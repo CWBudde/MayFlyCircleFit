@@ -36,3 +36,9 @@ diff.png
 
 # Temp
 /tmp/
+
+# Cache
+.cache/
+
+# AI Agents
+.claude/
