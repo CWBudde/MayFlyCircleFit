@@ -35,3 +35,29 @@ func TestOptimizeJoint(t *testing.T) {
 		t.Errorf("Expected 7 parameters for 1 circle, got %d", len(result.BestParams))
 	}
 }
+
+func TestOptimizeSequential(t *testing.T) {
+	// Create simple reference
+	ref := image.NewNRGBA(image.Rect(0, 0, 10, 10))
+	white := color.NRGBA{255, 255, 255, 255}
+	for y := 0; y < 10; y++ {
+		for x := 0; x < 10; x++ {
+			ref.Set(x, y, white)
+		}
+	}
+	ref.Set(5, 5, color.NRGBA{255, 0, 0, 255})
+
+	renderer := NewCPURenderer(ref, 1)
+
+	optimizer := opt.NewMayfly(30, 20, 42) // maxIters, popSize, seed
+
+	result := OptimizeSequential(renderer, optimizer, 2)
+
+	if result.BestCost >= result.InitialCost {
+		t.Errorf("Optimization did not improve")
+	}
+
+	if len(result.BestParams) != 14 { // 2 circles * 7 params
+		t.Errorf("Expected 14 parameters for 2 circles, got %d", len(result.BestParams))
+	}
+}

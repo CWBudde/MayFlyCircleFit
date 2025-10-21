@@ -48,3 +48,51 @@ func OptimizeJoint(renderer Renderer, optimizer opt.Optimizer, k int) *Optimizat
 		InitialCost: initialCost,
 	}
 }
+
+// OptimizeSequential optimizes circles one at a time (greedy)
+func OptimizeSequential(renderer Renderer, optimizer opt.Optimizer, totalK int) *OptimizationResult {
+	slog.Info("Starting sequential optimization", "total_circles", totalK)
+
+	ref := renderer.Reference()
+	allParams := []float64{}
+
+	initialCost := MSECost(
+		NewCPURenderer(ref, 0).Render([]float64{}),
+		ref,
+	)
+
+	for k := 1; k <= totalK; k++ {
+		slog.Info("Optimizing circle", "index", k, "of", totalK)
+
+		// Create renderer with k circles
+		currentRenderer := NewCPURenderer(ref, k)
+
+		// Objective: optimize only the new circle, keeping previous ones fixed
+		dim := paramsPerCircle
+		lower := make([]float64, dim)
+		upper := make([]float64, dim)
+		bounds := NewBounds(1, ref.Bounds().Dx(), ref.Bounds().Dy())
+		copy(lower, bounds.Lower)
+		copy(upper, bounds.Upper)
+
+		evalFunc := func(newCircleParams []float64) float64 {
+			// Combine previous circles + new circle
+			combined := append(append([]float64{}, allParams...), newCircleParams...)
+			return currentRenderer.Cost(combined)
+		}
+
+		bestNew, _ := optimizer.Run(evalFunc, lower, upper, dim)
+		allParams = append(allParams, bestNew...)
+	}
+
+	finalRenderer := NewCPURenderer(ref, totalK)
+	finalCost := finalRenderer.Cost(allParams)
+
+	slog.Info("Sequential optimization complete", "initial_cost", initialCost, "final_cost", finalCost)
+
+	return &OptimizationResult{
+		BestParams:  allParams,
+		BestCost:    finalCost,
+		InitialCost: initialCost,
+	}
+}
