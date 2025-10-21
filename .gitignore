@@ -1,0 +1,38 @@
+# Binaries
+/mayflycirclefit
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+*.out
+
+# Go workspace file
+go.work
+
+# Build artifacts
+/bin/
+/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Profiles
+*.prof
+*.pprof
+
+# Output
+out.png
+diff.png
+
+# Temp
+/tmp/
