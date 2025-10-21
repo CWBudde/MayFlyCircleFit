@@ -3,7 +3,7 @@ package opt
 import (
 	"math/rand"
 
-	"github.com/CWBudde/mayfly"
+	"github.com/cwbudde/mayfly"
 )
 
 // MayflyAdapter wraps the external Mayfly library to conform to our Optimizer interface
@@ -66,13 +66,28 @@ func (m *MayflyAdapter) Run(eval func([]float64) float64, lower, upper []float64
 		config = mayfly.NewDefaultConfig()
 	}
 
-	// Configure as before...
-	config.ObjectiveFunc = eval
+	// Denormalize parameters from [0,1] to actual bounds
+	// (mayfly only supports uniform bounds, so we normalize to [0,1])
+	denormalize := func(params []float64) []float64 {
+		result := make([]float64, len(params))
+		for i := range params {
+			result[i] = lower[i] + params[i]*(upper[i]-lower[i])
+		}
+		return result
+	}
+
+	// Wrap eval function to handle normalization
+	normalizedEval := func(normalizedParams []float64) float64 {
+		denormalizedParams := denormalize(normalizedParams)
+		return eval(denormalizedParams)
+	}
+
+	config.ObjectiveFunc = normalizedEval
 	config.ProblemSize = dim
 	config.MaxIterations = m.maxIters
 	config.NPop = m.popSize
-	config.LowerBound = lower[0]
-	config.UpperBound = upper[0]
+	config.LowerBound = 0.0
+	config.UpperBound = 1.0
 	config.Rand = rand.New(rand.NewSource(m.seed))
 
 	result, err := mayfly.Optimize(config)
@@ -80,5 +95,6 @@ func (m *MayflyAdapter) Run(eval func([]float64) float64, lower, upper []float64
 		return make([]float64, dim), eval(make([]float64, dim))
 	}
 
-	return result.GlobalBest.Position, result.GlobalBest.Cost
+	// Denormalize result before returning
+	return denormalize(result.GlobalBest.Position), result.GlobalBest.Cost
 }
