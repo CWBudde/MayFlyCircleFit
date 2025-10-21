@@ -69,10 +69,27 @@ Three strategies for adding circles:
 2. **Sequential**: Add circles one at a time greedily (planned)
 3. **Batch**: Add batchK circles per pass (planned)
 
+### HTTP Server (`internal/server/`)
+- **Job Management**: Thread-safe job queue with state machine
+  - Job states: pending, running, completed, failed, cancelled
+  - In-memory storage with concurrent access via RWMutex
+- **Background Worker**: Async optimization execution with context cancellation
+- **REST API**: Endpoints for job creation, status, and image retrieval
+  - POST /api/v1/jobs - Create and start job
+  - GET /api/v1/jobs - List all jobs
+  - GET /api/v1/jobs/:id/status - Get job status with metrics
+  - GET /api/v1/jobs/:id/best.png - Current best rendered image
+  - GET /api/v1/jobs/:id/diff.png - False-color difference visualization
+- **Middleware**: CORS and logging support
+
 ### CLI (`cmd/`)
 - **Cobra-based**: Structured command-line interface
 - **Logging**: Structured logging via `slog` with configurable levels (debug, info, warn, error)
-- Commands organized as separate files in `cmd/` directory
+- **Commands**:
+  - `run` - Single-shot optimization (writes output to file)
+  - `serve` - Start HTTP server with graceful shutdown
+  - `status` - Query server for job information
+  - `resume` - Resume from checkpoint (Phase 7)
 
 ## Development Guidelines
 
@@ -85,9 +102,9 @@ Three strategies for adding circles:
 - `cmd/`: CLI entry points and command definitions
 - `internal/fit/`: Core domain (circles, rendering, cost, pipelines)
 - `internal/opt/`: Optimization algorithms
-- `internal/server/`: HTTP server and job management (planned)
-- `internal/ui/`: templ components for web UI (planned)
-- `internal/store/`: Persistence and checkpoints (planned)
+- `internal/server/`: HTTP server and job management
+- `internal/ui/`: templ components for web UI (Phase 7)
+- `internal/store/`: Persistence and checkpoints (Phase 8)
 - `assets/`: Example reference images
 - `docs/`: Documentation
 
@@ -119,9 +136,56 @@ When implementing new optimizers:
 
 ## Project Status
 
-Currently implementing **Phase 3** (Mayfly Optimizer) according to PLAN.md. Phases 1-2 are complete:
+Currently implementing **Phase 6** (HTTP Server) according to PLAN.md. Phases 1-6 are complete:
 - Phase 1: Core domain model (Circle, ParamVector, Bounds, MSECost) - COMPLETE
 - Phase 2: CPU Renderer with alpha compositing - COMPLETE
-- Phase 3: Mayfly Algorithm - IN PROGRESS
+- Phase 3: Mayfly Algorithm - COMPLETE
+- Phase 4: Optimization Pipelines (Joint, Sequential, Batch) - COMPLETE
+- Phase 5: CLI with Cobra - COMPLETE
+- Phase 6: HTTP Server + Job Management + REST API - COMPLETE
 
 See PLAN.md for detailed implementation roadmap through Phase 13.
+
+## API Usage Examples
+
+### Start Server
+```bash
+mayflycirclefit serve --port 8080
+```
+
+### Create Optimization Job
+```bash
+curl -X POST http://localhost:8080/api/v1/jobs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refPath": "assets/test.png",
+    "mode": "joint",
+    "circles": 10,
+    "iters": 100,
+    "popSize": 30,
+    "seed": 42
+  }'
+```
+
+### Check Job Status
+```bash
+# Via CLI
+mayflycirclefit status <job-id>
+
+# Via API
+curl http://localhost:8080/api/v1/jobs/<job-id>/status
+```
+
+### Get Best Image
+```bash
+curl http://localhost:8080/api/v1/jobs/<job-id>/best.png -o best.png
+```
+
+### List All Jobs
+```bash
+# Via CLI
+mayflycirclefit status
+
+# Via API
+curl http://localhost:8080/api/v1/jobs
+```
