@@ -80,329 +80,138 @@
 
 ---
 
-## Phase 5: CLI with Cobra (Log-only UX) - Implementation Details
-
-### Task 5.1: Implement 'run' Command
-
-**Files:**
-- Create: `cmd/mayflycirclefit/run.go`
-- Modify: `cmd/mayflycirclefit/root.go`
-
-**Step 1: Write run command**
-
-Create: `cmd/mayflycirclefit/run.go`
-
-```go
-package main
-
-import (
-  "fmt"
-  "image"
-  "image/png"
-  "log/slog"
-  "os"
-  "time"
-
-  "github.com/spf13/cobra"
-  "github.com/cwbudde/mayflycirclefit/internal/fit"
-  "github.com/cwbudde/mayflycirclefit/internal/opt"
-)
-
-var (
-  refPath   string
-  outPath   string
-  mode      string
-  circles   int
-  iters     int
-  popSize   int
-  seed      int64
-)
-
-var runCmd = &cobra.Command{
-  Use:   "run",
-  Short: "Run single-shot optimization",
-  Long:  `Runs circle fitting optimization and writes output image and parameters.`,
-  RunE:  runOptimization,
-}
-
-func init() {
-  runCmd.Flags().StringVar(&refPath, "ref", "", "Reference image path (required)")
-  runCmd.Flags().StringVar(&outPath, "out", "out.png", "Output image path")
-  runCmd.Flags().StringVar(&mode, "mode", "joint", "Optimization mode: joint, sequential, batch")
-  runCmd.Flags().IntVar(&circles, "circles", 10, "Number of circles")
-  runCmd.Flags().IntVar(&iters, "iters", 100, "Max iterations")
-  runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
-  runCmd.Flags().Int64Var(&seed, "seed", 42, "Random seed")
-
-  runCmd.MarkFlagRequired("ref")
-  rootCmd.AddCommand(runCmd)
-}
-
-func runOptimization(cmd *cobra.Command, args []string) error {
-  slog.Info("Starting optimization", "mode", mode, "circles", circles, "iters", iters)
-
-  // Load reference image
-  f, err := os.Open(refPath)
-  if err != nil {
-    return fmt.Errorf("failed to open reference: %w", err)
-  }
-  defer f.Close()
-
-  img, _, err := image.Decode(f)
-  if err != nil {
-    return fmt.Errorf("failed to decode image: %w", err)
-  }
-
-  // Convert to NRGBA
-  bounds := img.Bounds()
-  ref := image.NewNRGBA(bounds)
-  for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-    for x := bounds.Min.X; x < bounds.Max.X; x++ {
-      ref.Set(x, y, img.At(x, y))
-    }
-  }
-
-  slog.Info("Loaded reference", "width", bounds.Dx(), "height", bounds.Dy())
-
-  // Create renderer
-  renderer := fit.NewCPURenderer(ref, circles)
-
-  // Create optimizer
-  optimizer := opt.NewMayfly(iters, popSize, seed)
-
-  // Run optimization
-  start := time.Now()
-  var result *fit.OptimizationResult
-
-  switch mode {
-  case "joint":
-    result = fit.OptimizeJoint(renderer, optimizer, circles)
-  case "sequential":
-    result = fit.OptimizeSequential(renderer, optimizer, circles)
-  case "batch":
-    batchSize := 5
-    passes := circles / batchSize
-    if circles%batchSize != 0 {
-      passes++
-    }
-    result = fit.OptimizeBatch(renderer, optimizer, batchSize, passes)
-  default:
-    return fmt.Errorf("unknown mode: %s", mode)
-  }
-
-  elapsed := time.Since(start)
-
-  // Render final image
-  finalRenderer := fit.NewCPURenderer(ref, circles)
-  output := finalRenderer.Render(result.BestParams)
-
-  // Save output
-  outFile, err := os.Create(outPath)
-  if err != nil {
-    return fmt.Errorf("failed to create output: %w", err)
-  }
-  defer outFile.Close()
-
-  if err := png.Encode(outFile, output); err != nil {
-    return fmt.Errorf("failed to encode output: %w", err)
-  }
-
-  // Compute throughput (circles rendered per second)
-  // Each eval renders K circles, estimate total evals ~ iters * popSize
-  totalEvals := iters * popSize
-  totalCircles := totalEvals * circles
-  cps := float64(totalCircles) / elapsed.Seconds()
-
-  slog.Info("Optimization complete",
-    "elapsed", elapsed,
-    "initial_cost", result.InitialCost,
-    "final_cost", result.BestCost,
-    "improvement", result.InitialCost-result.BestCost,
-    "circles_per_second", fmt.Sprintf("%.0f", cps),
-  )
-
-  fmt.Printf("✓ Wrote %s (cost: %.2f → %.2f, %.0f circles/sec)\n", outPath, result.InitialCost, result.BestCost, cps)
-
-  return nil
-}
-```
-
-**Step 2: Test run command**
-
-First create a simple test image:
-
-```bash
-# Create a simple test reference (you can use any small image)
-# For now, we'll create one programmatically in the next step
-```
-
-**Step 3: Build and test**
-
-```bash
-make build
-# We'll need a test image - create one in assets/
-```
-
-**Step 4: Create test image helper**
-
-Create a small Go program to generate a test image (temporary):
-
-```bash
-cat > /tmp/gen_test_img.go << 'EOF'
-package main
-import (
-  "image"
-  "image/color"
-  "image/png"
-  "os"
-)
-func main() {
-  img := image.NewNRGBA(image.Rect(0, 0, 50, 50))
-  for y := 0; y < 50; y++ {
-    for x := 0; x < 50; x++ {
-      img.Set(x, y, color.NRGBA{255, 255, 255, 255})
-    }
-  }
-  // Red square in center
-  for y := 20; y < 30; y++ {
-    for x := 20; x < 30; x++ {
-      img.Set(x, y, color.NRGBA{255, 0, 0, 255})
-    }
-  }
-  f, _ := os.Create("assets/test.png")
-  png.Encode(f, img)
-  f.Close()
-}
-EOF
-mkdir -p assets
-go run /tmp/gen_test_img.go
-```
-
-**Step 5: Test and commit**
-
-```bash
-./bin/mayflycirclefit run --ref assets/test.png --circles 3 --iters 50 --pop 10
-# Check that out.png is created
-git add cmd/mayflycirclefit/run.go assets/
-git commit -m "feat: implement 'run' command for single-shot optimization"
-```
-
----
-
-### Task 5.2: Add Stub Commands for serve, status, resume
-
-**Files:**
-- Create: `cmd/mayflycirclefit/serve.go`
-- Create: `cmd/mayflycirclefit/status.go`
-- Create: `cmd/mayflycirclefit/resume.go`
-
-**Step 1: Create serve stub**
-
-Create: `cmd/mayflycirclefit/serve.go`
-
-```go
-package main
-
-import (
-  "fmt"
-
-  "github.com/spf13/cobra"
-)
-
-var serveCmd = &cobra.Command{
-  Use:   "serve",
-  Short: "Start HTTP server (coming in Phase 6)",
-  RunE: func(cmd *cobra.Command, args []string) error {
-    return fmt.Errorf("serve command not yet implemented (Phase 6)")
-  },
-}
-
-func init() {
-  rootCmd.AddCommand(serveCmd)
-}
-```
-
-**Step 2: Create status stub**
-
-Create: `cmd/mayflycirclefit/status.go`
-
-```go
-package main
-
-import (
-  "fmt"
-
-  "github.com/spf13/cobra"
-)
-
-var statusCmd = &cobra.Command{
-  Use:   "status",
-  Short: "Query server status (coming in Phase 6)",
-  RunE: func(cmd *cobra.Command, args []string) error {
-    return fmt.Errorf("status command not yet implemented (Phase 6)")
-  },
-}
-
-func init() {
-  rootCmd.AddCommand(statusCmd)
-}
-```
-
-**Step 3: Create resume stub**
-
-Create: `cmd/mayflycirclefit/resume.go`
-
-```go
-package main
-
-import (
-  "fmt"
-
-  "github.com/spf13/cobra"
-)
-
-var resumeCmd = &cobra.Command{
-  Use:   "resume [job-id]",
-  Short: "Resume from checkpoint (coming in Phase 7)",
-  Args:  cobra.ExactArgs(1),
-  RunE: func(cmd *cobra.Command, args []string) error {
-    return fmt.Errorf("resume command not yet implemented (Phase 7)")
-  },
-}
-
-func init() {
-  rootCmd.AddCommand(resumeCmd)
-}
-```
-
-**Step 4: Test help**
-
-```bash
-make build
-./bin/mayflycirclefit --help
-# Verify all commands appear
-```
-
-**Step 5: Commit**
-
-```bash
-git add cmd/mayflycirclefit/serve.go cmd/mayflycirclefit/status.go cmd/mayflycirclefit/resume.go
-git commit -m "feat: add stub commands for serve, status, resume"
-```
+## Phase 6: Background Server + Job Model + Live Progress
+
+**Goal:** A long-running HTTP server that executes optimizations in the background with real-time progress via SSE.
+
+### Task 6.1: Job Management Core
+- [ ] Create `internal/server/job.go` with job state machine
+  - [ ] Define `Job` struct (ID, state, config, best params, best cost, iterations, start time)
+  - [ ] Define job states: `pending`, `running`, `completed`, `failed`, `cancelled`
+  - [ ] Implement `JobManager` with in-memory job storage (map[string]*Job)
+  - [ ] Add methods: `CreateJob()`, `GetJob()`, `ListJobs()`, `UpdateJob()`
+  - [ ] Add thread-safe access with `sync.RWMutex`
+  - [ ] Write tests for job lifecycle
+
+### Task 6.2: Background Worker
+- [ ] Create `internal/server/worker.go` for job execution
+  - [ ] Implement `runJob(ctx context.Context, job *Job)` function
+  - [ ] Load reference image from job config
+  - [ ] Create renderer and optimizer from job config
+  - [ ] Run optimization with periodic progress updates
+  - [ ] Use context for cancellation support
+  - [ ] Update job state atomically during execution
+  - [ ] Handle errors and set failed state
+  - [ ] Write tests for worker execution flow
+
+### Task 6.3: HTTP Server Foundation
+- [ ] Create `internal/server/server.go` with HTTP server setup
+  - [ ] Define `Server` struct with JobManager, port, routes
+  - [ ] Implement `NewServer()` constructor
+  - [ ] Implement `Start()` method with graceful shutdown
+  - [ ] Add CORS middleware for development
+  - [ ] Add logging middleware with slog
+  - [ ] Write tests for server lifecycle
+
+### Task 6.4: REST API Endpoints
+- [ ] Implement `POST /api/v1/jobs` - Create new job
+  - [ ] Accept JSON payload (refPath, width, height, mode, circles, iters, pop, seed)
+  - [ ] Validate input parameters
+  - [ ] Create job and start worker goroutine
+  - [ ] Return job ID and initial status
+  - [ ] Write integration test
+
+- [ ] Implement `GET /api/v1/jobs` - List all jobs
+  - [ ] Return JSON array of job summaries
+  - [ ] Write integration test
+
+- [ ] Implement `GET /api/v1/jobs/:id/status` - Get job status
+  - [ ] Return JSON with state, cost, iterations, elapsed time, cps
+  - [ ] Write integration test
+
+- [ ] Implement `GET /api/v1/jobs/:id/best.png` - Get current best image
+  - [ ] Render current best params to PNG
+  - [ ] Set appropriate content-type and cache headers
+  - [ ] Write integration test
+
+- [ ] Implement `GET /api/v1/jobs/:id/diff.png` - Get difference image
+  - [ ] Compute pixel-wise difference (false-color heatmap)
+  - [ ] Return PNG with difference visualization
+  - [ ] Write integration test
+
+### Task 6.5: Server-Sent Events (SSE) for Live Progress
+- [ ] Create `internal/server/stream.go` for SSE support
+  - [ ] Implement `GET /api/v1/jobs/:id/stream` endpoint
+  - [ ] Set SSE headers (text/event-stream)
+  - [ ] Create event channel per client connection
+  - [ ] Send progress events (iteration, cost, cps) periodically
+  - [ ] Handle client disconnect gracefully
+  - [ ] Write integration test with SSE client
+
+- [ ] Integrate SSE with worker
+  - [ ] Add event broadcaster to JobManager
+  - [ ] Emit events from worker during optimization
+  - [ ] Throttle events (e.g., max 1 per 500ms)
+
+### Task 6.6: CLI Integration - Serve Command
+- [ ] Update `cmd/serve.go` with full implementation
+  - [ ] Add flags: --port (default 8080), --addr (default localhost)
+  - [ ] Create and start HTTP server
+  - [ ] Add signal handling for graceful shutdown (SIGINT, SIGTERM)
+  - [ ] Log server start with URL
+  - [ ] Write manual test
+
+### Task 6.7: CLI Integration - Status Command
+- [ ] Update `cmd/status.go` with full implementation
+  - [ ] Add flags: --server-url (default http://localhost:8080)
+  - [ ] Optional job-id argument to show specific job
+  - [ ] Call GET /api/v1/jobs or /api/v1/jobs/:id/status
+  - [ ] Format and display status in terminal
+  - [ ] Handle connection errors gracefully
+  - [ ] Write manual test
+
+### Task 6.8: Integration Testing
+- [ ] Create `internal/server/integration_test.go`
+  - [ ] Test full flow: POST job → poll status → get best.png
+  - [ ] Test SSE stream receives progress events
+  - [ ] Test concurrent job execution
+  - [ ] Test error handling (invalid job ID, bad parameters)
+  - [ ] Test graceful shutdown
+
+### Task 6.9: Documentation
+- [ ] Update CLAUDE.md with server architecture
+  - [ ] Document API endpoints with examples
+  - [ ] Document job lifecycle and states
+  - [ ] Document SSE event format
+- [ ] Add example curl commands to README
+
+**Deliverables:**
+- Working HTTP server with job queue and SSE
+- All REST API endpoints functional
+- CLI commands `serve` and `status` fully implemented
+- Integration tests covering main flows
+- Updated documentation
+
+**Acceptance Checks:**
+- ✅ `mayflycirclefit serve` starts server
+- ✅ Can POST job and receive job ID
+- ✅ Can poll status and see cost decreasing
+- ✅ Can fetch best.png while optimization runs
+- ✅ SSE stream shows real-time progress
+- ✅ `mayflycirclefit status` displays job information
 
 ---
 
 ## Summary and Next Steps
 
-This plan covers **Phases 0-5** in detail with bite-sized, testable tasks. Each task follows TDD principles:
+This plan covers **Phases 0-6** in detail with bite-sized, testable tasks. Each task follows TDD principles:
 1. Write failing test
 2. Run test to verify failure
 3. Write minimal implementation
 4. Run test to verify pass
 5. Commit
 
-**Remaining Phases (6-13)** would follow the same structure:
-- **Phase 6**: HTTP server with job management and SSE
+**Remaining Phases (7-13)** will follow the same structure:
 - **Phase 7**: templ-based frontend UI
 - **Phase 8**: Persistence and checkpoints
 - **Phase 9**: CPU profiling and optimizations
@@ -410,10 +219,3 @@ This plan covers **Phases 0-5** in detail with bite-sized, testable tasks. Each 
 - **Phase 11**: GPU backends
 - **Phase 12**: UX polish and visualization
 - **Phase 13**: Documentation and packaging
-
-**Total estimated tasks**: ~80-100 tasks across all phases
-
-Would you like me to:
-1. Continue expanding Phases 6-13 in the same detail?
-2. Create a separate PLAN.md for each phase?
-3. Focus on specific phases you want to tackle first?
