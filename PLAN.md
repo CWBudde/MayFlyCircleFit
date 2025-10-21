@@ -10,7 +10,29 @@
 
 ---
 
-## Phase 1: Core Domain Model
+## Phase 1: Core Domain Model ✅ COMPLETE
+
+**Implemented:**
+- `Circle` struct: Position (X, Y, R) + Color (CR, CG, CB) + Opacity
+- `ParamVector`: Flat float64 encoding of K circles (7 params per circle)
+- `Bounds`: Parameter validation with configurable ranges
+  - X, Y: [0, width/height]
+  - R: [1, max(width, height)]
+  - Color/Opacity: [0, 1]
+- `MSECost`: Mean Squared Error cost function over RGB channels
+- Helper functions: `EncodeCircle`, `DecodeCircle`, `ClampCircle`, `ClampVector`
+
+**Commits:**
+- bb2f646: Circle and ParamVector types with encoding
+- 634122c: Bounds validation and clamping
+- 1cf4464: MSE cost function with tests
+
+**Test Coverage:** 6 passing tests (encoding, bounds, clamping, MSE)
+
+---
+
+<details>
+<summary>📦 Archived detailed implementation steps (click to expand)</summary>
 
 ### Task 1.1: Define Circle and Parameter Types
 
@@ -486,6 +508,8 @@ Expected: PASS
 git add internal/fit/cost.go internal/fit/cost_test.go
 git commit -m "feat: implement MSE cost function with tests"
 ```
+
+</details>
 
 ---
 
