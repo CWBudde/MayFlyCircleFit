@@ -10,7 +10,7 @@ MayFlyCircleFit approximates images with colored circles using the Mayfly Algori
 
 ```bash
 # Build
-make build
+just build
 
 # Run help
 ./bin/mayflycirclefit --help
@@ -20,7 +20,7 @@ make build
 
 ## Project Status
 
-Currently in Phase 0: Project scaffolding
+See current status and roadmap in the [PLAN.md](PLAN.md) file.
 
 ## Development
 
@@ -40,8 +40,7 @@ just clean
 
 ## Architecture
 
-```
-/cmd/mayflycirclefit          # CLI entry point
+```plain
 /internal/fit           # Rendering, cost functions, pipelines
 /internal/opt           # Mayfly/DE optimizers
 /internal/server        # HTTP server, jobs, SSE

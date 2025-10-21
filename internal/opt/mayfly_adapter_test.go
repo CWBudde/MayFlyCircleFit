@@ -49,11 +49,11 @@ func TestMayflyAdapterDeterministic(t *testing.T) {
 	lower := []float64{-5, -5}
 	upper := []float64{5, 5}
 
-	// Run twice with same seed
-	optimizer1 := NewMayfly(50, 10, 123)
+	// Run twice with same seed (popSize must be >=20 for mayfly v0.1.0)
+	optimizer1 := NewMayfly(50, 20, 123)
 	_, cost1 := optimizer1.Run(sphere, lower, upper, dim)
 
-	optimizer2 := NewMayfly(50, 10, 123)
+	optimizer2 := NewMayfly(50, 20, 123)
 	_, cost2 := optimizer2.Run(sphere, lower, upper, dim)
 
 	if cost1 != cost2 {

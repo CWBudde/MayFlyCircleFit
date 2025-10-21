@@ -38,310 +38,15 @@
 
 ---
 
-## Phase 3: Optimizer (Mayfly - Using External Library)
-
-**Strategy:** Use the existing, well-tested Mayfly library (github.com/CWBudde/Mayfly) as the primary implementation. Keep the baseline implementation code (below) as fallback documentation in case the external library needs adaptation.
-
-### Task 3.1: Define Optimizer Interface
-
-**Files:**
-- Create: `internal/opt/optimizer.go`
-
-**Step 1: Write interface definition**
-
-Create: `internal/opt/optimizer.go`
-
-```go
-package opt
-
-// Optimizer defines an optimization algorithm interface
-type Optimizer interface {
-	// Run executes the optimization
-	// eval: objective function to minimize
-	// lower, upper: parameter bounds
-	// dim: dimensionality of parameter space
-	// Returns: best parameters and best cost
-	Run(eval func([]float64) float64, lower, upper []float64, dim int) ([]float64, float64)
-}
-```
-
-**Step 2: Commit**
-
-```bash
-git add internal/opt/
-git commit -m "feat: define Optimizer interface"
-```
-
----
-
-### Task 3.2: Integrate External Mayfly Library
-
-**Files:**
-- Modify: `go.mod` (add dependency)
-- Create: `internal/opt/mayfly_adapter.go`
-- Create: `internal/opt/mayfly_adapter_test.go`
-
-**Step 1: Add dependency**
-
-```bash
-go get github.com/CWBudde/Mayfly@latest
-go mod tidy
-```
-
-**Step 2: Write the failing test**
-
-Create: `internal/opt/mayfly_adapter_test.go`
-
-```go
-package opt
-
-import (
-	"math"
-	"testing"
-)
-
-// Sphere function: f(x) = sum(x_i^2), minimum at origin
-func sphere(x []float64) float64 {
-	var sum float64
-	for _, v := range x {
-		sum += v * v
-	}
-	return sum
-}
-
-func TestMayflyAdapterOnSphere(t *testing.T) {
-	optimizer := NewMayfly(100, 20, 42) // maxIters, popSize, seed
-
-	dim := 3
-	lower := make([]float64, dim)
-	upper := make([]float64, dim)
-	for i := 0; i < dim; i++ {
-		lower[i] = -10
-		upper[i] = 10
-	}
-
-	best, cost := optimizer.Run(sphere, lower, upper, dim)
-
-	if len(best) != dim {
-		t.Fatalf("Expected %d parameters, got %d", dim, len(best))
-	}
-
-	// Should converge close to zero
-	if cost > 0.1 {
-		t.Errorf("Expected cost near 0, got %f", cost)
-	}
-
-	// Check that best params are near origin
-	for i, v := range best {
-		if math.Abs(v) > 1.0 {
-			t.Errorf("Parameter %d = %f, expected near 0", i, v)
-		}
-	}
-}
-
-func TestMayflyAdapterDeterministic(t *testing.T) {
-	dim := 2
-	lower := []float64{-5, -5}
-	upper := []float64{5, 5}
-
-	// Run twice with same seed
-	optimizer1 := NewMayfly(50, 10, 123)
-	_, cost1 := optimizer1.Run(sphere, lower, upper, dim)
-
-	optimizer2 := NewMayfly(50, 10, 123)
-	_, cost2 := optimizer2.Run(sphere, lower, upper, dim)
-
-	if cost1 != cost2 {
-		t.Errorf("Non-deterministic: cost1=%f, cost2=%f", cost1, cost2)
-	}
-}
-```
-
-**Step 3: Run test to verify it fails**
-
-```bash
-go test ./internal/opt -v
-```
-
-Expected: FAIL - NewMayfly not defined
-
-**Step 4: Write adapter implementation**
-
-Create: `internal/opt/mayfly_adapter.go`
-
-```go
-package opt
-
-import (
-	"math/rand"
-
-	"github.com/CWBudde/Mayfly"
-)
-
-// MayflyAdapter wraps the external Mayfly library to conform to our Optimizer interface
-type MayflyAdapter struct {
-	maxIters int
-	popSize  int
-	seed     int64
-}
-
-// NewMayfly creates a new Mayfly optimizer adapter
-func NewMayfly(maxIters, popSize int, seed int64) Optimizer {
-	return &MayflyAdapter{
-		maxIters: maxIters,
-		popSize:  popSize,
-		seed:     seed,
-	}
-}
-
-// Run executes the Mayfly optimization using the external library
-func (m *MayflyAdapter) Run(eval func([]float64) float64, lower, upper []float64, dim int) ([]float64, float64) {
-	// Create config for external Mayfly library
-	config := mayfly.NewDefaultConfig()
-
-	// Configure the optimizer
-	config.ObjectiveFunc = eval
-	config.ProblemSize = dim
-	config.MaxIterations = m.maxIters
-	config.NPop = m.popSize
-
-	// Set bounds (external library uses scalar bounds)
-	// Assumes all dimensions have same bounds - use first dimension
-	config.LowerBound = lower[0]
-	config.UpperBound = upper[0]
-
-	// Set random seed for reproducibility
-	config.Rand = rand.New(rand.NewSource(m.seed))
-
-	// Run optimization
-	result, err := mayfly.Optimize(config)
-	if err != nil {
-		// Fallback to zero vector if optimization fails
-		return make([]float64, dim), eval(make([]float64, dim))
-	}
-
-	return result.GlobalBest.Position, result.GlobalBest.Cost
-}
-```
-
-**Step 5: Run test to verify it passes**
-
-```bash
-go test ./internal/opt -v
-```
-
-Expected: PASS
-
-**Step 6: Commit**
-
-```bash
-git add go.mod go.sum internal/opt/
-git commit -m "feat: integrate external Mayfly library with adapter"
-```
-
----
-
-### Task 3.3: Add Variant Support (Optional Enhancement)
-
-**Files:**
-- Modify: `internal/opt/mayfly_adapter.go`
-
-**Step 1: Add variant constructor functions**
-
-Add to `internal/opt/mayfly_adapter.go`:
-
-```go
-// NewMayflyDESMA creates a Mayfly optimizer using the DESMA variant
-func NewMayflyDESMA(maxIters, popSize int, seed int64) Optimizer {
-	return &MayflyAdapter{
-		maxIters: maxIters,
-		popSize:  popSize,
-		seed:     seed,
-		variant:  "desma",
-	}
-}
-
-// NewMayflyOLCE creates a Mayfly optimizer using the OLCE-MA variant
-func NewMayflyOLCE(maxIters, popSize int, seed int64) Optimizer {
-	return &MayflyAdapter{
-		maxIters: maxIters,
-		popSize:  popSize,
-		seed:     seed,
-		variant:  "olce",
-	}
-}
-
-// Update MayflyAdapter struct to include variant field
-type MayflyAdapter struct {
-	maxIters int
-	popSize  int
-	seed     int64
-	variant  string // "standard", "desma", "olce", "eobbma", "gsasma", "mpma", "aoblmoa"
-}
-
-// Update Run method to use variant-specific config
-func (m *MayflyAdapter) Run(eval func([]float64) float64, lower, upper []float64, dim int) ([]float64, float64) {
-	var config *mayfly.Config
-
-	// Select variant
-	switch m.variant {
-	case "desma":
-		config = mayfly.NewDESMAConfig()
-	case "olce":
-		config = mayfly.NewOLCEConfig()
-	case "eobbma":
-		config = mayfly.NewEOBBMAConfig()
-	case "gsasma":
-		config = mayfly.NewGSASMAConfig()
-	case "mpma":
-		config = mayfly.NewMPMAConfig()
-	case "aoblmoa":
-		config = mayfly.NewAOBLMOAConfig()
-	default:
-		config = mayfly.NewDefaultConfig()
-	}
-
-	// Configure as before...
-	config.ObjectiveFunc = eval
-	config.ProblemSize = dim
-	config.MaxIterations = m.maxIters
-	config.NPop = m.popSize
-	config.LowerBound = lower[0]
-	config.UpperBound = upper[0]
-	config.Rand = rand.New(rand.NewSource(m.seed))
-
-	result, err := mayfly.Optimize(config)
-	if err != nil {
-		return make([]float64, dim), eval(make([]float64, dim))
-	}
-
-	return result.GlobalBest.Position, result.GlobalBest.Cost
-}
-```
-
-**Step 2: Commit**
-
-```bash
-git add internal/opt/mayfly_adapter.go
-git commit -m "feat: add Mayfly algorithm variant support (DESMA, OLCE, etc.)"
-```
-
----
-
-### FALLBACK: Baseline Mayfly Implementation
-
-**Note:** The code below is kept as documentation/fallback. Only implement if the external library integration fails or needs significant modification.
-
-<details>
-<summary>Click to expand baseline implementation</summary>
-
-**Files:**
-- Create: `internal/opt/mayfly_baseline.go`
-- Create: `internal/opt/mayfly_baseline_test.go`
-
-[... rest of baseline implementation as originally written ...]
-
-</details>
+## Phase 3: Optimizer (Mayfly - Using External Library) ✅ COMPLETE
+
+**Implemented:**
+- `Optimizer` interface: Run() method for optimization algorithms
+- `MayflyAdapter` struct: Wrapper for external Mayfly library with configurable variants
+- Variant support: Standard, DESMA, OLCE, and other Mayfly algorithm variants
+- Constructor functions: `NewMayfly()`, `NewMayflyDESMA()`, `NewMayflyOLCE()`
+
+**Test Coverage:** 2 passing tests (sphere function optimization, deterministic behavior)
 
 ---
 
@@ -361,39 +66,39 @@ Create: `internal/fit/pipeline_test.go`
 package fit
 
 import (
-	"image"
-	"image/color"
-	"testing"
+  "image"
+  "image/color"
+  "testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+  "github.com/cwbudde/mayflycirclefit/internal/opt"
 )
 
 func TestOptimizeJoint(t *testing.T) {
-	// Create simple 10x10 reference with red circle
-	ref := image.NewNRGBA(image.Rect(0, 0, 10, 10))
-	white := color.NRGBA{255, 255, 255, 255}
-	for y := 0; y < 10; y++ {
-		for x := 0; x < 10; x++ {
-			ref.Set(x, y, white)
-		}
-	}
+  // Create simple 10x10 reference with red circle
+  ref := image.NewNRGBA(image.Rect(0, 0, 10, 10))
+  white := color.NRGBA{255, 255, 255, 255}
+  for y := 0; y < 10; y++ {
+    for x := 0; x < 10; x++ {
+      ref.Set(x, y, white)
+    }
+  }
 
-	// Add a red center pixel
-	ref.Set(5, 5, color.NRGBA{255, 0, 0, 255})
+  // Add a red center pixel
+  ref.Set(5, 5, color.NRGBA{255, 0, 0, 255})
 
-	renderer := NewCPURenderer(ref, 1)
+  renderer := NewCPURenderer(ref, 1)
 
-	optimizer := opt.NewMayfly(50, 10, 42) // maxIters, popSize, seed
+  optimizer := opt.NewMayfly(50, 10, 42) // maxIters, popSize, seed
 
-	result := OptimizeJoint(renderer, optimizer, 1)
+  result := OptimizeJoint(renderer, optimizer, 1)
 
-	if result.BestCost >= result.InitialCost {
-		t.Errorf("Optimization did not improve: initial=%f, best=%f", result.InitialCost, result.BestCost)
-	}
+  if result.BestCost >= result.InitialCost {
+    t.Errorf("Optimization did not improve: initial=%f, best=%f", result.InitialCost, result.BestCost)
+  }
 
-	if len(result.BestParams) != 7 {
-		t.Errorf("Expected 7 parameters for 1 circle, got %d", len(result.BestParams))
-	}
+  if len(result.BestParams) != 7 {
+    t.Errorf("Expected 7 parameters for 1 circle, got %d", len(result.BestParams))
+  }
 }
 ```
 
@@ -413,52 +118,52 @@ Create: `internal/fit/pipeline.go`
 package fit
 
 import (
-	"log/slog"
+  "log/slog"
 
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+  "github.com/cwbudde/mayflycirclefit/internal/opt"
 )
 
 // OptimizationResult holds the output of an optimization run
 type OptimizationResult struct {
-	BestParams  []float64
-	BestCost    float64
-	InitialCost float64
-	Iterations  int
+  BestParams  []float64
+  BestCost    float64
+  InitialCost float64
+  Iterations  int
 }
 
 // OptimizeJoint optimizes all K circles simultaneously
 func OptimizeJoint(renderer Renderer, optimizer opt.Optimizer, k int) *OptimizationResult {
-	slog.Info("Starting joint optimization", "circles", k)
+  slog.Info("Starting joint optimization", "circles", k)
 
-	dim := k * paramsPerCircle
-	lower, upper := renderer.Bounds()
+  dim := k * paramsPerCircle
+  lower, upper := renderer.Bounds()
 
-	// Ensure bounds match dimension
-	if len(lower) < dim || len(upper) < dim {
-		// Extend bounds if needed (renderer created with fewer circles)
-		newRenderer := NewCPURenderer(renderer.Reference(), k)
-		renderer = newRenderer
-		lower, upper = renderer.Bounds()
-	}
+  // Ensure bounds match dimension
+  if len(lower) < dim || len(upper) < dim {
+    // Extend bounds if needed (renderer created with fewer circles)
+    newRenderer := NewCPURenderer(renderer.Reference(), k)
+    renderer = newRenderer
+    lower, upper = renderer.Bounds()
+  }
 
-	// Trim to actual dimension
-	lower = lower[:dim]
-	upper = upper[:dim]
+  // Trim to actual dimension
+  lower = lower[:dim]
+  upper = upper[:dim]
 
-	// Initial cost (white canvas)
-	initialParams := make([]float64, dim)
-	initialCost := renderer.Cost(initialParams)
+  // Initial cost (white canvas)
+  initialParams := make([]float64, dim)
+  initialCost := renderer.Cost(initialParams)
 
-	// Run optimizer
-	bestParams, bestCost := optimizer.Run(renderer.Cost, lower, upper, dim)
+  // Run optimizer
+  bestParams, bestCost := optimizer.Run(renderer.Cost, lower, upper, dim)
 
-	slog.Info("Joint optimization complete", "initial_cost", initialCost, "best_cost", bestCost)
+  slog.Info("Joint optimization complete", "initial_cost", initialCost, "best_cost", bestCost)
 
-	return &OptimizationResult{
-		BestParams:  bestParams,
-		BestCost:    bestCost,
-		InitialCost: initialCost,
-	}
+  return &OptimizationResult{
+    BestParams:  bestParams,
+    BestCost:    bestCost,
+    InitialCost: initialCost,
+  }
 }
 ```
 
@@ -491,29 +196,29 @@ Add to `internal/fit/pipeline_test.go`:
 
 ```go
 func TestOptimizeSequential(t *testing.T) {
-	// Create simple reference
-	ref := image.NewNRGBA(image.Rect(0, 0, 10, 10))
-	white := color.NRGBA{255, 255, 255, 255}
-	for y := 0; y < 10; y++ {
-		for x := 0; x < 10; x++ {
-			ref.Set(x, y, white)
-		}
-	}
-	ref.Set(5, 5, color.NRGBA{255, 0, 0, 255})
+  // Create simple reference
+  ref := image.NewNRGBA(image.Rect(0, 0, 10, 10))
+  white := color.NRGBA{255, 255, 255, 255}
+  for y := 0; y < 10; y++ {
+    for x := 0; x < 10; x++ {
+      ref.Set(x, y, white)
+    }
+  }
+  ref.Set(5, 5, color.NRGBA{255, 0, 0, 255})
 
-	renderer := NewCPURenderer(ref, 1)
+  renderer := NewCPURenderer(ref, 1)
 
-	optimizer := opt.NewMayfly(30, 10, 42) // maxIters, popSize, seed
+  optimizer := opt.NewMayfly(30, 10, 42) // maxIters, popSize, seed
 
-	result := OptimizeSequential(renderer, optimizer, 2)
+  result := OptimizeSequential(renderer, optimizer, 2)
 
-	if result.BestCost >= result.InitialCost {
-		t.Errorf("Optimization did not improve")
-	}
+  if result.BestCost >= result.InitialCost {
+    t.Errorf("Optimization did not improve")
+  }
 
-	if len(result.BestParams) != 14 { // 2 circles * 7 params
-		t.Errorf("Expected 14 parameters for 2 circles, got %d", len(result.BestParams))
-	}
+  if len(result.BestParams) != 14 { // 2 circles * 7 params
+    t.Errorf("Expected 14 parameters for 2 circles, got %d", len(result.BestParams))
+  }
 }
 ```
 
@@ -532,50 +237,50 @@ Add to `internal/fit/pipeline.go`:
 ```go
 // OptimizeSequential optimizes circles one at a time (greedy)
 func OptimizeSequential(renderer Renderer, optimizer opt.Optimizer, totalK int) *OptimizationResult {
-	slog.Info("Starting sequential optimization", "total_circles", totalK)
+  slog.Info("Starting sequential optimization", "total_circles", totalK)
 
-	ref := renderer.Reference()
-	allParams := []float64{}
+  ref := renderer.Reference()
+  allParams := []float64{}
 
-	initialCost := MSECost(
-		NewCPURenderer(ref, 0).Render([]float64{}),
-		ref,
-	)
+  initialCost := MSECost(
+    NewCPURenderer(ref, 0).Render([]float64{}),
+    ref,
+  )
 
-	for k := 1; k <= totalK; k++ {
-		slog.Info("Optimizing circle", "index", k, "of", totalK)
+  for k := 1; k <= totalK; k++ {
+    slog.Info("Optimizing circle", "index", k, "of", totalK)
 
-		// Create renderer with k circles
-		currentRenderer := NewCPURenderer(ref, k)
+    // Create renderer with k circles
+    currentRenderer := NewCPURenderer(ref, k)
 
-		// Objective: optimize only the new circle, keeping previous ones fixed
-		dim := paramsPerCircle
-		lower := make([]float64, dim)
-		upper := make([]float64, dim)
-		bounds := NewBounds(1, ref.Bounds().Dx(), ref.Bounds().Dy())
-		copy(lower, bounds.Lower)
-		copy(upper, bounds.Upper)
+    // Objective: optimize only the new circle, keeping previous ones fixed
+    dim := paramsPerCircle
+    lower := make([]float64, dim)
+    upper := make([]float64, dim)
+    bounds := NewBounds(1, ref.Bounds().Dx(), ref.Bounds().Dy())
+    copy(lower, bounds.Lower)
+    copy(upper, bounds.Upper)
 
-		evalFunc := func(newCircleParams []float64) float64 {
-			// Combine previous circles + new circle
-			combined := append(append([]float64{}, allParams...), newCircleParams...)
-			return currentRenderer.Cost(combined)
-		}
+    evalFunc := func(newCircleParams []float64) float64 {
+      // Combine previous circles + new circle
+      combined := append(append([]float64{}, allParams...), newCircleParams...)
+      return currentRenderer.Cost(combined)
+    }
 
-		bestNew, _ := optimizer.Run(evalFunc, lower, upper, dim)
-		allParams = append(allParams, bestNew...)
-	}
+    bestNew, _ := optimizer.Run(evalFunc, lower, upper, dim)
+    allParams = append(allParams, bestNew...)
+  }
 
-	finalRenderer := NewCPURenderer(ref, totalK)
-	finalCost := finalRenderer.Cost(allParams)
+  finalRenderer := NewCPURenderer(ref, totalK)
+  finalCost := finalRenderer.Cost(allParams)
 
-	slog.Info("Sequential optimization complete", "initial_cost", initialCost, "final_cost", finalCost)
+  slog.Info("Sequential optimization complete", "initial_cost", initialCost, "final_cost", finalCost)
 
-	return &OptimizationResult{
-		BestParams:  allParams,
-		BestCost:    finalCost,
-		InitialCost: initialCost,
-	}
+  return &OptimizationResult{
+    BestParams:  allParams,
+    BestCost:    finalCost,
+    InitialCost: initialCost,
+  }
 }
 ```
 
@@ -608,25 +313,25 @@ Add to `internal/fit/pipeline_test.go`:
 
 ```go
 func TestOptimizeBatch(t *testing.T) {
-	ref := image.NewNRGBA(image.Rect(0, 0, 10, 10))
-	white := color.NRGBA{255, 255, 255, 255}
-	for y := 0; y < 10; y++ {
-		for x := 0; x < 10; x++ {
-			ref.Set(x, y, white)
-		}
-	}
-	ref.Set(5, 5, color.NRGBA{255, 0, 0, 255})
+  ref := image.NewNRGBA(image.Rect(0, 0, 10, 10))
+  white := color.NRGBA{255, 255, 255, 255}
+  for y := 0; y < 10; y++ {
+    for x := 0; x < 10; x++ {
+      ref.Set(x, y, white)
+    }
+  }
+  ref.Set(5, 5, color.NRGBA{255, 0, 0, 255})
 
-	renderer := NewCPURenderer(ref, 1)
+  renderer := NewCPURenderer(ref, 1)
 
-	optimizer := opt.NewMayfly(30, 10, 42) // maxIters, popSize, seed
+  optimizer := opt.NewMayfly(30, 10, 42) // maxIters, popSize, seed
 
-	// 2 passes of 2 circles each = 4 circles total
-	result := OptimizeBatch(renderer, optimizer, 2, 2)
+  // 2 passes of 2 circles each = 4 circles total
+  result := OptimizeBatch(renderer, optimizer, 2, 2)
 
-	if len(result.BestParams) != 28 { // 4 circles * 7 params
-		t.Errorf("Expected 28 parameters for 4 circles, got %d", len(result.BestParams))
-	}
+  if len(result.BestParams) != 28 { // 4 circles * 7 params
+    t.Errorf("Expected 28 parameters for 4 circles, got %d", len(result.BestParams))
+  }
 }
 ```
 
@@ -645,52 +350,52 @@ Add to `internal/fit/pipeline.go`:
 ```go
 // OptimizeBatch adds batchK circles per pass for multiple passes
 func OptimizeBatch(renderer Renderer, optimizer opt.Optimizer, batchK, passes int) *OptimizationResult {
-	slog.Info("Starting batch optimization", "batch_size", batchK, "passes", passes)
+  slog.Info("Starting batch optimization", "batch_size", batchK, "passes", passes)
 
-	ref := renderer.Reference()
-	allParams := []float64{}
+  ref := renderer.Reference()
+  allParams := []float64{}
 
-	initialCost := MSECost(
-		NewCPURenderer(ref, 0).Render([]float64{}),
-		ref,
-	)
+  initialCost := MSECost(
+    NewCPURenderer(ref, 0).Render([]float64{}),
+    ref,
+  )
 
-	for pass := 0; pass < passes; pass++ {
-		slog.Info("Batch pass", "pass", pass+1, "of", passes)
+  for pass := 0; pass < passes; pass++ {
+    slog.Info("Batch pass", "pass", pass+1, "of", passes)
 
-		currentK := len(allParams) / paramsPerCircle
-		newK := currentK + batchK
+    currentK := len(allParams) / paramsPerCircle
+    newK := currentK + batchK
 
-		// Optimize batch of circles jointly
-		batchRenderer := NewCPURenderer(ref, newK)
+    // Optimize batch of circles jointly
+    batchRenderer := NewCPURenderer(ref, newK)
 
-		dim := batchK * paramsPerCircle
-		lower := make([]float64, dim)
-		upper := make([]float64, dim)
-		bounds := NewBounds(batchK, ref.Bounds().Dx(), ref.Bounds().Dy())
-		copy(lower, bounds.Lower)
-		copy(upper, bounds.Upper)
+    dim := batchK * paramsPerCircle
+    lower := make([]float64, dim)
+    upper := make([]float64, dim)
+    bounds := NewBounds(batchK, ref.Bounds().Dx(), ref.Bounds().Dy())
+    copy(lower, bounds.Lower)
+    copy(upper, bounds.Upper)
 
-		evalFunc := func(newBatchParams []float64) float64 {
-			combined := append(append([]float64{}, allParams...), newBatchParams...)
-			return batchRenderer.Cost(combined)
-		}
+    evalFunc := func(newBatchParams []float64) float64 {
+      combined := append(append([]float64{}, allParams...), newBatchParams...)
+      return batchRenderer.Cost(combined)
+    }
 
-		bestBatch, _ := optimizer.Run(evalFunc, lower, upper, dim)
-		allParams = append(allParams, bestBatch...)
-	}
+    bestBatch, _ := optimizer.Run(evalFunc, lower, upper, dim)
+    allParams = append(allParams, bestBatch...)
+  }
 
-	totalK := len(allParams) / paramsPerCircle
-	finalRenderer := NewCPURenderer(ref, totalK)
-	finalCost := finalRenderer.Cost(allParams)
+  totalK := len(allParams) / paramsPerCircle
+  finalRenderer := NewCPURenderer(ref, totalK)
+  finalCost := finalRenderer.Cost(allParams)
 
-	slog.Info("Batch optimization complete", "total_circles", totalK, "final_cost", finalCost)
+  slog.Info("Batch optimization complete", "total_circles", totalK, "final_cost", finalCost)
 
-	return &OptimizationResult{
-		BestParams:  allParams,
-		BestCost:    finalCost,
-		InitialCost: initialCost,
-	}
+  return &OptimizationResult{
+    BestParams:  allParams,
+    BestCost:    finalCost,
+    InitialCost: initialCost,
+  }
 }
 ```
 
@@ -727,134 +432,134 @@ Create: `cmd/mayflycirclefit/run.go`
 package main
 
 import (
-	"fmt"
-	"image"
-	"image/png"
-	"log/slog"
-	"os"
-	"time"
+  "fmt"
+  "image"
+  "image/png"
+  "log/slog"
+  "os"
+  "time"
 
-	"github.com/spf13/cobra"
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+  "github.com/spf13/cobra"
+  "github.com/cwbudde/mayflycirclefit/internal/fit"
+  "github.com/cwbudde/mayflycirclefit/internal/opt"
 )
 
 var (
-	refPath   string
-	outPath   string
-	mode      string
-	circles   int
-	iters     int
-	popSize   int
-	seed      int64
+  refPath   string
+  outPath   string
+  mode      string
+  circles   int
+  iters     int
+  popSize   int
+  seed      int64
 )
 
 var runCmd = &cobra.Command{
-	Use:   "run",
-	Short: "Run single-shot optimization",
-	Long:  `Runs circle fitting optimization and writes output image and parameters.`,
-	RunE:  runOptimization,
+  Use:   "run",
+  Short: "Run single-shot optimization",
+  Long:  `Runs circle fitting optimization and writes output image and parameters.`,
+  RunE:  runOptimization,
 }
 
 func init() {
-	runCmd.Flags().StringVar(&refPath, "ref", "", "Reference image path (required)")
-	runCmd.Flags().StringVar(&outPath, "out", "out.png", "Output image path")
-	runCmd.Flags().StringVar(&mode, "mode", "joint", "Optimization mode: joint, sequential, batch")
-	runCmd.Flags().IntVar(&circles, "circles", 10, "Number of circles")
-	runCmd.Flags().IntVar(&iters, "iters", 100, "Max iterations")
-	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
-	runCmd.Flags().Int64Var(&seed, "seed", 42, "Random seed")
+  runCmd.Flags().StringVar(&refPath, "ref", "", "Reference image path (required)")
+  runCmd.Flags().StringVar(&outPath, "out", "out.png", "Output image path")
+  runCmd.Flags().StringVar(&mode, "mode", "joint", "Optimization mode: joint, sequential, batch")
+  runCmd.Flags().IntVar(&circles, "circles", 10, "Number of circles")
+  runCmd.Flags().IntVar(&iters, "iters", 100, "Max iterations")
+  runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
+  runCmd.Flags().Int64Var(&seed, "seed", 42, "Random seed")
 
-	runCmd.MarkFlagRequired("ref")
-	rootCmd.AddCommand(runCmd)
+  runCmd.MarkFlagRequired("ref")
+  rootCmd.AddCommand(runCmd)
 }
 
 func runOptimization(cmd *cobra.Command, args []string) error {
-	slog.Info("Starting optimization", "mode", mode, "circles", circles, "iters", iters)
+  slog.Info("Starting optimization", "mode", mode, "circles", circles, "iters", iters)
 
-	// Load reference image
-	f, err := os.Open(refPath)
-	if err != nil {
-		return fmt.Errorf("failed to open reference: %w", err)
-	}
-	defer f.Close()
+  // Load reference image
+  f, err := os.Open(refPath)
+  if err != nil {
+    return fmt.Errorf("failed to open reference: %w", err)
+  }
+  defer f.Close()
 
-	img, _, err := image.Decode(f)
-	if err != nil {
-		return fmt.Errorf("failed to decode image: %w", err)
-	}
+  img, _, err := image.Decode(f)
+  if err != nil {
+    return fmt.Errorf("failed to decode image: %w", err)
+  }
 
-	// Convert to NRGBA
-	bounds := img.Bounds()
-	ref := image.NewNRGBA(bounds)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			ref.Set(x, y, img.At(x, y))
-		}
-	}
+  // Convert to NRGBA
+  bounds := img.Bounds()
+  ref := image.NewNRGBA(bounds)
+  for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+    for x := bounds.Min.X; x < bounds.Max.X; x++ {
+      ref.Set(x, y, img.At(x, y))
+    }
+  }
 
-	slog.Info("Loaded reference", "width", bounds.Dx(), "height", bounds.Dy())
+  slog.Info("Loaded reference", "width", bounds.Dx(), "height", bounds.Dy())
 
-	// Create renderer
-	renderer := fit.NewCPURenderer(ref, circles)
+  // Create renderer
+  renderer := fit.NewCPURenderer(ref, circles)
 
-	// Create optimizer
-	optimizer := opt.NewMayfly(iters, popSize, seed)
+  // Create optimizer
+  optimizer := opt.NewMayfly(iters, popSize, seed)
 
-	// Run optimization
-	start := time.Now()
-	var result *fit.OptimizationResult
+  // Run optimization
+  start := time.Now()
+  var result *fit.OptimizationResult
 
-	switch mode {
-	case "joint":
-		result = fit.OptimizeJoint(renderer, optimizer, circles)
-	case "sequential":
-		result = fit.OptimizeSequential(renderer, optimizer, circles)
-	case "batch":
-		batchSize := 5
-		passes := circles / batchSize
-		if circles%batchSize != 0 {
-			passes++
-		}
-		result = fit.OptimizeBatch(renderer, optimizer, batchSize, passes)
-	default:
-		return fmt.Errorf("unknown mode: %s", mode)
-	}
+  switch mode {
+  case "joint":
+    result = fit.OptimizeJoint(renderer, optimizer, circles)
+  case "sequential":
+    result = fit.OptimizeSequential(renderer, optimizer, circles)
+  case "batch":
+    batchSize := 5
+    passes := circles / batchSize
+    if circles%batchSize != 0 {
+      passes++
+    }
+    result = fit.OptimizeBatch(renderer, optimizer, batchSize, passes)
+  default:
+    return fmt.Errorf("unknown mode: %s", mode)
+  }
 
-	elapsed := time.Since(start)
+  elapsed := time.Since(start)
 
-	// Render final image
-	finalRenderer := fit.NewCPURenderer(ref, circles)
-	output := finalRenderer.Render(result.BestParams)
+  // Render final image
+  finalRenderer := fit.NewCPURenderer(ref, circles)
+  output := finalRenderer.Render(result.BestParams)
 
-	// Save output
-	outFile, err := os.Create(outPath)
-	if err != nil {
-		return fmt.Errorf("failed to create output: %w", err)
-	}
-	defer outFile.Close()
+  // Save output
+  outFile, err := os.Create(outPath)
+  if err != nil {
+    return fmt.Errorf("failed to create output: %w", err)
+  }
+  defer outFile.Close()
 
-	if err := png.Encode(outFile, output); err != nil {
-		return fmt.Errorf("failed to encode output: %w", err)
-	}
+  if err := png.Encode(outFile, output); err != nil {
+    return fmt.Errorf("failed to encode output: %w", err)
+  }
 
-	// Compute throughput (circles rendered per second)
-	// Each eval renders K circles, estimate total evals ~ iters * popSize
-	totalEvals := iters * popSize
-	totalCircles := totalEvals * circles
-	cps := float64(totalCircles) / elapsed.Seconds()
+  // Compute throughput (circles rendered per second)
+  // Each eval renders K circles, estimate total evals ~ iters * popSize
+  totalEvals := iters * popSize
+  totalCircles := totalEvals * circles
+  cps := float64(totalCircles) / elapsed.Seconds()
 
-	slog.Info("Optimization complete",
-		"elapsed", elapsed,
-		"initial_cost", result.InitialCost,
-		"final_cost", result.BestCost,
-		"improvement", result.InitialCost-result.BestCost,
-		"circles_per_second", fmt.Sprintf("%.0f", cps),
-	)
+  slog.Info("Optimization complete",
+    "elapsed", elapsed,
+    "initial_cost", result.InitialCost,
+    "final_cost", result.BestCost,
+    "improvement", result.InitialCost-result.BestCost,
+    "circles_per_second", fmt.Sprintf("%.0f", cps),
+  )
 
-	fmt.Printf("✓ Wrote %s (cost: %.2f → %.2f, %.0f circles/sec)\n", outPath, result.InitialCost, result.BestCost, cps)
+  fmt.Printf("✓ Wrote %s (cost: %.2f → %.2f, %.0f circles/sec)\n", outPath, result.InitialCost, result.BestCost, cps)
 
-	return nil
+  return nil
 }
 ```
 
@@ -882,27 +587,27 @@ Create a small Go program to generate a test image (temporary):
 cat > /tmp/gen_test_img.go << 'EOF'
 package main
 import (
-	"image"
-	"image/color"
-	"image/png"
-	"os"
+  "image"
+  "image/color"
+  "image/png"
+  "os"
 )
 func main() {
-	img := image.NewNRGBA(image.Rect(0, 0, 50, 50))
-	for y := 0; y < 50; y++ {
-		for x := 0; x < 50; x++ {
-			img.Set(x, y, color.NRGBA{255, 255, 255, 255})
-		}
-	}
-	// Red square in center
-	for y := 20; y < 30; y++ {
-		for x := 20; x < 30; x++ {
-			img.Set(x, y, color.NRGBA{255, 0, 0, 255})
-		}
-	}
-	f, _ := os.Create("assets/test.png")
-	png.Encode(f, img)
-	f.Close()
+  img := image.NewNRGBA(image.Rect(0, 0, 50, 50))
+  for y := 0; y < 50; y++ {
+    for x := 0; x < 50; x++ {
+      img.Set(x, y, color.NRGBA{255, 255, 255, 255})
+    }
+  }
+  // Red square in center
+  for y := 20; y < 30; y++ {
+    for x := 20; x < 30; x++ {
+      img.Set(x, y, color.NRGBA{255, 0, 0, 255})
+    }
+  }
+  f, _ := os.Create("assets/test.png")
+  png.Encode(f, img)
+  f.Close()
 }
 EOF
 mkdir -p assets
@@ -935,21 +640,21 @@ Create: `cmd/mayflycirclefit/serve.go`
 package main
 
 import (
-	"fmt"
+  "fmt"
 
-	"github.com/spf13/cobra"
+  "github.com/spf13/cobra"
 )
 
 var serveCmd = &cobra.Command{
-	Use:   "serve",
-	Short: "Start HTTP server (coming in Phase 6)",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("serve command not yet implemented (Phase 6)")
-	},
+  Use:   "serve",
+  Short: "Start HTTP server (coming in Phase 6)",
+  RunE: func(cmd *cobra.Command, args []string) error {
+    return fmt.Errorf("serve command not yet implemented (Phase 6)")
+  },
 }
 
 func init() {
-	rootCmd.AddCommand(serveCmd)
+  rootCmd.AddCommand(serveCmd)
 }
 ```
 
@@ -961,21 +666,21 @@ Create: `cmd/mayflycirclefit/status.go`
 package main
 
 import (
-	"fmt"
+  "fmt"
 
-	"github.com/spf13/cobra"
+  "github.com/spf13/cobra"
 )
 
 var statusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Query server status (coming in Phase 6)",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("status command not yet implemented (Phase 6)")
-	},
+  Use:   "status",
+  Short: "Query server status (coming in Phase 6)",
+  RunE: func(cmd *cobra.Command, args []string) error {
+    return fmt.Errorf("status command not yet implemented (Phase 6)")
+  },
 }
 
 func init() {
-	rootCmd.AddCommand(statusCmd)
+  rootCmd.AddCommand(statusCmd)
 }
 ```
 
@@ -987,22 +692,22 @@ Create: `cmd/mayflycirclefit/resume.go`
 package main
 
 import (
-	"fmt"
+  "fmt"
 
-	"github.com/spf13/cobra"
+  "github.com/spf13/cobra"
 )
 
 var resumeCmd = &cobra.Command{
-	Use:   "resume [job-id]",
-	Short: "Resume from checkpoint (coming in Phase 7)",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("resume command not yet implemented (Phase 7)")
-	},
+  Use:   "resume [job-id]",
+  Short: "Resume from checkpoint (coming in Phase 7)",
+  Args:  cobra.ExactArgs(1),
+  RunE: func(cmd *cobra.Command, args []string) error {
+    return fmt.Errorf("resume command not yet implemented (Phase 7)")
+  },
 }
 
 func init() {
-	rootCmd.AddCommand(resumeCmd)
+  rootCmd.AddCommand(resumeCmd)
 }
 ```
 

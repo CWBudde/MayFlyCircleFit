@@ -7,7 +7,7 @@ help:
 
 # Build the binary
 build:
-	go build -o {{BUILD_DIR}}/{{BINARY_NAME}} ./cmd
+	go build -o {{BUILD_DIR}}/{{BINARY_NAME}} .
 
 # Build and run the application
 run: build
@@ -42,4 +42,4 @@ clean:
 
 # Install the binary
 install:
-	go install ./cmd
+	go install .

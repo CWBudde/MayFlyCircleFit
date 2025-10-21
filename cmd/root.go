@@ -43,3 +43,8 @@ with colored circles, featuring CPU/GPU backends and live visualization.`,
 func init() {
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
 }
+
+// Execute runs the root command
+func Execute() error {
+	return rootCmd.Execute()
+}
