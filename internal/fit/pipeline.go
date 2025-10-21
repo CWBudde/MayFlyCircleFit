@@ -96,3 +96,53 @@ func OptimizeSequential(renderer Renderer, optimizer opt.Optimizer, totalK int) 
 		InitialCost: initialCost,
 	}
 }
+
+// OptimizeBatch adds batchK circles per pass for multiple passes
+func OptimizeBatch(renderer Renderer, optimizer opt.Optimizer, batchK, passes int) *OptimizationResult {
+	slog.Info("Starting batch optimization", "batch_size", batchK, "passes", passes)
+
+	ref := renderer.Reference()
+	allParams := []float64{}
+
+	initialCost := MSECost(
+		NewCPURenderer(ref, 0).Render([]float64{}),
+		ref,
+	)
+
+	for pass := 0; pass < passes; pass++ {
+		slog.Info("Batch pass", "pass", pass+1, "of", passes)
+
+		currentK := len(allParams) / paramsPerCircle
+		newK := currentK + batchK
+
+		// Optimize batch of circles jointly
+		batchRenderer := NewCPURenderer(ref, newK)
+
+		dim := batchK * paramsPerCircle
+		lower := make([]float64, dim)
+		upper := make([]float64, dim)
+		bounds := NewBounds(batchK, ref.Bounds().Dx(), ref.Bounds().Dy())
+		copy(lower, bounds.Lower)
+		copy(upper, bounds.Upper)
+
+		evalFunc := func(newBatchParams []float64) float64 {
+			combined := append(append([]float64{}, allParams...), newBatchParams...)
+			return batchRenderer.Cost(combined)
+		}
+
+		bestBatch, _ := optimizer.Run(evalFunc, lower, upper, dim)
+		allParams = append(allParams, bestBatch...)
+	}
+
+	totalK := len(allParams) / paramsPerCircle
+	finalRenderer := NewCPURenderer(ref, totalK)
+	finalCost := finalRenderer.Cost(allParams)
+
+	slog.Info("Batch optimization complete", "total_circles", totalK, "final_cost", finalCost)
+
+	return &OptimizationResult{
+		BestParams:  allParams,
+		BestCost:    finalCost,
+		InitialCost: initialCost,
+	}
+}
