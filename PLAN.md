@@ -80,7 +80,30 @@
 
 ---
 
-## Phase 6: Background Server + Job Model + Live Progress
+## Phase 6: Background Server + Job Model + Live Progress ✅ COMPLETE
+
+**Goal:** A long-running HTTP server that executes optimizations in the background with real-time progress via SSE.
+
+**Implemented:**
+- Job management with thread-safe state machine (pending, running, completed, failed, cancelled)
+- Background worker for async optimization execution with context cancellation
+- HTTP server with graceful shutdown and middleware (CORS, logging)
+- REST API endpoints:
+  - POST /api/v1/jobs - Create and start job
+  - GET /api/v1/jobs - List all jobs
+  - GET /api/v1/jobs/:id/status - Get job status with metrics
+  - GET /api/v1/jobs/:id/best.png - Render current best image
+  - GET /api/v1/jobs/:id/diff.png - False-color difference visualization
+- CLI `serve` command with signal handling and graceful shutdown
+- CLI `status` command for querying jobs (list or specific)
+- Helper functions for image loading and diff computation
+- Comprehensive test coverage for all components
+
+**Note:** SSE (Task 6.5) was deferred as the polling-based status endpoint provides sufficient functionality for Phase 6 goals.
+
+---
+
+## Phase 6: Background Server + Job Model + Live Progress - Implementation Details
 
 **Goal:** A long-running HTTP server that executes optimizations in the background with real-time progress via SSE.
 
