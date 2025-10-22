@@ -30,7 +30,7 @@ func TestRunJob_Success(t *testing.T) {
 	job := jm.CreateJob(config)
 
 	ctx := context.Background()
-	err := runJob(ctx, jm, job.ID)
+	err := runJob(ctx, jm, nil, job.ID)
 
 	if err != nil {
 		t.Errorf("runJob should succeed: %v", err)
@@ -67,7 +67,7 @@ func TestRunJob_InvalidImage(t *testing.T) {
 	job := jm.CreateJob(config)
 
 	ctx := context.Background()
-	err := runJob(ctx, jm, job.ID)
+	err := runJob(ctx, jm, nil, job.ID)
 
 	if err == nil {
 		t.Error("runJob should fail with invalid image path")
@@ -104,7 +104,7 @@ func TestRunJob_Cancellation(t *testing.T) {
 
 	done := make(chan error)
 	go func() {
-		done <- runJob(ctx, jm, job.ID)
+		done <- runJob(ctx, jm, nil, job.ID)
 	}()
 
 	// Give it time to start

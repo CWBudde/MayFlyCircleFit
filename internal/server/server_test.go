@@ -23,7 +23,7 @@ func TestServer_CreateJob(t *testing.T) {
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
 
-	s := NewServer(":8080")
+	s := NewServer(":8080", nil)
 
 	// Create job request
 	config := JobConfig{
@@ -65,7 +65,7 @@ func TestServer_ListJobs(t *testing.T) {
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
 
-	s := NewServer(":8080")
+	s := NewServer(":8080", nil)
 
 	// Create two jobs
 	s.jobManager.CreateJob(JobConfig{RefPath: imgPath})
@@ -95,7 +95,7 @@ func TestServer_GetJobStatus(t *testing.T) {
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
 
-	s := NewServer(":8080")
+	s := NewServer(":8080", nil)
 
 	job := s.jobManager.CreateJob(JobConfig{RefPath: imgPath, Circles: 2})
 
@@ -123,7 +123,7 @@ func TestServer_GetJobStatus(t *testing.T) {
 }
 
 func TestServer_GetJobStatus_NotFound(t *testing.T) {
-	s := NewServer(":8080")
+	s := NewServer(":8080", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/nonexistent/status", nil)
 	w := httptest.NewRecorder()
@@ -140,12 +140,12 @@ func TestServer_GetBestImage(t *testing.T) {
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
 
-	s := NewServer(":8080")
+	s := NewServer(":8080", nil)
 
 	job := s.jobManager.CreateJob(JobConfig{RefPath: imgPath, Mode: "joint", Circles: 2, Iters: 5, PopSize: 20, Seed: 42})
 
 	// Run job and wait for completion
-	err := runJob(context.Background(), s.jobManager, job.ID)
+	err := runJob(context.Background(), s.jobManager, nil, job.ID)
 	if err != nil {
 		t.Fatalf("Job failed: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestServer_Integration(t *testing.T) {
 	createSimpleTestImage(t, imgPath)
 
 	// Start server in background
-	s := NewServer("localhost:0") // Use random port
+	s := NewServer("localhost:0", nil) // Use random port
 	srv := httptest.NewServer(s.corsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/jobs" && r.Method == http.MethodPost {
 			s.handleCreateJob(w, r)
@@ -257,7 +257,7 @@ func TestServer_JobDetailPage(t *testing.T) {
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
 
-	s := NewServer(":8080")
+	s := NewServer(":8080", nil)
 
 	// Create a job
 	job := s.jobManager.CreateJob(JobConfig{
@@ -299,7 +299,7 @@ func TestServer_JobDetailPage(t *testing.T) {
 }
 
 func TestServer_JobDetailPage_NotFound(t *testing.T) {
-	s := NewServer(":8080")
+	s := NewServer(":8080", nil)
 
 	// Test job detail page with non-existent job ID
 	req := httptest.NewRequest(http.MethodGet, "/jobs/nonexistent", nil)
@@ -322,7 +322,7 @@ func TestServer_GetRefImage(t *testing.T) {
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
 
-	s := NewServer(":8080")
+	s := NewServer(":8080", nil)
 
 	// Create a job
 	job := s.jobManager.CreateJob(JobConfig{
@@ -360,7 +360,7 @@ func TestServer_JobDetailPage_Integration(t *testing.T) {
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
 
-	s := NewServer(":8080")
+	s := NewServer(":8080", nil)
 
 	// Create a job with some test data
 	job := s.jobManager.CreateJob(JobConfig{
@@ -412,7 +412,7 @@ func TestServer_JobStream_SSE(t *testing.T) {
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
 
-	s := NewServer(":8080")
+	s := NewServer(":8080", nil)
 
 	// Create a job
 	job := s.jobManager.CreateJob(JobConfig{
@@ -427,7 +427,7 @@ func TestServer_JobStream_SSE(t *testing.T) {
 	// Start worker in background
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	go runJob(ctx, s.jobManager, job.ID)
+	go runJob(ctx, s.jobManager, nil, job.ID)
 
 	// Wait a bit for job to start
 	time.Sleep(100 * time.Millisecond)
@@ -471,7 +471,7 @@ func TestServer_JobStream_SSE(t *testing.T) {
 }
 
 func TestServer_JobStream_NotFound(t *testing.T) {
-	s := NewServer(":8080")
+	s := NewServer(":8080", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/nonexistent/stream", nil)
 	w := httptest.NewRecorder()
@@ -551,7 +551,7 @@ func createSimpleTestImage(t *testing.T, path string) {
 }
 
 func TestServer_CreatePageGet(t *testing.T) {
-	server := NewServer(":0")
+	server := NewServer(":0", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/create", nil)
 	rec := httptest.NewRecorder()
@@ -582,7 +582,7 @@ func TestServer_CreatePagePost_Success(t *testing.T) {
 	testImagePath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, testImagePath)
 
-	server := NewServer(":0")
+	server := NewServer(":0", nil)
 
 	// Create form data
 	form := url.Values{}
@@ -637,7 +637,7 @@ func TestServer_CreatePagePost_Success(t *testing.T) {
 }
 
 func TestServer_CreatePagePost_ValidationErrors(t *testing.T) {
-	server := NewServer(":0")
+	server := NewServer(":0", nil)
 
 	tests := []struct {
 		name     string
@@ -735,7 +735,7 @@ func TestServer_CreatePage_Integration(t *testing.T) {
 	testImagePath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, testImagePath)
 
-	server := NewServer(":0")
+	server := NewServer(":0", nil)
 
 	// Test GET request
 	req := httptest.NewRequest(http.MethodGet, "/create", nil)

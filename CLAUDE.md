@@ -284,6 +284,81 @@ User-friendly job creation interface with validation.
 - `create.templ` - Job creation form
 - `*_templ.go` - Generated Go code (gitignored)
 
+### Persistence & Checkpoints (`internal/store/`)
+
+**Storage Interface Design:**
+- **Store interface**: Defines contract for checkpoint persistence
+  - `SaveCheckpoint(jobID, checkpoint)` - Atomically save checkpoint
+  - `LoadCheckpoint(jobID)` - Retrieve checkpoint by ID
+  - `ListCheckpoints()` - Get metadata for all checkpoints
+  - `DeleteCheckpoint(jobID)` - Remove checkpoint and artifacts
+- **Thread-safe**: All implementations must handle concurrent access
+- **Atomic writes**: Use temp file + rename pattern to prevent corruption
+- **Error handling**: Returns `ErrNotFound` for missing checkpoints
+
+**Data Structures:**
+- **Checkpoint**: Complete optimization state for resume
+  - `JobID` - Unique job identifier
+  - `BestParams` - Best circle parameters (7 × K floats)
+  - `BestCost` - Cost achieved by best parameters
+  - `InitialCost` - Starting cost for improvement tracking
+  - `Iteration` - Current iteration count
+  - `Timestamp` - When checkpoint was created
+  - `Config` - Job configuration for validation on resume
+- **CheckpointInfo**: Metadata-only view for efficient listing
+  - Excludes large `BestParams` array
+  - Used for checkpoint management UI
+
+**Filesystem Layout:**
+```
+./data/
+  └── jobs/
+      └── <job-uuid>/
+          ├── checkpoint.json    # Checkpoint struct as JSON
+          ├── best.png          # Rendered best image
+          ├── diff.png          # False-color difference heatmap
+          └── trace.jsonl       # Optional: cost history (one JSON per line)
+```
+
+**Checkpoint JSON Format:**
+```json
+{
+  "jobId": "550e8400-e29b-41d4-a716-446655440000",
+  "bestParams": [100.5, 50.2, 25.0, 0.8, 0.2, 0.1, 0.9, ...],
+  "bestCost": 0.0234,
+  "initialCost": 0.5621,
+  "iteration": 500,
+  "timestamp": "2025-10-23T10:30:00Z",
+  "config": {
+    "refPath": "assets/test.png",
+    "mode": "joint",
+    "circles": 10,
+    "iters": 1000,
+    "popSize": 30,
+    "seed": 42
+  }
+}
+```
+
+**Design Rationale:**
+- **Filesystem-based**: Simple, no external dependencies, easy to inspect/debug
+- **JSON format**: Human-readable, standard library support, easy to version
+- **One directory per job**: Clean isolation, easy cleanup, supports multiple artifacts
+- **Atomic writes**: Prevents corruption during server crashes or kills
+- **Optional trace**: Trade-off between disk usage and post-hoc analysis capability
+
+**Checkpoint Lifecycle:**
+1. **Create**: Worker periodically saves checkpoint during optimization
+2. **Load**: Resume command loads checkpoint to continue from saved state
+3. **List**: CLI/UI displays available checkpoints with metadata
+4. **Delete**: Cleanup removes checkpoint and all associated artifacts
+
+**Concurrency Considerations:**
+- Checkpoints written by background worker goroutines
+- Multiple jobs may checkpoint simultaneously
+- Store implementations use atomic file operations (no locks needed)
+- Checkpoint reads are read-only and don't interfere with writes
+
 ### CLI (`cmd/`)
 - **Cobra-based**: Structured command-line interface
 - **Logging**: Structured logging via `slog` with configurable levels (debug, info, warn, error)
@@ -291,7 +366,7 @@ User-friendly job creation interface with validation.
   - `run` - Single-shot optimization (writes output to file)
   - `serve` - Start HTTP server with graceful shutdown
   - `status` - Query server for job information
-  - `resume` - Resume from checkpoint (Phase 7)
+  - `resume` - Resume from checkpoint (Phase 8)
 
 ## Development Guidelines
 

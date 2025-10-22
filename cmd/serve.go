@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/server"
+	"github.com/cwbudde/mayflycirclefit/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -45,8 +46,14 @@ func runServer(cmd *cobra.Command, args []string) error {
 	fmt.Println("  GET    /api/v1/jobs/:id/diff.png  - Get difference image")
 	fmt.Println("\nPress Ctrl+C to shutdown")
 
+	// Create checkpoint store
+	checkpointStore, err := store.NewFSStore("./data")
+	if err != nil {
+		return fmt.Errorf("failed to create checkpoint store: %w", err)
+	}
+
 	// Create server
-	srv := server.NewServer(addr)
+	srv := server.NewServer(addr, checkpointStore)
 
 	// Channel for server errors
 	serverErrors := make(chan error, 1)

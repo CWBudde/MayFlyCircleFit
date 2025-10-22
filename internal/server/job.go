@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cwbudde/mayflycirclefit/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -19,15 +20,8 @@ const (
 	StateCancelled JobState = "cancelled"
 )
 
-// JobConfig holds configuration for an optimization job
-type JobConfig struct {
-	RefPath string `json:"refPath"`
-	Mode    string `json:"mode"` // joint, sequential, batch
-	Circles int    `json:"circles"`
-	Iters   int    `json:"iters"`
-	PopSize int    `json:"popSize"`
-	Seed    int64  `json:"seed"`
-}
+// JobConfig is an alias to avoid duplication with store.JobConfig
+type JobConfig = store.JobConfig
 
 // Job represents an optimization job
 type Job struct {

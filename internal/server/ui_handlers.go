@@ -199,8 +199,8 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	// Create the job
 	job := s.jobManager.CreateJob(config)
 
-	// Start the job in background with context.Background() to avoid cancellation
-	go runJob(context.Background(), s.jobManager, job.ID)
+	// Start the job in background with checkpoint store and context.Background() to avoid cancellation
+	go runJob(context.Background(), s.jobManager, s.store, job.ID)
 
 	// Redirect to job detail page
 	http.Redirect(w, r, "/jobs/"+job.ID, http.StatusSeeOther)

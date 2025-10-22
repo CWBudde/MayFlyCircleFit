@@ -11,19 +11,23 @@ import (
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
 
 // Server represents the HTTP server
 type Server struct {
 	jobManager *JobManager
+	store      store.Store
 	addr       string
 	server     *http.Server
 }
 
-// NewServer creates a new HTTP server
-func NewServer(addr string) *Server {
+// NewServer creates a new HTTP server with optional checkpoint store.
+// If store is nil, checkpointing is disabled.
+func NewServer(addr string, checkpointStore store.Store) *Server {
 	return &Server{
 		jobManager: NewJobManager(),
+		store:      checkpointStore,
 		addr:       addr,
 	}
 }
@@ -131,8 +135,8 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	// Create job
 	job := s.jobManager.CreateJob(config)
 
-	// Start worker in background
-	go runJob(context.Background(), s.jobManager, job.ID)
+	// Start worker in background with checkpoint store
+	go runJob(context.Background(), s.jobManager, s.store, job.ID)
 
 	// Return job
 	w.Header().Set("Content-Type", "application/json")
