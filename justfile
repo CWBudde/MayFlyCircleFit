@@ -43,3 +43,15 @@ clean:
 # Install the binary
 install:
 	go install .
+
+# Generate templ files
+templ:
+	~/go/bin/templ generate
+
+# Watch templ files and regenerate on changes
+templ-watch:
+	~/go/bin/templ generate --watch
+
+# Format templ files
+templ-fmt:
+	~/go/bin/templ fmt .

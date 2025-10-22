@@ -1,0 +1,58 @@
+package ui
+
+// Index page showing welcome message
+templ Index() {
+	@Layout("Home") {
+		<div class="card">
+			<h1 style="font-size: 2rem; font-weight: 700; margin-bottom: 1rem;">
+				Welcome to MayFlyCircleFit
+			</h1>
+			<p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+				High-performance circle fitting optimization tool using evolutionary algorithms.
+			</p>
+			<div style="display: flex; gap: 1rem;">
+				<a href="/create" class="btn btn-primary">Create New Job</a>
+				<a href="/api/v1/jobs" class="btn" style="background-color: var(--border-color);">
+					View API
+				</a>
+			</div>
+		</div>
+
+		<div class="card">
+			<h2 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 1rem;">
+				Quick Start
+			</h2>
+			<ol style="margin-left: 1.5rem; color: var(--text-muted);">
+				<li style="margin-bottom: 0.5rem;">Create a new optimization job using the API or UI</li>
+				<li style="margin-bottom: 0.5rem;">Monitor progress in real-time through the job detail page</li>
+				<li style="margin-bottom: 0.5rem;">Download optimized results when complete</li>
+			</ol>
+		</div>
+
+		<div class="card">
+			<h2 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 1rem;">
+				Features
+			</h2>
+			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+				<div>
+					<h3 style="font-weight: 600; margin-bottom: 0.5rem;">Evolutionary Algorithms</h3>
+					<p style="color: var(--text-muted); font-size: 0.875rem;">
+						Powered by Mayfly Algorithm for efficient optimization
+					</p>
+				</div>
+				<div>
+					<h3 style="font-weight: 600; margin-bottom: 0.5rem;">Multiple Strategies</h3>
+					<p style="color: var(--text-muted); font-size: 0.875rem;">
+						Joint, Sequential, and Batch optimization modes
+					</p>
+				</div>
+				<div>
+					<h3 style="font-weight: 600; margin-bottom: 0.5rem;">Live Progress</h3>
+					<p style="color: var(--text-muted); font-size: 0.875rem;">
+						Real-time monitoring of optimization progress
+					</p>
+				</div>
+			</div>
+		</div>
+	}
+}
