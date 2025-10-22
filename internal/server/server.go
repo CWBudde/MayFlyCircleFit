@@ -32,7 +32,10 @@ func NewServer(addr string) *Server {
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 
-	// Register routes
+	// Register UI routes
+	mux.HandleFunc("/", s.handleIndex)
+
+	// Register API routes
 	mux.HandleFunc("/api/v1/jobs", s.handleJobs)
 	mux.HandleFunc("/api/v1/jobs/", s.handleJobsWithID)
 
