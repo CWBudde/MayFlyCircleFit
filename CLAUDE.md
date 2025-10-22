@@ -29,9 +29,20 @@ just lint
 
 # Clean build artifacts
 just clean
+
+# Generate templ files
+just templ
+
+# Watch templ files and regenerate on changes
+just templ-watch
+
+# Format templ files
+just templ-fmt
 ```
 
 The binary is output to `./bin/mayflycirclefit`.
+
+**Note:** Templ files (`*.templ`) are automatically compiled to Go code (`*_templ.go`) which is gitignored.
 
 ## Architecture
 
@@ -80,7 +91,32 @@ Three strategies for adding circles:
   - GET /api/v1/jobs/:id/status - Get job status with metrics
   - GET /api/v1/jobs/:id/best.png - Current best rendered image
   - GET /api/v1/jobs/:id/diff.png - False-color difference visualization
+- **UI Routes**: Web interface for job management
+  - GET / - Homepage with project overview
+  - GET /jobs/:id - Job detail page (coming in Phase 7.4)
 - **Middleware**: CORS and logging support
+
+### Web UI (`internal/ui/`)
+- **templ-based**: Type-safe HTML templating with Go
+  - Templates are defined in `*.templ` files
+  - Run `just templ` to generate Go code (`*_templ.go`)
+  - Generated files are gitignored
+- **Layout Component**: Base HTML structure with navigation
+  - Minimal CSS styling (no heavy frameworks)
+  - Responsive design with mobile support
+  - CSS variables for consistent theming
+  - Navigation header with app branding and links
+- **Index Component**: Homepage with project overview
+  - Welcome message and quick start guide
+  - Feature highlights
+  - Links to create jobs and view API
+
+**templ Development Workflow:**
+1. Edit `*.templ` files in `internal/ui/`
+2. Run `just templ` to generate Go code
+3. Build and run server: `just build && ./bin/mayflycirclefit serve`
+4. Visit http://localhost:8080 to view UI
+5. For live development, use `just templ-watch` in a separate terminal
 
 ### CLI (`cmd/`)
 - **Cobra-based**: Structured command-line interface
@@ -136,13 +172,14 @@ When implementing new optimizers:
 
 ## Project Status
 
-Currently implementing **Phase 6** (HTTP Server) according to PLAN.md. Phases 1-6 are complete:
+Currently implementing **Phase 7** (Frontend with templ) according to PLAN.md. Phases 1-6 are complete:
 - Phase 1: Core domain model (Circle, ParamVector, Bounds, MSECost) - COMPLETE
 - Phase 2: CPU Renderer with alpha compositing - COMPLETE
 - Phase 3: Mayfly Algorithm - COMPLETE
 - Phase 4: Optimization Pipelines (Joint, Sequential, Batch) - COMPLETE
 - Phase 5: CLI with Cobra - COMPLETE
 - Phase 6: HTTP Server + Job Management + REST API - COMPLETE
+- Phase 7: Frontend with templ - IN PROGRESS (Tasks 7.1-7.2 complete)
 
 See PLAN.md for detailed implementation roadmap through Phase 13.
 
