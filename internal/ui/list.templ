@@ -1,0 +1,170 @@
+package ui
+
+import (
+	"fmt"
+	"time"
+)
+
+// JobListItem represents a job in the list view
+type JobListItem struct {
+	ID          string
+	State       string
+	RefPath     string
+	Mode        string
+	Circles     int
+	Iterations  int
+	BestCost    float64
+	InitialCost float64
+	StartTime   time.Time
+	EndTime     *time.Time
+	Error       string
+}
+
+// JobList displays a list of all jobs
+templ JobList(jobs []JobListItem) {
+	@Layout("Jobs") {
+		<div style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center;">
+			<h1 style="font-size: 2rem; font-weight: 700;">
+				Optimization Jobs
+			</h1>
+			<a href="/create" class="btn btn-primary">
+				+ Create New Job
+			</a>
+		</div>
+
+		if len(jobs) == 0 {
+			<div class="card" style="text-align: center; padding: 3rem;">
+				<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 1rem; color: var(--text-muted);">
+					<circle cx="12" cy="12" r="10"></circle>
+					<line x1="12" y1="8" x2="12" y2="12"></line>
+					<line x1="12" y1="16" x2="12.01" y2="16"></line>
+				</svg>
+				<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem;">
+					No jobs yet
+				</h2>
+				<p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+					Create your first optimization job to get started.
+				</p>
+				<a href="/create" class="btn btn-primary">
+					Create Job
+				</a>
+			</div>
+		} else {
+			<div style="display: grid; gap: 1rem;">
+				for _, job := range jobs {
+					@JobCard(job)
+				}
+			</div>
+		}
+	}
+}
+
+// JobCard displays a single job card
+templ JobCard(job JobListItem) {
+	<a href={ templ.URL(fmt.Sprintf("/jobs/%s", job.ID)) } style="text-decoration: none; color: inherit;">
+		<div class="card" style="cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;"
+			 onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='var(--shadow-md)';"
+			 onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--shadow)';"
+			 >
+		<div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+			<div style="flex: 1;">
+				<div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+					<h3 style="font-size: 1.125rem; font-weight: 600; font-family: monospace;">
+						{ job.ID[:8] }...
+					</h3>
+					@StateBadge(job.State)
+				</div>
+				<div style="display: flex; gap: 1.5rem; color: var(--text-muted); font-size: 0.875rem;">
+					<span title="Mode">
+						<strong>Mode:</strong> { job.Mode }
+					</span>
+					<span title="Circles">
+						<strong>Circles:</strong> { fmt.Sprintf("%d", job.Circles) }
+					</span>
+					<span title="Iterations">
+						<strong>Iterations:</strong> { fmt.Sprintf("%d", job.Iterations) }
+					</span>
+				</div>
+			</div>
+			<div style="text-align: right;">
+				if job.State == "completed" || job.State == "running" {
+					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+						Cost
+					</div>
+					<div style="font-size: 1.25rem; font-weight: 600;">
+						{ fmt.Sprintf("%.2f", job.BestCost) }
+					</div>
+					if job.InitialCost > 0 {
+						<div style="font-size: 0.75rem; color: var(--success-color);">
+							{ fmt.Sprintf("%.1f%% improvement", (1-job.BestCost/job.InitialCost)*100) }
+						</div>
+					}
+				}
+			</div>
+		</div>
+
+		<div style="display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; border-top: 1px solid var(--border-color); font-size: 0.875rem; color: var(--text-muted);">
+			<div>
+				<strong>Reference:</strong> { job.RefPath }
+			</div>
+			<div>
+				{ formatTime(job.StartTime) }
+			</div>
+		</div>
+
+		if job.Error != "" {
+			<div style="margin-top: 0.75rem; padding: 0.75rem; background-color: #fee2e2; border-radius: 0.375rem; color: #991b1b; font-size: 0.875rem;">
+				<strong>Error:</strong> { job.Error }
+			</div>
+		}
+		</div>
+	</a>
+}
+
+// StateBadge displays a badge for job state
+templ StateBadge(state string) {
+	switch state {
+		case "pending":
+			<span class="badge badge-info">Pending</span>
+		case "running":
+			<span class="badge badge-info" style="background-color: #dbeafe; color: #1e40af; animation: pulse 2s ease-in-out infinite;">
+				Running
+			</span>
+		case "completed":
+			<span class="badge badge-success">Completed</span>
+		case "failed":
+			<span class="badge badge-error">Failed</span>
+		case "cancelled":
+			<span class="badge badge-warning">Cancelled</span>
+		default:
+			<span class="badge" style="background-color: var(--border-color); color: var(--text-color);">
+				{ state }
+			</span>
+	}
+}
+
+// Helper function to format time
+func formatTime(t time.Time) string {
+	now := time.Now()
+	diff := now.Sub(t)
+
+	if diff < time.Minute {
+		return "just now"
+	} else if diff < time.Hour {
+		mins := int(diff.Minutes())
+		if mins == 1 {
+			return "1 minute ago"
+		}
+		return fmt.Sprintf("%d minutes ago", mins)
+	} else if diff < 24*time.Hour {
+		hours := int(diff.Hours())
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", hours)
+	} else if diff < 48*time.Hour {
+		return "yesterday"
+	} else {
+		return t.Format("Jan 2, 2006")
+	}
+}
