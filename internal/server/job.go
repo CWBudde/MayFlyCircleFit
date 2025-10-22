@@ -22,7 +22,7 @@ const (
 // JobConfig holds configuration for an optimization job
 type JobConfig struct {
 	RefPath string `json:"refPath"`
-	Mode    string `json:"mode"`    // joint, sequential, batch
+	Mode    string `json:"mode"` // joint, sequential, batch
 	Circles int    `json:"circles"`
 	Iters   int    `json:"iters"`
 	PopSize int    `json:"popSize"`
@@ -31,28 +31,30 @@ type JobConfig struct {
 
 // Job represents an optimization job
 type Job struct {
-	ID         string      `json:"id"`
-	State      JobState    `json:"state"`
-	Config     JobConfig   `json:"config"`
-	BestParams []float64   `json:"bestParams,omitempty"`
-	BestCost   float64     `json:"bestCost"`
+	ID          string     `json:"id"`
+	State       JobState   `json:"state"`
+	Config      JobConfig  `json:"config"`
+	BestParams  []float64  `json:"bestParams,omitempty"`
+	BestCost    float64    `json:"bestCost"`
 	InitialCost float64    `json:"initialCost"`
-	Iterations int         `json:"iterations"`
-	StartTime  time.Time   `json:"startTime"`
-	EndTime    *time.Time  `json:"endTime,omitempty"`
-	Error      string      `json:"error,omitempty"`
+	Iterations  int        `json:"iterations"`
+	StartTime   time.Time  `json:"startTime"`
+	EndTime     *time.Time `json:"endTime,omitempty"`
+	Error       string     `json:"error,omitempty"`
 }
 
 // JobManager manages the lifecycle of jobs
 type JobManager struct {
-	mu   sync.RWMutex
-	jobs map[string]*Job
+	mu          sync.RWMutex
+	jobs        map[string]*Job
+	broadcaster *EventBroadcaster
 }
 
 // NewJobManager creates a new JobManager
 func NewJobManager() *JobManager {
 	return &JobManager{
-		jobs: make(map[string]*Job),
+		jobs:        make(map[string]*Job),
+		broadcaster: NewEventBroadcaster(),
 	}
 }
 

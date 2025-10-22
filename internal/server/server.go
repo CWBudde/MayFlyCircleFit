@@ -34,6 +34,8 @@ func (s *Server) Start() error {
 
 	// Register UI routes
 	mux.HandleFunc("/", s.handleIndex)
+	mux.HandleFunc("/jobs/", s.handleJobDetail)
+	mux.HandleFunc("/create", s.handleCreatePage)
 
 	// Register API routes
 	mux.HandleFunc("/api/v1/jobs", s.handleJobs)
@@ -91,6 +93,10 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 		s.handleGetBestImage(w, r, jobID)
 	} else if parts[1] == "diff.png" {
 		s.handleGetDiffImage(w, r, jobID)
+	} else if parts[1] == "ref.png" {
+		s.handleGetRefImage(w, r, jobID)
+	} else if parts[1] == "stream" {
+		s.handleJobStream(w, r, jobID)
 	} else {
 		http.Error(w, "Not found", http.StatusNotFound)
 	}
@@ -271,6 +277,31 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// handleGetRefImage handles GET /api/v1/jobs/:id/ref.png
+func (s *Server) handleGetRefImage(w http.ResponseWriter, r *http.Request, jobID string) {
+	job, exists := s.jobManager.GetJob(jobID)
+	if !exists {
+		http.Error(w, "Job not found", http.StatusNotFound)
+		return
+	}
+
+	// Load reference image
+	ref, err := loadReferenceImage(job.Config.RefPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load reference: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Set headers
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+
+	// Encode and send
+	if err := png.Encode(w, ref); err != nil {
+		slog.Error("Failed to encode PNG", "error", err)
+	}
 }
 
 // loggingMiddleware logs HTTP requests

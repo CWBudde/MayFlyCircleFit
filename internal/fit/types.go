@@ -4,17 +4,17 @@ import "math"
 
 // Circle represents a colored circle with opacity
 type Circle struct {
-	X, Y, R          float64 // Position and radius
-	CR, CG, CB       float64 // Color in [0,1]
-	Opacity          float64 // Opacity in [0,1]
+	X, Y, R    float64 // Position and radius
+	CR, CG, CB float64 // Color in [0,1]
+	Opacity    float64 // Opacity in [0,1]
 }
 
 // ParamVector encodes K circles as a flat float64 slice
 type ParamVector struct {
 	Data   []float64
-	K      int     // Number of circles
-	Width  int     // Image width
-	Height int     // Image height
+	K      int // Number of circles
+	Width  int // Image width
+	Height int // Image height
 }
 
 const paramsPerCircle = 7

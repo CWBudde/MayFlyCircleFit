@@ -81,6 +81,10 @@ func runJob(ctx context.Context, jm *JobManager, jobID string) error {
 	default:
 	}
 
+	// Start progress monitoring goroutine
+	progressDone := make(chan struct{})
+	go monitorProgress(ctx, jm, jobID, start, progressDone)
+
 	switch job.Config.Mode {
 	case "joint":
 		result = fit.OptimizeJoint(renderer, optimizer, job.Config.Circles)
@@ -96,9 +100,11 @@ func runJob(ctx context.Context, jm *JobManager, jobID string) error {
 	default:
 		err := fmt.Errorf("unknown mode: %s", job.Config.Mode)
 		markJobFailed(jm, jobID, err)
+		close(progressDone)
 		return err
 	}
 
+	close(progressDone)
 	elapsed := time.Since(start)
 
 	// Check for cancellation after optimization
@@ -137,7 +143,59 @@ func runJob(ctx context.Context, jm *JobManager, jobID string) error {
 		"circles_per_second", cps,
 	)
 
+	// Broadcast final completion event
+	jm.broadcaster.Broadcast(ProgressEvent{
+		JobID:      jobID,
+		State:      StateCompleted,
+		Iterations: result.Iterations,
+		BestCost:   result.BestCost,
+		CPS:        cps,
+		Timestamp:  time.Now(),
+	})
+
 	return nil
+}
+
+// monitorProgress periodically broadcasts progress events during optimization
+func monitorProgress(ctx context.Context, jm *JobManager, jobID string, startTime time.Time, done chan struct{}) {
+	ticker := time.NewTicker(500 * time.Millisecond) // Throttle to 2 updates per second
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-done:
+			return
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Get current job state
+			job, exists := jm.GetJob(jobID)
+			if !exists {
+				return
+			}
+
+			elapsed := time.Since(startTime).Seconds()
+
+			// Calculate CPS based on current iterations
+			var cps float64
+			if elapsed > 0 && job.Iterations > 0 {
+				// Rough estimate: iterations completed so far
+				totalEvals := job.Iterations * job.Config.PopSize
+				totalCircles := totalEvals * job.Config.Circles
+				cps = float64(totalCircles) / elapsed
+			}
+
+			// Broadcast progress event
+			jm.broadcaster.Broadcast(ProgressEvent{
+				JobID:      jobID,
+				State:      job.State,
+				Iterations: job.Iterations,
+				BestCost:   job.BestCost,
+				CPS:        cps,
+				Timestamp:  time.Now(),
+			})
+		}
+	}
 }
 
 // markJobFailed marks a job as failed with an error message

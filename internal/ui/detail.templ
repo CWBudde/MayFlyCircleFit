@@ -1,0 +1,491 @@
+package ui
+
+import (
+	"fmt"
+	"time"
+)
+
+// JobDetail represents a job in the detail view
+type JobDetail struct {
+	ID          string
+	State       string
+	RefPath     string
+	Mode        string
+	Circles     int
+	Iterations  int
+	MaxIters    int
+	PopSize     int
+	BestCost    float64
+	InitialCost float64
+	StartTime   time.Time
+	EndTime     *time.Time
+	ElapsedSec  float64
+	CPS         float64
+	Error       string
+}
+
+// JobDetailPage displays detailed view of a single job
+templ JobDetailPage(job JobDetail) {
+	@Layout(fmt.Sprintf("Job %s", job.ID[:8])) {
+		<div style="margin-bottom: 2rem;">
+			<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+				<div>
+					<a href="/" style="color: var(--text-muted); text-decoration: none; font-size: 0.875rem; margin-bottom: 0.5rem; display: inline-block;">
+						← Back to Jobs
+					</a>
+					<h1 style="font-size: 2rem; font-weight: 700; font-family: monospace;">
+						{ job.ID[:8] }...
+					</h1>
+				</div>
+				<div style="text-align: right;">
+					@StateBadge(job.State)
+					<button onclick="location.reload()" class="btn" style="margin-left: 0.5rem; background-color: var(--border-color);">
+						⟳ Refresh
+					</button>
+				</div>
+			</div>
+		</div>
+
+		if job.Error != "" {
+			<div class="card" style="background-color: #fee2e2; border: 1px solid #fca5a5; margin-bottom: 1.5rem;">
+				<h3 style="color: #991b1b; font-weight: 600; margin-bottom: 0.5rem;">Error</h3>
+				<p style="color: #991b1b; font-family: monospace; font-size: 0.875rem;">
+					{ job.Error }
+				</p>
+			</div>
+		}
+
+		<!-- Metrics Panel -->
+		<div class="card" style="margin-bottom: 1.5rem;">
+			<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+				<h2 style="font-size: 1.25rem; font-weight: 600;">
+					Metrics
+				</h2>
+				if job.State == "running" || job.State == "completed" {
+					<button id="sparkline-toggle" class="btn" style="font-size: 0.875rem; padding: 0.25rem 0.75rem; background-color: var(--border-color);">
+						Show Chart
+					</button>
+				}
+			</div>
+
+			<!-- Cost Sparkline (initially hidden) -->
+			<div id="cost-sparkline-container" style="display: none; margin-bottom: 1.5rem; padding: 1rem; background-color: var(--bg-color); border-radius: 0.375rem;">
+				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+					<div style="font-size: 0.875rem; font-weight: 600; color: var(--text-muted);">
+						Cost History
+					</div>
+					<div id="sparkline-stats" style="font-size: 0.75rem; color: var(--text-muted);">
+						<span id="sparkline-samples">0</span> samples
+					</div>
+				</div>
+				<svg id="cost-sparkline" width="100%" height="80" style="border: 1px solid var(--border-color); border-radius: 0.25rem; background-color: white;">
+					<polyline id="sparkline-line" fill="none" stroke="var(--primary-color)" stroke-width="2" />
+					<circle id="sparkline-dot" r="3" fill="var(--primary-color)" style="display: none;" />
+				</svg>
+				<div style="display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">
+					<span>Start: <span id="sparkline-start">-</span></span>
+					<span>Current: <span id="sparkline-current">-</span></span>
+					<span>Min: <span id="sparkline-min">-</span></span>
+				</div>
+			</div>
+
+			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem;">
+				<div>
+					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+						Best Cost
+					</div>
+					<div style="font-size: 1.5rem; font-weight: 600;" data-metric="best-cost">
+						{ fmt.Sprintf("%.4f", job.BestCost) }
+					</div>
+					if job.InitialCost > 0 && job.BestCost < job.InitialCost {
+						<div style="font-size: 0.75rem; color: var(--success-color); margin-top: 0.25rem;">
+							↓ { fmt.Sprintf("%.1f%%", (1-job.BestCost/job.InitialCost)*100) } improvement
+						</div>
+					}
+				</div>
+				<div>
+					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+						Iterations
+					</div>
+					<div style="font-size: 1.5rem; font-weight: 600;" data-metric="iterations">
+						{ fmt.Sprintf("%d", job.Iterations) }
+						if job.MaxIters > 0 {
+							<span style="font-size: 1rem; color: var(--text-muted);">
+								/ { fmt.Sprintf("%d", job.MaxIters) }
+							</span>
+						}
+					</div>
+					if job.MaxIters > 0 && job.Iterations > 0 {
+						<div style="margin-top: 0.5rem; background-color: var(--border-color); height: 4px; border-radius: 2px; overflow: hidden;">
+							<div style={ fmt.Sprintf("width: %.1f%%; height: 100%%; background-color: var(--primary-color);", float64(job.Iterations)/float64(job.MaxIters)*100) }></div>
+						</div>
+					}
+				</div>
+				<div>
+					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+						Throughput
+					</div>
+					<div style="font-size: 1.5rem; font-weight: 600;" data-metric="cps">
+						{ formatNumber(job.CPS) }
+					</div>
+					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+						circles/sec
+					</div>
+				</div>
+				<div>
+					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+						Elapsed Time
+					</div>
+					<div style="font-size: 1.5rem; font-weight: 600;">
+						{ formatDuration(job.ElapsedSec) }
+					</div>
+					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+						{ formatTimestamp(job.StartTime) }
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Configuration Panel -->
+		<div class="card" style="margin-bottom: 1.5rem;">
+			<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+				Configuration
+			</h2>
+			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+				<div>
+					<div style="font-size: 0.875rem; color: var(--text-muted);">Mode</div>
+					<div style="font-weight: 500; text-transform: capitalize;">{ job.Mode }</div>
+				</div>
+				<div>
+					<div style="font-size: 0.875rem; color: var(--text-muted);">Circles</div>
+					<div style="font-weight: 500;">{ fmt.Sprintf("%d", job.Circles) }</div>
+				</div>
+				<div>
+					<div style="font-size: 0.875rem; color: var(--text-muted);">Population Size</div>
+					<div style="font-weight: 500;">{ fmt.Sprintf("%d", job.PopSize) }</div>
+				</div>
+				<div style="grid-column: 1 / -1;">
+					<div style="font-size: 0.875rem; color: var(--text-muted);">Reference Image</div>
+					<div style="font-weight: 500; font-family: monospace; font-size: 0.875rem;">{ job.RefPath }</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Two-Pane Layout: Reference and Best Images -->
+		<div class="card">
+			<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+				Images
+			</h2>
+			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem;">
+				<!-- Reference Image -->
+				<div>
+					<h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-muted);">
+						Reference
+					</h3>
+					<div style="border: 1px solid var(--border-color); border-radius: 0.375rem; overflow: hidden; background: repeating-conic-gradient(#f9fafb 0% 25%, #ffffff 0% 50%) 50% / 20px 20px;">
+						<img
+							src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/ref.png", job.ID)) }
+							alt="Reference Image"
+							style="width: 100%; height: auto; display: block;"
+							onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"
+						/>
+						<div style="display: none; padding: 2rem; text-align: center; color: var(--text-muted);">
+							Reference image not available
+						</div>
+					</div>
+				</div>
+
+				<!-- Current Best Image -->
+				<div>
+					<h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-muted);">
+						Current Best
+					</h3>
+					if job.State == "pending" {
+						<div style="border: 1px solid var(--border-color); border-radius: 0.375rem; padding: 4rem 2rem; text-align: center; background-color: var(--bg-color);">
+							<p style="color: var(--text-muted);">Optimization not started yet</p>
+						</div>
+					} else if len(job.ID) > 0 {
+						<div style="position: relative; border: 1px solid var(--border-color); border-radius: 0.375rem; overflow: hidden; background: repeating-conic-gradient(#f9fafb 0% 25%, #ffffff 0% 50%) 50% / 20px 20px;">
+							<img
+								id="best-image"
+								src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/best.png?t=%d", job.ID, time.Now().Unix())) }
+								alt="Current Best Image"
+								style="width: 100%; height: auto; display: block; transition: opacity 0.3s ease;"
+								onload="this.style.opacity='1'; this.nextElementSibling.style.display='none';"
+								onerror="this.style.display='none'; this.nextElementSibling.style.display='none'; this.nextElementSibling.nextElementSibling.style.display='block';"
+							/>
+							<div id="best-image-loading" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+								<div class="spinner"></div>
+								<p style="color: var(--text-muted); margin-top: 0.5rem; font-size: 0.875rem;">Loading...</p>
+							</div>
+							<div style="display: none; padding: 2rem; text-align: center; color: var(--text-muted);">
+								No results yet
+							</div>
+						</div>
+					}
+				</div>
+
+				<!-- Difference Image -->
+				<div>
+					<h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-muted);">
+						Difference Visualization
+					</h3>
+					if job.State == "pending" {
+						<div style="border: 1px solid var(--border-color); border-radius: 0.375rem; padding: 4rem 2rem; text-align: center; background-color: var(--bg-color);">
+							<p style="color: var(--text-muted);">Not available yet</p>
+						</div>
+					} else if len(job.ID) > 0 {
+						<div style="position: relative; border: 1px solid var(--border-color); border-radius: 0.375rem; overflow: hidden; background-color: #000000;">
+							<img
+								id="diff-image"
+								src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/diff.png?t=%d", job.ID, time.Now().Unix())) }
+								alt="Difference Visualization"
+								style="width: 100%; height: auto; display: block; transition: opacity 0.3s ease;"
+								onload="this.style.opacity='1'; this.nextElementSibling.style.display='none';"
+								onerror="this.style.display='none'; this.nextElementSibling.style.display='none'; this.nextElementSibling.nextElementSibling.style.display='block';"
+							/>
+							<div id="diff-image-loading" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+								<div class="spinner"></div>
+								<p style="color: #cccccc; margin-top: 0.5rem; font-size: 0.875rem;">Loading...</p>
+							</div>
+							<div style="display: none; padding: 2rem; text-align: center; color: #cccccc;">
+								No results yet
+							</div>
+						</div>
+					}
+				</div>
+			</div>
+		</div>
+
+		<!-- SSE for live updates -->
+		<script>
+			(function() {
+				const jobId = '{ job.ID }';
+				const jobState = '{ job.State }';
+
+				// Cost history for sparkline (bounded to 100 samples)
+				const costHistory = [];
+				const MAX_SAMPLES = 100;
+
+				// Initialize with current cost if available
+				if ({ fmt.Sprintf("%.4f", job.BestCost) } > 0) {
+					costHistory.push({ fmt.Sprintf("%.4f", job.BestCost) });
+				}
+
+				// Sparkline toggle
+				const toggleBtn = document.getElementById('sparkline-toggle');
+				const sparklineContainer = document.getElementById('cost-sparkline-container');
+				let sparklineVisible = false;
+
+				if (toggleBtn) {
+					toggleBtn.addEventListener('click', function() {
+						sparklineVisible = !sparklineVisible;
+						sparklineContainer.style.display = sparklineVisible ? 'block' : 'none';
+						toggleBtn.textContent = sparklineVisible ? 'Hide Chart' : 'Show Chart';
+						if (sparklineVisible && costHistory.length > 0) {
+							updateSparkline();
+						}
+					});
+				}
+
+				// Only connect SSE if job is running or pending
+				if (jobState === 'running' || jobState === 'pending') {
+					const eventSource = new EventSource('/api/v1/jobs/' + jobId + '/stream');
+
+					eventSource.onmessage = function(event) {
+						const data = JSON.parse(event.data);
+
+						// Update metrics
+						updateMetric('best-cost', data.bestCost.toFixed(4));
+						updateMetric('iterations', data.iterations);
+						updateMetric('cps', formatNumber(data.cps));
+
+						// Add to cost history
+						addCostSample(data.bestCost);
+
+						// If job completed, reload to update images
+						if (data.state === 'completed' || data.state === 'failed' || data.state === 'cancelled') {
+							eventSource.close();
+							location.reload();
+						} else {
+							// Refresh images with cache busting and loading states
+							const timestamp = new Date().getTime();
+							refreshImage('best-image', 'best-image-loading', jobId, 'best.png', timestamp);
+							refreshImage('diff-image', 'diff-image-loading', jobId, 'diff.png', timestamp);
+						}
+					};
+
+					eventSource.onerror = function(err) {
+						console.error('SSE connection error:', err);
+						eventSource.close();
+						// Fallback to polling after 5 seconds
+						setTimeout(function() {
+							location.reload();
+						}, 5000);
+					};
+				}
+
+				function updateMetric(id, value) {
+					const elements = document.querySelectorAll('[data-metric="' + id + '"]');
+					elements.forEach(function(el) {
+						el.textContent = value;
+					});
+				}
+
+				function formatNumber(n) {
+					if (n >= 1000000) {
+						return (n / 1000000).toFixed(1) + 'M';
+					} else if (n >= 1000) {
+						return (n / 1000).toFixed(1) + 'K';
+					} else {
+						return Math.round(n).toString();
+					}
+				}
+
+				function refreshImage(imgId, loadingId, jobId, filename, timestamp) {
+					const img = document.getElementById(imgId);
+					const loading = document.getElementById(loadingId);
+
+					if (!img) return;
+
+					// Show loading state
+					if (loading) {
+						loading.style.display = 'block';
+					}
+					img.style.opacity = '0.5';
+
+					// Create new image to preload
+					const newImg = new Image();
+					newImg.onload = function() {
+						img.src = newImg.src;
+						img.style.opacity = '1';
+						if (loading) {
+							loading.style.display = 'none';
+						}
+					};
+					newImg.onerror = function() {
+						// Keep current image, hide loading
+						img.style.opacity = '1';
+						if (loading) {
+							loading.style.display = 'none';
+						}
+					};
+					newImg.src = '/api/v1/jobs/' + jobId + '/' + filename + '?t=' + timestamp;
+				}
+
+				function addCostSample(cost) {
+					// Add new sample
+					costHistory.push(cost);
+
+					// Keep only last MAX_SAMPLES
+					if (costHistory.length > MAX_SAMPLES) {
+						costHistory.shift();
+					}
+
+					// Update sparkline if visible
+					if (sparklineVisible) {
+						updateSparkline();
+					}
+				}
+
+				function updateSparkline() {
+					if (costHistory.length < 2) return;
+
+					const svg = document.getElementById('cost-sparkline');
+					const line = document.getElementById('sparkline-line');
+					const dot = document.getElementById('sparkline-dot');
+
+					if (!svg || !line) return;
+
+					const width = svg.clientWidth;
+					const height = 80;
+					const padding = 10;
+
+					// Calculate min/max for scaling
+					const minCost = Math.min(...costHistory);
+					const maxCost = Math.max(...costHistory);
+					const range = maxCost - minCost || 1; // Prevent division by zero
+
+					// Generate points for polyline
+					const points = costHistory.map((cost, i) => {
+						const x = padding + (i / (costHistory.length - 1)) * (width - 2 * padding);
+						const y = height - padding - ((cost - minCost) / range) * (height - 2 * padding);
+						return x + ',' + y;
+					}).join(' ');
+
+					line.setAttribute('points', points);
+
+					// Position dot at last point
+					if (costHistory.length > 0) {
+						const lastX = padding + (width - 2 * padding);
+						const lastY = height - padding - ((costHistory[costHistory.length - 1] - minCost) / range) * (height - 2 * padding);
+						dot.setAttribute('cx', lastX);
+						dot.setAttribute('cy', lastY);
+						dot.style.display = 'block';
+					}
+
+					// Update stats
+					document.getElementById('sparkline-samples').textContent = costHistory.length;
+					document.getElementById('sparkline-start').textContent = costHistory[0].toFixed(4);
+					document.getElementById('sparkline-current').textContent = costHistory[costHistory.length - 1].toFixed(4);
+					document.getElementById('sparkline-min').textContent = minCost.toFixed(4);
+				}
+			})();
+		</script>
+	}
+}
+
+// JobNotFound displays a 404 page for jobs that don't exist
+templ JobNotFound(jobID string) {
+	@Layout("Job Not Found") {
+		<div class="card" style="text-align: center; padding: 3rem;">
+			<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 1rem; color: var(--text-muted);">
+				<circle cx="12" cy="12" r="10"></circle>
+				<line x1="12" y1="8" x2="12" y2="12"></line>
+				<line x1="12" y1="16" x2="12.01" y2="16"></line>
+			</svg>
+			<h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem;">
+				Job Not Found
+			</h1>
+			<p style="color: var(--text-muted); margin-bottom: 1.5rem; font-family: monospace;">
+				Job ID: { jobID }
+			</p>
+			<a href="/" class="btn btn-primary">
+				← Back to Jobs
+			</a>
+		</div>
+	}
+}
+
+// Helper function to format large numbers with K/M suffix
+func formatNumber(n float64) string {
+	if n >= 1_000_000 {
+		return fmt.Sprintf("%.1fM", n/1_000_000)
+	} else if n >= 1_000 {
+		return fmt.Sprintf("%.1fK", n/1_000)
+	} else {
+		return fmt.Sprintf("%.0f", n)
+	}
+}
+
+// Helper function to format duration in seconds to human-readable string
+func formatDuration(seconds float64) string {
+	if seconds < 1 {
+		return fmt.Sprintf("%.0fms", seconds*1000)
+	} else if seconds < 60 {
+		return fmt.Sprintf("%.1fs", seconds)
+	} else if seconds < 3600 {
+		mins := int(seconds / 60)
+		secs := int(seconds) % 60
+		return fmt.Sprintf("%dm %ds", mins, secs)
+	} else {
+		hours := int(seconds / 3600)
+		mins := int(seconds/60) % 60
+		return fmt.Sprintf("%dh %dm", hours, mins)
+	}
+}
+
+// Helper function to format timestamp
+func formatTimestamp(t time.Time) string {
+	return t.Format("Jan 2, 2006 3:04 PM")
+}

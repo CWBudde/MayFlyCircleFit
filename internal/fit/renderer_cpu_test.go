@@ -51,9 +51,9 @@ func TestCPURendererSingleCircle(t *testing.T) {
 
 	// Red circle at center
 	params := []float64{
-		10, 10, 5,      // x, y, r
-		1.0, 0.0, 0.0,  // red
-		1.0,            // opaque
+		10, 10, 5, // x, y, r
+		1.0, 0.0, 0.0, // red
+		1.0, // opaque
 	}
 
 	result := renderer.Render(params)

@@ -1,0 +1,178 @@
+package ui
+
+// CreateJobPage displays the job creation form
+templ CreateJobPage(errorMsg string) {
+	@Layout("Create Job") {
+		<div style="max-width: 800px; margin: 0 auto;">
+			<div style="margin-bottom: 2rem;">
+				<a href="/" style="color: var(--text-muted); text-decoration: none; font-size: 0.875rem; margin-bottom: 0.5rem; display: inline-block;">
+					← Back to Jobs
+				</a>
+				<h1 style="font-size: 2rem; font-weight: 700;">
+					Create New Job
+				</h1>
+				<p style="color: var(--text-muted); margin-top: 0.5rem;">
+					Configure and start a new circle fitting optimization job.
+				</p>
+			</div>
+
+			if errorMsg != "" {
+				<div class="card" style="background-color: #fee2e2; border: 1px solid #fca5a5; margin-bottom: 1.5rem;">
+					<h3 style="color: #991b1b; font-weight: 600; margin-bottom: 0.5rem;">Error</h3>
+					<p style="color: #991b1b; font-size: 0.875rem;">{ errorMsg }</p>
+				</div>
+			}
+
+			<form method="POST" action="/create" enctype="multipart/form-data" class="card">
+				<!-- Reference Image Section -->
+				<div style="margin-bottom: 2rem;">
+					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+						Reference Image
+					</h2>
+
+					<div style="margin-bottom: 1rem;">
+						<label for="refPath" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+							Image Path <span style="color: var(--error-color);">*</span>
+						</label>
+						<input
+							type="text"
+							id="refPath"
+							name="refPath"
+							placeholder="e.g., assets/test.png"
+							required
+							style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+						/>
+						<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+							Enter the path to your reference image file on the server.
+						</p>
+					</div>
+				</div>
+
+				<!-- Optimization Parameters -->
+				<div style="margin-bottom: 2rem;">
+					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+						Optimization Parameters
+					</h2>
+
+					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+						<div>
+							<label for="mode" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+								Mode <span style="color: var(--error-color);">*</span>
+							</label>
+							<select
+								id="mode"
+								name="mode"
+								required
+								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem; background-color: white;"
+							>
+								<option value="joint" selected>Joint</option>
+								<option value="sequential">Sequential</option>
+								<option value="batch">Batch</option>
+							</select>
+							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+								Optimization strategy
+							</p>
+						</div>
+
+						<div>
+							<label for="circles" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+								Circles <span style="color: var(--error-color);">*</span>
+							</label>
+							<input
+								type="number"
+								id="circles"
+								name="circles"
+								value="10"
+								min="1"
+								max="1000"
+								required
+								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+							/>
+							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+								Number of circles (1-1000)
+							</p>
+						</div>
+
+						<div>
+							<label for="iters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+								Iterations <span style="color: var(--error-color);">*</span>
+							</label>
+							<input
+								type="number"
+								id="iters"
+								name="iters"
+								value="100"
+								min="1"
+								max="10000"
+								required
+								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+							/>
+							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+								Max iterations (1-10000)
+							</p>
+						</div>
+
+						<div>
+							<label for="popSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+								Population Size <span style="color: var(--error-color);">*</span>
+							</label>
+							<input
+								type="number"
+								id="popSize"
+								name="popSize"
+								value="30"
+								min="2"
+								max="200"
+								required
+								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+							/>
+							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+								Population size (2-200)
+							</p>
+						</div>
+
+						<div>
+							<label for="seed" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+								Random Seed
+							</label>
+							<input
+								type="number"
+								id="seed"
+								name="seed"
+								value="0"
+								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+							/>
+							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+								0 for random, or set for reproducibility
+							</p>
+						</div>
+					</div>
+				</div>
+
+				<!-- Submit Button -->
+				<div style="display: flex; gap: 1rem; justify-content: flex-end; padding-top: 1rem; border-top: 1px solid var(--border-color);">
+					<a href="/" class="btn" style="background-color: var(--border-color); text-decoration: none;">
+						Cancel
+					</a>
+					<button type="submit" class="btn btn-primary">
+						Create Job
+					</button>
+				</div>
+			</form>
+
+			<!-- Quick Tips -->
+			<div class="card" style="margin-top: 1.5rem; background-color: #dbeafe;">
+				<h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: #1e40af;">
+					💡 Tips
+				</h3>
+				<ul style="margin-left: 1.5rem; color: #1e3a8a; font-size: 0.875rem; line-height: 1.6;">
+					<li><strong>Joint mode</strong>: Optimizes all circles simultaneously (fastest for small K)</li>
+					<li><strong>Sequential mode</strong>: Adds circles one at a time greedily (better for large K)</li>
+					<li><strong>Batch mode</strong>: Adds circles in batches (balanced approach)</li>
+					<li><strong>More iterations</strong>: Better results but takes longer</li>
+					<li><strong>Larger population</strong>: More exploration but slower per iteration</li>
+				</ul>
+			</div>
+		</div>
+	}
+}
