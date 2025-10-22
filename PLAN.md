@@ -451,15 +451,23 @@
 - [x] Add logging for checkpoint saves (slog with job_id, iteration, best_cost)
 - [x] Integrate into server: `cmd/serve.go` creates FSStore and passes to `NewServer()`
 
-### Task 8.5: Implement Trace Logging (Optional Cost History)
+### Task 8.5: Implement Trace Logging (Optional Cost History) ✅
 
-- [ ] Create `trace.jsonl` writer in `internal/store/trace.go`
-- [ ] Log format: JSON lines with iteration, cost, timestamp, params (optional)
-- [ ] Implement append-only writes to minimize overhead
-- [ ] Add buffered writer for performance
-- [ ] Add flag to job config to enable/disable trace (default: enabled)
-- [ ] Implement trace reader for analysis/visualization
-- [ ] Write tests for trace logging
+- [x] Create `trace.jsonl` writer in `internal/store/trace.go`
+- [x] Log format: JSON lines with iteration, cost, timestamp, params (optional)
+- [x] Implement append-only writes to minimize overhead
+- [x] Add buffered writer for performance (64KB buffer)
+- [x] Add flag to job config to enable/disable trace (`EnableTrace` field)
+- [x] Implement trace reader for analysis/visualization
+  - [x] `TraceReader` with `Read()` and `ReadAll()` methods
+  - [x] Support for large trace files with configurable buffer
+- [x] Write tests for trace logging (11 tests passing)
+  - [x] Write/read, append mode, flush, iterative reading
+  - [x] Params included/excluded, concurrent writes, delete
+- [x] Integrate into worker with `monitorTrace()` goroutine
+  - [x] Logs cost every 1 second when iteration progresses
+  - [x] Logs initial and final states
+  - [x] Non-blocking, runs in background
 
 ### Task 8.6: Add Resume Capability to Optimizer
 

@@ -15,6 +15,7 @@ type JobConfig struct {
 	PopSize            int    `json:"popSize"`
 	Seed               int64  `json:"seed"`
 	CheckpointInterval int    `json:"checkpointInterval,omitempty"` // Checkpoint every N seconds (0 = disabled)
+	EnableTrace        bool   `json:"enableTrace,omitempty"`        // Enable cost history trace logging (default: true)
 }
 
 // Checkpoint represents a saved optimization state that can be resumed later.

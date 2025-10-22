@@ -85,9 +85,39 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	default:
 	}
 
+	// Start trace writer if enabled
+	var traceWriter *store.TraceWriter
+	if job.Config.EnableTrace {
+		tw, err := store.NewTraceWriter("./data", jobID, false)
+		if err != nil {
+			slog.Warn("Failed to create trace writer", "job_id", jobID, "error", err)
+		} else {
+			traceWriter = tw
+			defer func() {
+				if err := traceWriter.Close(); err != nil {
+					slog.Warn("Failed to close trace writer", "job_id", jobID, "error", err)
+				}
+			}()
+			// Log initial state
+			traceWriter.Write(store.TraceEntry{
+				Iteration: 0,
+				Cost:      job.InitialCost,
+				Timestamp: start,
+			})
+		}
+	}
+
 	// Start progress monitoring goroutine
 	progressDone := make(chan struct{})
 	go monitorProgress(ctx, jm, jobID, start, progressDone)
+
+	// Start trace monitoring goroutine if enabled
+	traceDone := make(chan struct{})
+	if traceWriter != nil {
+		go monitorTrace(ctx, jm, traceWriter, jobID, traceDone)
+	} else {
+		close(traceDone) // No tracing, close immediately
+	}
 
 	// Start checkpoint monitoring goroutine if enabled
 	checkpointDone := make(chan struct{})
@@ -117,6 +147,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	}
 
 	close(progressDone)
+	close(traceDone)
 	close(checkpointDone)
 	elapsed := time.Since(start)
 
@@ -343,4 +374,54 @@ func saveCheckpointArtifacts(checkpointStore store.Store, renderer fit.Renderer,
 
 	slog.Debug("Checkpoint artifacts saved", "job_id", jobID, "best_path", bestPath, "diff_path", diffPath)
 	return nil
+}
+
+// monitorTrace periodically logs cost history to trace file
+func monitorTrace(ctx context.Context, jm *JobManager, traceWriter *store.TraceWriter, jobID string, done chan struct{}) {
+	// Log trace every 1 second
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	lastIteration := 0
+
+	for {
+		select {
+		case <-done:
+			// Log final state before exiting
+			job, exists := jm.GetJob(jobID)
+			if exists && job.Iterations > lastIteration {
+				traceWriter.Write(store.TraceEntry{
+					Iteration: job.Iterations,
+					Cost:      job.BestCost,
+					Timestamp: time.Now(),
+				})
+				traceWriter.Flush()
+			}
+			return
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			job, exists := jm.GetJob(jobID)
+			if !exists {
+				return
+			}
+
+			// Only log if iteration has progressed
+			if job.Iterations > lastIteration {
+				entry := store.TraceEntry{
+					Iteration: job.Iterations,
+					Cost:      job.BestCost,
+					Timestamp: time.Now(),
+					// Don't include params to save space - can be reconstructed from checkpoints
+					Params: nil,
+				}
+
+				if err := traceWriter.Write(entry); err != nil {
+					slog.Error("Failed to write trace entry", "job_id", jobID, "error", err)
+				}
+
+				lastIteration = job.Iterations
+			}
+		}
+	}
 }
