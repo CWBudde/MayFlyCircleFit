@@ -65,13 +65,25 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	// Create optimizer
 	optimizer := opt.NewMayfly(job.Config.Iters, job.Config.PopSize, job.Config.Seed)
 
-	// Get initial cost
-	initialParams := make([]float64, job.Config.Circles*7)
-	initialCost := renderer.Cost(initialParams)
+	// Check if this is a resumed job (has existing best params)
+	isResume := len(job.BestParams) > 0
 
-	jm.UpdateJob(jobID, func(j *Job) {
-		j.InitialCost = initialCost
-	})
+	// Get initial cost (or use existing if resume)
+	var initialCost float64
+	if isResume {
+		initialCost = job.InitialCost
+		slog.Info("Resuming from checkpoint",
+			"job_id", jobID,
+			"previous_cost", job.BestCost,
+			"previous_iterations", job.Iterations,
+		)
+	} else {
+		initialParams := make([]float64, job.Config.Circles*7)
+		initialCost = renderer.Cost(initialParams)
+		jm.UpdateJob(jobID, func(j *Job) {
+			j.InitialCost = initialCost
+		})
+	}
 
 	// Run optimization based on mode
 	start := time.Now()
@@ -127,23 +139,58 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		close(checkpointDone) // No checkpointing, close immediately
 	}
 
-	switch job.Config.Mode {
-	case "joint":
-		result = fit.OptimizeJoint(renderer, optimizer, job.Config.Circles)
-	case "sequential":
-		result = fit.OptimizeSequential(renderer, optimizer, job.Config.Circles)
-	case "batch":
-		batchSize := 5
-		passes := job.Config.Circles / batchSize
-		if job.Config.Circles%batchSize != 0 {
-			passes++
+	// If resuming, use optimizer with initial params
+	if isResume {
+		resumable, ok := optimizer.(opt.ResumableOptimizer)
+		if !ok {
+			err := fmt.Errorf("optimizer does not support resume")
+			markJobFailed(jm, jobID, err)
+			close(progressDone)
+			close(traceDone)
+			close(checkpointDone)
+			return err
 		}
-		result = fit.OptimizeBatch(renderer, optimizer, batchSize, passes)
-	default:
-		err := fmt.Errorf("unknown mode: %s", job.Config.Mode)
-		markJobFailed(jm, jobID, err)
-		close(progressDone)
-		return err
+
+		// Call optimizer directly with resume capability
+		lower, upper := renderer.Bounds()
+		bestParams, bestCost := resumable.RunWithInitial(
+			job.BestParams,
+			job.BestCost,
+			renderer.Cost,
+			lower,
+			upper,
+			renderer.Dim(),
+		)
+
+		// Create result
+		result = &fit.OptimizationResult{
+			BestParams:  bestParams,
+			BestCost:    bestCost,
+			InitialCost: initialCost,
+			Iterations:  job.Config.Iters + job.Iterations, // Cumulative
+		}
+	} else {
+		// Normal optimization from scratch
+		switch job.Config.Mode {
+		case "joint":
+			result = fit.OptimizeJoint(renderer, optimizer, job.Config.Circles)
+		case "sequential":
+			result = fit.OptimizeSequential(renderer, optimizer, job.Config.Circles)
+		case "batch":
+			batchSize := 5
+			passes := job.Config.Circles / batchSize
+			if job.Config.Circles%batchSize != 0 {
+				passes++
+			}
+			result = fit.OptimizeBatch(renderer, optimizer, batchSize, passes)
+		default:
+			err := fmt.Errorf("unknown mode: %s", job.Config.Mode)
+			markJobFailed(jm, jobID, err)
+			close(progressDone)
+			close(traceDone)
+			close(checkpointDone)
+			return err
+		}
 	}
 
 	close(progressDone)

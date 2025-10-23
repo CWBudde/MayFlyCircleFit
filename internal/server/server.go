@@ -101,6 +101,8 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 		s.handleGetRefImage(w, r, jobID)
 	} else if parts[1] == "stream" {
 		s.handleJobStream(w, r, jobID)
+	} else if parts[1] == "resume" {
+		s.handleResumeJob(w, r, jobID)
 	} else {
 		http.Error(w, "Not found", http.StatusNotFound)
 	}
@@ -306,6 +308,74 @@ func (s *Server) handleGetRefImage(w http.ResponseWriter, r *http.Request, jobID
 	if err := png.Encode(w, ref); err != nil {
 		slog.Error("Failed to encode PNG", "error", err)
 	}
+}
+
+// handleResumeJob handles POST /api/v1/jobs/:id/resume
+func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID string) {
+	// Only allow POST
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Check if checkpoint store is available
+	if s.store == nil {
+		http.Error(w, "Checkpoint feature not enabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Load checkpoint
+	checkpoint, err := s.store.LoadCheckpoint(jobID)
+	if err != nil {
+		if _, ok := err.(*store.NotFoundError); ok {
+			http.Error(w, fmt.Sprintf("Checkpoint not found for job %s", jobID), http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("Failed to load checkpoint: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Validate checkpoint
+	if err := checkpoint.Validate(); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid checkpoint: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	slog.Info("Resuming job from checkpoint",
+		"job_id", jobID,
+		"iteration", checkpoint.Iteration,
+		"best_cost", checkpoint.BestCost,
+	)
+
+	// Create a new job with resumed state
+	// We use the same configuration but mark it as a resumed job
+	config := checkpoint.Config
+	newJob := s.jobManager.CreateJob(config)
+
+	// Initialize the new job with checkpoint data
+	s.jobManager.UpdateJob(newJob.ID, func(j *Job) {
+		j.BestParams = checkpoint.BestParams
+		j.BestCost = checkpoint.BestCost
+		j.InitialCost = checkpoint.InitialCost
+		j.Iterations = checkpoint.Iteration
+	})
+
+	// Start worker in background with checkpoint store
+	go runJob(context.Background(), s.jobManager, s.store, newJob.ID)
+
+	// Return response
+	response := map[string]interface{}{
+		"jobId":         newJob.ID,
+		"resumedFrom":   jobID,
+		"state":         string(newJob.State),
+		"previousCost":  checkpoint.BestCost,
+		"previousIters": checkpoint.Iteration,
+		"message":       "Job resumed successfully from checkpoint",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
 }
 
 // loggingMiddleware logs HTTP requests

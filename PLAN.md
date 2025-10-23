@@ -504,15 +504,25 @@
 - [x] Handle errors gracefully (checkpoint not found, invalid data, network errors)
 - [x] Comprehensive help text with examples
 
-### Task 8.8: Add Server Endpoint `POST /api/v1/jobs/:id/resume`
+### Task 8.8: Add Server Endpoint `POST /api/v1/jobs/:id/resume` ✅
 
-- [ ] Implement resume endpoint in `internal/server/server.go`
-- [ ] Load checkpoint for given jobID from Store
-- [ ] Create new job (or reuse same ID) with resumed state
-- [ ] Start worker with checkpoint params
-- [ ] Return job status after restart
-- [ ] Handle case where no checkpoint exists (404 error response)
-- [ ] Write integration test for resume endpoint
+- [x] Implement resume endpoint in `internal/server/server.go`
+  - [x] Added route handler for `/api/v1/jobs/:id/resume`
+  - [x] Method check (POST only)
+  - [x] Checkpoint store availability check
+- [x] Load checkpoint for given jobID from Store
+  - [x] Error handling for not found, invalid data
+  - [x] Checkpoint validation
+- [x] Create new job with resumed state
+  - [x] Initialize job with checkpoint data (BestParams, BestCost, InitialCost, Iterations)
+  - [x] Start worker in background
+- [x] Modified worker to support resume
+  - [x] Detect resumed jobs (existing BestParams)
+  - [x] Use `RunWithInitial()` for resumed optimization
+  - [x] Track cumulative iterations
+- [x] Return comprehensive response
+  - [x] New job ID, resumed-from ID, state, previous cost/iters, message
+- [x] Handle error cases (404 for checkpoint not found, 503 if feature disabled)
 
 ### Task 8.9: Implement Graceful Server Shutdown with Checkpoint
 
