@@ -469,13 +469,22 @@
   - [x] Logs initial and final states
   - [x] Non-blocking, runs in background
 
-### Task 8.6: Add Resume Capability to Optimizer
+### Task 8.6: Add Resume Capability to Optimizer ✅
 
-- [ ] Modify `Optimizer.Run()` signature to accept optional initial best params
-- [ ] Update Mayfly adapter to seed population with checkpoint params + random variations
-- [ ] Continue iteration count from checkpoint (or reset if simpler)
-- [ ] Document any limitations (e.g., random seed divergence)
-- [ ] Write tests for optimizer resume behavior
+- [x] Define `ResumableOptimizer` interface extending `Optimizer`
+  - [x] `RunWithInitial(initialParams, initialCost, ...)` method
+- [x] Implement `RunWithInitial` in `MayflyAdapter`
+  - [x] Strategy: Run optimizer, return better of (new result, checkpoint solution)
+  - [x] Ensures we never lose progress on resume
+- [x] Document limitations
+  - [x] Mayfly library doesn't support custom population initialization
+  - [x] Iteration count resets (optimizer runs fresh)
+  - [x] Future: Consider different optimizer library with population seeding
+- [x] Write comprehensive tests (6 tests passing)
+  - [x] Basic resume with improvement
+  - [x] Resume from optimal solution
+  - [x] Resume vs from-scratch comparison
+  - [x] Checkpoint preservation (never worsen)
 
 ### Task 8.7: Implement CLI `resume` Command
 
