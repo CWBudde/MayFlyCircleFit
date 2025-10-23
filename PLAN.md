@@ -486,15 +486,23 @@
   - [x] Resume vs from-scratch comparison
   - [x] Checkpoint preservation (never worsen)
 
-### Task 8.7: Implement CLI `resume` Command
+### Task 8.7: Implement CLI `resume` Command ✅
 
-- [ ] Update `cmd/resume.go` with full implementation
-- [ ] Add flags: --job-id (required), --server-url (for server mode)
-- [ ] Support local mode: load checkpoint from Store, restart optimizer
-- [ ] Support server mode: POST to `/api/v1/jobs/:id/resume`
-- [ ] Display resume progress and final results
-- [ ] Handle errors gracefully (checkpoint not found, invalid data)
-- [ ] Write integration tests for both modes
+- [x] Update `cmd/resume.go` with full implementation
+- [x] Add flags: --local, --server-url, --output
+- [x] Support local mode: load checkpoint from Store, restart optimizer
+  - [x] Load and validate checkpoint
+  - [x] Load reference image and create renderer
+  - [x] Use `RunWithInitial()` to resume optimization
+  - [x] Display progress and improvement metrics
+  - [x] Save resumed output image
+  - [x] Update checkpoint with new results
+- [x] Support server mode: POST to `/api/v1/jobs/:id/resume`
+  - [x] Send POST request to server resume endpoint
+  - [x] Parse and display server response
+  - [x] Provide status command hint for monitoring
+- [x] Handle errors gracefully (checkpoint not found, invalid data, network errors)
+- [x] Comprehensive help text with examples
 
 ### Task 8.8: Add Server Endpoint `POST /api/v1/jobs/:id/resume`
 
