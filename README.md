@@ -38,6 +38,16 @@ just lint
 just clean
 ```
 
+## GPU Backend (Experimental)
+
+OpenCL support is under active development. Build with GPU hooks via:
+
+```bash
+GOFLAGS="-tags=gpu" go build -o bin/mayflycirclefit .
+```
+
+Install OpenCL headers/runtime for your platform and run with `--backend opencl` once the renderer is available. See `docs/gpu-backends.md` for current status and setup notes.
+
 ## Architecture
 
 ```plain

@@ -19,6 +19,7 @@ var (
 	refPath           string
 	outPath           string
 	mode              string
+	backendName       string
 	circles           int
 	iters             int
 	popSize           int
@@ -41,6 +42,7 @@ func init() {
 	runCmd.Flags().StringVar(&refPath, "ref", "", "Reference image path (required)")
 	runCmd.Flags().StringVar(&outPath, "out", "out.png", "Output image path")
 	runCmd.Flags().StringVar(&mode, "mode", "joint", "Optimization mode: joint, sequential, batch")
+	runCmd.Flags().StringVar(&backendName, "backend", "cpu", "Renderer backend to use (cpu, opencl)")
 	runCmd.Flags().IntVar(&circles, "circles", 10, "Number of circles")
 	runCmd.Flags().IntVar(&iters, "iters", 100, "Max iterations")
 	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
@@ -74,7 +76,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		slog.Info("CPU profiling enabled", "output", cpuProfile)
 	}
 
-	slog.Info("Starting optimization", "mode", mode, "circles", circles, "iters", iters)
+	slog.Info("Starting optimization", "mode", mode, "circles", circles, "iters", iters, "backend", backendName)
 
 	// Load reference image
 	f, err := os.Open(refPath)
@@ -100,7 +102,11 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	slog.Info("Loaded reference", "width", bounds.Dx(), "height", bounds.Dy())
 
 	// Create renderer
-	renderer := fit.NewCPURenderer(ref, circles)
+	renderer, cleanup, err := fit.NewRendererForBackend(backendName, ref, circles)
+	if err != nil {
+		return fmt.Errorf("failed to create renderer: %w", err)
+	}
+	defer cleanup()
 
 	// Create optimizer
 	optimizer := opt.NewMayfly(iters, popSize, seed)

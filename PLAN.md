@@ -860,39 +860,23 @@
 **Goal:** Add a pluggable GPU renderer/coster behind the existing `Renderer` interface.
 
 ### Task 11.1: Research GPU Backend Options
-- [ ] Create comparison document: `docs/gpu-backends.md`
-- [ ] Research OpenGL compute/fragment shader approach
-  - [ ] Availability across platforms (Windows/Linux/macOS)
-  - [ ] Ease of Go bindings (`go-gl/gl`, `go-gl/glfw`)
-  - [ ] Circle rendering in fragment shader
-  - [ ] Reduction strategies for cost computation
-  - [ ] Maintenance burden
-- [ ] Research OpenCL approach
-  - [ ] Portability across GPU vendors (NVIDIA/AMD/Intel/Apple)
-  - [ ] Go bindings quality and maturity
-  - [ ] Compute kernel for compositing and cost
-  - [ ] Platform support and driver requirements
-- [ ] Research WebGPU approach
-  - [ ] Maturity of native bindings in Go
-  - [ ] Cross-platform support
-  - [ ] Future-proofing considerations
-  - [ ] Current limitations
-- [ ] Research Vulkan compute approach
-  - [ ] Performance characteristics
-  - [ ] Integration complexity
-  - [ ] Platform support
-  - [ ] Maintenance overhead
-- [ ] Create comparison matrix: ease of binding, portability, debuggability, performance
-- [ ] Make recommendation with justification
+- [x] Create comparison document: `docs/gpu-backends.md` (baseline constraints, candidate analysis, matrix).
+- [x] Research OpenGL compute/fragment shader approach — viable for Windows/Linux; macOS limited to 4.1, use fragment path plus CPU reduction; Go bindings via `go-gl` + headless GLFW.
+- [x] Research OpenCL approach — best portability across NVIDIA/AMD/Intel, strong Go binding (`github.com/jgillich/go-opencl/cl`), compute-first API suits compositing+SSD, note Apple Silicon gap.
+- [x] Research WebGPU approach — modern but bindings immature and require bundling Dawn/WGPU; defer until primary backend stabilizes.
+- [x] Research Vulkan compute approach — powerful yet extremely boilerplate-heavy; not ideal for first iteration.
+- [x] Create comparison matrix: ease of binding, portability, debuggability, performance (see doc).
+- [x] Make recommendation with justification: pursue OpenCL as primary backend, prototype OpenGL fragment fallback for macOS.
+- [ ] Track outstanding risks: document macOS (Metal/WebGPU) gap, driver quirks encountered during prototype.
 
 ### Task 11.2: Choose GPU Backend and Set Up Infrastructure
-- [ ] Choose one backend based on research (e.g., OpenGL or OpenCL)
-- [ ] Install required Go bindings and dependencies
-- [ ] Set up GPU context initialization code
-- [ ] Add build tags for GPU support (`// +build gpu`)
-- [ ] Add `--backend` flag to CLI (values: `cpu`, `<gpu-name>`)
-- [ ] Document GPU requirements and setup in README
-- [ ] Test GPU detection and initialization
+- [x] Choose one backend based on research (OpenCL selected; fragment-shader OpenGL fallback deferred to Task 11.6).
+- [x] Install required GPU scaffolding (cgo-based OpenCL runtime under `internal/fit/gpu`, no external bindings required).
+- [x] Set up GPU context initialization code (context + queue bootstrap, device selection with GPU preference).
+- [x] Add build tags for GPU support (`//go:build gpu` mirrored by stub fallback).
+- [x] Add `--backend` flag to CLI (values: `cpu`, `opencl` for now) and surface backend choice in logs.
+- [x] Document GPU requirements and setup in README (experimental build instructions referencing doc).
+- [ ] Test GPU detection and initialization (pending hardware run + automated checks).
 
 ### Task 11.3: Design GPU Renderer Architecture
 - [ ] Create `internal/fit/renderer_<gpu>.go` skeleton
