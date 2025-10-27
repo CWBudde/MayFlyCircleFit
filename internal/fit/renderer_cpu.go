@@ -134,15 +134,19 @@ func (r *CPURenderer) renderCircle(img *image.NRGBA, c Circle) {
 	}
 }
 
+// Optimization constants
+const inv255 = 1.0 / 255.0 // Reciprocal for fast division
+
 // compositePixel blends a color onto the image at (x,y) using premultiplied alpha
 func compositePixel(img *image.NRGBA, x, y int, r, g, b, alpha float64) {
-	i := img.PixOffset(x, y)
+	// Inline PixOffset calculation (faster than function call)
+	i := y*img.Stride + x*4
 
-	// Current background color (non-premultiplied)
-	bgR := float64(img.Pix[i+0]) / 255.0
-	bgG := float64(img.Pix[i+1]) / 255.0
-	bgB := float64(img.Pix[i+2]) / 255.0
-	bgA := float64(img.Pix[i+3]) / 255.0
+	// Current background color (non-premultiplied) - use reciprocal multiplication
+	bgR := float64(img.Pix[i+0]) * inv255
+	bgG := float64(img.Pix[i+1]) * inv255
+	bgB := float64(img.Pix[i+2]) * inv255
+	bgA := float64(img.Pix[i+3]) * inv255
 
 	// Foreground premultiplied
 	fgR := r * alpha
@@ -156,9 +160,15 @@ func compositePixel(img *image.NRGBA, x, y int, r, g, b, alpha float64) {
 		return // Transparent
 	}
 
-	outR := (fgR + bgR*bgA*(1-fgA)) / outA
-	outG := (fgG + bgG*bgA*(1-fgA)) / outA
-	outB := (fgB + bgB*bgA*(1-fgA)) / outA
+	// Hoist division: compute reciprocal once, multiply three times
+	invOutA := 1.0 / outA
+
+	// Precompute common subexpression
+	bgBlend := bgA * (1 - fgA)
+
+	outR := (fgR + bgR*bgBlend) * invOutA
+	outG := (fgG + bgG*bgBlend) * invOutA
+	outB := (fgB + bgB*bgBlend) * invOutA
 
 	// Write back as 8-bit (use int conversion with +0.5 for rounding, faster than math.Round)
 	img.Pix[i+0] = uint8(outR*255 + 0.5)
