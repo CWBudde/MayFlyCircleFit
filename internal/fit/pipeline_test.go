@@ -25,7 +25,8 @@ func TestOptimizeJoint(t *testing.T) {
 
 	optimizer := opt.NewMayfly(50, 20, 42) // maxIters, popSize, seed (popSize must be >=20)
 
-	result := OptimizeJoint(renderer, optimizer, 1)
+	// Convergence config not used for joint mode
+	result := OptimizeJoint(renderer, optimizer, 1, DisabledConvergenceConfig())
 
 	if result.BestCost >= result.InitialCost {
 		t.Errorf("Optimization did not improve: initial=%f, best=%f", result.InitialCost, result.BestCost)
@@ -51,7 +52,8 @@ func TestOptimizeSequential(t *testing.T) {
 
 	optimizer := opt.NewMayfly(30, 20, 42) // maxIters, popSize, seed
 
-	result := OptimizeSequential(renderer, optimizer, 2)
+	// Disable convergence for deterministic test
+	result := OptimizeSequential(renderer, optimizer, 2, DisabledConvergenceConfig())
 
 	if result.BestCost >= result.InitialCost {
 		t.Errorf("Optimization did not improve")
@@ -77,7 +79,8 @@ func TestOptimizeBatch(t *testing.T) {
 	optimizer := opt.NewMayfly(30, 20, 42) // maxIters, popSize, seed
 
 	// 2 passes of 2 circles each = 4 circles total
-	result := OptimizeBatch(renderer, optimizer, 2, 2)
+	// Disable convergence for deterministic test
+	result := OptimizeBatch(renderer, optimizer, 2, 2, DisabledConvergenceConfig())
 
 	if len(result.BestParams) != 28 { // 4 circles * 7 params
 		t.Errorf("Expected 28 parameters for 4 circles, got %d", len(result.BestParams))

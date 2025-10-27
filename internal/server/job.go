@@ -102,3 +102,17 @@ func (jm *JobManager) UpdateJob(id string, updateFn func(*Job)) error {
 	updateFn(job)
 	return nil
 }
+
+// GetRunningJobs returns all jobs currently in the running state
+func (jm *JobManager) GetRunningJobs() []*Job {
+	jm.mu.RLock()
+	defer jm.mu.RUnlock()
+
+	runningJobs := make([]*Job, 0)
+	for _, job := range jm.jobs {
+		if job.State == StateRunning {
+			runningJobs = append(runningJobs, job)
+		}
+	}
+	return runningJobs
+}

@@ -125,7 +125,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 
 	// Start trace monitoring goroutine if enabled
 	traceDone := make(chan struct{})
-	if traceWriter != nil {
+	traceEnabled := traceWriter != nil
+	if traceEnabled {
 		go monitorTrace(ctx, jm, traceWriter, jobID, traceDone)
 	} else {
 		close(traceDone) // No tracing, close immediately
@@ -133,7 +134,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 
 	// Start checkpoint monitoring goroutine if enabled
 	checkpointDone := make(chan struct{})
-	if checkpointStore != nil && job.Config.CheckpointInterval > 0 {
+	checkpointEnabled := checkpointStore != nil && job.Config.CheckpointInterval > 0
+	if checkpointEnabled {
 		go monitorCheckpoints(ctx, jm, checkpointStore, renderer, jobID, checkpointDone)
 	} else {
 		close(checkpointDone) // No checkpointing, close immediately
@@ -146,8 +148,12 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 			err := fmt.Errorf("optimizer does not support resume")
 			markJobFailed(jm, jobID, err)
 			close(progressDone)
-			close(traceDone)
-			close(checkpointDone)
+			if traceEnabled {
+				close(traceDone)
+			}
+			if checkpointEnabled {
+				close(checkpointDone)
+			}
 			return err
 		}
 
@@ -171,34 +177,47 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		}
 	} else {
 		// Normal optimization from scratch
+		// Use default convergence config (enabled by default for server jobs)
+		convergenceConfig := fit.DefaultConvergenceConfig()
+
 		switch job.Config.Mode {
 		case "joint":
-			result = fit.OptimizeJoint(renderer, optimizer, job.Config.Circles)
+			result = fit.OptimizeJoint(renderer, optimizer, job.Config.Circles, convergenceConfig)
 		case "sequential":
-			result = fit.OptimizeSequential(renderer, optimizer, job.Config.Circles)
+			result = fit.OptimizeSequential(renderer, optimizer, job.Config.Circles, convergenceConfig)
 		case "batch":
 			batchSize := 5
 			passes := job.Config.Circles / batchSize
 			if job.Config.Circles%batchSize != 0 {
 				passes++
 			}
-			result = fit.OptimizeBatch(renderer, optimizer, batchSize, passes)
+			result = fit.OptimizeBatch(renderer, optimizer, batchSize, passes, convergenceConfig)
 		default:
 			err := fmt.Errorf("unknown mode: %s", job.Config.Mode)
 			markJobFailed(jm, jobID, err)
 			close(progressDone)
-			close(traceDone)
-			close(checkpointDone)
+			if traceEnabled {
+				close(traceDone)
+			}
+			if checkpointEnabled {
+				close(checkpointDone)
+			}
 			return err
 		}
 	}
 
+	// Close monitoring goroutines (only close if they were started)
 	close(progressDone)
-	close(traceDone)
-	close(checkpointDone)
+	if traceEnabled {
+		close(traceDone)
+	}
+	if checkpointEnabled {
+		close(checkpointDone)
+	}
 	elapsed := time.Since(start)
 
 	// Check for cancellation after optimization
+	// Note: Don't checkpoint here - shutdown already handles checkpointing running jobs
 	select {
 	case <-ctx.Done():
 		markJobCancelled(jm, jobID)

@@ -2,8 +2,6 @@ package fit
 
 import (
 	"image"
-	"image/color"
-	"math"
 )
 
 // CPURenderer implements software rendering of circles
@@ -14,12 +12,25 @@ type CPURenderer struct {
 	costFunc  CostFunc
 	width     int
 	height    int
+	// Buffer pooling to reduce allocations
+	canvas  *image.NRGBA // Reusable render buffer
+	whiteBg []byte       // Precomputed white background pattern
 }
 
 // NewCPURenderer creates a CPU-based renderer
 func NewCPURenderer(reference *image.NRGBA, k int) *CPURenderer {
 	bounds := reference.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
+
+	// Allocate reusable canvas buffer
+	canvas := image.NewNRGBA(image.Rect(0, 0, width, height))
+
+	// Precompute white background (NRGBA: 255,255,255,255 repeated)
+	pixelCount := width * height * 4 // 4 bytes per pixel (RGBA)
+	whiteBg := make([]byte, pixelCount)
+	for i := 0; i < pixelCount; i++ {
+		whiteBg[i] = 255
+	}
 
 	return &CPURenderer{
 		reference: reference,
@@ -28,28 +39,24 @@ func NewCPURenderer(reference *image.NRGBA, k int) *CPURenderer {
 		costFunc:  MSECost,
 		width:     width,
 		height:    height,
+		canvas:    canvas,
+		whiteBg:   whiteBg,
 	}
 }
 
 // Render creates an image from parameter vector
 func (r *CPURenderer) Render(params []float64) *image.NRGBA {
-	// Start with white canvas
-	img := image.NewNRGBA(image.Rect(0, 0, r.width, r.height))
-	white := color.NRGBA{255, 255, 255, 255}
-	for y := 0; y < r.height; y++ {
-		for x := 0; x < r.width; x++ {
-			img.Set(x, y, white)
-		}
-	}
+	// Reset canvas to white using fast copy (avoids allocation)
+	copy(r.canvas.Pix, r.whiteBg)
 
 	// Decode and render each circle
 	pv := &ParamVector{Data: params, K: r.k, Width: r.width, Height: r.height}
 	for i := 0; i < r.k; i++ {
 		circle := pv.DecodeCircle(i)
-		r.renderCircle(img, circle)
+		r.renderCircle(r.canvas, circle)
 	}
 
-	return img
+	return r.canvas
 }
 
 // Cost computes error between params and reference
@@ -75,17 +82,45 @@ func (r *CPURenderer) Reference() *image.NRGBA {
 
 // renderCircle composites a circle onto the image using premultiplied alpha
 func (r *CPURenderer) renderCircle(img *image.NRGBA, c Circle) {
-	// Compute bounding box
-	minX := int(math.Max(0, math.Floor(c.X-c.R)))
-	maxX := int(math.Min(float64(r.width-1), math.Ceil(c.X+c.R)))
-	minY := int(math.Max(0, math.Floor(c.Y-c.R)))
-	maxY := int(math.Min(float64(r.height-1), math.Ceil(c.Y+c.R)))
+	// Early-reject: circle is fully transparent
+	if c.Opacity < 0.001 {
+		return
+	}
+
+	// Compute AABB (Axis-Aligned Bounding Box)
+	minXf := c.X - c.R
+	maxXf := c.X + c.R
+	minYf := c.Y - c.R
+	maxYf := c.Y + c.R
+
+	// Early-reject: circle completely outside image bounds
+	if maxXf < 0 || minXf >= float64(r.width) || maxYf < 0 || minYf >= float64(r.height) {
+		return
+	}
+
+	// Clamp AABB to image bounds (use integer arithmetic)
+	minX := int(minXf)
+	if minX < 0 {
+		minX = 0
+	}
+	maxX := int(maxXf + 1) // +1 for ceiling
+	if maxX > r.width {
+		maxX = r.width
+	}
+	minY := int(minYf)
+	if minY < 0 {
+		minY = 0
+	}
+	maxY := int(maxYf + 1) // +1 for ceiling
+	if maxY > r.height {
+		maxY = r.height
+	}
 
 	r2 := c.R * c.R
 
-	// Scan bounding box
-	for y := minY; y <= maxY; y++ {
-		for x := minX; x <= maxX; x++ {
+	// Scan bounding box (note: using < instead of <= due to ceiling adjustment)
+	for y := minY; y < maxY; y++ {
+		for x := minX; x < maxX; x++ {
 			// Check if inside circle
 			dx := float64(x) - c.X
 			dy := float64(y) - c.Y
@@ -125,9 +160,9 @@ func compositePixel(img *image.NRGBA, x, y int, r, g, b, alpha float64) {
 	outG := (fgG + bgG*bgA*(1-fgA)) / outA
 	outB := (fgB + bgB*bgA*(1-fgA)) / outA
 
-	// Write back as 8-bit
-	img.Pix[i+0] = uint8(math.Round(outR * 255))
-	img.Pix[i+1] = uint8(math.Round(outG * 255))
-	img.Pix[i+2] = uint8(math.Round(outB * 255))
-	img.Pix[i+3] = uint8(math.Round(outA * 255))
+	// Write back as 8-bit (use int conversion with +0.5 for rounding, faster than math.Round)
+	img.Pix[i+0] = uint8(outR*255 + 0.5)
+	img.Pix[i+1] = uint8(outG*255 + 0.5)
+	img.Pix[i+2] = uint8(outB*255 + 0.5)
+	img.Pix[i+3] = uint8(outA*255 + 0.5)
 }

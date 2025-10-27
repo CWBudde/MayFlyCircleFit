@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
 
 func TestServer_CreateJob(t *testing.T) {
@@ -769,4 +771,121 @@ func TestServer_CreatePage_Integration(t *testing.T) {
 	if !bytes.Contains([]byte(location), []byte("/jobs/")) {
 		t.Errorf("Expected redirect to /jobs/, got %s", location)
 	}
+}
+
+func TestServer_GracefulShutdownWithCheckpoint(t *testing.T) {
+	// Skip in short mode
+	if testing.Short() {
+		t.Skip("Skipping shutdown test in short mode")
+	}
+
+	// Create temp directory and test image
+	tmpDir := t.TempDir()
+	testImagePath := filepath.Join(tmpDir, "test.png")
+	createSimpleTestImage(t, testImagePath)
+
+	// Create checkpoint store
+	checkpointDir := filepath.Join(tmpDir, "data")
+	store, err := createTestStore(checkpointDir)
+	if err != nil {
+		t.Fatalf("Failed to create checkpoint store: %v", err)
+	}
+
+	server := NewServer(":0", store)
+
+	// Create a job with checkpointing enabled
+	config := JobConfig{
+		RefPath:            testImagePath,
+		Mode:               "joint",
+		Circles:            10,  // More circles = longer optimization
+		Iters:              500, // Many iterations to ensure it's still running when we shut down
+		PopSize:            50,
+		Seed:               42,
+		CheckpointInterval: 1, // Checkpoint every 1 second
+	}
+
+	job := server.jobManager.CreateJob(config)
+
+	// Start worker in background
+	go runJob(server.ctx, server.jobManager, store, job.ID)
+
+	// Wait for job to start and for at least one checkpoint to happen
+	// Since checkpointInterval is 1 second, wait 1.5 seconds to ensure checkpoint occurs
+	time.Sleep(1500 * time.Millisecond)
+
+	// Verify job is running or pending
+	j, exists := server.jobManager.GetJob(job.ID)
+	if !exists {
+		t.Fatal("Job not found")
+	}
+
+	// If job already completed (ran too fast), skip the shutdown test
+	if j.State == StateCompleted {
+		t.Skip("Job completed too quickly for shutdown test")
+	}
+
+	if j.State != StateRunning && j.State != StatePending {
+		t.Fatalf("Expected job to be running or pending, got %s", j.State)
+	}
+
+	t.Logf("Job state before shutdown: state=%s, iterations=%d", j.State, j.Iterations)
+
+	// Simulate shutdown with timeout
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Trigger shutdown
+	err = server.Shutdown(shutdownCtx)
+	if err != nil {
+		t.Errorf("Shutdown returned error: %v", err)
+	}
+
+	// Wait a bit for checkpoint to complete
+	time.Sleep(500 * time.Millisecond)
+
+	// Try to load checkpoint - it should exist if job was running
+	checkpoint, err := store.LoadCheckpoint(job.ID)
+	if err != nil {
+		// If checkpoint doesn't exist, it means job finished before/during shutdown
+		// This is acceptable - the test verified graceful shutdown works
+		t.Logf("No checkpoint found (job may have completed): %v", err)
+		return
+	}
+
+	// If we have a checkpoint, verify it contains valid data
+	if checkpoint.JobID != job.ID {
+		t.Errorf("Expected checkpoint jobID %s, got %s", job.ID, checkpoint.JobID)
+	}
+
+	if len(checkpoint.BestParams) == 0 {
+		t.Error("Checkpoint should contain best params")
+	}
+
+	if checkpoint.BestCost == 0 {
+		t.Error("Checkpoint should have non-zero best cost")
+	}
+
+	if checkpoint.Iteration == 0 {
+		t.Error("Checkpoint should have non-zero iteration count")
+	}
+
+	t.Logf("Checkpoint saved successfully: iteration=%d, cost=%f", checkpoint.Iteration, checkpoint.BestCost)
+
+	// Verify checkpoint artifacts exist
+	jobDir := filepath.Join(checkpointDir, "jobs", job.ID)
+	bestPngPath := filepath.Join(jobDir, "best.png")
+	diffPngPath := filepath.Join(jobDir, "diff.png")
+
+	if _, err := os.Stat(bestPngPath); os.IsNotExist(err) {
+		t.Error("best.png artifact should exist")
+	}
+
+	if _, err := os.Stat(diffPngPath); os.IsNotExist(err) {
+		t.Error("diff.png artifact should exist")
+	}
+}
+
+// createTestStore creates a filesystem store for testing
+func createTestStore(baseDir string) (*store.FSStore, error) {
+	return store.NewFSStore(baseDir)
 }

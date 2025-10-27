@@ -29,10 +29,23 @@ Thumbs.db
 # Profiles
 *.prof
 *.pprof
+/profiles/
 
 # Output
 out.png
 diff.png
+
+# Runtime data (checkpoints, jobs, traces)
+/data/
+
+# Reference images for testing
+/refs/
+
+# Test output directories
+/test-resume-output/
+/test-sequential-resume/
+/test-batch-resume/
+/resumed/
 
 # Temp
 /tmp/

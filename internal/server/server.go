@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"log/slog"
 	"net/http"
+	"net/http/pprof"
 	"strings"
 	"time"
 
@@ -20,15 +21,20 @@ type Server struct {
 	store      store.Store
 	addr       string
 	server     *http.Server
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
 // NewServer creates a new HTTP server with optional checkpoint store.
 // If store is nil, checkpointing is disabled.
 func NewServer(addr string, checkpointStore store.Store) *Server {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
 		jobManager: NewJobManager(),
 		store:      checkpointStore,
 		addr:       addr,
+		ctx:        ctx,
+		cancel:     cancel,
 	}
 }
 
@@ -45,6 +51,13 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/v1/jobs", s.handleJobs)
 	mux.HandleFunc("/api/v1/jobs/", s.handleJobsWithID)
 
+	// Register pprof routes for profiling
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
 	// Wrap with middleware
 	handler := s.loggingMiddleware(s.corsMiddleware(mux))
 
@@ -60,10 +73,114 @@ func (s *Server) Start() error {
 // Shutdown gracefully shuts down the server
 func (s *Server) Shutdown(ctx context.Context) error {
 	slog.Info("Shutting down HTTP server")
+
+	// Cancel server context to signal workers to stop
+	s.cancel()
+
+	// Checkpoint all running jobs before shutdown
+	if s.store != nil {
+		s.checkpointRunningJobs(ctx)
+	}
+
+	// Shutdown HTTP server
 	if s.server != nil {
 		return s.server.Shutdown(ctx)
 	}
 	return nil
+}
+
+// checkpointRunningJobs saves checkpoints for all running jobs
+func (s *Server) checkpointRunningJobs(ctx context.Context) {
+	runningJobs := s.jobManager.GetRunningJobs()
+
+	if len(runningJobs) == 0 {
+		slog.Info("No running jobs to checkpoint")
+		return
+	}
+
+	slog.Info("Checkpointing running jobs", "count", len(runningJobs))
+
+	// Use a wait group to checkpoint jobs concurrently
+	type checkpointResult struct {
+		jobID string
+		err   error
+	}
+
+	results := make(chan checkpointResult, len(runningJobs))
+
+	for _, job := range runningJobs {
+		go func(j *Job) {
+			// Load reference image to create renderer
+			ref, err := loadReferenceImage(j.Config.RefPath)
+			if err != nil {
+				slog.Error("Failed to load reference for checkpoint",
+					"job_id", j.ID,
+					"error", err,
+				)
+				results <- checkpointResult{jobID: j.ID, err: err}
+				return
+			}
+
+			// Create renderer
+			renderer := fit.NewCPURenderer(ref, j.Config.Circles)
+
+			// Save checkpoint
+			err = saveCheckpoint(s.jobManager, s.store, renderer, j.ID)
+
+			// Re-fetch job to get updated values after potential checkpoint
+			job, exists := s.jobManager.GetJob(j.ID)
+			if !exists {
+				results <- checkpointResult{jobID: j.ID, err: fmt.Errorf("job not found")}
+				return
+			}
+
+			// Only log if checkpoint was actually saved (job has params)
+			if err != nil {
+				slog.Error("Failed to checkpoint job on shutdown",
+					"job_id", j.ID,
+					"error", err,
+				)
+			} else if len(job.BestParams) > 0 {
+				slog.Info("Job checkpointed on shutdown",
+					"job_id", j.ID,
+					"iteration", job.Iterations,
+					"best_cost", job.BestCost,
+				)
+			} else {
+				slog.Debug("Skipped checkpoint for job with no progress",
+					"job_id", j.ID,
+				)
+			}
+			results <- checkpointResult{jobID: j.ID, err: err}
+		}(job)
+	}
+
+	// Wait for all checkpoints to complete or timeout
+	checkpointed := 0
+	failed := 0
+
+	for i := 0; i < len(runningJobs); i++ {
+		select {
+		case result := <-results:
+			if result.err == nil {
+				checkpointed++
+			} else {
+				failed++
+			}
+		case <-ctx.Done():
+			slog.Warn("Checkpoint timeout during shutdown",
+				"checkpointed", checkpointed,
+				"failed", failed,
+				"pending", len(runningJobs)-checkpointed-failed,
+			)
+			return
+		}
+	}
+
+	slog.Info("Shutdown checkpoint complete",
+		"checkpointed", checkpointed,
+		"failed", failed,
+	)
 }
 
 // handleJobs handles /api/v1/jobs
@@ -138,7 +255,7 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	job := s.jobManager.CreateJob(config)
 
 	// Start worker in background with checkpoint store
-	go runJob(context.Background(), s.jobManager, s.store, job.ID)
+	go runJob(s.ctx, s.jobManager, s.store, job.ID)
 
 	// Return job
 	w.Header().Set("Content-Type", "application/json")
@@ -361,7 +478,7 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 	})
 
 	// Start worker in background with checkpoint store
-	go runJob(context.Background(), s.jobManager, s.store, newJob.ID)
+	go runJob(s.ctx, s.jobManager, s.store, newJob.ID)
 
 	// Return response
 	response := map[string]interface{}{

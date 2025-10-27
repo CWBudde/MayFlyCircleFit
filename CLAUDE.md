@@ -44,6 +44,16 @@ The binary is output to `./bin/mayflycirclefit`.
 
 **Note:** Templ files (`*.templ`) are automatically compiled to Go code (`*_templ.go`) which is gitignored.
 
+## Directory Structure
+
+- `assets/` - Example reference images bundled with the project
+- `bin/` - Compiled binaries (gitignored)
+- `cmd/` - CLI entry points and command definitions
+- `data/` - Runtime data (checkpoints, jobs, traces) (gitignored)
+- `docs/` - Documentation
+- `internal/` - Go packages (fit, opt, server, store, ui)
+- `refs/` - Reference images for testing (gitignored)
+
 ## Architecture
 
 The codebase follows a modular, interface-driven design with clear separation of concerns:
@@ -411,9 +421,188 @@ When implementing new optimizers:
 - Should support deterministic runs via configuration (seed)
 - Returns best parameters and best cost
 
+## Profiling and Performance Analysis
+
+MayFlyCircleFit includes comprehensive profiling support via Go's pprof tooling for identifying performance bottlenecks and optimizing CPU/memory usage.
+
+### CLI Profiling Flags
+
+Both `run` and `serve` commands support CPU and memory profiling:
+
+```bash
+# CPU profiling during single-shot optimization
+./bin/mayflycirclefit run --ref assets/test.png --circles 50 --iters 100 \
+  --cpuprofile cpu.prof
+
+# Memory profiling (written at end of optimization)
+./bin/mayflycirclefit run --ref assets/test.png --circles 50 --iters 100 \
+  --memprofile mem.prof
+
+# Both CPU and memory profiling
+./bin/mayflycirclefit run --ref assets/test.png --circles 50 --iters 100 \
+  --cpuprofile cpu.prof --memprofile mem.prof
+
+# Profiling the server (profiles until Ctrl+C shutdown)
+./bin/mayflycirclefit serve --port 8080 \
+  --cpuprofile server-cpu.prof --memprofile server-mem.prof
+```
+
+### HTTP Profiling Endpoints
+
+When running the server, live profiling data is available via `/debug/pprof/` endpoints:
+
+```bash
+# Start server
+./bin/mayflycirclefit serve --port 8080
+
+# View profiling index (browser)
+open http://localhost:8080/debug/pprof/
+
+# Capture 30-second CPU profile
+curl http://localhost:8080/debug/pprof/profile?seconds=30 > cpu.prof
+
+# Capture heap profile
+curl http://localhost:8080/debug/pprof/heap > heap.prof
+
+# Capture goroutine dump
+curl http://localhost:8080/debug/pprof/goroutine > goroutines.txt
+
+# Capture 5-second execution trace
+curl http://localhost:8080/debug/pprof/trace?seconds=5 > trace.out
+```
+
+### Analyzing Profile Data
+
+#### CPU Profile Analysis
+
+```bash
+# Interactive analysis (top, list, web commands)
+go tool pprof cpu.prof
+
+# Generate flamegraph (requires graphviz)
+go tool pprof -http=:8081 cpu.prof
+
+# Text report of top functions by CPU time
+go tool pprof -top cpu.prof
+
+# List specific function's CPU usage
+go tool pprof -list=Render cpu.prof
+```
+
+#### Memory Profile Analysis
+
+```bash
+# Interactive heap analysis
+go tool pprof mem.prof
+
+# Web-based visualization
+go tool pprof -http=:8081 mem.prof
+
+# Show memory allocations
+go tool pprof -alloc_space mem.prof
+
+# Show in-use memory
+go tool pprof -inuse_space mem.prof
+```
+
+#### Execution Trace Analysis
+
+```bash
+# View trace in browser (detailed goroutine/timing info)
+go tool trace trace.out
+```
+
+### Common Profiling Workflows
+
+#### Finding CPU Hotspots
+
+```bash
+# 1. Run optimization with CPU profiling
+./bin/mayflycirclefit run --ref assets/test.png --circles 100 --iters 200 \
+  --cpuprofile cpu.prof
+
+# 2. Analyze top functions
+go tool pprof -top cpu.prof
+
+# 3. Generate flamegraph for visual analysis
+go tool pprof -http=:8081 cpu.prof
+```
+
+#### Identifying Memory Leaks
+
+```bash
+# 1. Start server with long-running jobs
+./bin/mayflycirclefit serve --memprofile mem.prof
+
+# 2. Create several jobs via API
+# ... let jobs run ...
+
+# 3. Shutdown server (Ctrl+C) to write memory profile
+
+# 4. Analyze heap allocations
+go tool pprof -alloc_space mem.prof
+go tool pprof -inuse_space mem.prof
+```
+
+#### Profiling Specific Workloads
+
+```bash
+# Small image (64x64, 10 circles)
+./bin/mayflycirclefit run --ref small.png --circles 10 --iters 100 \
+  --cpuprofile small-cpu.prof --memprofile small-mem.prof
+
+# Large image (512x512, 100 circles)
+./bin/mayflycirclefit run --ref large.png --circles 100 --iters 200 \
+  --cpuprofile large-cpu.prof --memprofile large-mem.prof
+
+# Compare profiles
+go tool pprof -top small-cpu.prof > small-report.txt
+go tool pprof -top large-cpu.prof > large-report.txt
+diff small-report.txt large-report.txt
+```
+
+### Profiling Best Practices
+
+1. **Use representative workloads**: Profile with realistic image sizes and circle counts
+2. **Run multiple iterations**: Longer runs provide more accurate profiling data
+3. **Profile before optimizing**: Establish baseline performance metrics
+4. **Profile after optimizing**: Verify improvements and identify new bottlenecks
+5. **Focus on hot paths**: Optimize functions consuming >10% CPU time first
+6. **Check memory allocations**: Look for unnecessary allocations in tight loops
+7. **Compare profiles**: Use `-base` flag to compare before/after profiles:
+   ```bash
+   go tool pprof -base=baseline.prof optimized.prof
+   ```
+
+### Interpreting pprof Output
+
+**CPU Profile Metrics:**
+- `flat`: Time spent in function itself (excluding callees)
+- `cum`: Cumulative time (including callees)
+- Focus on high `flat` values in hot loops
+
+**Memory Profile Metrics:**
+- `alloc_space`: Total bytes allocated (even if later freed)
+- `inuse_space`: Bytes currently in use
+- High `alloc_space` indicates GC pressure
+
+**Common Bottlenecks:**
+- Circle rasterization (pixel loops)
+- Alpha compositing calculations
+- Cost function evaluation (MSE computation)
+- Image buffer allocations
+
+### Performance Targets
+
+Based on profiling analysis, optimization goals:
+- **Rendering**: >1000 circles/second on modern CPU
+- **Memory**: <100MB heap for typical workloads (256x256, 50 circles)
+- **Allocations**: Minimize allocations in rendering hot path
+- **Goroutines**: Keep goroutine count proportional to GOMAXPROCS
+
 ## Project Status
 
-Currently completed **Phase 7** (Frontend with templ) according to PLAN.md. Phases 1-7 are complete:
+Currently completed **Phase 8** (Persistence & Checkpoints) according to PLAN.md. Phases 1-8 are complete:
 - Phase 1: Core domain model (Circle, ParamVector, Bounds, MSECost) - ✅ COMPLETE
 - Phase 2: CPU Renderer with alpha compositing - ✅ COMPLETE
 - Phase 3: Mayfly Algorithm - ✅ COMPLETE
@@ -430,8 +619,20 @@ Currently completed **Phase 7** (Frontend with templ) according to PLAN.md. Phas
   - Job creation form with validation
   - End-to-end UI testing
   - Comprehensive documentation
+- Phase 8: Persistence & Checkpoints - ✅ COMPLETE (All tasks 8.1-8.11 complete)
+  - Filesystem-based checkpoint storage with atomic writes
+  - Checkpoint data structures with validation
+  - Periodic checkpointing infrastructure (limited by optimizer library)
+  - Trace logging (JSONL format)
+  - Resume capability for joint mode optimization
+  - CLI resume command (local and server modes)
+  - Server resume endpoint
+  - Graceful shutdown with checkpoint save
+  - Checkpoint management utilities (list, clean)
+  - End-to-end testing with comprehensive test report
+  - **Known limitation:** Periodic checkpointing during optimization not possible due to Mayfly optimizer library constraints (no iteration callbacks). Checkpoints saved on graceful shutdown.
 
-**Next Phase:** Phase 8 (Persistence & Checkpoints) - See PLAN.md for detailed implementation roadmap through Phase 13.
+**Next Phase:** Phase 9 (Performance Profiling & Fast Paths) - See PLAN.md for detailed implementation roadmap through Phase 13.
 
 ## API Usage Examples
 
