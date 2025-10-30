@@ -1,4 +1,4 @@
-package fit
+package renderer
 
 import "image"
 
@@ -19,3 +19,6 @@ type Renderer interface {
 	// Reference returns the reference image
 	Reference() *image.NRGBA
 }
+
+// noopCleanup is a no-op cleanup function used when no cleanup is needed
+var noopCleanup = func() {}

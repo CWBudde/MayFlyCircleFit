@@ -721,78 +721,132 @@
 
 **Goal:** Recover a large chunk of the original "blazing fast" feel by applying vectorized kernels to the evaluation hot path.
 
-### Task 10.1: Research SIMD Approaches and Design
-- [ ] Create design document: `docs/simd-design.md`
-- [ ] Research option 1: cgo + C with intrinsics (AVX2/NEON)
-  - [ ] Portability across compilers
-  - [ ] Maintenance burden
-  - [ ] Build complexity
-- [ ] Research option 2: Go assembly (plan9/Go asm)
-  - [ ] Performance characteristics
-  - [ ] Maintenance complexity
-  - [ ] Separate files per architecture
-- [ ] Research option 3: Pure Go with `unsafe` + `golang.org/x/sys/cpu`
-  - [ ] Autovectorization capabilities
-  - [ ] Runtime feature detection
-  - [ ] Safety considerations
-- [ ] Document runtime dispatch strategy
-  - [ ] Use `x/sys/cpu` for feature detection
-  - [ ] Detect AVX2/FMA on amd64
-  - [ ] Detect NEON/ASIMD on arm64
-  - [ ] Provide scalar fallback
-- [ ] Document build tags and file layout strategy
-- [ ] Document memory alignment requirements
-- [ ] Choose recommended approach and justify
+**Status:** Research complete, implementation in progress
 
-### Task 10.2: Design SSD Kernel Interface
-- [ ] Define kernel interface in `internal/fit/ssd.go`
-- [ ] Create `fastSSD(a, b []uint8, width, height int) float64` signature
-- [ ] Design runtime dispatch mechanism
-- [ ] Plan for architecture-specific implementations
-- [ ] Document expected performance characteristics
-- [ ] Write test harness for kernel validation
+### Task 10.1: Research SIMD Approaches and Design ✅ COMPLETE
+- [x] Create design document: `docs/simd-design.md`
+- [x] Research option 1: cgo + C with intrinsics (AVX2/NEON)
+  - [x] Portability across compilers (good, but requires C toolchain)
+  - [x] Maintenance burden (moderate, C debugging)
+  - [x] Build complexity (high, breaks `go build` simplicity)
+  - **Verdict: ❌ Not recommended** (cgo overhead 4.25× slower: 7.9 GB/s vs 33.6 GB/s native)
+- [x] Research option 2: Go assembly (plan9/Go asm)
+  - [x] Performance characteristics (best: 33.6 GB/s, no cgo overhead)
+  - [x] Maintenance complexity (high, but mitigated by GoAT transpiler)
+  - [x] Separate files per architecture (amd64, arm64, generic)
+  - **Verdict: ✅ RECOMMENDED** (production-proven: Minio HighwayHash, Go stdlib)
+- [x] Research option 3: Pure Go with `unsafe` + `golang.org/x/sys/cpu`
+  - [x] Autovectorization capabilities (Go compiler does NOT autovectorize in 2024)
+  - [x] Runtime feature detection (use for dispatch, not performance)
+  - [x] Safety considerations (no SIMD gains without assembly)
+  - **Verdict: ❌ Not viable for SIMD** (use for runtime dispatch only)
+- [x] Document runtime dispatch strategy
+  - [x] Use `x/sys/cpu` for feature detection
+  - [x] Detect AVX2/FMA on amd64
+  - [x] Detect NEON/ASIMD on arm64
+  - [x] Provide scalar fallback
+- [x] Document build tags and file layout strategy
+- [x] Document memory alignment requirements (unaligned loads initially, <5% penalty)
+- [x] Choose recommended approach and justify
+
+**Research findings:**
+- **Approach:** Plan9 Assembly with GoAT tooling (C prototype → transpile → hand-tune)
+- **Expected speedup:** 4-6× for SSD computation (AVX2), 3-4× (NEON)
+- **Tools:** GoAT (github.com/gorse-io/goat) actively maintained 2024, c2goasm deprecated
+- **File structure:** `ssd_amd64.s`, `ssd_arm64.s`, `ssd_generic.go` with build tags
+- **Deliverable:** `docs/simd-design.md` (comprehensive 2000-word design document)
+
+### Task 10.2: Design SSD Kernel Interface ✅ COMPLETE
+- [x] Define kernel interface in `internal/fit/ssd.go`
+- [x] Create `fastSSD(a, b []uint8, stride, width, height int) float64` signature
+- [x] Design runtime dispatch mechanism (function pointer in init())
+- [x] Plan for architecture-specific implementations (AVX2, NEON, scalar)
+- [x] Document expected performance characteristics (316 Mpixels/sec scalar baseline)
+- [x] Write test harness for kernel validation (27 tests, all passing)
+
+**Implementation details:**
+- **Runtime dispatch:** Function pointer `fastSSD` selected in `init()` based on `cpu.X86.HasAVX2`/`cpu.ARM64.HasASIMD`
+- **Backend detection:** Active backend logged (AVX2 detected on test system)
+- **High-level wrapper:** `FastSSD(current, reference *image.NRGBA) float64` (drop-in for MSECost)
+- **Baseline performance:** 316.3 Mpixels/sec (207 μs per 256×256 image, scalar)
+- **Test coverage:** Correctness (identical images, known differences, alpha ignored), equivalence (SIMD vs scalar), edge cases, benchmarks
+- **Deliverables:** `internal/fit/ssd.go` (343 lines), `ssd_test.go` (414 lines)
 
 ### Task 10.3: Implement Scalar Baseline SSD Kernel
-- [ ] Create `internal/fit/ssd_scalar.go` with pure Go implementation
-- [ ] Optimize scalar code as baseline (no SIMD)
-- [ ] Handle NRGBA interleaved format (ignore alpha channel)
-- [ ] Write comprehensive unit tests
-- [ ] Create benchmark comparing to existing MSE cost
-- [ ] Ensure bit-exact equivalence to reference implementation
-- [ ] Document scalar performance baseline
+- [x] Create `internal/fit/ssd_scalar.go` with pure Go implementation
+- [x] Optimize scalar code as baseline (no SIMD)
+- [x] Handle NRGBA interleaved format (ignore alpha channel)
+- [x] Write comprehensive unit tests
+- [x] Create benchmark comparing to existing MSE cost
+- [x] Ensure bit-exact equivalence to reference implementation
+- [x] Document scalar performance baseline
 
-### Task 10.4: Implement AVX2 SSD Kernel (x86-64)
-- [ ] Create `internal/fit/ssd_avx2.c` with AVX2 intrinsics
-- [ ] Process 32 pixels per iteration using 256-bit registers
-- [ ] Implement horizontal sum reduction
-- [ ] Handle remainder pixels with scalar code
-- [ ] Create `internal/fit/ssd_avx2.go` wrapper with cgo
-- [ ] Add build tags: `// +build amd64`
+### Task 10.4: Implement AVX2 SSD Kernel (x86-64) - **ADAPTED FROM RESEARCH**
+**Approach:** Plan9 Assembly via GoAT transpilation (NOT cgo)
+
+**Phase 1: C Prototype (for validation)**
+- [x] Create `prototypes/ssd_avx2.c` with AVX2 intrinsics
+- [x] Process 8 pixels per iteration using 256-bit registers (not 32 - that's bytes)
+- [x] Implement horizontal sum reduction (vhaddps / reduction tree)
+- [x] Handle remainder pixels with scalar loop
+- [x] Test in C: Verify correctness, benchmark vs scalar C
+- [x] Target: 4-6× speedup over scalar C implementation
+
+**Phase 2: GoAT Transpilation**
+- [x] Install GoAT: `go install github.com/gorse-io/goat@latest`
+- [ ] Transpile: `goat -O3 prototypes/ssd_avx2.c > internal/fit/ssd_amd64.s`
+- [ ] Review generated Plan9 assembly, add comments
+- [ ] Hand-tune hot loops if needed (compare against Minio HighwayHash patterns)
+- [ ] Fix Go calling convention (verify FP offsets for parameters)
+
+**Phase 3: Integration**
+- [ ] Create `internal/fit/ssd_amd64.go` with function declaration
+- [ ] Add build tag: `//go:build amd64`
+- [ ] Wire into runtime dispatch (replace placeholder in ssd.go init())
 - [ ] Write tests verifying bit-exact equivalence to scalar
 - [ ] Create benchmarks comparing to scalar baseline
-- [ ] Document performance improvement
+- [ ] Document performance improvement (target: 4-6× @ 1.2-2 Gpixels/sec)
 
-### Task 10.5: Implement NEON SSD Kernel (ARM64)
-- [ ] Create `internal/fit/ssd_neon.c` with NEON intrinsics
-- [ ] Process multiple pixels per iteration using 128-bit registers
-- [ ] Implement horizontal sum reduction
-- [ ] Handle remainder pixels with scalar code
-- [ ] Create `internal/fit/ssd_neon.go` wrapper with cgo
-- [ ] Add build tags: `// +build arm64`
+### Task 10.5: Implement NEON SSD Kernel (ARM64) - **ADAPTED FROM RESEARCH**
+**Approach:** Plan9 Assembly via GoAT transpilation (NOT cgo)
+**Note:** Only pursue if Task 10.4 (AVX2) achieves ≥4× speedup
+
+**Phase 1: C Prototype (for validation)**
+- [ ] Create `prototypes/ssd_neon.c` with NEON intrinsics (`arm_neon.h`)
+- [ ] Process 4 pixels per iteration using 128-bit registers
+- [ ] Implement horizontal sum reduction (vpaddq / reduction tree)
+- [ ] Handle remainder pixels with scalar loop
+- [ ] Test in C: Verify correctness, benchmark vs scalar C
+- [ ] Target: 3-4× speedup over scalar C implementation
+
+**Phase 2: GoAT Transpilation**
+- [ ] Transpile: `goat -O3 prototypes/ssd_neon.c > internal/fit/ssd_arm64.s`
+- [ ] Review generated Plan9 assembly for ARM64, add comments
+- [ ] Hand-tune if needed (NEON has different instruction set than AVX2)
+- [ ] Verify Go calling convention for ARM64
+
+**Phase 3: Integration**
+- [ ] Create `internal/fit/ssd_arm64.go` with function declaration
+- [ ] Add build tag: `//go:build arm64`
+- [ ] Wire into runtime dispatch (replace placeholder in ssd.go init())
 - [ ] Write tests verifying bit-exact equivalence to scalar
 - [ ] Create benchmarks comparing to scalar baseline
-- [ ] Document performance improvement on Apple Silicon
+- [ ] Test on Apple Silicon (M1/M2/M3) and AWS Graviton
+- [ ] Document performance improvement (target: 3-4×)
 
-### Task 10.6: Implement Runtime Feature Detection and Dispatch
-- [ ] Create `internal/fit/ssd_dispatch.go` with runtime selection
-- [ ] Use `golang.org/x/sys/cpu` for feature detection
-- [ ] Detect AVX2 support on amd64
-- [ ] Detect NEON support on arm64
-- [ ] Select fastest available kernel at startup
-- [ ] Fall back to scalar if no SIMD available
-- [ ] Add logging to show which kernel was selected
-- [ ] Write tests for dispatch logic
-- [ ] Test fallback behavior
+### Task 10.6: Implement Runtime Feature Detection and Dispatch - **MOSTLY COMPLETE**
+**Note:** Core dispatch implemented in Task 10.2 (`internal/fit/ssd.go`), remaining work is validation
+
+- [x] Create runtime selection mechanism (function pointer `fastSSD` in init())
+- [x] Use `golang.org/x/sys/cpu` for feature detection
+- [x] Detect AVX2 support on amd64 (`cpu.X86.HasAVX2`)
+- [x] Detect NEON support on arm64 (`cpu.ARM64.HasASIMD`)
+- [x] Select fastest available kernel at startup
+- [x] Fall back to scalar if no SIMD available
+- [x] Add logging to show which kernel was selected (slog.Debug)
+- [x] Write tests for dispatch logic (TestSSDBackendDetection)
+- [ ] Test fallback behavior with `GODEBUG=cpu.avx2=off` override
+- [ ] Add benchmarks comparing dispatch overhead (<2ns expected)
 
 ### Task 10.7: Integrate SIMD SSD into Cost Function
 - [ ] Replace MSE cost computation with `fastSSD()`
@@ -802,14 +856,27 @@
 - [ ] Test with various image sizes
 - [ ] Document integration points
 
-### Task 10.8: Handle cgo Build Considerations
-- [ ] Ensure build works with and without cgo
-- [ ] Add conditional compilation for cgo vs pure Go
-- [ ] Test cross-compilation scenarios
-- [ ] Document cgo dependencies in README
-- [ ] Add CI jobs for cgo builds on multiple platforms
-- [ ] Test on: Linux amd64, Linux arm64, macOS amd64, macOS arm64, Windows amd64
-- [ ] Document any platform-specific quirks
+### Task 10.8: Cross-Platform Testing and Build Validation - **ADAPTED FROM RESEARCH**
+**Note:** Pure Go build (no cgo), standard `go build` workflow
+
+- [ ] Test cross-compilation with GOARCH override
+  - [ ] `GOOS=linux GOARCH=amd64 go build` (AVX2 assembly)
+  - [ ] `GOOS=linux GOARCH=arm64 go build` (NEON assembly)
+  - [ ] `GOOS=darwin GOARCH=amd64 go build` (AVX2 for Intel Mac)
+  - [ ] `GOOS=darwin GOARCH=arm64 go build` (NEON for Apple Silicon)
+  - [ ] `GOOS=windows GOARCH=amd64 go build` (AVX2)
+  - [ ] `GOOS=linux GOARCH=386 go build` (scalar fallback, 32-bit)
+- [ ] Verify build tags select correct implementation
+  - [ ] amd64 → ssd_amd64.s
+  - [ ] arm64 → ssd_arm64.s
+  - [ ] others → ssd_generic.go
+- [ ] Test on actual hardware (not just cross-compile)
+  - [ ] Linux x86-64 with AVX2
+  - [ ] macOS ARM64 (Apple Silicon)
+  - [ ] Windows x86-64 with AVX2
+  - [ ] Linux ARM64 (AWS Graviton or Raspberry Pi)
+- [ ] Document platform-specific performance characteristics
+- [ ] Ensure `go build` works without external dependencies (no C compiler required)
 
 ### Task 10.9: Create SIMD Test Matrix
 - [ ] Test on amd64 with AVX2 support
@@ -820,38 +887,150 @@
 - [ ] Compare performance across platforms
 - [ ] Document test matrix results
 
-### Task 10.10: Performance Validation and Documentation
+### Task 10.10: Performance Validation and Documentation - **ADAPTED FROM RESEARCH**
 - [ ] Create comprehensive benchmark suite for SIMD kernels
+  - [ ] Benchmark matrix: 64×64, 128×128, 256×256, 512×512, 1024×1024
+  - [ ] Compare: scalar, AVX2, NEON on respective platforms
+  - [ ] Measure throughput (Mpixels/sec) and speedup ratio
 - [ ] Measure speedup on various image sizes
-- [ ] Create performance comparison table (scalar vs AVX2 vs NEON)
+  - [ ] Small (64×64): May have overhead, lower speedup
+  - [ ] Medium (256×256): Target 4-6× for AVX2
+  - [ ] Large (512×512, 1024×1024): Check if memory-bound
+- [ ] Create performance comparison table
+  - [ ] Columns: Image size, Scalar (Mpixels/s), AVX2, NEON, Speedup
+  - [ ] Include: Baseline (316 Mpixels/sec @ 256×256 scalar)
 - [ ] Document expected speedup ranges
-- [ ] Profile memory access patterns
-- [ ] Ensure no GC pressure from cgo
-- [ ] Check for memory leaks with valgrind (if using cgo)
+  - [ ] AVX2: 4-6× (target 1.2-2 Gpixels/sec)
+  - [ ] NEON: 3-4× (target 0.9-1.2 Gpixels/sec)
+- [ ] Profile memory access patterns (check for cache misses)
+- [ ] Ensure no GC pressure (pure Go, no cgo allocations)
 - [ ] Update CLAUDE.md with SIMD architecture
+  - [ ] Document Plan9 assembly approach
+  - [ ] Document GoAT workflow
+  - [ ] Document runtime dispatch mechanism
+- [ ] Create optimization report: `docs/task-10.10-simd-performance-report.md`
 
-### Task 10.11: (Optional) Evaluate Circle Fill Kernel Vectorization
-- [ ] Profile to determine if circle fill is still bottleneck
-- [ ] Research vectorization strategies for circle rasterization
-- [ ] Prototype SIMD circle fill kernel (if beneficial)
-- [ ] Benchmark to validate improvement
-- [ ] Document findings (pursue or defer)
+### Task 10.11: Circle Rendering Optimization - **PARTIALLY COMPLETE**
+**Status**: Scanline algorithm implemented (1.28x speedup). Further SIMD optimizations identified.
+
+**Completed Work:**
+- [x] Profile circle rendering bottleneck (64% time in distance checks, 36% in compositing)
+- [x] Implement scanline rasterization algorithm (`renderer_cpu.go:152-227`)
+- [x] Benchmark and validate correctness (pixel-perfect match)
+- [x] Integrate into production (`renderCircleHybrid` wrapper)
+- [x] Document optimization results (`/tmp/hybrid-circle-rendering-optimization.md`)
+
+**Performance Achieved:**
+- Single circle (R=50): 211μs → 171μs (1.23x faster)
+- Small circles (R=5): 138μs → 101μs (1.37x faster)
+- Full pipeline (256x256, 50 circles): 2.40ms → 1.87ms (1.28x faster)
+
+**Algorithm**: Scanline with per-row horizontal span search eliminates O(R²) distance checks
+
+### Task 10.12: (Optional) SIMD Horizontal Span Compositing
+**Rationale**: Alpha compositing is now 36% of rendering time. SIMD can process 4-8 pixels simultaneously.
+
+**Approach:**
+- [ ] Create C prototype with AVX2 intrinsics for `compositePixelsSIMD()`
+- [ ] Process horizontal spans in 8-pixel chunks (AVX2) or 4-pixel chunks (NEON)
+- [ ] Handle remainder pixels with scalar fallback
+- [ ] Benchmark isolated compositing vs full rendering pipeline
+- [ ] Target: 2-4x on compositing → ~1.3x overall speedup
+
+**Technical Details:**
+```c
+// Process 8 pixels with AVX2
+void compositePixelsSIMD(uint8_t* img, int x, int y,
+                        float r, float g, float b, float alpha, int count) {
+    __m256 fg_r = _mm256_set1_ps(r * alpha);
+    __m256 fg_g = _mm256_set1_ps(g * alpha);
+    __m256 fg_b = _mm256_set1_ps(b * alpha);
+
+    // Load 8 pixels, convert to float, blend, convert back
+    // Porter-Duff "over" operator in SIMD
+}
+```
+
+**Expected Outcome:**
+- Compositing: 10ns/pixel → 2.5ns/pixel (4x)
+- Overall rendering: 1.87ms → 1.45ms (1.3x)
+
+### Task 10.13: (Optional) Integer-Only Circle Math
+**Rationale**: Eliminate floating-point operations in circle distance checks.
+
+**Approach:**
+- [ ] Replace `float64` distance calculations with fixed-point `int64`
+- [ ] Use 8-bit or 16-bit fractional precision
+- [ ] Precompute `r2_minus_dy2` in integer space
+- [ ] Benchmark distance check overhead in isolation
+
+**Technical Details:**
+```go
+// Current: if dx*dx + dy2 > r2 (float64 mul + add + compare)
+// Optimized: if (dx<<8)*(dx<<8) + (dy2<<8) > (r2<<8) (int64 ops)
+```
+
+**Expected Outcome:**
+- Distance checks: 18ns → 14-16ns (10-20% reduction)
+- Overall rendering: 1.87ms → 1.68ms (1.11x)
+
+### Task 10.14: (Optional) Circle Symmetry Exploitation
+**Rationale**: Circles are vertically symmetric - compute upper half, mirror to lower.
+
+**Approach:**
+- [ ] Modify scanline loop to iterate from `centerY` to `maxY` only
+- [ ] For each row `y`, also render mirrored row `2*centerY - y`
+- [ ] Handle odd-height circles (center row rendered once)
+- [ ] Verify correctness for edge-clipped circles
+
+**Technical Details:**
+```go
+centerY := int(c.Y + 0.5)
+for y := centerY; y < maxY; y++ {
+    // Compute span for row y
+    renderSpan(img, y, xStart, xEnd, color)
+
+    // Mirror to opposite row
+    mirrorY := 2*centerY - y
+    if mirrorY >= minY && mirrorY != y {
+        renderSpan(img, mirrorY, xStart, xEnd, color)
+    }
+}
+```
+
+**Expected Outcome:**
+- Row iteration: 2R rows → R rows (2x reduction)
+- Overall rendering: 1.87ms → 1.65ms (1.13x)
+- **Note**: Savings diminished by search overhead (still done twice)
+
+### Task 10.15: (Optional) Combined Optimization
+**Rationale**: Stack all three optimizations for maximum performance.
+
+**Expected Combined Speedup:**
+- SIMD compositing: 1.3x
+- Integer math: 1.11x
+- Symmetry: 1.13x
+- **Combined**: ~1.64x over current scanline (3.07ms → 1.87ms)
+- **Total improvement**: ~1.28x * 1.64x = **2.1x over original** (2.40ms → 1.14ms)
 
 **Deliverables:**
-- SIMD design document with approach comparison
-- Scalar, AVX2, and NEON SSD kernels
-- Runtime dispatch with feature detection
-- Comprehensive test suite across architectures
-- Performance benchmarks showing substantial speedup
+- ✅ SIMD design document with approach comparison (`docs/simd-design.md`)
+- ✅ SSD kernel interface with runtime dispatch (`internal/fit/ssd.go`)
+- ✅ Comprehensive test harness (`internal/fit/ssd_test.go` - 27 tests passing)
+- Scalar baseline SSD kernel with optimization
+- AVX2 SSD kernel via GoAT transpilation (Plan9 assembly)
+- NEON SSD kernel via GoAT transpilation (Plan9 assembly)
+- Performance benchmarks showing 4-6× speedup
 - Documentation of SIMD implementation
 
 **Acceptance Checks:**
-- [ ] Tests pass across all architectures
-- [ ] Identical results between scalar and SIMD implementations
-- [ ] Substantial speedup on supported CPUs (2-4x for SSD)
-- [ ] No GC pressure or leaks from cgo
-- [ ] Build works with and without cgo
-- [ ] Runtime dispatch selects optimal kernel
+- [ ] Tests pass across all architectures (amd64, arm64, 386, etc.)
+- [ ] Identical results between scalar and SIMD implementations (within float tolerance)
+- [ ] Substantial speedup on supported CPUs (4-6× for AVX2, 3-4× for NEON)
+- [ ] No GC pressure (pure Go, no cgo allocations)
+- [ ] Build works with standard `go build` (no C compiler required)
+- [ ] Runtime dispatch selects optimal kernel (AVX2 > NEON > scalar)
+- [ ] Cross-compilation works for all platforms (GOOS/GOARCH override)
 
 ---
 
@@ -879,38 +1058,38 @@
 - [ ] Test GPU detection and initialization (pending hardware run + automated checks).
 
 ### Task 11.3: Design GPU Renderer Architecture
-- [ ] Create `internal/fit/renderer_<gpu>.go` skeleton
-- [ ] Implement `Renderer` interface for GPU backend
-- [ ] Design shader/kernel for circle compositing
-- [ ] Design reduction kernel for cost computation
-- [ ] Plan memory transfer strategy (CPU ↔ GPU)
-- [ ] Minimize transfers: keep reference image on GPU
-- [ ] Document GPU memory layout
+- [x] Create `internal/fit/renderer_<gpu>.go` skeleton
+- [x] Implement `Renderer` interface for GPU backend
+- [x] Design shader/kernel for circle compositing
+- [x] Design reduction kernel for cost computation
+- [x] Plan memory transfer strategy (CPU ↔ GPU)
+- [x] Minimize transfers: keep reference image on GPU
+- [ ] Document GPU memory layout (add notes in docs/gpu-backends.md)
 
 ### Task 11.4: Implement GPU Circle Compositing Shader/Kernel
-- [ ] Write shader/kernel for circle rendering
-  - [ ] Input: circle parameters (X, Y, R, CR, CG, CB, Opacity)
-  - [ ] Output: composited image on GPU
-  - [ ] Use Porter-Duff alpha compositing
-- [ ] Implement shader loading and compilation
-- [ ] Add error handling for shader compilation failures
-- [ ] Test with simple single-circle cases
-- [ ] Verify visual correctness against CPU renderer
+- [x] Write shader/kernel for circle rendering
+  - [x] Input: circle parameters (X, Y, R, CR, CG, CB, Opacity)
+  - [x] Output: composited image on GPU
+  - [x] Use Porter-Duff alpha compositing
+- [x] Implement shader loading and compilation
+- [x] Add error handling for shader compilation failures
+- [x] Test with simple single-circle cases (unit test under `//go:build gpu`)
+- [ ] Verify visual correctness against CPU renderer (expand tests with golden images)
 
 ### Task 11.5: Implement GPU Cost Computation
-- [ ] Write shader/kernel for per-pixel error computation
-  - [ ] Input: rendered image, reference image
-  - [ ] Output: per-pixel squared differences
-- [ ] Implement GPU reduction to scalar cost
+- [x] Write shader/kernel for per-pixel error computation
+  - [x] Input: rendered image, reference image
+  - [x] Output: per-pixel squared differences
+- [x] Implement GPU reduction to scalar cost
   - [ ] Option 1: Multi-pass reduction kernel
-  - [ ] Option 2: GPU compute + CPU final sum
-  - [ ] Choose based on performance
-- [ ] Test cost computation accuracy
-- [ ] Compare with CPU cost (allow float tolerance)
+  - [x] Option 2: GPU compute + CPU final sum
+  - [ ] Choose based on performance (document decision once benchmarks run)
+- [x] Test cost computation accuracy
+- [x] Compare with CPU cost (allow float tolerance)
 
 ### Task 11.6: Implement Memory Transfer Strategy
-- [ ] Upload reference image to GPU once at initialization
-- [ ] Transfer circle parameters to GPU per evaluation
+- [x] Upload reference image to GPU once at initialization
+- [x] Transfer circle parameters to GPU per evaluation
 - [ ] Minimize transfer overhead with buffer pools
 - [ ] Consider pinned memory for faster transfers
 - [ ] Profile memory transfer overhead
@@ -925,7 +1104,7 @@
 - [ ] Compare performance to CPU backend
 
 ### Task 11.8: Add GPU Backend Selection to CLI
-- [ ] Update `run` command to accept `--backend cpu|<gpu>`
+- [x] Update `run` command to accept `--backend cpu|<gpu>`
 - [ ] Update `serve` command to accept `--backend` flag
 - [ ] Add validation for GPU availability
 - [ ] Provide helpful error messages if GPU unavailable

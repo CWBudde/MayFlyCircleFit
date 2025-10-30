@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 	"github.com/spf13/cobra"
@@ -153,7 +153,7 @@ func runResumeLocal(jobID string) error {
 	}
 
 	// Create renderer
-	renderer := fit.NewCPURenderer(ref, checkpoint.Config.Circles)
+	rend := renderer.NewCPURenderer(ref, checkpoint.Config.Circles)
 
 	// Create optimizer
 	optimizer := opt.NewMayfly(checkpoint.Config.Iters, checkpoint.Config.PopSize, checkpoint.Config.Seed)
@@ -173,14 +173,14 @@ func runResumeLocal(jobID string) error {
 
 	switch checkpoint.Config.Mode {
 	case "joint":
-		lower, upper := renderer.Bounds()
+		lower, upper := rend.Bounds()
 		bestParams, bestCost = resumable.RunWithInitial(
 			checkpoint.BestParams,
 			checkpoint.BestCost,
-			renderer.Cost,
+			rend.Cost,
 			lower,
 			upper,
-			renderer.Dim(),
+			rend.Dim(),
 		)
 	case "sequential", "batch":
 		return fmt.Errorf("resume not yet supported for mode: %s", checkpoint.Config.Mode)
@@ -215,7 +215,7 @@ func runResumeLocal(jobID string) error {
 	}
 
 	// Render and save best image
-	bestImg := renderer.Render(bestParams)
+	bestImg := rend.Render(bestParams)
 	bestPath := filepath.Join(resumeOutputDir, fmt.Sprintf("%s_resumed.png", jobID))
 	if err := saveImage(bestImg, bestPath); err != nil {
 		return fmt.Errorf("failed to save output image: %w", err)

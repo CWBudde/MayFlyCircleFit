@@ -138,11 +138,15 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 
 	// Extract and validate form fields
 	refPath := r.FormValue("refPath")
+	canvasPath := r.FormValue("canvasPath")
 	mode := r.FormValue("mode")
 	circlesStr := r.FormValue("circles")
 	itersStr := r.FormValue("iters")
 	popSizeStr := r.FormValue("popSize")
 	seedStr := r.FormValue("seed")
+	convergenceEnabledStr := r.FormValue("convergenceEnabled")
+	convergencePatienceStr := r.FormValue("convergencePatience")
+	convergenceThresholdStr := r.FormValue("convergenceThreshold")
 
 	// Validate required fields
 	if refPath == "" {
@@ -186,14 +190,40 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse convergence fields (with defaults)
+	convergenceEnabled := convergenceEnabledStr == "on" // checkbox is "on" when checked, empty otherwise
+	convergencePatience := 3 // default
+	if convergencePatienceStr != "" {
+		convergencePatience, err = strconv.Atoi(convergencePatienceStr)
+		if err != nil || convergencePatience < 1 || convergencePatience > 100 {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			ui.CreateJobPage("Convergence patience must be between 1 and 100").Render(r.Context(), w)
+			return
+		}
+	}
+
+	convergenceThreshold := 0.001 // default
+	if convergenceThresholdStr != "" {
+		convergenceThreshold, err = strconv.ParseFloat(convergenceThresholdStr, 64)
+		if err != nil || convergenceThreshold < 0.0001 || convergenceThreshold > 0.1 {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			ui.CreateJobPage("Convergence threshold must be between 0.0001 and 0.1").Render(r.Context(), w)
+			return
+		}
+	}
+
 	// Create job configuration
 	config := JobConfig{
-		RefPath: refPath,
-		Mode:    mode,
-		Circles: circles,
-		Iters:   iters,
-		PopSize: popSize,
-		Seed:    seed,
+		RefPath:              refPath,
+		CanvasPath:           canvasPath,
+		Mode:                 mode,
+		Circles:              circles,
+		Iters:                iters,
+		PopSize:              popSize,
+		Seed:                 seed,
+		ConvergenceEnabled:   convergenceEnabled,
+		ConvergencePatience:  convergencePatience,
+		ConvergenceThreshold: convergenceThreshold,
 	}
 
 	// Create the job

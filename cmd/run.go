@@ -10,13 +10,14 @@ import (
 	"runtime/pprof"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
 	"github.com/spf13/cobra"
 )
 
 var (
 	refPath           string
+	canvasPath        string
 	outPath           string
 	mode              string
 	backendName       string
@@ -40,6 +41,7 @@ var runCmd = &cobra.Command{
 
 func init() {
 	runCmd.Flags().StringVar(&refPath, "ref", "", "Reference image path (required)")
+	runCmd.Flags().StringVar(&canvasPath, "canvas", "", "Canvas image path (optional: start from existing result)")
 	runCmd.Flags().StringVar(&outPath, "out", "out.png", "Output image path")
 	runCmd.Flags().StringVar(&mode, "mode", "joint", "Optimization mode: joint, sequential, batch")
 	runCmd.Flags().StringVar(&backendName, "backend", "cpu", "Renderer backend to use (cpu, opencl)")
@@ -101,10 +103,55 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 
 	slog.Info("Loaded reference", "width", bounds.Dx(), "height", bounds.Dy())
 
-	// Create renderer
-	renderer, cleanup, err := fit.NewRendererForBackend(backendName, ref, circles)
-	if err != nil {
-		return fmt.Errorf("failed to create renderer: %w", err)
+	// Load canvas image if specified
+	var canvas *image.NRGBA
+	if canvasPath != "" {
+		slog.Info("Loading canvas", "path", canvasPath)
+
+		canvasFile, err := os.Open(canvasPath)
+		if err != nil {
+			return fmt.Errorf("failed to open canvas: %w", err)
+		}
+		defer canvasFile.Close()
+
+		canvasImg, _, err := image.Decode(canvasFile)
+		if err != nil {
+			return fmt.Errorf("failed to decode canvas: %w", err)
+		}
+
+		// Convert canvas to NRGBA
+		canvas = image.NewNRGBA(bounds)
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				canvas.Set(x, y, canvasImg.At(x, y))
+			}
+		}
+
+		slog.Info("Loaded canvas", "width", canvas.Bounds().Dx(), "height", canvas.Bounds().Dy())
+	}
+
+	// Create renderer (with or without canvas)
+	var rend renderer.Renderer
+	var cleanup func()
+
+	if backendName == "cpu" {
+		// CPU renderer supports canvas
+		if canvas != nil {
+			rend = renderer.NewCPURendererWithCanvas(ref, canvas, circles)
+		} else {
+			rend = renderer.NewCPURenderer(ref, circles)
+		}
+		cleanup = func() {} // No cleanup needed for CPU renderer
+	} else {
+		// Other backends don't support canvas yet
+		if canvas != nil {
+			return fmt.Errorf("canvas loading only supported with CPU backend")
+		}
+		var err error
+		rend, cleanup, err = renderer.NewRendererForBackend(backendName, ref, circles)
+		if err != nil {
+			return fmt.Errorf("failed to create renderer: %w", err)
+		}
 	}
 	defer cleanup()
 
@@ -112,7 +159,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	optimizer := opt.NewMayfly(iters, popSize, seed)
 
 	// Create convergence config
-	convergenceConfig := fit.ConvergenceConfig{
+	convergenceConfig := renderer.ConvergenceConfig{
 		Enabled:   convergenceEnable,
 		Patience:  patience,
 		Threshold: threshold,
@@ -124,20 +171,20 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 
 	// Run optimization
 	start := time.Now()
-	var result *fit.OptimizationResult
+	var result *renderer.OptimizationResult
 
 	switch mode {
 	case "joint":
-		result = fit.OptimizeJoint(renderer, optimizer, circles, convergenceConfig)
+		result = renderer.OptimizeJoint(rend, optimizer, circles, convergenceConfig)
 	case "sequential":
-		result = fit.OptimizeSequential(renderer, optimizer, circles, convergenceConfig)
+		result = renderer.OptimizeSequential(rend, optimizer, circles, convergenceConfig)
 	case "batch":
 		batchSize := 5
 		passes := circles / batchSize
 		if circles%batchSize != 0 {
 			passes++
 		}
-		result = fit.OptimizeBatch(renderer, optimizer, batchSize, passes, convergenceConfig)
+		result = renderer.OptimizeBatch(rend, optimizer, batchSize, passes, convergenceConfig)
 	default:
 		return fmt.Errorf("unknown mode: %s", mode)
 	}
@@ -147,7 +194,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	// Render final image
 	// Use actual number of circles from result (may be less if convergence detected)
 	actualCircles := len(result.BestParams) / 7
-	finalRenderer := fit.NewCPURenderer(ref, actualCircles)
+	finalRenderer := renderer.NewCPURenderer(ref, actualCircles)
 	output := finalRenderer.Render(result.BestParams)
 
 	// Save output

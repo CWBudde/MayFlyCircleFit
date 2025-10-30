@@ -8,14 +8,18 @@ import (
 // JobConfig holds configuration for an optimization job (checkpoint copy).
 // This avoids import cycles with server package.
 type JobConfig struct {
-	RefPath            string `json:"refPath"`
-	Mode               string `json:"mode"` // joint, sequential, batch
-	Circles            int    `json:"circles"`
-	Iters              int    `json:"iters"`
-	PopSize            int    `json:"popSize"`
-	Seed               int64  `json:"seed"`
-	CheckpointInterval int    `json:"checkpointInterval,omitempty"` // Checkpoint every N seconds (0 = disabled)
-	EnableTrace        bool   `json:"enableTrace,omitempty"`        // Enable cost history trace logging (default: true)
+	RefPath            string  `json:"refPath"`
+	CanvasPath         string  `json:"canvasPath,omitempty"`         // Optional: path to existing canvas image to continue from (empty = blank canvas)
+	Mode               string  `json:"mode"`                         // joint, sequential, batch
+	Circles            int     `json:"circles"`
+	Iters              int     `json:"iters"`
+	PopSize            int     `json:"popSize"`
+	Seed               int64   `json:"seed"`
+	CheckpointInterval int     `json:"checkpointInterval,omitempty"` // Checkpoint every N seconds (0 = disabled)
+	EnableTrace        bool    `json:"enableTrace,omitempty"`        // Enable cost history trace logging (default: true)
+	ConvergenceEnabled bool    `json:"convergenceEnabled,omitempty"` // Enable adaptive convergence detection (default: true)
+	ConvergencePatience int    `json:"convergencePatience,omitempty"` // Stop after N iterations with no significant improvement (default: 3)
+	ConvergenceThreshold float64 `json:"convergenceThreshold,omitempty"` // Minimum relative improvement required (default: 0.001 = 0.1%)
 }
 
 // Checkpoint represents a saved optimization state that can be resumed later.

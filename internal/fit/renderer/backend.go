@@ -1,4 +1,4 @@
-package fit
+package renderer
 
 import (
 	"errors"
@@ -23,8 +23,6 @@ var (
 	// ErrBackendNotImplemented indicates the backend is known but not yet implemented.
 	ErrBackendNotImplemented = errors.New("renderer backend not implemented")
 )
-
-var noopCleanup = func() {}
 
 // NormalizeBackend maps arbitrary user input to a canonical backend identifier.
 func NormalizeBackend(name string) Backend {
@@ -51,7 +49,7 @@ func NewRendererForBackend(name string, reference *image.NRGBA, k int) (Renderer
 	case BackendCPU:
 		return NewCPURenderer(reference, k), noopCleanup, nil
 	case BackendOpenCL:
-		return newOpenCLRenderer(reference, k)
+		return NewOpenCLRenderer(reference, k)
 	default:
 		return nil, noopCleanup, fmt.Errorf("%w: %s", ErrUnknownBackend, name)
 	}

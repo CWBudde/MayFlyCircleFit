@@ -415,3 +415,18 @@ func mapDeviceType(dt C.cl_device_type) DeviceType {
 func statusError(prefix string, status C.cl_int) error {
 	return fmt.Errorf("%s: %s (%d)", prefix, C.GoString(C.mayfly_cl_error_string(status)), int(status))
 }
+
+// ContextPtr exposes the underlying OpenCL context pointer for advanced users.
+func (r *Runtime) ContextPtr() unsafe.Pointer {
+	return unsafe.Pointer(r.context)
+}
+
+// QueuePtr exposes the underlying OpenCL command queue pointer for advanced users.
+func (r *Runtime) QueuePtr() unsafe.Pointer {
+	return unsafe.Pointer(r.queue)
+}
+
+// DevicePtr exposes the underlying OpenCL device pointer for advanced users.
+func (r *Runtime) DevicePtr() unsafe.Pointer {
+	return unsafe.Pointer(r.deviceID)
+}

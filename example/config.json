@@ -1,0 +1,12 @@
+{
+  "refPath": "example/Ref.png",
+  "canvasPath": "",
+  "mode": "sequential",
+  "circles": 10,
+  "iters": 1000,
+  "popSize": 30,
+  "seed": 42,
+  "convergenceEnabled": true,
+  "convergencePatience": 3,
+  "convergenceThreshold": 0.001
+}

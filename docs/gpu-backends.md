@@ -53,12 +53,12 @@ Parallel to the OpenCL prototype, scope an **OpenGL fragment-shader fallback** f
 ## Immediate Next Steps
 1. Draft `internal/fit/gpu` package layout (`context.go`, `opencl_renderer.go`, `kernels/`).
 2. Author initial OpenCL kernels: circle compositing (float32 RGBA) and SSD reduction (local reductions + final sum on host).
-3. Wire renderer constructor (`internal/fit/renderer_opencl_gpu.go`) to the runtime: keep context alive, hydrate parameter buffers, return a functional `Renderer`.
-4. Expand CLI/server plumbing so `--backend opencl` flows through pipelines; add graceful fallback messaging.
-5. Seed benchmarks (`benchmarks/gpu_render_test.go`) to compare CPU SIMD vs OpenCL for 256×256 and 512×512 cases.
-6. Capture investigation notes in this document as kernels mature (driver quirks, tuning parameters, fallbacks).
+3. Expand CLI/server plumbing so `--backend opencl` flows through pipelines; add graceful fallback messaging.
+4. Run and interpret the new `go test -tags gpu ./internal/fit -run TestOpenCLRendererMatchesCPU` and `go test -tags gpu ./internal/fit -bench BenchmarkRendererCost` once hardware is available; document variances.
+5. Capture investigation notes in this document as kernels mature (driver quirks, tuning parameters, fallbacks).
 
 ## Scaffolding Status
 - `internal/fit/backend.go` centralises backend selection and normalises CLI input.
 - `internal/fit/gpu/opencl_runtime_*.go` enumerates platforms/devices and bootstraps an OpenCL context (GPU preferred, CPU fallback) when built with `-tags gpu`; non-GPU builds return a helpful error.
-- CLI exposes `--backend` (default `cpu`) and reports the selected backend during runs. GPU mode currently stops after context init until kernels land.
+- `internal/fit/renderer_opencl_gpu.go` now implements the full renderer+cost path in OpenCL with CPU fallback on errors; next step is to reconnect server pipelines and add benchmarking/validation.
+- CLI exposes `--backend` (default `cpu`) and reports the selected backend during runs. GPU mode currently renders and scores via OpenCL when compiled with `-tags gpu`.

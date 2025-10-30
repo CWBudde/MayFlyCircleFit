@@ -10,10 +10,35 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
+
+// buildConvergenceConfig creates a convergence config from job config with sensible defaults
+func buildConvergenceConfig(config store.JobConfig) renderer.ConvergenceConfig {
+	// Default values if not specified
+	enabled := true
+	patience := 3
+	threshold := 0.001
+
+	// Override with config values if specified
+	if !config.ConvergenceEnabled {
+		enabled = false
+	}
+	if config.ConvergencePatience > 0 {
+		patience = config.ConvergencePatience
+	}
+	if config.ConvergenceThreshold > 0 {
+		threshold = config.ConvergenceThreshold
+	}
+
+	return renderer.ConvergenceConfig{
+		Enabled:   enabled,
+		Patience:  patience,
+		Threshold: threshold,
+	}
+}
 
 // runJob executes an optimization job in the background.
 // If checkpointStore is not nil and job has checkpointInterval > 0, periodic checkpoints are saved.
@@ -59,8 +84,39 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 
 	slog.Info("Loaded reference image", "job_id", jobID, "width", bounds.Dx(), "height", bounds.Dy())
 
-	// Create renderer
-	renderer := fit.NewCPURenderer(ref, job.Config.Circles)
+	// Load canvas image if specified
+	var rend renderer.Renderer
+	if job.Config.CanvasPath != "" {
+		slog.Info("Loading canvas image", "job_id", jobID, "canvas", job.Config.CanvasPath)
+
+		canvasFile, err := os.Open(job.Config.CanvasPath)
+		if err != nil {
+			markJobFailed(jm, jobID, fmt.Errorf("failed to open canvas: %w", err))
+			return err
+		}
+		defer canvasFile.Close()
+
+		canvasImg, _, err := image.Decode(canvasFile)
+		if err != nil {
+			markJobFailed(jm, jobID, fmt.Errorf("failed to decode canvas: %w", err))
+			return err
+		}
+
+		// Convert canvas to NRGBA
+		canvasNRGBA := image.NewNRGBA(bounds)
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				canvasNRGBA.Set(x, y, canvasImg.At(x, y))
+			}
+		}
+
+		// Create renderer with canvas
+		rend = renderer.NewCPURendererWithCanvas(ref, canvasNRGBA, job.Config.Circles)
+		slog.Info("Loaded canvas image", "job_id", jobID, "width", canvasNRGBA.Bounds().Dx(), "height", canvasNRGBA.Bounds().Dy())
+	} else {
+		// Create renderer with white background
+		rend = renderer.NewCPURenderer(ref, job.Config.Circles)
+	}
 
 	// Create optimizer
 	optimizer := opt.NewMayfly(job.Config.Iters, job.Config.PopSize, job.Config.Seed)
@@ -79,7 +135,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		)
 	} else {
 		initialParams := make([]float64, job.Config.Circles*7)
-		initialCost = renderer.Cost(initialParams)
+		initialCost = rend.Cost(initialParams)
 		jm.UpdateJob(jobID, func(j *Job) {
 			j.InitialCost = initialCost
 		})
@@ -87,7 +143,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 
 	// Run optimization based on mode
 	start := time.Now()
-	var result *fit.OptimizationResult
+	var result *renderer.OptimizationResult
 
 	// Check for cancellation before starting expensive operation
 	select {
@@ -136,7 +192,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	checkpointDone := make(chan struct{})
 	checkpointEnabled := checkpointStore != nil && job.Config.CheckpointInterval > 0
 	if checkpointEnabled {
-		go monitorCheckpoints(ctx, jm, checkpointStore, renderer, jobID, checkpointDone)
+		go monitorCheckpoints(ctx, jm, checkpointStore, rend, jobID, checkpointDone)
 	} else {
 		close(checkpointDone) // No checkpointing, close immediately
 	}
@@ -158,18 +214,18 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		}
 
 		// Call optimizer directly with resume capability
-		lower, upper := renderer.Bounds()
+		lower, upper := rend.Bounds()
 		bestParams, bestCost := resumable.RunWithInitial(
 			job.BestParams,
 			job.BestCost,
-			renderer.Cost,
+			rend.Cost,
 			lower,
 			upper,
-			renderer.Dim(),
+			rend.Dim(),
 		)
 
 		// Create result
-		result = &fit.OptimizationResult{
+		result = &renderer.OptimizationResult{
 			BestParams:  bestParams,
 			BestCost:    bestCost,
 			InitialCost: initialCost,
@@ -177,21 +233,21 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		}
 	} else {
 		// Normal optimization from scratch
-		// Use default convergence config (enabled by default for server jobs)
-		convergenceConfig := fit.DefaultConvergenceConfig()
+		// Build convergence config from job settings (with defaults)
+		convergenceConfig := buildConvergenceConfig(job.Config)
 
 		switch job.Config.Mode {
 		case "joint":
-			result = fit.OptimizeJoint(renderer, optimizer, job.Config.Circles, convergenceConfig)
+			result = renderer.OptimizeJoint(rend, optimizer, job.Config.Circles, convergenceConfig)
 		case "sequential":
-			result = fit.OptimizeSequential(renderer, optimizer, job.Config.Circles, convergenceConfig)
+			result = renderer.OptimizeSequential(rend, optimizer, job.Config.Circles, convergenceConfig)
 		case "batch":
 			batchSize := 5
 			passes := job.Config.Circles / batchSize
 			if job.Config.Circles%batchSize != 0 {
 				passes++
 			}
-			result = fit.OptimizeBatch(renderer, optimizer, batchSize, passes, convergenceConfig)
+			result = renderer.OptimizeBatch(rend, optimizer, batchSize, passes, convergenceConfig)
 		default:
 			err := fmt.Errorf("unknown mode: %s", job.Config.Mode)
 			markJobFailed(jm, jobID, err)
@@ -330,7 +386,7 @@ func markJobCancelled(jm *JobManager, jobID string) {
 }
 
 // monitorCheckpoints periodically saves checkpoints during optimization
-func monitorCheckpoints(ctx context.Context, jm *JobManager, checkpointStore store.Store, renderer fit.Renderer, jobID string, done chan struct{}) {
+func monitorCheckpoints(ctx context.Context, jm *JobManager, checkpointStore store.Store, rend renderer.Renderer, jobID string, done chan struct{}) {
 	job, exists := jm.GetJob(jobID)
 	if !exists {
 		return
@@ -348,7 +404,7 @@ func monitorCheckpoints(ctx context.Context, jm *JobManager, checkpointStore sto
 			return
 		case <-ticker.C:
 			// Save checkpoint
-			if err := saveCheckpoint(jm, checkpointStore, renderer, jobID); err != nil {
+			if err := saveCheckpoint(jm, checkpointStore, rend, jobID); err != nil {
 				slog.Error("Failed to save checkpoint", "job_id", jobID, "error", err)
 			}
 		}
@@ -356,7 +412,7 @@ func monitorCheckpoints(ctx context.Context, jm *JobManager, checkpointStore sto
 }
 
 // saveCheckpoint saves a checkpoint for the given job
-func saveCheckpoint(jm *JobManager, checkpointStore store.Store, renderer fit.Renderer, jobID string) error {
+func saveCheckpoint(jm *JobManager, checkpointStore store.Store, rend renderer.Renderer, jobID string) error {
 	// Get current job state
 	job, exists := jm.GetJob(jobID)
 	if !exists {
@@ -391,7 +447,7 @@ func saveCheckpoint(jm *JobManager, checkpointStore store.Store, renderer fit.Re
 	)
 
 	// Save checkpoint artifacts (best.png, diff.png)
-	if err := saveCheckpointArtifacts(checkpointStore, renderer, jobID, job.BestParams); err != nil {
+	if err := saveCheckpointArtifacts(checkpointStore, rend, jobID, job.BestParams); err != nil {
 		slog.Warn("Failed to save checkpoint artifacts", "job_id", jobID, "error", err)
 		// Don't fail the checkpoint if artifacts fail - metadata is most important
 	}
@@ -400,7 +456,7 @@ func saveCheckpoint(jm *JobManager, checkpointStore store.Store, renderer fit.Re
 }
 
 // saveCheckpointArtifacts saves best.png and diff.png to the checkpoint directory
-func saveCheckpointArtifacts(checkpointStore store.Store, renderer fit.Renderer, jobID string, bestParams []float64) error {
+func saveCheckpointArtifacts(checkpointStore store.Store, rend renderer.Renderer, jobID string, bestParams []float64) error {
 	// We need to access the filesystem directly since Store interface doesn't expose artifact paths
 	// This assumes FSStore with ./data/jobs/<jobID>/ structure
 	// TODO: Consider adding GetJobDir() to Store interface if we need different store implementations
@@ -409,7 +465,7 @@ func saveCheckpointArtifacts(checkpointStore store.Store, renderer fit.Renderer,
 	jobDir := filepath.Join("./data", "jobs", jobID)
 
 	// Render best image
-	bestImg := renderer.Render(bestParams)
+	bestImg := rend.Render(bestParams)
 
 	// Save best.png
 	bestPath := filepath.Join(jobDir, "best.png")
@@ -424,7 +480,7 @@ func saveCheckpointArtifacts(checkpointStore store.Store, renderer fit.Renderer,
 	}
 
 	// Compute and save diff.png
-	ref := renderer.Reference()
+	ref := rend.Reference()
 	diffImg := computeDiffImage(ref, bestImg)
 
 	diffPath := filepath.Join(jobDir, "diff.png")

@@ -1,8 +1,9 @@
-package fit
+package renderer
 
 import (
 	"log/slog"
 
+	"github.com/cwbudde/mayflycirclefit/internal/fit"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
 )
 
@@ -16,18 +17,18 @@ type OptimizationResult struct {
 
 // OptimizeJoint optimizes all K circles simultaneously
 // Note: Convergence config is not used for joint mode (all circles optimized at once)
-func OptimizeJoint(renderer Renderer, optimizer opt.Optimizer, k int, _ ConvergenceConfig) *OptimizationResult {
+func OptimizeJoint(rend Renderer, optimizer opt.Optimizer, k int, _ ConvergenceConfig) *OptimizationResult {
 	slog.Info("Starting joint optimization", "circles", k)
 
-	dim := k * paramsPerCircle
-	lower, upper := renderer.Bounds()
+	dim := k * 7
+	lower, upper := rend.Bounds()
 
 	// Ensure bounds match dimension
 	if len(lower) < dim || len(upper) < dim {
 		// Extend bounds if needed (renderer created with fewer circles)
-		newRenderer := NewCPURenderer(renderer.Reference(), k)
-		renderer = newRenderer
-		lower, upper = renderer.Bounds()
+		newRenderer := NewCPURenderer(rend.Reference(), k)
+		rend = newRenderer
+		lower, upper = rend.Bounds()
 	}
 
 	// Trim to actual dimension
@@ -36,10 +37,10 @@ func OptimizeJoint(renderer Renderer, optimizer opt.Optimizer, k int, _ Converge
 
 	// Initial cost (white canvas)
 	initialParams := make([]float64, dim)
-	initialCost := renderer.Cost(initialParams)
+	initialCost := rend.Cost(initialParams)
 
 	// Run optimizer
-	bestParams, bestCost := optimizer.Run(renderer.Cost, lower, upper, dim)
+	bestParams, bestCost := optimizer.Run(rend.Cost, lower, upper, dim)
 
 	slog.Info("Joint optimization complete", "initial_cost", initialCost, "best_cost", bestCost)
 
@@ -62,7 +63,7 @@ func OptimizeSequential(renderer Renderer, optimizer opt.Optimizer, totalK int, 
 	ref := renderer.Reference()
 	allParams := []float64{}
 
-	initialCost := MSECost(
+	initialCost := fit.MSECost(
 		NewCPURenderer(ref, 0).Render([]float64{}),
 		ref,
 	)
@@ -78,10 +79,10 @@ func OptimizeSequential(renderer Renderer, optimizer opt.Optimizer, totalK int, 
 		currentRenderer := NewCPURenderer(ref, k)
 
 		// Objective: optimize only the new circle, keeping previous ones fixed
-		dim := paramsPerCircle
+		dim := 7
 		lower := make([]float64, dim)
 		upper := make([]float64, dim)
-		bounds := NewBounds(1, ref.Bounds().Dx(), ref.Bounds().Dy())
+		bounds := fit.NewBounds(1, ref.Bounds().Dx(), ref.Bounds().Dy())
 		copy(lower, bounds.Lower)
 		copy(upper, bounds.Upper)
 
@@ -137,7 +138,7 @@ func OptimizeBatch(renderer Renderer, optimizer opt.Optimizer, batchK, passes in
 	ref := renderer.Reference()
 	allParams := []float64{}
 
-	initialCost := MSECost(
+	initialCost := fit.MSECost(
 		NewCPURenderer(ref, 0).Render([]float64{}),
 		ref,
 	)
@@ -149,16 +150,16 @@ func OptimizeBatch(renderer Renderer, optimizer opt.Optimizer, batchK, passes in
 	for pass := 0; pass < passes; pass++ {
 		slog.Info("Batch pass", "pass", pass+1, "of", passes)
 
-		currentK := len(allParams) / paramsPerCircle
+		currentK := len(allParams) / 7
 		newK := currentK + batchK
 
 		// Optimize batch of circles jointly
 		batchRenderer := NewCPURenderer(ref, newK)
 
-		dim := batchK * paramsPerCircle
+		dim := batchK * 7
 		lower := make([]float64, dim)
 		upper := make([]float64, dim)
-		bounds := NewBounds(batchK, ref.Bounds().Dx(), ref.Bounds().Dy())
+		bounds := fit.NewBounds(batchK, ref.Bounds().Dx(), ref.Bounds().Dy())
 		copy(lower, bounds.Lower)
 		copy(upper, bounds.Upper)
 
@@ -183,7 +184,7 @@ func OptimizeBatch(renderer Renderer, optimizer opt.Optimizer, batchK, passes in
 		}
 	}
 
-	totalK := len(allParams) / paramsPerCircle
+	totalK := len(allParams) / 7
 	finalRenderer := NewCPURenderer(ref, totalK)
 	finalCost := finalRenderer.Cost(allParams)
 

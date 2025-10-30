@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
 
@@ -122,7 +122,7 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 			}
 
 			// Create renderer
-			renderer := fit.NewCPURenderer(ref, j.Config.Circles)
+			renderer := renderer.NewCPURenderer(ref, j.Config.Circles)
 
 			// Save checkpoint
 			err = saveCheckpoint(s.jobManager, s.store, renderer, j.ID)
@@ -335,7 +335,7 @@ func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobI
 	}
 
 	// Render best image
-	renderer := fit.NewCPURenderer(ref, job.Config.Circles)
+	renderer := renderer.NewCPURenderer(ref, job.Config.Circles)
 	img := renderer.Render(job.BestParams)
 
 	// Set headers
@@ -370,7 +370,7 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 	}
 
 	// Render best image
-	renderer := fit.NewCPURenderer(ref, job.Config.Circles)
+	renderer := renderer.NewCPURenderer(ref, job.Config.Circles)
 	best := renderer.Render(job.BestParams)
 
 	// Compute difference image (simple visualization for now)
