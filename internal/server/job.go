@@ -65,7 +65,7 @@ func (jm *JobManager) CreateJob(config JobConfig) *Job {
 	}
 
 	jm.jobs[job.ID] = job
-	return job
+	return cloneJob(job)
 }
 
 // GetJob retrieves a job by ID
@@ -74,7 +74,10 @@ func (jm *JobManager) GetJob(id string) (*Job, bool) {
 	defer jm.mu.RUnlock()
 
 	job, exists := jm.jobs[id]
-	return job, exists
+	if !exists {
+		return nil, false
+	}
+	return cloneJob(job), true
 }
 
 // ListJobs returns all jobs
@@ -84,7 +87,7 @@ func (jm *JobManager) ListJobs() []*Job {
 
 	jobs := make([]*Job, 0, len(jm.jobs))
 	for _, job := range jm.jobs {
-		jobs = append(jobs, job)
+		jobs = append(jobs, cloneJob(job))
 	}
 	return jobs
 }
@@ -111,8 +114,24 @@ func (jm *JobManager) GetRunningJobs() []*Job {
 	runningJobs := make([]*Job, 0)
 	for _, job := range jm.jobs {
 		if job.State == StateRunning {
-			runningJobs = append(runningJobs, job)
+			runningJobs = append(runningJobs, cloneJob(job))
 		}
 	}
 	return runningJobs
+}
+
+// cloneJob returns a fully detached snapshot. Callers may safely retain or
+// serialize it while the manager continues updating the live job.
+func cloneJob(job *Job) *Job {
+	if job == nil {
+		return nil
+	}
+
+	cloned := *job
+	cloned.BestParams = append([]float64(nil), job.BestParams...)
+	if job.EndTime != nil {
+		endTime := *job.EndTime
+		cloned.EndTime = &endTime
+	}
+	return &cloned
 }

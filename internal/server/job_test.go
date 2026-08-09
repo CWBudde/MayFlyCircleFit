@@ -53,6 +53,42 @@ func TestJobManager_GetJob(t *testing.T) {
 	}
 }
 
+func TestJobManager_ReturnsDetachedSnapshots(t *testing.T) {
+	jm := NewJobManager()
+	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
+
+	params := []float64{1, 2, 3}
+	end := time.Now()
+	if err := jm.UpdateJob(job.ID, func(live *Job) {
+		live.BestParams = params
+		live.EndTime = &end
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, ok := jm.GetJob(job.ID)
+	if !ok {
+		t.Fatal("job not found")
+	}
+	snapshot.BestParams[0] = 99
+	*snapshot.EndTime = snapshot.EndTime.Add(time.Hour)
+	snapshot.State = StateFailed
+
+	unchanged, ok := jm.GetJob(job.ID)
+	if !ok {
+		t.Fatal("job not found")
+	}
+	if unchanged.BestParams[0] != 1 {
+		t.Fatalf("mutable parameter slice escaped: %v", unchanged.BestParams)
+	}
+	if !unchanged.EndTime.Equal(end) {
+		t.Fatalf("mutable end time escaped: got %v, want %v", unchanged.EndTime, end)
+	}
+	if unchanged.State == StateFailed {
+		t.Fatal("mutable job snapshot escaped")
+	}
+}
+
 func TestJobManager_ListJobs(t *testing.T) {
 	jm := NewJobManager()
 

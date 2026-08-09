@@ -78,8 +78,8 @@ func (eb *EventBroadcaster) Unsubscribe(jobID string, ch chan ProgressEvent) {
 
 // Broadcast sends an event to all subscribed clients for a job
 func (eb *EventBroadcaster) Broadcast(event ProgressEvent) {
-	eb.mu.RLock()
-	defer eb.mu.RUnlock()
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
 
 	// Store last event
 	eb.lastEvent[event.JobID] = event
