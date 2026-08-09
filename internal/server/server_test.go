@@ -26,6 +26,7 @@ func TestServer_CreateJob(t *testing.T) {
 	createSimpleTestImage(t, imgPath)
 
 	s := NewServerWithOptions(":8080", nil, ServerOptions{InputRoots: []string{tmpDir}})
+	shutdownTestServer(t, s)
 
 	// Create job request
 	config := JobConfig{
@@ -184,6 +185,7 @@ func TestServer_Integration(t *testing.T) {
 
 	// Start server in background
 	s := NewServerWithOptions("localhost:0", nil, ServerOptions{InputRoots: []string{tmpDir}}) // Use random port
+	shutdownTestServer(t, s)
 	srv := httptest.NewServer(s.corsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/jobs" && r.Method == http.MethodPost {
 			s.handleCreateJob(w, r)
@@ -373,12 +375,19 @@ func TestServer_JobDetailPage_Integration(t *testing.T) {
 		PopSize: 10,
 	})
 
-	// Set some initial values
-	job.BestParams = make([]float64, 14) // 2 circles * 7 params
-	job.BestCost = 1000.0
-	job.InitialCost = 2000.0
-	job.Iterations = 3
-	job.State = StateRunning
+	// Set some initial values through the manager: CreateJob returns an immutable
+	// snapshot, so mutating it must not change the stored job.
+	if err := s.jobManager.StartJob(job.ID); err != nil {
+		t.Fatalf("Failed to start job: %v", err)
+	}
+	if err := s.jobManager.UpdateProgress(job.ID, 3, 3, make([]float64, 14), 1000); err != nil {
+		t.Fatalf("Failed to update job progress: %v", err)
+	}
+	if err := s.jobManager.UpdateJob(job.ID, func(stored *Job) {
+		stored.InitialCost = 2000
+	}); err != nil {
+		t.Fatalf("Failed to set initial cost: %v", err)
+	}
 
 	// Test that the detail page renders with job data
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/jobs/%s", job.ID), nil)
@@ -585,6 +594,7 @@ func TestServer_CreatePagePost_Success(t *testing.T) {
 	createSimpleTestImage(t, testImagePath)
 
 	server := NewServerWithOptions(":0", nil, ServerOptions{InputRoots: []string{tmpDir}})
+	shutdownTestServer(t, server)
 
 	// Create form data
 	form := url.Values{}
@@ -738,6 +748,7 @@ func TestServer_CreatePage_Integration(t *testing.T) {
 	createSimpleTestImage(t, testImagePath)
 
 	server := NewServerWithOptions(":0", nil, ServerOptions{InputRoots: []string{tmpDir}})
+	shutdownTestServer(t, server)
 
 	// Test GET request
 	req := httptest.NewRequest(http.MethodGet, "/create", nil)
@@ -888,4 +899,15 @@ func TestServer_GracefulShutdownWithCheckpoint(t *testing.T) {
 // createTestStore creates a filesystem store for testing
 func createTestStore(baseDir string) (*store.FSStore, error) {
 	return store.NewFSStore(baseDir)
+}
+
+func shutdownTestServer(t *testing.T, server *Server) {
+	t.Helper()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			t.Errorf("Failed to shut down test server: %v", err)
+		}
+	})
 }
