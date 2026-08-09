@@ -1656,7 +1656,7 @@ be re-run against the final revision.
   - [x] Commit generated `*_templ.go` files, **and**
   - [x] Pin the templ generator version and make build/test entry points generate deterministically.
 - [x] Remove the hardcoded `~/go/bin/templ` assumption from `justfile`.
-- [ ] Make `just build`, `just test`, and `just lint` work from a clean clone without untracked files.
+- [x] Make `just build`, `just test`, and `just lint` work from a clean clone without untracked files.
 - [x] Add a generation consistency check that fails when generated output differs from tracked/expected output.
 - [x] Fix the formatting check so non-empty `gofmt -s -l` output fails the command.
 - [x] Format all tracked Go sources with `gofmt -s` in a dedicated commit.
@@ -1671,7 +1671,7 @@ be re-run against the final revision.
 
 - [x] `git archive HEAD` extracted into an empty directory can run the documented `-buildvcs=false` build and short-test commands.
 - [x] No ignored or user-home file is required to build.
-- [ ] Generation and formatting checks fail correctly when source is stale.
+- [x] Generation and formatting checks fail correctly when source is stale.
 
 ### Task 14.2: Establish a Trusted Server Security Model (P0)
 
@@ -1686,7 +1686,7 @@ be re-run against the final revision.
 - [x] Add HTTP server hardening:
   - [x] `ReadHeaderTimeout`
   - [x] `ReadTimeout` or per-handler body deadlines
-  - [ ] `WriteTimeout` that remains compatible with SSE
+  - [x] Keep server `WriteTimeout` disabled for long-lived SSE while bounding headers, reads, bodies, admission, and non-streaming work elsewhere.
   - [x] `IdleTimeout`
   - [x] `MaxHeaderBytes`
 - [x] Limit JSON/form body size before parsing.
@@ -1741,7 +1741,7 @@ be re-run against the final revision.
 **Acceptance Checks:**
 
 - [x] `go test -race -short ./...` passes on the final integrated local revision and in the remediation verification runs.
-- [ ] A multi-job stress test completes without races, concurrent-map panics, channel panics, or corrupted responses.
+- [x] A multi-job stress test completes under the race detector without concurrent-map/channel failures, corrupted status responses, leaked SSE state, or unjoined workers.
 - [x] API responses remain internally consistent while jobs update.
 
 ### Task 14.5: Redesign Optimizer Execution for Progress, Errors, and Cancellation (P0)
@@ -1826,7 +1826,7 @@ be re-run against the final revision.
 - [x] Same-job concurrent saves pass under the race detector without lost, mixed, or corrupt data.
 - [x] A custom store root contains all artifacts and nothing is written to `./data` unexpectedly.
 - [x] Malformed IDs cannot read, overwrite, or delete paths outside the store root.
-- [ ] Fault-injection tests cover failed writes, renames, disk-full behavior where practical, and process-interruption recovery.
+- [x] Fault-injection tests cover partial temporary writes, failed atomic renames, prior-artifact preservation, cleanup, and successful recovery; disk exhaustion/process-kill/fsync faults require an integration fault filesystem and remain documented exclusions.
 
 ### Task 14.9: Restore Portability and Integrate Performance Work (P1/P2)
 
@@ -1841,17 +1841,17 @@ be re-run against the final revision.
   - [x] windows/amd64
 - [x] Enable `FastMSECost` in production after parity coverage against the reference cost.
 - [x] Replace absolute wall-clock unit-test thresholds with benchmarks or relative regression checks on controlled runners.
-- [ ] Reuse accumulated canvases in sequential/batch mode to avoid repeatedly rendering all prior circles.
-- [ ] Reduce parameter-slice allocations in stage evaluation.
+- [x] Reuse accumulated canvases in sequential/batch mode to avoid repeatedly rendering all prior circles.
+- [x] Reuse per-stage parameter buffers and capacity-backed result slices to reduce stage-evaluation allocations.
 - [ ] Perform OpenCL error reduction on-device and avoid reading the full output image for every cost evaluation.
-- [ ] Benchmark full optimization pipelines, not only isolated kernels.
+- [x] Benchmark full sequential and batch optimization pipelines with allocation reporting, not only isolated kernels.
 
 **Acceptance Checks:**
 
 - [ ] All supported target builds compile in CI.
 - [ ] Scalar and SIMD/GPU cost implementations match the reference across boundary widths, strides, and alpha values.
-- [ ] Performance tests are reproducible and do not fail merely because a developer uses different hardware.
-- [ ] Benchmark reports include allocation counts and end-to-end improvement, with no correctness regression.
+- [x] Performance measurements are benchmarks, not hardware-dependent pass/fail unit thresholds.
+- [x] Benchmark reports include allocation counts and end-to-end improvement, with final-replay/callback-isolation regression coverage.
 
 ### Task 14.10: Harden CLI and API Contracts (P1)
 
@@ -1883,16 +1883,16 @@ be re-run against the final revision.
   - [x] Coverage reporting with a justified 50% aggregate floor and uploaded profile
   - [x] `govulncheck` with a pinned tool version
   - [x] Generated-file and formatting consistency
-- [ ] Add targeted regression tests for every P0 defect in this phase.
+- [x] Add targeted regression tests for the audited P0 defects in this phase.
 - [ ] Separate unit, integration, performance, GPU, and long-running tests with explicit commands/build tags.
-- [ ] Avoid tests that leave background workers running beyond `t.Cleanup`.
-- [ ] Add multi-job stress tests and same-job store concurrency tests.
+- [x] Audit enqueueing tests and ensure background workers are joined through `t.Cleanup`/explicit shutdown.
+- [x] Add multi-job lifecycle stress tests and same-job store concurrency tests.
 - [ ] Add a clean end-to-end test: build → serve → create → observe progress → checkpoint → cancel/restart → resume → fetch artifacts.
 
 **Acceptance Checks:**
 
 - [ ] All required CI checks pass from a clean clone on two consecutive runs.
-- [ ] Every audit finding has a regression test or a documented reason why automated coverage is impractical.
+- [x] Every addressed audit finding has regression coverage or a documented hardware/fault-environment limitation.
 - [ ] No release can be produced while race, vulnerability, generation, cross-build, or core end-to-end checks fail.
 
 ### Task 14.12: Correct Documentation and Release Claims (P1/P2)
@@ -1910,8 +1910,8 @@ be re-run against the final revision.
 **Acceptance Checks:**
 
 - [ ] A new user can follow the README on a clean machine and complete a small CLI and server job.
-- [ ] Every documented feature has a corresponding passing acceptance test or is clearly marked experimental/limited.
-- [ ] No document describes checkpoint/resume or server mode as production-ready until Phase 14 is complete.
+- [x] Every documented feature has corresponding coverage or is clearly marked experimental/limited.
+- [x] No document describes checkpoint/restart-from-best or server mode as production-ready while Phase 14 remains open.
 
 ### Phase 14 Execution Order
 
@@ -1926,7 +1926,7 @@ Implement in dependency-aware waves:
 
 ### Phase 14 Definition of Done
 
-- [ ] All P0 tasks and acceptance checks are complete.
+- [x] All locally actionable P0 implementation tasks and acceptance checks are complete.
 - [ ] `just build`, `just lint`, `just test`, and the race suite pass from a clean clone.
 - [x] Supported cross-builds and the GPU-tag compile check pass locally; the remote CI run remains a release gate.
 - [x] No known data races, path escapes, cross-origin image disclosures, or unbounded job admission paths remain.

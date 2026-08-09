@@ -45,8 +45,8 @@ behavior is production-ready.
 - The experimental OpenCL renderer contains a CPU compatibility degradation path
   for runtime rendering/cost errors. Inspect warning logs and device-specific
   parity tests when GPU execution matters.
-- ARM64 uses the scalar SSD/SAD implementations. NEON constants and compatibility
-  wrapper names exist, but there is no native NEON kernel.
+- ARM64 uses the scalar SSD/SAD implementations. NEON backend identifiers remain
+  for compatibility, but there is no native NEON kernel.
 - AMD64 AVX2 is selected only when the CPU reports support; scalar execution is
   used otherwise.
 - The production CPU renderer uses `FastMSECost`; parity tests cover the scalar

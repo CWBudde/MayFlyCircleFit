@@ -18,6 +18,9 @@ release is declared by this file.
   pinned static analysis, aggregate coverage, ordinary and GPU-tag builds,
   selected cross-builds, and vulnerability scanning.
 - Support-matrix, known-limitations, contribution, and license documentation.
+- Concurrent multi-job lifecycle stress coverage and atomic persistence fault
+  injection for partial-write/rename recovery.
+- End-to-end sequential and batch pipeline benchmarks with allocation reporting.
 
 ### Changed
 
@@ -31,6 +34,8 @@ release is declared by this file.
   worsens the cost.
 - Configuration, limits, and zero-seed resolution are centralized across entry
   points.
+- Sequential and batch CPU stages evaluate only newly added circles over the
+  retained canvas, reducing replay work and per-evaluation allocations.
 
 ### Fixed
 
