@@ -6,7 +6,9 @@
 
 **Architecture:** Go-based CLI with Cobra, modular optimizer/renderer interfaces, HTTP server with SSE streaming, templ-based UI, and SIMD-accelerated evaluation kernels.
 
-**Tech Stack:** Go 1.21+, Cobra (CLI), templ (frontend), slog (logging), net/http (server), optional chi (routing), cgo+SIMD (performance), OpenGL/OpenCL (GPU)
+**Tech Stack:** Go 1.24+, Cobra (CLI), templ (frontend), slog (logging), net/http (server), optional chi (routing), cgo+SIMD (performance), OpenGL/OpenCL (GPU)
+
+> **Production-readiness audit (2026-08-09):** Historical `COMPLETE` markers below describe implementation milestones, not validated production readiness. The audit found blocking correctness, concurrency, security, persistence, build, and portability defects. Phase 14 supersedes affected completion claims until its acceptance checks pass.
 
 ---
 
@@ -1161,9 +1163,11 @@ for y := centerY; y < maxY; y++ {
 
 ---
 
-## Summary and Next Steps
+## Historical Summary Through Phase 11
 
-This plan covers **Phases 0-11** in detail with bite-sized, testable tasks. Each task follows TDD principles:
+This section records the roadmap state before Phases 12-14 were added. The final summary and current execution priority are at the end of this document.
+
+Phases 0-11 use bite-sized, testable tasks. Each task follows TDD principles:
 1. Write failing test
 2. Run test to verify failure
 3. Write minimal implementation
@@ -1620,9 +1624,319 @@ This plan covers **Phases 0-11** in detail with bite-sized, testable tasks. Each
 
 ---
 
+## Phase 14: Production-Readiness Remediation 🚨 BLOCKING
+
+**Goal:** Correct the defects identified by the 2026-08-09 codebase audit before adding more product features or declaring the project shippable.
+
+**Priority policy:**
+
+- **P0:** Security, data races, incorrect output, broken builds, or nonfunctional lifecycle guarantees. These block release and should be completed first.
+- **P1:** Reliability, persistence, portability, test coverage, and API consistency required for sustained use.
+- **P2:** Performance, maintainability, documentation, and UX improvements that should follow the corrected architecture.
+- Existing unchecked Phase 12/13 feature work should pause when it depends on behavior being redesigned here.
+
+### Audit Baseline
+
+The following results define the starting point for Phase 14:
+
+- [x] `go vet ./...` passes on the current AMD64 workspace.
+- [x] `go test -short ./...` passes.
+- [ ] `go test -race -short ./...` passes; currently fails with server job-state and event-broadcaster races.
+- [ ] A clean source export builds; currently fails because ignored `*_templ.go` files are required.
+- [ ] Linux/ARM64 builds; currently fails with undefined `ssdAVX2` and `sadAVX2` symbols.
+- [ ] The normal test suite is hardware-independent; currently the absolute SSD throughput threshold fails on valid hardware.
+- [ ] Live progress, periodic checkpoints, traces, cancellation, and resume behave as documented.
+- [ ] Canvas, backend, batch-size, and per-circle metadata behavior are correct end-to-end.
+
+### Task 14.1: Restore Reproducible Builds and Tooling (P0)
+
+- [ ] Choose and document one templ generation strategy:
+  - [ ] Commit generated `*_templ.go` files, **or**
+  - [ ] Pin the templ generator version and make all build/test entry points generate deterministically.
+- [ ] Remove the hardcoded `~/go/bin/templ` assumption from `justfile`.
+- [ ] Make `just build`, `just test`, and `just lint` work from a clean clone without untracked files.
+- [ ] Add a generation consistency check that fails when generated output differs from tracked/expected output.
+- [ ] Fix the formatting check so non-empty `gofmt -s -l` output fails the command.
+- [ ] Format all tracked Go sources with `gofmt -s` in a dedicated commit.
+- [ ] Remove tracked generated artifacts:
+  - [ ] `prototypes/ssd_avx2_test`
+  - [ ] `prototypes/ssd_avx2_simple_test`
+  - [ ] `prototypes/ssd_avx2_v2_test`
+  - [ ] `out2.png`, unless deliberately retained and documented as an example asset.
+- [ ] Align Go-version declarations across `go.mod`, `AGENTS.md`, `README.md`, `PLAN.md`, and CI.
+
+**Acceptance Checks:**
+
+- [ ] `git archive HEAD` extracted into an empty directory can run the documented build and short-test commands.
+- [ ] No ignored or user-home file is required to build.
+- [ ] Generation and formatting checks fail correctly when source is stale.
+
+### Task 14.2: Establish a Trusted Server Security Model (P0)
+
+- [ ] Decide and document whether server mode is:
+  - [ ] Strictly trusted-local-only, with defensive browser-origin protections, or
+  - [ ] Network-capable, with authentication and authorization.
+- [ ] Remove wildcard CORS; default to same-origin and support an explicit allowlist only when configured.
+- [ ] Add CSRF/origin validation for browser-triggered state-changing requests.
+- [ ] Restrict `refPath` and `canvasPath` to configured, canonicalized input roots.
+- [ ] Reject symlink/path escapes after resolving the final path.
+- [ ] Disable pprof endpoints by default; expose them only behind an explicit profiling flag and trusted bind address.
+- [ ] Add HTTP server hardening:
+  - [ ] `ReadHeaderTimeout`
+  - [ ] `ReadTimeout` or per-handler body deadlines
+  - [ ] `WriteTimeout` that remains compatible with SSE
+  - [ ] `IdleTimeout`
+  - [ ] `MaxHeaderBytes`
+- [ ] Limit JSON/form body size before parsing.
+- [ ] Validate decoded image dimensions and maximum pixel count before large allocations/work.
+- [ ] Add job admission controls: bounded queue, maximum concurrent jobs, and configurable resource limits.
+- [ ] Add a safe production error format that does not reveal filesystem paths or internal details.
+
+**Acceptance Checks:**
+
+- [ ] An untrusted browser origin cannot create jobs, read local images, or access profiling data.
+- [ ] Files outside configured input roots cannot be read, including through symlinks or traversal sequences.
+- [ ] Oversized bodies, images, and job requests are rejected before expensive work begins.
+- [ ] Security tests cover CORS/origin behavior, path containment, pprof defaults, and resource limits.
+
+### Task 14.3: Centralize Configuration and Validation (P0)
+
+- [ ] Move application configuration types out of `internal/store` into a dependency-free domain/application package.
+- [ ] Define typed `Mode`, `Backend`, job state, and optimizer variant values instead of unchecked strings.
+- [ ] Implement one `DefaultConfig`, `ApplyDefaults`, and `Validate` path shared by CLI, API, UI, and checkpoint loading.
+- [ ] Enforce explicit limits for:
+  - [ ] Circles
+  - [ ] Iterations
+  - [ ] Population size
+  - [ ] Batch size
+  - [ ] Convergence patience and threshold
+  - [ ] Checkpoint/trace intervals
+  - [ ] Image dimensions and decoded pixel count
+- [ ] Represent optional booleans so omitted values differ from explicit `false`, or replace them with explicit enable/disable flags.
+- [ ] Correct seed semantics:
+  - [ ] Either implement `seed=0` as random and report the generated seed, or
+  - [ ] Document that zero is deterministic.
+- [ ] Validate canvas dimensions rather than silently cropping or padding.
+- [ ] Add checkpoint schema versioning and migration/rejection rules.
+
+**Acceptance Checks:**
+
+- [ ] The same input receives the same defaults and validation result through CLI, API, UI, and resume.
+- [ ] Invalid values return typed errors rather than panics, silent coercion, or delayed worker failure.
+- [ ] Table-driven tests cover boundaries and omitted-versus-explicit configuration values.
+
+### Task 14.4: Fix Job-State and SSE Concurrency (P0)
+
+- [ ] Stop returning mutable internal `*Job` pointers from `JobManager`.
+- [ ] Return immutable/deep-copied snapshots, including copied parameter slices and `EndTime` values.
+- [ ] Replace arbitrary mutation callbacks with typed state-transition/update methods where practical.
+- [ ] Define and test legal job state transitions.
+- [ ] Use exclusive synchronization when mutating `EventBroadcaster.lastEvent`.
+- [ ] Ensure subscribe, unsubscribe, broadcast, cleanup, and job completion cannot close/send the same channel concurrently.
+- [ ] Remove completed-job broadcaster cache entries at a defined lifecycle point.
+- [ ] Add concurrent handler/worker/SSE tests that repeatedly exercise creation, status, completion, cancellation, and cleanup.
+
+**Acceptance Checks:**
+
+- [ ] `go test -race -short ./...` passes repeatedly.
+- [ ] A multi-job stress test completes without races, concurrent-map panics, channel panics, or corrupted responses.
+- [ ] API responses remain internally consistent while jobs update.
+
+### Task 14.5: Redesign Optimizer Execution for Progress, Errors, and Cancellation (P0)
+
+- [ ] Replace the synchronous error-less optimizer contract with a context-aware result contract, for example:
+  - [ ] `Run(ctx, problem, observer) (Result, error)`
+  - [ ] Include best parameters, best cost, completed iterations, evaluations, and termination reason.
+- [ ] Check cancellation inside optimizer iterations/evaluations with a documented maximum cancellation latency.
+- [ ] Publish atomic best-so-far snapshots from optimizer callbacks.
+- [ ] Update job state, SSE, traces, and checkpoints from the same progress snapshot rather than independent polling assumptions.
+- [ ] Propagate Mayfly errors instead of silently returning an all-zero candidate.
+- [ ] Ensure monitor goroutines are joined before their writers/renderers are closed.
+- [ ] Supervise workers with per-job contexts, a `WaitGroup`, and explicit cancellation ownership.
+- [ ] Make UI- and API-created jobs use the same server-controlled lifecycle.
+- [ ] Wait for or clearly report unfinished workers during shutdown.
+
+**Acceptance Checks:**
+
+- [ ] Status and SSE show increasing iterations and updated best cost during a long job.
+- [ ] Cancellation stops CPU work within the documented latency and reaches `cancelled` deterministically.
+- [ ] Optimizer failure reaches the CLI/API and sets the job to `failed` with a safe diagnostic.
+- [ ] Shutdown does not leave unmanaged optimization goroutines running.
+
+### Task 14.6: Correct Renderer and Pipeline Semantics (P0)
+
+- [ ] Preserve the selected renderer backend and starting canvas through joint, sequential, and batch modes.
+- [ ] Introduce a renderer/session factory capable of creating larger-stage renderers without silently falling back to CPU or white background.
+- [ ] Render final CLI and server output using the same base canvas/backend semantics used for cost evaluation.
+- [ ] Change batch optimization to accept `totalCircles` and use `min(batchSize, remaining)` for the final batch.
+- [ ] Populate `OptimizationResult.Iterations` and evaluation statistics for every mode.
+- [ ] Preserve the best historical parameter vector; reject or roll back a sequential/batch stage that worsens cost.
+- [ ] Validate parameter-vector length before rendering instead of panicking.
+- [ ] Define image-origin and stride requirements:
+  - [ ] Support independent origins/strides correctly, or
+  - [ ] Normalize inputs once and assert the normalized representation.
+- [ ] Handle empty images and zero-circle cases without division by zero or incorrect zero costs.
+
+**Acceptance Checks:**
+
+- [ ] Custom-canvas cost, saved PNG, `/best.png`, and `/diff.png` all describe the same rendered image.
+- [ ] Sequential and batch modes honor CPU/OpenCL selection or return an explicit unsupported-mode error.
+- [ ] Requests for 1, 4, 6, and 7 batch-mode circles return exactly that many circles.
+- [ ] Tests cover custom canvases, mismatched dimensions, non-zero origins, padded strides, short parameter vectors, and zero-size inputs.
+
+### Task 14.7: Repair Snapshots, Checkpoints, Traces, and Resume (P0/P1)
+
+- [ ] Preserve `CostAfter` and `Timestamp` for every circle instead of rebuilding previous entries with zero metadata.
+- [ ] Save circle metadata incrementally or carry previous metadata forward explicitly.
+- [ ] Make checkpoint creation consume an immutable live optimizer snapshot.
+- [ ] Ensure fresh jobs can create meaningful periodic checkpoints before completion.
+- [ ] Save a final checkpoint on successful completion when checkpointing is enabled/documented.
+- [ ] Make early-converged sequential and partial-batch checkpoints valid by recording actual and requested circle counts separately.
+- [ ] Define resume semantics honestly:
+  - [ ] Persist and restore optimizer population/internal state, or
+  - [ ] Seed a new population around the previous best with a new deterministic continuation seed, or
+  - [ ] Rename the operation to `restart-from-best` and document its limitations.
+- [ ] Do not share a mutable `CPURenderer` between active optimization and checkpoint artifact rendering.
+- [ ] Make trace finalization ordered and durable on completion, cancellation, failure, and shutdown.
+
+**Acceptance Checks:**
+
+- [ ] Every `circles.json` entry contains its own non-zero timestamp and correct post-circle cost.
+- [ ] A long job produces observable, valid intermediate checkpoints and trace entries.
+- [ ] Kill/restart/resume tests demonstrate progress beyond the saved state or explicitly validate restart-from-best semantics.
+- [ ] Checkpoint artifact generation cannot race with objective evaluation.
+
+### Task 14.8: Make Persistence Safe and Cohesive (P1)
+
+- [ ] Make the configured store own checkpoint metadata, traces, best/diff images, snapshots, and circle metadata.
+- [ ] Remove all hardcoded `./data` paths from server workers.
+- [ ] Validate job IDs as canonical UUIDs or safe single path components at every store boundary.
+- [ ] Guarantee that resolved job paths remain beneath the configured store root.
+- [ ] Use unique same-directory temporary files for concurrent atomic writes.
+- [ ] Validate checkpoint contents and require `checkpoint.JobID == jobID` before saving.
+- [ ] Make snapshots, `circles.json`, best images, and diff images atomic where partial files would be harmful.
+- [ ] Define file permissions appropriate for potentially sensitive reference paths and outputs.
+- [ ] Add file/directory sync where crash durability is promised.
+- [ ] Define retention and server-side deletion behavior for completed jobs and SSE caches.
+
+**Acceptance Checks:**
+
+- [ ] Same-job concurrent saves pass under the race detector without lost, mixed, or corrupt data.
+- [ ] A custom store root contains all artifacts and nothing is written to `./data` unexpectedly.
+- [ ] Malformed IDs cannot read, overwrite, or delete paths outside the store root.
+- [ ] Fault-injection tests cover failed writes, renames, disk-full behavior where practical, and process-interruption recovery.
+
+### Task 14.9: Restore Portability and Integrate Performance Work (P1/P2)
+
+- [ ] Split SIMD wrappers by architecture/build tag so unsupported symbols are never referenced.
+- [ ] Provide a real portable scalar fallback for non-AMD64 targets.
+- [ ] Implement or accurately label ARM64 NEON support; do not advertise an unbuildable placeholder.
+- [ ] Cross-build at minimum:
+  - [ ] linux/amd64
+  - [ ] linux/arm64
+  - [ ] darwin/amd64
+  - [ ] darwin/arm64
+  - [ ] windows/amd64
+- [ ] Enable `FastMSECost` in production only after parity and representative benchmark validation.
+- [ ] Replace absolute wall-clock unit-test thresholds with benchmarks or relative regression checks on controlled runners.
+- [ ] Reuse accumulated canvases in sequential/batch mode to avoid repeatedly rendering all prior circles.
+- [ ] Reduce parameter-slice allocations in stage evaluation.
+- [ ] Perform OpenCL error reduction on-device and avoid reading the full output image for every cost evaluation.
+- [ ] Benchmark full optimization pipelines, not only isolated kernels.
+
+**Acceptance Checks:**
+
+- [ ] All supported target builds compile in CI.
+- [ ] Scalar and SIMD/GPU cost implementations match the reference across boundary widths, strides, and alpha values.
+- [ ] Performance tests are reproducible and do not fail merely because a developer uses different hardware.
+- [ ] Benchmark reports include allocation counts and end-to-end improvement, with no correctness regression.
+
+### Task 14.10: Harden CLI and API Contracts (P1)
+
+- [ ] Use typed request/response DTOs instead of `map[string]interface{}` and unchecked assertions.
+- [ ] Add bounded HTTP clients and request contexts to `status` and `resume` commands.
+- [ ] Escape job IDs as URL path segments.
+- [ ] Validate log levels and return a usage error for unknown values.
+- [ ] Standardize API error responses, method handling, status codes, and `Allow` headers.
+- [ ] Reject trailing/unexpected path components instead of loosely routing them.
+- [ ] Record actual evaluations/iterations for throughput rather than estimating configured maximum work.
+- [ ] Add job cancellation and deletion endpoints only after lifecycle and persistence semantics are safe.
+
+**Acceptance Checks:**
+
+- [ ] Malformed or version-skewed server responses produce CLI errors, never panics.
+- [ ] CLI network commands time out and respect cancellation.
+- [ ] API contract tests cover methods, malformed JSON, unknown fields, trailing data, status codes, and response schemas.
+
+### Task 14.11: Build a Release-Gating Test and CI Matrix (P1)
+
+- [ ] Add CI jobs for:
+  - [ ] Clean-checkout generation and build
+  - [ ] `go vet ./...`
+  - [ ] `staticcheck` or a pinned `golangci-lint` configuration
+  - [ ] `go test -short ./...`
+  - [ ] `go test -race -short ./...`
+  - [ ] Cross-compilation matrix
+  - [ ] GPU-tag compile check where OpenCL headers are available
+  - [ ] Coverage reporting with justified package thresholds
+  - [ ] `govulncheck`
+  - [ ] Generated-file and formatting consistency
+- [ ] Add targeted regression tests for every P0 defect in this phase.
+- [ ] Separate unit, integration, performance, GPU, and long-running tests with explicit commands/build tags.
+- [ ] Avoid tests that leave background workers running beyond `t.Cleanup`.
+- [ ] Add multi-job stress tests and same-job store concurrency tests.
+- [ ] Add a clean end-to-end test: build → serve → create → observe progress → checkpoint → cancel/restart → resume → fetch artifacts.
+
+**Acceptance Checks:**
+
+- [ ] All required CI checks pass from a clean clone on two consecutive runs.
+- [ ] Every audit finding has a regression test or a documented reason why automated coverage is impractical.
+- [ ] No release can be produced while race, vulnerability, generation, cross-build, or core end-to-end checks fail.
+
+### Task 14.12: Correct Documentation and Release Claims (P1/P2)
+
+- [ ] Rewrite README quick start so it works verbatim from a clean clone.
+- [ ] Document all current CLI commands and remove “coming in later phases.”
+- [ ] Remove nonexistent packages such as `internal/pkg` from architecture documentation.
+- [ ] Document the server trust model, bind behavior, input roots, authentication/origin policy, and pprof controls.
+- [ ] Document exact checkpoint/resume semantics and limitations.
+- [ ] Correct claims about canvas continuation, live progress, periodic/final checkpoints, random seeds, SIMD, NEON, and GPU support.
+- [ ] Distinguish implemented, experimental, tested, and production-ready features.
+- [ ] Update historical phase completion notes when their acceptance checks have genuinely been revalidated.
+- [ ] Add `LICENSE`, `CONTRIBUTING.md`, changelog, support matrix, and known-limitations documentation before public release.
+
+**Acceptance Checks:**
+
+- [ ] A new user can follow the README on a clean machine and complete a small CLI and server job.
+- [ ] Every documented feature has a corresponding passing acceptance test or is clearly marked experimental/limited.
+- [ ] No document describes checkpoint/resume or server mode as production-ready until Phase 14 is complete.
+
+### Phase 14 Execution Order
+
+Implement in dependency-aware waves:
+
+1. **Build foundation:** 14.1, then establish the CI skeleton from 14.11.
+2. **Safety boundary:** 14.2, 14.3, and 14.4.
+3. **Execution model:** 14.5, followed by 14.6.
+4. **Durability:** 14.7 and 14.8.
+5. **Compatibility and efficiency:** 14.9 and 14.10.
+6. **Release gate:** finish 14.11 and 14.12, then rerun every Phase 14 acceptance check.
+
+### Phase 14 Definition of Done
+
+- [ ] All P0 tasks and acceptance checks are complete.
+- [ ] `just build`, `just lint`, `just test`, and the race suite pass from a clean clone.
+- [ ] Supported cross-builds and the GPU-tag compile check pass.
+- [ ] No known data races, path escapes, cross-origin image disclosures, or unbounded job admission paths remain.
+- [ ] Canvas, backend, batch count, snapshot metadata, progress, checkpoint, cancellation, and resume semantics are correct and tested.
+- [ ] Documentation matches observable behavior.
+- [ ] A fresh end-to-end release-candidate run passes without manual workspace preparation.
+
+---
+
 ## Summary and Next Steps
 
-This plan covers **Phases 0-13** in complete detail with bite-sized, testable tasks. Each task follows TDD principles:
+This plan covers **Phases 0-14** in complete detail with bite-sized, testable tasks. Each task follows TDD principles:
 1. Write failing test
 2. Run test to verify failure
 3. Write minimal implementation
@@ -1630,11 +1944,12 @@ This plan covers **Phases 0-13** in complete detail with bite-sized, testable ta
 5. Commit
 
 **Implementation Strategy:**
-- Follow phases sequentially for maximum stability
-- Complete all tasks in a phase before moving to the next
-- Use TodoWrite to track progress within each phase
+- Execute Phase 14 before continuing feature work in Phases 12-13
+- Follow the dependency-aware Phase 14 execution order rather than task number alone
+- Complete and verify each remediation wave before starting dependent work
+- Use the active task tracker to record progress within each wave
 - Update PLAN.md with completion status as you go
 - Commit frequently with descriptive messages
 - Document learnings and decisions in CLAUDE.md
 
-**Current Status:** Phases 1-8 complete. Phase 8 (Persistence & Checkpoints) fully tested and documented. Ready to begin Phase 9 (Performance Profiling).
+**Current Status:** Historical feature phases reached Phase 11-era implementation, but the 2026-08-09 audit found release-blocking defects. **Phase 14 is now the active priority. Begin with Task 14.1 and do not claim production readiness until the Phase 14 definition of done passes.**
