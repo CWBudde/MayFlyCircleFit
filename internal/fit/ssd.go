@@ -2,26 +2,21 @@ package fit
 
 import (
 	"image"
-	"log/slog"
-
-	"golang.org/x/sys/cpu"
 )
 
 // SSD (Sum of Squared Differences) kernel interface for SIMD-accelerated cost computation.
 //
 // This file defines the interface for computing pixel-wise sum of squared differences
-// between two NRGBA images, with runtime dispatch to SIMD implementations (AVX2, NEON)
-// or scalar fallback.
+// between two NRGBA images, with runtime dispatch to AVX2 on supported amd64
+// processors and a scalar fallback everywhere else.
 //
 // Architecture-specific implementations:
-//   - ssd_amd64.s:      AVX2 implementation (256-bit, processes 8 pixels/iteration)
-//   - ssd_arm64.s:      NEON implementation (128-bit, processes 4 pixels/iteration)
-//   - ssd_generic.go:   Scalar fallback (all other platforms)
+//   - ssd_amd64.s: AVX2 implementation (256-bit, processes 8 pixels/iteration)
+//   - ssd_dispatch_generic.go: scalar dispatch for non-amd64 platforms
 //
 // Performance expectations:
-//   - AVX2:   4-6x speedup over scalar (processes 32 bytes per instruction)
-//   - NEON:   3-4x speedup over scalar (processes 16 bytes per instruction)
-//   - Scalar: Baseline (current MSECost performance)
+//   - AVX2: 4-6x speedup over scalar (processes 32 bytes per instruction)
+//   - Scalar: baseline and portable fallback
 
 // SSDBackend indicates which SIMD backend is active
 type SSDBackend int
@@ -49,25 +44,8 @@ func (b SSDBackend) String() string {
 var ActiveSSDBackend SSDBackend
 
 // fastSSD is the function pointer for runtime-dispatched SSD computation.
-// Set by init() based on CPU feature detection.
+// Set by an architecture-specific init function.
 var fastSSD func(a, b []uint8, stride, width, height int) float64
-
-func init() {
-	// Detect CPU features and select best SSD implementation
-	if cpu.X86.HasAVX2 {
-		ActiveSSDBackend = SSDBackendAVX2
-		fastSSD = fastSSD_AVX2
-		slog.Debug("SSD kernel initialized", "backend", "AVX2", "width", "256-bit")
-	} else if cpu.ARM64.HasASIMD {
-		ActiveSSDBackend = SSDBackendNEON
-		fastSSD = fastSSD_NEON
-		slog.Debug("SSD kernel initialized", "backend", "NEON", "width", "128-bit")
-	} else {
-		ActiveSSDBackend = SSDBackendScalar
-		fastSSD = fastSSD_Scalar
-		slog.Debug("SSD kernel initialized", "backend", "scalar", "reason", "no SIMD support")
-	}
-}
 
 // FastSSD computes sum of squared differences between two NRGBA images.
 //
@@ -97,54 +75,21 @@ func FastSSD(current, reference *image.NRGBA) float64 {
 
 // ---------------------- Low-Level Kernel Interface ----------------------
 
-// fastSSD_AVX2 computes SSD using AVX2 SIMD instructions (256-bit).
-//
-// Implementation: ssd_amd64.s (hand-written Plan9 assembly or GoAT-generated)
-//
-// Algorithm (per iteration):
-//   1. Load 8 RGBA pixels from `a` (32 bytes)
-//   2. Load 8 RGBA pixels from `b` (32 bytes)
-//   3. Extract RGB bytes (ignore alpha): de-interleave or mask
-//   4. Compute per-channel differences: dr = a.r - b.r, dg = a.g - b.g, db = a.b - b.b
-//   5. Square differences: dr^2, dg^2, db^2
-//   6. Accumulate into running sum (horizontal add reduction at end)
-//
-// Performance target: 4-6x speedup over scalar (processes 8 pixels per iteration)
-//
-// Parameters:
-//   - a:      Current image pixel buffer (NRGBA format: R,G,B,A repeated)
-//   - b:      Reference image pixel buffer (same format and size)
-//   - stride: Bytes per row (typically width * 4, may be padded)
-//   - width:  Image width in pixels
-//   - height: Image height in pixels
-//
-// Returns: Sum of squared differences over RGB channels (float64)
-//
-// Note: Implemented in ssd_amd64.s (Task 10.4 - hand-written assembly)
-func fastSSD_AVX2(a, b []uint8, stride, width, height int) float64 {
-	// Call assembly implementation (requires pointers, not slices)
-	if len(a) == 0 || len(b) == 0 {
-		return 0.0
-	}
-	return ssdAVX2(&a[0], &b[0], stride, width, height)
-}
-
 // fastSSD_NEON computes SSD using NEON SIMD instructions (128-bit).
 //
 // Implementation: ssd_arm64.s (hand-written Plan9 assembly or GoAT-generated)
 //
 // Algorithm (per iteration):
-//   1. Load 4 RGBA pixels from `a` (16 bytes)
-//   2. Load 4 RGBA pixels from `b` (16 bytes)
-//   3. Extract RGB bytes (ignore alpha)
-//   4. Compute per-channel differences and square
-//   5. Accumulate into running sum
+//  1. Load 4 RGBA pixels from `a` (16 bytes)
+//  2. Load 4 RGBA pixels from `b` (16 bytes)
+//  3. Extract RGB bytes (ignore alpha)
+//  4. Compute per-channel differences and square
+//  5. Accumulate into running sum
 //
 // Performance target: 3-4x speedup over scalar (processes 4 pixels per iteration)
 //
-// Note: Implemented in ssd_arm64.s (to be created in Task 10.5)
+// Note: This remains a scalar compatibility wrapper until a NEON kernel exists.
 func fastSSD_NEON(a, b []uint8, stride, width, height int) float64 {
-	// Placeholder: Will be replaced by assembly implementation in Task 10.5
 	return fastSSD_Scalar(a, b, stride, width, height)
 }
 
@@ -167,10 +112,12 @@ func fastSSD_NEON(a, b []uint8, stride, width, height int) float64 {
 // FastMSECost is a drop-in replacement for MSECost using the SIMD-accelerated SSD kernel.
 //
 // This function has the same signature as MSECost and can be used as a CostFunc.
-// It provides 4-6x speedup on AVX2-capable CPUs and 3-4x on ARM64 (NEON).
+// It provides 4-6x speedup on AVX2-capable CPUs and uses the portable scalar
+// kernel on other architectures.
 //
 // To use in CPURenderer:
-//   renderer.costFunc = FastMSECost  // Replace MSECost with FastMSECost
+//
+//	renderer.costFunc = FastMSECost  // Replace MSECost with FastMSECost
 //
 // Performance comparison (256x256 image):
 //   - MSECost (scalar):     ~15ms per evaluation
@@ -195,9 +142,10 @@ func FastMSECost(current, reference *image.NRGBA) float64 {
 // Returns: true if all implementations match within tolerance, false otherwise
 //
 // Example usage in tests:
-//   if !CompareSSDImplementations(imgA, imgB, 1e-9) {
-//       t.Error("SIMD implementation differs from scalar reference")
-//   }
+//
+//	if !CompareSSDImplementations(imgA, imgB, 1e-9) {
+//	    t.Error("SIMD implementation differs from scalar reference")
+//	}
 func CompareSSDImplementations(a, b *image.NRGBA, tolerance float64) bool {
 	width := a.Bounds().Dx()
 	height := a.Bounds().Dy()
@@ -223,14 +171,15 @@ func CompareSSDImplementations(a, b *image.NRGBA, tolerance float64) bool {
 // Returns: throughput in megapixels/second
 //
 // Example usage in benchmarks:
-//   func BenchmarkSSDScalar(b *testing.B) {
-//       img := randomImage(256, 256)
-//       b.ResetTimer()
-//       for i := 0; i < b.N; i++ {
-//           fastSSD_Scalar(img.Pix, img.Pix, img.Stride, 256, 256)
-//       }
-//       b.ReportMetric(BenchmarkSSDBackend(b, 256, 256), "Mpixels/sec")
-//   }
+//
+//	func BenchmarkSSDScalar(b *testing.B) {
+//	    img := randomImage(256, 256)
+//	    b.ResetTimer()
+//	    for i := 0; i < b.N; i++ {
+//	        fastSSD_Scalar(img.Pix, img.Pix, img.Stride, 256, 256)
+//	    }
+//	    b.ReportMetric(BenchmarkSSDBackend(b, 256, 256), "Mpixels/sec")
+//	}
 func BenchmarkSSDBackend(iterations int, width, height int, durationNs int64) float64 {
 	totalPixels := float64(iterations) * float64(width) * float64(height)
 	seconds := float64(durationNs) / 1e9

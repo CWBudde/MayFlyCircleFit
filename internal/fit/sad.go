@@ -2,9 +2,6 @@ package fit
 
 import (
 	"image"
-	"log/slog"
-
-	"golang.org/x/sys/cpu"
 )
 
 // SAD (Sum of Absolute Differences) with Quadratic Weighting kernel.
@@ -20,9 +17,9 @@ import (
 // giving more importance to larger differences (more visually noticeable).
 //
 // Architecture-specific implementations:
-//   - sad_amd64.s:     AVX2 with VPSADBW (processes 8 pixels/iteration)
-//   - sad_arm64.s:     NEON (processes 4 pixels/iteration)
-//   - sad_scalar.go:   Portable fallback
+//   - sad_amd64.s: AVX2 implementation (processes 8 pixels/iteration)
+//   - sad_scalar.go: portable fallback for non-amd64 platforms and amd64
+//     processors without AVX2
 
 // SADBackend indicates which SIMD backend is active for SAD
 type SADBackend int
@@ -52,28 +49,12 @@ var ActiveSADBackend SADBackend
 // fastSAD is the function pointer for runtime-dispatched SAD computation
 var fastSAD func(a, b []uint8, stride, width, height int) float64
 
-func init() {
-	// Detect CPU features and select best SAD implementation
-	if cpu.X86.HasAVX2 {
-		ActiveSADBackend = SADBackendAVX2
-		fastSAD = fastSAD_AVX2
-		slog.Debug("SAD kernel initialized", "backend", "AVX2", "instruction", "VPSADBW")
-	} else if cpu.ARM64.HasASIMD {
-		ActiveSADBackend = SADBackendNEON
-		fastSAD = fastSAD_NEON
-		slog.Debug("SAD kernel initialized", "backend", "NEON")
-	} else {
-		ActiveSADBackend = SADBackendScalar
-		fastSAD = fastSAD_Scalar
-		slog.Debug("SAD kernel initialized", "backend", "scalar")
-	}
-}
-
 // FastSAD computes perceptually-weighted error using SAD + quadratic weighting.
 //
 // This matches the Delphi ErrorWeightingLoop function:
-//   For each pixel: Value = |R1-R2| + |G1-G2| + |B1-B2|
-//   Weighted cost: Scale × Value × (255 + 9×Value)
+//
+//	For each pixel: Value = |R1-R2| + |G1-G2| + |B1-B2|
+//	Weighted cost: Scale × Value × (255 + 9×Value)
 //
 // The quadratic weighting emphasizes larger differences, which are more
 // perceptually significant.
@@ -91,33 +72,9 @@ func FastSAD(current, reference *image.NRGBA) float64 {
 	return fastSAD(current.Pix, reference.Pix, current.Stride, width, height)
 }
 
-// fastSAD_AVX2 computes SAD using AVX2 VPSADBW instruction.
-//
-// VPSADBW (Packed Sum of Absolute Differences Byte to Word) is specifically
-// designed for this operation - it computes 8 absolute differences and
-// horizontally sums them in a single instruction.
-//
-// Algorithm per iteration:
-//   1. Load 8 RGBA pixels (32 bytes) from each image
-//   2. Mask out alpha channel (AND with 0x00FFFFFF repeated)
-//   3. VPSADBW: Compute |a[i]-b[i]| for 32 bytes and horizontal sum
-//   4. Apply quadratic weighting: value × (255 + 9×value)
-//   5. Accumulate into running sum
-//
-// Final step: Multiply total by CScale
-//
-// Performance: ~3-4x faster than scalar due to VPSADBW efficiency
-func fastSAD_AVX2(a, b []uint8, stride, width, height int) float64 {
-	// Call assembly implementation
-	if len(a) == 0 || len(b) == 0 {
-		return 0.0
-	}
-	return sadAVX2(&a[0], &b[0], stride, width, height)
-}
-
 // fastSAD_NEON computes SAD using NEON SIMD (ARM64)
 func fastSAD_NEON(a, b []uint8, stride, width, height int) float64 {
-	// Placeholder: Will be implemented in Task 10.5
+	// This remains a scalar compatibility wrapper until a NEON kernel exists.
 	return fastSAD_Scalar(a, b, stride, width, height)
 }
 
