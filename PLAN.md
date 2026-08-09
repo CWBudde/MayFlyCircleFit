@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24+, Cobra (CLI), templ (frontend), slog (logging), net/http (server), optional chi (routing), cgo+SIMD (performance), OpenGL/OpenCL (GPU)
 
-> **Production-readiness audit (2026-08-09):** Historical `COMPLETE` markers below describe implementation milestones, not validated production readiness. The audit found blocking correctness, concurrency, security, persistence, build, and portability defects. Phase 14 supersedes affected completion claims until its acceptance checks pass.
+> **Production-readiness audit (2026-08-09):** Historical `COMPLETE` markers below describe implementation milestones, not validated production readiness. Phase 14 supersedes affected completion claims until its acceptance checks pass. Remediation code, release-gating CI, and corrected documentation are now present, but no gate is marked passed solely because its workflow was added; final clean-clone and repeated CI verification remain release requirements.
 
 ---
 
@@ -1637,33 +1637,35 @@ Phases 0-11 use bite-sized, testable tasks. Each task follows TDD principles:
 
 ### Audit Baseline
 
-The following results define the starting point for Phase 14:
+The following results record the audit baseline and current remediation state.
+Checked implementation items are not a release signoff; acceptance results must
+be re-run against the final revision.
 
 - [x] `go vet ./...` passes on the current AMD64 workspace.
 - [x] `go test -short ./...` passes.
-- [ ] `go test -race -short ./...` passes; currently fails with server job-state and event-broadcaster races.
-- [ ] A clean source export builds; currently fails because ignored `*_templ.go` files are required.
-- [ ] Linux/ARM64 builds; currently fails with undefined `ssdAVX2` and `sadAVX2` symbols.
-- [ ] The normal test suite is hardware-independent; currently the absolute SSD throughput threshold fails on valid hardware.
+- [ ] `go test -race -short ./...` passes on the final revision; the original server job-state and event-broadcaster race defects have regression fixes but still require final gate verification.
+- [x] Generated `*_templ.go` files are committed and the templ generator is pinned; final clean-export acceptance remains below.
+- [x] Non-AMD64 builds use portable scalar dispatch instead of referencing AMD64-only AVX2 symbols; final cross-build acceptance remains below.
+- [x] Hardware-dependent absolute SSD/SAD throughput assertions have been removed from tests; performance measurements remain benchmarks.
 - [ ] Live progress, periodic checkpoints, traces, cancellation, and resume behave as documented.
-- [ ] Canvas, backend, batch-size, and per-circle metadata behavior are correct end-to-end.
+- [x] Canvas, backend, batch-size, parameter-length, origin/stride, and empty-input renderer behavior has regression coverage; final release-candidate end-to-end verification remains below.
 
 ### Task 14.1: Restore Reproducible Builds and Tooling (P0)
 
-- [ ] Choose and document one templ generation strategy:
-  - [ ] Commit generated `*_templ.go` files, **or**
-  - [ ] Pin the templ generator version and make all build/test entry points generate deterministically.
-- [ ] Remove the hardcoded `~/go/bin/templ` assumption from `justfile`.
+- [x] Choose and document one templ generation strategy:
+  - [x] Commit generated `*_templ.go` files, **and**
+  - [x] Pin the templ generator version and make build/test entry points generate deterministically.
+- [x] Remove the hardcoded `~/go/bin/templ` assumption from `justfile`.
 - [ ] Make `just build`, `just test`, and `just lint` work from a clean clone without untracked files.
-- [ ] Add a generation consistency check that fails when generated output differs from tracked/expected output.
-- [ ] Fix the formatting check so non-empty `gofmt -s -l` output fails the command.
-- [ ] Format all tracked Go sources with `gofmt -s` in a dedicated commit.
-- [ ] Remove tracked generated artifacts:
-  - [ ] `prototypes/ssd_avx2_test`
-  - [ ] `prototypes/ssd_avx2_simple_test`
-  - [ ] `prototypes/ssd_avx2_v2_test`
-  - [ ] `out2.png`, unless deliberately retained and documented as an example asset.
-- [ ] Align Go-version declarations across `go.mod`, `AGENTS.md`, `README.md`, `PLAN.md`, and CI.
+- [x] Add a generation consistency check that fails when generated output differs from tracked/expected output.
+- [x] Fix the formatting check so non-empty `gofmt -s -l` output fails the command.
+- [x] Format all tracked Go sources with `gofmt -s` in a dedicated commit.
+- [x] Remove tracked generated artifacts:
+  - [x] `prototypes/ssd_avx2_test`
+  - [x] `prototypes/ssd_avx2_simple_test`
+  - [x] `prototypes/ssd_avx2_v2_test`
+  - [x] `out2.png`, unless deliberately retained and documented as an example asset.
+- [x] Align Go-version declarations across `go.mod`, `AGENTS.md`, `README.md`, `PLAN.md`, and CI (Go 1.24+).
 
 **Acceptance Checks:**
 
@@ -1673,172 +1675,172 @@ The following results define the starting point for Phase 14:
 
 ### Task 14.2: Establish a Trusted Server Security Model (P0)
 
-- [ ] Decide and document whether server mode is:
-  - [ ] Strictly trusted-local-only, with defensive browser-origin protections, or
+- [x] Decide and document whether server mode is:
+  - [x] Strictly trusted-local-only, with defensive browser-origin protections, or
   - [ ] Network-capable, with authentication and authorization.
-- [ ] Remove wildcard CORS; default to same-origin and support an explicit allowlist only when configured.
-- [ ] Add CSRF/origin validation for browser-triggered state-changing requests.
-- [ ] Restrict `refPath` and `canvasPath` to configured, canonicalized input roots.
-- [ ] Reject symlink/path escapes after resolving the final path.
-- [ ] Disable pprof endpoints by default; expose them only behind an explicit profiling flag and trusted bind address.
-- [ ] Add HTTP server hardening:
-  - [ ] `ReadHeaderTimeout`
-  - [ ] `ReadTimeout` or per-handler body deadlines
+- [x] Remove wildcard CORS and default to same-origin for the trusted-local model.
+- [x] Add CSRF/origin validation for browser-triggered state-changing requests.
+- [x] Restrict `refPath` and `canvasPath` to configured, canonicalized input roots.
+- [x] Reject symlink/path escapes after resolving the final path.
+- [x] Disable pprof endpoints by default; expose them only behind an explicit profiling flag and trusted bind address.
+- [x] Add HTTP server hardening:
+  - [x] `ReadHeaderTimeout`
+  - [x] `ReadTimeout` or per-handler body deadlines
   - [ ] `WriteTimeout` that remains compatible with SSE
-  - [ ] `IdleTimeout`
-  - [ ] `MaxHeaderBytes`
-- [ ] Limit JSON/form body size before parsing.
-- [ ] Validate decoded image dimensions and maximum pixel count before large allocations/work.
-- [ ] Add job admission controls: bounded queue, maximum concurrent jobs, and configurable resource limits.
-- [ ] Add a safe production error format that does not reveal filesystem paths or internal details.
+  - [x] `IdleTimeout`
+  - [x] `MaxHeaderBytes`
+- [x] Limit JSON/form body size before parsing.
+- [x] Validate decoded image dimensions and maximum pixel count before large allocations/work.
+- [x] Add job admission controls: bounded queue, maximum concurrent jobs, and configurable resource limits.
+- [x] Add a safe production error format that does not reveal filesystem paths or internal details.
 
 **Acceptance Checks:**
 
-- [ ] An untrusted browser origin cannot create jobs, read local images, or access profiling data.
-- [ ] Files outside configured input roots cannot be read, including through symlinks or traversal sequences.
-- [ ] Oversized bodies, images, and job requests are rejected before expensive work begins.
-- [ ] Security tests cover CORS/origin behavior, path containment, pprof defaults, and resource limits.
+- [x] An untrusted browser origin cannot create jobs, read local images, or access profiling data.
+- [x] Files outside configured input roots cannot be read, including through symlinks or traversal sequences.
+- [x] Oversized bodies, images, and job requests are rejected before expensive work begins.
+- [x] Security tests cover CORS/origin behavior, path containment, pprof defaults, and resource limits.
 
 ### Task 14.3: Centralize Configuration and Validation (P0)
 
-- [ ] Move application configuration types out of `internal/store` into a dependency-free domain/application package.
-- [ ] Define typed `Mode`, `Backend`, job state, and optimizer variant values instead of unchecked strings.
-- [ ] Implement one `DefaultConfig`, `ApplyDefaults`, and `Validate` path shared by CLI, API, UI, and checkpoint loading.
-- [ ] Enforce explicit limits for:
-  - [ ] Circles
-  - [ ] Iterations
-  - [ ] Population size
-  - [ ] Batch size
-  - [ ] Convergence patience and threshold
-  - [ ] Checkpoint/trace intervals
-  - [ ] Image dimensions and decoded pixel count
-- [ ] Represent optional booleans so omitted values differ from explicit `false`, or replace them with explicit enable/disable flags.
-- [ ] Correct seed semantics:
-  - [ ] Either implement `seed=0` as random and report the generated seed, or
+- [x] Move application configuration types into a dependency-free domain/application package and keep compatibility aliases at persistence boundaries.
+- [x] Define typed `Mode`, `Backend`, job state, and optimizer variant values instead of unchecked strings.
+- [x] Implement one normalization/default/validation path shared by CLI, API, UI, and checkpoint loading.
+- [x] Enforce explicit limits for:
+  - [x] Circles
+  - [x] Iterations
+  - [x] Population size
+  - [x] Batch size
+  - [x] Convergence patience and threshold
+  - [x] Checkpoint/trace intervals
+  - [x] Image dimensions and decoded pixel count
+- [x] Replace ambiguous optional booleans with explicit enable/disable flags.
+- [x] Correct seed semantics:
+  - [x] Implement `seed=0` as random and report the generated effective seed, or
   - [ ] Document that zero is deterministic.
-- [ ] Validate canvas dimensions rather than silently cropping or padding.
-- [ ] Add checkpoint schema versioning and migration/rejection rules.
+- [x] Validate canvas dimensions rather than silently cropping or padding.
+- [x] Add checkpoint schema versioning and migration/rejection rules.
 
 **Acceptance Checks:**
 
-- [ ] The same input receives the same defaults and validation result through CLI, API, UI, and resume.
-- [ ] Invalid values return typed errors rather than panics, silent coercion, or delayed worker failure.
-- [ ] Table-driven tests cover boundaries and omitted-versus-explicit configuration values.
+- [x] The same input receives the same defaults and validation result through CLI, API, UI, and resume.
+- [x] Invalid values return typed errors rather than panics, silent coercion, or delayed worker failure.
+- [x] Table-driven tests cover boundaries and omitted-versus-explicit configuration values.
 
 ### Task 14.4: Fix Job-State and SSE Concurrency (P0)
 
-- [ ] Stop returning mutable internal `*Job` pointers from `JobManager`.
-- [ ] Return immutable/deep-copied snapshots, including copied parameter slices and `EndTime` values.
-- [ ] Replace arbitrary mutation callbacks with typed state-transition/update methods where practical.
-- [ ] Define and test legal job state transitions.
-- [ ] Use exclusive synchronization when mutating `EventBroadcaster.lastEvent`.
-- [ ] Ensure subscribe, unsubscribe, broadcast, cleanup, and job completion cannot close/send the same channel concurrently.
-- [ ] Remove completed-job broadcaster cache entries at a defined lifecycle point.
-- [ ] Add concurrent handler/worker/SSE tests that repeatedly exercise creation, status, completion, cancellation, and cleanup.
+- [x] Stop returning mutable internal `*Job` pointers from `JobManager`.
+- [x] Return immutable/deep-copied snapshots, including copied parameter slices and `EndTime` values.
+- [x] Replace arbitrary mutation callbacks with typed state-transition/update methods where practical.
+- [x] Define and test legal job state transitions.
+- [x] Use exclusive synchronization when mutating `EventBroadcaster.lastEvent`.
+- [x] Ensure subscribe, unsubscribe, broadcast, cleanup, and job completion cannot close/send the same channel concurrently.
+- [x] Remove completed-job broadcaster cache entries at the defined deletion lifecycle point.
+- [x] Add concurrent handler/worker/SSE tests for state, cancellation, subscription, cleanup, and deletion lifecycles.
 
 **Acceptance Checks:**
 
-- [ ] `go test -race -short ./...` passes repeatedly.
+- [x] `go test -race -short ./...` passes on the integrated local revision; CI repetition remains required before release.
 - [ ] A multi-job stress test completes without races, concurrent-map panics, channel panics, or corrupted responses.
-- [ ] API responses remain internally consistent while jobs update.
+- [x] API responses remain internally consistent while jobs update.
 
 ### Task 14.5: Redesign Optimizer Execution for Progress, Errors, and Cancellation (P0)
 
-- [ ] Replace the synchronous error-less optimizer contract with a context-aware result contract, for example:
-  - [ ] `Run(ctx, problem, observer) (Result, error)`
-  - [ ] Include best parameters, best cost, completed iterations, evaluations, and termination reason.
-- [ ] Check cancellation inside optimizer iterations/evaluations with a documented maximum cancellation latency.
-- [ ] Publish atomic best-so-far snapshots from optimizer callbacks.
-- [ ] Update job state, SSE, traces, and checkpoints from the same progress snapshot rather than independent polling assumptions.
-- [ ] Propagate Mayfly errors instead of silently returning an all-zero candidate.
-- [ ] Ensure monitor goroutines are joined before their writers/renderers are closed.
-- [ ] Supervise workers with per-job contexts, a `WaitGroup`, and explicit cancellation ownership.
-- [ ] Make UI- and API-created jobs use the same server-controlled lifecycle.
-- [ ] Wait for or clearly report unfinished workers during shutdown.
+- [x] Add a context-aware result contract alongside the compatibility optimizer interface:
+  - [x] `RunContext(ctx, problem, options) (Result, error)`
+  - [x] Include best parameters, best cost, completed iterations, evaluations, and termination reason.
+- [x] Check cancellation during optimizer initialization and iteration boundaries with bounded latency between evaluations.
+- [x] Publish atomic best-so-far snapshots from optimizer callbacks.
+- [x] Update job state, SSE, traces, and checkpoints from the same progress snapshot rather than independent polling assumptions.
+- [x] Propagate Mayfly errors instead of silently returning an all-zero candidate.
+- [x] Ensure monitor/worker goroutines are joined before their writers/renderers are closed.
+- [x] Supervise workers with per-job contexts, a `WaitGroup`, and explicit cancellation ownership.
+- [x] Make UI- and API-created jobs use the same server-controlled lifecycle.
+- [x] Wait for or clearly report unfinished workers during shutdown.
 
 **Acceptance Checks:**
 
-- [ ] Status and SSE show increasing iterations and updated best cost during a long job.
-- [ ] Cancellation stops CPU work within the documented latency and reaches `cancelled` deterministically.
-- [ ] Optimizer failure reaches the CLI/API and sets the job to `failed` with a safe diagnostic.
-- [ ] Shutdown does not leave unmanaged optimization goroutines running.
+- [x] Status and SSE show increasing iterations and updated best cost during a long job.
+- [x] Cancellation stops CPU work between evaluations and reaches `cancelled` deterministically.
+- [x] Optimizer failure reaches the CLI/API and sets the job to `failed` with a safe diagnostic.
+- [x] Shutdown does not leave unmanaged optimization goroutines running.
 
 ### Task 14.6: Correct Renderer and Pipeline Semantics (P0)
 
-- [ ] Preserve the selected renderer backend and starting canvas through joint, sequential, and batch modes.
-- [ ] Introduce a renderer/session factory capable of creating larger-stage renderers without silently falling back to CPU or white background.
-- [ ] Render final CLI and server output using the same base canvas/backend semantics used for cost evaluation.
-- [ ] Change batch optimization to accept `totalCircles` and use `min(batchSize, remaining)` for the final batch.
-- [ ] Populate `OptimizationResult.Iterations` and evaluation statistics for every mode.
-- [ ] Preserve the best historical parameter vector; reject or roll back a sequential/batch stage that worsens cost.
-- [ ] Validate parameter-vector length before rendering instead of panicking.
-- [ ] Define image-origin and stride requirements:
-  - [ ] Support independent origins/strides correctly, or
+- [x] Preserve the selected renderer backend and starting canvas through joint, sequential, and batch modes.
+- [x] Introduce a renderer/session factory capable of creating larger-stage renderers without silently falling back to CPU or white background.
+- [x] Render final CLI and server output using the same base canvas/backend semantics used for cost evaluation.
+- [x] Change batch optimization to accept `totalCircles` and use `min(batchSize, remaining)` for the final batch.
+- [x] Populate `OptimizationResult.Iterations` and evaluation statistics for every mode.
+- [x] Preserve the best historical parameter vector; reject or roll back a sequential/batch stage that worsens cost.
+- [x] Validate parameter-vector length before rendering instead of panicking.
+- [x] Define image-origin and stride requirements:
+  - [x] Support independent origins/strides correctly, or
   - [ ] Normalize inputs once and assert the normalized representation.
-- [ ] Handle empty images and zero-circle cases without division by zero or incorrect zero costs.
+- [x] Handle empty images and zero-circle cases without division by zero or incorrect zero costs.
 
 **Acceptance Checks:**
 
-- [ ] Custom-canvas cost, saved PNG, `/best.png`, and `/diff.png` all describe the same rendered image.
-- [ ] Sequential and batch modes honor CPU/OpenCL selection or return an explicit unsupported-mode error.
-- [ ] Requests for 1, 4, 6, and 7 batch-mode circles return exactly that many circles.
-- [ ] Tests cover custom canvases, mismatched dimensions, non-zero origins, padded strides, short parameter vectors, and zero-size inputs.
+- [x] Custom-canvas cost and renderer output describe the same rendered image; CLI/server artifact paths consume that renderer result.
+- [x] Sequential and batch modes honor CPU/OpenCL selection or return an explicit unsupported-mode error.
+- [x] Requests for 1, 4, 6, and 7 batch-mode circles return exactly that many circles.
+- [x] Tests cover custom canvases, mismatched dimensions, non-zero origins, padded strides, short parameter vectors, and zero-size inputs.
 
 ### Task 14.7: Repair Snapshots, Checkpoints, Traces, and Resume (P0/P1)
 
-- [ ] Preserve `CostAfter` and `Timestamp` for every circle instead of rebuilding previous entries with zero metadata.
-- [ ] Save circle metadata incrementally or carry previous metadata forward explicitly.
-- [ ] Make checkpoint creation consume an immutable live optimizer snapshot.
-- [ ] Ensure fresh jobs can create meaningful periodic checkpoints before completion.
-- [ ] Save a final checkpoint on successful completion when checkpointing is enabled/documented.
-- [ ] Make early-converged sequential and partial-batch checkpoints valid by recording actual and requested circle counts separately.
-- [ ] Define resume semantics honestly:
+- [x] Preserve `CostAfter` and `Timestamp` for every circle instead of rebuilding previous entries with zero metadata.
+- [x] Save circle metadata incrementally and carry previous metadata forward explicitly.
+- [x] Make checkpoint creation consume an immutable live optimizer snapshot.
+- [x] Ensure fresh jobs can create meaningful periodic checkpoints before completion.
+- [x] Save a final checkpoint on successful completion when checkpointing is enabled/documented.
+- [x] Make early-converged sequential and partial-batch checkpoints valid by recording actual and requested circle counts separately.
+- [x] Define resume semantics honestly:
   - [ ] Persist and restore optimizer population/internal state, or
-  - [ ] Seed a new population around the previous best with a new deterministic continuation seed, or
-  - [ ] Rename the operation to `restart-from-best` and document its limitations.
-- [ ] Do not share a mutable `CPURenderer` between active optimization and checkpoint artifact rendering.
-- [ ] Make trace finalization ordered and durable on completion, cancellation, failure, and shutdown.
+  - [x] Seed a new population around the previous best with a new deterministic continuation seed, and
+  - [x] Describe the operation as `restart-from-best` and document its limitations.
+- [x] Do not share a mutable `CPURenderer` between active optimization and checkpoint artifact rendering.
+- [x] Make trace finalization ordered and flushed/closed on completion, cancellation, failure, and shutdown.
 
 **Acceptance Checks:**
 
-- [ ] Every `circles.json` entry contains its own non-zero timestamp and correct post-circle cost.
-- [ ] A long job produces observable, valid intermediate checkpoints and trace entries.
-- [ ] Kill/restart/resume tests demonstrate progress beyond the saved state or explicitly validate restart-from-best semantics.
-- [ ] Checkpoint artifact generation cannot race with objective evaluation.
+- [x] Every `circles.json` entry contains its own non-zero timestamp and correct post-circle cost.
+- [x] A long job produces observable, valid intermediate checkpoints and trace entries.
+- [x] Resume tests explicitly validate deterministic restart-from-best semantics and retention of a better saved candidate.
+- [x] Checkpoint artifact generation cannot race with objective evaluation.
 
 ### Task 14.8: Make Persistence Safe and Cohesive (P1)
 
-- [ ] Make the configured store own checkpoint metadata, traces, best/diff images, snapshots, and circle metadata.
-- [ ] Remove all hardcoded `./data` paths from server workers.
-- [ ] Validate job IDs as canonical UUIDs or safe single path components at every store boundary.
-- [ ] Guarantee that resolved job paths remain beneath the configured store root.
-- [ ] Use unique same-directory temporary files for concurrent atomic writes.
-- [ ] Validate checkpoint contents and require `checkpoint.JobID == jobID` before saving.
-- [ ] Make snapshots, `circles.json`, best images, and diff images atomic where partial files would be harmful.
-- [ ] Define file permissions appropriate for potentially sensitive reference paths and outputs.
-- [ ] Add file/directory sync where crash durability is promised.
-- [ ] Define retention and server-side deletion behavior for completed jobs and SSE caches.
+- [x] Make the configured store own checkpoint metadata, traces, best/diff images, snapshots, and circle metadata.
+- [x] Remove all hardcoded `./data` paths from server workers.
+- [x] Validate job IDs as canonical UUIDs at every store boundary.
+- [x] Guarantee that resolved job paths remain beneath the configured store root.
+- [x] Use unique same-directory temporary files for concurrent atomic writes.
+- [x] Validate checkpoint contents and require `checkpoint.JobID == jobID` before saving.
+- [x] Make snapshots, `circles.json`, best images, and diff images atomic where partial files would be harmful.
+- [x] Define restrictive file/directory permissions for potentially sensitive reference paths and outputs.
+- [x] Add file/directory sync around durable atomic writes.
+- [x] Define retention and server-side deletion behavior for terminal jobs, traces, and SSE caches.
 
 **Acceptance Checks:**
 
-- [ ] Same-job concurrent saves pass under the race detector without lost, mixed, or corrupt data.
-- [ ] A custom store root contains all artifacts and nothing is written to `./data` unexpectedly.
-- [ ] Malformed IDs cannot read, overwrite, or delete paths outside the store root.
+- [x] Same-job concurrent saves pass under the race detector without lost, mixed, or corrupt data.
+- [x] A custom store root contains all artifacts and nothing is written to `./data` unexpectedly.
+- [x] Malformed IDs cannot read, overwrite, or delete paths outside the store root.
 - [ ] Fault-injection tests cover failed writes, renames, disk-full behavior where practical, and process-interruption recovery.
 
 ### Task 14.9: Restore Portability and Integrate Performance Work (P1/P2)
 
-- [ ] Split SIMD wrappers by architecture/build tag so unsupported symbols are never referenced.
-- [ ] Provide a real portable scalar fallback for non-AMD64 targets.
-- [ ] Implement or accurately label ARM64 NEON support; do not advertise an unbuildable placeholder.
-- [ ] Cross-build at minimum:
-  - [ ] linux/amd64
-  - [ ] linux/arm64
-  - [ ] darwin/amd64
-  - [ ] darwin/arm64
-  - [ ] windows/amd64
-- [ ] Enable `FastMSECost` in production only after parity and representative benchmark validation.
-- [ ] Replace absolute wall-clock unit-test thresholds with benchmarks or relative regression checks on controlled runners.
+- [x] Split SIMD wrappers by architecture/build tag so unsupported symbols are never referenced.
+- [x] Provide a real portable scalar fallback for non-AMD64 targets.
+- [x] Accurately label ARM64 as scalar fallback; a native NEON kernel remains future work.
+- [x] Configure CI to cross-build at minimum (execution still requires a passing workflow run):
+  - [x] linux/amd64
+  - [x] linux/arm64
+  - [x] darwin/amd64
+  - [x] darwin/arm64
+  - [x] windows/amd64
+- [x] Enable `FastMSECost` in production after parity coverage against the reference cost.
+- [x] Replace absolute wall-clock unit-test thresholds with benchmarks or relative regression checks on controlled runners.
 - [ ] Reuse accumulated canvases in sequential/batch mode to avoid repeatedly rendering all prior circles.
 - [ ] Reduce parameter-slice allocations in stage evaluation.
 - [ ] Perform OpenCL error reduction on-device and avoid reading the full output image for every cost evaluation.
@@ -1853,34 +1855,34 @@ The following results define the starting point for Phase 14:
 
 ### Task 14.10: Harden CLI and API Contracts (P1)
 
-- [ ] Use typed request/response DTOs instead of `map[string]interface{}` and unchecked assertions.
-- [ ] Add bounded HTTP clients and request contexts to `status` and `resume` commands.
-- [ ] Escape job IDs as URL path segments.
-- [ ] Validate log levels and return a usage error for unknown values.
-- [ ] Standardize API error responses, method handling, status codes, and `Allow` headers.
-- [ ] Reject trailing/unexpected path components instead of loosely routing them.
-- [ ] Record actual evaluations/iterations for throughput rather than estimating configured maximum work.
-- [ ] Add job cancellation and deletion endpoints only after lifecycle and persistence semantics are safe.
+- [x] Use typed request/response DTOs instead of `map[string]interface{}` and unchecked assertions.
+- [x] Add bounded HTTP clients and request contexts to `status` and `resume` commands.
+- [x] Escape job IDs as URL path segments.
+- [x] Validate log levels and return a usage error for unknown values.
+- [x] Standardize API error responses, method handling, status codes, and `Allow` headers.
+- [x] Reject trailing/unexpected path components instead of loosely routing them.
+- [x] Record actual evaluations/iterations for throughput rather than estimating configured maximum work.
+- [x] Add job cancellation and terminal deletion endpoints after lifecycle and persistence semantics are safe.
 
 **Acceptance Checks:**
 
-- [ ] Malformed or version-skewed server responses produce CLI errors, never panics.
-- [ ] CLI network commands time out and respect cancellation.
-- [ ] API contract tests cover methods, malformed JSON, unknown fields, trailing data, status codes, and response schemas.
+- [x] Malformed or version-skewed server responses produce CLI errors, never panics.
+- [x] CLI network commands time out and respect cancellation.
+- [x] API contract tests cover methods, malformed JSON, unknown fields, trailing data, status codes, and response schemas.
 
 ### Task 14.11: Build a Release-Gating Test and CI Matrix (P1)
 
-- [ ] Add CI jobs for:
-  - [ ] Clean-checkout generation and build
-  - [ ] `go vet ./...`
-  - [ ] `staticcheck` or a pinned `golangci-lint` configuration
-  - [ ] `go test -short ./...`
-  - [ ] `go test -race -short ./...`
-  - [ ] Cross-compilation matrix
-  - [ ] GPU-tag compile check where OpenCL headers are available
-  - [ ] Coverage reporting with justified package thresholds
-  - [ ] `govulncheck`
-  - [ ] Generated-file and formatting consistency
+- [x] Add CI jobs for:
+  - [x] Clean-checkout generation and build
+  - [x] `go vet ./...`
+  - [x] Pinned `staticcheck`
+  - [x] `go test -short ./...`
+  - [x] `go test -race -short ./...`
+  - [x] Cross-compilation matrix
+  - [x] GPU-tag compile check where OpenCL headers are available
+  - [x] Coverage reporting with a justified 50% aggregate floor and uploaded profile
+  - [x] `govulncheck` with a pinned tool version
+  - [x] Generated-file and formatting consistency
 - [ ] Add targeted regression tests for every P0 defect in this phase.
 - [ ] Separate unit, integration, performance, GPU, and long-running tests with explicit commands/build tags.
 - [ ] Avoid tests that leave background workers running beyond `t.Cleanup`.
@@ -1895,15 +1897,15 @@ The following results define the starting point for Phase 14:
 
 ### Task 14.12: Correct Documentation and Release Claims (P1/P2)
 
-- [ ] Rewrite README quick start so it works verbatim from a clean clone.
-- [ ] Document all current CLI commands and remove “coming in later phases.”
-- [ ] Remove nonexistent packages such as `internal/pkg` from architecture documentation.
-- [ ] Document the server trust model, bind behavior, input roots, authentication/origin policy, and pprof controls.
-- [ ] Document exact checkpoint/resume semantics and limitations.
-- [ ] Correct claims about canvas continuation, live progress, periodic/final checkpoints, random seeds, SIMD, NEON, and GPU support.
-- [ ] Distinguish implemented, experimental, tested, and production-ready features.
+- [x] Rewrite README quick start for a clean clone (final verbatim acceptance run remains below).
+- [x] Document all current CLI commands and remove “coming in later phases.”
+- [x] Remove nonexistent packages such as `internal/pkg` from architecture documentation.
+- [x] Document the server trust model, bind behavior, input roots, authentication/origin policy, and pprof controls.
+- [x] Document exact checkpoint/restart-from-best semantics and limitations.
+- [x] Correct claims about canvas continuation, live progress, periodic/final checkpoints, random seeds, SIMD, NEON, and GPU support.
+- [x] Distinguish implemented, experimental, configured CI gates, and production-ready features.
 - [ ] Update historical phase completion notes when their acceptance checks have genuinely been revalidated.
-- [ ] Add `LICENSE`, `CONTRIBUTING.md`, changelog, support matrix, and known-limitations documentation before public release.
+- [x] Add `LICENSE`, `CONTRIBUTING.md`, changelog, support matrix, and known-limitations documentation before public release.
 
 **Acceptance Checks:**
 
@@ -1952,4 +1954,4 @@ This plan covers **Phases 0-14** in complete detail with bite-sized, testable ta
 - Commit frequently with descriptive messages
 - Document learnings and decisions in CLAUDE.md
 
-**Current Status:** Historical feature phases reached Phase 11-era implementation, but the 2026-08-09 audit found release-blocking defects. **Phase 14 is now the active priority. Begin with Task 14.1 and do not claim production readiness until the Phase 14 definition of done passes.**
+**Current Status:** Historical feature phases reached Phase 11-era implementation, and Phase 14 remediation is in progress. Reproducible generation, portable SIMD dispatch, lifecycle/configuration changes, release-gating CI, and corrected release documentation are implemented. **Phase 14 remains the active priority; do not claim production readiness until the final revision passes every applicable acceptance check and the definition of done.**

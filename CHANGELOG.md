@@ -1,0 +1,50 @@
+# Changelog
+
+All notable changes will be documented here. This project follows the structure
+of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); no stable public
+release is declared by this file.
+
+## [Unreleased]
+
+### Added
+
+- Context-aware MayFly optimization with measured progress and cancellation.
+- Seeded restart-from-best populations using MayFly `v0.3.0`.
+- Trusted-local server controls for same-origin browser requests, canonical input
+  roots, bounded admission, request/image limits, and opt-in loopback pprof.
+- Portable scalar SSD/SAD dispatch for non-AMD64 targets and AVX2 runtime
+  detection on AMD64.
+- Release-gating CI for generation drift, formatting, vet, short and race tests,
+  pinned static analysis, aggregate coverage, ordinary and GPU-tag builds,
+  selected cross-builds, and vulnerability scanning.
+- Support-matrix, known-limitations, contribution, and license documentation.
+
+### Changed
+
+- templ is pinned as a Go tool and generated UI Go files are committed.
+- CPU joint, sequential, and batch pipelines preserve their supplied base canvas;
+  staged OpenCL requests report an unsupported-mode error.
+- The CPU renderer uses parity-tested `FastMSECost` by default.
+- Batch optimization treats circle count as an exact total and uses a smaller
+  final batch where necessary.
+- Staged optimization keeps the best historical parameters when a later stage
+  worsens the cost.
+- Configuration, limits, and zero-seed resolution are centralized across entry
+  points.
+
+### Fixed
+
+- Architecture-specific SIMD references no longer prevent non-AMD64 builds.
+- SSD/MSE handling supports independent image origins and strides and defines
+  empty-image and mismatched-dimension behavior.
+- Job snapshots and progress updates no longer expose shared mutable state to
+  callers.
+
+### Known limitations
+
+- OpenCL remains experimental and joint-only.
+- Restart-from-best does not restore the full optimizer state, and server resume
+  of sequential/batch jobs is unsupported.
+- Real-device GPU runtime, long-running end-to-end, per-package coverage, and
+  performance-regression gates remain outside the required CI matrix. See
+  [docs/known-limitations.md](docs/known-limitations.md).
