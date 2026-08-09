@@ -96,26 +96,6 @@ func ssdIndependentStrides(current, reference *image.NRGBA, width, height int) f
 	return sum
 }
 
-// ---------------------- Low-Level Kernel Interface ----------------------
-
-// fastSSD_NEON computes SSD using NEON SIMD instructions (128-bit).
-//
-// Implementation: ssd_arm64.s (hand-written Plan9 assembly or GoAT-generated)
-//
-// Algorithm (per iteration):
-//  1. Load 4 RGBA pixels from `a` (16 bytes)
-//  2. Load 4 RGBA pixels from `b` (16 bytes)
-//  3. Extract RGB bytes (ignore alpha)
-//  4. Compute per-channel differences and square
-//  5. Accumulate into running sum
-//
-// Performance target: 3-4x speedup over scalar (processes 4 pixels per iteration)
-//
-// Note: This remains a scalar compatibility wrapper until a NEON kernel exists.
-func fastSSD_NEON(a, b []uint8, stride, width, height int) float64 {
-	return fastSSD_Scalar(a, b, stride, width, height)
-}
-
 // fastSSD_Scalar is the portable scalar fallback implementation.
 //
 // Implementation: ssd_scalar.go (optimized with loop unrolling and int32 arithmetic)

@@ -98,11 +98,5 @@ func sadIndependentStrides(current, reference *image.NRGBA, width, height int) f
 	return total * sadScale
 }
 
-// fastSAD_NEON computes SAD using NEON SIMD (ARM64)
-func fastSAD_NEON(a, b []uint8, stride, width, height int) float64 {
-	// This remains a scalar compatibility wrapper until a NEON kernel exists.
-	return fastSAD_Scalar(a, b, stride, width, height)
-}
-
 // fastSAD_Scalar is the portable scalar fallback.
 // Implemented in sad_scalar.go

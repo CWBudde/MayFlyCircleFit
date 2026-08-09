@@ -303,15 +303,6 @@ func (r *CPURenderer) renderCircleHybrid(img *image.NRGBA, c fit.Circle) {
 // Optimization constants
 const inv255 = 1.0 / 255.0 // Reciprocal for fast division
 
-// fastSqrt is a wrapper around math.Sqrt for clarity
-// TODO: Consider using fast approximation if profiling shows this as bottleneck
-func fastSqrt(x float64) float64 {
-	// For now, use standard library sqrt
-	// Alternative: Fast inverse square root (Quake III algorithm)
-	// or lookup table for small integer values
-	return math.Sqrt(x)
-}
-
 // compositePixel blends a color onto the image at (x,y) using premultiplied alpha
 func compositePixel(img *image.NRGBA, x, y int, r, g, b, alpha float64) {
 	// Inline PixOffset calculation (faster than function call)

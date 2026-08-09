@@ -61,27 +61,3 @@ func fastSAD_Scalar(a, b []uint8, stride, width, height int) float64 {
 	// Apply final scale factor
 	return totalCost * sadScale
 }
-
-// sadScalarPerPixel computes SAD cost for a single pixel (for testing).
-func sadScalarPerPixel(current, reference [4]uint8) float64 {
-	// Compute absolute differences for RGB (ignore alpha)
-	dr := int(current[0]) - int(reference[0])
-	if dr < 0 {
-		dr = -dr
-	}
-
-	dg := int(current[1]) - int(reference[1])
-	if dg < 0 {
-		dg = -dg
-	}
-
-	db := int(current[2]) - int(reference[2])
-	if db < 0 {
-		db = -db
-	}
-
-	value := dr + dg + db
-	weighted := value * (255 + 9*value)
-
-	return float64(weighted) * sadScale
-}

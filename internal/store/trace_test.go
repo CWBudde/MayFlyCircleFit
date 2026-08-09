@@ -308,7 +308,7 @@ func TestTraceWriter_EmptyParams(t *testing.T) {
 	}
 
 	// Params should be nil or empty
-	if readEntry.Params != nil && len(readEntry.Params) > 0 {
+	if len(readEntry.Params) > 0 {
 		t.Errorf("Expected no params, got %d params", len(readEntry.Params))
 	}
 }

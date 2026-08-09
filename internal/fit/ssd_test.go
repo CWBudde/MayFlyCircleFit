@@ -39,13 +39,6 @@ func solidColorNRGBA(width, height int, c color.NRGBA) *image.NRGBA {
 	return img
 }
 
-// cloneNRGBA creates a deep copy of an NRGBA image
-func cloneNRGBA(src *image.NRGBA) *image.NRGBA {
-	dst := image.NewNRGBA(src.Bounds())
-	copy(dst.Pix, src.Pix)
-	return dst
-}
-
 // ---------------------- Correctness Tests ----------------------
 
 // TestFastSSD_IdenticalImages tests that SSD of identical images is zero
