@@ -29,6 +29,14 @@ const (
 type FSStore struct {
 	baseDir string
 	jobsDir string
+	atomic  atomicFileOperations
+}
+
+// atomicFileOperations keeps the two failure-prone boundaries of the atomic
+// replacement protocol injectable for focused fault tests.
+type atomicFileOperations struct {
+	write  func(*os.File, func(io.Writer) error) error
+	rename func(string, string) error
 }
 
 // NewFSStore creates a filesystem store. The configured root is resolved once
@@ -42,7 +50,16 @@ func NewFSStore(baseDir string) (*FSStore, error) {
 	if err := ensureSecureDir(root, jobsDir); err != nil {
 		return nil, fmt.Errorf("create jobs directory: %w", err)
 	}
-	return &FSStore{baseDir: root, jobsDir: jobsDir}, nil
+	return &FSStore{
+		baseDir: root,
+		jobsDir: jobsDir,
+		atomic: atomicFileOperations{
+			write: func(file *os.File, write func(io.Writer) error) error {
+				return write(file)
+			},
+			rename: os.Rename,
+		},
+	}, nil
 }
 
 func (fs *FSStore) jobPath(jobID string) (string, error) {
@@ -317,7 +334,11 @@ func (fs *FSStore) atomicWrite(path string, write func(io.Writer) error) (result
 	if err := temp.Chmod(artifactMode); err != nil {
 		return fmt.Errorf("secure temporary file permissions: %w", err)
 	}
-	if err := write(temp); err != nil {
+	writeTemp := fs.atomic.write
+	if writeTemp == nil {
+		writeTemp = func(file *os.File, write func(io.Writer) error) error { return write(file) }
+	}
+	if err := writeTemp(temp, write); err != nil {
 		return fmt.Errorf("write temporary file: %w", err)
 	}
 	if err := temp.Sync(); err != nil {
@@ -327,7 +348,11 @@ func (fs *FSStore) atomicWrite(path string, write func(io.Writer) error) (result
 		return fmt.Errorf("close temporary file: %w", err)
 	}
 	temp = nil
-	if err := os.Rename(tempPath, path); err != nil {
+	rename := fs.atomic.rename
+	if rename == nil {
+		rename = os.Rename
+	}
+	if err := rename(tempPath, path); err != nil {
 		return fmt.Errorf("replace destination: %w", err)
 	}
 	if err := syncDirectory(dir); err != nil {
