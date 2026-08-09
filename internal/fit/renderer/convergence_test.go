@@ -160,8 +160,8 @@ func TestConvergenceTracker_ZeroThreshold(t *testing.T) {
 		t.Error("Even tiny improvement should reset stale count with zero threshold")
 	}
 
-	tracker.Update(0.999) // No improvement
-	tracker.Update(1.0)   // Worse (no improvement)
+	tracker.Update(0.999)     // No improvement
+	tracker.Update(1.0)       // Worse (no improvement)
 	if !tracker.Update(1.1) { // Still no improvement - should converge
 		t.Error("Should converge after patience with no improvement")
 	}

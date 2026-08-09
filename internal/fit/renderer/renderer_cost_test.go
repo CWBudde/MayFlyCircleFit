@@ -53,10 +53,10 @@ func TestCPURenderer_FastCostCorrectness(t *testing.T) {
 	for y := 0; y < 32; y++ {
 		for x := 0; x < 32; x++ {
 			idx := y*ref.Stride + x*4
-			ref.Pix[idx+0] = uint8(x * 8)   // R varies horizontally
-			ref.Pix[idx+1] = uint8(y * 8)   // G varies vertically
-			ref.Pix[idx+2] = 128            // B constant
-			ref.Pix[idx+3] = 255            // A opaque
+			ref.Pix[idx+0] = uint8(x * 8) // R varies horizontally
+			ref.Pix[idx+1] = uint8(y * 8) // G varies vertically
+			ref.Pix[idx+2] = 128          // B constant
+			ref.Pix[idx+3] = 255          // A opaque
 		}
 	}
 
@@ -142,9 +142,9 @@ func BenchmarkCPURenderer_Cost_Fast(b *testing.B) {
 // BenchmarkCPURenderer_CostComparison compares MSECost vs FastMSECost
 func BenchmarkCPURenderer_CostComparison(b *testing.B) {
 	sizes := []struct {
-		name   string
-		width  int
-		height int
+		name    string
+		width   int
+		height  int
 		circles int
 	}{
 		{"64x64_10circles", 64, 64, 10},

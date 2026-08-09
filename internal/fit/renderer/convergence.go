@@ -39,11 +39,11 @@ func DisabledConvergenceConfig() ConvergenceConfig {
 
 // ConvergenceTracker tracks cost history and detects when optimization has converged
 type ConvergenceTracker struct {
-	config           ConvergenceConfig
-	costHistory      []float64
-	bestCost         float64 // Best cost ever seen
-	lastSignificant  float64 // Last cost that was a significant improvement
-	staleCount       int     // Number of iterations without significant improvement
+	config          ConvergenceConfig
+	costHistory     []float64
+	bestCost        float64 // Best cost ever seen
+	lastSignificant float64 // Last cost that was a significant improvement
+	staleCount      int     // Number of iterations without significant improvement
 }
 
 // NewConvergenceTracker creates a new convergence tracker with the given config

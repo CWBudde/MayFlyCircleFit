@@ -17,9 +17,9 @@ func TestOpenCLRendererMatchesCPU(t *testing.T) {
 	const circles = 1
 
 	params := make([]float64, circles*7) // 7 params per circle
-	params[0] = 16 // X
-	params[1] = 16 // Y
-	params[2] = 8  // Radius
+	params[0] = 16                       // X
+	params[1] = 16                       // Y
+	params[2] = 8                        // Radius
 	params[3] = 0.2
 	params[4] = 0.4
 	params[5] = 0.8

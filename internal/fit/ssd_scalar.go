@@ -22,12 +22,13 @@ package fit
 //   - Branch-free inner loop (no conditionals)
 //
 // Algorithm:
-//   For each pixel at (x, y):
-//     1. Compute offset: i = y*stride + x*4
-//     2. Load RGB bytes from both images (ignore alpha at i+3)
-//     3. Compute differences: dr = a[i+0] - b[i+0], dg = a[i+1] - b[i+1], db = a[i+2] - b[i+2]
-//     4. Square differences: dr^2, dg^2, db^2
-//     5. Accumulate into sum
+//
+//	For each pixel at (x, y):
+//	  1. Compute offset: i = y*stride + x*4
+//	  2. Load RGB bytes from both images (ignore alpha at i+3)
+//	  3. Compute differences: dr = a[i+0] - b[i+0], dg = a[i+1] - b[i+1], db = a[i+2] - b[i+2]
+//	  4. Square differences: dr^2, dg^2, db^2
+//	  5. Accumulate into sum
 //
 // Performance characteristics:
 //   - Memory access: 6 loads per pixel (3 bytes × 2 images)
@@ -264,11 +265,12 @@ func fastSSD_Scalar(a, b []uint8, stride, width, height int) float64 {
 //   - SetScalarImplementation(scalarUnrolled8): 8-way unrolled (experimental, may be faster)
 //
 // Example usage in benchmarks:
-//   func BenchmarkScalarNaive(b *testing.B) {
-//       SetScalarImplementation(scalarNaive)
-//       defer SetScalarImplementation(scalarUnrolled4)
-//       // ... benchmark code ...
-//   }
+//
+//	func BenchmarkScalarNaive(b *testing.B) {
+//	    SetScalarImplementation(scalarNaive)
+//	    defer SetScalarImplementation(scalarUnrolled4)
+//	    // ... benchmark code ...
+//	}
 func SetScalarImplementation(impl scalarImplementation) {
 	activeScalarImpl = impl
 }

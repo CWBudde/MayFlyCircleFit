@@ -78,8 +78,8 @@ func TestCPURendererSingleCircle(t *testing.T) {
 // TestScanlineCircleRenderingMatchesOriginal verifies scanline method produces identical results
 func TestScanlineCircleRenderingMatchesOriginal(t *testing.T) {
 	sizes := []struct {
-		name string
-		w, h int
+		name    string
+		w, h    int
 		circles []fit.Circle
 	}{
 		{

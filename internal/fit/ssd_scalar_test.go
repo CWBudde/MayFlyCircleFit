@@ -14,15 +14,15 @@ func TestScalarVariants_Equivalence(t *testing.T) {
 	sizes := []struct {
 		width, height int
 	}{
-		{1, 1},       // Single pixel
-		{3, 3},       // Smaller than unroll factor
-		{4, 4},       // Exactly one unroll iteration
-		{7, 7},       // Not multiple of unroll factor
-		{8, 8},       // Multiple of unroll factor
-		{64, 64},     // Medium
-		{256, 256},   // Large
-		{17, 23},     // Non-square
-		{100, 100},   // Moderate
+		{1, 1},     // Single pixel
+		{3, 3},     // Smaller than unroll factor
+		{4, 4},     // Exactly one unroll iteration
+		{7, 7},     // Not multiple of unroll factor
+		{8, 8},     // Multiple of unroll factor
+		{64, 64},   // Medium
+		{256, 256}, // Large
+		{17, 23},   // Non-square
+		{100, 100}, // Moderate
 	}
 
 	for _, sz := range sizes {
@@ -63,10 +63,10 @@ func TestScalarVariants_EdgeCases(t *testing.T) {
 		{"1x1", 1, 1},
 		{"1xN", 1, 100},
 		{"Nx1", 100, 1},
-		{"3x3", 3, 3},   // Smaller than unroll
-		{"5x5", 5, 5},   // Not divisible by 4 or 8
-		{"7x7", 7, 7},   // Not divisible by 4 or 8
-		{"9x9", 9, 9},   // Odd square
+		{"3x3", 3, 3},     // Smaller than unroll
+		{"5x5", 5, 5},     // Not divisible by 4 or 8
+		{"7x7", 7, 7},     // Not divisible by 4 or 8
+		{"9x9", 9, 9},     // Odd square
 		{"15x15", 15, 15}, // Not divisible by 4 or 8
 	}
 

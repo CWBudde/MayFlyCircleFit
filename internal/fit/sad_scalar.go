@@ -12,9 +12,10 @@ const (
 // fastSAD_Scalar computes SAD with quadratic weighting (scalar reference).
 //
 // Algorithm (matching Delphi ErrorWeightingLoopNative):
-//   For each pixel:
-//     value = |R1-R2| + |G1-G2| + |B1-B2|
-//     cost += scale × value × (255 + 9×value)
+//
+//	For each pixel:
+//	  value = |R1-R2| + |G1-G2| + |B1-B2|
+//	  cost += scale × value × (255 + 9×value)
 //
 // This expands to: scale × (255×value + 9×value²)
 //
