@@ -8,6 +8,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/cwbudde/mayflycirclefit/internal/fit"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
 )
 
@@ -118,6 +119,64 @@ func TestOptimizeBatchPreservesCustomCanvas(t *testing.T) {
 	}
 	if got := result.BestImage.NRGBAAt(1, 1); got != canvasColor {
 		t.Fatalf("best image pixel = %#v, want custom canvas %#v", got, canvasColor)
+	}
+}
+
+func TestAccumulatedStagesMatchFinalFullReplay(t *testing.T) {
+	ref := solidImage(5, 5, color.NRGBA{A: 255})
+
+	sequential, err := OptimizeSequential(
+		NewCPURenderer(ref, 3),
+		opaqueBlackOptimizer(),
+		3,
+		DisabledConvergenceConfig(),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("OptimizeSequential() error = %v", err)
+	}
+	if replayCost := fit.FastMSECost(sequential.BestImage, ref); replayCost != sequential.BestCost {
+		t.Fatalf("sequential final replay cost = %v, retained incremental cost = %v", replayCost, sequential.BestCost)
+	}
+
+	batch, err := OptimizeBatch(
+		NewCPURenderer(ref, 5),
+		opaqueBlackOptimizer(),
+		5,
+		2,
+		DisabledConvergenceConfig(),
+	)
+	if err != nil {
+		t.Fatalf("OptimizeBatch() error = %v", err)
+	}
+	if replayCost := fit.FastMSECost(batch.BestImage, ref); replayCost != batch.BestCost {
+		t.Fatalf("batch final replay cost = %v, retained incremental cost = %v", replayCost, batch.BestCost)
+	}
+}
+
+func TestSequentialCallbackCannotMutateAccumulatedState(t *testing.T) {
+	canvasColor := color.NRGBA{R: 30, G: 90, B: 150, A: 255}
+	ref := solidImage(3, 3, canvasColor)
+	base := NewCPURendererWithCanvas(ref, solidImage(3, 3, canvasColor), 3)
+
+	callback := func(_ int, params []float64, _ float64, img image.Image) {
+		params[len(params)-1] = 1
+		if mutable, ok := img.(*image.NRGBA); ok {
+			mutable.SetNRGBA(1, 1, color.NRGBA{A: 255})
+		}
+	}
+	result, err := OptimizeSequential(base, transparentOptimizer(), 3, DisabledConvergenceConfig(), callback)
+	if err != nil {
+		t.Fatalf("OptimizeSequential() error = %v", err)
+	}
+
+	for offset := 0; offset < len(result.BestParams); offset += paramsPerCircle {
+		if result.BestParams[offset+6] != 0 {
+			t.Fatalf("retained opacity for circle %d was mutated through callback", offset/paramsPerCircle+1)
+		}
+	}
+	if got := result.BestImage.NRGBAAt(1, 1); got != canvasColor {
+		t.Fatalf("best image pixel = %#v after callback mutation, want %#v", got, canvasColor)
 	}
 }
 

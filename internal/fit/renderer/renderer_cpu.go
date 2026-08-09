@@ -123,11 +123,44 @@ func (r *CPURenderer) newSession(circleCount int) (Renderer, func(), error) {
 	if circleCount < 0 {
 		return nil, noopCleanup, fmt.Errorf("circle count cannot be negative")
 	}
-	baseCanvas := image.NewNRGBA(image.Rect(0, 0, r.width, r.height))
-	copy(baseCanvas.Pix, r.initialBg)
-	session := NewCPURendererWithCanvas(r.reference, baseCanvas, circleCount)
+
+	canvas := image.NewNRGBA(image.Rect(0, 0, r.width, r.height))
+	initialBg := append([]byte(nil), r.initialBg...)
+	return &CPURenderer{
+		reference: r.reference,
+		k:         circleCount,
+		bounds:    fit.NewBounds(circleCount, r.width, r.height),
+		costFunc:  r.costFunc,
+		width:     r.width,
+		height:    r.height,
+		canvas:    canvas,
+		initialBg: initialBg,
+	}, noopCleanup, nil
+}
+
+// newSessionWithCanvas creates a staged session that renders only newly
+// optimized circles over an already-retained canvas.
+func (r *CPURenderer) newSessionWithCanvas(canvas *image.NRGBA, circleCount int) (Renderer, func(), error) {
+	if canvas == nil {
+		return nil, noopCleanup, fmt.Errorf("canvas cannot be nil")
+	}
+	if circleCount < 0 {
+		return nil, noopCleanup, fmt.Errorf("circle count cannot be negative")
+	}
+	if canvas.Bounds().Dx() != r.width || canvas.Bounds().Dy() != r.height {
+		return nil, noopCleanup, fmt.Errorf("canvas dimensions must match reference image")
+	}
+
+	session := NewCPURendererWithCanvas(r.reference, canvas, circleCount)
 	session.costFunc = r.costFunc
 	return session, noopCleanup, nil
+}
+
+// initialCanvas returns an independent snapshot of the configured base canvas.
+func (r *CPURenderer) initialCanvas() *image.NRGBA {
+	canvas := image.NewNRGBA(image.Rect(0, 0, r.width, r.height))
+	copy(canvas.Pix, r.initialBg)
+	return canvas
 }
 
 // Dim returns the dimensionality of the parameter space
