@@ -5,20 +5,36 @@ import (
 	"time"
 )
 
+// CircleData represents a single optimized circle with its parameters and metadata.
+// Used for exporting circle-by-circle data in sequential optimization mode.
+type CircleData struct {
+	CircleNum int       `json:"circleNum"` // 1-indexed circle number
+	X         float64   `json:"x"`         // Horizontal position
+	Y         float64   `json:"y"`         // Vertical position
+	R         float64   `json:"r"`         // Radius
+	CR        float64   `json:"cr"`        // Red channel [0, 1]
+	CG        float64   `json:"cg"`        // Green channel [0, 1]
+	CB        float64   `json:"cb"`        // Blue channel [0, 1]
+	Opacity   float64   `json:"opacity"`   // Alpha [0, 1]
+	CostAfter float64   `json:"costAfter"` // Cost after adding this circle
+	Timestamp time.Time `json:"timestamp"` // When this circle was optimized
+}
+
 // JobConfig holds configuration for an optimization job (checkpoint copy).
 // This avoids import cycles with server package.
 type JobConfig struct {
-	RefPath            string  `json:"refPath"`
-	CanvasPath         string  `json:"canvasPath,omitempty"`         // Optional: path to existing canvas image to continue from (empty = blank canvas)
-	Mode               string  `json:"mode"`                         // joint, sequential, batch
-	Circles            int     `json:"circles"`
-	Iters              int     `json:"iters"`
-	PopSize            int     `json:"popSize"`
-	Seed               int64   `json:"seed"`
-	CheckpointInterval int     `json:"checkpointInterval,omitempty"` // Checkpoint every N seconds (0 = disabled)
-	EnableTrace        bool    `json:"enableTrace,omitempty"`        // Enable cost history trace logging (default: true)
-	ConvergenceEnabled bool    `json:"convergenceEnabled,omitempty"` // Enable adaptive convergence detection (default: true)
-	ConvergencePatience int    `json:"convergencePatience,omitempty"` // Stop after N iterations with no significant improvement (default: 3)
+	RefPath              string  `json:"refPath"`
+	CanvasPath           string  `json:"canvasPath,omitempty"` // Optional: path to existing canvas image to continue from (empty = blank canvas)
+	Mode                 string  `json:"mode"`                 // joint, sequential, batch
+	Circles              int     `json:"circles"`
+	Iters                int     `json:"iters"`
+	PopSize              int     `json:"popSize"`
+	Seed                 int64   `json:"seed"`
+	CheckpointInterval   int     `json:"checkpointInterval,omitempty"`   // Checkpoint every N seconds (0 = disabled)
+	EnableTrace          bool    `json:"enableTrace,omitempty"`          // Enable cost history trace logging (default: true)
+	SaveSnapshots        bool    `json:"saveSnapshots,omitempty"`        // Save intermediate canvas snapshots and circle data in sequential mode (default: false)
+	ConvergenceEnabled   bool    `json:"convergenceEnabled,omitempty"`   // Enable adaptive convergence detection (default: true)
+	ConvergencePatience  int     `json:"convergencePatience,omitempty"`  // Stop after N iterations with no significant improvement (default: 3)
 	ConvergenceThreshold float64 `json:"convergenceThreshold,omitempty"` // Minimum relative improvement required (default: 0.001 = 0.1%)
 }
 
@@ -45,9 +61,9 @@ type JobConfig struct {
 //
 // RESUME STRATEGY:
 // When resuming, the optimizer is restarted with a fresh population, but we can:
-//   1. Seed the population with the best parameters + random variations
-//   2. Continue iteration count from checkpoint (or reset to 0)
-//   3. Use the same random seed if deterministic behavior is desired
+//  1. Seed the population with the best parameters + random variations
+//  2. Continue iteration count from checkpoint (or reset to 0)
+//  3. Use the same random seed if deterministic behavior is desired
 //
 // IMPLICATIONS:
 //   - Resume is not a perfect continuation - there will be some divergence
@@ -237,4 +253,34 @@ type CompatibilityError struct {
 
 func (e *CompatibilityError) Error() string {
 	return "compatibility error: " + e.Field + " mismatch (expected " + e.Expected + ", got " + e.Actual + ")"
+}
+
+// ParamVectorToCircles decomposes a flat parameter vector into individual CircleData structs.
+// The params slice should contain 7 values per circle: X, Y, R, CR, CG, CB, Opacity.
+// Returns a slice of CircleData with circleNum starting from 1.
+// The costAfter and timestamp fields are left at zero values and should be populated by the caller.
+func ParamVectorToCircles(params []float64) ([]CircleData, error) {
+	if len(params)%7 != 0 {
+		return nil, fmt.Errorf("invalid params length %d: must be multiple of 7", len(params))
+	}
+
+	numCircles := len(params) / 7
+	circles := make([]CircleData, numCircles)
+
+	for i := 0; i < numCircles; i++ {
+		offset := i * 7
+		circles[i] = CircleData{
+			CircleNum: i + 1, // 1-indexed
+			X:         params[offset+0],
+			Y:         params[offset+1],
+			R:         params[offset+2],
+			CR:        params[offset+3],
+			CG:        params[offset+4],
+			CB:        params[offset+5],
+			Opacity:   params[offset+6],
+			// CostAfter and Timestamp are zero values - caller should populate
+		}
+	}
+
+	return circles, nil
 }

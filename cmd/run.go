@@ -177,7 +177,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	case "joint":
 		result = renderer.OptimizeJoint(rend, optimizer, circles, convergenceConfig)
 	case "sequential":
-		result = renderer.OptimizeSequential(rend, optimizer, circles, convergenceConfig)
+		result = renderer.OptimizeSequential(rend, optimizer, circles, convergenceConfig, nil)
 	case "batch":
 		batchSize := 5
 		passes := circles / batchSize

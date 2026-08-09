@@ -240,7 +240,43 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		case "joint":
 			result = renderer.OptimizeJoint(rend, optimizer, job.Config.Circles, convergenceConfig)
 		case "sequential":
-			result = renderer.OptimizeSequential(rend, optimizer, job.Config.Circles, convergenceConfig)
+			// Build callback for snapshot saving if enabled
+			var callback renderer.CircleCallback
+			var circleDataList []store.CircleData
+			if job.Config.SaveSnapshots && checkpointStore != nil {
+				circleDataList = []store.CircleData{}
+				callback = func(circleNum int, params []float64, cost float64, img image.Image) {
+					// Save snapshot image
+					if err := checkpointStore.SaveCircleSnapshot(jobID, circleNum, img); err != nil {
+						slog.Warn("Failed to save circle snapshot", "job_id", jobID, "circle", circleNum, "error", err)
+					}
+
+					// Extract circle data for this circle
+					circles, err := store.ParamVectorToCircles(params)
+					if err != nil {
+						slog.Warn("Failed to extract circle data", "job_id", jobID, "error", err)
+						return
+					}
+
+					// Update cost and timestamp for the last circle (the one just optimized)
+					if circleNum > 0 && circleNum <= len(circles) {
+						circles[circleNum-1].CostAfter = cost
+						circles[circleNum-1].Timestamp = time.Now()
+					}
+
+					// Accumulate circle data
+					circleDataList = circles
+				}
+			}
+
+			result = renderer.OptimizeSequential(rend, optimizer, job.Config.Circles, convergenceConfig, callback)
+
+			// Save final circle data if snapshots were enabled
+			if job.Config.SaveSnapshots && checkpointStore != nil && len(circleDataList) > 0 {
+				if err := checkpointStore.SaveCircleData(jobID, circleDataList); err != nil {
+					slog.Warn("Failed to save circle data", "job_id", jobID, "error", err)
+				}
+			}
 		case "batch":
 			batchSize := 5
 			passes := job.Config.Circles / batchSize

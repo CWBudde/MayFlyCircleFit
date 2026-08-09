@@ -6,6 +6,9 @@
   "iters": 1000,
   "popSize": 30,
   "seed": 42,
+  "checkpointInterval": 0,
+  "enableTrace": true,
+  "saveSnapshots": true,
   "convergenceEnabled": true,
   "convergencePatience": 3,
   "convergenceThreshold": 0.001

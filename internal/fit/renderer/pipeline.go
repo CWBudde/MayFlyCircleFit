@@ -1,6 +1,7 @@
 package renderer
 
 import (
+	"image"
 	"log/slog"
 
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
@@ -14,6 +15,14 @@ type OptimizationResult struct {
 	InitialCost float64
 	Iterations  int
 }
+
+// CircleCallback is called after each circle is optimized in sequential mode.
+// Parameters:
+//   - circleNum: 1-indexed circle number
+//   - params: all circle parameters up to and including this circle (7*circleNum floats)
+//   - cost: the cost after adding this circle
+//   - img: the rendered image with all circles up to this point
+type CircleCallback func(circleNum int, params []float64, cost float64, img image.Image)
 
 // OptimizeJoint optimizes all K circles simultaneously
 // Note: Convergence config is not used for joint mode (all circles optimized at once)
@@ -51,8 +60,9 @@ func OptimizeJoint(rend Renderer, optimizer opt.Optimizer, k int, _ ConvergenceC
 	}
 }
 
-// OptimizeSequential optimizes circles one at a time (greedy) with adaptive convergence
-func OptimizeSequential(renderer Renderer, optimizer opt.Optimizer, totalK int, convergenceConfig ConvergenceConfig) *OptimizationResult {
+// OptimizeSequential optimizes circles one at a time (greedy) with adaptive convergence.
+// The callback function (if provided) is called after each circle is optimized.
+func OptimizeSequential(renderer Renderer, optimizer opt.Optimizer, totalK int, convergenceConfig ConvergenceConfig, callback CircleCallback) *OptimizationResult {
 	slog.Info("Starting sequential optimization",
 		"total_circles", totalK,
 		"convergence_enabled", convergenceConfig.Enabled,
@@ -98,6 +108,13 @@ func OptimizeSequential(renderer Renderer, optimizer opt.Optimizer, totalK int, 
 
 		// Check convergence
 		finalCost := currentRenderer.Cost(allParams)
+
+		// Call callback if provided (for snapshot saving, etc.)
+		if callback != nil {
+			img := currentRenderer.Render(allParams)
+			callback(k, allParams, finalCost, img)
+		}
+
 		if tracker.Update(finalCost) {
 			slog.Info("Convergence detected - stopping early",
 				"circles_used", actualK,

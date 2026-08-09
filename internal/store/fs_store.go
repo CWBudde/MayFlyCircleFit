@@ -3,6 +3,8 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -180,5 +182,73 @@ func (fs *FSStore) DeleteCheckpoint(jobID string) error {
 	}
 
 	slog.Debug("Checkpoint deleted", "jobID", jobID, "path", jobDir)
+	return nil
+}
+
+// SaveCircleSnapshot saves an intermediate canvas snapshot during sequential optimization.
+// The snapshot is saved to ./data/jobs/<jobID>/snapshots/canvas-NN.png where NN is zero-padded.
+func (fs *FSStore) SaveCircleSnapshot(jobID string, circleNum int, img image.Image) error {
+	if jobID == "" {
+		return fmt.Errorf("jobID cannot be empty")
+	}
+	if img == nil {
+		return fmt.Errorf("image cannot be nil")
+	}
+	if circleNum < 1 {
+		return fmt.Errorf("circleNum must be >= 1")
+	}
+
+	// Ensure snapshots directory exists
+	snapshotsDir := filepath.Join(fs.jobDir(jobID), "snapshots")
+	if err := os.MkdirAll(snapshotsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create snapshots directory: %w", err)
+	}
+
+	// Create snapshot filename with zero-padded circle number (e.g., canvas-01.png)
+	filename := fmt.Sprintf("canvas-%02d.png", circleNum)
+	snapshotPath := filepath.Join(snapshotsDir, filename)
+
+	// Create file
+	file, err := os.Create(snapshotPath)
+	if err != nil {
+		return fmt.Errorf("failed to create snapshot file: %w", err)
+	}
+	defer file.Close()
+
+	// Encode image as PNG
+	if err := png.Encode(file, img); err != nil {
+		return fmt.Errorf("failed to encode snapshot image: %w", err)
+	}
+
+	slog.Debug("Circle snapshot saved", "jobID", jobID, "circleNum", circleNum, "path", snapshotPath)
+	return nil
+}
+
+// SaveCircleData saves the per-circle metadata as a JSON array.
+// The data is saved to ./data/jobs/<jobID>/circles.json with pretty formatting.
+func (fs *FSStore) SaveCircleData(jobID string, circles []CircleData) error {
+	if jobID == "" {
+		return fmt.Errorf("jobID cannot be empty")
+	}
+
+	// Ensure job directory exists
+	jobDir := fs.jobDir(jobID)
+	if err := os.MkdirAll(jobDir, 0755); err != nil {
+		return fmt.Errorf("failed to create job directory: %w", err)
+	}
+
+	// Serialize circles to JSON with pretty formatting
+	data, err := json.MarshalIndent(circles, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to serialize circle data: %w", err)
+	}
+
+	// Write to circles.json
+	circlesPath := filepath.Join(jobDir, "circles.json")
+	if err := os.WriteFile(circlesPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write circles.json: %w", err)
+	}
+
+	slog.Debug("Circle data saved", "jobID", jobID, "numCircles", len(circles), "path", circlesPath)
 	return nil
 }

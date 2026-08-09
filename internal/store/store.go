@@ -1,5 +1,9 @@
 package store
 
+import (
+	"image"
+)
+
 // Store defines the interface for checkpoint persistence operations.
 // Implementations must be thread-safe and handle concurrent access gracefully.
 //
@@ -34,10 +38,26 @@ type Store interface {
 	//   - best.png
 	//   - diff.png
 	//   - trace.jsonl
+	//   - snapshots/ directory (if exists)
+	//   - circles.json (if exists)
 	//
 	// Returns ErrNotFound if no checkpoint exists for this jobID.
 	// Returns an error if the checkpoint exists but cannot be deleted.
 	DeleteCheckpoint(jobID string) error
+
+	// SaveCircleSnapshot saves an intermediate canvas snapshot during sequential optimization.
+	// The snapshot is saved to ./data/jobs/<jobID>/snapshots/canvas-NN.png where NN is zero-padded.
+	// This method creates the snapshots directory if it doesn't exist.
+	//
+	// Returns an error if the image cannot be encoded or written to disk.
+	SaveCircleSnapshot(jobID string, circleNum int, img image.Image) error
+
+	// SaveCircleData saves the per-circle metadata as a JSON array.
+	// The data is saved to ./data/jobs/<jobID>/circles.json with pretty formatting.
+	// Each CircleData entry should contain circle parameters and optimization metadata.
+	//
+	// Returns an error if the data cannot be encoded or written to disk.
+	SaveCircleData(jobID string, circles []CircleData) error
 }
 
 // ErrNotFound is returned when a requested checkpoint does not exist.

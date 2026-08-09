@@ -53,7 +53,7 @@ func TestOptimizeSequential(t *testing.T) {
 	optimizer := opt.NewMayfly(30, 20, 42) // maxIters, popSize, seed
 
 	// Disable convergence for deterministic test
-	result := OptimizeSequential(renderer, optimizer, 2, DisabledConvergenceConfig())
+	result := OptimizeSequential(renderer, optimizer, 2, DisabledConvergenceConfig(), nil)
 
 	if result.BestCost >= result.InitialCost {
 		t.Errorf("Optimization did not improve")
