@@ -58,7 +58,7 @@ func runResume(cmd *cobra.Command, args []string) error {
 	jobID := args[0]
 
 	if resumeLocalMode {
-		return runResumeLocal(jobID)
+		return runResumeLocal(cmd.Context(), jobID)
 	}
 	return runResumeServer(cmd.Context(), cmd.OutOrStdout(), jobID)
 }
@@ -112,7 +112,7 @@ func runResumeServer(ctx context.Context, output io.Writer, jobID string) error 
 }
 
 // runResumeLocal loads checkpoint and runs optimization locally
-func runResumeLocal(jobID string) error {
+func runResumeLocal(ctx context.Context, jobID string) error {
 	slog.Info("Resuming job locally", "job_id", jobID)
 
 	// Load checkpoint
@@ -160,36 +160,68 @@ func runResumeLocal(jobID string) error {
 		}
 	}
 
-	// Create renderer
-	rend := renderer.NewCPURenderer(ref, checkpoint.Config.Circles)
+	var rend renderer.Renderer
+	cleanup := func() {}
+	if checkpoint.Config.CanvasPath != "" {
+		canvasFile, err := os.Open(checkpoint.Config.CanvasPath)
+		if err != nil {
+			return fmt.Errorf("failed to open canvas: %w", err)
+		}
+		defer canvasFile.Close()
+		canvasImage, _, err := image.Decode(canvasFile)
+		if err != nil {
+			return fmt.Errorf("failed to decode canvas: %w", err)
+		}
+		if canvasImage.Bounds().Dx() != bounds.Dx() || canvasImage.Bounds().Dy() != bounds.Dy() {
+			return fmt.Errorf("canvas dimensions do not match reference")
+		}
+		canvas := image.NewNRGBA(bounds)
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				canvas.Set(x, y, canvasImage.At(x, y))
+			}
+		}
+		rend = renderer.NewCPURendererWithCanvas(ref, canvas, checkpoint.Config.Circles)
+	} else {
+		backend := checkpoint.Config.Backend
+		if backend == "" {
+			backend = "cpu"
+		}
+		rend, cleanup, err = renderer.NewRendererForBackend(string(backend), ref, checkpoint.Config.Circles)
+		if err != nil {
+			return err
+		}
+	}
+	defer cleanup()
 
-	// Create optimizer
-	optimizer := opt.NewMayfly(checkpoint.Config.Iters, checkpoint.Config.PopSize, checkpoint.Config.Seed)
-
-	// Check if optimizer supports resume
-	resumable, ok := optimizer.(opt.ResumableOptimizer)
+	seed := checkpoint.EffectiveSeed
+	if seed == 0 {
+		seed = checkpoint.Config.Seed
+	}
+	optimizer := opt.NewMayfly(checkpoint.Config.Iters, checkpoint.Config.PopSize, seed)
+	lifecycle, ok := optimizer.(opt.LifecycleOptimizer)
 	if !ok {
-		return fmt.Errorf("optimizer does not support resume")
+		return fmt.Errorf("optimizer does not support lifecycle resume")
 	}
 
 	// Resume optimization
 	fmt.Printf("Resuming optimization...\n")
 	start := time.Now()
 
-	var bestParams []float64
-	var bestCost float64
+	var optimization opt.Result
 
 	switch checkpoint.Config.Mode {
 	case "joint":
 		lower, upper := rend.Bounds()
-		bestParams, bestCost = resumable.RunWithInitial(
-			checkpoint.BestParams,
-			checkpoint.BestCost,
-			rend.Cost,
-			lower,
-			upper,
-			rend.Dim(),
-		)
+		optimization, err = lifecycle.RunContext(ctx, opt.Problem{
+			Eval: rend.Cost, Lower: lower, Upper: upper, Dim: rend.Dim(),
+		}, opt.RunOptions{
+			Initial:     &opt.Candidate{Params: checkpoint.BestParams, Cost: checkpoint.BestCost},
+			ResumeCount: checkpoint.ResumeCount + 1,
+		})
+		if err != nil {
+			return fmt.Errorf("resume optimization: %w", err)
+		}
 	case "sequential", "batch":
 		return fmt.Errorf("resume not yet supported for mode: %s", checkpoint.Config.Mode)
 	default:
@@ -197,12 +229,16 @@ func runResumeLocal(jobID string) error {
 	}
 
 	elapsed := time.Since(start)
+	bestParams, bestCost := optimization.BestParams, optimization.BestCost
 
 	// Display results
 	fmt.Printf("\n✓ Optimization completed in %s\n", elapsed)
 	fmt.Printf("  Previous cost: %f\n", checkpoint.BestCost)
 	fmt.Printf("  New cost: %f\n", bestCost)
-	improvement := ((checkpoint.BestCost - bestCost) / checkpoint.BestCost) * 100
+	improvement := 0.0
+	if checkpoint.BestCost > 0 {
+		improvement = (checkpoint.BestCost - bestCost) / checkpoint.BestCost * 100
+	}
 	if improvement > 0 {
 		fmt.Printf("  Improvement: %.2f%%\n", improvement)
 	} else if improvement < 0 {
@@ -212,8 +248,7 @@ func runResumeLocal(jobID string) error {
 	}
 
 	// Compute throughput
-	totalEvals := checkpoint.Config.Iters * checkpoint.Config.PopSize
-	totalCircles := totalEvals * checkpoint.Config.Circles
+	totalCircles := optimization.Evaluations * checkpoint.Config.Circles
 	cps := float64(totalCircles) / elapsed.Seconds()
 	fmt.Printf("  Throughput: %.0f circles/sec\n", cps)
 
@@ -232,14 +267,19 @@ func runResumeLocal(jobID string) error {
 	fmt.Printf("\n✓ Output saved to: %s\n", bestPath)
 
 	// Update checkpoint
+	updatedConfig := checkpoint.Config
+	updatedConfig.EffectiveSeed = seed
+	updatedConfig.ResumeCount = checkpoint.ResumeCount + 1
 	updatedCheckpoint := store.NewCheckpoint(
 		jobID,
 		bestParams,
 		bestCost,
 		checkpoint.InitialCost,
-		checkpoint.Iteration+checkpoint.Config.Iters, // Cumulative iterations
-		checkpoint.Config,
+		checkpoint.Iterations+optimization.Iterations,
+		updatedConfig,
 	)
+	updatedCheckpoint.Evaluations = checkpoint.Evaluations + int64(optimization.Evaluations)
+	updatedCheckpoint.Termination = string(optimization.Termination)
 
 	if err := checkpointStore.SaveCheckpoint(jobID, updatedCheckpoint); err != nil {
 		slog.Warn("Failed to update checkpoint", "error", err)
