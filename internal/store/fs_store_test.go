@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
 )
 
 // setupTestStore creates a temporary directory and returns an FSStore for testing.
@@ -20,6 +19,10 @@ func setupTestStore(t *testing.T) (*FSStore, string) {
 	}
 
 	return store, tempDir
+}
+
+func testJobID(n int) string {
+	return fmt.Sprintf("00000000-0000-4000-8000-%012d", n)
 }
 
 // createTestCheckpoint creates a checkpoint with test data.
@@ -63,7 +66,7 @@ func TestNewFSStore(t *testing.T) {
 func TestSaveCheckpoint(t *testing.T) {
 	store, tempDir := setupTestStore(t)
 
-	jobID := "test-job-123"
+	jobID := testJobID(1)
 	checkpoint := createTestCheckpoint(jobID)
 
 	// Save checkpoint
@@ -87,7 +90,7 @@ func TestSaveCheckpoint(t *testing.T) {
 
 func TestSaveCheckpoint_EmptyJobID(t *testing.T) {
 	store, _ := setupTestStore(t)
-	checkpoint := createTestCheckpoint("any-id")
+	checkpoint := createTestCheckpoint(testJobID(1))
 
 	err := store.SaveCheckpoint("", checkpoint)
 	if err == nil {
@@ -98,7 +101,7 @@ func TestSaveCheckpoint_EmptyJobID(t *testing.T) {
 func TestSaveCheckpoint_NilCheckpoint(t *testing.T) {
 	store, _ := setupTestStore(t)
 
-	err := store.SaveCheckpoint("test-job", nil)
+	err := store.SaveCheckpoint(testJobID(1), nil)
 	if err == nil {
 		t.Fatal("Expected error for nil checkpoint")
 	}
@@ -107,7 +110,7 @@ func TestSaveCheckpoint_NilCheckpoint(t *testing.T) {
 func TestSaveCheckpoint_Overwrite(t *testing.T) {
 	store, _ := setupTestStore(t)
 
-	jobID := "test-job-overwrite"
+	jobID := testJobID(1)
 	checkpoint1 := createTestCheckpoint(jobID)
 	checkpoint1.BestCost = 0.5
 
@@ -138,7 +141,7 @@ func TestSaveCheckpoint_Overwrite(t *testing.T) {
 func TestLoadCheckpoint(t *testing.T) {
 	store, _ := setupTestStore(t)
 
-	jobID := "test-job-load"
+	jobID := testJobID(1)
 	original := createTestCheckpoint(jobID)
 
 	// Save checkpoint
@@ -173,7 +176,7 @@ func TestLoadCheckpoint(t *testing.T) {
 func TestLoadCheckpoint_NotFound(t *testing.T) {
 	store, _ := setupTestStore(t)
 
-	_, err := store.LoadCheckpoint("nonexistent-job")
+	_, err := store.LoadCheckpoint(testJobID(99))
 	if err == nil {
 		t.Fatal("Expected error for nonexistent checkpoint")
 	}
@@ -210,7 +213,7 @@ func TestListCheckpoints_Multiple(t *testing.T) {
 	store, _ := setupTestStore(t)
 
 	// Create multiple checkpoints
-	jobs := []string{"job-1", "job-2", "job-3"}
+	jobs := []string{testJobID(1), testJobID(2), testJobID(3)}
 	for _, jobID := range jobs {
 		checkpoint := createTestCheckpoint(jobID)
 		if err := store.SaveCheckpoint(jobID, checkpoint); err != nil {
@@ -245,7 +248,7 @@ func TestListCheckpoints_SkipsInvalidDirectories(t *testing.T) {
 	store, tempDir := setupTestStore(t)
 
 	// Create valid checkpoint
-	validJobID := "valid-job"
+	validJobID := testJobID(1)
 	checkpoint := createTestCheckpoint(validJobID)
 	if err := store.SaveCheckpoint(validJobID, checkpoint); err != nil {
 		t.Fatalf("Failed to save valid checkpoint: %v", err)
@@ -282,7 +285,7 @@ func TestListCheckpoints_SkipsInvalidDirectories(t *testing.T) {
 func TestDeleteCheckpoint(t *testing.T) {
 	store, _ := setupTestStore(t)
 
-	jobID := "test-job-delete"
+	jobID := testJobID(1)
 	checkpoint := createTestCheckpoint(jobID)
 
 	// Save checkpoint
@@ -311,7 +314,7 @@ func TestDeleteCheckpoint(t *testing.T) {
 func TestDeleteCheckpoint_NotFound(t *testing.T) {
 	store, _ := setupTestStore(t)
 
-	err := store.DeleteCheckpoint("nonexistent-job")
+	err := store.DeleteCheckpoint(testJobID(99))
 	if err == nil {
 		t.Fatal("Expected error for nonexistent checkpoint")
 	}
@@ -332,7 +335,7 @@ func TestDeleteCheckpoint_EmptyJobID(t *testing.T) {
 }
 
 func TestCheckpointToInfo(t *testing.T) {
-	checkpoint := createTestCheckpoint("test-job")
+	checkpoint := createTestCheckpoint(testJobID(1))
 
 	info := checkpoint.ToInfo()
 
@@ -362,7 +365,7 @@ func TestConcurrentSave(t *testing.T) {
 
 	for i := 0; i < numJobs; i++ {
 		go func(idx int) {
-			jobID := fmt.Sprintf("concurrent-job-%d", idx)
+			jobID := testJobID(idx + 1)
 			checkpoint := createTestCheckpoint(jobID)
 			if err := store.SaveCheckpoint(jobID, checkpoint); err != nil {
 				t.Errorf("Concurrent save failed for job %s: %v", jobID, err)

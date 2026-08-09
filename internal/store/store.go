@@ -60,6 +60,17 @@ type Store interface {
 	SaveCircleData(jobID string, circles []CircleData) error
 }
 
+// ArtifactStore is the optional store-owned artifact API. Keeping it separate
+// from Store preserves compatibility for checkpoint-only implementations while
+// allowing server and CLI code to avoid constructing filesystem paths.
+type ArtifactStore interface {
+	ArtifactPath(jobID string, artifact Artifact) (string, error)
+	SavePNGArtifact(jobID string, artifact Artifact, img image.Image) error
+	NewTraceWriter(jobID string, appendMode bool) (*TraceWriter, error)
+	NewTraceReader(jobID string) (*TraceReader, error)
+	DeleteTrace(jobID string) error
+}
+
 // ErrNotFound is returned when a requested checkpoint does not exist.
 // Use errors.Is(err, ErrNotFound) to check for this error.
 var ErrNotFound = &NotFoundError{}

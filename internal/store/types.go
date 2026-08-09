@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -25,6 +26,14 @@ type CircleData struct {
 // JobConfig holds configuration for an optimization job (checkpoint copy).
 // This avoids import cycles with server package.
 type JobConfig = app.JobConfig
+
+const (
+	// CheckpointSchemaVersion is the checkpoint format written by this version.
+	CheckpointSchemaVersion = 2
+
+	TerminationUnknown = "unknown"
+	TerminationLegacy  = "legacy"
+)
 
 // Checkpoint represents a saved optimization state that can be resumed later.
 // All fields are serialized to JSON for persistence.
@@ -65,6 +74,9 @@ type JobConfig = app.JobConfig
 //   - Would significantly increase checkpoint size
 //   - Would tie checkpoint format to specific optimizer implementations
 type Checkpoint struct {
+	// SchemaVersion identifies the persisted checkpoint format.
+	SchemaVersion int `json:"schemaVersion"`
+
 	// JobID is the unique identifier for this optimization job
 	JobID string `json:"jobId"`
 
@@ -78,8 +90,28 @@ type Checkpoint struct {
 	// InitialCost is the starting cost (usually white canvas) for tracking improvement
 	InitialCost float64 `json:"initialCost"`
 
-	// Iteration is the current iteration count when this checkpoint was created
-	Iteration int `json:"iteration"`
+	// RequestedCircles is the target number of circles. ActualCircles is the
+	// number currently represented by BestParams, which may be lower for a
+	// checkpoint taken during sequential optimization.
+	RequestedCircles int `json:"requestedCircles"`
+	ActualCircles    int `json:"actualCircles"`
+
+	// EffectiveSeed is the resolved, non-zero seed used by the optimizer.
+	// ResumeCount records how many times this job has been resumed.
+	EffectiveSeed int64 `json:"effectiveSeed"`
+	ResumeCount   int   `json:"resumeCount"`
+
+	// Iterations and Evaluations are cumulative optimizer progress counters.
+	Iterations  int   `json:"iterations"`
+	Evaluations int64 `json:"evaluations"`
+
+	// Termination records why the run stopped (for example completed,
+	// converged, cancelled, or failed). In-progress checkpoints use unknown.
+	Termination string `json:"termination"`
+
+	// Iteration is a deprecated in-memory alias retained for source
+	// compatibility. Version 2 JSON uses Iterations.
+	Iteration int `json:"-"`
 
 	// Timestamp records when this checkpoint was created
 	Timestamp time.Time `json:"timestamp"`
@@ -92,6 +124,8 @@ type Checkpoint struct {
 // CheckpointInfo contains metadata about a checkpoint without the full parameter data.
 // Used for listing checkpoints efficiently without loading large parameter arrays.
 type CheckpointInfo struct {
+	SchemaVersion int `json:"schemaVersion"`
+
 	// JobID is the unique identifier for this checkpoint
 	JobID string `json:"jobId"`
 
@@ -100,6 +134,13 @@ type CheckpointInfo struct {
 
 	// Iteration is the iteration count at checkpoint time
 	Iteration int `json:"iteration"`
+
+	Evaluations      int64  `json:"evaluations"`
+	RequestedCircles int    `json:"requestedCircles"`
+	ActualCircles    int    `json:"actualCircles"`
+	EffectiveSeed    int64  `json:"effectiveSeed"`
+	ResumeCount      int    `json:"resumeCount"`
+	Termination      string `json:"termination"`
 
 	// Timestamp records when this checkpoint was created
 	Timestamp time.Time `json:"timestamp"`
@@ -117,82 +158,245 @@ type CheckpointInfo struct {
 // NewCheckpoint creates a checkpoint from job state.
 // This is a helper for converting runtime job state to a persistable checkpoint.
 func NewCheckpoint(jobID string, bestParams []float64, bestCost, initialCost float64, iteration int, config JobConfig) *Checkpoint {
-	return &Checkpoint{
-		JobID:       jobID,
-		BestParams:  bestParams,
-		BestCost:    bestCost,
-		InitialCost: initialCost,
-		Iteration:   iteration,
-		Timestamp:   time.Now(),
-		Config:      config,
+	checkpoint := Checkpoint{
+		SchemaVersion:    CheckpointSchemaVersion,
+		JobID:            jobID,
+		BestParams:       append([]float64(nil), bestParams...),
+		BestCost:         bestCost,
+		InitialCost:      initialCost,
+		RequestedCircles: config.Circles,
+		ActualCircles:    len(bestParams) / 7,
+		EffectiveSeed:    effectiveSeed(config),
+		ResumeCount:      config.ResumeCount,
+		Iterations:       iteration,
+		Iteration:        iteration,
+		Termination:      TerminationUnknown,
+		Timestamp:        time.Now(),
+		Config:           config,
 	}
+	return &checkpoint
 }
 
 // ToInfo converts a full Checkpoint to CheckpointInfo (metadata only).
 func (c *Checkpoint) ToInfo() CheckpointInfo {
+	normalized := c.normalized()
 	return CheckpointInfo{
-		JobID:     c.JobID,
-		BestCost:  c.BestCost,
-		Iteration: c.Iteration,
-		Timestamp: c.Timestamp,
-		Mode:      c.Config.Mode,
-		Circles:   c.Config.Circles,
-		RefPath:   c.Config.RefPath,
+		SchemaVersion:    normalized.SchemaVersion,
+		JobID:            normalized.JobID,
+		BestCost:         normalized.BestCost,
+		Iteration:        normalized.Iterations,
+		Evaluations:      normalized.Evaluations,
+		RequestedCircles: normalized.RequestedCircles,
+		ActualCircles:    normalized.ActualCircles,
+		EffectiveSeed:    normalized.EffectiveSeed,
+		ResumeCount:      normalized.ResumeCount,
+		Termination:      normalized.Termination,
+		Timestamp:        normalized.Timestamp,
+		Mode:             normalized.Config.Mode,
+		Circles:          normalized.Config.Circles,
+		RefPath:          normalized.Config.RefPath,
 	}
 }
 
 // Validate checks if the checkpoint has valid data.
 // Returns an error if any required field is missing or invalid.
 func (c *Checkpoint) Validate() error {
-	if c.JobID == "" {
-		return &ValidationError{Field: "JobID", Reason: "cannot be empty"}
+	if c == nil {
+		return &ValidationError{Field: "Checkpoint", Reason: "cannot be nil"}
 	}
-	if c.BestParams == nil {
+	normalized := c.normalized()
+	if err := validateJobID(normalized.JobID); err != nil {
+		return &ValidationError{Field: "JobID", Reason: err.Error()}
+	}
+	if normalized.SchemaVersion != CheckpointSchemaVersion {
+		return &ValidationError{Field: "SchemaVersion", Reason: fmt.Sprintf("must be %d", CheckpointSchemaVersion)}
+	}
+	if normalized.BestParams == nil {
 		return &ValidationError{Field: "BestParams", Reason: "cannot be nil"}
 	}
-	if len(c.BestParams) == 0 {
+	if len(normalized.BestParams) == 0 {
 		return &ValidationError{Field: "BestParams", Reason: "cannot be empty"}
 	}
 	// BestParams should be a multiple of 7 (7 params per circle)
-	if len(c.BestParams)%7 != 0 {
+	if len(normalized.BestParams)%7 != 0 {
 		return &ValidationError{Field: "BestParams", Reason: "length must be multiple of 7"}
 	}
-	if c.BestCost < 0 {
+	if normalized.BestCost < 0 {
 		return &ValidationError{Field: "BestCost", Reason: "cannot be negative"}
 	}
-	if c.InitialCost < 0 {
+	if normalized.InitialCost < 0 {
 		return &ValidationError{Field: "InitialCost", Reason: "cannot be negative"}
 	}
-	if c.Iteration < 0 {
-		return &ValidationError{Field: "Iteration", Reason: "cannot be negative"}
+	if normalized.Iterations < 0 {
+		return &ValidationError{Field: "Iterations", Reason: "cannot be negative"}
 	}
-	if c.Timestamp.IsZero() {
+	if normalized.Evaluations < 0 {
+		return &ValidationError{Field: "Evaluations", Reason: "cannot be negative"}
+	}
+	if normalized.ResumeCount < 0 {
+		return &ValidationError{Field: "ResumeCount", Reason: "cannot be negative"}
+	}
+	if normalized.Timestamp.IsZero() {
 		return &ValidationError{Field: "Timestamp", Reason: "cannot be zero"}
 	}
-	if c.Config.RefPath == "" {
+	if normalized.Config.RefPath == "" {
 		return &ValidationError{Field: "Config.RefPath", Reason: "cannot be empty"}
 	}
-	if c.Config.Mode == "" {
+	if normalized.Config.Mode == "" {
 		return &ValidationError{Field: "Config.Mode", Reason: "cannot be empty"}
 	}
-	if c.Config.Circles <= 0 {
+	if normalized.Config.Circles <= 0 {
 		return &ValidationError{Field: "Config.Circles", Reason: "must be positive"}
 	}
-	if c.Config.Iters <= 0 {
+	if normalized.Config.Iters <= 0 {
 		return &ValidationError{Field: "Config.Iters", Reason: "must be positive"}
 	}
-	if c.Config.PopSize <= 0 {
+	if normalized.Config.PopSize <= 0 {
 		return &ValidationError{Field: "Config.PopSize", Reason: "must be positive"}
 	}
-	// Verify BestParams length matches expected circles
-	expectedParams := c.Config.Circles * 7
-	if len(c.BestParams) != expectedParams {
+	if normalized.RequestedCircles != normalized.Config.Circles {
+		return &ValidationError{Field: "RequestedCircles", Reason: "must match Config.Circles"}
+	}
+	if normalized.ActualCircles < 1 || normalized.ActualCircles > normalized.RequestedCircles {
+		return &ValidationError{Field: "ActualCircles", Reason: "must be positive and no greater than RequestedCircles"}
+	}
+	// Verify BestParams length matches the actual materialized circles.
+	expectedParams := normalized.ActualCircles * 7
+	if len(normalized.BestParams) != expectedParams {
 		return &ValidationError{
 			Field:  "BestParams",
-			Reason: fmt.Sprintf("length mismatch: expected %d params for %d circles", expectedParams, c.Config.Circles),
+			Reason: fmt.Sprintf("length mismatch: expected %d params for %d actual circles", expectedParams, normalized.ActualCircles),
 		}
 	}
 	return nil
+}
+
+// MarshalJSON always emits the current schema, including normalized progress
+// metadata. It does not mutate the caller's checkpoint.
+func (c Checkpoint) MarshalJSON() ([]byte, error) {
+	normalized := c.normalized()
+	return json.Marshal(checkpointWireFrom(normalized))
+}
+
+// UnmarshalJSON accepts schema v2 and migrates legacy v1 checkpoints whose
+// schemaVersion is either missing or explicitly 1.
+func (c *Checkpoint) UnmarshalJSON(data []byte) error {
+	var wire checkpointWire
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	if wire.SchemaVersion < 0 || wire.SchemaVersion > CheckpointSchemaVersion {
+		return fmt.Errorf("unsupported checkpoint schema version %d", wire.SchemaVersion)
+	}
+	if wire.SchemaVersion != 0 && wire.SchemaVersion != 1 && wire.SchemaVersion != CheckpointSchemaVersion {
+		return fmt.Errorf("unsupported checkpoint schema version %d", wire.SchemaVersion)
+	}
+
+	iterations := wire.Iterations
+	if iterations == 0 && wire.Iteration != 0 {
+		iterations = wire.Iteration
+	}
+	*c = Checkpoint{
+		SchemaVersion:    CheckpointSchemaVersion,
+		JobID:            wire.JobID,
+		BestParams:       append([]float64(nil), wire.BestParams...),
+		BestCost:         wire.BestCost,
+		InitialCost:      wire.InitialCost,
+		RequestedCircles: wire.RequestedCircles,
+		ActualCircles:    wire.ActualCircles,
+		EffectiveSeed:    wire.EffectiveSeed,
+		ResumeCount:      wire.ResumeCount,
+		Iterations:       iterations,
+		Evaluations:      wire.Evaluations,
+		Termination:      wire.Termination,
+		Iteration:        iterations,
+		Timestamp:        wire.Timestamp,
+		Config:           wire.Config,
+	}
+	legacy := wire.SchemaVersion == 0 || wire.SchemaVersion == 1
+	*c = c.normalized()
+	if legacy {
+		if c.Evaluations == 0 && c.Iterations > 0 && c.Config.PopSize > 0 {
+			c.Evaluations = int64(c.Iterations) * int64(c.Config.PopSize)
+		}
+		if wire.Termination == "" {
+			c.Termination = TerminationLegacy
+		}
+	}
+	return nil
+}
+
+type checkpointWire struct {
+	SchemaVersion    int       `json:"schemaVersion"`
+	JobID            string    `json:"jobId"`
+	BestParams       []float64 `json:"bestParams"`
+	BestCost         float64   `json:"bestCost"`
+	InitialCost      float64   `json:"initialCost"`
+	RequestedCircles int       `json:"requestedCircles"`
+	ActualCircles    int       `json:"actualCircles"`
+	EffectiveSeed    int64     `json:"effectiveSeed"`
+	ResumeCount      int       `json:"resumeCount"`
+	Iterations       int       `json:"iterations"`
+	Evaluations      int64     `json:"evaluations"`
+	Termination      string    `json:"termination"`
+	Iteration        int       `json:"iteration,omitempty"`
+	Timestamp        time.Time `json:"timestamp"`
+	Config           JobConfig `json:"config"`
+}
+
+func checkpointWireFrom(c Checkpoint) checkpointWire {
+	return checkpointWire{
+		SchemaVersion:    c.SchemaVersion,
+		JobID:            c.JobID,
+		BestParams:       c.BestParams,
+		BestCost:         c.BestCost,
+		InitialCost:      c.InitialCost,
+		RequestedCircles: c.RequestedCircles,
+		ActualCircles:    c.ActualCircles,
+		EffectiveSeed:    c.EffectiveSeed,
+		ResumeCount:      c.ResumeCount,
+		Iterations:       c.Iterations,
+		Evaluations:      c.Evaluations,
+		Termination:      c.Termination,
+		Timestamp:        c.Timestamp,
+		Config:           c.Config,
+	}
+}
+
+func (c Checkpoint) normalized() Checkpoint {
+	if c.SchemaVersion == 0 || c.SchemaVersion == 1 {
+		c.SchemaVersion = CheckpointSchemaVersion
+	}
+	if c.Iterations == 0 && c.Iteration != 0 {
+		c.Iterations = c.Iteration
+	}
+	c.Iteration = c.Iterations
+	if c.RequestedCircles == 0 {
+		c.RequestedCircles = c.Config.Circles
+	}
+	if c.ActualCircles == 0 && len(c.BestParams)%7 == 0 {
+		c.ActualCircles = len(c.BestParams) / 7
+	}
+	if c.EffectiveSeed == 0 {
+		c.EffectiveSeed = effectiveSeed(c.Config)
+	}
+	if c.ResumeCount == 0 {
+		c.ResumeCount = c.Config.ResumeCount
+	}
+	if c.Termination == "" {
+		c.Termination = TerminationUnknown
+	}
+	c.Config.EffectiveSeed = c.EffectiveSeed
+	c.Config.ResumeCount = c.ResumeCount
+	c.BestParams = append([]float64(nil), c.BestParams...)
+	return c
+}
+
+func effectiveSeed(config JobConfig) int64 {
+	if config.EffectiveSeed != 0 {
+		return config.EffectiveSeed
+	}
+	return config.Seed
 }
 
 // ValidationError represents a checkpoint validation error.

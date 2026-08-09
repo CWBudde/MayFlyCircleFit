@@ -12,7 +12,7 @@ func TestTraceWriter_WriteAndRead(t *testing.T) {
 	// Create temp directory
 	tmpDir := t.TempDir()
 
-	jobID := "test-job-123"
+	jobID := testJobID(1)
 
 	// Create trace writer
 	writer, err := NewTraceWriter(tmpDir, jobID, false)
@@ -78,7 +78,7 @@ func TestTraceWriter_WriteAndRead(t *testing.T) {
 
 func TestTraceWriter_Append(t *testing.T) {
 	tmpDir := t.TempDir()
-	jobID := "test-job-append"
+	jobID := testJobID(1)
 
 	// Write initial entries
 	writer, err := NewTraceWriter(tmpDir, jobID, false)
@@ -132,7 +132,7 @@ func TestTraceWriter_Append(t *testing.T) {
 
 func TestTraceWriter_Flush(t *testing.T) {
 	tmpDir := t.TempDir()
-	jobID := "test-job-flush"
+	jobID := testJobID(1)
 
 	writer, err := NewTraceWriter(tmpDir, jobID, false)
 	if err != nil {
@@ -163,7 +163,7 @@ func TestTraceWriter_Flush(t *testing.T) {
 
 func TestTraceReader_ReadIteratively(t *testing.T) {
 	tmpDir := t.TempDir()
-	jobID := "test-job-iter"
+	jobID := testJobID(1)
 
 	// Write entries
 	writer, err := NewTraceWriter(tmpDir, jobID, false)
@@ -210,7 +210,7 @@ func TestTraceReader_ReadIteratively(t *testing.T) {
 
 func TestTraceReader_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
-	jobID := "nonexistent-job"
+	jobID := testJobID(99)
 
 	_, err := NewTraceReader(tmpDir, jobID)
 	if err == nil {
@@ -225,7 +225,7 @@ func TestTraceReader_NotFound(t *testing.T) {
 
 func TestTraceWriter_WithParams(t *testing.T) {
 	tmpDir := t.TempDir()
-	jobID := "test-job-params"
+	jobID := testJobID(1)
 
 	writer, err := NewTraceWriter(tmpDir, jobID, false)
 	if err != nil {
@@ -275,7 +275,7 @@ func TestTraceWriter_WithParams(t *testing.T) {
 
 func TestTraceWriter_EmptyParams(t *testing.T) {
 	tmpDir := t.TempDir()
-	jobID := "test-job-no-params"
+	jobID := testJobID(1)
 
 	writer, err := NewTraceWriter(tmpDir, jobID, false)
 	if err != nil {
@@ -315,7 +315,7 @@ func TestTraceWriter_EmptyParams(t *testing.T) {
 
 func TestDeleteTrace(t *testing.T) {
 	tmpDir := t.TempDir()
-	jobID := "test-job-delete"
+	jobID := testJobID(1)
 
 	// Create trace file
 	writer, err := NewTraceWriter(tmpDir, jobID, false)
@@ -344,7 +344,7 @@ func TestDeleteTrace(t *testing.T) {
 
 func TestDeleteTrace_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
-	jobID := "nonexistent-job"
+	jobID := testJobID(99)
 
 	// Should not error when deleting nonexistent trace
 	if err := DeleteTrace(tmpDir, jobID); err != nil {
@@ -354,7 +354,7 @@ func TestDeleteTrace_NotFound(t *testing.T) {
 
 func TestTraceWriter_ConcurrentWrites(t *testing.T) {
 	tmpDir := t.TempDir()
-	jobID := "test-job-concurrent"
+	jobID := testJobID(1)
 
 	writer, err := NewTraceWriter(tmpDir, jobID, false)
 	if err != nil {

@@ -4,12 +4,11 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
-
 )
 
 func TestCheckpoint_JSONSerialization(t *testing.T) {
 	original := &Checkpoint{
-		JobID:       "test-job-123",
+		JobID:       testJobID(1),
 		BestParams:  []float64{100.5, 50.2, 25.0, 0.8, 0.2, 0.1, 0.9},
 		BestCost:    0.0234,
 		InitialCost: 0.5621,
@@ -79,7 +78,7 @@ func TestCheckpoint_JSONSerialization(t *testing.T) {
 
 func TestCheckpoint_JSONIndented(t *testing.T) {
 	checkpoint := &Checkpoint{
-		JobID:       "test-job",
+		JobID:       testJobID(1),
 		BestParams:  []float64{1.0, 2.0, 3.0, 0.5, 0.5, 0.5, 1.0},
 		BestCost:    0.1,
 		InitialCost: 0.5,
@@ -114,7 +113,7 @@ func TestCheckpoint_JSONIndented(t *testing.T) {
 
 func TestCheckpoint_Validate_Valid(t *testing.T) {
 	checkpoint := &Checkpoint{
-		JobID:       "valid-job",
+		JobID:       testJobID(1),
 		BestParams:  []float64{100, 50, 25, 0.8, 0.2, 0.1, 0.9},
 		BestCost:    0.1,
 		InitialCost: 0.5,
@@ -165,7 +164,7 @@ func TestCheckpoint_Validate_EmptyJobID(t *testing.T) {
 
 func TestCheckpoint_Validate_NilBestParams(t *testing.T) {
 	checkpoint := &Checkpoint{
-		JobID:       "test",
+		JobID:       testJobID(1),
 		BestParams:  nil,
 		BestCost:    0.1,
 		InitialCost: 0.5,
@@ -188,7 +187,7 @@ func TestCheckpoint_Validate_NilBestParams(t *testing.T) {
 
 func TestCheckpoint_Validate_EmptyBestParams(t *testing.T) {
 	checkpoint := &Checkpoint{
-		JobID:       "test",
+		JobID:       testJobID(1),
 		BestParams:  []float64{},
 		BestCost:    0.1,
 		InitialCost: 0.5,
@@ -221,7 +220,7 @@ func TestCheckpoint_Validate_InvalidParamsLength(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			checkpoint := &Checkpoint{
-				JobID:       "test",
+				JobID:       testJobID(1),
 				BestParams:  tc.bestParams,
 				BestCost:    0.1,
 				InitialCost: 0.5,
@@ -259,7 +258,7 @@ func TestCheckpoint_Validate_NegativeValues(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			checkpoint := &Checkpoint{
-				JobID:       "test",
+				JobID:       testJobID(1),
 				BestParams:  []float64{1, 2, 3, 4, 5, 6, 7},
 				BestCost:    tc.bestCost,
 				InitialCost: tc.initialCost,
@@ -284,7 +283,7 @@ func TestCheckpoint_Validate_NegativeValues(t *testing.T) {
 
 func TestCheckpoint_Validate_ZeroTimestamp(t *testing.T) {
 	checkpoint := &Checkpoint{
-		JobID:       "test",
+		JobID:       testJobID(1),
 		BestParams:  []float64{1, 2, 3, 4, 5, 6, 7},
 		BestCost:    0.1,
 		InitialCost: 0.5,
@@ -321,7 +320,7 @@ func TestCheckpoint_Validate_InvalidConfig(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			checkpoint := &Checkpoint{
-				JobID:       "test",
+				JobID:       testJobID(1),
 				BestParams:  []float64{1, 2, 3, 4, 5, 6, 7},
 				BestCost:    0.1,
 				InitialCost: 0.5,
@@ -428,10 +427,10 @@ func TestCheckpoint_IsCompatible_DifferentCircles(t *testing.T) {
 
 func TestCheckpointInfo_FromCheckpoint(t *testing.T) {
 	checkpoint := &Checkpoint{
-		JobID:       "test-job",
-		BestCost:    0.123,
-		Iteration:   500,
-		Timestamp:   time.Now(),
+		JobID:     testJobID(1),
+		BestCost:  0.123,
+		Iteration: 500,
+		Timestamp: time.Now(),
 		Config: JobConfig{
 			RefPath: "test.png",
 			Mode:    "joint",
@@ -465,7 +464,7 @@ func TestCheckpointInfo_FromCheckpoint(t *testing.T) {
 }
 
 func TestNewCheckpoint(t *testing.T) {
-	jobID := "test-job"
+	jobID := testJobID(1)
 	bestParams := []float64{1, 2, 3, 4, 5, 6, 7}
 	bestCost := 0.123
 	initialCost := 0.5
