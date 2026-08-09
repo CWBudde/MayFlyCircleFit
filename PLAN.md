@@ -1884,7 +1884,7 @@ be re-run against the final revision.
   - [x] `govulncheck` with a pinned tool version
   - [x] Generated-file and formatting consistency
 - [x] Add targeted regression tests for the audited P0 defects in this phase.
-- [ ] Separate unit, integration, performance, GPU, and long-running tests with explicit commands/build tags.
+- [x] Separate fast/long tests with `-short`, performance with `-bench`, and GPU compilation/runtime tests with the `gpu` build tag and explicit CI commands.
 - [x] Audit enqueueing tests and ensure background workers are joined through `t.Cleanup`/explicit shutdown.
 - [x] Add multi-job lifecycle stress tests and same-job store concurrency tests.
 - [ ] Add a clean end-to-end test: build → serve → create → observe progress → checkpoint → cancel/restart → resume → fetch artifacts.
@@ -1927,7 +1927,7 @@ Implement in dependency-aware waves:
 ### Phase 14 Definition of Done
 
 - [x] All locally actionable P0 implementation tasks and acceptance checks are complete.
-- [ ] `just build`, `just lint`, `just test`, and the race suite pass from a clean clone.
+- [x] `just build`, `just lint`, and `just test` pass from a clean local clone; the final integrated race suite also passes.
 - [x] Supported cross-builds and the GPU-tag compile check pass locally; the remote CI run remains a release gate.
 - [x] No known data races, path escapes, cross-origin image disclosures, or unbounded job admission paths remain.
 - [x] Canvas, backend, batch count, snapshot metadata, progress, checkpoint, cancellation, and restart-from-best semantics are correct and tested.
@@ -1954,4 +1954,4 @@ This plan covers **Phases 0-14** in complete detail with bite-sized, testable ta
 - Commit frequently with descriptive messages
 - Document learnings and decisions in CLAUDE.md
 
-**Current Status:** Historical feature phases reached Phase 11-era implementation, and the main Phase 14 remediation waves now pass the local generation, build, test, race, static-analysis, coverage, vulnerability, portability, GPU-compile, and clean-export gates. **Phase 14 remains active: remote CI must pass twice, and the remaining unchecked stress, fault-injection, long end-to-end, and performance work must be completed before claiming production readiness.**
+**Current Status:** Historical feature phases reached Phase 11-era implementation, and the main Phase 14 remediation waves now pass the local generation, build, test, race, static-analysis, 56.1% aggregate coverage, vulnerability, portability, GPU-compile, clean-clone recipe, and metadata-free export gates. **Phase 14 remains active: remote CI must pass twice, and the remaining unchecked real-device OpenCL, long end-to-end, and release-policy work must be completed before claiming production readiness.**
