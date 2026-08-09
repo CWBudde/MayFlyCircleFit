@@ -1,15 +1,19 @@
 package cmd
 
 import (
-	"encoding/json"
+	"context"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/jpeg"
 	"image/png"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
@@ -56,49 +60,53 @@ func runResume(cmd *cobra.Command, args []string) error {
 	if resumeLocalMode {
 		return runResumeLocal(jobID)
 	}
-	return runResumeServer(jobID)
+	return runResumeServer(cmd.Context(), cmd.OutOrStdout(), jobID)
 }
 
 // runResumeServer sends a resume request to the server
-func runResumeServer(jobID string) error {
-	url := fmt.Sprintf("%s/api/v1/jobs/%s/resume", resumeServerURL, jobID)
+func runResumeServer(ctx context.Context, output io.Writer, jobID string) error {
+	endpoint := fmt.Sprintf("%s/api/v1/jobs/%s/resume", strings.TrimRight(resumeServerURL, "/"), url.PathEscape(jobID))
 
-	slog.Info("Resuming job via server", "job_id", jobID, "url", url)
+	slog.Info("Resuming job via server", "job_id", jobID, "url", endpoint)
 
-	// Send POST request
-	resp, err := http.Post(url, "application/json", nil)
+	body, err := requestCLI(ctx, http.MethodPost, endpoint)
 	if err != nil {
-		return fmt.Errorf("failed to connect to server: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("checkpoint not found for job %s", jobID)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("server returned status %d", resp.StatusCode)
+		var apiErr *cliAPIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("checkpoint not found for job %q: %w", jobID, err)
+		}
+		return fmt.Errorf("resume job %q: %w", jobID, err)
 	}
 
-	// Parse response
 	var result struct {
-		JobID   string  `json:"jobId"`
-		State   string  `json:"state"`
-		Message string  `json:"message,omitempty"`
-		Cost    float64 `json:"cost,omitempty"`
+		JobID         string   `json:"jobId"`
+		ResumedFrom   string   `json:"resumedFrom"`
+		State         string   `json:"state"`
+		PreviousCost  *float64 `json:"previousCost"`
+		PreviousIters *int     `json:"previousIters"`
+		Message       string   `json:"message,omitempty"`
+	}
+	if err := decodeCLIResponse(body, &result); err != nil {
+		return fmt.Errorf("decode resume response: %w", err)
+	}
+	if strings.TrimSpace(result.JobID) == "" || result.ResumedFrom != jobID {
+		return fmt.Errorf("invalid resume response: mismatched or missing job identifiers")
+	}
+	if result.State != "pending" && result.State != "running" {
+		return fmt.Errorf("invalid resume response: unexpected state %q", result.State)
+	}
+	if result.PreviousCost == nil || result.PreviousIters == nil ||
+		!finiteNonnegative(*result.PreviousCost) || *result.PreviousIters < 0 {
+		return fmt.Errorf("invalid resume response: invalid checkpoint progress")
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	fmt.Printf("✓ Job resumed successfully\n")
-	fmt.Printf("  Job ID: %s\n", result.JobID)
-	fmt.Printf("  State: %s\n", result.State)
+	fmt.Fprintln(output, "✓ Job resumed successfully")
+	fmt.Fprintf(output, "  Job ID: %s\n", result.JobID)
+	fmt.Fprintf(output, "  State: %s\n", result.State)
 	if result.Message != "" {
-		fmt.Printf("  Message: %s\n", result.Message)
+		fmt.Fprintf(output, "  Message: %s\n", result.Message)
 	}
-	fmt.Printf("\nUse 'mayflycirclefit status %s' to monitor progress\n", result.JobID)
+	fmt.Fprintf(output, "\nUse 'mayflycirclefit status %s' to monitor progress\n", result.JobID)
 
 	return nil
 }

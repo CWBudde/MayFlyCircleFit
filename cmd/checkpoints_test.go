@@ -12,10 +12,10 @@ import (
 func TestSelectCheckpointsForDeletion_ByAge(t *testing.T) {
 	now := time.Now()
 	infos := []store.CheckpointInfo{
-		{JobID: "job1", Timestamp: now.AddDate(0, 0, -10)},  // 10 days old
-		{JobID: "job2", Timestamp: now.AddDate(0, 0, -5)},   // 5 days old
-		{JobID: "job3", Timestamp: now.AddDate(0, 0, -1)},   // 1 day old
-		{JobID: "job4", Timestamp: now.AddDate(0, 0, -30)},  // 30 days old
+		{JobID: "job1", Timestamp: now.AddDate(0, 0, -10)}, // 10 days old
+		{JobID: "job2", Timestamp: now.AddDate(0, 0, -5)},  // 5 days old
+		{JobID: "job3", Timestamp: now.AddDate(0, 0, -1)},  // 1 day old
+		{JobID: "job4", Timestamp: now.AddDate(0, 0, -30)}, // 30 days old
 	}
 
 	// Delete checkpoints older than 7 days
@@ -174,9 +174,10 @@ func TestCheckpointsListCommand_WithCheckpoints(t *testing.T) {
 		Iters:   100,
 		PopSize: 30,
 	}
-	checkpoint := store.NewCheckpoint("test-job-id", []float64{1, 2, 3}, 0.5, 1.0, 10, config)
+	const jobID = "1f953c26-a9c8-4a53-9dd6-8f8459727010"
+	checkpoint := store.NewCheckpoint(jobID, make([]float64, 35), 0.5, 1.0, 10, config)
 
-	err = checkpointStore.SaveCheckpoint("test-job-id", checkpoint)
+	err = checkpointStore.SaveCheckpoint(jobID, checkpoint)
 	if err != nil {
 		t.Fatalf("Failed to save checkpoint: %v", err)
 	}
@@ -227,12 +228,13 @@ func TestCheckpointsCleanCommand_WithForce(t *testing.T) {
 		Iters:   100,
 		PopSize: 30,
 	}
-	checkpoint := store.NewCheckpoint("old-job", []float64{1, 2, 3}, 0.5, 1.0, 10, config)
+	const jobID = "7287daeb-7196-446c-832e-616ea3d3f615"
+	checkpoint := store.NewCheckpoint(jobID, make([]float64, 35), 0.5, 1.0, 10, config)
 
 	// Manually set timestamp to be old
 	checkpoint.Timestamp = time.Now().AddDate(0, 0, -30)
 
-	err = checkpointStore.SaveCheckpoint("old-job", checkpoint)
+	err = checkpointStore.SaveCheckpoint(jobID, checkpoint)
 	if err != nil {
 		t.Fatalf("Failed to save checkpoint: %v", err)
 	}
