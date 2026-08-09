@@ -2,6 +2,7 @@ package fit
 
 import (
 	"image"
+	"math"
 )
 
 // SSD (Sum of Squared Differences) kernel interface for SIMD-accelerated cost computation.
@@ -63,14 +64,36 @@ func FastSSD(current, reference *image.NRGBA) float64 {
 	height := bounds.Dy()
 
 	if width != reference.Bounds().Dx() || height != reference.Bounds().Dy() {
-		panic("FastSSD: image dimensions must match")
+		return math.Inf(1)
+	}
+	if width == 0 || height == 0 {
+		return math.Inf(1)
 	}
 
-	// Call low-level kernel (operates on raw pixel buffers)
-	sum := fastSSD(current.Pix, reference.Pix, current.Stride, width, height)
+	var sum float64
+	if current.Stride == reference.Stride {
+		sum = fastSSD(current.Pix, reference.Pix, current.Stride, width, height)
+	} else {
+		sum = ssdIndependentStrides(current, reference, width, height)
+	}
 
 	// Return mean over pixels and channels (3 channels: RGB)
 	return sum / float64(width*height*3)
+}
+
+func ssdIndependentStrides(current, reference *image.NRGBA, width, height int) float64 {
+	var sum float64
+	for y := range height {
+		for x := range width {
+			currentOffset := y*current.Stride + x*4
+			referenceOffset := y*reference.Stride + x*4
+			for channel := range 3 {
+				difference := float64(current.Pix[currentOffset+channel]) - float64(reference.Pix[referenceOffset+channel])
+				sum += difference * difference
+			}
+		}
+	}
+	return sum
 }
 
 // ---------------------- Low-Level Kernel Interface ----------------------

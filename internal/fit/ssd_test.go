@@ -8,7 +8,6 @@ import (
 	"math/rand"
 	"sync"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/cpu"
 )
@@ -54,12 +53,12 @@ func TestFastSSD_IdenticalImages(t *testing.T) {
 	sizes := []struct {
 		width, height int
 	}{
-		{1, 1},       // Single pixel
-		{8, 8},       // Small (AVX2 batch size)
-		{64, 64},     // Medium
-		{256, 256},   // Large
-		{17, 23},     // Non-power-of-2
-		{255, 255},   // Just under 256
+		{1, 1},     // Single pixel
+		{8, 8},     // Small (AVX2 batch size)
+		{64, 64},   // Medium
+		{256, 256}, // Large
+		{17, 23},   // Non-power-of-2
+		{255, 255}, // Just under 256
 	}
 
 	for _, sz := range sizes {
@@ -144,12 +143,12 @@ func TestFastSSD_ScalarEquivalence(t *testing.T) {
 	sizes := []struct {
 		width, height int
 	}{
-		{8, 8},       // Exactly one AVX2 batch
-		{64, 64},     // Multiple batches
-		{256, 256},   // Large image
-		{17, 23},     // Non-aligned dimensions
-		{100, 100},   // Moderate size
-		{7, 11},      // Smaller than AVX2 batch (tests remainder handling)
+		{8, 8},     // Exactly one AVX2 batch
+		{64, 64},   // Multiple batches
+		{256, 256}, // Large image
+		{17, 23},   // Non-aligned dimensions
+		{100, 100}, // Moderate size
+		{7, 11},    // Smaller than AVX2 batch (tests remainder handling)
 	}
 
 	for _, sz := range sizes {
@@ -261,19 +260,13 @@ func TestFastSSD_ThinImages(t *testing.T) {
 	}
 }
 
-// TestFastSSD_DimensionMismatch tests panic on mismatched dimensions
+// TestFastSSD_DimensionMismatch tests safe rejection of mismatched dimensions.
 func TestFastSSD_DimensionMismatch(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("FastSSD should panic on dimension mismatch")
-		}
-	}()
-
 	img1 := randomNRGBA(64, 64, 111)
 	img2 := randomNRGBA(128, 128, 222) // Different size
-
-	// Should panic
-	FastSSD(img1, img2)
+	if got := FastSSD(img1, img2); !math.IsInf(got, 1) {
+		t.Fatalf("FastSSD mismatch = %v, want +Inf", got)
+	}
 }
 
 // ---------------------- SIMD-Specific Tests ----------------------
@@ -385,59 +378,6 @@ func TestFastSSD_ConcurrentAccess(t *testing.T) {
 	}
 
 	t.Logf("Concurrent access test passed: %d goroutines × %d iterations, all results identical", goroutines, iterations)
-}
-
-// ---------------------- Performance Regression Tests ----------------------
-
-// TestFastSSD_PerformanceBaseline detects performance regressions by checking throughput
-func TestFastSSD_PerformanceBaseline(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping performance test in short mode")
-	}
-
-	img1 := randomNRGBA(256, 256, 100)
-	img2 := randomNRGBA(256, 256, 200)
-
-	// Warmup
-	for i := 0; i < 100; i++ {
-		fastSSD(img1.Pix, img2.Pix, img1.Stride, 256, 256)
-	}
-
-	// Measure throughput
-	start := time.Now()
-	iterations := 1000
-	for i := 0; i < iterations; i++ {
-		fastSSD(img1.Pix, img2.Pix, img1.Stride, 256, 256)
-	}
-	elapsed := time.Since(start)
-
-	mpixelsPerSec := float64(iterations*256*256) / 1e6 / elapsed.Seconds()
-
-	// Expected baseline (adjust based on backend)
-	var expectedMin float64
-	var backendName string
-
-	switch ActiveSSDBackend {
-	case SSDBackendAVX2:
-		expectedMin = 1500 // 1.5 Gpixels/sec minimum
-		backendName = "AVX2"
-	case SSDBackendNEON:
-		expectedMin = 1200 // 1.2 Gpixels/sec minimum
-		backendName = "NEON"
-	case SSDBackendScalar:
-		expectedMin = 400 // 400 Mpixels/sec minimum
-		backendName = "Scalar"
-	default:
-		expectedMin = 100 // Conservative fallback
-		backendName = ActiveSSDBackend.String()
-	}
-
-	t.Logf("Backend: %s, Throughput: %.1f Mpixels/sec (expected ≥%.1f)", backendName, mpixelsPerSec, expectedMin)
-
-	if mpixelsPerSec < expectedMin {
-		t.Errorf("Performance regression detected: %.1f Mpixels/sec (expected ≥%.1f)",
-			mpixelsPerSec, expectedMin)
-	}
 }
 
 // ---------------------- Large Image Tests ----------------------

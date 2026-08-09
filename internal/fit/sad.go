@@ -2,6 +2,7 @@ package fit
 
 import (
 	"image"
+	"math"
 )
 
 // SAD (Sum of Absolute Differences) with Quadratic Weighting kernel.
@@ -66,10 +67,35 @@ func FastSAD(current, reference *image.NRGBA) float64 {
 	height := bounds.Dy()
 
 	if width != reference.Bounds().Dx() || height != reference.Bounds().Dy() {
-		panic("FastSAD: image dimensions must match")
+		return math.Inf(1)
 	}
+	if width == 0 || height == 0 {
+		return math.Inf(1)
+	}
+	if current.Stride == reference.Stride {
+		return fastSAD(current.Pix, reference.Pix, current.Stride, width, height)
+	}
+	return sadIndependentStrides(current, reference, width, height)
+}
 
-	return fastSAD(current.Pix, reference.Pix, current.Stride, width, height)
+func sadIndependentStrides(current, reference *image.NRGBA, width, height int) float64 {
+	var total float64
+	for y := range height {
+		for x := range width {
+			currentOffset := y*current.Stride + x*4
+			referenceOffset := y*reference.Stride + x*4
+			value := 0
+			for channel := range 3 {
+				difference := int(current.Pix[currentOffset+channel]) - int(reference.Pix[referenceOffset+channel])
+				if difference < 0 {
+					difference = -difference
+				}
+				value += difference
+			}
+			total += float64(value * (255 + 9*value))
+		}
+	}
+	return total * sadScale
 }
 
 // fastSAD_NEON computes SAD using NEON SIMD (ARM64)

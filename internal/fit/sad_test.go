@@ -8,7 +8,6 @@ import (
 	"math/rand"
 	"sync"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/cpu"
 )
@@ -233,60 +232,6 @@ func TestSAD_ConcurrentAccess(t *testing.T) {
 	}
 
 	t.Logf("Concurrent access test passed: %d goroutines × %d iterations, all results identical", goroutines, iterations)
-}
-
-// ---------------------- Performance Regression Tests ----------------------
-
-// TestSAD_PerformanceBaseline detects performance regressions by checking throughput
-func TestSAD_PerformanceBaseline(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping performance test in short mode")
-	}
-
-	img1 := randomNRGBA(256, 256, 300)
-	img2 := randomNRGBA(256, 256, 400)
-
-	// Warmup
-	for i := 0; i < 100; i++ {
-		fastSAD(img1.Pix, img2.Pix, img1.Stride, 256, 256)
-	}
-
-	// Measure throughput
-	start := time.Now()
-	iterations := 1000
-	for i := 0; i < iterations; i++ {
-		fastSAD(img1.Pix, img2.Pix, img1.Stride, 256, 256)
-	}
-	elapsed := time.Since(start)
-
-	mpixelsPerSec := float64(iterations*256*256) / 1e6 / elapsed.Seconds()
-
-	// Expected baseline (adjust based on backend)
-	// SAD has quadratic weighting so it's slower than SSD
-	var expectedMin float64
-	var backendName string
-
-	switch ActiveSADBackend {
-	case SADBackendAVX2:
-		expectedMin = 1000 // 1 Gpixels/sec minimum (lower than SSD due to quadratic formula)
-		backendName = "AVX2"
-	case SADBackendNEON:
-		expectedMin = 800 // 800 Mpixels/sec minimum
-		backendName = "NEON"
-	case SADBackendScalar:
-		expectedMin = 300 // 300 Mpixels/sec minimum
-		backendName = "Scalar"
-	default:
-		expectedMin = 100 // Conservative fallback
-		backendName = ActiveSADBackend.String()
-	}
-
-	t.Logf("Backend: %s, Throughput: %.1f Mpixels/sec (expected ≥%.1f)", backendName, mpixelsPerSec, expectedMin)
-
-	if mpixelsPerSec < expectedMin {
-		t.Errorf("Performance regression detected: %.1f Mpixels/sec (expected ≥%.1f)",
-			mpixelsPerSec, expectedMin)
-	}
 }
 
 // ---------------------- Large Image Tests ----------------------

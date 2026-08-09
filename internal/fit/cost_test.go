@@ -3,6 +3,7 @@ package fit
 import (
 	"image"
 	"image/color"
+	"math"
 	"testing"
 )
 
@@ -22,6 +23,42 @@ func TestMSECost(t *testing.T) {
 	cost := MSECost(img1, img2)
 	if cost != 0 {
 		t.Errorf("Identical images should have cost 0, got %f", cost)
+	}
+}
+
+func TestCostsSupportIndependentOriginsAndStrides(t *testing.T) {
+	currentParent := image.NewNRGBA(image.Rect(0, 0, 8, 6))
+	referenceParent := image.NewNRGBA(image.Rect(10, 20, 21, 28))
+	current := currentParent.SubImage(image.Rect(2, 1, 6, 4)).(*image.NRGBA)
+	reference := referenceParent.SubImage(image.Rect(13, 22, 17, 25)).(*image.NRGBA)
+	value := color.NRGBA{R: 17, G: 42, B: 99, A: 255}
+	for y := range 3 {
+		for x := range 4 {
+			current.SetNRGBA(current.Rect.Min.X+x, current.Rect.Min.Y+y, value)
+			reference.SetNRGBA(reference.Rect.Min.X+x, reference.Rect.Min.Y+y, value)
+		}
+	}
+	if got := MSECost(current, reference); got != 0 {
+		t.Fatalf("MSECost = %v, want 0", got)
+	}
+	if got := FastSSD(current, reference); got != 0 {
+		t.Fatalf("FastSSD = %v, want 0", got)
+	}
+	if got := FastSAD(current, reference); got != 0 {
+		t.Fatalf("FastSAD = %v, want 0", got)
+	}
+}
+
+func TestCostsRejectEmptyAndMismatchedImages(t *testing.T) {
+	empty := image.NewNRGBA(image.Rect(0, 0, 0, 0))
+	nonempty := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	for name, cost := range map[string]CostFunc{"mse": MSECost, "fast": FastMSECost} {
+		if got := cost(empty, empty); !math.IsInf(got, 1) {
+			t.Errorf("%s empty cost = %v, want +Inf", name, got)
+		}
+		if got := cost(empty, nonempty); !math.IsInf(got, 1) {
+			t.Errorf("%s mismatch cost = %v, want +Inf", name, got)
+		}
 	}
 }
 
