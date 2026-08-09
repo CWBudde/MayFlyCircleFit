@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/pprof"
 	"net/url"
@@ -82,6 +83,9 @@ func NewServerWithOptions(addr string, checkpointStore store.Store, options Serv
 
 // Start starts the HTTP server
 func (s *Server) Start() error {
+	if s.options.EnablePprof && !isLoopbackAddress(s.addr) {
+		return fmt.Errorf("pprof requires a loopback bind address")
+	}
 	handler := s.Handler()
 
 	s.server = &http.Server{
@@ -95,6 +99,18 @@ func (s *Server) Start() error {
 
 	slog.Info("Starting HTTP server", "addr", s.addr)
 	return s.server.ListenAndServe()
+}
+
+func isLoopbackAddress(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Handler returns the fully configured HTTP handler. It is exposed so the
@@ -727,7 +743,27 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 
 	// Create a new job with resumed state
 	// We use the same configuration but mark it as a resumed job
-	config := checkpoint.Config
+	config, err := app.Normalize(checkpoint.Config)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint configuration is invalid")
+		return
+	}
+	if s.inputErr != nil {
+		writeAPIError(w, http.StatusInternalServerError, "server_config", "server input roots are unavailable")
+		return
+	}
+	config.RefPath, err = s.input.resolveImage(config.RefPath)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint reference is outside configured input roots")
+		return
+	}
+	if config.CanvasPath != "" {
+		config.CanvasPath, err = s.input.resolveImage(config.CanvasPath)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint canvas is outside configured input roots")
+			return
+		}
+	}
 	config.EffectiveSeed = checkpoint.EffectiveSeed
 	config.ResumeCount = checkpoint.ResumeCount + 1
 	newJob := s.jobManager.CreateJob(config)
