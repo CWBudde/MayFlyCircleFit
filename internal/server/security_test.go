@@ -3,6 +3,8 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -36,6 +38,33 @@ func TestTrustedLocalOriginPolicy(t *testing.T) {
 				t.Fatal("server emitted an unsafe CORS allow-origin header")
 			}
 		})
+	}
+}
+
+func TestInputPolicyRejectsTraversalAndSymlinkEscapes(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	outsideImage := filepath.Join(outside, "outside.png")
+	createSimpleTestImage(t, outsideImage)
+	insideImage := filepath.Join(root, "inside.png")
+	createSimpleTestImage(t, insideImage)
+	link := filepath.Join(root, "escape.png")
+	if err := os.Symlink(outsideImage, link); err != nil {
+		t.Fatal(err)
+	}
+
+	policy, err := newInputPolicy([]string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := policy.resolveImage(insideImage)
+	if err != nil || resolved != insideImage {
+		t.Fatalf("valid image resolved to %q: %v", resolved, err)
+	}
+	for _, path := range []string{outsideImage, link, filepath.Join(root, "..", filepath.Base(outside), "outside.png")} {
+		if _, err := policy.resolveImage(path); err == nil {
+			t.Fatalf("escape path %q was accepted", path)
+		}
 	}
 }
 
@@ -80,5 +109,15 @@ func TestAPIMethodResponseIncludesAllow(t *testing.T) {
 	}
 	if got := response.Header().Get("Allow"); got != "GET, POST" {
 		t.Fatalf("Allow = %q, want GET, POST", got)
+	}
+}
+
+func TestCreateJobRejectsOversizedBody(t *testing.T) {
+	body := `{"refPath":"` + strings.Repeat("x", 1<<20) + `"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(body))
+	response := httptest.NewRecorder()
+	NewServer("localhost:8080", nil).Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413: %s", response.Code, response.Body.String())
 	}
 }

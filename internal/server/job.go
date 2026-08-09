@@ -1,7 +1,9 @@
 package server
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -32,10 +34,14 @@ type Job struct {
 	BestCost    float64    `json:"bestCost"`
 	InitialCost float64    `json:"initialCost"`
 	Iterations  int        `json:"iterations"`
+	Evaluations int        `json:"evaluations"`
+	Termination string     `json:"termination,omitempty"`
 	StartTime   time.Time  `json:"startTime"`
 	EndTime     *time.Time `json:"endTime,omitempty"`
 	Error       string     `json:"error,omitempty"`
 }
+
+var ErrInvalidTransition = errors.New("invalid job state transition")
 
 // JobManager manages the lifecycle of jobs
 type JobManager struct {
@@ -104,6 +110,105 @@ func (jm *JobManager) UpdateJob(id string, updateFn func(*Job)) error {
 
 	updateFn(job)
 	return nil
+}
+
+// StartJob transitions a pending job to running.
+func (jm *JobManager) StartJob(id string) error {
+	return jm.transition(id, StateRunning, func(job *Job) {
+		job.StartTime = time.Now()
+	})
+}
+
+// UpdateProgress publishes one immutable optimizer snapshot.
+func (jm *JobManager) UpdateProgress(id string, iterations, evaluations int, bestParams []float64, bestCost float64) error {
+	jm.mu.Lock()
+	defer jm.mu.Unlock()
+	job, ok := jm.jobs[id]
+	if !ok {
+		return fmt.Errorf("job not found: %s", id)
+	}
+	if job.State != StateRunning {
+		return fmt.Errorf("%w: cannot update %s job", ErrInvalidTransition, job.State)
+	}
+	if iterations < job.Iterations || evaluations < job.Evaluations || math.IsNaN(bestCost) {
+		return fmt.Errorf("invalid progress snapshot")
+	}
+	job.Iterations = iterations
+	job.Evaluations = evaluations
+	if len(bestParams) > 0 && (len(job.BestParams) == 0 || bestCost <= job.BestCost) {
+		job.BestParams = append([]float64(nil), bestParams...)
+		job.BestCost = bestCost
+	}
+	return nil
+}
+
+// CompleteJob records the measured final result and transitions to completed.
+func (jm *JobManager) CompleteJob(id string, iterations, evaluations int, bestParams []float64, bestCost, initialCost float64, termination string) error {
+	return jm.transition(id, StateCompleted, func(job *Job) {
+		job.Iterations = iterations
+		job.Evaluations = evaluations
+		job.BestParams = append([]float64(nil), bestParams...)
+		job.BestCost = bestCost
+		job.InitialCost = initialCost
+		job.Termination = termination
+	})
+}
+
+// FailJob records a safe diagnostic and transitions a pending/running job.
+func (jm *JobManager) FailJob(id, message string) error {
+	return jm.transition(id, StateFailed, func(job *Job) { job.Error = message })
+}
+
+// CancelJob transitions a pending/running job to cancelled.
+func (jm *JobManager) CancelJob(id string) error {
+	return jm.transition(id, StateCancelled, nil)
+}
+
+// DeleteJob removes a terminal job. Active jobs must be cancelled first.
+func (jm *JobManager) DeleteJob(id string) error {
+	jm.mu.Lock()
+	defer jm.mu.Unlock()
+	job, ok := jm.jobs[id]
+	if !ok {
+		return fmt.Errorf("job not found: %s", id)
+	}
+	if job.State == StatePending || job.State == StateRunning {
+		return fmt.Errorf("%w: cannot delete %s job", ErrInvalidTransition, job.State)
+	}
+	delete(jm.jobs, id)
+	return nil
+}
+
+func (jm *JobManager) transition(id string, next JobState, update func(*Job)) error {
+	jm.mu.Lock()
+	defer jm.mu.Unlock()
+	job, ok := jm.jobs[id]
+	if !ok {
+		return fmt.Errorf("job not found: %s", id)
+	}
+	if !canTransition(job.State, next) {
+		return fmt.Errorf("%w: %s to %s", ErrInvalidTransition, job.State, next)
+	}
+	if update != nil {
+		update(job)
+	}
+	job.State = next
+	if next == StateCompleted || next == StateFailed || next == StateCancelled {
+		end := time.Now()
+		job.EndTime = &end
+	}
+	return nil
+}
+
+func canTransition(current, next JobState) bool {
+	switch current {
+	case StatePending:
+		return next == StateRunning || next == StateFailed || next == StateCancelled
+	case StateRunning:
+		return next == StateCompleted || next == StateFailed || next == StateCancelled
+	default:
+		return false
+	}
 }
 
 // GetRunningJobs returns all jobs currently in the running state

@@ -200,26 +200,27 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 
 	switch config.Mode {
 	case app.ModeJoint:
-		result = renderer.OptimizeJoint(rend, optimizer, config.Circles, convergenceConfig)
+		result, err = renderer.OptimizeJoint(rend, optimizer, config.Circles, convergenceConfig)
 	case app.ModeSequential:
-		result = renderer.OptimizeSequential(rend, optimizer, config.Circles, convergenceConfig, nil)
+		result, err = renderer.OptimizeSequential(rend, optimizer, config.Circles, convergenceConfig, nil)
 	case app.ModeBatch:
-		passes := config.Circles / config.BatchSize
-		if config.Circles%config.BatchSize != 0 {
-			passes++
-		}
-		result = renderer.OptimizeBatch(rend, optimizer, config.BatchSize, passes, convergenceConfig)
+		result, err = renderer.OptimizeBatch(rend, optimizer, config.Circles, config.BatchSize, convergenceConfig)
 	default:
 		return fmt.Errorf("unknown mode: %s", config.Mode)
+	}
+	if err != nil {
+		return fmt.Errorf("optimization failed: %w", err)
 	}
 
 	elapsed := time.Since(start)
 
-	// Render final image
-	// Use actual number of circles from result (may be less if convergence detected)
+	// BestImage is rendered by the same backend session and base canvas used by
+	// the objective, so the saved output cannot diverge from the reported cost.
 	actualCircles := len(result.BestParams) / 7
-	finalRenderer := renderer.NewCPURenderer(ref, actualCircles)
-	output := finalRenderer.Render(result.BestParams)
+	output := result.BestImage
+	if output == nil {
+		return fmt.Errorf("optimizer returned no final image")
+	}
 
 	// Save output
 	outFile, err := os.Create(outPath)

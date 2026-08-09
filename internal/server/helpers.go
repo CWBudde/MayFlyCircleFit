@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	_ "image/jpeg"
 	"math"
 	"os"
+
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 )
 
 // loadReferenceImage loads and converts an image to NRGBA
@@ -23,6 +26,9 @@ func loadReferenceImage(path string) (*image.NRGBA, error) {
 
 	// Convert to NRGBA
 	bounds := img.Bounds()
+	if err := app.ValidateImageDimensions(bounds.Dx(), bounds.Dy()); err != nil {
+		return nil, err
+	}
 	ref := image.NewNRGBA(bounds)
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {

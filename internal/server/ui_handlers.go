@@ -74,8 +74,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 
 	cps := float64(0)
 	if elapsed > 0 {
-		totalEvals := job.Config.Iters * job.Config.PopSize
-		totalCircles := totalEvals * job.Config.Circles
+		totalCircles := job.Evaluations * max(1, len(job.BestParams)/7)
 		cps = float64(totalCircles) / elapsed
 	}
 
@@ -130,6 +129,7 @@ func (s *Server) handleCreatePageGet(w http.ResponseWriter, r *http.Request) {
 // handleCreatePagePost processes the job creation form submission
 func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	// Parse form data
+	r.Body = http.MaxBytesReader(w, r.Body, app.MaxRequestBody)
 	if err := r.ParseForm(); err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		ui.CreateJobPage("Failed to parse form data").Render(r.Context(), w)
@@ -189,7 +189,6 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		ui.CreateJobPage("Invalid seed value").Render(r.Context(), w)
 		return
 	}
-
 	// Parse convergence fields (with defaults)
 	convergenceEnabled := convergenceEnabledStr == "on" // checkbox is "on" when checked, empty otherwise
 	convergencePatience := 3                            // default
@@ -231,12 +230,36 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		ui.CreateJobPage(err.Error()).Render(r.Context(), w)
 		return
 	}
+	if s.inputErr != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		ui.CreateJobPage("Server input roots are unavailable").Render(r.Context(), w)
+		return
+	}
+	config.RefPath, err = s.input.resolveImage(config.RefPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+		return
+	}
+	if config.CanvasPath != "" {
+		config.CanvasPath, err = s.input.resolveImage(config.CanvasPath)
+		if err != nil {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+			return
+		}
+	}
 
 	// Create the job
 	job := s.jobManager.CreateJob(config)
 
 	// The server owns every job context, including jobs created through the UI.
-	go runJob(s.ctx, s.jobManager, s.store, job.ID)
+	if err := s.enqueueJob(job.ID); err != nil {
+		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		ui.CreateJobPage("Server job queue is full").Render(r.Context(), w)
+		return
+	}
 
 	// Redirect to job detail page
 	http.Redirect(w, r, "/jobs/"+job.ID, http.StatusSeeOther)

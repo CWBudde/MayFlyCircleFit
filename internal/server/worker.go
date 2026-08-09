@@ -2,584 +2,351 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
-	"image/png"
 	"log/slog"
-	"os"
-	"path/filepath"
+	"math"
+	"sync"
 	"time"
 
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
 
-// buildConvergenceConfig creates a convergence config from job config with sensible defaults
 func buildConvergenceConfig(config store.JobConfig) renderer.ConvergenceConfig {
-	// Default values if not specified
-	enabled := true
-	patience := 3
-	threshold := 0.001
-
-	// Override with config values if specified
-	if !config.ConvergenceEnabled {
-		enabled = false
-	}
-	if config.ConvergencePatience > 0 {
-		patience = config.ConvergencePatience
-	}
-	if config.ConvergenceThreshold > 0 {
-		threshold = config.ConvergenceThreshold
-	}
-
 	return renderer.ConvergenceConfig{
-		Enabled:   enabled,
-		Patience:  patience,
-		Threshold: threshold,
+		Enabled:   config.ConvergenceEnabled,
+		Patience:  config.ConvergencePatience,
+		Threshold: config.ConvergenceThreshold,
 	}
 }
 
-// runJob executes an optimization job in the background.
-// If checkpointStore is not nil and job has checkpointInterval > 0, periodic checkpoints are saved.
+// progressOptimizer injects one observer and optional saved best into each
+// lifecycle-aware stage while maintaining cumulative counters across stages.
+type progressOptimizer struct {
+	base        opt.Optimizer
+	observer    opt.Observer
+	initial     *opt.Candidate
+	resumeCount int
+
+	mu          sync.Mutex
+	iterations  int
+	evaluations int
+}
+
+func (o *progressOptimizer) Run(eval func([]float64) float64, lower, upper []float64, dim int) ([]float64, float64) {
+	return o.base.Run(eval, lower, upper, dim)
+}
+
+func (o *progressOptimizer) RunContext(ctx context.Context, problem opt.Problem, _ opt.RunOptions) (opt.Result, error) {
+	lifecycle, ok := o.base.(opt.LifecycleOptimizer)
+	if !ok {
+		return opt.Result{}, fmt.Errorf("optimizer does not support lifecycle execution")
+	}
+
+	o.mu.Lock()
+	baseIterations, baseEvaluations := o.iterations, o.evaluations
+	initial := o.initial
+	if initial != nil && len(initial.Params) == problem.Dim {
+		o.initial = nil
+	} else {
+		initial = nil
+	}
+	o.mu.Unlock()
+
+	result, err := lifecycle.RunContext(ctx, problem, opt.RunOptions{
+		Initial:     initial,
+		ResumeCount: o.resumeCount,
+		Observer: func(progress opt.Progress) {
+			progress.Iterations += baseIterations
+			progress.Evaluations += baseEvaluations
+			if o.observer != nil {
+				o.observer(progress)
+			}
+		},
+	})
+
+	o.mu.Lock()
+	o.iterations = baseIterations + result.Iterations
+	o.evaluations = baseEvaluations + result.Evaluations
+	o.mu.Unlock()
+	return result, err
+}
+
+// runJob executes one server-owned job. Progress, SSE, trace, and checkpoint
+// writes all consume the same immutable optimizer callback snapshot.
 func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jobID string) error {
-	// Get the job
 	job, exists := jm.GetJob(jobID)
 	if !exists {
 		return fmt.Errorf("job not found: %s", jobID)
 	}
-
-	// Update state to running
-	err := jm.UpdateJob(jobID, func(j *Job) {
-		j.State = StateRunning
-	})
-	if err != nil {
+	if err := jm.StartJob(jobID); err != nil {
 		return err
 	}
-
-	slog.Info("Starting job", "job_id", jobID, "ref", job.Config.RefPath)
-
-	// Load reference image
-	f, err := os.Open(job.Config.RefPath)
-	if err != nil {
-		markJobFailed(jm, jobID, fmt.Errorf("failed to open reference: %w", err))
-		return err
-	}
-	defer f.Close()
-
-	img, _, err := image.Decode(f)
-	if err != nil {
-		markJobFailed(jm, jobID, fmt.Errorf("failed to decode image: %w", err))
-		return err
-	}
-
-	// Convert to NRGBA
-	bounds := img.Bounds()
-	ref := image.NewNRGBA(bounds)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			ref.Set(x, y, img.At(x, y))
-		}
-	}
-
-	slog.Info("Loaded reference image", "job_id", jobID, "width", bounds.Dx(), "height", bounds.Dy())
-
-	// Load canvas image if specified
-	var rend renderer.Renderer
-	if job.Config.CanvasPath != "" {
-		slog.Info("Loading canvas image", "job_id", jobID, "canvas", job.Config.CanvasPath)
-
-		canvasFile, err := os.Open(job.Config.CanvasPath)
-		if err != nil {
-			markJobFailed(jm, jobID, fmt.Errorf("failed to open canvas: %w", err))
-			return err
-		}
-		defer canvasFile.Close()
-
-		canvasImg, _, err := image.Decode(canvasFile)
-		if err != nil {
-			markJobFailed(jm, jobID, fmt.Errorf("failed to decode canvas: %w", err))
-			return err
-		}
-
-		// Convert canvas to NRGBA
-		canvasNRGBA := image.NewNRGBA(bounds)
-		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-			for x := bounds.Min.X; x < bounds.Max.X; x++ {
-				canvasNRGBA.Set(x, y, canvasImg.At(x, y))
-			}
-		}
-
-		// Create renderer with canvas
-		rend = renderer.NewCPURendererWithCanvas(ref, canvasNRGBA, job.Config.Circles)
-		slog.Info("Loaded canvas image", "job_id", jobID, "width", canvasNRGBA.Bounds().Dx(), "height", canvasNRGBA.Bounds().Dy())
-	} else {
-		// Create renderer with white background
-		rend = renderer.NewCPURenderer(ref, job.Config.Circles)
-	}
-
-	// Create optimizer
-	optimizer := opt.NewMayfly(job.Config.Iters, job.Config.PopSize, job.Config.Seed)
-
-	// Check if this is a resumed job (has existing best params)
-	isResume := len(job.BestParams) > 0
-
-	// Get initial cost (or use existing if resume)
-	var initialCost float64
-	if isResume {
-		initialCost = job.InitialCost
-		slog.Info("Resuming from checkpoint",
-			"job_id", jobID,
-			"previous_cost", job.BestCost,
-			"previous_iterations", job.Iterations,
-		)
-	} else {
-		initialParams := make([]float64, job.Config.Circles*7)
-		initialCost = rend.Cost(initialParams)
-		jm.UpdateJob(jobID, func(j *Job) {
-			j.InitialCost = initialCost
-		})
-	}
-
-	// Run optimization based on mode
-	start := time.Now()
-	var result *renderer.OptimizationResult
-
-	// Check for cancellation before starting expensive operation
-	select {
-	case <-ctx.Done():
+	if err := ctx.Err(); err != nil {
 		markJobCancelled(jm, jobID)
-		return ctx.Err()
-	default:
+		return err
 	}
 
-	// Start trace writer if enabled
+	ref, err := loadReferenceImage(job.Config.RefPath)
+	if err != nil {
+		markJobFailed(jm, jobID, err)
+		return err
+	}
+	if err := app.ValidateImageDimensions(ref.Bounds().Dx(), ref.Bounds().Dy()); err != nil {
+		markJobFailed(jm, jobID, err)
+		return err
+	}
+
+	rend, cleanup, err := rendererForJob(job.Config, ref, job.Config.Circles)
+	if err != nil {
+		markJobFailed(jm, jobID, err)
+		return err
+	}
+	defer cleanup()
+
+	seed := job.Config.EffectiveSeed
+	if seed == 0 {
+		seed = job.Config.Seed
+	}
+	optimizer := opt.NewMayfly(job.Config.Iters, job.Config.PopSize, seed)
+	start := time.Now()
+	baseIterations, baseEvaluations := job.Iterations, job.Evaluations
+	initialCost := job.InitialCost
+	if len(job.BestParams) == 0 {
+		initialCost = rend.Cost(make([]float64, job.Config.Circles*7))
+		_ = jm.UpdateJob(jobID, func(live *Job) { live.InitialCost = initialCost })
+	}
+
 	var traceWriter *store.TraceWriter
 	if job.Config.EnableTrace {
-		tw, err := store.NewTraceWriter("./data", jobID, false)
-		if err != nil {
-			slog.Warn("Failed to create trace writer", "job_id", jobID, "error", err)
-		} else {
-			traceWriter = tw
-			defer func() {
-				if err := traceWriter.Close(); err != nil {
-					slog.Warn("Failed to close trace writer", "job_id", jobID, "error", err)
-				}
-			}()
-			// Log initial state
-			traceWriter.Write(store.TraceEntry{
-				Iteration: 0,
-				Cost:      job.InitialCost,
-				Timestamp: start,
+		if artifacts, ok := checkpointStore.(store.ArtifactStore); ok {
+			traceWriter, err = artifacts.NewTraceWriter(jobID, false)
+			if err != nil {
+				slog.Warn("Failed to open trace", "job_id", jobID, "error", err)
+				traceWriter = nil
+			}
+		}
+	}
+	if traceWriter != nil {
+		defer func() {
+			if closeErr := traceWriter.Close(); closeErr != nil {
+				slog.Warn("Failed to close trace", "job_id", jobID, "error", closeErr)
+			}
+		}()
+		_ = traceWriter.Write(store.TraceEntry{Iteration: baseIterations, Cost: initialCost, Timestamp: start})
+	}
+
+	nextBroadcast := start
+	nextCheckpoint := time.Time{}
+	if job.Config.CheckpointInterval > 0 {
+		nextCheckpoint = start.Add(time.Duration(job.Config.CheckpointInterval) * time.Second)
+	}
+	observer := func(progress opt.Progress) {
+		iterations := baseIterations + progress.Iterations
+		evaluations := baseEvaluations + progress.Evaluations
+		if err := jm.UpdateProgress(jobID, iterations, evaluations, progress.BestParams, progress.BestCost); err != nil {
+			return
+		}
+		now := time.Now()
+		if traceWriter != nil {
+			_ = traceWriter.Write(store.TraceEntry{Iteration: iterations, Cost: progress.BestCost, Timestamp: now})
+		}
+		if !now.Before(nextCheckpoint) && checkpointStore != nil && !nextCheckpoint.IsZero() {
+			if err := saveCheckpoint(jm, checkpointStore, rend, jobID); err != nil {
+				slog.Warn("Failed to save periodic checkpoint", "job_id", jobID, "error", err)
+			}
+			nextCheckpoint = now.Add(time.Duration(job.Config.CheckpointInterval) * time.Second)
+		}
+		if !now.Before(nextBroadcast) {
+			elapsed := now.Sub(start).Seconds()
+			cps := 0.0
+			if elapsed > 0 {
+				cps = float64(evaluations*job.Config.Circles) / elapsed
+			}
+			jm.broadcaster.Broadcast(ProgressEvent{
+				JobID: jobID, State: StateRunning, Iterations: iterations,
+				BestCost: progress.BestCost, CPS: cps, Timestamp: now,
 			})
+			nextBroadcast = now.Add(500 * time.Millisecond)
 		}
 	}
 
-	// Start progress monitoring goroutine
-	progressDone := make(chan struct{})
-	go monitorProgress(ctx, jm, jobID, start, progressDone)
-
-	// Start trace monitoring goroutine if enabled
-	traceDone := make(chan struct{})
-	traceEnabled := traceWriter != nil
-	if traceEnabled {
-		go monitorTrace(ctx, jm, traceWriter, jobID, traceDone)
-	} else {
-		close(traceDone) // No tracing, close immediately
+	wrapped := &progressOptimizer{base: optimizer, observer: observer, resumeCount: job.Config.ResumeCount}
+	if len(job.BestParams) > 0 {
+		wrapped.initial = &opt.Candidate{Params: append([]float64(nil), job.BestParams...), Cost: job.BestCost}
 	}
 
-	// Start checkpoint monitoring goroutine if enabled
-	checkpointDone := make(chan struct{})
-	checkpointEnabled := checkpointStore != nil && job.Config.CheckpointInterval > 0
-	if checkpointEnabled {
-		go monitorCheckpoints(ctx, jm, checkpointStore, rend, jobID, checkpointDone)
-	} else {
-		close(checkpointDone) // No checkpointing, close immediately
-	}
-
-	// If resuming, use optimizer with initial params
-	if isResume {
-		resumable, ok := optimizer.(opt.ResumableOptimizer)
-		if !ok {
-			err := fmt.Errorf("optimizer does not support resume")
-			markJobFailed(jm, jobID, err)
-			close(progressDone)
-			if traceEnabled {
-				close(traceDone)
+	convergence := buildConvergenceConfig(job.Config)
+	var result *renderer.OptimizationResult
+	var circleData []store.CircleData
+	var callback renderer.CircleCallback
+	if job.Config.SaveSnapshots && checkpointStore != nil {
+		callback = func(circleNum int, params []float64, cost float64, img image.Image) {
+			if err := checkpointStore.SaveCircleSnapshot(jobID, circleNum, img); err != nil {
+				slog.Warn("Failed to save circle snapshot", "job_id", jobID, "circle", circleNum, "error", err)
 			}
-			if checkpointEnabled {
-				close(checkpointDone)
+			current, err := store.ParamVectorToCircles(params)
+			if err != nil {
+				return
 			}
-			return err
-		}
-
-		// Call optimizer directly with resume capability
-		lower, upper := rend.Bounds()
-		bestParams, bestCost := resumable.RunWithInitial(
-			job.BestParams,
-			job.BestCost,
-			rend.Cost,
-			lower,
-			upper,
-			rend.Dim(),
-		)
-
-		// Create result
-		result = &renderer.OptimizationResult{
-			BestParams:  bestParams,
-			BestCost:    bestCost,
-			InitialCost: initialCost,
-			Iterations:  job.Config.Iters + job.Iterations, // Cumulative
-		}
-	} else {
-		// Normal optimization from scratch
-		// Build convergence config from job settings (with defaults)
-		convergenceConfig := buildConvergenceConfig(job.Config)
-
-		switch job.Config.Mode {
-		case "joint":
-			result = renderer.OptimizeJoint(rend, optimizer, job.Config.Circles, convergenceConfig)
-		case "sequential":
-			// Build callback for snapshot saving if enabled
-			var callback renderer.CircleCallback
-			var circleDataList []store.CircleData
-			if job.Config.SaveSnapshots && checkpointStore != nil {
-				circleDataList = []store.CircleData{}
-				callback = func(circleNum int, params []float64, cost float64, img image.Image) {
-					// Save snapshot image
-					if err := checkpointStore.SaveCircleSnapshot(jobID, circleNum, img); err != nil {
-						slog.Warn("Failed to save circle snapshot", "job_id", jobID, "circle", circleNum, "error", err)
-					}
-
-					// Extract circle data for this circle
-					circles, err := store.ParamVectorToCircles(params)
-					if err != nil {
-						slog.Warn("Failed to extract circle data", "job_id", jobID, "error", err)
-						return
-					}
-
-					// Update cost and timestamp for the last circle (the one just optimized)
-					if circleNum > 0 && circleNum <= len(circles) {
-						circles[circleNum-1].CostAfter = cost
-						circles[circleNum-1].Timestamp = time.Now()
-					}
-
-					// Accumulate circle data
-					circleDataList = circles
+			for i := range current {
+				if i < len(circleData) {
+					current[i].CostAfter = circleData[i].CostAfter
+					current[i].Timestamp = circleData[i].Timestamp
 				}
 			}
-
-			result = renderer.OptimizeSequential(rend, optimizer, job.Config.Circles, convergenceConfig, callback)
-
-			// Save final circle data if snapshots were enabled
-			if job.Config.SaveSnapshots && checkpointStore != nil && len(circleDataList) > 0 {
-				if err := checkpointStore.SaveCircleData(jobID, circleDataList); err != nil {
-					slog.Warn("Failed to save circle data", "job_id", jobID, "error", err)
-				}
+			if circleNum > 0 && circleNum <= len(current) {
+				current[circleNum-1].CostAfter = cost
+				current[circleNum-1].Timestamp = time.Now()
 			}
-		case "batch":
-			batchSize := 5
-			passes := job.Config.Circles / batchSize
-			if job.Config.Circles%batchSize != 0 {
-				passes++
-			}
-			result = renderer.OptimizeBatch(rend, optimizer, batchSize, passes, convergenceConfig)
-		default:
-			err := fmt.Errorf("unknown mode: %s", job.Config.Mode)
-			markJobFailed(jm, jobID, err)
-			close(progressDone)
-			if traceEnabled {
-				close(traceDone)
-			}
-			if checkpointEnabled {
-				close(checkpointDone)
-			}
-			return err
+			circleData = current
 		}
 	}
 
-	// Close monitoring goroutines (only close if they were started)
-	close(progressDone)
-	if traceEnabled {
-		close(traceDone)
-	}
-	if checkpointEnabled {
-		close(checkpointDone)
-	}
-	elapsed := time.Since(start)
-
-	// Check for cancellation after optimization
-	// Note: Don't checkpoint here - shutdown already handles checkpointing running jobs
-	select {
-	case <-ctx.Done():
-		markJobCancelled(jm, jobID)
-		return ctx.Err()
+	switch job.Config.Mode {
+	case app.ModeJoint:
+		result, err = renderer.OptimizeJointContext(ctx, rend, wrapped, job.Config.Circles, convergence)
+	case app.ModeSequential:
+		if len(job.BestParams) > 0 {
+			err = fmt.Errorf("sequential resume is not supported")
+		} else {
+			result, err = renderer.OptimizeSequentialContext(ctx, rend, wrapped, job.Config.Circles, convergence, callback)
+		}
+	case app.ModeBatch:
+		if len(job.BestParams) > 0 {
+			err = fmt.Errorf("batch resume is not supported")
+		} else {
+			result, err = renderer.OptimizeBatchContext(ctx, rend, wrapped, job.Config.Circles, job.Config.BatchSize, convergence)
+		}
 	default:
+		err = fmt.Errorf("unknown mode")
 	}
-
-	// Update job with results
-	endTime := time.Now()
-	err = jm.UpdateJob(jobID, func(j *Job) {
-		j.State = StateCompleted
-		j.BestParams = result.BestParams
-		j.BestCost = result.BestCost
-		j.InitialCost = result.InitialCost
-		j.Iterations = result.Iterations
-		j.EndTime = &endTime
-	})
-
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			markJobCancelled(jm, jobID)
+			return err
+		}
+		markJobFailed(jm, jobID, err)
 		return err
 	}
 
-	// Compute throughput
-	totalEvals := job.Config.Iters * job.Config.PopSize
-	totalCircles := totalEvals * job.Config.Circles
-	cps := float64(totalCircles) / elapsed.Seconds()
+	iterations := baseIterations + result.Iterations
+	evaluations := baseEvaluations + result.Evaluations
+	if err := jm.CompleteJob(jobID, iterations, evaluations, result.BestParams, result.BestCost, initialCost, string(opt.TerminationCompleted)); err != nil {
+		return err
+	}
+	if len(circleData) > 0 {
+		if err := checkpointStore.SaveCircleData(jobID, circleData); err != nil {
+			slog.Warn("Failed to save circle metadata", "job_id", jobID, "error", err)
+		}
+	}
+	if traceWriter != nil {
+		_ = traceWriter.Write(store.TraceEntry{Iteration: iterations, Cost: result.BestCost, Timestamp: time.Now()})
+		_ = traceWriter.Flush()
+	}
+	if checkpointStore != nil && job.Config.CheckpointInterval > 0 {
+		if err := saveCheckpoint(jm, checkpointStore, rend, jobID); err != nil {
+			slog.Warn("Failed to save final checkpoint", "job_id", jobID, "error", err)
+		}
+	}
+	if artifacts, ok := checkpointStore.(store.ArtifactStore); ok && result.BestImage != nil {
+		_ = artifacts.SavePNGArtifact(jobID, store.ArtifactBest, result.BestImage)
+		_ = artifacts.SavePNGArtifact(jobID, store.ArtifactDiff, computeDiffImage(ref, result.BestImage))
+	}
 
-	slog.Info("Job completed",
-		"job_id", jobID,
-		"elapsed", elapsed,
-		"initial_cost", result.InitialCost,
-		"best_cost", result.BestCost,
-		"circles_per_second", cps,
-	)
-
-	// Broadcast final completion event
+	elapsed := time.Since(start).Seconds()
+	cps := 0.0
+	if elapsed > 0 {
+		cps = float64(result.Evaluations*job.Config.Circles) / elapsed
+	}
 	jm.broadcaster.Broadcast(ProgressEvent{
-		JobID:      jobID,
-		State:      StateCompleted,
-		Iterations: result.Iterations,
-		BestCost:   result.BestCost,
-		CPS:        cps,
-		Timestamp:  time.Now(),
+		JobID: jobID, State: StateCompleted, Iterations: iterations,
+		BestCost: result.BestCost, CPS: cps, Timestamp: time.Now(),
 	})
-
+	slog.Info("Job completed", "job_id", jobID, "iterations", iterations, "evaluations", evaluations, "best_cost", result.BestCost)
 	return nil
 }
 
-// monitorProgress periodically broadcasts progress events during optimization
-func monitorProgress(ctx context.Context, jm *JobManager, jobID string, startTime time.Time, done chan struct{}) {
-	ticker := time.NewTicker(500 * time.Millisecond) // Throttle to 2 updates per second
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-done:
-			return
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			// Get current job state
-			job, exists := jm.GetJob(jobID)
-			if !exists {
-				return
-			}
-
-			elapsed := time.Since(startTime).Seconds()
-
-			// Calculate CPS based on current iterations
-			var cps float64
-			if elapsed > 0 && job.Iterations > 0 {
-				// Rough estimate: iterations completed so far
-				totalEvals := job.Iterations * job.Config.PopSize
-				totalCircles := totalEvals * job.Config.Circles
-				cps = float64(totalCircles) / elapsed
-			}
-
-			// Broadcast progress event
-			jm.broadcaster.Broadcast(ProgressEvent{
-				JobID:      jobID,
-				State:      job.State,
-				Iterations: job.Iterations,
-				BestCost:   job.BestCost,
-				CPS:        cps,
-				Timestamp:  time.Now(),
-			})
+func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (renderer.Renderer, func(), error) {
+	if config.CanvasPath != "" {
+		if config.Backend != "" && config.Backend != app.BackendCPU {
+			return nil, func() {}, fmt.Errorf("custom canvas requires CPU backend")
 		}
+		canvas, err := loadReferenceImage(config.CanvasPath)
+		if err != nil {
+			return nil, func() {}, fmt.Errorf("load canvas: %w", err)
+		}
+		if canvas.Bounds().Dx() != ref.Bounds().Dx() || canvas.Bounds().Dy() != ref.Bounds().Dy() {
+			return nil, func() {}, fmt.Errorf("canvas dimensions do not match reference")
+		}
+		return renderer.NewCPURendererWithCanvas(ref, canvas, circleCount), func() {}, nil
 	}
+	backend := config.Backend
+	if backend == "" {
+		backend = app.BackendCPU
+	}
+	return renderer.NewRendererForBackend(string(backend), ref, circleCount)
 }
 
-// markJobFailed marks a job as failed with an error message
 func markJobFailed(jm *JobManager, jobID string, err error) {
-	endTime := time.Now()
-	jm.UpdateJob(jobID, func(j *Job) {
-		j.State = StateFailed
-		j.Error = err.Error()
-		j.EndTime = &endTime
-	})
+	_ = jm.FailJob(jobID, safeJobError(err))
 	slog.Error("Job failed", "job_id", jobID, "error", err)
 }
 
-// markJobCancelled marks a job as cancelled
+func safeJobError(err error) string {
+	switch {
+	case errors.Is(err, renderer.ErrStagedOptimizationUnsupported):
+		return "selected backend does not support this optimization mode"
+	case errors.Is(err, renderer.ErrInvalidOptimizationInput):
+		return "optimizer produced an invalid result"
+	default:
+		return "job execution failed"
+	}
+}
+
 func markJobCancelled(jm *JobManager, jobID string) {
-	endTime := time.Now()
-	jm.UpdateJob(jobID, func(j *Job) {
-		j.State = StateCancelled
-		j.EndTime = &endTime
-	})
-	slog.Info("Job cancelled", "job_id", jobID)
-}
-
-// monitorCheckpoints periodically saves checkpoints during optimization
-func monitorCheckpoints(ctx context.Context, jm *JobManager, checkpointStore store.Store, rend renderer.Renderer, jobID string, done chan struct{}) {
-	job, exists := jm.GetJob(jobID)
-	if !exists {
-		return
-	}
-
-	interval := time.Duration(job.Config.CheckpointInterval) * time.Second
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-done:
-			return
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			// Save checkpoint
-			if err := saveCheckpoint(jm, checkpointStore, rend, jobID); err != nil {
-				slog.Error("Failed to save checkpoint", "job_id", jobID, "error", err)
-			}
-		}
+	if err := jm.CancelJob(jobID); err != nil && !errors.Is(err, ErrInvalidTransition) {
+		slog.Warn("Failed to mark job cancelled", "job_id", jobID, "error", err)
 	}
 }
 
-// saveCheckpoint saves a checkpoint for the given job
 func saveCheckpoint(jm *JobManager, checkpointStore store.Store, rend renderer.Renderer, jobID string) error {
-	// Get current job state
 	job, exists := jm.GetJob(jobID)
 	if !exists {
 		return fmt.Errorf("job not found: %s", jobID)
 	}
-
-	// Skip if no best params yet
-	if len(job.BestParams) == 0 {
-		slog.Debug("Skipping checkpoint, no best params yet", "job_id", jobID)
+	if len(job.BestParams) == 0 || math.IsInf(job.BestCost, 0) || math.IsNaN(job.BestCost) {
 		return nil
 	}
-
-	// Create checkpoint
-	checkpoint := store.NewCheckpoint(
-		jobID,
-		job.BestParams,
-		job.BestCost,
-		job.InitialCost,
-		job.Iterations,
-		job.Config,
-	)
-
-	// Save checkpoint metadata
+	checkpoint := store.NewCheckpoint(jobID, job.BestParams, job.BestCost, job.InitialCost, job.Iterations, job.Config)
+	checkpoint.Evaluations = int64(job.Evaluations)
+	if job.Termination != "" {
+		checkpoint.Termination = job.Termination
+	}
 	if err := checkpointStore.SaveCheckpoint(jobID, checkpoint); err != nil {
-		return fmt.Errorf("failed to save checkpoint: %w", err)
+		return fmt.Errorf("save checkpoint: %w", err)
 	}
-
-	slog.Info("Checkpoint saved",
-		"job_id", jobID,
-		"iteration", job.Iterations,
-		"best_cost", job.BestCost,
-	)
-
-	// Save checkpoint artifacts (best.png, diff.png)
-	if err := saveCheckpointArtifacts(checkpointStore, rend, jobID, job.BestParams); err != nil {
-		slog.Warn("Failed to save checkpoint artifacts", "job_id", jobID, "error", err)
-		// Don't fail the checkpoint if artifacts fail - metadata is most important
-	}
-
-	return nil
+	return saveCheckpointArtifacts(checkpointStore, rend, job.Config, jobID, job.BestParams)
 }
 
-// saveCheckpointArtifacts saves best.png and diff.png to the checkpoint directory
-func saveCheckpointArtifacts(checkpointStore store.Store, rend renderer.Renderer, jobID string, bestParams []float64) error {
-	// We need to access the filesystem directly since Store interface doesn't expose artifact paths
-	// This assumes FSStore with ./data/jobs/<jobID>/ structure
-	// TODO: Consider adding GetJobDir() to Store interface if we need different store implementations
-
-	// For now, assume FSStore with ./data base directory
-	jobDir := filepath.Join("./data", "jobs", jobID)
-
-	// Render best image
-	bestImg := rend.Render(bestParams)
-
-	// Save best.png
-	bestPath := filepath.Join(jobDir, "best.png")
-	bestFile, err := os.Create(bestPath)
-	if err != nil {
-		return fmt.Errorf("failed to create best.png: %w", err)
+func saveCheckpointArtifacts(checkpointStore store.Store, rend renderer.Renderer, config store.JobConfig, jobID string, bestParams []float64) error {
+	artifacts, ok := checkpointStore.(store.ArtifactStore)
+	if !ok {
+		return nil
 	}
-	defer bestFile.Close()
-
-	if err := png.Encode(bestFile, bestImg); err != nil {
-		return fmt.Errorf("failed to encode best.png: %w", err)
-	}
-
-	// Compute and save diff.png
 	ref := rend.Reference()
-	diffImg := computeDiffImage(ref, bestImg)
-
-	diffPath := filepath.Join(jobDir, "diff.png")
-	diffFile, err := os.Create(diffPath)
+	snapshotRenderer, cleanup, err := rendererForJob(config, ref, len(bestParams)/7)
 	if err != nil {
-		return fmt.Errorf("failed to create diff.png: %w", err)
+		return err
 	}
-	defer diffFile.Close()
-
-	if err := png.Encode(diffFile, diffImg); err != nil {
-		return fmt.Errorf("failed to encode diff.png: %w", err)
+	defer cleanup()
+	best := snapshotRenderer.Render(bestParams)
+	if err := artifacts.SavePNGArtifact(jobID, store.ArtifactBest, best); err != nil {
+		return err
 	}
-
-	slog.Debug("Checkpoint artifacts saved", "job_id", jobID, "best_path", bestPath, "diff_path", diffPath)
-	return nil
-}
-
-// monitorTrace periodically logs cost history to trace file
-func monitorTrace(ctx context.Context, jm *JobManager, traceWriter *store.TraceWriter, jobID string, done chan struct{}) {
-	// Log trace every 1 second
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	lastIteration := 0
-
-	for {
-		select {
-		case <-done:
-			// Log final state before exiting
-			job, exists := jm.GetJob(jobID)
-			if exists && job.Iterations > lastIteration {
-				traceWriter.Write(store.TraceEntry{
-					Iteration: job.Iterations,
-					Cost:      job.BestCost,
-					Timestamp: time.Now(),
-				})
-				traceWriter.Flush()
-			}
-			return
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			job, exists := jm.GetJob(jobID)
-			if !exists {
-				return
-			}
-
-			// Only log if iteration has progressed
-			if job.Iterations > lastIteration {
-				entry := store.TraceEntry{
-					Iteration: job.Iterations,
-					Cost:      job.BestCost,
-					Timestamp: time.Now(),
-					// Don't include params to save space - can be reconstructed from checkpoints
-					Params: nil,
-				}
-
-				if err := traceWriter.Write(entry); err != nil {
-					slog.Error("Failed to write trace entry", "job_id", jobID, "error", err)
-				}
-
-				lastIteration = job.Iterations
-			}
-		}
-	}
+	return artifacts.SavePNGArtifact(jobID, store.ArtifactDiff, computeDiffImage(ref, best))
 }

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -29,6 +30,43 @@ func TestJobManager_CreateJob(t *testing.T) {
 
 	if job.Config.RefPath != "test.png" {
 		t.Errorf("Config not set correctly")
+	}
+}
+
+func TestJobManagerLegalTransitions(t *testing.T) {
+	jm := NewJobManager()
+	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
+	if err := jm.StartJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := jm.UpdateProgress(job.ID, 1, 20, []float64{1, 2}, 4); err != nil {
+		t.Fatal(err)
+	}
+	if err := jm.CompleteJob(job.ID, 2, 40, []float64{2, 3}, 3, 10, "completed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := jm.CancelJob(job.ID); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("terminal transition error = %v", err)
+	}
+	if err := jm.DeleteJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := jm.GetJob(job.ID); ok {
+		t.Fatal("deleted job remains visible")
+	}
+}
+
+func TestJobManagerRejectsRegressingProgress(t *testing.T) {
+	jm := NewJobManager()
+	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
+	if err := jm.StartJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := jm.UpdateProgress(job.ID, 2, 40, []float64{1}, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := jm.UpdateProgress(job.ID, 1, 20, []float64{2}, 2); err == nil {
+		t.Fatal("regressing progress was accepted")
 	}
 }
 

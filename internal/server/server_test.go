@@ -25,7 +25,7 @@ func TestServer_CreateJob(t *testing.T) {
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
 
-	s := NewServer(":8080", nil)
+	s := NewServerWithOptions(":8080", nil, ServerOptions{InputRoots: []string{tmpDir}})
 
 	// Create job request
 	config := JobConfig{
@@ -183,7 +183,7 @@ func TestServer_Integration(t *testing.T) {
 	createSimpleTestImage(t, imgPath)
 
 	// Start server in background
-	s := NewServer("localhost:0", nil) // Use random port
+	s := NewServerWithOptions("localhost:0", nil, ServerOptions{InputRoots: []string{tmpDir}}) // Use random port
 	srv := httptest.NewServer(s.corsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/jobs" && r.Method == http.MethodPost {
 			s.handleCreateJob(w, r)
@@ -584,7 +584,7 @@ func TestServer_CreatePagePost_Success(t *testing.T) {
 	testImagePath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, testImagePath)
 
-	server := NewServer(":0", nil)
+	server := NewServerWithOptions(":0", nil, ServerOptions{InputRoots: []string{tmpDir}})
 
 	// Create form data
 	form := url.Values{}
@@ -737,7 +737,7 @@ func TestServer_CreatePage_Integration(t *testing.T) {
 	testImagePath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, testImagePath)
 
-	server := NewServer(":0", nil)
+	server := NewServerWithOptions(":0", nil, ServerOptions{InputRoots: []string{tmpDir}})
 
 	// Test GET request
 	req := httptest.NewRequest(http.MethodGet, "/create", nil)

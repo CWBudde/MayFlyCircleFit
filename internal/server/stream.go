@@ -120,6 +120,11 @@ func (eb *EventBroadcaster) CleanupJob(jobID string) {
 
 // handleJobStream handles SSE connections for job progress
 func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID string) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
 	// Check if job exists
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
@@ -131,7 +136,6 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	// Get flusher
 	flusher, ok := w.(http.Flusher)

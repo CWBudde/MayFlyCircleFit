@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"image"
 	"image/png"
 	"io"
 	"log/slog"
@@ -11,11 +13,13 @@ import (
 	"net/http/pprof"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/google/uuid"
 )
 
 // Server represents the HTTP server
@@ -27,12 +31,24 @@ type Server struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	options    ServerOptions
+	queue      chan string
+	workerOnce sync.Once
+	workerWG   sync.WaitGroup
+	cancelMu   sync.Mutex
+	jobCancels map[string]context.CancelFunc
+	input      *inputPolicy
+	inputErr   error
 }
 
 // ServerOptions configures the trusted-local HTTP boundary.
 type ServerOptions struct {
-	EnablePprof bool
+	EnablePprof       bool
+	MaxConcurrentJobs int
+	QueueSize         int
+	InputRoots        []string
 }
+
+var ErrJobQueueFull = errors.New("job queue is full")
 
 // NewServer creates a new HTTP server with optional checkpoint store.
 // If store is nil, checkpointing is disabled.
@@ -42,7 +58,14 @@ func NewServer(addr string, checkpointStore store.Store) *Server {
 
 // NewServerWithOptions creates a server with explicit security options.
 func NewServerWithOptions(addr string, checkpointStore store.Store, options ServerOptions) *Server {
+	if options.MaxConcurrentJobs <= 0 {
+		options.MaxConcurrentJobs = 1
+	}
+	if options.QueueSize <= 0 {
+		options.QueueSize = 16
+	}
 	ctx, cancel := context.WithCancel(context.Background())
+	policy, policyErr := newInputPolicy(options.InputRoots)
 	return &Server{
 		jobManager: NewJobManager(),
 		store:      checkpointStore,
@@ -50,6 +73,10 @@ func NewServerWithOptions(addr string, checkpointStore store.Store, options Serv
 		ctx:        ctx,
 		cancel:     cancel,
 		options:    options,
+		queue:      make(chan string, options.QueueSize),
+		jobCancels: make(map[string]context.CancelFunc),
+		input:      policy,
+		inputErr:   policyErr,
 	}
 }
 
@@ -109,8 +136,85 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 	// Shutdown HTTP server
 	if s.server != nil {
-		return s.server.Shutdown(ctx)
+		if err := s.server.Shutdown(ctx); err != nil {
+			return err
+		}
 	}
+
+	waited := make(chan struct{})
+	go func() {
+		s.workerWG.Wait()
+		close(waited)
+	}()
+	select {
+	case <-waited:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("wait for optimization workers: %w", ctx.Err())
+	}
+}
+
+func (s *Server) ensureWorkers() {
+	s.workerOnce.Do(func() {
+		for range s.options.MaxConcurrentJobs {
+			s.workerWG.Add(1)
+			go s.workerLoop()
+		}
+	})
+}
+
+func (s *Server) enqueueJob(jobID string) error {
+	s.ensureWorkers()
+	select {
+	case s.queue <- jobID:
+		return nil
+	default:
+		return ErrJobQueueFull
+	}
+}
+
+func (s *Server) workerLoop() {
+	defer s.workerWG.Done()
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case jobID := <-s.queue:
+			job, ok := s.jobManager.GetJob(jobID)
+			if !ok || job.State != StatePending {
+				continue
+			}
+			ctx, cancel := context.WithCancel(s.ctx)
+			s.cancelMu.Lock()
+			s.jobCancels[jobID] = cancel
+			s.cancelMu.Unlock()
+			_ = runJob(ctx, s.jobManager, s.store, jobID)
+			cancel()
+			s.cancelMu.Lock()
+			delete(s.jobCancels, jobID)
+			s.cancelMu.Unlock()
+		}
+	}
+}
+
+func (s *Server) requestCancellation(jobID string) error {
+	job, ok := s.jobManager.GetJob(jobID)
+	if !ok {
+		return store.ErrNotFound
+	}
+	if job.State == StatePending {
+		return s.jobManager.CancelJob(jobID)
+	}
+	if job.State != StateRunning {
+		return fmt.Errorf("%w: job is %s", ErrInvalidTransition, job.State)
+	}
+	s.cancelMu.Lock()
+	cancel := s.jobCancels[jobID]
+	s.cancelMu.Unlock()
+	if cancel == nil {
+		return fmt.Errorf("job cancellation is not yet available")
+	}
+	cancel()
 	return nil
 }
 
@@ -232,9 +336,16 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jobID := parts[0]
+	parsedID, err := uuid.Parse(jobID)
+	if err != nil || parsedID == uuid.Nil || parsedID.String() != jobID {
+		writeAPIError(w, http.StatusBadRequest, "invalid_job_id", "job ID must be a canonical UUID")
+		return
+	}
 
 	// Route based on subpath
-	if len(parts) == 1 || len(parts) == 2 && parts[1] == "status" {
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		s.handleDeleteJob(w, r, jobID)
+	} else if len(parts) == 1 || len(parts) == 2 && parts[1] == "status" {
 		s.handleGetJobStatus(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "best.png" {
 		s.handleGetBestImage(w, r, jobID)
@@ -246,6 +357,8 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 		s.handleJobStream(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "resume" {
 		s.handleResumeJob(w, r, jobID)
+	} else if len(parts) == 2 && parts[1] == "cancel" {
+		s.handleCancelJob(w, r, jobID)
 	} else {
 		writeAPIError(w, http.StatusNotFound, "not_found", "resource not found")
 	}
@@ -258,6 +371,11 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&config); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeAPIError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body exceeds the size limit")
+			return
+		}
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid JSON request body")
 		return
 	}
@@ -270,12 +388,31 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_config", err.Error())
 		return
 	}
+	if s.inputErr != nil {
+		writeAPIError(w, http.StatusInternalServerError, "server_config", "server input roots are unavailable")
+		return
+	}
+	config.RefPath, err = s.input.resolveImage(config.RefPath)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_ref_path", err.Error())
+		return
+	}
+	if config.CanvasPath != "" {
+		config.CanvasPath, err = s.input.resolveImage(config.CanvasPath)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, "invalid_canvas_path", err.Error())
+			return
+		}
+	}
 
 	// Create job
 	job := s.jobManager.CreateJob(config)
 
-	// Start worker in background with checkpoint store
-	go runJob(s.ctx, s.jobManager, s.store, job.ID)
+	if err := s.enqueueJob(job.ID); err != nil {
+		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
+		writeAPIError(w, http.StatusTooManyRequests, "queue_full", "server job queue is full")
+		return
+	}
 
 	// Return job
 	w.Header().Set("Content-Type", "application/json")
@@ -283,6 +420,41 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(job); err != nil {
 		slog.Error("Failed to encode create-job response", "error", err)
 	}
+}
+
+func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request, jobID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+	if err := s.requestCancellation(jobID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
+		} else {
+			writeAPIError(w, http.StatusConflict, "invalid_state", err.Error())
+		}
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *Server) handleDeleteJob(w http.ResponseWriter, _ *http.Request, jobID string) {
+	if err := s.jobManager.DeleteJob(jobID); err != nil {
+		if errors.Is(err, ErrInvalidTransition) {
+			writeAPIError(w, http.StatusConflict, "invalid_state", "active jobs must be cancelled before deletion")
+		} else {
+			writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
+		}
+		return
+	}
+	s.jobManager.broadcaster.CleanupJob(jobID)
+	if s.store != nil {
+		if err := s.store.DeleteCheckpoint(jobID); err != nil && !errors.Is(err, store.ErrNotFound) {
+			slog.Warn("Failed to delete persisted job", "job_id", jobID, "error", err)
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleListJobs handles GET /api/v1/jobs
@@ -293,8 +465,29 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(jobs)
 }
 
+type jobStatusResponse struct {
+	ID          string     `json:"id"`
+	State       JobState   `json:"state"`
+	Config      JobConfig  `json:"config"`
+	BestCost    float64    `json:"bestCost"`
+	InitialCost float64    `json:"initialCost"`
+	Iterations  int        `json:"iterations"`
+	Evaluations int        `json:"evaluations"`
+	Termination string     `json:"termination,omitempty"`
+	Elapsed     float64    `json:"elapsed"`
+	CPS         float64    `json:"cps"`
+	StartTime   time.Time  `json:"startTime"`
+	EndTime     *time.Time `json:"endTime,omitempty"`
+	Error       string     `json:"error,omitempty"`
+}
+
 // handleGetJobStatus handles GET /api/v1/jobs/:id/status
 func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobID string) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
 		http.Error(w, "Job not found", http.StatusNotFound)
@@ -311,24 +504,16 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 
 	cps := float64(0)
 	if elapsed.Seconds() > 0 {
-		totalEvals := job.Config.Iters * job.Config.PopSize
-		totalCircles := totalEvals * job.Config.Circles
+		totalCircles := job.Evaluations * max(1, len(job.BestParams)/7)
 		cps = float64(totalCircles) / elapsed.Seconds()
 	}
 
-	// Create response
-	response := map[string]interface{}{
-		"id":          job.ID,
-		"state":       job.State,
-		"config":      job.Config,
-		"bestCost":    job.BestCost,
-		"initialCost": job.InitialCost,
-		"iterations":  job.Iterations,
-		"elapsed":     elapsed.Seconds(),
-		"cps":         cps,
-		"startTime":   job.StartTime,
-		"endTime":     job.EndTime,
-		"error":       job.Error,
+	response := jobStatusResponse{
+		ID: job.ID, State: job.State, Config: job.Config,
+		BestCost: job.BestCost, InitialCost: job.InitialCost,
+		Iterations: job.Iterations, Evaluations: job.Evaluations,
+		Termination: job.Termination, Elapsed: elapsed.Seconds(), CPS: cps,
+		StartTime: job.StartTime, EndTime: job.EndTime, Error: job.Error,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -337,6 +522,11 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 
 // handleGetBestImage handles GET /api/v1/jobs/:id/best.png
 func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobID string) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
 		http.Error(w, "Job not found", http.StatusNotFound)
@@ -356,9 +546,12 @@ func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobI
 		return
 	}
 
-	// Render best image
-	renderer := renderer.NewCPURenderer(ref, job.Config.Circles)
-	img := renderer.Render(job.BestParams)
+	img, cleanup, err := renderBestSnapshot(job, ref)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "render_failed", "failed to render job snapshot")
+		return
+	}
+	defer cleanup()
 
 	// Set headers
 	w.Header().Set("Content-Type", "image/png")
@@ -372,6 +565,11 @@ func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobI
 
 // handleGetDiffImage handles GET /api/v1/jobs/:id/diff.png
 func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobID string) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
 		http.Error(w, "Job not found", http.StatusNotFound)
@@ -391,9 +589,12 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 		return
 	}
 
-	// Render best image
-	renderer := renderer.NewCPURenderer(ref, job.Config.Circles)
-	best := renderer.Render(job.BestParams)
+	best, cleanup, err := renderBestSnapshot(job, ref)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "render_failed", "failed to render job snapshot")
+		return
+	}
+	defer cleanup()
 
 	// Compute difference image (simple visualization for now)
 	diff := computeDiffImage(ref, best)
@@ -406,6 +607,15 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 	if err := png.Encode(w, diff); err != nil {
 		slog.Error("Failed to encode PNG", "error", err)
 	}
+}
+
+func renderBestSnapshot(job *Job, ref *image.NRGBA) (*image.NRGBA, func(), error) {
+	actualCircles := len(job.BestParams) / 7
+	rend, cleanup, err := rendererForJob(job.Config, ref, actualCircles)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return rend.Render(job.BestParams), cleanup, nil
 }
 
 // corsMiddleware enforces the trusted-local same-origin browser policy. CLI
@@ -450,6 +660,11 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string) {
 
 // handleGetRefImage handles GET /api/v1/jobs/:id/ref.png
 func (s *Server) handleGetRefImage(w http.ResponseWriter, r *http.Request, jobID string) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
 		http.Error(w, "Job not found", http.StatusNotFound)
@@ -513,6 +728,8 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 	// Create a new job with resumed state
 	// We use the same configuration but mark it as a resumed job
 	config := checkpoint.Config
+	config.EffectiveSeed = checkpoint.EffectiveSeed
+	config.ResumeCount = checkpoint.ResumeCount + 1
 	newJob := s.jobManager.CreateJob(config)
 
 	// Initialize the new job with checkpoint data
@@ -523,8 +740,11 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 		j.Iterations = checkpoint.Iteration
 	})
 
-	// Start worker in background with checkpoint store
-	go runJob(s.ctx, s.jobManager, s.store, newJob.ID)
+	if err := s.enqueueJob(newJob.ID); err != nil {
+		_ = s.jobManager.FailJob(newJob.ID, "server job queue is full")
+		writeAPIError(w, http.StatusTooManyRequests, "queue_full", "server job queue is full")
+		return
+	}
 
 	// Return response
 	response := map[string]interface{}{

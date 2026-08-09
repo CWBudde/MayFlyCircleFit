@@ -17,10 +17,15 @@ import (
 )
 
 var (
-	serverAddr        string
-	serverPort        int
-	serveCpuProfile   string
-	serveMemProfile   string
+	serverAddr      string
+	serverPort      int
+	serveCpuProfile string
+	serveMemProfile string
+	servePprof      bool
+	serveInputRoots []string
+	serveMaxJobs    int
+	serveQueueSize  int
+	serveDataRoot   string
 )
 
 var serveCmd = &cobra.Command{
@@ -34,6 +39,11 @@ Jobs run in the background and progress can be monitored via SSE or status endpo
 func init() {
 	serveCmd.Flags().StringVar(&serverAddr, "addr", "localhost", "Server bind address")
 	serveCmd.Flags().IntVar(&serverPort, "port", 8080, "Server port")
+	serveCmd.Flags().StringSliceVar(&serveInputRoots, "input-root", []string{"."}, "Allowed image input root (repeatable)")
+	serveCmd.Flags().IntVar(&serveMaxJobs, "max-jobs", 1, "Maximum concurrently running jobs")
+	serveCmd.Flags().IntVar(&serveQueueSize, "queue-size", 16, "Maximum queued jobs")
+	serveCmd.Flags().StringVar(&serveDataRoot, "data-root", "./data", "Job artifact and checkpoint root")
+	serveCmd.Flags().BoolVar(&servePprof, "enable-pprof", false, "Enable trusted-local /debug/pprof endpoints")
 
 	// Profiling flags
 	serveCmd.Flags().StringVar(&serveCpuProfile, "cpuprofile", "", "Write CPU profile to file")
@@ -43,6 +53,16 @@ func init() {
 }
 
 func runServer(cmd *cobra.Command, args []string) error {
+	if serveMaxJobs < 1 || serveMaxJobs > 16 {
+		return fmt.Errorf("max-jobs must be between 1 and 16")
+	}
+	if serveQueueSize < 1 || serveQueueSize > 100 {
+		return fmt.Errorf("queue-size must be between 1 and 100")
+	}
+	if servePprof && serverAddr != "localhost" && serverAddr != "127.0.0.1" && serverAddr != "::1" {
+		return fmt.Errorf("pprof requires a trusted loopback bind address")
+	}
+
 	// Start CPU profiling if requested
 	if serveCpuProfile != "" {
 		f, err := os.Create(serveCpuProfile)
@@ -67,21 +87,25 @@ func runServer(cmd *cobra.Command, args []string) error {
 	fmt.Println("  GET    /api/v1/jobs/:id      - Get job status")
 	fmt.Println("  GET    /api/v1/jobs/:id/best.png  - Get current best image")
 	fmt.Println("  GET    /api/v1/jobs/:id/diff.png  - Get difference image")
-	fmt.Println("\nProfiling endpoints:")
-	fmt.Printf("  GET    http://%s/debug/pprof/        - pprof index\n", addr)
-	fmt.Printf("  GET    http://%s/debug/pprof/profile - CPU profile (30s)\n", addr)
-	fmt.Printf("  GET    http://%s/debug/pprof/heap    - Heap profile\n", addr)
-	fmt.Printf("  GET    http://%s/debug/pprof/goroutine - Goroutine dump\n", addr)
+	if servePprof {
+		fmt.Println("\nProfiling endpoints enabled for this trusted-local server:")
+		fmt.Printf("  GET    http://%s/debug/pprof/        - pprof index\n", addr)
+	}
 	fmt.Println("\nPress Ctrl+C to shutdown")
 
 	// Create checkpoint store
-	checkpointStore, err := store.NewFSStore("./data")
+	checkpointStore, err := store.NewFSStore(serveDataRoot)
 	if err != nil {
 		return fmt.Errorf("failed to create checkpoint store: %w", err)
 	}
 
 	// Create server
-	srv := server.NewServer(addr, checkpointStore)
+	srv := server.NewServerWithOptions(addr, checkpointStore, server.ServerOptions{
+		EnablePprof:       servePprof,
+		InputRoots:        serveInputRoots,
+		MaxConcurrentJobs: serveMaxJobs,
+		QueueSize:         serveQueueSize,
+	})
 
 	// Channel for server errors
 	serverErrors := make(chan error, 1)
