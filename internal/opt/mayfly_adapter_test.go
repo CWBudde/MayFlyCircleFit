@@ -1,6 +1,8 @@
 package opt
 
 import (
+	"context"
+	"errors"
 	"math"
 	"testing"
 )
@@ -12,6 +14,68 @@ func sphere(x []float64) float64 {
 		sum += v * v
 	}
 	return sum
+}
+
+func TestMayflyAdapterLifecycleProgressAndCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	optimizer := NewMayfly(100, 20, 42).(*MayflyAdapter)
+	var updates []Progress
+	result, err := optimizer.RunContext(ctx, Problem{
+		Eval: sphere, Lower: []float64{-10, -10}, Upper: []float64{10, 10}, Dim: 2,
+	}, RunOptions{Observer: func(progress Progress) {
+		updates = append(updates, progress)
+		progress.BestParams[0] = 999
+		cancel()
+	}})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunContext error = %v, want context.Canceled", err)
+	}
+	if result.Termination != TerminationCancelled || result.Iterations != 1 || result.Evaluations == 0 {
+		t.Fatalf("unexpected cancelled result: %+v", result)
+	}
+	if len(updates) != 1 {
+		t.Fatalf("observer updates = %d, want 1", len(updates))
+	}
+	if len(result.BestParams) == 0 || result.BestParams[0] == 999 {
+		t.Fatal("observer received a mutable optimizer snapshot")
+	}
+}
+
+func TestMayflyAdapterSeedsResumePopulationAroundBest(t *testing.T) {
+	initial := Candidate{Params: []float64{2, -3}, Cost: 13}
+	var firstEvaluation []float64
+	objective := func(params []float64) float64 {
+		if firstEvaluation == nil {
+			firstEvaluation = append([]float64(nil), params...)
+		}
+		return sphere(params)
+	}
+	optimizer := NewMayfly(1, 20, 42).(*MayflyAdapter)
+	result, err := optimizer.RunContext(context.Background(), Problem{
+		Eval: objective, Lower: []float64{-10, -10}, Upper: []float64{10, 10}, Dim: 2,
+	}, RunOptions{Initial: &initial, ResumeCount: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstEvaluation[0] != initial.Params[0] || firstEvaluation[1] != initial.Params[1] {
+		t.Fatalf("first population member = %v, want exact saved best %v", firstEvaluation, initial.Params)
+	}
+	if result.BestCost > initial.Cost {
+		t.Fatalf("resume worsened cost: got %v, initial %v", result.BestCost, initial.Cost)
+	}
+	if result.Evaluations == 0 || result.Iterations != 1 {
+		t.Fatalf("missing measured work: %+v", result)
+	}
+}
+
+func TestContinuationSeedIsStableAndAdvances(t *testing.T) {
+	first := continuationSeed(42, 1)
+	if first != continuationSeed(42, 1) {
+		t.Fatal("continuation seed is not deterministic")
+	}
+	if first == continuationSeed(42, 2) || first == 42 {
+		t.Fatal("continuation seed did not advance")
+	}
 }
 
 func TestMayflyAdapterOnSphere(t *testing.T) {

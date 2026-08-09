@@ -1,5 +1,62 @@
 package opt
 
+import "context"
+
+// Problem describes one bounded minimization problem.
+type Problem struct {
+	Eval  func([]float64) float64
+	Lower []float64
+	Upper []float64
+	Dim   int
+}
+
+// Candidate is a known solution used to seed a continuation run.
+type Candidate struct {
+	Params []float64
+	Cost   float64
+}
+
+// Progress is an immutable best-so-far optimizer snapshot.
+type Progress struct {
+	Iterations  int
+	Evaluations int
+	BestParams  []float64
+	BestCost    float64
+}
+
+// Observer consumes synchronous best-so-far snapshots.
+type Observer func(Progress)
+
+// RunOptions controls progress reporting and restart-from-best behavior.
+type RunOptions struct {
+	Observer    Observer
+	Initial     *Candidate
+	ResumeCount int
+}
+
+// Termination describes why an optimizer stopped.
+type Termination string
+
+const (
+	TerminationCompleted Termination = "completed"
+	TerminationCancelled Termination = "cancelled"
+)
+
+// Result is the complete, measured outcome of an optimization run.
+type Result struct {
+	BestParams  []float64
+	BestCost    float64
+	Iterations  int
+	Evaluations int
+	Termination Termination
+}
+
+// LifecycleOptimizer supports errors, cooperative cancellation, measured
+// progress, and genuine restart-from-best population seeding.
+type LifecycleOptimizer interface {
+	RunContext(context.Context, Problem, RunOptions) (Result, error)
+}
+
 // Optimizer defines an optimization algorithm interface
 type Optimizer interface {
 	// Run executes the optimization
