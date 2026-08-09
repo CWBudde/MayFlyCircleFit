@@ -1,7 +1,9 @@
 package renderer
 
 import (
+	"fmt"
 	"image"
+	"image/draw"
 	"math"
 
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
@@ -16,12 +18,15 @@ type CPURenderer struct {
 	width     int
 	height    int
 	// Buffer pooling to reduce allocations
-	canvas     *image.NRGBA // Reusable render buffer
-	initialBg  []byte       // Precomputed initial background (white or custom canvas)
+	canvas    *image.NRGBA // Reusable render buffer
+	initialBg []byte       // Precomputed initial background (white or custom canvas)
 }
 
 // NewCPURenderer creates a CPU-based renderer with a white background
 func NewCPURenderer(reference *image.NRGBA, k int) *CPURenderer {
+	if k < 0 {
+		k = 0
+	}
 	bounds := reference.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 
@@ -52,6 +57,9 @@ func NewCPURenderer(reference *image.NRGBA, k int) *CPURenderer {
 // to an existing partial solution).
 // The canvas parameter is copied, so the original image is not modified.
 func NewCPURendererWithCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int) *CPURenderer {
+	if k < 0 {
+		k = 0
+	}
 	bounds := reference.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 
@@ -63,12 +71,12 @@ func NewCPURendererWithCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int
 
 	// Allocate reusable canvas buffer (copy from input canvas)
 	canvasCopy := image.NewNRGBA(image.Rect(0, 0, width, height))
-	copy(canvasCopy.Pix, canvas.Pix)
+	draw.Draw(canvasCopy, canvasCopy.Bounds(), canvas, canvas.Bounds().Min, draw.Src)
 
 	// Store initial canvas state for reset between renders
 	pixelCount := width * height * 4 // 4 bytes per pixel (RGBA)
 	initialBg := make([]byte, pixelCount)
-	copy(initialBg, canvas.Pix)
+	copy(initialBg, canvasCopy.Pix)
 
 	return &CPURenderer{
 		reference: reference,
@@ -86,6 +94,9 @@ func NewCPURendererWithCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int
 func (r *CPURenderer) Render(params []float64) *image.NRGBA {
 	// Reset canvas to initial background using fast copy (avoids allocation)
 	copy(r.canvas.Pix, r.initialBg)
+	if len(params) != r.Dim() {
+		return r.canvas
+	}
 
 	// Decode and render each circle (using hybrid/scanline algorithm)
 	pv := &fit.ParamVector{Data: params, K: r.k, Width: r.width, Height: r.height}
@@ -99,8 +110,24 @@ func (r *CPURenderer) Render(params []float64) *image.NRGBA {
 
 // Cost computes error between params and reference
 func (r *CPURenderer) Cost(params []float64) float64 {
+	if len(params) != r.Dim() || r.width == 0 || r.height == 0 {
+		return math.Inf(1)
+	}
 	rendered := r.Render(params)
 	return r.costFunc(rendered, r.reference)
+}
+
+// newSession creates an independent CPU renderer that preserves the reference,
+// base canvas, and selected cost function.
+func (r *CPURenderer) newSession(circleCount int) (Renderer, func(), error) {
+	if circleCount < 0 {
+		return nil, noopCleanup, fmt.Errorf("circle count cannot be negative")
+	}
+	baseCanvas := image.NewNRGBA(image.Rect(0, 0, r.width, r.height))
+	copy(baseCanvas.Pix, r.initialBg)
+	session := NewCPURendererWithCanvas(r.reference, baseCanvas, circleCount)
+	session.costFunc = r.costFunc
+	return session, noopCleanup, nil
 }
 
 // Dim returns the dimensionality of the parameter space

@@ -1,88 +1,284 @@
 package renderer
 
 import (
+	"context"
+	"errors"
 	"image"
 	"image/color"
+	"math"
 	"testing"
 
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
 )
 
-func TestOptimizeJoint(t *testing.T) {
-	// Create simple 10x10 reference with red circle
-	ref := image.NewNRGBA(image.Rect(0, 0, 10, 10))
-	white := color.NRGBA{255, 255, 255, 255}
-	for y := 0; y < 10; y++ {
-		for x := 0; x < 10; x++ {
-			ref.Set(x, y, white)
-		}
+type optimizerFunc func(eval func([]float64) float64, lower, upper []float64, dim int) ([]float64, float64)
+
+func (f optimizerFunc) Run(eval func([]float64) float64, lower, upper []float64, dim int) ([]float64, float64) {
+	return f(eval, lower, upper, dim)
+}
+
+type measuredOptimizer struct{}
+
+func (measuredOptimizer) Run(eval func([]float64) float64, _, _ []float64, dim int) ([]float64, float64) {
+	params := transparentParams(dim / paramsPerCircle)
+	return params, eval(params)
+}
+
+func (measuredOptimizer) RunContext(ctx context.Context, problem opt.Problem, _ opt.RunOptions) (opt.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return opt.Result{Termination: opt.TerminationCancelled}, err
 	}
+	params := transparentParams(problem.Dim / paramsPerCircle)
+	cost := problem.Eval(params)
+	return opt.Result{
+		BestParams:  params,
+		BestCost:    cost,
+		Iterations:  7,
+		Evaluations: 1,
+		Termination: opt.TerminationCompleted,
+	}, nil
+}
 
-	// Add a red center pixel
-	ref.Set(5, 5, color.NRGBA{255, 0, 0, 255})
-
-	renderer := NewCPURenderer(ref, 1)
-
-	optimizer := opt.NewMayfly(50, 20, 42) // maxIters, popSize, seed (popSize must be >=20)
-
-	// Convergence config not used for joint mode
-	result := OptimizeJoint(renderer, optimizer, 1, DisabledConvergenceConfig())
-
-	if result.BestCost >= result.InitialCost {
-		t.Errorf("Optimization did not improve: initial=%f, best=%f", result.InitialCost, result.BestCost)
-	}
-
-	if len(result.BestParams) != 7 {
-		t.Errorf("Expected 7 parameters for 1 circle, got %d", len(result.BestParams))
+func transparentOptimizer() optimizerFunc {
+	return func(eval func([]float64) float64, _, _ []float64, dim int) ([]float64, float64) {
+		params := transparentParams(dim / paramsPerCircle)
+		return params, eval(params)
 	}
 }
 
-func TestOptimizeSequential(t *testing.T) {
-	// Create simple reference
-	ref := image.NewNRGBA(image.Rect(0, 0, 10, 10))
-	white := color.NRGBA{255, 255, 255, 255}
-	for y := 0; y < 10; y++ {
-		for x := 0; x < 10; x++ {
-			ref.Set(x, y, white)
+func opaqueBlackOptimizer() optimizerFunc {
+	return func(eval func([]float64) float64, _, _ []float64, dim int) ([]float64, float64) {
+		params := make([]float64, dim)
+		for offset := 0; offset < dim; offset += paramsPerCircle {
+			params[offset+0] = 1
+			params[offset+1] = 1
+			params[offset+2] = 10
+			params[offset+6] = 1
 		}
-	}
-	ref.Set(5, 5, color.NRGBA{255, 0, 0, 255})
-
-	renderer := NewCPURenderer(ref, 1)
-
-	optimizer := opt.NewMayfly(30, 20, 42) // maxIters, popSize, seed
-
-	// Disable convergence for deterministic test
-	result := OptimizeSequential(renderer, optimizer, 2, DisabledConvergenceConfig(), nil)
-
-	if result.BestCost >= result.InitialCost {
-		t.Errorf("Optimization did not improve")
-	}
-
-	if len(result.BestParams) != 14 { // 2 circles * 7 params
-		t.Errorf("Expected 14 parameters for 2 circles, got %d", len(result.BestParams))
+		return params, eval(params)
 	}
 }
 
-func TestOptimizeBatch(t *testing.T) {
-	ref := image.NewNRGBA(image.Rect(0, 0, 10, 10))
-	white := color.NRGBA{255, 255, 255, 255}
-	for y := 0; y < 10; y++ {
-		for x := 0; x < 10; x++ {
-			ref.Set(x, y, white)
+func solidImage(width, height int, c color.NRGBA) *image.NRGBA {
+	img := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			img.SetNRGBA(x, y, c)
 		}
 	}
-	ref.Set(5, 5, color.NRGBA{255, 0, 0, 255})
+	return img
+}
 
+func TestOptimizeJointPreservesCustomCanvas(t *testing.T) {
+	ref := solidImage(3, 3, color.NRGBA{R: 255, A: 255})
+	canvasColor := color.NRGBA{G: 128, B: 255, A: 255}
+	canvas := solidImage(3, 3, canvasColor)
+	base := NewCPURendererWithCanvas(ref, canvas, 1)
+
+	result, err := OptimizeJoint(base, transparentOptimizer(), 1, DisabledConvergenceConfig())
+	if err != nil {
+		t.Fatalf("OptimizeJoint() error = %v", err)
+	}
+	if got := result.BestImage.NRGBAAt(1, 1); got != canvasColor {
+		t.Fatalf("best image pixel = %#v, want custom canvas %#v", got, canvasColor)
+	}
+	if result.BestCost != result.InitialCost {
+		t.Fatalf("best cost = %v, want initial cost %v", result.BestCost, result.InitialCost)
+	}
+}
+
+func TestOptimizeSequentialPreservesCustomCanvas(t *testing.T) {
+	canvasColor := color.NRGBA{R: 10, G: 80, B: 160, A: 255}
+	ref := solidImage(3, 3, canvasColor)
+	base := NewCPURendererWithCanvas(ref, solidImage(3, 3, canvasColor), 2)
+
+	result, err := OptimizeSequential(base, transparentOptimizer(), 2, DisabledConvergenceConfig(), nil)
+	if err != nil {
+		t.Fatalf("OptimizeSequential() error = %v", err)
+	}
+	if result.BestCost != 0 {
+		t.Fatalf("best cost = %v, want 0", result.BestCost)
+	}
+	if got := result.BestImage.NRGBAAt(1, 1); got != canvasColor {
+		t.Fatalf("best image pixel = %#v, want custom canvas %#v", got, canvasColor)
+	}
+}
+
+func TestOptimizeBatchPreservesCustomCanvas(t *testing.T) {
+	canvasColor := color.NRGBA{R: 70, G: 30, B: 190, A: 255}
+	ref := solidImage(3, 3, canvasColor)
+	base := NewCPURendererWithCanvas(ref, solidImage(3, 3, canvasColor), 4)
+
+	result, err := OptimizeBatch(base, transparentOptimizer(), 4, 3, DisabledConvergenceConfig())
+	if err != nil {
+		t.Fatalf("OptimizeBatch() error = %v", err)
+	}
+	if result.BestCost != 0 {
+		t.Fatalf("best cost = %v, want 0", result.BestCost)
+	}
+	if got := result.BestImage.NRGBAAt(1, 1); got != canvasColor {
+		t.Fatalf("best image pixel = %#v, want custom canvas %#v", got, canvasColor)
+	}
+}
+
+func TestOptimizeBatchReturnsExactCircleCount(t *testing.T) {
+	ref := solidImage(3, 3, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+
+	for _, total := range []int{1, 4, 6, 7} {
+		t.Run(string(rune('0'+total)), func(t *testing.T) {
+			base := NewCPURenderer(ref, total)
+			result, err := OptimizeBatch(base, transparentOptimizer(), total, 5, DisabledConvergenceConfig())
+			if err != nil {
+				t.Fatalf("OptimizeBatch() error = %v", err)
+			}
+			if got, want := len(result.BestParams), total*paramsPerCircle; got != want {
+				t.Fatalf("parameter count = %d, want %d", got, want)
+			}
+			if result.OptimizedCircles != total {
+				t.Fatalf("optimized circles = %d, want %d", result.OptimizedCircles, total)
+			}
+			wantStages := (total + 4) / 5
+			if result.Stages != wantStages {
+				t.Fatalf("stages = %d, want %d", result.Stages, wantStages)
+			}
+		})
+	}
+}
+
+func TestStagedOptimizationRollsBackWorseningStage(t *testing.T) {
+	white := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	ref := solidImage(3, 3, white)
+	base := NewCPURenderer(ref, 1)
+
+	result, err := OptimizeSequential(base, opaqueBlackOptimizer(), 1, DisabledConvergenceConfig(), nil)
+	if err != nil {
+		t.Fatalf("OptimizeSequential() error = %v", err)
+	}
+	if result.BestCost != 0 {
+		t.Fatalf("best cost regressed to %v, want 0", result.BestCost)
+	}
+	if got := result.BestParams[6]; got != 0 {
+		t.Fatalf("retained opacity = %v, want transparent rollback", got)
+	}
+	if got := result.BestImage.NRGBAAt(1, 1); got != white {
+		t.Fatalf("best image pixel = %#v, want %#v", got, white)
+	}
+
+	batch, err := OptimizeBatch(NewCPURenderer(ref, 4), opaqueBlackOptimizer(), 4, 3, DisabledConvergenceConfig())
+	if err != nil {
+		t.Fatalf("OptimizeBatch() error = %v", err)
+	}
+	if batch.BestCost != 0 {
+		t.Fatalf("batch best cost regressed to %v, want 0", batch.BestCost)
+	}
+	for offset := 0; offset < len(batch.BestParams); offset += paramsPerCircle {
+		if got := batch.BestParams[offset+6]; got != 0 {
+			t.Fatalf("batch retained opacity at circle %d = %v, want 0", offset/paramsPerCircle+1, got)
+		}
+	}
+}
+
+func TestPipelineRejectsShortOptimizerResults(t *testing.T) {
+	ref := solidImage(2, 2, color.NRGBA{A: 255})
+	base := NewCPURenderer(ref, 1)
+	short := optimizerFunc(func(_ func([]float64) float64, _, _ []float64, dim int) ([]float64, float64) {
+		return make([]float64, dim-1), 0
+	})
+
+	if _, err := OptimizeJoint(base, short, 1, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+		t.Fatalf("OptimizeJoint() error = %v, want ErrInvalidOptimizationInput", err)
+	}
+	if _, err := OptimizeSequential(base, short, 1, DisabledConvergenceConfig(), nil); !errors.Is(err, ErrInvalidOptimizationInput) {
+		t.Fatalf("OptimizeSequential() error = %v, want ErrInvalidOptimizationInput", err)
+	}
+	if _, err := OptimizeBatch(base, short, 1, 1, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+		t.Fatalf("OptimizeBatch() error = %v, want ErrInvalidOptimizationInput", err)
+	}
+}
+
+func TestZeroCirclePipelines(t *testing.T) {
+	ref := solidImage(2, 2, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+	base := NewCPURenderer(ref, 0)
+
+	joint, err := OptimizeJoint(base, nil, 0, DisabledConvergenceConfig())
+	if err != nil {
+		t.Fatalf("OptimizeJoint(0) error = %v", err)
+	}
+	sequential, err := OptimizeSequential(base, nil, 0, DisabledConvergenceConfig(), nil)
+	if err != nil {
+		t.Fatalf("OptimizeSequential(0) error = %v", err)
+	}
+	batch, err := OptimizeBatch(base, nil, 0, 5, DisabledConvergenceConfig())
+	if err != nil {
+		t.Fatalf("OptimizeBatch(0) error = %v", err)
+	}
+
+	for name, result := range map[string]*OptimizationResult{"joint": joint, "sequential": sequential, "batch": batch} {
+		if len(result.BestParams) != 0 || result.BestCost != 0 || result.BestImage == nil {
+			t.Errorf("%s zero result = %#v", name, result)
+		}
+	}
+}
+
+func TestPipelineRejectsInvalidAndEmptyInputs(t *testing.T) {
+	ref := solidImage(2, 2, color.NRGBA{A: 255})
+	base := NewCPURenderer(ref, 1)
+
+	if _, err := OptimizeJoint(base, transparentOptimizer(), -1, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+		t.Fatalf("OptimizeJoint(-1) error = %v, want ErrInvalidOptimizationInput", err)
+	}
+	if _, err := OptimizeBatch(base, transparentOptimizer(), 1, 0, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+		t.Fatalf("OptimizeBatch(batchSize=0) error = %v, want ErrInvalidOptimizationInput", err)
+	}
+	empty := NewCPURenderer(image.NewNRGBA(image.Rect(0, 0, 0, 0)), 0)
+	if _, err := OptimizeJoint(empty, nil, 0, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+		t.Fatalf("OptimizeJoint(empty reference) error = %v, want ErrInvalidOptimizationInput", err)
+	}
+}
+
+func TestStagedOptimizationRejectsUnsupportedRenderer(t *testing.T) {
+	ref := solidImage(2, 2, color.NRGBA{A: 255})
+	base := struct{ Renderer }{Renderer: NewCPURenderer(ref, 1)}
+
+	if _, err := OptimizeSequential(base, transparentOptimizer(), 1, DisabledConvergenceConfig(), nil); !errors.Is(err, ErrStagedOptimizationUnsupported) {
+		t.Fatalf("OptimizeSequential() error = %v, want ErrStagedOptimizationUnsupported", err)
+	}
+	if _, err := OptimizeBatch(base, transparentOptimizer(), 1, 1, DisabledConvergenceConfig()); !errors.Is(err, ErrStagedOptimizationUnsupported) {
+		t.Fatalf("OptimizeBatch() error = %v, want ErrStagedOptimizationUnsupported", err)
+	}
+}
+
+func TestCPURendererShortParamsDoNotPanic(t *testing.T) {
+	ref := solidImage(2, 2, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	renderer := NewCPURenderer(ref, 1)
 
-	optimizer := opt.NewMayfly(30, 20, 42) // maxIters, popSize, seed
+	img := renderer.Render(make([]float64, paramsPerCircle-1))
+	if img == nil {
+		t.Fatal("Render(short params) returned nil")
+	}
+	if cost := renderer.Cost(make([]float64, paramsPerCircle-1)); !math.IsInf(cost, 1) {
+		t.Fatalf("Cost(short params) = %v, want +Inf", cost)
+	}
+}
 
-	// 2 passes of 2 circles each = 4 circles total
-	// Disable convergence for deterministic test
-	result := OptimizeBatch(renderer, optimizer, 2, 2, DisabledConvergenceConfig())
+func TestPipelineUsesLifecycleStatsAndCancellation(t *testing.T) {
+	ref := solidImage(2, 2, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+	base := NewCPURenderer(ref, 1)
 
-	if len(result.BestParams) != 28 { // 4 circles * 7 params
-		t.Errorf("Expected 28 parameters for 4 circles, got %d", len(result.BestParams))
+	result, err := OptimizeJointContext(context.Background(), base, measuredOptimizer{}, 1, DisabledConvergenceConfig())
+	if err != nil {
+		t.Fatalf("OptimizeJointContext() error = %v", err)
+	}
+	if result.Iterations != 7 {
+		t.Fatalf("iterations = %d, want 7", result.Iterations)
+	}
+	if result.Evaluations != 3 { // Baseline, optimizer, retained candidate validation.
+		t.Fatalf("evaluations = %d, want 3", result.Evaluations)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := OptimizeJointContext(ctx, base, measuredOptimizer{}, 1, DisabledConvergenceConfig()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled OptimizeJointContext() error = %v, want context.Canceled", err)
 	}
 }

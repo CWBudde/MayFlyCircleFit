@@ -2,6 +2,8 @@ package renderer
 
 import "image"
 
+const paramsPerCircle = 7
+
 // Renderer renders circles to an image and computes cost
 type Renderer interface {
 	// Render creates an image from parameter vector
