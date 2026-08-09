@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-MayFlyCircleFit is a Go 1.23 CLI; the entry point `main.go` compiles to `bin/`. Core rendering and evaluation reside in `internal/fit`, optimizers in `internal/opt`, and orchestration code in `internal/server`. UI templ files live in `internal/ui`, persistence helpers in `internal/store`, while assets, data fixtures, and research notes are in `assets/`, `data/`, and `docs/` or `profiles/`.
+MayFlyCircleFit is a Go 1.24 CLI; the entry point `main.go` compiles to `bin/`. Core rendering and evaluation reside in `internal/fit`, optimizers in `internal/opt`, and orchestration code in `internal/server`. UI templ files live in `internal/ui`, persistence helpers in `internal/store`, while assets, data fixtures, and research notes are in `assets/`, `data/`, and `docs/` or `profiles/`.
 
 ## Build, Test, and Development Commands
 Prefer the `just` recipes defined in `justfile`. Run `just build` to compile `bin/mayflycirclefit`, and `just run` to exercise the binary. Enforce formatting with `just fmt`, then confirm static checks via `just lint`. Use `just test` for unit and integration suites, `just test-coverage` to emit `coverage.out` and `coverage.html`, and `just clean` to drop build or coverage artifacts.
