@@ -1,11 +1,11 @@
 package server
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/ui"
 )
 
@@ -29,7 +29,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			ID:          job.ID,
 			State:       string(job.State),
 			RefPath:     job.Config.RefPath,
-			Mode:        job.Config.Mode,
+			Mode:        string(job.Config.Mode),
 			Circles:     job.Config.Circles,
 			Iterations:  job.Iterations,
 			BestCost:    job.BestCost,
@@ -84,7 +84,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		ID:          job.ID,
 		State:       string(job.State),
 		RefPath:     job.Config.RefPath,
-		Mode:        job.Config.Mode,
+		Mode:        string(job.Config.Mode),
 		Circles:     job.Config.Circles,
 		Iterations:  job.Iterations,
 		MaxIters:    job.Config.Iters,
@@ -192,7 +192,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 
 	// Parse convergence fields (with defaults)
 	convergenceEnabled := convergenceEnabledStr == "on" // checkbox is "on" when checked, empty otherwise
-	convergencePatience := 3 // default
+	convergencePatience := 3                            // default
 	if convergencePatienceStr != "" {
 		convergencePatience, err = strconv.Atoi(convergencePatienceStr)
 		if err != nil || convergencePatience < 1 || convergencePatience > 100 {
@@ -212,25 +212,31 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Create job configuration
-	config := JobConfig{
+	// Create job configuration through the same normalization path as the API.
+	config, err := app.Normalize(JobConfig{
 		RefPath:              refPath,
 		CanvasPath:           canvasPath,
-		Mode:                 mode,
+		Mode:                 app.Mode(mode),
 		Circles:              circles,
 		Iters:                iters,
 		PopSize:              popSize,
 		Seed:                 seed,
 		ConvergenceEnabled:   convergenceEnabled,
+		DisableConvergence:   !convergenceEnabled,
 		ConvergencePatience:  convergencePatience,
 		ConvergenceThreshold: convergenceThreshold,
+	})
+	if err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+		return
 	}
 
 	// Create the job
 	job := s.jobManager.CreateJob(config)
 
-	// Start the job in background with checkpoint store and context.Background() to avoid cancellation
-	go runJob(context.Background(), s.jobManager, s.store, job.ID)
+	// The server owns every job context, including jobs created through the UI.
+	go runJob(s.ctx, s.jobManager, s.store, job.ID)
 
 	// Redirect to job detail page
 	http.Redirect(w, r, "/jobs/"+job.ID, http.StatusSeeOther)

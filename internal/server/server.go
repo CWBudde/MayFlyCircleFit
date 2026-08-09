@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"image/png"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/pprof"
+	"net/url"
 	"strings"
 	"time"
 
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
@@ -23,11 +26,22 @@ type Server struct {
 	server     *http.Server
 	ctx        context.Context
 	cancel     context.CancelFunc
+	options    ServerOptions
+}
+
+// ServerOptions configures the trusted-local HTTP boundary.
+type ServerOptions struct {
+	EnablePprof bool
 }
 
 // NewServer creates a new HTTP server with optional checkpoint store.
 // If store is nil, checkpointing is disabled.
 func NewServer(addr string, checkpointStore store.Store) *Server {
+	return NewServerWithOptions(addr, checkpointStore, ServerOptions{})
+}
+
+// NewServerWithOptions creates a server with explicit security options.
+func NewServerWithOptions(addr string, checkpointStore store.Store, options ServerOptions) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
 		jobManager: NewJobManager(),
@@ -35,11 +49,30 @@ func NewServer(addr string, checkpointStore store.Store) *Server {
 		addr:       addr,
 		ctx:        ctx,
 		cancel:     cancel,
+		options:    options,
 	}
 }
 
 // Start starts the HTTP server
 func (s *Server) Start() error {
+	handler := s.Handler()
+
+	s.server = &http.Server{
+		Addr:              s.addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    app.MaxRequestBody,
+	}
+
+	slog.Info("Starting HTTP server", "addr", s.addr)
+	return s.server.ListenAndServe()
+}
+
+// Handler returns the fully configured HTTP handler. It is exposed so the
+// security boundary can be tested without opening a network listener.
+func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	// Register UI routes
@@ -51,23 +84,15 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/v1/jobs", s.handleJobs)
 	mux.HandleFunc("/api/v1/jobs/", s.handleJobsWithID)
 
-	// Register pprof routes for profiling
-	mux.HandleFunc("/debug/pprof/", pprof.Index)
-	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-
-	// Wrap with middleware
-	handler := s.loggingMiddleware(s.corsMiddleware(mux))
-
-	s.server = &http.Server{
-		Addr:    s.addr,
-		Handler: handler,
+	if s.options.EnablePprof {
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 	}
 
-	slog.Info("Starting HTTP server", "addr", s.addr)
-	return s.server.ListenAndServe()
+	return s.loggingMiddleware(s.corsMiddleware(mux))
 }
 
 // Shutdown gracefully shuts down the server
@@ -191,7 +216,8 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		s.handleListJobs(w, r)
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		w.Header().Set("Allow", "GET, POST")
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 	}
 }
 
@@ -208,47 +234,41 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 	jobID := parts[0]
 
 	// Route based on subpath
-	if len(parts) == 1 || parts[1] == "status" {
+	if len(parts) == 1 || len(parts) == 2 && parts[1] == "status" {
 		s.handleGetJobStatus(w, r, jobID)
-	} else if parts[1] == "best.png" {
+	} else if len(parts) == 2 && parts[1] == "best.png" {
 		s.handleGetBestImage(w, r, jobID)
-	} else if parts[1] == "diff.png" {
+	} else if len(parts) == 2 && parts[1] == "diff.png" {
 		s.handleGetDiffImage(w, r, jobID)
-	} else if parts[1] == "ref.png" {
+	} else if len(parts) == 2 && parts[1] == "ref.png" {
 		s.handleGetRefImage(w, r, jobID)
-	} else if parts[1] == "stream" {
+	} else if len(parts) == 2 && parts[1] == "stream" {
 		s.handleJobStream(w, r, jobID)
-	} else if parts[1] == "resume" {
+	} else if len(parts) == 2 && parts[1] == "resume" {
 		s.handleResumeJob(w, r, jobID)
 	} else {
-		http.Error(w, "Not found", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "not_found", "resource not found")
 	}
 }
 
 // handleCreateJob handles POST /api/v1/jobs
 func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	var config JobConfig
-	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+	r.Body = http.MaxBytesReader(w, r.Body, app.MaxRequestBody)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&config); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid JSON request body")
 		return
 	}
-
-	// Validate config
-	if config.RefPath == "" {
-		http.Error(w, "refPath is required", http.StatusBadRequest)
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "request body must contain one JSON object")
 		return
 	}
-	if config.Circles <= 0 {
-		config.Circles = 10
-	}
-	if config.Iters <= 0 {
-		config.Iters = 100
-	}
-	if config.PopSize <= 0 {
-		config.PopSize = 30
-	}
-	if config.Mode == "" {
-		config.Mode = "joint"
+	config, err := app.Normalize(config)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_config", err.Error())
+		return
 	}
 
 	// Create job
@@ -260,7 +280,9 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	// Return job
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(job)
+	if err := json.NewEncoder(w).Encode(job); err != nil {
+		slog.Error("Failed to encode create-job response", "error", err)
+	}
 }
 
 // handleListJobs handles GET /api/v1/jobs
@@ -386,20 +408,44 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 	}
 }
 
-// corsMiddleware adds CORS headers
+// corsMiddleware enforces the trusted-local same-origin browser policy. CLI
+// clients normally omit Origin and remain supported.
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
+		origin := r.Header.Get("Origin")
+		if origin != "" && !sameOrigin(origin, r) {
+			writeAPIError(w, http.StatusForbidden, "origin_forbidden", "cross-origin requests are not allowed")
 			return
 		}
-
+		w.Header().Add("Vary", "Origin")
 		next.ServeHTTP(w, r)
 	})
+}
+
+func sameOrigin(origin string, r *http.Request) bool {
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return false
+	}
+	return strings.EqualFold(parsed.Host, r.Host)
+}
+
+type apiErrorResponse struct {
+	Error struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+func writeAPIError(w http.ResponseWriter, status int, code, message string) {
+	var response apiErrorResponse
+	response.Error.Code = code
+	response.Error.Message = message
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		slog.Error("Failed to encode API error", "error", err)
+	}
 }
 
 // handleGetRefImage handles GET /api/v1/jobs/:id/ref.png

@@ -1,0 +1,89 @@
+package app
+
+import (
+	"errors"
+	"testing"
+)
+
+func TestNormalizeAppliesCanonicalDefaults(t *testing.T) {
+	config, err := Normalize(JobConfig{RefPath: "reference.png"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaults := DefaultConfig()
+	if config.Mode != defaults.Mode || config.Backend != defaults.Backend || config.Circles != defaults.Circles || config.Iters != defaults.Iters || config.PopSize != defaults.PopSize {
+		t.Fatalf("defaults not applied: %+v", config)
+	}
+	if config.EffectiveSeed == 0 {
+		t.Fatal("zero seed was not resolved")
+	}
+}
+
+func TestNormalizePreservesExplicitSeedAndDisables(t *testing.T) {
+	config, err := Normalize(JobConfig{
+		RefPath:            "reference.png",
+		Seed:               42,
+		DisableTrace:       true,
+		DisableConvergence: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.EffectiveSeed != 42 {
+		t.Fatalf("effective seed = %d, want 42", config.EffectiveSeed)
+	}
+	if config.EnableTrace || config.ConvergenceEnabled {
+		t.Fatal("explicit disable flags were ignored")
+	}
+}
+
+func TestValidateBoundaries(t *testing.T) {
+	valid := DefaultConfig()
+	valid.RefPath = "reference.png"
+	valid.EffectiveSeed = 1
+
+	tests := []struct {
+		name   string
+		mutate func(*JobConfig)
+		field  string
+	}{
+		{"mode", func(c *JobConfig) { c.Mode = "invalid" }, "mode"},
+		{"backend", func(c *JobConfig) { c.Backend = "invalid" }, "backend"},
+		{"circles low", func(c *JobConfig) { c.Circles = -1 }, "circles"},
+		{"circles high", func(c *JobConfig) { c.Circles = MaxCircles + 1 }, "circles"},
+		{"iterations", func(c *JobConfig) { c.Iters = MaxIterations + 1 }, "iters"},
+		{"population low", func(c *JobConfig) { c.PopSize = MinPopulation - 1 }, "popSize"},
+		{"population high", func(c *JobConfig) { c.PopSize = MaxPopulation + 1 }, "popSize"},
+		{"batch", func(c *JobConfig) { c.Mode, c.BatchSize = ModeBatch, c.Circles+1 }, "batchSize"},
+		{"patience", func(c *JobConfig) { c.ConvergencePatience = 101 }, "convergencePatience"},
+		{"threshold", func(c *JobConfig) { c.ConvergenceThreshold = 2 }, "convergenceThreshold"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := valid
+			test.mutate(&config)
+			err := config.Validate()
+			var validationErr *ValidationError
+			if !errors.As(err, &validationErr) || validationErr.Field != test.field {
+				t.Fatalf("got %v, want validation error for %s", err, test.field)
+			}
+		})
+	}
+}
+
+func TestValidateImageDimensions(t *testing.T) {
+	for _, test := range []struct {
+		width, height int
+		wantErr       bool
+	}{
+		{1, 1, false},
+		{4096, 4096, false},
+		{0, 1, true},
+		{1, 0, true},
+		{MaxImagePixels, 2, true},
+	} {
+		if got := ValidateImageDimensions(test.width, test.height); (got != nil) != test.wantErr {
+			t.Errorf("ValidateImageDimensions(%d, %d) = %v", test.width, test.height, got)
+		}
+	}
+}

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -17,7 +18,7 @@ var rootCmd = &cobra.Command{
 	Short: "High-performance circle fitting with mayfly optimization",
 	Long: `MayFlyCircleFit uses evolutionary algorithms to approximate images
 with colored circles, featuring CPU/GPU backends and live visualization.`,
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Setup logger
 		var level slog.Level
 		switch logLevel {
@@ -30,13 +31,14 @@ with colored circles, featuring CPU/GPU backends and live visualization.`,
 		case "error":
 			level = slog.LevelError
 		default:
-			level = slog.LevelInfo
+			return fmt.Errorf("invalid log level %q: use debug, info, warn, or error", logLevel)
 		}
 
 		opts := &slog.HandlerOptions{Level: level}
 		handler := slog.NewJSONHandler(os.Stdout, opts)
 		logger = slog.New(handler)
 		slog.SetDefault(logger)
+		return nil
 	},
 }
 

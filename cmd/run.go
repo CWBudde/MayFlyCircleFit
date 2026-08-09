@@ -10,6 +10,7 @@ import (
 	"runtime/pprof"
 	"time"
 
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
 	"github.com/spf13/cobra"
@@ -48,7 +49,7 @@ func init() {
 	runCmd.Flags().IntVar(&circles, "circles", 10, "Number of circles")
 	runCmd.Flags().IntVar(&iters, "iters", 100, "Max iterations")
 	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
-	runCmd.Flags().Int64Var(&seed, "seed", 42, "Random seed")
+	runCmd.Flags().Int64Var(&seed, "seed", 0, "Random seed (0 chooses and reports a random seed)")
 
 	// Convergence detection flags (only used for sequential/batch modes)
 	runCmd.Flags().BoolVar(&convergenceEnable, "convergence", true, "Enable adaptive convergence detection")
@@ -64,6 +65,24 @@ func init() {
 }
 
 func runOptimization(cmd *cobra.Command, args []string) error {
+	config, err := app.Normalize(app.JobConfig{
+		RefPath:              refPath,
+		CanvasPath:           canvasPath,
+		Mode:                 app.Mode(mode),
+		Backend:              app.Backend(backendName),
+		Circles:              circles,
+		Iters:                iters,
+		PopSize:              popSize,
+		Seed:                 seed,
+		ConvergenceEnabled:   convergenceEnable,
+		DisableConvergence:   !convergenceEnable,
+		ConvergencePatience:  patience,
+		ConvergenceThreshold: threshold,
+	})
+	if err != nil {
+		return fmt.Errorf("invalid configuration: %w", err)
+	}
+
 	// Start CPU profiling if requested
 	if cpuProfile != "" {
 		f, err := os.Create(cpuProfile)
@@ -78,7 +97,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		slog.Info("CPU profiling enabled", "output", cpuProfile)
 	}
 
-	slog.Info("Starting optimization", "mode", mode, "circles", circles, "iters", iters, "backend", backendName)
+	slog.Info("Starting optimization", "mode", config.Mode, "circles", config.Circles, "iters", config.Iters, "backend", config.Backend, "seed", config.EffectiveSeed)
 
 	// Load reference image
 	f, err := os.Open(refPath)
@@ -94,6 +113,9 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 
 	// Convert to NRGBA
 	bounds := img.Bounds()
+	if err := app.ValidateImageDimensions(bounds.Dx(), bounds.Dy()); err != nil {
+		return err
+	}
 	ref := image.NewNRGBA(bounds)
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
@@ -118,6 +140,9 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to decode canvas: %w", err)
 		}
+		if canvasImg.Bounds().Dx() != bounds.Dx() || canvasImg.Bounds().Dy() != bounds.Dy() {
+			return fmt.Errorf("canvas dimensions %dx%d do not match reference %dx%d", canvasImg.Bounds().Dx(), canvasImg.Bounds().Dy(), bounds.Dx(), bounds.Dy())
+		}
 
 		// Convert canvas to NRGBA
 		canvas = image.NewNRGBA(bounds)
@@ -134,12 +159,12 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	var rend renderer.Renderer
 	var cleanup func()
 
-	if backendName == "cpu" {
+	if config.Backend == app.BackendCPU {
 		// CPU renderer supports canvas
 		if canvas != nil {
-			rend = renderer.NewCPURendererWithCanvas(ref, canvas, circles)
+			rend = renderer.NewCPURendererWithCanvas(ref, canvas, config.Circles)
 		} else {
-			rend = renderer.NewCPURenderer(ref, circles)
+			rend = renderer.NewCPURenderer(ref, config.Circles)
 		}
 		cleanup = func() {} // No cleanup needed for CPU renderer
 	} else {
@@ -148,7 +173,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("canvas loading only supported with CPU backend")
 		}
 		var err error
-		rend, cleanup, err = renderer.NewRendererForBackend(backendName, ref, circles)
+		rend, cleanup, err = renderer.NewRendererForBackend(string(config.Backend), ref, config.Circles)
 		if err != nil {
 			return fmt.Errorf("failed to create renderer: %w", err)
 		}
@@ -156,16 +181,16 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	defer cleanup()
 
 	// Create optimizer
-	optimizer := opt.NewMayfly(iters, popSize, seed)
+	optimizer := opt.NewMayfly(config.Iters, config.PopSize, config.EffectiveSeed)
 
 	// Create convergence config
 	convergenceConfig := renderer.ConvergenceConfig{
-		Enabled:   convergenceEnable,
-		Patience:  patience,
-		Threshold: threshold,
+		Enabled:   config.ConvergenceEnabled,
+		Patience:  config.ConvergencePatience,
+		Threshold: config.ConvergenceThreshold,
 	}
 
-	if mode == "joint" && convergenceEnable {
+	if config.Mode == app.ModeJoint && config.ConvergenceEnabled {
 		slog.Info("Convergence detection not applicable to joint mode (ignored)")
 	}
 
@@ -173,20 +198,19 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	start := time.Now()
 	var result *renderer.OptimizationResult
 
-	switch mode {
-	case "joint":
-		result = renderer.OptimizeJoint(rend, optimizer, circles, convergenceConfig)
-	case "sequential":
-		result = renderer.OptimizeSequential(rend, optimizer, circles, convergenceConfig, nil)
-	case "batch":
-		batchSize := 5
-		passes := circles / batchSize
-		if circles%batchSize != 0 {
+	switch config.Mode {
+	case app.ModeJoint:
+		result = renderer.OptimizeJoint(rend, optimizer, config.Circles, convergenceConfig)
+	case app.ModeSequential:
+		result = renderer.OptimizeSequential(rend, optimizer, config.Circles, convergenceConfig, nil)
+	case app.ModeBatch:
+		passes := config.Circles / config.BatchSize
+		if config.Circles%config.BatchSize != 0 {
 			passes++
 		}
-		result = renderer.OptimizeBatch(rend, optimizer, batchSize, passes, convergenceConfig)
+		result = renderer.OptimizeBatch(rend, optimizer, config.BatchSize, passes, convergenceConfig)
 	default:
-		return fmt.Errorf("unknown mode: %s", mode)
+		return fmt.Errorf("unknown mode: %s", config.Mode)
 	}
 
 	elapsed := time.Since(start)
@@ -210,7 +234,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 
 	// Compute throughput (circles rendered per second)
 	// Each eval renders K circles, estimate total evals ~ iters * popSize
-	totalEvals := iters * popSize
+	totalEvals := config.Iters * config.PopSize
 	totalCircles := totalEvals * actualCircles
 	cps := float64(totalCircles) / elapsed.Seconds()
 
@@ -220,13 +244,14 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		"final_cost", result.BestCost,
 		"improvement", result.InitialCost-result.BestCost,
 		"circles_used", actualCircles,
-		"circles_requested", circles,
+		"circles_requested", config.Circles,
+		"seed", config.EffectiveSeed,
 		"circles_per_second", fmt.Sprintf("%.0f", cps),
 	)
 
-	if actualCircles < circles {
+	if actualCircles < config.Circles {
 		fmt.Printf("Wrote %s (cost: %.2f -> %.2f, %d/%d circles, %.0f circles/sec) - Converged early!\n",
-			outPath, result.InitialCost, result.BestCost, actualCircles, circles, cps)
+			outPath, result.InitialCost, result.BestCost, actualCircles, config.Circles, cps)
 	} else {
 		fmt.Printf("Wrote %s (cost: %.2f -> %.2f, %d circles, %.0f circles/sec)\n",
 			outPath, result.InitialCost, result.BestCost, actualCircles, cps)

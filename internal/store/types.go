@@ -3,6 +3,8 @@ package store
 import (
 	"fmt"
 	"time"
+
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 )
 
 // CircleData represents a single optimized circle with its parameters and metadata.
@@ -22,21 +24,7 @@ type CircleData struct {
 
 // JobConfig holds configuration for an optimization job (checkpoint copy).
 // This avoids import cycles with server package.
-type JobConfig struct {
-	RefPath              string  `json:"refPath"`
-	CanvasPath           string  `json:"canvasPath,omitempty"` // Optional: path to existing canvas image to continue from (empty = blank canvas)
-	Mode                 string  `json:"mode"`                 // joint, sequential, batch
-	Circles              int     `json:"circles"`
-	Iters                int     `json:"iters"`
-	PopSize              int     `json:"popSize"`
-	Seed                 int64   `json:"seed"`
-	CheckpointInterval   int     `json:"checkpointInterval,omitempty"`   // Checkpoint every N seconds (0 = disabled)
-	EnableTrace          bool    `json:"enableTrace,omitempty"`          // Enable cost history trace logging (default: true)
-	SaveSnapshots        bool    `json:"saveSnapshots,omitempty"`        // Save intermediate canvas snapshots and circle data in sequential mode (default: false)
-	ConvergenceEnabled   bool    `json:"convergenceEnabled,omitempty"`   // Enable adaptive convergence detection (default: true)
-	ConvergencePatience  int     `json:"convergencePatience,omitempty"`  // Stop after N iterations with no significant improvement (default: 3)
-	ConvergenceThreshold float64 `json:"convergenceThreshold,omitempty"` // Minimum relative improvement required (default: 0.001 = 0.1%)
-}
+type JobConfig = app.JobConfig
 
 // Checkpoint represents a saved optimization state that can be resumed later.
 // All fields are serialized to JSON for persistence.
@@ -117,7 +105,7 @@ type CheckpointInfo struct {
 	Timestamp time.Time `json:"timestamp"`
 
 	// Mode is the optimization mode (joint, sequential, batch)
-	Mode string `json:"mode"`
+	Mode app.Mode `json:"mode"`
 
 	// Circles is the number of circles (K) being optimized
 	Circles int `json:"circles"`
@@ -230,8 +218,8 @@ func (c *Checkpoint) IsCompatible(config JobConfig) error {
 	if c.Config.Mode != config.Mode {
 		return &CompatibilityError{
 			Field:    "Mode",
-			Expected: c.Config.Mode,
-			Actual:   config.Mode,
+			Expected: string(c.Config.Mode),
+			Actual:   string(config.Mode),
 		}
 	}
 	if c.Config.Circles != config.Circles {
