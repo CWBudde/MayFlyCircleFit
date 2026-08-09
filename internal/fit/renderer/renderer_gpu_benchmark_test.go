@@ -4,11 +4,7 @@ package renderer
 
 import (
 	"image"
-	"math/rand"
 	"testing"
-	"time"
-
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
 )
 
 func BenchmarkRendererCost(b *testing.B) {
@@ -44,20 +40,4 @@ func BenchmarkRendererCost(b *testing.B) {
 			_ = rend.Cost(params)
 		}
 	})
-}
-
-func randomParams(k, width, height int) []float64 {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	params := make([]float64, k*paramsPerCircle)
-	for i := 0; i < k; i++ {
-		offset := i * paramsPerCircle
-		params[offset+0] = r.Float64() * float64(width)
-		params[offset+1] = r.Float64() * float64(height)
-		params[offset+2] = 5 + r.Float64()*float64(width/4)
-		params[offset+3] = r.Float64()
-		params[offset+4] = r.Float64()
-		params[offset+5] = r.Float64()
-		params[offset+6] = 0.5 + 0.5*r.Float64()
-	}
-	return params
 }
