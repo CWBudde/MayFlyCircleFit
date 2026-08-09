@@ -1643,11 +1643,11 @@ be re-run against the final revision.
 
 - [x] `go vet ./...` passes on the current AMD64 workspace.
 - [x] `go test -short ./...` passes.
-- [ ] `go test -race -short ./...` passes on the final revision; the original server job-state and event-broadcaster race defects have regression fixes but still require final gate verification.
-- [x] Generated `*_templ.go` files are committed and the templ generator is pinned; final clean-export acceptance remains below.
-- [x] Non-AMD64 builds use portable scalar dispatch instead of referencing AMD64-only AVX2 symbols; final cross-build acceptance remains below.
+- [x] `go test -race -short ./...` passes on the final local revision; the original server job-state and event-broadcaster races have regression coverage.
+- [x] Generated `*_templ.go` files are committed, the templ generator is pinned, and a metadata-free source export builds/tests.
+- [x] Non-AMD64 builds use portable scalar dispatch instead of referencing AMD64-only AVX2 symbols; all five configured cross-builds pass locally.
 - [x] Hardware-dependent absolute SSD/SAD throughput assertions have been removed from tests; performance measurements remain benchmarks.
-- [ ] Live progress, periodic checkpoints, traces, cancellation, and resume behave as documented.
+- [x] Live progress, periodic/final checkpoints, traces, cancellation, and restart-from-best behave as documented in focused tests.
 - [x] Canvas, backend, batch-size, parameter-length, origin/stride, and empty-input renderer behavior has regression coverage; final release-candidate end-to-end verification remains below.
 
 ### Task 14.1: Restore Reproducible Builds and Tooling (P0)
@@ -1740,7 +1740,7 @@ be re-run against the final revision.
 
 **Acceptance Checks:**
 
-- [x] `go test -race -short ./...` passes on the integrated local revision; CI repetition remains required before release.
+- [x] `go test -race -short ./...` passes on the final integrated local revision and in the remediation verification runs.
 - [ ] A multi-job stress test completes without races, concurrent-map panics, channel panics, or corrupted responses.
 - [x] API responses remain internally consistent while jobs update.
 
@@ -1928,10 +1928,10 @@ Implement in dependency-aware waves:
 
 - [ ] All P0 tasks and acceptance checks are complete.
 - [ ] `just build`, `just lint`, `just test`, and the race suite pass from a clean clone.
-- [ ] Supported cross-builds and the GPU-tag compile check pass.
-- [ ] No known data races, path escapes, cross-origin image disclosures, or unbounded job admission paths remain.
-- [ ] Canvas, backend, batch count, snapshot metadata, progress, checkpoint, cancellation, and resume semantics are correct and tested.
-- [ ] Documentation matches observable behavior.
+- [x] Supported cross-builds and the GPU-tag compile check pass locally; the remote CI run remains a release gate.
+- [x] No known data races, path escapes, cross-origin image disclosures, or unbounded job admission paths remain.
+- [x] Canvas, backend, batch count, snapshot metadata, progress, checkpoint, cancellation, and restart-from-best semantics are correct and tested.
+- [x] Documentation matches observable behavior.
 - [ ] A fresh end-to-end release-candidate run passes without manual workspace preparation.
 
 ---
@@ -1954,4 +1954,4 @@ This plan covers **Phases 0-14** in complete detail with bite-sized, testable ta
 - Commit frequently with descriptive messages
 - Document learnings and decisions in CLAUDE.md
 
-**Current Status:** Historical feature phases reached Phase 11-era implementation, and Phase 14 remediation is in progress. Reproducible generation, portable SIMD dispatch, lifecycle/configuration changes, release-gating CI, and corrected release documentation are implemented. **Phase 14 remains the active priority; do not claim production readiness until the final revision passes every applicable acceptance check and the definition of done.**
+**Current Status:** Historical feature phases reached Phase 11-era implementation, and the main Phase 14 remediation waves now pass the local generation, build, test, race, static-analysis, coverage, vulnerability, portability, GPU-compile, and clean-export gates. **Phase 14 remains active: remote CI must pass twice, and the remaining unchecked stress, fault-injection, long end-to-end, and performance work must be completed before claiming production readiness.**
