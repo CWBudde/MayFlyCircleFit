@@ -46,6 +46,10 @@ and report an effective seed; provide a nonzero seed for repeatable runs.
 Equivalent convenience commands are `just build`, `just test`, `just lint`,
 and `just check`.
 
+When building an extracted `git archive` rather than a Git checkout, use
+`go build -buildvcs=false ./...` (the `just build` recipe already does this),
+because there is no repository metadata to stamp into the binary.
+
 ## Commands
 
 - `run` performs a local optimization and writes a PNG.

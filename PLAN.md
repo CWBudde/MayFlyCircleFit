@@ -1669,8 +1669,8 @@ be re-run against the final revision.
 
 **Acceptance Checks:**
 
-- [ ] `git archive HEAD` extracted into an empty directory can run the documented build and short-test commands.
-- [ ] No ignored or user-home file is required to build.
+- [x] `git archive HEAD` extracted into an empty directory can run the documented `-buildvcs=false` build and short-test commands.
+- [x] No ignored or user-home file is required to build.
 - [ ] Generation and formatting checks fail correctly when source is stale.
 
 ### Task 14.2: Establish a Trusted Server Security Model (P0)

@@ -7,7 +7,7 @@ help:
 
 # Build the binary
 build: templ
-	go build -o {{BUILD_DIR}}/{{BINARY_NAME}} .
+	go build -buildvcs=false -o {{BUILD_DIR}}/{{BINARY_NAME}} .
 
 # Build and run the application
 run: build
@@ -40,7 +40,7 @@ check: templ-check
 	go vet ./...
 	@echo "Checking formatting..."
 	@test -z "$(gofmt -s -l .)" || (gofmt -s -l . && echo "Code not formatted" && exit 1)
-	go build ./...
+	go build -buildvcs=false ./...
 
 # Clean build artifacts
 clean:
