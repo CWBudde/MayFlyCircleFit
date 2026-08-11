@@ -37,11 +37,13 @@ behavior is production-ready.
 
 ## Rendering and optimization
 
-- CPU is the only backend supporting joint, sequential, and batch pipelines and
-  custom base canvases.
-- OpenCL is experimental, joint-only, CGO-dependent, and requires local headers,
-  a loader, a driver, and a usable device. It is excluded from the standard
-  portable matrix; a dedicated CI job exercises it through the PoCL CPU runtime.
+- CPU and OpenCL support joint, sequential, and batch pipelines; only CPU
+  supports custom base canvases. Staged OpenCL modes replay all retained circles
+  in independent device sessions, so their performance remains uncharacterized
+  on vendor GPUs.
+- OpenCL is experimental, CGO-dependent, and requires local headers, a loader,
+  a driver, and a usable device. It is excluded from the standard portable
+  matrix; a dedicated CI job exercises it through the PoCL CPU runtime.
 - The experimental OpenCL renderer contains a CPU compatibility degradation path
   for runtime rendering/cost errors. Inspect warning logs and device-specific
   parity tests when GPU execution matters.

@@ -498,6 +498,17 @@ func (r *openCLRenderer) Cost(params []float64) float64 {
 	return r.lastCost
 }
 
+// newSession creates an independent OpenCL renderer over the same reference.
+// Sequential and batch optimization use these sessions with an increasing
+// circle count, replaying retained circles because OpenCL does not yet support
+// an accumulated base canvas.
+func (r *openCLRenderer) newSession(circleCount int) (Renderer, func(), error) {
+	if circleCount < 0 {
+		return nil, noopCleanup, fmt.Errorf("circle count cannot be negative")
+	}
+	return NewOpenCLRenderer(r.reference, circleCount)
+}
+
 func (r *openCLRenderer) ensure(params []float64) error {
 	hash := hashParams(params)
 	if r.deviceValid && r.deviceHash == hash {

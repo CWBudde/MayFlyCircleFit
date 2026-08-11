@@ -569,11 +569,11 @@ Completed: quantized per-pixel SSD in the render kernel, portable multi-pass on-
 Completed: persistent reference/parameter/output buffers, hash-aware parameter uploads, four-byte cost readback, lazy cached image materialization, documented PoCL transfer profiling, and packed `uchar4` image buffers that cut pixel storage/readback by 75%; pinned staging remains unjustified without vendor-GPU evidence.
 
 ### Task 11.7: Integrate GPU Renderer into Pipeline
-- [ ] Update pipeline functions to accept GPU renderer
-- [ ] Test joint optimization with GPU backend
-- [ ] Test sequential optimization with GPU backend
-- [ ] Test batch optimization with GPU backend
-- [ ] Verify all modes work correctly
+- [x] Update pipeline functions to accept GPU renderer
+- [x] Test joint optimization with GPU backend
+- [x] Test sequential optimization with GPU backend
+- [x] Test batch optimization with GPU backend
+- [x] Verify all modes work correctly (GPU-tagged PoCL test asserts device evaluations without CPU degradation)
 - [ ] Compare performance to CPU backend
 
 ### Task 11.8: Add GPU Backend Selection to CLI

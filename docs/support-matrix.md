@@ -8,12 +8,14 @@ certify a release or substitute for the CI result for a particular revision.
 | Backend | Joint | Sequential | Batch | Custom canvas |
 | --- | --- | --- | --- | --- |
 | CPU | Supported | Supported | Supported | Supported |
-| OpenCL (`gpu` tag) | Experimental | Unsupported | Unsupported | Unsupported |
+| OpenCL (`gpu` tag) | Experimental | Experimental | Experimental | Unsupported |
 
-Sequential and batch are staged pipelines. A backend that cannot create staged
-sessions returns `ErrStagedOptimizationUnsupported`; the pipeline does not
-silently replace it with CPU. Batch mode accepts a requested total and batch
-size, including a smaller final batch, so result cardinality matches the total.
+Sequential and batch are staged pipelines. OpenCL creates independent
+same-backend sessions and replays retained circles at each stage; it does not
+silently replace the staged pipeline with CPU. A backend that cannot create
+staged sessions returns `ErrStagedOptimizationUnsupported`. Batch mode accepts a
+requested total and batch size, including a smaller final batch, so result
+cardinality matches the total.
 
 ## Build targets
 
@@ -34,7 +36,7 @@ claimed as supported until they are added to the matrix and exercised.
 
 ## OpenCL
 
-OpenCL is an experimental, opt-in joint renderer:
+OpenCL is an experimental, opt-in renderer for all optimization modes:
 
 - build with `-tags gpu` and `CGO_ENABLED=1`;
 - install platform-specific OpenCL headers, loader, driver, and runtime;

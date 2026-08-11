@@ -3,6 +3,7 @@
 package renderer
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"math"
@@ -146,6 +147,104 @@ func TestOpenCLCostDefersImageReadback(t *testing.T) {
 	if r.imageValid {
 		t.Fatal("changed parameters did not invalidate the host image cache")
 	}
+}
+
+func TestOpenCLOptimizationPipelines(t *testing.T) {
+	ref := solidImage(3, 3, color.NRGBA{A: 255})
+
+	tests := []struct {
+		name        string
+		circles     int
+		wantStages  int
+		wantSession int
+		run         func(Renderer) (*OptimizationResult, error)
+	}{
+		{
+			name:        "joint",
+			circles:     3,
+			wantStages:  1,
+			wantSession: 0,
+			run: func(r Renderer) (*OptimizationResult, error) {
+				return OptimizeJoint(r, opaqueBlackOptimizer(), 3, DisabledConvergenceConfig())
+			},
+		},
+		{
+			name:        "sequential",
+			circles:     3,
+			wantStages:  3,
+			wantSession: 5, // baseline, three stages, and final replay
+			run: func(r Renderer) (*OptimizationResult, error) {
+				return OptimizeSequential(r, opaqueBlackOptimizer(), 3, DisabledConvergenceConfig(), nil)
+			},
+		},
+		{
+			name:        "batch",
+			circles:     5,
+			wantStages:  3,
+			wantSession: 5, // baseline, 2+2+1 stages, and final replay
+			run: func(r Renderer) (*OptimizationResult, error) {
+				return OptimizeBatch(r, opaqueBlackOptimizer(), 5, 2, DisabledConvergenceConfig())
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base := newOpenCLTestRenderer(t, ref, tt.circles)
+			defer base.release()
+			tracking := &trackingOpenCLFactory{openCLRenderer: base}
+
+			result, err := tt.run(tracking)
+			if err != nil {
+				t.Fatalf("optimize with OpenCL: %v", err)
+			}
+			if result.Stages != tt.wantStages {
+				t.Fatalf("stages = %d, want %d", result.Stages, tt.wantStages)
+			}
+			if got, want := len(result.BestParams), tt.circles*paramsPerCircle; got != want {
+				t.Fatalf("parameter count = %d, want %d", got, want)
+			}
+			if result.BestCost != 0 {
+				t.Fatalf("best cost = %v, want 0", result.BestCost)
+			}
+			if got := result.BestImage.NRGBAAt(1, 1); got != (color.NRGBA{A: 255}) {
+				t.Fatalf("best image pixel = %#v, want opaque black", got)
+			}
+			if base.degraded {
+				t.Fatal("base OpenCL renderer degraded to CPU")
+			}
+			if len(tracking.sessions) != tt.wantSession {
+				t.Fatalf("OpenCL sessions = %d, want %d", len(tracking.sessions), tt.wantSession)
+			}
+			for i, session := range tracking.sessions {
+				if session.degraded {
+					t.Fatalf("OpenCL session %d degraded to CPU", i)
+				}
+				if session.evaluations == 0 {
+					t.Fatalf("OpenCL session %d performed no device evaluations", i)
+				}
+			}
+		})
+	}
+}
+
+type trackingOpenCLFactory struct {
+	*openCLRenderer
+	sessions []*openCLRenderer
+}
+
+func (r *trackingOpenCLFactory) newSession(circleCount int) (Renderer, func(), error) {
+	session, cleanup, err := r.openCLRenderer.newSession(circleCount)
+	if err != nil {
+		return nil, cleanup, err
+	}
+	openCLSession, ok := session.(*openCLRenderer)
+	if !ok {
+		cleanup()
+		return nil, noopCleanup, fmt.Errorf("OpenCL session has type %T", session)
+	}
+	r.sessions = append(r.sessions, openCLSession)
+	return session, cleanup, nil
 }
 
 func TestPackReferenceNRGBAPreservesOriginStrideAndChannels(t *testing.T) {

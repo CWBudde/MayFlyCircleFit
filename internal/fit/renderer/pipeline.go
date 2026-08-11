@@ -42,8 +42,9 @@ type CircleCallback func(circleNum int, params []float64, cost float64, img imag
 
 // rendererSessionFactory creates an independent renderer with the same
 // reference, initial canvas, cost function, and backend as the receiver.
-// CPURenderer implements it. OpenCL intentionally does not until it can
-// preserve a base canvas for staged optimization.
+// CPURenderer and OpenCL implement it. Backends that also implement
+// accumulatedSessionFactory can avoid replaying retained circles in staged
+// optimization.
 type rendererSessionFactory interface {
 	newSession(circleCount int) (Renderer, func(), error)
 }

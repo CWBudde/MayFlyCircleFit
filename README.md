@@ -3,7 +3,7 @@
 MayFlyCircleFit approximates a reference image with colored circles using the
 [Mayfly](https://github.com/cwbudde/mayfly) optimizer. The default CPU renderer
 supports joint, sequential, and batch optimization. An experimental OpenCL
-renderer is available for joint optimization in GPU-tagged builds.
+renderer is available for all three modes in GPU-tagged builds.
 
 The project is under active production-readiness remediation. Read the
 [support matrix](docs/support-matrix.md) and
@@ -104,15 +104,16 @@ Command-line clients normally omit `Origin` and are allowed.
 | Backend | Joint | Sequential | Batch | Notes |
 | --- | --- | --- | --- | --- |
 | CPU | Supported | Supported | Supported | Custom base canvases are supported |
-| OpenCL | Experimental | Unsupported | Unsupported | Requires `-tags gpu`, CGO, OpenCL headers and a runtime |
+| OpenCL | Experimental | Experimental | Experimental | Requires `-tags gpu`, CGO, OpenCL headers and a runtime; no custom base canvas |
 
-Unsupported staged OpenCL requests return an explicit error; they are not
-silently switched to a CPU staged pipeline. See
-[GPU backend notes](docs/gpu-backends.md) for setup details.
+Sequential and batch OpenCL runs create independent device sessions and replay
+retained circles at each stage. They remain experimental and have not been
+performance-characterized on vendor GPUs. See [GPU backend
+notes](docs/gpu-backends.md) for setup details.
 
 ```sh
 CGO_ENABLED=1 go build -tags gpu -o mayflycirclefit .
-./mayflycirclefit run --ref assets/test.png --backend opencl --mode joint
+./mayflycirclefit run --ref assets/test.png --backend opencl --mode sequential
 ```
 
 ## Checkpoints and restart-from-best

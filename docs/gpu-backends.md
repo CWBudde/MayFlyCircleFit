@@ -56,7 +56,8 @@ Parallel to the OpenCL prototype, scope an **OpenGL fragment-shader fallback** f
 - `internal/fit/renderer/renderer_opencl_gpu.go` implements rendering and cost evaluation in OpenCL with CPU degradation on runtime errors. Cost reduction is entirely on-device: the host reads only the final float rather than a full pixel-error buffer.
 - Cost and image caching are separate. `Cost` leaves the rendered output resident; `Render` reads the full image only when requested and can reuse output from a matching cost evaluation without dispatching the kernels again.
 - The kernel quantizes composited channels to NRGBA semantics before scoring, so the reduced cost describes the image returned by `Render`. CPU/OpenCL parity tests allow a 1% cost tolerance and two channel values for float32 geometry and edge-coverage differences.
-- CLI exposes `--backend` (default `cpu`) and reports the selected backend during runs. GPU mode currently renders and scores via OpenCL when compiled with `-tags gpu`.
+- CLI exposes `--backend` (default `cpu`) and reports the selected backend during runs. GPU mode renders and scores joint, sequential, and batch pipelines via OpenCL when compiled with `-tags gpu`.
+- Sequential and batch optimization create independent OpenCL sessions as the active circle count grows. These modes replay retained parameters instead of accumulating a device-side base canvas; this preserves pipeline semantics but needs vendor-GPU benchmarking before performance claims.
 
 ## Memory Layout and Transfers
 
@@ -95,7 +96,7 @@ parameter upload is a meaningful share of evaluation time.
 
 The Ubuntu GPU-tag CI job installs the PoCL CPU implementation, verifies OpenCL
 platform discovery, compiles all GPU-tagged packages, and runs the focused
-OpenCL parity, reduction, and caching tests. This is deterministic runtime
+OpenCL parity, reduction, caching, and all-mode pipeline tests. This is deterministic runtime
 coverage of the OpenCL path, but it is not evidence of GPU throughput or vendor
 driver compatibility.
 
