@@ -130,10 +130,10 @@ go build ./...
 ```
 
 The CI workflow runs these gates, pinned `staticcheck`, a 50% aggregate coverage
-floor with an uploaded profile, portable cross-builds, an OpenCL-header GPU-tag
-compile, and pinned `govulncheck` under Go 1.26.5. Their presence is not a claim
-that the current branch or release candidate has passed them; consult the actual
-workflow result.
+floor with an uploaded profile, portable cross-builds, an OpenCL/PoCL GPU-tag
+compile and focused runtime suite, and pinned `govulncheck` under Go 1.26.5.
+Their presence is not a claim that the current branch or release candidate has
+passed them; consult the actual workflow result.
 
 ## Repository layout
 

@@ -14,77 +14,31 @@
 
 ## Phase 1: Core Domain Model ✅ COMPLETE
 
-**Implemented:**
-
-- `Circle` struct: Position (X, Y, R) + Color (CR, CG, CB) + Opacity
-- `ParamVector`: Flat float64 encoding of K circles (7 params per circle)
-- `Bounds`: Parameter validation with configurable ranges
-  - X, Y: [0, width/height]
-  - R: [1, max(width, height)]
-  - Color/Opacity: [0, 1]
-- `MSECost`: Mean Squared Error cost function over RGB channels
-- Helper functions: `EncodeCircle`, `DecodeCircle`, `ClampCircle`, `ClampVector`
-
-**Test Coverage:** 6 passing tests (encoding, bounds, clamping, MSE)
+Implemented and tested the circle model, parameter encoding, bounds/clamping, and RGB MSE cost (6 tests).
 
 ---
 
 ## Phase 2: CPU Renderer ✅ COMPLETE
 
-**Implemented:**
-
-- `Renderer` interface: Render(), Cost(), Dim(), Bounds(), Reference()
-- `CPURenderer` struct: Software rendering with Porter-Duff alpha compositing
-- `renderCircle()`: Bounding-box optimized circle rasterization
-- `compositePixel()`: Premultiplied alpha blending
-
-**Test Coverage:** 2 passing tests (white canvas, single circle rendering)
+Implemented and tested the `Renderer` interface and bounding-box CPU renderer with Porter-Duff alpha compositing (2 tests).
 
 ---
 
 ## Phase 3: Optimizer (Mayfly - Using External Library) ✅ COMPLETE
 
-**Implemented:**
-
-- `Optimizer` interface: Run() method for optimization algorithms
-- `MayflyAdapter` struct: Wrapper for external Mayfly library with configurable variants
-- Variant support: Standard, DESMA, OLCE, and other Mayfly algorithm variants
-- Constructor functions: `NewMayfly()`, `NewMayflyDESMA()`, `NewMayflyOLCE()`
-
-**Test Coverage:** 2 passing tests (sphere function optimization, deterministic behavior)
+Implemented and tested the optimizer interface and Mayfly adapter with Standard, DESMA, and OLCE variants (2 tests); the project is pinned to `github.com/cwbudde/mayfly v0.3.0`.
 
 ---
 
 ## Phase 4: Pipelines (Joint, Sequential, Batch) ✅ COMPLETE
 
-**Implemented:**
-
-- `OptimizationResult` struct: Holds best parameters, costs, and iteration info
-- `OptimizeJoint()`: Optimizes all circles simultaneously
-- `OptimizeSequential()`: Adds circles one at a time greedily
-- `OptimizeBatch()`: Adds batches of circles in multiple passes
-
-**Test Coverage:** 3 passing tests (joint, sequential, batch optimization pipelines)
+Implemented and tested joint, sequential, and batch optimization pipelines plus `OptimizationResult` (3 tests).
 
 ---
 
 ## Phase 5: CLI with Cobra (Log-only UX) ✅ COMPLETE
 
-**Implemented:**
-
-- `run` command: Single-shot optimization with configurable modes (joint/sequential/batch)
-  - Flags: --ref, --out, --mode, --circles, --iters, --pop, --seed
-  - Image loading, optimization, and output saving
-  - Metrics reporting (cost improvement, circles/sec throughput)
-- Stub commands: `serve`, `status`, `resume` (placeholders for future phases)
-- Test image: assets/test.png for validation
-
-**Commands:**
-
-- `mayflycirclefit run --ref <image>` - Run optimization
-- `mayflycirclefit serve` - Stub for Phase 6
-- `mayflycirclefit status` - Stub for Phase 6
-- `mayflycirclefit resume <job-id>` - Stub for Phase 7
+Implemented the Cobra CLI foundation, single-shot `run` workflow, metrics, command stubs, and validation asset.
 
 ---
 
@@ -92,88 +46,23 @@
 
 **Goal:** A long-running HTTP server that executes optimizations in the background with real-time progress via SSE.
 
-**Implemented:**
-
-- Job management with thread-safe state machine (pending, running, completed, failed, cancelled)
-- Background worker for async optimization execution with context cancellation
-- HTTP server with graceful shutdown and middleware (CORS, logging)
-- REST API endpoints:
-  - POST /api/v1/jobs - Create and start job
-  - GET /api/v1/jobs - List all jobs
-  - GET /api/v1/jobs/:id/status - Get job status with metrics
-  - GET /api/v1/jobs/:id/best.png - Render current best image
-  - GET /api/v1/jobs/:id/diff.png - False-color difference visualization
-- CLI `serve` command with signal handling and graceful shutdown
-- CLI `status` command for querying jobs (list or specific)
-- Helper functions for image loading and diff computation
-- Comprehensive test coverage for all components
-
-**Note:** SSE (Task 6.5) was deferred as the polling-based status endpoint provides sufficient functionality for Phase 6 goals.
-
----
-
-## Phase 6: Background Server + Job Model + Live Progress - Implementation Details
-
-**Goal:** A long-running HTTP server that executes optimizations in the background with real-time progress via SSE.
+Implemented the job manager, background execution, hardened HTTP foundation, REST/image endpoints, CLI integration, tests, and documentation. Task 6.5 records the originally deferred SSE work (later implemented in Phase 7).
 
 ### Task 6.1: Job Management Core ✅
 
-- [x] Create `internal/server/job.go` with job state machine
-  - [x] Define `Job` struct (ID, state, config, best params, best cost, iterations, start time)
-  - [x] Define job states: `pending`, `running`, `completed`, `failed`, `cancelled`
-  - [x] Implement `JobManager` with in-memory job storage (map[string]*Job)
-  - [x] Add methods: `CreateJob()`, `GetJob()`, `ListJobs()`, `UpdateJob()`
-  - [x] Add thread-safe access with `sync.RWMutex`
-  - [x] Write tests for job lifecycle
+Completed: thread-safe job state, storage, lifecycle methods, and tests.
 
 ### Task 6.2: Background Worker ✅
 
-- [x] Create `internal/server/worker.go` for job execution
-  - [x] Implement `runJob(ctx context.Context, job *Job)` function
-  - [x] Load reference image from job config
-  - [x] Create renderer and optimizer from job config
-  - [x] Run optimization with periodic progress updates
-  - [x] Use context for cancellation support
-  - [x] Update job state atomically during execution
-  - [x] Handle errors and set failed state
-  - [x] Write tests for worker execution flow
+Completed: context-aware background execution, progress/state updates, error handling, and tests.
 
 ### Task 6.3: HTTP Server Foundation ✅
 
-- [x] Create `internal/server/server.go` with HTTP server setup
-  - [x] Define `Server` struct with JobManager, port, routes
-  - [x] Implement `NewServer()` constructor
-  - [x] Implement `Start()` method with graceful shutdown
-  - [x] Add CORS middleware for development
-  - [x] Add logging middleware with slog
-  - [x] Write tests for server lifecycle
+Completed: HTTP server construction, routes, middleware, graceful shutdown, and lifecycle tests.
 
 ### Task 6.4: REST API Endpoints ✅
 
-- [x] Implement `POST /api/v1/jobs` - Create new job
-  - [x] Accept JSON payload (refPath, width, height, mode, circles, iters, pop, seed)
-  - [x] Validate input parameters
-  - [x] Create job and start worker goroutine
-  - [x] Return job ID and initial status
-  - [x] Write integration test
-
-- [x] Implement `GET /api/v1/jobs` - List all jobs
-  - [x] Return JSON array of job summaries
-  - [x] Write integration test
-
-- [x] Implement `GET /api/v1/jobs/:id/status` - Get job status
-  - [x] Return JSON with state, cost, iterations, elapsed time, cps
-  - [x] Write integration test
-
-- [x] Implement `GET /api/v1/jobs/:id/best.png` - Get current best image
-  - [x] Render current best params to PNG
-  - [x] Set appropriate content-type and cache headers
-  - [x] Write integration test
-
-- [x] Implement `GET /api/v1/jobs/:id/diff.png` - Get difference image
-  - [x] Compute pixel-wise difference (false-color heatmap)
-  - [x] Return PNG with difference visualization
-  - [x] Write integration test
+Completed: validated job creation/list/status and best/difference image endpoints with integration coverage.
 
 ### Task 6.5: Server-Sent Events (SSE) for Live Progress ⏭️ DEFERRED
 
@@ -194,56 +83,19 @@
 
 ### Task 6.6: CLI Integration - Serve Command ✅
 
-- [x] Update `cmd/serve.go` with full implementation
-  - [x] Add flags: --port (default 8080), --addr (default localhost)
-  - [x] Create and start HTTP server
-  - [x] Add signal handling for graceful shutdown (SIGINT, SIGTERM)
-  - [x] Log server start with URL
-  - [x] Write manual test
+Completed: `serve` flags, server startup, signal handling, graceful shutdown, logging, and manual verification.
 
 ### Task 6.7: CLI Integration - Status Command ✅
 
-- [x] Update `cmd/status.go` with full implementation
-  - [x] Add flags: --server-url (default http://localhost:8080)
-  - [x] Optional job-id argument to show specific job
-  - [x] Call GET /api/v1/jobs or /api/v1/jobs/:id/status
-  - [x] Format and display status in terminal
-  - [x] Handle connection errors gracefully
-  - [x] Write manual test
+Completed: list/single-job status queries, output formatting, connection handling, and manual verification.
 
 ### Task 6.8: Integration Testing ✅
 
-- [x] Create `internal/server/server_test.go` with integration tests
-  - [x] Test full flow: POST job → poll status → get best.png
-  - [x] Test SSE stream receives progress events (deferred with SSE)
-  - [x] Test concurrent job execution (basic coverage)
-  - [x] Test error handling (invalid job ID, bad parameters)
-  - [x] Test graceful shutdown (tested via manual verification)
+Completed: job-flow, concurrency, error, and graceful-shutdown integration coverage; SSE coverage was deferred here.
 
 ### Task 6.9: Documentation ✅
 
-- [x] Update CLAUDE.md with server architecture
-  - [x] Document API endpoints with examples
-  - [x] Document job lifecycle and states
-  - [x] Document SSE event format (deferred with SSE)
-- [x] Add example curl commands to CLAUDE.md
-
-**Deliverables:**
-
-- Working HTTP server with job queue and SSE
-- All REST API endpoints functional
-- CLI commands `serve` and `status` fully implemented
-- Integration tests covering main flows
-- Updated documentation
-
-**Acceptance Checks:**
-
-- ✅ `mayflycirclefit serve` starts server
-- ✅ Can POST job and receive job ID
-- ✅ Can poll status and see cost decreasing
-- ✅ Can fetch best.png while optimization runs
-- ✅ SSE stream shows real-time progress
-- ✅ `mayflycirclefit status` displays job information
+Completed: server/API/lifecycle documentation and curl examples; SSE format was deferred here.
 
 ---
 
@@ -253,82 +105,35 @@
 
 ### Task 7.1: Set up templ Infrastructure
 
-- [x] Install templ generator (`go install github.com/a-h/templ/cmd/templ@latest`)
-- [x] Add templ generation to `justfile` (e.g., `just templ` command)
-- [x] Create `internal/ui/` directory structure
-- [x] Configure templ build process in development workflow
-- [x] Add templ files to `.gitignore` (generated Go files)
-- [x] Write setup documentation in CLAUDE.md
+Completed: templ tooling, generation workflow, UI structure, ignore rules, and setup documentation.
 
 ### Task 7.2: Create Base Layout Template
 
-- [x] Create `internal/ui/layout.templ` with base HTML structure
-- [x] Add minimal CSS styling (lightweight, no heavy frameworks)
-- [x] Include meta tags and viewport configuration
-- [x] Set up asset serving for static files in server
-- [x] Add navigation header with app title and links
-- [x] Write tests for templ generation (if applicable)
+Completed: base HTML layout, lightweight styling, metadata, navigation, asset serving, and tests.
 
 ### Task 7.3: Implement Job List Page (`/`)
 
-- [x] Create `internal/ui/list.templ` for job listing
-- [x] Display all jobs with: ID, status, reference thumbnail, metrics
-- [x] Add "Create New Job" button/form
-- [x] Link each job to detail page (`/jobs/:id`)
-- [x] Show job state visually (colors/icons for running/completed/failed)
-- [x] Add server route handler for `/` in `internal/server/server.go`
-- [x] Write integration test for job list page
+Completed: routed job list with status, thumbnails, metrics, creation/detail links, and integration coverage.
 
 ### Task 7.4: Implement Job Detail Page (`/jobs/:id`) ✅
 
-- [x] Create `internal/ui/detail.templ` for single job view
-- [x] Design two-pane layout: **Reference** (left) and **Current Best** (right)
-- [x] Display key metrics: cost, circles/sec, iterations, K, mode
-- [x] Add manual refresh button as fallback
-- [x] Handle job-not-found and error states gracefully
-- [x] Add server route handler for `/jobs/:id` in `internal/server/server.go`
-- [x] Write integration test for job detail page
+Completed: routed two-pane job detail with metrics, refresh/error states, and integration coverage.
 
 ### Task 7.5: Integrate SSE for Live Updates ✅
 
-- [x] Implement `GET /api/v1/jobs/:id/stream` SSE endpoint in server
-  - [x] Set SSE headers (`Content-Type: text/event-stream`)
-  - [x] Create event channel per client connection
-  - [x] Send periodic events with: cost, iterations, cps, timestamp
-  - [x] Handle client disconnect gracefully
-  - [x] Throttle events (e.g., max 1 per 500ms)
-- [x] Add event broadcaster to `JobManager`
-- [x] Emit events from worker during optimization
-- [x] Write integration test with SSE client
+Completed: throttled SSE progress streaming, broadcaster/worker integration, disconnect handling, and tests.
 
 ### Task 7.6: Implement Auto-Refreshing Images ✅
 
-- [x] Add JavaScript SSE client in detail.templ
-- [x] Use `<img src="/api/v1/jobs/:id/best.png?t=...">` with cache-busting
-- [x] Update image src via JavaScript when SSE sends update event
-- [x] Add loading states/spinners during image refresh
-- [x] Handle image load errors gracefully (show error state)
-- [x] Test with slow network conditions
+Completed: SSE-driven cache-busted image refresh with loading/error states and slow-network testing.
 
 ### Task 7.7: Add Optional Cost Sparkline Visualization ✅
 
-- [x] Create lightweight sparkline component (SVG or canvas-based)
-- [x] Collect cost history from SSE stream in client-side JavaScript
-- [x] Display mini-chart showing cost descent over time
-- [x] Keep data structure bounded (e.g., last 100 samples)
-- [x] Add toggle to show/hide sparkline
-- [x] Test with various cost descent patterns
+Completed: bounded, toggleable SSE cost-history sparkline with pattern tests.
 
 ### Task 7.8: Create Job Creation Form UI ✅
 
-- [x] Build form on separate `/create` page with GET and POST handlers
-- [x] Input fields: reference path, mode, circles, iters, popSize, seed
-- [x] Server-side validation for all input fields with helpful error messages
-- [x] POST handler creates job and starts optimization in background
-- [x] Redirect to job detail page on success (`/jobs/:id`)
-- [x] Show validation errors on same page if job creation fails
-- [x] Write comprehensive integration tests for form submission
-- [x] Test validation error cases (missing fields, out-of-range values)
+Completed: routed job-creation form, server validation, background start/redirect, inline errors, and integration tests.
 
 ### Task 7.9: Test End-to-End UI Flow ✅
 
@@ -344,27 +149,7 @@
 
 ### Task 7.10: Documentation and Polish ✅
 
-- [x] Update CLAUDE.md with UI architecture
-  - [x] Comprehensive component documentation (Layout, Index, Job List, Job Detail, Create Form)
-  - [x] Detailed SSE architecture with EventBroadcaster mechanics
-  - [x] templ development workflow and file naming conventions
-  - [x] Technology stack and styling approach
-- [x] Document templ structure and conventions
-  - [x] Component architecture with detailed breakdowns
-  - [x] Form validation and error handling patterns
-  - [x] Real-time update mechanisms
-- [x] Document SSE event format
-  - [x] ProgressEvent structure with all fields
-  - [x] Connection management lifecycle
-  - [x] Reliability features and error handling
-  - [x] Client-side integration details
-- [x] Add troubleshooting section for common UI issues
-  - [x] Web UI issues (SSE, images, sparkline, form validation)
-  - [x] templ development issues
-  - [x] Server issues (port conflicts, job states, memory)
-  - [x] API issues (validation, 404s)
-  - [x] Browser compatibility notes
-- [x] Update project status in CLAUDE.md (Phase 7 complete)
+Completed: UI/templ/SSE architecture, conventions, troubleshooting, and project-status documentation.
 
 **Deliverables:**
 
@@ -396,201 +181,7 @@
 
 ## Phase 8: Persistence & Checkpoints (Resume) ✅ COMPLETE
 
-**Goal:** Don't lose progress; enable pausing/resuming long runs.
-
-**Status:** All tasks complete with documented limitations. Full test report: `docs/checkpoint-resume-test-results.md`
-
-### Task 8.1: Design Storage Interface and Structure ✅
-
-- [x] Create `internal/store/store.go` with `Store` interface
-  - [x] Define methods: `SaveCheckpoint()`, `LoadCheckpoint()`, `ListCheckpoints()`, `DeleteCheckpoint()`
-  - [x] Define `Checkpoint` struct with: JobID, BestParams, BestCost, Iteration, Timestamp
-  - [x] Document checkpoint data format (JSON)
-- [x] Choose filesystem-based storage approach
-- [x] Define directory structure: `./data/jobs/<jobID>/` with artifacts
-  - [x] `checkpoint.json` - Full checkpoint with params
-  - [x] `best.png` - Best rendered image
-  - [x] `diff.png` - Difference visualization
-  - [x] `trace.jsonl` - Optional cost history
-- [x] Write design documentation in CLAUDE.md
-
-### Task 8.2: Implement Filesystem-Based Store ✅
-
-- [x] Create `internal/store/fs_store.go` implementing `Store` interface
-- [x] Implement atomic writes using temp file + rename pattern
-- [x] Handle concurrent access safely (atomic renames, no locks needed)
-- [x] Create directories lazily on first write
-- [x] Add error handling for disk full, permissions, etc.
-- [x] Implement `SaveCheckpoint()` with JSON serialization
-- [x] Implement `LoadCheckpoint()` with JSON deserialization
-- [x] Implement `ListCheckpoints()` with filesystem scan
-- [x] Implement `DeleteCheckpoint()` with cleanup
-- [x] Write comprehensive unit tests for all methods (17 tests passing)
-
-### Task 8.3: Define Checkpoint Data Structures ✅
-
-- [x] Create `Checkpoint` struct in `internal/store/types.go`
-  - [x] Fields: JobID, BestParams []float64, BestCost float64, InitialCost, Iteration int, Timestamp time.Time
-  - [x] Add JSON struct tags
-- [x] Add optimizer state to checkpoint (if needed for true resume)
-  - [x] Document what state is saved vs. reinitialized on resume (detailed comments in types.go)
-- [x] Create helper functions for checkpoint validation
-  - [x] `NewCheckpoint()`, `ToInfo()`, `Validate()`, `IsCompatible()`
-  - [x] Custom error types: `ValidationError`, `CompatibilityError`, `NotFoundError`
-- [x] Write tests for serialization/deserialization (24 tests passing)
-
-### Task 8.4: Integrate Periodic Checkpointing into Worker ✅
-
-- [x] Modify `internal/server/worker.go` to accept Store instance
-- [x] Add checkpoint interval configuration to job config
-  - [x] Time-based checkpointing (every N seconds)
-  - [x] `CheckpointInterval` field in `JobConfig`
-- [x] Use ticker to trigger periodic saves during optimization
-  - [x] `monitorCheckpoints()` goroutine with ticker
-- [x] Save checkpoint artifacts:
-  - [x] `checkpoint.json` with all checkpoint data
-  - [x] Rendered `best.png` image
-  - [x] Rendered `diff.png` difference visualization
-- [x] Ensure checkpointing doesn't block optimization significantly (async saves in goroutine)
-- [x] Add logging for checkpoint saves (slog with job_id, iteration, best_cost)
-- [x] Integrate into server: `cmd/serve.go` creates FSStore and passes to `NewServer()`
-
-### Task 8.5: Implement Trace Logging (Optional Cost History) ✅
-
-- [x] Create `trace.jsonl` writer in `internal/store/trace.go`
-- [x] Log format: JSON lines with iteration, cost, timestamp, params (optional)
-- [x] Implement append-only writes to minimize overhead
-- [x] Add buffered writer for performance (64KB buffer)
-- [x] Add flag to job config to enable/disable trace (`EnableTrace` field)
-- [x] Implement trace reader for analysis/visualization
-  - [x] `TraceReader` with `Read()` and `ReadAll()` methods
-  - [x] Support for large trace files with configurable buffer
-- [x] Write tests for trace logging (11 tests passing)
-  - [x] Write/read, append mode, flush, iterative reading
-  - [x] Params included/excluded, concurrent writes, delete
-- [x] Integrate into worker with `monitorTrace()` goroutine
-  - [x] Logs cost every 1 second when iteration progresses
-  - [x] Logs initial and final states
-  - [x] Non-blocking, runs in background
-
-### Task 8.6: Add Resume Capability to Optimizer ✅
-
-- [x] Define `ResumableOptimizer` interface extending `Optimizer`
-  - [x] `RunWithInitial(initialParams, initialCost, ...)` method
-- [x] Implement `RunWithInitial` in `MayflyAdapter`
-  - [x] Strategy: Run optimizer, return better of (new result, checkpoint solution)
-  - [x] Ensures we never lose progress on resume
-- [x] Document limitations
-  - [x] Mayfly library doesn't support custom population initialization
-  - [x] Iteration count resets (optimizer runs fresh)
-  - [x] Future: Consider different optimizer library with population seeding
-- [x] Write comprehensive tests (6 tests passing)
-  - [x] Basic resume with improvement
-  - [x] Resume from optimal solution
-  - [x] Resume vs from-scratch comparison
-  - [x] Checkpoint preservation (never worsen)
-
-### Task 8.7: Implement CLI `resume` Command ✅
-
-- [x] Update `cmd/resume.go` with full implementation
-- [x] Add flags: --local, --server-url, --output
-- [x] Support local mode: load checkpoint from Store, restart optimizer
-  - [x] Load and validate checkpoint
-  - [x] Load reference image and create renderer
-  - [x] Use `RunWithInitial()` to resume optimization
-  - [x] Display progress and improvement metrics
-  - [x] Save resumed output image
-  - [x] Update checkpoint with new results
-- [x] Support server mode: POST to `/api/v1/jobs/:id/resume`
-  - [x] Send POST request to server resume endpoint
-  - [x] Parse and display server response
-  - [x] Provide status command hint for monitoring
-- [x] Handle errors gracefully (checkpoint not found, invalid data, network errors)
-- [x] Comprehensive help text with examples
-
-### Task 8.8: Add Server Endpoint `POST /api/v1/jobs/:id/resume` ✅
-
-- [x] Implement resume endpoint in `internal/server/server.go`
-  - [x] Added route handler for `/api/v1/jobs/:id/resume`
-  - [x] Method check (POST only)
-  - [x] Checkpoint store availability check
-- [x] Load checkpoint for given jobID from Store
-  - [x] Error handling for not found, invalid data
-  - [x] Checkpoint validation
-- [x] Create new job with resumed state
-  - [x] Initialize job with checkpoint data (BestParams, BestCost, InitialCost, Iterations)
-  - [x] Start worker in background
-- [x] Modified worker to support resume
-  - [x] Detect resumed jobs (existing BestParams)
-  - [x] Use `RunWithInitial()` for resumed optimization
-  - [x] Track cumulative iterations
-- [x] Return comprehensive response
-  - [x] New job ID, resumed-from ID, state, previous cost/iters, message
-- [x] Handle error cases (404 for checkpoint not found, 503 if feature disabled)
-
-### Task 8.9: Implement Graceful Server Shutdown with Checkpoint ✅
-
-- [x] Hook server shutdown signal (SIGINT/SIGTERM) in `cmd/serve.go`
-- [x] Checkpoint all running jobs before exit
-- [x] Add timeout for checkpoint saves (e.g., 10 seconds)
-- [x] Use context cancellation to stop workers gracefully
-- [x] Log checkpoint status on shutdown
-- [x] Write integration test for shutdown behavior
-
-### Task 8.10: Add Checkpoint Management Utilities ✅
-
-- [x] Add CLI command `mayflycirclefit checkpoints list`
-  - [x] Display all checkpoints with metadata (jobID, timestamp, file sizes)
-- [x] Add CLI command `mayflycirclefit checkpoints clean`
-  - [x] Delete old checkpoints based on age or count
-  - [x] Add confirmation prompt
-- [x] Add retention policy configuration
-  - [x] Keep last N checkpoints per job
-  - [x] Delete checkpoints older than X days
-- [x] Write tests for checkpoint management commands
-
-### Task 8.11: Test Checkpoint/Resume Flow End-to-End ✅
-
-- [x] Start optimization, let it run for N iterations
-- [x] Verify checkpoint files are created periodically (on graceful shutdown)
-- [x] Kill server abruptly (SIGKILL) during optimization
-- [x] Verify checkpoint files exist and are valid JSON
-- [x] Resume from checkpoint using CLI (local and server modes)
-- [x] Verify cost continues decreasing from previous best
-- [x] Test graceful shutdown (SIGTERM) with checkpoint save
-- [x] Test with different modes (joint supported, sequential/batch not supported)
-- [x] Verify trace.jsonl is valid and contains expected data
-- [x] Document test results (see docs/checkpoint-resume-test-results.md)
-
-**Test Results:** All core functionality verified. See `docs/checkpoint-resume-test-results.md` for detailed test report.
-
-**Documented Limitations:**
-- Periodic checkpointing during optimization not possible (Mayfly optimizer library limitation)
-- Checkpoints created on graceful shutdown (SIGTERM) or manually after completion
-- Resume only supported for joint mode (sequential/batch are future enhancements)
-- Trace logging limited to initial state (same optimizer limitation)
-
-**Deliverables:**
-
-- Working checkpoint/resume system
-- Filesystem-based storage with atomic writes
-- Periodic checkpointing during optimization
-- CLI resume command
-- Server resume endpoint
-- Graceful shutdown with checkpoint
-- Checkpoint management utilities
-- Comprehensive test coverage
-
-**Acceptance Checks:**
-
-- [x] Kill server mid-run, restart, resume from checkpoint (graceful shutdown via SIGTERM)
-- [x] Cost continues decreasing from previous best (RunWithInitial guarantees no regression)
-- [x] Checkpoint files are valid and complete (JSON validation passed)
-- [x] Trace logging works correctly (files created, limited to initial state due to optimizer)
-- [x] Graceful shutdown saves checkpoints (SIGTERM handler verified)
-- [x] Checkpoint management commands work (list and clean commands functional)
-
-**Note:** Periodic checkpointing during optimization is not possible with current Mayfly optimizer library (no iteration callbacks). Checkpoints saved on graceful shutdown for running jobs.
+Implemented and tested filesystem-backed atomic checkpoints, trace logging, CLI/server restart-from-best, graceful-shutdown saves, retention utilities, and end-to-end recovery. Detailed results and limitations are recorded in `docs/checkpoint-resume-test-results.md`; Phase 14 later corrected live checkpoint, trace, and resume semantics.
 
 ---
 
@@ -600,72 +191,27 @@
 
 ### Task 9.1: Set Up Profiling Infrastructure ✅
 
-- [x] Add `-cpuprofile` flag to CLI commands (`run`, `serve`)
-- [x] Add `-memprofile` flag for memory profiling
-- [x] Add pprof HTTP endpoints to server (`/debug/pprof/`)
-- [x] Document profiling workflow in CLAUDE.md
-- [x] Create profiling helper scripts for common scenarios
-- [x] Test profiling with sample workloads
+Completed: CLI/server CPU and memory profiling, pprof routes, helper scripts, documentation, and validation.
 
 ### Task 9.2: Profile Baseline Performance ✅
 
-- [x] Run CPU profiling on small image (64x64, K=10)
-- [x] Run CPU profiling on medium image (256x256, K=30)
-- [x] Run CPU profiling on large image (512x512, K=64) - in progress, not blocking
-- [x] Generate flamegraphs for each scenario - data available via `go tool pprof -http`
-- [x] Identify top 5 hotspots in rendering pipeline
-- [x] Identify top 5 hotspots in cost computation
-- [x] Document baseline performance metrics (images/sec, circles/sec)
-- [x] Create profiling report with findings - `docs/baseline-performance-report.md`
+Completed: small-to-large workload profiles, hotspot analysis, baseline metrics, and `docs/baseline-performance-report.md`.
 
 ### Task 9.3: Optimize Circle Rasterization - AABB Precomputation ✅
 
-- [x] Precompute axis-aligned bounding boxes for circles
-- [x] Avoid per-pixel bounds checks in inner loops
-- [x] Add early-reject for circles fully outside image bounds
-- [x] Add early-reject for circles with opacity ≈ 0 (threshold: 0.001)
-- [x] Write benchmarks comparing old vs new approach
-- [x] Verify pixel-exact equivalence with existing tests
-- [x] Document performance improvement - `docs/task-9.3-optimization-report.md`
-
-**Result:** 1.42x speedup (41.7% faster) - significantly exceeds 15-25% target!
+Completed: AABB precomputation and early rejection with pixel-equivalence benchmarks; 1.42× speedup (41.7% faster).
 
 ### Task 9.4: Optimize Memory Allocation in Renderer ✅
 
-- [x] Reuse image buffers across multiple renders
-- [x] Add buffer pool for temporary allocations (single-buffer approach)
-- [x] Cache white background as prefilled pattern
-- [x] Reset canvas via `copy()` instead of pixel loops
-- [x] Profile memory allocations with `-memprofile`
-- [x] Write benchmarks showing reduced allocations
-- [x] Verify no memory leaks with long-running optimizations
-- [x] Document performance improvement - `docs/task-9.4-optimization-report.md`
-
-**Result:** 1.065x speedup (6.5% faster), 98.1% memory reduction (51.4x less allocations) - exceeds memory target!
+Completed: reusable buffers and cached background reset; 1.065× speedup and 98.1% allocation reduction.
 
 ### Task 9.5: Optimize Data Layout for Cache Efficiency ✅
 
-- [x] Analyze SoA (Struct of Arrays) vs AoS (Array of Structs) tradeoffs
-- [x] Evaluate tight parameter packing (already optimal at 56 bytes/circle)
-- [x] Profile cache miss rates (analytical - no perf on WSL2)
-- [x] Determine most cache-friendly layout (AoS is optimal)
-- [x] Document choice and rationale - `docs/task-9.5-data-layout-analysis.md`
-
-**Result:** SKIPPED implementation - Analysis shows current AoS layout is optimal (SoA would cause 10-20% regression). No code changes needed.
+Completed: analysis retained AoS as optimal; SoA was projected to regress performance by 10–20%, so no code change was made.
 
 ### Task 9.6: Optimize Inner Rendering Loops ✅
 
-- [x] Replace divisions with reciprocal multiplications (inv255 constant)
-- [x] Hoist outA division to reciprocal (strength reduction)
-- [x] Precompute common subexpressions (bgBlend = bgA*(1-fgA))
-- [x] Inline PixOffset calculation (y*stride + x*4)
-- [x] Verify correctness with existing tests (all 118 passing)
-- [x] Profile optimized version
-- [x] Document optimizations and tradeoffs - `docs/task-9.6-optimization-report.md`
-
-**Result:** 1.395x speedup (28.3% faster), throughput 970→1,353 circles/sec (39.5% increase) - exceeds 10-22% target!
-
-**Cumulative Phase 9 Progress:** 2.11x total speedup from baseline (140.0s → 66.5s)
+Completed: strength reduction, common-subexpression reuse, and offset inlining; 1.395× speedup and 39.5% higher throughput. Cumulative Phase 9 speedup: 2.11×.
 
 ### Task 9.7: Add Optional Multi-Threading for Rendering
 
@@ -726,62 +272,16 @@
 **Status:** Research complete, implementation in progress
 
 ### Task 10.1: Research SIMD Approaches and Design ✅ COMPLETE
-- [x] Create design document: `docs/simd-design.md`
-- [x] Research option 1: cgo + C with intrinsics (AVX2/NEON)
-  - [x] Portability across compilers (good, but requires C toolchain)
-  - [x] Maintenance burden (moderate, C debugging)
-  - [x] Build complexity (high, breaks `go build` simplicity)
-  - **Verdict: ❌ Not recommended** (cgo overhead 4.25× slower: 7.9 GB/s vs 33.6 GB/s native)
-- [x] Research option 2: Go assembly (plan9/Go asm)
-  - [x] Performance characteristics (best: 33.6 GB/s, no cgo overhead)
-  - [x] Maintenance complexity (high, but mitigated by GoAT transpiler)
-  - [x] Separate files per architecture (amd64, arm64, generic)
-  - **Verdict: ✅ RECOMMENDED** (production-proven: Minio HighwayHash, Go stdlib)
-- [x] Research option 3: Pure Go with `unsafe` + `golang.org/x/sys/cpu`
-  - [x] Autovectorization capabilities (Go compiler does NOT autovectorize in 2024)
-  - [x] Runtime feature detection (use for dispatch, not performance)
-  - [x] Safety considerations (no SIMD gains without assembly)
-  - **Verdict: ❌ Not viable for SIMD** (use for runtime dispatch only)
-- [x] Document runtime dispatch strategy
-  - [x] Use `x/sys/cpu` for feature detection
-  - [x] Detect AVX2/FMA on amd64
-  - [x] Detect NEON/ASIMD on arm64
-  - [x] Provide scalar fallback
-- [x] Document build tags and file layout strategy
-- [x] Document memory alignment requirements (unaligned loads initially, <5% penalty)
-- [x] Choose recommended approach and justify
 
-**Research findings:**
-- **Approach:** Plan9 Assembly with GoAT tooling (C prototype → transpile → hand-tune)
-- **Expected speedup:** 4-6× for SSD computation (AVX2), 3-4× (NEON)
-- **Tools:** GoAT (github.com/gorse-io/goat) actively maintained 2024, c2goasm deprecated
-- **File structure:** `ssd_amd64.s`, `ssd_arm64.s`, `ssd_generic.go` with build tags
-- **Deliverable:** `docs/simd-design.md` (comprehensive 2000-word design document)
+Completed: selected Plan 9 assembly with runtime dispatch and scalar fallback; documented design, portability, build tags, alignment, and expected AVX2/NEON gains in `docs/simd-design.md`.
 
 ### Task 10.2: Design SSD Kernel Interface ✅ COMPLETE
-- [x] Define kernel interface in `internal/fit/ssd.go`
-- [x] Create `fastSSD(a, b []uint8, stride, width, height int) float64` signature
-- [x] Design runtime dispatch mechanism (function pointer in init())
-- [x] Plan for architecture-specific implementations (AVX2, NEON, scalar)
-- [x] Document expected performance characteristics (316 Mpixels/sec scalar baseline)
-- [x] Write test harness for kernel validation (27 tests, all passing)
 
-**Implementation details:**
-- **Runtime dispatch:** Function pointer `fastSSD` selected in `init()` based on `cpu.X86.HasAVX2`/`cpu.ARM64.HasASIMD`
-- **Backend detection:** Active backend logged (AVX2 detected on test system)
-- **High-level wrapper:** `FastSSD(current, reference *image.NRGBA) float64` (drop-in for MSECost)
-- **Baseline performance:** 316.3 Mpixels/sec (207 μs per 256×256 image, scalar)
-- **Test coverage:** Correctness (identical images, known differences, alpha ignored), equivalence (SIMD vs scalar), edge cases, benchmarks
-- **Deliverables:** `internal/fit/ssd.go` (343 lines), `ssd_test.go` (414 lines)
+Completed: `fastSSD`/`FastSSD` interfaces, runtime backend dispatch, scalar baseline, backend reporting, and a 27-test validation harness.
 
 ### Task 10.3: Implement Scalar Baseline SSD Kernel
-- [x] Create `internal/fit/ssd_scalar.go` with pure Go implementation
-- [x] Optimize scalar code as baseline (no SIMD)
-- [x] Handle NRGBA interleaved format (ignore alpha channel)
-- [x] Write comprehensive unit tests
-- [x] Create benchmark comparing to existing MSE cost
-- [x] Ensure bit-exact equivalence to reference implementation
-- [x] Document scalar performance baseline
+
+Completed: optimized pure-Go NRGBA SSD baseline with alpha exclusion, equivalence/edge tests, and benchmarks.
 
 ### Task 10.4: Implement AVX2 SSD Kernel (x86-64) - **ADAPTED FROM RESEARCH**
 **Approach:** Plan9 Assembly via GoAT transpilation (NOT cgo)
@@ -913,21 +413,8 @@
 - [ ] Create optimization report: `docs/task-10.10-simd-performance-report.md`
 
 ### Task 10.11: Circle Rendering Optimization - **PARTIALLY COMPLETE**
-**Status**: Scanline algorithm implemented (1.28x speedup). Further SIMD optimizations identified.
 
-**Completed Work:**
-- [x] Profile circle rendering bottleneck (64% time in distance checks, 36% in compositing)
-- [x] Implement scanline rasterization algorithm (`renderer_cpu.go:152-227`)
-- [x] Benchmark and validate correctness (pixel-perfect match)
-- [x] Integrate into production (`renderCircleHybrid` wrapper)
-- [x] Document optimization results (`/tmp/hybrid-circle-rendering-optimization.md`)
-
-**Performance Achieved:**
-- Single circle (R=50): 211μs → 171μs (1.23x faster)
-- Small circles (R=5): 138μs → 101μs (1.37x faster)
-- Full pipeline (256x256, 50 circles): 2.40ms → 1.87ms (1.28x faster)
-
-**Algorithm**: Scanline with per-row horizontal span search eliminates O(R²) distance checks
+Completed scoped work: scanline rasterization was profiled, integrated, and pixel-equivalence tested, improving the full 256×256/50-circle pipeline by 1.28×. Further rendering work remains explicitly open in Tasks 10.12–10.15.
 
 ### Task 10.12: (Optional) SIMD Horizontal Span Compositing
 **Rationale**: Alpha compositing is now 36% of rendering time. SIMD can process 4-8 pixels simultaneously.
@@ -1083,16 +570,16 @@ for y := centerY; y < maxY; y++ {
   - [x] Input: rendered image, reference image
   - [x] Output: per-pixel squared differences
 - [x] Implement GPU reduction to scalar cost
-  - [ ] Option 1: Multi-pass reduction kernel
-  - [x] Option 2: GPU compute + CPU final sum
-  - [ ] Choose based on performance (document decision once benchmarks run)
+  - [x] Option 1: Multi-pass reduction kernel (selected implementation)
+  - [x] Option 2: GPU compute + CPU final sum (initial prototype, superseded)
+  - [x] Choose based on performance (on-device reduction avoids per-pixel error readback)
 - [x] Test cost computation accuracy
 - [x] Compare with CPU cost (allow float tolerance)
 
 ### Task 11.6: Implement Memory Transfer Strategy
 - [x] Upload reference image to GPU once at initialization
 - [x] Transfer circle parameters to GPU per evaluation
-- [ ] Minimize transfer overhead with buffer pools
+- [x] Minimize transfer overhead with persistent device buffers and lazy host image readback
 - [ ] Consider pinned memory for faster transfers
 - [ ] Profile memory transfer overhead
 - [ ] Optimize transfer strategy based on profiling
@@ -1635,43 +1122,13 @@ Phases 0-11 use bite-sized, testable tasks. Each task follows TDD principles:
 - **P2:** Performance, maintainability, documentation, and UX improvements that should follow the corrected architecture.
 - Existing unchecked Phase 12/13 feature work should pause when it depends on behavior being redesigned here.
 
-### Audit Baseline
+### Audit Baseline ✅
 
-The following results record the audit baseline and current remediation state.
-Checked implementation items are not a release signoff; acceptance results must
-be re-run against the final revision.
+Completed local baseline verification: vet, short/race tests, deterministic generated sources, portable cross-build dispatch, benchmark-only performance assertions, lifecycle/progress/checkpoint behavior, and renderer edge-case coverage. Final release-candidate verification remains tracked below.
 
-- [x] `go vet ./...` passes on the current AMD64 workspace.
-- [x] `go test -short ./...` passes.
-- [x] `go test -race -short ./...` passes on the final local revision; the original server job-state and event-broadcaster races have regression coverage.
-- [x] Generated `*_templ.go` files are committed, the templ generator is pinned, and a metadata-free source export builds/tests.
-- [x] Non-AMD64 builds use portable scalar dispatch instead of referencing AMD64-only AVX2 symbols; all five configured cross-builds pass locally.
-- [x] Hardware-dependent absolute SSD/SAD throughput assertions have been removed from tests; performance measurements remain benchmarks.
-- [x] Live progress, periodic/final checkpoints, traces, cancellation, and restart-from-best behave as documented in focused tests.
-- [x] Canvas, backend, batch-size, parameter-length, origin/stride, and empty-input renderer behavior has regression coverage; final release-candidate end-to-end verification remains below.
+### Task 14.1: Restore Reproducible Builds and Tooling (P0) ✅
 
-### Task 14.1: Restore Reproducible Builds and Tooling (P0)
-
-- [x] Choose and document one templ generation strategy:
-  - [x] Commit generated `*_templ.go` files, **and**
-  - [x] Pin the templ generator version and make build/test entry points generate deterministically.
-- [x] Remove the hardcoded `~/go/bin/templ` assumption from `justfile`.
-- [x] Make `just build`, `just test`, and `just lint` work from a clean clone without untracked files.
-- [x] Add a generation consistency check that fails when generated output differs from tracked/expected output.
-- [x] Fix the formatting check so non-empty `gofmt -s -l` output fails the command.
-- [x] Format all tracked Go sources with `gofmt -s` in a dedicated commit.
-- [x] Remove tracked generated artifacts:
-  - [x] `prototypes/ssd_avx2_test`
-  - [x] `prototypes/ssd_avx2_simple_test`
-  - [x] `prototypes/ssd_avx2_v2_test`
-  - [x] `out2.png`, unless deliberately retained and documented as an example asset.
-- [x] Align Go-version declarations across `go.mod`, `AGENTS.md`, `README.md`, `PLAN.md`, and CI (Go 1.24+).
-
-**Acceptance Checks:**
-
-- [x] `git archive HEAD` extracted into an empty directory can run the documented `-buildvcs=false` build and short-test commands.
-- [x] No ignored or user-home file is required to build.
-- [x] Generation and formatting checks fail correctly when source is stale.
+Completed: deterministic pinned templ generation, clean-clone build/test/lint, effective stale-generation/format checks, source formatting, artifact cleanup, and Go 1.24 alignment; all acceptance checks passed.
 
 ### Task 14.2: Establish a Trusted Server Security Model (P0)
 
@@ -1727,43 +1184,13 @@ be re-run against the final revision.
 - [x] Invalid values return typed errors rather than panics, silent coercion, or delayed worker failure.
 - [x] Table-driven tests cover boundaries and omitted-versus-explicit configuration values.
 
-### Task 14.4: Fix Job-State and SSE Concurrency (P0)
+### Task 14.4: Fix Job-State and SSE Concurrency (P0) ✅
 
-- [x] Stop returning mutable internal `*Job` pointers from `JobManager`.
-- [x] Return immutable/deep-copied snapshots, including copied parameter slices and `EndTime` values.
-- [x] Replace arbitrary mutation callbacks with typed state-transition/update methods where practical.
-- [x] Define and test legal job state transitions.
-- [x] Use exclusive synchronization when mutating `EventBroadcaster.lastEvent`.
-- [x] Ensure subscribe, unsubscribe, broadcast, cleanup, and job completion cannot close/send the same channel concurrently.
-- [x] Remove completed-job broadcaster cache entries at the defined deletion lifecycle point.
-- [x] Add concurrent handler/worker/SSE tests for state, cancellation, subscription, cleanup, and deletion lifecycles.
+Completed: immutable job snapshots, typed transitions, synchronized broadcaster lifecycle/cleanup, and concurrent handler/worker/SSE coverage; race and stress acceptance checks passed.
 
-**Acceptance Checks:**
+### Task 14.5: Redesign Optimizer Execution for Progress, Errors, and Cancellation (P0) ✅
 
-- [x] `go test -race -short ./...` passes on the final integrated local revision and in the remediation verification runs.
-- [x] A multi-job stress test completes under the race detector without concurrent-map/channel failures, corrupted status responses, leaked SSE state, or unjoined workers.
-- [x] API responses remain internally consistent while jobs update.
-
-### Task 14.5: Redesign Optimizer Execution for Progress, Errors, and Cancellation (P0)
-
-- [x] Add a context-aware result contract alongside the compatibility optimizer interface:
-  - [x] `RunContext(ctx, problem, options) (Result, error)`
-  - [x] Include best parameters, best cost, completed iterations, evaluations, and termination reason.
-- [x] Check cancellation during optimizer initialization and iteration boundaries with bounded latency between evaluations.
-- [x] Publish atomic best-so-far snapshots from optimizer callbacks.
-- [x] Update job state, SSE, traces, and checkpoints from the same progress snapshot rather than independent polling assumptions.
-- [x] Propagate Mayfly errors instead of silently returning an all-zero candidate.
-- [x] Ensure monitor/worker goroutines are joined before their writers/renderers are closed.
-- [x] Supervise workers with per-job contexts, a `WaitGroup`, and explicit cancellation ownership.
-- [x] Make UI- and API-created jobs use the same server-controlled lifecycle.
-- [x] Wait for or clearly report unfinished workers during shutdown.
-
-**Acceptance Checks:**
-
-- [x] Status and SSE show increasing iterations and updated best cost during a long job.
-- [x] Cancellation stops CPU work between evaluations and reaches `cancelled` deterministically.
-- [x] Optimizer failure reaches the CLI/API and sets the job to `failed` with a safe diagnostic.
-- [x] Shutdown does not leave unmanaged optimization goroutines running.
+Completed: context-aware optimizer results, bounded cancellation, unified progress snapshots, error propagation, supervised/joined workers, shared lifecycle handling, and shutdown reporting; all acceptance checks passed.
 
 ### Task 14.6: Correct Renderer and Pipeline Semantics (P0)
 
@@ -1808,25 +1235,9 @@ be re-run against the final revision.
 - [x] Resume tests explicitly validate deterministic restart-from-best semantics and retention of a better saved candidate.
 - [x] Checkpoint artifact generation cannot race with objective evaluation.
 
-### Task 14.8: Make Persistence Safe and Cohesive (P1)
+### Task 14.8: Make Persistence Safe and Cohesive (P1) ✅
 
-- [x] Make the configured store own checkpoint metadata, traces, best/diff images, snapshots, and circle metadata.
-- [x] Remove all hardcoded `./data` paths from server workers.
-- [x] Validate job IDs as canonical UUIDs at every store boundary.
-- [x] Guarantee that resolved job paths remain beneath the configured store root.
-- [x] Use unique same-directory temporary files for concurrent atomic writes.
-- [x] Validate checkpoint contents and require `checkpoint.JobID == jobID` before saving.
-- [x] Make snapshots, `circles.json`, best images, and diff images atomic where partial files would be harmful.
-- [x] Define restrictive file/directory permissions for potentially sensitive reference paths and outputs.
-- [x] Add file/directory sync around durable atomic writes.
-- [x] Define retention and server-side deletion behavior for terminal jobs, traces, and SSE caches.
-
-**Acceptance Checks:**
-
-- [x] Same-job concurrent saves pass under the race detector without lost, mixed, or corrupt data.
-- [x] A custom store root contains all artifacts and nothing is written to `./data` unexpectedly.
-- [x] Malformed IDs cannot read, overwrite, or delete paths outside the store root.
-- [x] Fault-injection tests cover partial temporary writes, failed atomic renames, prior-artifact preservation, cleanup, and successful recovery; disk exhaustion/process-kill/fsync faults require an integration fault filesystem and remain documented exclusions.
+Completed: store-owned artifacts, canonical UUID/path containment, concurrent durable atomic writes, checkpoint validation, restrictive permissions, retention/deletion behavior, and fault-path coverage; documented fault-filesystem exclusions remain.
 
 ### Task 14.9: Restore Portability and Integrate Performance Work (P1/P2)
 
@@ -1843,32 +1254,19 @@ be re-run against the final revision.
 - [x] Replace absolute wall-clock unit-test thresholds with benchmarks or relative regression checks on controlled runners.
 - [x] Reuse accumulated canvases in sequential/batch mode to avoid repeatedly rendering all prior circles.
 - [x] Reuse per-stage parameter buffers and capacity-backed result slices to reduce stage-evaluation allocations.
-- [ ] Perform OpenCL error reduction on-device and avoid reading the full output image for every cost evaluation.
+- [x] Perform OpenCL error reduction on-device and avoid reading the full output image for every cost evaluation.
 - [x] Benchmark full sequential and batch optimization pipelines with allocation reporting, not only isolated kernels.
 
 **Acceptance Checks:**
 
 - [ ] All supported target builds compile in CI.
-- [ ] Scalar and SIMD/GPU cost implementations match the reference across boundary widths, strides, and alpha values.
+- [x] Scalar and SIMD/GPU cost implementations match the reference across boundary widths, strides, and alpha values.
 - [x] Performance measurements are benchmarks, not hardware-dependent pass/fail unit thresholds.
 - [x] Benchmark reports include allocation counts and end-to-end improvement, with final-replay/callback-isolation regression coverage.
 
-### Task 14.10: Harden CLI and API Contracts (P1)
+### Task 14.10: Harden CLI and API Contracts (P1) ✅
 
-- [x] Use typed request/response DTOs instead of `map[string]interface{}` and unchecked assertions.
-- [x] Add bounded HTTP clients and request contexts to `status` and `resume` commands.
-- [x] Escape job IDs as URL path segments.
-- [x] Validate log levels and return a usage error for unknown values.
-- [x] Standardize API error responses, method handling, status codes, and `Allow` headers.
-- [x] Reject trailing/unexpected path components instead of loosely routing them.
-- [x] Record actual evaluations/iterations for throughput rather than estimating configured maximum work.
-- [x] Add job cancellation and terminal deletion endpoints after lifecycle and persistence semantics are safe.
-
-**Acceptance Checks:**
-
-- [x] Malformed or version-skewed server responses produce CLI errors, never panics.
-- [x] CLI network commands time out and respect cancellation.
-- [x] API contract tests cover methods, malformed JSON, unknown fields, trailing data, status codes, and response schemas.
+Completed: typed DTOs, bounded cancellable clients, escaped IDs, validated logs, strict standardized routing/errors, actual work metrics, cancellation/deletion endpoints, and contract tests; all acceptance checks passed.
 
 ### Task 14.11: Build a Release-Gating Test and CI Matrix (P1)
 
@@ -1954,4 +1352,4 @@ This plan covers **Phases 0-14** in complete detail with bite-sized, testable ta
 - Commit frequently with descriptive messages
 - Document learnings and decisions in CLAUDE.md
 
-**Current Status:** Historical feature phases reached Phase 11-era implementation, and the main Phase 14 remediation waves now pass the local generation, build, test, race, static-analysis, 56.1% aggregate coverage, vulnerability, portability, GPU-compile, clean-clone recipe, and metadata-free export gates. **Phase 14 remains active: remote CI must pass twice, and the remaining unchecked real-device OpenCL, long end-to-end, and release-policy work must be completed before claiming production readiness.**
+**Current Status:** Historical feature phases reached Phase 11-era implementation, and the main Phase 14 remediation waves now pass the local generation, build, test, race, static-analysis, 56.1% aggregate coverage, vulnerability, portability, GPU-compile, PoCL runtime, clean-clone recipe, and metadata-free export gates. **Phase 14 remains active: remote CI must pass twice, the long end-to-end and release-policy work remains open, and real-GPU vendor/performance validation is still required before promoting the experimental OpenCL backend.**

@@ -61,56 +61,111 @@ __kernel void render_cost(
     const int height,
     __global const float4 *reference,
     __global float4 *outImage,
-    __global float *outError) {
+    __global float *partialSums,
+    __local float *scratch) {
 
     const int idx = get_global_id(0);
+    const int localID = get_local_id(0);
+    const int localSize = get_local_size(0);
     const int pixelCount = width * height;
-    if (idx >= pixelCount) {
-        return;
-    }
+    float error = 0.0f;
 
-    const int x = idx % width;
-    const int y = idx / width;
+    if (idx < pixelCount) {
+        const int x = idx % width;
+        const int y = idx / width;
 
-    float4 color = (float4)(1.0f, 1.0f, 1.0f, 1.0f);
+        float4 color = (float4)(1.0f, 1.0f, 1.0f, 1.0f);
 
-    for (int i = 0; i < circleCount; ++i) {
-        const int base = i * 7;
-        const float cx = params[base + 0];
-        const float cy = params[base + 1];
-        const float radius = params[base + 2];
-        const float cr = params[base + 3];
-        const float cg = params[base + 4];
-        const float cb = params[base + 5];
-        const float opacity = params[base + 6];
+        for (int i = 0; i < circleCount; ++i) {
+            const int base = i * 7;
+            const float cx = params[base + 0];
+            const float cy = params[base + 1];
+            const float radius = params[base + 2];
+            const float cr = params[base + 3];
+            const float cg = params[base + 4];
+            const float cb = params[base + 5];
+            const float opacity = params[base + 6];
 
-        if (opacity < 0.001f || radius <= 0.0f) {
-            continue;
+            if (opacity < 0.001f || radius < 0.0f) {
+                continue;
+            }
+
+            const float dx = (float)x - cx;
+            const float dy = (float)y - cy;
+            if (dx * dx + dy * dy > radius * radius) {
+                continue;
+            }
+
+            const float4 fg = (float4)(cr, cg, cb, 1.0f) * opacity;
+            const float invOpacity = 1.0f - fg.w;
+
+            color.xyz = fg.xyz + color.xyz * invOpacity;
+            color.w = fg.w + color.w * invOpacity;
+            // Match the CPU renderer's NRGBA storage semantics between layers.
+            color.xyz = floor(clamp(color.xyz, 0.0f, 1.0f) * 255.0f + 0.5f) / 255.0f;
+            color.w = floor(clamp(color.w, 0.0f, 1.0f) * 255.0f + 0.5f) / 255.0f;
         }
 
-        const float dx = (float)x - cx;
-        const float dy = (float)y - cy;
-        if (dx * dx + dy * dy > radius * radius) {
-            continue;
-        }
+        color.xyz = clamp(color.xyz, 0.0f, 1.0f);
+        color.w = clamp(color.w, 0.0f, 1.0f);
 
-        const float4 fg = (float4)(cr, cg, cb, 1.0f) * opacity;
-        const float invOpacity = 1.0f - fg.w;
+        outImage[idx] = color;
 
-        color.xyz = fg.xyz + color.xyz * invOpacity;
-        color.w = fg.w + color.w * invOpacity;
+        const float4 ref = reference[idx];
+        const float3 renderedBytes = floor(color.xyz * 255.0f + 0.5f);
+        const float3 referenceBytes = floor(ref.xyz * 255.0f + 0.5f);
+        const float dr = renderedBytes.x - referenceBytes.x;
+        const float dg = renderedBytes.y - referenceBytes.y;
+        const float db = renderedBytes.z - referenceBytes.z;
+        error = dr * dr + dg * dg + db * db;
     }
 
-    color.xyz = clamp(color.xyz, 0.0f, 1.0f);
-    color.w = clamp(color.w, 0.0f, 1.0f);
+    scratch[localID] = error;
+    barrier(CLK_LOCAL_MEM_FENCE);
 
-    outImage[idx] = color;
+    for (int offset = localSize / 2; offset > 0; offset /= 2) {
+        if (localID < offset) {
+            scratch[localID] += scratch[localID + offset];
+        }
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
 
-    const float4 ref = reference[idx];
-    const float dr = (color.x - ref.x) * 255.0f;
-    const float dg = (color.y - ref.y) * 255.0f;
-    const float db = (color.z - ref.z) * 255.0f;
-    outError[idx] = dr * dr + dg * dg + db * db;
+    if (localID == 0) {
+        partialSums[get_group_id(0)] = scratch[0];
+    }
+}
+
+__kernel void reduce_sum(
+    __global const float *input,
+    __global float *output,
+    const int count,
+    __local float *scratch) {
+
+    const int localID = get_local_id(0);
+    const int localSize = get_local_size(0);
+    const int base = get_group_id(0) * localSize * 2 + localID;
+
+    float sum = 0.0f;
+    if (base < count) {
+        sum = input[base];
+    }
+    if (base + localSize < count) {
+        sum += input[base + localSize];
+    }
+
+    scratch[localID] = sum;
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    for (int offset = localSize / 2; offset > 0; offset /= 2) {
+        if (localID < offset) {
+            scratch[localID] += scratch[localID + offset];
+        }
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+
+    if (localID == 0) {
+        output[get_group_id(0)] = scratch[0];
+    }
 }
 `
 
@@ -123,26 +178,31 @@ type openCLRenderer struct {
 	height     int
 	pixelCount int
 
-	context C.cl_context
-	queue   C.cl_command_queue
-	device  C.cl_device_id
-	program C.cl_program
-	kernel  C.cl_kernel
+	context      C.cl_context
+	queue        C.cl_command_queue
+	device       C.cl_device_id
+	program      C.cl_program
+	renderKernel C.cl_kernel
+	reduceKernel C.cl_kernel
+	localSize    int
 
 	paramsBuffer    C.cl_mem
 	referenceBuffer C.cl_mem
 	outputBuffer    C.cl_mem
-	errorBuffer     C.cl_mem
+	partialBufferA  C.cl_mem
+	partialBufferB  C.cl_mem
 
 	paramsScratch []float32
 	imageScratch  []float32
-	errorScratch  []float32
 
 	renderImage *image.NRGBA
 
-	lastHash  uint64
-	lastCost  float64
-	lastValid bool
+	deviceHash  uint64
+	lastCost    float64
+	deviceValid bool
+	imageHash   uint64
+	imageValid  bool
+	evaluations uint64
 
 	degraded bool
 }
@@ -163,13 +223,11 @@ func NewOpenCLRenderer(reference *image.NRGBA, k int) (Renderer, func(), error) 
 		height:        reference.Bounds().Dy(),
 		pixelCount:    reference.Bounds().Dx() * reference.Bounds().Dy(),
 		paramsScratch: make([]float32, k*7), // 7 params per circle
-		imageScratch:  make([]float32, reference.Bounds().Dx()*reference.Bounds().Dy()*4),
-		errorScratch:  make([]float32, reference.Bounds().Dx()*reference.Bounds().Dy()),
-		renderImage:   image.NewNRGBA(reference.Bounds()),
+		renderImage:   image.NewNRGBA(image.Rect(0, 0, reference.Bounds().Dx(), reference.Bounds().Dy())),
 	}
 
 	if err := r.init(); err != nil {
-		rt.Close()
+		r.release()
 		return nil, noopCleanup, err
 	}
 
@@ -204,25 +262,46 @@ func (r *openCLRenderer) init() error {
 		return r.clError("clBuildProgram", status)
 	}
 
-	kernelName := C.CString("render_cost")
-	defer C.free(unsafe.Pointer(kernelName))
-	r.kernel = C.clCreateKernel(r.program, kernelName, &status)
+	renderKernelName := C.CString("render_cost")
+	defer C.free(unsafe.Pointer(renderKernelName))
+	r.renderKernel = C.clCreateKernel(r.program, renderKernelName, &status)
 	if status != C.CL_SUCCESS {
-		return r.clError("clCreateKernel", status)
+		return r.clError("clCreateKernel(render_cost)", status)
 	}
 
-	bytePixels := C.size_t(r.pixelCount * 4 * int(unsafe.Sizeof(float32(0))))
-	byteErrors := C.size_t(r.pixelCount * int(unsafe.Sizeof(float32(0))))
-	byteParams := C.size_t(len(r.paramsScratch) * int(unsafe.Sizeof(float32(0))))
+	reduceKernelName := C.CString("reduce_sum")
+	defer C.free(unsafe.Pointer(reduceKernelName))
+	r.reduceKernel = C.clCreateKernel(r.program, reduceKernelName, &status)
+	if status != C.CL_SUCCESS {
+		return r.clError("clCreateKernel(reduce_sum)", status)
+	}
+
+	localSize, err := r.selectLocalSize()
+	if err != nil {
+		return err
+	}
+	r.localSize = localSize
+
+	bufferPixels := max(1, r.pixelCount)
+	bufferParams := max(1, len(r.paramsScratch))
+	partialCount := max(1, ceilDiv(r.pixelCount, r.localSize))
+	bytePixels := C.size_t(bufferPixels * 4 * int(unsafe.Sizeof(float32(0))))
+	bytePartials := C.size_t(partialCount * int(unsafe.Sizeof(float32(0))))
+	byteParams := C.size_t(bufferParams * int(unsafe.Sizeof(float32(0))))
 
 	r.outputBuffer = C.clCreateBuffer(r.context, C.CL_MEM_READ_WRITE, bytePixels, nil, &status)
 	if status != C.CL_SUCCESS {
 		return r.clError("clCreateBuffer(output)", status)
 	}
 
-	r.errorBuffer = C.clCreateBuffer(r.context, C.CL_MEM_READ_WRITE, byteErrors, nil, &status)
+	r.partialBufferA = C.clCreateBuffer(r.context, C.CL_MEM_READ_WRITE, bytePartials, nil, &status)
 	if status != C.CL_SUCCESS {
-		return r.clError("clCreateBuffer(error)", status)
+		return r.clError("clCreateBuffer(partialA)", status)
+	}
+
+	r.partialBufferB = C.clCreateBuffer(r.context, C.CL_MEM_READ_WRITE, bytePartials, nil, &status)
+	if status != C.CL_SUCCESS {
+		return r.clError("clCreateBuffer(partialB)", status)
 	}
 
 	r.paramsBuffer = C.clCreateBuffer(r.context, C.CL_MEM_READ_ONLY, byteParams, nil, &status)
@@ -230,13 +309,18 @@ func (r *openCLRenderer) init() error {
 		return r.clError("clCreateBuffer(params)", status)
 	}
 
-	refFloats := make([]float32, r.pixelCount*4)
-	for i := 0; i < r.pixelCount; i++ {
-		offset := i * 4
-		refFloats[offset+0] = float32(r.reference.Pix[offset+0]) / 255.0
-		refFloats[offset+1] = float32(r.reference.Pix[offset+1]) / 255.0
-		refFloats[offset+2] = float32(r.reference.Pix[offset+2]) / 255.0
-		refFloats[offset+3] = float32(r.reference.Pix[offset+3]) / 255.0
+	refFloats := make([]float32, bufferPixels*4)
+	bounds := r.reference.Bounds()
+	for y := 0; y < r.height; y++ {
+		sourceOffset := r.reference.PixOffset(bounds.Min.X, bounds.Min.Y+y)
+		for x := 0; x < r.width; x++ {
+			source := sourceOffset + x*4
+			target := (y*r.width + x) * 4
+			refFloats[target+0] = float32(r.reference.Pix[source+0]) / 255.0
+			refFloats[target+1] = float32(r.reference.Pix[source+1]) / 255.0
+			refFloats[target+2] = float32(r.reference.Pix[source+2]) / 255.0
+			refFloats[target+3] = float32(r.reference.Pix[source+3]) / 255.0
+		}
 	}
 
 	r.referenceBuffer = C.clCreateBuffer(r.context, C.CL_MEM_READ_ONLY|C.CL_MEM_COPY_HOST_PTR, bytePixels, unsafe.Pointer(&refFloats[0]), &status)
@@ -252,6 +336,7 @@ func (r *openCLRenderer) init() error {
 		"device", r.runtime.Device.Name,
 		"vendor", r.runtime.Device.Vendor,
 		"compute_units", r.runtime.Device.MaxComputeUnits,
+		"reduction_local_size", r.localSize,
 	)
 
 	return nil
@@ -263,32 +348,98 @@ func (r *openCLRenderer) setStaticKernelArgs() error {
 	width := C.cl_int(r.width)
 	height := C.cl_int(r.height)
 
-	status = C.clSetKernelArg(r.kernel, 2, C.size_t(unsafe.Sizeof(width)), unsafe.Pointer(&width))
+	status = C.clSetKernelArg(r.renderKernel, 2, C.size_t(unsafe.Sizeof(width)), unsafe.Pointer(&width))
 	if status != C.CL_SUCCESS {
 		return r.clError("clSetKernelArg(width)", status)
 	}
 
-	status = C.clSetKernelArg(r.kernel, 3, C.size_t(unsafe.Sizeof(height)), unsafe.Pointer(&height))
+	status = C.clSetKernelArg(r.renderKernel, 3, C.size_t(unsafe.Sizeof(height)), unsafe.Pointer(&height))
 	if status != C.CL_SUCCESS {
 		return r.clError("clSetKernelArg(height)", status)
 	}
 
-	status = C.clSetKernelArg(r.kernel, 4, C.size_t(unsafe.Sizeof(r.referenceBuffer)), unsafe.Pointer(&r.referenceBuffer))
+	status = C.clSetKernelArg(r.renderKernel, 4, C.size_t(unsafe.Sizeof(r.referenceBuffer)), unsafe.Pointer(&r.referenceBuffer))
 	if status != C.CL_SUCCESS {
 		return r.clError("clSetKernelArg(reference)", status)
 	}
 
-	status = C.clSetKernelArg(r.kernel, 5, C.size_t(unsafe.Sizeof(r.outputBuffer)), unsafe.Pointer(&r.outputBuffer))
+	status = C.clSetKernelArg(r.renderKernel, 5, C.size_t(unsafe.Sizeof(r.outputBuffer)), unsafe.Pointer(&r.outputBuffer))
 	if status != C.CL_SUCCESS {
 		return r.clError("clSetKernelArg(output)", status)
 	}
 
-	status = C.clSetKernelArg(r.kernel, 6, C.size_t(unsafe.Sizeof(r.errorBuffer)), unsafe.Pointer(&r.errorBuffer))
+	status = C.clSetKernelArg(r.renderKernel, 6, C.size_t(unsafe.Sizeof(r.partialBufferA)), unsafe.Pointer(&r.partialBufferA))
 	if status != C.CL_SUCCESS {
-		return r.clError("clSetKernelArg(error)", status)
+		return r.clError("clSetKernelArg(partialSums)", status)
 	}
 
 	return nil
+}
+
+func (r *openCLRenderer) selectLocalSize() (int, error) {
+	var renderLimit C.size_t
+	status := C.clGetKernelWorkGroupInfo(
+		r.renderKernel,
+		r.device,
+		C.CL_KERNEL_WORK_GROUP_SIZE,
+		C.size_t(unsafe.Sizeof(renderLimit)),
+		unsafe.Pointer(&renderLimit),
+		nil,
+	)
+	if status != C.CL_SUCCESS {
+		return 0, r.clError("clGetKernelWorkGroupInfo(render_cost)", status)
+	}
+
+	var reduceLimit C.size_t
+	status = C.clGetKernelWorkGroupInfo(
+		r.reduceKernel,
+		r.device,
+		C.CL_KERNEL_WORK_GROUP_SIZE,
+		C.size_t(unsafe.Sizeof(reduceLimit)),
+		unsafe.Pointer(&reduceLimit),
+		nil,
+	)
+	if status != C.CL_SUCCESS {
+		return 0, r.clError("clGetKernelWorkGroupInfo(reduce_sum)", status)
+	}
+
+	var localMemory C.cl_ulong
+	status = C.clGetDeviceInfo(
+		r.device,
+		C.CL_DEVICE_LOCAL_MEM_SIZE,
+		C.size_t(unsafe.Sizeof(localMemory)),
+		unsafe.Pointer(&localMemory),
+		nil,
+	)
+	if status != C.CL_SUCCESS {
+		return 0, r.clError("clGetDeviceInfo(local memory)", status)
+	}
+
+	limit := min(256, int(renderLimit), int(reduceLimit), int(localMemory)/int(unsafe.Sizeof(float32(0))))
+	localSize := largestPowerOfTwo(limit)
+	if localSize == 0 {
+		return 0, fmt.Errorf("%w: OpenCL device has no usable reduction workgroup size", ErrBackendUnavailable)
+	}
+
+	return localSize, nil
+}
+
+func largestPowerOfTwo(limit int) int {
+	result := 1
+	for result <= limit/2 {
+		result *= 2
+	}
+	if limit < 1 {
+		return 0
+	}
+	return result
+}
+
+func ceilDiv(value, divisor int) int {
+	if value <= 0 {
+		return 0
+	}
+	return 1 + (value-1)/divisor
 }
 
 func (r *openCLRenderer) clError(prefix string, status C.cl_int) error {
@@ -319,6 +470,9 @@ func (r *openCLRenderer) dumpBuildLog() {
 }
 
 func (r *openCLRenderer) Render(params []float64) *image.NRGBA {
+	if len(params) != r.Dim() || r.pixelCount == 0 {
+		return r.fallback.Render(params)
+	}
 	if r.degraded {
 		return r.fallback.Render(params)
 	}
@@ -329,13 +483,10 @@ func (r *openCLRenderer) Render(params []float64) *image.NRGBA {
 		return r.fallback.Render(params)
 	}
 
-	pix := r.renderImage.Pix
-	for i := 0; i < r.pixelCount; i++ {
-		offset := i * 4
-		pix[offset+0] = clampToByte(r.imageScratch[offset+0] * 255.0)
-		pix[offset+1] = clampToByte(r.imageScratch[offset+1] * 255.0)
-		pix[offset+2] = clampToByte(r.imageScratch[offset+2] * 255.0)
-		pix[offset+3] = clampToByte(r.imageScratch[offset+3] * 255.0)
+	if err := r.materializeImage(r.deviceHash); err != nil {
+		slog.Warn("OpenCL renderer degraded to CPU", "reason", err)
+		r.degraded = true
+		return r.fallback.Render(params)
 	}
 
 	return r.renderImage
@@ -352,6 +503,9 @@ func clampToByte(v float32) uint8 {
 }
 
 func (r *openCLRenderer) Cost(params []float64) float64 {
+	if len(params) != r.Dim() || r.pixelCount == 0 {
+		return r.fallback.Cost(params)
+	}
 	if r.degraded {
 		return r.fallback.Cost(params)
 	}
@@ -367,31 +521,20 @@ func (r *openCLRenderer) Cost(params []float64) float64 {
 
 func (r *openCLRenderer) ensure(params []float64) error {
 	hash := hashParams(params)
-	if r.lastValid && r.lastHash == hash {
+	if r.deviceValid && r.deviceHash == hash {
 		return nil
+	}
+
+	if len(params) != r.Dim() {
+		return fmt.Errorf("parameter count %d does not match renderer dimension %d", len(params), r.Dim())
 	}
 
 	circleCount := len(params) / paramsPerCircle
-	if circleCount == 0 {
-		// Reset image to white and zero cost.
-		for i := 0; i < len(r.imageScratch); i += 4 {
-			r.imageScratch[i+0] = 1.0
-			r.imageScratch[i+1] = 1.0
-			r.imageScratch[i+2] = 1.0
-			r.imageScratch[i+3] = 1.0
-		}
-		for i := range r.errorScratch {
-			r.errorScratch[i] = 0
-		}
-		r.lastCost = 0
-		r.lastHash = hash
-		r.lastValid = true
-		return nil
-	}
-
 	if circleCount*paramsPerCircle > len(r.paramsScratch) {
 		return fmt.Errorf("parameter count %d exceeds renderer capacity %d", circleCount, len(r.paramsScratch)/paramsPerCircle)
 	}
+	r.deviceValid = false
+	r.imageValid = false
 
 	for i := 0; i < circleCount*paramsPerCircle; i++ {
 		r.paramsScratch[i] = float32(params[i])
@@ -407,52 +550,124 @@ func (r *openCLRenderer) ensure(params []float64) error {
 	}
 
 	cc := C.cl_int(circleCount)
-	status = C.clSetKernelArg(r.kernel, 0, C.size_t(unsafe.Sizeof(r.paramsBuffer)), unsafe.Pointer(&r.paramsBuffer))
+	status = C.clSetKernelArg(r.renderKernel, 0, C.size_t(unsafe.Sizeof(r.paramsBuffer)), unsafe.Pointer(&r.paramsBuffer))
 	if status != C.CL_SUCCESS {
 		return r.clError("clSetKernelArg(params)", status)
 	}
 
-	status = C.clSetKernelArg(r.kernel, 1, C.size_t(unsafe.Sizeof(cc)), unsafe.Pointer(&cc))
+	status = C.clSetKernelArg(r.renderKernel, 1, C.size_t(unsafe.Sizeof(cc)), unsafe.Pointer(&cc))
 	if status != C.CL_SUCCESS {
 		return r.clError("clSetKernelArg(circleCount)", status)
 	}
 
-	global := C.size_t(r.pixelCount)
-	status = C.clEnqueueNDRangeKernel(r.queue, r.kernel, 1, nil, &global, nil, 0, nil, nil)
+	local := C.size_t(r.localSize)
+	localBytes := C.size_t(r.localSize * int(unsafe.Sizeof(float32(0))))
+	status = C.clSetKernelArg(r.renderKernel, 7, localBytes, nil)
 	if status != C.CL_SUCCESS {
-		return r.clError("clEnqueueNDRangeKernel", status)
+		return r.clError("clSetKernelArg(render scratch)", status)
 	}
 
-	status = C.clFinish(r.queue)
+	partialCount := ceilDiv(r.pixelCount, r.localSize)
+	global := C.size_t(partialCount * r.localSize)
+	status = C.clEnqueueNDRangeKernel(r.queue, r.renderKernel, 1, nil, &global, &local, 0, nil, nil)
 	if status != C.CL_SUCCESS {
-		return r.clError("clFinish", status)
+		return r.clError("clEnqueueNDRangeKernel(render_cost)", status)
 	}
 
-	if len(r.imageScratch) > 0 {
-		bytePixels := C.size_t(len(r.imageScratch) * int(unsafe.Sizeof(float32(0))))
-		status = C.clEnqueueReadBuffer(r.queue, r.outputBuffer, C.CL_TRUE, 0, bytePixels, unsafe.Pointer(&r.imageScratch[0]), 0, nil, nil)
+	input := r.partialBufferA
+	output := r.partialBufferB
+	for partialCount > 1 {
+		nextCount := ceilDiv(partialCount, r.localSize*2)
+		global = C.size_t(nextCount * r.localSize)
+		count := C.cl_int(partialCount)
+
+		status = C.clSetKernelArg(r.reduceKernel, 0, C.size_t(unsafe.Sizeof(input)), unsafe.Pointer(&input))
 		if status != C.CL_SUCCESS {
-			return r.clError("clEnqueueReadBuffer(output)", status)
+			return r.clError("clSetKernelArg(reduce input)", status)
 		}
-	}
-
-	if len(r.errorScratch) > 0 {
-		byteErrors := C.size_t(len(r.errorScratch) * int(unsafe.Sizeof(float32(0))))
-		status = C.clEnqueueReadBuffer(r.queue, r.errorBuffer, C.CL_TRUE, 0, byteErrors, unsafe.Pointer(&r.errorScratch[0]), 0, nil, nil)
+		status = C.clSetKernelArg(r.reduceKernel, 1, C.size_t(unsafe.Sizeof(output)), unsafe.Pointer(&output))
 		if status != C.CL_SUCCESS {
-			return r.clError("clEnqueueReadBuffer(error)", status)
+			return r.clError("clSetKernelArg(reduce output)", status)
 		}
+		status = C.clSetKernelArg(r.reduceKernel, 2, C.size_t(unsafe.Sizeof(count)), unsafe.Pointer(&count))
+		if status != C.CL_SUCCESS {
+			return r.clError("clSetKernelArg(reduce count)", status)
+		}
+		status = C.clSetKernelArg(r.reduceKernel, 3, localBytes, nil)
+		if status != C.CL_SUCCESS {
+			return r.clError("clSetKernelArg(reduce scratch)", status)
+		}
+		status = C.clEnqueueNDRangeKernel(r.queue, r.reduceKernel, 1, nil, &global, &local, 0, nil, nil)
+		if status != C.CL_SUCCESS {
+			return r.clError("clEnqueueNDRangeKernel(reduce_sum)", status)
+		}
+
+		partialCount = nextCount
+		input, output = output, input
 	}
 
-	var sum float64
-	for _, v := range r.errorScratch {
-		sum += float64(v)
+	var finalSum float32
+	status = C.clEnqueueReadBuffer(
+		r.queue,
+		input,
+		C.CL_TRUE,
+		0,
+		C.size_t(unsafe.Sizeof(finalSum)),
+		unsafe.Pointer(&finalSum),
+		0,
+		nil,
+		nil,
+	)
+	if status != C.CL_SUCCESS {
+		return r.clError("clEnqueueReadBuffer(reduced cost)", status)
 	}
 
-	r.lastCost = sum / float64(r.pixelCount*3)
-	r.lastHash = hash
-	r.lastValid = true
+	r.lastCost = float64(finalSum) / float64(r.pixelCount*3)
+	r.deviceHash = hash
+	r.deviceValid = true
+	r.evaluations++
 
+	return nil
+}
+
+func (r *openCLRenderer) materializeImage(hash uint64) error {
+	if r.imageValid && r.imageHash == hash {
+		return nil
+	}
+	if !r.deviceValid || r.deviceHash != hash {
+		return fmt.Errorf("OpenCL output is not available for requested parameters")
+	}
+
+	if r.imageScratch == nil {
+		r.imageScratch = make([]float32, r.pixelCount*4)
+	}
+	bytePixels := C.size_t(len(r.imageScratch) * int(unsafe.Sizeof(float32(0))))
+	status := C.clEnqueueReadBuffer(
+		r.queue,
+		r.outputBuffer,
+		C.CL_TRUE,
+		0,
+		bytePixels,
+		unsafe.Pointer(&r.imageScratch[0]),
+		0,
+		nil,
+		nil,
+	)
+	if status != C.CL_SUCCESS {
+		return r.clError("clEnqueueReadBuffer(output)", status)
+	}
+
+	pix := r.renderImage.Pix
+	for i := 0; i < r.pixelCount; i++ {
+		offset := i * 4
+		pix[offset+0] = clampToByte(r.imageScratch[offset+0] * 255.0)
+		pix[offset+1] = clampToByte(r.imageScratch[offset+1] * 255.0)
+		pix[offset+2] = clampToByte(r.imageScratch[offset+2] * 255.0)
+		pix[offset+3] = clampToByte(r.imageScratch[offset+3] * 255.0)
+	}
+
+	r.imageHash = hash
+	r.imageValid = true
 	return nil
 }
 
@@ -481,13 +696,21 @@ func (r *openCLRenderer) release() {
 		C.clReleaseMemObject(r.outputBuffer)
 		r.outputBuffer = nil
 	}
-	if r.errorBuffer != nil {
-		C.clReleaseMemObject(r.errorBuffer)
-		r.errorBuffer = nil
+	if r.partialBufferA != nil {
+		C.clReleaseMemObject(r.partialBufferA)
+		r.partialBufferA = nil
 	}
-	if r.kernel != nil {
-		C.clReleaseKernel(r.kernel)
-		r.kernel = nil
+	if r.partialBufferB != nil {
+		C.clReleaseMemObject(r.partialBufferB)
+		r.partialBufferB = nil
+	}
+	if r.renderKernel != nil {
+		C.clReleaseKernel(r.renderKernel)
+		r.renderKernel = nil
+	}
+	if r.reduceKernel != nil {
+		C.clReleaseKernel(r.reduceKernel)
+		r.reduceKernel = nil
 	}
 	if r.program != nil {
 		C.clReleaseProgram(r.program)

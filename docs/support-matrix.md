@@ -41,13 +41,15 @@ OpenCL is an experimental, opt-in joint renderer:
 - expect device/driver-specific behavior;
 - validate CPU/OpenCL parity on the actual target device.
 
-The ordinary and cross-build CI jobs do not validate OpenCL runtime behavior. A
-separate Ubuntu job installs OpenCL development headers and compiles all
-GPU-tagged packages and tests, but there is no required real-device GPU runner.
-Runtime OpenCL failures may cause the experimental renderer to degrade
-individual rendering/cost work to its CPU compatibility path and emit a
-warning; callers must not interpret the backend label alone as proof that every
-evaluation ran on the GPU.
+The ordinary and cross-build CI jobs intentionally exclude OpenCL. A separate
+Ubuntu job installs the OpenCL headers and PoCL CPU runtime, verifies platform
+discovery, compiles all GPU-tagged packages, and gates focused OpenCL runtime
+tests. PoCL covers kernel correctness and lifecycle behavior deterministically;
+there is still no required real-device GPU runner, vendor-driver compatibility
+gate, or GPU performance threshold. Runtime OpenCL failures may cause the
+experimental renderer to degrade individual rendering/cost work to its CPU
+compatibility path and emit a warning; callers must not interpret the backend
+label alone as proof that every evaluation ran on the GPU.
 
 ## Server deployment
 

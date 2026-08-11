@@ -40,8 +40,8 @@ behavior is production-ready.
 - CPU is the only backend supporting joint, sequential, and batch pipelines and
   custom base canvases.
 - OpenCL is experimental, joint-only, CGO-dependent, and requires local headers,
-  a loader, a driver, and a usable device. It is not exercised by the standard
-  portable CI matrix.
+  a loader, a driver, and a usable device. It is excluded from the standard
+  portable matrix; a dedicated CI job exercises it through the PoCL CPU runtime.
 - The experimental OpenCL renderer contains a CPU compatibility degradation path
   for runtime rendering/cost errors. Inspect warning logs and device-specific
   parity tests when GPU execution matters.
@@ -70,9 +70,11 @@ behavior is production-ready.
 - The standard gates cover generation drift, formatting, vet, pinned
   staticcheck, short tests, race short tests, a 50% aggregate coverage floor and
   artifact, ordinary builds, selected CGO-disabled cross-builds, an
-  OpenCL-header GPU-tag compile, and pinned `govulncheck`.
+  OpenCL/PoCL GPU-tag compile and focused runtime suite, and pinned
+  `govulncheck`.
 - Real-device GPU tests, per-package coverage thresholds, long-running lifecycle
-  tests, and performance regression thresholds are not required gates yet.
+  tests, vendor-driver coverage, and performance regression thresholds are not
+  required gates yet. PoCL CI results do not establish actual-GPU performance.
 - Cross-compilation proves that packages compile for a target; it does not test
   runtime behavior on that operating system or architecture.
 - The existence of a workflow is not evidence that a revision passed it. Use

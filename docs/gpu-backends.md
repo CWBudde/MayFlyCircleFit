@@ -1,7 +1,7 @@
-# GPU Backend Research (Task 11.1 Draft)
+# GPU Backend Design and Status
 
 ## Baseline Constraints
-- The renderer contract lives in `internal/fit/renderer.go` and expects `Render`, `Cost`, and `Reference`.
+- The renderer contract lives in `internal/fit/renderer/renderer.go` and expects `Render`, `Cost`, and `Reference`.
 - Current CPU path composites circles in Go and computes SSD via SIMD kernels; GPU path must match float32/64 semantics within tolerance.
 - Reference images are static per run, while candidate circle parameters stream in for each evaluation; minimizing host↔device transfers is critical.
 - CLI aims to stay cross-platform (Windows, Linux, macOS) with optional headless execution on build agents.
@@ -16,7 +16,7 @@
 
 ### OpenCL
 - **Bindings:** `github.com/jgillich/go-opencl/cl`; maintained, maps closely to C API.
-- **Approach:** One kernel composites circles into an image buffer, second kernel (or same with atomics) performs per-pixel SSD reduction. Keeps reference image resident on device memory.
+- **Approach:** `render_cost` composites circles and performs the first workgroup SSD reduction. A generic `reduce_sum` kernel then ping-pongs partial sums until one scalar remains. The reference and rendered image stay resident on the device between evaluations.
 - **Pros:** Designed for compute; portable across NVIDIA/AMD/Intel GPU vendors and even CPU implementations. Headless-friendly; no windowing.
 - **Cons:** Apple deprecated OpenCL (still available on Intel Macs, missing on Apple Silicon without third-party ICD). Kernel language feels lower-level; need to manage workgroup tuning for each vendor. Error messages less friendly.
 - **Fit:** Strong choice for broad hardware coverage on Windows/Linux; document macOS limitations and provide CPU fallback.
@@ -50,15 +50,28 @@ Start with **OpenCL** as the primary GPU backend:
 
 Parallel to the OpenCL prototype, scope an **OpenGL fragment-shader fallback** for macOS or integrated GPUs where OpenCL is unavailable, reusing the same parameter packing logic.
 
-## Immediate Next Steps
-1. Draft `internal/fit/gpu` package layout (`context.go`, `opencl_renderer.go`, `kernels/`).
-2. Author initial OpenCL kernels: circle compositing (float32 RGBA) and SSD reduction (local reductions + final sum on host).
-3. Expand CLI/server plumbing so `--backend opencl` flows through pipelines; add graceful fallback messaging.
-4. Run and interpret the new `go test -tags gpu ./internal/fit -run TestOpenCLRendererMatchesCPU` and `go test -tags gpu ./internal/fit -bench BenchmarkRendererCost` once hardware is available; document variances.
-5. Capture investigation notes in this document as kernels mature (driver quirks, tuning parameters, fallbacks).
-
-## Scaffolding Status
-- `internal/fit/backend.go` centralises backend selection and normalises CLI input.
+## Implementation Status
+- `internal/fit/renderer/backend.go` centralises backend selection and normalises CLI input.
 - `internal/fit/gpu/opencl_runtime_*.go` enumerates platforms/devices and bootstraps an OpenCL context (GPU preferred, CPU fallback) when built with `-tags gpu`; non-GPU builds return a helpful error.
-- `internal/fit/renderer_opencl_gpu.go` now implements the full renderer+cost path in OpenCL with CPU fallback on errors; next step is to reconnect server pipelines and add benchmarking/validation.
+- `internal/fit/renderer/renderer_opencl_gpu.go` implements rendering and cost evaluation in OpenCL with CPU degradation on runtime errors. Cost reduction is entirely on-device: the host reads only the final float rather than a full pixel-error buffer.
+- Cost and image caching are separate. `Cost` leaves the rendered output resident; `Render` reads the full image only when requested and can reuse output from a matching cost evaluation without dispatching the kernels again.
+- The kernel quantizes composited channels to NRGBA semantics before scoring, so the reduced cost describes the image returned by `Render`. CPU/OpenCL parity tests allow a 1% cost tolerance and two channel values for float32 geometry and edge-coverage differences.
 - CLI exposes `--backend` (default `cpu`) and reports the selected backend during runs. GPU mode currently renders and scores via OpenCL when compiled with `-tags gpu`.
+
+## Validation
+
+The Ubuntu GPU-tag CI job installs the PoCL CPU implementation, verifies OpenCL
+platform discovery, compiles all GPU-tagged packages, and runs the focused
+OpenCL parity, reduction, and caching tests. This is deterministic runtime
+coverage of the OpenCL path, but it is not evidence of GPU throughput or vendor
+driver compatibility.
+
+Run the same focused tests on each target GPU before relying on the backend:
+
+```sh
+go test -tags gpu -count=1 ./internal/fit/renderer -run '^TestOpenCL'
+go test -tags gpu ./internal/fit/renderer -bench '^BenchmarkRenderer'
+```
+
+Performance claims require benchmarks on actual GPU hardware. PoCL executes on
+the CI runner CPU and is used for correctness and lifecycle coverage only.
