@@ -546,14 +546,9 @@ for y := centerY; y < maxY; y++ {
 - [x] Document GPU requirements and setup in README (experimental build instructions referencing doc).
 - [ ] Test GPU detection and initialization (pending hardware run + automated checks).
 
-### Task 11.3: Design GPU Renderer Architecture
-- [x] Create `internal/fit/renderer_<gpu>.go` skeleton
-- [x] Implement `Renderer` interface for GPU backend
-- [x] Design shader/kernel for circle compositing
-- [x] Design reduction kernel for cost computation
-- [x] Plan memory transfer strategy (CPU ↔ GPU)
-- [x] Minimize transfers: keep reference image on GPU
-- [ ] Document GPU memory layout (add notes in docs/gpu-backends.md)
+### Task 11.3: Design GPU Renderer Architecture ✅
+
+Completed: pluggable OpenCL renderer architecture, compositing and reduction kernel designs, persistent reference storage, and documented device-memory layout and transfers.
 
 ### Task 11.4: Implement GPU Circle Compositing Shader/Kernel
 - [x] Write shader/kernel for circle rendering
@@ -565,24 +560,13 @@ for y := centerY; y < maxY; y++ {
 - [x] Test with simple single-circle cases (unit test under `//go:build gpu`)
 - [ ] Verify visual correctness against CPU renderer (expand tests with golden images)
 
-### Task 11.5: Implement GPU Cost Computation
-- [x] Write shader/kernel for per-pixel error computation
-  - [x] Input: rendered image, reference image
-  - [x] Output: per-pixel squared differences
-- [x] Implement GPU reduction to scalar cost
-  - [x] Option 1: Multi-pass reduction kernel (selected implementation)
-  - [x] Option 2: GPU compute + CPU final sum (initial prototype, superseded)
-  - [x] Choose based on performance (on-device reduction avoids per-pixel error readback)
-- [x] Test cost computation accuracy
-- [x] Compare with CPU cost (allow float tolerance)
+### Task 11.5: Implement GPU Cost Computation ✅
 
-### Task 11.6: Implement Memory Transfer Strategy
-- [x] Upload reference image to GPU once at initialization
-- [x] Transfer circle parameters to GPU per evaluation
-- [x] Minimize transfer overhead with persistent device buffers and lazy host image readback
-- [ ] Consider pinned memory for faster transfers
-- [ ] Profile memory transfer overhead
-- [ ] Optimize transfer strategy based on profiling
+Completed: quantized per-pixel SSD in the render kernel, portable multi-pass on-device reduction to a four-byte scalar readback, and CPU/OpenCL tolerance-based parity coverage.
+
+### Task 11.6: Implement Memory Transfer Strategy ✅
+
+Completed: persistent reference/parameter/output buffers, hash-aware parameter uploads, four-byte cost readback, lazy cached image materialization, documented PoCL transfer profiling, and packed `uchar4` image buffers that cut pixel storage/readback by 75%; pinned staging remains unjustified without vendor-GPU evidence.
 
 ### Task 11.7: Integrate GPU Renderer into Pipeline
 - [ ] Update pipeline functions to accept GPU renderer

@@ -58,6 +58,39 @@ Parallel to the OpenCL prototype, scope an **OpenGL fragment-shader fallback** f
 - The kernel quantizes composited channels to NRGBA semantics before scoring, so the reduced cost describes the image returned by `Render`. CPU/OpenCL parity tests allow a 1% cost tolerance and two channel values for float32 geometry and edge-coverage differences.
 - CLI exposes `--backend` (default `cpu`) and reports the selected backend during runs. GPU mode currently renders and scores via OpenCL when compiled with `-tags gpu`.
 
+## Memory Layout and Transfers
+
+Let `P = width * height`, `K` be the circle count, `L` the selected reduction
+workgroup size, and `G = ceil(P / L)`. Buffers are allocated once per renderer
+and released with its OpenCL runtime.
+
+| Storage | Device layout and size | Lifetime | Host/device traffic |
+|---------|------------------------|----------|---------------------|
+| Circle parameters | `float32[7*K]`, `28*K` bytes | Persistent | Host to device only when the parameter hash changes. The default 10-circle job writes 280 bytes; the accepted 1000-circle maximum writes 28,000 bytes. |
+| Reference image | packed `uchar4[P]` NRGBA, `4*P` bytes | Persistent, read-only | Uploaded once during initialization. Non-zero image origins and padded host strides are normalized row by row before upload. |
+| Rendered image | packed `uchar4[P]` NRGBA, `4*P` bytes | Persistent | Remains device-resident after `Cost`; copied to the reusable host `image.NRGBA` only when `Render` requests a new parameter hash. |
+| Partial sums A/B | `float32[G]` each, `4*G` bytes each | Persistent | Device-only ping-pong storage for multi-pass reduction. |
+| Reduction scratch | `float32[L]`, `4*L` bytes per workgroup | One kernel dispatch | OpenCL local memory; never transferred to the host. |
+| Final cost | one `float32`, 4 bytes | Per changed evaluation | Device to host after reduction; this read also synchronizes the evaluation required by the optimizer. |
+
+Repeated `Cost` calls with identical parameters reuse the cached device result.
+Calling `Render` immediately after `Cost` reuses that same rendered output rather
+than dispatching kernels again. Packing the reference and output as `uchar4`
+replaced the prototype's `float4` storage, reducing both persistent pixel-buffer
+memory and the only large, lazy image readback by 75% while matching NRGBA's
+native representation.
+
+### Pinned-memory decision
+
+Pinned host memory was evaluated but is deliberately not used yet. The only
+recurring host-to-device payload is `28*K` bytes, at most 28 KB under the current
+input limit, while every evaluation already has to wait for a four-byte reduced
+cost. An OpenCL pinned buffer would add map/unmap synchronization, lifetime and
+cgo ownership complexity, and vendor-dependent behavior. Packing the large
+image buffers removes 75% of the material transfer without those costs. Revisit
+pinned staging only if event profiling on a supported discrete GPU shows that
+parameter upload is a meaningful share of evaluation time.
+
 ## Validation
 
 The Ubuntu GPU-tag CI job installs the PoCL CPU implementation, verifies OpenCL
@@ -75,3 +108,45 @@ go test -tags gpu ./internal/fit/renderer -bench '^BenchmarkRenderer'
 
 Performance claims require benchmarks on actual GPU hardware. PoCL executes on
 the CI runner CPU and is used for correctness and lifecycle coverage only.
+
+### Local PoCL transfer baseline
+
+The local development baseline uses PoCL on `cpu-haswell-AMD Ryzen 5 4600H with
+Radeon Graphics` (12 compute units). The prototype materialization path read 16
+bytes per pixel and then converted float channels on the host; inspecting that
+transfer boundary motivated eliminating the conversion and reducing the
+readback to 4 bytes per pixel. PoCL uses host CPU memory, so this is not evidence
+about PCIe transfers or real-GPU performance.
+
+With packed `uchar4` buffers, the focused local microbenchmarks reported these
+medians (`-benchtime=300ms -count=3`, with zero Go allocations per operation):
+
+| Boundary | Cases | PoCL median |
+|----------|-------|-------------|
+| Parameter pack and blocking upload | K=1, 10, 50, 100 | 21.96, 22.25, 22.45, 22.18 µs/op |
+| Resident image readback | 64², 256², 512², 1024² | 22.14, 34.61, 92.20, 473.78 µs/op |
+
+The nearly constant parameter times through 2.8 KB indicate that PoCL queue and
+driver latency dominates this range, so pinned parameter staging has no local
+justification. The packed readback scales with image size and avoids both the
+old four-times-larger transfer and its host conversion loop. These conclusions
+apply to this PoCL CPU baseline only. A short post-change end-to-end comparison
+was noisy, including an inverted 256x256 `Cost`/`CostThenRender` result, so it is
+not used for a before/after speedup claim.
+
+Reproduce the focused correctness and transfer-sensitive benchmarks with:
+
+```sh
+MAYFLY_REQUIRE_OPENCL=1 go test -tags gpu -count=1 \
+  ./internal/fit/renderer -run '^TestOpenCL'
+MAYFLY_REQUIRE_OPENCL=1 go test -tags gpu -run '^$' \
+  -bench '^BenchmarkOpenCL(ParameterPackAndUpload|ResidentImageReadback)$' \
+  -benchmem -benchtime=2s -count=5 ./internal/fit/renderer
+go test -tags gpu -run '^$' -bench '^BenchmarkRenderer(Cost|CostThenRender)$' \
+  -benchmem -benchtime=2s -count=5 ./internal/fit/renderer
+```
+
+Record the OpenCL device name/vendor with every result. Task 11.9 remains open
+until the full circle-count and image-size matrix is measured on supported
+vendor GPUs; those measurements, not this PoCL baseline, determine crossover
+points and whether pinned memory should be reconsidered.

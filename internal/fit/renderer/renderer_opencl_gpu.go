@@ -59,8 +59,8 @@ __kernel void render_cost(
     const int circleCount,
     const int width,
     const int height,
-    __global const float4 *reference,
-    __global float4 *outImage,
+    __global const uchar4 *reference,
+    __global uchar4 *outImage,
     __global float *partialSums,
     __local float *scratch) {
 
@@ -109,11 +109,10 @@ __kernel void render_cost(
         color.xyz = clamp(color.xyz, 0.0f, 1.0f);
         color.w = clamp(color.w, 0.0f, 1.0f);
 
-        outImage[idx] = color;
-
-        const float4 ref = reference[idx];
         const float3 renderedBytes = floor(color.xyz * 255.0f + 0.5f);
-        const float3 referenceBytes = floor(ref.xyz * 255.0f + 0.5f);
+        outImage[idx] = convert_uchar4_sat((float4)(renderedBytes, 255.0f));
+
+        const float3 referenceBytes = convert_float3(reference[idx].xyz);
         const float dr = renderedBytes.x - referenceBytes.x;
         const float dg = renderedBytes.y - referenceBytes.y;
         const float db = renderedBytes.z - referenceBytes.z;
@@ -193,7 +192,6 @@ type openCLRenderer struct {
 	partialBufferB  C.cl_mem
 
 	paramsScratch []float32
-	imageScratch  []float32
 
 	renderImage *image.NRGBA
 
@@ -222,7 +220,7 @@ func NewOpenCLRenderer(reference *image.NRGBA, k int) (Renderer, func(), error) 
 		width:         reference.Bounds().Dx(),
 		height:        reference.Bounds().Dy(),
 		pixelCount:    reference.Bounds().Dx() * reference.Bounds().Dy(),
-		paramsScratch: make([]float32, k*7), // 7 params per circle
+		paramsScratch: make([]float32, k*paramsPerCircle),
 		renderImage:   image.NewNRGBA(image.Rect(0, 0, reference.Bounds().Dx(), reference.Bounds().Dy())),
 	}
 
@@ -285,11 +283,11 @@ func (r *openCLRenderer) init() error {
 	bufferPixels := max(1, r.pixelCount)
 	bufferParams := max(1, len(r.paramsScratch))
 	partialCount := max(1, ceilDiv(r.pixelCount, r.localSize))
-	bytePixels := C.size_t(bufferPixels * 4 * int(unsafe.Sizeof(float32(0))))
+	bytePixels := C.size_t(bufferPixels * 4)
 	bytePartials := C.size_t(partialCount * int(unsafe.Sizeof(float32(0))))
 	byteParams := C.size_t(bufferParams * int(unsafe.Sizeof(float32(0))))
 
-	r.outputBuffer = C.clCreateBuffer(r.context, C.CL_MEM_READ_WRITE, bytePixels, nil, &status)
+	r.outputBuffer = C.clCreateBuffer(r.context, C.CL_MEM_WRITE_ONLY|C.CL_MEM_HOST_READ_ONLY, bytePixels, nil, &status)
 	if status != C.CL_SUCCESS {
 		return r.clError("clCreateBuffer(output)", status)
 	}
@@ -304,26 +302,17 @@ func (r *openCLRenderer) init() error {
 		return r.clError("clCreateBuffer(partialB)", status)
 	}
 
-	r.paramsBuffer = C.clCreateBuffer(r.context, C.CL_MEM_READ_ONLY, byteParams, nil, &status)
+	r.paramsBuffer = C.clCreateBuffer(r.context, C.CL_MEM_READ_ONLY|C.CL_MEM_HOST_WRITE_ONLY, byteParams, nil, &status)
 	if status != C.CL_SUCCESS {
 		return r.clError("clCreateBuffer(params)", status)
 	}
 
-	refFloats := make([]float32, bufferPixels*4)
-	bounds := r.reference.Bounds()
-	for y := 0; y < r.height; y++ {
-		sourceOffset := r.reference.PixOffset(bounds.Min.X, bounds.Min.Y+y)
-		for x := 0; x < r.width; x++ {
-			source := sourceOffset + x*4
-			target := (y*r.width + x) * 4
-			refFloats[target+0] = float32(r.reference.Pix[source+0]) / 255.0
-			refFloats[target+1] = float32(r.reference.Pix[source+1]) / 255.0
-			refFloats[target+2] = float32(r.reference.Pix[source+2]) / 255.0
-			refFloats[target+3] = float32(r.reference.Pix[source+3]) / 255.0
-		}
+	refBytes := packReferenceNRGBA(r.reference)
+	if len(refBytes) == 0 {
+		refBytes = make([]byte, 4)
 	}
 
-	r.referenceBuffer = C.clCreateBuffer(r.context, C.CL_MEM_READ_ONLY|C.CL_MEM_COPY_HOST_PTR, bytePixels, unsafe.Pointer(&refFloats[0]), &status)
+	r.referenceBuffer = C.clCreateBuffer(r.context, C.CL_MEM_READ_ONLY|C.CL_MEM_COPY_HOST_PTR|C.CL_MEM_HOST_NO_ACCESS, bytePixels, unsafe.Pointer(&refBytes[0]), &status)
 	if status != C.CL_SUCCESS {
 		return r.clError("clCreateBuffer(reference)", status)
 	}
@@ -492,16 +481,6 @@ func (r *openCLRenderer) Render(params []float64) *image.NRGBA {
 	return r.renderImage
 }
 
-func clampToByte(v float32) uint8 {
-	if v < 0 {
-		return 0
-	}
-	if v > 255 {
-		return 255
-	}
-	return uint8(v + 0.5)
-}
-
 func (r *openCLRenderer) Cost(params []float64) float64 {
 	if len(params) != r.Dim() || r.pixelCount == 0 {
 		return r.fallback.Cost(params)
@@ -536,19 +515,11 @@ func (r *openCLRenderer) ensure(params []float64) error {
 	r.deviceValid = false
 	r.imageValid = false
 
-	for i := 0; i < circleCount*paramsPerCircle; i++ {
-		r.paramsScratch[i] = float32(params[i])
+	if err := r.uploadParams(params); err != nil {
+		return err
 	}
 
 	var status C.cl_int
-	if len(r.paramsScratch) > 0 {
-		byteParams := C.size_t(circleCount * paramsPerCircle * int(unsafe.Sizeof(float32(0))))
-		status = C.clEnqueueWriteBuffer(r.queue, r.paramsBuffer, C.CL_TRUE, 0, byteParams, unsafe.Pointer(&r.paramsScratch[0]), 0, nil, nil)
-		if status != C.CL_SUCCESS {
-			return r.clError("clEnqueueWriteBuffer(params)", status)
-		}
-	}
-
 	cc := C.cl_int(circleCount)
 	status = C.clSetKernelArg(r.renderKernel, 0, C.size_t(unsafe.Sizeof(r.paramsBuffer)), unsafe.Pointer(&r.paramsBuffer))
 	if status != C.CL_SUCCESS {
@@ -630,6 +601,28 @@ func (r *openCLRenderer) ensure(params []float64) error {
 	return nil
 }
 
+// uploadParams converts the optimizer's float64 vector into the persistent
+// float32 staging slice and transfers only those parameters to the device.
+func (r *openCLRenderer) uploadParams(params []float64) error {
+	if len(params) > len(r.paramsScratch) {
+		return fmt.Errorf("parameter count %d exceeds renderer capacity %d", len(params), len(r.paramsScratch))
+	}
+	if len(params) == 0 {
+		return nil
+	}
+
+	for i, param := range params {
+		r.paramsScratch[i] = float32(param)
+	}
+
+	byteParams := C.size_t(len(params) * int(unsafe.Sizeof(float32(0))))
+	status := C.clEnqueueWriteBuffer(r.queue, r.paramsBuffer, C.CL_TRUE, 0, byteParams, unsafe.Pointer(&r.paramsScratch[0]), 0, nil, nil)
+	if status != C.CL_SUCCESS {
+		return r.clError("clEnqueueWriteBuffer(params)", status)
+	}
+	return nil
+}
+
 func (r *openCLRenderer) materializeImage(hash uint64) error {
 	if r.imageValid && r.imageHash == hash {
 		return nil
@@ -638,17 +631,14 @@ func (r *openCLRenderer) materializeImage(hash uint64) error {
 		return fmt.Errorf("OpenCL output is not available for requested parameters")
 	}
 
-	if r.imageScratch == nil {
-		r.imageScratch = make([]float32, r.pixelCount*4)
-	}
-	bytePixels := C.size_t(len(r.imageScratch) * int(unsafe.Sizeof(float32(0))))
+	bytePixels := C.size_t(r.pixelCount * 4)
 	status := C.clEnqueueReadBuffer(
 		r.queue,
 		r.outputBuffer,
 		C.CL_TRUE,
 		0,
 		bytePixels,
-		unsafe.Pointer(&r.imageScratch[0]),
+		unsafe.Pointer(&r.renderImage.Pix[0]),
 		0,
 		nil,
 		nil,
@@ -657,18 +647,25 @@ func (r *openCLRenderer) materializeImage(hash uint64) error {
 		return r.clError("clEnqueueReadBuffer(output)", status)
 	}
 
-	pix := r.renderImage.Pix
-	for i := 0; i < r.pixelCount; i++ {
-		offset := i * 4
-		pix[offset+0] = clampToByte(r.imageScratch[offset+0] * 255.0)
-		pix[offset+1] = clampToByte(r.imageScratch[offset+1] * 255.0)
-		pix[offset+2] = clampToByte(r.imageScratch[offset+2] * 255.0)
-		pix[offset+3] = clampToByte(r.imageScratch[offset+3] * 255.0)
-	}
-
 	r.imageHash = hash
 	r.imageValid = true
 	return nil
+}
+
+func packReferenceNRGBA(reference *image.NRGBA) []byte {
+	if reference == nil || reference.Bounds().Empty() {
+		return nil
+	}
+
+	bounds := reference.Bounds()
+	width := bounds.Dx()
+	packed := make([]byte, width*bounds.Dy()*4)
+	rowBytes := width * 4
+	for y := 0; y < bounds.Dy(); y++ {
+		source := reference.PixOffset(bounds.Min.X, bounds.Min.Y+y)
+		copy(packed[y*rowBytes:(y+1)*rowBytes], reference.Pix[source:source+rowBytes])
+	}
+	return packed
 }
 
 func (r *openCLRenderer) Dim() int {
