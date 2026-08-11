@@ -1286,6 +1286,7 @@ Completed: typed DTOs, bounded cancellable clients, escaped IDs, validated logs,
 - [x] Audit enqueueing tests and ensure background workers are joined through `t.Cleanup`/explicit shutdown.
 - [x] Add multi-job lifecycle stress tests and same-job store concurrency tests.
 - [x] Add an opt-in clean end-to-end test and dedicated CI job: build → serve → create → observe SSE progress → checkpoint → cancel/restart → resume → fetch artifacts (`just test-e2e`).
+- [x] Gate the repository's automated SemVer-tag release job on every required CI job and publish verified portable archives draft-first.
 
 **Acceptance Checks:**
 
@@ -1352,4 +1353,4 @@ This plan covers **Phases 0-14** in complete detail with bite-sized, testable ta
 - Commit frequently with descriptive messages
 - Document learnings and decisions in CLAUDE.md
 
-**Current Status:** Historical feature phases reached Phase 11-era implementation, and the main Phase 14 remediation waves now pass the local generation, build, test, race, static-analysis, 56.1% aggregate coverage, vulnerability, portability, GPU-compile, PoCL runtime, clean-clone recipe, metadata-free export, and release-lifecycle end-to-end gates. **Phase 14 remains active: remote CI must pass twice, release-policy enforcement remains open, and real-GPU vendor/performance validation is still required before promoting the experimental OpenCL backend.**
+**Current Status:** Historical feature phases reached Phase 11-era implementation, and the main Phase 14 remediation waves now pass the local generation, build, test, race, static-analysis, 56.1% aggregate coverage, vulnerability, portability, GPU-compile, PoCL runtime, clean-clone recipe, metadata-free export, and release-lifecycle end-to-end gates. Automated SemVer releases are now dependency-gated in the repository workflow, but **Phase 14 remains active: remote CI must pass twice, repository-admin controls must prevent manual release bypass, and real-GPU vendor/performance validation is still required before promoting the experimental OpenCL backend.**

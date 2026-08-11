@@ -21,6 +21,8 @@ release is declared by this file.
 - Concurrent multi-job lifecycle stress coverage and atomic persistence fault
   injection for partial-write/rename recovery.
 - End-to-end sequential and batch pipeline benchmarks with allocation reporting.
+- A SemVer tag-driven release pipeline with CI dependencies, portable archives,
+  build metadata, and SHA-256 manifests.
 
 ### Changed
 

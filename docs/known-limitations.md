@@ -84,5 +84,13 @@ behavior is production-ready.
   runtime behavior on that operating system or architecture.
 - The existence of a workflow is not evidence that a revision passed it. Use
   the workflow result and Phase 14 acceptance checks for release decisions.
+- Valid SemVer tags run the complete required matrix before the repository's
+  automated release job can publish portable CPU archives. This dependency gate
+  does not prevent a sufficiently privileged GitHub user from creating a tag or
+  release manually; repository roles and rules remain an administrative release
+  requirement.
+- Release archives are not signed and do not yet include provenance attestations
+  or an SBOM. The published SHA-256 manifest detects accidental or post-download
+  corruption but is not a substitute for signature verification.
 
 Track remaining work in the active [Phase 14 plan](../PLAN.md#phase-14-production-readiness-remediation--blocking).

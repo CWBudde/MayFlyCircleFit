@@ -9,6 +9,10 @@ help:
 build: templ
 	go build -buildvcs=false -o {{BUILD_DIR}}/{{BINARY_NAME}} .
 
+# Build portable release archives for a semantic version (without a leading v)
+release version:
+	bash scripts/build-release.sh "{{version}}"
+
 # Build and run the application
 run: build
 	{{BUILD_DIR}}/{{BINARY_NAME}}
@@ -49,6 +53,7 @@ check: templ-check
 # Clean build artifacts
 clean:
 	rm -rf {{BUILD_DIR}}
+	rm -rf ./dist
 	rm -f coverage.out coverage.html
 	rm -f *.prof *.pprof
 

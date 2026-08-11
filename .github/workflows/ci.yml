@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [master]
+    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -229,3 +230,69 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
       - name: Scan
         run: govulncheck ./...
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - generation
+      - quality
+      - staticcheck
+      - test
+      - e2e
+      - coverage
+      - race
+      - build
+      - cross-build
+      - gpu-compile
+      - vulnerability
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Validate release tag and source commit
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            printf 'Release tag is not valid SemVer: %s\n' "$tag"
+            exit 1
+          fi
+          git fetch --no-tags origin master
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/master; then
+            printf 'Tagged commit %s is not part of master.\n' "$GITHUB_SHA"
+            exit 1
+          fi
+      - name: Build and verify release archives
+        shell: bash
+        env:
+          MAYFLY_RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          export MAYFLY_RELEASE_BUILD_DATE="$(git show -s --format=%cI "$GITHUB_SHA")"
+          bash scripts/build-release.sh "${GITHUB_REF_NAME#v}"
+          cd dist
+          sha256sum --check SHA256SUMS
+      - name: Create draft and publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            prerelease+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --verify-tag \
+            --draft \
+            --generate-notes \
+            --title "$GITHUB_REF_NAME" \
+            "${prerelease[@]}"
+          gh release edit "$GITHUB_REF_NAME" --draft=false

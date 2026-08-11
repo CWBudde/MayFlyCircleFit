@@ -64,7 +64,8 @@ because there is no repository metadata to stamp into the binary.
 - `resume <job-id>` restarts from a saved best candidate, remotely or with
   `--local`.
 - `checkpoints list` and `checkpoints clean` inspect or prune persisted jobs.
-- `version` prints the application version string.
+- `version` and the root `--version` flag print version, commit, and build-date
+  metadata. Source builds identify themselves as development builds.
 
 Use `./mayflycirclefit <command> --help` for the complete flag set.
 
@@ -142,6 +143,11 @@ dedicated release-lifecycle E2E job equivalent to `just test-e2e`. Their
 presence is not a claim that the current branch or release candidate has passed
 them; consult the actual workflow result.
 
+SemVer tags trigger the same complete matrix and can publish portable CPU
+archives only after every required job succeeds. See the
+[release process](docs/releasing.md) for the local packaging command, artifact
+contents, tag format, and repository-policy boundary.
+
 ## Repository layout
 
 ```text
@@ -157,6 +163,6 @@ assets/                 Small example input
 docs/                   Support, limitations, and design notes
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md), and
-[PLAN.md](PLAN.md) for contribution checks, current changes, and remediation
-status.
+See [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md), the
+[release process](docs/releasing.md), and [PLAN.md](PLAN.md) for contribution
+checks, current changes, publishing, and remediation status.
