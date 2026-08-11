@@ -34,6 +34,7 @@ go build -o mayflycirclefit .
   --out out.png \
   --mode joint \
   --backend cpu \
+  --threads 1 \
   --circles 1 \
   --iters 1 \
   --pop 20 \
@@ -69,6 +70,12 @@ because there is no repository metadata to stamp into the binary.
 
 Use `./mayflycirclefit <command> --help` for the complete flag set.
 
+CPU rendering shards the image into horizontal scanline bands. `run --threads`
+controls the worker count and defaults to `GOMAXPROCS`; the effective value is
+capped at `GOMAXPROCS` and the image height. Use `--threads 1` for small inputs,
+where coordination can cost more than it saves. See the [threading benchmarks
+and guidance](docs/cpu-rendering-threads.md).
+
 ## Trusted-local server
 
 Server mode is designed for a trusted local machine. It has no authentication
@@ -93,11 +100,27 @@ A minimal API job can be submitted from the checkout directory with:
 ```sh
 curl -fsS http://localhost:8080/api/v1/jobs \
   -H 'Content-Type: application/json' \
-  --data '{"refPath":"assets/test.png","mode":"joint","backend":"cpu","circles":1,"iters":1,"popSize":20,"seed":42}'
+  --data '{"refPath":"assets/test.png","mode":"joint","backend":"cpu","threads":1,"circles":1,"iters":1,"popSize":20,"seed":42}'
 ```
 
 This same-origin check is a browser defense, not an authentication boundary.
 Command-line clients normally omit `Origin` and are allowed.
+
+Progress can be observed either by polling the status resource or by keeping an
+SSE connection open. SSE is an optional second transport; polling remains
+available for clients that cannot maintain streaming HTTP connections.
+
+```sh
+# Polling
+curl -fsS http://localhost:8080/api/v1/jobs/JOB_ID/status
+
+# Live events (iteration, best cost, circles/second, and state)
+curl -N http://localhost:8080/api/v1/jobs/JOB_ID/stream
+```
+
+The stream sends an immediate snapshot, at most one optimization progress event
+per 500 ms, and a final `completed`, `failed`, or `cancelled` event before it
+closes. A comment heartbeat is sent every 30 seconds while otherwise idle.
 
 ## Backends and optimization modes
 

@@ -64,22 +64,15 @@ Completed: HTTP server construction, routes, middleware, graceful shutdown, and 
 
 Completed: validated job creation/list/status and best/difference image endpoints with integration coverage.
 
-### Task 6.5: Server-Sent Events (SSE) for Live Progress ⏭️ DEFERRED
+### Task 6.5: Server-Sent Events (SSE) for Live Progress ✅
 
-- [ ] Create `internal/server/stream.go` for SSE support
-  - [ ] Implement `GET /api/v1/jobs/:id/stream` endpoint
-  - [ ] Set SSE headers (text/event-stream)
-  - [ ] Create event channel per client connection
-  - [ ] Send progress events (iteration, cost, cps) periodically
-  - [ ] Handle client disconnect gracefully
-  - [ ] Write integration test with SSE client
-
-- [ ] Integrate SSE with worker
-  - [ ] Add event broadcaster to JobManager
-  - [ ] Emit events from worker during optimization
-  - [ ] Throttle events (e.g., max 1 per 500ms)
-
-**Note:** Deferred as polling-based status endpoint provides sufficient functionality.
+Completed as an optional second alternative to polling: `GET
+/api/v1/jobs/:id/stream` sends an immediate job snapshot, throttled progress
+events (iteration, cost, and circles/second), heartbeats, and one terminal event
+before closing. The per-job broadcaster handles concurrent subscribers, slow
+clients, cancellation/failure, and disconnect cleanup. Integration and
+concurrency tests cover the stream lifecycle; clients that cannot use streaming
+HTTP can continue using the status endpoint.
 
 ### Task 6.6: CLI Integration - Serve Command ✅
 
@@ -91,11 +84,11 @@ Completed: list/single-job status queries, output formatting, connection handlin
 
 ### Task 6.8: Integration Testing ✅
 
-Completed: job-flow, concurrency, error, and graceful-shutdown integration coverage; SSE coverage was deferred here.
+Completed: job-flow, concurrency, error, graceful-shutdown, and SSE lifecycle integration coverage.
 
 ### Task 6.9: Documentation ✅
 
-Completed: server/API/lifecycle documentation and curl examples; SSE format was deferred here.
+Completed: server/API/lifecycle documentation and curl examples, including polling and SSE progress alternatives.
 
 ---
 
@@ -213,15 +206,16 @@ Completed: analysis retained AoS as optimal; SoA was projected to regress perfor
 
 Completed: strength reduction, common-subexpression reuse, and offset inlining; 1.395× speedup and 39.5% higher throughput. Cumulative Phase 9 speedup: 2.11×.
 
-### Task 9.7: Add Optional Multi-Threading for Rendering
+### Task 9.7: Add Optional Multi-Threading for Rendering ✅
 
-- [ ] Implement goroutine sharding over scanlines
-- [ ] Add `--threads` flag to control parallelism
-- [ ] Avoid oversubscription (default: GOMAXPROCS)
-- [ ] Profile multi-threaded performance
-- [ ] Measure speedup vs single-threaded baseline
-- [ ] Document when threading helps vs hurts
-- [ ] Write tests for thread-safe rendering
+Completed: the CPU renderer shards disjoint scanline bands across a configurable
+worker count, preserves circle compositing order within every band, defaults to
+`GOMAXPROCS`, and caps workers at `GOMAXPROCS` and image height. Local runs use
+`--threads`; API jobs use the optional `threads` field. Pixel-exact race tests,
+session propagation, scaling benchmarks, CPU profiles, and operational guidance
+are recorded in `docs/cpu-rendering-threads.md`. On the measured 12-logical-CPU
+host, 512×512/100-circle rendering improved 4.40×, while tiny workloads remained
+faster with `--threads 1`.
 
 ### Task 9.8: Create Comprehensive Benchmarks
 - [ ] Create `internal/fit/bench_test.go` with benchmark suite
@@ -568,13 +562,9 @@ Completed: quantized per-pixel SSD in the render kernel, portable multi-pass on-
 
 Completed: persistent reference/parameter/output buffers, hash-aware parameter uploads, four-byte cost readback, lazy cached image materialization, documented PoCL transfer profiling, and packed `uchar4` image buffers that cut pixel storage/readback by 75%; pinned staging remains unjustified without vendor-GPU evidence.
 
-### Task 11.7: Integrate GPU Renderer into Pipeline
-- [x] Update pipeline functions to accept GPU renderer
-- [x] Test joint optimization with GPU backend
-- [x] Test sequential optimization with GPU backend
-- [x] Test batch optimization with GPU backend
-- [x] Verify all modes work correctly (GPU-tagged PoCL test asserts device evaluations without CPU degradation)
-- [ ] Compare performance to CPU backend
+### Task 11.7: Integrate GPU Renderer into Pipeline ✅
+
+Completed: joint, sequential, and batch optimization use same-backend OpenCL sessions without silent CPU degradation; GPU-tagged PoCL tests cover every mode, and an uncached end-to-end CPU/PoCL benchmark documents current pipeline performance and staged-session overhead. Real vendor-GPU characterization remains in Task 11.9.
 
 ### Task 11.8: Add GPU Backend Selection to CLI
 - [x] Update `run` command to accept `--backend cpu|<gpu>`
@@ -615,6 +605,36 @@ Completed: persistent reference/parameter/output buffers, hash-aware parameter u
 - [ ] Document performance comparisons
 - [ ] Add troubleshooting section for GPU issues
 - [ ] Document when to use GPU vs CPU
+
+### Task 11.13: Optimize OpenCL/PoCL Pipeline Performance
+
+Measured baseline: the uncached 64x64, K=12 pipeline benchmark reports PoCL approximately 3x slower than CPU for joint mode, 190x slower for sequential mode, and 120x slower for batch mode. Sequential creates 14 OpenCL sessions and batch creates 5; their approximately 45 ms/session cost shows that repeated context/program initialization dominates staged execution. These PoCL CPU measurements guide implementation but do not replace vendor-GPU validation.
+
+- [ ] Share OpenCL resources across renderer sessions
+  - [ ] Introduce an owned shared device engine for the selected device, context, queue, compiled program, reference buffer, and workgroup configuration
+  - [ ] Make staged sessions allocate only their mutable kernels/buffers instead of calling `InitOpenCL` and `clBuildProgram` again
+  - [ ] Define safe shared-resource ownership and cleanup for normal completion, partial initialization, and CPU degradation
+  - [ ] Add an isolated session-creation benchmark and verify that kernel compilation occurs once per base renderer
+- [ ] Add accumulated-canvas support to the OpenCL staged pipeline
+  - [ ] Implement `newSessionWithCanvas` and `initialCanvas` so sequential and batch stages evaluate only newly added circles
+  - [ ] Accept a packed `uchar4` base-canvas buffer in the render/cost kernel instead of assuming white
+  - [ ] Upload the retained canvas at most once per stage as the first implementation
+  - [ ] Investigate a device-resident retained-canvas handoff to eliminate stage-boundary readback/upload
+- [ ] Reduce per-evaluation synchronization and memory traffic
+  - [ ] Add a cost-only execution path that omits full output-buffer writes during optimizer evaluations and materializes the final/best image on demand
+  - [ ] Profile a C/OpenCL-owned asynchronous parameter staging path; retain blocking writes unless measurements justify the added ownership complexity
+  - [ ] Design a batched objective interface so optimizer populations can share kernel launches and scalar synchronization
+- [ ] Optimize the render kernel based on profiling
+  - [ ] Precompute radius squared, premultiplied color, opacity, and inverse opacity into aligned circle records
+  - [ ] Evaluate constant-memory circle parameters and device-specific preferred workgroup sizes
+  - [ ] Investigate order-preserving tile/bin circle lists so pixels skip non-overlapping circles
+- [ ] Preserve semantics and fallback behavior
+  - [ ] Extend CPU/OpenCL parity tests across joint, sequential, and batch modes after each optimization
+  - [ ] Verify cache invalidation, lazy image materialization, cleanup, and permanent CPU degradation paths
+- [ ] Re-run the complete backend pipeline benchmark after each tranche
+  - [ ] Record PoCL before/after medians, allocations, session counts, and evaluation counts
+  - [ ] Run the same benchmark on supported AMD, Intel, and NVIDIA OpenCL devices where available
+  - [ ] Document crossover points and retain optimizations only when profiling demonstrates a benefit
 
 **Deliverables:**
 - GPU backend comparison document with recommendation

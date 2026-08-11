@@ -1,9 +1,12 @@
 package renderer
 
 import (
+	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"math/rand"
+	"runtime"
 	"testing"
 	"time"
 
@@ -72,6 +75,85 @@ func TestCPURendererSingleCircle(t *testing.T) {
 	r, g, b, _ = result.At(0, 0).RGBA()
 	if r != 65535 || g != 65535 || b != 65535 {
 		t.Errorf("Corner pixel should be white, got (%d,%d,%d)", r>>8, g>>8, b>>8)
+	}
+}
+
+func TestCPURendererParallelMatchesSingleThreaded(t *testing.T) {
+	tests := []struct {
+		name          string
+		width, height int
+		circles       int
+		customCanvas  bool
+	}{
+		{name: "odd dimensions", width: 127, height: 91, circles: 24},
+		{name: "more threads than rows", width: 19, height: 3, circles: 8},
+		{name: "custom canvas", width: 96, height: 65, circles: 16, customCanvas: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ref := randomNRGBA(test.width, test.height, 42)
+			params := deterministicParams(test.circles, test.width, test.height, 99)
+			var single, parallel *CPURenderer
+			if test.customCanvas {
+				canvas := randomNRGBA(test.width, test.height, 7)
+				single = NewCPURendererWithCanvas(ref, canvas, test.circles)
+				parallel = NewCPURendererWithCanvas(ref, canvas, test.circles)
+			} else {
+				single = NewCPURenderer(ref, test.circles)
+				parallel = NewCPURenderer(ref, test.circles)
+			}
+			single.SetThreads(1)
+			parallel.SetThreads(runtime.GOMAXPROCS(0) + test.height)
+
+			want := append([]byte(nil), single.Render(params).Pix...)
+			got := parallel.Render(params)
+			if !bytes.Equal(got.Pix, want) {
+				t.Fatal("parallel rendering differs from single-threaded rendering")
+			}
+			wantThreads := min(runtime.GOMAXPROCS(0), test.height)
+			if parallel.Threads() != wantThreads {
+				t.Fatalf("effective threads = %d, want %d", parallel.Threads(), wantThreads)
+			}
+		})
+	}
+}
+
+func TestCPURendererParallelRenderStable(t *testing.T) {
+	const (
+		width   = 193
+		height  = 129
+		circles = 32
+	)
+	ref := randomNRGBA(width, height, 42)
+	renderer := NewCPURenderer(ref, circles)
+	renderer.SetThreads(4)
+	params := deterministicParams(circles, width, height, 101)
+	want := append([]byte(nil), renderer.Render(params).Pix...)
+
+	for i := 0; i < 50; i++ {
+		if got := renderer.Render(params); !bytes.Equal(got.Pix, want) {
+			t.Fatalf("render %d differs from the first parallel render", i+1)
+		}
+	}
+}
+
+func TestCPURendererSessionsPreserveThreads(t *testing.T) {
+	ref := randomNRGBA(32, 32, 42)
+	base := NewCPURenderer(ref, 4)
+	base.SetThreads(2)
+
+	session, cleanup, err := base.newSession(3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	cpuSession, ok := session.(*CPURenderer)
+	if !ok {
+		t.Fatalf("session type = %T, want *CPURenderer", session)
+	}
+	if cpuSession.Threads() != base.Threads() {
+		t.Fatalf("session threads = %d, want %d", cpuSession.Threads(), base.Threads())
 	}
 }
 
@@ -179,6 +261,7 @@ func BenchmarkCPURenderer_Render(b *testing.B) {
 		b.Run(sz.name, func(b *testing.B) {
 			ref := randomNRGBA(sz.width, sz.height, 42)
 			renderer := NewCPURenderer(ref, sz.circles)
+			renderer.SetThreads(1)
 			params := randomParams(sz.circles, sz.width, sz.height)
 
 			b.ResetTimer()
@@ -186,6 +269,35 @@ func BenchmarkCPURenderer_Render(b *testing.B) {
 				_ = renderer.Render(params)
 			}
 		})
+	}
+}
+
+// BenchmarkCPURendererThreadScaling compares scanline sharding against the
+// single-threaded renderer. Keep the workload fixed when recording results.
+func BenchmarkCPURendererThreadScaling(b *testing.B) {
+	for _, workload := range []struct {
+		name          string
+		width, height int
+		circles       int
+	}{
+		{name: "32x32_4circles", width: 32, height: 32, circles: 4},
+		{name: "128x128_20circles", width: 128, height: 128, circles: 20},
+		{name: "512x512_100circles", width: 512, height: 512, circles: 100},
+	} {
+		ref := randomNRGBA(workload.width, workload.height, 42)
+		params := deterministicParams(workload.circles, workload.width, workload.height, 99)
+		threadCounts := []int{1, 2, 4, runtime.GOMAXPROCS(0)}
+		for _, threadCount := range threadCounts {
+			b.Run(workload.name+fmt.Sprintf("/threads=%d", threadCount), func(b *testing.B) {
+				renderer := NewCPURenderer(ref, workload.circles)
+				renderer.SetThreads(threadCount)
+				b.ReportAllocs()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					_ = renderer.Render(params)
+				}
+			})
+		}
 	}
 }
 
@@ -313,6 +425,22 @@ func randomParams(k, width, height int) []float64 {
 		params[offset+4] = r.Float64()
 		params[offset+5] = r.Float64()
 		params[offset+6] = 0.5 + 0.5*r.Float64()
+	}
+	return params
+}
+
+func deterministicParams(k, width, height int, seed int64) []float64 {
+	r := rand.New(rand.NewSource(seed))
+	params := make([]float64, k*7)
+	for i := 0; i < k; i++ {
+		offset := i * 7
+		params[offset+0] = r.Float64() * float64(width)
+		params[offset+1] = r.Float64() * float64(height)
+		params[offset+2] = 1 + r.Float64()*float64(max(width, height))/3
+		params[offset+3] = r.Float64()
+		params[offset+4] = r.Float64()
+		params[offset+5] = r.Float64()
+		params[offset+6] = r.Float64()
 	}
 	return params
 }

@@ -283,11 +283,18 @@ func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (
 		if canvas.Bounds().Dx() != ref.Bounds().Dx() || canvas.Bounds().Dy() != ref.Bounds().Dy() {
 			return nil, func() {}, fmt.Errorf("canvas dimensions do not match reference")
 		}
-		return renderer.NewCPURendererWithCanvas(ref, canvas, circleCount), func() {}, nil
+		cpu := renderer.NewCPURendererWithCanvas(ref, canvas, circleCount)
+		cpu.SetThreads(config.Threads)
+		return cpu, func() {}, nil
 	}
 	backend := config.Backend
 	if backend == "" {
 		backend = app.BackendCPU
+	}
+	if backend == app.BackendCPU {
+		cpu := renderer.NewCPURenderer(ref, circleCount)
+		cpu.SetThreads(config.Threads)
+		return cpu, func() {}, nil
 	}
 	return renderer.NewRendererForBackend(string(backend), ref, circleCount)
 }

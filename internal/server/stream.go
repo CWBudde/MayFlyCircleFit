@@ -19,11 +19,15 @@ type ProgressEvent struct {
 	Timestamp  time.Time `json:"timestamp"`
 }
 
+func (e ProgressEvent) terminal() bool {
+	return e.State == StateCompleted || e.State == StateFailed || e.State == StateCancelled
+}
+
 // EventBroadcaster manages SSE connections for a job
 type EventBroadcaster struct {
 	mu        sync.RWMutex
 	clients   map[string]map[chan ProgressEvent]bool // jobID -> set of client channels
-	lastEvent map[string]ProgressEvent               // jobID -> last event for new clients
+	lastEvent map[string]ProgressEvent               // jobID -> last event for ordering and diagnostics
 }
 
 // NewEventBroadcaster creates a new event broadcaster
@@ -45,15 +49,6 @@ func (eb *EventBroadcaster) Subscribe(jobID string) chan ProgressEvent {
 		eb.clients[jobID] = make(map[chan ProgressEvent]bool)
 	}
 	eb.clients[jobID][ch] = true
-
-	// Send last event if available (for reconnecting clients)
-	if lastEvent, ok := eb.lastEvent[jobID]; ok {
-		select {
-		case ch <- lastEvent:
-		default:
-			// Channel full, skip
-		}
-	}
 
 	slog.Debug("SSE client subscribed", "jobID", jobID, "total_clients", len(eb.clients[jobID]))
 	return ch
@@ -80,6 +75,13 @@ func (eb *EventBroadcaster) Unsubscribe(jobID string, ch chan ProgressEvent) {
 func (eb *EventBroadcaster) Broadcast(event ProgressEvent) {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
+
+	// A progress callback can race with cancellation after updating the job but
+	// before publishing its event. Do not overwrite a terminal state with that
+	// stale running update.
+	if previous, ok := eb.lastEvent[event.JobID]; ok && previous.terminal() && !event.terminal() {
+		return
+	}
 
 	// Store last event
 	eb.lastEvent[event.JobID] = event
@@ -128,14 +130,15 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 	// Check if job exists
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
-		http.Error(w, "Job not found", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		return
 	}
 
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 
 	// Get flusher
 	flusher, ok := w.(http.Flusher)
@@ -144,9 +147,14 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 		return
 	}
 
-	// Subscribe to events
+	// Subscribe before taking the initial snapshot so a state transition cannot
+	// fall into the gap between the snapshot and channel registration.
 	eventChan := s.jobManager.broadcaster.Subscribe(jobID)
 	defer s.jobManager.broadcaster.Unsubscribe(jobID, eventChan)
+	job, exists = s.jobManager.GetJob(jobID)
+	if !exists {
+		return
+	}
 
 	// Send initial event with current job state
 	initialEvent := ProgressEvent{
@@ -163,6 +171,9 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 		return
 	}
 	flusher.Flush()
+	if initialEvent.terminal() {
+		return
+	}
 
 	// Set up ping ticker to keep connection alive
 	pingTicker := time.NewTicker(30 * time.Second)
@@ -188,6 +199,9 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 				return
 			}
 			flusher.Flush()
+			if event.terminal() {
+				return
+			}
 
 		case <-pingTicker.C:
 			// Send ping to keep connection alive

@@ -268,6 +268,7 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 
 			// Create renderer
 			renderer := renderer.NewCPURenderer(ref, j.Config.Circles)
+			renderer.SetThreads(j.Config.Threads)
 
 			// Save checkpoint
 			err = saveCheckpoint(s.jobManager, s.store, renderer, j.ID)

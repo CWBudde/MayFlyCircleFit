@@ -5,6 +5,8 @@ import (
 	"image"
 	"image/draw"
 	"math"
+	"runtime"
+	"sync"
 
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
 )
@@ -17,6 +19,7 @@ type CPURenderer struct {
 	costFunc  fit.CostFunc
 	width     int
 	height    int
+	threads   int
 	// Buffer pooling to reduce allocations
 	canvas    *image.NRGBA // Reusable render buffer
 	initialBg []byte       // Precomputed initial background (white or custom canvas)
@@ -47,6 +50,7 @@ func NewCPURenderer(reference *image.NRGBA, k int) *CPURenderer {
 		costFunc:  fit.FastMSECost,
 		width:     width,
 		height:    height,
+		threads:   effectiveThreadCount(runtime.GOMAXPROCS(0), height),
 		canvas:    canvas,
 		initialBg: whiteBg,
 	}
@@ -85,6 +89,7 @@ func NewCPURendererWithCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int
 		costFunc:  fit.FastMSECost,
 		width:     width,
 		height:    height,
+		threads:   effectiveThreadCount(runtime.GOMAXPROCS(0), height),
 		canvas:    canvasCopy,
 		initialBg: initialBg,
 	}
@@ -97,15 +102,39 @@ func (r *CPURenderer) Render(params []float64) *image.NRGBA {
 	if len(params) != r.Dim() {
 		return r.canvas
 	}
-
-	// Decode and render each circle (using hybrid/scanline algorithm)
-	pv := &fit.ParamVector{Data: params, K: r.k, Width: r.width, Height: r.height}
-	for i := 0; i < r.k; i++ {
-		circle := pv.DecodeCircle(i)
-		r.renderCircleHybrid(r.canvas, circle)
+	if r.k == 0 || r.height == 0 {
+		return r.canvas
 	}
 
+	// Each worker owns a disjoint band of rows and composites every circle in
+	// the original order. This keeps the output pixel-exact without locks.
+	if r.threads <= 1 {
+		r.renderRows(r.canvas, params, 0, r.height)
+		return r.canvas
+	}
+
+	var workers sync.WaitGroup
+	workers.Add(r.threads - 1)
+	for worker := 0; worker < r.threads-1; worker++ {
+		minY := worker * r.height / r.threads
+		maxY := (worker + 1) * r.height / r.threads
+		go func() {
+			defer workers.Done()
+			r.renderRows(r.canvas, params, minY, maxY)
+		}()
+	}
+	r.renderRows(r.canvas, params, (r.threads-1)*r.height/r.threads, r.height)
+	workers.Wait()
+
 	return r.canvas
+}
+
+func (r *CPURenderer) renderRows(img *image.NRGBA, params []float64, minY, maxY int) {
+	pv := fit.ParamVector{Data: params, K: r.k, Width: r.width, Height: r.height}
+	for i := 0; i < r.k; i++ {
+		circle := pv.DecodeCircle(i)
+		r.renderCircleScanlineRows(img, circle, minY, maxY)
+	}
 }
 
 // Cost computes error between params and reference
@@ -133,6 +162,7 @@ func (r *CPURenderer) newSession(circleCount int) (Renderer, func(), error) {
 		costFunc:  r.costFunc,
 		width:     r.width,
 		height:    r.height,
+		threads:   r.threads,
 		canvas:    canvas,
 		initialBg: initialBg,
 	}, noopCleanup, nil
@@ -153,6 +183,7 @@ func (r *CPURenderer) newSessionWithCanvas(canvas *image.NRGBA, circleCount int)
 
 	session := NewCPURendererWithCanvas(r.reference, canvas, circleCount)
 	session.costFunc = r.costFunc
+	session.threads = r.threads
 	return session, noopCleanup, nil
 }
 
@@ -187,6 +218,36 @@ func (r *CPURenderer) SetCostFunc(costFunc fit.CostFunc) {
 // This provides 1.5-2x speedup over the default MSECost implementation
 func (r *CPURenderer) UseFastCost() {
 	r.costFunc = fit.FastMSECost
+}
+
+// SetThreads configures CPU rendering parallelism. Non-positive values select
+// GOMAXPROCS. Values above GOMAXPROCS or the image height are capped to avoid
+// oversubscription and empty row shards.
+// Call SetThreads before starting an optimization; changing renderer settings
+// concurrently with Render is unsupported.
+func (r *CPURenderer) SetThreads(threads int) {
+	r.threads = effectiveThreadCount(threads, r.height)
+}
+
+// Threads returns the effective number of rendering workers.
+func (r *CPURenderer) Threads() int {
+	return r.threads
+}
+
+func effectiveThreadCount(threads, height int) int {
+	if threads < 1 {
+		threads = runtime.GOMAXPROCS(0)
+	}
+	if maxThreads := runtime.GOMAXPROCS(0); threads > maxThreads {
+		threads = maxThreads
+	}
+	if height > 0 && threads > height {
+		threads = height
+	}
+	if threads < 1 {
+		return 1
+	}
+	return threads
 }
 
 // renderCircle composites a circle onto the image using premultiplied alpha
@@ -245,6 +306,12 @@ func (r *CPURenderer) renderCircle(img *image.NRGBA, c fit.Circle) {
 
 // renderCircleScanline uses scanline algorithm to avoid per-pixel distance checks
 func (r *CPURenderer) renderCircleScanline(img *image.NRGBA, c fit.Circle) {
+	r.renderCircleScanlineRows(img, c, 0, r.height)
+}
+
+// renderCircleScanlineRows composites the portion of c within [rowStart,
+// rowEnd). Callers may safely process disjoint row ranges concurrently.
+func (r *CPURenderer) renderCircleScanlineRows(img *image.NRGBA, c fit.Circle, rowStart, rowEnd int) {
 	// Early-reject: circle is fully transparent
 	if c.Opacity < 0.001 {
 		return
@@ -264,9 +331,15 @@ func (r *CPURenderer) renderCircleScanline(img *image.NRGBA, c fit.Circle) {
 	if minY < 0 {
 		minY = 0
 	}
+	if minY < rowStart {
+		minY = rowStart
+	}
 	maxY := int(maxYf + 1) // +1 for ceiling
 	if maxY > r.height {
 		maxY = r.height
+	}
+	if maxY > rowEnd {
+		maxY = rowEnd
 	}
 
 	r2 := c.R * c.R

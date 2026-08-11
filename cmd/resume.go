@@ -181,15 +181,23 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 				canvas.Set(x, y, canvasImage.At(x, y))
 			}
 		}
-		rend = renderer.NewCPURendererWithCanvas(ref, canvas, checkpoint.Config.Circles)
+		cpu := renderer.NewCPURendererWithCanvas(ref, canvas, checkpoint.Config.Circles)
+		cpu.SetThreads(checkpoint.Config.Threads)
+		rend = cpu
 	} else {
 		backend := checkpoint.Config.Backend
 		if backend == "" {
 			backend = "cpu"
 		}
-		rend, cleanup, err = renderer.NewRendererForBackend(string(backend), ref, checkpoint.Config.Circles)
-		if err != nil {
-			return err
+		if backend == "cpu" {
+			cpu := renderer.NewCPURenderer(ref, checkpoint.Config.Circles)
+			cpu.SetThreads(checkpoint.Config.Threads)
+			rend = cpu
+		} else {
+			rend, cleanup, err = renderer.NewRendererForBackend(string(backend), ref, checkpoint.Config.Circles)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	defer cleanup()

@@ -25,6 +25,7 @@ var (
 	circles           int
 	iters             int
 	popSize           int
+	threads           int
 	seed              int64
 	convergenceEnable bool
 	patience          int
@@ -49,6 +50,7 @@ func init() {
 	runCmd.Flags().IntVar(&circles, "circles", 10, "Number of circles")
 	runCmd.Flags().IntVar(&iters, "iters", 100, "Max iterations")
 	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
+	runCmd.Flags().IntVar(&threads, "threads", runtime.GOMAXPROCS(0), "CPU rendering threads (capped at GOMAXPROCS)")
 	runCmd.Flags().Int64Var(&seed, "seed", 0, "Random seed (0 chooses and reports a random seed)")
 
 	// Convergence detection flags (only used for sequential/batch modes)
@@ -73,6 +75,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		Circles:              circles,
 		Iters:                iters,
 		PopSize:              popSize,
+		Threads:              threads,
 		Seed:                 seed,
 		ConvergenceEnabled:   convergenceEnable,
 		DisableConvergence:   !convergenceEnable,
@@ -166,6 +169,9 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		} else {
 			rend = renderer.NewCPURenderer(ref, config.Circles)
 		}
+		cpuRenderer := rend.(*renderer.CPURenderer)
+		cpuRenderer.SetThreads(config.Threads)
+		slog.Info("Configured CPU renderer", "threads", cpuRenderer.Threads())
 		cleanup = func() {} // No cleanup needed for CPU renderer
 	} else {
 		// Other backends don't support canvas yet

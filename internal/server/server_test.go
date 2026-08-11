@@ -414,11 +414,6 @@ func TestServer_JobDetailPage_Integration(t *testing.T) {
 }
 
 func TestServer_JobStream_SSE(t *testing.T) {
-	// Skip in short mode
-	if testing.Short() {
-		t.Skip("Skipping SSE test in short mode")
-	}
-
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
@@ -430,54 +425,40 @@ func TestServer_JobStream_SSE(t *testing.T) {
 		RefPath: imgPath,
 		Mode:    "joint",
 		Circles: 2,
-		Iters:   50,
+		Iters:   1,
 		PopSize: 20,
 		Seed:    42,
 	})
-
-	// Start worker in background
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	go runJob(ctx, s.jobManager, nil, job.ID)
-
-	// Wait a bit for job to start
-	time.Sleep(100 * time.Millisecond)
+	if err := s.jobManager.StartJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.jobManager.CompleteJob(job.ID, 7, 20, make([]float64, 14), 12.5, 100, "completed"); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create SSE request
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/jobs/%s/stream", job.ID), nil)
 	w := httptest.NewRecorder()
 
-	// Run handler in goroutine
-	done := make(chan bool)
-	go func() {
-		s.handleJobStream(w, req, job.ID)
-		done <- true
-	}()
-
-	// Wait for some data or timeout
-	timeout := time.After(3 * time.Second)
-	select {
-	case <-done:
-		// Handler completed
-	case <-timeout:
-		// Timeout - that's ok, we just want to check we got some events
-	}
+	s.handleJobStream(w, req, job.ID)
 
 	// Check headers
-	if w.Header().Get("Content-Type") != "text/event-stream" {
-		t.Error("Expected text/event-stream content type")
+	if got := w.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Errorf("Content-Type = %q, want text/event-stream", got)
+	}
+	if got := w.Header().Get("Cache-Control"); got != "no-cache, no-transform" {
+		t.Errorf("Cache-Control = %q, want no-cache, no-transform", got)
+	}
+	if got := w.Header().Get("X-Accel-Buffering"); got != "no" {
+		t.Errorf("X-Accel-Buffering = %q, want no", got)
 	}
 
-	// Check we got some SSE data
-	body := w.Body.String()
-	if !containsString(body, "data:") {
-		t.Error("Expected SSE data in response")
+	events := decodeSSEEvents(t, w.Body.String())
+	if len(events) != 1 {
+		t.Fatalf("event count = %d, want 1; body=%q", len(events), w.Body.String())
 	}
-
-	// Verify we can parse the JSON
-	if containsString(body, "data: {") {
-		// Good, we have JSON data
-		t.Log("SSE events received successfully")
+	if events[0].State != StateCompleted || events[0].Iterations != 7 || events[0].BestCost != 12.5 {
+		t.Errorf("terminal event = %+v", events[0])
 	}
 }
 

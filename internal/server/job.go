@@ -181,12 +181,13 @@ func (jm *JobManager) DeleteJob(id string) error {
 
 func (jm *JobManager) transition(id string, next JobState, update func(*Job)) error {
 	jm.mu.Lock()
-	defer jm.mu.Unlock()
 	job, ok := jm.jobs[id]
 	if !ok {
+		jm.mu.Unlock()
 		return fmt.Errorf("job not found: %s", id)
 	}
 	if !canTransition(job.State, next) {
+		jm.mu.Unlock()
 		return fmt.Errorf("%w: %s to %s", ErrInvalidTransition, job.State, next)
 	}
 	if update != nil {
@@ -196,6 +197,21 @@ func (jm *JobManager) transition(id string, next JobState, update func(*Job)) er
 	if next == StateCompleted || next == StateFailed || next == StateCancelled {
 		end := time.Now()
 		job.EndTime = &end
+	}
+	event := ProgressEvent{
+		JobID:      job.ID,
+		State:      job.State,
+		Iterations: job.Iterations,
+		BestCost:   job.BestCost,
+		Timestamp:  time.Now(),
+	}
+	jm.mu.Unlock()
+
+	// Successful completion is published by the worker with its measured CPS.
+	// Failure and cancellation can originate outside the worker, so publish
+	// those transitions here to guarantee that live streams terminate.
+	if next == StateFailed || next == StateCancelled {
+		jm.broadcaster.Broadcast(event)
 	}
 	return nil
 }

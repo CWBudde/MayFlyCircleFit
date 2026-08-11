@@ -1,6 +1,10 @@
 package server
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -45,4 +49,104 @@ func TestEventBroadcasterCleanupMakesUnsubscribeIdempotent(t *testing.T) {
 
 	eb.CleanupJob(jobID)
 	eb.Unsubscribe(jobID, ch)
+}
+
+func TestJobStreamPublishesTerminalTransitionsAndCloses(t *testing.T) {
+	tests := []struct {
+		name       string
+		wantState  JobState
+		transition func(*JobManager, string) error
+	}{
+		{name: "cancelled", wantState: StateCancelled, transition: func(manager *JobManager, id string) error {
+			return manager.CancelJob(id)
+		}},
+		{name: "failed", wantState: StateFailed, transition: func(manager *JobManager, id string) error {
+			return manager.FailJob(id, "safe failure")
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := NewServer(":8080", nil)
+			job := server.jobManager.CreateJob(JobConfig{})
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+job.ID+"/stream", nil)
+			response := httptest.NewRecorder()
+			done := make(chan struct{})
+			go func() {
+				server.handleJobStream(response, request, job.ID)
+				close(done)
+			}()
+
+			waitForSubscriber(t, server.jobManager.broadcaster, job.ID)
+			if err := test.transition(server.jobManager, job.ID); err != nil {
+				t.Fatal(err)
+			}
+
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatalf("SSE handler did not close after job became %s", test.wantState)
+			}
+
+			events := decodeSSEEvents(t, response.Body.String())
+			if len(events) != 2 {
+				t.Fatalf("event count = %d, want initial and terminal events; body=%q", len(events), response.Body.String())
+			}
+			if events[0].State != StatePending || events[1].State != test.wantState {
+				t.Fatalf("states = [%s, %s], want [pending, %s]", events[0].State, events[1].State, test.wantState)
+			}
+
+			server.jobManager.broadcaster.mu.RLock()
+			clientCount := len(server.jobManager.broadcaster.clients[job.ID])
+			server.jobManager.broadcaster.mu.RUnlock()
+			if clientCount != 0 {
+				t.Fatalf("subscriber count = %d, want 0", clientCount)
+			}
+		})
+	}
+}
+
+func TestEventBroadcasterDoesNotRegressTerminalState(t *testing.T) {
+	broadcaster := NewEventBroadcaster()
+	terminal := ProgressEvent{JobID: "job", State: StateCancelled, Timestamp: time.Now()}
+	broadcaster.Broadcast(terminal)
+	broadcaster.Broadcast(ProgressEvent{JobID: "job", State: StateRunning, Iterations: 10, Timestamp: time.Now()})
+
+	broadcaster.mu.RLock()
+	got := broadcaster.lastEvent["job"]
+	broadcaster.mu.RUnlock()
+	if got.State != StateCancelled {
+		t.Fatalf("cached state = %s, want cancelled", got.State)
+	}
+}
+
+func waitForSubscriber(t *testing.T, broadcaster *EventBroadcaster, jobID string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		broadcaster.mu.RLock()
+		count := len(broadcaster.clients[jobID])
+		broadcaster.mu.RUnlock()
+		if count == 1 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("SSE client did not subscribe")
+}
+
+func decodeSSEEvents(t *testing.T, body string) []ProgressEvent {
+	t.Helper()
+	var events []ProgressEvent
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		var event ProgressEvent
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event); err != nil {
+			t.Fatalf("decode SSE event: %v", err)
+		}
+		events = append(events, event)
+	}
+	return events
 }

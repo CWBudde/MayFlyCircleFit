@@ -135,6 +135,29 @@ apply to this PoCL CPU baseline only. A short post-change end-to-end comparison
 was noisy, including an inverted 256x256 `Cost`/`CostThenRender` result, so it is
 not used for a before/after speedup claim.
 
+### Local CPU/PoCL pipeline comparison
+
+The backend pipeline benchmark uses a 64x64 reference, 12 circles, and eight
+distinct (uncached) optimizer evaluations per stage. It includes stage-session
+creation, retained-state handling, and final image materialization, while
+excluding construction of the initial renderer. The table reports medians from
+five samples of five complete pipelines (`-benchtime=5x -count=5`):
+
+| Mode | Evaluations/pipeline | CPU median | PoCL median | PoCL vs CPU | CPU B/op, allocs/op | PoCL B/op, allocs/op |
+|------|---------------------:|-----------:|------------:|------------:|--------------------:|---------------------:|
+| Joint | 10 | 0.740 ms | 2.187 ms | 3.0x slower | 20,006, 12 | 19,833, 65 |
+| Sequential | 109 | 3.315 ms | 629.393 ms | 190x slower | 602,182, 179 | 1,001,633, 1,435 |
+| Batch (four circles/stage) | 28 | 1.887 ms | 226.270 ms | 120x slower | 247,891, 64 | 370,521, 452 |
+
+PoCL ran on the host CPU, so these numbers compare the complete backend paths
+on one machine rather than CPU rendering with a physical GPU. They show that
+the current staged OpenCL path is not suitable for PoCL: each stage constructs
+an independent runtime and program and replays retained circles, whereas the
+CPU renderer accumulates a base canvas. Sharing compiled OpenCL resources and
+adding a device-side accumulated canvas are the likely next staged-path
+optimizations, but vendor-GPU measurements are still required before making
+hardware performance claims.
+
 Reproduce the focused correctness and transfer-sensitive benchmarks with:
 
 ```sh
@@ -145,6 +168,9 @@ MAYFLY_REQUIRE_OPENCL=1 go test -tags gpu -run '^$' \
   -benchmem -benchtime=2s -count=5 ./internal/fit/renderer
 go test -tags gpu -run '^$' -bench '^BenchmarkRenderer(Cost|CostThenRender)$' \
   -benchmem -benchtime=2s -count=5 ./internal/fit/renderer
+MAYFLY_REQUIRE_OPENCL=1 go test -tags gpu -run '^$' \
+  -bench '^BenchmarkOptimizePipelineBackends$' \
+  -benchmem -benchtime=5x -count=5 ./internal/fit/renderer
 ```
 
 Record the OpenCL device name/vendor with every result. Task 11.9 remains open

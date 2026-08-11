@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"runtime"
 	"time"
 )
 
@@ -59,6 +60,7 @@ type JobConfig struct {
 	Iters                int     `json:"iters"`
 	PopSize              int     `json:"popSize"`
 	BatchSize            int     `json:"batchSize,omitempty"`
+	Threads              int     `json:"threads,omitempty"`
 	Seed                 int64   `json:"seed"`
 	EffectiveSeed        int64   `json:"effectiveSeed,omitempty"`
 	ResumeCount          int     `json:"resumeCount,omitempty"`
@@ -84,6 +86,7 @@ func DefaultConfig() JobConfig {
 		Iters:                100,
 		PopSize:              30,
 		BatchSize:            5,
+		Threads:              runtime.GOMAXPROCS(0),
 		EnableTrace:          true,
 		ConvergenceEnabled:   true,
 		ConvergencePatience:  3,
@@ -118,6 +121,9 @@ func (c *JobConfig) ApplyDefaults() error {
 		if c.Circles > 0 && c.BatchSize > c.Circles {
 			c.BatchSize = c.Circles
 		}
+	}
+	if c.Threads == 0 {
+		c.Threads = defaults.Threads
 	}
 	if !c.EnableTrace && !c.DisableTrace {
 		c.EnableTrace = defaults.EnableTrace
@@ -182,6 +188,9 @@ func (c JobConfig) Validate() error {
 	}
 	if c.BatchSize < 1 || c.BatchSize > MaxBatchSize || c.Mode == ModeBatch && c.BatchSize > c.Circles {
 		return invalid("batchSize", "must be positive, within the limit, and no larger than circles")
+	}
+	if c.Threads < 1 {
+		return invalid("threads", "must be positive")
 	}
 	if c.CheckpointInterval < 0 {
 		return invalid("checkpointInterval", "cannot be negative")

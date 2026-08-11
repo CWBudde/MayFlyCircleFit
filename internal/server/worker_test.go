@@ -9,7 +9,26 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 )
+
+func TestRendererForJobConfiguresThreads(t *testing.T) {
+	ref := image.NewNRGBA(image.Rect(0, 0, 32, 32))
+	rend, cleanup, err := rendererForJob(JobConfig{Backend: "cpu", Threads: 1}, ref, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	cpu, ok := rend.(*renderer.CPURenderer)
+	if !ok {
+		t.Fatalf("renderer type = %T, want *renderer.CPURenderer", rend)
+	}
+	if cpu.Threads() != 1 {
+		t.Fatalf("renderer threads = %d, want 1", cpu.Threads())
+	}
+}
 
 func TestRunJob_Success(t *testing.T) {
 	// Create temporary test image

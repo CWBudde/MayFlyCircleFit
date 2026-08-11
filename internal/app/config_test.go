@@ -14,6 +14,9 @@ func TestNormalizeAppliesCanonicalDefaults(t *testing.T) {
 	if config.Mode != defaults.Mode || config.Backend != defaults.Backend || config.Circles != defaults.Circles || config.Iters != defaults.Iters || config.PopSize != defaults.PopSize {
 		t.Fatalf("defaults not applied: %+v", config)
 	}
+	if config.Threads != defaults.Threads || config.Threads < 1 {
+		t.Fatalf("threads = %d, want default %d", config.Threads, defaults.Threads)
+	}
 	if config.EffectiveSeed == 0 {
 		t.Fatal("zero seed was not resolved")
 	}
@@ -55,6 +58,7 @@ func TestValidateBoundaries(t *testing.T) {
 		{"population low", func(c *JobConfig) { c.PopSize = MinPopulation - 1 }, "popSize"},
 		{"population high", func(c *JobConfig) { c.PopSize = MaxPopulation + 1 }, "popSize"},
 		{"batch", func(c *JobConfig) { c.Mode, c.BatchSize = ModeBatch, c.Circles+1 }, "batchSize"},
+		{"threads", func(c *JobConfig) { c.Threads = -1 }, "threads"},
 		{"patience", func(c *JobConfig) { c.ConvergencePatience = 101 }, "convergencePatience"},
 		{"threshold", func(c *JobConfig) { c.ConvergenceThreshold = 2 }, "convergenceThreshold"},
 	}
