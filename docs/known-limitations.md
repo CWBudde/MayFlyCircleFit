@@ -72,9 +72,14 @@ behavior is production-ready.
   artifact, ordinary builds, selected CGO-disabled cross-builds, an
   OpenCL/PoCL GPU-tag compile and focused runtime suite, and pinned
   `govulncheck`.
-- Real-device GPU tests, per-package coverage thresholds, long-running lifecycle
-  tests, vendor-driver coverage, and performance regression thresholds are not
-  required gates yet. PoCL CI results do not establish actual-GPU performance.
+- A dedicated opt-in E2E gate builds the CLI and exercises the real server
+  process through create, SSE progress, checkpoint, cancellation, restart,
+  resume, and artifact retrieval. Run it locally with `just test-e2e`; it is
+  intentionally separate from the short suite.
+- Real-device GPU tests, per-package coverage thresholds, broader load and
+  fault-injection lifecycle tests, vendor-driver coverage, and performance
+  regression thresholds are not required gates yet. PoCL CI results do not
+  establish actual-GPU performance.
 - Cross-compilation proves that packages compile for a target; it does not test
   runtime behavior on that operating system or architecture.
 - The existence of a workflow is not evidence that a revision passed it. Use

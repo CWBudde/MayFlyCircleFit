@@ -1285,7 +1285,7 @@ Completed: typed DTOs, bounded cancellable clients, escaped IDs, validated logs,
 - [x] Separate fast/long tests with `-short`, performance with `-bench`, and GPU compilation/runtime tests with the `gpu` build tag and explicit CI commands.
 - [x] Audit enqueueing tests and ensure background workers are joined through `t.Cleanup`/explicit shutdown.
 - [x] Add multi-job lifecycle stress tests and same-job store concurrency tests.
-- [ ] Add a clean end-to-end test: build → serve → create → observe progress → checkpoint → cancel/restart → resume → fetch artifacts.
+- [x] Add an opt-in clean end-to-end test and dedicated CI job: build → serve → create → observe SSE progress → checkpoint → cancel/restart → resume → fetch artifacts (`just test-e2e`).
 
 **Acceptance Checks:**
 
@@ -1330,7 +1330,7 @@ Implement in dependency-aware waves:
 - [x] No known data races, path escapes, cross-origin image disclosures, or unbounded job admission paths remain.
 - [x] Canvas, backend, batch count, snapshot metadata, progress, checkpoint, cancellation, and restart-from-best semantics are correct and tested.
 - [x] Documentation matches observable behavior.
-- [ ] A fresh end-to-end release-candidate run passes without manual workspace preparation.
+- [x] A fresh end-to-end release-candidate run passes without manual workspace preparation.
 
 ---
 
@@ -1352,4 +1352,4 @@ This plan covers **Phases 0-14** in complete detail with bite-sized, testable ta
 - Commit frequently with descriptive messages
 - Document learnings and decisions in CLAUDE.md
 
-**Current Status:** Historical feature phases reached Phase 11-era implementation, and the main Phase 14 remediation waves now pass the local generation, build, test, race, static-analysis, 56.1% aggregate coverage, vulnerability, portability, GPU-compile, PoCL runtime, clean-clone recipe, and metadata-free export gates. **Phase 14 remains active: remote CI must pass twice, the long end-to-end and release-policy work remains open, and real-GPU vendor/performance validation is still required before promoting the experimental OpenCL backend.**
+**Current Status:** Historical feature phases reached Phase 11-era implementation, and the main Phase 14 remediation waves now pass the local generation, build, test, race, static-analysis, 56.1% aggregate coverage, vulnerability, portability, GPU-compile, PoCL runtime, clean-clone recipe, metadata-free export, and release-lifecycle end-to-end gates. **Phase 14 remains active: remote CI must pass twice, release-policy enforcement remains open, and real-GPU vendor/performance validation is still required before promoting the experimental OpenCL backend.**

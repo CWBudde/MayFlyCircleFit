@@ -22,6 +22,10 @@ fmt:
 test: templ
 	go test -v ./...
 
+# Run the opt-in release lifecycle end-to-end test
+test-e2e:
+	MAYFLY_RUN_E2E=1 go test -count=1 -timeout=3m ./tests/e2e
+
 # Run tests with coverage
 test-coverage: templ
 	go test -v -coverprofile=coverage.out ./...

@@ -46,6 +46,12 @@ and report an effective seed; provide a nonzero seed for repeatable runs.
 Equivalent convenience commands are `just build`, `just test`, `just lint`,
 and `just check`.
 
+Run the opt-in release lifecycle test separately with `just test-e2e`. It
+builds the CLI in a temporary directory, starts and restarts the real server,
+and verifies create, SSE progress, checkpoint, cancellation, resume, and PNG
+artifact retrieval. The test is intentionally excluded from the ordinary
+short suite and has a three-minute Go test timeout.
+
 When building an extracted `git archive` rather than a Git checkout, use
 `go build -buildvcs=false ./...` (the `just build` recipe already does this),
 because there is no repository metadata to stamp into the binary.
@@ -131,9 +137,10 @@ go build ./...
 
 The CI workflow runs these gates, pinned `staticcheck`, a 50% aggregate coverage
 floor with an uploaded profile, portable cross-builds, an OpenCL/PoCL GPU-tag
-compile and focused runtime suite, and pinned `govulncheck` under Go 1.26.5.
-Their presence is not a claim that the current branch or release candidate has
-passed them; consult the actual workflow result.
+compile and focused runtime suite, pinned `govulncheck` under Go 1.26.5, and a
+dedicated release-lifecycle E2E job equivalent to `just test-e2e`. Their
+presence is not a claim that the current branch or release candidate has passed
+them; consult the actual workflow result.
 
 ## Repository layout
 
