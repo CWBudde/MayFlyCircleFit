@@ -79,6 +79,50 @@ func TestFixedCircleQ16CoverageError(t *testing.T) {
 	t.Logf("Q16.16 changed %d of %d intersecting rows", changedRows, totalRows)
 }
 
+func TestCircleSpanFloat32CoverageError(t *testing.T) {
+	const (
+		width  = 513
+		height = 389
+	)
+	rng := rand.New(rand.NewSource(1013))
+	changedRows := 0
+	totalRows := 0
+
+	for range 10_000 {
+		centerX64 := rng.Float64() * width
+		centerY64 := rng.Float64() * height
+		radius64 := 1 + rng.Float64()*256
+		centerX32 := float32(centerX64)
+		centerY32 := float32(centerY64)
+		radius32 := float32(radius64)
+		radiusSquared64 := radius64 * radius64
+		radiusSquared32 := radius32 * radius32
+		for y := 0; y < height; y++ {
+			dy64 := float64(y) - centerY64
+			remaining64 := radiusSquared64 - dy64*dy64
+			if remaining64 < 0 {
+				continue
+			}
+			wantStart, wantEnd := circleSpanFloat64(centerX64, remaining64, width)
+			dy32 := float32(y) - centerY32
+			remaining32 := radiusSquared32 - dy32*dy32
+			gotStart, gotEnd := 0, 0
+			if remaining32 >= 0 {
+				gotStart, gotEnd = circleSpanFloat32Selected(centerX32, remaining32, width)
+			}
+			totalRows++
+			if gotStart != wantStart || gotEnd != wantEnd {
+				changedRows++
+			}
+		}
+	}
+
+	if changedRows > totalRows/100_000+1 {
+		t.Fatalf("float32 changed %d of %d intersecting rows; want at most 0.001%%", changedRows, totalRows)
+	}
+	t.Logf("float32/%s changed %d of %d intersecting rows", circleSpanFloat32Backend, changedRows, totalRows)
+}
+
 func TestFixedCircleQ16ExactRepresentableBoundaries(t *testing.T) {
 	tests := []struct {
 		name     string

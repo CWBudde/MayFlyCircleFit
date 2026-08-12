@@ -539,3 +539,67 @@ func TestCheckpointAcceptsNewTerminationValues(t *testing.T) {
 		})
 	}
 }
+
+// TestOldCheckpointLoadsWithoutEarlyStopFields is the backward-compatibility
+// gate for the optimizer-level stopping configuration. Checkpoints written
+// before those fields existed must still load, validate, and resume with early
+// stopping disabled.
+func TestOldCheckpointLoadsWithoutEarlyStopFields(t *testing.T) {
+	tests := []struct {
+		name            string
+		schema          string
+		wantTermination string
+	}{
+		{name: "schema v0", schema: "", wantTermination: TerminationLegacy},
+		{name: "schema v1", schema: `"schemaVersion": 1,`, wantTermination: TerminationLegacy},
+		{name: "schema v2", schema: `"schemaVersion": 2,`, wantTermination: TerminationUnknown},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			raw := `{
+				` + test.schema + `
+				"jobId": "8d5f1c2a-1f2e-4c3b-8a9d-2b6c7e0f1a34",
+				"bestParams": [0, 0, 1, 0, 0, 0, 0],
+				"bestCost": 2.5,
+				"initialCost": 5,
+				"requestedCircles": 1,
+				"actualCircles": 1,
+				"effectiveSeed": 11,
+				"iterations": 40,
+				"timestamp": "2026-01-02T03:04:05Z",
+				"config": {
+					"refPath": "reference.png",
+					"mode": "joint",
+					"circles": 1,
+					"iters": 100,
+					"popSize": 30,
+					"seed": 11
+				}
+			}`
+
+			var checkpoint Checkpoint
+			if err := json.Unmarshal([]byte(raw), &checkpoint); err != nil {
+				t.Fatalf("Unmarshal() error = %v", err)
+			}
+			if err := checkpoint.Validate(); err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+			if checkpoint.SchemaVersion != CheckpointSchemaVersion {
+				t.Fatalf("SchemaVersion = %d, want %d", checkpoint.SchemaVersion, CheckpointSchemaVersion)
+			}
+			if checkpoint.Termination != test.wantTermination {
+				t.Fatalf("Termination = %q, want %q", checkpoint.Termination, test.wantTermination)
+			}
+
+			config := checkpoint.Config
+			if config.StopTargetCost != 0 || config.StopMinImprovement != 0 ||
+				config.StopStagnationIters != 0 || config.StopMinIters != 0 {
+				t.Fatalf("old checkpoint gained early-stop settings: %+v", config)
+			}
+			if config.EarlyStopEnabled() {
+				t.Fatal("old checkpoint resumes with early stopping enabled")
+			}
+		})
+	}
+}

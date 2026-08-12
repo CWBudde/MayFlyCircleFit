@@ -16,6 +16,32 @@ func TestRunThreadsFlagDefaultsToGOMAXPROCS(t *testing.T) {
 	}
 }
 
+// TestRunEarlyStopFlagsDefaultToDisabled pins that optimizer-level stopping is
+// opt-in, and that the stage-level flags keep their own distinct defaults. The
+// two mechanisms are separate on purpose and must not be unified.
+func TestRunEarlyStopFlagsDefaultToDisabled(t *testing.T) {
+	tests := map[string]string{
+		"stop-target-cost":      "0",
+		"stop-min-improvement":  "0",
+		"stop-stagnation-iters": "0",
+		"stop-min-iters":        "0",
+		"patience":              "3",
+		"threshold":             "0.001",
+	}
+
+	for name, want := range tests {
+		t.Run(name, func(t *testing.T) {
+			flag := runCmd.Flags().Lookup(name)
+			if flag == nil {
+				t.Fatalf("run command has no --%s flag", name)
+			}
+			if flag.DefValue != want {
+				t.Fatalf("--%s default = %q, want %q", name, flag.DefValue, want)
+			}
+		})
+	}
+}
+
 func TestRunVariantFlagDefaultsToStandard(t *testing.T) {
 	flag := runCmd.Flags().Lookup("variant")
 	if flag == nil {

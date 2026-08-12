@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -212,6 +213,33 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Optimizer-level early stopping. These fields only need to parse here;
+	// their bounds belong to app.Normalize, so they are not duplicated.
+	stopTargetCost, err := optionalFormFloat(r, "stopTargetCost")
+	if err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+		return
+	}
+	stopMinImprovement, err := optionalFormFloat(r, "stopMinImprovement")
+	if err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+		return
+	}
+	stopStagnationIters, err := optionalFormInt(r, "stopStagnationIters")
+	if err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+		return
+	}
+	stopMinIters, err := optionalFormInt(r, "stopMinIters")
+	if err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+		return
+	}
+
 	// Create job configuration through the same normalization path as the API.
 	config, err := app.Normalize(JobConfig{
 		RefPath:              refPath,
@@ -225,6 +253,10 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		DisableConvergence:   !convergenceEnabled,
 		ConvergencePatience:  convergencePatience,
 		ConvergenceThreshold: convergenceThreshold,
+		StopTargetCost:       stopTargetCost,
+		StopMinImprovement:   stopMinImprovement,
+		StopStagnationIters:  stopStagnationIters,
+		StopMinIters:         stopMinIters,
 	})
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -264,4 +296,33 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 
 	// Redirect to job detail page
 	http.Redirect(w, r, "/jobs/"+job.ID, http.StatusSeeOther)
+}
+
+// optionalFormFloat parses an optional numeric form field. An absent or empty
+// value yields zero. Range checks deliberately live in app.Normalize so the
+// form and the JSON API cannot drift apart.
+func optionalFormFloat(r *http.Request, field string) (float64, error) {
+	raw := r.FormValue(field)
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a number", field)
+	}
+	return value, nil
+}
+
+// optionalFormInt parses an optional integer form field. An absent or empty
+// value yields zero.
+func optionalFormInt(r *http.Request, field string) (int, error) {
+	raw := r.FormValue(field)
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a whole number", field)
+	}
+	return value, nil
 }

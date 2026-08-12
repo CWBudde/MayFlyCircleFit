@@ -892,3 +892,89 @@ func shutdownTestServer(t *testing.T, server *Server) {
 		}
 	})
 }
+
+// TestServer_CreatePagePost_EarlyStopDefersToAppValidation proves the form
+// parses the optimizer-level stopping fields but leaves their bounds to
+// app.Normalize, so the HTML and JSON entry points cannot drift apart.
+func TestServer_CreatePagePost_EarlyStopDefersToAppValidation(t *testing.T) {
+	server := NewServer(":0", nil)
+
+	base := map[string]string{
+		"refPath": "test.png",
+		"mode":    "joint",
+		"circles": "10",
+		"iters":   "100",
+		"popSize": "30",
+		"seed":    "1",
+	}
+
+	tests := []struct {
+		name     string
+		extra    map[string]string
+		errMsg   string
+		wantPage bool
+	}{
+		{
+			name:     "min iters above the iteration budget",
+			extra:    map[string]string{"stopMinIters": "999999"},
+			errMsg:   "stopMinIters",
+			wantPage: true,
+		},
+		{
+			name:     "min improvement without a stagnation window",
+			extra:    map[string]string{"stopMinImprovement": "5"},
+			errMsg:   "stopMinImprovement",
+			wantPage: true,
+		},
+		{
+			name:     "negative target cost",
+			extra:    map[string]string{"stopTargetCost": "-1"},
+			errMsg:   "stopTargetCost",
+			wantPage: true,
+		},
+		{
+			name:     "non-numeric target cost",
+			extra:    map[string]string{"stopTargetCost": "abc"},
+			errMsg:   "stopTargetCost must be a number",
+			wantPage: true,
+		},
+		{
+			name:  "empty fields are accepted as disabled",
+			extra: map[string]string{"stopTargetCost": "", "stopStagnationIters": ""},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			form := url.Values{}
+			for k, v := range base {
+				form.Add(k, v)
+			}
+			for k, v := range tt.extra {
+				form.Add(k, v)
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/create", bytes.NewBufferString(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+
+			server.handleCreatePage(rec, req)
+
+			body := rec.Body.String()
+			if tt.wantPage {
+				if rec.Code != http.StatusOK {
+					t.Fatalf("status = %d, want 200", rec.Code)
+				}
+				if !containsString(body, tt.errMsg) {
+					t.Fatalf("expected %q in the rendered error page, got:\n%s", tt.errMsg, body)
+				}
+				return
+			}
+			// A valid submission redirects to the created job instead of
+			// re-rendering the form with an error.
+			if containsString(body, "stopTargetCost must be") || containsString(body, "stopStagnationIters must be") {
+				t.Fatalf("empty early-stop fields were rejected:\n%s", body)
+			}
+		})
+	}
+}

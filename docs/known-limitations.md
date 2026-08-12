@@ -67,6 +67,23 @@ behavior is production-ready.
 - Evolutionary optimization is expensive and does not guarantee a global
   optimum. Seed, population, iteration count, mode, and image size materially
   affect runtime and quality.
+- Optimizer-level early stopping (`--stop-*`) applies per stage in sequential
+  and batch modes. A run can stop early in many stages and still execute every
+  stage, in which case the reported termination is `completed` and the count
+  appears in the `stages_stopped_early` log field. Only the stage-level tracker
+  reports `stage_convergence`.
+- Early stopping changes which solution a given seed produces. It is disabled by
+  default for that reason; a run that enables it is reproducible for a fixed
+  configuration but is not comparable to a run without it.
+- `--log-level=debug` now emits one MayFly record per optimizer iteration.
+  Long runs produce correspondingly large logs.
+- MayFly's `EnableParallel`/`MaxWorkers` evaluation parallelism is deliberately
+  unused. `CPURenderer.Render` composites into one reusable canvas, so
+  concurrent cost evaluations would interleave, and CPU rendering already
+  parallelizes across row bands. Enabling it would require a concurrency-safe
+  cost path and has not been shown to pay for itself.
+- MayFly's constraint handling and convergence-curve CSV/JSON export are unused.
+  The problem is box-bounded, and trace ownership belongs to the store package.
 
 ## CI and release status
 

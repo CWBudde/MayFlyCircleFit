@@ -165,18 +165,18 @@ func (r *CPURenderer) newSession(circleCount int) (Renderer, func(), error) {
 	canvas := image.NewNRGBA(image.Rect(0, 0, r.width, r.height))
 	initialBg := append([]byte(nil), r.initialBg...)
 	return &CPURenderer{
-		reference:          r.reference,
-		k:                  circleCount,
-		bounds:             fit.NewBounds(circleCount, r.width, r.height),
-		costFunc:           r.costFunc,
-		width:              r.width,
-		height:             r.height,
-		threads:            r.threads,
-		opaqueCanvas:       r.opaqueCanvas,
-		forceFloatGeometry: r.forceFloatGeometry,
+		reference:            r.reference,
+		k:                    circleCount,
+		bounds:               fit.NewBounds(circleCount, r.width, r.height),
+		costFunc:             r.costFunc,
+		width:                r.width,
+		height:               r.height,
+		threads:              r.threads,
+		opaqueCanvas:         r.opaqueCanvas,
+		forceFloatGeometry:   r.forceFloatGeometry,
 		forceFloat32Geometry: r.forceFloat32Geometry,
-		canvas:             canvas,
-		initialBg:          initialBg,
+		canvas:               canvas,
+		initialBg:            initialBg,
 	}, noopCleanup, nil
 }
 
@@ -359,9 +359,13 @@ func (r *CPURenderer) renderCircleScanlineRows(img *image.NRGBA, c fit.Circle, r
 	r2 := c.R * c.R
 	fixedGeometry, useFixedGeometry := newFixedCircleQ16(c)
 	useFixedGeometry = useFixedGeometry && !r.forceFloatGeometry && !r.forceFloat32Geometry
-	center32 := float32(c.X)
-	y32 := float32(c.Y)
-	radiusSquared32 := float32(c.R) * float32(c.R)
+	var center32, y32, radiusSquared32 float32
+	if r.forceFloat32Geometry {
+		center32 = float32(c.X)
+		y32 = float32(c.Y)
+		radius32 := float32(c.R)
+		radiusSquared32 = radius32 * radius32
+	}
 
 	// Scanline algorithm: for each row, compute horizontal span
 	for y := minY; y < maxY; y++ {

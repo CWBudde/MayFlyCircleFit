@@ -92,6 +92,27 @@ application configuration into the store package.
   is not supported.
 - A zero user seed generates and reports an effective seed; a nonzero seed is
   deterministic.
+- Two distinct early-stopping mechanisms exist and must not be conflated.
+  Stage-level convergence (`--patience`, `--threshold`, `Convergence*` config)
+  counts whole circles or batches, uses a relative improvement ratio, and
+  applies to sequential and batch only; `OptimizeJointContext` discards it.
+  Optimizer-level stopping (`--stop-*`, `Stop*` config) is evaluated per
+  iteration inside one optimizer run, uses an absolute improvement, and applies
+  in every mode. Optimizer-level stopping is off by default and `ApplyDefaults`
+  must never fill those fields in, because a default run has to stay
+  reproducible.
+- In sequential and batch modes, optimizer-level stopping applies per stage. A
+  run can stop early in many stages and still execute all of them; the reported
+  termination is then `completed`, with the count in `stages_stopped_early`.
+  Only the stage-level tracker reports `stage_convergence`.
+- Optimizer termination reasons propagate from the adapter through the pipeline
+  to jobs, checkpoints, `status`, and `checkpoints list`. The checkpoint
+  `termination` field is free-form, so new reasons need no schema bump, and
+  readers reject a version above 2.
+- The configured `variant` is honored at every optimizer construction site.
+- MayFly's `optimization_started` and `iteration_completed` events are demoted
+  to debug, so `--log-level=debug` emits one record per optimizer iteration.
+  Info level stays at one record per optimizer run.
 - The post-Task-10.12 M5 profile assigns 65.01% of flat samples to the scalar
   span compositor, 26.47% to scanline traversal, and 1.95% to gated NEON.
   Keep further rendering work profile-guided and pixel-equivalent.

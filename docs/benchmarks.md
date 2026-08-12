@@ -40,10 +40,11 @@ per-pixel loop with the production horizontal-span renderer at 512×512/K100;
 it is the integration benchmark used by Task 10.12.
 
 `BenchmarkCircleSpanGeometry` compares the `float64` oracle, scalar `float32`,
-and Q16.16 span-edge searches across small, large, clipped, and row-sharded
-circles. `BenchmarkCPURendererGeometry` compares the oracle and Q16.16 modes in
-the complete one-thread 512×512/K100 renderer. These are the Task 10.13
-geometry and integration benchmarks.
+runtime-selected float32 SIMD, and Q16.16 span-edge searches across small,
+large, clipped, and row-sharded circles. `BenchmarkCPURendererGeometry`
+compares those modes in the complete one-thread 512×512/K100 renderer. On
+AMD64, `BenchmarkCircleSpanFloat32AVX2Direct` isolates the AVX2 per-row kernel
+crossover. These are the Task 10.13 geometry and integration benchmarks.
 
 ## Running benchmarks
 

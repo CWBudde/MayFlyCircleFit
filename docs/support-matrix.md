@@ -17,6 +17,23 @@ staged sessions returns `ErrStagedOptimizationUnsupported`. Batch mode accepts a
 requested total and batch size, including a smaller final batch, so result
 cardinality matches the total.
 
+## Early stopping
+
+Two independent mechanisms exist. They use different units and must not be
+confused.
+
+| Mechanism | Flags | Unit | Improvement | Modes | Default |
+| --- | --- | --- | --- | --- | --- |
+| Stage-level convergence | `--convergence`, `--patience`, `--threshold` | circles/batches | relative ratio | Sequential, batch | Enabled |
+| Optimizer-level stopping | `--stop-target-cost`, `--stop-stagnation-iters`, `--stop-min-improvement`, `--stop-min-iters` | iterations | absolute cost | Joint, sequential, batch | Disabled |
+
+Joint mode ignores stage-level convergence. In staged modes, optimizer-level
+stopping applies to each stage independently, so it can shorten stages without
+ending the run; the run then reports `completed`. Reported termination reasons
+are `completed`, `cancelled`, `target_cost`, `stagnation`, and
+`stage_convergence`. MayFly evaluation parallelism (`EnableParallel`) is not
+enabled.
+
 ## Build targets
 
 The portable CI matrix is defined with `CGO_ENABLED=0`, which intentionally

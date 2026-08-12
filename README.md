@@ -143,6 +143,37 @@ CGO_ENABLED=1 go build -tags gpu -o mayflycirclefit .
 ./mayflycirclefit run --ref assets/test.png --backend opencl --mode sequential
 ```
 
+## Early stopping
+
+Two independent mechanisms can end a run before its budget is spent. They count
+different things, so they have separate flags.
+
+| Mechanism | Flags | Counts | Improvement | Applies to | Default |
+| --- | --- | --- | --- | --- | --- |
+| Stage-level convergence | `--convergence`, `--patience`, `--threshold` | circles or batches | relative ratio | sequential, batch | on |
+| Optimizer-level stopping | `--stop-*` | iterations | absolute cost | all modes | off |
+
+Optimizer-level stopping is disabled unless you ask for it, so default runs stay
+reproducible for a given seed:
+
+```sh
+# Stop once the optimizer stalls for 25 iterations, but never before iteration 50.
+./mayflycirclefit run --ref assets/test.png --iters 500 \
+  --stop-stagnation-iters 25 --stop-min-iters 50
+
+# Stop as soon as the cost reaches a known-good value.
+./mayflycirclefit run --ref assets/test.png --stop-target-cost 1200
+```
+
+`--stop-target-cost` and `--stop-min-improvement` use the same cost units shown
+by `status` and written to the trace. In sequential and batch modes these apply
+to each stage, so they can shorten stages without ending the run. `status` and
+`checkpoints list` report why a run stopped: `completed`, `cancelled`,
+`target_cost`, `stagnation`, or `stage_convergence`.
+
+Use `--variant` to select the MayFly algorithm variant (`standard`, `desma`, or
+`olce`).
+
 ## Checkpoints and restart-from-best
 
 Checkpoint files record the best candidate and measured progress. Resume does

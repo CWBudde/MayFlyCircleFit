@@ -1,7 +1,7 @@
 # Task 10.13: fixed-point circle geometry (initial AMD64 results)
 
 **Status:** in progress  
-**Validated:** 2026-08-12  
+**Validated:** 2026-08-13
 **Hardware:** AMD Ryzen 5 4600H, Linux/AMD64  
 **Production result:** 1.14× faster one-thread 512×512/K100 rendering
 
@@ -35,18 +35,47 @@ the integer path useful:
 2. The final zero-to-seven-pixel tail updates squared distance with first and
    second finite differences instead of multiplying again.
 
-This is the useful batching property an AVX2 prototype would exploit, but it
-needs only one scalar lane. Inspection of the compiled AMD64 kernel shows a
-tight batch loop consisting of shift, subtract, `IMULQ`, compare, and branch,
-with add-only tail recurrences and no stack frame. Calculating all eight AVX2
-lanes and extracting a mask would do more work for the same monotonic proof.
-An assembly kernel is therefore not enabled at this stage. Direct SIMD
-prototyping remains open if later profiles or another architecture show a
-crossover.
+This is also the batching property used by the AVX2 float32 prototype. The
+fixed-point path needs only the farthest scalar lane, while the AVX2 path tests
+all eight float32 candidates and extracts a comparison mask to locate a partial
+edge. Clipped fragments shorter than eight pixels use scalar VEX-encoded
+float32 instructions.
+
+## AVX2 float32 follow-up
+
+The AMD64 prototype is hand-written Plan 9 assembly and runtime-gated with
+`golang.org/x/sys/cpu`. It keeps all instructions VEX-encoded until
+`VZEROUPPER`; mixing a legacy SSE load into the first prototype caused a severe
+AVX-to-SSE transition penalty and was removed. A 100,000-case randomized test
+proves the AVX2 span results are exact relative to the scalar float32 helper,
+including clipped spans and batch boundaries.
+
+Direct single-row medians show that SIMD does make float32 substantially faster:
+
+| Radius | Scalar float32 | AVX2 float32 | Speedup |
+| --- | ---: | ---: | ---: |
+| 5.25 | 8.63 ns | 6.63 ns | 1.30× |
+| 25.25 | 33.57 ns | 12.56 ns | 2.67× |
+| 100.25 | 148.9 ns | 31.57 ns | 4.72× |
+| 256.25 | 324.3 ns | 62.08 ns | 5.22× |
+
+The stronger comparison is Q16.16, whose monotonic batch needs one widened
+integer multiply rather than eight floating-point lane calculations. Across all
+intersecting rows, AVX2 float32 was about 2.0× faster than scalar float32 at R25,
+4.1× at R100, and 3.6× for the clipped R256 case, but Q16.16 remained 16–34%
+faster over those workloads. R5 is below the SIMD crossover and AVX2 was about
+18% slower than scalar float32 there.
+
+With `GOMAXPROCS=1` and two-second samples, the complete 512×512/K100 renderer
+measured a 10.04 ms median for AVX2 float32 and 9.32 ms for Q16.16. AVX2 was
+therefore about 7.7% slower than Q16.16 despite decisively beating the original
+scalar float32 search. It remains a runtime-gated experimental/benchmark
+backend; production rendering continues to select Q16.16.
 
 Scalar `float32` was also measured. On this host it is effectively tied with
 `float64`; Go emits scalar XMM arithmetic for both, so halving the value width
-does not create SIMD parallelism by itself.
+does not create SIMD parallelism by itself. The explicit AVX2 kernel supplies
+that parallelism, but does not overcome Q16.16's cheaper monotonic skip.
 
 ## AMD64 benchmarks
 
@@ -71,7 +100,8 @@ The same binary compares the geometry modes in the complete opaque renderer:
 
 A deterministic test compared 10,000 random circles over 2,022,704
 `float64`-intersecting rows. Q16.16 changed 15 row spans, or approximately
-0.00074%. The test caps this at 0.001% and retains the exact `float64` path for
+0.00074%; float32 changed 19 spans, or approximately 0.00094%. Both tests cap
+the deviation at 0.001%, and Q16.16 retains the exact `float64` path for
 out-of-range geometry. Existing historical renderer-oracle and row-sharding
 tests pass with the fixed-point path enabled.
 
@@ -84,6 +114,11 @@ cross-build matrix passes.
 
 ```sh
 go test -run '^TestFixedCircleQ16' -count=1 -v ./internal/fit/renderer
+
+go test -run '^TestCircleSpanFloat32' -count=1 -v ./internal/fit/renderer
+
+go test -run '^$' -bench '^BenchmarkCircleSpanFloat32AVX2Direct$' \
+  -benchmem -benchtime=500ms -count=5 ./internal/fit/renderer
 
 go test -run '^$' -bench '^BenchmarkCircleSpanGeometry$' \
   -benchmem -benchtime=500ms -count=5 ./internal/fit/renderer

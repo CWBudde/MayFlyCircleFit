@@ -41,6 +41,7 @@ TEXT ·circleSpanFloat32AVX2Kernel(SB), NOSPLIT, $0-40
 	VBROADCASTSS X1, Y1
 	VMOVSS roundedCenter+8(FP), X2
 	VBROADCASTSS X2, Y2
+	VBROADCASTSS ·circleEight<>(SB), Y5
 	MOVQ width+16(FP), SI
 
 	// Left candidates are [cx-1, cx-2, ..., cx-8].
@@ -58,7 +59,6 @@ left_vector:
 	CMPL DI, $255
 	JNE left_partial
 	SUBQ $8, AX
-	VBROADCASTSS ·circleEight<>(SB), Y5
 	VSUBPS Y5, Y2, Y2
 	JMP left_vector
 
@@ -101,7 +101,6 @@ right_vector:
 	CMPL DI, $255
 	JNE right_partial
 	ADDQ $8, BX
-	VBROADCASTSS ·circleEight<>(SB), Y5
 	VADDPS Y5, Y2, Y2
 	JMP right_vector
 

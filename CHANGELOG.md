@@ -8,6 +8,15 @@ release is declared by this file.
 
 ### Added
 
+- Optimizer-level early stopping, disabled by default. `--stop-target-cost`,
+  `--stop-stagnation-iters`, `--stop-min-improvement`, and `--stop-min-iters`
+  (and their `stop*` job-configuration fields) apply per iteration inside a
+  single optimizer run, in every mode. They are distinct from the existing
+  stage-level `--patience`/`--threshold` convergence detection, which counts
+  whole circles or batches and uses a relative ratio; the new minimum
+  improvement is absolute. Leaving them unset keeps a run bit-identical to one
+  configured before they existed.
+- `run` gained `--variant` for selecting the MayFly algorithm variant.
 - Structured MayFly lifecycle logging. Each optimizer run emits one info record
   carrying its measured work and termination reason; MayFly's per-iteration and
   run-start events are demoted to debug, so `--log-level=debug` now emits one

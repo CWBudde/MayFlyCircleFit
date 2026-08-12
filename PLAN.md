@@ -426,10 +426,10 @@ assumed instruction-level speedup.
 
 **10.13d — Investigate AMD64 SIMD/assembly:**
 - [x] Inspect compiler output for scalar `float32` and fixed-point candidates
-- [ ] Prototype an AVX2 span-edge search that checks multiple candidate X values
+- [x] Prototype an AVX2 float32 span-edge search that checks eight candidate X values
   per batch; account for mask extraction, short-span setup cost, and scalar tails
-- [ ] Benchmark direct kernel calls and full rendering before enabling runtime
-  dispatch; use `x/sys/cpu` feature gating and a measured crossover if retained
+- [x] Benchmark direct kernel calls and full rendering with `x/sys/cpu` feature
+  gating; retain Q16.16 for production because AVX2 float32 did not beat it
 - [ ] Assess the corresponding ARM64 NEON opportunity without making AMD64-only
   layout choices that prevent a later implementation
 
@@ -465,6 +465,14 @@ clipped R256 circle. The controlled one-thread 512×512/K100 renderer improved
 from 9.13 ms to 7.98 ms median (1.14×, zero allocations). Q16.16 changed 15
 of 2,022,704 randomized intersecting row spans (0.00074%); alternate formats,
 adversarial boundaries, and cross-platform validation remain open.
+
+**AVX2 float32 follow-up:** the hand-written eight-lane kernel is exact relative
+to scalar float32 across 100,000 randomized span searches. Direct calls improve
+by 1.30× at R5, 2.67× at R25, 4.72× at R100, and 5.22× at R256. Across all
+rows, however, Q16.16 remains 16–34% faster for R25–R256, and the controlled
+full render measured 9.32 ms for Q16.16 versus 10.04 ms for AVX2 float32.
+Production dispatch therefore remains Q16.16; AVX2 float32 is retained as a
+runtime-gated benchmark/experimental backend.
 
 ### Task 10.14: (Optional) Circle Symmetry Exploitation
 **Rationale**: Circles are vertically symmetric - compute upper half, mirror to lower.

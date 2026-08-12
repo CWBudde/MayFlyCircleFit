@@ -1,7 +1,10 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
+	"math"
+	"strings"
 	"testing"
 )
 
@@ -99,5 +102,76 @@ func TestValidateImageDimensions(t *testing.T) {
 		if got := ValidateImageDimensions(test.width, test.height); (got != nil) != test.wantErr {
 			t.Errorf("ValidateImageDimensions(%d, %d) = %v", test.width, test.height, got)
 		}
+	}
+}
+
+// TestNormalizeLeavesEarlyStopDisabled is the reproducibility contract for the
+// optimizer-level stopping fields: ApplyDefaults must never fill them in, so an
+// unconfigured run behaves exactly as it did before they existed.
+func TestNormalizeLeavesEarlyStopDisabled(t *testing.T) {
+	config, err := Normalize(JobConfig{RefPath: "reference.png"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.StopTargetCost != 0 || config.StopMinImprovement != 0 {
+		t.Fatalf("early-stop costs defaulted to non-zero: %+v", config)
+	}
+	if config.StopStagnationIters != 0 || config.StopMinIters != 0 {
+		t.Fatalf("early-stop windows defaulted to non-zero: %+v", config)
+	}
+	if config.EarlyStopEnabled() {
+		t.Fatal("early stopping is enabled by default")
+	}
+}
+
+// TestDefaultConfigJSONOmitsEarlyStopFields proves the persisted bytes for a
+// default job are unchanged, so existing checkpoints round-trip identically.
+func TestDefaultConfigJSONOmitsEarlyStopFields(t *testing.T) {
+	config, err := Normalize(JobConfig{RefPath: "reference.png"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"stopTargetCost", "stopMinImprovement", "stopStagnationIters", "stopMinIters"} {
+		if strings.Contains(string(data), key) {
+			t.Fatalf("default config serialized %s: %s", key, data)
+		}
+	}
+}
+
+func TestEarlyStopEnabledAndValidCombinations(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*JobConfig)
+		enabled bool
+	}{
+		{"target cost only", func(c *JobConfig) { c.StopTargetCost = 0.5 }, true},
+		{"stagnation only", func(c *JobConfig) { c.StopStagnationIters = 5 }, true},
+		{"min iters only", func(c *JobConfig) { c.StopMinIters = 5 }, false},
+		{"full configuration", func(c *JobConfig) {
+			c.StopTargetCost = 1
+			c.StopMinImprovement = 0.5
+			c.StopStagnationIters = 5
+			c.StopMinIters = 10
+		}, true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := DefaultConfig()
+			config.RefPath = "reference.png"
+			config.EffectiveSeed = 1
+			test.mutate(&config)
+
+			if err := config.Validate(); err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+			if got := config.EarlyStopEnabled(); got != test.enabled {
+				t.Fatalf("EarlyStopEnabled() = %v, want %v", got, test.enabled)
+			}
+		})
 	}
 }
