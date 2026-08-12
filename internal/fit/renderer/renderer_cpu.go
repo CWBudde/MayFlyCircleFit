@@ -253,7 +253,7 @@ func effectiveThreadCount(threads, height int) int {
 // renderCircle composites a circle onto the image using premultiplied alpha
 func (r *CPURenderer) renderCircle(img *image.NRGBA, c fit.Circle) {
 	// Early-reject: circle is fully transparent
-	if c.Opacity < 0.001 {
+	if c.Opacity == 0 {
 		return
 	}
 
@@ -313,7 +313,7 @@ func (r *CPURenderer) renderCircleScanline(img *image.NRGBA, c fit.Circle) {
 // rowEnd). Callers may safely process disjoint row ranges concurrently.
 func (r *CPURenderer) renderCircleScanlineRows(img *image.NRGBA, c fit.Circle, rowStart, rowEnd int) {
 	// Early-reject: circle is fully transparent
-	if c.Opacity < 0.001 {
+	if c.Opacity == 0 {
 		return
 	}
 

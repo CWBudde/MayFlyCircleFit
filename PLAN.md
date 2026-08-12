@@ -178,7 +178,7 @@ Implemented and tested filesystem-backed atomic checkpoints, trace logging, CLI/
 
 ---
 
-## Phase 9: Performance Profiling & Fast Paths (CPU)
+## Phase 9: Performance Profiling & Fast Paths (CPU) ✅ COMPLETE
 
 **Goal:** Identify bottlenecks and implement safe, incremental speedups on CPU.
 
@@ -237,13 +237,12 @@ flame views, per-optimization findings, reproduction templates, and remaining
 bottlenecks are recorded in `docs/task-9.9-performance-report.md`; pprof is now
 pinned as a Go tool for reproducible analysis.
 
-### Task 9.10: Validate Correctness After Optimizations
-- [ ] Run full test suite to verify no regressions
-- [ ] Compare optimized outputs with baseline (pixel-exact)
-- [ ] Test with various edge cases (small circles, large circles, overlapping)
-- [ ] Verify cost computation still accurate
-- [ ] Test with different image sizes and circle counts
-- [ ] Document any limitations or tradeoffs introduced
+### Task 9.10: Validate Correctness After Optimizations ✅
+
+Completed: pixel-exact baseline tests cover single- and multi-threaded CPU
+rendering, edge cases, varied workloads, custom canvases, and cost parity. They
+also found and fixed the sub-0.001 opacity rejection regression. Results and
+tradeoffs are documented in `docs/task-9.10-correctness-validation.md`.
 
 **Deliverables:**
 - Profiling infrastructure and scripts
@@ -253,11 +252,11 @@ pinned as a Go tool for reproducible analysis.
 - Documentation of optimization techniques
 
 **Acceptance Checks:**
-- [ ] Profiling shows top offenders moved in right direction
-- [ ] Benchmarks demonstrate improvement without changing outputs
-- [ ] All existing tests still pass
-- [ ] Memory allocations reduced significantly
-- [ ] Rendering throughput increased by measurable amount
+- [x] Profiling shows top offenders moved in right direction
+- [x] Benchmarks demonstrate improvement without changing outputs
+- [x] All existing tests still pass
+- [x] Memory allocations reduced significantly
+- [x] Rendering throughput increased by measurable amount
 
 ---
 

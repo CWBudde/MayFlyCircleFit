@@ -22,6 +22,11 @@ Successfully implemented AABB (Axis-Aligned Bounding Box) precomputation and ear
 
 ### 1. Early-Reject for Transparent Circles
 
+> **Task 9.10 correction:** This task originally used the `< 0.001` threshold
+> shown below. Pixel-exact baseline validation later proved that such circles
+> can change an 8-bit channel on non-white canvases. Production code now skips
+> only circles with opacity exactly equal to zero.
+
 **Implementation:**
 ```go
 // Early-reject: circle is fully transparent
@@ -31,7 +36,8 @@ if c.Opacity < 0.001 {
 ```
 
 **Impact:**
-- Skips rendering circles with opacity < 0.001
+- Historically skipped circles with opacity < 0.001; Task 9.10 narrowed this
+  to exactly zero to preserve pixel parity
 - Zero pixels processed for fully transparent circles
 - Minimal branching overhead
 
@@ -222,7 +228,7 @@ The optimizations are particularly effective on larger images where:
 - math.Round (4 calls per pixel in compositePixel)
 + Integer arithmetic with +0.5 offset
 
-+ Early-reject for opacity < 0.001
++ Early-reject for opacity == 0 (corrected from < 0.001 by Task 9.10)
 + Early-reject for circles outside image bounds
 + Precomputed AABB values before loops
 ```
@@ -280,7 +286,8 @@ Task 9.3 successfully implemented AABB precomputation and early-reject optimizat
 - [x] Precompute axis-aligned bounding boxes for circles
 - [x] Avoid per-pixel bounds checks in inner loops
 - [x] Add early-reject for circles fully outside image bounds
-- [x] Add early-reject for circles with opacity ≈ 0 (threshold: 0.001)
+- [x] Add early-reject for fully transparent circles (Task 9.10 corrected the
+  original 0.001 threshold to exact zero)
 - [x] Write benchmarks comparing old vs new approach
 - [x] Verify pixel-exact equivalence with existing tests
 - [x] Document performance improvement

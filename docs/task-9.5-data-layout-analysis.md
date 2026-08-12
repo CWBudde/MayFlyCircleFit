@@ -107,7 +107,7 @@ func (r *CPURenderer) renderCircle(img *image.NRGBA, c Circle) {
     maxYf := c.Y + c.R
 
     // 2. Early-reject using opacity: c.Opacity
-    if c.Opacity < 0.001 { return }
+    if c.Opacity == 0 { return }
 
     // 3. Loop over pixels in bounding box
     for y := minY; y < maxY; y++ {
@@ -293,7 +293,7 @@ While SoA is not beneficial, we identified some micro-optimizations already impl
 
 2. **Early-reject for transparent circles** (line 86)
    ```go
-   if c.Opacity < 0.001 { return }  // Skip rendering entirely
+   if c.Opacity == 0 { return }  // Skip rendering entirely
    ```
 
 3. **Early-reject for out-of-bounds circles** (line 96)
