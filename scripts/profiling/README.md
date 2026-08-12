@@ -2,6 +2,12 @@
 
 Helper scripts for profiling MayFlyCircleFit performance and identifying optimization opportunities.
 
+The repository pins `github.com/google/pprof` as a Go tool. Use
+`go tool pprof`; this works even with Go installations that do not bundle
+`pprof` in the toolchain. Phase 9's cross-revision renderer harness templates
+and measured results are documented in
+[`docs/task-9.9-performance-report.md`](../../docs/task-9.9-performance-report.md).
+
 ## Scripts
 
 ### profile-run.sh
@@ -227,3 +233,6 @@ profiles/
 ```
 
 Add `profiles/` to `.gitignore` to avoid committing large binary files.
+
+Static documentation captures that intentionally belong in a performance
+report live under `docs/profiles/`; ordinary raw profiles remain ignored.

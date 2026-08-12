@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="820" viewBox="0 0 1440 820" role="img" aria-labelledby="title desc">
+  <title id="title">Phase 9 CPU render latency by milestone</title>
+  <desc id="desc">Two bar charts compare median render latency for 256 by 256 with 30 circles and 512 by 512 with 100 circles. Lower is better.</desc>
+  <rect width="1440" height="820" fill="#0f172a"/>
+  <text x="720" y="52" text-anchor="middle" fill="#f8fafc" font-family="sans-serif" font-size="30" font-weight="700">Phase 9 CPU render latency</text>
+  <text x="720" y="82" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="17">Median of six 1-second samples · lower is better</text>
+
+  <g transform="translate(70 130)">
+    <text x="300" y="0" text-anchor="middle" fill="#e2e8f0" font-family="sans-serif" font-size="22" font-weight="600">256×256 · 30 circles</text>
+    <line x1="50" y1="350" x2="590" y2="350" stroke="#64748b" stroke-width="2"/>
+    <line x1="50" y1="50" x2="50" y2="350" stroke="#64748b" stroke-width="2"/>
+    <g fill="#94a3b8" font-family="sans-serif" font-size="14">
+      <text x="42" y="355" text-anchor="end">0</text>
+      <text x="42" y="280" text-anchor="end">1 ms</text>
+      <text x="42" y="205" text-anchor="end">2 ms</text>
+      <text x="42" y="130" text-anchor="end">3 ms</text>
+      <text x="42" y="55" text-anchor="end">4 ms</text>
+    </g>
+    <g stroke="#334155" stroke-width="1">
+      <line x1="50" y1="275" x2="590" y2="275"/>
+      <line x1="50" y1="200" x2="590" y2="200"/>
+      <line x1="50" y1="125" x2="590" y2="125"/>
+      <line x1="50" y1="50" x2="590" y2="50"/>
+    </g>
+    <rect x="85" y="67" width="90" height="283" rx="5" fill="#ef4444"/>
+    <rect x="215" y="201" width="90" height="149" rx="5" fill="#f59e0b"/>
+    <rect x="345" y="236" width="90" height="114" rx="5" fill="#38bdf8"/>
+    <rect x="475" y="302" width="90" height="48" rx="5" fill="#22c55e"/>
+    <g fill="#f8fafc" font-family="sans-serif" font-size="16" font-weight="600" text-anchor="middle">
+      <text x="130" y="58">3.774 ms</text>
+      <text x="260" y="192">1.992 ms</text>
+      <text x="390" y="227">1.526 ms</text>
+      <text x="520" y="293">0.641 ms</text>
+    </g>
+    <g fill="#cbd5e1" font-family="sans-serif" font-size="14" text-anchor="middle">
+      <text x="130" y="377">Baseline</text>
+      <text x="260" y="377">Tasks 9.3+9.4</text>
+      <text x="390" y="377">Task 9.6</text>
+      <text x="520" y="377">Task 9.7 · 12T</text>
+    </g>
+  </g>
+
+  <g transform="translate(760 130)">
+    <text x="300" y="0" text-anchor="middle" fill="#e2e8f0" font-family="sans-serif" font-size="22" font-weight="600">512×512 · 100 circles</text>
+    <line x1="50" y1="350" x2="590" y2="350" stroke="#64748b" stroke-width="2"/>
+    <line x1="50" y1="50" x2="50" y2="350" stroke="#64748b" stroke-width="2"/>
+    <g fill="#94a3b8" font-family="sans-serif" font-size="14">
+      <text x="42" y="355" text-anchor="end">0</text>
+      <text x="42" y="280" text-anchor="end">10 ms</text>
+      <text x="42" y="205" text-anchor="end">20 ms</text>
+      <text x="42" y="130" text-anchor="end">30 ms</text>
+      <text x="42" y="55" text-anchor="end">40 ms</text>
+    </g>
+    <g stroke="#334155" stroke-width="1">
+      <line x1="50" y1="275" x2="590" y2="275"/>
+      <line x1="50" y1="200" x2="590" y2="200"/>
+      <line x1="50" y1="125" x2="590" y2="125"/>
+      <line x1="50" y1="50" x2="590" y2="50"/>
+    </g>
+    <rect x="85" y="50" width="90" height="300" rx="5" fill="#ef4444"/>
+    <rect x="215" y="161" width="90" height="189" rx="5" fill="#f59e0b"/>
+    <rect x="345" y="207" width="90" height="143" rx="5" fill="#38bdf8"/>
+    <rect x="475" y="303" width="90" height="47" rx="5" fill="#22c55e"/>
+    <g fill="#f8fafc" font-family="sans-serif" font-size="16" font-weight="600" text-anchor="middle">
+      <text x="130" y="41">39.95 ms</text>
+      <text x="260" y="152">25.16 ms</text>
+      <text x="390" y="198">19.09 ms</text>
+      <text x="520" y="294">6.257 ms</text>
+    </g>
+    <g fill="#cbd5e1" font-family="sans-serif" font-size="14" text-anchor="middle">
+      <text x="130" y="377">Baseline</text>
+      <text x="260" y="377">Tasks 9.3+9.4</text>
+      <text x="390" y="377">Task 9.6</text>
+      <text x="520" y="377">Task 9.7 · 12T</text>
+    </g>
+  </g>
+
+  <g transform="translate(90 610)" font-family="sans-serif">
+    <text x="0" y="0" fill="#f8fafc" font-size="20" font-weight="600">What changed</text>
+    <circle cx="12" cy="38" r="8" fill="#ef4444"/><text x="30" y="44" fill="#cbd5e1" font-size="16">Pre-optimization renderer</text>
+    <circle cx="290" cy="38" r="8" fill="#f59e0b"/><text x="308" y="44" fill="#cbd5e1" font-size="16">AABB plus reusable canvas</text>
+    <circle cx="620" cy="38" r="8" fill="#38bdf8"/><text x="638" y="44" fill="#cbd5e1" font-size="16">Inner-loop strength reduction</text>
+    <circle cx="995" cy="38" r="8" fill="#22c55e"/><text x="1013" y="44" fill="#cbd5e1" font-size="16">12 scanline workers</text>
+    <text x="630" y="100" text-anchor="middle" fill="#94a3b8" font-size="15">Task 9.7 values are its isolated 12-thread results; earlier bars are single-thread milestone measurements.</text>
+  </g>
+</svg>

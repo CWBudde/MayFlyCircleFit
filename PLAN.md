@@ -227,14 +227,15 @@ and report-only CI compares base/head results on the same runner without using
 noisy timing changes as a merge gate. Usage and interpretation are documented
 in `docs/benchmarks.md`.
 
-### Task 9.9: Measure and Document Performance Improvements
-- [ ] Re-run profiling on optimized code
-- [ ] Generate new flamegraphs showing improvement
-- [ ] Compare before/after benchmarks
-- [ ] Document speedup percentages for each optimization
-- [ ] Create performance report with graphs
-- [ ] Update CLAUDE.md with optimization findings
-- [ ] Identify remaining bottlenecks for future work
+### Task 9.9: Measure and Document Performance Improvements ✅
+
+Completed: same-host deterministic benchmarks compare the pre-optimization,
+AABB/canvas-reuse, inner-loop, pre-threading, and multi-threading milestones.
+The CPU renderer improved 2.09-2.47× on one thread and 6.39× for the large
+12-thread case, while timed serial allocations fell to zero. Matched profiles,
+flame views, per-optimization findings, reproduction templates, and remaining
+bottlenecks are recorded in `docs/task-9.9-performance-report.md`; pprof is now
+pinned as a Go tool for reproducible analysis.
 
 ### Task 9.10: Validate Correctness After Optimizations
 - [ ] Run full test suite to verify no regressions

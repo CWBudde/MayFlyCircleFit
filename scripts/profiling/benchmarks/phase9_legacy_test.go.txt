@@ -1,0 +1,50 @@
+package fit
+
+import (
+	"image"
+	"testing"
+)
+
+var phase9ImageSink *image.NRGBA
+
+func BenchmarkPhase9Render(b *testing.B) {
+	for _, workload := range []struct {
+		name          string
+		width, height int
+		circles       int
+	}{
+		{name: "256x256_K30", width: 256, height: 256, circles: 30},
+		{name: "512x512_K100", width: 512, height: 512, circles: 100},
+	} {
+		b.Run(workload.name, func(b *testing.B) {
+			reference := image.NewNRGBA(image.Rect(0, 0, workload.width, workload.height))
+			renderer := NewCPURenderer(reference, workload.circles)
+			params := phase9Params(workload.circles, workload.width, workload.height)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				phase9ImageSink = renderer.Render(params)
+			}
+		})
+	}
+}
+
+func phase9Params(circles, width, height int) []float64 {
+	params := make([]float64, circles*7)
+	maxRadius := width
+	if height < maxRadius {
+		maxRadius = height
+	}
+	maxRadius /= 4
+	for circle := 0; circle < circles; circle++ {
+		offset := circle * 7
+		params[offset] = float64((circle*37)%width) + 0.25
+		params[offset+1] = float64((circle*53)%height) + 0.75
+		params[offset+2] = 2 + float64((circle*11)%maxRadius)
+		params[offset+3] = float64((circle*29)%256) / 255
+		params[offset+4] = float64((circle*47)%256) / 255
+		params[offset+5] = float64((circle*71)%256) / 255
+		params[offset+6] = 0.25 + 0.7*float64((circle*17)%100)/100
+	}
+	return params
+}

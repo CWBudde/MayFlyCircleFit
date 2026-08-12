@@ -16,6 +16,13 @@ code and tests take precedence if this document becomes stale.
 - Prefer the `just` recipes. `just check` covers generation drift, tests, vet,
   formatting, and the ordinary build; CI adds race, pinned static analysis,
   aggregate coverage, vulnerability, GPU-compile, and cross-build jobs.
+- Phase 9 CPU measurements on the Ryzen 5 4600H show a 2.09-2.47×
+  single-thread renderer speedup, zero timed allocations after canvas reuse,
+  and a 6.39× median large-workload gain when Task 9.7 uses 12 workers. See
+  `docs/task-9.9-performance-report.md`; do not compare those absolute timings
+  across machines.
+- `github.com/google/pprof` is pinned as a Go tool because some Go
+  installations do not bundle it. Use `go tool pprof` for profile analysis.
 
 Do not state that a release gate passed unless its command or CI result was
 actually observed for the revision being discussed.
@@ -56,6 +63,10 @@ application configuration into the store package.
   is not supported.
 - A zero user seed generates and reports an effective seed; a nonzero seed is
   deterministic.
+- Current CPU profiles identify pixel compositing as the remaining dominant
+  renderer hotspot (83.48% of flat samples in the documented 12-thread
+  profile); scanline traversal is secondary. Keep further rendering work
+  profile-guided and pixel-equivalent.
 
 ## Server trust boundary
 
