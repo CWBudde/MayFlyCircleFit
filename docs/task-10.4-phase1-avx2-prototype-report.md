@@ -1,5 +1,9 @@
 # Task 10.4 Phase 1 Report: AVX2 Prototype in C
 
+> **Historical record:** The prototype sources and Makefile were removed after
+> the direct Plan 9 implementation replaced the C/GoAT workflow. This report
+> preserves the experiment; the deleted sources remain available in Git history.
+
 **Date:** 2025-10-28
 **Phase:** Prototype AVX2 in C (Validation & Learning)
 **Status:** ✅ COMPLETE

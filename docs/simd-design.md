@@ -1,5 +1,10 @@
 # SIMD Design Document - CPU Rendering Optimization
 
+> **Implementation update (2026-08-12):** Task 10.4 uses hand-written Plan 9
+> assembly in `internal/fit/ssd_amd64.s`. The production build does not require
+> C, cgo, or GoAT; the prototype and transpilation sections below remain as the
+> original research record.
+
 **Date:** 2025-10-28
 **Author:** Research for Phase 10 (SIMD/C Intrinsics)
 **Status:** Design Research Complete (Task 10.1)

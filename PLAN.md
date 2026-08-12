@@ -274,35 +274,18 @@ Completed: selected Plan 9 assembly with runtime dispatch and scalar fallback; d
 
 Completed: `fastSSD`/`FastSSD` interfaces, runtime backend dispatch, scalar baseline, backend reporting, and a 27-test validation harness.
 
-### Task 10.3: Implement Scalar Baseline SSD Kernel
+### Task 10.3: Implement Scalar Baseline SSD Kernel ✅ COMPLETE
 
 Completed: optimized pure-Go NRGBA SSD baseline with alpha exclusion, equivalence/edge tests, and benchmarks.
 
-### Task 10.4: Implement AVX2 SSD Kernel (x86-64) - **ADAPTED FROM RESEARCH**
-**Approach:** Plan9 Assembly via GoAT transpilation (NOT cgo)
+### Task 10.4: Implement AVX2 SSD Kernel (x86-64) ✅ COMPLETE
 
-**Phase 1: C Prototype (for validation)**
-- [x] Create `prototypes/ssd_avx2.c` with AVX2 intrinsics
-- [x] Process 8 pixels per iteration using 256-bit registers (not 32 - that's bytes)
-- [x] Implement horizontal sum reduction (vhaddps / reduction tree)
-- [x] Handle remainder pixels with scalar loop
-- [x] Test in C: Verify correctness, benchmark vs scalar C
-- [x] Target: 4-6× speedup over scalar C implementation
-
-**Phase 2: GoAT Transpilation**
-- [x] Install GoAT: `go install github.com/gorse-io/goat@latest`
-- [ ] Transpile: `goat -O3 prototypes/ssd_avx2.c > internal/fit/ssd_amd64.s`
-- [ ] Review generated Plan9 assembly, add comments
-- [ ] Hand-tune hot loops if needed (compare against Minio HighwayHash patterns)
-- [ ] Fix Go calling convention (verify FP offsets for parameters)
-
-**Phase 3: Integration**
-- [ ] Create `internal/fit/ssd_amd64.go` with function declaration
-- [ ] Add build tag: `//go:build amd64`
-- [ ] Wire into runtime dispatch (replace placeholder in ssd.go init())
-- [ ] Write tests verifying bit-exact equivalence to scalar
-- [ ] Create benchmarks comparing to scalar baseline
-- [ ] Document performance improvement (target: 4-6× @ 1.2-2 Gpixels/sec)
+Completed with hand-written Plan 9 assembly and runtime AVX2 dispatch; the build
+has no C, cgo, or GoAT dependency. Exact scalar-equivalence tests cover SIMD
+boundaries, remainders, padded rows, alpha exclusion, and large accumulators.
+Measured throughput is 2.4–2.6 Gpixels/s, approximately 6× the scalar baseline;
+details are in `docs/task-10.4-avx2-report.md`. Obsolete C prototypes were
+removed; their research results remain documented and recoverable from history.
 
 ### Task 10.5: Implement NEON SSD Kernel (ARM64) - **ADAPTED FROM RESEARCH**
 **Approach:** Plan9 Assembly via GoAT transpilation (NOT cgo)

@@ -155,13 +155,9 @@ func TestFastSSD_ScalarEquivalence(t *testing.T) {
 			// Compute with scalar reference
 			scalarResult := fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height) / float64(sz.width*sz.height*3)
 
-			// Allow small tolerance for floating-point rounding differences
-			tolerance := 1e-9
-			diff := math.Abs(simdResult - scalarResult)
-
-			if diff > tolerance {
-				t.Errorf("SIMD result differs from scalar: SIMD=%f, scalar=%f, diff=%e",
-					simdResult, scalarResult, diff)
+			if simdResult != scalarResult {
+				t.Errorf("SIMD result differs from scalar: SIMD=%f, scalar=%f",
+					simdResult, scalarResult)
 				t.Logf("Active backend: %s", ActiveSSDBackend)
 			}
 		})
@@ -286,15 +282,31 @@ func TestFastSSD_AVX2_BatchBoundaries(t *testing.T) {
 			// Compute with scalar reference
 			scalarResult := fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, width, height)
 
-			// Results should match exactly (or within floating-point tolerance)
-			diff := math.Abs(avx2Result - scalarResult)
-			tolerance := 1e-9
-
-			if diff > tolerance {
-				t.Errorf("AVX2 batch boundary error: width=%d, avx2=%f, scalar=%f, diff=%e",
-					width, avx2Result, scalarResult, diff)
+			if avx2Result != scalarResult {
+				t.Errorf("AVX2 batch boundary error: width=%d, avx2=%f, scalar=%f",
+					width, avx2Result, scalarResult)
 			}
 		})
+	}
+}
+
+// TestFastSSD_AVX2ExactLargeSum guards against overflowing 32-bit SIMD lanes.
+func TestFastSSD_AVX2ExactLargeSum(t *testing.T) {
+	if ActiveSSDBackend != SSDBackendAVX2 {
+		t.Skipf("Skipping AVX2 accumulator test: active backend is %s, not AVX2", ActiveSSDBackend)
+	}
+
+	const width, height = 512, 512
+	black := solidColorNRGBA(width, height, color.NRGBA{A: 0})
+	white := solidColorNRGBA(width, height, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+
+	got := fastSSD(black.Pix, white.Pix, black.Stride, width, height)
+	want := float64(width) * float64(height) * 3 * 255 * 255
+	if got != want {
+		t.Fatalf("AVX2 large SSD = %.0f, want %.0f", got, want)
+	}
+	if scalar := fastSSD_Scalar(black.Pix, white.Pix, black.Stride, width, height); got != scalar {
+		t.Fatalf("AVX2 large SSD = %.0f, scalar = %.0f", got, scalar)
 	}
 }
 

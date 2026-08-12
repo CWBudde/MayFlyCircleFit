@@ -1,14 +1,11 @@
-// Code generated from prototypes/ssd_avx2.c - DO NOT EDIT
-
 //go:build amd64
 
 package fit
 
 // ssdAVX2 computes sum of squared RGB differences using AVX2 SIMD instructions.
 //
-// This is a hand-written Plan9 assembly implementation based on the C prototype
-// in prototypes/ssd_avx2.c. It processes 8 pixels at a time using 256-bit AVX2
-// registers for improved performance over the scalar baseline.
+// This is a hand-written Plan 9 assembly implementation. It processes 8 pixels
+// at a time using 256-bit AVX2 registers and has no C or cgo dependency.
 //
 // Parameters:
 //   - a, b: pointers to RGBA image data (interleaved format: R,G,B,A,R,G,B,A,...)
