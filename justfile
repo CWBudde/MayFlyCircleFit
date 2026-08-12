@@ -13,6 +13,10 @@ build: templ
 release version:
 	bash scripts/build-release.sh "{{version}}"
 
+# Cross-build all supported CPU targets and verify SIMD build constraints
+cross-build:
+	bash scripts/check-cross-build.sh
+
 # Build and run the application
 run: build
 	{{BUILD_DIR}}/{{BINARY_NAME}}

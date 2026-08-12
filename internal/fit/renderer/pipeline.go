@@ -20,6 +20,12 @@ var (
 	ErrInvalidOptimizationInput = errors.New("invalid optimization input")
 )
 
+// TerminationStageConvergence reports that the stage-level convergence tracker
+// stopped a sequential or batch run before its circle budget was consumed. It
+// is a pipeline outcome rather than an optimizer outcome, so it is defined here
+// instead of in the opt package.
+const TerminationStageConvergence opt.Termination = "stage_convergence"
+
 // OptimizationResult holds the output of an optimization run.
 type OptimizationResult struct {
 	BestParams       []float64
@@ -30,6 +36,30 @@ type OptimizationResult struct {
 	Stages           int // Completed optimizer runs (one for joint, circles/batches for staged modes).
 	OptimizedCircles int
 	BestImage        *image.NRGBA
+
+	// Termination reports why the run stopped. Joint mode reports the single
+	// optimizer run's reason verbatim. Staged modes report
+	// TerminationStageConvergence when the stage-level tracker stopped the loop
+	// and opt.TerminationCompleted when the circle budget was consumed: an
+	// individual stage that stopped early is not why the run ended, because the
+	// loop went on to the next circle or batch.
+	Termination opt.Termination
+	// StagesStoppedEarly counts stages whose optimizer stopped before its own
+	// iteration cap. It is diagnostic and never changes Termination.
+	StagesStoppedEarly int
+}
+
+// stageOutcome is the measured result of one optimizer run within a pipeline.
+type stageOutcome struct {
+	Params      []float64
+	Iterations  int
+	Termination opt.Termination
+}
+
+// stoppedEarly reports whether the optimizer ended a stage before exhausting
+// its iteration budget.
+func (o stageOutcome) stoppedEarly() bool {
+	return o.Termination == opt.TerminationTargetCost || o.Termination == opt.TerminationStagnation
 }
 
 // CircleCallback is called after each circle is optimized in sequential mode.
@@ -102,19 +132,27 @@ func OptimizeJointContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	stages := 0
 	iterations := 0
 
+	termination := opt.TerminationCompleted
+	stagesStoppedEarly := 0
+
 	if circleCount > 0 {
-		candidate, stageIterations, err := runOptimizer(ctx, optimizer, evaluate, lower, upper, dim)
+		outcome, err := runOptimizer(ctx, optimizer, evaluate, lower, upper, dim)
 		if err != nil {
 			return nil, err
 		}
-		iterations += stageIterations
+		iterations += outcome.Iterations
 		stages = 1
-		if err := validateParamLength(candidate, dim); err != nil {
+		// Joint runs one optimizer, so its reason is the run's reason.
+		termination = outcome.Termination
+		if outcome.stoppedEarly() {
+			stagesStoppedEarly = 1
+		}
+		if err := validateParamLength(outcome.Params, dim); err != nil {
 			return nil, fmt.Errorf("%w: optimizer result: %v", ErrInvalidOptimizationInput, err)
 		}
-		candidateCost := evaluate(candidate)
+		candidateCost := evaluate(outcome.Params)
 		if candidateCost < bestCost {
-			bestParams = append([]float64(nil), candidate...)
+			bestParams = append([]float64(nil), outcome.Params...)
 			bestCost = candidateCost
 		}
 	}
@@ -124,6 +162,8 @@ func OptimizeJointContext(ctx context.Context, base Renderer, optimizer opt.Opti
 		return nil, err
 	}
 	result.Iterations = iterations
+	result.Termination = termination
+	result.StagesStoppedEarly = stagesStoppedEarly
 
 	slog.Info("Joint optimization complete", "initial_cost", initialCost, "best_cost", bestCost, "evaluations", evaluations)
 	return result, nil
@@ -158,6 +198,8 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 	tracker := NewConvergenceTracker(convergenceConfig)
 	stages := 0
 	iterations := 0
+	stagesStoppedEarly := 0
+	termination := opt.TerminationCompleted
 
 	for circleNum := 1; circleNum <= totalCircles; circleNum++ {
 		sessionCircleCount := circleNum
@@ -188,13 +230,17 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 			return session.Cost(params)
 		}
 
-		candidateCircle, stageIterations, err := runOptimizer(ctx, optimizer, evaluate, bounds.Lower, bounds.Upper, paramsPerCircle)
+		outcome, err := runOptimizer(ctx, optimizer, evaluate, bounds.Lower, bounds.Upper, paramsPerCircle)
 		if err != nil {
 			cleanup()
 			return nil, err
 		}
-		iterations += stageIterations
+		candidateCircle := outcome.Params
+		iterations += outcome.Iterations
 		stages++
+		if outcome.stoppedEarly() {
+			stagesStoppedEarly++
+		}
 		if err := validateParamLength(candidateCircle, paramsPerCircle); err != nil {
 			cleanup()
 			return nil, fmt.Errorf("%w: optimizer result for circle %d: %v", ErrInvalidOptimizationInput, circleNum, err)
@@ -226,6 +272,7 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 		}
 		if tracker.Update(bestCost) {
 			slog.Info("Sequential convergence detected", "circles_optimized", circleNum, "circles_requested", totalCircles)
+			termination = TerminationStageConvergence
 			break
 		}
 	}
@@ -236,6 +283,13 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 	}
 	result.OptimizedCircles = len(bestParams) / paramsPerCircle
 	result.Iterations = iterations
+	result.Termination = termination
+	result.StagesStoppedEarly = stagesStoppedEarly
+	slog.Info("Sequential optimization complete",
+		"stages", stages,
+		"stages_stopped_early", stagesStoppedEarly,
+		"termination", termination,
+	)
 	return result, nil
 }
 
@@ -272,6 +326,8 @@ func OptimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	stages := 0
 	iterations := 0
 	optimizedCircles := 0
+	stagesStoppedEarly := 0
+	termination := opt.TerminationCompleted
 
 	for currentCircles := 0; currentCircles < totalCircles; {
 		stageCircles := min(batchSize, totalCircles-currentCircles)
@@ -305,13 +361,17 @@ func OptimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 			return session.Cost(params)
 		}
 
-		candidateBatch, stageIterations, err := runOptimizer(ctx, optimizer, evaluate, bounds.Lower, bounds.Upper, dim)
+		outcome, err := runOptimizer(ctx, optimizer, evaluate, bounds.Lower, bounds.Upper, dim)
 		if err != nil {
 			cleanup()
 			return nil, err
 		}
-		iterations += stageIterations
+		candidateBatch := outcome.Params
+		iterations += outcome.Iterations
 		stages++
+		if outcome.stoppedEarly() {
+			stagesStoppedEarly++
+		}
 		if err := validateParamLength(candidateBatch, dim); err != nil {
 			cleanup()
 			return nil, fmt.Errorf("%w: optimizer result for batch %d: %v", ErrInvalidOptimizationInput, stages, err)
@@ -334,6 +394,7 @@ func OptimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 		if tracker.Update(bestCost) {
 			// Keep the result cardinality exact while avoiding further optimizer work.
 			bestParams = appendTransparentCircles(bestParams, totalCircles-currentCircles)
+			termination = TerminationStageConvergence
 			break
 		}
 	}
@@ -344,10 +405,17 @@ func OptimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	}
 	result.OptimizedCircles = optimizedCircles
 	result.Iterations = iterations
+	result.Termination = termination
+	result.StagesStoppedEarly = stagesStoppedEarly
+	slog.Info("Batch optimization complete",
+		"stages", stages,
+		"stages_stopped_early", stagesStoppedEarly,
+		"termination", termination,
+	)
 	return result, nil
 }
 
-func runOptimizer(ctx context.Context, optimizer opt.Optimizer, evaluate func([]float64) float64, lower, upper []float64, dim int) ([]float64, int, error) {
+func runOptimizer(ctx context.Context, optimizer opt.Optimizer, evaluate func([]float64) float64, lower, upper []float64, dim int) (stageOutcome, error) {
 	if lifecycle, ok := optimizer.(opt.LifecycleOptimizer); ok {
 		result, err := lifecycle.RunContext(ctx, opt.Problem{
 			Eval:  evaluate,
@@ -356,23 +424,29 @@ func runOptimizer(ctx context.Context, optimizer opt.Optimizer, evaluate func([]
 			Dim:   dim,
 		}, opt.RunOptions{})
 		if err != nil {
-			return nil, result.Iterations, err
+			return stageOutcome{Iterations: result.Iterations, Termination: result.Termination}, err
 		}
-		return result.BestParams, result.Iterations, nil
+		return stageOutcome{
+			Params:      result.BestParams,
+			Iterations:  result.Iterations,
+			Termination: result.Termination,
+		}, nil
 	}
 
 	select {
 	case <-ctx.Done():
-		return nil, 0, ctx.Err()
+		return stageOutcome{}, ctx.Err()
 	default:
 	}
 	params, _ := optimizer.Run(evaluate, lower, upper, dim)
 	select {
 	case <-ctx.Done():
-		return nil, 0, ctx.Err()
+		return stageOutcome{}, ctx.Err()
 	default:
 	}
-	return params, 0, nil
+	// The plain Optimizer interface reports no reason; "completed" matches what
+	// the pipeline assumed before termination reasons were propagated.
+	return stageOutcome{Params: params, Termination: opt.TerminationCompleted}, nil
 }
 
 func validatePipelineInputs(renderer Renderer, optimizer opt.Optimizer, circleCount int) error {
@@ -484,6 +558,9 @@ func finishResult(session Renderer, params []float64, bestCost, initialCost floa
 		Stages:           stages,
 		OptimizedCircles: optimizedCircles,
 		BestImage:        cloneNRGBA(session.Render(params)),
+		// Callers overwrite this with the reason they observed; defaulting here
+		// keeps every path from returning an empty termination.
+		Termination: opt.TerminationCompleted,
 	}, nil
 }
 

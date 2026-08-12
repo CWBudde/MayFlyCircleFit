@@ -71,15 +71,17 @@ func runListCheckpoints(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list checkpoints: %w", err)
 	}
 
+	output := cmd.OutOrStdout()
+
 	if len(infos) == 0 {
-		fmt.Println("No checkpoints found.")
+		fmt.Fprintln(output, "No checkpoints found.")
 		return nil
 	}
 
 	// Display checkpoints in a table
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "JOB ID\tTIMESTAMP\tITERATION\tBEST COST\tSIZE")
-	fmt.Fprintln(w, "------\t---------\t---------\t---------\t----")
+	w := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "JOB ID\tTIMESTAMP\tITERATION\tBEST COST\tTERMINATION\tSIZE")
+	fmt.Fprintln(w, "------\t---------\t---------\t---------\t-----------\t----")
 
 	for _, info := range infos {
 		// Get checkpoint directory size
@@ -99,18 +101,19 @@ func runListCheckpoints(cmd *cobra.Command, args []string) error {
 			displayID = displayID[:12] + "..."
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%d\t%.6f\t%s\n",
+		fmt.Fprintf(w, "%s\t%s\t%d\t%.6f\t%s\t%s\n",
 			displayID,
 			timestamp,
 			info.Iteration,
 			info.BestCost,
+			info.Termination,
 			sizeStr,
 		)
 	}
 
 	w.Flush()
 
-	fmt.Printf("\nTotal checkpoints: %d\n", len(infos))
+	fmt.Fprintf(output, "\nTotal checkpoints: %d\n", len(infos))
 	return nil
 }
 

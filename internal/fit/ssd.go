@@ -18,7 +18,7 @@ import (
 //
 // Performance expectations:
 //   - AVX2: approximately 6x measured speedup on AMD Ryzen 5 4600H
-//   - NEON: hardware benchmarking pending
+//   - NEON: approximately 5.2x measured speedup on Apple M5
 //   - Scalar: baseline and portable fallback
 
 // SSDBackend indicates which SIMD backend is active

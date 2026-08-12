@@ -21,6 +21,7 @@ type JobDetail struct {
 	EndTime     *time.Time
 	ElapsedSec  float64
 	CPS         float64
+	Termination string
 	Error       string
 }
 
@@ -142,6 +143,11 @@ templ JobDetailPage(job JobDetail) {
 					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 						{ formatTimestamp(job.StartTime) }
 					</div>
+					if job.Termination != "" {
+						<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;" data-metric="termination">
+							stopped: { job.Termination }
+						</div>
+					}
 				</div>
 			</div>
 		</div>

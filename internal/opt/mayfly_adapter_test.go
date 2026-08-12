@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -243,4 +244,81 @@ func TestMayflyAdapter_RunWithInitial_KeepsCheckpointIfBetter(t *testing.T) {
 
 	t.Logf("Initial cost: %f, Final cost: %f", initialCost, cost)
 	t.Logf("Initial params: %v, Final params: %v", initialParams, best)
+}
+
+func TestNewMayflyVariantSelectsVariant(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "", want: "standard"},
+		{name: "standard", want: "standard"},
+		{name: "desma", want: "desma"},
+		{name: "olce", want: "olce"},
+		{name: "aoblmoa", want: "aoblmoa"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			optimizer, err := NewMayflyVariant(test.name, 10, 20, 1)
+			if err != nil {
+				t.Fatalf("NewMayflyVariant(%q) error = %v", test.name, err)
+			}
+			adapter, ok := optimizer.(*MayflyAdapter)
+			if !ok {
+				t.Fatalf("NewMayflyVariant returned %T, want *MayflyAdapter", optimizer)
+			}
+			if adapter.variant != test.want {
+				t.Fatalf("variant = %q, want %q", adapter.variant, test.want)
+			}
+		})
+	}
+}
+
+func TestNewMayflyVariantRejectsUnknownName(t *testing.T) {
+	optimizer, err := NewMayflyVariant("nope", 10, 20, 1)
+	if !errors.Is(err, ErrUnknownVariant) {
+		t.Fatalf("error = %v, want ErrUnknownVariant", err)
+	}
+	if optimizer != nil {
+		t.Fatalf("optimizer = %v, want nil on error", optimizer)
+	}
+}
+
+// TestNewMayflyVariantMatchesNamedConstructors pins that routing a variant name
+// through the factory is identical to calling the dedicated constructor, so the
+// three call sites gain variant support without changing optimizer behavior.
+func TestNewMayflyVariantMatchesNamedConstructors(t *testing.T) {
+	tests := []struct {
+		name  string
+		named Optimizer
+	}{
+		{name: "", named: NewMayfly(30, 20, 7)},
+		{name: "standard", named: NewMayfly(30, 20, 7)},
+		{name: "desma", named: NewMayflyDESMA(30, 20, 7)},
+		{name: "olce", named: NewMayflyOLCE(30, 20, 7)},
+	}
+
+	problem := Problem{Eval: sphere, Lower: []float64{-10, -10}, Upper: []float64{10, 10}, Dim: 2}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			byName, err := NewMayflyVariant(test.name, 30, 20, 7)
+			if err != nil {
+				t.Fatalf("NewMayflyVariant(%q) error = %v", test.name, err)
+			}
+			want, err := test.named.(LifecycleOptimizer).RunContext(context.Background(), problem, RunOptions{})
+			if err != nil {
+				t.Fatalf("named constructor run error = %v", err)
+			}
+			got, err := byName.(LifecycleOptimizer).RunContext(context.Background(), problem, RunOptions{})
+			if err != nil {
+				t.Fatalf("variant factory run error = %v", err)
+			}
+			if got.BestCost != want.BestCost || !slices.Equal(got.BestParams, want.BestParams) {
+				t.Fatalf("variant %q result = (%v, %v), want (%v, %v)",
+					test.name, got.BestParams, got.BestCost, want.BestParams, want.BestCost)
+			}
+		})
+	}
 }

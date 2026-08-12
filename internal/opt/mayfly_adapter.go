@@ -4,11 +4,30 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"math/rand"
 
 	"github.com/cwbudde/mayfly"
 )
+
+// ErrUnknownVariant reports an unsupported Mayfly variant name.
+var ErrUnknownVariant = errors.New("unknown mayfly variant")
+
+// variantStandard is the default Mayfly variant. An empty variant name resolves
+// to it so checkpoints written before the variant field existed still resume.
+const variantStandard = "standard"
+
+// supportedVariants lists the variant names RunContext can configure.
+var supportedVariants = map[string]struct{}{
+	variantStandard: {},
+	"desma":         {},
+	"olce":          {},
+	"eobbma":        {},
+	"gsasma":        {},
+	"mpma":          {},
+	"aoblmoa":       {},
+}
 
 // MayflyAdapter wraps the external Mayfly library to conform to our Optimizer interface
 type MayflyAdapter struct {
@@ -16,36 +35,62 @@ type MayflyAdapter struct {
 	popSize  int
 	seed     int64
 	variant  string // "standard", "desma", "olce", "eobbma", "gsasma", "mpma", "aoblmoa"
+	logger   *slog.Logger
+}
+
+// MayflyOption customizes an adapter at construction time. Options are applied
+// per optimizer rather than per run, so wrappers that rebuild RunOptions cannot
+// drop them.
+type MayflyOption func(*MayflyAdapter)
+
+// WithLogger reports Mayfly lifecycle events through logger. Per-iteration
+// events are demoted to debug so an ordinary run logs one completion record per
+// optimizer run. A nil logger disables optimizer logging entirely.
+func WithLogger(logger *slog.Logger) MayflyOption {
+	return func(m *MayflyAdapter) { m.logger = logger }
+}
+
+func newAdapter(variant string, maxIters, popSize int, seed int64, options ...MayflyOption) *MayflyAdapter {
+	adapter := &MayflyAdapter{
+		maxIters: maxIters,
+		popSize:  popSize,
+		seed:     seed,
+		variant:  variant,
+	}
+	for _, option := range options {
+		if option != nil {
+			option(adapter)
+		}
+	}
+	return adapter
 }
 
 // NewMayfly creates a new Mayfly optimizer adapter
-func NewMayfly(maxIters, popSize int, seed int64) Optimizer {
-	return &MayflyAdapter{
-		maxIters: maxIters,
-		popSize:  popSize,
-		seed:     seed,
-		variant:  "standard",
-	}
+func NewMayfly(maxIters, popSize int, seed int64, options ...MayflyOption) Optimizer {
+	return newAdapter(variantStandard, maxIters, popSize, seed, options...)
 }
 
 // NewMayflyDESMA creates a Mayfly optimizer using the DESMA variant
-func NewMayflyDESMA(maxIters, popSize int, seed int64) Optimizer {
-	return &MayflyAdapter{
-		maxIters: maxIters,
-		popSize:  popSize,
-		seed:     seed,
-		variant:  "desma",
-	}
+func NewMayflyDESMA(maxIters, popSize int, seed int64, options ...MayflyOption) Optimizer {
+	return newAdapter("desma", maxIters, popSize, seed, options...)
 }
 
 // NewMayflyOLCE creates a Mayfly optimizer using the OLCE-MA variant
-func NewMayflyOLCE(maxIters, popSize int, seed int64) Optimizer {
-	return &MayflyAdapter{
-		maxIters: maxIters,
-		popSize:  popSize,
-		seed:     seed,
-		variant:  "olce",
+func NewMayflyOLCE(maxIters, popSize int, seed int64, options ...MayflyOption) Optimizer {
+	return newAdapter("olce", maxIters, popSize, seed, options...)
+}
+
+// NewMayflyVariant creates an adapter for a named Mayfly variant. An empty name
+// selects the standard variant, because resume reads a persisted configuration
+// directly and checkpoints predating the variant field carry no name.
+func NewMayflyVariant(variant string, maxIters, popSize int, seed int64, options ...MayflyOption) (Optimizer, error) {
+	if variant == "" {
+		variant = variantStandard
 	}
+	if _, ok := supportedVariants[variant]; !ok {
+		return nil, fmt.Errorf("%w: %q", ErrUnknownVariant, variant)
+	}
+	return newAdapter(variant, maxIters, popSize, seed, options...), nil
 }
 
 // RunWithInitial executes optimization starting from an initial solution.
@@ -164,6 +209,9 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 		maleSeeds, femaleSeeds := seededPopulation(normalize(options.Initial.Params), m.popSize, rng)
 		runOptions = append(runOptions, mayfly.WithInitialPopulation(maleSeeds, femaleSeeds))
 	}
+	if m.logger != nil {
+		runOptions = append(runOptions, mayfly.WithLogger(mayflyLogger{logger: m.logger}))
+	}
 	runOptions = append(runOptions, mayfly.WithProgressObserver(func(progress mayfly.Progress) {
 		params := denormalize(progress.Best.Position)
 		if progress.Best.Cost < best.BestCost {
@@ -196,9 +244,24 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 		best.BestParams = params
 		best.BestCost = result.GlobalBest.Cost
 	}
-	best.Iterations = len(result.ConvergenceCurve)
+	best.Iterations = result.IterationCount
 	best.Evaluations = result.FuncEvalCount
+	best.Termination = terminationFromMayfly(result.TerminationReason)
 	return best, nil
+}
+
+// terminationFromMayfly maps a Mayfly termination reason onto the application
+// vocabulary. maximum_iterations maps onto the existing "completed" value so
+// checkpoints written before early stopping existed keep their meaning.
+func terminationFromMayfly(reason mayfly.TerminationReason) Termination {
+	switch reason {
+	case mayfly.TerminationTargetCost:
+		return TerminationTargetCost
+	case mayfly.TerminationStagnation:
+		return TerminationStagnation
+	default:
+		return TerminationCompleted
+	}
 }
 
 func validateProblem(problem Problem) error {

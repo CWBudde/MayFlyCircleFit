@@ -15,3 +15,13 @@ func TestRunThreadsFlagDefaultsToGOMAXPROCS(t *testing.T) {
 		t.Fatalf("--threads default = %q, want %q", flag.DefValue, want)
 	}
 }
+
+func TestRunVariantFlagDefaultsToStandard(t *testing.T) {
+	flag := runCmd.Flags().Lookup("variant")
+	if flag == nil {
+		t.Fatal("run command has no --variant flag")
+	}
+	if flag.DefValue != "standard" {
+		t.Fatalf("--variant default = %q, want %q", flag.DefValue, "standard")
+	}
+}

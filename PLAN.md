@@ -318,110 +318,153 @@ for 0.60% of flat samples in the profiled 512×512/K100 production workload, so
 rendering is again the bottleneck. Integration details and measurements are in
 `docs/task-10.7-simd-cost-integration.md`.
 
-### Task 10.8: Cross-Platform Testing and Build Validation - **ADAPTED FROM RESEARCH**
-**Note:** Pure Go build (no cgo), standard `go build` workflow
+### Task 10.8: Cross-Platform Testing and Build Validation ✅ COMPLETE
 
-- [ ] Test cross-compilation with GOARCH override
-  - [ ] `GOOS=linux GOARCH=amd64 go build` (AVX2 assembly)
-  - [ ] `GOOS=linux GOARCH=arm64 go build` (NEON assembly)
-  - [ ] `GOOS=darwin GOARCH=amd64 go build` (AVX2 for Intel Mac)
-  - [ ] `GOOS=darwin GOARCH=arm64 go build` (NEON for Apple Silicon)
-  - [ ] `GOOS=windows GOARCH=amd64 go build` (AVX2)
-  - [ ] `GOOS=linux GOARCH=386 go build` (scalar fallback, 32-bit)
-- [ ] Verify build tags select correct implementation
-  - [ ] amd64 → ssd_amd64.s
-  - [ ] arm64 → ssd_arm64.s
-  - [ ] others → ssd_generic.go
-- [ ] Test on actual hardware (not just cross-compile)
-  - [ ] Linux x86-64 with AVX2
-  - [ ] macOS ARM64 (Apple Silicon)
-  - [ ] Windows x86-64 with AVX2
-  - [ ] Linux ARM64 (AWS Graviton or Raspberry Pi)
-- [ ] Document platform-specific performance characteristics
-- [ ] Ensure `go build` works without external dependencies (no C compiler required)
+Completed with a reproducible `just cross-build` gate covering all six planned
+targets under `CGO_ENABLED=0`. The validator asserts the exact Go/assembly file
+selection before building each CLI, including the generic scalar dispatcher on
+Linux/386. Native CI now executes the SSD suite and records scalar-versus-SIMD
+throughput on Linux AMD64, macOS ARM64, Windows AMD64, and Linux ARM64; each job
+requires AVX2 or NEON rather than accepting a silent scalar fallback. Local
+Linux/AMD64 validation measured a 6.1–6.5× AVX2 kernel speedup across 64–512
+pixel-square inputs. See `docs/task-10.8-cross-platform-validation.md`.
 
-### Task 10.9: Create SIMD Test Matrix
-- [ ] Test on amd64 with AVX2 support
-- [ ] Test on amd64 without AVX2 (scalar fallback)
-- [ ] Test on arm64 with NEON support (Apple M-series)
-- [ ] Test on arm64 without NEON (scalar fallback)
-- [ ] Verify identical results across all platforms
-- [ ] Compare performance across platforms
-- [ ] Document test matrix results
+### Task 10.9: Create SIMD Test Matrix ✅ COMPLETE
 
-### Task 10.10: Performance Validation and Documentation - **ADAPTED FROM RESEARCH**
-- [ ] Create comprehensive benchmark suite for SIMD kernels
-  - [ ] Benchmark matrix: 64×64, 128×128, 256×256, 512×512, 1024×1024
-  - [ ] Compare: scalar, AVX2, NEON on respective platforms
-  - [ ] Measure throughput (Mpixels/sec) and speedup ratio
-- [ ] Measure speedup on various image sizes
-  - [ ] Small (64×64): May have overhead, lower speedup
-  - [ ] Medium (256×256): Target 4-6× for AVX2
-  - [ ] Large (512×512, 1024×1024): Check if memory-bound
-- [ ] Create performance comparison table
-  - [ ] Columns: Image size, Scalar (Mpixels/s), AVX2, NEON, Speedup
-  - [ ] Include: Baseline (316 Mpixels/sec @ 256×256 scalar)
-- [ ] Document expected speedup ranges
-  - [ ] AVX2: 4-6× (target 1.2-2 Gpixels/sec)
-  - [ ] NEON: 3-4× (target 0.9-1.2 Gpixels/sec)
-- [ ] Profile memory access patterns (check for cache misses)
-- [ ] Ensure no GC pressure (pure Go, no cgo allocations)
-- [ ] Update CLAUDE.md with SIMD architecture
-  - [ ] Document Plan9 assembly approach
-  - [ ] Document GoAT workflow
-  - [ ] Document runtime dispatch mechanism
-- [ ] Create optimization report: `docs/task-10.10-simd-performance-report.md`
+Completed on native Linux/AMD64 and Apple M5 ARM64 hardware. Required-backend
+tests prove AVX2 and NEON selection, fresh-process feature overrides validate
+both scalar fallbacks, and exact scalar/SIMD comparisons cover batch boundaries,
+remainders, padded strides, concurrency, and large accumulators. Native CI runs
+both feature-enabled and `cpu.all=off` suites. See
+`docs/task-10.9-simd-test-matrix.md`.
+
+### Task 10.10: Performance Validation and Documentation ✅ COMPLETE
+
+Completed with a zero-allocation 64×64–1024×1024 benchmark matrix. Five-sample
+medians measured AVX2 at 6.0–6.3× through 512² before a 1024² cache-related drop,
+while Apple M5 NEON sustained about 6.9 Gpixels/s and 5.2× throughout. Hardware
+counter access was unavailable without weakening host security, so cache
+behavior is documented from working-set and throughput scaling. M5 profiling
+also yielded an exact opaque-canvas compositing fast path, reducing the full
+512²/K100 workload by 12.3%. See
+`docs/task-10.10-simd-performance-report.md`.
 
 ### Task 10.11: Circle Rendering Optimization - **PARTIALLY COMPLETE**
 
-Completed scoped work: scanline rasterization was profiled, integrated, and pixel-equivalence tested, improving the full 256×256/50-circle pipeline by 1.28×. Further rendering work remains explicitly open in Tasks 10.12–10.15.
+Completed scoped work: scanline rasterization was profiled, integrated, and
+pixel-equivalence tested, improving the full 256×256/50-circle pipeline by
+1.28×. A later profile-guided opaque-canvas fast path improved the M5
+512×512/K100 workload by another 1.14×. Further rendering work remains
+explicitly open in Tasks 10.12–10.15.
 
-### Task 10.12: (Optional) SIMD Horizontal Span Compositing
-**Rationale**: Alpha compositing is now 36% of rendering time. SIMD can process 4-8 pixels simultaneously.
-
-**Approach:**
-- [ ] Create C prototype with AVX2 intrinsics for `compositePixelsSIMD()`
-- [ ] Process horizontal spans in 8-pixel chunks (AVX2) or 4-pixel chunks (NEON)
-- [ ] Handle remainder pixels with scalar fallback
-- [ ] Benchmark isolated compositing vs full rendering pipeline
-- [ ] Target: 2-4x on compositing → ~1.3x overall speedup
-
-**Technical Details:**
-```c
-// Process 8 pixels with AVX2
-void compositePixelsSIMD(uint8_t* img, int x, int y,
-                        float r, float g, float b, float alpha, int count) {
-    __m256 fg_r = _mm256_set1_ps(r * alpha);
-    __m256 fg_g = _mm256_set1_ps(g * alpha);
-    __m256 fg_b = _mm256_set1_ps(b * alpha);
-
-    // Load 8 pixels, convert to float, blend, convert back
-    // Porter-Duff "over" operator in SIMD
-}
-```
-
-**Expected Outcome:**
-- Compositing: 10ns/pixel → 2.5ns/pixel (4x)
-- Overall rendering: 1.87ms → 1.45ms (1.3x)
-
-### Task 10.13: (Optional) Integer-Only Circle Math
-**Rationale**: Eliminate floating-point operations in circle distance checks.
+### Task 10.12: SIMD Horizontal Span Compositing ✅ COMPLETE
+**Rationale**: Alpha compositing was 72.56% of flat samples in the post-Task
+10.10 M5 profile. Moving invariant work out of the pixel loop and selectively
+using SIMD can process spans more efficiently.
 
 **Approach:**
-- [ ] Replace `float64` distance calculations with fixed-point `int64`
-- [ ] Use 8-bit or 16-bit fractional precision
-- [ ] Precompute `r2_minus_dy2` in integer space
-- [ ] Benchmark distance check overhead in isolation
+- [x] Implement an exact Go scalar span kernel that hoists foreground and blend terms
+- [x] Implement an eight-pixel ARM64 NEON kernel in Go Plan 9 assembly
+- [x] Handle short spans and remainders with the scalar span kernel
+- [x] Gate NEON on ASIMD and a measured 256-pixel crossover threshold
+- [x] Preserve the general Porter-Duff path for translucent custom canvases
+- [x] Benchmark isolated compositing and the full one-thread renderer on Apple M5
+- [x] Validate exact boundaries, randomized pixels, feature-disabled fallback, and renderer parity
 
 **Technical Details:**
 ```go
-// Current: if dx*dx + dy2 > r2 (float64 mul + add + compare)
-// Optimized: if (dx<<8)*(dx<<8) + (dy2<<8) > (r2<<8) (int64 ops)
+if opaqueCanvas {
+    compositeOpaqueSpan(img.Pix, offset, pixels, r, g, b, alpha)
+} else {
+    // Preserve the general translucent-destination path.
+    compositePixel(img, x, y, r, g, b, alpha)
+}
 ```
 
-**Expected Outcome:**
-- Distance checks: 18ns → 14-16ns (10-20% reduction)
-- Overall rendering: 1.87ms → 1.68ms (1.11x)
+**Measured Outcome:**
+- Horizontal span integration: 3.883 ms → 2.015 ms median on the final
+  controlled 512×512/K100 M5 render benchmark (1.93×, zero allocations).
+- Exact float64 NEON alone crosses the M5 scalar span only on long spans: about
+  1.02× at 64–256 pixels, while losing at 8–16 pixels. Production dispatch is
+  therefore deliberately conservative rather than applying SIMD everywhere.
+- Post-change profile: scalar span 65.01%, scanline traversal 26.47%, gated
+  NEON 1.95%. See `docs/task-10.12-neon-span-report.md`.
+
+### Task 10.13: Fixed-Point and Reduced-Precision Circle Geometry - **IN PROGRESS**
+**Rationale**: Scanline geometry still performs repeated `float64` conversions,
+squares, and comparisons while searching both span edges. Reduced-precision or
+fixed-point arithmetic may lower that cost, particularly on AMD64, but must be
+judged against whole-render performance and rasterization error rather than an
+assumed instruction-level speedup.
+
+**10.13a — Establish the geometry baseline and candidates:**
+- [x] Add deterministic geometry-only benchmarks for representative radii,
+  fractional centers, clipped circles, and row shards
+- [x] Compare the current `float64` oracle with scalar `float32` and signed
+  Q16.16 implementations
+- [ ] Evaluate signed Q24.8 (wider range) and Pascal-style Q8.24 (higher
+  fractional precision, requiring normalization for normal image sizes)
+- [x] Record full one-thread render results separately so compositing does not
+  hide geometry regressions
+
+**10.13b — Select a fixed-point contract:**
+- [x] Quantize `X`, `Y`, and `R` once per decoded circle; keep squared values in
+  `int64` (an `int32` Q value cannot safely hold its own square)
+- [ ] Prefer Q16.16 when its coordinate range is safe; evaluate Q24.8 as the
+  wider-range, lower-precision alternative and retain `float64` as an overflow
+  fallback for unusually wide or tall images
+- [x] Define rounding, signed-coordinate, clipping, and overflow behavior
+- [x] Measure changed coverage against the `float64` oracle with boundary-heavy
+  and randomized cases; require byte-identical compositing for unchanged spans
+
+**10.13c — Implement the winning scalar path:**
+- [x] Precompute `r²`, per-row `r²-dy²`, and fixed-point center terms
+- [x] Use eight-pixel monotonic skips plus addition/subtraction recurrences for
+  the scalar tail instead of repeated per-pixel squaring
+- [x] Integrate behind an internal geometry dispatcher with zero allocations
+- [x] Keep the general `float64` path as the correctness oracle and range fallback
+
+**10.13d — Investigate AMD64 SIMD/assembly:**
+- [x] Inspect compiler output for scalar `float32` and fixed-point candidates
+- [ ] Prototype an AVX2 span-edge search that checks multiple candidate X values
+  per batch; account for mask extraction, short-span setup cost, and scalar tails
+- [ ] Benchmark direct kernel calls and full rendering before enabling runtime
+  dispatch; use `x/sys/cpu` feature gating and a measured crossover if retained
+- [ ] Assess the corresponding ARM64 NEON opportunity without making AMD64-only
+  layout choices that prevent a later implementation
+
+**10.13e — Validation and documentation:**
+- [ ] Test fractional/tangent boundaries, radii 1 and maximum radius, clipping on
+  every image edge, SIMD batch boundaries, randomized circles, and row sharding
+- [x] Run native AMD64 tests plus the existing six-target cross-build gate
+- [x] Publish initial precision and native AMD64 throughput results in
+  `docs/task-10.13-fixed-point-report.md`; complete cross-platform results and
+  backend selection before closing the task
+
+**Scaling invariant:** if coordinates use `Q = round(value * 2^F)`, squared
+distances all use scale `2^(2F)`:
+```go
+dxQ := (int64(x) << F) - xQ
+dyQ := (int64(y) << F) - yQ
+inside := dxQ*dxQ+dyQ*dyQ <= radiusQ*radiusQ
+```
+Mixing a Q-scaled squared term with a once-shifted value is dimensionally
+invalid. Q16.16 therefore uses `int32` coordinates and `int64` products, with a
+range check before conversion.
+
+**Success criteria:**
+- Geometry microbenchmarks improve by at least 10% on a supported native host
+- Full 512×512/K100 one-thread rendering does not regress and preferably improves
+  by at least 3% across repeated samples
+- The precision report quantifies every deviation from the `float64` coverage
+  oracle; exact mode and out-of-range inputs retain the oracle path
+
+**Initial AMD64 outcome (Ryzen 5 4600H):** Q16.16 with monotonic eight-pixel
+skips is 2.75× faster for R25 geometry, 5.02× for R100, and 4.51× for a
+clipped R256 circle. The controlled one-thread 512×512/K100 renderer improved
+from 9.13 ms to 7.98 ms median (1.14×, zero allocations). Q16.16 changed 15
+of 2,022,704 randomized intersecting row spans (0.00074%); alternate formats,
+adversarial boundaries, and cross-platform validation remain open.
 
 ### Task 10.14: (Optional) Circle Symmetry Exploitation
 **Rationale**: Circles are vertically symmetric - compute upper half, mirror to lower.

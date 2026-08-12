@@ -319,3 +319,43 @@ func TestCLIHTTPClientHasBoundedTimeout(t *testing.T) {
 		t.Errorf("CLI HTTP timeout = %s, want 10s", cliHTTPClient.Timeout)
 	}
 }
+
+// TestGetJobStatusPrintsTermination covers the reason a run stopped now that
+// the server reports the optimizer's actual termination instead of a hardcoded
+// "completed".
+func TestGetJobStatusPrintsTermination(t *testing.T) {
+	tests := []struct {
+		name        string
+		termination string
+		want        string
+		absent      bool
+	}{
+		{name: "stagnation", termination: "stagnation", want: "Termination: stagnation"},
+		{name: "target cost", termination: "target_cost", want: "Termination: target_cost"},
+		{name: "legacy sentinel", termination: "legacy", want: "Termination: legacy"},
+		{name: "omitted", termination: "", want: "Termination:", absent: true},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			response := validJobResponse(t, "job-1")
+			response.Termination = testCase.termination
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "application/json")
+				if err := json.NewEncoder(writer).Encode(response); err != nil {
+					t.Errorf("encode response: %v", err)
+				}
+			}))
+			defer server.Close()
+
+			var output bytes.Buffer
+			if err := getJobStatus(context.Background(), &output, server.URL, "job-1"); err != nil {
+				t.Fatalf("getJobStatus: %v", err)
+			}
+			if got := strings.Contains(output.String(), testCase.want); got == testCase.absent {
+				t.Errorf("output contains %q = %v, want %v:\n%s",
+					testCase.want, got, !testCase.absent, output.String())
+			}
+		})
+	}
+}

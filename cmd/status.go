@@ -181,6 +181,9 @@ func getJobStatus(ctx context.Context, output io.Writer, endpoint, jobID string)
 	if *status.CPS > 0 {
 		fmt.Fprintf(output, "  Throughput: %.0f circles/sec\n", *status.CPS)
 	}
+	if status.Termination != "" {
+		fmt.Fprintf(output, "  Termination: %s\n", status.Termination)
+	}
 
 	if status.Error != "" {
 		fmt.Fprintf(output, "\nError: %s\n", status.Error)

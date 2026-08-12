@@ -44,6 +44,34 @@ actually observed for the revision being discussed.
 Keep dependencies flowing toward these lower-level packages; do not reintroduce
 application configuration into the store package.
 
+### SIMD SSD architecture
+
+- `ssd_amd64.s` processes eight NRGBA pixels per AVX2 batch;
+  `ssd_arm64.s` processes four per NEON batch. Both ignore alpha, reduce into a
+  64-bit total, and leave non-multiple widths to an exact scalar tail.
+- The assembly is hand-written in Go Plan 9 syntax. The implemented workflow
+  does not use GoAT, C sources, cgo, or an external assembler.
+- Architecture-specific initialization checks `x/sys/cpu` once and installs an
+  AVX2, NEON, or scalar function pointer. Do not call an assembly kernel without
+  passing through feature-gated dispatch.
+- `just cross-build` verifies the selected source set and compiles the CLI and
+  `internal/fit` test binary for every supported CPU target with
+  `CGO_ENABLED=0`.
+- Use `MAYFLY_REQUIRE_SSD_BACKEND` in native hardware validation and
+  `GODEBUG=cpu.all=off` to exercise a complete scalar fallback. Kernel
+  benchmarks must retain their result through `ssdBenchmarkSink` and report
+  allocations.
+
+### CPU span compositing
+
+- Opaque canvases use horizontal span compositing; the scalar span hoists
+  foreground and blend invariants out of the per-pixel loop.
+- ARM64 includes an exact float64, eight-pixel NEON span kernel. Runtime ASIMD
+  detection and a measured 256-pixel cutoff guard it; shorter spans and tails
+  use scalar because that is faster on Apple M5.
+- Translucent custom canvases retain the general per-pixel Porter-Duff path.
+  Preserve that split and byte-exact span tests when changing renderer math.
+
 ## Current behavior that must remain explicit
 
 - CPU supports joint, sequential, and batch modes, including a supplied base
@@ -64,10 +92,9 @@ application configuration into the store package.
   is not supported.
 - A zero user seed generates and reports an effective seed; a nonzero seed is
   deterministic.
-- Current CPU profiles identify pixel compositing as the remaining dominant
-  renderer hotspot (83.48% of flat samples in the documented 12-thread
-  profile); scanline traversal is secondary. Keep further rendering work
-  profile-guided and pixel-equivalent.
+- The post-Task-10.12 M5 profile assigns 65.01% of flat samples to the scalar
+  span compositor, 26.47% to scanline traversal, and 1.95% to gated NEON.
+  Keep further rendering work profile-guided and pixel-equivalent.
 
 ## Server trust boundary
 

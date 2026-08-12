@@ -13,13 +13,20 @@ import (
 
 // CPURenderer implements software rendering of circles
 type CPURenderer struct {
-	reference *image.NRGBA
-	k         int
-	bounds    *fit.Bounds
-	costFunc  fit.CostFunc
-	width     int
-	height    int
-	threads   int
+	reference    *image.NRGBA
+	k            int
+	bounds       *fit.Bounds
+	costFunc     fit.CostFunc
+	width        int
+	height       int
+	threads      int
+	opaqueCanvas bool
+	// forceFloatGeometry is reserved for oracle tests and benchmarks. Normal
+	// renderers use Q16.16 when the decoded circle is in its safe range.
+	forceFloatGeometry bool
+	// forceFloat32Geometry is reserved for reduced-precision SIMD tests and
+	// benchmarks. On AVX2 hosts it exercises the vectorized span-edge search.
+	forceFloat32Geometry bool
 	// Buffer pooling to reduce allocations
 	canvas    *image.NRGBA // Reusable render buffer
 	initialBg []byte       // Precomputed initial background (white or custom canvas)
@@ -44,15 +51,16 @@ func NewCPURenderer(reference *image.NRGBA, k int) *CPURenderer {
 	}
 
 	return &CPURenderer{
-		reference: reference,
-		k:         k,
-		bounds:    fit.NewBounds(k, width, height),
-		costFunc:  fit.FastMSECost,
-		width:     width,
-		height:    height,
-		threads:   effectiveThreadCount(runtime.GOMAXPROCS(0), height),
-		canvas:    canvas,
-		initialBg: whiteBg,
+		reference:    reference,
+		k:            k,
+		bounds:       fit.NewBounds(k, width, height),
+		costFunc:     fit.FastMSECost,
+		width:        width,
+		height:       height,
+		threads:      effectiveThreadCount(runtime.GOMAXPROCS(0), height),
+		opaqueCanvas: true,
+		canvas:       canvas,
+		initialBg:    whiteBg,
 	}
 }
 
@@ -83,15 +91,16 @@ func NewCPURendererWithCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int
 	copy(initialBg, canvasCopy.Pix)
 
 	return &CPURenderer{
-		reference: reference,
-		k:         k,
-		bounds:    fit.NewBounds(k, width, height),
-		costFunc:  fit.FastMSECost,
-		width:     width,
-		height:    height,
-		threads:   effectiveThreadCount(runtime.GOMAXPROCS(0), height),
-		canvas:    canvasCopy,
-		initialBg: initialBg,
+		reference:    reference,
+		k:            k,
+		bounds:       fit.NewBounds(k, width, height),
+		costFunc:     fit.FastMSECost,
+		width:        width,
+		height:       height,
+		threads:      effectiveThreadCount(runtime.GOMAXPROCS(0), height),
+		opaqueCanvas: pixelsAreOpaque(initialBg),
+		canvas:       canvasCopy,
+		initialBg:    initialBg,
 	}
 }
 
@@ -156,15 +165,18 @@ func (r *CPURenderer) newSession(circleCount int) (Renderer, func(), error) {
 	canvas := image.NewNRGBA(image.Rect(0, 0, r.width, r.height))
 	initialBg := append([]byte(nil), r.initialBg...)
 	return &CPURenderer{
-		reference: r.reference,
-		k:         circleCount,
-		bounds:    fit.NewBounds(circleCount, r.width, r.height),
-		costFunc:  r.costFunc,
-		width:     r.width,
-		height:    r.height,
-		threads:   r.threads,
-		canvas:    canvas,
-		initialBg: initialBg,
+		reference:          r.reference,
+		k:                  circleCount,
+		bounds:             fit.NewBounds(circleCount, r.width, r.height),
+		costFunc:           r.costFunc,
+		width:              r.width,
+		height:             r.height,
+		threads:            r.threads,
+		opaqueCanvas:       r.opaqueCanvas,
+		forceFloatGeometry: r.forceFloatGeometry,
+		forceFloat32Geometry: r.forceFloat32Geometry,
+		canvas:             canvas,
+		initialBg:          initialBg,
 	}, noopCleanup, nil
 }
 
@@ -184,6 +196,8 @@ func (r *CPURenderer) newSessionWithCanvas(canvas *image.NRGBA, circleCount int)
 	session := NewCPURendererWithCanvas(r.reference, canvas, circleCount)
 	session.costFunc = r.costFunc
 	session.threads = r.threads
+	session.forceFloatGeometry = r.forceFloatGeometry
+	session.forceFloat32Geometry = r.forceFloat32Geometry
 	return session, noopCleanup, nil
 }
 
@@ -343,9 +357,35 @@ func (r *CPURenderer) renderCircleScanlineRows(img *image.NRGBA, c fit.Circle, r
 	}
 
 	r2 := c.R * c.R
+	fixedGeometry, useFixedGeometry := newFixedCircleQ16(c)
+	useFixedGeometry = useFixedGeometry && !r.forceFloatGeometry && !r.forceFloat32Geometry
+	center32 := float32(c.X)
+	y32 := float32(c.Y)
+	radiusSquared32 := float32(c.R) * float32(c.R)
 
 	// Scanline algorithm: for each row, compute horizontal span
 	for y := minY; y < maxY; y++ {
+		if useFixedGeometry {
+			xStart, xEnd, intersects := fixedGeometry.span(y, r.width)
+			if intersects {
+				r.compositeCircleSpan(img, c, y, xStart, xEnd)
+			}
+			continue
+		}
+		if r.forceFloat32Geometry {
+			dy := float32(y) - y32
+			remaining := radiusSquared32 - dy*dy
+			if remaining < 0 {
+				continue
+			}
+			xStart, xEnd := circleSpanFloat32Selected(center32, remaining, r.width)
+			if xStart < 0 {
+				xStart = 0
+			}
+			r.compositeCircleSpan(img, c, y, xStart, xEnd)
+			continue
+		}
+
 		// Calculate distance from row to circle center
 		dy := float64(y) - c.Y
 		dy2 := dy * dy
@@ -355,42 +395,25 @@ func (r *CPURenderer) renderCircleScanlineRows(img *image.NRGBA, c fit.Circle, r
 			continue // Row entirely outside circle
 		}
 
-		// Find horizontal extent by searching from center
-		// This avoids sqrt() and guarantees correctness
-		r2_minus_dy2 := r2 - dy2
-		cx := int(c.X + 0.5)
-
-		// Find xStart by searching left
-		xStart := cx
-		for xStart > 0 {
-			dx := float64(xStart-1) - c.X
-			if dx*dx > r2_minus_dy2 {
-				break
-			}
-			xStart--
-		}
+		// Find the horizontal extent with the float64 oracle. This path also
+		// handles geometry outside the safe signed Q16.16 coordinate range.
+		xStart, xEnd := circleSpanFloat64(c.X, r2-dy2, r.width)
 		if xStart < 0 {
 			xStart = 0
 		}
+		r.compositeCircleSpan(img, c, y, xStart, xEnd)
+	}
+}
 
-		// Find xEnd by searching right
-		xEnd := cx + 1
-		for xEnd < r.width {
-			dx := float64(xEnd) - c.X
-			if dx*dx > r2_minus_dy2 {
-				break
-			}
-			xEnd++
-		}
-		if xEnd > r.width {
-			xEnd = r.width
-		}
-
-		// Composite all pixels in span
-		for x := xStart; x < xEnd; x++ {
-			compositePixel(img, x, y, c.CR, c.CG, c.CB, c.Opacity)
-		}
-
+func (r *CPURenderer) compositeCircleSpan(img *image.NRGBA, c fit.Circle, y, xStart, xEnd int) {
+	// Opaque canvases remain opaque under source-over compositing, so their
+	// spans can use the runtime-dispatched SIMD implementation.
+	if r.opaqueCanvas {
+		compositeOpaqueSpan(img.Pix, y*img.Stride+xStart*4, xEnd-xStart, c.CR, c.CG, c.CB, c.Opacity)
+		return
+	}
+	for x := xStart; x < xEnd; x++ {
+		compositePixel(img, x, y, c.CR, c.CG, c.CB, c.Opacity)
 	}
 }
 
@@ -418,12 +441,24 @@ func compositePixel(img *image.NRGBA, x, y int, r, g, b, alpha float64) {
 	bgR := float64(img.Pix[i+0]) * inv255
 	bgG := float64(img.Pix[i+1]) * inv255
 	bgB := float64(img.Pix[i+2]) * inv255
-	bgA := float64(img.Pix[i+3]) * inv255
 
 	// Foreground premultiplied
 	fgR := r * alpha
 	fgG := g * alpha
 	fgB := b * alpha
+
+	// An opaque destination remains opaque under source-over compositing. This
+	// is the common path for the default white canvas and avoids alpha
+	// normalization, the output-alpha reciprocal, and the alpha store.
+	if img.Pix[i+3] == 255 {
+		bgBlend := 1 - alpha
+		img.Pix[i+0] = uint8((fgR+bgR*bgBlend)*255 + 0.5)
+		img.Pix[i+1] = uint8((fgG+bgG*bgBlend)*255 + 0.5)
+		img.Pix[i+2] = uint8((fgB+bgB*bgBlend)*255 + 0.5)
+		return
+	}
+
+	bgA := float64(img.Pix[i+3]) * inv255
 	fgA := alpha
 
 	// Porter-Duff "over" operator

@@ -2,7 +2,7 @@
 
 **Implemented:** 2026-08-12  
 **Implementation:** hand-written Go Plan 9 assembly; no C, cgo, or GoAT dependency  
-**Hardware measurements:** pending ARM64 hardware access
+**Hardware measurements:** Apple M5, completed in Task 10.10
 
 The ARM64 kernel processes four interleaved NRGBA pixels per 128-bit iteration:
 
@@ -32,6 +32,9 @@ Validation in this development environment includes:
   a 512×512 maximum-difference total exceeding 32 bits;
 - native amd64 formatting, lint, build, and regression tests.
 
-An ARM64 emulator or physical ARM64 machine was not available, so this report
-does not claim the original 3–4× target. Execution and benchmark measurements
-on Apple Silicon and Linux ARM64 remain part of Tasks 10.8–10.10.
+Native Apple M5 validation now passes the exact NEON matrix and forced scalar
+fallback. Five-sample medians show a stable 5.2× speedup and approximately
+6.9 Gpixels/s from 64×64 through 1024×1024, exceeding the original 3–4× target.
+See `task-10.9-simd-test-matrix.md` and
+`task-10.10-simd-performance-report.md` for the complete results. Native Linux
+ARM64 remains covered by the CI hardware gate rather than this local run.

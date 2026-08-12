@@ -94,6 +94,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		EndTime:     job.EndTime,
 		ElapsedSec:  elapsed,
 		CPS:         cps,
+		Termination: job.Termination,
 		Error:       job.Error,
 	}
 

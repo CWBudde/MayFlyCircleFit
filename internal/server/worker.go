@@ -112,7 +112,11 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	if seed == 0 {
 		seed = job.Config.Seed
 	}
-	optimizer := opt.NewMayfly(job.Config.Iters, job.Config.PopSize, seed)
+	optimizer, err := opt.NewMayflyVariant(string(job.Config.Variant), job.Config.Iters, job.Config.PopSize, seed)
+	if err != nil {
+		markJobFailed(jm, jobID, err)
+		return err
+	}
 	start := time.Now()
 	baseIterations, baseEvaluations := job.Iterations, job.Evaluations
 	initialCost := job.InitialCost
@@ -236,7 +240,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 
 	iterations := baseIterations + result.Iterations
 	evaluations := baseEvaluations + result.Evaluations
-	if err := jm.CompleteJob(jobID, iterations, evaluations, result.BestParams, result.BestCost, initialCost, string(opt.TerminationCompleted)); err != nil {
+	if err := jm.CompleteJob(jobID, iterations, evaluations, result.BestParams, result.BestCost, initialCost, string(result.Termination)); err != nil {
 		return err
 	}
 	if len(circleData) > 0 {

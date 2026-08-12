@@ -341,3 +341,138 @@ func TestPipelineUsesLifecycleStatsAndCancellation(t *testing.T) {
 		t.Fatalf("cancelled OptimizeJointContext() error = %v, want context.Canceled", err)
 	}
 }
+
+// terminatingOptimizer reports a configurable termination reason so pipeline
+// aggregation can be tested independently of a real optimizer.
+type terminatingOptimizer struct {
+	reason opt.Termination
+}
+
+func (t terminatingOptimizer) Run(eval func([]float64) float64, _, _ []float64, dim int) ([]float64, float64) {
+	params := transparentParams(dim / paramsPerCircle)
+	return params, eval(params)
+}
+
+func (t terminatingOptimizer) RunContext(ctx context.Context, problem opt.Problem, _ opt.RunOptions) (opt.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return opt.Result{Termination: opt.TerminationCancelled}, err
+	}
+	params := transparentParams(problem.Dim / paramsPerCircle)
+	return opt.Result{
+		BestParams:  params,
+		BestCost:    problem.Eval(params),
+		Iterations:  3,
+		Evaluations: 1,
+		Termination: t.reason,
+	}, nil
+}
+
+func TestJointReportsOptimizerTerminationVerbatim(t *testing.T) {
+	tests := []opt.Termination{
+		opt.TerminationCompleted,
+		opt.TerminationTargetCost,
+		opt.TerminationStagnation,
+	}
+
+	for _, reason := range tests {
+		t.Run(string(reason), func(t *testing.T) {
+			ref := solidImage(4, 4, color.NRGBA{A: 255})
+			result, err := OptimizeJoint(NewCPURenderer(ref, 2), terminatingOptimizer{reason: reason}, 2, DisabledConvergenceConfig())
+			if err != nil {
+				t.Fatalf("OptimizeJoint() error = %v", err)
+			}
+			if result.Termination != reason {
+				t.Fatalf("Termination = %q, want %q", result.Termination, reason)
+			}
+			wantEarly := 0
+			if reason != opt.TerminationCompleted {
+				wantEarly = 1
+			}
+			if result.StagesStoppedEarly != wantEarly {
+				t.Fatalf("StagesStoppedEarly = %d, want %d", result.StagesStoppedEarly, wantEarly)
+			}
+		})
+	}
+}
+
+func TestJointZeroCirclesReportsCompleted(t *testing.T) {
+	ref := solidImage(4, 4, color.NRGBA{A: 255})
+	result, err := OptimizeJoint(NewCPURenderer(ref, 0), terminatingOptimizer{reason: opt.TerminationStagnation}, 0, DisabledConvergenceConfig())
+	if err != nil {
+		t.Fatalf("OptimizeJoint() error = %v", err)
+	}
+	if result.Termination != opt.TerminationCompleted {
+		t.Fatalf("Termination = %q, want %q", result.Termination, opt.TerminationCompleted)
+	}
+}
+
+// TestStagedRunToCompletionReportsCompleted pins the aggregation rule: a stage
+// whose optimizer stopped early is not why a staged run ended, because the loop
+// went on to the next circle or batch.
+func TestStagedRunToCompletionReportsCompleted(t *testing.T) {
+	ref := solidImage(5, 5, color.NRGBA{A: 255})
+	optimizer := terminatingOptimizer{reason: opt.TerminationStagnation}
+
+	sequential, err := OptimizeSequential(NewCPURenderer(ref, 3), optimizer, 3, DisabledConvergenceConfig(), nil)
+	if err != nil {
+		t.Fatalf("OptimizeSequential() error = %v", err)
+	}
+	if sequential.Termination != opt.TerminationCompleted {
+		t.Fatalf("sequential Termination = %q, want %q", sequential.Termination, opt.TerminationCompleted)
+	}
+	if sequential.StagesStoppedEarly != sequential.Stages {
+		t.Fatalf("sequential StagesStoppedEarly = %d, want %d", sequential.StagesStoppedEarly, sequential.Stages)
+	}
+
+	batch, err := OptimizeBatch(NewCPURenderer(ref, 4), optimizer, 4, 2, DisabledConvergenceConfig())
+	if err != nil {
+		t.Fatalf("OptimizeBatch() error = %v", err)
+	}
+	if batch.Termination != opt.TerminationCompleted {
+		t.Fatalf("batch Termination = %q, want %q", batch.Termination, opt.TerminationCompleted)
+	}
+	if batch.StagesStoppedEarly != batch.Stages {
+		t.Fatalf("batch StagesStoppedEarly = %d, want %d", batch.StagesStoppedEarly, batch.Stages)
+	}
+}
+
+// TestStagedTrackerStopReportsStageConvergence covers the one staged case that
+// genuinely ends the run early: the stage-level convergence tracker.
+func TestStagedTrackerStopReportsStageConvergence(t *testing.T) {
+	ref := solidImage(5, 5, color.NRGBA{A: 255})
+	// A transparent optimizer never improves the cost, so the tracker stalls
+	// immediately at patience 1.
+	converging := ConvergenceConfig{Enabled: true, Patience: 1, Threshold: 0.5}
+
+	sequential, err := OptimizeSequential(NewCPURenderer(ref, 5), transparentOptimizer(), 5, converging, nil)
+	if err != nil {
+		t.Fatalf("OptimizeSequential() error = %v", err)
+	}
+	if sequential.Termination != TerminationStageConvergence {
+		t.Fatalf("sequential Termination = %q, want %q", sequential.Termination, TerminationStageConvergence)
+	}
+
+	batch, err := OptimizeBatch(NewCPURenderer(ref, 6), transparentOptimizer(), 6, 2, converging)
+	if err != nil {
+		t.Fatalf("OptimizeBatch() error = %v", err)
+	}
+	if batch.Termination != TerminationStageConvergence {
+		t.Fatalf("batch Termination = %q, want %q", batch.Termination, TerminationStageConvergence)
+	}
+}
+
+// TestNonLifecycleOptimizerReportsCompleted keeps the plain Optimizer interface
+// reporting what the pipeline assumed before reasons were propagated.
+func TestNonLifecycleOptimizerReportsCompleted(t *testing.T) {
+	ref := solidImage(4, 4, color.NRGBA{A: 255})
+	result, err := OptimizeJoint(NewCPURenderer(ref, 2), transparentOptimizer(), 2, DisabledConvergenceConfig())
+	if err != nil {
+		t.Fatalf("OptimizeJoint() error = %v", err)
+	}
+	if result.Termination != opt.TerminationCompleted {
+		t.Fatalf("Termination = %q, want %q", result.Termination, opt.TerminationCompleted)
+	}
+	if result.StagesStoppedEarly != 0 {
+		t.Fatalf("StagesStoppedEarly = %d, want 0", result.StagesStoppedEarly)
+	}
+}

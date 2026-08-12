@@ -38,8 +38,15 @@ type RunOptions struct {
 type Termination string
 
 const (
+	// TerminationCompleted means the optimizer consumed its iteration budget.
 	TerminationCompleted Termination = "completed"
+	// TerminationCancelled means the run stopped on context cancellation.
 	TerminationCancelled Termination = "cancelled"
+	// TerminationTargetCost means a configured target cost was reached.
+	TerminationTargetCost Termination = "target_cost"
+	// TerminationStagnation means the best cost stopped improving within the
+	// configured stagnation window.
+	TerminationStagnation Termination = "stagnation"
 )
 
 // Result is the complete, measured outcome of an optimization run.

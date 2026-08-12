@@ -22,6 +22,7 @@ var (
 	outPath           string
 	mode              string
 	backendName       string
+	variantName       string
 	circles           int
 	iters             int
 	popSize           int
@@ -47,6 +48,7 @@ func init() {
 	runCmd.Flags().StringVar(&outPath, "out", "out.png", "Output image path")
 	runCmd.Flags().StringVar(&mode, "mode", "joint", "Optimization mode: joint, sequential, batch")
 	runCmd.Flags().StringVar(&backendName, "backend", "cpu", "Renderer backend to use (cpu, opencl)")
+	runCmd.Flags().StringVar(&variantName, "variant", "standard", "MayFly algorithm variant: standard, desma, olce")
 	runCmd.Flags().IntVar(&circles, "circles", 10, "Number of circles")
 	runCmd.Flags().IntVar(&iters, "iters", 100, "Max iterations")
 	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
@@ -72,6 +74,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		CanvasPath:           canvasPath,
 		Mode:                 app.Mode(mode),
 		Backend:              app.Backend(backendName),
+		Variant:              app.Variant(variantName),
 		Circles:              circles,
 		Iters:                iters,
 		PopSize:              popSize,
@@ -187,7 +190,10 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	defer cleanup()
 
 	// Create optimizer
-	optimizer := opt.NewMayfly(config.Iters, config.PopSize, config.EffectiveSeed)
+	optimizer, err := opt.NewMayflyVariant(string(config.Variant), config.Iters, config.PopSize, config.EffectiveSeed)
+	if err != nil {
+		return fmt.Errorf("create optimizer: %w", err)
+	}
 
 	// Create convergence config
 	convergenceConfig := renderer.ConvergenceConfig{
@@ -239,10 +245,10 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to encode output: %w", err)
 	}
 
-	// Compute throughput (circles rendered per second)
-	// Each eval renders K circles, estimate total evals ~ iters * popSize
-	totalEvals := config.Iters * config.PopSize
-	totalCircles := totalEvals * actualCircles
+	// Compute throughput (circles rendered per second) from the measured
+	// evaluation count. An iters*popSize estimate overstates the work whenever a
+	// run stops before its iteration budget.
+	totalCircles := result.Evaluations * actualCircles
 	cps := float64(totalCircles) / elapsed.Seconds()
 
 	slog.Info("Optimization complete",
@@ -253,6 +259,8 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		"circles_used", actualCircles,
 		"circles_requested", config.Circles,
 		"seed", config.EffectiveSeed,
+		"evaluations", result.Evaluations,
+		"termination", result.Termination,
 		"circles_per_second", fmt.Sprintf("%.0f", cps),
 	)
 

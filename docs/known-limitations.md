@@ -59,6 +59,11 @@ behavior is production-ready.
   pixel error, not a perceptual color-space metric.
 - Circle compositing is a raster approximation without an antialiasing quality
   guarantee. Results can differ from vector renderers.
+- On ARM64, the historical pre-optimization renderer oracle differs from the
+  current renderer by one alpha unit for one covered translucent custom-canvas
+  pixel. Current single-threaded and parallel rendering agree, and the issue
+  predates the opaque-canvas fast path. Cross-architecture byte identity for
+  this floating-point rounding boundary is not claimed.
 - Evolutionary optimization is expensive and does not guarantee a global
   optimum. Seed, population, iteration count, mode, and image size materially
   affect runtime and quality.

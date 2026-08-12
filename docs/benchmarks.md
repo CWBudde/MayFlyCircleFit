@@ -18,6 +18,11 @@ The suite covers three layers:
   using the real Mayfly optimizer with bounded iteration/population counts and
   a fixed seed.
 
+`BenchmarkFastSSD_Comparison` is the architecture-level SIMD suite. It compares
+the portable scalar kernel with the runtime-selected kernel at 64×64, 128×128,
+256×256, 512×512, and 1024×1024, reports Mpixels/s and allocations, and retains
+the result to prevent dead-code elimination.
+
 References, candidate images, circle parameters, optimizer seeds, and worker
 counts are fixed. Benchmark setup is excluded from the timed region, and each
 case reports allocations.
@@ -28,6 +33,17 @@ complete render-plus-cost measurements at 64×64/K10, 256×256/K50, and
 with the production `FastMSECost` default using one rendering thread. This is
 the full-cost integration benchmark used by Task 10.7; the canonical `Cost`
 cases isolate the SSD improvement from circle rendering.
+
+`BenchmarkCompositeOpaqueSpan` isolates scalar and automatically dispatched
+opaque-span compositing. `BenchmarkCPURendererOpaqueSpan` compares the former
+per-pixel loop with the production horizontal-span renderer at 512×512/K100;
+it is the integration benchmark used by Task 10.12.
+
+`BenchmarkCircleSpanGeometry` compares the `float64` oracle, scalar `float32`,
+and Q16.16 span-edge searches across small, large, clipped, and row-sharded
+circles. `BenchmarkCPURendererGeometry` compares the oracle and Q16.16 modes in
+the complete one-thread 512×512/K100 renderer. These are the Task 10.13
+geometry and integration benchmarks.
 
 ## Running benchmarks
 
@@ -48,6 +64,29 @@ Run the full CPU renderer cost comparison with:
 ```sh
 go test -run '^$' -bench '^BenchmarkCPURenderer_CostComparison$' \
   -benchmem ./internal/fit/renderer
+```
+
+Run the SIMD kernel matrix with repeated samples:
+
+```sh
+go test -run '^$' -bench '^BenchmarkFastSSD_Comparison$' \
+  -benchmem -benchtime=500ms -count=5 ./internal/fit
+```
+
+Run the opaque-span microbenchmark and full renderer comparison with:
+
+```sh
+go test -run '^$' \
+  -bench '^(BenchmarkCompositeOpaqueSpan|BenchmarkCPURendererOpaqueSpan)$' \
+  -benchmem -benchtime=500ms -count=5 ./internal/fit/renderer
+```
+
+Run the fixed-point geometry and full renderer comparison with:
+
+```sh
+go test -run '^$' \
+  -bench '^(BenchmarkCircleSpanGeometry|BenchmarkCPURendererGeometry)$' \
+  -benchmem -benchtime=500ms -count=5 ./internal/fit/renderer
 ```
 
 Save two runs made under the same machine, power, thermal, Go-version, and

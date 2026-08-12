@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -150,9 +153,13 @@ func TestCheckpointsListCommand_NoCheckpoints(t *testing.T) {
 	defer func() { checkpointDataDir = originalDataDir }()
 
 	// Run list command
-	err := runListCheckpoints(nil, nil)
+	var output bytes.Buffer
+	err := runListCheckpoints(testCommand(context.Background(), &output), nil)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
+	}
+	if !strings.Contains(output.String(), "No checkpoints found.") {
+		t.Errorf("unexpected output:\n%s", output.String())
 	}
 }
 
@@ -176,6 +183,7 @@ func TestCheckpointsListCommand_WithCheckpoints(t *testing.T) {
 	}
 	const jobID = "1f953c26-a9c8-4a53-9dd6-8f8459727010"
 	checkpoint := store.NewCheckpoint(jobID, make([]float64, 35), 0.5, 1.0, 10, config)
+	checkpoint.Termination = "stagnation"
 
 	err = checkpointStore.SaveCheckpoint(jobID, checkpoint)
 	if err != nil {
@@ -188,9 +196,14 @@ func TestCheckpointsListCommand_WithCheckpoints(t *testing.T) {
 	defer func() { checkpointDataDir = originalDataDir }()
 
 	// Run list command
-	err = runListCheckpoints(nil, nil)
+	var output bytes.Buffer
+	err = runListCheckpoints(testCommand(context.Background(), &output), nil)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
+	}
+	// The termination column reports why each checkpointed run stopped.
+	if !strings.Contains(output.String(), "TERMINATION") || !strings.Contains(output.String(), "stagnation") {
+		t.Errorf("checkpoint listing is missing the termination column:\n%s", output.String())
 	}
 }
 

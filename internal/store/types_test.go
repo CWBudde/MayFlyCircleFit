@@ -496,3 +496,46 @@ func TestNewCheckpoint(t *testing.T) {
 		t.Errorf("BestParams length mismatch")
 	}
 }
+
+// TestCheckpointAcceptsNewTerminationValues covers the reasons that became
+// reachable once optimizer termination was propagated end to end. The wire
+// field is free-form, so these must survive a round trip and validation without
+// a schema-version bump.
+func TestCheckpointAcceptsNewTerminationValues(t *testing.T) {
+	for _, termination := range []string{"target_cost", "stagnation", "stage_convergence", "completed"} {
+		t.Run(termination, func(t *testing.T) {
+			original := &Checkpoint{
+				JobID:            "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+				BestParams:       make([]float64, 7),
+				BestCost:         1.5,
+				RequestedCircles: 1,
+				ActualCircles:    1,
+				EffectiveSeed:    3,
+				Iterations:       10,
+				Evaluations:      100,
+				Termination:      termination,
+				Timestamp:        time.Now(),
+				Config:           JobConfig{RefPath: "reference.png", Mode: "joint", Circles: 1, Iters: 10, PopSize: 20},
+			}
+
+			data, err := json.Marshal(original)
+			if err != nil {
+				t.Fatalf("Marshal() error = %v", err)
+			}
+
+			var restored Checkpoint
+			if err := json.Unmarshal(data, &restored); err != nil {
+				t.Fatalf("Unmarshal() error = %v", err)
+			}
+			if restored.Termination != termination {
+				t.Fatalf("Termination = %q, want %q", restored.Termination, termination)
+			}
+			if restored.SchemaVersion != CheckpointSchemaVersion {
+				t.Fatalf("SchemaVersion = %d, want %d", restored.SchemaVersion, CheckpointSchemaVersion)
+			}
+			if err := restored.Validate(); err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+		})
+	}
+}

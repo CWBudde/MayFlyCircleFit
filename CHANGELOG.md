@@ -8,6 +8,11 @@ release is declared by this file.
 
 ### Added
 
+- Optimizer termination reasons propagate end to end. `opt.Termination` gains
+  `target_cost` and `stagnation`, staged pipelines report `stage_convergence`
+  when the stage-level tracker stops a run, and the reason is shown by `status`,
+  the `checkpoints list` table, and the job detail page.
+
 - Context-aware MayFly optimization with measured progress and cancellation.
 - Seeded restart-from-best populations using MayFly `v0.4.0`.
 - Trusted-local server controls for same-origin browser requests, canonical input
@@ -46,6 +51,17 @@ release is declared by this file.
   empty-image and mismatched-dimension behavior.
 - Job snapshots and progress updates no longer expose shared mutable state to
   callers.
+- Completed server jobs report the optimizer's actual termination reason. The
+  worker previously recorded `completed` for every finished job because the
+  pipeline discarded the reason on the way out of the optimizer.
+- `run` computes throughput from the measured evaluation count instead of an
+  `iters * popSize` estimate, which overstated the work whenever a run stopped
+  before its iteration budget.
+- The configured MayFly `variant` is now applied. It was accepted, defaulted,
+  validated, and persisted in checkpoints, but every optimizer construction site
+  hardcoded the standard variant, so `desma` and `olce` silently ran standard.
+  `run` also gained the `--variant` flag that makes the setting reachable from
+  the CLI.
 
 ### Known limitations
 

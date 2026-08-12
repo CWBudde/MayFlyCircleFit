@@ -206,7 +206,10 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	if seed == 0 {
 		seed = checkpoint.Config.Seed
 	}
-	optimizer := opt.NewMayfly(checkpoint.Config.Iters, checkpoint.Config.PopSize, seed)
+	optimizer, err := opt.NewMayflyVariant(string(checkpoint.Config.Variant), checkpoint.Config.Iters, checkpoint.Config.PopSize, seed)
+	if err != nil {
+		return fmt.Errorf("create optimizer: %w", err)
+	}
 	lifecycle, ok := optimizer.(opt.LifecycleOptimizer)
 	if !ok {
 		return fmt.Errorf("optimizer does not support lifecycle resume")

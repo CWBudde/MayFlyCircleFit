@@ -246,18 +246,63 @@ jobs:
             goarch: arm64
           - goos: windows
             goarch: amd64
+          - goos: linux
+            goarch: "386"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
-      - name: Cross-build packages
+      - name: Cross-build and verify selected SSD sources
         env:
           CGO_ENABLED: "0"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        run: go build ./...
+        run: bash scripts/check-cross-build.sh "${GOOS}/${GOARCH}"
+
+  native-simd:
+    name: Native SSD (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux AMD64 / AVX2
+            runner: ubuntu-24.04
+            backend: AVX2
+          - platform: macOS ARM64 / NEON
+            runner: macos-15
+            backend: NEON
+          - platform: Windows AMD64 / AVX2
+            runner: windows-2025
+            backend: AVX2
+          - platform: Linux ARM64 / NEON
+            runner: ubuntu-24.04-arm
+            backend: NEON
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run SSD tests on native hardware
+        env:
+          CGO_ENABLED: "0"
+          MAYFLY_REQUIRE_SSD_BACKEND: ${{ matrix.backend }}
+        run: go test -count=1 ./internal/fit
+      - name: Run SSD tests with SIMD features disabled
+        env:
+          CGO_ENABLED: "0"
+          GODEBUG: cpu.all=off
+          MAYFLY_REQUIRE_SSD_BACKEND: scalar
+        run: go test -count=1 ./internal/fit
+      - name: Record native scalar and SIMD throughput
+        env:
+          CGO_ENABLED: "0"
+          MAYFLY_REQUIRE_SSD_BACKEND: ${{ matrix.backend }}
+        run: go test -run '^$' -bench '^BenchmarkFastSSD_Comparison$' -benchtime=200ms -count=1 ./internal/fit
 
   gpu-compile:
     name: GPU-tag OpenCL (PoCL)
@@ -318,6 +363,7 @@ jobs:
       - race
       - build
       - cross-build
+      - native-simd
       - gpu-compile
       - vulnerability
     runs-on: ubuntu-latest

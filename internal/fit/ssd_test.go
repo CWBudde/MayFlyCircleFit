@@ -6,11 +6,14 @@ import (
 	"image/color"
 	"math"
 	"math/rand"
+	"os"
 	"sync"
 	"testing"
 
 	"golang.org/x/sys/cpu"
 )
+
+var ssdBenchmarkSink float64
 
 // ---------------------- Test Utilities ----------------------
 
@@ -490,6 +493,18 @@ func TestFastSSD_PaddedStride(t *testing.T) {
 
 // ---------------------- Backend Selection Tests ----------------------
 
+// TestFastSSD_RequiredBackend lets native hardware CI require that runtime
+// feature detection selected the backend expected for its runner.
+func TestFastSSD_RequiredBackend(t *testing.T) {
+	required := os.Getenv("MAYFLY_REQUIRE_SSD_BACKEND")
+	if required == "" {
+		t.Skip("MAYFLY_REQUIRE_SSD_BACKEND is not set")
+	}
+	if got := ActiveSSDBackend.String(); got != required {
+		t.Fatalf("active SSD backend = %s, required %s", got, required)
+	}
+}
+
 // TestFastSSD_BackendSelection validates that the correct backend was selected based on CPU features
 func TestFastSSD_BackendSelection(t *testing.T) {
 	t.Logf("Active SSD backend: %s", ActiveSSDBackend)
@@ -593,6 +608,7 @@ func BenchmarkFastSSD_Comparison(b *testing.B) {
 		{"128x128", 128, 128},
 		{"256x256", 256, 256},
 		{"512x512", 512, 512},
+		{"1024x1024", 1024, 1024},
 	}
 
 	for _, sz := range sizes {
@@ -600,9 +616,10 @@ func BenchmarkFastSSD_Comparison(b *testing.B) {
 		img2 := randomNRGBA(sz.width, sz.height, 2)
 
 		b.Run(sz.name+"_scalar", func(b *testing.B) {
+			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height)
+				ssdBenchmarkSink = fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height)
 			}
 			mpixelsPerSec := BenchmarkSSDBackend(b.N, sz.width, sz.height, b.Elapsed().Nanoseconds())
 			b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
@@ -610,9 +627,10 @@ func BenchmarkFastSSD_Comparison(b *testing.B) {
 
 		b.Run(sz.name+"_active", func(b *testing.B) {
 			b.Logf("Active backend: %s", ActiveSSDBackend)
+			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				fastSSD(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height)
+				ssdBenchmarkSink = fastSSD(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height)
 			}
 			mpixelsPerSec := BenchmarkSSDBackend(b.N, sz.width, sz.height, b.Elapsed().Nanoseconds())
 			b.ReportMetric(mpixelsPerSec, "Mpixels/sec")

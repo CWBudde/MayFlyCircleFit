@@ -347,6 +347,74 @@ func BenchmarkCompositePixel(b *testing.B) {
 	}
 }
 
+func BenchmarkCompositePixelOpaque(b *testing.B) {
+	img := image.NewNRGBA(image.Rect(0, 0, 256, 256))
+	for i := 0; i < len(img.Pix); i += 4 {
+		img.Pix[i+0] = 200
+		img.Pix[i+1] = 200
+		img.Pix[i+2] = 200
+		img.Pix[i+3] = 255
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		compositePixel(img, 128, 128, 1.0, 0.0, 0.0, 0.5)
+	}
+}
+
+func TestCompositePixelOpaqueMatchesGeneralPath(t *testing.T) {
+	tests := []struct {
+		name       string
+		background color.NRGBA
+		red        float64
+		green      float64
+		blue       float64
+		alpha      float64
+	}{
+		{name: "transparent_source", background: color.NRGBA{R: 12, G: 34, B: 56, A: 255}},
+		{name: "fractional", background: color.NRGBA{R: 12, G: 127, B: 241, A: 255}, red: 0.13, green: 0.57, blue: 0.91, alpha: 0.37},
+		{name: "half", background: color.NRGBA{R: 200, G: 100, B: 50, A: 255}, red: 1, green: 0.5, blue: 0, alpha: 0.5},
+		{name: "opaque_source", background: color.NRGBA{R: 1, G: 2, B: 3, A: 255}, red: 0.99, green: 0.01, blue: 0.49, alpha: 1},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+			want := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+			got.SetNRGBA(0, 0, test.background)
+			want.SetNRGBA(0, 0, test.background)
+
+			compositePixel(got, 0, 0, test.red, test.green, test.blue, test.alpha)
+			compositePixelGeneral(want, 0, 0, test.red, test.green, test.blue, test.alpha)
+			if !bytes.Equal(got.Pix, want.Pix) {
+				t.Fatalf("opaque path = %v, general path = %v", got.Pix, want.Pix)
+			}
+		})
+	}
+}
+
+func compositePixelGeneral(img *image.NRGBA, x, y int, r, g, b, alpha float64) {
+	i := y*img.Stride + x*4
+	bgR := float64(img.Pix[i+0]) * inv255
+	bgG := float64(img.Pix[i+1]) * inv255
+	bgB := float64(img.Pix[i+2]) * inv255
+	bgA := float64(img.Pix[i+3]) * inv255
+	fgR := r * alpha
+	fgG := g * alpha
+	fgB := b * alpha
+	outA := alpha + bgA*(1-alpha)
+	if outA == 0 {
+		return
+	}
+	bgBlend := bgA * (1 - alpha)
+	invOutA := 1 / outA
+	img.Pix[i+0] = uint8((fgR+bgR*bgBlend)*invOutA*255 + 0.5)
+	img.Pix[i+1] = uint8((fgG+bgG*bgBlend)*invOutA*255 + 0.5)
+	img.Pix[i+2] = uint8((fgB+bgB*bgBlend)*invOutA*255 + 0.5)
+	img.Pix[i+3] = uint8(outA*255 + 0.5)
+}
+
 // BenchmarkRenderCircle benchmarks rendering a single circle
 func BenchmarkRenderCircle(b *testing.B) {
 	img := image.NewNRGBA(image.Rect(0, 0, 256, 256))

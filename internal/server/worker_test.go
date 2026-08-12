@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
+	"github.com/cwbudde/mayflycirclefit/internal/opt"
 )
 
 func TestRendererForJobConfiguresThreads(t *testing.T) {
@@ -174,5 +175,54 @@ func createTestImage(t *testing.T, path string) {
 
 	if err := png.Encode(f, img); err != nil {
 		t.Fatalf("Failed to encode test image: %v", err)
+	}
+}
+
+// terminationOptimizer returns a fixed termination reason so the wrapper's
+// pass-through behavior can be checked without running a real optimizer.
+type terminationOptimizer struct {
+	reason opt.Termination
+}
+
+func (t terminationOptimizer) Run(_ func([]float64) float64, _, _ []float64, dim int) ([]float64, float64) {
+	return make([]float64, dim), 0
+}
+
+func (t terminationOptimizer) RunContext(_ context.Context, problem opt.Problem, _ opt.RunOptions) (opt.Result, error) {
+	return opt.Result{
+		BestParams:  make([]float64, problem.Dim),
+		BestCost:    1,
+		Iterations:  5,
+		Evaluations: 9,
+		Termination: t.reason,
+	}, nil
+}
+
+// TestProgressOptimizerPreservesTermination pins the wrapper that rebuilds
+// RunOptions: it must still return the base optimizer's termination reason,
+// because the worker now reports that reason instead of a hardcoded value.
+func TestProgressOptimizerPreservesTermination(t *testing.T) {
+	reasons := []opt.Termination{
+		opt.TerminationCompleted,
+		opt.TerminationTargetCost,
+		opt.TerminationStagnation,
+	}
+
+	for _, reason := range reasons {
+		t.Run(string(reason), func(t *testing.T) {
+			wrapped := &progressOptimizer{base: terminationOptimizer{reason: reason}}
+			result, err := wrapped.RunContext(context.Background(), opt.Problem{
+				Eval:  func([]float64) float64 { return 1 },
+				Lower: []float64{0},
+				Upper: []float64{1},
+				Dim:   1,
+			}, opt.RunOptions{})
+			if err != nil {
+				t.Fatalf("RunContext() error = %v", err)
+			}
+			if result.Termination != reason {
+				t.Fatalf("Termination = %q, want %q", result.Termination, reason)
+			}
+		})
 	}
 }

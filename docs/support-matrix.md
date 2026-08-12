@@ -22,17 +22,29 @@ cardinality matches the total.
 The portable CI matrix is defined with `CGO_ENABLED=0`, which intentionally
 excludes OpenCL.
 
-| Target | CPU build path | SIMD path | CI cross-build gate |
-| --- | --- | --- | --- |
-| Linux/AMD64 | Available | AVX2 with runtime detection; scalar fallback | Configured |
-| Linux/ARM64 | Available | Scalar fallback; no NEON kernel | Configured |
-| macOS/AMD64 | Available | AVX2 with runtime detection; scalar fallback | Configured |
-| macOS/ARM64 | Available | Scalar fallback; no NEON kernel | Configured |
-| Windows/AMD64 | Available | AVX2 with runtime detection; scalar fallback | Configured |
+| Target | CPU build path | SIMD path | CI cross-build gate | Native SSD gate |
+| --- | --- | --- | --- | --- |
+| Linux/AMD64 | Available | AVX2 with runtime detection; scalar fallback | Configured | AVX2 required |
+| Linux/ARM64 | Available | NEON with runtime detection; scalar fallback | Configured | NEON required |
+| macOS/AMD64 | Available | AVX2 with runtime detection; scalar fallback | Configured | Not configured |
+| macOS/ARM64 | Available | NEON with runtime detection; scalar fallback | Configured | NEON required |
+| Windows/AMD64 | Available | AVX2 with runtime detection; scalar fallback | Configured | AVX2 required |
+| Linux/386 | Portability only | Scalar | Configured | Not configured |
 
-“Configured” means the workflow contains that gate. Check the workflow run
-before treating a commit as verified. Other Go targets may compile but are not
-claimed as supported until they are added to the matrix and exercised.
+“Configured” means the workflow contains that gate. Cross-build jobs also
+assert that Go selected the expected SSD Go and assembly files. Native gates
+run the SSD correctness suite on the stated architecture and fail if runtime
+dispatch does not select the required SIMD backend. Check the workflow run
+before treating a commit as verified. Linux/386 is not a release artifact;
+other Go targets may compile but are not claimed as supported until they are
+added to the matrix and exercised.
+
+On ARM64, opaque CPU-renderer spans additionally have an ASIMD-gated NEON
+compositor for spans of at least 256 pixels, with an exact scalar span and
+remainder path. Shorter spans use scalar because native Apple M5 measurements
+show it is faster there. Translucent custom canvases always retain the general
+scalar Porter-Duff path. This renderer kernel is natively validated on macOS
+ARM64 but is not currently a required Linux/ARM64 timing gate.
 
 ## OpenCL
 
