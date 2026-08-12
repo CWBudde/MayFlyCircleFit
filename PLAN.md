@@ -298,19 +298,14 @@ Physical Apple Silicon and Linux ARM64 measurements remain explicitly tracked
 by Tasks 10.8–10.10; no unmeasured speedup is claimed. See
 `docs/task-10.5-neon-report.md`.
 
-### Task 10.6: Implement Runtime Feature Detection and Dispatch - **MOSTLY COMPLETE**
-**Note:** Core dispatch implemented in Task 10.2 (`internal/fit/ssd.go`), remaining work is validation
+### Task 10.6: Implement Runtime Feature Detection and Dispatch ✅ COMPLETE
 
-- [x] Create runtime selection mechanism (function pointer `fastSSD` in init())
-- [x] Use `golang.org/x/sys/cpu` for feature detection
-- [x] Detect AVX2 support on amd64 (`cpu.X86.HasAVX2`)
-- [x] Detect NEON support on arm64 (`cpu.ARM64.HasASIMD`)
-- [x] Select fastest available kernel at startup
-- [x] Fall back to scalar if no SIMD available
-- [x] Add logging to show which kernel was selected (slog.Debug)
-- [x] Write tests for dispatch logic (TestSSDBackendDetection)
-- [ ] Test fallback behavior with `GODEBUG=cpu.avx2=off` override
-- [ ] Add benchmarks comparing dispatch overhead (<2ns expected)
+Completed: architecture-specific initialization uses `x/sys/cpu` to select
+AVX2, NEON, or scalar once at startup and logs the active backend. Dispatch
+tests cover feature/backend consistency and prove the amd64 scalar fallback in
+a fresh process with `GODEBUG=cpu.avx2=off`; a focused direct-versus-function-
+pointer benchmark measures dispatch overhead independently of kernel work. A
+five-run local sample measured about 0.18 ns mean overhead, below the 2 ns target.
 
 ### Task 10.7: Integrate SIMD SSD into Cost Function
 - [ ] Replace MSE cost computation with `fastSSD()`
