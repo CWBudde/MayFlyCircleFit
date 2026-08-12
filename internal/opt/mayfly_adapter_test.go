@@ -322,3 +322,141 @@ func TestNewMayflyVariantMatchesNamedConstructors(t *testing.T) {
 		})
 	}
 }
+
+func sphereProblem() Problem {
+	return Problem{Eval: sphere, Lower: []float64{-10, -10}, Upper: []float64{10, 10}, Dim: 2}
+}
+
+func runAdapter(t *testing.T, optimizer Optimizer) Result {
+	t.Helper()
+
+	result, err := optimizer.(LifecycleOptimizer).RunContext(context.Background(), sphereProblem(), RunOptions{})
+	if err != nil {
+		t.Fatalf("RunContext() error = %v", err)
+	}
+	return result
+}
+
+// TestMayflyAdapterDefaultsAreUnchanged is the reproducibility gate for the
+// option surface: constructing an adapter with zero-valued options must be
+// bit-identical to constructing one without them, so that an unconfigured run
+// behaves exactly as it did before early stopping and logging existed.
+func TestMayflyAdapterDefaultsAreUnchanged(t *testing.T) {
+	want := runAdapter(t, NewMayfly(40, 20, 42))
+
+	withZeroOptions := runAdapter(t, NewMayfly(40, 20, 42, WithEarlyStop(Stop{}), WithLogger(nil)))
+	if withZeroOptions.BestCost != want.BestCost || !slices.Equal(withZeroOptions.BestParams, want.BestParams) {
+		t.Fatalf("zero options changed the result: got (%v, %v), want (%v, %v)",
+			withZeroOptions.BestParams, withZeroOptions.BestCost, want.BestParams, want.BestCost)
+	}
+	if withZeroOptions.Iterations != want.Iterations || withZeroOptions.Evaluations != want.Evaluations {
+		t.Fatalf("zero options changed measured work: got %d/%d, want %d/%d",
+			withZeroOptions.Iterations, withZeroOptions.Evaluations, want.Iterations, want.Evaluations)
+	}
+
+	viaVariant, err := NewMayflyVariant("", 40, 20, 42)
+	if err != nil {
+		t.Fatalf("NewMayflyVariant() error = %v", err)
+	}
+	if got := runAdapter(t, viaVariant); got.BestCost != want.BestCost || !slices.Equal(got.BestParams, want.BestParams) {
+		t.Fatalf("variant factory changed the result: got (%v, %v), want (%v, %v)",
+			got.BestParams, got.BestCost, want.BestParams, want.BestCost)
+	}
+
+	if want.Termination != TerminationCompleted {
+		t.Fatalf("Termination = %q, want %q", want.Termination, TerminationCompleted)
+	}
+	if want.Iterations != 40 {
+		t.Fatalf("Iterations = %d, want the full budget of 40", want.Iterations)
+	}
+}
+
+func TestMayflyAdapterStopsOnTargetCost(t *testing.T) {
+	result := runAdapter(t, NewMayfly(500, 20, 42, WithEarlyStop(Stop{TargetCost: 1e-2, MinIters: 1})))
+
+	if result.Termination != TerminationTargetCost {
+		t.Fatalf("Termination = %q, want %q", result.Termination, TerminationTargetCost)
+	}
+	if result.Iterations >= 500 {
+		t.Fatalf("Iterations = %d, want fewer than the 500 budget", result.Iterations)
+	}
+	if result.BestCost > 1e-2 {
+		t.Fatalf("BestCost = %v, want at or below the 0.01 target", result.BestCost)
+	}
+}
+
+func TestMayflyAdapterStopsOnStagnation(t *testing.T) {
+	constant := func([]float64) float64 { return 1 }
+	optimizer := NewMayfly(100, 20, 42, WithEarlyStop(Stop{StagnationIters: 3, MinIters: 1}))
+	result, err := optimizer.(LifecycleOptimizer).RunContext(context.Background(), Problem{
+		Eval: constant, Lower: []float64{-10, -10}, Upper: []float64{10, 10}, Dim: 2,
+	}, RunOptions{})
+	if err != nil {
+		t.Fatalf("RunContext() error = %v", err)
+	}
+
+	if result.Termination != TerminationStagnation {
+		t.Fatalf("Termination = %q, want %q", result.Termination, TerminationStagnation)
+	}
+	if result.Iterations >= 100 {
+		t.Fatalf("Iterations = %d, want far fewer than the 100 budget", result.Iterations)
+	}
+}
+
+func TestMayflyAdapterMinItersDelaysStop(t *testing.T) {
+	const minIters = 20
+	constant := func([]float64) float64 { return 1 }
+	optimizer := NewMayfly(100, 20, 42, WithEarlyStop(Stop{StagnationIters: 1, MinIters: minIters}))
+	result, err := optimizer.(LifecycleOptimizer).RunContext(context.Background(), Problem{
+		Eval: constant, Lower: []float64{-10, -10}, Upper: []float64{10, 10}, Dim: 2,
+	}, RunOptions{})
+	if err != nil {
+		t.Fatalf("RunContext() error = %v", err)
+	}
+
+	if result.Iterations < minIters {
+		t.Fatalf("Iterations = %d, want at least the %d minimum", result.Iterations, minIters)
+	}
+}
+
+// TestMayflyAdapterTargetCostUsesObjectiveUnits pins that the target is compared
+// against the objective's own value. The adapter normalizes positions to [0,1],
+// so a target interpreted in normalized space would behave differently.
+func TestMayflyAdapterTargetCostUsesObjectiveUnits(t *testing.T) {
+	// Costs are always 500: above the target in objective units, but below it if
+	// anything were to rescale them.
+	constant := func([]float64) float64 { return 500 }
+	optimizer := NewMayfly(15, 20, 42, WithEarlyStop(Stop{TargetCost: 100, MinIters: 1}))
+	result, err := optimizer.(LifecycleOptimizer).RunContext(context.Background(), Problem{
+		Eval: constant, Lower: []float64{-1000, -1000}, Upper: []float64{1000, 1000}, Dim: 2,
+	}, RunOptions{})
+	if err != nil {
+		t.Fatalf("RunContext() error = %v", err)
+	}
+
+	if result.Termination != TerminationCompleted {
+		t.Fatalf("Termination = %q, want %q: a cost of 500 must not satisfy a target of 100",
+			result.Termination, TerminationCompleted)
+	}
+	if result.Iterations != 15 {
+		t.Fatalf("Iterations = %d, want the full budget of 15", result.Iterations)
+	}
+}
+
+// TestMayflyAdapterClampsMinItersToMaxIterations covers resume, which reads a
+// persisted configuration without renormalizing it. Mayfly rejects a minimum
+// above the iteration cap, so the adapter clamps instead of erroring.
+func TestMayflyAdapterClampsMinItersToMaxIterations(t *testing.T) {
+	// Without the clamp this run fails with an opaque optimizer validation
+	// error. With it, the minimum lands on the last iteration, so the run still
+	// consumes its whole budget; the reported reason may be either "completed"
+	// or a criterion that first became eligible on that final iteration.
+	result := runAdapter(t, NewMayfly(10, 20, 42, WithEarlyStop(Stop{StagnationIters: 1, MinIters: 1000})))
+
+	if result.Iterations != 10 {
+		t.Fatalf("Iterations = %d, want the full budget of 10", result.Iterations)
+	}
+	if result.Termination == TerminationCancelled {
+		t.Fatalf("Termination = %q, want a non-cancelled reason", result.Termination)
+	}
+}

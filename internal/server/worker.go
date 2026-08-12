@@ -16,6 +16,18 @@ import (
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
 
+// buildEarlyStop maps the optimizer-level stopping fields onto the adapter's
+// option. A configuration that sets none of them yields a zero Stop, which
+// leaves the optimizer unchanged.
+func buildEarlyStop(config store.JobConfig) opt.Stop {
+	return opt.Stop{
+		TargetCost:      config.StopTargetCost,
+		MinImprovement:  config.StopMinImprovement,
+		StagnationIters: config.StopStagnationIters,
+		MinIters:        config.StopMinIters,
+	}
+}
+
 func buildConvergenceConfig(config store.JobConfig) renderer.ConvergenceConfig {
 	return renderer.ConvergenceConfig{
 		Enabled:   config.ConvergenceEnabled,
@@ -112,7 +124,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	if seed == 0 {
 		seed = job.Config.Seed
 	}
-	optimizer, err := opt.NewMayflyVariant(string(job.Config.Variant), job.Config.Iters, job.Config.PopSize, seed)
+	optimizer, err := opt.NewMayflyVariant(string(job.Config.Variant), job.Config.Iters, job.Config.PopSize, seed,
+		opt.WithLogger(slog.Default()), opt.WithEarlyStop(buildEarlyStop(job.Config)))
 	if err != nil {
 		markJobFailed(jm, jobID, err)
 		return err

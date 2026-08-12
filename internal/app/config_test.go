@@ -61,6 +61,16 @@ func TestValidateBoundaries(t *testing.T) {
 		{"threads", func(c *JobConfig) { c.Threads = -1 }, "threads"},
 		{"patience", func(c *JobConfig) { c.ConvergencePatience = 101 }, "convergencePatience"},
 		{"threshold", func(c *JobConfig) { c.ConvergenceThreshold = 2 }, "convergenceThreshold"},
+		{"stop target cost NaN", func(c *JobConfig) { c.StopTargetCost = math.NaN() }, "stopTargetCost"},
+		{"stop target cost infinite", func(c *JobConfig) { c.StopTargetCost = math.Inf(1) }, "stopTargetCost"},
+		{"stop target cost negative", func(c *JobConfig) { c.StopTargetCost = -1 }, "stopTargetCost"},
+		{"stop min improvement infinite", func(c *JobConfig) { c.StopMinImprovement = math.Inf(1) }, "stopMinImprovement"},
+		{"stop min improvement negative", func(c *JobConfig) { c.StopMinImprovement = -1 }, "stopMinImprovement"},
+		{"stop min improvement without window", func(c *JobConfig) { c.StopMinImprovement = 1 }, "stopMinImprovement"},
+		{"stop stagnation negative", func(c *JobConfig) { c.StopStagnationIters = -1 }, "stopStagnationIters"},
+		{"stop stagnation over budget", func(c *JobConfig) { c.StopStagnationIters = c.Iters + 1 }, "stopStagnationIters"},
+		{"stop min iters negative", func(c *JobConfig) { c.StopMinIters = -1 }, "stopMinIters"},
+		{"stop min iters over budget", func(c *JobConfig) { c.StopMinIters = c.Iters + 1 }, "stopMinIters"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

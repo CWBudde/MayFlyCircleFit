@@ -31,8 +31,13 @@ var (
 	convergenceEnable bool
 	patience          int
 	threshold         float64
-	cpuProfile        string
-	memProfile        string
+
+	stopTargetCost      float64
+	stopMinImprovement  float64
+	stopStagnationIters int
+	stopMinIters        int
+	cpuProfile          string
+	memProfile          string
 )
 
 var runCmd = &cobra.Command{
@@ -55,10 +60,17 @@ func init() {
 	runCmd.Flags().IntVar(&threads, "threads", runtime.GOMAXPROCS(0), "CPU rendering threads (capped at GOMAXPROCS)")
 	runCmd.Flags().Int64Var(&seed, "seed", 0, "Random seed (0 chooses and reports a random seed)")
 
-	// Convergence detection flags (only used for sequential/batch modes)
+	// Stage-level convergence detection (only used for sequential/batch modes)
 	runCmd.Flags().BoolVar(&convergenceEnable, "convergence", true, "Enable adaptive convergence detection")
-	runCmd.Flags().IntVar(&patience, "patience", 3, "Stop after N circles/batches with no significant improvement")
-	runCmd.Flags().Float64Var(&threshold, "threshold", 0.001, "Minimum relative improvement required (0.001 = 0.1%)")
+	runCmd.Flags().IntVar(&patience, "patience", 3, "Stage-level: stop after N circles/batches with no significant improvement (sequential/batch only)")
+	runCmd.Flags().Float64Var(&threshold, "threshold", 0.001, "Stage-level: minimum RELATIVE improvement ratio per circle/batch (0.001 = 0.1%)")
+
+	// Optimizer-level early stopping, evaluated per iteration within one
+	// optimizer run. Disabled by default so runs stay reproducible.
+	runCmd.Flags().Float64Var(&stopTargetCost, "stop-target-cost", 0, "Stop the optimizer once the best cost reaches this absolute value (0 disables)")
+	runCmd.Flags().Float64Var(&stopMinImprovement, "stop-min-improvement", 0, "Optimizer-level: ABSOLUTE cost reduction per iteration counted as progress (0 accepts any improvement)")
+	runCmd.Flags().IntVar(&stopStagnationIters, "stop-stagnation-iters", 0, "Optimizer-level: stop after N consecutive iterations without progress (0 disables)")
+	runCmd.Flags().IntVar(&stopMinIters, "stop-min-iters", 0, "Optimizer-level: minimum iterations before any early stop can fire")
 
 	// Profiling flags
 	runCmd.Flags().StringVar(&cpuProfile, "cpuprofile", "", "Write CPU profile to file")
@@ -66,6 +78,18 @@ func init() {
 
 	runCmd.MarkFlagRequired("ref")
 	rootCmd.AddCommand(runCmd)
+}
+
+// earlyStopFromConfig maps the optimizer-level stopping fields onto the adapter
+// option. A configuration that sets none of them yields a zero Stop, which
+// leaves the optimizer unchanged.
+func earlyStopFromConfig(config app.JobConfig) opt.Stop {
+	return opt.Stop{
+		TargetCost:      config.StopTargetCost,
+		MinImprovement:  config.StopMinImprovement,
+		StagnationIters: config.StopStagnationIters,
+		MinIters:        config.StopMinIters,
+	}
 }
 
 func runOptimization(cmd *cobra.Command, args []string) error {
@@ -84,6 +108,10 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		DisableConvergence:   !convergenceEnable,
 		ConvergencePatience:  patience,
 		ConvergenceThreshold: threshold,
+		StopTargetCost:       stopTargetCost,
+		StopMinImprovement:   stopMinImprovement,
+		StopStagnationIters:  stopStagnationIters,
+		StopMinIters:         stopMinIters,
 	})
 	if err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
@@ -190,7 +218,8 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	defer cleanup()
 
 	// Create optimizer
-	optimizer, err := opt.NewMayflyVariant(string(config.Variant), config.Iters, config.PopSize, config.EffectiveSeed)
+	optimizer, err := opt.NewMayflyVariant(string(config.Variant), config.Iters, config.PopSize, config.EffectiveSeed,
+		opt.WithLogger(slog.Default()), opt.WithEarlyStop(earlyStopFromConfig(config)))
 	if err != nil {
 		return fmt.Errorf("create optimizer: %w", err)
 	}

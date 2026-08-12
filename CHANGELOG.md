@@ -8,6 +8,10 @@ release is declared by this file.
 
 ### Added
 
+- Structured MayFly lifecycle logging. Each optimizer run emits one info record
+  carrying its measured work and termination reason; MayFly's per-iteration and
+  run-start events are demoted to debug, so `--log-level=debug` now emits one
+  record per optimizer iteration.
 - Optimizer termination reasons propagate end to end. `opt.Termination` gains
   `target_cost` and `stagnation`, staged pipelines report `stage_convergence`
   when the stage-level tracker stops a run, and the reason is shown by `status`,

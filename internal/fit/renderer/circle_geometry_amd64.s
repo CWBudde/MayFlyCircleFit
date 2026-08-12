@@ -35,17 +35,17 @@ GLOBL ·circleEight<>(SB), RODATA|NOPTR, $4
 // func circleSpanFloat32AVX2Kernel(centerX, radiusSquaredMinusDY,
 //     roundedCenter float32, width int) (xStart, xEnd int)
 TEXT ·circleSpanFloat32AVX2Kernel(SB), NOSPLIT, $0-40
-	MOVSS centerX+0(FP), X0
+	VMOVSS centerX+0(FP), X0
 	VBROADCASTSS X0, Y0
-	MOVSS radiusSquaredMinusDY+4(FP), X1
+	VMOVSS radiusSquaredMinusDY+4(FP), X1
 	VBROADCASTSS X1, Y1
-	MOVSS roundedCenter+8(FP), X2
+	VMOVSS roundedCenter+8(FP), X2
 	VBROADCASTSS X2, Y2
 	MOVQ width+16(FP), SI
 
 	// Left candidates are [cx-1, cx-2, ..., cx-8].
 	VADDPS ·circleLeftOffsets<>(SB), Y2, Y2
-	MOVSS roundedCenter+8(FP), X3
+	VMOVSS roundedCenter+8(FP), X3
 	VCVTTSS2SIQ X3, AX                 // xStart = rounded center
 
 left_vector:
@@ -84,7 +84,7 @@ left_done:
 	MOVQ AX, xStart+24(FP)
 
 	// Right candidates are [cx+1, cx+2, ..., cx+8].
-	MOVSS roundedCenter+8(FP), X2
+	VMOVSS roundedCenter+8(FP), X2
 	VCVTTSS2SIQ X2, BX
 	INCQ BX                            // xEnd = rounded center + 1
 	VBROADCASTSS X2, Y2

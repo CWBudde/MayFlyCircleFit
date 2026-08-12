@@ -73,10 +73,30 @@ type JobConfig struct {
 	DisableConvergence   bool    `json:"disableConvergence,omitempty"`
 	ConvergencePatience  int     `json:"convergencePatience,omitempty"`
 	ConvergenceThreshold float64 `json:"convergenceThreshold,omitempty"`
+
+	// Optimizer-level early stopping. These are per-iteration criteria applied
+	// inside a single optimizer run, and are unrelated to the Convergence*
+	// fields above, which count whole circles or batches and use a relative
+	// improvement ratio. All four default to zero, which disables early
+	// stopping and keeps a default run identical to one configured before these
+	// fields existed.
+	StopTargetCost      float64 `json:"stopTargetCost,omitempty"`
+	StopMinImprovement  float64 `json:"stopMinImprovement,omitempty"`
+	StopStagnationIters int     `json:"stopStagnationIters,omitempty"`
+	StopMinIters        int     `json:"stopMinIters,omitempty"`
+}
+
+// EarlyStopEnabled reports whether optimizer-level early stopping is configured.
+func (c JobConfig) EarlyStopEnabled() bool {
+	return c.StopTargetCost > 0 || c.StopStagnationIters > 0
 }
 
 // DefaultConfig returns the canonical defaults. A zero seed is deliberately
 // left unresolved until ApplyDefaults so callers can report the chosen seed.
+//
+// The Stop* early-stopping fields are intentionally absent. They must stay zero
+// by default so that an unconfigured run reproduces exactly, and ApplyDefaults
+// must not gain a branch that fills them in.
 func DefaultConfig() JobConfig {
 	return JobConfig{
 		Mode:                 ModeJoint,
@@ -206,6 +226,25 @@ func (c JobConfig) Validate() error {
 	}
 	if c.ResumeCount < 0 {
 		return invalid("resumeCount", "cannot be negative")
+	}
+	if math.IsNaN(c.StopTargetCost) || math.IsInf(c.StopTargetCost, 0) || c.StopTargetCost < 0 {
+		return invalid("stopTargetCost", "must be finite and non-negative")
+	}
+	if math.IsNaN(c.StopMinImprovement) || math.IsInf(c.StopMinImprovement, 0) || c.StopMinImprovement < 0 {
+		return invalid("stopMinImprovement", "must be finite and non-negative")
+	}
+	// A minimum improvement only resets the stagnation counter, so on its own it
+	// would silently do nothing.
+	if c.StopMinImprovement > 0 && c.StopStagnationIters == 0 {
+		return invalid("stopMinImprovement", "requires stopStagnationIters to be set")
+	}
+	// Both windows are meaningless beyond the iteration budget, and the
+	// optimizer rejects a minimum above it outright.
+	if c.StopStagnationIters < 0 || c.StopStagnationIters > c.Iters {
+		return invalid("stopStagnationIters", fmt.Sprintf("must be between 0 and iters (%d)", c.Iters))
+	}
+	if c.StopMinIters < 0 || c.StopMinIters > c.Iters {
+		return invalid("stopMinIters", fmt.Sprintf("must be between 0 and iters (%d)", c.Iters))
 	}
 	return nil
 }

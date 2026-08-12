@@ -36,6 +36,31 @@ type MayflyAdapter struct {
 	seed     int64
 	variant  string // "standard", "desma", "olce", "eobbma", "gsasma", "mpma", "aoblmoa"
 	logger   *slog.Logger
+	stop     Stop
+}
+
+// Stop configures optimizer-level early stopping, evaluated per iteration
+// within a single run. The zero value disables every criterion, which is the
+// default and reproduces the behavior of runs configured without it.
+type Stop struct {
+	// TargetCost stops the run once the best cost reaches it. It is compared
+	// against the objective's own value, not a normalized one, so it uses the
+	// same units reported by status output and traces. Zero disables the check.
+	TargetCost float64
+	// MinImprovement is the absolute cost reduction that counts as progress and
+	// resets the stagnation counter. Zero accepts any improvement.
+	MinImprovement float64
+	// StagnationIters stops the run after this many consecutive iterations
+	// without progress. Zero disables stagnation detection.
+	StagnationIters int
+	// MinIters is the number of iterations that must complete before any
+	// criterion can stop the run.
+	MinIters int
+}
+
+// enabled reports whether any stopping criterion is configured.
+func (s Stop) enabled() bool {
+	return s.TargetCost > 0 || s.StagnationIters > 0
 }
 
 // MayflyOption customizes an adapter at construction time. Options are applied
@@ -48,6 +73,12 @@ type MayflyOption func(*MayflyAdapter)
 // optimizer run. A nil logger disables optimizer logging entirely.
 func WithLogger(logger *slog.Logger) MayflyOption {
 	return func(m *MayflyAdapter) { m.logger = logger }
+}
+
+// WithEarlyStop enables Mayfly's per-iteration stopping criteria. A zero Stop
+// leaves the optimizer configured exactly as it is without this option.
+func WithEarlyStop(stop Stop) MayflyOption {
+	return func(m *MayflyAdapter) { m.stop = stop }
 }
 
 func newAdapter(variant string, maxIters, popSize int, seed int64, options ...MayflyOption) *MayflyAdapter {
@@ -189,6 +220,25 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 	config.NPopF = m.popSize
 	config.LowerBound = 0.0
 	config.UpperBound = 1.0
+
+	// Leave Convergence nil unless a criterion is actually configured. An empty
+	// convergence config is inert today, but it would still engage the
+	// optimizer's per-iteration tracker for every caller.
+	if m.stop.enabled() {
+		convergence := &mayfly.ConvergenceConfig{
+			MinImprovement:       m.stop.MinImprovement,
+			StagnationIterations: m.stop.StagnationIters,
+			// Mayfly rejects a minimum above the iteration cap. Resume reads a
+			// persisted configuration without renormalizing it, so clamp here
+			// rather than surfacing an opaque optimizer error.
+			MinIterations: min(m.stop.MinIters, m.maxIters),
+		}
+		if m.stop.TargetCost > 0 {
+			target := m.stop.TargetCost
+			convergence.TargetCost = &target
+		}
+		config.Convergence = convergence
+	}
 
 	// Create RNG for population initialization
 	runSeed := m.seed

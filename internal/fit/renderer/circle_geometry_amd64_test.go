@@ -3,6 +3,7 @@
 package renderer
 
 import (
+	"fmt"
 	"math/rand"
 	"testing"
 
@@ -58,4 +59,29 @@ func TestCircleSpanFloat32Backend(t *testing.T) {
 	if circleSpanFloat32Backend != want {
 		t.Fatalf("float32 geometry backend = %q, want %q", circleSpanFloat32Backend, want)
 	}
+}
+
+func BenchmarkCircleSpanFloat32AVX2Direct(b *testing.B) {
+	if !cpu.X86.HasAVX2 {
+		b.Skip("AVX2 unavailable")
+	}
+	for _, radius := range []float32{5.25, 25.25, 100.25, 256.25} {
+		remaining := radius * radius
+		b.Run("scalar_R"+benchmarkFloatName(radius), func(b *testing.B) {
+			for range b.N {
+				xStart, xEnd := circleSpanFloat32(256.125, remaining, 513)
+				geometryBenchmarkSink = xEnd - xStart
+			}
+		})
+		b.Run("avx2_R"+benchmarkFloatName(radius), func(b *testing.B) {
+			for range b.N {
+				xStart, xEnd := circleSpanFloat32AVX2Kernel(256.125, remaining, 256, 513)
+				geometryBenchmarkSink = xEnd - xStart
+			}
+		})
+	}
+}
+
+func benchmarkFloatName(value float32) string {
+	return fmt.Sprintf("%g", value)
 }
