@@ -120,9 +120,10 @@ func ssdIndependentStrides(current, reference *image.NRGBA, width, height int) f
 // It uses the fastest supported SSD kernel and falls back to portable scalar
 // code when the current CPU has no native implementation.
 //
-// To use in CPURenderer:
+// CPURenderer selects this cost by default. After installing a custom cost
+// function, restore it with:
 //
-//	renderer.costFunc = FastMSECost  // Replace MSECost with FastMSECost
+//	renderer.UseFastCost()
 func FastMSECost(current, reference *image.NRGBA) float64 {
 	return FastSSD(current, reference)
 }

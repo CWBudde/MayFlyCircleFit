@@ -26,7 +26,7 @@ Implemented and tested the `Renderer` interface and bounding-box CPU renderer wi
 
 ## Phase 3: Optimizer (Mayfly - Using External Library) ✅ COMPLETE
 
-Implemented and tested the optimizer interface and Mayfly adapter with Standard, DESMA, and OLCE variants (2 tests); the project is pinned to `github.com/cwbudde/mayfly v0.3.0`.
+Implemented and tested the optimizer interface and Mayfly adapter with Standard, DESMA, and OLCE variants (2 tests); the project is pinned to `github.com/cwbudde/mayfly v0.4.0`.
 
 ---
 
@@ -307,13 +307,16 @@ a fresh process with `GODEBUG=cpu.avx2=off`; a focused direct-versus-function-
 pointer benchmark measures dispatch overhead independently of kernel work. A
 five-run local sample measured about 0.18 ns mean overhead, below the 2 ns target.
 
-### Task 10.7: Integrate SIMD SSD into Cost Function
-- [ ] Replace MSE cost computation with `fastSSD()`
-- [ ] Ensure same results as original implementation
-- [ ] Add benchmarks for full cost function
-- [ ] Profile to verify SSD is no longer bottleneck
-- [ ] Test with various image sizes
-- [ ] Document integration points
+### Task 10.7: Integrate SIMD SSD into Cost Function ✅ COMPLETE
+
+Completed: CPU renderers use the runtime-dispatched `FastMSECost` by default
+while retaining `MSECost` as the scalar oracle and custom-cost opt-out. Exact
+integration tests cover both constructors and varied SIMD-boundary image sizes;
+corrected full-cost benchmarks compare distinct scalar and fast paths. On the
+local AVX2 host, direct cost evaluation improved by 9.1–18.3× and SSD accounted
+for 0.60% of flat samples in the profiled 512×512/K100 production workload, so
+rendering is again the bottleneck. Integration details and measurements are in
+`docs/task-10.7-simd-cost-integration.md`.
 
 ### Task 10.8: Cross-Platform Testing and Build Validation - **ADAPTED FROM RESEARCH**
 **Note:** Pure Go build (no cgo), standard `go build` workflow

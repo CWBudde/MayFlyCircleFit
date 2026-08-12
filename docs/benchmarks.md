@@ -22,6 +22,13 @@ References, candidate images, circle parameters, optimizer seeds, and worker
 counts are fixed. Benchmark setup is excluded from the timed region, and each
 case reports allocations.
 
+`BenchmarkCPURenderer_CostComparison` complements the canonical suite with
+complete render-plus-cost measurements at 64×64/K10, 256×256/K50, and
+512×512/K100. It explicitly selects `MSECost` for the baseline and compares it
+with the production `FastMSECost` default using one rendering thread. This is
+the full-cost integration benchmark used by Task 10.7; the canonical `Cost`
+cases isolate the SSD improvement from circle rendering.
+
 ## Running benchmarks
 
 Run six automatically calibrated samples of the canonical suite:
@@ -34,6 +41,13 @@ For a quick correctness and runtime check, run every case exactly once:
 
 ```sh
 go test -run '^$' -bench '^BenchmarkFit$' -benchmem -benchtime=1x ./internal/fit
+```
+
+Run the full CPU renderer cost comparison with:
+
+```sh
+go test -run '^$' -bench '^BenchmarkCPURenderer_CostComparison$' \
+  -benchmem ./internal/fit/renderer
 ```
 
 Save two runs made under the same machine, power, thermal, Go-version, and

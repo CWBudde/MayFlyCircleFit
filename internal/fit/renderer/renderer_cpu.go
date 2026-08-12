@@ -214,8 +214,8 @@ func (r *CPURenderer) SetCostFunc(costFunc fit.CostFunc) {
 	r.costFunc = costFunc
 }
 
-// UseFastCost enables SIMD-accelerated cost computation (AVX2/NEON)
-// This provides 1.5-2x speedup over the default MSECost implementation
+// UseFastCost restores the runtime-dispatched SIMD cost implementation after a
+// custom cost function has been selected. New CPU renderers use this by default.
 func (r *CPURenderer) UseFastCost() {
 	r.costFunc = fit.FastMSECost
 }

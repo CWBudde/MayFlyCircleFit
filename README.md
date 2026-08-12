@@ -19,7 +19,7 @@ unattended runs.
 
 The repository pins templ `v0.3.960` as a Go tool and commits generated
 `internal/ui/*_templ.go` files. A clean checkout therefore builds without a
-separate templ installation. MayFly is pinned to `v0.3.0`.
+separate templ installation. MayFly is pinned to `v0.4.0`.
 
 ## Quick start
 

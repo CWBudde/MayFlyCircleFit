@@ -9,7 +9,7 @@ release is declared by this file.
 ### Added
 
 - Context-aware MayFly optimization with measured progress and cancellation.
-- Seeded restart-from-best populations using MayFly `v0.3.0`.
+- Seeded restart-from-best populations using MayFly `v0.4.0`.
 - Trusted-local server controls for same-origin browser requests, canonical input
   roots, bounded admission, request/image limits, and opt-in loopback pprof.
 - Portable scalar SSD/SAD dispatch for non-AMD64 targets and AVX2 runtime

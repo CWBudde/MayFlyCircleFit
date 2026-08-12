@@ -8,7 +8,7 @@ code and tests take precedence if this document becomes stale.
 - The module has a Go 1.24 source-compatibility floor (`go 1.24.0` in
   `go.mod`). Production binaries should use a currently supported,
   security-patched Go release; vulnerability CI is pinned to Go 1.26.5.
-- MayFly is pinned to `github.com/cwbudde/mayfly v0.3.0`.
+- MayFly is pinned to `github.com/cwbudde/mayfly v0.4.0`.
 - templ is pinned as a Go tool at `github.com/a-h/templ v0.3.960`.
 - `internal/ui/*_templ.go` files are generated and committed. After changing a
   `.templ` source, run `go tool templ generate` and include the corresponding
@@ -36,7 +36,7 @@ actually observed for the revision being discussed.
 - `internal/fit`: image costs and architecture-specific SIMD dispatch.
 - `internal/fit/renderer`: CPU/OpenCL renderers and joint/sequential/batch
   pipelines.
-- `internal/opt`: optimizer interfaces and the MayFly v0.3.0 adapter.
+- `internal/opt`: optimizer interfaces and the MayFly v0.4.0 adapter.
 - `internal/server`: trusted-local HTTP boundary and background job lifecycle.
 - `internal/store`: filesystem checkpoint, trace, and artifact ownership.
 - `internal/ui`: templ views plus committed generated Go output.
@@ -58,7 +58,7 @@ application configuration into the store package.
 - CPU renderers use `FastMSECost` after parity coverage against `MSECost`.
   Independent image origins and strides, empty images, and dimension mismatch
   behavior have dedicated correctness handling/tests.
-- Resume is restart-from-best: the MayFly v0.3.0 population is seeded with the
+- Resume is restart-from-best: the MayFly v0.4.0 population is seeded with the
   saved best and deterministic nearby variations. It is not an exact restoration
   of optimizer internals. Server restart-from-best for sequential and batch jobs
   is not supported.

@@ -2,86 +2,52 @@ package renderer
 
 import (
 	"image"
-	"math"
 	"testing"
 
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
 )
 
-// TestCPURenderer_CostFunctionSelection verifies cost function can be switched
-func TestCPURenderer_CostFunctionSelection(t *testing.T) {
-	// Create a simple reference image
-	ref := image.NewNRGBA(image.Rect(0, 0, 64, 64))
-	for i := range ref.Pix {
-		ref.Pix[i] = 128 // Mid-gray
+func TestCPURenderer_DefaultCostMatchesMSE(t *testing.T) {
+	tests := []struct {
+		name          string
+		width, height int
+		circles       int
+		customCanvas  bool
+	}{
+		{name: "single_pixel", width: 1, height: 1},
+		{name: "below_simd_batch", width: 7, height: 5, circles: 2},
+		{name: "exact_simd_batch", width: 8, height: 8, circles: 4},
+		{name: "simd_remainder", width: 9, height: 13, circles: 5},
+		{name: "odd_rectangle", width: 127, height: 91, circles: 24, customCanvas: true},
+		{name: "large_rectangle", width: 257, height: 193, circles: 48, customCanvas: true},
 	}
 
-	// Create renderer with 10 circles
-	r := NewCPURenderer(ref, 10)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			reference := randomNRGBA(test.width, test.height, 42)
+			params := deterministicParams(test.circles, test.width, test.height, 99)
 
-	// Create some random parameters
-	params := make([]float64, 10*7)
-	for i := range params {
-		params[i] = float64(i * 10)
-	}
+			var r *CPURenderer
+			if test.customCanvas {
+				canvas := randomNRGBA(test.width, test.height, 7)
+				r = NewCPURendererWithCanvas(reference, canvas, test.circles)
+			} else {
+				r = NewCPURenderer(reference, test.circles)
+			}
+			r.SetThreads(1)
 
-	// Test default cost function (MSECost)
-	cost1 := r.Cost(params)
-	if cost1 <= 0 {
-		t.Errorf("Default cost should be > 0, got %f", cost1)
-	}
+			got := r.Cost(params)
+			r.SetCostFunc(fit.MSECost)
+			want := r.Cost(params)
+			if got != want {
+				t.Fatalf("default FastMSECost = %v, MSECost = %v", got, want)
+			}
 
-	// Switch to fast cost function
-	r.UseFastCost()
-	cost2 := r.Cost(params)
-
-	// Both should produce similar results (within floating point tolerance)
-	diff := math.Abs(cost1 - cost2)
-	tolerance := math.Max(cost1, cost2) * 0.001 // 0.1% tolerance
-	if diff > tolerance {
-		t.Errorf("Cost functions differ too much: MSECost=%f, FastMSECost=%f, diff=%f",
-			cost1, cost2, diff)
-	}
-
-	t.Logf("MSECost: %f, FastMSECost: %f, diff: %f", cost1, cost2, diff)
-}
-
-// TestCPURenderer_FastCostCorrectness verifies FastMSECost produces correct results
-func TestCPURenderer_FastCostCorrectness(t *testing.T) {
-	// Create reference image with known pattern
-	ref := image.NewNRGBA(image.Rect(0, 0, 32, 32))
-	for y := 0; y < 32; y++ {
-		for x := 0; x < 32; x++ {
-			idx := y*ref.Stride + x*4
-			ref.Pix[idx+0] = uint8(x * 8) // R varies horizontally
-			ref.Pix[idx+1] = uint8(y * 8) // G varies vertically
-			ref.Pix[idx+2] = 128          // B constant
-			ref.Pix[idx+3] = 255          // A opaque
-		}
-	}
-
-	r := NewCPURenderer(ref, 5)
-
-	// Create parameters that render exactly the reference (empty params = white canvas)
-	params := make([]float64, 5*7)
-
-	// Test with default cost
-	costDefault := r.Cost(params)
-
-	// Test with fast cost
-	r.UseFastCost()
-	costFast := r.Cost(params)
-
-	// Verify both non-zero (white canvas != patterned reference)
-	if costDefault <= 0 || costFast <= 0 {
-		t.Errorf("Both costs should be > 0: default=%f, fast=%f", costDefault, costFast)
-	}
-
-	// Verify they're close
-	relDiff := math.Abs(costDefault-costFast) / costDefault
-	if relDiff > 0.01 { // 1% tolerance
-		t.Errorf("Costs differ by %.2f%%: default=%f, fast=%f",
-			relDiff*100, costDefault, costFast)
+			r.UseFastCost()
+			if restored := r.Cost(params); restored != want {
+				t.Fatalf("restored FastMSECost = %v, MSECost = %v", restored, want)
+			}
+		})
 	}
 }
 
@@ -104,38 +70,33 @@ func TestCPURenderer_SetCostFunc(t *testing.T) {
 	}
 }
 
-// BenchmarkCPURenderer_Cost_MSE benchmarks rendering with default MSECost
+// BenchmarkCPURenderer_Cost_MSE benchmarks rendering with explicit MSECost.
 func BenchmarkCPURenderer_Cost_MSE(b *testing.B) {
 	ref := randomNRGBA(128, 128, 42)
 	r := NewCPURenderer(ref, 20)
+	r.SetThreads(1)
+	r.SetCostFunc(fit.MSECost)
+	params := deterministicParams(20, 128, 128, 99)
 
-	params := make([]float64, 20*7)
-	for i := range params {
-		params[i] = float64(i * 3)
-	}
-
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = r.Cost(params)
+		rendererCostSink = r.Cost(params)
 	}
 }
 
-// BenchmarkCPURenderer_Cost_Fast benchmarks rendering with FastMSECost
+// BenchmarkCPURenderer_Cost_Fast benchmarks the production FastMSECost default.
 func BenchmarkCPURenderer_Cost_Fast(b *testing.B) {
 	ref := randomNRGBA(128, 128, 42)
 	r := NewCPURenderer(ref, 20)
-	r.UseFastCost() // Enable SIMD-accelerated cost
-
-	params := make([]float64, 20*7)
-	for i := range params {
-		params[i] = float64(i * 3)
-	}
+	r.SetThreads(1)
+	params := deterministicParams(20, 128, 128, 99)
 
 	b.Logf("Using SSD backend: %s", fit.ActiveSSDBackend)
-
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = r.Cost(params)
+		rendererCostSink = r.Cost(params)
 	}
 }
 
@@ -148,32 +109,36 @@ func BenchmarkCPURenderer_CostComparison(b *testing.B) {
 		circles int
 	}{
 		{"64x64_10circles", 64, 64, 10},
-		{"128x128_20circles", 128, 128, 20},
 		{"256x256_50circles", 256, 256, 50},
+		{"512x512_100circles", 512, 512, 100},
 	}
 
 	for _, sz := range sizes {
 		ref := randomNRGBA(sz.width, sz.height, 42)
-		params := make([]float64, sz.circles*7)
-		for i := range params {
-			params[i] = float64(i * 3)
-		}
+		params := deterministicParams(sz.circles, sz.width, sz.height, 99)
 
 		b.Run(sz.name+"/MSECost", func(b *testing.B) {
 			r := NewCPURenderer(ref, sz.circles)
+			r.SetThreads(1)
+			r.SetCostFunc(fit.MSECost)
+			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_ = r.Cost(params)
+				rendererCostSink = r.Cost(params)
 			}
 		})
 
 		b.Run(sz.name+"/FastMSECost", func(b *testing.B) {
 			r := NewCPURenderer(ref, sz.circles)
-			r.UseFastCost()
+			r.SetThreads(1)
+			b.ReportAllocs()
+			b.Logf("Using SSD backend: %s", fit.ActiveSSDBackend)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_ = r.Cost(params)
+				rendererCostSink = r.Cost(params)
 			}
 		})
 	}
 }
+
+var rendererCostSink float64
