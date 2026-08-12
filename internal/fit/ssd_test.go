@@ -332,15 +332,31 @@ func TestFastSSD_NEON_BatchBoundaries(t *testing.T) {
 			// Compute with scalar reference
 			scalarResult := fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, width, height)
 
-			// Results should match exactly (or within floating-point tolerance)
-			diff := math.Abs(neonResult - scalarResult)
-			tolerance := 1e-9
-
-			if diff > tolerance {
-				t.Errorf("NEON batch boundary error: width=%d, neon=%f, scalar=%f, diff=%e",
-					width, neonResult, scalarResult, diff)
+			if neonResult != scalarResult {
+				t.Errorf("NEON batch boundary error: width=%d, neon=%f, scalar=%f",
+					width, neonResult, scalarResult)
 			}
 		})
+	}
+}
+
+// TestFastSSD_NEONExactLargeSum guards against overflowing SIMD accumulator lanes.
+func TestFastSSD_NEONExactLargeSum(t *testing.T) {
+	if ActiveSSDBackend != SSDBackendNEON {
+		t.Skipf("Skipping NEON accumulator test: active backend is %s, not NEON", ActiveSSDBackend)
+	}
+
+	const width, height = 512, 512
+	black := solidColorNRGBA(width, height, color.NRGBA{A: 0})
+	white := solidColorNRGBA(width, height, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+
+	got := fastSSD(black.Pix, white.Pix, black.Stride, width, height)
+	want := float64(width) * float64(height) * 3 * 255 * 255
+	if got != want {
+		t.Fatalf("NEON large SSD = %.0f, want %.0f", got, want)
+	}
+	if scalar := fastSSD_Scalar(black.Pix, white.Pix, black.Stride, width, height); got != scalar {
+		t.Fatalf("NEON large SSD = %.0f, scalar = %.0f", got, scalar)
 	}
 }
 
@@ -464,13 +480,9 @@ func TestFastSSD_PaddedStride(t *testing.T) {
 	// Should handle padded stride correctly
 	result := FastSSD(img1, img2)
 
-	// Check for invalid results
-	if math.IsNaN(result) || math.IsInf(result, 0) {
-		t.Errorf("Padded stride produced invalid result: %f", result)
-	}
-
-	if result < 0 {
-		t.Errorf("SSD should be non-negative, got %f", result)
+	want := fastSSD_Scalar(img1.Pix, img2.Pix, stride, width, height) / float64(width*height*3)
+	if result != want {
+		t.Errorf("Padded stride result = %f, scalar = %f", result, want)
 	}
 
 	t.Logf("Padded stride test passed: width=%d, stride=%d, result=%f", width, stride, result)

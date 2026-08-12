@@ -9,14 +9,16 @@ import (
 //
 // This file defines the interface for computing pixel-wise sum of squared differences
 // between two NRGBA images, with runtime dispatch to AVX2 on supported amd64
-// processors and a scalar fallback everywhere else.
+// processors, NEON on supported ARM64 processors, and a scalar fallback.
 //
 // Architecture-specific implementations:
 //   - ssd_amd64.s: AVX2 implementation (256-bit, processes 8 pixels/iteration)
-//   - ssd_dispatch_generic.go: scalar dispatch for non-amd64 platforms
+//   - ssd_arm64.s: NEON implementation (128-bit, processes 4 pixels/iteration)
+//   - ssd_dispatch_generic.go: scalar dispatch for other platforms
 //
 // Performance expectations:
-//   - AVX2: 4-6x speedup over scalar (processes 32 bytes per instruction)
+//   - AVX2: approximately 6x measured speedup on AMD Ryzen 5 4600H
+//   - NEON: hardware benchmarking pending
 //   - Scalar: baseline and portable fallback
 
 // SSDBackend indicates which SIMD backend is active
@@ -115,17 +117,12 @@ func ssdIndependentStrides(current, reference *image.NRGBA, width, height int) f
 // FastMSECost is a drop-in replacement for MSECost using the SIMD-accelerated SSD kernel.
 //
 // This function has the same signature as MSECost and can be used as a CostFunc.
-// It provides 4-6x speedup on AVX2-capable CPUs and uses the portable scalar
-// kernel on other architectures.
+// It uses the fastest supported SSD kernel and falls back to portable scalar
+// code when the current CPU has no native implementation.
 //
 // To use in CPURenderer:
 //
 //	renderer.costFunc = FastMSECost  // Replace MSECost with FastMSECost
-//
-// Performance comparison (256x256 image):
-//   - MSECost (scalar):     ~15ms per evaluation
-//   - FastMSECost (AVX2):   ~3-4ms per evaluation (4-5x faster)
-//   - FastMSECost (NEON):   ~4-5ms per evaluation (3-4x faster)
 func FastMSECost(current, reference *image.NRGBA) float64 {
 	return FastSSD(current, reference)
 }
@@ -188,32 +185,3 @@ func BenchmarkSSDBackend(iterations int, width, height int, durationNs int64) fl
 	seconds := float64(durationNs) / 1e9
 	return (totalPixels / 1e6) / seconds // Megapixels per second
 }
-
-// ---------------------- Performance Characteristics Documentation ----------------------
-
-// Expected Performance (based on alpha blending SIMD benchmarks):
-//
-// Hardware: Intel Core i5-10400 (6 cores, 2.9 GHz base, AVX2 support)
-// Workload: 256x256 NRGBA images (65,536 pixels, 262,144 RGB channel comparisons)
-//
-// Backend    | Time per call | Throughput      | Speedup vs Scalar
-// -----------|---------------|-----------------|-------------------
-// Scalar     | ~15 ms        | ~4.4 Mpixels/s  | 1.0x (baseline)
-// AVX2       | ~3 ms         | ~22 Mpixels/s   | 5.0x
-// NEON       | ~4 ms         | ~16 Mpixels/s   | 4.0x (estimated, ARM Cortex-A72)
-//
-// Notes:
-//   - AVX2 processes 8 pixels per iteration (256-bit registers)
-//   - NEON processes 4 pixels per iteration (128-bit registers)
-//   - Actual speedup depends on memory bandwidth, cache efficiency, and CPU architecture
-//   - Modern CPUs (2015+) have excellent unaligned SIMD load performance (<5% penalty)
-//
-// Bottleneck analysis:
-//   - Scalar:  Limited by sequential pixel access (1 pixel/iteration)
-//   - AVX2:    Memory bandwidth limited for large images (cache misses)
-//   - NEON:    Similar to AVX2, but lower throughput due to narrower registers
-//
-// Integration impact (overall rendering speedup):
-//   - Current profile: Cost computation is ~20-30% of total time (rest is rendering)
-//   - With 5x faster cost: Overall speedup ~1.5-2x (assuming cost was 25% of time)
-//   - Combined with SIMD compositing (Phase 10 Tasks 10.4-10.6): ~3-4x total speedup

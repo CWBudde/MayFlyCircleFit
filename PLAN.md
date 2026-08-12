@@ -287,32 +287,16 @@ Measured throughput is 2.4–2.6 Gpixels/s, approximately 6× the scalar baselin
 details are in `docs/task-10.4-avx2-report.md`. Obsolete C prototypes were
 removed; their research results remain documented and recoverable from history.
 
-### Task 10.5: Implement NEON SSD Kernel (ARM64) - **ADAPTED FROM RESEARCH**
-**Approach:** Plan9 Assembly via GoAT transpilation (NOT cgo)
-**Note:** Only pursue if Task 10.4 (AVX2) achieves ≥4× speedup
+### Task 10.5: Implement NEON SSD Kernel (ARM64) ✅ COMPLETE
 
-**Phase 1: C Prototype (for validation)**
-- [ ] Create `prototypes/ssd_neon.c` with NEON intrinsics (`arm_neon.h`)
-- [ ] Process 4 pixels per iteration using 128-bit registers
-- [ ] Implement horizontal sum reduction (vpaddq / reduction tree)
-- [ ] Handle remainder pixels with scalar loop
-- [ ] Test in C: Verify correctness, benchmark vs scalar C
-- [ ] Target: 3-4× speedup over scalar C implementation
-
-**Phase 2: GoAT Transpilation**
-- [ ] Transpile: `goat -O3 prototypes/ssd_neon.c > internal/fit/ssd_arm64.s`
-- [ ] Review generated Plan9 assembly for ARM64, add comments
-- [ ] Hand-tune if needed (NEON has different instruction set than AVX2)
-- [ ] Verify Go calling convention for ARM64
-
-**Phase 3: Integration**
-- [ ] Create `internal/fit/ssd_arm64.go` with function declaration
-- [ ] Add build tag: `//go:build arm64`
-- [ ] Wire into runtime dispatch (replace placeholder in ssd.go init())
-- [ ] Write tests verifying bit-exact equivalence to scalar
-- [ ] Create benchmarks comparing to scalar baseline
-- [ ] Test on Apple Silicon (M1/M2/M3) and AWS Graviton
-- [ ] Document performance improvement (target: 3-4×)
+Completed with hand-written Plan 9 assembly and runtime ASIMD dispatch; the
+build has no C, cgo, or GoAT dependency. The kernel processes four NRGBA pixels
+per batch, ignores alpha, handles scalar remainders, and reduces into a 64-bit
+accumulator. Exact tests cover boundaries and totals exceeding 32 bits, and
+Linux, macOS, and Windows ARM64 builds cross-compile with `CGO_ENABLED=0`.
+Physical Apple Silicon and Linux ARM64 measurements remain explicitly tracked
+by Tasks 10.8–10.10; no unmeasured speedup is claimed. See
+`docs/task-10.5-neon-report.md`.
 
 ### Task 10.6: Implement Runtime Feature Detection and Dispatch - **MOSTLY COMPLETE**
 **Note:** Core dispatch implemented in Task 10.2 (`internal/fit/ssd.go`), remaining work is validation

@@ -319,11 +319,8 @@ func (impl scalarImplementation) String() string {
 //   - ssdScalar: Inline indexing and int32 arithmetic until final accumulation
 //   - Result: ssdScalar is ~1.3-1.5x faster than original MSECost
 //
-// SIMD Performance Targets:
-//   - AVX2 (8 pixels/iteration): Target 1.2-2 Gpixels/s (4-6x vs scalar)
-//   - NEON (4 pixels/iteration): Target 0.9-1.3 Gpixels/s (3-4x vs scalar)
-//
-// Next Optimizations (SIMD, Tasks 10.4-10.5):
-//   - Process 8 pixels per instruction (AVX2) or 4 pixels (NEON)
-//   - Eliminate scalar loop overhead entirely
-//   - Leverage hardware SIMD units (256-bit or 128-bit)
+// SIMD implementations:
+//   - AVX2 processes 8 pixels per iteration and measures about 6x faster on the
+//     documented Ryzen 5 4600H system.
+//   - NEON processes 4 pixels per iteration; ARM64 hardware measurements are
+//     pending.

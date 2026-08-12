@@ -52,8 +52,9 @@ application configuration into the store package.
   build tag, CGO, OpenCL development headers, and a usable runtime/device.
   Sequential and batch OpenCL requests must fail explicitly, not silently use a
   CPU staged renderer.
-- AMD64 dispatch uses AVX2 only after a runtime CPU-feature check. Other AMD64
-  CPUs and non-AMD64 targets use scalar kernels. ARM64 NEON is not implemented.
+- AMD64 SSD dispatch uses AVX2 only after a runtime CPU-feature check; ARM64 SSD
+  dispatch similarly requires ASIMD before selecting NEON. Unsupported CPUs and
+  architectures use the scalar kernel. SAD remains scalar on ARM64.
 - CPU renderers use `FastMSECost` after parity coverage against `MSECost`.
   Independent image origins and strides, empty images, and dimension mismatch
   behavior have dedicated correctness handling/tests.
