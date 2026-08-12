@@ -76,6 +76,10 @@ capped at `GOMAXPROCS` and the image height. Use `--threads 1` for small inputs,
 where coordination can cost more than it saves. See the [threading benchmarks
 and guidance](docs/cpu-rendering-threads.md).
 
+Run `just benchmark` for the canonical CPU rendering, cost, and optimization
+pipeline suite. See the [benchmark guide](docs/benchmarks.md) for workload and
+regression-comparison details.
+
 ## Trusted-local server
 
 Server mode is designed for a trusted local machine. It has no authentication

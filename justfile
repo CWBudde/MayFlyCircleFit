@@ -26,6 +26,14 @@ fmt:
 test: templ
 	go test -v ./...
 
+# Run the canonical CPU performance suite with statistically useful samples
+benchmark:
+	go test -run '^$' -bench '^BenchmarkFit$' -benchmem -count=6 ./internal/fit
+
+# Compare two saved canonical benchmark result files
+benchmark-compare baseline candidate:
+	go tool benchstat "{{baseline}}" "{{candidate}}"
+
 # Run the opt-in release lifecycle end-to-end test
 test-e2e:
 	MAYFLY_RUN_E2E=1 go test -count=1 -timeout=3m ./tests/e2e

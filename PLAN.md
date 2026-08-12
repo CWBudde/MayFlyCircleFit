@@ -217,14 +217,15 @@ are recorded in `docs/cpu-rendering-threads.md`. On the measured 12-logical-CPU
 host, 512×512/100-circle rendering improved 4.40×, while tiny workloads remained
 faster with `--threads 1`.
 
-### Task 9.8: Create Comprehensive Benchmarks
-- [ ] Create `internal/fit/bench_test.go` with benchmark suite
-- [ ] Benchmark rendering: various K, W, H combinations
-- [ ] Benchmark cost computation separately
-- [ ] Benchmark full optimization pipeline
-- [ ] Add benchmark regression tracking
-- [ ] Document how to run benchmarks
-- [ ] Add CI integration for benchmark tracking (optional)
+### Task 9.8: Create Comprehensive Benchmarks ✅
+
+Completed: `internal/fit/bench_test.go` provides deterministic CPU rendering,
+standalone cost, and fixed-seed joint/sequential/batch pipeline benchmarks over
+representative workloads. `just benchmark` records statistically useful
+samples, `just benchmark-compare` compares saved runs with pinned `benchstat`,
+and report-only CI compares base/head results on the same runner without using
+noisy timing changes as a merge gate. Usage and interpretation are documented
+in `docs/benchmarks.md`.
 
 ### Task 9.9: Measure and Document Performance Improvements
 - [ ] Re-run profiling on optimized code
