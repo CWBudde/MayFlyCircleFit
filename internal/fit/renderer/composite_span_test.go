@@ -79,6 +79,37 @@ func TestCompositeOpaqueSpanRandomMatchesPixelPath(t *testing.T) {
 	}
 }
 
+func TestCompositeOpaqueSpanPairMatchesSeparateSpans(t *testing.T) {
+	const (
+		rowPixels  = 273
+		spanStart  = 5
+		spanPixels = 257
+	)
+	firstOffset := spanStart * 4
+	secondOffset := rowPixels*4 + firstOffset
+
+	for _, test := range []struct {
+		name           string
+		r, g, b, alpha float64
+	}{
+		{name: "transparent", r: 0.13, g: 0.57, b: 0.91},
+		{name: "fractional", r: 0.13, g: 0.57, b: 0.91, alpha: 0.37},
+		{name: "opaque", r: 0.99, g: 0.01, b: 0.49, alpha: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := makeOpaqueSpanFixture(rowPixels * 2)
+			want := append([]byte(nil), got...)
+			compositeOpaqueSpan(want, firstOffset, spanPixels, test.r, test.g, test.b, test.alpha)
+			compositeOpaqueSpan(want, secondOffset, spanPixels, test.r, test.g, test.b, test.alpha)
+
+			compositeOpaqueSpanPair(got, firstOffset, secondOffset, spanPixels, test.r, test.g, test.b, test.alpha)
+			if !bytes.Equal(got, want) {
+				t.Fatal("paired span compositor differs from two ordinary spans")
+			}
+		})
+	}
+}
+
 func TestPixelsAreOpaque(t *testing.T) {
 	opaque := []byte{1, 2, 3, 255, 4, 5, 6, 255}
 	if !pixelsAreOpaque(opaque) {

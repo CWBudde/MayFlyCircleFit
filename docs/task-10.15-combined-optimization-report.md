@@ -9,11 +9,13 @@ The production CPU renderer already composes the two proven rendering changes:
   skips from Task 10.13, otherwise it falls back to the float64 oracle.
 
 Task 10.15 adds an integration benchmark and correctness matrix, and evaluates
-the proposed vertical-symmetry optimization under the current renderer. The
-symmetry prototype is exact in its restricted domain but remains disabled in
-production because whole-render results were not stable enough to justify it.
-The newer exact incremental SSD policy from Task 10.16 is included in the
-combined cost result rather than being mistaken for part of circle geometry.
+the proposed vertical-symmetry optimization under the current renderer. Task
+10.14 subsequently corrected the prototype to use a true two-ended loop and a
+paired scalar compositor. It now wins on fully eligible one-worker fixtures,
+but remains disabled because continuous centers are almost never eligible and
+four-worker rendering does not improve. The newer exact incremental SSD policy
+from Task 10.16 is included in the combined cost result rather than being
+mistaken for part of circle geometry.
 
 ## Why arbitrary fractional rows cannot be mirrored
 
@@ -34,7 +36,8 @@ condition would change coverage and was rejected.
 The prototype therefore exposes `fixedCircleQ16.symmetricRowSum` only for
 eligible centers. It calculates a span once, composites it onto both rows, and
 adds both rows to the dirty-span union. A pair is used only when both rows lie
-inside the same worker shard; no goroutine writes another worker's rows.
+inside the same worker shard; no goroutine writes another worker's rows. See
+`task-10.14-circle-symmetry-report.md` for the final implementation and result.
 
 ## Correctness coverage
 
@@ -71,16 +74,18 @@ integer prototype was slower, as documented in the Task 10.13 report.
 
 ### Symmetry selection
 
-Eligible half-pixel-center samples did not produce a stable whole-render win.
-Two longer blocked A/B runs moved in opposite directions: approximately 4.5%
-slower in one run and 4.0% faster in another. Compositing still occurs for both
-rows, and mirrored processing changes memory traversal from sequential rows to
-distant row pairs. The saving is limited to one span search per pair, which is
-small after the Q16.16 work.
+The initial span-search-only experiment was inconclusive. The completed Task
+10.14 prototype also shares scalar compositing setup and loop control across a
+row pair. Eight-sample medians improved by 5.7% for mixed large radii and by
+16-17% for fixed R5/R25 on deliberately 100%-eligible, one-worker fixtures.
+The same mixed-radius workload with four workers was noise-level and slightly
+slower because most partners cross row-shard boundaries.
 
 The prototype is retained behind the internal `enableRowSymmetry` test and
-benchmark switch, but constructors leave it disabled. This avoids claiming the
-old plan's estimated 1.13× symmetry gain without repeatable evidence.
+benchmark switch, but constructors leave it disabled. With continuous Q16.16
+centers, exact integer/half-integer eligibility occurs only about once per
+32,768 circles, and the CLI defaults to multiple workers. The synthetic win
+therefore does not translate into a meaningful production expectation.
 
 ## Interaction with Task 10.16
 

@@ -29,7 +29,8 @@ type CPURenderer struct {
 	forceFloat32Geometry bool
 	// enableRowSymmetry is reserved for integration benchmarks and parity
 	// tests. Mirrored Q16.16 rows are exact for integer and half-integer
-	// centers, but non-sequential row writes made the prototype slower overall.
+	// centers. The measured prototype remains opt-in because ordinary optimizer
+	// centers are almost never eligible and row sharding removes the gain.
 	enableRowSymmetry bool
 	// initialSSD is the exact, unnormalized RGB SSD between initialBg and the
 	// reference. It is prepared once for future incremental-cost evaluation.
@@ -521,31 +522,58 @@ func (r *CPURenderer) renderFixedCircleRowsTracked(
 		return
 	}
 
-	for y := minY; y < maxY; y++ {
-		mirrorY := rowSum - y
-		if mirrorY >= minY && mirrorY < y {
-			// This row was rendered with its partner earlier in this shard.
-			continue
-		}
-
-		xStart, xEnd, intersects := geometry.span(y, r.width)
-		if !intersects {
-			continue
-		}
-		if dirty != nil {
-			dirty.add(y, xStart, xEnd)
-		}
-		r.compositeCircleSpan(img, c, y, xStart, xEnd)
-
-		// Workers own disjoint row shards. Pair only inside this shard so no
-		// worker writes a row owned by another goroutine.
-		if mirrorY > y && mirrorY < maxY {
-			if dirty != nil {
-				dirty.add(mirrorY, xStart, xEnd)
+	// Walk inward from both shard edges. If the edge rows are a symmetric
+	// pair, one span search covers both and the loop advances twice. Otherwise
+	// the edge farther from its partner is unpaired inside this shard and must
+	// be rendered normally. This handles clipped and asymmetric worker bands
+	// without walking the already-rendered half merely to skip it.
+	for topY, bottomY := minY, maxY-1; topY <= bottomY; {
+		mirrorY := rowSum - topY
+		switch {
+		case mirrorY > bottomY:
+			r.renderFixedCircleRowTracked(img, c, geometry, topY, dirty)
+			topY++
+		case mirrorY < bottomY:
+			r.renderFixedCircleRowTracked(img, c, geometry, bottomY, dirty)
+			bottomY--
+		default:
+			xStart, xEnd, intersects := geometry.span(topY, r.width)
+			if intersects {
+				if dirty != nil {
+					dirty.add(topY, xStart, xEnd)
+				}
+				if bottomY != topY {
+					r.compositeCircleSpanPair(img, c, topY, bottomY, xStart, xEnd)
+				} else {
+					r.compositeCircleSpan(img, c, topY, xStart, xEnd)
+				}
+				if bottomY != topY {
+					if dirty != nil {
+						dirty.add(bottomY, xStart, xEnd)
+					}
+				}
 			}
-			r.compositeCircleSpan(img, c, mirrorY, xStart, xEnd)
+			topY++
+			bottomY--
 		}
 	}
+}
+
+func (r *CPURenderer) renderFixedCircleRowTracked(
+	img *image.NRGBA,
+	c fit.Circle,
+	geometry fixedCircleQ16,
+	y int,
+	dirty *dirtySpanSet,
+) {
+	xStart, xEnd, intersects := geometry.span(y, r.width)
+	if !intersects {
+		return
+	}
+	if dirty != nil {
+		dirty.add(y, xStart, xEnd)
+	}
+	r.compositeCircleSpan(img, c, y, xStart, xEnd)
 }
 
 func (r *CPURenderer) compositeCircleSpan(img *image.NRGBA, c fit.Circle, y, xStart, xEnd int) {
@@ -558,6 +586,24 @@ func (r *CPURenderer) compositeCircleSpan(img *image.NRGBA, c fit.Circle, y, xSt
 	for x := xStart; x < xEnd; x++ {
 		compositePixel(img, x, y, c.CR, c.CG, c.CB, c.Opacity)
 	}
+}
+
+func (r *CPURenderer) compositeCircleSpanPair(img *image.NRGBA, c fit.Circle, firstY, secondY, xStart, xEnd int) {
+	if r.opaqueCanvas {
+		compositeOpaqueSpanPair(
+			img.Pix,
+			firstY*img.Stride+xStart*4,
+			secondY*img.Stride+xStart*4,
+			xEnd-xStart,
+			c.CR,
+			c.CG,
+			c.CB,
+			c.Opacity,
+		)
+		return
+	}
+	r.compositeCircleSpan(img, c, firstY, xStart, xEnd)
+	r.compositeCircleSpan(img, c, secondY, xStart, xEnd)
 }
 
 // renderCircleHybrid uses bounding box for small circles and scanline for large ones

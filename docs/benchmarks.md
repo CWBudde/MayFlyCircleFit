@@ -52,8 +52,9 @@ AMD64 host. These are the Task 10.13 geometry and integration benchmarks.
 `BenchmarkCPURendererCombinedOptimizations` stacks the renderer components and
 compares the old float64 per-pixel scanline path, span compositing, production
 Q16.16 geometry, and the exact-but-experimental paired-row prototype. Separate
-fractional, half-pixel, and small-radius fixtures make symmetry eligibility and
-memory-order effects visible. Task 10.15 records the selection result.
+fractional, half-pixel, R5, R25, and four-worker fixtures make symmetry
+eligibility, span-length crossover, and row-shard effects visible. Task 10.14
+records the symmetry result; Task 10.15 records the combined selection.
 
 ## Running benchmarks
 

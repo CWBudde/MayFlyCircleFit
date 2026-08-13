@@ -48,6 +48,7 @@ func TestCPURendererSymmetricRowsMatchUnpairedRendering(t *testing.T) {
 		{X: 30.25, Y: 24, R: 18.5, CR: 0.9, CG: 0.1, CB: 0.4, Opacity: 0.65},
 		{X: 55.75, Y: 31.5, R: 23.25, CR: 0.2, CG: 0.8, CB: 0.3, Opacity: 0.4},
 		{X: 4.5, Y: 0.5, R: 12.75, CR: 0.1, CG: 0.3, CB: 0.95, Opacity: 0.8},
+		{X: 42.5, Y: -2.5, R: 11.75, CR: 0.4, CG: 0.2, CB: 0.85, Opacity: 0.7},
 		// An ineligible fractional center verifies the ordinary loop remains
 		// byte-identical when mixed with paired circles.
 		{X: 88.125, Y: 65.25, R: 14.5, CR: 0.7, CG: 0.6, CB: 0.2, Opacity: 0.55},
@@ -82,6 +83,43 @@ func TestCPURendererSymmetricRowsMatchUnpairedRendering(t *testing.T) {
 					t.Fatalf("paired incremental cost = %.17g, full unpaired cost = %.17g", gotCost, wantCost)
 				}
 			})
+		}
+	}
+}
+
+func TestCPURendererSymmetricRowsMatchEveryShard(t *testing.T) {
+	const (
+		width  = 41
+		height = 31
+	)
+	circles := []fit.Circle{
+		{X: 20.25, Y: -2.5, R: 12.75, CR: 0.1, CG: 0.8, CB: 0.4, Opacity: 0.65},
+		{X: 20.25, Y: 0, R: 12.75, CR: 0.1, CG: 0.8, CB: 0.4, Opacity: 0.65},
+		{X: 20.25, Y: 0.5, R: 12.75, CR: 0.1, CG: 0.8, CB: 0.4, Opacity: 0.65},
+		{X: 20.25, Y: 15, R: 12.75, CR: 0.1, CG: 0.8, CB: 0.4, Opacity: 0.65},
+		{X: 20.25, Y: 15.5, R: 12.75, CR: 0.1, CG: 0.8, CB: 0.4, Opacity: 0.65},
+		{X: 20.25, Y: 30, R: 12.75, CR: 0.1, CG: 0.8, CB: 0.4, Opacity: 0.65},
+		{X: 20.25, Y: 32.5, R: 12.75, CR: 0.1, CG: 0.8, CB: 0.4, Opacity: 0.65},
+	}
+
+	paired := &CPURenderer{width: width, height: height, opaqueCanvas: true, enableRowSymmetry: true}
+	unpaired := &CPURenderer{width: width, height: height, opaqueCanvas: true}
+	base := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for i := range base.Pix {
+		base.Pix[i] = 255
+	}
+
+	for _, circle := range circles {
+		for rowStart := 0; rowStart <= height; rowStart++ {
+			for rowEnd := rowStart; rowEnd <= height; rowEnd++ {
+				got := &image.NRGBA{Pix: append([]byte(nil), base.Pix...), Stride: base.Stride, Rect: base.Rect}
+				want := &image.NRGBA{Pix: append([]byte(nil), base.Pix...), Stride: base.Stride, Rect: base.Rect}
+				paired.renderCircleScanlineRows(got, circle, rowStart, rowEnd)
+				unpaired.renderCircleScanlineRows(want, circle, rowStart, rowEnd)
+				if !bytes.Equal(got.Pix, want.Pix) {
+					t.Fatalf("Y=%g shard [%d,%d) differs from ordinary rendering", circle.Y, rowStart, rowEnd)
+				}
+			}
 		}
 	}
 }
@@ -122,10 +160,13 @@ func BenchmarkCPURendererCombinedOptimizations(b *testing.B) {
 		name      string
 		symmetric bool
 		radius    float64
+		threads   int
 	}{
 		{name: "fractional_centers"},
 		{name: "half_pixel_centers", symmetric: true},
 		{name: "half_pixel_centers_R5", symmetric: true, radius: 5},
+		{name: "half_pixel_centers_R25", symmetric: true, radius: 25},
+		{name: "half_pixel_centers_threads4", symmetric: true, threads: 4},
 	} {
 		params := combinedBenchmarkParams(circles, width, height, fixture.symmetric, fixture.radius)
 		for _, variant := range []struct {
@@ -141,19 +182,24 @@ func BenchmarkCPURendererCombinedOptimizations(b *testing.B) {
 		} {
 			b.Run(fixture.name+"/"+variant.name, func(b *testing.B) {
 				renderer := NewCPURenderer(reference, circles)
-				renderer.SetThreads(1)
+				threads := fixture.threads
+				if threads == 0 {
+					threads = 1
+				}
+				renderer.SetThreads(threads)
 				renderer.forceFloatGeometry = variant.forceFloat
 				renderer.opaqueCanvas = variant.opaqueSpan
 				renderer.enableRowSymmetry = variant.enableSymmetry
-				if fixture.symmetric {
-					b.ReportMetric(100, "%symmetric")
-				} else {
-					b.ReportMetric(0, "%symmetric")
-				}
 				b.ReportAllocs()
 				b.ResetTimer()
 				for range b.N {
 					renderer.Render(params)
+				}
+				b.ReportMetric(float64(renderer.Threads()), "threads")
+				if fixture.symmetric {
+					b.ReportMetric(100, "%symmetric")
+				} else {
+					b.ReportMetric(0, "%symmetric")
 				}
 			})
 		}

@@ -493,34 +493,43 @@ exact `float64`, 8.67 ms for scalar `float32`, 7.76 ms for AVX2 `float32`, and
 the margin over the newly batched exact oracle is now about 6%, not the earlier
 14% measured against the one-pixel float64 search.
 
-### Task 10.14: (Optional) Circle Symmetry Exploitation
-**Rationale**: Circles are vertically symmetric - compute upper half, mirror to lower.
+### Task 10.14: Circle Symmetry Exploitation ✅ PROTOTYPE COMPLETE
+**Rationale:** Determine whether vertically paired rows can reduce Q16.16 span
+search and compositing overhead without changing fractional circle coverage or
+the renderer's row-sharded ownership model.
 
-**Approach:**
-- [ ] Modify scanline loop to iterate from `centerY` to `maxY` only
-- [ ] For each row `y`, also render mirrored row `2*centerY - y`
-- [ ] Handle odd-height circles (center row rendered once)
-- [ ] Verify correctness for edge-clipped circles
+**10.14a — Correct the symmetry contract:**
+- [x] Require `y1 + y2 == 2*centerY`; integer sampled rows therefore share a
+  span only when the Q16.16 Y center is an integer or half-integer
+- [x] Keep arbitrary fractional centers on the ordinary row loop instead of
+  rounding their geometry and changing coverage
+- [x] Treat clipped circles, negative/clipped centers, the single center row,
+  and worker-shard edges as first-class correctness cases
 
-**Technical Details:**
-```go
-centerY := int(c.Y + 0.5)
-for y := centerY; y < maxY; y++ {
-    // Compute span for row y
-    renderSpan(img, y, xStart, xEnd, color)
+**10.14b — Build the exact prototype:**
+- [x] Replace the initial skip-based experiment with a true two-ended loop,
+  which consumes one row pair per iteration and renders asymmetric shard edges
+  independently
+- [x] Reuse one Q16.16 span search for each eligible pair and add both rows to
+  incremental dirty-span tracking
+- [x] Add a paired opaque-span compositor: non-ARM64 scalar builds share blend
+  setup and loop control across both rows, while ARM64 retains its measured
+  NEON dispatch
+- [x] Preserve circle order and pair only rows inside the current worker shard,
+  retaining race-free disjoint row ownership
 
-    // Mirror to opposite row
-    mirrorY := 2*centerY - y
-    if mirrorY >= minY && mirrorY != y {
-        renderSpan(img, mirrorY, xStart, xEnd, color)
-    }
-}
-```
+**10.14c — Measure and select:**
+- [x] Verify byte parity with ordinary rendering on opaque and translucent
+  canvases, including mixed eligible/ineligible circles and 1/4 workers
+- [x] Verify exact incremental-cost parity and ordinary/staged session settings
+- [x] Benchmark fractional, 100%-eligible R5/R25/mixed-radius, and four-worker
+  512×512/K100 fixtures with zero single-worker steady-state allocations
+- [x] Keep symmetry opt-in: the AMD64 best case improved 5.7% for mixed large
+  radii and 16-17% for R5/R25 with one worker, but four workers showed no win,
+  and continuous optimizer centers are eligible only about 1 in 32,768 times
 
-**Expected Outcome:**
-- Row iteration: 2R rows → R rows (2x reduction)
-- Overall rendering: 1.87ms → 1.65ms (1.13x)
-- **Note**: Savings diminished by search overhead (still done twice)
+See `docs/task-10.14-circle-symmetry-report.md` for the derivation, benchmark
+medians, and production decision.
 
 ### Task 10.15: Combined CPU Optimization ✅ COMPLETE
 **Rationale:** Validate the optimized renderer as one production path instead
@@ -546,8 +555,9 @@ preserve fractional-center coverage and row-shard ownership.
   remains race-free and circle compositing order remains unchanged
 - [x] Benchmark the old float64 pixel loop, span plus float64, production span
   plus Q16.16, and the symmetry prototype on fractional and eligible centers
-- [x] Leave row symmetry disabled in production because whole-render samples
-  did not show a stable win; retain the prototype and benchmark for future CPUs
+- [x] Leave row symmetry disabled in production: the corrected paired
+  compositor wins on fully eligible one-worker fixtures, but ordinary optimizer
+  centers are almost never eligible and four-worker rendering showed no gain
 
 **10.15c — Combined validation and documentation:**
 - [x] Require byte equality between paired and unpaired Q16.16 rendering on
@@ -562,10 +572,12 @@ preserve fractional-center coverage and row-shard ownership.
 
 **Measured AMD64 outcome (Ryzen 5 4600H):** the production opaque-span plus
 Q16.16 renderer reduced the 512×512/K100 fractional-center median from 13.99
-ms to 7.38 ms (1.90×, zero allocations). Symmetry results varied from a 4.5%
-loss to a 4.0% gain across repeated blocked runs and therefore remain
-experimental. The current 256×256 sequential K1 incremental-cost path reduced
-the median from 68.88 µs to 59.20 µs (1.16×) on top of the combined renderer.
+ms to 7.38 ms (1.90×, zero allocations). The corrected symmetry prototype wins
+5.7-17% on deliberately 100%-eligible one-worker fixtures, but has no measured
+four-worker benefit and negligible eligibility for continuous centers, so it
+remains experimental. The current 256×256 sequential K1 incremental-cost path
+reduced the median from 68.88 µs to 59.20 µs (1.16×) on top of the combined
+renderer.
 
 ### Task 10.16: Incremental Dirty-Region Cost Accumulation
 **Rationale**: `CPURenderer.Cost` currently renders a candidate and then runs
