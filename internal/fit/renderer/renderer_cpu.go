@@ -27,6 +27,10 @@ type CPURenderer struct {
 	// forceFloat32Geometry is reserved for reduced-precision SIMD tests and
 	// benchmarks. On AVX2 hosts it exercises the vectorized span-edge search.
 	forceFloat32Geometry bool
+	// enableRowSymmetry is reserved for integration benchmarks and parity
+	// tests. Mirrored Q16.16 rows are exact for integer and half-integer
+	// centers, but non-sequential row writes made the prototype slower overall.
+	enableRowSymmetry bool
 	// initialSSD is the exact, unnormalized RGB SSD between initialBg and the
 	// reference. It is prepared once for future incremental-cost evaluation.
 	initialSSD      uint64
@@ -220,6 +224,7 @@ func (r *CPURenderer) newSession(circleCount int) (Renderer, func(), error) {
 		opaqueCanvas:         r.opaqueCanvas,
 		forceFloatGeometry:   r.forceFloatGeometry,
 		forceFloat32Geometry: r.forceFloat32Geometry,
+		enableRowSymmetry:    r.enableRowSymmetry,
 		initialSSD:           r.initialSSD,
 		initialSSDValid:      r.initialSSDValid,
 		fastCostSelected:     r.fastCostSelected,
@@ -264,6 +269,7 @@ func (r *CPURenderer) newSessionWithCanvas(canvas *image.NRGBA, circleCount int)
 	session.threads = r.threads
 	session.forceFloatGeometry = r.forceFloatGeometry
 	session.forceFloat32Geometry = r.forceFloat32Geometry
+	session.enableRowSymmetry = r.enableRowSymmetry
 	return session, noopCleanup, nil
 }
 
@@ -448,17 +454,11 @@ func (r *CPURenderer) renderCircleScanlineRowsTracked(
 	}
 
 	// Scanline algorithm: for each row, compute horizontal span
+	if useFixedGeometry {
+		r.renderFixedCircleRowsTracked(img, c, fixedGeometry, minY, maxY, dirty)
+		return
+	}
 	for y := minY; y < maxY; y++ {
-		if useFixedGeometry {
-			xStart, xEnd, intersects := fixedGeometry.span(y, r.width)
-			if intersects {
-				if dirty != nil {
-					dirty.add(y, xStart, xEnd)
-				}
-				r.compositeCircleSpan(img, c, y, xStart, xEnd)
-			}
-			continue
-		}
 		if r.forceFloat32Geometry {
 			dy := float32(y) - y32
 			remaining := radiusSquared32 - dy*dy
@@ -495,6 +495,56 @@ func (r *CPURenderer) renderCircleScanlineRowsTracked(
 			dirty.add(y, xStart, xEnd)
 		}
 		r.compositeCircleSpan(img, c, y, xStart, xEnd)
+	}
+}
+
+func (r *CPURenderer) renderFixedCircleRowsTracked(
+	img *image.NRGBA,
+	c fit.Circle,
+	geometry fixedCircleQ16,
+	minY, maxY int,
+	dirty *dirtySpanSet,
+) {
+	rowSum, symmetric := geometry.symmetricRowSum()
+	symmetric = symmetric && r.enableRowSymmetry
+	if !symmetric {
+		for y := minY; y < maxY; y++ {
+			xStart, xEnd, intersects := geometry.span(y, r.width)
+			if !intersects {
+				continue
+			}
+			if dirty != nil {
+				dirty.add(y, xStart, xEnd)
+			}
+			r.compositeCircleSpan(img, c, y, xStart, xEnd)
+		}
+		return
+	}
+
+	for y := minY; y < maxY; y++ {
+		mirrorY := rowSum - y
+		if mirrorY >= minY && mirrorY < y {
+			// This row was rendered with its partner earlier in this shard.
+			continue
+		}
+
+		xStart, xEnd, intersects := geometry.span(y, r.width)
+		if !intersects {
+			continue
+		}
+		if dirty != nil {
+			dirty.add(y, xStart, xEnd)
+		}
+		r.compositeCircleSpan(img, c, y, xStart, xEnd)
+
+		// Workers own disjoint row shards. Pair only inside this shard so no
+		// worker writes a row owned by another goroutine.
+		if mirrorY > y && mirrorY < maxY {
+			if dirty != nil {
+				dirty.add(mirrorY, xStart, xEnd)
+			}
+			r.compositeCircleSpan(img, c, mirrorY, xStart, xEnd)
+		}
 	}
 }
 

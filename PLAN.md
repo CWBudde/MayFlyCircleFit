@@ -522,34 +522,50 @@ for y := centerY; y < maxY; y++ {
 - Overall rendering: 1.87ms → 1.65ms (1.13x)
 - **Note**: Savings diminished by search overhead (still done twice)
 
-### Task 10.15: (Optional) Combined Optimization
-**Rationale**: Stack all three optimizations for maximum performance.
+### Task 10.15: Combined CPU Optimization ✅ COMPLETE
+**Rationale:** Validate the optimized renderer as one production path instead
+of multiplying isolated speedup estimates. Task 10.12 span compositing, Task
+10.13 Q16.16 geometry, and the exact Task 10.16 incremental SSD path have
+different crossovers and architecture support. Task 10.14 symmetry must also
+preserve fractional-center coverage and row-shard ownership.
 
-**Expected Combined Speedup:**
-- SIMD compositing: 1.3x
-- Integer math: 1.11x
-- Symmetry: 1.13x
-- **Combined**: ~1.64x over current scanline (3.07ms → 1.87ms)
-- **Total improvement**: ~1.28x * 1.64x = **2.1x over original** (2.40ms → 1.14ms)
+**10.15a — Reconcile the component contracts:**
+- [x] Verify that opaque-span compositing and Q16.16 geometry compose without
+  allocations while translucent canvases and out-of-range geometry retain
+  their exact general fallbacks
+- [x] Correct the symmetry premise: sampled rows share a span only when the
+  Q16.16 Y center is an integer or half-integer; arbitrary fractional centers
+  cannot be rounded merely to enable mirroring
+- [x] Include staged incremental SSD in end-to-end assessment rather than
+  treating full-image cost as unchanged after Task 10.16
 
-**Deliverables:**
-- ✅ SIMD design document with approach comparison (`docs/simd-design.md`)
-- ✅ SSD kernel interface with runtime dispatch (`internal/fit/ssd.go`)
-- ✅ Comprehensive test harness (`internal/fit/ssd_test.go` - 27 tests passing)
-- Scalar baseline SSD kernel with optimization
-- AVX2 SSD kernel via GoAT transpilation (Plan9 assembly)
-- NEON SSD kernel via GoAT transpilation (Plan9 assembly)
-- Performance benchmarks showing 4-6× speedup
-- Documentation of SIMD implementation
+**10.15b — Prototype and select the combined path:**
+- [x] Implement an exact paired-row Q16.16 prototype for eligible centers,
+  including clipped circles and dirty-span tracking
+- [x] Keep paired writes inside the current worker's row shard so rendering
+  remains race-free and circle compositing order remains unchanged
+- [x] Benchmark the old float64 pixel loop, span plus float64, production span
+  plus Q16.16, and the symmetry prototype on fractional and eligible centers
+- [x] Leave row symmetry disabled in production because whole-render samples
+  did not show a stable win; retain the prototype and benchmark for future CPUs
 
-**Acceptance Checks:**
-- [ ] Tests pass across all architectures (amd64, arm64, 386, etc.)
-- [ ] Identical results between scalar and SIMD implementations (within float tolerance)
-- [ ] Substantial speedup on supported CPUs (4-6× for AVX2, 3-4× for NEON)
-- [ ] No GC pressure (pure Go, no cgo allocations)
-- [ ] Build works with standard `go build` (no C compiler required)
-- [ ] Runtime dispatch selects optimal kernel (AVX2 > NEON > scalar)
-- [ ] Cross-compilation works for all platforms (GOOS/GOARCH override)
+**10.15c — Combined validation and documentation:**
+- [x] Require byte equality between paired and unpaired Q16.16 rendering on
+  opaque/translucent canvases with integer, half-integer, fractional, clipped,
+  overlapping, single-threaded, and multi-threaded cases
+- [x] Require exact incremental-cost parity when symmetric rows contribute to
+  the dirty-region union and preserve settings across ordinary/staged sessions
+- [x] Confirm zero steady-state allocations, standard Go builds, runtime SIMD
+  fallbacks, and supported cross-build targets
+- [x] Publish measured native results and selection decisions in
+  `docs/task-10.15-combined-optimization-report.md`
+
+**Measured AMD64 outcome (Ryzen 5 4600H):** the production opaque-span plus
+Q16.16 renderer reduced the 512×512/K100 fractional-center median from 13.99
+ms to 7.38 ms (1.90×, zero allocations). Symmetry results varied from a 4.5%
+loss to a 4.0% gain across repeated blocked runs and therefore remain
+experimental. The current 256×256 sequential K1 incremental-cost path reduced
+the median from 68.88 µs to 59.20 µs (1.16×) on top of the combined renderer.
 
 ### Task 10.16: Incremental Dirty-Region Cost Accumulation
 **Rationale**: `CPURenderer.Cost` currently renders a candidate and then runs

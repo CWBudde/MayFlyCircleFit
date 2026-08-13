@@ -56,6 +56,18 @@ func floatToQ16(value float64) (int32, bool) {
 	return int32(scaled), true
 }
 
+// symmetricRowSum reports the integer sum of two sampled row coordinates that
+// are equidistant from the Q16.16 center. Such a pairing exists only when the
+// quantized Y coordinate lies on an integer or half-integer pixel row. For all
+// other fractional centers, mirroring a span would change circle coverage.
+func (g fixedCircleQ16) symmetricRowSum() (int, bool) {
+	halfPixelQ := int32(circleQ16Scale / 2)
+	if g.yQ%halfPixelQ != 0 {
+		return 0, false
+	}
+	return int((int64(g.yQ) * 2) / circleQ16Scale), true
+}
+
 // span returns the half-open horizontal pixel span covered on row y. It uses
 // the same center-out search and inclusive boundary rule as the float64 oracle,
 // but all hot-loop distance checks are fixed-point integer operations.

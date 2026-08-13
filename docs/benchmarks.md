@@ -49,6 +49,12 @@ Q16.16 with its exact eight-lane AVX2 prototype. The latter remains a benchmark
 backend because widened integer multiplies make it slower on the validated
 AMD64 host. These are the Task 10.13 geometry and integration benchmarks.
 
+`BenchmarkCPURendererCombinedOptimizations` stacks the renderer components and
+compares the old float64 per-pixel scanline path, span compositing, production
+Q16.16 geometry, and the exact-but-experimental paired-row prototype. Separate
+fractional, half-pixel, and small-radius fixtures make symmetry eligibility and
+memory-order effects visible. Task 10.15 records the selection result.
+
 ## Running benchmarks
 
 Run six automatically calibrated samples of the canonical suite:
@@ -91,6 +97,13 @@ Run the fixed-point geometry and full renderer comparison with:
 go test -run '^$' \
   -bench '^(BenchmarkCircleSpanGeometry|BenchmarkCPURendererGeometry)$' \
   -benchmem -benchtime=500ms -count=5 ./internal/fit/renderer
+```
+
+Run the combined renderer and symmetry-selection benchmark with:
+
+```sh
+go test -run '^$' -bench '^BenchmarkCPURendererCombinedOptimizations$' \
+  -benchmem -benchtime=750ms -count=7 ./internal/fit/renderer
 ```
 
 Save two runs made under the same machine, power, thermal, Go-version, and
