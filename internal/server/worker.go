@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/mayflycirclefit/internal/fit"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
@@ -272,7 +273,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	}
 	if artifacts, ok := checkpointStore.(store.ArtifactStore); ok && result.BestImage != nil {
 		_ = artifacts.SavePNGArtifact(jobID, store.ArtifactBest, result.BestImage)
-		_ = artifacts.SavePNGArtifact(jobID, store.ArtifactDiff, computeDiffImage(ref, result.BestImage))
+		_ = artifacts.SavePNGArtifact(jobID, store.ArtifactDiff, computeDiffImage(ref, result.BestImage, fit.ColormapTurbo))
 	}
 
 	elapsed := time.Since(start).Seconds()
@@ -372,5 +373,5 @@ func saveCheckpointArtifacts(checkpointStore store.Store, rend renderer.Renderer
 	if err := artifacts.SavePNGArtifact(jobID, store.ArtifactBest, best); err != nil {
 		return err
 	}
-	return artifacts.SavePNGArtifact(jobID, store.ArtifactDiff, computeDiffImage(ref, best))
+	return artifacts.SavePNGArtifact(jobID, store.ArtifactDiff, computeDiffImage(ref, best, fit.ColormapTurbo))
 }

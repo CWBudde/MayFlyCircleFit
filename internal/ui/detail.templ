@@ -285,6 +285,56 @@ templ JobDetailPage(job JobDetail) {
 				font-size: 0.75rem;
 				color: var(--text-muted);
 			}
+			.heatmap-heading {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				justify-content: space-between;
+				gap: 0.75rem;
+				margin-bottom: 0.75rem;
+			}
+			.heatmap-colormap-control {
+				display: inline-flex;
+				align-items: center;
+				gap: 0.5rem;
+				font-size: 0.875rem;
+				color: var(--text-muted);
+			}
+			.heatmap-colormap-control select {
+				padding: 0.3rem 0.5rem;
+				border: 1px solid var(--border-color);
+				border-radius: 0.375rem;
+				background-color: var(--surface-color);
+				color: var(--text-color);
+			}
+			.heatmap-legend {
+				display: grid;
+				grid-template-columns: auto minmax(120px, 1fr) auto;
+				align-items: center;
+				gap: 0.5rem;
+				margin-top: 0.75rem;
+				font-size: 0.75rem;
+				color: var(--text-muted);
+			}
+			.heatmap-legend-gradient {
+				height: 0.75rem;
+				border: 1px solid var(--border-color);
+				border-radius: 9999px;
+				background: linear-gradient(
+					90deg,
+					#23171b,
+					#4145ab,
+					#2aa7d6,
+					#49df75,
+					#d5e21a,
+					#f68513,
+					#900c00
+				);
+			}
+			.heatmap-legend-description {
+				grid-column: 1 / -1;
+				text-align: center;
+			}
 			@media (max-width: 768px) {
 				.image-viewer[data-view-mode="side-by-side"] .image-view-panels {
 					grid-template-columns: minmax(0, 1fr);
@@ -374,14 +424,23 @@ templ JobDetailPage(job JobDetail) {
 				</div>
 				<!-- Difference Image -->
 				<div class="image-view-panel" data-view-panel="difference">
-					<h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-muted);">
-						Difference Visualization
-					</h3>
+					<div class="heatmap-heading">
+						<h3 style="font-size: 1rem; font-weight: 600; color: var(--text-muted);">
+							Difference Heatmap
+						</h3>
+						<label class="heatmap-colormap-control" for="heatmap-colormap">
+							Colormap
+							<select id="heatmap-colormap">
+								<option value="turbo" selected>Turbo</option>
+								<option value="magma">Magma</option>
+							</select>
+						</label>
+					</div>
 					<div class="image-frame image-frame-difference">
 						<img
 							id="diff-image"
-							src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/diff.png?t=%d", job.ID, time.Now().Unix())) }
-							alt="Difference Visualization"
+							src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/diff.png?colormap=turbo&t=%d", job.ID, time.Now().Unix())) }
+							alt="False-color difference heatmap"
 						/>
 						<div id="diff-image-loading" class="image-state image-loading" style="color: #cccccc;">
 							<div class="spinner"></div>
@@ -394,6 +453,12 @@ templ JobDetailPage(job JobDetail) {
 								No results yet
 							}
 						</div>
+					</div>
+					<div class="heatmap-legend" role="img" aria-label="Mean absolute RGB error scale from 0 to 255">
+						<span>0</span>
+						<div id="heatmap-legend-gradient" class="heatmap-legend-gradient"></div>
+						<span>255</span>
+						<span class="heatmap-legend-description">Mean absolute RGB error per pixel</span>
 					</div>
 				</div>
 			</div>
@@ -416,6 +481,7 @@ templ JobDetailPage(job JobDetail) {
 				initializeImageState('reference-image', 'reference-image-loading', 'reference-image-error');
 				initializeImageState('best-image', 'best-image-loading', 'best-image-error');
 				initializeImageState('diff-image', 'diff-image-loading', 'diff-image-error');
+				initializeHeatmapColormap();
 
 				// Cost history for sparkline (bounded to 100 samples)
 				const costHistory = [];
@@ -525,7 +591,7 @@ templ JobDetailPage(job JobDetail) {
 							// Refresh images with cache busting and loading states
 							const timestamp = new Date().getTime();
 							refreshImage('best-image', 'best-image-loading', jobId, 'best.png', timestamp);
-							refreshImage('diff-image', 'diff-image-loading', jobId, 'diff.png', timestamp);
+							refreshImage('diff-image', 'diff-image-loading', jobId, 'diff.png', timestamp, selectedHeatmapColormap());
 						}
 					};
 
@@ -556,7 +622,7 @@ templ JobDetailPage(job JobDetail) {
 					}
 				}
 
-				function refreshImage(imgId, loadingId, jobId, filename, timestamp) {
+				function refreshImage(imgId, loadingId, jobId, filename, timestamp, colormap) {
 					const img = document.getElementById(imgId);
 					const loading = document.getElementById(loadingId);
 					const error = document.getElementById(imgId + '-error');
@@ -595,7 +661,40 @@ templ JobDetailPage(job JobDetail) {
 							showImageError(img, error);
 						}
 					};
-					newImg.src = '/api/v1/jobs/' + jobId + '/' + filename + '?t=' + timestamp;
+					let imageURL = '/api/v1/jobs/' + jobId + '/' + filename + '?t=' + timestamp;
+					if (colormap) {
+						imageURL += '&colormap=' + encodeURIComponent(colormap);
+					}
+					newImg.src = imageURL;
+				}
+
+				function initializeHeatmapColormap() {
+					const select = document.getElementById('heatmap-colormap');
+					if (!select) {
+						return;
+					}
+					select.addEventListener('change', function() {
+						updateHeatmapLegend(select.value);
+						refreshImage('diff-image', 'diff-image-loading', jobId, 'diff.png', Date.now(), select.value);
+					});
+					updateHeatmapLegend(select.value);
+				}
+
+				function selectedHeatmapColormap() {
+					const select = document.getElementById('heatmap-colormap');
+					return select ? select.value : 'turbo';
+				}
+
+				function updateHeatmapLegend(colormap) {
+					const gradient = document.getElementById('heatmap-legend-gradient');
+					if (!gradient) {
+						return;
+					}
+					if (colormap === 'magma') {
+						gradient.style.background = 'linear-gradient(90deg, #000004, #180f3d, #3d0f70, #65156e, #8c2961, #b7374b, #de492f, #f67019, #fda50a, #f9dc5c, #fcfdbf)';
+					} else {
+						gradient.style.background = 'linear-gradient(90deg, #23171b, #4145ab, #2aa7d6, #49df75, #d5e21a, #f68513, #900c00)';
+					}
 				}
 
 				function initializeImageState(imgId, loadingId, errorId) {

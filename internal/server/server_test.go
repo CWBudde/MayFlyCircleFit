@@ -390,6 +390,69 @@ func TestServer_GetRefImage(t *testing.T) {
 	}
 }
 
+func TestServer_GetDiffImageColormap(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reference.png")
+	createSimpleTestImage(t, path)
+
+	server := NewServer(":8080", nil)
+	job := server.jobManager.CreateJob(JobConfig{RefPath: path, Circles: 1, Threads: 1})
+	if err := server.jobManager.StartJob(job.ID); err != nil {
+		t.Fatalf("start job: %v", err)
+	}
+	params := []float64{25, 25, 10, 1, 0, 0, 1}
+	if err := server.jobManager.UpdateProgress(job.ID, 1, 1, params, 1); err != nil {
+		t.Fatalf("update job: %v", err)
+	}
+
+	images := make(map[string]image.Image)
+	requests := []struct {
+		name  string
+		query string
+	}{
+		{name: "default"},
+		{name: "turbo", query: "?colormap=turbo"},
+		{name: "magma", query: "?colormap=magma"},
+	}
+	for _, test := range requests {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+job.ID+"/diff.png"+test.query, nil)
+		recorder := httptest.NewRecorder()
+		server.handleGetDiffImage(recorder, req, job.ID)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("%s diff status = %d, want 200: %s", test.name, recorder.Code, recorder.Body.String())
+		}
+		decoded, err := png.Decode(recorder.Body)
+		if err != nil {
+			t.Fatalf("decode %s diff: %v", test.name, err)
+		}
+		images[test.name] = decoded
+	}
+
+	defaultColor := color.NRGBAModel.Convert(images["default"].At(0, 0))
+	turbo := color.NRGBAModel.Convert(images["turbo"].At(0, 0))
+	magma := color.NRGBAModel.Convert(images["magma"].At(0, 0))
+	if defaultColor != turbo {
+		t.Errorf("default pixel = %#v, want Turbo %#v", defaultColor, turbo)
+	}
+	if turbo == magma {
+		t.Errorf("Turbo and Magma pixels unexpectedly match: %#v", turbo)
+	}
+}
+
+func TestServer_GetDiffImageRejectsInvalidColormap(t *testing.T) {
+	server := NewServer(":8080", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/missing/diff.png?colormap=viridis", nil)
+	recorder := httptest.NewRecorder()
+
+	server.handleGetDiffImage(recorder, req, "missing")
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", recorder.Code)
+	}
+	if !containsString(recorder.Body.String(), `"code":"invalid_colormap"`) {
+		t.Errorf("response = %s, want invalid_colormap error", recorder.Body.String())
+	}
+}
+
 func TestServer_JobDetailPage_Integration(t *testing.T) {
 	// Skip in short mode
 	if testing.Short() {

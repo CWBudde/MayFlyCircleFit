@@ -37,6 +37,13 @@ func TestJobDetailPageViewModes(t *testing.T) {
 		`initializeImageState('best-image'`,
 		`id="best-image-error"`,
 		`id="diff-image-error"`,
+		`id="heatmap-colormap"`,
+		`<option value="turbo" selected>Turbo</option>`,
+		`<option value="magma">Magma</option>`,
+		`diff.png?colormap=turbo&amp;t=`,
+		`id="heatmap-legend-gradient"`,
+		`Mean absolute RGB error per pixel`,
+		`selectedHeatmapColormap()`,
 		`640 × 480 px`,
 		`title="2048 bytes">2.0 KiB`,
 	} {

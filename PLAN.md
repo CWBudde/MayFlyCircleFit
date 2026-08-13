@@ -817,23 +817,15 @@ Best or Difference images. The Difference view intentionally uses the existing
 false-color endpoint; selectable colormaps and its quantitative legend remain in
 Task 12.2.
 
-### Task 12.2: Implement Difference Heatmap Visualization
-- [ ] Create colormap utility in `internal/fit/colormap.go`
-  - [ ] Implement turbo colormap (recommended)
-  - [ ] Implement magma colormap (alternative)
-  - [ ] Map error values [0, max_error] to RGB
-- [ ] Update diff.png generation to use colormap
-  - [ ] Compute per-pixel absolute error
-  - [ ] Normalize to [0, 1] range
-  - [ ] Apply colormap transformation
-- [ ] Add colormap selection to UI
-  - [ ] Dropdown to choose colormap
-  - [ ] Update diff.png with selected colormap
-- [ ] Add color legend to heatmap view
-  - [ ] Show gradient bar with labels
-  - [ ] Display min/max error values
-- [ ] Write tests for colormap functions
-- [ ] Document colormap choices and interpretation
+### Task 12.2: Implement Difference Heatmap Visualization ✅
+
+Completed: `internal/fit/colormap.go` maps normalized errors through Turbo or
+Magma, while `diff.png` now visualizes per-pixel mean absolute RGB error on a
+fixed 0-255 scale. The Difference view provides a live colormap selector and a
+matching labeled legend; the endpoint accepts `?colormap=turbo|magma` and
+rejects unsupported values. Unit, image-generation, endpoint, and rendered-UI
+tests cover the behavior, and `docs/difference-heatmaps.md` documents the scale,
+palette tradeoffs, API, and artifact default.
 
 ### Task 12.3: Add Advanced Metrics (PSNR, Optional SSIM)
 - [ ] Implement PSNR (Peak Signal-to-Noise Ratio) calculation

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/mayflycirclefit/internal/fit"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 	"github.com/google/uuid"
@@ -587,6 +588,15 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 		return
 	}
+	colormap := fit.ColormapTurbo
+	if requested := r.URL.Query().Get("colormap"); requested != "" {
+		var ok bool
+		colormap, ok = fit.ParseColormap(requested)
+		if !ok {
+			writeAPIError(w, http.StatusBadRequest, "invalid_colormap", "colormap must be turbo or magma")
+			return
+		}
+	}
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
 		http.Error(w, "Job not found", http.StatusNotFound)
@@ -613,8 +623,7 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 	}
 	defer cleanup()
 
-	// Compute difference image (simple visualization for now)
-	diff := computeDiffImage(ref, best)
+	diff := computeDiffImage(ref, best, colormap)
 
 	// Set headers
 	w.Header().Set("Content-Type", "image/png")

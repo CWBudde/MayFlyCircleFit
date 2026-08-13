@@ -3,12 +3,12 @@ package server
 import (
 	"fmt"
 	"image"
-	"image/color"
 	_ "image/jpeg"
 	"math"
 	"os"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/mayflycirclefit/internal/fit"
 )
 
 // loadReferenceImage loads and converts an image to NRGBA
@@ -39,29 +39,20 @@ func loadReferenceImage(path string) (*image.NRGBA, error) {
 	return ref, nil
 }
 
-// computeDiffImage creates a false-color difference image
-func computeDiffImage(ref, best *image.NRGBA) *image.NRGBA {
+// computeDiffImage creates a false-color image from mean absolute RGB error.
+func computeDiffImage(ref, best *image.NRGBA, colormap fit.Colormap) *image.NRGBA {
 	bounds := ref.Bounds()
 	diff := image.NewNRGBA(bounds)
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			r1, g1, b1, _ := ref.At(x, y).RGBA()
-			r2, g2, b2, _ := best.At(x, y).RGBA()
-
-			// Compute per-channel differences (0-65535 range)
-			dr := int(r1) - int(r2)
-			dg := int(g1) - int(g2)
-			db := int(b1) - int(b2)
-
-			// Compute magnitude
-			diffMag := math.Sqrt(float64(dr*dr + dg*dg + db*db))
-
-			// Normalize to 0-255 (max diff is ~113k for 16-bit)
-			normalized := uint8(math.Min(255, diffMag/443.0))
-
-			// Create false-color: black = no diff, red = high diff
-			diff.Set(x, y, color.NRGBA{normalized, 0, 0, 255})
+			refPixel := ref.NRGBAAt(x, y)
+			bestPixel := best.NRGBAAt(x, y)
+			dr := math.Abs(float64(int(refPixel.R) - int(bestPixel.R)))
+			dg := math.Abs(float64(int(refPixel.G) - int(bestPixel.G)))
+			db := math.Abs(float64(int(refPixel.B) - int(bestPixel.B)))
+			absoluteError := (dr + dg + db) / 3
+			diff.Set(x, y, fit.MapErrorColor(absoluteError, 255, colormap))
 		}
 	}
 
