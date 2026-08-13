@@ -110,6 +110,29 @@ per-span penalty. Falling back above 50% is a conservative initial bound, not a
 production threshold; the final crossover remains intentionally unset until
 the real scalar and SIMD dirty-span kernels exist.
 
+## Exact retained-base SSD
+
+The first Task 10.16b implementation slice adds `fit.ExactSSD`, which returns
+the unnormalized RGB SSD as a `uint64`. For equal strides it reuses the active
+AVX2, NEON, or scalar reduction. Those kernels calculate an integer total and
+currently return it through `float64`, so `ExactSSD` first proves that the
+worst-case image total is at most `2^53`, then verifies that converting the
+result back to `uint64` is lossless. The bound permits roughly 46 billion
+maximum-difference pixels, well beyond practical in-memory images. Independent
+strides use a direct `uint64` scalar accumulation.
+
+CPU renderer constructors now calculate this exact total between their initial
+canvas and reference. Ordinary child sessions inherit it, while staged sessions
+recompute it for the newly retained canvas. Empty, mismatched, or theoretically
+oversized images mark the stored total invalid instead of silently rounding.
+Alpha remains excluded exactly as in `FastMSECost`.
+
+This value is intentionally not consumed by `CPURenderer.Cost` yet. Candidate
+rendering still performs the established full-image SSD, and no dirty-span or
+delta behavior has been introduced in this slice. Focused tests cover maximum
+RGB differences, alpha exclusion, padded and independent strides, white and
+custom initial canvases, inherited sessions, and retained-canvas sessions.
+
 Reproduce the benchmark with:
 
 ```sh

@@ -573,7 +573,7 @@ which optimizes only circle coverage geometry.
   threshold only after the dirty-span kernel can be benchmarked
 
 **10.16b — Design an exact incremental SSD contract:**
-- [ ] Precompute the retained base canvas SSD in an exact `uint64` accumulator
+- [x] Precompute the retained base canvas SSD in an exact `uint64` accumulator
   and preserve the current NRGBA quantization and alpha-exclusion semantics
 - [ ] Track the union of changed half-open spans per row so overlapping circles
   and repeated writes never double-count a pixel
