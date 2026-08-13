@@ -141,4 +141,78 @@ func BenchmarkCPURenderer_CostComparison(b *testing.B) {
 	}
 }
 
-var rendererCostSink float64
+// BenchmarkIncrementalCostBaseline isolates the work that a future dirty-region
+// cost path could avoid. Joint evaluates all circles over a white canvas, while
+// sequential and batch evaluate one or five new circles over an already
+// retained 45-circle canvas. Every case uses the same image dimensions and one
+// rendering thread so the full-image SSD cost is directly comparable.
+func BenchmarkIncrementalCostBaseline(b *testing.B) {
+	const (
+		width           = 256
+		height          = 256
+		retainedCircles = 45
+	)
+
+	reference := randomNRGBA(width, height, 42)
+	retainedRenderer := NewCPURenderer(reference, retainedCircles)
+	retainedRenderer.SetThreads(1)
+	retained := retainedRenderer.Render(deterministicParams(retainedCircles, width, height, 99))
+
+	workloads := []struct {
+		name       string
+		circles    int
+		baseCanvas *image.NRGBA
+	}{
+		{name: "joint_K50", circles: 50},
+		{name: "sequential_K1", circles: 1, baseCanvas: retained},
+		{name: "batch_K5", circles: 5, baseCanvas: retained},
+	}
+
+	b.Logf("Using SSD backend: %s", fit.ActiveSSDBackend)
+	for _, workload := range workloads {
+		params := deterministicParams(workload.circles, width, height, int64(200+workload.circles))
+		newRenderer := func() *CPURenderer {
+			var renderer *CPURenderer
+			if workload.baseCanvas == nil {
+				renderer = NewCPURenderer(reference, workload.circles)
+			} else {
+				renderer = NewCPURendererWithCanvas(reference, workload.baseCanvas, workload.circles)
+			}
+			renderer.SetThreads(1)
+			return renderer
+		}
+
+		b.Run(workload.name+"/Render", func(b *testing.B) {
+			renderer := newRenderer()
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				rendererImageSink = renderer.Render(params)
+			}
+		})
+
+		b.Run(workload.name+"/FullImageSSD", func(b *testing.B) {
+			rendered := newRenderer().Render(params)
+			b.SetBytes(int64(width * height * 8))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				rendererCostSink = fit.FastMSECost(rendered, reference)
+			}
+		})
+
+		b.Run(workload.name+"/Cost", func(b *testing.B) {
+			renderer := newRenderer()
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				rendererCostSink = renderer.Cost(params)
+			}
+		})
+	}
+}
+
+var (
+	rendererCostSink  float64
+	rendererImageSink *image.NRGBA
+)

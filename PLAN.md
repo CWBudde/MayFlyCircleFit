@@ -551,6 +551,74 @@ for y := centerY; y < maxY; y++ {
 - [ ] Runtime dispatch selects optimal kernel (AVX2 > NEON > scalar)
 - [ ] Cross-compilation works for all platforms (GOOS/GOARCH override)
 
+### Task 10.16: Incremental Dirty-Region Cost Accumulation
+**Rationale**: `CPURenderer.Cost` currently renders a candidate and then runs
+SSD over the complete image. In sequential and small-batch optimization, the
+retained base canvas is already available and only the union of the candidate
+circle spans can change. Updating the base cost over that dirty region may
+avoid most of the full-image difference pass. This is distinct from Task 10.13,
+which optimizes only circle coverage geometry.
+
+**10.16a — Verify the legacy algorithm and establish baselines:**
+- [ ] Locate and inspect the original Pascal/Delphi implementation (deferred
+  until the source is available or the Go prototype is running); determine
+  whether its `ErrorWeightingLoop` used a cumulative, delta, bounding-box, or
+  span-based cost update rather than assuming equivalence from its name
+- [ ] Document the exact legacy arithmetic and any 16.16, 8.24, float32, MMX,
+  or SSE representations used for cost accumulation
+- [x] Benchmark and profile the current full-image `FastMSECost` separately for
+  joint, sequential single-circle, and representative batch evaluations
+- [x] Measure changed-pixel and dirty-span ratios by circle radius, clipping,
+  overlap, and batch size to bound the crossover search; select the final
+  threshold only after the dirty-span kernel can be benchmarked
+
+**10.16b — Design an exact incremental SSD contract:**
+- [ ] Precompute the retained base canvas SSD in an exact `uint64` accumulator
+  and preserve the current NRGBA quantization and alpha-exclusion semantics
+- [ ] Track the union of changed half-open spans per row so overlapping circles
+  and repeated writes never double-count a pixel
+- [ ] Compute candidate cost as
+  `baseSSD + sumDirty(candidateError - baseError)`, using signed delta
+  accumulation without intermediate overflow
+- [ ] Normalize to MSE only once after reduction; retain full-image evaluation
+  for custom cost functions and any unsupported or uneconomical case
+- [ ] Define invalidation rules for retained-canvas changes, joint mode, custom
+  canvases, row sharding, and renderer/session reuse
+
+**10.16c — Implement and optimize the dirty-region path:**
+- [ ] Add an allocation-free dirty-span collector shared with scanline
+  rendering, without coupling correctness to Q16.16 geometry
+- [ ] Implement an exact portable scalar delta-SSD kernel for dirty spans
+- [ ] Reuse or extend the AVX2 and NEON integer SSD kernels for discontiguous
+  spans; benchmark SIMD setup cost and keep scalar handling for short spans
+- [ ] Integrate the optimized path into sequential and batch `FastMSECost`
+  sessions behind a measured crossover; leave `Render` behavior unchanged
+- [ ] Assess whether calculating cost after each completed row shard improves
+  cache locality compared with a separate dirty-span pass
+
+**10.16d — Correctness and performance validation:**
+- [ ] Require exact equality with a full `FastMSECost` replay across randomized
+  circles, tangent and clipped spans, overlapping circles, transparent colors,
+  opaque and translucent base canvases, and SIMD batch boundaries
+- [ ] Cover single-thread and multi-thread row sharding plus AVX2/NEON-disabled
+  scalar fallbacks under race testing
+- [ ] Benchmark end-to-end optimizer throughput and convergence for joint,
+  sequential, and batch modes; report results by dirty-area ratio
+- [ ] Enable the incremental path in production only where repeated samples
+  beat the full-image SIMD SSD without changing candidate ordering or cost
+- [ ] Publish the legacy comparison, arithmetic bounds, crossover policy, and
+  native/cross-platform results in a dedicated performance report
+
+**Success criteria:**
+- Exact cost parity with the existing full-image `FastMSECost` for every
+  production-supported case; no float32 or fixed-point approximation is
+  accepted unless separately benchmarked and explicitly opt-in
+- At least 10% end-to-end improvement in sequential single-circle evaluation
+  on a representative native workload, with no material regression after
+  crossover fallback in joint or large-batch evaluation
+- Zero steady-state allocations and safe scalar behavior on platforms without
+  AVX2 or NEON
+
 ---
 
 ## Phase 11: GPU Backends (Research → Prototype)
