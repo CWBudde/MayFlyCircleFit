@@ -487,6 +487,10 @@ func TestFastSSD_PaddedStride(t *testing.T) {
 	if result != want {
 		t.Errorf("Padded stride result = %f, scalar = %f", result, want)
 	}
+	wantExact := uint64(fastSSD_Scalar(img1.Pix, img2.Pix, stride, width, height))
+	if exact, ok := ExactSSD(img1, img2); !ok || exact != wantExact {
+		t.Errorf("ExactSSD padded stride = (%d, %v), want (%d, true)", exact, ok, wantExact)
+	}
 
 	t.Logf("Padded stride test passed: width=%d, stride=%d, result=%f", width, stride, result)
 }

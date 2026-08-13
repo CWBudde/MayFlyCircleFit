@@ -50,6 +50,43 @@ var ActiveSSDBackend SSDBackend
 // Set by an architecture-specific init function.
 var fastSSD func(a, b []uint8, stride, width, height int) float64
 
+const (
+	maxRGBSquaredDifference = uint64(3 * 255 * 255)
+	maxExactFloat64Integer  = uint64(1 << 53)
+)
+
+// ExactSSD returns the unnormalized RGB sum of squared differences as an exact
+// integer. The active SIMD kernel currently returns its integer reduction in a
+// float64, so this API accepts only image sizes whose worst-case sum is within
+// float64's exact-integer range. This covers any practical in-memory image; the
+// boolean is false for empty, mismatched, or theoretically oversized inputs.
+// Alpha bytes are ignored, matching FastSSD.
+func ExactSSD(current, reference *image.NRGBA) (uint64, bool) {
+	bounds := current.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+	if width <= 0 || height <= 0 || width != reference.Bounds().Dx() || height != reference.Bounds().Dy() {
+		return 0, false
+	}
+
+	unsignedWidth := uint64(width)
+	unsignedHeight := uint64(height)
+	if unsignedWidth > ^uint64(0)/unsignedHeight {
+		return 0, false
+	}
+	pixelCount := unsignedWidth * unsignedHeight
+	if pixelCount > maxExactFloat64Integer/maxRGBSquaredDifference {
+		return 0, false
+	}
+
+	if current.Stride != reference.Stride {
+		return ssdIndependentStridesExact(current, reference, width, height), true
+	}
+	sum := fastSSD(current.Pix, reference.Pix, current.Stride, width, height)
+	exact := uint64(sum)
+	return exact, sum == float64(exact)
+}
+
 // FastSSD computes sum of squared differences between two NRGBA images.
 //
 // This is a high-level wrapper around the low-level fastSSD kernel. It handles
@@ -92,6 +129,21 @@ func ssdIndependentStrides(current, reference *image.NRGBA, width, height int) f
 			for channel := range 3 {
 				difference := float64(current.Pix[currentOffset+channel]) - float64(reference.Pix[referenceOffset+channel])
 				sum += difference * difference
+			}
+		}
+	}
+	return sum
+}
+
+func ssdIndependentStridesExact(current, reference *image.NRGBA, width, height int) uint64 {
+	var sum uint64
+	for y := range height {
+		for x := range width {
+			currentOffset := y*current.Stride + x*4
+			referenceOffset := y*reference.Stride + x*4
+			for channel := range 3 {
+				difference := int64(current.Pix[currentOffset+channel]) - int64(reference.Pix[referenceOffset+channel])
+				sum += uint64(difference * difference)
 			}
 		}
 	}

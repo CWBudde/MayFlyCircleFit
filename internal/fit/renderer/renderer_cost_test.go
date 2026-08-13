@@ -70,6 +70,63 @@ func TestCPURenderer_SetCostFunc(t *testing.T) {
 	}
 }
 
+func TestCPURendererPrecomputesInitialSSD(t *testing.T) {
+	const width, height = 37, 29
+	reference := randomNRGBA(width, height, 42)
+	tests := []struct {
+		name   string
+		canvas *image.NRGBA
+	}{
+		{name: "white"},
+		{name: "custom", canvas: randomNRGBA(width, height, 7)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var renderer *CPURenderer
+			if test.canvas == nil {
+				renderer = NewCPURenderer(reference, 2)
+			} else {
+				renderer = NewCPURendererWithCanvas(reference, test.canvas, 2)
+			}
+
+			want, ok := fit.ExactSSD(renderer.initialCanvas(), reference)
+			if !ok {
+				t.Fatal("ExactSSD rejected renderer initial canvas")
+			}
+			if !renderer.initialSSDValid || renderer.initialSSD != want {
+				t.Fatalf("precomputed SSD = (%d, %v), want (%d, true)", renderer.initialSSD, renderer.initialSSDValid, want)
+			}
+
+			session, cleanup, err := renderer.newSession(1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cleanup()
+			inherited := session.(*CPURenderer)
+			if inherited.initialSSD != want || inherited.initialSSDValid != renderer.initialSSDValid {
+				t.Fatalf("inherited SSD = (%d, %v), want (%d, true)", inherited.initialSSD, inherited.initialSSDValid, want)
+			}
+		})
+	}
+
+	base := NewCPURenderer(reference, 2)
+	retained := base.Render(deterministicParams(2, width, height, 99))
+	wantRetained, ok := fit.ExactSSD(retained, reference)
+	if !ok {
+		t.Fatal("ExactSSD rejected retained canvas")
+	}
+	stagedSession, cleanup, err := base.newSessionWithCanvas(retained, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	staged := stagedSession.(*CPURenderer)
+	if !staged.initialSSDValid || staged.initialSSD != wantRetained {
+		t.Fatalf("staged SSD = (%d, %v), want (%d, true)", staged.initialSSD, staged.initialSSDValid, wantRetained)
+	}
+}
+
 // BenchmarkCPURenderer_Cost_MSE benchmarks rendering with explicit MSECost.
 func BenchmarkCPURenderer_Cost_MSE(b *testing.B) {
 	ref := randomNRGBA(128, 128, 42)

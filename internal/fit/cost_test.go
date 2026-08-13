@@ -44,8 +44,39 @@ func TestCostsSupportIndependentOriginsAndStrides(t *testing.T) {
 	if got := FastSSD(current, reference); got != 0 {
 		t.Fatalf("FastSSD = %v, want 0", got)
 	}
+	if got, ok := ExactSSD(current, reference); !ok || got != 0 {
+		t.Fatalf("ExactSSD = (%d, %v), want (0, true)", got, ok)
+	}
 	if got := FastSAD(current, reference); got != 0 {
 		t.Fatalf("FastSAD = %v, want 0", got)
+	}
+}
+
+func TestExactSSD(t *testing.T) {
+	white := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	black := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	for y := range 2 {
+		for x := range 2 {
+			white.SetNRGBA(x, y, color.NRGBA{R: 255, G: 255, B: 255, A: uint8(x + y)})
+			black.SetNRGBA(x, y, color.NRGBA{A: 255})
+		}
+	}
+
+	const want = uint64(2 * 2 * 3 * 255 * 255)
+	if got, ok := ExactSSD(white, black); !ok || got != want {
+		t.Fatalf("ExactSSD = (%d, %v), want (%d, true)", got, ok, want)
+	}
+	if got := FastSSD(white, black) * float64(2*2*3); got != float64(want) {
+		t.Fatalf("FastSSD raw total = %v, want %d", got, want)
+	}
+
+	empty := image.NewNRGBA(image.Rect(0, 0, 0, 0))
+	mismatch := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	if _, ok := ExactSSD(empty, empty); ok {
+		t.Fatal("ExactSSD accepted empty images")
+	}
+	if _, ok := ExactSSD(white, mismatch); ok {
+		t.Fatal("ExactSSD accepted mismatched images")
 	}
 }
 

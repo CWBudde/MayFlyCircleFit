@@ -27,6 +27,10 @@ type CPURenderer struct {
 	// forceFloat32Geometry is reserved for reduced-precision SIMD tests and
 	// benchmarks. On AVX2 hosts it exercises the vectorized span-edge search.
 	forceFloat32Geometry bool
+	// initialSSD is the exact, unnormalized RGB SSD between initialBg and the
+	// reference. It is prepared once for future incremental-cost evaluation.
+	initialSSD      uint64
+	initialSSDValid bool
 	// Buffer pooling to reduce allocations
 	canvas    *image.NRGBA // Reusable render buffer
 	initialBg []byte       // Precomputed initial background (white or custom canvas)
@@ -49,18 +53,21 @@ func NewCPURenderer(reference *image.NRGBA, k int) *CPURenderer {
 	for i := 0; i < pixelCount; i++ {
 		whiteBg[i] = 255
 	}
+	initialSSD, initialSSDValid := exactInitialCanvasSSD(whiteBg, width, height, reference)
 
 	return &CPURenderer{
-		reference:    reference,
-		k:            k,
-		bounds:       fit.NewBounds(k, width, height),
-		costFunc:     fit.FastMSECost,
-		width:        width,
-		height:       height,
-		threads:      effectiveThreadCount(runtime.GOMAXPROCS(0), height),
-		opaqueCanvas: true,
-		canvas:       canvas,
-		initialBg:    whiteBg,
+		reference:       reference,
+		k:               k,
+		bounds:          fit.NewBounds(k, width, height),
+		costFunc:        fit.FastMSECost,
+		width:           width,
+		height:          height,
+		threads:         effectiveThreadCount(runtime.GOMAXPROCS(0), height),
+		opaqueCanvas:    true,
+		initialSSD:      initialSSD,
+		initialSSDValid: initialSSDValid,
+		canvas:          canvas,
+		initialBg:       whiteBg,
 	}
 }
 
@@ -89,18 +96,21 @@ func NewCPURendererWithCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int
 	pixelCount := width * height * 4 // 4 bytes per pixel (RGBA)
 	initialBg := make([]byte, pixelCount)
 	copy(initialBg, canvasCopy.Pix)
+	initialSSD, initialSSDValid := exactInitialCanvasSSD(initialBg, width, height, reference)
 
 	return &CPURenderer{
-		reference:    reference,
-		k:            k,
-		bounds:       fit.NewBounds(k, width, height),
-		costFunc:     fit.FastMSECost,
-		width:        width,
-		height:       height,
-		threads:      effectiveThreadCount(runtime.GOMAXPROCS(0), height),
-		opaqueCanvas: pixelsAreOpaque(initialBg),
-		canvas:       canvasCopy,
-		initialBg:    initialBg,
+		reference:       reference,
+		k:               k,
+		bounds:          fit.NewBounds(k, width, height),
+		costFunc:        fit.FastMSECost,
+		width:           width,
+		height:          height,
+		threads:         effectiveThreadCount(runtime.GOMAXPROCS(0), height),
+		opaqueCanvas:    pixelsAreOpaque(initialBg),
+		initialSSD:      initialSSD,
+		initialSSDValid: initialSSDValid,
+		canvas:          canvasCopy,
+		initialBg:       initialBg,
 	}
 }
 
@@ -175,9 +185,20 @@ func (r *CPURenderer) newSession(circleCount int) (Renderer, func(), error) {
 		opaqueCanvas:         r.opaqueCanvas,
 		forceFloatGeometry:   r.forceFloatGeometry,
 		forceFloat32Geometry: r.forceFloat32Geometry,
+		initialSSD:           r.initialSSD,
+		initialSSDValid:      r.initialSSDValid,
 		canvas:               canvas,
 		initialBg:            initialBg,
 	}, noopCleanup, nil
+}
+
+func exactInitialCanvasSSD(initial []byte, width, height int, reference *image.NRGBA) (uint64, bool) {
+	canvas := &image.NRGBA{
+		Pix:    initial,
+		Stride: width * 4,
+		Rect:   image.Rect(0, 0, width, height),
+	}
+	return fit.ExactSSD(canvas, reference)
 }
 
 // newSessionWithCanvas creates a staged session that renders only newly
