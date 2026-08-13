@@ -11,12 +11,15 @@ import (
 
 // ProgressEvent represents a progress update event
 type ProgressEvent struct {
-	JobID      string    `json:"jobId"`
-	State      JobState  `json:"state"`
-	Iterations int       `json:"iterations"`
-	BestCost   float64   `json:"bestCost"`
-	CPS        float64   `json:"cps"`
-	Timestamp  time.Time `json:"timestamp"`
+	JobID        string    `json:"jobId"`
+	State        JobState  `json:"state"`
+	Iterations   int       `json:"iterations"`
+	BestCost     float64   `json:"bestCost"`
+	PSNR         *float64  `json:"psnr"`
+	PSNRInfinite bool      `json:"psnrInfinite,omitempty"`
+	SSIM         *float64  `json:"ssim,omitempty"`
+	CPS          float64   `json:"cps"`
+	Timestamp    time.Time `json:"timestamp"`
 }
 
 func (e ProgressEvent) terminal() bool {
@@ -158,12 +161,15 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 
 	// Send initial event with current job state
 	initialEvent := ProgressEvent{
-		JobID:      job.ID,
-		State:      job.State,
-		Iterations: job.Iterations,
-		BestCost:   job.BestCost,
-		CPS:        0,
-		Timestamp:  time.Now(),
+		JobID:        job.ID,
+		State:        job.State,
+		Iterations:   job.Iterations,
+		BestCost:     job.BestCost,
+		PSNR:         cloneFloat(job.PSNR),
+		PSNRInfinite: job.PSNRInfinite,
+		SSIM:         cloneFloat(job.SSIM),
+		CPS:          0,
+		Timestamp:    time.Now(),
 	}
 
 	if err := writeSSEEvent(w, initialEvent); err != nil {

@@ -125,6 +125,38 @@ func TestServer_GetJobStatus(t *testing.T) {
 	}
 }
 
+func TestServerJobStatusRepresentsInfinitePSNRAndOptionalSSIM(t *testing.T) {
+	server := NewServer(":8080", nil)
+	job := server.jobManager.CreateJob(JobConfig{RefPath: "test.png", EnableSSIM: true})
+	if err := server.jobManager.StartJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.jobManager.UpdateProgress(job.ID, 1, 1, []float64{1}, 0); err != nil {
+		t.Fatal(err)
+	}
+	ssim := 1.0
+	if err := server.jobManager.RecordMetrics(job.ID, qualitySample(1, 0, &ssim, time.Now())); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+job.ID+"/status", nil)
+	recorder := httptest.NewRecorder()
+	server.handleGetJobStatus(recorder, req, job.ID)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", recorder.Code)
+	}
+	var response jobStatusResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.PSNR != nil || !response.PSNRInfinite {
+		t.Fatalf("PSNR response = (%v, %v), want (nil, true)", response.PSNR, response.PSNRInfinite)
+	}
+	if response.SSIM == nil || *response.SSIM != 1 {
+		t.Fatalf("SSIM response = %v, want 1", response.SSIM)
+	}
+}
+
 func TestServer_GetJobStatus_NotFound(t *testing.T) {
 	s := NewServer(":8080", nil)
 
@@ -534,6 +566,10 @@ func TestServer_JobStream_SSE(t *testing.T) {
 	if err := s.jobManager.CompleteJob(job.ID, 7, 20, make([]float64, 14), 12.5, 100, "completed"); err != nil {
 		t.Fatal(err)
 	}
+	ssim := 0.75
+	if err := s.jobManager.RecordMetrics(job.ID, qualitySample(7, 12.5, &ssim, time.Now())); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create SSE request
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/jobs/%s/stream", job.ID), nil)
@@ -558,6 +594,9 @@ func TestServer_JobStream_SSE(t *testing.T) {
 	}
 	if events[0].State != StateCompleted || events[0].Iterations != 7 || events[0].BestCost != 12.5 {
 		t.Errorf("terminal event = %+v", events[0])
+	}
+	if events[0].PSNR == nil || events[0].PSNRInfinite || events[0].SSIM == nil || *events[0].SSIM != ssim {
+		t.Errorf("terminal quality metrics = %+v", events[0])
 	}
 }
 
@@ -684,6 +723,7 @@ func TestServer_CreatePagePost_Success(t *testing.T) {
 	form.Add("iters", "50")
 	form.Add("popSize", "20")
 	form.Add("seed", "42")
+	form.Add("enableSSIM", "on")
 
 	req := httptest.NewRequest(http.MethodPost, "/create", bytes.NewBufferString(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -725,6 +765,9 @@ func TestServer_CreatePagePost_Success(t *testing.T) {
 	}
 	if job.Config.Seed != 42 {
 		t.Errorf("Expected seed 42, got %d", job.Config.Seed)
+	}
+	if !job.Config.EnableSSIM {
+		t.Error("Expected SSIM to be enabled")
 	}
 }
 

@@ -5,12 +5,14 @@ import (
 	"image"
 	"image/png"
 	"log/slog"
+	"math"
 	"os"
 	"runtime"
 	"runtime/pprof"
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/mayflycirclefit/internal/fit"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
 	"github.com/spf13/cobra"
@@ -31,6 +33,7 @@ var (
 	convergenceEnable bool
 	patience          int
 	threshold         float64
+	enableSSIM        bool
 
 	stopTargetCost      float64
 	stopMinImprovement  float64
@@ -59,6 +62,7 @@ func init() {
 	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
 	runCmd.Flags().IntVar(&threads, "threads", runtime.GOMAXPROCS(0), "CPU rendering threads (capped at GOMAXPROCS)")
 	runCmd.Flags().Int64Var(&seed, "seed", 0, "Random seed (0 chooses and reports a random seed)")
+	runCmd.Flags().BoolVar(&enableSSIM, "enable-ssim", false, "Calculate the optional final structural similarity metric")
 
 	// Stage-level convergence detection (only used for sequential/batch modes)
 	runCmd.Flags().BoolVar(&convergenceEnable, "convergence", true, "Enable adaptive convergence detection")
@@ -104,6 +108,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		PopSize:              popSize,
 		Threads:              threads,
 		Seed:                 seed,
+		EnableSSIM:           enableSSIM,
 		ConvergenceEnabled:   convergenceEnable,
 		DisableConvergence:   !convergenceEnable,
 		ConvergencePatience:  patience,
@@ -279,26 +284,48 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	// run stops before its iteration budget.
 	totalCircles := result.Evaluations * actualCircles
 	cps := float64(totalCircles) / elapsed.Seconds()
+	psnr := fit.PSNR(result.BestCost)
+	var ssim *float64
+	if config.EnableSSIM {
+		value, err := fit.SSIM(output, ref)
+		if err != nil {
+			return fmt.Errorf("calculate final SSIM: %w", err)
+		}
+		ssim = &value
+	}
 
-	slog.Info("Optimization complete",
+	logAttrs := []any{
 		"elapsed", elapsed,
 		"initial_cost", result.InitialCost,
 		"final_cost", result.BestCost,
-		"improvement", result.InitialCost-result.BestCost,
+		"improvement", result.InitialCost - result.BestCost,
 		"circles_used", actualCircles,
 		"circles_requested", config.Circles,
 		"seed", config.EffectiveSeed,
 		"evaluations", result.Evaluations,
 		"termination", result.Termination,
 		"circles_per_second", fmt.Sprintf("%.0f", cps),
-	)
+		"psnr_db", psnr,
+	}
+	if ssim != nil {
+		logAttrs = append(logAttrs, "ssim", *ssim)
+	}
+	slog.Info("Optimization complete", logAttrs...)
+
+	qualitySummary := fmt.Sprintf(", PSNR %.2f dB", psnr)
+	if math.IsInf(psnr, 1) {
+		qualitySummary = ", PSNR ∞ dB"
+	}
+	if ssim != nil {
+		qualitySummary += fmt.Sprintf(", SSIM %.4f", *ssim)
+	}
 
 	if actualCircles < config.Circles {
-		fmt.Printf("Wrote %s (cost: %.2f -> %.2f, %d/%d circles, %.0f circles/sec) - Converged early!\n",
-			outPath, result.InitialCost, result.BestCost, actualCircles, config.Circles, cps)
+		fmt.Printf("Wrote %s (cost: %.2f -> %.2f%s, %d/%d circles, %.0f circles/sec) - Converged early!\n",
+			outPath, result.InitialCost, result.BestCost, qualitySummary, actualCircles, config.Circles, cps)
 	} else {
-		fmt.Printf("Wrote %s (cost: %.2f -> %.2f, %d circles, %.0f circles/sec)\n",
-			outPath, result.InitialCost, result.BestCost, actualCircles, cps)
+		fmt.Printf("Wrote %s (cost: %.2f -> %.2f%s, %d circles, %.0f circles/sec)\n",
+			outPath, result.InitialCost, result.BestCost, qualitySummary, actualCircles, cps)
 	}
 
 	// Write memory profile if requested

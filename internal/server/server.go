@@ -484,19 +484,22 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 }
 
 type jobStatusResponse struct {
-	ID          string     `json:"id"`
-	State       JobState   `json:"state"`
-	Config      JobConfig  `json:"config"`
-	BestCost    float64    `json:"bestCost"`
-	InitialCost float64    `json:"initialCost"`
-	Iterations  int        `json:"iterations"`
-	Evaluations int        `json:"evaluations"`
-	Termination string     `json:"termination,omitempty"`
-	Elapsed     float64    `json:"elapsed"`
-	CPS         float64    `json:"cps"`
-	StartTime   time.Time  `json:"startTime"`
-	EndTime     *time.Time `json:"endTime,omitempty"`
-	Error       string     `json:"error,omitempty"`
+	ID           string     `json:"id"`
+	State        JobState   `json:"state"`
+	Config       JobConfig  `json:"config"`
+	BestCost     float64    `json:"bestCost"`
+	InitialCost  float64    `json:"initialCost"`
+	PSNR         *float64   `json:"psnr"`
+	PSNRInfinite bool       `json:"psnrInfinite,omitempty"`
+	SSIM         *float64   `json:"ssim,omitempty"`
+	Iterations   int        `json:"iterations"`
+	Evaluations  int        `json:"evaluations"`
+	Termination  string     `json:"termination,omitempty"`
+	Elapsed      float64    `json:"elapsed"`
+	CPS          float64    `json:"cps"`
+	StartTime    time.Time  `json:"startTime"`
+	EndTime      *time.Time `json:"endTime,omitempty"`
+	Error        string     `json:"error,omitempty"`
 }
 
 // handleGetJobStatus handles GET /api/v1/jobs/:id/status
@@ -526,9 +529,14 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 		cps = float64(totalCircles) / elapsed.Seconds()
 	}
 
+	psnr, psnrInfinite := cloneFloat(job.PSNR), job.PSNRInfinite
+	if len(job.BestParams) > 0 {
+		psnr, psnrInfinite = serializablePSNR(job.BestCost)
+	}
 	response := jobStatusResponse{
 		ID: job.ID, State: job.State, Config: job.Config,
 		BestCost: job.BestCost, InitialCost: job.InitialCost,
+		PSNR: psnr, PSNRInfinite: psnrInfinite, SSIM: cloneFloat(job.SSIM),
 		Iterations: job.Iterations, Evaluations: job.Evaluations,
 		Termination: job.Termination, Elapsed: elapsed.Seconds(), CPS: cps,
 		StartTime: job.StartTime, EndTime: job.EndTime, Error: job.Error,

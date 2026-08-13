@@ -21,9 +21,11 @@ func TestTraceWriter_WriteAndRead(t *testing.T) {
 	}
 
 	// Write some entries
+	psnr, ssim := 32.5, 0.91
 	entries := []TraceEntry{
 		{Iteration: 0, Cost: 1.0, Timestamp: time.Now()},
-		{Iteration: 10, Cost: 0.8, Timestamp: time.Now()},
+		{Iteration: 10, Cost: 0.8, PSNR: &psnr, SSIM: &ssim, Timestamp: time.Now()},
+		{Iteration: 15, Cost: 0, PSNRInfinite: true, Timestamp: time.Now()},
 		{Iteration: 20, Cost: 0.6, Timestamp: time.Now(), Params: []float64{1, 2, 3}},
 		{Iteration: 30, Cost: 0.4, Timestamp: time.Now()},
 	}
@@ -72,6 +74,15 @@ func TestTraceWriter_WriteAndRead(t *testing.T) {
 		}
 		if len(entry.Params) != len(entries[i].Params) {
 			t.Errorf("Entry %d: expected %d params, got %d", i, len(entries[i].Params), len(entry.Params))
+		}
+		if entry.PSNRInfinite != entries[i].PSNRInfinite || (entry.PSNR == nil) != (entries[i].PSNR == nil) || (entry.SSIM == nil) != (entries[i].SSIM == nil) {
+			t.Errorf("Entry %d metric availability mismatch: got %+v want %+v", i, entry, entries[i])
+		}
+		if entry.PSNR != nil && *entry.PSNR != *entries[i].PSNR {
+			t.Errorf("Entry %d PSNR = %v, want %v", i, *entry.PSNR, *entries[i].PSNR)
+		}
+		if entry.SSIM != nil && *entry.SSIM != *entries[i].SSIM {
+			t.Errorf("Entry %d SSIM = %v, want %v", i, *entry.SSIM, *entries[i].SSIM)
 		}
 	}
 }

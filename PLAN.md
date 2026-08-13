@@ -827,22 +827,17 @@ rejects unsupported values. Unit, image-generation, endpoint, and rendered-UI
 tests cover the behavior, and `docs/difference-heatmaps.md` documents the scale,
 palette tradeoffs, API, and artifact default.
 
-### Task 12.3: Add Advanced Metrics (PSNR, Optional SSIM)
-- [ ] Implement PSNR (Peak Signal-to-Noise Ratio) calculation
-  - [ ] Create `internal/fit/metrics.go`
-  - [ ] Formula: PSNR = 20 * log10(255 / sqrt(MSE))
-  - [ ] Add to job status response
-  - [ ] Display in UI metrics panel
-- [ ] Implement optional SSIM (Structural Similarity Index)
-  - [ ] Add `--enable-ssim` flag (off by default due to cost)
-  - [ ] Implement SSIM calculation over RGB channels
-  - [ ] Add to job status response (if enabled)
-  - [ ] Display in UI metrics panel (if available)
-- [ ] Add metrics history tracking
-  - [ ] Store metrics over time in trace.jsonl
-  - [ ] Display metrics evolution in UI
-- [ ] Write tests for metric calculations
-- [ ] Document metrics interpretation and usage
+### Task 12.3: Add Advanced Metrics (PSNR, Optional SSIM) ✅
+
+Completed: PSNR is derived from the optimizer's RGB MSE and reported by CLI,
+status API, SSE, trace history, and the detail page, with perfect matches encoded
+as `psnr: null` plus `psnrInfinite: true`. Optional SSIM uses an 11×11 Gaussian
+window over RGB, remains off by default, and is sampled initially, at most once
+per second following improvement, and finally. The UI provides live metric cards
+and bounded selectable Cost/PSNR/SSIM history, while `trace.jsonl` retains the
+full persistent history when tracing is enabled. Calculation, configuration,
+lifecycle, serialization, UI, and cadence tests cover the feature; formulas and
+interpretation are documented in `docs/advanced-quality-metrics.md`.
 
 ### Task 12.4: Add Parameter Inspection Tooltip
 - [ ] Display current best parameters in UI

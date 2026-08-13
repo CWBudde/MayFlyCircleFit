@@ -134,10 +134,20 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	start := time.Now()
 	baseIterations, baseEvaluations := job.Iterations, job.Evaluations
 	initialCost := job.InitialCost
+	metricCost := job.BestCost
+	metricParams := append([]float64(nil), job.BestParams...)
 	if len(job.BestParams) == 0 {
-		initialCost = rend.Cost(make([]float64, job.Config.Circles*7))
+		metricParams = make([]float64, job.Config.Circles*7)
+		initialCost = rend.Cost(metricParams)
+		metricCost = initialCost
 		_ = jm.UpdateJob(jobID, func(live *Job) { live.InitialCost = initialCost })
 	}
+	var initialSSIM *float64
+	if job.Config.EnableSSIM {
+		initialSSIM = calculateSSIM(rend.Render(metricParams), ref, jobID)
+	}
+	initialSample := qualitySample(baseIterations, metricCost, initialSSIM, start)
+	_ = jm.RecordMetrics(jobID, initialSample)
 
 	var traceWriter *store.TraceWriter
 	if job.Config.EnableTrace {
@@ -155,10 +165,15 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 				slog.Warn("Failed to close trace", "job_id", jobID, "error", closeErr)
 			}
 		}()
-		_ = traceWriter.Write(store.TraceEntry{Iteration: baseIterations, Cost: initialCost, Timestamp: start})
+		_ = traceWriter.Write(traceEntry(initialSample))
 	}
 
 	nextBroadcast := start
+	lastSSIMAt := start
+	lastSSIMCost := metricCost
+	if job.Config.EnableSSIM && initialSSIM == nil {
+		lastSSIMCost = math.Inf(1)
+	}
 	nextCheckpoint := time.Time{}
 	if job.Config.CheckpointInterval > 0 {
 		nextCheckpoint = start.Add(time.Duration(job.Config.CheckpointInterval) * time.Second)
@@ -170,8 +185,18 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 			return
 		}
 		now := time.Now()
+		shouldBroadcast := !now.Before(nextBroadcast)
+		var sampledSSIM *float64
+		if shouldBroadcast && job.Config.EnableSSIM && shouldSampleSSIM(now, lastSSIMAt, progress.BestCost, lastSSIMCost) {
+			sampledSSIM = calculateSSIM(rend.Render(progress.BestParams), ref, jobID)
+			lastSSIMAt = now
+			if sampledSSIM != nil {
+				lastSSIMCost = progress.BestCost
+			}
+		}
+		sample := qualitySample(iterations, progress.BestCost, sampledSSIM, now)
 		if traceWriter != nil {
-			_ = traceWriter.Write(store.TraceEntry{Iteration: iterations, Cost: progress.BestCost, Timestamp: now})
+			_ = traceWriter.Write(traceEntry(sample))
 		}
 		if !now.Before(nextCheckpoint) && checkpointStore != nil && !nextCheckpoint.IsZero() {
 			if err := saveCheckpoint(jm, checkpointStore, rend, jobID); err != nil {
@@ -179,15 +204,17 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 			}
 			nextCheckpoint = now.Add(time.Duration(job.Config.CheckpointInterval) * time.Second)
 		}
-		if !now.Before(nextBroadcast) {
+		if shouldBroadcast {
 			elapsed := now.Sub(start).Seconds()
 			cps := 0.0
 			if elapsed > 0 {
 				cps = float64(evaluations*job.Config.Circles) / elapsed
 			}
+			_ = jm.RecordMetrics(jobID, sample)
 			jm.broadcaster.Broadcast(ProgressEvent{
 				JobID: jobID, State: StateRunning, Iterations: iterations,
-				BestCost: progress.BestCost, CPS: cps, Timestamp: now,
+				BestCost: progress.BestCost, PSNR: cloneFloat(sample.PSNR),
+				PSNRInfinite: sample.PSNRInfinite, SSIM: cloneFloat(sample.SSIM), CPS: cps, Timestamp: now,
 			})
 			nextBroadcast = now.Add(500 * time.Millisecond)
 		}
@@ -257,13 +284,20 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	if err := jm.CompleteJob(jobID, iterations, evaluations, result.BestParams, result.BestCost, initialCost, string(result.Termination)); err != nil {
 		return err
 	}
+	completedAt := time.Now()
+	var finalSSIM *float64
+	if job.Config.EnableSSIM && result.BestImage != nil {
+		finalSSIM = calculateSSIM(result.BestImage, ref, jobID)
+	}
+	finalSample := qualitySample(iterations, result.BestCost, finalSSIM, completedAt)
+	_ = jm.RecordMetrics(jobID, finalSample)
 	if len(circleData) > 0 {
 		if err := checkpointStore.SaveCircleData(jobID, circleData); err != nil {
 			slog.Warn("Failed to save circle metadata", "job_id", jobID, "error", err)
 		}
 	}
 	if traceWriter != nil {
-		_ = traceWriter.Write(store.TraceEntry{Iteration: iterations, Cost: result.BestCost, Timestamp: time.Now()})
+		_ = traceWriter.Write(traceEntry(finalSample))
 		_ = traceWriter.Flush()
 	}
 	if checkpointStore != nil && job.Config.CheckpointInterval > 0 {
@@ -283,7 +317,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	}
 	jm.broadcaster.Broadcast(ProgressEvent{
 		JobID: jobID, State: StateCompleted, Iterations: iterations,
-		BestCost: result.BestCost, CPS: cps, Timestamp: time.Now(),
+		BestCost: result.BestCost, PSNR: cloneFloat(finalSample.PSNR),
+		PSNRInfinite: finalSample.PSNRInfinite, SSIM: cloneFloat(finalSample.SSIM), CPS: cps, Timestamp: completedAt,
 	})
 	slog.Info("Job completed", "job_id", jobID, "iterations", iterations, "evaluations", evaluations, "best_cost", result.BestCost)
 	return nil

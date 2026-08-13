@@ -124,6 +124,28 @@ func TestNormalizeLeavesEarlyStopDisabled(t *testing.T) {
 	}
 }
 
+func TestSSIMIsOptInAndSerializedWhenEnabled(t *testing.T) {
+	config, err := Normalize(JobConfig{RefPath: "reference.png"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.EnableSSIM || strings.Contains(string(data), "enableSSIM") {
+		t.Fatalf("SSIM should be disabled and omitted by default: %s", data)
+	}
+	config.EnableSSIM = true
+	data, err = json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"enableSSIM":true`) {
+		t.Fatalf("enabled SSIM was not serialized: %s", data)
+	}
+}
+
 // TestDefaultConfigJSONOmitsEarlyStopFields proves the persisted bytes for a
 // default job are unchanged, so existing checkpoints round-trip identically.
 func TestDefaultConfigJSONOmitsEarlyStopFields(t *testing.T) {

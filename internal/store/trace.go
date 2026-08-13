@@ -12,10 +12,13 @@ import (
 
 // TraceEntry represents a single entry in the cost history trace.
 type TraceEntry struct {
-	Iteration int       `json:"iteration"`
-	Cost      float64   `json:"cost"`
-	Timestamp time.Time `json:"timestamp"`
-	Params    []float64 `json:"params,omitempty"`
+	Iteration    int       `json:"iteration"`
+	Cost         float64   `json:"cost"`
+	PSNR         *float64  `json:"psnr"`
+	PSNRInfinite bool      `json:"psnrInfinite,omitempty"`
+	SSIM         *float64  `json:"ssim,omitempty"`
+	Timestamp    time.Time `json:"timestamp"`
+	Params       []float64 `json:"params,omitempty"`
 }
 
 // TraceWriter writes buffered JSONL entries and is safe for concurrent use.

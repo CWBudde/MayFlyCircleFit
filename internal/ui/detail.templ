@@ -5,27 +5,40 @@ import (
 	"time"
 )
 
+type MetricSample struct {
+	Iteration    int      `json:"iteration"`
+	Cost         float64  `json:"cost"`
+	PSNR         *float64 `json:"psnr"`
+	PSNRInfinite bool     `json:"psnrInfinite,omitempty"`
+	SSIM         *float64 `json:"ssim,omitempty"`
+}
+
 // JobDetail represents a job in the detail view
 type JobDetail struct {
-	ID          string
-	State       string
-	RefPath     string
-	Mode        string
-	Circles     int
-	Iterations  int
-	MaxIters    int
-	PopSize     int
-	BestCost    float64
-	InitialCost float64
-	StartTime   time.Time
-	EndTime     *time.Time
-	ElapsedSec  float64
-	CPS         float64
-	Termination string
-	Error       string
-	RefWidth    int
-	RefHeight   int
-	RefSize     int64
+	ID            string
+	State         string
+	RefPath       string
+	Mode          string
+	Circles       int
+	Iterations    int
+	MaxIters      int
+	PopSize       int
+	BestCost      float64
+	InitialCost   float64
+	StartTime     time.Time
+	EndTime       *time.Time
+	ElapsedSec    float64
+	CPS           float64
+	Termination   string
+	Error         string
+	RefWidth      int
+	RefHeight     int
+	RefSize       int64
+	PSNR          *float64
+	PSNRInfinite  bool
+	SSIM          *float64
+	SSIMEnabled   bool
+	MetricHistory []MetricSample
 }
 
 // JobDetailPage displays detailed view of a single job
@@ -65,16 +78,23 @@ templ JobDetailPage(job JobDetail) {
 				</h2>
 				if job.State == "running" || job.State == "completed" {
 					<button id="sparkline-toggle" class="btn" style="font-size: 0.875rem; padding: 0.25rem 0.75rem; background-color: var(--border-color);">
-						Show Chart
+						Show History
 					</button>
 				}
 			</div>
-			<!-- Cost Sparkline (initially hidden) -->
+			<!-- Metric history sparkline (initially hidden) -->
 			<div id="cost-sparkline-container" style="display: none; margin-bottom: 1.5rem; padding: 1rem; background-color: var(--bg-color); border-radius: 0.375rem;">
 				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-					<div style="font-size: 0.875rem; font-weight: 600; color: var(--text-muted);">
-						Cost History
-					</div>
+					<label for="metric-history-series" style="font-size: 0.875rem; font-weight: 600; color: var(--text-muted);">
+						Metric History
+						<select id="metric-history-series" style="margin-left: 0.5rem; padding: 0.2rem 0.4rem; border: 1px solid var(--border-color); border-radius: 0.25rem; background: white;">
+							<option value="cost">Cost</option>
+							<option value="psnr">PSNR</option>
+							if job.SSIMEnabled {
+								<option value="ssim">SSIM</option>
+							}
+						</select>
+					</label>
 					<div id="sparkline-stats" style="font-size: 0.75rem; color: var(--text-muted);">
 						<span id="sparkline-samples">0</span> samples
 					</div>
@@ -86,7 +106,7 @@ templ JobDetailPage(job JobDetail) {
 				<div style="display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">
 					<span>Start: <span id="sparkline-start">-</span></span>
 					<span>Current: <span id="sparkline-current">-</span></span>
-					<span>Min: <span id="sparkline-min">-</span></span>
+					<span><span id="sparkline-best-label">Min</span>: <span id="sparkline-min">-</span></span>
 				</div>
 			</div>
 			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem;">
@@ -103,6 +123,42 @@ templ JobDetailPage(job JobDetail) {
 						</div>
 					}
 				</div>
+				<div>
+					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+						PSNR
+					</div>
+					<div style="font-size: 1.5rem; font-weight: 600;">
+						<span data-metric="psnr">
+							if job.PSNRInfinite {
+								∞
+							} else if job.PSNR != nil {
+								{ fmt.Sprintf("%.2f", *job.PSNR) }
+							} else {
+								—
+							}
+						</span> dB
+					</div>
+					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+						Higher is better
+					</div>
+				</div>
+				if job.SSIMEnabled {
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+							SSIM
+						</div>
+						<div style="font-size: 1.5rem; font-weight: 600;" data-metric="ssim">
+							if job.SSIM != nil {
+								{ fmt.Sprintf("%.4f", *job.SSIM) }
+							} else {
+								Calculating…
+							}
+						</div>
+						<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+							Structural similarity, higher is better
+						</div>
+					</div>
+				}
 				<div>
 					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
 						Iterations
@@ -463,62 +519,92 @@ templ JobDetailPage(job JobDetail) {
 				</div>
 			</div>
 		</div>
+		@templ.JSONScript("metric-history-data", job.MetricHistory)
 		<!-- SSE for live updates -->
 		<script>
-			(function() {
-				const jobId = '{ job.ID }';
-				const jobState = '{ job.State }';
-				const viewStorageKey = 'mayflycirclefit.viewMode';
-				const viewModes = ['reference', 'best', 'side-by-side', 'difference'];
+			(function () {
+				const jobId = "{ job.ID }";
+				const jobState = "{ job.State }";
+				const viewStorageKey = "mayflycirclefit.viewMode";
+				const viewModes = ["reference", "best", "side-by-side", "difference"];
 				const shortcutViews = {
-					'1': 'reference',
-					'2': 'best',
-					'3': 'side-by-side',
-					'4': 'difference'
+					1: "reference",
+					2: "best",
+					3: "side-by-side",
+					4: "difference",
 				};
 
 				initializeViewMode();
-				initializeImageState('reference-image', 'reference-image-loading', 'reference-image-error');
-				initializeImageState('best-image', 'best-image-loading', 'best-image-error');
-				initializeImageState('diff-image', 'diff-image-loading', 'diff-image-error');
+				initializeImageState(
+					"reference-image",
+					"reference-image-loading",
+					"reference-image-error",
+				);
+				initializeImageState(
+					"best-image",
+					"best-image-loading",
+					"best-image-error",
+				);
+				initializeImageState(
+					"diff-image",
+					"diff-image-loading",
+					"diff-image-error",
+				);
 				initializeHeatmapColormap();
 
-				// Cost history for sparkline (bounded to 100 samples)
-				const costHistory = [];
+				// Bounded server-seeded quality history for the selectable sparkline.
 				const MAX_SAMPLES = 100;
-
-				// Initialize with current cost if available
-				if ({ fmt.Sprintf("%.4f", job.BestCost) } > 0) {
-					costHistory.push({ fmt.Sprintf("%.4f", job.BestCost) });
+				let metricHistory = [];
+				const historyData = document.getElementById("metric-history-data");
+				if (historyData) {
+					try {
+						metricHistory = JSON.parse(historyData.textContent) || [];
+					} catch (err) {
+						console.error("Unable to parse metric history:", err);
+					}
 				}
+				metricHistory = metricHistory.slice(-MAX_SAMPLES);
 
 				// Sparkline toggle
-				const toggleBtn = document.getElementById('sparkline-toggle');
-				const sparklineContainer = document.getElementById('cost-sparkline-container');
+				const toggleBtn = document.getElementById("sparkline-toggle");
+				const sparklineContainer = document.getElementById(
+					"cost-sparkline-container",
+				);
+				const metricSeries = document.getElementById("metric-history-series");
 				let sparklineVisible = false;
 
 				if (toggleBtn) {
-					toggleBtn.addEventListener('click', function() {
+					toggleBtn.addEventListener("click", function () {
 						sparklineVisible = !sparklineVisible;
-						sparklineContainer.style.display = sparklineVisible ? 'block' : 'none';
-						toggleBtn.textContent = sparklineVisible ? 'Hide Chart' : 'Show Chart';
-						if (sparklineVisible && costHistory.length > 0) {
+						sparklineContainer.style.display = sparklineVisible
+							? "block"
+							: "none";
+						toggleBtn.textContent = sparklineVisible
+							? "Hide History"
+							: "Show History";
+						if (sparklineVisible) {
 							updateSparkline();
 						}
 					});
 				}
+				if (metricSeries) {
+					metricSeries.addEventListener("change", updateSparkline);
+				}
+				window.addEventListener("resize", function () {
+					if (sparklineVisible) updateSparkline();
+				});
 
 				function initializeViewMode() {
 					const controls = document.querySelectorAll('input[name="view-mode"]');
-					controls.forEach(function(control) {
-						control.addEventListener('change', function() {
+					controls.forEach(function (control) {
+						control.addEventListener("change", function () {
 							if (control.checked) {
 								applyViewMode(control.value, true);
 							}
 						});
 					});
 
-					let initialMode = 'side-by-side';
+					let initialMode = "side-by-side";
 					try {
 						const storedMode = window.localStorage.getItem(viewStorageKey);
 						if (viewModes.includes(storedMode)) {
@@ -529,12 +615,22 @@ templ JobDetailPage(job JobDetail) {
 					}
 					applyViewMode(initialMode, false);
 
-					document.addEventListener('keydown', function(event) {
-						if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+					document.addEventListener("keydown", function (event) {
+						if (
+							event.defaultPrevented ||
+							event.altKey ||
+							event.ctrlKey ||
+							event.metaKey ||
+							event.shiftKey
+						) {
 							return;
 						}
 						const target = event.target;
-						if (target && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName))) {
+						if (
+							target &&
+							(target.isContentEditable ||
+								["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName))
+						) {
 							return;
 						}
 						const mode = shortcutViews[event.key];
@@ -548,14 +644,16 @@ templ JobDetailPage(job JobDetail) {
 
 				function applyViewMode(mode, persist) {
 					if (!viewModes.includes(mode)) {
-						mode = 'side-by-side';
+						mode = "side-by-side";
 					}
-					const viewer = document.getElementById('image-viewer');
+					const viewer = document.getElementById("image-viewer");
 					if (!viewer) {
 						return;
 					}
 					viewer.dataset.viewMode = mode;
-					const control = document.querySelector('input[name="view-mode"][value="' + mode + '"]');
+					const control = document.querySelector(
+						'input[name="view-mode"][value="' + mode + '"]',
+					);
 					if (control) {
 						control.checked = true;
 					}
@@ -569,131 +667,176 @@ templ JobDetailPage(job JobDetail) {
 				}
 
 				// Only connect SSE if job is running or pending
-				if (jobState === 'running' || jobState === 'pending') {
-					const eventSource = new EventSource('/api/v1/jobs/' + jobId + '/stream');
+				if (jobState === "running" || jobState === "pending") {
+					const eventSource = new EventSource(
+						"/api/v1/jobs/" + jobId + "/stream",
+					);
 
-					eventSource.onmessage = function(event) {
+					eventSource.onmessage = function (event) {
 						const data = JSON.parse(event.data);
 
 						// Update metrics
-						updateMetric('best-cost', data.bestCost.toFixed(4));
-						updateMetric('iterations', data.iterations);
-						updateMetric('cps', formatNumber(data.cps));
+						updateMetric("best-cost", data.bestCost.toFixed(4));
+						updateMetric("iterations", data.iterations);
+						updateMetric("cps", formatNumber(data.cps));
+						if (data.psnrInfinite) {
+							updateMetric("psnr", "∞");
+						} else if (typeof data.psnr === "number") {
+							updateMetric("psnr", data.psnr.toFixed(2));
+						}
+						if (typeof data.ssim === "number") {
+							updateMetric("ssim", data.ssim.toFixed(4));
+						}
 
-						// Add to cost history
-						addCostSample(data.bestCost);
+						addMetricSample(data);
 
 						// If job completed, reload to update images
-						if (data.state === 'completed' || data.state === 'failed' || data.state === 'cancelled') {
+						if (
+							data.state === "completed" ||
+							data.state === "failed" ||
+							data.state === "cancelled"
+						) {
 							eventSource.close();
 							location.reload();
 						} else {
 							// Refresh images with cache busting and loading states
 							const timestamp = new Date().getTime();
-							refreshImage('best-image', 'best-image-loading', jobId, 'best.png', timestamp);
-							refreshImage('diff-image', 'diff-image-loading', jobId, 'diff.png', timestamp, selectedHeatmapColormap());
+							refreshImage(
+								"best-image",
+								"best-image-loading",
+								jobId,
+								"best.png",
+								timestamp,
+							);
+							refreshImage(
+								"diff-image",
+								"diff-image-loading",
+								jobId,
+								"diff.png",
+								timestamp,
+								selectedHeatmapColormap(),
+							);
 						}
 					};
 
-					eventSource.onerror = function(err) {
-						console.error('SSE connection error:', err);
+					eventSource.onerror = function (err) {
+						console.error("SSE connection error:", err);
 						eventSource.close();
 						// Fallback to polling after 5 seconds
-						setTimeout(function() {
+						setTimeout(function () {
 							location.reload();
 						}, 5000);
 					};
 				}
 
 				function updateMetric(id, value) {
-					const elements = document.querySelectorAll('[data-metric="' + id + '"]');
-					elements.forEach(function(el) {
+					const elements = document.querySelectorAll(
+						'[data-metric="' + id + '"]',
+					);
+					elements.forEach(function (el) {
 						el.textContent = value;
 					});
 				}
 
 				function formatNumber(n) {
 					if (n >= 1000000) {
-						return (n / 1000000).toFixed(1) + 'M';
+						return (n / 1000000).toFixed(1) + "M";
 					} else if (n >= 1000) {
-						return (n / 1000).toFixed(1) + 'K';
+						return (n / 1000).toFixed(1) + "K";
 					} else {
 						return Math.round(n).toString();
 					}
 				}
 
-				function refreshImage(imgId, loadingId, jobId, filename, timestamp, colormap) {
+				function refreshImage(
+					imgId,
+					loadingId,
+					jobId,
+					filename,
+					timestamp,
+					colormap,
+				) {
 					const img = document.getElementById(imgId);
 					const loading = document.getElementById(loadingId);
-					const error = document.getElementById(imgId + '-error');
+					const error = document.getElementById(imgId + "-error");
 
 					if (!img) return;
 
 					// Keep the last successful image visible while preloading its replacement.
 					if (loading) {
-						loading.style.display = 'block';
+						loading.style.display = "block";
 					}
 					if (img.naturalWidth > 0) {
-						img.style.display = 'block';
-						img.style.opacity = '0.5';
+						img.style.display = "block";
+						img.style.opacity = "0.5";
 					}
 
 					// Create new image to preload
 					const newImg = new Image();
-					newImg.onload = function() {
+					newImg.onload = function () {
 						img.src = newImg.src;
-						img.style.display = 'block';
-						img.style.opacity = '1';
+						img.style.display = "block";
+						img.style.opacity = "1";
 						if (loading) {
-							loading.style.display = 'none';
+							loading.style.display = "none";
 						}
 						if (error) {
-							error.style.display = 'none';
+							error.style.display = "none";
 						}
 					};
-					newImg.onerror = function() {
+					newImg.onerror = function () {
 						// Keep a prior successful image; otherwise retain the empty-state message.
-						img.style.opacity = '1';
+						img.style.opacity = "1";
 						if (loading) {
-							loading.style.display = 'none';
+							loading.style.display = "none";
 						}
 						if (img.naturalWidth === 0) {
 							showImageError(img, error);
 						}
 					};
-					let imageURL = '/api/v1/jobs/' + jobId + '/' + filename + '?t=' + timestamp;
+					let imageURL =
+						"/api/v1/jobs/" + jobId + "/" + filename + "?t=" + timestamp;
 					if (colormap) {
-						imageURL += '&colormap=' + encodeURIComponent(colormap);
+						imageURL += "&colormap=" + encodeURIComponent(colormap);
 					}
 					newImg.src = imageURL;
 				}
 
 				function initializeHeatmapColormap() {
-					const select = document.getElementById('heatmap-colormap');
+					const select = document.getElementById("heatmap-colormap");
 					if (!select) {
 						return;
 					}
-					select.addEventListener('change', function() {
+					select.addEventListener("change", function () {
 						updateHeatmapLegend(select.value);
-						refreshImage('diff-image', 'diff-image-loading', jobId, 'diff.png', Date.now(), select.value);
+						refreshImage(
+							"diff-image",
+							"diff-image-loading",
+							jobId,
+							"diff.png",
+							Date.now(),
+							select.value,
+						);
 					});
 					updateHeatmapLegend(select.value);
 				}
 
 				function selectedHeatmapColormap() {
-					const select = document.getElementById('heatmap-colormap');
-					return select ? select.value : 'turbo';
+					const select = document.getElementById("heatmap-colormap");
+					return select ? select.value : "turbo";
 				}
 
 				function updateHeatmapLegend(colormap) {
-					const gradient = document.getElementById('heatmap-legend-gradient');
+					const gradient = document.getElementById("heatmap-legend-gradient");
 					if (!gradient) {
 						return;
 					}
-					if (colormap === 'magma') {
-						gradient.style.background = 'linear-gradient(90deg, #000004, #180f3d, #3d0f70, #65156e, #8c2961, #b7374b, #de492f, #f67019, #fda50a, #f9dc5c, #fcfdbf)';
+					if (colormap === "magma") {
+						gradient.style.background =
+							"linear-gradient(90deg, #000004, #180f3d, #3d0f70, #65156e, #8c2961, #b7374b, #de492f, #f67019, #fda50a, #f9dc5c, #fcfdbf)";
 					} else {
-						gradient.style.background = 'linear-gradient(90deg, #23171b, #4145ab, #2aa7d6, #49df75, #d5e21a, #f68513, #900c00)';
+						gradient.style.background =
+							"linear-gradient(90deg, #23171b, #4145ab, #2aa7d6, #49df75, #d5e21a, #f68513, #900c00)";
 					}
 				}
 
@@ -704,20 +847,20 @@ templ JobDetailPage(job JobDetail) {
 					if (!img) {
 						return;
 					}
-					img.addEventListener('load', function() {
-						img.style.display = 'block';
-						img.style.opacity = '1';
-						if (loading) loading.style.display = 'none';
-						if (error) error.style.display = 'none';
+					img.addEventListener("load", function () {
+						img.style.display = "block";
+						img.style.opacity = "1";
+						if (loading) loading.style.display = "none";
+						if (error) error.style.display = "none";
 					});
-					img.addEventListener('error', function() {
-						if (loading) loading.style.display = 'none';
+					img.addEventListener("error", function () {
+						if (loading) loading.style.display = "none";
 						showImageError(img, error);
 					});
 					if (img.complete) {
 						if (img.naturalWidth > 0) {
-							img.style.display = 'block';
-							if (error) error.style.display = 'none';
+							img.style.display = "block";
+							if (error) error.style.display = "none";
 						} else {
 							showImageError(img, error);
 						}
@@ -725,68 +868,104 @@ templ JobDetailPage(job JobDetail) {
 				}
 
 				function showImageError(img, error) {
-					img.style.display = 'none';
+					img.style.display = "none";
 					if (error) {
-						error.style.display = 'block';
+						error.style.display = "block";
 					}
 				}
 
-				function addCostSample(cost) {
-					// Add new sample
-					costHistory.push(cost);
+				function addMetricSample(data) {
+					metricHistory.push({
+						iteration: data.iterations,
+						cost: data.bestCost,
+						psnr: typeof data.psnr === "number" ? data.psnr : null,
+						psnrInfinite: data.psnrInfinite === true,
+						ssim: typeof data.ssim === "number" ? data.ssim : null,
+					});
+					if (metricHistory.length > MAX_SAMPLES) metricHistory.shift();
+					if (sparklineVisible) updateSparkline();
+				}
 
-					// Keep only last MAX_SAMPLES
-					if (costHistory.length > MAX_SAMPLES) {
-						costHistory.shift();
-					}
+				function selectedMetricValues() {
+					const series = metricSeries ? metricSeries.value : "cost";
+					return {
+						series: series,
+						values: metricHistory
+							.map(function (sample) {
+								const value = sample[series];
+								return typeof value === "number" && Number.isFinite(value)
+									? value
+									: null;
+							})
+							.filter(function (value) {
+								return value !== null;
+							}),
+					};
+				}
 
-					// Update sparkline if visible
-					if (sparklineVisible) {
-						updateSparkline();
-					}
+				function formatMetricValue(series, value) {
+					if (series === "psnr") return value.toFixed(2) + " dB";
+					return value.toFixed(4);
 				}
 
 				function updateSparkline() {
-					if (costHistory.length < 2) return;
-
-					const svg = document.getElementById('cost-sparkline');
-					const line = document.getElementById('sparkline-line');
-					const dot = document.getElementById('sparkline-dot');
-
+					const svg = document.getElementById("cost-sparkline");
+					const line = document.getElementById("sparkline-line");
+					const dot = document.getElementById("sparkline-dot");
 					if (!svg || !line) return;
+					const selected = selectedMetricValues();
+					const values = selected.values;
+					document.getElementById("sparkline-samples").textContent =
+						values.length;
+					document.getElementById("sparkline-best-label").textContent =
+						selected.series === "cost" ? "Min" : "Max";
+					if (values.length === 0) {
+						line.setAttribute("points", "");
+						dot.style.display = "none";
+						document.getElementById("sparkline-start").textContent = "-";
+						document.getElementById("sparkline-current").textContent = "-";
+						document.getElementById("sparkline-min").textContent = "-";
+						return;
+					}
 
 					const width = svg.clientWidth;
 					const height = 80;
 					const padding = 10;
-
-					// Calculate min/max for scaling
-					const minCost = Math.min(...costHistory);
-					const maxCost = Math.max(...costHistory);
-					const range = maxCost - minCost || 1; // Prevent division by zero
-
-					// Generate points for polyline
-					const points = costHistory.map((cost, i) => {
-						const x = padding + (i / (costHistory.length - 1)) * (width - 2 * padding);
-						const y = height - padding - ((cost - minCost) / range) * (height - 2 * padding);
-						return x + ',' + y;
-					}).join(' ');
-
-					line.setAttribute('points', points);
-
-					// Position dot at last point
-					if (costHistory.length > 0) {
-						const lastX = padding + (width - 2 * padding);
-						const lastY = height - padding - ((costHistory[costHistory.length - 1] - minCost) / range) * (height - 2 * padding);
-						dot.setAttribute('cx', lastX);
-						dot.setAttribute('cy', lastY);
-						dot.style.display = 'block';
-					}
-
-					// Update stats
-					document.getElementById('sparkline-samples').textContent = costHistory.length;
-					document.getElementById('sparkline-start').textContent = costHistory[0].toFixed(4);
-					document.getElementById('sparkline-current').textContent = costHistory[costHistory.length - 1].toFixed(4);
-					document.getElementById('sparkline-min').textContent = minCost.toFixed(4);
+					const minimum = Math.min(...values);
+					const maximum = Math.max(...values);
+					const range = maximum - minimum || 1;
+					const denominator = Math.max(1, values.length - 1);
+					const points = values
+						.map((value, i) => {
+							const x = padding + (i / denominator) * (width - 2 * padding);
+							const y =
+								height -
+								padding -
+								((value - minimum) / range) * (height - 2 * padding);
+							return x + "," + y;
+						})
+						.join(" ");
+					line.setAttribute("points", points);
+					const lastValue = values[values.length - 1];
+					dot.setAttribute(
+						"cx",
+						padding +
+							((values.length - 1) / denominator) * (width - 2 * padding),
+					);
+					dot.setAttribute(
+						"cy",
+						height -
+							padding -
+							((lastValue - minimum) / range) * (height - 2 * padding),
+					);
+					dot.style.display = "block";
+					document.getElementById("sparkline-start").textContent =
+						formatMetricValue(selected.series, values[0]);
+					document.getElementById("sparkline-current").textContent =
+						formatMetricValue(selected.series, lastValue);
+					const best = selected.series === "cost" ? minimum : maximum;
+					document.getElementById("sparkline-min").textContent =
+						formatMetricValue(selected.series, best);
 				}
 			})();
 		</script>

@@ -51,3 +51,13 @@ func TestRunVariantFlagDefaultsToStandard(t *testing.T) {
 		t.Fatalf("--variant default = %q, want %q", flag.DefValue, "standard")
 	}
 }
+
+func TestRunSSIMFlagDefaultsToDisabled(t *testing.T) {
+	flag := runCmd.Flags().Lookup("enable-ssim")
+	if flag == nil {
+		t.Fatal("run command has no --enable-ssim flag")
+	}
+	if flag.DefValue != "false" {
+		t.Fatalf("--enable-ssim default = %q, want false", flag.DefValue)
+	}
+}

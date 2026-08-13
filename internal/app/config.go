@@ -68,6 +68,7 @@ type JobConfig struct {
 	TraceInterval        int     `json:"traceInterval,omitempty"`
 	EnableTrace          bool    `json:"enableTrace,omitempty"`
 	DisableTrace         bool    `json:"disableTrace,omitempty"`
+	EnableSSIM           bool    `json:"enableSSIM,omitempty"`
 	SaveSnapshots        bool    `json:"saveSnapshots,omitempty"`
 	ConvergenceEnabled   bool    `json:"convergenceEnabled,omitempty"`
 	DisableConvergence   bool    `json:"disableConvergence,omitempty"`

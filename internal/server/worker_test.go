@@ -12,6 +12,7 @@ import (
 
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
 
 func TestRendererForJobConfiguresThreads(t *testing.T) {
@@ -71,6 +72,49 @@ func TestRunJob_Success(t *testing.T) {
 
 	// Note: Iterations tracking will be added in a future enhancement
 	// For now, just verify the job completed successfully
+}
+
+func TestRunJobRecordsPSNRAndOptionalSSIM(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.png")
+	createTestImage(t, imgPath)
+	persistence, err := store.NewFSStore(filepath.Join(tmpDir, "artifacts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jm := NewJobManager()
+	job := jm.CreateJob(JobConfig{
+		RefPath: imgPath, Mode: "joint", Circles: 2, Iters: 5, PopSize: 20, Seed: 42,
+		EnableTrace: true, EnableSSIM: true,
+	})
+	if err := runJob(context.Background(), jm, persistence, job.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	completed, _ := jm.GetJob(job.ID)
+	if completed.PSNR == nil || completed.PSNRInfinite || completed.SSIM == nil {
+		t.Fatalf("completed metrics unavailable: PSNR=%v infinite=%v SSIM=%v", completed.PSNR, completed.PSNRInfinite, completed.SSIM)
+	}
+	if len(completed.MetricHistory) < 2 || completed.MetricHistory[len(completed.MetricHistory)-1].SSIM == nil {
+		t.Fatalf("metric history missing initial/final samples: %+v", completed.MetricHistory)
+	}
+
+	reader, err := persistence.NewTraceReader(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	entries, err := reader.ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) < 2 || entries[0].PSNR == nil || entries[0].SSIM == nil {
+		t.Fatalf("initial trace metrics unavailable: %+v", entries)
+	}
+	last := entries[len(entries)-1]
+	if last.PSNR == nil || last.SSIM == nil {
+		t.Fatalf("final trace metrics unavailable: %+v", last)
+	}
 }
 
 func TestRunJob_InvalidImage(t *testing.T) {

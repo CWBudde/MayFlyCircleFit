@@ -82,28 +82,44 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	refWidth, refHeight, refSize, _ := referenceImageMetadata(job.Config.RefPath)
+	psnr, psnrInfinite := cloneFloat(job.PSNR), job.PSNRInfinite
+	if len(job.BestParams) > 0 {
+		psnr, psnrInfinite = serializablePSNR(job.BestCost)
+	}
+	metricHistory := make([]ui.MetricSample, len(job.MetricHistory))
+	for i, sample := range job.MetricHistory {
+		metricHistory[i] = ui.MetricSample{
+			Iteration: sample.Iteration, Cost: sample.Cost, PSNR: cloneFloat(sample.PSNR),
+			PSNRInfinite: sample.PSNRInfinite, SSIM: cloneFloat(sample.SSIM),
+		}
+	}
 
 	// Convert to UI job detail
 	jobDetail := ui.JobDetail{
-		ID:          job.ID,
-		State:       string(job.State),
-		RefPath:     job.Config.RefPath,
-		Mode:        string(job.Config.Mode),
-		Circles:     job.Config.Circles,
-		Iterations:  job.Iterations,
-		MaxIters:    job.Config.Iters,
-		PopSize:     job.Config.PopSize,
-		BestCost:    job.BestCost,
-		InitialCost: job.InitialCost,
-		StartTime:   job.StartTime,
-		EndTime:     job.EndTime,
-		ElapsedSec:  elapsed,
-		CPS:         cps,
-		Termination: job.Termination,
-		Error:       job.Error,
-		RefWidth:    refWidth,
-		RefHeight:   refHeight,
-		RefSize:     refSize,
+		ID:            job.ID,
+		State:         string(job.State),
+		RefPath:       job.Config.RefPath,
+		Mode:          string(job.Config.Mode),
+		Circles:       job.Config.Circles,
+		Iterations:    job.Iterations,
+		MaxIters:      job.Config.Iters,
+		PopSize:       job.Config.PopSize,
+		BestCost:      job.BestCost,
+		InitialCost:   job.InitialCost,
+		StartTime:     job.StartTime,
+		EndTime:       job.EndTime,
+		ElapsedSec:    elapsed,
+		CPS:           cps,
+		Termination:   job.Termination,
+		Error:         job.Error,
+		RefWidth:      refWidth,
+		RefHeight:     refHeight,
+		RefSize:       refSize,
+		PSNR:          psnr,
+		PSNRInfinite:  psnrInfinite,
+		SSIM:          cloneFloat(job.SSIM),
+		SSIMEnabled:   job.Config.EnableSSIM,
+		MetricHistory: metricHistory,
 	}
 
 	// Render the job detail page using templ
@@ -174,6 +190,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	convergenceEnabledStr := r.FormValue("convergenceEnabled")
 	convergencePatienceStr := r.FormValue("convergencePatience")
 	convergenceThresholdStr := r.FormValue("convergenceThreshold")
+	enableSSIM := r.FormValue("enableSSIM") == "on"
 
 	// Validate required fields
 	if refPath == "" {
@@ -274,6 +291,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		Iters:                iters,
 		PopSize:              popSize,
 		Seed:                 seed,
+		EnableSSIM:           enableSSIM,
 		ConvergenceEnabled:   convergenceEnabled,
 		DisableConvergence:   !convergenceEnabled,
 		ConvergencePatience:  convergencePatience,

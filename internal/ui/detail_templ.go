@@ -13,27 +13,40 @@ import (
 	"time"
 )
 
+type MetricSample struct {
+	Iteration    int      `json:"iteration"`
+	Cost         float64  `json:"cost"`
+	PSNR         *float64 `json:"psnr"`
+	PSNRInfinite bool     `json:"psnrInfinite,omitempty"`
+	SSIM         *float64 `json:"ssim,omitempty"`
+}
+
 // JobDetail represents a job in the detail view
 type JobDetail struct {
-	ID          string
-	State       string
-	RefPath     string
-	Mode        string
-	Circles     int
-	Iterations  int
-	MaxIters    int
-	PopSize     int
-	BestCost    float64
-	InitialCost float64
-	StartTime   time.Time
-	EndTime     *time.Time
-	ElapsedSec  float64
-	CPS         float64
-	Termination string
-	Error       string
-	RefWidth    int
-	RefHeight   int
-	RefSize     int64
+	ID            string
+	State         string
+	RefPath       string
+	Mode          string
+	Circles       int
+	Iterations    int
+	MaxIters      int
+	PopSize       int
+	BestCost      float64
+	InitialCost   float64
+	StartTime     time.Time
+	EndTime       *time.Time
+	ElapsedSec    float64
+	CPS           float64
+	Termination   string
+	Error         string
+	RefWidth      int
+	RefHeight     int
+	RefSize       int64
+	PSNR          *float64
+	PSNRInfinite  bool
+	SSIM          *float64
+	SSIMEnabled   bool
+	MetricHistory []MetricSample
 }
 
 // JobDetailPage displays detailed view of a single job
@@ -77,7 +90,7 @@ func JobDetailPage(job JobDetail) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(job.ID[:8])
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 41, Col: 18}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 54, Col: 18}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -103,7 +116,7 @@ func JobDetailPage(job JobDetail) templ.Component {
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(job.Error)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 56, Col: 16}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 69, Col: 16}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -119,351 +132,424 @@ func JobDetailPage(job JobDetail) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if job.State == "running" || job.State == "completed" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<button id=\"sparkline-toggle\" class=\"btn\" style=\"font-size: 0.875rem; padding: 0.25rem 0.75rem; background-color: var(--border-color);\">Show Chart</button>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<button id=\"sparkline-toggle\" class=\"btn\" style=\"font-size: 0.875rem; padding: 0.25rem 0.75rem; background-color: var(--border-color);\">Show History</button>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div><!-- Cost Sparkline (initially hidden) --><div id=\"cost-sparkline-container\" style=\"display: none; margin-bottom: 1.5rem; padding: 1rem; background-color: var(--bg-color); border-radius: 0.375rem;\"><div style=\"display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;\"><div style=\"font-size: 0.875rem; font-weight: 600; color: var(--text-muted);\">Cost History</div><div id=\"sparkline-stats\" style=\"font-size: 0.75rem; color: var(--text-muted);\"><span id=\"sparkline-samples\">0</span> samples</div></div><svg id=\"cost-sparkline\" width=\"100%\" height=\"80\" style=\"border: 1px solid var(--border-color); border-radius: 0.25rem; background-color: white;\"><polyline id=\"sparkline-line\" fill=\"none\" stroke=\"var(--primary-color)\" stroke-width=\"2\"></polyline> <circle id=\"sparkline-dot\" r=\"3\" fill=\"var(--primary-color)\" style=\"display: none;\"></circle></svg><div style=\"display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);\"><span>Start: <span id=\"sparkline-start\">-</span></span> <span>Current: <span id=\"sparkline-current\">-</span></span> <span>Min: <span id=\"sparkline-min\">-</span></span></div></div><div style=\"display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem;\"><div><div style=\"font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;\">Best Cost</div><div style=\"font-size: 1.5rem; font-weight: 600;\" data-metric=\"best-cost\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div><!-- Metric history sparkline (initially hidden) --><div id=\"cost-sparkline-container\" style=\"display: none; margin-bottom: 1.5rem; padding: 1rem; background-color: var(--bg-color); border-radius: 0.375rem;\"><div style=\"display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;\"><label for=\"metric-history-series\" style=\"font-size: 0.875rem; font-weight: 600; color: var(--text-muted);\">Metric History <select id=\"metric-history-series\" style=\"margin-left: 0.5rem; padding: 0.2rem 0.4rem; border: 1px solid var(--border-color); border-radius: 0.25rem; background: white;\"><option value=\"cost\">Cost</option> <option value=\"psnr\">PSNR</option> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if job.SSIMEnabled {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<option value=\"ssim\">SSIM</option>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</select></label><div id=\"sparkline-stats\" style=\"font-size: 0.75rem; color: var(--text-muted);\"><span id=\"sparkline-samples\">0</span> samples</div></div><svg id=\"cost-sparkline\" width=\"100%\" height=\"80\" style=\"border: 1px solid var(--border-color); border-radius: 0.25rem; background-color: white;\"><polyline id=\"sparkline-line\" fill=\"none\" stroke=\"var(--primary-color)\" stroke-width=\"2\"></polyline> <circle id=\"sparkline-dot\" r=\"3\" fill=\"var(--primary-color)\" style=\"display: none;\"></circle></svg><div style=\"display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);\"><span>Start: <span id=\"sparkline-start\">-</span></span> <span>Current: <span id=\"sparkline-current\">-</span></span> <span><span id=\"sparkline-best-label\">Min</span>: <span id=\"sparkline-min\">-</span></span></div></div><div style=\"display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem;\"><div><div style=\"font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;\">Best Cost</div><div style=\"font-size: 1.5rem; font-weight: 600;\" data-metric=\"best-cost\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.4f", job.BestCost))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 98, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 118, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if job.InitialCost > 0 && job.BestCost < job.InitialCost {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<div style=\"font-size: 0.75rem; color: var(--success-color); margin-top: 0.25rem;\">↓ ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div style=\"font-size: 0.75rem; color: var(--success-color); margin-top: 0.25rem;\">↓ ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", (1-job.BestCost/job.InitialCost)*100))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 102, Col: 72}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 122, Col: 72}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, " improvement</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " improvement</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div><div><div style=\"font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;\">Iterations</div><div style=\"font-size: 1.5rem; font-weight: 600;\" data-metric=\"iterations\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div><div><div style=\"font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;\">PSNR</div><div style=\"font-size: 1.5rem; font-weight: 600;\"><span data-metric=\"psnr\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var7 string
-			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", job.Iterations))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 111, Col: 41}
+			if job.PSNRInfinite {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "∞")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else if job.PSNR != nil {
+				var templ_7745c5c3_Var7 string
+				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2f", *job.PSNR))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 135, Col: 40}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "—")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</span> dB</div><div style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Higher is better</div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " ")
+			if job.SSIMEnabled {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div><div style=\"font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;\">SSIM</div><div style=\"font-size: 1.5rem; font-weight: 600;\" data-metric=\"ssim\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if job.SSIM != nil {
+					var templ_7745c5c3_Var8 string
+					templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.4f", *job.SSIM))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 152, Col: 40}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "Calculating…")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</div><div style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Structural similarity, higher is better</div></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<div><div style=\"font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;\">Iterations</div><div style=\"font-size: 1.5rem; font-weight: 600;\" data-metric=\"iterations\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var9 string
+			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", job.Iterations))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 167, Col: 41}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if job.MaxIters > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<span style=\"font-size: 1rem; color: var(--text-muted);\">/ ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<span style=\"font-size: 1rem; color: var(--text-muted);\">/ ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var8 string
-				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", job.MaxIters))
+				var templ_7745c5c3_Var10 string
+				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", job.MaxIters))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 114, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 170, Col: 43}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if job.MaxIters > 0 && job.Iterations > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<div style=\"margin-top: 0.5rem; background-color: var(--border-color); height: 4px; border-radius: 2px; overflow: hidden;\"><div style=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<div style=\"margin-top: 0.5rem; background-color: var(--border-color); height: 4px; border-radius: 2px; overflow: hidden;\"><div style=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var9 string
-				templ_7745c5c3_Var9, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("width: %.1f%%; height: 100%%; background-color: var(--primary-color);", float64(job.Iterations)/float64(job.MaxIters)*100))
+				var templ_7745c5c3_Var11 string
+				templ_7745c5c3_Var11, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("width: %.1f%%; height: 100%%; background-color: var(--primary-color);", float64(job.Iterations)/float64(job.MaxIters)*100))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 120, Col: 155}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 176, Col: 155}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\"></div></div>")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\"></div></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div><div><div style=\"font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;\">Throughput</div><div style=\"font-size: 1.5rem; font-weight: 600;\" data-metric=\"cps\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var10 string
-			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(formatNumber(job.CPS))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 129, Col: 29}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</div><div style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">circles/sec</div></div><div><div style=\"font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;\">Elapsed Time</div><div style=\"font-size: 1.5rem; font-weight: 600;\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var11 string
-			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(formatDuration(job.ElapsedSec))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 140, Col: 38}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</div><div style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div><div><div style=\"font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;\">Throughput</div><div style=\"font-size: 1.5rem; font-weight: 600;\" data-metric=\"cps\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var12 string
-			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(formatTimestamp(job.StartTime))
+			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(formatNumber(job.CPS))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 143, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 185, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</div><div style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">circles/sec</div></div><div><div style=\"font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;\">Elapsed Time</div><div style=\"font-size: 1.5rem; font-weight: 600;\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if job.Termination != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\" data-metric=\"termination\">stopped: ")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var13 string
-				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(job.Termination)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 147, Col: 33}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</div>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
+			var templ_7745c5c3_Var13 string
+			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(formatDuration(job.ElapsedSec))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 196, Col: 38}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</div></div></div><!-- Configuration Panel --> <div class=\"card\" style=\"margin-bottom: 1.5rem;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Configuration</h2><div style=\"display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;\"><div><div style=\"font-size: 0.875rem; color: var(--text-muted);\">Mode</div><div style=\"font-weight: 500; text-transform: capitalize;\">")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</div><div style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var14 string
-			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(job.Mode)
+			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(formatTimestamp(job.StartTime))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 161, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 199, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</div></div><div><div style=\"font-size: 0.875rem; color: var(--text-muted);\">Circles</div><div style=\"font-weight: 500;\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var15 string
-			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", job.Circles))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 165, Col: 68}
+			if job.Termination != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<div style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\" data-metric=\"termination\">stopped: ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var15 string
+				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(job.Termination)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 203, Col: 33}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</div></div><div><div style=\"font-size: 0.875rem; color: var(--text-muted);\">Population Size</div><div style=\"font-weight: 500;\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</div></div></div><!-- Configuration Panel --> <div class=\"card\" style=\"margin-bottom: 1.5rem;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Configuration</h2><div style=\"display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;\"><div><div style=\"font-size: 0.875rem; color: var(--text-muted);\">Mode</div><div style=\"font-weight: 500; text-transform: capitalize;\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var16 string
-			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", job.PopSize))
+			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(job.Mode)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 169, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 217, Col: 74}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div></div><div style=\"grid-column: 1 / -1;\"><div style=\"font-size: 0.875rem; color: var(--text-muted);\">Reference Image</div><div style=\"font-weight: 500; font-family: monospace; font-size: 0.875rem;\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</div></div><div><div style=\"font-size: 0.875rem; color: var(--text-muted);\">Circles</div><div style=\"font-weight: 500;\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var17 string
-			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(job.RefPath)
+			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", job.Circles))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 173, Col: 94}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 221, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</div></div></div></div><!-- Selectable image comparison views --> <style>\n\t\t\t.view-mode-selector {\n\t\t\t\tdisplay: flex;\n\t\t\t\tflex-wrap: wrap;\n\t\t\t\tgap: 0.5rem;\n\t\t\t\tborder: 0;\n\t\t\t}\n\t\t\t.view-mode-selector legend {\n\t\t\t\tposition: absolute;\n\t\t\t\twidth: 1px;\n\t\t\t\theight: 1px;\n\t\t\t\tpadding: 0;\n\t\t\t\tmargin: -1px;\n\t\t\t\toverflow: hidden;\n\t\t\t\tclip: rect(0, 0, 0, 0);\n\t\t\t\twhite-space: nowrap;\n\t\t\t\tborder: 0;\n\t\t\t}\n\t\t\t.view-mode-option {\n\t\t\t\tposition: relative;\n\t\t\t}\n\t\t\t.view-mode-option input {\n\t\t\t\tposition: absolute;\n\t\t\t\topacity: 0;\n\t\t\t\tpointer-events: none;\n\t\t\t}\n\t\t\t.view-mode-option label {\n\t\t\t\tdisplay: inline-flex;\n\t\t\t\talign-items: center;\n\t\t\t\tgap: 0.4rem;\n\t\t\t\tpadding: 0.4rem 0.7rem;\n\t\t\t\tborder: 1px solid var(--border-color);\n\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t\tfont-size: 0.875rem;\n\t\t\t\tfont-weight: 500;\n\t\t\t\tcursor: pointer;\n\t\t\t\ttransition: all 0.2s;\n\t\t\t}\n\t\t\t.view-mode-option input:checked + label {\n\t\t\t\tborder-color: var(--primary-color);\n\t\t\t\tbackground-color: #dbeafe;\n\t\t\t\tcolor: #1e40af;\n\t\t\t}\n\t\t\t.view-mode-option input:focus-visible + label {\n\t\t\t\toutline: 2px solid var(--primary-color);\n\t\t\t\toutline-offset: 2px;\n\t\t\t}\n\t\t\t.view-mode-shortcut {\n\t\t\t\tfont-family: monospace;\n\t\t\t\tfont-size: 0.75rem;\n\t\t\t\topacity: 0.75;\n\t\t\t}\n\t\t\t.image-view-panels {\n\t\t\t\tdisplay: grid;\n\t\t\t\tgrid-template-columns: minmax(0, 1fr);\n\t\t\t\tgap: 2rem;\n\t\t\t}\n\t\t\t.image-view-panel {\n\t\t\t\tdisplay: none;\n\t\t\t\tmin-width: 0;\n\t\t\t}\n\t\t\t.image-viewer[data-view-mode=\"reference\"] [data-view-panel=\"reference\"],\n\t\t\t.image-viewer[data-view-mode=\"best\"] [data-view-panel=\"best\"],\n\t\t\t.image-viewer[data-view-mode=\"difference\"] [data-view-panel=\"difference\"],\n\t\t\t.image-viewer[data-view-mode=\"side-by-side\"]\n\t\t\t\t[data-view-panel=\"reference\"],\n\t\t\t.image-viewer[data-view-mode=\"side-by-side\"] [data-view-panel=\"best\"] {\n\t\t\t\tdisplay: block;\n\t\t\t}\n\t\t\t.image-viewer[data-view-mode=\"side-by-side\"] .image-view-panels {\n\t\t\t\tgrid-template-columns: repeat(2, minmax(0, 1fr));\n\t\t\t}\n\t\t\t.image-frame {\n\t\t\t\tposition: relative;\n\t\t\t\tborder: 1px solid var(--border-color);\n\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\toverflow: hidden;\n\t\t\t\tbackground: repeating-conic-gradient(#f9fafb 0% 25%, #ffffff 0% 50%)\n\t\t\t\t\t50% / 20px 20px;\n\t\t\t}\n\t\t\t.image-frame-difference {\n\t\t\t\tbackground: #000000;\n\t\t\t}\n\t\t\t.image-frame img {\n\t\t\t\twidth: 100%;\n\t\t\t\theight: auto;\n\t\t\t\tdisplay: block;\n\t\t\t\ttransition: opacity 0.3s ease;\n\t\t\t}\n\t\t\t.image-state {\n\t\t\t\tdisplay: none;\n\t\t\t\tpadding: 2rem;\n\t\t\t\ttext-align: center;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t}\n\t\t\t.image-loading {\n\t\t\t\tposition: absolute;\n\t\t\t\ttop: 50%;\n\t\t\t\tleft: 50%;\n\t\t\t\ttransform: translate(-50%, -50%);\n\t\t\t}\n\t\t\t.image-metadata {\n\t\t\t\tdisplay: flex;\n\t\t\t\tflex-wrap: wrap;\n\t\t\t\tgap: 0.75rem;\n\t\t\t\tmargin-top: 0.5rem;\n\t\t\t\tfont-size: 0.75rem;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t}\n\t\t\t.heatmap-heading {\n\t\t\t\tdisplay: flex;\n\t\t\t\tflex-wrap: wrap;\n\t\t\t\talign-items: center;\n\t\t\t\tjustify-content: space-between;\n\t\t\t\tgap: 0.75rem;\n\t\t\t\tmargin-bottom: 0.75rem;\n\t\t\t}\n\t\t\t.heatmap-colormap-control {\n\t\t\t\tdisplay: inline-flex;\n\t\t\t\talign-items: center;\n\t\t\t\tgap: 0.5rem;\n\t\t\t\tfont-size: 0.875rem;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t}\n\t\t\t.heatmap-colormap-control select {\n\t\t\t\tpadding: 0.3rem 0.5rem;\n\t\t\t\tborder: 1px solid var(--border-color);\n\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\tbackground-color: var(--surface-color);\n\t\t\t\tcolor: var(--text-color);\n\t\t\t}\n\t\t\t.heatmap-legend {\n\t\t\t\tdisplay: grid;\n\t\t\t\tgrid-template-columns: auto minmax(120px, 1fr) auto;\n\t\t\t\talign-items: center;\n\t\t\t\tgap: 0.5rem;\n\t\t\t\tmargin-top: 0.75rem;\n\t\t\t\tfont-size: 0.75rem;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t}\n\t\t\t.heatmap-legend-gradient {\n\t\t\t\theight: 0.75rem;\n\t\t\t\tborder: 1px solid var(--border-color);\n\t\t\t\tborder-radius: 9999px;\n\t\t\t\tbackground: linear-gradient(\n\t\t\t\t\t90deg,\n\t\t\t\t\t#23171b,\n\t\t\t\t\t#4145ab,\n\t\t\t\t\t#2aa7d6,\n\t\t\t\t\t#49df75,\n\t\t\t\t\t#d5e21a,\n\t\t\t\t\t#f68513,\n\t\t\t\t\t#900c00\n\t\t\t\t);\n\t\t\t}\n\t\t\t.heatmap-legend-description {\n\t\t\t\tgrid-column: 1 / -1;\n\t\t\t\ttext-align: center;\n\t\t\t}\n\t\t\t@media (max-width: 768px) {\n\t\t\t\t.image-viewer[data-view-mode=\"side-by-side\"] .image-view-panels {\n\t\t\t\t\tgrid-template-columns: minmax(0, 1fr);\n\t\t\t\t}\n\t\t\t}\n\t\t</style> <div id=\"image-viewer\" class=\"card image-viewer\" data-view-mode=\"side-by-side\"><div style=\"display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem;\"><h2 style=\"font-size: 1.25rem; font-weight: 600;\">Images</h2><fieldset class=\"view-mode-selector\" aria-label=\"Image view mode\"><legend>Image view mode</legend><div class=\"view-mode-option\"><input type=\"radio\" id=\"view-mode-reference\" name=\"view-mode\" value=\"reference\" aria-keyshortcuts=\"1\"> <label for=\"view-mode-reference\">Reference <span class=\"view-mode-shortcut\" aria-hidden=\"true\">1</span></label></div><div class=\"view-mode-option\"><input type=\"radio\" id=\"view-mode-best\" name=\"view-mode\" value=\"best\" aria-keyshortcuts=\"2\"> <label for=\"view-mode-best\">Best <span class=\"view-mode-shortcut\" aria-hidden=\"true\">2</span></label></div><div class=\"view-mode-option\"><input type=\"radio\" id=\"view-mode-side-by-side\" name=\"view-mode\" value=\"side-by-side\" aria-keyshortcuts=\"3\" checked> <label for=\"view-mode-side-by-side\">Side-by-Side <span class=\"view-mode-shortcut\" aria-hidden=\"true\">3</span></label></div><div class=\"view-mode-option\"><input type=\"radio\" id=\"view-mode-difference\" name=\"view-mode\" value=\"difference\" aria-keyshortcuts=\"4\"> <label for=\"view-mode-difference\">Difference <span class=\"view-mode-shortcut\" aria-hidden=\"true\">4</span></label></div></fieldset></div><div class=\"image-view-panels\"><!-- Reference Image --><div class=\"image-view-panel\" data-view-panel=\"reference\"><h3 style=\"font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-muted);\">Reference</h3><div class=\"image-frame\"><img id=\"reference-image\" src=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</div></div><div><div style=\"font-size: 0.875rem; color: var(--text-muted);\">Population Size</div><div style=\"font-weight: 500;\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var18 string
-			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(templ.URL(fmt.Sprintf("/api/v1/jobs/%s/ref.png", job.ID)))
+			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", job.PopSize))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 378, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 225, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" alt=\"Reference Image\"><div id=\"reference-image-loading\" class=\"image-state image-loading\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"reference-image-error\" class=\"image-state\">Reference image not available</div></div><div class=\"image-metadata\" aria-label=\"Reference image metadata\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</div></div><div style=\"grid-column: 1 / -1;\"><div style=\"font-size: 0.875rem; color: var(--text-muted);\">Reference Image</div><div style=\"font-weight: 500; font-family: monospace; font-size: 0.875rem;\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var19 string
+			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(job.RefPath)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 229, Col: 94}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</div></div></div></div><!-- Selectable image comparison views --> <style>\n\t\t\t.view-mode-selector {\n\t\t\t\tdisplay: flex;\n\t\t\t\tflex-wrap: wrap;\n\t\t\t\tgap: 0.5rem;\n\t\t\t\tborder: 0;\n\t\t\t}\n\t\t\t.view-mode-selector legend {\n\t\t\t\tposition: absolute;\n\t\t\t\twidth: 1px;\n\t\t\t\theight: 1px;\n\t\t\t\tpadding: 0;\n\t\t\t\tmargin: -1px;\n\t\t\t\toverflow: hidden;\n\t\t\t\tclip: rect(0, 0, 0, 0);\n\t\t\t\twhite-space: nowrap;\n\t\t\t\tborder: 0;\n\t\t\t}\n\t\t\t.view-mode-option {\n\t\t\t\tposition: relative;\n\t\t\t}\n\t\t\t.view-mode-option input {\n\t\t\t\tposition: absolute;\n\t\t\t\topacity: 0;\n\t\t\t\tpointer-events: none;\n\t\t\t}\n\t\t\t.view-mode-option label {\n\t\t\t\tdisplay: inline-flex;\n\t\t\t\talign-items: center;\n\t\t\t\tgap: 0.4rem;\n\t\t\t\tpadding: 0.4rem 0.7rem;\n\t\t\t\tborder: 1px solid var(--border-color);\n\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t\tfont-size: 0.875rem;\n\t\t\t\tfont-weight: 500;\n\t\t\t\tcursor: pointer;\n\t\t\t\ttransition: all 0.2s;\n\t\t\t}\n\t\t\t.view-mode-option input:checked + label {\n\t\t\t\tborder-color: var(--primary-color);\n\t\t\t\tbackground-color: #dbeafe;\n\t\t\t\tcolor: #1e40af;\n\t\t\t}\n\t\t\t.view-mode-option input:focus-visible + label {\n\t\t\t\toutline: 2px solid var(--primary-color);\n\t\t\t\toutline-offset: 2px;\n\t\t\t}\n\t\t\t.view-mode-shortcut {\n\t\t\t\tfont-family: monospace;\n\t\t\t\tfont-size: 0.75rem;\n\t\t\t\topacity: 0.75;\n\t\t\t}\n\t\t\t.image-view-panels {\n\t\t\t\tdisplay: grid;\n\t\t\t\tgrid-template-columns: minmax(0, 1fr);\n\t\t\t\tgap: 2rem;\n\t\t\t}\n\t\t\t.image-view-panel {\n\t\t\t\tdisplay: none;\n\t\t\t\tmin-width: 0;\n\t\t\t}\n\t\t\t.image-viewer[data-view-mode=\"reference\"] [data-view-panel=\"reference\"],\n\t\t\t.image-viewer[data-view-mode=\"best\"] [data-view-panel=\"best\"],\n\t\t\t.image-viewer[data-view-mode=\"difference\"] [data-view-panel=\"difference\"],\n\t\t\t.image-viewer[data-view-mode=\"side-by-side\"]\n\t\t\t\t[data-view-panel=\"reference\"],\n\t\t\t.image-viewer[data-view-mode=\"side-by-side\"] [data-view-panel=\"best\"] {\n\t\t\t\tdisplay: block;\n\t\t\t}\n\t\t\t.image-viewer[data-view-mode=\"side-by-side\"] .image-view-panels {\n\t\t\t\tgrid-template-columns: repeat(2, minmax(0, 1fr));\n\t\t\t}\n\t\t\t.image-frame {\n\t\t\t\tposition: relative;\n\t\t\t\tborder: 1px solid var(--border-color);\n\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\toverflow: hidden;\n\t\t\t\tbackground: repeating-conic-gradient(#f9fafb 0% 25%, #ffffff 0% 50%)\n\t\t\t\t\t50% / 20px 20px;\n\t\t\t}\n\t\t\t.image-frame-difference {\n\t\t\t\tbackground: #000000;\n\t\t\t}\n\t\t\t.image-frame img {\n\t\t\t\twidth: 100%;\n\t\t\t\theight: auto;\n\t\t\t\tdisplay: block;\n\t\t\t\ttransition: opacity 0.3s ease;\n\t\t\t}\n\t\t\t.image-state {\n\t\t\t\tdisplay: none;\n\t\t\t\tpadding: 2rem;\n\t\t\t\ttext-align: center;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t}\n\t\t\t.image-loading {\n\t\t\t\tposition: absolute;\n\t\t\t\ttop: 50%;\n\t\t\t\tleft: 50%;\n\t\t\t\ttransform: translate(-50%, -50%);\n\t\t\t}\n\t\t\t.image-metadata {\n\t\t\t\tdisplay: flex;\n\t\t\t\tflex-wrap: wrap;\n\t\t\t\tgap: 0.75rem;\n\t\t\t\tmargin-top: 0.5rem;\n\t\t\t\tfont-size: 0.75rem;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t}\n\t\t\t.heatmap-heading {\n\t\t\t\tdisplay: flex;\n\t\t\t\tflex-wrap: wrap;\n\t\t\t\talign-items: center;\n\t\t\t\tjustify-content: space-between;\n\t\t\t\tgap: 0.75rem;\n\t\t\t\tmargin-bottom: 0.75rem;\n\t\t\t}\n\t\t\t.heatmap-colormap-control {\n\t\t\t\tdisplay: inline-flex;\n\t\t\t\talign-items: center;\n\t\t\t\tgap: 0.5rem;\n\t\t\t\tfont-size: 0.875rem;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t}\n\t\t\t.heatmap-colormap-control select {\n\t\t\t\tpadding: 0.3rem 0.5rem;\n\t\t\t\tborder: 1px solid var(--border-color);\n\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\tbackground-color: var(--surface-color);\n\t\t\t\tcolor: var(--text-color);\n\t\t\t}\n\t\t\t.heatmap-legend {\n\t\t\t\tdisplay: grid;\n\t\t\t\tgrid-template-columns: auto minmax(120px, 1fr) auto;\n\t\t\t\talign-items: center;\n\t\t\t\tgap: 0.5rem;\n\t\t\t\tmargin-top: 0.75rem;\n\t\t\t\tfont-size: 0.75rem;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t}\n\t\t\t.heatmap-legend-gradient {\n\t\t\t\theight: 0.75rem;\n\t\t\t\tborder: 1px solid var(--border-color);\n\t\t\t\tborder-radius: 9999px;\n\t\t\t\tbackground: linear-gradient(\n\t\t\t\t\t90deg,\n\t\t\t\t\t#23171b,\n\t\t\t\t\t#4145ab,\n\t\t\t\t\t#2aa7d6,\n\t\t\t\t\t#49df75,\n\t\t\t\t\t#d5e21a,\n\t\t\t\t\t#f68513,\n\t\t\t\t\t#900c00\n\t\t\t\t);\n\t\t\t}\n\t\t\t.heatmap-legend-description {\n\t\t\t\tgrid-column: 1 / -1;\n\t\t\t\ttext-align: center;\n\t\t\t}\n\t\t\t@media (max-width: 768px) {\n\t\t\t\t.image-viewer[data-view-mode=\"side-by-side\"] .image-view-panels {\n\t\t\t\t\tgrid-template-columns: minmax(0, 1fr);\n\t\t\t\t}\n\t\t\t}\n\t\t</style> <div id=\"image-viewer\" class=\"card image-viewer\" data-view-mode=\"side-by-side\"><div style=\"display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem;\"><h2 style=\"font-size: 1.25rem; font-weight: 600;\">Images</h2><fieldset class=\"view-mode-selector\" aria-label=\"Image view mode\"><legend>Image view mode</legend><div class=\"view-mode-option\"><input type=\"radio\" id=\"view-mode-reference\" name=\"view-mode\" value=\"reference\" aria-keyshortcuts=\"1\"> <label for=\"view-mode-reference\">Reference <span class=\"view-mode-shortcut\" aria-hidden=\"true\">1</span></label></div><div class=\"view-mode-option\"><input type=\"radio\" id=\"view-mode-best\" name=\"view-mode\" value=\"best\" aria-keyshortcuts=\"2\"> <label for=\"view-mode-best\">Best <span class=\"view-mode-shortcut\" aria-hidden=\"true\">2</span></label></div><div class=\"view-mode-option\"><input type=\"radio\" id=\"view-mode-side-by-side\" name=\"view-mode\" value=\"side-by-side\" aria-keyshortcuts=\"3\" checked> <label for=\"view-mode-side-by-side\">Side-by-Side <span class=\"view-mode-shortcut\" aria-hidden=\"true\">3</span></label></div><div class=\"view-mode-option\"><input type=\"radio\" id=\"view-mode-difference\" name=\"view-mode\" value=\"difference\" aria-keyshortcuts=\"4\"> <label for=\"view-mode-difference\">Difference <span class=\"view-mode-shortcut\" aria-hidden=\"true\">4</span></label></div></fieldset></div><div class=\"image-view-panels\"><!-- Reference Image --><div class=\"image-view-panel\" data-view-panel=\"reference\"><h3 style=\"font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-muted);\">Reference</h3><div class=\"image-frame\"><img id=\"reference-image\" src=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var20 string
+			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(templ.URL(fmt.Sprintf("/api/v1/jobs/%s/ref.png", job.ID)))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 434, Col: 70}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\" alt=\"Reference Image\"><div id=\"reference-image-loading\" class=\"image-state image-loading\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"reference-image-error\" class=\"image-state\">Reference image not available</div></div><div class=\"image-metadata\" aria-label=\"Reference image metadata\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if job.RefWidth > 0 && job.RefHeight > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<span>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var19 string
-				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d × %d px", job.RefWidth, job.RefHeight))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 391, Col: 70}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</span> ")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			if job.RefSize > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<span title=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var20 string
-				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d bytes", job.RefSize))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 394, Col: 57}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "<span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var21 string
-				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(formatFileSize(job.RefSize))
+				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d × %d px", job.RefWidth, job.RefHeight))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 394, Col: 89}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 447, Col: 70}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</span> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</span> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			if job.RefSize > 0 {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<span title=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var22 string
+				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d bytes", job.RefSize))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 450, Col: 57}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var23 string
+				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(formatFileSize(job.RefSize))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 450, Col: 89}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</span> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 			if job.RefWidth <= 0 && job.RefHeight <= 0 && job.RefSize <= 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<span>Metadata unavailable</span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<span>Metadata unavailable</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</div></div><!-- Current Best Image --><div class=\"image-view-panel\" data-view-panel=\"best\"><h3 style=\"font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-muted);\">Current Best</h3><div class=\"image-frame\"><img id=\"best-image\" src=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</div></div><!-- Current Best Image --><div class=\"image-view-panel\" data-view-panel=\"best\"><h3 style=\"font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-muted);\">Current Best</h3><div class=\"image-frame\"><img id=\"best-image\" src=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var22 string
-			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(templ.URL(fmt.Sprintf("/api/v1/jobs/%s/best.png?t=%d", job.ID, time.Now().Unix())))
+			var templ_7745c5c3_Var24 string
+			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(templ.URL(fmt.Sprintf("/api/v1/jobs/%s/best.png?t=%d", job.ID, time.Now().Unix())))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 409, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 465, Col: 95}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\" alt=\"Current Best Image\"><div id=\"best-image-loading\" class=\"image-state image-loading\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"best-image-error\" class=\"image-state\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\" alt=\"Current Best Image\"><div id=\"best-image-loading\" class=\"image-state image-loading\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"best-image-error\" class=\"image-state\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if job.State == "pending" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "Optimization not started yet")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "Optimization not started yet")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "No results yet")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "No results yet")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</div></div></div><!-- Difference Image --><div class=\"image-view-panel\" data-view-panel=\"difference\"><div class=\"heatmap-heading\"><h3 style=\"font-size: 1rem; font-weight: 600; color: var(--text-muted);\">Difference Heatmap</h3><label class=\"heatmap-colormap-control\" for=\"heatmap-colormap\">Colormap <select id=\"heatmap-colormap\"><option value=\"turbo\" selected>Turbo</option> <option value=\"magma\">Magma</option></select></label></div><div class=\"image-frame image-frame-difference\"><img id=\"diff-image\" src=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "</div></div></div><!-- Difference Image --><div class=\"image-view-panel\" data-view-panel=\"difference\"><div class=\"heatmap-heading\"><h3 style=\"font-size: 1rem; font-weight: 600; color: var(--text-muted);\">Difference Heatmap</h3><label class=\"heatmap-colormap-control\" for=\"heatmap-colormap\">Colormap <select id=\"heatmap-colormap\"><option value=\"turbo\" selected>Turbo</option> <option value=\"magma\">Magma</option></select></label></div><div class=\"image-frame image-frame-difference\"><img id=\"diff-image\" src=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var23 string
-			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(templ.URL(fmt.Sprintf("/api/v1/jobs/%s/diff.png?colormap=turbo&t=%d", job.ID, time.Now().Unix())))
+			var templ_7745c5c3_Var25 string
+			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(templ.URL(fmt.Sprintf("/api/v1/jobs/%s/diff.png?colormap=turbo&t=%d", job.ID, time.Now().Unix())))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 442, Col: 110}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 498, Col: 110}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "\" alt=\"False-color difference heatmap\"><div id=\"diff-image-loading\" class=\"image-state image-loading\" style=\"color: #cccccc;\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"diff-image-error\" class=\"image-state\" style=\"color: #cccccc;\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "\" alt=\"False-color difference heatmap\"><div id=\"diff-image-loading\" class=\"image-state image-loading\" style=\"color: #cccccc;\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"diff-image-error\" class=\"image-state\" style=\"color: #cccccc;\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if job.State == "pending" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "Not available yet")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "Not available yet")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "No results yet")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "No results yet")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "</div></div><div class=\"heatmap-legend\" role=\"img\" aria-label=\"Mean absolute RGB error scale from 0 to 255\"><span>0</span><div id=\"heatmap-legend-gradient\" class=\"heatmap-legend-gradient\"></div><span>255</span> <span class=\"heatmap-legend-description\">Mean absolute RGB error per pixel</span></div></div></div></div><!-- SSE for live updates --> <script>\n\t\t\t(function() {\n\t\t\t\tconst jobId = '{ job.ID }';\n\t\t\t\tconst jobState = '{ job.State }';\n\t\t\t\tconst viewStorageKey = 'mayflycirclefit.viewMode';\n\t\t\t\tconst viewModes = ['reference', 'best', 'side-by-side', 'difference'];\n\t\t\t\tconst shortcutViews = {\n\t\t\t\t\t'1': 'reference',\n\t\t\t\t\t'2': 'best',\n\t\t\t\t\t'3': 'side-by-side',\n\t\t\t\t\t'4': 'difference'\n\t\t\t\t};\n\n\t\t\t\tinitializeViewMode();\n\t\t\t\tinitializeImageState('reference-image', 'reference-image-loading', 'reference-image-error');\n\t\t\t\tinitializeImageState('best-image', 'best-image-loading', 'best-image-error');\n\t\t\t\tinitializeImageState('diff-image', 'diff-image-loading', 'diff-image-error');\n\t\t\t\tinitializeHeatmapColormap();\n\n\t\t\t\t// Cost history for sparkline (bounded to 100 samples)\n\t\t\t\tconst costHistory = [];\n\t\t\t\tconst MAX_SAMPLES = 100;\n\n\t\t\t\t// Initialize with current cost if available\n\t\t\t\tif ({ fmt.Sprintf(\"%.4f\", job.BestCost) } > 0) {\n\t\t\t\t\tcostHistory.push({ fmt.Sprintf(\"%.4f\", job.BestCost) });\n\t\t\t\t}\n\n\t\t\t\t// Sparkline toggle\n\t\t\t\tconst toggleBtn = document.getElementById('sparkline-toggle');\n\t\t\t\tconst sparklineContainer = document.getElementById('cost-sparkline-container');\n\t\t\t\tlet sparklineVisible = false;\n\n\t\t\t\tif (toggleBtn) {\n\t\t\t\t\ttoggleBtn.addEventListener('click', function() {\n\t\t\t\t\t\tsparklineVisible = !sparklineVisible;\n\t\t\t\t\t\tsparklineContainer.style.display = sparklineVisible ? 'block' : 'none';\n\t\t\t\t\t\ttoggleBtn.textContent = sparklineVisible ? 'Hide Chart' : 'Show Chart';\n\t\t\t\t\t\tif (sparklineVisible && costHistory.length > 0) {\n\t\t\t\t\t\t\tupdateSparkline();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction initializeViewMode() {\n\t\t\t\t\tconst controls = document.querySelectorAll('input[name=\"view-mode\"]');\n\t\t\t\t\tcontrols.forEach(function(control) {\n\t\t\t\t\t\tcontrol.addEventListener('change', function() {\n\t\t\t\t\t\t\tif (control.checked) {\n\t\t\t\t\t\t\t\tapplyViewMode(control.value, true);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t});\n\n\t\t\t\t\tlet initialMode = 'side-by-side';\n\t\t\t\t\ttry {\n\t\t\t\t\t\tconst storedMode = window.localStorage.getItem(viewStorageKey);\n\t\t\t\t\t\tif (viewModes.includes(storedMode)) {\n\t\t\t\t\t\t\tinitialMode = storedMode;\n\t\t\t\t\t\t}\n\t\t\t\t\t} catch (err) {\n\t\t\t\t\t\t// Storage can be unavailable in privacy-restricted browser contexts.\n\t\t\t\t\t}\n\t\t\t\t\tapplyViewMode(initialMode, false);\n\n\t\t\t\t\tdocument.addEventListener('keydown', function(event) {\n\t\t\t\t\t\tif (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tconst target = event.target;\n\t\t\t\t\t\tif (target && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName))) {\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tconst mode = shortcutViews[event.key];\n\t\t\t\t\t\tif (!mode) {\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tevent.preventDefault();\n\t\t\t\t\t\tapplyViewMode(mode, true);\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction applyViewMode(mode, persist) {\n\t\t\t\t\tif (!viewModes.includes(mode)) {\n\t\t\t\t\t\tmode = 'side-by-side';\n\t\t\t\t\t}\n\t\t\t\t\tconst viewer = document.getElementById('image-viewer');\n\t\t\t\t\tif (!viewer) {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tviewer.dataset.viewMode = mode;\n\t\t\t\t\tconst control = document.querySelector('input[name=\"view-mode\"][value=\"' + mode + '\"]');\n\t\t\t\t\tif (control) {\n\t\t\t\t\t\tcontrol.checked = true;\n\t\t\t\t\t}\n\t\t\t\t\tif (persist) {\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\twindow.localStorage.setItem(viewStorageKey, mode);\n\t\t\t\t\t\t} catch (err) {\n\t\t\t\t\t\t\t// The selected view still applies for the current page.\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\t// Only connect SSE if job is running or pending\n\t\t\t\tif (jobState === 'running' || jobState === 'pending') {\n\t\t\t\t\tconst eventSource = new EventSource('/api/v1/jobs/' + jobId + '/stream');\n\n\t\t\t\t\teventSource.onmessage = function(event) {\n\t\t\t\t\t\tconst data = JSON.parse(event.data);\n\n\t\t\t\t\t\t// Update metrics\n\t\t\t\t\t\tupdateMetric('best-cost', data.bestCost.toFixed(4));\n\t\t\t\t\t\tupdateMetric('iterations', data.iterations);\n\t\t\t\t\t\tupdateMetric('cps', formatNumber(data.cps));\n\n\t\t\t\t\t\t// Add to cost history\n\t\t\t\t\t\taddCostSample(data.bestCost);\n\n\t\t\t\t\t\t// If job completed, reload to update images\n\t\t\t\t\t\tif (data.state === 'completed' || data.state === 'failed' || data.state === 'cancelled') {\n\t\t\t\t\t\t\teventSource.close();\n\t\t\t\t\t\t\tlocation.reload();\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// Refresh images with cache busting and loading states\n\t\t\t\t\t\t\tconst timestamp = new Date().getTime();\n\t\t\t\t\t\t\trefreshImage('best-image', 'best-image-loading', jobId, 'best.png', timestamp);\n\t\t\t\t\t\t\trefreshImage('diff-image', 'diff-image-loading', jobId, 'diff.png', timestamp, selectedHeatmapColormap());\n\t\t\t\t\t\t}\n\t\t\t\t\t};\n\n\t\t\t\t\teventSource.onerror = function(err) {\n\t\t\t\t\t\tconsole.error('SSE connection error:', err);\n\t\t\t\t\t\teventSource.close();\n\t\t\t\t\t\t// Fallback to polling after 5 seconds\n\t\t\t\t\t\tsetTimeout(function() {\n\t\t\t\t\t\t\tlocation.reload();\n\t\t\t\t\t\t}, 5000);\n\t\t\t\t\t};\n\t\t\t\t}\n\n\t\t\t\tfunction updateMetric(id, value) {\n\t\t\t\t\tconst elements = document.querySelectorAll('[data-metric=\"' + id + '\"]');\n\t\t\t\t\telements.forEach(function(el) {\n\t\t\t\t\t\tel.textContent = value;\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction formatNumber(n) {\n\t\t\t\t\tif (n >= 1000000) {\n\t\t\t\t\t\treturn (n / 1000000).toFixed(1) + 'M';\n\t\t\t\t\t} else if (n >= 1000) {\n\t\t\t\t\t\treturn (n / 1000).toFixed(1) + 'K';\n\t\t\t\t\t} else {\n\t\t\t\t\t\treturn Math.round(n).toString();\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction refreshImage(imgId, loadingId, jobId, filename, timestamp, colormap) {\n\t\t\t\t\tconst img = document.getElementById(imgId);\n\t\t\t\t\tconst loading = document.getElementById(loadingId);\n\t\t\t\t\tconst error = document.getElementById(imgId + '-error');\n\n\t\t\t\t\tif (!img) return;\n\n\t\t\t\t\t// Keep the last successful image visible while preloading its replacement.\n\t\t\t\t\tif (loading) {\n\t\t\t\t\t\tloading.style.display = 'block';\n\t\t\t\t\t}\n\t\t\t\t\tif (img.naturalWidth > 0) {\n\t\t\t\t\t\timg.style.display = 'block';\n\t\t\t\t\t\timg.style.opacity = '0.5';\n\t\t\t\t\t}\n\n\t\t\t\t\t// Create new image to preload\n\t\t\t\t\tconst newImg = new Image();\n\t\t\t\t\tnewImg.onload = function() {\n\t\t\t\t\t\timg.src = newImg.src;\n\t\t\t\t\t\timg.style.display = 'block';\n\t\t\t\t\t\timg.style.opacity = '1';\n\t\t\t\t\t\tif (loading) {\n\t\t\t\t\t\t\tloading.style.display = 'none';\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (error) {\n\t\t\t\t\t\t\terror.style.display = 'none';\n\t\t\t\t\t\t}\n\t\t\t\t\t};\n\t\t\t\t\tnewImg.onerror = function() {\n\t\t\t\t\t\t// Keep a prior successful image; otherwise retain the empty-state message.\n\t\t\t\t\t\timg.style.opacity = '1';\n\t\t\t\t\t\tif (loading) {\n\t\t\t\t\t\t\tloading.style.display = 'none';\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (img.naturalWidth === 0) {\n\t\t\t\t\t\t\tshowImageError(img, error);\n\t\t\t\t\t\t}\n\t\t\t\t\t};\n\t\t\t\t\tlet imageURL = '/api/v1/jobs/' + jobId + '/' + filename + '?t=' + timestamp;\n\t\t\t\t\tif (colormap) {\n\t\t\t\t\t\timageURL += '&colormap=' + encodeURIComponent(colormap);\n\t\t\t\t\t}\n\t\t\t\t\tnewImg.src = imageURL;\n\t\t\t\t}\n\n\t\t\t\tfunction initializeHeatmapColormap() {\n\t\t\t\t\tconst select = document.getElementById('heatmap-colormap');\n\t\t\t\t\tif (!select) {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tselect.addEventListener('change', function() {\n\t\t\t\t\t\tupdateHeatmapLegend(select.value);\n\t\t\t\t\t\trefreshImage('diff-image', 'diff-image-loading', jobId, 'diff.png', Date.now(), select.value);\n\t\t\t\t\t});\n\t\t\t\t\tupdateHeatmapLegend(select.value);\n\t\t\t\t}\n\n\t\t\t\tfunction selectedHeatmapColormap() {\n\t\t\t\t\tconst select = document.getElementById('heatmap-colormap');\n\t\t\t\t\treturn select ? select.value : 'turbo';\n\t\t\t\t}\n\n\t\t\t\tfunction updateHeatmapLegend(colormap) {\n\t\t\t\t\tconst gradient = document.getElementById('heatmap-legend-gradient');\n\t\t\t\t\tif (!gradient) {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tif (colormap === 'magma') {\n\t\t\t\t\t\tgradient.style.background = 'linear-gradient(90deg, #000004, #180f3d, #3d0f70, #65156e, #8c2961, #b7374b, #de492f, #f67019, #fda50a, #f9dc5c, #fcfdbf)';\n\t\t\t\t\t} else {\n\t\t\t\t\t\tgradient.style.background = 'linear-gradient(90deg, #23171b, #4145ab, #2aa7d6, #49df75, #d5e21a, #f68513, #900c00)';\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction initializeImageState(imgId, loadingId, errorId) {\n\t\t\t\t\tconst img = document.getElementById(imgId);\n\t\t\t\t\tconst loading = document.getElementById(loadingId);\n\t\t\t\t\tconst error = document.getElementById(errorId);\n\t\t\t\t\tif (!img) {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\timg.addEventListener('load', function() {\n\t\t\t\t\t\timg.style.display = 'block';\n\t\t\t\t\t\timg.style.opacity = '1';\n\t\t\t\t\t\tif (loading) loading.style.display = 'none';\n\t\t\t\t\t\tif (error) error.style.display = 'none';\n\t\t\t\t\t});\n\t\t\t\t\timg.addEventListener('error', function() {\n\t\t\t\t\t\tif (loading) loading.style.display = 'none';\n\t\t\t\t\t\tshowImageError(img, error);\n\t\t\t\t\t});\n\t\t\t\t\tif (img.complete) {\n\t\t\t\t\t\tif (img.naturalWidth > 0) {\n\t\t\t\t\t\t\timg.style.display = 'block';\n\t\t\t\t\t\t\tif (error) error.style.display = 'none';\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tshowImageError(img, error);\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction showImageError(img, error) {\n\t\t\t\t\timg.style.display = 'none';\n\t\t\t\t\tif (error) {\n\t\t\t\t\t\terror.style.display = 'block';\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction addCostSample(cost) {\n\t\t\t\t\t// Add new sample\n\t\t\t\t\tcostHistory.push(cost);\n\n\t\t\t\t\t// Keep only last MAX_SAMPLES\n\t\t\t\t\tif (costHistory.length > MAX_SAMPLES) {\n\t\t\t\t\t\tcostHistory.shift();\n\t\t\t\t\t}\n\n\t\t\t\t\t// Update sparkline if visible\n\t\t\t\t\tif (sparklineVisible) {\n\t\t\t\t\t\tupdateSparkline();\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction updateSparkline() {\n\t\t\t\t\tif (costHistory.length < 2) return;\n\n\t\t\t\t\tconst svg = document.getElementById('cost-sparkline');\n\t\t\t\t\tconst line = document.getElementById('sparkline-line');\n\t\t\t\t\tconst dot = document.getElementById('sparkline-dot');\n\n\t\t\t\t\tif (!svg || !line) return;\n\n\t\t\t\t\tconst width = svg.clientWidth;\n\t\t\t\t\tconst height = 80;\n\t\t\t\t\tconst padding = 10;\n\n\t\t\t\t\t// Calculate min/max for scaling\n\t\t\t\t\tconst minCost = Math.min(...costHistory);\n\t\t\t\t\tconst maxCost = Math.max(...costHistory);\n\t\t\t\t\tconst range = maxCost - minCost || 1; // Prevent division by zero\n\n\t\t\t\t\t// Generate points for polyline\n\t\t\t\t\tconst points = costHistory.map((cost, i) => {\n\t\t\t\t\t\tconst x = padding + (i / (costHistory.length - 1)) * (width - 2 * padding);\n\t\t\t\t\t\tconst y = height - padding - ((cost - minCost) / range) * (height - 2 * padding);\n\t\t\t\t\t\treturn x + ',' + y;\n\t\t\t\t\t}).join(' ');\n\n\t\t\t\t\tline.setAttribute('points', points);\n\n\t\t\t\t\t// Position dot at last point\n\t\t\t\t\tif (costHistory.length > 0) {\n\t\t\t\t\t\tconst lastX = padding + (width - 2 * padding);\n\t\t\t\t\t\tconst lastY = height - padding - ((costHistory[costHistory.length - 1] - minCost) / range) * (height - 2 * padding);\n\t\t\t\t\t\tdot.setAttribute('cx', lastX);\n\t\t\t\t\t\tdot.setAttribute('cy', lastY);\n\t\t\t\t\t\tdot.style.display = 'block';\n\t\t\t\t\t}\n\n\t\t\t\t\t// Update stats\n\t\t\t\t\tdocument.getElementById('sparkline-samples').textContent = costHistory.length;\n\t\t\t\t\tdocument.getElementById('sparkline-start').textContent = costHistory[0].toFixed(4);\n\t\t\t\t\tdocument.getElementById('sparkline-current').textContent = costHistory[costHistory.length - 1].toFixed(4);\n\t\t\t\t\tdocument.getElementById('sparkline-min').textContent = minCost.toFixed(4);\n\t\t\t\t}\n\t\t\t})();\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "</div></div><div class=\"heatmap-legend\" role=\"img\" aria-label=\"Mean absolute RGB error scale from 0 to 255\"><span>0</span><div id=\"heatmap-legend-gradient\" class=\"heatmap-legend-gradient\"></div><span>255</span> <span class=\"heatmap-legend-description\">Mean absolute RGB error per pixel</span></div></div></div></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templ.JSONScript("metric-history-data", job.MetricHistory).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, " <!-- SSE for live updates --> <script>\n\t\t\t(function () {\n\t\t\t\tconst jobId = \"{ job.ID }\";\n\t\t\t\tconst jobState = \"{ job.State }\";\n\t\t\t\tconst viewStorageKey = \"mayflycirclefit.viewMode\";\n\t\t\t\tconst viewModes = [\"reference\", \"best\", \"side-by-side\", \"difference\"];\n\t\t\t\tconst shortcutViews = {\n\t\t\t\t\t1: \"reference\",\n\t\t\t\t\t2: \"best\",\n\t\t\t\t\t3: \"side-by-side\",\n\t\t\t\t\t4: \"difference\",\n\t\t\t\t};\n\n\t\t\t\tinitializeViewMode();\n\t\t\t\tinitializeImageState(\n\t\t\t\t\t\"reference-image\",\n\t\t\t\t\t\"reference-image-loading\",\n\t\t\t\t\t\"reference-image-error\",\n\t\t\t\t);\n\t\t\t\tinitializeImageState(\n\t\t\t\t\t\"best-image\",\n\t\t\t\t\t\"best-image-loading\",\n\t\t\t\t\t\"best-image-error\",\n\t\t\t\t);\n\t\t\t\tinitializeImageState(\n\t\t\t\t\t\"diff-image\",\n\t\t\t\t\t\"diff-image-loading\",\n\t\t\t\t\t\"diff-image-error\",\n\t\t\t\t);\n\t\t\t\tinitializeHeatmapColormap();\n\n\t\t\t\t// Bounded server-seeded quality history for the selectable sparkline.\n\t\t\t\tconst MAX_SAMPLES = 100;\n\t\t\t\tlet metricHistory = [];\n\t\t\t\tconst historyData = document.getElementById(\"metric-history-data\");\n\t\t\t\tif (historyData) {\n\t\t\t\t\ttry {\n\t\t\t\t\t\tmetricHistory = JSON.parse(historyData.textContent) || [];\n\t\t\t\t\t} catch (err) {\n\t\t\t\t\t\tconsole.error(\"Unable to parse metric history:\", err);\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tmetricHistory = metricHistory.slice(-MAX_SAMPLES);\n\n\t\t\t\t// Sparkline toggle\n\t\t\t\tconst toggleBtn = document.getElementById(\"sparkline-toggle\");\n\t\t\t\tconst sparklineContainer = document.getElementById(\n\t\t\t\t\t\"cost-sparkline-container\",\n\t\t\t\t);\n\t\t\t\tconst metricSeries = document.getElementById(\"metric-history-series\");\n\t\t\t\tlet sparklineVisible = false;\n\n\t\t\t\tif (toggleBtn) {\n\t\t\t\t\ttoggleBtn.addEventListener(\"click\", function () {\n\t\t\t\t\t\tsparklineVisible = !sparklineVisible;\n\t\t\t\t\t\tsparklineContainer.style.display = sparklineVisible\n\t\t\t\t\t\t\t? \"block\"\n\t\t\t\t\t\t\t: \"none\";\n\t\t\t\t\t\ttoggleBtn.textContent = sparklineVisible\n\t\t\t\t\t\t\t? \"Hide History\"\n\t\t\t\t\t\t\t: \"Show History\";\n\t\t\t\t\t\tif (sparklineVisible) {\n\t\t\t\t\t\t\tupdateSparkline();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t\tif (metricSeries) {\n\t\t\t\t\tmetricSeries.addEventListener(\"change\", updateSparkline);\n\t\t\t\t}\n\t\t\t\twindow.addEventListener(\"resize\", function () {\n\t\t\t\t\tif (sparklineVisible) updateSparkline();\n\t\t\t\t});\n\n\t\t\t\tfunction initializeViewMode() {\n\t\t\t\t\tconst controls = document.querySelectorAll('input[name=\"view-mode\"]');\n\t\t\t\t\tcontrols.forEach(function (control) {\n\t\t\t\t\t\tcontrol.addEventListener(\"change\", function () {\n\t\t\t\t\t\t\tif (control.checked) {\n\t\t\t\t\t\t\t\tapplyViewMode(control.value, true);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t});\n\n\t\t\t\t\tlet initialMode = \"side-by-side\";\n\t\t\t\t\ttry {\n\t\t\t\t\t\tconst storedMode = window.localStorage.getItem(viewStorageKey);\n\t\t\t\t\t\tif (viewModes.includes(storedMode)) {\n\t\t\t\t\t\t\tinitialMode = storedMode;\n\t\t\t\t\t\t}\n\t\t\t\t\t} catch (err) {\n\t\t\t\t\t\t// Storage can be unavailable in privacy-restricted browser contexts.\n\t\t\t\t\t}\n\t\t\t\t\tapplyViewMode(initialMode, false);\n\n\t\t\t\t\tdocument.addEventListener(\"keydown\", function (event) {\n\t\t\t\t\t\tif (\n\t\t\t\t\t\t\tevent.defaultPrevented ||\n\t\t\t\t\t\t\tevent.altKey ||\n\t\t\t\t\t\t\tevent.ctrlKey ||\n\t\t\t\t\t\t\tevent.metaKey ||\n\t\t\t\t\t\t\tevent.shiftKey\n\t\t\t\t\t\t) {\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tconst target = event.target;\n\t\t\t\t\t\tif (\n\t\t\t\t\t\t\ttarget &&\n\t\t\t\t\t\t\t(target.isContentEditable ||\n\t\t\t\t\t\t\t\t[\"INPUT\", \"SELECT\", \"TEXTAREA\"].includes(target.tagName))\n\t\t\t\t\t\t) {\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tconst mode = shortcutViews[event.key];\n\t\t\t\t\t\tif (!mode) {\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tevent.preventDefault();\n\t\t\t\t\t\tapplyViewMode(mode, true);\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction applyViewMode(mode, persist) {\n\t\t\t\t\tif (!viewModes.includes(mode)) {\n\t\t\t\t\t\tmode = \"side-by-side\";\n\t\t\t\t\t}\n\t\t\t\t\tconst viewer = document.getElementById(\"image-viewer\");\n\t\t\t\t\tif (!viewer) {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tviewer.dataset.viewMode = mode;\n\t\t\t\t\tconst control = document.querySelector(\n\t\t\t\t\t\t'input[name=\"view-mode\"][value=\"' + mode + '\"]',\n\t\t\t\t\t);\n\t\t\t\t\tif (control) {\n\t\t\t\t\t\tcontrol.checked = true;\n\t\t\t\t\t}\n\t\t\t\t\tif (persist) {\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\twindow.localStorage.setItem(viewStorageKey, mode);\n\t\t\t\t\t\t} catch (err) {\n\t\t\t\t\t\t\t// The selected view still applies for the current page.\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\t// Only connect SSE if job is running or pending\n\t\t\t\tif (jobState === \"running\" || jobState === \"pending\") {\n\t\t\t\t\tconst eventSource = new EventSource(\n\t\t\t\t\t\t\"/api/v1/jobs/\" + jobId + \"/stream\",\n\t\t\t\t\t);\n\n\t\t\t\t\teventSource.onmessage = function (event) {\n\t\t\t\t\t\tconst data = JSON.parse(event.data);\n\n\t\t\t\t\t\t// Update metrics\n\t\t\t\t\t\tupdateMetric(\"best-cost\", data.bestCost.toFixed(4));\n\t\t\t\t\t\tupdateMetric(\"iterations\", data.iterations);\n\t\t\t\t\t\tupdateMetric(\"cps\", formatNumber(data.cps));\n\t\t\t\t\t\tif (data.psnrInfinite) {\n\t\t\t\t\t\t\tupdateMetric(\"psnr\", \"∞\");\n\t\t\t\t\t\t} else if (typeof data.psnr === \"number\") {\n\t\t\t\t\t\t\tupdateMetric(\"psnr\", data.psnr.toFixed(2));\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (typeof data.ssim === \"number\") {\n\t\t\t\t\t\t\tupdateMetric(\"ssim\", data.ssim.toFixed(4));\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\taddMetricSample(data);\n\n\t\t\t\t\t\t// If job completed, reload to update images\n\t\t\t\t\t\tif (\n\t\t\t\t\t\t\tdata.state === \"completed\" ||\n\t\t\t\t\t\t\tdata.state === \"failed\" ||\n\t\t\t\t\t\t\tdata.state === \"cancelled\"\n\t\t\t\t\t\t) {\n\t\t\t\t\t\t\teventSource.close();\n\t\t\t\t\t\t\tlocation.reload();\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// Refresh images with cache busting and loading states\n\t\t\t\t\t\t\tconst timestamp = new Date().getTime();\n\t\t\t\t\t\t\trefreshImage(\n\t\t\t\t\t\t\t\t\"best-image\",\n\t\t\t\t\t\t\t\t\"best-image-loading\",\n\t\t\t\t\t\t\t\tjobId,\n\t\t\t\t\t\t\t\t\"best.png\",\n\t\t\t\t\t\t\t\ttimestamp,\n\t\t\t\t\t\t\t);\n\t\t\t\t\t\t\trefreshImage(\n\t\t\t\t\t\t\t\t\"diff-image\",\n\t\t\t\t\t\t\t\t\"diff-image-loading\",\n\t\t\t\t\t\t\t\tjobId,\n\t\t\t\t\t\t\t\t\"diff.png\",\n\t\t\t\t\t\t\t\ttimestamp,\n\t\t\t\t\t\t\t\tselectedHeatmapColormap(),\n\t\t\t\t\t\t\t);\n\t\t\t\t\t\t}\n\t\t\t\t\t};\n\n\t\t\t\t\teventSource.onerror = function (err) {\n\t\t\t\t\t\tconsole.error(\"SSE connection error:\", err);\n\t\t\t\t\t\teventSource.close();\n\t\t\t\t\t\t// Fallback to polling after 5 seconds\n\t\t\t\t\t\tsetTimeout(function () {\n\t\t\t\t\t\t\tlocation.reload();\n\t\t\t\t\t\t}, 5000);\n\t\t\t\t\t};\n\t\t\t\t}\n\n\t\t\t\tfunction updateMetric(id, value) {\n\t\t\t\t\tconst elements = document.querySelectorAll(\n\t\t\t\t\t\t'[data-metric=\"' + id + '\"]',\n\t\t\t\t\t);\n\t\t\t\t\telements.forEach(function (el) {\n\t\t\t\t\t\tel.textContent = value;\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction formatNumber(n) {\n\t\t\t\t\tif (n >= 1000000) {\n\t\t\t\t\t\treturn (n / 1000000).toFixed(1) + \"M\";\n\t\t\t\t\t} else if (n >= 1000) {\n\t\t\t\t\t\treturn (n / 1000).toFixed(1) + \"K\";\n\t\t\t\t\t} else {\n\t\t\t\t\t\treturn Math.round(n).toString();\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction refreshImage(\n\t\t\t\t\timgId,\n\t\t\t\t\tloadingId,\n\t\t\t\t\tjobId,\n\t\t\t\t\tfilename,\n\t\t\t\t\ttimestamp,\n\t\t\t\t\tcolormap,\n\t\t\t\t) {\n\t\t\t\t\tconst img = document.getElementById(imgId);\n\t\t\t\t\tconst loading = document.getElementById(loadingId);\n\t\t\t\t\tconst error = document.getElementById(imgId + \"-error\");\n\n\t\t\t\t\tif (!img) return;\n\n\t\t\t\t\t// Keep the last successful image visible while preloading its replacement.\n\t\t\t\t\tif (loading) {\n\t\t\t\t\t\tloading.style.display = \"block\";\n\t\t\t\t\t}\n\t\t\t\t\tif (img.naturalWidth > 0) {\n\t\t\t\t\t\timg.style.display = \"block\";\n\t\t\t\t\t\timg.style.opacity = \"0.5\";\n\t\t\t\t\t}\n\n\t\t\t\t\t// Create new image to preload\n\t\t\t\t\tconst newImg = new Image();\n\t\t\t\t\tnewImg.onload = function () {\n\t\t\t\t\t\timg.src = newImg.src;\n\t\t\t\t\t\timg.style.display = \"block\";\n\t\t\t\t\t\timg.style.opacity = \"1\";\n\t\t\t\t\t\tif (loading) {\n\t\t\t\t\t\t\tloading.style.display = \"none\";\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (error) {\n\t\t\t\t\t\t\terror.style.display = \"none\";\n\t\t\t\t\t\t}\n\t\t\t\t\t};\n\t\t\t\t\tnewImg.onerror = function () {\n\t\t\t\t\t\t// Keep a prior successful image; otherwise retain the empty-state message.\n\t\t\t\t\t\timg.style.opacity = \"1\";\n\t\t\t\t\t\tif (loading) {\n\t\t\t\t\t\t\tloading.style.display = \"none\";\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (img.naturalWidth === 0) {\n\t\t\t\t\t\t\tshowImageError(img, error);\n\t\t\t\t\t\t}\n\t\t\t\t\t};\n\t\t\t\t\tlet imageURL =\n\t\t\t\t\t\t\"/api/v1/jobs/\" + jobId + \"/\" + filename + \"?t=\" + timestamp;\n\t\t\t\t\tif (colormap) {\n\t\t\t\t\t\timageURL += \"&colormap=\" + encodeURIComponent(colormap);\n\t\t\t\t\t}\n\t\t\t\t\tnewImg.src = imageURL;\n\t\t\t\t}\n\n\t\t\t\tfunction initializeHeatmapColormap() {\n\t\t\t\t\tconst select = document.getElementById(\"heatmap-colormap\");\n\t\t\t\t\tif (!select) {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tselect.addEventListener(\"change\", function () {\n\t\t\t\t\t\tupdateHeatmapLegend(select.value);\n\t\t\t\t\t\trefreshImage(\n\t\t\t\t\t\t\t\"diff-image\",\n\t\t\t\t\t\t\t\"diff-image-loading\",\n\t\t\t\t\t\t\tjobId,\n\t\t\t\t\t\t\t\"diff.png\",\n\t\t\t\t\t\t\tDate.now(),\n\t\t\t\t\t\t\tselect.value,\n\t\t\t\t\t\t);\n\t\t\t\t\t});\n\t\t\t\t\tupdateHeatmapLegend(select.value);\n\t\t\t\t}\n\n\t\t\t\tfunction selectedHeatmapColormap() {\n\t\t\t\t\tconst select = document.getElementById(\"heatmap-colormap\");\n\t\t\t\t\treturn select ? select.value : \"turbo\";\n\t\t\t\t}\n\n\t\t\t\tfunction updateHeatmapLegend(colormap) {\n\t\t\t\t\tconst gradient = document.getElementById(\"heatmap-legend-gradient\");\n\t\t\t\t\tif (!gradient) {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tif (colormap === \"magma\") {\n\t\t\t\t\t\tgradient.style.background =\n\t\t\t\t\t\t\t\"linear-gradient(90deg, #000004, #180f3d, #3d0f70, #65156e, #8c2961, #b7374b, #de492f, #f67019, #fda50a, #f9dc5c, #fcfdbf)\";\n\t\t\t\t\t} else {\n\t\t\t\t\t\tgradient.style.background =\n\t\t\t\t\t\t\t\"linear-gradient(90deg, #23171b, #4145ab, #2aa7d6, #49df75, #d5e21a, #f68513, #900c00)\";\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction initializeImageState(imgId, loadingId, errorId) {\n\t\t\t\t\tconst img = document.getElementById(imgId);\n\t\t\t\t\tconst loading = document.getElementById(loadingId);\n\t\t\t\t\tconst error = document.getElementById(errorId);\n\t\t\t\t\tif (!img) {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\timg.addEventListener(\"load\", function () {\n\t\t\t\t\t\timg.style.display = \"block\";\n\t\t\t\t\t\timg.style.opacity = \"1\";\n\t\t\t\t\t\tif (loading) loading.style.display = \"none\";\n\t\t\t\t\t\tif (error) error.style.display = \"none\";\n\t\t\t\t\t});\n\t\t\t\t\timg.addEventListener(\"error\", function () {\n\t\t\t\t\t\tif (loading) loading.style.display = \"none\";\n\t\t\t\t\t\tshowImageError(img, error);\n\t\t\t\t\t});\n\t\t\t\t\tif (img.complete) {\n\t\t\t\t\t\tif (img.naturalWidth > 0) {\n\t\t\t\t\t\t\timg.style.display = \"block\";\n\t\t\t\t\t\t\tif (error) error.style.display = \"none\";\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tshowImageError(img, error);\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction showImageError(img, error) {\n\t\t\t\t\timg.style.display = \"none\";\n\t\t\t\t\tif (error) {\n\t\t\t\t\t\terror.style.display = \"block\";\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction addMetricSample(data) {\n\t\t\t\t\tmetricHistory.push({\n\t\t\t\t\t\titeration: data.iterations,\n\t\t\t\t\t\tcost: data.bestCost,\n\t\t\t\t\t\tpsnr: typeof data.psnr === \"number\" ? data.psnr : null,\n\t\t\t\t\t\tpsnrInfinite: data.psnrInfinite === true,\n\t\t\t\t\t\tssim: typeof data.ssim === \"number\" ? data.ssim : null,\n\t\t\t\t\t});\n\t\t\t\t\tif (metricHistory.length > MAX_SAMPLES) metricHistory.shift();\n\t\t\t\t\tif (sparklineVisible) updateSparkline();\n\t\t\t\t}\n\n\t\t\t\tfunction selectedMetricValues() {\n\t\t\t\t\tconst series = metricSeries ? metricSeries.value : \"cost\";\n\t\t\t\t\treturn {\n\t\t\t\t\t\tseries: series,\n\t\t\t\t\t\tvalues: metricHistory\n\t\t\t\t\t\t\t.map(function (sample) {\n\t\t\t\t\t\t\t\tconst value = sample[series];\n\t\t\t\t\t\t\t\treturn typeof value === \"number\" && Number.isFinite(value)\n\t\t\t\t\t\t\t\t\t? value\n\t\t\t\t\t\t\t\t\t: null;\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t.filter(function (value) {\n\t\t\t\t\t\t\t\treturn value !== null;\n\t\t\t\t\t\t\t}),\n\t\t\t\t\t};\n\t\t\t\t}\n\n\t\t\t\tfunction formatMetricValue(series, value) {\n\t\t\t\t\tif (series === \"psnr\") return value.toFixed(2) + \" dB\";\n\t\t\t\t\treturn value.toFixed(4);\n\t\t\t\t}\n\n\t\t\t\tfunction updateSparkline() {\n\t\t\t\t\tconst svg = document.getElementById(\"cost-sparkline\");\n\t\t\t\t\tconst line = document.getElementById(\"sparkline-line\");\n\t\t\t\t\tconst dot = document.getElementById(\"sparkline-dot\");\n\t\t\t\t\tif (!svg || !line) return;\n\t\t\t\t\tconst selected = selectedMetricValues();\n\t\t\t\t\tconst values = selected.values;\n\t\t\t\t\tdocument.getElementById(\"sparkline-samples\").textContent =\n\t\t\t\t\t\tvalues.length;\n\t\t\t\t\tdocument.getElementById(\"sparkline-best-label\").textContent =\n\t\t\t\t\t\tselected.series === \"cost\" ? \"Min\" : \"Max\";\n\t\t\t\t\tif (values.length === 0) {\n\t\t\t\t\t\tline.setAttribute(\"points\", \"\");\n\t\t\t\t\t\tdot.style.display = \"none\";\n\t\t\t\t\t\tdocument.getElementById(\"sparkline-start\").textContent = \"-\";\n\t\t\t\t\t\tdocument.getElementById(\"sparkline-current\").textContent = \"-\";\n\t\t\t\t\t\tdocument.getElementById(\"sparkline-min\").textContent = \"-\";\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\n\t\t\t\t\tconst width = svg.clientWidth;\n\t\t\t\t\tconst height = 80;\n\t\t\t\t\tconst padding = 10;\n\t\t\t\t\tconst minimum = Math.min(...values);\n\t\t\t\t\tconst maximum = Math.max(...values);\n\t\t\t\t\tconst range = maximum - minimum || 1;\n\t\t\t\t\tconst denominator = Math.max(1, values.length - 1);\n\t\t\t\t\tconst points = values\n\t\t\t\t\t\t.map((value, i) => {\n\t\t\t\t\t\t\tconst x = padding + (i / denominator) * (width - 2 * padding);\n\t\t\t\t\t\t\tconst y =\n\t\t\t\t\t\t\t\theight -\n\t\t\t\t\t\t\t\tpadding -\n\t\t\t\t\t\t\t\t((value - minimum) / range) * (height - 2 * padding);\n\t\t\t\t\t\t\treturn x + \",\" + y;\n\t\t\t\t\t\t})\n\t\t\t\t\t\t.join(\" \");\n\t\t\t\t\tline.setAttribute(\"points\", points);\n\t\t\t\t\tconst lastValue = values[values.length - 1];\n\t\t\t\t\tdot.setAttribute(\n\t\t\t\t\t\t\"cx\",\n\t\t\t\t\t\tpadding +\n\t\t\t\t\t\t\t((values.length - 1) / denominator) * (width - 2 * padding),\n\t\t\t\t\t);\n\t\t\t\t\tdot.setAttribute(\n\t\t\t\t\t\t\"cy\",\n\t\t\t\t\t\theight -\n\t\t\t\t\t\t\tpadding -\n\t\t\t\t\t\t\t((lastValue - minimum) / range) * (height - 2 * padding),\n\t\t\t\t\t);\n\t\t\t\t\tdot.style.display = \"block\";\n\t\t\t\t\tdocument.getElementById(\"sparkline-start\").textContent =\n\t\t\t\t\t\tformatMetricValue(selected.series, values[0]);\n\t\t\t\t\tdocument.getElementById(\"sparkline-current\").textContent =\n\t\t\t\t\t\tformatMetricValue(selected.series, lastValue);\n\t\t\t\t\tconst best = selected.series === \"cost\" ? minimum : maximum;\n\t\t\t\t\tdocument.getElementById(\"sparkline-min\").textContent =\n\t\t\t\t\t\tformatMetricValue(selected.series, best);\n\t\t\t\t}\n\t\t\t})();\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -494,12 +580,12 @@ func JobNotFound(jobID string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var24 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var24 == nil {
-			templ_7745c5c3_Var24 = templ.NopComponent
+		templ_7745c5c3_Var26 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var26 == nil {
+			templ_7745c5c3_Var26 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var25 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var27 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -511,26 +597,26 @@ func JobNotFound(jobID string) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<div class=\"card\" style=\"text-align: center; padding: 3rem;\"><svg width=\"64\" height=\"64\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" style=\"margin: 0 auto 1rem; color: var(--text-muted);\"><circle cx=\"12\" cy=\"12\" r=\"10\"></circle> <line x1=\"12\" y1=\"8\" x2=\"12\" y2=\"12\"></line> <line x1=\"12\" y1=\"16\" x2=\"12.01\" y2=\"16\"></line></svg><h1 style=\"font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem;\">Job Not Found</h1><p style=\"color: var(--text-muted); margin-bottom: 1.5rem; font-family: monospace;\">Job ID: ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "<div class=\"card\" style=\"text-align: center; padding: 3rem;\"><svg width=\"64\" height=\"64\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" style=\"margin: 0 auto 1rem; color: var(--text-muted);\"><circle cx=\"12\" cy=\"12\" r=\"10\"></circle> <line x1=\"12\" y1=\"8\" x2=\"12\" y2=\"12\"></line> <line x1=\"12\" y1=\"16\" x2=\"12.01\" y2=\"16\"></line></svg><h1 style=\"font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem;\">Job Not Found</h1><p style=\"color: var(--text-muted); margin-bottom: 1.5rem; font-family: monospace;\">Job ID: ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var26 string
-			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(jobID)
+			var templ_7745c5c3_Var28 string
+			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(jobID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 809, Col: 19}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/detail.templ`, Line: 988, Col: 19}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "</p><a href=\"/\" class=\"btn btn-primary\">← Back to Jobs</a></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</p><a href=\"/\" class=\"btn btn-primary\">← Back to Jobs</a></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = Layout("Job Not Found").Render(templ.WithChildren(ctx, templ_7745c5c3_Var25), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = Layout("Job Not Found").Render(templ.WithChildren(ctx, templ_7745c5c3_Var27), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -27,19 +27,36 @@ type JobConfig = store.JobConfig
 
 // Job represents an optimization job
 type Job struct {
-	ID          string     `json:"id"`
-	State       JobState   `json:"state"`
-	Config      JobConfig  `json:"config"`
-	BestParams  []float64  `json:"bestParams,omitempty"`
-	BestCost    float64    `json:"bestCost"`
-	InitialCost float64    `json:"initialCost"`
-	Iterations  int        `json:"iterations"`
-	Evaluations int        `json:"evaluations"`
-	Termination string     `json:"termination,omitempty"`
-	StartTime   time.Time  `json:"startTime"`
-	EndTime     *time.Time `json:"endTime,omitempty"`
-	Error       string     `json:"error,omitempty"`
+	ID            string         `json:"id"`
+	State         JobState       `json:"state"`
+	Config        JobConfig      `json:"config"`
+	BestParams    []float64      `json:"bestParams,omitempty"`
+	BestCost      float64        `json:"bestCost"`
+	InitialCost   float64        `json:"initialCost"`
+	Iterations    int            `json:"iterations"`
+	Evaluations   int            `json:"evaluations"`
+	Termination   string         `json:"termination,omitempty"`
+	StartTime     time.Time      `json:"startTime"`
+	EndTime       *time.Time     `json:"endTime,omitempty"`
+	Error         string         `json:"error,omitempty"`
+	PSNR          *float64       `json:"-"`
+	PSNRInfinite  bool           `json:"-"`
+	SSIM          *float64       `json:"-"`
+	MetricHistory []MetricSample `json:"-"`
 }
+
+// MetricSample is a bounded live-history point used by the detail page. The
+// complete persistent history remains in trace.jsonl when tracing is enabled.
+type MetricSample struct {
+	Iteration    int       `json:"iteration"`
+	Cost         float64   `json:"cost"`
+	PSNR         *float64  `json:"psnr"`
+	PSNRInfinite bool      `json:"psnrInfinite,omitempty"`
+	SSIM         *float64  `json:"ssim,omitempty"`
+	Timestamp    time.Time `json:"timestamp"`
+}
+
+const maxMetricHistory = 100
 
 var ErrInvalidTransition = errors.New("invalid job state transition")
 
@@ -142,6 +159,30 @@ func (jm *JobManager) UpdateProgress(id string, iterations, evaluations int, bes
 	return nil
 }
 
+// RecordMetrics stores the latest quality metrics and one bounded UI-history
+// sample. Callers provide immutable pointer values; the manager clones them.
+func (jm *JobManager) RecordMetrics(id string, sample MetricSample) error {
+	jm.mu.Lock()
+	defer jm.mu.Unlock()
+	job, ok := jm.jobs[id]
+	if !ok {
+		return fmt.Errorf("job not found: %s", id)
+	}
+	sample.PSNR = cloneFloat(sample.PSNR)
+	sample.SSIM = cloneFloat(sample.SSIM)
+	job.PSNR = cloneFloat(sample.PSNR)
+	job.PSNRInfinite = sample.PSNRInfinite
+	if sample.SSIM != nil {
+		job.SSIM = cloneFloat(sample.SSIM)
+	}
+	job.MetricHistory = append(job.MetricHistory, sample)
+	if len(job.MetricHistory) > maxMetricHistory {
+		copy(job.MetricHistory, job.MetricHistory[len(job.MetricHistory)-maxMetricHistory:])
+		job.MetricHistory = job.MetricHistory[:maxMetricHistory]
+	}
+	return nil
+}
+
 // CompleteJob records the measured final result and transitions to completed.
 func (jm *JobManager) CompleteJob(id string, iterations, evaluations int, bestParams []float64, bestCost, initialCost float64, termination string) error {
 	return jm.transition(id, StateCompleted, func(job *Job) {
@@ -199,11 +240,14 @@ func (jm *JobManager) transition(id string, next JobState, update func(*Job)) er
 		job.EndTime = &end
 	}
 	event := ProgressEvent{
-		JobID:      job.ID,
-		State:      job.State,
-		Iterations: job.Iterations,
-		BestCost:   job.BestCost,
-		Timestamp:  time.Now(),
+		JobID:        job.ID,
+		State:        job.State,
+		Iterations:   job.Iterations,
+		BestCost:     job.BestCost,
+		PSNR:         cloneFloat(job.PSNR),
+		PSNRInfinite: job.PSNRInfinite,
+		SSIM:         cloneFloat(job.SSIM),
+		Timestamp:    time.Now(),
 	}
 	jm.mu.Unlock()
 
@@ -250,9 +294,25 @@ func cloneJob(job *Job) *Job {
 
 	cloned := *job
 	cloned.BestParams = append([]float64(nil), job.BestParams...)
+	cloned.PSNR = cloneFloat(job.PSNR)
+	cloned.SSIM = cloneFloat(job.SSIM)
+	cloned.MetricHistory = make([]MetricSample, len(job.MetricHistory))
+	for i, sample := range job.MetricHistory {
+		cloned.MetricHistory[i] = sample
+		cloned.MetricHistory[i].PSNR = cloneFloat(sample.PSNR)
+		cloned.MetricHistory[i].SSIM = cloneFloat(sample.SSIM)
+	}
 	if job.EndTime != nil {
 		endTime := *job.EndTime
 		cloned.EndTime = &endTime
 	}
+	return &cloned
+}
+
+func cloneFloat(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
 	return &cloned
 }

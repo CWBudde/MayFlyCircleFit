@@ -311,6 +311,25 @@ templ CreateJobPage(errorMsg string) {
 					</div>
 				</div>
 
+				<!-- Advanced Metrics -->
+				<div style="margin-bottom: 2rem;">
+					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+						Advanced Metrics
+					</h2>
+					<label style="display: flex; align-items: center; cursor: pointer;">
+						<input
+							type="checkbox"
+							id="enableSSIM"
+							name="enableSSIM"
+							style="margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;"
+						/>
+						<span style="font-weight: 500;">Enable SSIM</span>
+					</label>
+					<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;">
+						Track structural similarity during the run. This adds periodic image rendering and metric work.
+					</p>
+				</div>
+
 				<!-- Submit Button -->
 				<div style="display: flex; gap: 1rem; justify-content: flex-end; padding-top: 1rem; border-top: 1px solid var(--border-color);">
 					<a href="/" class="btn" style="background-color: var(--border-color); text-decoration: none;">

@@ -1,0 +1,43 @@
+package server
+
+import (
+	"math"
+	"testing"
+	"time"
+)
+
+func TestSerializablePSNR(t *testing.T) {
+	value, infinite := serializablePSNR(1)
+	if value == nil || infinite || math.Abs(*value-48.1308036086791) > 1e-12 {
+		t.Fatalf("serializablePSNR(1) = (%v, %v)", value, infinite)
+	}
+	value, infinite = serializablePSNR(0)
+	if value != nil || !infinite {
+		t.Fatalf("serializablePSNR(0) = (%v, %v), want (nil, true)", value, infinite)
+	}
+	value, infinite = serializablePSNR(-1)
+	if value != nil || infinite {
+		t.Fatalf("serializablePSNR(-1) = (%v, %v), want unavailable", value, infinite)
+	}
+}
+
+func TestShouldSampleSSIM(t *testing.T) {
+	last := time.Unix(100, 0)
+	for _, test := range []struct {
+		name string
+		now  time.Time
+		cost float64
+		want bool
+	}{
+		{name: "improved after interval", now: last.Add(time.Second), cost: 9, want: true},
+		{name: "too soon", now: last.Add(time.Second - 1), cost: 9},
+		{name: "unchanged", now: last.Add(2 * time.Second), cost: 10},
+		{name: "regressed", now: last.Add(2 * time.Second), cost: 11},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := shouldSampleSSIM(test.now, last, test.cost, 10); got != test.want {
+				t.Fatalf("shouldSampleSSIM() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}

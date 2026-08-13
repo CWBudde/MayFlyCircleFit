@@ -9,13 +9,18 @@ import (
 )
 
 func TestJobDetailPageViewModes(t *testing.T) {
+	psnr, ssim := 31.25, 0.9123
 	job := JobDetail{
-		ID:        "12345678-1234-1234-1234-123456789abc",
-		State:     "pending",
-		StartTime: time.Date(2026, time.August, 13, 9, 0, 0, 0, time.UTC),
-		RefWidth:  640,
-		RefHeight: 480,
-		RefSize:   2048,
+		ID:            "12345678-1234-1234-1234-123456789abc",
+		State:         "pending",
+		StartTime:     time.Date(2026, time.August, 13, 9, 0, 0, 0, time.UTC),
+		RefWidth:      640,
+		RefHeight:     480,
+		RefSize:       2048,
+		PSNR:          &psnr,
+		SSIM:          &ssim,
+		SSIMEnabled:   true,
+		MetricHistory: []MetricSample{{Iteration: 1, Cost: 10, PSNR: &psnr, SSIM: &ssim}},
 	}
 
 	var output bytes.Buffer
@@ -46,10 +51,30 @@ func TestJobDetailPageViewModes(t *testing.T) {
 		`selectedHeatmapColormap()`,
 		`640 × 480 px`,
 		`title="2048 bytes">2.0 KiB`,
+		`data-metric="psnr">31.25`,
+		`data-metric="ssim">0.9123`,
+		`id="metric-history-series"`,
+		`<option value="psnr">PSNR</option>`,
+		`<option value="ssim">SSIM</option>`,
+		`id="metric-history-data"`,
+		`selectedMetricValues()`,
 	} {
 		if !strings.Contains(body, marker) {
 			t.Errorf("rendered detail page missing %q", marker)
 		}
+	}
+}
+
+func TestJobDetailPageOmitsSSIMControlsWhenDisabled(t *testing.T) {
+	job := JobDetail{
+		ID: "12345678-1234-1234-1234-123456789abc", State: "pending", StartTime: time.Now(),
+	}
+	var output bytes.Buffer
+	if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), `<option value="ssim">`) {
+		t.Fatal("disabled SSIM was offered as a history series")
 	}
 }
 
