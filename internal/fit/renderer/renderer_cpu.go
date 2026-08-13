@@ -31,6 +31,11 @@ type CPURenderer struct {
 	// reference. It is prepared once for future incremental-cost evaluation.
 	initialSSD      uint64
 	initialSSDValid bool
+	// fastCostSelected distinguishes the built-in FastMSECost from arbitrary
+	// CostFunc values, which cannot be compared directly in Go.
+	fastCostSelected    bool
+	incrementalCostMode incrementalCostMode
+	dirtySpans          dirtySpanSet
 	// Buffer pooling to reduce allocations
 	canvas    *image.NRGBA // Reusable render buffer
 	initialBg []byte       // Precomputed initial background (white or custom canvas)
@@ -56,18 +61,19 @@ func NewCPURenderer(reference *image.NRGBA, k int) *CPURenderer {
 	initialSSD, initialSSDValid := exactInitialCanvasSSD(whiteBg, width, height, reference)
 
 	return &CPURenderer{
-		reference:       reference,
-		k:               k,
-		bounds:          fit.NewBounds(k, width, height),
-		costFunc:        fit.FastMSECost,
-		width:           width,
-		height:          height,
-		threads:         effectiveThreadCount(runtime.GOMAXPROCS(0), height),
-		opaqueCanvas:    true,
-		initialSSD:      initialSSD,
-		initialSSDValid: initialSSDValid,
-		canvas:          canvas,
-		initialBg:       whiteBg,
+		reference:        reference,
+		k:                k,
+		bounds:           fit.NewBounds(k, width, height),
+		costFunc:         fit.FastMSECost,
+		width:            width,
+		height:           height,
+		threads:          effectiveThreadCount(runtime.GOMAXPROCS(0), height),
+		opaqueCanvas:     true,
+		initialSSD:       initialSSD,
+		initialSSDValid:  initialSSDValid,
+		fastCostSelected: true,
+		canvas:           canvas,
+		initialBg:        whiteBg,
 	}
 }
 
@@ -99,25 +105,33 @@ func NewCPURendererWithCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int
 	initialSSD, initialSSDValid := exactInitialCanvasSSD(initialBg, width, height, reference)
 
 	return &CPURenderer{
-		reference:       reference,
-		k:               k,
-		bounds:          fit.NewBounds(k, width, height),
-		costFunc:        fit.FastMSECost,
-		width:           width,
-		height:          height,
-		threads:         effectiveThreadCount(runtime.GOMAXPROCS(0), height),
-		opaqueCanvas:    pixelsAreOpaque(initialBg),
-		initialSSD:      initialSSD,
-		initialSSDValid: initialSSDValid,
-		canvas:          canvasCopy,
-		initialBg:       initialBg,
+		reference:        reference,
+		k:                k,
+		bounds:           fit.NewBounds(k, width, height),
+		costFunc:         fit.FastMSECost,
+		width:            width,
+		height:           height,
+		threads:          effectiveThreadCount(runtime.GOMAXPROCS(0), height),
+		opaqueCanvas:     pixelsAreOpaque(initialBg),
+		initialSSD:       initialSSD,
+		initialSSDValid:  initialSSDValid,
+		fastCostSelected: true,
+		canvas:           canvasCopy,
+		initialBg:        initialBg,
 	}
 }
 
 // Render creates an image from parameter vector
 func (r *CPURenderer) Render(params []float64) *image.NRGBA {
+	return r.render(params, nil)
+}
+
+func (r *CPURenderer) render(params []float64, dirty *dirtySpanSet) *image.NRGBA {
 	// Reset canvas to initial background using fast copy (avoids allocation)
 	copy(r.canvas.Pix, r.initialBg)
+	if dirty != nil {
+		dirty.reset(r.height)
+	}
 	if len(params) != r.Dim() {
 		return r.canvas
 	}
@@ -128,7 +142,7 @@ func (r *CPURenderer) Render(params []float64) *image.NRGBA {
 	// Each worker owns a disjoint band of rows and composites every circle in
 	// the original order. This keeps the output pixel-exact without locks.
 	if r.threads <= 1 {
-		r.renderRows(r.canvas, params, 0, r.height)
+		r.renderRowsTracked(r.canvas, params, 0, r.height, dirty)
 		return r.canvas
 	}
 
@@ -139,20 +153,24 @@ func (r *CPURenderer) Render(params []float64) *image.NRGBA {
 		maxY := (worker + 1) * r.height / r.threads
 		go func() {
 			defer workers.Done()
-			r.renderRows(r.canvas, params, minY, maxY)
+			r.renderRowsTracked(r.canvas, params, minY, maxY, dirty)
 		}()
 	}
-	r.renderRows(r.canvas, params, (r.threads-1)*r.height/r.threads, r.height)
+	r.renderRowsTracked(r.canvas, params, (r.threads-1)*r.height/r.threads, r.height, dirty)
 	workers.Wait()
 
 	return r.canvas
 }
 
 func (r *CPURenderer) renderRows(img *image.NRGBA, params []float64, minY, maxY int) {
+	r.renderRowsTracked(img, params, minY, maxY, nil)
+}
+
+func (r *CPURenderer) renderRowsTracked(img *image.NRGBA, params []float64, minY, maxY int, dirty *dirtySpanSet) {
 	pv := fit.ParamVector{Data: params, K: r.k, Width: r.width, Height: r.height}
 	for i := 0; i < r.k; i++ {
 		circle := pv.DecodeCircle(i)
-		r.renderCircleScanlineRows(img, circle, minY, maxY)
+		r.renderCircleScanlineRowsTracked(img, circle, minY, maxY, dirty)
 	}
 }
 
@@ -160,6 +178,15 @@ func (r *CPURenderer) renderRows(img *image.NRGBA, params []float64, minY, maxY 
 func (r *CPURenderer) Cost(params []float64) float64 {
 	if len(params) != r.Dim() || r.width == 0 || r.height == 0 {
 		return math.Inf(1)
+	}
+	if r.incrementalCostMode != incrementalCostDisabled && r.fastCostSelected && r.initialSSDValid {
+		rendered := r.render(params, &r.dirtySpans)
+		if r.incrementalCostMode == incrementalCostForce || incrementalCostWorthwhile(&r.dirtySpans, r.width*r.height) {
+			if total, ok := r.incrementalSSDTotal(rendered, &r.dirtySpans); ok {
+				return float64(total) / float64(r.width*r.height*3)
+			}
+		}
+		return fit.FastMSECost(rendered, r.reference)
 	}
 	rendered := r.Render(params)
 	return r.costFunc(rendered, r.reference)
@@ -187,6 +214,8 @@ func (r *CPURenderer) newSession(circleCount int) (Renderer, func(), error) {
 		forceFloat32Geometry: r.forceFloat32Geometry,
 		initialSSD:           r.initialSSD,
 		initialSSDValid:      r.initialSSDValid,
+		fastCostSelected:     r.fastCostSelected,
+		incrementalCostMode:  r.incrementalCostMode,
 		canvas:               canvas,
 		initialBg:            initialBg,
 	}, noopCleanup, nil
@@ -216,6 +245,8 @@ func (r *CPURenderer) newSessionWithCanvas(canvas *image.NRGBA, circleCount int)
 
 	session := NewCPURendererWithCanvas(r.reference, canvas, circleCount)
 	session.costFunc = r.costFunc
+	session.fastCostSelected = r.fastCostSelected
+	session.incrementalCostMode = r.incrementalCostMode
 	session.threads = r.threads
 	session.forceFloatGeometry = r.forceFloatGeometry
 	session.forceFloat32Geometry = r.forceFloat32Geometry
@@ -247,12 +278,14 @@ func (r *CPURenderer) Reference() *image.NRGBA {
 // SetCostFunc sets the cost function used for evaluation
 func (r *CPURenderer) SetCostFunc(costFunc fit.CostFunc) {
 	r.costFunc = costFunc
+	r.fastCostSelected = false
 }
 
 // UseFastCost restores the runtime-dispatched SIMD cost implementation after a
 // custom cost function has been selected. New CPU renderers use this by default.
 func (r *CPURenderer) UseFastCost() {
 	r.costFunc = fit.FastMSECost
+	r.fastCostSelected = true
 }
 
 // SetThreads configures CPU rendering parallelism. Non-positive values select
@@ -347,6 +380,15 @@ func (r *CPURenderer) renderCircleScanline(img *image.NRGBA, c fit.Circle) {
 // renderCircleScanlineRows composites the portion of c within [rowStart,
 // rowEnd). Callers may safely process disjoint row ranges concurrently.
 func (r *CPURenderer) renderCircleScanlineRows(img *image.NRGBA, c fit.Circle, rowStart, rowEnd int) {
+	r.renderCircleScanlineRowsTracked(img, c, rowStart, rowEnd, nil)
+}
+
+func (r *CPURenderer) renderCircleScanlineRowsTracked(
+	img *image.NRGBA,
+	c fit.Circle,
+	rowStart, rowEnd int,
+	dirty *dirtySpanSet,
+) {
 	// Early-reject: circle is fully transparent
 	if c.Opacity == 0 {
 		return
@@ -396,6 +438,9 @@ func (r *CPURenderer) renderCircleScanlineRows(img *image.NRGBA, c fit.Circle, r
 		if useFixedGeometry {
 			xStart, xEnd, intersects := fixedGeometry.span(y, r.width)
 			if intersects {
+				if dirty != nil {
+					dirty.add(y, xStart, xEnd)
+				}
 				r.compositeCircleSpan(img, c, y, xStart, xEnd)
 			}
 			continue
@@ -409,6 +454,9 @@ func (r *CPURenderer) renderCircleScanlineRows(img *image.NRGBA, c fit.Circle, r
 			xStart, xEnd := circleSpanFloat32Selected(center32, remaining, r.width)
 			if xStart < 0 {
 				xStart = 0
+			}
+			if dirty != nil {
+				dirty.add(y, xStart, xEnd)
 			}
 			r.compositeCircleSpan(img, c, y, xStart, xEnd)
 			continue
@@ -428,6 +476,9 @@ func (r *CPURenderer) renderCircleScanlineRows(img *image.NRGBA, c fit.Circle, r
 		xStart, xEnd := circleSpanFloat64(c.X, r2-dy2, r.width)
 		if xStart < 0 {
 			xStart = 0
+		}
+		if dirty != nil {
+			dirty.add(y, xStart, xEnd)
 		}
 		r.compositeCircleSpan(img, c, y, xStart, xEnd)
 	}
