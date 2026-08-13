@@ -23,6 +23,9 @@ type JobDetail struct {
 	CPS         float64
 	Termination string
 	Error       string
+	RefWidth    int
+	RefHeight   int
+	RefSize     int64
 }
 
 // JobDetailPage displays detailed view of a single job
@@ -46,7 +49,6 @@ templ JobDetailPage(job JobDetail) {
 				</div>
 			</div>
 		</div>
-
 		if job.Error != "" {
 			<div class="card" style="background-color: #fee2e2; border: 1px solid #fca5a5; margin-bottom: 1.5rem;">
 				<h3 style="color: #991b1b; font-weight: 600; margin-bottom: 0.5rem;">Error</h3>
@@ -55,7 +57,6 @@ templ JobDetailPage(job JobDetail) {
 				</p>
 			</div>
 		}
-
 		<!-- Metrics Panel -->
 		<div class="card" style="margin-bottom: 1.5rem;">
 			<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
@@ -68,7 +69,6 @@ templ JobDetailPage(job JobDetail) {
 					</button>
 				}
 			</div>
-
 			<!-- Cost Sparkline (initially hidden) -->
 			<div id="cost-sparkline-container" style="display: none; margin-bottom: 1.5rem; padding: 1rem; background-color: var(--bg-color); border-radius: 0.375rem;">
 				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
@@ -80,8 +80,8 @@ templ JobDetailPage(job JobDetail) {
 					</div>
 				</div>
 				<svg id="cost-sparkline" width="100%" height="80" style="border: 1px solid var(--border-color); border-radius: 0.25rem; background-color: white;">
-					<polyline id="sparkline-line" fill="none" stroke="var(--primary-color)" stroke-width="2" />
-					<circle id="sparkline-dot" r="3" fill="var(--primary-color)" style="display: none;" />
+					<polyline id="sparkline-line" fill="none" stroke="var(--primary-color)" stroke-width="2"></polyline>
+					<circle id="sparkline-dot" r="3" fill="var(--primary-color)" style="display: none;"></circle>
 				</svg>
 				<div style="display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">
 					<span>Start: <span id="sparkline-start">-</span></span>
@@ -89,7 +89,6 @@ templ JobDetailPage(job JobDetail) {
 					<span>Min: <span id="sparkline-min">-</span></span>
 				</div>
 			</div>
-
 			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem;">
 				<div>
 					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
@@ -151,7 +150,6 @@ templ JobDetailPage(job JobDetail) {
 				</div>
 			</div>
 		</div>
-
 		<!-- Configuration Panel -->
 		<div class="card" style="margin-bottom: 1.5rem;">
 			<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
@@ -176,98 +174,248 @@ templ JobDetailPage(job JobDetail) {
 				</div>
 			</div>
 		</div>
-
-		<!-- Two-Pane Layout: Reference and Best Images -->
-		<div class="card">
-			<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-				Images
-			</h2>
-			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem;">
+		<!-- Selectable image comparison views -->
+		<style>
+			.view-mode-selector {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 0.5rem;
+				border: 0;
+			}
+			.view-mode-selector legend {
+				position: absolute;
+				width: 1px;
+				height: 1px;
+				padding: 0;
+				margin: -1px;
+				overflow: hidden;
+				clip: rect(0, 0, 0, 0);
+				white-space: nowrap;
+				border: 0;
+			}
+			.view-mode-option {
+				position: relative;
+			}
+			.view-mode-option input {
+				position: absolute;
+				opacity: 0;
+				pointer-events: none;
+			}
+			.view-mode-option label {
+				display: inline-flex;
+				align-items: center;
+				gap: 0.4rem;
+				padding: 0.4rem 0.7rem;
+				border: 1px solid var(--border-color);
+				border-radius: 0.375rem;
+				color: var(--text-muted);
+				font-size: 0.875rem;
+				font-weight: 500;
+				cursor: pointer;
+				transition: all 0.2s;
+			}
+			.view-mode-option input:checked + label {
+				border-color: var(--primary-color);
+				background-color: #dbeafe;
+				color: #1e40af;
+			}
+			.view-mode-option input:focus-visible + label {
+				outline: 2px solid var(--primary-color);
+				outline-offset: 2px;
+			}
+			.view-mode-shortcut {
+				font-family: monospace;
+				font-size: 0.75rem;
+				opacity: 0.75;
+			}
+			.image-view-panels {
+				display: grid;
+				grid-template-columns: minmax(0, 1fr);
+				gap: 2rem;
+			}
+			.image-view-panel {
+				display: none;
+				min-width: 0;
+			}
+			.image-viewer[data-view-mode="reference"] [data-view-panel="reference"],
+			.image-viewer[data-view-mode="best"] [data-view-panel="best"],
+			.image-viewer[data-view-mode="difference"] [data-view-panel="difference"],
+			.image-viewer[data-view-mode="side-by-side"]
+				[data-view-panel="reference"],
+			.image-viewer[data-view-mode="side-by-side"] [data-view-panel="best"] {
+				display: block;
+			}
+			.image-viewer[data-view-mode="side-by-side"] .image-view-panels {
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+			}
+			.image-frame {
+				position: relative;
+				border: 1px solid var(--border-color);
+				border-radius: 0.375rem;
+				overflow: hidden;
+				background: repeating-conic-gradient(#f9fafb 0% 25%, #ffffff 0% 50%)
+					50% / 20px 20px;
+			}
+			.image-frame-difference {
+				background: #000000;
+			}
+			.image-frame img {
+				width: 100%;
+				height: auto;
+				display: block;
+				transition: opacity 0.3s ease;
+			}
+			.image-state {
+				display: none;
+				padding: 2rem;
+				text-align: center;
+				color: var(--text-muted);
+			}
+			.image-loading {
+				position: absolute;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+			}
+			.image-metadata {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 0.75rem;
+				margin-top: 0.5rem;
+				font-size: 0.75rem;
+				color: var(--text-muted);
+			}
+			@media (max-width: 768px) {
+				.image-viewer[data-view-mode="side-by-side"] .image-view-panels {
+					grid-template-columns: minmax(0, 1fr);
+				}
+			}
+		</style>
+		<div id="image-viewer" class="card image-viewer" data-view-mode="side-by-side">
+			<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+				<h2 style="font-size: 1.25rem; font-weight: 600;">
+					Images
+				</h2>
+				<fieldset class="view-mode-selector" aria-label="Image view mode">
+					<legend>Image view mode</legend>
+					<div class="view-mode-option">
+						<input type="radio" id="view-mode-reference" name="view-mode" value="reference" aria-keyshortcuts="1"/>
+						<label for="view-mode-reference">Reference <span class="view-mode-shortcut" aria-hidden="true">1</span></label>
+					</div>
+					<div class="view-mode-option">
+						<input type="radio" id="view-mode-best" name="view-mode" value="best" aria-keyshortcuts="2"/>
+						<label for="view-mode-best">Best <span class="view-mode-shortcut" aria-hidden="true">2</span></label>
+					</div>
+					<div class="view-mode-option">
+						<input type="radio" id="view-mode-side-by-side" name="view-mode" value="side-by-side" aria-keyshortcuts="3" checked/>
+						<label for="view-mode-side-by-side">Side-by-Side <span class="view-mode-shortcut" aria-hidden="true">3</span></label>
+					</div>
+					<div class="view-mode-option">
+						<input type="radio" id="view-mode-difference" name="view-mode" value="difference" aria-keyshortcuts="4"/>
+						<label for="view-mode-difference">Difference <span class="view-mode-shortcut" aria-hidden="true">4</span></label>
+					</div>
+				</fieldset>
+			</div>
+			<div class="image-view-panels">
 				<!-- Reference Image -->
-				<div>
+				<div class="image-view-panel" data-view-panel="reference">
 					<h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-muted);">
 						Reference
 					</h3>
-					<div style="border: 1px solid var(--border-color); border-radius: 0.375rem; overflow: hidden; background: repeating-conic-gradient(#f9fafb 0% 25%, #ffffff 0% 50%) 50% / 20px 20px;">
+					<div class="image-frame">
 						<img
+							id="reference-image"
 							src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/ref.png", job.ID)) }
 							alt="Reference Image"
-							style="width: 100%; height: auto; display: block;"
-							onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"
 						/>
-						<div style="display: none; padding: 2rem; text-align: center; color: var(--text-muted);">
+						<div id="reference-image-loading" class="image-state image-loading">
+							<div class="spinner"></div>
+							<p style="margin-top: 0.5rem; font-size: 0.875rem;">Loading...</p>
+						</div>
+						<div id="reference-image-error" class="image-state">
 							Reference image not available
 						</div>
 					</div>
+					<div class="image-metadata" aria-label="Reference image metadata">
+						if job.RefWidth > 0 && job.RefHeight > 0 {
+							<span>{ fmt.Sprintf("%d × %d px", job.RefWidth, job.RefHeight) }</span>
+						}
+						if job.RefSize > 0 {
+							<span title={ fmt.Sprintf("%d bytes", job.RefSize) }>{ formatFileSize(job.RefSize) }</span>
+						}
+						if job.RefWidth <= 0 && job.RefHeight <= 0 && job.RefSize <= 0 {
+							<span>Metadata unavailable</span>
+						}
+					</div>
 				</div>
-
 				<!-- Current Best Image -->
-				<div>
+				<div class="image-view-panel" data-view-panel="best">
 					<h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-muted);">
 						Current Best
 					</h3>
-					if job.State == "pending" {
-						<div style="border: 1px solid var(--border-color); border-radius: 0.375rem; padding: 4rem 2rem; text-align: center; background-color: var(--bg-color);">
-							<p style="color: var(--text-muted);">Optimization not started yet</p>
+					<div class="image-frame">
+						<img
+							id="best-image"
+							src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/best.png?t=%d", job.ID, time.Now().Unix())) }
+							alt="Current Best Image"
+						/>
+						<div id="best-image-loading" class="image-state image-loading">
+							<div class="spinner"></div>
+							<p style="margin-top: 0.5rem; font-size: 0.875rem;">Loading...</p>
 						</div>
-					} else if len(job.ID) > 0 {
-						<div style="position: relative; border: 1px solid var(--border-color); border-radius: 0.375rem; overflow: hidden; background: repeating-conic-gradient(#f9fafb 0% 25%, #ffffff 0% 50%) 50% / 20px 20px;">
-							<img
-								id="best-image"
-								src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/best.png?t=%d", job.ID, time.Now().Unix())) }
-								alt="Current Best Image"
-								style="width: 100%; height: auto; display: block; transition: opacity 0.3s ease;"
-								onload="this.style.opacity='1'; this.nextElementSibling.style.display='none';"
-								onerror="this.style.display='none'; this.nextElementSibling.style.display='none'; this.nextElementSibling.nextElementSibling.style.display='block';"
-							/>
-							<div id="best-image-loading" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
-								<div class="spinner"></div>
-								<p style="color: var(--text-muted); margin-top: 0.5rem; font-size: 0.875rem;">Loading...</p>
-							</div>
-							<div style="display: none; padding: 2rem; text-align: center; color: var(--text-muted);">
+						<div id="best-image-error" class="image-state">
+							if job.State == "pending" {
+								Optimization not started yet
+							} else {
 								No results yet
-							</div>
+							}
 						</div>
-					}
+					</div>
 				</div>
-
 				<!-- Difference Image -->
-				<div>
+				<div class="image-view-panel" data-view-panel="difference">
 					<h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-muted);">
 						Difference Visualization
 					</h3>
-					if job.State == "pending" {
-						<div style="border: 1px solid var(--border-color); border-radius: 0.375rem; padding: 4rem 2rem; text-align: center; background-color: var(--bg-color);">
-							<p style="color: var(--text-muted);">Not available yet</p>
+					<div class="image-frame image-frame-difference">
+						<img
+							id="diff-image"
+							src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/diff.png?t=%d", job.ID, time.Now().Unix())) }
+							alt="Difference Visualization"
+						/>
+						<div id="diff-image-loading" class="image-state image-loading" style="color: #cccccc;">
+							<div class="spinner"></div>
+							<p style="margin-top: 0.5rem; font-size: 0.875rem;">Loading...</p>
 						</div>
-					} else if len(job.ID) > 0 {
-						<div style="position: relative; border: 1px solid var(--border-color); border-radius: 0.375rem; overflow: hidden; background-color: #000000;">
-							<img
-								id="diff-image"
-								src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/diff.png?t=%d", job.ID, time.Now().Unix())) }
-								alt="Difference Visualization"
-								style="width: 100%; height: auto; display: block; transition: opacity 0.3s ease;"
-								onload="this.style.opacity='1'; this.nextElementSibling.style.display='none';"
-								onerror="this.style.display='none'; this.nextElementSibling.style.display='none'; this.nextElementSibling.nextElementSibling.style.display='block';"
-							/>
-							<div id="diff-image-loading" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
-								<div class="spinner"></div>
-								<p style="color: #cccccc; margin-top: 0.5rem; font-size: 0.875rem;">Loading...</p>
-							</div>
-							<div style="display: none; padding: 2rem; text-align: center; color: #cccccc;">
+						<div id="diff-image-error" class="image-state" style="color: #cccccc;">
+							if job.State == "pending" {
+								Not available yet
+							} else {
 								No results yet
-							</div>
+							}
 						</div>
-					}
+					</div>
 				</div>
 			</div>
 		</div>
-
 		<!-- SSE for live updates -->
 		<script>
 			(function() {
 				const jobId = '{ job.ID }';
 				const jobState = '{ job.State }';
+				const viewStorageKey = 'mayflycirclefit.viewMode';
+				const viewModes = ['reference', 'best', 'side-by-side', 'difference'];
+				const shortcutViews = {
+					'1': 'reference',
+					'2': 'best',
+					'3': 'side-by-side',
+					'4': 'difference'
+				};
+
+				initializeViewMode();
+				initializeImageState('reference-image', 'reference-image-loading', 'reference-image-error');
+				initializeImageState('best-image', 'best-image-loading', 'best-image-error');
+				initializeImageState('diff-image', 'diff-image-loading', 'diff-image-error');
 
 				// Cost history for sparkline (bounded to 100 samples)
 				const costHistory = [];
@@ -292,6 +440,66 @@ templ JobDetailPage(job JobDetail) {
 							updateSparkline();
 						}
 					});
+				}
+
+				function initializeViewMode() {
+					const controls = document.querySelectorAll('input[name="view-mode"]');
+					controls.forEach(function(control) {
+						control.addEventListener('change', function() {
+							if (control.checked) {
+								applyViewMode(control.value, true);
+							}
+						});
+					});
+
+					let initialMode = 'side-by-side';
+					try {
+						const storedMode = window.localStorage.getItem(viewStorageKey);
+						if (viewModes.includes(storedMode)) {
+							initialMode = storedMode;
+						}
+					} catch (err) {
+						// Storage can be unavailable in privacy-restricted browser contexts.
+					}
+					applyViewMode(initialMode, false);
+
+					document.addEventListener('keydown', function(event) {
+						if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+							return;
+						}
+						const target = event.target;
+						if (target && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName))) {
+							return;
+						}
+						const mode = shortcutViews[event.key];
+						if (!mode) {
+							return;
+						}
+						event.preventDefault();
+						applyViewMode(mode, true);
+					});
+				}
+
+				function applyViewMode(mode, persist) {
+					if (!viewModes.includes(mode)) {
+						mode = 'side-by-side';
+					}
+					const viewer = document.getElementById('image-viewer');
+					if (!viewer) {
+						return;
+					}
+					viewer.dataset.viewMode = mode;
+					const control = document.querySelector('input[name="view-mode"][value="' + mode + '"]');
+					if (control) {
+						control.checked = true;
+					}
+					if (persist) {
+						try {
+							window.localStorage.setItem(viewStorageKey, mode);
+						} catch (err) {
+							// The selected view still applies for the current page.
+						}
+					}
 				}
 
 				// Only connect SSE if job is running or pending
@@ -351,32 +559,77 @@ templ JobDetailPage(job JobDetail) {
 				function refreshImage(imgId, loadingId, jobId, filename, timestamp) {
 					const img = document.getElementById(imgId);
 					const loading = document.getElementById(loadingId);
+					const error = document.getElementById(imgId + '-error');
 
 					if (!img) return;
 
-					// Show loading state
+					// Keep the last successful image visible while preloading its replacement.
 					if (loading) {
 						loading.style.display = 'block';
 					}
-					img.style.opacity = '0.5';
+					if (img.naturalWidth > 0) {
+						img.style.display = 'block';
+						img.style.opacity = '0.5';
+					}
 
 					// Create new image to preload
 					const newImg = new Image();
 					newImg.onload = function() {
 						img.src = newImg.src;
+						img.style.display = 'block';
 						img.style.opacity = '1';
 						if (loading) {
 							loading.style.display = 'none';
+						}
+						if (error) {
+							error.style.display = 'none';
 						}
 					};
 					newImg.onerror = function() {
-						// Keep current image, hide loading
+						// Keep a prior successful image; otherwise retain the empty-state message.
 						img.style.opacity = '1';
 						if (loading) {
 							loading.style.display = 'none';
 						}
+						if (img.naturalWidth === 0) {
+							showImageError(img, error);
+						}
 					};
 					newImg.src = '/api/v1/jobs/' + jobId + '/' + filename + '?t=' + timestamp;
+				}
+
+				function initializeImageState(imgId, loadingId, errorId) {
+					const img = document.getElementById(imgId);
+					const loading = document.getElementById(loadingId);
+					const error = document.getElementById(errorId);
+					if (!img) {
+						return;
+					}
+					img.addEventListener('load', function() {
+						img.style.display = 'block';
+						img.style.opacity = '1';
+						if (loading) loading.style.display = 'none';
+						if (error) error.style.display = 'none';
+					});
+					img.addEventListener('error', function() {
+						if (loading) loading.style.display = 'none';
+						showImageError(img, error);
+					});
+					if (img.complete) {
+						if (img.naturalWidth > 0) {
+							img.style.display = 'block';
+							if (error) error.style.display = 'none';
+						} else {
+							showImageError(img, error);
+						}
+					}
+				}
+
+				function showImageError(img, error) {
+					img.style.display = 'none';
+					if (error) {
+						error.style.display = 'block';
+					}
 				}
 
 				function addCostSample(cost) {
@@ -489,6 +742,18 @@ func formatDuration(seconds float64) string {
 		mins := int(seconds/60) % 60
 		return fmt.Sprintf("%dh %dm", hours, mins)
 	}
+}
+
+// Helper function to format file sizes with binary units.
+func formatFileSize(size int64) string {
+	if size < 1024 {
+		return fmt.Sprintf("%d B", size)
+	} else if size < 1024*1024 {
+		return fmt.Sprintf("%.1f KiB", float64(size)/1024)
+	} else if size < 1024*1024*1024 {
+		return fmt.Sprintf("%.1f MiB", float64(size)/(1024*1024))
+	}
+	return fmt.Sprintf("%.1f GiB", float64(size)/(1024*1024*1024))
 }
 
 // Helper function to format timestamp

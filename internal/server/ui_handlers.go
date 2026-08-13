@@ -2,7 +2,9 @@ package server
 
 import (
 	"fmt"
+	"image"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -79,6 +81,8 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		cps = float64(totalCircles) / elapsed
 	}
 
+	refWidth, refHeight, refSize, _ := referenceImageMetadata(job.Config.RefPath)
+
 	// Convert to UI job detail
 	jobDetail := ui.JobDetail{
 		ID:          job.ID,
@@ -97,6 +101,9 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		CPS:         cps,
 		Termination: job.Termination,
 		Error:       job.Error,
+		RefWidth:    refWidth,
+		RefHeight:   refHeight,
+		RefSize:     refSize,
 	}
 
 	// Render the job detail page using templ
@@ -104,6 +111,24 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to render page", http.StatusInternalServerError)
 		return
 	}
+}
+
+func referenceImageMetadata(path string) (width, height int, size int64, err error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	config, _, err := image.DecodeConfig(file)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	return config.Width, config.Height, info.Size(), nil
 }
 
 // handleCreatePage handles GET /create and POST /create

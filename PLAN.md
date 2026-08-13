@@ -806,26 +806,16 @@ Phases 0-11 use bite-sized, testable tasks. Each task follows TDD principles:
 
 **Goal:** Make it pleasant to use and reason about results.
 
-### Task 12.1: Implement View Mode Toggles
-- [ ] Add view mode selector to job detail page
-  - [ ] Radio buttons or dropdown: Reference, Best, Side-by-Side, Difference Heatmap
-  - [ ] Persist selection in browser localStorage
-- [ ] Implement "Reference Only" view
-  - [ ] Display reference image at full size
-  - [ ] Show image dimensions and file size
-- [ ] Implement "Best Only" view
-  - [ ] Display current best rendered image
-  - [ ] Auto-update from SSE stream
-- [ ] Implement "Side-by-Side" view
-  - [ ] Two-pane layout with synchronized zoom/pan (optional)
-  - [ ] Show reference on left, best on right
-  - [ ] Equal sizing for visual comparison
-- [ ] Implement "Difference Heatmap" view
-  - [ ] Show false-color visualization of pixel differences
-  - [ ] Use colormap (turbo, magma, or viridis)
-  - [ ] Include legend showing error magnitude
-- [ ] Add keyboard shortcuts for view switching (1, 2, 3, 4)
-- [ ] Test view transitions and image loading
+### Task 12.1: Implement View Mode Toggles ✅
+
+Completed: accessible Reference, Best, Side-by-Side, and Difference radio
+controls default to an equal two-pane comparison, persist the global preference
+in browser localStorage, and support keyboard shortcuts 1-4. Single-image views
+use the full responsive card width, reference metadata reports decoded dimensions
+and original file size, and SSE refreshes recover from initially unavailable
+Best or Difference images. The Difference view intentionally uses the existing
+false-color endpoint; selectable colormaps and its quantitative legend remain in
+Task 12.2.
 
 ### Task 12.2: Implement Difference Heatmap Visualization
 - [ ] Create colormap utility in `internal/fit/colormap.go`

@@ -300,6 +300,42 @@ func TestServer_JobDetailPage(t *testing.T) {
 	if !containsString(body, "Images") {
 		t.Error("Response should contain images section")
 	}
+	if !containsString(body, "50 × 50 px") {
+		t.Error("Response should contain reference image dimensions")
+	}
+	info, err := os.Stat(imgPath)
+	if err != nil {
+		t.Fatalf("stat reference image: %v", err)
+	}
+	if !containsString(body, fmt.Sprintf("%d bytes", info.Size())) {
+		t.Error("Response should contain the original reference file size")
+	}
+}
+
+func TestReferenceImageMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reference.png")
+	createSimpleTestImage(t, path)
+
+	width, height, size, err := referenceImageMetadata(path)
+	if err != nil {
+		t.Fatalf("referenceImageMetadata() error = %v", err)
+	}
+	if width != 50 || height != 50 {
+		t.Fatalf("referenceImageMetadata() dimensions = %dx%d, want 50x50", width, height)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat reference image: %v", err)
+	}
+	if size != info.Size() {
+		t.Errorf("referenceImageMetadata() size = %d, want %d", size, info.Size())
+	}
+}
+
+func TestReferenceImageMetadataUnavailable(t *testing.T) {
+	if _, _, _, err := referenceImageMetadata(filepath.Join(t.TempDir(), "missing.png")); err == nil {
+		t.Fatal("referenceImageMetadata() error = nil for missing image")
+	}
 }
 
 func TestServer_JobDetailPage_NotFound(t *testing.T) {
