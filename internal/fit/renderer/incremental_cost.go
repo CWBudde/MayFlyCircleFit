@@ -25,24 +25,25 @@ func incrementalCostWorthwhile(dirty *dirtySpanSet, totalPixels int) bool {
 }
 
 func (r *CPURenderer) incrementalSSDTotal(rendered *image.NRGBA, dirty *dirtySpanSet) (uint64, bool) {
-	if !r.initialSSDValid || len(dirty.rows) != r.height {
+	if !r.initialSSDValid || dirty.height != r.height || !dirty.normalize() {
 		return 0, false
 	}
 
 	var delta int64
-	for y, row := range dirty.rows {
+	for y := 0; y < dirty.height; y++ {
 		referenceRow := y * r.reference.Stride
 		canvasRow := y * rendered.Stride
 		initialRow := y * r.width * 4
-		for _, span := range row {
-			for x := span.start; x < span.end; x++ {
-				referenceOffset := referenceRow + x*4
-				canvasOffset := canvasRow + x*4
-				initialOffset := initialRow + x*4
-				before := rgbSquaredError(r.initialBg, initialOffset, r.reference.Pix, referenceOffset)
-				after := rgbSquaredError(rendered.Pix, canvasOffset, r.reference.Pix, referenceOffset)
-				delta += int64(after) - int64(before)
-			}
+		for _, span := range dirty.row(y) {
+			canvasOffset := canvasRow + span.start*4
+			initialOffset := initialRow + span.start*4
+			referenceOffset := referenceRow + span.start*4
+			delta += deltaSSDSpan(
+				rendered.Pix[canvasOffset:],
+				r.initialBg[initialOffset:],
+				r.reference.Pix[referenceOffset:],
+				span.end-span.start,
+			)
 		}
 	}
 
@@ -58,11 +59,4 @@ func (r *CPURenderer) incrementalSSDTotal(rendered *image.NRGBA, dirty *dirtySpa
 		return 0, false
 	}
 	return r.initialSSD + increase, true
-}
-
-func rgbSquaredError(pixels []byte, offset int, reference []byte, referenceOffset int) uint64 {
-	red := int64(pixels[offset+0]) - int64(reference[referenceOffset+0])
-	green := int64(pixels[offset+1]) - int64(reference[referenceOffset+1])
-	blue := int64(pixels[offset+2]) - int64(reference[referenceOffset+2])
-	return uint64(red*red + green*green + blue*blue)
 }

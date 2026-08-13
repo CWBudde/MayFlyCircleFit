@@ -130,7 +130,7 @@ func (r *CPURenderer) render(params []float64, dirty *dirtySpanSet) *image.NRGBA
 	// Reset canvas to initial background using fast copy (avoids allocation)
 	copy(r.canvas.Pix, r.initialBg)
 	if dirty != nil {
-		dirty.reset(r.height)
+		dirty.reset(r.height, r.k)
 	}
 	if len(params) != r.Dim() {
 		return r.canvas

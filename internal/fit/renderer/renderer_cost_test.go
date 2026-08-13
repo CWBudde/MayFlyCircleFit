@@ -266,6 +266,30 @@ func BenchmarkIncrementalCostBaseline(b *testing.B) {
 				rendererCostSink = renderer.Cost(params)
 			}
 		})
+
+		b.Run(workload.name+"/IncrementalForce", func(b *testing.B) {
+			renderer := newRenderer()
+			renderer.incrementalCostMode = incrementalCostForce
+			// Populate reusable row/span storage before measuring steady state.
+			rendererCostSink = renderer.Cost(params)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				rendererCostSink = renderer.Cost(params)
+			}
+		})
+
+		b.Run(workload.name+"/IncrementalAuto", func(b *testing.B) {
+			renderer := newRenderer()
+			renderer.incrementalCostMode = incrementalCostAuto
+			// Populate reusable row/span storage before measuring steady state.
+			rendererCostSink = renderer.Cost(params)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				rendererCostSink = renderer.Cost(params)
+			}
+		})
 	}
 }
 

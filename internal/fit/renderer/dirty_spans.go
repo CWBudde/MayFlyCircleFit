@@ -9,62 +9,113 @@ type dirtySpan struct {
 }
 
 type dirtySpanSet struct {
-	rows [][]dirtySpan
+	spans           []dirtySpan
+	counts          []int
+	rowCapacity     int
+	height          int
+	overflow        bool
+	normalized      bool
+	dirtyPixels     int
+	mergedSpanCount int
 }
 
-func (s *dirtySpanSet) reset(height int) {
-	if cap(s.rows) < height {
-		s.rows = make([][]dirtySpan, height)
-	} else {
-		s.rows = s.rows[:height]
-		for y := range s.rows {
-			s.rows[y] = s.rows[y][:0]
-		}
+// reset prepares storage for a render of at most spansPerRow circles. A circle
+// contributes at most one horizontal span to a row, so the flat backing store
+// is a hard, geometry-independent bound. Storage is retained between renders.
+func (s *dirtySpanSet) reset(height, spansPerRow int) {
+	if height < 0 {
+		height = 0
 	}
+	if spansPerRow < 1 {
+		spansPerRow = 1
+	}
+	required := height * spansPerRow
+	if cap(s.spans) < required {
+		s.spans = make([]dirtySpan, required)
+	} else {
+		s.spans = s.spans[:required]
+	}
+	if cap(s.counts) < height {
+		s.counts = make([]int, height)
+	} else {
+		s.counts = s.counts[:height]
+		clear(s.counts)
+	}
+	s.rowCapacity = spansPerRow
+	s.height = height
+	s.overflow = false
+	s.normalized = false
+	s.dirtyPixels = 0
+	s.mergedSpanCount = 0
 }
 
 func (s *dirtySpanSet) add(y, start, end int) {
-	if y < 0 || y >= len(s.rows) || end <= start {
+	if y < 0 || y >= s.height || end <= start || s.overflow {
 		return
 	}
-	row := s.rows[y]
-	insert := 0
-	for insert < len(row) && row[insert].end < start {
-		insert++
+	count := s.counts[y]
+	if count == s.rowCapacity {
+		s.overflow = true
+		return
 	}
+	base := y * s.rowCapacity
+	s.spans[base+count] = dirtySpan{start: start, end: end}
+	s.counts[y] = count + 1
+	s.normalized = false
+}
 
-	if insert == len(row) {
-		s.rows[y] = append(row, dirtySpan{start: start, end: end})
-		return
+func (s *dirtySpanSet) normalize() bool {
+	if s.overflow {
+		return false
 	}
-	if end < row[insert].start {
-		row = append(row, dirtySpan{})
-		copy(row[insert+1:], row[insert:])
-		row[insert] = dirtySpan{start: start, end: end}
-		s.rows[y] = row
-		return
+	if s.normalized {
+		return true
 	}
+	s.dirtyPixels = 0
+	s.mergedSpanCount = 0
+	for y := 0; y < s.height; y++ {
+		row := s.row(y)
+		// Circle counts are deliberately small in the staged path. Insertion
+		// sort avoids interface calls and is faster than sort.Slice here.
+		for i := 1; i < len(row); i++ {
+			span := row[i]
+			j := i
+			for j > 0 && row[j-1].start > span.start {
+				row[j] = row[j-1]
+				j--
+			}
+			row[j] = span
+		}
+		merged := 0
+		for _, span := range row {
+			if merged != 0 && span.start <= row[merged-1].end {
+				row[merged-1].end = max(row[merged-1].end, span.end)
+				continue
+			}
+			row[merged] = span
+			merged++
+		}
+		s.counts[y] = merged
+		s.mergedSpanCount += merged
+		for _, span := range row[:merged] {
+			s.dirtyPixels += span.end - span.start
+		}
+	}
+	s.normalized = true
+	return true
+}
 
-	row[insert].start = min(row[insert].start, start)
-	row[insert].end = max(row[insert].end, end)
-	consumeEnd := insert + 1
-	for consumeEnd < len(row) && row[consumeEnd].start <= row[insert].end {
-		row[insert].end = max(row[insert].end, row[consumeEnd].end)
-		consumeEnd++
+func (s *dirtySpanSet) row(y int) []dirtySpan {
+	if y < 0 || y >= s.height || s.rowCapacity == 0 {
+		return nil
 	}
-	if consumeEnd > insert+1 {
-		copy(row[insert+1:], row[consumeEnd:])
-		row = row[:len(row)-(consumeEnd-insert-1)]
-	}
-	s.rows[y] = row
+	base := y * s.rowCapacity
+	return s.spans[base : base+s.counts[y]]
 }
 
 func (s *dirtySpanSet) metrics() (pixels, spans int) {
-	for _, row := range s.rows {
-		spans += len(row)
-		for _, span := range row {
-			pixels += span.end - span.start
-		}
+	if !s.normalize() {
+		return 0, 0
 	}
-	return pixels, spans
+	return s.dirtyPixels, s.mergedSpanCount
 }

@@ -127,11 +127,88 @@ recompute it for the newly retained canvas. Empty, mismatched, or theoretically
 oversized images mark the stored total invalid instead of silently rounding.
 Alpha remains excluded exactly as in `FastMSECost`.
 
-This value is intentionally not consumed by `CPURenderer.Cost` yet. Candidate
-rendering still performs the established full-image SSD, and no dirty-span or
-delta behavior has been introduced in this slice. Focused tests cover maximum
-RGB differences, alpha exclusion, padded and independent strides, white and
-custom initial canvases, inherited sessions, and retained-canvas sessions.
+Production `CPURenderer.Cost` does not consume this value while incremental
+mode remains disabled. The default-off experimental path described below uses
+it for parity and performance work. Focused tests cover maximum RGB
+differences, alpha exclusion, padded and independent strides, white and custom
+initial canvases, inherited sessions, and retained-canvas sessions.
+
+## Exact incremental contract
+
+The remaining Task 10.16b work adds a default-off experimental evaluator. The
+normal production mode is unchanged; tests and benchmarks can select forced or
+automatic incremental evaluation internally while Task 10.16c establishes a
+faster kernel and measured production crossover.
+
+The renderer records each half-open circle span during the real compositing
+traversal. Per-row insertion keeps intervals sorted and merges overlap and
+adjacency immediately. Consequently, a pixel covered by several circles is
+visited once after its final composited value is available. Row-sharded workers
+write only to their disjoint row entries.
+
+For each merged dirty pixel, the evaluator calculates exact integer errors for
+the retained base and final candidate:
+
+```text
+delta        += candidatePixelSSD - basePixelSSD
+candidateSSD  = baseSSD + delta
+candidateMSE  = float64(candidateSSD) / float64(width * height * 3)
+```
+
+Each RGB pixel error is at most 195,075. Because both complete image totals are
+already constrained to at most `2^53`, the signed delta and every valid final
+total fit safely in `int64`; subtraction from and addition to the stored
+`uint64` base are checked before use. Alpha remains ignored, and normalization
+occurs exactly once with the same denominator as `FastMSECost`.
+
+### Selection and invalidation rules
+
+- Incremental mode is disabled by default. Joint, sequential, and batch
+  production sessions therefore continue to use full-image SIMD SSD.
+- An internal forced mode is used only for exact parity tests and diagnostic
+  benchmarks.
+- The provisional automatic mode estimates scalar work as
+  `dirtyPixels*8 + mergedSpans*32` and falls back when that exceeds the full
+  pixel count. The weights reflect the current AVX2/scalar gap and are not a
+  final production crossover.
+- `SetCostFunc` selects an arbitrary cost and disables incremental MSE;
+  `UseFastCost` explicitly restores eligibility. Go functions cannot otherwise
+  be compared reliably.
+- Ordinary child sessions inherit the immutable base total and selection mode.
+  A staged retained-canvas session copies the retained pixels and recomputes
+  its base total. Changing candidate parameters never mutates that base.
+- Invalid exact totals, empty/mismatched inputs, or an uneconomical dirty union
+  use the established full-image path. Custom canvases, including translucent
+  ones, remain supported because deltas compare final NRGBA bytes rather than
+  intermediate blend values.
+- A `CPURenderer` remains intentionally non-concurrent as an object; internal
+  row workers are safe because their image and dirty-span rows are disjoint.
+
+Tests require exact equality with full-image `FastMSECost` for positive and
+negative deltas, transparent, clipped, and overlapping circles, opaque and
+translucent retained canvases, 250 randomized cases, and one/four render
+threads. Randomized interval insertion is also checked against a per-pixel
+boolean union oracle. The focused race test passes.
+
+## Scalar prototype benchmark
+
+Five 300 ms samples compared the established cost, forced scalar delta, and
+the provisional automatic policy. Medians are shown below:
+
+| 256x256 evaluation | Full-image cost | Forced delta | Automatic | Decision |
+| --- | ---: | ---: | ---: | --- |
+| Joint K50 | 909.61 us | 1,272.69 us | 953.43 us | full-image fallback |
+| Sequential K1 | 71.71 us | 115.69 us | 72.51 us | full-image fallback |
+| Batch K5 | 254.95 us | 516.73 us | 261.00 us | full-image fallback |
+
+All steady-state cases reported zero allocations. Forced scalar delta loses on
+these representative parameters because a Go scalar pixel update cannot yet
+compete with the approximately 25 us full-image AVX2 reduction. Automatic mode
+correctly rejects all three, although collecting spans before that decision
+still costs roughly 1-5%. The result validates keeping the experiment disabled
+in production and makes the next Task 10.16c objective concrete: reduce span
+tracking cost and vectorize or otherwise strengthen the dirty-span reduction
+before retuning dispatch.
 
 Reproduce the benchmark with:
 

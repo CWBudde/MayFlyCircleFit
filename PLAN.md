@@ -575,14 +575,14 @@ which optimizes only circle coverage geometry.
 **10.16b — Design an exact incremental SSD contract:**
 - [x] Precompute the retained base canvas SSD in an exact `uint64` accumulator
   and preserve the current NRGBA quantization and alpha-exclusion semantics
-- [ ] Track the union of changed half-open spans per row so overlapping circles
+- [x] Track the union of changed half-open spans per row so overlapping circles
   and repeated writes never double-count a pixel
-- [ ] Compute candidate cost as
+- [x] Compute candidate cost as
   `baseSSD + sumDirty(candidateError - baseError)`, using signed delta
   accumulation without intermediate overflow
-- [ ] Normalize to MSE only once after reduction; retain full-image evaluation
+- [x] Normalize to MSE only once after reduction; retain full-image evaluation
   for custom cost functions and any unsupported or uneconomical case
-- [ ] Define invalidation rules for retained-canvas changes, joint mode, custom
+- [x] Define invalidation rules for retained-canvas changes, joint mode, custom
   canvases, row sharding, and renderer/session reuse
 
 **10.16c — Implement and optimize the dirty-region path:**
