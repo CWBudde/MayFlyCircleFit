@@ -13,6 +13,17 @@ type MetricSample struct {
 	SSIM         *float64 `json:"ssim,omitempty"`
 }
 
+type CircleParameter struct {
+	Number  int     `json:"number"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	Radius  float64 `json:"radius"`
+	Red     float64 `json:"red"`
+	Green   float64 `json:"green"`
+	Blue    float64 `json:"blue"`
+	Opacity float64 `json:"opacity"`
+}
+
 // JobDetail represents a job in the detail view
 type JobDetail struct {
 	ID            string
@@ -39,6 +50,33 @@ type JobDetail struct {
 	SSIM          *float64
 	SSIMEnabled   bool
 	MetricHistory []MetricSample
+	Parameters    []CircleParameter
+}
+
+func parameterDescription(circle CircleParameter) string {
+	return fmt.Sprintf(
+		"Circle %d: (%.2f, %.2f, %.2f) RGB(%d, %d, %d) α=%.3f",
+		circle.Number, circle.X, circle.Y, circle.Radius,
+		colorChannel(circle.Red), colorChannel(circle.Green), colorChannel(circle.Blue), circle.Opacity,
+	)
+}
+
+func colorChannel(value float64) int {
+	return int(min(255, max(0, value*255)) + 0.5)
+}
+
+func displayValue(visible bool) string {
+	if visible {
+		return "block"
+	}
+	return "none"
+}
+
+func parameterTabIndex(hasParameters bool) string {
+	if hasParameters {
+		return "0"
+	}
+	return "-1"
 }
 
 // JobDetailPage displays detailed view of a single job
@@ -230,6 +268,99 @@ templ JobDetailPage(job JobDetail) {
 				</div>
 			</div>
 		</div>
+		<!-- Current best parameter viewer -->
+		<style>
+			.parameter-viewer summary {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 1rem;
+				cursor: pointer;
+				list-style: none;
+			}
+			.parameter-viewer summary::-webkit-details-marker {
+				display: none;
+			}
+			.parameter-viewer summary::after {
+				content: "▾";
+				color: var(--text-muted);
+				transition: transform 0.2s;
+			}
+			.parameter-viewer[open] summary::after {
+				transform: rotate(180deg);
+			}
+			.parameter-list {
+				list-style: none;
+				max-height: 28rem;
+				overflow: auto;
+				margin-top: 1rem;
+				border: 1px solid var(--border-color);
+				border-radius: 0.375rem;
+			}
+			.parameter-list li {
+				display: flex;
+				align-items: center;
+				gap: 0.75rem;
+				padding: 0.6rem 0.75rem;
+				font-family: monospace;
+				font-size: 0.8125rem;
+			}
+			.parameter-list li + li {
+				border-top: 1px solid var(--border-color);
+			}
+			.parameter-list li:hover {
+				background-color: var(--bg-color);
+			}
+			.parameter-color {
+				flex: 0 0 auto;
+				width: 1rem;
+				height: 1rem;
+				border: 1px solid var(--border-color);
+				border-radius: 50%;
+			}
+			.parameter-export[aria-disabled="true"] {
+				pointer-events: none;
+				opacity: 0.5;
+			}
+		</style>
+		<div class="card" style="margin-bottom: 1.5rem;">
+			<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem;">
+				<div>
+					<h2 style="font-size: 1.25rem; font-weight: 600;">Current Best Parameters</h2>
+					<p style="font-size: 0.875rem; color: var(--text-muted);">
+						<span id="parameter-count">{ fmt.Sprintf("%d", len(job.Parameters)) }</span> of { fmt.Sprintf("%d", job.Circles) } circles available
+					</p>
+				</div>
+				<a
+					id="parameter-export"
+					class="btn parameter-export"
+					style="background-color: var(--border-color); font-size: 0.875rem;"
+					href={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/params.json", job.ID)) }
+					download="params.json"
+					aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
+					tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
+				>
+					Download params.json
+				</a>
+			</div>
+			<details id="parameter-viewer" class="parameter-viewer" style="margin-top: 1rem;">
+				<summary>
+					<span style="font-weight: 600;">Inspect circles</span>
+					<span style="font-size: 0.75rem; color: var(--text-muted);">X, Y, radius, RGB, opacity</span>
+				</summary>
+				<p id="parameter-empty" style={ fmt.Sprintf("display: %s; margin-top: 1rem; color: var(--text-muted); font-size: 0.875rem;", displayValue(len(job.Parameters) == 0)) }>
+					No best parameters available yet.
+				</p>
+				<ol id="parameter-list" class="parameter-list" style={ fmt.Sprintf("display: %s;", displayValue(len(job.Parameters) > 0)) }>
+					for _, circle := range job.Parameters {
+						<li title={ parameterDescription(circle) }>
+							<span class="parameter-color" style={ fmt.Sprintf("background-color: rgba(%d, %d, %d, %.3f);", colorChannel(circle.Red), colorChannel(circle.Green), colorChannel(circle.Blue), circle.Opacity) }></span>
+							<span>{ parameterDescription(circle) }</span>
+						</li>
+					}
+				</ol>
+			</details>
+		</div>
 		<!-- Selectable image comparison views -->
 		<style>
 			.view-mode-selector {
@@ -397,7 +528,7 @@ templ JobDetailPage(job JobDetail) {
 				}
 			}
 		</style>
-		<div id="image-viewer" class="card image-viewer" data-view-mode="side-by-side">
+		<div id="image-viewer" class="card image-viewer" data-view-mode="side-by-side" data-job-id={ job.ID } data-job-state={ job.State }>
 			<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem;">
 				<h2 style="font-size: 1.25rem; font-weight: 600;">
 					Images
@@ -520,11 +651,13 @@ templ JobDetailPage(job JobDetail) {
 			</div>
 		</div>
 		@templ.JSONScript("metric-history-data", job.MetricHistory)
+		@templ.JSONScript("parameter-data", job.Parameters)
 		<!-- SSE for live updates -->
 		<script>
 			(function () {
-				const jobId = "{ job.ID }";
-				const jobState = "{ job.State }";
+				const imageViewer = document.getElementById("image-viewer");
+				const jobId = imageViewer.dataset.jobId;
+				const jobState = imageViewer.dataset.jobState;
 				const viewStorageKey = "mayflycirclefit.viewMode";
 				const viewModes = ["reference", "best", "side-by-side", "difference"];
 				const shortcutViews = {
@@ -533,6 +666,7 @@ templ JobDetailPage(job JobDetail) {
 					3: "side-by-side",
 					4: "difference",
 				};
+				let parameterRefreshPending = false;
 
 				initializeViewMode();
 				initializeImageState(
@@ -551,6 +685,7 @@ templ JobDetailPage(job JobDetail) {
 					"diff-image-error",
 				);
 				initializeHeatmapColormap();
+				initializeParameterViewer();
 
 				// Bounded server-seeded quality history for the selectable sparkline.
 				const MAX_SAMPLES = 100;
@@ -689,6 +824,7 @@ templ JobDetailPage(job JobDetail) {
 						}
 
 						addMetricSample(data);
+						refreshParameterViewer();
 
 						// If job completed, reload to update images
 						if (
@@ -736,6 +872,98 @@ templ JobDetailPage(job JobDetail) {
 					elements.forEach(function (el) {
 						el.textContent = value;
 					});
+				}
+
+				function initializeParameterViewer() {
+					const viewer = document.getElementById("parameter-viewer");
+					if (!viewer) return;
+					viewer.addEventListener("toggle", function () {
+						if (viewer.open) refreshParameterViewer();
+					});
+
+					const data = document.getElementById("parameter-data");
+					if (!data) return;
+					try {
+						const circles = JSON.parse(data.textContent) || [];
+						if (circles.length > 0) renderParameters(circles);
+					} catch (err) {
+						console.error("Unable to parse parameter data:", err);
+					}
+				}
+
+				async function refreshParameterViewer() {
+					const viewer = document.getElementById("parameter-viewer");
+					if (!viewer || !viewer.open || parameterRefreshPending) return;
+					parameterRefreshPending = true;
+					try {
+						const response = await fetch(
+							"/api/v1/jobs/" + jobId + "/params.json",
+							{ cache: "no-store", headers: { Accept: "application/json" } },
+						);
+						if (response.status === 404) return;
+						if (!response.ok) throw new Error("HTTP " + response.status);
+						const snapshot = await response.json();
+						renderParameters(snapshot.circles || []);
+					} catch (err) {
+						console.error("Unable to refresh parameters:", err);
+					} finally {
+						parameterRefreshPending = false;
+					}
+				}
+
+				function renderParameters(circles) {
+					const list = document.getElementById("parameter-list");
+					const empty = document.getElementById("parameter-empty");
+					const count = document.getElementById("parameter-count");
+					const exportLink = document.getElementById("parameter-export");
+					if (!list || !empty || !count) return;
+
+					list.replaceChildren();
+					circles.forEach(function (circle) {
+						const description = formatParameter(circle);
+						const item = document.createElement("li");
+						item.title = description;
+						const swatch = document.createElement("span");
+						swatch.className = "parameter-color";
+						swatch.style.backgroundColor =
+							"rgba(" +
+							colorChannel(circle.red) + ", " +
+							colorChannel(circle.green) + ", " +
+							colorChannel(circle.blue) + ", " +
+							circle.opacity.toFixed(3) + ")";
+						const text = document.createElement("span");
+						text.textContent = description;
+						item.append(swatch, text);
+						list.appendChild(item);
+					});
+
+					count.textContent = circles.length;
+					list.style.display = circles.length > 0 ? "block" : "none";
+					empty.style.display = circles.length > 0 ? "none" : "block";
+					if (exportLink) {
+						exportLink.setAttribute(
+							"aria-disabled",
+							circles.length > 0 ? "false" : "true",
+						);
+						exportLink.tabIndex = circles.length > 0 ? 0 : -1;
+					}
+				}
+
+				function formatParameter(circle) {
+					return (
+						"Circle " + circle.number + ": (" +
+						circle.x.toFixed(2) + ", " +
+						circle.y.toFixed(2) + ", " +
+						circle.radius.toFixed(2) + ") RGB(" +
+						colorChannel(circle.red) + ", " +
+						colorChannel(circle.green) + ", " +
+						colorChannel(circle.blue) + ") α=" +
+						circle.opacity.toFixed(3)
+					);
+				}
+
+				function colorChannel(value) {
+					return Math.round(Math.min(1, Math.max(0, value)) * 255);
 				}
 
 				function formatNumber(n) {

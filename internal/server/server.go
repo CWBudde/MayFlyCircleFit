@@ -371,6 +371,8 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 		s.handleGetDiffImage(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "ref.png" {
 		s.handleGetRefImage(w, r, jobID)
+	} else if len(parts) == 2 && parts[1] == "params.json" {
+		s.handleGetParameters(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "stream" {
 		s.handleJobStream(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "resume" {

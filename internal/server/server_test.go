@@ -542,6 +542,17 @@ func TestServer_JobDetailPage_Integration(t *testing.T) {
 	if !containsString(body, "Running") { // State badge
 		t.Error("Response should contain Running badge")
 	}
+	if !containsString(body, `id="parameter-count">2</span> of 2 circles available`) {
+		t.Error("Response should contain the materialized parameter count")
+	}
+	for _, description := range []string{
+		"Circle 1: (0.00, 0.00, 0.00) RGB(0, 0, 0) α=0.000",
+		"Circle 2: (0.00, 0.00, 0.00) RGB(0, 0, 0) α=0.000",
+	} {
+		if !containsString(body, description) {
+			t.Errorf("Response should contain %q", description)
+		}
+	}
 }
 
 func TestServer_JobStream_SSE(t *testing.T) {

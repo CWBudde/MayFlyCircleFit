@@ -839,20 +839,29 @@ full persistent history when tracing is enabled. Calculation, configuration,
 lifecycle, serialization, UI, and cadence tests cover the feature; formulas and
 interpretation are documented in `docs/advanced-quality-metrics.md`.
 
-### Task 12.4: Add Parameter Inspection Tooltip
-- [ ] Display current best parameters in UI
-  - [ ] Show all K circles with their properties
-  - [ ] Format: Circle N: (X, Y, R) RGB(r, g, b) α=opacity
-- [ ] Add interactive parameter viewer
-  - [ ] Expandable/collapsible list of circles
+### Task 12.4: Add Parameter Inspection Tooltip ✅
+- [x] Display current best parameters in UI
+  - [x] Show all K circles with their properties
+  - [x] Format: Circle N: (X, Y, R) RGB(r, g, b) α=opacity
+- [x] Add interactive parameter viewer
+  - [x] Expandable/collapsible list of circles
   - [ ] Highlight individual circles on hover (optional)
-- [ ] Add parameter export button
-  - [ ] Download params.json with current best
-  - [ ] Include metadata: jobID, cost, iterations, timestamp
+- [x] Add parameter export button
+  - [x] Download params.json with current best
+  - [x] Include metadata: jobID, cost, iterations, timestamp
 - [ ] Add parameter visualization (optional)
   - [ ] Show circles sorted by size or opacity
-  - [ ] Color-code by properties
-- [ ] Test parameter display with various circle counts
+  - [x] Color-code by properties
+- [x] Test parameter display with various circle counts
+
+Completed: the job detail page now exposes the materialized current-best circles
+in a native expandable viewer using the requested coordinate, radius, 8-bit RGB,
+and opacity format. Color/opacity swatches aid inspection, and an open viewer
+refreshes from the live job snapshot without expanding SSE payloads. The new
+`params.json` endpoint downloads both the exact flat optimizer vector and a
+readable circle representation with job ID, cost, iterations, and UTC snapshot
+timestamp. Endpoint, conversion, live-view markup, empty state, and circle-count
+tests include one, many, and 1,000-circle cases.
 
 ### Task 12.5: Add Download Buttons for Artifacts
 - [ ] Add "Download Best Image" button

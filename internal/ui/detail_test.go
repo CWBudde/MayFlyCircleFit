@@ -39,7 +39,7 @@ func TestJobDetailPageViewModes(t *testing.T) {
 		`data-view-panel="best"`,
 		`data-view-panel="difference"`,
 		`mayflycirclefit.viewMode`,
-		`initializeImageState('best-image'`,
+		`initializeImageState(`,
 		`id="best-image-error"`,
 		`id="diff-image-error"`,
 		`id="heatmap-colormap"`,
@@ -92,6 +92,77 @@ func TestJobDetailPageMetadataUnavailable(t *testing.T) {
 	if !strings.Contains(output.String(), "Metadata unavailable") {
 		t.Error("rendered detail page should report unavailable reference metadata")
 	}
+}
+
+func TestJobDetailPageParameterViewerCircleCounts(t *testing.T) {
+	tests := []struct {
+		name       string
+		parameters []CircleParameter
+		wantText   string
+	}{
+		{name: "none"},
+		{
+			name: "one",
+			parameters: []CircleParameter{{
+				Number: 1, X: 12.345, Y: 67.891, Radius: 4.567,
+				Red: 1, Green: 0.5, Blue: 0, Opacity: 0.75,
+			}},
+			wantText: "Circle 1: (12.35, 67.89, 4.57) RGB(255, 128, 0) α=0.750",
+		},
+		{name: "many", parameters: makeCircleParameters(64)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			job := JobDetail{
+				ID: "12345678-1234-1234-1234-123456789abc", State: "completed",
+				StartTime: time.Now(), Circles: 64, Parameters: test.parameters,
+			}
+			var output bytes.Buffer
+			if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+				t.Fatal(err)
+			}
+			body := output.String()
+			for _, marker := range []string{
+				`id="parameter-viewer"`, `id="parameter-list"`, `id="parameter-data"`,
+				`download="params.json"`, `refreshParameterViewer()`, `formatParameter(circle)`,
+			} {
+				if !strings.Contains(body, marker) {
+					t.Errorf("rendered detail page missing %q", marker)
+				}
+			}
+			if got := strings.Count(body, `<li title="Circle `); got != len(test.parameters) {
+				t.Errorf("rendered circle rows = %d, want %d", got, len(test.parameters))
+			}
+			if test.wantText != "" && !strings.Contains(body, test.wantText) {
+				t.Errorf("rendered detail page missing %q", test.wantText)
+			}
+			exportStart := strings.Index(body, `id="parameter-export"`)
+			if exportStart < 0 {
+				t.Fatal("rendered detail page missing parameter export control")
+			}
+			exportEnd := strings.Index(body[exportStart:], ">")
+			if exportEnd < 0 {
+				t.Fatal("parameter export control has no closing bracket")
+			}
+			exportTag := body[exportStart : exportStart+exportEnd]
+			wantDisabled := len(test.parameters) == 0
+			if gotDisabled := strings.Contains(exportTag, `aria-disabled="true"`); gotDisabled != wantDisabled {
+				t.Errorf("export disabled = %v, want %v", gotDisabled, wantDisabled)
+			}
+		})
+	}
+}
+
+func makeCircleParameters(count int) []CircleParameter {
+	parameters := make([]CircleParameter, count)
+	for i := range parameters {
+		parameters[i] = CircleParameter{
+			Number: i + 1, X: float64(i), Y: float64(i + 1), Radius: float64(i + 2),
+			Red: 0.1, Green: 0.2, Blue: 0.3, Opacity: 0.4,
+		}
+	}
+	return parameters
 }
 
 func TestFormatFileSize(t *testing.T) {

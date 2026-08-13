@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"image"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -93,6 +94,17 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 			PSNRInfinite: sample.PSNRInfinite, SSIM: cloneFloat(sample.SSIM),
 		}
 	}
+	parameterCircles, err := decodeParameterCircles(job.BestParams)
+	if err != nil {
+		slog.Warn("Unable to display invalid job parameters", "job_id", job.ID, "error", err)
+	}
+	parameters := make([]ui.CircleParameter, len(parameterCircles))
+	for i, circle := range parameterCircles {
+		parameters[i] = ui.CircleParameter{
+			Number: circle.Number, X: circle.X, Y: circle.Y, Radius: circle.Radius,
+			Red: circle.Red, Green: circle.Green, Blue: circle.Blue, Opacity: circle.Opacity,
+		}
+	}
 
 	// Convert to UI job detail
 	jobDetail := ui.JobDetail{
@@ -120,6 +132,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		SSIM:          cloneFloat(job.SSIM),
 		SSIMEnabled:   job.Config.EnableSSIM,
 		MetricHistory: metricHistory,
+		Parameters:    parameters,
 	}
 
 	// Render the job detail page using templ
