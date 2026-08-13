@@ -33,6 +33,30 @@ func TestFixedCircleQ16Range(t *testing.T) {
 	}
 }
 
+func TestBatchedFloatSpansMatchOnePixelSearch(t *testing.T) {
+	rng := rand.New(rand.NewSource(8131013))
+	for i := range 100_000 {
+		width := 1 + rng.Intn(2048)
+		center64 := rng.Float64() * float64(width-1)
+		radius64 := rng.Float64() * float64(width)
+		remaining64 := radius64 * radius64 * rng.Float64()
+
+		wantStart, wantEnd := circleSpanFloat64OnePixel(center64, remaining64, width)
+		gotStart, gotEnd := circleSpanFloat64(center64, remaining64, width)
+		if gotStart != wantStart || gotEnd != wantEnd {
+			t.Fatalf("float64 case %d = [%d,%d), want [%d,%d)", i, gotStart, gotEnd, wantStart, wantEnd)
+		}
+
+		center32 := float32(center64)
+		remaining32 := float32(remaining64)
+		wantStart, wantEnd = circleSpanFloat32OnePixel(center32, remaining32, width)
+		gotStart, gotEnd = circleSpanFloat32(center32, remaining32, width)
+		if gotStart != wantStart || gotEnd != wantEnd {
+			t.Fatalf("float32 case %d = [%d,%d), want [%d,%d)", i, gotStart, gotEnd, wantStart, wantEnd)
+		}
+	}
+}
+
 func TestFixedCircleQ16CoverageError(t *testing.T) {
 	const (
 		width  = 513
@@ -270,6 +294,20 @@ func BenchmarkCircleSpanGeometry(b *testing.B) {
 			}
 			geometryBenchmarkSink = widthSum
 		})
+
+		b.Run(test.name+"/q16.16_avx2", func(b *testing.B) {
+			widthSum := 0
+			b.ReportAllocs()
+			for range b.N {
+				for y := minY; y < maxY; y++ {
+					xStart, xEnd, intersects := fixed.spanAVX2(y, 513)
+					if intersects {
+						widthSum += xEnd - xStart
+					}
+				}
+			}
+			geometryBenchmarkSink = widthSum
+		})
 	}
 }
 
@@ -286,12 +324,19 @@ func BenchmarkCPURendererGeometry(b *testing.B) {
 		name         string
 		forceFloat   bool
 		forceFloat32 bool
+		float32Span  func(float32, float32, int) (int, int)
 	}{
 		{name: "float64_oracle", forceFloat: true},
+		{name: "float32_scalar", forceFloat32: true, float32Span: circleSpanFloat32},
 		{name: "float32_" + circleSpanFloat32Backend, forceFloat32: true},
 		{name: "q16.16"},
 	} {
 		b.Run(test.name, func(b *testing.B) {
+			if test.float32Span != nil {
+				selected := circleSpanFloat32Selected
+				circleSpanFloat32Selected = test.float32Span
+				defer func() { circleSpanFloat32Selected = selected }()
+			}
 			renderer := NewCPURenderer(reference, circles)
 			renderer.SetThreads(1)
 			renderer.forceFloatGeometry = test.forceFloat

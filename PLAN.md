@@ -430,6 +430,11 @@ assumed instruction-level speedup.
   per batch; account for mask extraction, short-span setup cost, and scalar tails
 - [x] Benchmark direct kernel calls and full rendering with `x/sys/cpu` feature
   gating; retain Q16.16 for production because AVX2 float32 did not beat it
+- [x] Prototype exact AVX2 Q16.16 span edges and compare them with the scalar
+  monotonic skip; retain scalar Q16.16 because AVX2 widened products and mask
+  interleaving cost 1.4-2.9× more in direct R5-R256 span searches
+- [x] Apply the same one-test/eight-pixel monotonic skip to scalar `float32` and
+  `float64`; verify 100,000 randomized cases against the one-pixel searches
 - [ ] Assess the corresponding ARM64 NEON opportunity without making AMD64-only
   layout choices that prevent a later implementation
 
@@ -467,12 +472,26 @@ of 2,022,704 randomized intersecting row spans (0.00074%); alternate formats,
 adversarial boundaries, and cross-platform validation remain open.
 
 **AVX2 float32 follow-up:** the hand-written eight-lane kernel is exact relative
-to scalar float32 across 100,000 randomized span searches. Direct calls improve
-by 1.30× at R5, 2.67× at R25, 4.72× at R100, and 5.22× at R256. Across all
-rows, however, Q16.16 remains 16–34% faster for R25–R256, and the controlled
-full render measured 9.32 ms for Q16.16 versus 10.04 ms for AVX2 float32.
-Production dispatch therefore remains Q16.16; AVX2 float32 is retained as a
-runtime-gated benchmark/experimental backend.
+to scalar float32 across 100,000 randomized span searches. It decisively beat
+the original one-pixel scalar search. After scalar float32 gained the same
+monotonic eight-pixel skip, AVX2 is competitive in direct calls through roughly
+R100 and loses by about 1.45× at R256; across whole-circle rows scalar is 9-24% faster.
+Production dispatch remains Q16.16; AVX2 float32 is retained as a runtime-gated
+benchmark/experimental backend.
+
+**Monotonic batching follow-up:** the eight-pixel shortcut is not specific to
+integers. Applying it to scalar `float32` and `float64` preserves exact results
+relative to their original one-pixel searches. A real AVX2 Q16.16 kernel was
+also implemented and proved exact across 100,000 randomized cases, but its two
+`VPMULDQ` streams and mask interleaving make it 1.4× slower at R5 and roughly
+2.5-2.9× slower at R25-R256 than scalar Q16.16. It therefore remains a tested
+prototype rather than the production dispatcher.
+
+Seven-sample full-render medians after all batching changes were 8.09 ms for
+exact `float64`, 8.67 ms for scalar `float32`, 7.76 ms for AVX2 `float32`, and
+7.66 ms for scalar Q16.16. Q16.16 therefore remains the production path, but
+the margin over the newly batched exact oracle is now about 6%, not the earlier
+14% measured against the one-pixel float64 search.
 
 ### Task 10.14: (Optional) Circle Symmetry Exploitation
 **Rationale**: Circles are vertically symmetric - compute upper half, mirror to lower.

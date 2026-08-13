@@ -44,7 +44,10 @@ runtime-selected float32 SIMD, and Q16.16 span-edge searches across small,
 large, clipped, and row-sharded circles. `BenchmarkCPURendererGeometry`
 compares those modes in the complete one-thread 512×512/K100 renderer. On
 AMD64, `BenchmarkCircleSpanFloat32AVX2Direct` isolates the AVX2 per-row kernel
-crossover. These are the Task 10.13 geometry and integration benchmarks.
+crossover, while `BenchmarkCircleSpanQ16AVX2Direct` compares scalar monotonic
+Q16.16 with its exact eight-lane AVX2 prototype. The latter remains a benchmark
+backend because widened integer multiplies make it slower on the validated
+AMD64 host. These are the Task 10.13 geometry and integration benchmarks.
 
 ## Running benchmarks
 

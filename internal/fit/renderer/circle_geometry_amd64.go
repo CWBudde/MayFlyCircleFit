@@ -2,7 +2,11 @@
 
 package renderer
 
-import "golang.org/x/sys/cpu"
+import (
+	"math"
+
+	"golang.org/x/sys/cpu"
+)
 
 var (
 	circleSpanFloat32Backend  = "scalar"
@@ -28,8 +32,32 @@ func circleSpanFloat32AVX2Unchecked(centerX, radiusSquaredMinusDY float32, width
 	return circleSpanFloat32AVX2Kernel(centerX, radiusSquaredMinusDY, float32(cx), width)
 }
 
+func (g fixedCircleQ16) spanAVX2(y, width int) (xStart, xEnd int, intersects bool) {
+	const vectorMarginQ = 8 * circleQ16Scale
+	roundedCenterQ := int64(g.centerX) << circleQ16FractionBits
+	if !cpu.X86.HasAVX2 || g.centerX < 0 || g.centerX >= width ||
+		roundedCenterQ < math.MinInt32+vectorMarginQ || roundedCenterQ > math.MaxInt32-vectorMarginQ {
+		return g.span(y, width)
+	}
+
+	dyQ := (int64(y) << circleQ16FractionBits) - int64(g.yQ)
+	radiusQ := int64(g.radiusQ)
+	if dyQ < -radiusQ || dyQ > radiusQ {
+		return 0, 0, false
+	}
+
+	xStart, xEnd = circleSpanQ16AVX2Kernel(g.xQ, g.centerX, g.radiusSquared-dyQ*dyQ, width)
+	return xStart, xEnd, xEnd > xStart
+}
+
 // circleSpanFloat32AVX2Kernel finds both half-open span edges using eight
 // float32 squared-distance comparisons per AVX2 iteration.
 //
 //go:noescape
 func circleSpanFloat32AVX2Kernel(centerX, radiusSquaredMinusDY, roundedCenter float32, width int) (xStart, xEnd int)
+
+// circleSpanQ16AVX2Kernel finds both half-open span edges using eight Q16.16
+// squared-distance comparisons per AVX2 iteration.
+//
+//go:noescape
+func circleSpanQ16AVX2Kernel(centerXQ int32, roundedCenter int, radiusSquaredMinusDY int64, width int) (xStart, xEnd int)

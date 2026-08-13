@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/cwbudde/mayflycirclefit/internal/fit"
 	"golang.org/x/sys/cpu"
 )
 
@@ -61,6 +62,34 @@ func TestCircleSpanFloat32Backend(t *testing.T) {
 	}
 }
 
+func TestFixedCircleQ16AVX2MatchesScalar(t *testing.T) {
+	if !cpu.X86.HasAVX2 {
+		t.Skip("AVX2 unavailable")
+	}
+
+	rng := rand.New(rand.NewSource(101316))
+	for i := range 100_000 {
+		width := 8 + rng.Intn(2041)
+		c := fit.Circle{
+			X: rng.Float64() * float64(width),
+			Y: rng.Float64() * 1024,
+			R: 0.25 + rng.Float64()*512,
+		}
+		fixed, ok := newFixedCircleQ16(c)
+		if !ok {
+			t.Fatalf("ordinary circle outside Q16.16 range: %+v", c)
+		}
+		y := rng.Intn(2048) - 512
+
+		wantStart, wantEnd, wantIntersects := fixed.span(y, width)
+		gotStart, gotEnd, gotIntersects := fixed.spanAVX2(y, width)
+		if gotStart != wantStart || gotEnd != wantEnd || gotIntersects != wantIntersects {
+			t.Fatalf("case %d: spanAVX2(y=%d, width=%d, circle=%+v) = [%d,%d), %v; want [%d,%d), %v",
+				i, y, width, c, gotStart, gotEnd, gotIntersects, wantStart, wantEnd, wantIntersects)
+		}
+	}
+}
+
 func BenchmarkCircleSpanFloat32AVX2Direct(b *testing.B) {
 	if !cpu.X86.HasAVX2 {
 		b.Skip("AVX2 unavailable")
@@ -76,6 +105,31 @@ func BenchmarkCircleSpanFloat32AVX2Direct(b *testing.B) {
 		b.Run("avx2_R"+benchmarkFloatName(radius), func(b *testing.B) {
 			for range b.N {
 				xStart, xEnd := circleSpanFloat32AVX2Kernel(256.125, remaining, 256, 513)
+				geometryBenchmarkSink = xEnd - xStart
+			}
+		})
+	}
+}
+
+func BenchmarkCircleSpanQ16AVX2Direct(b *testing.B) {
+	if !cpu.X86.HasAVX2 {
+		b.Skip("AVX2 unavailable")
+	}
+	for _, radius := range []float64{5.25, 25.25, 100.25, 256.25} {
+		fixed, ok := newFixedCircleQ16(fit.Circle{X: 256.125, Y: 0, R: radius})
+		if !ok {
+			b.Fatal("benchmark circle outside Q16.16 range")
+		}
+		name := benchmarkFloatName(float32(radius))
+		b.Run("scalar_R"+name, func(b *testing.B) {
+			for range b.N {
+				xStart, xEnd, _ := fixed.span(0, 513)
+				geometryBenchmarkSink = xEnd - xStart
+			}
+		})
+		b.Run("avx2_R"+name, func(b *testing.B) {
+			for range b.N {
+				xStart, xEnd, _ := fixed.spanAVX2(0, 513)
 				geometryBenchmarkSink = xEnd - xStart
 			}
 		})

@@ -3,7 +3,8 @@
 **Status:** in progress  
 **Validated:** 2026-08-13
 **Hardware:** AMD Ryzen 5 4600H, Linux/AMD64  
-**Production result:** 1.14× faster one-thread 512×512/K100 rendering
+**Current production result:** 1.06× faster than batched exact `float64` in the
+one-thread 512×512/K100 renderer
 
 ## Decision so far
 
@@ -41,6 +42,45 @@ all eight float32 candidates and extracts a comparison mask to locate a partial
 edge. Clipped fragments shorter than eight pixels use scalar VEX-encoded
 float32 instructions.
 
+The phrase "needs only the farthest scalar lane" does **not** mean that only
+one eighth of the circle is calculated. It means that one comparison certifies
+eight pixels: distance from the center is monotonic, so when candidate eight is
+inside the circle, candidates one through seven are necessarily inside too.
+The complete half-open span is still returned, including an exact zero-to-seven
+pixel edge tail.
+
+This shortcut is independent of number format. The scalar `float32` and
+`float64` helpers now use it too, guarded below the first possible full batch so
+small spans do not pay an unnecessary far-candidate comparison. A deterministic
+100,000-case test verifies both batched helpers against their original
+one-pixel searches with identical results.
+
+## AVX2 Q16.16 follow-up
+
+A hand-written AVX2 Q16.16 kernel now provides the literal eight-lane integer
+comparison requested for evaluation. It is runtime-gated, and 100,000
+randomized cases produce exactly the same spans and intersection decisions as
+scalar Q16.16.
+
+It is not selected for production on the Ryzen 5 4600H. AVX2 lacks a packed
+eight-lane 32-by-32-to-64 signed multiply: `VPMULDQ` widens only the four even
+32-bit lanes. The kernel therefore shifts the odd lanes into place, issues a
+second multiply and comparison, then interleaves two four-bit masks. Scalar
+Q16.16 needs just one farthest-candidate multiply per eight certified pixels.
+
+Five 500 ms direct-span samples produced these medians:
+
+| Radius | Scalar Q16.16 | AVX2 Q16.16 | AVX2/scalar |
+| --- | ---: | ---: | ---: |
+| 5.25 | 10.23 ns | 14.69 ns | 1.44× slower |
+| 25.25 | 10.46 ns | 29.32 ns | 2.80× slower |
+| 100.25 | 26.37 ns | 64.79 ns | 2.46× slower |
+| 256.25 | 49.46 ns | 141.1 ns | 2.85× slower |
+
+The useful implementation is therefore scalar monotonic batching, not SIMD
+for its own sake. The AVX2 kernel remains as a correctness-tested benchmark
+prototype and is not called by normal rendering.
+
 ## AVX2 float32 follow-up
 
 The AMD64 prototype is hand-written Plan 9 assembly and runtime-gated with
@@ -50,51 +90,47 @@ AVX-to-SSE transition penalty and was removed. A 100,000-case randomized test
 proves the AVX2 span results are exact relative to the scalar float32 helper,
 including clipped spans and batch boundaries.
 
-Direct single-row medians show that SIMD does make float32 substantially faster:
+Against the original one-pixel scalar search, SIMD was substantially faster.
+After applying monotonic batching to scalar float32, the current direct
+single-row comparison is:
 
 | Radius | Scalar float32 | AVX2 float32 | Speedup |
 | --- | ---: | ---: | ---: |
-| 5.25 | 8.63 ns | 6.63 ns | 1.30× |
-| 25.25 | 33.57 ns | 12.56 ns | 2.67× |
-| 100.25 | 148.9 ns | 31.57 ns | 4.72× |
-| 256.25 | 324.3 ns | 62.08 ns | 5.22× |
+| 5.25 | ~11.1 ns | ~6.35 ns | AVX2 ~1.7× faster |
+| 25.25 | ~10.6 ns | ~11.4 ns | effectively tied |
+| 100.25 | ~26.1 ns | ~25.6 ns | effectively tied |
+| 256.25 | ~44.2 ns | ~64.0 ns | scalar ~1.45× faster |
 
-The stronger comparison is Q16.16, whose monotonic batch needs one widened
-integer multiply rather than eight floating-point lane calculations. Across all
-intersecting rows, AVX2 float32 was about 2.0× faster than scalar float32 at R25,
-4.1× at R100, and 3.6× for the clipped R256 case, but Q16.16 remained 16–34%
-faster over those workloads. R5 is below the SIMD crossover and AVX2 was about
-18% slower than scalar float32 there.
+Across all intersecting rows, batched scalar float32 was 9-24% faster than its
+AVX2 kernel in the measured R5-R256 cases. The direct-call advantage at small
+radii is lost to per-row setup and call overhead; at large radii, the scalar
+search certifies eight pixels with one farthest-candidate comparison while AVX2
+still calculates all eight lanes.
 
-With `GOMAXPROCS=1` and two-second samples, the complete 512×512/K100 renderer
-measured a 10.04 ms median for AVX2 float32 and 9.32 ms for Q16.16. AVX2 was
-therefore about 7.7% slower than Q16.16 despite decisively beating the original
-scalar float32 search. It remains a runtime-gated experimental/benchmark
-backend; production rendering continues to select Q16.16.
-
-Scalar `float32` was also measured. On this host it is effectively tied with
-`float64`; Go emits scalar XMM arithmetic for both, so halving the value width
-does not create SIMD parallelism by itself. The explicit AVX2 kernel supplies
-that parallelism, but does not overcome Q16.16's cheaper monotonic skip.
+In the complete renderer, compositing dominates and the differences narrow.
+Seven one-second `GOMAXPROCS=1` samples measured medians of 8.09 ms for exact
+batched float64, 8.67 ms for batched scalar float32, 7.76 ms for AVX2 float32,
+and 7.66 ms for scalar Q16.16. Production therefore remains scalar Q16.16;
+both float32 paths remain experimental/benchmark backends.
 
 ## AMD64 benchmarks
 
 Five 500 ms samples produced the following medians. Each geometry operation
 computes every intersecting row span for one circle on a 513×389 canvas.
 
-| Geometry | `float64` oracle | Q16.16 | Speedup |
+| Geometry | Batched `float64` oracle | Q16.16 | Comparison |
 | --- | ---: | ---: | ---: |
-| R5 fractional | 103.7 ns | 99.72 ns | 1.04× |
-| R25 fractional | 1.592 µs | 0.578 µs | 2.75× |
-| R100 fractional | 23.887 µs | 4.762 µs | 5.02× |
-| R256 clipped | 62.879 µs | 13.954 µs | 4.51× |
+| R5 fractional | 116 ns | 115 ns | tied |
+| R25 fractional | 604 ns | 685 ns | float64 1.13× faster |
+| R100 fractional | 4.72 µs | 4.79 µs | tied |
+| R256 clipped | 14.45 µs | 15.04 µs | float64 1.04× faster |
 
 The same binary compares the geometry modes in the complete opaque renderer:
 
 | 512×512/K100, one thread | Median | Speedup | Allocations |
 | --- | ---: | ---: | ---: |
-| `float64` oracle | 9.134 ms | 1.00× | 0 |
-| Q16.16 | 7.982 ms | **1.14×** | 0 |
+| Batched `float64` oracle | 8.09 ms | 1.00× | 0 |
+| Q16.16 | 7.66 ms | **1.06×** | 0 |
 
 ## Precision
 
@@ -118,6 +154,9 @@ go test -run '^TestFixedCircleQ16' -count=1 -v ./internal/fit/renderer
 go test -run '^TestCircleSpanFloat32' -count=1 -v ./internal/fit/renderer
 
 go test -run '^$' -bench '^BenchmarkCircleSpanFloat32AVX2Direct$' \
+  -benchmem -benchtime=500ms -count=5 ./internal/fit/renderer
+
+go test -run '^$' -bench '^BenchmarkCircleSpanQ16AVX2Direct$' \
   -benchmem -benchtime=500ms -count=5 ./internal/fit/renderer
 
 go test -run '^$' -bench '^BenchmarkCircleSpanGeometry$' \

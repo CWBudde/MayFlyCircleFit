@@ -357,8 +357,11 @@ func (r *CPURenderer) renderCircleScanlineRows(img *image.NRGBA, c fit.Circle, r
 	}
 
 	r2 := c.R * c.R
-	fixedGeometry, useFixedGeometry := newFixedCircleQ16(c)
-	useFixedGeometry = useFixedGeometry && !r.forceFloatGeometry && !r.forceFloat32Geometry
+	var fixedGeometry fixedCircleQ16
+	useFixedGeometry := false
+	if !r.forceFloatGeometry && !r.forceFloat32Geometry {
+		fixedGeometry, useFixedGeometry = newFixedCircleQ16(c)
+	}
 	var center32, y32, radiusSquared32 float32
 	if r.forceFloat32Geometry {
 		center32 = float32(c.X)
