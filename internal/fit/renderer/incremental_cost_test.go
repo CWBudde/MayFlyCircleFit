@@ -296,6 +296,41 @@ func TestIncrementalCostPreflightPolicy(t *testing.T) {
 	if !renderer.incrementalCandidateWorthwhile(transparent) {
 		t.Fatal("transparent circle rejected")
 	}
+
+	smallRenderer := NewCPURenderer(randomNRGBA(64, 64, 43), 1)
+	smallAccepted := encodeCircles([]fit.Circle{{X: 32, Y: 32, R: 12, Opacity: 1}})
+	if !smallRenderer.incrementalCandidateWorthwhile(smallAccepted) {
+		t.Fatal("small-image measured winner rejected")
+	}
+	smallRejected := encodeCircles([]fit.Circle{{X: 32, Y: 32, R: 16, Opacity: 1}})
+	if smallRenderer.incrementalCandidateWorthwhile(smallRejected) {
+		t.Fatal("small-image measured loser accepted")
+	}
+}
+
+func TestIncrementalStagedSessionEligibility(t *testing.T) {
+	reference := randomNRGBA(64, 64, 44)
+	smallSingle := NewCPURenderer(reference, 1)
+	if !smallSingle.incrementalStagedSessionEligible() {
+		t.Fatal("small single-circle stage rejected")
+	}
+	smallBatch := NewCPURenderer(reference, 5)
+	if smallBatch.incrementalStagedSessionEligible() {
+		t.Fatal("small multi-circle stage accepted")
+	}
+	smallBatch.stagedIncremental = true
+	session, cleanup, err := smallBatch.newSessionWithCanvas(smallBatch.initialCanvas(), 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if mode := session.(*CPURenderer).incrementalCostMode; mode != incrementalCostDisabled {
+		t.Fatalf("small batch session mode = %d, want disabled", mode)
+	}
+	largeBatch := NewCPURenderer(randomNRGBA(256, 256, 46), 5)
+	if !largeBatch.incrementalStagedSessionEligible() {
+		t.Fatal("large multi-circle stage rejected")
+	}
 }
 
 func newCostTestRenderer(reference, canvas *image.NRGBA, circles int) *CPURenderer {

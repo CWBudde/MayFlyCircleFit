@@ -257,7 +257,8 @@ func (r *CPURenderer) newSessionWithCanvas(canvas *image.NRGBA, circleCount int)
 	session.fastCostSelected = r.fastCostSelected
 	session.incrementalCostMode = r.incrementalCostMode
 	session.stagedIncremental = r.stagedIncremental
-	if session.incrementalCostMode == incrementalCostDisabled && session.fastCostSelected && session.stagedIncremental {
+	if session.incrementalCostMode == incrementalCostDisabled && session.fastCostSelected &&
+		session.stagedIncremental && session.incrementalStagedSessionEligible() {
 		session.incrementalCostMode = incrementalCostAuto
 	}
 	session.threads = r.threads

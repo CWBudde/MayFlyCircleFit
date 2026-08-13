@@ -1,14 +1,15 @@
-# Task 10.16: Incremental cost baseline
+# Task 10.16: Incremental cost performance report
 
 **Baseline date:** 2026-08-13  
 **Hardware:** AMD Ryzen 5 4600H  
 **Backend:** AVX2 SSD, `GOMAXPROCS=1`
 
-This note covers Tasks 10.16a through 10.16c: the current-cost baseline, exact
-incremental contract, optimized dirty-region kernels, and measured staged-mode
-dispatch. The original Pascal/Delphi source is not present in this repository,
-so its possible cumulative-cost implementation remains deferred until the
-source is available or the running Go prototype can be compared with it.
+This note covers Tasks 10.16a through 10.16d: the current-cost baseline, exact
+incremental contract, optimized dirty-region kernels, correctness matrix, and
+measured staged-mode dispatch. The original Pascal/Delphi source is not present
+in this repository, so its possible cumulative-cost implementation remains
+deferred until the source is available or the running Go prototype can be
+compared with it.
 
 ## Benchmark design
 
@@ -165,14 +166,16 @@ occurs exactly once with the same denominator as `FastMSECost`.
 ### Selection and invalidation rules
 
 - Incremental mode remains disabled for direct and joint production sessions.
-  On AVX2, sequential and batch retained-canvas sessions select automatic
-  incremental evaluation when the built-in `FastMSECost` is active. NEON and
-  scalar defaults remain unchanged until their native crossover is measured.
+  On AVX2, eligible sequential and batch retained-canvas sessions select
+  automatic incremental evaluation when the built-in `FastMSECost` is active.
+  Canvases below 128×128 admit only K1 staged sessions. NEON and scalar defaults
+  remain unchanged until their native crossover is measured.
 - An internal forced mode is used only for exact parity tests and diagnostic
   benchmarks.
-- Automatic mode first rejects candidates whose summed circle area exceeds 30%
-  of the image, avoiding span tracking in obvious fallback cases. After span
-  union it accepts only when `dirtyPixels*3 + mergedSpans*16 <= totalPixels`.
+- On images of at least 128×128, automatic mode first rejects candidates whose
+  summed circle area exceeds 30% of the image and then requires
+  `dirtyPixels*3 + mergedSpans*16 <= totalPixels`. Smaller K1 sessions use the
+  final 15% / six-dirty-pixel policy documented below.
 - `SetCostFunc` selects an arbitrary cost and disables incremental MSE;
   `UseFastCost` explicitly restores eligibility. Go functions cannot otherwise
   be compared reliably.
@@ -226,14 +229,15 @@ difference. The AVX2 kernel processes eight pixels per iteration, NEON four,
 and both dispatchers retain scalar handling below one vector. Randomized span
 lengths and positive/negative maximum-difference cases match the scalar oracle
 exactly on native AVX2. Linux/Darwin ARM64 builds validate the NEON assembly;
-native ARM64 timing remains part of Task 10.16d.
+native ARM64 timing remains an enablement gate after Task 10.16d.
 
 On the Ryzen 5 4600H, three 500 ms samples put the AVX2 crossover at eight
 pixels: the eight-pixel median is 11.6 ns versus 27.2 ns scalar, while lengths
 one through four remain scalar. Centered single-circle end-to-end measurements
 show the dirty path still winning at 30.64% coverage (about 94 us versus 100 us)
 and losing at 44.12% (about 134 us versus 124 us). Production therefore uses a
-conservative 30% summed-area preflight plus the exact union/span model above.
+conservative 30% summed-area preflight plus the large-image union/span model
+above. Task 10.16d adds the small-image policy below.
 
 The representative 256×256 sequential K1 case has 18.54% dirty pixels and 122
 merged spans. Five 750 ms samples improved the median from 72.50 us to 61.65 us
@@ -241,19 +245,131 @@ merged spans. Five 750 ms samples improved the median from 72.50 us to 61.65 us
 has 72.76% dirty pixels; preflight sends it directly to full-image AVX2, whose
 median remains effectively unchanged at about 231 us.
 
-Five one-second end-to-end samples of the repository's 64×64 pipeline
-benchmarks produced:
-
-| Pipeline | Full-image median | Automatic incremental | Improvement |
-| --- | ---: | ---: | ---: |
-| Sequential, 12 stages | 460.95 us | 332.10 us | 27.9% |
-| Batch, 18 circles / K5 | 187.16 us | 155.47 us | 16.9% |
+The preliminary 10.16c 64×64 pipeline benchmark used literal optimizer values
+for coordinates and radius rather than scaling them through the supplied
+bounds. Its nominal `0.15` radius was therefore 0.15 pixels, not 15% of the
+canvas. Task 10.16d replaces those numbers with bounds-scaled, varying
+candidates and reports the actual geometric dirty union below.
 
 An experimental reduction immediately after each completed row shard was
 effectively tied with the simpler separate post-render span pass (roughly
 61-62 us in the representative sequential case). It did not justify extra
 coordination or allocation, so production retains the separate pass and public
 `Render` behavior is unchanged.
+
+## Task 10.16d validation
+
+### Exactness and optimizer outcomes
+
+The final parity suite compares forced incremental totals with a complete
+`FastMSECost` replay and requires exact `float64` equality. It covers integer
+and fractional tangent rows, every clipped edge and a clipped corner,
+overlapping/repeated spans, fully transparent circles, opaque, translucent, and
+fully transparent retained canvases, positive and negative deltas, and 250
+randomized retained-canvas cases. Both one-thread and four-thread row sharding
+are exercised.
+
+Renderer-level SIMD boundary cases cover full-width dirty spans of 1, 2, 3, 4,
+7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, and 65 pixels. The lower-level kernel
+suite independently compares randomized AVX2/NEON-dispatch lengths and signed
+extremes with the scalar oracle. A 96-candidate ordering test in both K1 and K5
+modes verifies that automatic dispatch preserves every exact cost and the
+stable ranking.
+
+Two end-to-end pipeline tests compare full-image and production-policy results
+for joint, sequential, and batch optimization. The first uses controlled,
+varying candidates with stage convergence enabled. The second uses the real
+seeded Mayfly optimizer. They require identical best parameters, exact best and
+initial costs, final image bytes, evaluation and stage counts, optimized-circle
+counts, termination, and early-stop metadata.
+
+The renderer suite passes normally, with `GODEBUG=cpu.avx2=off`, and under the
+race detector both with native AVX2 and with AVX2 disabled. Linux and Darwin
+ARM64 test binaries compile with the NEON assembly, while Windows AMD64 and
+Linux 386 validate AVX2/scalar build selection. Native ARM64 hardware was not
+available, so production remains AVX2-only; on ARM64,
+`GODEBUG=cpu.asimd=off` selects the tested scalar contract and native NEON
+timing remains a prerequisite for enabling it by default.
+
+### Corrected end-to-end benchmarks
+
+Five 750 ms samples on the Ryzen 5 4600H, pinned to one Go execution context,
+used eight distinct candidates per optimizer stage. Radius is now derived from
+the optimizer bounds, and `% dirty` is the mean merged geometric union across
+those candidates.
+
+| 64×64 pipeline | Mean dirty | Full-image median | Production median | Change |
+| --- | ---: | ---: | ---: | ---: |
+| Sequential K1, radius 8% | 1.52% | 519.41 us | 440.26 us | **+15.2%** |
+| Sequential K1, radius 15% | 5.14% | 597.30 us | 561.60 us | +6.0% |
+| Sequential K1, radius 25% | 13.24% | 750.01 us | 759.98 us | -1.3% (fallback) |
+| Batch K5, radius 4% | 2.00% | 233.46 us | 215.00 us | same full-image code path; timing noise |
+| Batch K5, radius 8% | 7.85% | 264.28 us | 266.63 us | -0.9% (full-image) |
+| Batch K5, radius 15% | 26.05% | 383.18 us | 390.74 us | -2.0% (full-image) |
+| Joint K12 | 60.09% | 156.97 us | 154.98 us | +1.3% (full-image) |
+
+The small-canvas K5 and joint entries intentionally execute identical
+full-image production code; equal allocation counts confirm that no dirty-span
+session is created. Their small signed differences are run-order and system
+noise, not different algorithms.
+
+The representative 256×256 retained-canvas benchmark still shows the larger
+image benefit: sequential K1 at 18.54% dirty improves from a 74.18 us median to
+59.76 us, or 19.4%, with zero allocations per steady-state evaluation. Batch
+K5 at 72.76% dirty preflights to full-image SSD (230.00 us versus 230.24 us,
+-0.1%). Joint K50 remains full-image-only.
+
+A separate five-sample 256×256 K5 pipeline sweep covers the large batch
+sessions that remain production-eligible:
+
+| 256×256 batch K5 | Mean dirty | Full-image median | Production median | Improvement |
+| --- | ---: | ---: | ---: | ---: |
+| Radius 2% | 0.50% | 2.724 ms | 1.950 ms | **28.4%** |
+| Radius 4% | 2.02% | 2.842 ms | 2.188 ms | **23.0%** |
+| Radius 8% | 7.83% | 3.431 ms | 3.020 ms | **12.0%** |
+
+Together with the 72.76%-dirty fallback, this supports enabling large-canvas
+batch sessions only through the same preflight and merged-union policy.
+
+Five 500 ms samples with the real seeded Mayfly optimizer (two iterations,
+population ten, six requested circles) produced medians of 5.48/5.56 ms for
+joint, 6.47/6.40 ms for sequential, and 5.90/5.98 ms for batch (full/production).
+This deliberately broad-radius population triggers many fallbacks; all modes
+remain within about 1.5%, and the outcome-parity test proves identical
+convergence. The ratio-controlled sequential workload above provides the
+required greater-than-10% end-to-end win where the incremental path is used.
+
+### Final production crossover
+
+Production selection remains restricted to retained-canvas `FastMSECost`
+sessions on AVX2. Direct and joint evaluation, custom cost functions, scalar,
+and NEON defaults continue to use full-image evaluation.
+
+For images of at least 128×128, the preflight accepts at most 30% summed circle
+area and the merged-union model requires
+`dirtyPixels*3 + mergedSpans*16 <= totalPixels`. Corrected small-image
+measurements found that applying this model unchanged could accept a losing
+64×64 K1 case, while merely preflighting K5 was measurable. Below 128×128,
+production therefore:
+
+- enables automatic incremental evaluation only for K1 retained sessions;
+- caps preflight summed area at 15%; and
+- requires `dirtyPixels*6 + mergedSpans*16 <= totalPixels` after union.
+
+This keeps the 15.2% measured K1 pipeline win, sends the 13.24%-dirty losing
+case back to full-image SSD, and avoids any preflight overhead for small batch
+sessions. Steady-state incremental evaluation remains allocation-free; the
+extra pipeline allocations in accepted K1 runs are the per-stage reusable span
+stores, not per-evaluation allocation.
+
+### Legacy status
+
+The Pascal/Delphi source is still not present in this repository. Per the
+explicit deferral in Task 10.16a, this report does not infer a legacy cumulative
+or fixed-point algorithm from `ErrorWeightingLoop`. The exact modern arithmetic
+bounds and Q16.16 geometry independence are documented above; a source-backed
+comparison of legacy 16.16, 8.24, MMX, or SSE accumulation remains tracked in
+10.16a and can be added without changing this exact integer SSD contract.
 
 Reproduce the benchmark with:
 
@@ -263,8 +379,19 @@ GOMAXPROCS=1 go test ./internal/fit/renderer -run '^$' \
   -benchmem -benchtime=750ms -count=5
 
 GOMAXPROCS=1 go test ./internal/fit/renderer -run '^$' \
-  -bench '^BenchmarkOptimize(Sequential|Batch)Pipeline$' \
-  -benchmem -benchtime=1s -count=5
+  -bench '^BenchmarkOptimize(Joint|Sequential|Batch)Pipeline$' \
+  -benchmem -benchtime=750ms -count=5
+
+GOMAXPROCS=1 go test ./internal/fit/renderer -run '^$' \
+  -bench '^BenchmarkOptimizeBatchPipeline256$' \
+  -benchmem -benchtime=500ms -count=5
+
+GOMAXPROCS=1 go test ./internal/fit/renderer -run '^$' \
+  -bench '^BenchmarkMayflyIncrementalPipelines$' \
+  -benchmem -benchtime=500ms -count=5
+
+GODEBUG=cpu.avx2=off go test -race ./internal/fit/renderer \
+  -run '^(TestDeltaSSDSpan|TestDirtySpanSet|TestIncrementalCost|TestIncrementalPipeline)'
 
 go test ./internal/fit/renderer \
   -run '^TestDirtySpanCoverageMetrics$' -count=1 -v

@@ -597,17 +597,18 @@ which optimizes only circle coverage geometry.
   cache locality compared with a separate dirty-span pass
 
 **10.16d — Correctness and performance validation:**
-- [ ] Require exact equality with a full `FastMSECost` replay across randomized
+- [x] Require exact equality with a full `FastMSECost` replay across randomized
   circles, tangent and clipped spans, overlapping circles, transparent colors,
   opaque and translucent base canvases, and SIMD batch boundaries
-- [ ] Cover single-thread and multi-thread row sharding plus AVX2/NEON-disabled
+- [x] Cover single-thread and multi-thread row sharding plus AVX2/NEON-disabled
   scalar fallbacks under race testing
-- [ ] Benchmark end-to-end optimizer throughput and convergence for joint,
+- [x] Benchmark end-to-end optimizer throughput and convergence for joint,
   sequential, and batch modes; report results by dirty-area ratio
-- [ ] Enable the incremental path in production only where repeated samples
+- [x] Enable the incremental path in production only where repeated samples
   beat the full-image SIMD SSD without changing candidate ordering or cost
-- [ ] Publish the legacy comparison, arithmetic bounds, crossover policy, and
-  native/cross-platform results in a dedicated performance report
+- [x] Publish the available arithmetic bounds, crossover policy, and
+  native/cross-platform results in a dedicated performance report; explicitly
+  defer the legacy comparison to 10.16a until its source becomes available
 
 **Success criteria:**
 - Exact cost parity with the existing full-image `FastMSECost` for every
