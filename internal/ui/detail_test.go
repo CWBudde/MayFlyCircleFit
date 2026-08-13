@@ -125,7 +125,10 @@ func TestJobDetailPageParameterViewerCircleCounts(t *testing.T) {
 			body := output.String()
 			for _, marker := range []string{
 				`id="parameter-viewer"`, `id="parameter-list"`, `id="parameter-data"`,
-				`download="params.json"`, `refreshParameterViewer()`, `formatParameter(circle)`,
+				`params.json`, `refreshParameterViewer()`, `formatParameter(circle)`,
+				`Download Best Image`, `Download Parameters`, `Download Difference Image`,
+				`id="download-report"`, `Generating report…`, `URL.createObjectURL(blob)`,
+				`syncArtifactDownloadColormap()`, `role="status" aria-live="polite"`,
 			} {
 				if !strings.Contains(body, marker) {
 					t.Errorf("rendered detail page missing %q", marker)

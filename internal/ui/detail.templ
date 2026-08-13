@@ -268,6 +268,55 @@ templ JobDetailPage(job JobDetail) {
 				</div>
 			</div>
 		</div>
+		<!-- Artifact downloads -->
+		<style>
+			.download-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.75rem; }
+			.download-button { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; background: var(--border-color); color: var(--text-color); text-align: center; }
+			.download-button:hover { background: #d1d5db; }
+			.download-button[aria-disabled="true"], .download-button:disabled { pointer-events: none; cursor: not-allowed; opacity: 0.5; }
+			.download-button[aria-busy="true"]::before { content: ""; width: 0.8rem; height: 0.8rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; }
+		</style>
+		<div class="card" style="margin-bottom: 1.5rem;">
+			<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.25rem;">Downloads</h2>
+			<p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1rem;">Export the current immutable best snapshot or a self-contained report.</p>
+			<div class="download-grid">
+				<a
+					class="btn download-button"
+					data-result-download
+					href={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/best.png?download=1", job.ID)) }
+					download={ fmt.Sprintf("job-%s-best.png", job.ID) }
+					aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
+					tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
+				>Download Best Image</a>
+				<a
+					class="btn download-button"
+					data-result-download
+					href={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/params.json", job.ID)) }
+					download={ fmt.Sprintf("job-%s-params.json", job.ID) }
+					aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
+					tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
+				>Download Parameters</a>
+				<a
+					id="download-difference"
+					class="btn download-button"
+					data-result-download
+					href={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/diff.png?colormap=turbo&download=1", job.ID)) }
+					download={ fmt.Sprintf("job-%s-diff.png", job.ID) }
+					aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
+					tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
+				>Download Difference Image</a>
+				<button
+					id="download-report"
+					class="btn download-button"
+					data-result-download
+					type="button"
+					if len(job.Parameters) == 0 {
+						disabled
+					}
+				>Download Report</button>
+			</div>
+			<p id="report-download-status" role="status" aria-live="polite" style="min-height: 1.25rem; margin-top: 0.75rem; color: var(--text-muted); font-size: 0.8rem;"></p>
+		</div>
 		<!-- Current best parameter viewer -->
 		<style>
 			.parameter-viewer summary {
@@ -336,7 +385,7 @@ templ JobDetailPage(job JobDetail) {
 					class="btn parameter-export"
 					style="background-color: var(--border-color); font-size: 0.875rem;"
 					href={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/params.json", job.ID)) }
-					download="params.json"
+					download={ fmt.Sprintf("job-%s-params.json", job.ID) }
 					aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
 					tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
 				>
@@ -686,6 +735,7 @@ templ JobDetailPage(job JobDetail) {
 				);
 				initializeHeatmapColormap();
 				initializeParameterViewer();
+				initializeDownloadControls();
 
 				// Bounded server-seeded quality history for the selectable sparkline.
 				const MAX_SAMPLES = 100;
@@ -891,6 +941,59 @@ templ JobDetailPage(job JobDetail) {
 					}
 				}
 
+				function initializeDownloadControls() {
+					const reportButton = document.getElementById("download-report");
+					if (reportButton) {
+						reportButton.addEventListener("click", downloadReport);
+					}
+					syncArtifactDownloadColormap();
+				}
+
+				function syncArtifactDownloadColormap() {
+					const differenceLink = document.getElementById("download-difference");
+					if (!differenceLink) return;
+					differenceLink.href =
+						"/api/v1/jobs/" + jobId + "/diff.png?colormap=" +
+						encodeURIComponent(selectedHeatmapColormap()) + "&download=1";
+				}
+
+				async function downloadReport() {
+					const button = document.getElementById("download-report");
+					const status = document.getElementById("report-download-status");
+					if (!button || button.disabled) return;
+
+					button.disabled = true;
+					button.setAttribute("aria-busy", "true");
+					const originalText = button.textContent;
+					button.textContent = "Generating report…";
+					if (status) status.textContent = "Rendering images and assembling report…";
+					try {
+						const response = await fetch(
+							"/api/v1/jobs/" + jobId + "/report.html?colormap=" +
+							encodeURIComponent(selectedHeatmapColormap()),
+							{ cache: "no-store" },
+						);
+						if (!response.ok) throw new Error("HTTP " + response.status);
+						const blob = await response.blob();
+						const objectURL = URL.createObjectURL(blob);
+						const link = document.createElement("a");
+						link.href = objectURL;
+						link.download = "job-" + jobId + "-report.html";
+						document.body.appendChild(link);
+						link.click();
+						link.remove();
+						setTimeout(function () { URL.revokeObjectURL(objectURL); }, 1000);
+						if (status) status.textContent = "Report download ready.";
+					} catch (err) {
+						console.error("Unable to generate report:", err);
+						if (status) status.textContent = "Report generation failed. Please try again.";
+					} finally {
+						button.removeAttribute("aria-busy");
+						button.textContent = originalText;
+						button.disabled = false;
+					}
+				}
+
 				async function refreshParameterViewer() {
 					const viewer = document.getElementById("parameter-viewer");
 					if (!viewer || !viewer.open || parameterRefreshPending) return;
@@ -947,6 +1050,19 @@ templ JobDetailPage(job JobDetail) {
 						);
 						exportLink.tabIndex = circles.length > 0 ? 0 : -1;
 					}
+					updateResultDownloads(circles.length > 0);
+				}
+
+				function updateResultDownloads(available) {
+					document.querySelectorAll("[data-result-download]").forEach(function (control) {
+						if (control.tagName === "BUTTON") {
+							control.disabled =
+								!available || control.getAttribute("aria-busy") === "true";
+						} else {
+							control.setAttribute("aria-disabled", available ? "false" : "true");
+							control.tabIndex = available ? 0 : -1;
+						}
+					});
 				}
 
 				function formatParameter(circle) {
@@ -1037,6 +1153,7 @@ templ JobDetailPage(job JobDetail) {
 					}
 					select.addEventListener("change", function () {
 						updateHeatmapLegend(select.value);
+						syncArtifactDownloadColormap();
 						refreshImage(
 							"diff-image",
 							"diff-image-loading",

@@ -1,0 +1,133 @@
+package ui
+
+import (
+	"fmt"
+	"time"
+)
+
+type JobReport struct {
+	ID                string
+	State             string
+	Mode              string
+	Colormap          string
+	RefPath           string
+	Circles           int
+	Iterations        int
+	Evaluations       int
+	Cost              float64
+	PSNR              string
+	SSIM              string
+	StartTime         time.Time
+	EndTime           *time.Time
+	ElapsedSec        float64
+	GeneratedAt       time.Time
+	ReferenceDataURI  string
+	BestDataURI       string
+	DifferenceDataURI string
+	Parameters        []CircleParameter
+}
+
+templ JobReportPage(report JobReport) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ fmt.Sprintf("Job %s Report", report.ID) }</title>
+			<style>
+				* { box-sizing: border-box; }
+				body { margin: 0; background: #f3f4f6; color: #111827; font: 15px/1.5 system-ui, sans-serif; }
+				main { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+				h1, h2 { margin: 0 0 1rem; }
+				.subtitle { margin: -0.75rem 0 1.5rem; color: #6b7280; }
+				.card { margin-bottom: 1.5rem; padding: 1.5rem; border: 1px solid #e5e7eb; border-radius: 0.5rem; background: white; }
+				.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
+				.label { color: #6b7280; font-size: 0.8rem; }
+				.value { overflow-wrap: anywhere; font-weight: 600; }
+				.images { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+				figure { margin: 0; min-width: 0; }
+				figure img { display: block; width: 100%; height: auto; border: 1px solid #e5e7eb; border-radius: 0.375rem; }
+				figcaption { margin-bottom: 0.5rem; color: #4b5563; font-weight: 600; }
+				table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+				th, td { padding: 0.5rem 0.65rem; border-bottom: 1px solid #e5e7eb; text-align: left; }
+				th { background: #f9fafb; }
+				.parameters { max-height: 38rem; overflow: auto; }
+				.swatch { display: inline-block; width: 0.85rem; height: 0.85rem; margin-right: 0.4rem; border: 1px solid #d1d5db; border-radius: 50%; vertical-align: -0.1rem; }
+				footer { color: #6b7280; font-size: 0.8rem; text-align: center; }
+				@media (max-width: 800px) { main { padding: 1rem; } .images { grid-template-columns: 1fr; } }
+				@media print { body { background: white; } main { max-width: none; padding: 0; } .card { break-inside: avoid; box-shadow: none; } .parameters { max-height: none; overflow: visible; } }
+			</style>
+		</head>
+		<body>
+			<main>
+				<header>
+					<h1>MayFlyCircleFit Report</h1>
+					<p class="subtitle">Job { report.ID }</p>
+				</header>
+				<section class="card">
+					<h2>Metadata</h2>
+					<div class="grid">
+						@reportValue("State", report.State)
+						@reportValue("Mode", report.Mode)
+						@reportValue("Circles", fmt.Sprintf("%d", report.Circles))
+						@reportValue("Iterations", fmt.Sprintf("%d", report.Iterations))
+						@reportValue("Evaluations", fmt.Sprintf("%d", report.Evaluations))
+						@reportValue("Elapsed", formatDuration(report.ElapsedSec))
+						@reportValue("Started", report.StartTime.Format(time.RFC3339))
+						if report.EndTime != nil {
+							@reportValue("Ended", report.EndTime.Format(time.RFC3339))
+						}
+						@reportValue("Reference", report.RefPath)
+						@reportValue("Generated", report.GeneratedAt.Format(time.RFC3339))
+					</div>
+				</section>
+				<section class="card">
+					<h2>Metrics</h2>
+					<div class="grid">
+						@reportValue("Cost (MSE)", fmt.Sprintf("%.6f", report.Cost))
+						@reportValue("PSNR", report.PSNR)
+						@reportValue("SSIM", report.SSIM)
+						@reportValue("Difference colormap", report.Colormap)
+					</div>
+				</section>
+				<section class="card">
+					<h2>Images</h2>
+					<div class="images">
+						@reportImage("Reference", report.ReferenceDataURI, "Reference image")
+						@reportImage("Best", report.BestDataURI, "Current best image")
+						@reportImage("Difference", report.DifferenceDataURI, "Difference heatmap")
+					</div>
+				</section>
+				<section class="card">
+					<h2>Parameters</h2>
+					<div class="parameters">
+						<table>
+							<thead><tr><th>Circle</th><th>X</th><th>Y</th><th>Radius</th><th>RGB</th><th>Opacity</th></tr></thead>
+							<tbody>
+								for _, circle := range report.Parameters {
+									<tr>
+										<td>{ fmt.Sprintf("%d", circle.Number) }</td>
+										<td>{ fmt.Sprintf("%.4f", circle.X) }</td>
+										<td>{ fmt.Sprintf("%.4f", circle.Y) }</td>
+										<td>{ fmt.Sprintf("%.4f", circle.Radius) }</td>
+										<td><span class="swatch" style={ fmt.Sprintf("background: rgba(%d,%d,%d,%.3f)", colorChannel(circle.Red), colorChannel(circle.Green), colorChannel(circle.Blue), circle.Opacity) }></span>{ fmt.Sprintf("%d, %d, %d", colorChannel(circle.Red), colorChannel(circle.Green), colorChannel(circle.Blue)) }</td>
+										<td>{ fmt.Sprintf("%.4f", circle.Opacity) }</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				</section>
+				<footer>Self-contained report generated by MayFlyCircleFit.</footer>
+			</main>
+		</body>
+	</html>
+}
+
+templ reportValue(label, value string) {
+	<div><div class="label">{ label }</div><div class="value">{ value }</div></div>
+}
+
+templ reportImage(caption, dataURI, alt string) {
+	<figure><figcaption>{ caption }</figcaption><img src={ templ.SafeURL(dataURI) } alt={ alt }/></figure>
+}

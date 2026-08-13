@@ -863,23 +863,34 @@ readable circle representation with job ID, cost, iterations, and UTC snapshot
 timestamp. Endpoint, conversion, live-view markup, empty state, and circle-count
 tests include one, many, and 1,000-circle cases.
 
-### Task 12.5: Add Download Buttons for Artifacts
-- [ ] Add "Download Best Image" button
-  - [ ] Download current best.png
-  - [ ] Filename: `job-<id>-best.png`
-- [ ] Add "Download Parameters" button
-  - [ ] Download params.json
-  - [ ] Filename: `job-<id>-params.json`
-- [ ] Add "Download Difference Image" button
-  - [ ] Download diff.png with colormap
-  - [ ] Filename: `job-<id>-diff.png`
-- [ ] Add "Download Report" button
-  - [ ] Generate HTML report with all artifacts
-  - [ ] Include: reference, best, diff images, parameters, metrics, metadata
-  - [ ] Self-contained HTML file (embedded images as base64)
-  - [ ] Filename: `job-<id>-report.html`
-- [ ] Test downloads on various browsers
-- [ ] Add loading states during report generation
+### Task 12.5: Add Download Buttons for Artifacts ✅
+- [x] Add "Download Best Image" button
+  - [x] Download current best.png
+  - [x] Filename: `job-<id>-best.png`
+- [x] Add "Download Parameters" button
+  - [x] Download params.json
+  - [x] Filename: `job-<id>-params.json`
+- [x] Add "Download Difference Image" button
+  - [x] Download diff.png with colormap
+  - [x] Filename: `job-<id>-diff.png`
+- [x] Add "Download Report" button
+  - [x] Generate HTML report with all artifacts
+  - [x] Include: reference, best, diff images, parameters, metrics, metadata
+  - [x] Self-contained HTML file (embedded images as base64)
+  - [x] Filename: `job-<id>-report.html`
+- [x] Cover browser-compatible downloads with response and UI tests
+- [x] Add loading states during report generation
+
+Completed: the detail page provides responsive controls for Best, Parameters,
+Difference, and Report downloads with deterministic job-specific filenames.
+PNG endpoints preserve inline image use while `?download=1` adds standards-based
+attachment headers, and the selected heatmap colormap is shared with Difference
+and Report exports. Report generation renders one immutable job snapshot into a
+self-contained HTML download with three base64 PNGs, metrics, metadata, and the
+full parameter table. An accessible asynchronous loading/error state keeps the
+page responsive. Endpoint tests validate MIME and attachment headers, embedded
+PNG integrity, report self-containment, error behavior, and browser-facing UI
+contracts.
 
 ### Task 12.6: Generate HTML Report
 - [ ] Create report template in `internal/ui/report.templ`

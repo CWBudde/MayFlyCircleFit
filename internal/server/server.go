@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 	"github.com/google/uuid"
@@ -373,6 +372,8 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 		s.handleGetRefImage(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "params.json" {
 		s.handleGetParameters(w, r, jobID)
+	} else if len(parts) == 2 && parts[1] == "report.html" {
+		s.handleGetReport(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "stream" {
 		s.handleJobStream(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "resume" {
@@ -584,6 +585,9 @@ func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobI
 	// Set headers
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "no-cache")
+	if downloadRequested(r) {
+		setAttachment(w, artifactFilename(jobID, "best.png"))
+	}
 
 	// Encode and send
 	if err := png.Encode(w, img); err != nil {
@@ -598,14 +602,10 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 		return
 	}
-	colormap := fit.ColormapTurbo
-	if requested := r.URL.Query().Get("colormap"); requested != "" {
-		var ok bool
-		colormap, ok = fit.ParseColormap(requested)
-		if !ok {
-			writeAPIError(w, http.StatusBadRequest, "invalid_colormap", "colormap must be turbo or magma")
-			return
-		}
+	colormap, err := requestedColormap(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_colormap", err.Error())
+		return
 	}
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
@@ -638,6 +638,9 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 	// Set headers
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "no-cache")
+	if downloadRequested(r) {
+		setAttachment(w, artifactFilename(jobID, "diff.png"))
+	}
 
 	// Encode and send
 	if err := png.Encode(w, diff); err != nil {

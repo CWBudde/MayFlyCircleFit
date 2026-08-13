@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -78,8 +79,9 @@ func TestServerGetParameters(t *testing.T) {
 	if got := recorder.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
 		t.Errorf("Content-Type = %q", got)
 	}
-	if got := recorder.Header().Get("Content-Disposition"); got != `attachment; filename="params.json"` {
-		t.Errorf("Content-Disposition = %q", got)
+	mediaType, disposition, err := mime.ParseMediaType(recorder.Header().Get("Content-Disposition"))
+	if err != nil || mediaType != "attachment" || disposition["filename"] != artifactFilename(job.ID, "params.json") {
+		t.Errorf("Content-Disposition = %q, error = %v", recorder.Header().Get("Content-Disposition"), err)
 	}
 	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
 		t.Errorf("Cache-Control = %q", got)

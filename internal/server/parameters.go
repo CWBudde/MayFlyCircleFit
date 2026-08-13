@@ -85,7 +85,7 @@ func (s *Server) handleGetParameters(w http.ResponseWriter, r *http.Request, job
 	}
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="params.json"`)
+	setAttachment(w, artifactFilename(jobID, "params.json"))
 	w.Header().Set("Cache-Control", "no-store")
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
