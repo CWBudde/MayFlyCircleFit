@@ -1,6 +1,7 @@
 package renderer
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"math/rand"
@@ -9,6 +10,43 @@ import (
 
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
 )
+
+func TestDeltaSSDSpanMatchesScalar(t *testing.T) {
+	rng := rand.New(rand.NewSource(10_016))
+	for _, pixels := range []int{0, 1, 2, 3, 4, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255, 256, 257} {
+		t.Run(fmt.Sprintf("%d", pixels), func(t *testing.T) {
+			candidate := make([]byte, pixels*4)
+			base := make([]byte, pixels*4)
+			reference := make([]byte, pixels*4)
+			_, _ = rng.Read(candidate)
+			_, _ = rng.Read(base)
+			_, _ = rng.Read(reference)
+			got := deltaSSDSpan(candidate, base, reference, pixels)
+			want := deltaSSDSpanScalar(candidate, base, reference, pixels)
+			if got != want {
+				t.Fatalf("%s delta = %d, scalar = %d", deltaSSDBackend, got, want)
+			}
+		})
+	}
+}
+
+func TestDeltaSSDSpanSignedExtremes(t *testing.T) {
+	const pixels = 257
+	black := make([]byte, pixels*4)
+	white := make([]byte, pixels*4)
+	for offset := 0; offset < len(white); offset += 4 {
+		white[offset+0] = 255
+		white[offset+1] = 255
+		white[offset+2] = 255
+	}
+	want := int64(pixels * 3 * 255 * 255)
+	if got := deltaSSDSpan(white, black, black, pixels); got != want {
+		t.Fatalf("positive delta = %d, want %d", got, want)
+	}
+	if got := deltaSSDSpan(black, white, black, pixels); got != -want {
+		t.Fatalf("negative delta = %d, want %d", got, -want)
+	}
+}
 
 func TestDirtySpanSetMergesHalfOpenIntervals(t *testing.T) {
 	var dirty dirtySpanSet
@@ -244,9 +282,53 @@ func TestIncrementalCostWorthwhilePolicy(t *testing.T) {
 	}
 }
 
+func TestIncrementalCostPreflightPolicy(t *testing.T) {
+	renderer := NewCPURenderer(randomNRGBA(256, 256, 42), 1)
+	small := encodeCircles([]fit.Circle{{X: 128, Y: 128, R: 64, Opacity: 1}})
+	if !renderer.incrementalCandidateWorthwhile(small) {
+		t.Fatal("measured small-circle case rejected")
+	}
+	large := encodeCircles([]fit.Circle{{X: 128, Y: 128, R: 96, Opacity: 1}})
+	if renderer.incrementalCandidateWorthwhile(large) {
+		t.Fatal("measured large-circle fallback case accepted")
+	}
+	transparent := encodeCircles([]fit.Circle{{X: 128, Y: 128, R: 128}})
+	if !renderer.incrementalCandidateWorthwhile(transparent) {
+		t.Fatal("transparent circle rejected")
+	}
+}
+
 func newCostTestRenderer(reference, canvas *image.NRGBA, circles int) *CPURenderer {
 	if canvas == nil {
 		return NewCPURenderer(reference, circles)
 	}
 	return NewCPURendererWithCanvas(reference, canvas, circles)
 }
+
+func BenchmarkDeltaSSDSpan(b *testing.B) {
+	for _, pixels := range []int{1, 2, 4, 8, 16, 32, 64, 128, 256} {
+		candidate := make([]byte, pixels*4)
+		base := make([]byte, pixels*4)
+		reference := make([]byte, pixels*4)
+		rng := rand.New(rand.NewSource(int64(pixels)))
+		_, _ = rng.Read(candidate)
+		_, _ = rng.Read(base)
+		_, _ = rng.Read(reference)
+		b.Run(fmt.Sprintf("scalar/%d", pixels), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(pixels * 12))
+			for range b.N {
+				rendererDeltaSink = deltaSSDSpanScalar(candidate, base, reference, pixels)
+			}
+		})
+		b.Run(fmt.Sprintf("auto_%s/%d", deltaSSDBackend, pixels), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(pixels * 12))
+			for range b.N {
+				rendererDeltaSink = deltaSSDSpan(candidate, base, reference, pixels)
+			}
+		})
+	}
+}
+
+var rendererDeltaSink int64

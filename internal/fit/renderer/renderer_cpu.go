@@ -35,7 +35,10 @@ type CPURenderer struct {
 	// CostFunc values, which cannot be compared directly in Go.
 	fastCostSelected    bool
 	incrementalCostMode incrementalCostMode
-	dirtySpans          dirtySpanSet
+	// stagedIncremental enables measured automatic dispatch for sessions that
+	// render new sequential/batch circles over a retained canvas.
+	stagedIncremental bool
+	dirtySpans        dirtySpanSet
 	// Buffer pooling to reduce allocations
 	canvas    *image.NRGBA // Reusable render buffer
 	initialBg []byte       // Precomputed initial background (white or custom canvas)
@@ -61,19 +64,20 @@ func NewCPURenderer(reference *image.NRGBA, k int) *CPURenderer {
 	initialSSD, initialSSDValid := exactInitialCanvasSSD(whiteBg, width, height, reference)
 
 	return &CPURenderer{
-		reference:        reference,
-		k:                k,
-		bounds:           fit.NewBounds(k, width, height),
-		costFunc:         fit.FastMSECost,
-		width:            width,
-		height:           height,
-		threads:          effectiveThreadCount(runtime.GOMAXPROCS(0), height),
-		opaqueCanvas:     true,
-		initialSSD:       initialSSD,
-		initialSSDValid:  initialSSDValid,
-		fastCostSelected: true,
-		canvas:           canvas,
-		initialBg:        whiteBg,
+		reference:         reference,
+		k:                 k,
+		bounds:            fit.NewBounds(k, width, height),
+		costFunc:          fit.FastMSECost,
+		width:             width,
+		height:            height,
+		threads:           effectiveThreadCount(runtime.GOMAXPROCS(0), height),
+		opaqueCanvas:      true,
+		initialSSD:        initialSSD,
+		initialSSDValid:   initialSSDValid,
+		fastCostSelected:  true,
+		stagedIncremental: deltaSSDBackend == "avx2",
+		canvas:            canvas,
+		initialBg:         whiteBg,
 	}
 }
 
@@ -105,19 +109,20 @@ func NewCPURendererWithCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int
 	initialSSD, initialSSDValid := exactInitialCanvasSSD(initialBg, width, height, reference)
 
 	return &CPURenderer{
-		reference:        reference,
-		k:                k,
-		bounds:           fit.NewBounds(k, width, height),
-		costFunc:         fit.FastMSECost,
-		width:            width,
-		height:           height,
-		threads:          effectiveThreadCount(runtime.GOMAXPROCS(0), height),
-		opaqueCanvas:     pixelsAreOpaque(initialBg),
-		initialSSD:       initialSSD,
-		initialSSDValid:  initialSSDValid,
-		fastCostSelected: true,
-		canvas:           canvasCopy,
-		initialBg:        initialBg,
+		reference:         reference,
+		k:                 k,
+		bounds:            fit.NewBounds(k, width, height),
+		costFunc:          fit.FastMSECost,
+		width:             width,
+		height:            height,
+		threads:           effectiveThreadCount(runtime.GOMAXPROCS(0), height),
+		opaqueCanvas:      pixelsAreOpaque(initialBg),
+		initialSSD:        initialSSD,
+		initialSSDValid:   initialSSDValid,
+		fastCostSelected:  true,
+		stagedIncremental: deltaSSDBackend == "avx2",
+		canvas:            canvasCopy,
+		initialBg:         initialBg,
 	}
 }
 
@@ -180,6 +185,9 @@ func (r *CPURenderer) Cost(params []float64) float64 {
 		return math.Inf(1)
 	}
 	if r.incrementalCostMode != incrementalCostDisabled && r.fastCostSelected && r.initialSSDValid {
+		if r.incrementalCostMode == incrementalCostAuto && !r.incrementalCandidateWorthwhile(params) {
+			return fit.FastMSECost(r.Render(params), r.reference)
+		}
 		rendered := r.render(params, &r.dirtySpans)
 		if r.incrementalCostMode == incrementalCostForce || incrementalCostWorthwhile(&r.dirtySpans, r.width*r.height) {
 			if total, ok := r.incrementalSSDTotal(rendered, &r.dirtySpans); ok {
@@ -216,6 +224,7 @@ func (r *CPURenderer) newSession(circleCount int) (Renderer, func(), error) {
 		initialSSDValid:      r.initialSSDValid,
 		fastCostSelected:     r.fastCostSelected,
 		incrementalCostMode:  r.incrementalCostMode,
+		stagedIncremental:    r.stagedIncremental,
 		canvas:               canvas,
 		initialBg:            initialBg,
 	}, noopCleanup, nil
@@ -247,6 +256,10 @@ func (r *CPURenderer) newSessionWithCanvas(canvas *image.NRGBA, circleCount int)
 	session.costFunc = r.costFunc
 	session.fastCostSelected = r.fastCostSelected
 	session.incrementalCostMode = r.incrementalCostMode
+	session.stagedIncremental = r.stagedIncremental
+	if session.incrementalCostMode == incrementalCostDisabled && session.fastCostSelected && session.stagedIncremental {
+		session.incrementalCostMode = incrementalCostAuto
+	}
 	session.threads = r.threads
 	session.forceFloatGeometry = r.forceFloatGeometry
 	session.forceFloat32Geometry = r.forceFloat32Geometry

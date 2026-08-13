@@ -1,6 +1,11 @@
 package renderer
 
-import "image"
+import (
+	"image"
+	"math"
+
+	"github.com/cwbudde/mayflycirclefit/internal/fit"
+)
 
 type incrementalCostMode uint8
 
@@ -10,18 +15,39 @@ const (
 	incrementalCostForce
 )
 
-// incrementalCostWorthwhile is deliberately conservative while the dirty
-// update is scalar and the full-image fallback is SIMD. Eight units per pixel
-// approximate the measured AVX2/scalar throughput gap; the per-span charge
-// penalizes fragmented batches. Task 10.16c will replace this provisional model
-// with native scalar/SIMD crossover measurements.
+// incrementalCostWorthwhile models native AVX2 measurements. Three dirty-pixel
+// units account for reading candidate, base, and reference instead of the full
+// kernel's two inputs; 16 units per span cover SIMD call/setup and fragmented
+// short tails. The resulting boundary is conservative relative to the measured
+// 30.6%-to-44.1% single-span crossover.
 func incrementalCostWorthwhile(dirty *dirtySpanSet, totalPixels int) bool {
 	pixels, spans := dirty.metrics()
 	if pixels == 0 {
 		return true
 	}
-	estimatedWork := uint64(pixels)*8 + uint64(spans)*32
+	estimatedWork := uint64(pixels)*3 + uint64(spans)*16
 	return estimatedWork <= uint64(totalPixels)
+}
+
+// incrementalCandidateWorthwhile avoids span collection entirely for obvious
+// fallback cases. Summed circle area is an upper bound apart from scanline
+// quantization (and deliberately ignores overlap/clipping), so accepting only
+// 30% of the image leaves margin below the measured native crossover.
+func (r *CPURenderer) incrementalCandidateWorthwhile(params []float64) bool {
+	limit := float64(r.width*r.height) * 0.30
+	pv := fit.ParamVector{Data: params, K: r.k, Width: r.width, Height: r.height}
+	area := 0.0
+	for i := 0; i < r.k; i++ {
+		circle := pv.DecodeCircle(i)
+		if circle.Opacity == 0 || circle.R <= 0 {
+			continue
+		}
+		area += math.Pi * circle.R * circle.R
+		if area > limit {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *CPURenderer) incrementalSSDTotal(rendered *image.NRGBA, dirty *dirtySpanSet) (uint64, bool) {
@@ -29,8 +55,13 @@ func (r *CPURenderer) incrementalSSDTotal(rendered *image.NRGBA, dirty *dirtySpa
 		return 0, false
 	}
 
+	delta := r.incrementalSSDDeltaRows(rendered, dirty, 0, dirty.height)
+	return addSSDDelta(r.initialSSD, delta)
+}
+
+func (r *CPURenderer) incrementalSSDDeltaRows(rendered *image.NRGBA, dirty *dirtySpanSet, minY, maxY int) int64 {
 	var delta int64
-	for y := 0; y < dirty.height; y++ {
+	for y := minY; y < maxY; y++ {
 		referenceRow := y * r.reference.Stride
 		canvasRow := y * rendered.Stride
 		initialRow := y * r.width * 4
@@ -46,17 +77,20 @@ func (r *CPURenderer) incrementalSSDTotal(rendered *image.NRGBA, dirty *dirtySpa
 			)
 		}
 	}
+	return delta
+}
 
+func addSSDDelta(initialSSD uint64, delta int64) (uint64, bool) {
 	if delta < 0 {
 		decrease := uint64(-delta)
-		if decrease > r.initialSSD {
+		if decrease > initialSSD {
 			return 0, false
 		}
-		return r.initialSSD - decrease, true
+		return initialSSD - decrease, true
 	}
 	increase := uint64(delta)
-	if increase > ^uint64(0)-r.initialSSD {
+	if increase > ^uint64(0)-initialSSD {
 		return 0, false
 	}
-	return r.initialSSD + increase, true
+	return initialSSD + increase, true
 }

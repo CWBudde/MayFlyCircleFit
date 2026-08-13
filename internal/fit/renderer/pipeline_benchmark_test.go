@@ -59,15 +59,25 @@ func silencePipelineBenchmarkLogs(b *testing.B) {
 func BenchmarkOptimizeSequentialPipeline(b *testing.B) {
 	silencePipelineBenchmarkLogs(b)
 	ref := benchmarkPipelineReference(64, 64)
-	base := NewCPURenderer(ref, 12)
 	optimizer := pipelineBenchmarkOptimizer{evaluations: 8}
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for range b.N {
-		if _, err := OptimizeSequential(base, optimizer, 12, DisabledConvergenceConfig(), nil); err != nil {
-			b.Fatal(err)
-		}
+	for _, test := range []struct {
+		name        string
+		incremental bool
+	}{
+		{name: "full_image"},
+		{name: "incremental", incremental: true},
+	} {
+		b.Run(test.name, func(b *testing.B) {
+			base := NewCPURenderer(ref, 12)
+			base.stagedIncremental = test.incremental
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				if _, err := OptimizeSequential(base, optimizer, 12, DisabledConvergenceConfig(), nil); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }
 
@@ -77,14 +87,24 @@ func BenchmarkOptimizeSequentialPipeline(b *testing.B) {
 func BenchmarkOptimizeBatchPipeline(b *testing.B) {
 	silencePipelineBenchmarkLogs(b)
 	ref := benchmarkPipelineReference(64, 64)
-	base := NewCPURenderer(ref, 18)
 	optimizer := pipelineBenchmarkOptimizer{evaluations: 8}
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for range b.N {
-		if _, err := OptimizeBatch(base, optimizer, 18, 5, DisabledConvergenceConfig()); err != nil {
-			b.Fatal(err)
-		}
+	for _, test := range []struct {
+		name        string
+		incremental bool
+	}{
+		{name: "full_image"},
+		{name: "incremental", incremental: true},
+	} {
+		b.Run(test.name, func(b *testing.B) {
+			base := NewCPURenderer(ref, 18)
+			base.stagedIncremental = test.incremental
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				if _, err := OptimizeBatch(base, optimizer, 18, 5, DisabledConvergenceConfig()); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }

@@ -1,6 +1,7 @@
 package renderer
 
 import (
+	"fmt"
 	"image"
 	"testing"
 
@@ -124,6 +125,13 @@ func TestCPURendererPrecomputesInitialSSD(t *testing.T) {
 	staged := stagedSession.(*CPURenderer)
 	if !staged.initialSSDValid || staged.initialSSD != wantRetained {
 		t.Fatalf("staged SSD = (%d, %v), want (%d, true)", staged.initialSSD, staged.initialSSDValid, wantRetained)
+	}
+	wantMode := incrementalCostDisabled
+	if deltaSSDBackend == "avx2" {
+		wantMode = incrementalCostAuto
+	}
+	if staged.incrementalCostMode != wantMode {
+		t.Fatalf("staged CPU cost mode = %d, want %d for %s", staged.incrementalCostMode, wantMode, deltaSSDBackend)
 	}
 }
 
@@ -272,6 +280,8 @@ func BenchmarkIncrementalCostBaseline(b *testing.B) {
 			renderer.incrementalCostMode = incrementalCostForce
 			// Populate reusable row/span storage before measuring steady state.
 			rendererCostSink = renderer.Cost(params)
+			dirtyPixels, dirtySpans := renderer.dirtySpans.metrics()
+			b.Logf("dirty pixels=%d (%.2f%%), spans=%d", dirtyPixels, 100*float64(dirtyPixels)/float64(width*height), dirtySpans)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
@@ -290,6 +300,41 @@ func BenchmarkIncrementalCostBaseline(b *testing.B) {
 				rendererCostSink = renderer.Cost(params)
 			}
 		})
+	}
+}
+
+func BenchmarkIncrementalCostCrossover(b *testing.B) {
+	const width, height = 256, 256
+	reference := randomNRGBA(width, height, 42)
+	canvas := randomNRGBA(width, height, 7)
+	for offset := 3; offset < len(canvas.Pix); offset += 4 {
+		canvas.Pix[offset] = 255
+	}
+	for _, radius := range []float64{4, 8, 16, 32, 48, 64, 80, 96, 112, 128} {
+		params := encodeCircles([]fit.Circle{{X: 128, Y: 128, R: radius, CR: 0.2, CG: 0.6, CB: 0.9, Opacity: 0.5}})
+		for _, mode := range []struct {
+			name string
+			mode incrementalCostMode
+		}{
+			{name: "full", mode: incrementalCostDisabled},
+			{name: "delta", mode: incrementalCostForce},
+		} {
+			b.Run(fmt.Sprintf("R%.0f/%s", radius, mode.name), func(b *testing.B) {
+				renderer := NewCPURendererWithCanvas(reference, canvas, 1)
+				renderer.SetThreads(1)
+				renderer.incrementalCostMode = mode.mode
+				rendererCostSink = renderer.Cost(params)
+				if mode.mode == incrementalCostForce {
+					pixels, spans := renderer.dirtySpans.metrics()
+					b.Logf("dirty=%.2f%% spans=%d", 100*float64(pixels)/float64(width*height), spans)
+				}
+				b.ReportAllocs()
+				b.ResetTimer()
+				for range b.N {
+					rendererCostSink = renderer.Cost(params)
+				}
+			})
+		}
 	}
 }
 

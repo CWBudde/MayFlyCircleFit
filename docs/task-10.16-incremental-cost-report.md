@@ -4,11 +4,11 @@
 **Hardware:** AMD Ryzen 5 4600H  
 **Backend:** AVX2 SSD, `GOMAXPROCS=1`
 
-This note covers only Task 10.16a's current-cost baseline. No dirty-region
-collector, delta arithmetic, or production dispatch has been implemented yet.
-The original Pascal/Delphi source is not present in this repository, so its
-possible cumulative-cost implementation is deliberately deferred until the
-source is available or a Go prototype can be compared with it.
+This note covers Tasks 10.16a through 10.16c: the current-cost baseline, exact
+incremental contract, optimized dirty-region kernels, and measured staged-mode
+dispatch. The original Pascal/Delphi source is not present in this repository,
+so its possible cumulative-cost implementation remains deferred until the
+source is available or the running Go prototype can be compared with it.
 
 ## Benchmark design
 
@@ -127,24 +127,25 @@ recompute it for the newly retained canvas. Empty, mismatched, or theoretically
 oversized images mark the stored total invalid instead of silently rounding.
 Alpha remains excluded exactly as in `FastMSECost`.
 
-Production `CPURenderer.Cost` does not consume this value while incremental
-mode remains disabled. The default-off experimental path described below uses
-it for parity and performance work. Focused tests cover maximum RGB
-differences, alpha exclusion, padded and independent strides, white and custom
-initial canvases, inherited sessions, and retained-canvas sessions.
+Direct and joint `CPURenderer.Cost` evaluation leaves incremental mode disabled.
+On measured AVX2 hosts, retained-canvas sessions created by the sequential and
+batch pipelines now use the automatic policy described below. Focused tests
+cover maximum RGB differences, alpha exclusion, padded and independent
+strides, white and custom initial canvases, inherited sessions, and
+retained-canvas sessions.
 
 ## Exact incremental contract
 
-The remaining Task 10.16b work adds a default-off experimental evaluator. The
-normal production mode is unchanged; tests and benchmarks can select forced or
-automatic incremental evaluation internally while Task 10.16c establishes a
-faster kernel and measured production crossover.
+Task 10.16b introduced a default-off experimental evaluator. Task 10.16c keeps
+joint/direct behavior unchanged but enables measured automatic selection for
+the retained-canvas sessions used by sequential and batch optimization.
 
 The renderer records each half-open circle span during the real compositing
-traversal. Per-row insertion keeps intervals sorted and merges overlap and
-adjacency immediately. Consequently, a pixel covered by several circles is
-visited once after its final composited value is available. Row-sharded workers
-write only to their disjoint row entries.
+traversal. A flat `height × K` store follows the hard bound that one circle can
+contribute at most one span per row. Spans are sorted and merged once after
+rendering, so a pixel covered by several circles is visited once after its final
+composited value is available. The store is reused without steady-state
+allocation, and row-sharded workers write only to disjoint entries.
 
 For each merged dirty pixel, the evaluator calculates exact integer errors for
 the retained base and final candidate:
@@ -163,14 +164,15 @@ occurs exactly once with the same denominator as `FastMSECost`.
 
 ### Selection and invalidation rules
 
-- Incremental mode is disabled by default. Joint, sequential, and batch
-  production sessions therefore continue to use full-image SIMD SSD.
+- Incremental mode remains disabled for direct and joint production sessions.
+  On AVX2, sequential and batch retained-canvas sessions select automatic
+  incremental evaluation when the built-in `FastMSECost` is active. NEON and
+  scalar defaults remain unchanged until their native crossover is measured.
 - An internal forced mode is used only for exact parity tests and diagnostic
   benchmarks.
-- The provisional automatic mode estimates scalar work as
-  `dirtyPixels*8 + mergedSpans*32` and falls back when that exceeds the full
-  pixel count. The weights reflect the current AVX2/scalar gap and are not a
-  final production crossover.
+- Automatic mode first rejects candidates whose summed circle area exceeds 30%
+  of the image, avoiding span tracking in obvious fallback cases. After span
+  union it accepts only when `dirtyPixels*3 + mergedSpans*16 <= totalPixels`.
 - `SetCostFunc` selects an arbitrary cost and disables incremental MSE;
   `UseFastCost` explicitly restores eligibility. Go functions cannot otherwise
   be compared reliably.
@@ -190,7 +192,7 @@ translucent retained canvases, 250 randomized cases, and one/four render
 threads. Randomized interval insertion is also checked against a per-pixel
 boolean union oracle. The focused race test passes.
 
-## Scalar prototype benchmark
+## Historical scalar prototype benchmark
 
 Five 300 ms samples compared the established cost, forced scalar delta, and
 the provisional automatic policy. Medians are shown below:
@@ -205,17 +207,64 @@ All steady-state cases reported zero allocations. Forced scalar delta loses on
 these representative parameters because a Go scalar pixel update cannot yet
 compete with the approximately 25 us full-image AVX2 reduction. Automatic mode
 correctly rejects all three, although collecting spans before that decision
-still costs roughly 1-5%. The result validates keeping the experiment disabled
-in production and makes the next Task 10.16c objective concrete: reduce span
-tracking cost and vectorize or otherwise strengthen the dirty-span reduction
-before retuning dispatch.
+still costs roughly 1-5%. At that stage the result validated keeping the
+experiment disabled in production and made the Task 10.16c objective concrete:
+reduce span tracking cost and vectorize or otherwise strengthen the dirty-span
+reduction before retuning dispatch.
+
+## Task 10.16c optimized implementation
+
+The collector now uses fixed-capacity flat storage bounded by image height and
+the session's circle count. It receives spans from the common scanline
+traversal, regardless of whether the edges were calculated with Q16.16,
+float32, or the float64 fallback, and normalizes each row only once.
+
+The exact portable scalar reducer is isolated as `deltaSSDSpanScalar`. Native
+AMD64 and ARM64 implementations compute candidate-versus-reference and
+base-versus-reference RGB errors together, returning their signed integer
+difference. The AVX2 kernel processes eight pixels per iteration, NEON four,
+and both dispatchers retain scalar handling below one vector. Randomized span
+lengths and positive/negative maximum-difference cases match the scalar oracle
+exactly on native AVX2. Linux/Darwin ARM64 builds validate the NEON assembly;
+native ARM64 timing remains part of Task 10.16d.
+
+On the Ryzen 5 4600H, three 500 ms samples put the AVX2 crossover at eight
+pixels: the eight-pixel median is 11.6 ns versus 27.2 ns scalar, while lengths
+one through four remain scalar. Centered single-circle end-to-end measurements
+show the dirty path still winning at 30.64% coverage (about 94 us versus 100 us)
+and losing at 44.12% (about 134 us versus 124 us). Production therefore uses a
+conservative 30% summed-area preflight plus the exact union/span model above.
+
+The representative 256×256 sequential K1 case has 18.54% dirty pixels and 122
+merged spans. Five 750 ms samples improved the median from 72.50 us to 61.65 us
+(15.0%) with zero steady-state allocations. The representative K5 candidate
+has 72.76% dirty pixels; preflight sends it directly to full-image AVX2, whose
+median remains effectively unchanged at about 231 us.
+
+Five one-second end-to-end samples of the repository's 64×64 pipeline
+benchmarks produced:
+
+| Pipeline | Full-image median | Automatic incremental | Improvement |
+| --- | ---: | ---: | ---: |
+| Sequential, 12 stages | 460.95 us | 332.10 us | 27.9% |
+| Batch, 18 circles / K5 | 187.16 us | 155.47 us | 16.9% |
+
+An experimental reduction immediately after each completed row shard was
+effectively tied with the simpler separate post-render span pass (roughly
+61-62 us in the representative sequential case). It did not justify extra
+coordination or allocation, so production retains the separate pass and public
+`Render` behavior is unchanged.
 
 Reproduce the benchmark with:
 
 ```sh
 GOMAXPROCS=1 go test ./internal/fit/renderer -run '^$' \
   -bench '^BenchmarkIncrementalCostBaseline$' \
-  -benchmem -benchtime=500ms -count=7
+  -benchmem -benchtime=750ms -count=5
+
+GOMAXPROCS=1 go test ./internal/fit/renderer -run '^$' \
+  -bench '^BenchmarkOptimize(Sequential|Batch)Pipeline$' \
+  -benchmem -benchtime=1s -count=5
 
 go test ./internal/fit/renderer \
   -run '^TestDirtySpanCoverageMetrics$' -count=1 -v

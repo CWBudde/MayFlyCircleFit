@@ -586,14 +586,14 @@ which optimizes only circle coverage geometry.
   canvases, row sharding, and renderer/session reuse
 
 **10.16c — Implement and optimize the dirty-region path:**
-- [ ] Add an allocation-free dirty-span collector shared with scanline
+- [x] Add an allocation-free dirty-span collector shared with scanline
   rendering, without coupling correctness to Q16.16 geometry
-- [ ] Implement an exact portable scalar delta-SSD kernel for dirty spans
-- [ ] Reuse or extend the AVX2 and NEON integer SSD kernels for discontiguous
+- [x] Implement an exact portable scalar delta-SSD kernel for dirty spans
+- [x] Reuse or extend the AVX2 and NEON integer SSD kernels for discontiguous
   spans; benchmark SIMD setup cost and keep scalar handling for short spans
-- [ ] Integrate the optimized path into sequential and batch `FastMSECost`
+- [x] Integrate the optimized path into sequential and batch `FastMSECost`
   sessions behind a measured crossover; leave `Render` behavior unchanged
-- [ ] Assess whether calculating cost after each completed row shard improves
+- [x] Assess whether calculating cost after each completed row shard improves
   cache locality compared with a separate dirty-span pass
 
 **10.16d — Correctness and performance validation:**
