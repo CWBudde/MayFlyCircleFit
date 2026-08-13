@@ -892,23 +892,33 @@ page responsive. Endpoint tests validate MIME and attachment headers, embedded
 PNG integrity, report self-containment, error behavior, and browser-facing UI
 contracts.
 
-### Task 12.6: Generate HTML Report
-- [ ] Create report template in `internal/ui/report.templ`
-  - [ ] Header with job metadata (ID, mode, circles, date)
-  - [ ] Three-column layout: Reference, Best, Difference
-  - [ ] Metrics table: Cost, PSNR, SSIM, iterations, time
-  - [ ] Parameters table: All circles with properties
-  - [ ] Footer with generation timestamp
-- [ ] Implement report generation endpoint
-  - [ ] `GET /api/v1/jobs/:id/report.html`
-  - [ ] Embed images as base64 data URIs
-  - [ ] Inline CSS for styling
-  - [ ] No external dependencies
-- [ ] Add print-friendly CSS styles
-  - [ ] Page breaks between sections
-  - [ ] High-contrast colors
-- [ ] Test report rendering and downloading
-- [ ] Document report format and customization
+### Task 12.6: Generate HTML Report ✅
+- [x] Create report template in `internal/ui/report.templ`
+  - [x] Header with job metadata (ID, mode, circles, date)
+  - [x] Three-column layout: Reference, Best, Difference
+  - [x] Metrics table: Cost, PSNR, SSIM, iterations, time
+  - [x] Parameters table: All circles with properties
+  - [x] Footer with generation timestamp
+- [x] Implement report generation endpoint
+  - [x] `GET /api/v1/jobs/:id/report.html`
+  - [x] Embed images as base64 data URIs
+  - [x] Inline CSS for styling
+  - [x] No external dependencies
+- [x] Add print-friendly CSS styles
+  - [x] Page breaks between sections
+  - [x] High-contrast colors
+- [x] Test report rendering and downloading
+- [x] Document report format and customization
+
+Completed: report downloads capture an immutable job snapshot in a standalone
+HTML document with header metadata, a metrics table, three embedded PNGs, every
+circle parameter, and a timestamped footer. Inline responsive and print styles
+provide a three-column screen layout, high-contrast printed output, section page
+breaks, and an unbounded parameter table without external dependencies. Template
+and endpoint tests cover content, attachment headers, embedded PNG integrity,
+print contracts, errors, and active-job timestamps; `docs/html-reports.md`
+documents the endpoint, snapshot format, offline behavior, printing, and safe
+customization workflow.
 
 ### Task 12.7: Improve Metrics Panel Visualization
 - [ ] Enhance sparkline chart for cost history

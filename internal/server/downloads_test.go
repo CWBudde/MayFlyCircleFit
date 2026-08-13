@@ -76,7 +76,8 @@ func TestServerReportIsSelfContained(t *testing.T) {
 	body := recorder.Body.String()
 	for _, marker := range []string{
 		"<!doctype html>", "MayFlyCircleFit Report", jobID, "Metrics", "Parameters",
-		"Circle", "magma", "12.500000", "0.8765", "Self-contained report generated",
+		"Circle", "magma", "12.500000", "0.8765", `class="metrics-table"`,
+		"Elapsed time", "page-break-before: always", "Self-contained report generated",
 	} {
 		if !strings.Contains(body, marker) {
 			t.Errorf("report missing %q", marker)
@@ -122,6 +123,44 @@ func TestServerReportErrors(t *testing.T) {
 			server.Handler().ServeHTTP(recorder, request)
 			if recorder.Code != test.want {
 				t.Fatalf("status = %d, want %d: %s", recorder.Code, test.want, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestServerReportSnapshotFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		refPath string
+		params  []float64
+	}{
+		{name: "unavailable reference", refPath: filepath.Join(t.TempDir(), "missing.png"), params: []float64{25, 25, 10, 1, 0.5, 0, 0.75}},
+		{name: "malformed parameters", params: []float64{25}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			refPath := test.refPath
+			if refPath == "" {
+				refPath = filepath.Join(t.TempDir(), "reference.png")
+				createSimpleTestImage(t, refPath)
+			}
+			server := NewServer(":8080", nil)
+			job := server.jobManager.CreateJob(JobConfig{RefPath: refPath, Mode: "joint", Circles: 1})
+			if err := server.jobManager.StartJob(job.ID); err != nil {
+				t.Fatal(err)
+			}
+			if err := server.jobManager.UpdateProgress(job.ID, 1, 1, test.params, 12.5); err != nil {
+				t.Fatal(err)
+			}
+
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+job.ID+"/report.html", nil)
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500: %s", recorder.Code, recorder.Body.String())
+			}
+			if !strings.Contains(recorder.Body.String(), `"code":"report_failed"`) {
+				t.Errorf("response = %s, want report_failed error", recorder.Body.String())
 			}
 		})
 	}

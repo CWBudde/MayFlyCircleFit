@@ -39,7 +39,8 @@ templ JobReportPage(report JobReport) {
 				body { margin: 0; background: #f3f4f6; color: #111827; font: 15px/1.5 system-ui, sans-serif; }
 				main { max-width: 1200px; margin: 0 auto; padding: 2rem; }
 				h1, h2 { margin: 0 0 1rem; }
-				.subtitle { margin: -0.75rem 0 1.5rem; color: #6b7280; }
+				.subtitle { margin: -0.75rem 0 0.25rem; color: #4b5563; }
+				.header-metadata { margin: 0 0 1.5rem; color: #4b5563; }
 				.card { margin-bottom: 1.5rem; padding: 1.5rem; border: 1px solid #e5e7eb; border-radius: 0.5rem; background: white; }
 				.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
 				.label { color: #6b7280; font-size: 0.8rem; }
@@ -51,11 +52,24 @@ templ JobReportPage(report JobReport) {
 				table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 				th, td { padding: 0.5rem 0.65rem; border-bottom: 1px solid #e5e7eb; text-align: left; }
 				th { background: #f9fafb; }
+				.metrics-table th { width: 50%; }
 				.parameters { max-height: 38rem; overflow: auto; }
 				.swatch { display: inline-block; width: 0.85rem; height: 0.85rem; margin-right: 0.4rem; border: 1px solid #d1d5db; border-radius: 50%; vertical-align: -0.1rem; }
 				footer { color: #6b7280; font-size: 0.8rem; text-align: center; }
 				@media (max-width: 800px) { main { padding: 1rem; } .images { grid-template-columns: 1fr; } }
-				@media print { body { background: white; } main { max-width: none; padding: 0; } .card { break-inside: avoid; box-shadow: none; } .parameters { max-height: none; overflow: visible; } }
+				@media print {
+					@page { margin: 1.5cm; }
+					body { background: #fff; color: #000; }
+					main { max-width: none; padding: 0; }
+					.subtitle, .header-metadata, .label, figcaption, footer { color: #000; }
+					.card { border-color: #000; border-radius: 0; box-shadow: none; break-inside: avoid; }
+					.report-section + .report-section { break-before: page; page-break-before: always; }
+					.parameters-section { break-inside: auto; }
+					.parameters { max-height: none; overflow: visible; }
+					th, td, figure img, .swatch { border-color: #000; }
+					th { background: #fff; color: #000; }
+					.swatch { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+				}
 			</style>
 		</head>
 		<body>
@@ -63,34 +77,39 @@ templ JobReportPage(report JobReport) {
 				<header>
 					<h1>MayFlyCircleFit Report</h1>
 					<p class="subtitle">Job { report.ID }</p>
+					<p class="header-metadata">
+						Mode { report.Mode } · { fmt.Sprintf("%d circles", report.Circles) } ·
+						<time datetime={ report.GeneratedAt.Format(time.RFC3339) }>{ report.GeneratedAt.Format("2006-01-02") }</time>
+					</p>
 				</header>
-				<section class="card">
+				<section class="card report-section">
 					<h2>Metadata</h2>
 					<div class="grid">
 						@reportValue("State", report.State)
 						@reportValue("Mode", report.Mode)
 						@reportValue("Circles", fmt.Sprintf("%d", report.Circles))
-						@reportValue("Iterations", fmt.Sprintf("%d", report.Iterations))
-						@reportValue("Evaluations", fmt.Sprintf("%d", report.Evaluations))
-						@reportValue("Elapsed", formatDuration(report.ElapsedSec))
 						@reportValue("Started", report.StartTime.Format(time.RFC3339))
 						if report.EndTime != nil {
 							@reportValue("Ended", report.EndTime.Format(time.RFC3339))
 						}
 						@reportValue("Reference", report.RefPath)
-						@reportValue("Generated", report.GeneratedAt.Format(time.RFC3339))
 					</div>
 				</section>
-				<section class="card">
+				<section class="card report-section">
 					<h2>Metrics</h2>
-					<div class="grid">
-						@reportValue("Cost (MSE)", fmt.Sprintf("%.6f", report.Cost))
-						@reportValue("PSNR", report.PSNR)
-						@reportValue("SSIM", report.SSIM)
-						@reportValue("Difference colormap", report.Colormap)
-					</div>
+					<table class="metrics-table">
+						<tbody>
+							@reportMetric("Cost (MSE)", fmt.Sprintf("%.6f", report.Cost))
+							@reportMetric("PSNR", report.PSNR)
+							@reportMetric("SSIM", report.SSIM)
+							@reportMetric("Iterations", fmt.Sprintf("%d", report.Iterations))
+							@reportMetric("Evaluations", fmt.Sprintf("%d", report.Evaluations))
+							@reportMetric("Elapsed time", formatDuration(report.ElapsedSec))
+							@reportMetric("Difference colormap", report.Colormap)
+						</tbody>
+					</table>
 				</section>
-				<section class="card">
+				<section class="card report-section">
 					<h2>Images</h2>
 					<div class="images">
 						@reportImage("Reference", report.ReferenceDataURI, "Reference image")
@@ -98,7 +117,7 @@ templ JobReportPage(report JobReport) {
 						@reportImage("Difference", report.DifferenceDataURI, "Difference heatmap")
 					</div>
 				</section>
-				<section class="card">
+				<section class="card report-section parameters-section">
 					<h2>Parameters</h2>
 					<div class="parameters">
 						<table>
@@ -118,7 +137,10 @@ templ JobReportPage(report JobReport) {
 						</table>
 					</div>
 				</section>
-				<footer>Self-contained report generated by MayFlyCircleFit.</footer>
+				<footer>
+					Self-contained report generated by MayFlyCircleFit on
+					<time datetime={ report.GeneratedAt.Format(time.RFC3339) }>{ report.GeneratedAt.Format(time.RFC3339) }</time>.
+				</footer>
 			</main>
 		</body>
 	</html>
@@ -126,6 +148,10 @@ templ JobReportPage(report JobReport) {
 
 templ reportValue(label, value string) {
 	<div><div class="label">{ label }</div><div class="value">{ value }</div></div>
+}
+
+templ reportMetric(label, value string) {
+	<tr><th scope="row">{ label }</th><td>{ value }</td></tr>
 }
 
 templ reportImage(caption, dataURI, alt string) {
