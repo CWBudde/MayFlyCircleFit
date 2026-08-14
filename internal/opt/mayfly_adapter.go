@@ -308,12 +308,16 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 		best.Iterations = progress.Iteration
 		best.Evaluations = progress.EvaluationCount
 		if options.Observer != nil {
-			options.Observer(Progress{
+			reported := Progress{
 				Iterations:  progress.Iteration,
 				Evaluations: progress.EvaluationCount,
 				BestParams:  append([]float64(nil), best.BestParams...),
 				BestCost:    best.BestCost,
-			})
+			}
+			if options.ProgressMapper != nil {
+				reported = options.ProgressMapper(reported)
+			}
+			options.Observer(reported)
 		}
 	}))
 

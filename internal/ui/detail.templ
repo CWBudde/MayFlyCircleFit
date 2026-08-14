@@ -38,6 +38,15 @@ type JobDetail struct {
 	ItersPerEpoch int
 	OptimizerEpochs int
 	PopSize       int
+	PolishingEnabled bool
+	PolishingOnly bool
+	CanPolish bool
+	PolishingActiveSetSize int
+	PolishingMaxSweeps int
+	PolishingEpochs int
+	PolishingIters int
+	PolishingStagnationIters int
+	PolishingMinImprovement float64
 	BestCost      float64
 	InitialCost   float64
 	StartTime     time.Time
@@ -98,6 +107,11 @@ templ JobDetailPage(job JobDetail) {
 				</div>
 				<div style="text-align: right;">
 					@StateBadge(job.State)
+					if job.CanPolish {
+						<button id="polish-job" class="btn btn-primary" style="margin-left: 0.5rem;">
+							Polish weak circles
+						</button>
+					}
 					<button onclick="location.reload()" class="btn" style="margin-left: 0.5rem; background-color: var(--border-color);">
 						⟳ Refresh
 					</button>
@@ -252,6 +266,19 @@ templ JobDetailPage(job JobDetail) {
 				<div>
 					<div style="font-size: 0.875rem; color: var(--text-muted);">Optimizer Schedule</div>
 					<div style="font-weight: 500;">{ fmt.Sprintf("%d × %d iterations", job.OptimizerEpochs, job.ItersPerEpoch) }</div>
+				</div>
+				<div>
+					<div style="font-size: 0.875rem; color: var(--text-muted);">Active-set Polishing</div>
+					if job.PolishingEnabled {
+						if job.PolishingOnly {
+							<div style="font-weight: 500;">Continuation only · { fmt.Sprintf("up to %d sweeps of %d circles", job.PolishingMaxSweeps, job.PolishingActiveSetSize) }</div>
+						} else {
+							<div style="font-weight: 500;">Enabled · { fmt.Sprintf("up to %d sweeps of %d circles", job.PolishingMaxSweeps, job.PolishingActiveSetSize) }</div>
+						}
+						<div style="font-size: 0.75rem; color: var(--text-muted);">{ fmt.Sprintf("%d × %d iterations · stagnation %d · progress threshold %.4g", job.PolishingEpochs, job.PolishingIters, job.PolishingStagnationIters, job.PolishingMinImprovement) }</div>
+					} else {
+						<div style="font-weight: 500;">Disabled</div>
+					}
 				</div>
 				<div style="grid-column: 1 / -1;">
 					<div style="font-size: 0.875rem; color: var(--text-muted);">Reference Image</div>
@@ -782,6 +809,7 @@ templ JobDetailPage(job JobDetail) {
 				initializeHeatmapColormap();
 				initializeParameterViewer();
 				initializeDownloadControls();
+				initializePolishControl();
 
 				// Server-seeded quality history for the selectable chart.
 				let metricHistory = [];
@@ -1013,6 +1041,25 @@ templ JobDetailPage(job JobDetail) {
 						reportButton.addEventListener("click", downloadReport);
 					}
 					syncArtifactDownloadColormap();
+				}
+
+				function initializePolishControl() {
+					const button = document.getElementById("polish-job");
+					if (!button) return;
+					button.addEventListener("click", async function () {
+						button.disabled = true;
+						button.textContent = "Starting polishing…";
+						try {
+							const response = await fetch("/api/v1/jobs/" + jobId + "/polish", { method: "POST" });
+							const payload = await response.json();
+							if (!response.ok) throw new Error(payload.message || "Unable to start polishing");
+							window.location.assign("/jobs/" + payload.jobId);
+						} catch (err) {
+							window.alert(err.message || "Unable to start polishing");
+							button.disabled = false;
+							button.textContent = "Polish weak circles";
+						}
+					});
 				}
 
 				function syncArtifactDownloadColormap() {

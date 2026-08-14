@@ -13,9 +13,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
 
@@ -328,6 +330,9 @@ func TestServer_JobDetailPage(t *testing.T) {
 	}
 	if !containsString(body, "Configuration") {
 		t.Error("Response should contain configuration section")
+	}
+	if !containsString(body, "Active-set Polishing") || !containsString(body, "Disabled") {
+		t.Error("Response should contain the polishing configuration")
 	}
 	if !containsString(body, "Images") {
 		t.Error("Response should contain images section")
@@ -721,6 +726,9 @@ func TestServer_CreatePageGet(t *testing.T) {
 	if !containsString(body, "optimizerEpochs") {
 		t.Error("Expected page to expose optimizer epochs")
 	}
+	if !containsString(body, "polishingEnabled") || !containsString(body, "polishingActiveSetSize") {
+		t.Error("Expected page to expose active-set polishing controls")
+	}
 }
 
 func TestServer_CreatePagePost_Success(t *testing.T) {
@@ -735,12 +743,19 @@ func TestServer_CreatePagePost_Success(t *testing.T) {
 	// Create form data
 	form := url.Values{}
 	form.Add("refPath", testImagePath)
-	form.Add("mode", "joint")
+	form.Add("mode", "batch")
 	form.Add("circles", "5")
 	form.Add("iters", "50")
 	form.Add("popSize", "20")
 	form.Add("optimizerEpochs", "4")
 	form.Add("batchSize", "5")
+	form.Add("polishingEnabled", "on")
+	form.Add("polishingActiveSetSize", "3")
+	form.Add("polishingMaxSweeps", "2")
+	form.Add("polishingEpochs", "2")
+	form.Add("polishingIters", "10")
+	form.Add("polishingStagnationIters", "5")
+	form.Add("polishingMinImprovement", "0.01")
 	form.Add("seed", "42")
 	form.Add("enableSSIM", "on")
 
@@ -770,8 +785,8 @@ func TestServer_CreatePagePost_Success(t *testing.T) {
 	if job.Config.RefPath != testImagePath {
 		t.Errorf("Expected refPath %s, got %s", testImagePath, job.Config.RefPath)
 	}
-	if job.Config.Mode != "joint" {
-		t.Errorf("Expected mode joint, got %s", job.Config.Mode)
+	if job.Config.Mode != "batch" {
+		t.Errorf("Expected mode batch, got %s", job.Config.Mode)
 	}
 	if job.Config.Circles != 5 {
 		t.Errorf("Expected 5 circles, got %d", job.Config.Circles)
@@ -787,6 +802,12 @@ func TestServer_CreatePagePost_Success(t *testing.T) {
 	}
 	if job.Config.BatchSize != 5 {
 		t.Errorf("Expected batchSize 5, got %d", job.Config.BatchSize)
+	}
+	if !job.Config.PolishingEnabled || job.Config.PolishingActiveSetSize != 3 || job.Config.PolishingMaxSweeps != 2 {
+		t.Errorf("unexpected polishing configuration: %+v", job.Config)
+	}
+	if job.Config.PolishingEpochs != 2 || job.Config.PolishingIters != 10 || job.Config.PolishingStagnationIters != 5 || job.Config.PolishingMinImprovement != 0.01 {
+		t.Errorf("unexpected polishing optimizer settings: %+v", job.Config)
 	}
 	if job.Config.Seed != 42 {
 		t.Errorf("Expected seed 42, got %d", job.Config.Seed)
@@ -886,6 +907,90 @@ func TestServer_CreatePagePost_ValidationErrors(t *testing.T) {
 				t.Errorf("Expected error message '%s' in body", tt.errMsg)
 			}
 		})
+	}
+}
+
+func TestPlannedOptimizerIterationsIncludesStagesRefillsAndPolishing(t *testing.T) {
+	tests := []struct {
+		name   string
+		config JobConfig
+		want   int
+	}{
+		{name: "joint", config: JobConfig{Mode: app.ModeJoint, Iters: 100, OptimizerEpochs: 2}, want: 200},
+		{name: "sequential", config: JobConfig{Mode: app.ModeSequential, Circles: 3, Iters: 100, OptimizerEpochs: 2}, want: 600},
+		{
+			name: "batch with refill budget and polishing",
+			config: JobConfig{
+				Mode: app.ModeBatch, Circles: 30, BatchSize: 30, Iters: 2000, OptimizerEpochs: 4,
+				PolishingEnabled: true, PolishingMaxSweeps: 3, PolishingEpochs: 2, PolishingIters: 1000,
+			},
+			want: 38_000,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := plannedOptimizerIterations(test.config); got != test.want {
+				t.Fatalf("plannedOptimizerIterations() = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
+func TestPolishEndpointCreatesCheckpointContinuation(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "ref.png")
+	createSimpleTestImage(t, imgPath)
+	fsStore, err := store.NewFSStore(filepath.Join(tmpDir, "data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithOptions(":0", fsStore, ServerOptions{InputRoots: []string{tmpDir}})
+	shutdownTestServer(t, server)
+	config, err := app.Normalize(JobConfig{
+		RefPath: imgPath, Mode: app.ModeBatch, Circles: 1, BatchSize: 1, Iters: 2,
+		PopSize: 20, Threads: 1, Seed: 42,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := server.jobManager.CreateJob(config)
+	params := []float64{1, 1, 1, 1, 0, 0, 1}
+	if err := server.jobManager.StartJob(source.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.jobManager.CompleteJob(source.ID, 8000, 900000, params, 600, 1000, "completed"); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := store.NewCheckpoint(source.ID, params, 600, 1000, 8000, config)
+	checkpoint.Evaluations = 900000
+	if err := fsStore.SaveCheckpoint(source.ID, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	// Keep the continuation pending so its exact checkpoint initialization can
+	// be inspected without racing the background optimizer.
+	server.cancel()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+source.ID+"/polish", nil)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("polish status = %d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		JobID string `json:"jobId"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	continuation, ok := server.jobManager.GetJob(payload.JobID)
+	if !ok {
+		t.Fatal("polishing continuation job not found")
+	}
+	if !continuation.Config.PolishingEnabled || !continuation.Config.PolishingOnly || continuation.Config.Mode != app.ModeBatch {
+		t.Fatalf("polishing continuation config = %+v", continuation.Config)
+	}
+	if continuation.Iterations != 8000 || continuation.Evaluations != 900000 || !reflect.DeepEqual(continuation.BestParams, params) {
+		t.Fatalf("polishing continuation state = %+v", continuation)
 	}
 }
 

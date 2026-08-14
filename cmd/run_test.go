@@ -68,3 +68,21 @@ func TestRunBatchSizeFlagDefaultsToAutomatic(t *testing.T) {
 		t.Fatalf("batch-size flag = %#v, want default 0", flag)
 	}
 }
+
+func TestRunPolishingFlagDefaults(t *testing.T) {
+	tests := map[string]string{
+		"polishing":                  "false",
+		"polishing-active-set-size":  "5",
+		"polishing-max-sweeps":       "3",
+		"polishing-epochs":           "2",
+		"polishing-iters":            "1000",
+		"polishing-stagnation-iters": "500",
+		"polishing-min-improvement":  "0.001",
+	}
+	for name, want := range tests {
+		flag := runCmd.Flags().Lookup(name)
+		if flag == nil || flag.DefValue != want {
+			t.Errorf("--%s = %#v, want default %q", name, flag, want)
+		}
+	}
+}

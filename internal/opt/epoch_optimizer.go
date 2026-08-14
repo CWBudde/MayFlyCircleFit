@@ -64,8 +64,9 @@ func (o *epochOptimizer) RunContext(ctx context.Context, problem Problem, option
 		iterationOffset := totalIterations
 		evaluationOffset := totalEvaluations
 		epochOptions := RunOptions{
-			Initial:     initial,
-			ResumeCount: options.ResumeCount + epoch,
+			Initial:        initial,
+			ProgressMapper: options.ProgressMapper,
+			ResumeCount:    options.ResumeCount + epoch,
 		}
 		if options.Observer != nil {
 			epochOptions.Observer = func(progress Progress) {
@@ -85,6 +86,24 @@ func (o *epochOptimizer) RunContext(ctx context.Context, problem Problem, option
 		best.Evaluations = totalEvaluations
 		if err != nil {
 			return best, err
+		}
+		if options.EpochObserver != nil {
+			progress := Progress{
+				Iterations:  totalIterations,
+				Evaluations: totalEvaluations,
+				BestParams:  append([]float64(nil), result.BestParams...),
+				BestCost:    result.BestCost,
+			}
+			if options.ProgressMapper != nil {
+				progress = options.ProgressMapper(progress)
+			}
+			if err := options.EpochObserver(EpochBoundary{
+				Epoch:       epoch + 1,
+				Progress:    progress,
+				Termination: result.Termination,
+			}); err != nil {
+				return best, err
+			}
 		}
 		if result.Termination == TerminationTargetCost {
 			return best, nil

@@ -18,6 +18,7 @@ const (
 	MaxPopulation      = 200
 	MaxOptimizerEpochs = 32
 	MaxBatchSize       = 100
+	MaxPolishingSweeps = 32
 	MaxImagePixels     = 16_777_216
 	MaxImageFileSize   = 64 << 20
 	MaxRequestBody     = 1 << 20
@@ -52,30 +53,38 @@ const (
 // JobConfig is the canonical configuration shared by all application entry
 // points and persisted checkpoints.
 type JobConfig struct {
-	RefPath              string  `json:"refPath"`
-	CanvasPath           string  `json:"canvasPath,omitempty"`
-	Mode                 Mode    `json:"mode"`
-	Backend              Backend `json:"backend,omitempty"`
-	Variant              Variant `json:"variant,omitempty"`
-	Circles              int     `json:"circles"`
-	Iters                int     `json:"iters"`
-	PopSize              int     `json:"popSize"`
-	OptimizerEpochs      int     `json:"optimizerEpochs,omitempty"`
-	BatchSize            int     `json:"batchSize,omitempty"`
-	Threads              int     `json:"threads,omitempty"`
-	Seed                 int64   `json:"seed"`
-	EffectiveSeed        int64   `json:"effectiveSeed,omitempty"`
-	ResumeCount          int     `json:"resumeCount,omitempty"`
-	CheckpointInterval   int     `json:"checkpointInterval,omitempty"`
-	TraceInterval        int     `json:"traceInterval,omitempty"`
-	EnableTrace          bool    `json:"enableTrace,omitempty"`
-	DisableTrace         bool    `json:"disableTrace,omitempty"`
-	EnableSSIM           bool    `json:"enableSSIM,omitempty"`
-	SaveSnapshots        bool    `json:"saveSnapshots,omitempty"`
-	ConvergenceEnabled   bool    `json:"convergenceEnabled,omitempty"`
-	DisableConvergence   bool    `json:"disableConvergence,omitempty"`
-	ConvergencePatience  int     `json:"convergencePatience,omitempty"`
-	ConvergenceThreshold float64 `json:"convergenceThreshold,omitempty"`
+	RefPath                  string  `json:"refPath"`
+	CanvasPath               string  `json:"canvasPath,omitempty"`
+	Mode                     Mode    `json:"mode"`
+	Backend                  Backend `json:"backend,omitempty"`
+	Variant                  Variant `json:"variant,omitempty"`
+	Circles                  int     `json:"circles"`
+	Iters                    int     `json:"iters"`
+	PopSize                  int     `json:"popSize"`
+	OptimizerEpochs          int     `json:"optimizerEpochs,omitempty"`
+	BatchSize                int     `json:"batchSize,omitempty"`
+	PolishingEnabled         bool    `json:"polishingEnabled,omitempty"`
+	PolishingOnly            bool    `json:"polishingOnly,omitempty"`
+	PolishingActiveSetSize   int     `json:"polishingActiveSetSize,omitempty"`
+	PolishingMaxSweeps       int     `json:"polishingMaxSweeps,omitempty"`
+	PolishingEpochs          int     `json:"polishingEpochs,omitempty"`
+	PolishingIters           int     `json:"polishingIters,omitempty"`
+	PolishingStagnationIters int     `json:"polishingStagnationIters,omitempty"`
+	PolishingMinImprovement  float64 `json:"polishingMinImprovement,omitempty"`
+	Threads                  int     `json:"threads,omitempty"`
+	Seed                     int64   `json:"seed"`
+	EffectiveSeed            int64   `json:"effectiveSeed,omitempty"`
+	ResumeCount              int     `json:"resumeCount,omitempty"`
+	CheckpointInterval       int     `json:"checkpointInterval,omitempty"`
+	TraceInterval            int     `json:"traceInterval,omitempty"`
+	EnableTrace              bool    `json:"enableTrace,omitempty"`
+	DisableTrace             bool    `json:"disableTrace,omitempty"`
+	EnableSSIM               bool    `json:"enableSSIM,omitempty"`
+	SaveSnapshots            bool    `json:"saveSnapshots,omitempty"`
+	ConvergenceEnabled       bool    `json:"convergenceEnabled,omitempty"`
+	DisableConvergence       bool    `json:"disableConvergence,omitempty"`
+	ConvergencePatience      int     `json:"convergencePatience,omitempty"`
+	ConvergenceThreshold     float64 `json:"convergenceThreshold,omitempty"`
 
 	// Optimizer-level early stopping. These are per-iteration criteria applied
 	// inside a single optimizer run, and are unrelated to the Convergence*
@@ -102,19 +111,25 @@ func (c JobConfig) EarlyStopEnabled() bool {
 // must not gain a branch that fills them in.
 func DefaultConfig() JobConfig {
 	return JobConfig{
-		Mode:                 ModeJoint,
-		Backend:              BackendCPU,
-		Variant:              VariantStandard,
-		Circles:              10,
-		Iters:                100,
-		PopSize:              30,
-		OptimizerEpochs:      1,
-		BatchSize:            5,
-		Threads:              runtime.GOMAXPROCS(0),
-		EnableTrace:          true,
-		ConvergenceEnabled:   true,
-		ConvergencePatience:  3,
-		ConvergenceThreshold: 0.001,
+		Mode:                     ModeJoint,
+		Backend:                  BackendCPU,
+		Variant:                  VariantStandard,
+		Circles:                  10,
+		Iters:                    100,
+		PopSize:                  30,
+		OptimizerEpochs:          1,
+		BatchSize:                5,
+		PolishingActiveSetSize:   5,
+		PolishingMaxSweeps:       3,
+		PolishingEpochs:          2,
+		PolishingIters:           1000,
+		PolishingStagnationIters: 500,
+		PolishingMinImprovement:  0.001,
+		Threads:                  runtime.GOMAXPROCS(0),
+		EnableTrace:              true,
+		ConvergenceEnabled:       true,
+		ConvergencePatience:      3,
+		ConvergenceThreshold:     0.001,
 	}
 }
 
@@ -148,6 +163,27 @@ func (c *JobConfig) ApplyDefaults() error {
 		if c.Circles > 0 && c.BatchSize > c.Circles {
 			c.BatchSize = c.Circles
 		}
+	}
+	if c.PolishingActiveSetSize == 0 {
+		c.PolishingActiveSetSize = defaults.PolishingActiveSetSize
+		if c.Circles > 0 && c.PolishingActiveSetSize > c.Circles {
+			c.PolishingActiveSetSize = c.Circles
+		}
+	}
+	if c.PolishingMaxSweeps == 0 {
+		c.PolishingMaxSweeps = defaults.PolishingMaxSweeps
+	}
+	if c.PolishingEpochs == 0 {
+		c.PolishingEpochs = defaults.PolishingEpochs
+	}
+	if c.PolishingIters == 0 {
+		c.PolishingIters = defaults.PolishingIters
+	}
+	if c.PolishingStagnationIters == 0 {
+		c.PolishingStagnationIters = defaults.PolishingStagnationIters
+	}
+	if c.PolishingMinImprovement == 0 {
+		c.PolishingMinImprovement = defaults.PolishingMinImprovement
 	}
 	if c.Threads == 0 {
 		c.Threads = defaults.Threads
@@ -218,6 +254,30 @@ func (c JobConfig) Validate() error {
 	}
 	if c.BatchSize < 1 || c.BatchSize > MaxBatchSize || c.Mode == ModeBatch && c.BatchSize > c.Circles {
 		return invalid("batchSize", "must be positive, within the limit, and no larger than circles")
+	}
+	if c.PolishingEnabled && c.Mode != ModeBatch {
+		return invalid("polishingEnabled", "requires batch mode")
+	}
+	if c.PolishingOnly && !c.PolishingEnabled {
+		return invalid("polishingOnly", "requires polishing to be enabled")
+	}
+	if c.PolishingActiveSetSize < 1 || c.PolishingActiveSetSize > MaxBatchSize || c.PolishingActiveSetSize > c.Circles {
+		return invalid("polishingActiveSetSize", "must be positive, within the limit, and no larger than circles")
+	}
+	if c.PolishingMaxSweeps < 1 || c.PolishingMaxSweeps > MaxPolishingSweeps {
+		return invalid("polishingMaxSweeps", fmt.Sprintf("must be between 1 and %d", MaxPolishingSweeps))
+	}
+	if c.PolishingEpochs < 1 || c.PolishingEpochs > MaxOptimizerEpochs {
+		return invalid("polishingEpochs", fmt.Sprintf("must be between 1 and %d", MaxOptimizerEpochs))
+	}
+	if c.PolishingIters < 1 || c.PolishingIters > MaxIterations {
+		return invalid("polishingIters", fmt.Sprintf("must be between 1 and %d", MaxIterations))
+	}
+	if c.PolishingStagnationIters < 1 || c.PolishingStagnationIters > c.PolishingIters {
+		return invalid("polishingStagnationIters", "must be positive and no larger than polishingIters")
+	}
+	if math.IsNaN(c.PolishingMinImprovement) || math.IsInf(c.PolishingMinImprovement, 0) || c.PolishingMinImprovement <= 0 {
+		return invalid("polishingMinImprovement", "must be finite and positive")
 	}
 	if c.Threads < 1 {
 		return invalid("threads", "must be positive")

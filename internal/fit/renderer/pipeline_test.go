@@ -26,7 +26,8 @@ func (measuredOptimizer) Run(eval func([]float64) float64, _, _ []float64, dim i
 }
 
 type refillSeedOptimizer struct {
-	calls int
+	calls             int
+	mappedParamCounts []int
 }
 
 func (o *refillSeedOptimizer) Run(eval func([]float64) float64, _, _ []float64, dim int) ([]float64, float64) {
@@ -80,6 +81,10 @@ func (o *refillSeedOptimizer) RunContext(_ context.Context, problem opt.Problem,
 		}
 	}
 	o.calls++
+	if options.ProgressMapper != nil {
+		mapped := options.ProgressMapper(opt.Progress{BestParams: append([]float64(nil), params...)})
+		o.mappedParamCounts = append(o.mappedParamCounts, len(mapped.BestParams))
+	}
 	return opt.Result{
 		BestParams:  params,
 		BestCost:    problem.Eval(params),
@@ -277,7 +282,7 @@ func TestOptimizeBatchRejectsIneffectiveCirclesAfterBoundedRefill(t *testing.T) 
 			if result.OptimizedCircles != 0 {
 				t.Fatalf("optimized circles = %d, want 0", result.OptimizedCircles)
 			}
-			wantStages := (total+4)/5 + maxExtraBatchStages
+			wantStages := (total+4)/5 + MaxExtraBatchStages
 			if result.Stages != wantStages {
 				t.Fatalf("stages = %d, want %d", result.Stages, wantStages)
 			}
@@ -301,6 +306,11 @@ func TestOptimizeBatchRefillsPrunedSlotsFromResidualSeed(t *testing.T) {
 	}
 	if result.Stages != 2 || optimizer.calls != 2 {
 		t.Fatalf("stages/calls = %d/%d, want 2/2", result.Stages, optimizer.calls)
+	}
+	for stage, count := range optimizer.mappedParamCounts {
+		if count != total*paramsPerCircle {
+			t.Fatalf("stage %d mapped progress parameter count = %d, want complete %d-circle vector", stage+1, count, total)
+		}
 	}
 	if result.Termination != opt.TerminationCompleted {
 		t.Fatalf("termination = %q, want completed", result.Termination)

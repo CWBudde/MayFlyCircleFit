@@ -96,6 +96,25 @@ func TestJobDetailPageOmitsSSIMControlsWhenDisabled(t *testing.T) {
 	}
 }
 
+func TestJobDetailPageShowsPolishingSchedule(t *testing.T) {
+	job := JobDetail{
+		ID: "12345678-1234-1234-1234-123456789abc", State: "pending", StartTime: time.Now(),
+		PolishingEnabled: true, PolishingActiveSetSize: 5, PolishingMaxSweeps: 3,
+		PolishingEpochs: 2, PolishingIters: 1000, PolishingStagnationIters: 500,
+		PolishingMinImprovement: 0.001, CanPolish: true,
+	}
+	var output bytes.Buffer
+	if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	body := output.String()
+	for _, marker := range []string{"Active-set Polishing", "Enabled · up to 3 sweeps of 5 circles", "2 × 1000 iterations", "progress threshold 0.001", "Polish weak circles", "/polish"} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("rendered detail page missing %q", marker)
+		}
+	}
+}
+
 func TestJobDetailPageMetadataUnavailable(t *testing.T) {
 	job := JobDetail{
 		ID:        "12345678-1234-1234-1234-123456789abc",

@@ -35,11 +35,30 @@ type Progress struct {
 // Observer consumes synchronous best-so-far snapshots.
 type Observer func(Progress)
 
+// ProgressMapper converts optimizer-local progress into the caller's complete
+// parameter space. Staged renderers use it to prepend already-retained circles
+// before progress reaches monitoring and persistence observers.
+type ProgressMapper func(Progress) Progress
+
+// EpochBoundary reports a completed restart epoch with cumulative work for the
+// current optimizer invocation.
+type EpochBoundary struct {
+	Epoch       int
+	Progress    Progress
+	Termination Termination
+}
+
+// EpochObserver consumes a synchronous epoch boundary. Returning an error
+// aborts the remaining epochs so persistence failures cannot be ignored.
+type EpochObserver func(EpochBoundary) error
+
 // RunOptions controls progress reporting and restart-from-best behavior.
 type RunOptions struct {
-	Observer    Observer
-	Initial     *Candidate
-	ResumeCount int
+	Observer       Observer
+	ProgressMapper ProgressMapper
+	EpochObserver  EpochObserver
+	Initial        *Candidate
+	ResumeCount    int
 }
 
 // Termination describes why an optimizer stopped.

@@ -29,9 +29,11 @@ const TerminationStageConvergence opt.Termination = "stage_convergence"
 const (
 	// TerminationRefillLimit reports that batch mode exhausted its bounded
 	// replacement attempts before every requested slot became useful.
-	TerminationRefillLimit  opt.Termination = "refill_limit"
-	maxExtraBatchStages                     = 3
-	minBatchMSEContribution                 = 0.01
+	TerminationRefillLimit opt.Termination = "refill_limit"
+	// MaxExtraBatchStages is the bounded number of residual-refill attempts
+	// available after the initially planned batch stages.
+	MaxExtraBatchStages     = 3
+	minBatchMSEContribution = 0.01
 )
 
 // OptimizationResult holds the output of an optimization run.
@@ -258,7 +260,15 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 		}
 		constraints := radiusConstraints(bounds, 1)
 		currentCanvas := currentStageCanvas(session, accumulator, combined)
-		runOptions := opt.RunOptions{}
+		progressPrefix := append([]float64(nil), bestParams...)
+		runOptions := opt.RunOptions{
+			ProgressMapper: func(progress opt.Progress) opt.Progress {
+				if len(progress.BestParams) == paramsPerCircle {
+					progress.BestParams = append(append([]float64(nil), progressPrefix...), progress.BestParams...)
+				}
+				return progress
+			},
+		}
 		if seedParams, seedErr := SeedParamsFromResidual(currentCanvas, base.Reference(), 1, ResidualSeedOptions{}); seedErr == nil {
 			seedCost := evaluate(seedParams)
 			runOptions.Initial = &opt.Candidate{Params: seedParams, Cost: seedCost}
@@ -369,7 +379,7 @@ func OptimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	if totalCircles > 0 {
 		plannedStages = (totalCircles + batchSize - 1) / batchSize
 	}
-	maxStages := plannedStages + maxExtraBatchStages
+	maxStages := plannedStages + MaxExtraBatchStages
 	for optimizedCircles < totalCircles && stages < maxStages {
 		stageCircles := min(batchSize, totalCircles-optimizedCircles)
 		retainedCircles := len(bestParams) / paramsPerCircle
@@ -407,7 +417,16 @@ func OptimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 			return nil, fmt.Errorf("%w: seed batch %d: %v", ErrInvalidOptimizationInput, stages+1, err)
 		}
 		seedCost := evaluate(seedParams)
-		runOptions := opt.RunOptions{Initial: &opt.Candidate{Params: seedParams, Cost: seedCost}}
+		progressPrefix := append([]float64(nil), bestParams...)
+		runOptions := opt.RunOptions{
+			Initial: &opt.Candidate{Params: seedParams, Cost: seedCost},
+			ProgressMapper: func(progress opt.Progress) opt.Progress {
+				if len(progress.BestParams) == dim {
+					progress.BestParams = append(append([]float64(nil), progressPrefix...), progress.BestParams...)
+				}
+				return progress
+			},
+		}
 
 		outcome, err := runOptimizer(ctx, optimizer, evaluate, bounds.ClampIndependentVector, bounds.ClampVector, constraints, bounds.Lower, bounds.Upper, dim, runOptions)
 		if err != nil {

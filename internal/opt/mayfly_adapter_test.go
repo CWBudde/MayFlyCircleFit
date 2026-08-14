@@ -74,6 +74,29 @@ func TestMayflyAdapterRepairsEvaluationsProgressAndResult(t *testing.T) {
 	}
 }
 
+func TestMayflyAdapterMapsProgressWithoutChangingLocalResult(t *testing.T) {
+	optimizer := NewMayfly(2, 20, 42).(*MayflyAdapter)
+	var mapped Progress
+	result, err := optimizer.RunContext(context.Background(), Problem{
+		Eval: sphere, Lower: []float64{-1}, Upper: []float64{1}, Dim: 1,
+	}, RunOptions{
+		ProgressMapper: func(progress Progress) Progress {
+			progress.BestParams = append([]float64{7}, progress.BestParams...)
+			return progress
+		},
+		Observer: func(progress Progress) { mapped = progress },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mapped.BestParams) != 2 || mapped.BestParams[0] != 7 {
+		t.Fatalf("mapped progress params = %v, want staged prefix", mapped.BestParams)
+	}
+	if len(result.BestParams) != 1 {
+		t.Fatalf("optimizer-local result params = %v, want one dimension", result.BestParams)
+	}
+}
+
 func TestMayflyAdapterEvaluatesInequalitiesOnCanonicalParameters(t *testing.T) {
 	const repairedValue = 7.5
 	var constraintCalls int

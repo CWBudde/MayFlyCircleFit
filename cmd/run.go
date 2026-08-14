@@ -19,23 +19,30 @@ import (
 )
 
 var (
-	refPath           string
-	canvasPath        string
-	outPath           string
-	mode              string
-	backendName       string
-	variantName       string
-	circles           int
-	iters             int
-	popSize           int
-	optimizerEpochs   int
-	batchSize         int
-	threads           int
-	seed              int64
-	convergenceEnable bool
-	patience          int
-	threshold         float64
-	enableSSIM        bool
+	refPath                  string
+	canvasPath               string
+	outPath                  string
+	mode                     string
+	backendName              string
+	variantName              string
+	circles                  int
+	iters                    int
+	popSize                  int
+	optimizerEpochs          int
+	batchSize                int
+	polishingEnabled         bool
+	polishingActiveSetSize   int
+	polishingMaxSweeps       int
+	polishingEpochs          int
+	polishingIters           int
+	polishingStagnationIters int
+	polishingMinImprovement  float64
+	threads                  int
+	seed                     int64
+	convergenceEnable        bool
+	patience                 int
+	threshold                float64
+	enableSSIM               bool
 
 	stopTargetCost      float64
 	stopMinImprovement  float64
@@ -64,6 +71,13 @@ func init() {
 	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
 	runCmd.Flags().IntVar(&optimizerEpochs, "optimizer-epochs", 1, "Optimizer runs per stage, reseeding each continuation from the best result")
 	runCmd.Flags().IntVar(&batchSize, "batch-size", 0, "Circles optimized together in batch mode (0 selects the automatic default)")
+	runCmd.Flags().BoolVar(&polishingEnabled, "polishing", false, "Polish weak circles transactionally after a batch run")
+	runCmd.Flags().IntVar(&polishingActiveSetSize, "polishing-active-set-size", 5, "Weak circles optimized together in each polishing sweep")
+	runCmd.Flags().IntVar(&polishingMaxSweeps, "polishing-max-sweeps", 3, "Maximum transactional polishing sweeps")
+	runCmd.Flags().IntVar(&polishingEpochs, "polishing-epochs", 2, "Optimizer epochs per polishing sweep")
+	runCmd.Flags().IntVar(&polishingIters, "polishing-iters", 1000, "Iterations per polishing epoch")
+	runCmd.Flags().IntVar(&polishingStagnationIters, "polishing-stagnation-iters", 500, "Stop a polishing epoch after this many iterations without sufficient progress")
+	runCmd.Flags().Float64Var(&polishingMinImprovement, "polishing-min-improvement", 0.001, "Absolute optimizer cost reduction counted as progress during polishing")
 	runCmd.Flags().IntVar(&threads, "threads", runtime.GOMAXPROCS(0), "CPU rendering threads (capped at GOMAXPROCS)")
 	runCmd.Flags().Int64Var(&seed, "seed", 0, "Random seed (0 chooses and reports a random seed)")
 	runCmd.Flags().BoolVar(&enableSSIM, "enable-ssim", false, "Calculate the optional final structural similarity metric")
@@ -102,27 +116,34 @@ func earlyStopFromConfig(config app.JobConfig) opt.Stop {
 
 func runOptimization(cmd *cobra.Command, args []string) error {
 	config, err := app.Normalize(app.JobConfig{
-		RefPath:              refPath,
-		CanvasPath:           canvasPath,
-		Mode:                 app.Mode(mode),
-		Backend:              app.Backend(backendName),
-		Variant:              app.Variant(variantName),
-		Circles:              circles,
-		Iters:                iters,
-		PopSize:              popSize,
-		OptimizerEpochs:      optimizerEpochs,
-		BatchSize:            batchSize,
-		Threads:              threads,
-		Seed:                 seed,
-		EnableSSIM:           enableSSIM,
-		ConvergenceEnabled:   convergenceEnable,
-		DisableConvergence:   !convergenceEnable,
-		ConvergencePatience:  patience,
-		ConvergenceThreshold: threshold,
-		StopTargetCost:       stopTargetCost,
-		StopMinImprovement:   stopMinImprovement,
-		StopStagnationIters:  stopStagnationIters,
-		StopMinIters:         stopMinIters,
+		RefPath:                  refPath,
+		CanvasPath:               canvasPath,
+		Mode:                     app.Mode(mode),
+		Backend:                  app.Backend(backendName),
+		Variant:                  app.Variant(variantName),
+		Circles:                  circles,
+		Iters:                    iters,
+		PopSize:                  popSize,
+		OptimizerEpochs:          optimizerEpochs,
+		BatchSize:                batchSize,
+		PolishingEnabled:         polishingEnabled,
+		PolishingActiveSetSize:   polishingActiveSetSize,
+		PolishingMaxSweeps:       polishingMaxSweeps,
+		PolishingEpochs:          polishingEpochs,
+		PolishingIters:           polishingIters,
+		PolishingStagnationIters: polishingStagnationIters,
+		PolishingMinImprovement:  polishingMinImprovement,
+		Threads:                  threads,
+		Seed:                     seed,
+		EnableSSIM:               enableSSIM,
+		ConvergenceEnabled:       convergenceEnable,
+		DisableConvergence:       !convergenceEnable,
+		ConvergencePatience:      patience,
+		ConvergenceThreshold:     threshold,
+		StopTargetCost:           stopTargetCost,
+		StopMinImprovement:       stopMinImprovement,
+		StopStagnationIters:      stopStagnationIters,
+		StopMinIters:             stopMinIters,
 	})
 	if err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
@@ -258,6 +279,33 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		result, err = renderer.OptimizeSequential(rend, optimizer, config.Circles, convergenceConfig, nil)
 	case app.ModeBatch:
 		result, err = renderer.OptimizeBatch(rend, optimizer, config.Circles, config.BatchSize, convergenceConfig)
+		if err == nil && config.PolishingEnabled && result.OptimizedCircles == config.Circles {
+			var polishOptimizer opt.Optimizer
+			polishOptimizer, err = opt.NewMayflyVariant(string(app.VariantStandard), config.PolishingIters, config.PopSize, config.EffectiveSeed,
+				opt.WithLogger(slog.Default()),
+				opt.WithEarlyStop(opt.Stop{
+					MinImprovement:  config.PolishingMinImprovement,
+					StagnationIters: config.PolishingStagnationIters,
+				}),
+			)
+			if err == nil {
+				polishOptimizer = opt.WithEpochs(polishOptimizer, config.PolishingEpochs)
+				var polished *renderer.BatchPolishResult
+				polished, err = renderer.PolishCircleBatchContext(cmd.Context(), rend, polishOptimizer, result.BestParams, renderer.BatchPolishOptions{
+					ActiveSetSize: config.PolishingActiveSetSize,
+					MaxSweeps:     config.PolishingMaxSweeps,
+				})
+				if err == nil {
+					result.BestParams = polished.BestParams
+					result.BestCost = polished.BestCost
+					result.BestImage = polished.BestImage
+					result.Iterations += polished.Iterations
+					result.Evaluations += polished.Evaluations
+					result.Stages += polished.Sweeps
+					slog.Info("Batch polishing complete", "sweeps", polished.Sweeps, "accepted_sweeps", polished.AcceptedSweeps, "best_cost", polished.BestCost)
+				}
+			}
+		}
 	default:
 		return fmt.Errorf("unknown mode: %s", config.Mode)
 	}

@@ -26,9 +26,45 @@ func (o *epochProbeOptimizer) RunContext(_ context.Context, _ Problem, options R
 		Termination: TerminationCompleted,
 	}
 	if options.Observer != nil {
-		options.Observer(Progress{Iterations: 2, Evaluations: 3, BestParams: result.BestParams, BestCost: result.BestCost})
+		progress := Progress{Iterations: 2, Evaluations: 3, BestParams: result.BestParams, BestCost: result.BestCost}
+		if options.ProgressMapper != nil {
+			progress = options.ProgressMapper(progress)
+		}
+		options.Observer(progress)
 	}
 	return result, nil
+}
+
+func TestEpochOptimizerReportsMappedDurableBoundaries(t *testing.T) {
+	base := &epochProbeOptimizer{}
+	optimizer := WithEpochs(base, 3).(LifecycleOptimizer)
+	var boundaries []EpochBoundary
+	result, err := optimizer.RunContext(context.Background(), Problem{
+		Eval: func([]float64) float64 { return 0 }, Lower: []float64{0}, Upper: []float64{1}, Dim: 1,
+	}, RunOptions{
+		ProgressMapper: func(progress Progress) Progress {
+			progress.BestParams = append([]float64{99}, progress.BestParams...)
+			return progress
+		},
+		EpochObserver: func(boundary EpochBoundary) error {
+			boundaries = append(boundaries, boundary)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Iterations != 6 || len(boundaries) != 3 {
+		t.Fatalf("result/boundaries = %+v/%d, want 6 iterations and 3 boundaries", result, len(boundaries))
+	}
+	for epoch, boundary := range boundaries {
+		if boundary.Epoch != epoch+1 || boundary.Progress.Iterations != (epoch+1)*2 || boundary.Progress.Evaluations != (epoch+1)*3 {
+			t.Fatalf("boundary %d = %+v", epoch+1, boundary)
+		}
+		if len(boundary.Progress.BestParams) != 2 || boundary.Progress.BestParams[0] != 99 {
+			t.Fatalf("boundary %d params = %v, want complete mapped vector", epoch+1, boundary.Progress.BestParams)
+		}
+	}
 }
 
 func TestWithEpochsPreservesSingleEpochIdentity(t *testing.T) {

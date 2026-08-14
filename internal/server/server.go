@@ -380,6 +380,8 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 		s.handleJobStream(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "resume" {
 		s.handleResumeJob(w, r, jobID)
+	} else if len(parts) == 2 && parts[1] == "polish" {
+		s.handlePolishJob(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "cancel" {
 		s.handleCancelJob(w, r, jobID)
 	} else {
@@ -409,6 +411,10 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	config, err := app.Normalize(config)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_config", err.Error())
+		return
+	}
+	if config.PolishingOnly {
+		writeAPIError(w, http.StatusBadRequest, "invalid_config", "polishingOnly jobs must be created from a completed checkpoint")
 		return
 	}
 	if s.inputErr != nil {
@@ -799,6 +805,7 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 		j.BestCost = checkpoint.BestCost
 		j.InitialCost = checkpoint.InitialCost
 		j.Iterations = checkpoint.Iteration
+		j.Evaluations = int(checkpoint.Evaluations)
 	})
 
 	if err := s.enqueueJob(newJob.ID); err != nil {
@@ -820,6 +827,99 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
+}
+
+// handlePolishJob creates a continuation that runs only transactional
+// active-set polishing from a completed batch checkpoint.
+func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+	if s.store == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "checkpoint_unavailable", "checkpoint feature not enabled")
+		return
+	}
+	source, ok := s.jobManager.GetJob(jobID)
+	if !ok {
+		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
+		return
+	}
+	if source.State != StateCompleted {
+		writeAPIError(w, http.StatusConflict, "invalid_state", "only completed jobs can be polished")
+		return
+	}
+
+	checkpoint, err := s.store.LoadCheckpoint(jobID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "not_found", "completed checkpoint not found")
+		} else {
+			writeAPIError(w, http.StatusInternalServerError, "checkpoint_error", "failed to load completed checkpoint")
+		}
+		return
+	}
+	if err := checkpoint.Validate(); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "completed checkpoint is invalid")
+		return
+	}
+	config, err := app.Normalize(checkpoint.Config)
+	if err != nil || config.Mode != app.ModeBatch || len(checkpoint.BestParams) != config.Circles*7 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "polishing requires a complete batch checkpoint")
+		return
+	}
+	if s.inputErr != nil {
+		writeAPIError(w, http.StatusInternalServerError, "server_config", "server input roots are unavailable")
+		return
+	}
+	config.RefPath, err = s.input.resolveImage(config.RefPath)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint reference is outside configured input roots")
+		return
+	}
+	if config.CanvasPath != "" {
+		config.CanvasPath, err = s.input.resolveImage(config.CanvasPath)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint canvas is outside configured input roots")
+			return
+		}
+	}
+	config.PolishingEnabled = true
+	config.PolishingOnly = true
+	config.EffectiveSeed = checkpoint.EffectiveSeed
+	config.ResumeCount = checkpoint.ResumeCount + 1
+
+	evaluations := int(checkpoint.Evaluations)
+	if int64(evaluations) != checkpoint.Evaluations {
+		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint evaluation count is out of range")
+		return
+	}
+	newJob := s.jobManager.CreateJob(config)
+	if err := s.jobManager.UpdateJob(newJob.ID, func(job *Job) {
+		job.BestParams = append([]float64(nil), checkpoint.BestParams...)
+		job.BestCost = checkpoint.BestCost
+		job.InitialCost = checkpoint.InitialCost
+		job.Iterations = checkpoint.Iteration
+		job.Evaluations = evaluations
+	}); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "job_error", "failed to initialize polishing job")
+		return
+	}
+	if err := s.enqueueJob(newJob.ID); err != nil {
+		_ = s.jobManager.FailJob(newJob.ID, "server job queue is full")
+		writeAPIError(w, http.StatusTooManyRequests, "queue_full", "server job queue is full")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"jobId":        newJob.ID,
+		"polishedFrom": jobID,
+		"state":        string(newJob.State),
+		"previousCost": checkpoint.BestCost,
+	})
 }
 
 // loggingMiddleware logs HTTP requests

@@ -2,14 +2,18 @@ package server
 
 import (
 	"context"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
@@ -114,6 +118,208 @@ func TestRunJobRecordsPSNRAndOptionalSSIM(t *testing.T) {
 	last := entries[len(entries)-1]
 	if last.PSNR == nil || last.SSIM == nil {
 		t.Fatalf("final trace metrics unavailable: %+v", last)
+	}
+}
+
+func TestRunJobPersistsExactFinalResultWithoutPeriodicCheckpointing(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.png")
+	createTestImage(t, imgPath)
+	persistence, err := store.NewFSStore(filepath.Join(tmpDir, "artifacts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jm := NewJobManager()
+	job := jm.CreateJob(JobConfig{
+		RefPath: imgPath, Mode: "joint", Circles: 2, Iters: 5, PopSize: 20, Seed: 42,
+		CheckpointInterval: 0,
+	})
+
+	if err := runJob(context.Background(), jm, persistence, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	completed, _ := jm.GetJob(job.ID)
+	checkpoint, err := persistence.LoadCheckpoint(job.ID)
+	if err != nil {
+		t.Fatalf("load final checkpoint: %v", err)
+	}
+	if checkpoint.BestCost != completed.BestCost ||
+		checkpoint.Iterations != completed.Iterations ||
+		checkpoint.Evaluations != int64(completed.Evaluations) ||
+		checkpoint.Termination != completed.Termination ||
+		!reflect.DeepEqual(checkpoint.BestParams, completed.BestParams) {
+		t.Fatalf("checkpoint does not match completed job:\ncheckpoint=%+v\njob=%+v", checkpoint, completed)
+	}
+	for _, artifact := range []store.Artifact{store.ArtifactBest, store.ArtifactDiff} {
+		path, err := persistence.ArtifactPath(job.ID, artifact)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("stat final artifact %s: %v", artifact, err)
+		}
+	}
+}
+
+type faultingWorkerStore struct {
+	*store.FSStore
+	checkpointErr error
+	artifactErrs  map[store.Artifact]error
+	artifactCalls []store.Artifact
+}
+
+func (s *faultingWorkerStore) SaveCheckpoint(jobID string, checkpoint *store.Checkpoint) error {
+	if s.checkpointErr != nil {
+		return s.checkpointErr
+	}
+	return s.FSStore.SaveCheckpoint(jobID, checkpoint)
+}
+
+func (s *faultingWorkerStore) SavePNGArtifact(jobID string, artifact store.Artifact, img image.Image) error {
+	s.artifactCalls = append(s.artifactCalls, artifact)
+	if err := s.artifactErrs[artifact]; err != nil {
+		return err
+	}
+	return s.FSStore.SavePNGArtifact(jobID, artifact, img)
+}
+
+func TestRunJobReportsFinalPersistenceFailuresAndAttemptsBothArtifacts(t *testing.T) {
+	tests := []struct {
+		name          string
+		checkpointErr error
+		artifactErrs  map[store.Artifact]error
+		wantErrors    []string
+	}{
+		{
+			name:          "checkpoint",
+			checkpointErr: errors.New("injected checkpoint failure"),
+			wantErrors:    []string{"save checkpoint", "injected checkpoint failure"},
+		},
+		{
+			name: "both artifacts",
+			artifactErrs: map[store.Artifact]error{
+				store.ArtifactBest: errors.New("injected best failure"),
+				store.ArtifactDiff: errors.New("injected diff failure"),
+			},
+			wantErrors: []string{"save best artifact", "injected best failure", "save diff artifact", "injected diff failure"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			imgPath := filepath.Join(tmpDir, "test.png")
+			createTestImage(t, imgPath)
+			fsStore, err := store.NewFSStore(filepath.Join(tmpDir, "artifacts"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			persistence := &faultingWorkerStore{
+				FSStore: fsStore, checkpointErr: test.checkpointErr, artifactErrs: test.artifactErrs,
+			}
+			jm := NewJobManager()
+			job := jm.CreateJob(JobConfig{
+				RefPath: imgPath, Mode: "joint", Circles: 1, Iters: 2, PopSize: 20, Seed: 42,
+			})
+
+			runErr := runJob(context.Background(), jm, persistence, job.ID)
+			if runErr == nil {
+				t.Fatal("runJob returned nil after final persistence failure")
+			}
+			for _, want := range test.wantErrors {
+				if !strings.Contains(runErr.Error(), want) {
+					t.Errorf("runJob error %q does not contain %q", runErr, want)
+				}
+			}
+			completed, _ := jm.GetJob(job.ID)
+			if completed.State != StateCompleted || completed.Error != "failed to persist final result" {
+				t.Fatalf("completed job did not expose persistence failure: state=%s error=%q", completed.State, completed.Error)
+			}
+			wantCalls := []store.Artifact{store.ArtifactBest, store.ArtifactDiff}
+			if !reflect.DeepEqual(persistence.artifactCalls, wantCalls) {
+				t.Fatalf("artifact calls = %v, want %v", persistence.artifactCalls, wantCalls)
+			}
+		})
+	}
+}
+
+func TestRunJobExecutesConfiguredBatchPolishing(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.png")
+	createTestImage(t, imgPath)
+	jm := NewJobManager()
+	job := jm.CreateJob(JobConfig{
+		RefPath:                  imgPath,
+		Mode:                     app.ModeBatch,
+		Backend:                  app.BackendCPU,
+		Variant:                  app.VariantStandard,
+		Circles:                  1,
+		BatchSize:                1,
+		Iters:                    2,
+		OptimizerEpochs:          1,
+		PopSize:                  20,
+		Threads:                  1,
+		Seed:                     42,
+		EffectiveSeed:            42,
+		PolishingEnabled:         true,
+		PolishingActiveSetSize:   1,
+		PolishingMaxSweeps:       1,
+		PolishingEpochs:          1,
+		PolishingIters:           2,
+		PolishingStagnationIters: 1,
+		PolishingMinImprovement:  0.001,
+		DisableConvergence:       true,
+	})
+
+	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	completed, ok := jm.GetJob(job.ID)
+	if !ok {
+		t.Fatal("completed job not found")
+	}
+	if completed.State != StateCompleted || len(completed.BestParams) != 7 {
+		t.Fatalf("completed polished job = state %s params %d", completed.State, len(completed.BestParams))
+	}
+	if completed.Iterations <= job.Config.Iters {
+		t.Fatalf("iterations = %d, want work from initial stage plus polishing", completed.Iterations)
+	}
+}
+
+func TestRunJobPolishingOnlyContinuesCompleteBatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.png")
+	createTestImage(t, imgPath)
+	jm := NewJobManager()
+	config := JobConfig{
+		RefPath: imgPath, Mode: app.ModeBatch, Backend: app.BackendCPU, Variant: app.VariantStandard,
+		Circles: 1, BatchSize: 1, Iters: 2, OptimizerEpochs: 1, PopSize: 20, Threads: 1,
+		Seed: 42, EffectiveSeed: 42, PolishingEnabled: true, PolishingOnly: true,
+		PolishingActiveSetSize: 1, PolishingMaxSweeps: 1, PolishingEpochs: 1,
+		PolishingIters: 2, PolishingStagnationIters: 1, PolishingMinImprovement: 0.001,
+		DisableConvergence: true,
+	}
+	job := jm.CreateJob(config)
+	params := []float64{25, 25, 10, 1, 0, 0, 1}
+	if err := jm.UpdateJob(job.ID, func(live *Job) {
+		live.BestParams = append([]float64(nil), params...)
+		live.BestCost = 1000
+		live.InitialCost = 2000
+		live.Iterations = 8000
+		live.Evaluations = 900000
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	completed, _ := jm.GetJob(job.ID)
+	if completed.State != StateCompleted || len(completed.BestParams) != 7 {
+		t.Fatalf("polishing continuation = state %s params %d", completed.State, len(completed.BestParams))
+	}
+	if completed.Iterations <= 8000 || completed.Evaluations <= 900000 {
+		t.Fatalf("continuation work = %d/%d, want counters beyond checkpoint", completed.Iterations, completed.Evaluations)
 	}
 }
 
@@ -236,6 +442,8 @@ type optionsCaptureOptimizer struct {
 	options opt.RunOptions
 }
 
+type epochCallbackOptimizer struct{}
+
 func (o *optionsCaptureOptimizer) Run(_ func([]float64) float64, _, _ []float64, dim int) ([]float64, float64) {
 	return make([]float64, dim), 0
 }
@@ -243,6 +451,21 @@ func (o *optionsCaptureOptimizer) Run(_ func([]float64) float64, _, _ []float64,
 func (o *optionsCaptureOptimizer) RunContext(_ context.Context, problem opt.Problem, options opt.RunOptions) (opt.Result, error) {
 	o.options = options
 	return opt.Result{BestParams: append([]float64(nil), options.Initial.Params...), BestCost: options.Initial.Cost}, nil
+}
+
+func (epochCallbackOptimizer) Run(_ func([]float64) float64, _, _ []float64, dim int) ([]float64, float64) {
+	return make([]float64, dim), 0
+}
+
+func (epochCallbackOptimizer) RunContext(_ context.Context, _ opt.Problem, options opt.RunOptions) (opt.Result, error) {
+	progress := opt.Progress{Iterations: 2, Evaluations: 3, BestParams: []float64{4}, BestCost: 5}
+	if options.ProgressMapper != nil {
+		progress = options.ProgressMapper(progress)
+	}
+	if err := options.EpochObserver(opt.EpochBoundary{Epoch: 1, Progress: progress, Termination: opt.TerminationCompleted}); err != nil {
+		return opt.Result{}, err
+	}
+	return opt.Result{BestParams: []float64{4}, BestCost: 5, Iterations: 2, Evaluations: 3, Termination: opt.TerminationCompleted}, nil
 }
 
 func (t terminationOptimizer) RunContext(_ context.Context, problem opt.Problem, _ opt.RunOptions) (opt.Result, error) {
@@ -295,5 +518,33 @@ func TestProgressOptimizerForwardsPipelineInitialSeed(t *testing.T) {
 	}
 	if base.options.Initial != initial || base.options.ResumeCount != 3 {
 		t.Fatalf("forwarded options = %+v, want initial seed and resume count 3", base.options)
+	}
+}
+
+func TestProgressOptimizerMapsAndOffsetsEpochBoundary(t *testing.T) {
+	var boundary opt.EpochBoundary
+	wrapped := &progressOptimizer{
+		base: epochCallbackOptimizer{},
+		epochObserver: func(sample opt.EpochBoundary) error {
+			boundary = sample
+			return nil
+		},
+		iterations:  10,
+		evaluations: 20,
+	}
+	_, err := wrapped.RunContext(context.Background(), opt.Problem{
+		Eval: func([]float64) float64 { return 1 }, Lower: []float64{0}, Upper: []float64{1}, Dim: 1,
+	}, opt.RunOptions{ProgressMapper: func(progress opt.Progress) opt.Progress {
+		progress.BestParams = append([]float64{9}, progress.BestParams...)
+		return progress
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if boundary.Progress.Iterations != 12 || boundary.Progress.Evaluations != 23 {
+		t.Fatalf("boundary work = %+v, want offsets 12/23", boundary.Progress)
+	}
+	if !reflect.DeepEqual(boundary.Progress.BestParams, []float64{9, 4}) {
+		t.Fatalf("boundary params = %v, want complete mapped vector", boundary.Progress.BestParams)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/ui"
 )
 
@@ -105,38 +106,48 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 			Red: circle.Red, Green: circle.Green, Blue: circle.Blue, Opacity: circle.Opacity,
 		}
 	}
+	maxIterations := plannedOptimizerIterations(job.Config)
 
 	// Convert to UI job detail
 	jobDetail := ui.JobDetail{
-		ID:              job.ID,
-		State:           string(job.State),
-		RefPath:         job.Config.RefPath,
-		Mode:            string(job.Config.Mode),
-		Variant:         string(job.Config.Variant),
-		Circles:         job.Config.Circles,
-		Iterations:      job.Iterations,
-		Evaluations:     job.Evaluations,
-		MaxIters:        job.Config.Iters * max(job.Config.OptimizerEpochs, 1),
-		ItersPerEpoch:   job.Config.Iters,
-		OptimizerEpochs: max(job.Config.OptimizerEpochs, 1),
-		PopSize:         job.Config.PopSize,
-		BestCost:        job.BestCost,
-		InitialCost:     job.InitialCost,
-		StartTime:       job.StartTime,
-		EndTime:         job.EndTime,
-		ElapsedSec:      elapsed,
-		CPS:             cps,
-		Termination:     job.Termination,
-		Error:           job.Error,
-		RefWidth:        refWidth,
-		RefHeight:       refHeight,
-		RefSize:         refSize,
-		PSNR:            psnr,
-		PSNRInfinite:    psnrInfinite,
-		SSIM:            cloneFloat(job.SSIM),
-		SSIMEnabled:     job.Config.EnableSSIM,
-		MetricHistory:   metricHistory,
-		Parameters:      parameters,
+		ID:                       job.ID,
+		State:                    string(job.State),
+		RefPath:                  job.Config.RefPath,
+		Mode:                     string(job.Config.Mode),
+		Variant:                  string(job.Config.Variant),
+		Circles:                  job.Config.Circles,
+		Iterations:               job.Iterations,
+		Evaluations:              job.Evaluations,
+		MaxIters:                 maxIterations,
+		ItersPerEpoch:            job.Config.Iters,
+		OptimizerEpochs:          max(job.Config.OptimizerEpochs, 1),
+		PopSize:                  job.Config.PopSize,
+		PolishingEnabled:         job.Config.PolishingEnabled,
+		PolishingOnly:            job.Config.PolishingOnly,
+		CanPolish:                s.store != nil && job.State == StateCompleted && job.Config.Mode == app.ModeBatch && len(job.BestParams) == job.Config.Circles*7,
+		PolishingActiveSetSize:   job.Config.PolishingActiveSetSize,
+		PolishingMaxSweeps:       job.Config.PolishingMaxSweeps,
+		PolishingEpochs:          job.Config.PolishingEpochs,
+		PolishingIters:           job.Config.PolishingIters,
+		PolishingStagnationIters: job.Config.PolishingStagnationIters,
+		PolishingMinImprovement:  job.Config.PolishingMinImprovement,
+		BestCost:                 job.BestCost,
+		InitialCost:              job.InitialCost,
+		StartTime:                job.StartTime,
+		EndTime:                  job.EndTime,
+		ElapsedSec:               elapsed,
+		CPS:                      cps,
+		Termination:              job.Termination,
+		Error:                    job.Error,
+		RefWidth:                 refWidth,
+		RefHeight:                refHeight,
+		RefSize:                  refSize,
+		PSNR:                     psnr,
+		PSNRInfinite:             psnrInfinite,
+		SSIM:                     cloneFloat(job.SSIM),
+		SSIMEnabled:              job.Config.EnableSSIM,
+		MetricHistory:            metricHistory,
+		Parameters:               parameters,
 	}
 
 	// Render the job detail page using templ
@@ -144,6 +155,23 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to render page", http.StatusInternalServerError)
 		return
 	}
+}
+
+func plannedOptimizerIterations(config JobConfig) int {
+	perStage := config.Iters * max(config.OptimizerEpochs, 1)
+	stages := 1
+	switch config.Mode {
+	case app.ModeSequential:
+		stages = config.Circles
+	case app.ModeBatch:
+		batchSize := max(config.BatchSize, 1)
+		stages = (config.Circles+batchSize-1)/batchSize + renderer.MaxExtraBatchStages
+	}
+	total := stages * perStage
+	if config.PolishingEnabled {
+		total += config.PolishingMaxSweeps * config.PolishingEpochs * config.PolishingIters
+	}
+	return total
 }
 
 func referenceImageMetadata(path string) (width, height int, size int64, err error) {
@@ -205,6 +233,13 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	popSizeStr := r.FormValue("popSize")
 	optimizerEpochsStr := r.FormValue("optimizerEpochs")
 	batchSizeStr := r.FormValue("batchSize")
+	polishingEnabled := r.FormValue("polishingEnabled") == "on"
+	polishingActiveSetSizeStr := r.FormValue("polishingActiveSetSize")
+	polishingMaxSweepsStr := r.FormValue("polishingMaxSweeps")
+	polishingEpochsStr := r.FormValue("polishingEpochs")
+	polishingItersStr := r.FormValue("polishingIters")
+	polishingStagnationItersStr := r.FormValue("polishingStagnationIters")
+	polishingMinImprovementStr := r.FormValue("polishingMinImprovement")
 	seedStr := r.FormValue("seed")
 	convergenceEnabledStr := r.FormValue("convergenceEnabled")
 	convergencePatienceStr := r.FormValue("convergencePatience")
@@ -266,6 +301,37 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	polishingActiveSetSize, err := formIntOrDefault(polishingActiveSetSizeStr, 0, "Polishing active set size")
+	if err != nil {
+		renderCreateError(w, r, err)
+		return
+	}
+	polishingMaxSweeps, err := formIntOrDefault(polishingMaxSweepsStr, 0, "Polishing max sweeps")
+	if err != nil {
+		renderCreateError(w, r, err)
+		return
+	}
+	polishingEpochs, err := formIntOrDefault(polishingEpochsStr, 0, "Polishing epochs")
+	if err != nil {
+		renderCreateError(w, r, err)
+		return
+	}
+	polishingIters, err := formIntOrDefault(polishingItersStr, 0, "Polishing iterations")
+	if err != nil {
+		renderCreateError(w, r, err)
+		return
+	}
+	polishingStagnationIters, err := formIntOrDefault(polishingStagnationItersStr, 0, "Polishing stagnation iterations")
+	if err != nil {
+		renderCreateError(w, r, err)
+		return
+	}
+	polishingMinImprovement, err := formFloatOrDefault(polishingMinImprovementStr, 0, "Polishing minimum improvement")
+	if err != nil {
+		renderCreateError(w, r, err)
+		return
+	}
+
 	seed, err := strconv.ParseInt(seedStr, 10, 64)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -323,24 +389,31 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 
 	// Create job configuration through the same normalization path as the API.
 	config, err := app.Normalize(JobConfig{
-		RefPath:              refPath,
-		CanvasPath:           canvasPath,
-		Mode:                 app.Mode(mode),
-		Circles:              circles,
-		Iters:                iters,
-		PopSize:              popSize,
-		OptimizerEpochs:      optimizerEpochs,
-		BatchSize:            batchSize,
-		Seed:                 seed,
-		EnableSSIM:           enableSSIM,
-		ConvergenceEnabled:   convergenceEnabled,
-		DisableConvergence:   !convergenceEnabled,
-		ConvergencePatience:  convergencePatience,
-		ConvergenceThreshold: convergenceThreshold,
-		StopTargetCost:       stopTargetCost,
-		StopMinImprovement:   stopMinImprovement,
-		StopStagnationIters:  stopStagnationIters,
-		StopMinIters:         stopMinIters,
+		RefPath:                  refPath,
+		CanvasPath:               canvasPath,
+		Mode:                     app.Mode(mode),
+		Circles:                  circles,
+		Iters:                    iters,
+		PopSize:                  popSize,
+		OptimizerEpochs:          optimizerEpochs,
+		BatchSize:                batchSize,
+		PolishingEnabled:         polishingEnabled,
+		PolishingActiveSetSize:   polishingActiveSetSize,
+		PolishingMaxSweeps:       polishingMaxSweeps,
+		PolishingEpochs:          polishingEpochs,
+		PolishingIters:           polishingIters,
+		PolishingStagnationIters: polishingStagnationIters,
+		PolishingMinImprovement:  polishingMinImprovement,
+		Seed:                     seed,
+		EnableSSIM:               enableSSIM,
+		ConvergenceEnabled:       convergenceEnabled,
+		DisableConvergence:       !convergenceEnabled,
+		ConvergencePatience:      convergencePatience,
+		ConvergenceThreshold:     convergenceThreshold,
+		StopTargetCost:           stopTargetCost,
+		StopMinImprovement:       stopMinImprovement,
+		StopStagnationIters:      stopStagnationIters,
+		StopMinIters:             stopMinIters,
 	})
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -380,6 +453,33 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 
 	// Redirect to job detail page
 	http.Redirect(w, r, "/jobs/"+job.ID, http.StatusSeeOther)
+}
+
+func renderCreateError(w http.ResponseWriter, r *http.Request, err error) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+}
+
+func formIntOrDefault(raw string, defaultValue int, label string) (int, error) {
+	if raw == "" {
+		return defaultValue, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a whole number", label)
+	}
+	return value, nil
+}
+
+func formFloatOrDefault(raw string, defaultValue float64, label string) (float64, error) {
+	if raw == "" {
+		return defaultValue, nil
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a number", label)
+	}
+	return value, nil
 }
 
 // optionalFormFloat parses an optional numeric form field. An absent or empty

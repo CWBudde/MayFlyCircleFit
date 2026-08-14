@@ -40,10 +40,11 @@ func buildConvergenceConfig(config store.JobConfig) renderer.ConvergenceConfig {
 // progressOptimizer injects one observer and optional saved best into each
 // lifecycle-aware stage while maintaining cumulative counters across stages.
 type progressOptimizer struct {
-	base        opt.Optimizer
-	observer    opt.Observer
-	initial     *opt.Candidate
-	resumeCount int
+	base          opt.Optimizer
+	observer      opt.Observer
+	epochObserver opt.EpochObserver
+	initial       *opt.Candidate
+	resumeCount   int
 
 	mu          sync.Mutex
 	iterations  int
@@ -74,8 +75,9 @@ func (o *progressOptimizer) RunContext(ctx context.Context, problem opt.Problem,
 	}
 
 	result, err := lifecycle.RunContext(ctx, problem, opt.RunOptions{
-		Initial:     initial,
-		ResumeCount: resumeCount,
+		Initial:        initial,
+		ProgressMapper: options.ProgressMapper,
+		ResumeCount:    resumeCount,
 		Observer: func(progress opt.Progress) {
 			progress.Iterations += baseIterations
 			progress.Evaluations += baseEvaluations
@@ -85,6 +87,19 @@ func (o *progressOptimizer) RunContext(ctx context.Context, problem opt.Problem,
 			if o.observer != nil {
 				o.observer(progress)
 			}
+		},
+		EpochObserver: func(boundary opt.EpochBoundary) error {
+			boundary.Progress.Iterations += baseIterations
+			boundary.Progress.Evaluations += baseEvaluations
+			if options.EpochObserver != nil {
+				if err := options.EpochObserver(boundary); err != nil {
+					return err
+				}
+			}
+			if o.epochObserver != nil {
+				return o.epochObserver(boundary)
+			}
+			return nil
 		},
 	})
 
@@ -228,6 +243,19 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	}
 
 	wrapped := &progressOptimizer{base: optimizer, observer: observer, resumeCount: job.Config.ResumeCount}
+	wrapped.epochObserver = func(boundary opt.EpochBoundary) error {
+		iterations := baseIterations + boundary.Progress.Iterations
+		evaluations := baseEvaluations + boundary.Progress.Evaluations
+		if err := jm.UpdateProgress(jobID, iterations, evaluations, boundary.Progress.BestParams, boundary.Progress.BestCost); err != nil {
+			return err
+		}
+		if checkpointStore != nil {
+			if err := saveCheckpoint(jm, checkpointStore, rend, jobID); err != nil {
+				return fmt.Errorf("persist optimizer epoch %d: %w", boundary.Epoch, err)
+			}
+		}
+		return nil
+	}
 	if len(job.BestParams) > 0 {
 		initialParams := append([]float64(nil), job.BestParams...)
 		parameterBounds := fit.NewBounds(job.Config.Circles, ref.Bounds().Dx(), ref.Bounds().Dy())
@@ -273,9 +301,46 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		}
 	case app.ModeBatch:
 		if len(job.BestParams) > 0 {
-			err = fmt.Errorf("batch resume is not supported")
+			if !job.Config.PolishingOnly || len(job.BestParams) != job.Config.Circles*7 {
+				err = fmt.Errorf("batch resume is not supported")
+			} else {
+				bestParams := append([]float64(nil), job.BestParams...)
+				bestCost := rend.Cost(bestParams)
+				result = &renderer.OptimizationResult{
+					BestParams:       bestParams,
+					BestCost:         bestCost,
+					InitialCost:      initialCost,
+					OptimizedCircles: job.Config.Circles,
+					BestImage:        rend.Render(bestParams),
+					Termination:      opt.TerminationCompleted,
+				}
+				result, err = polishBatchResult(
+					ctx,
+					jm,
+					checkpointStore,
+					rend,
+					job,
+					result,
+					observer,
+					baseIterations,
+					baseEvaluations,
+				)
+			}
 		} else {
 			result, err = renderer.OptimizeBatchContext(ctx, rend, wrapped, job.Config.Circles, job.Config.BatchSize, convergence)
+			if err == nil && job.Config.PolishingEnabled && result.OptimizedCircles == job.Config.Circles {
+				result, err = polishBatchResult(
+					ctx,
+					jm,
+					checkpointStore,
+					rend,
+					job,
+					result,
+					observer,
+					baseIterations,
+					baseEvaluations,
+				)
+			}
 		}
 	default:
 		err = fmt.Errorf("unknown mode")
@@ -310,14 +375,15 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		_ = traceWriter.Write(traceEntry(finalSample))
 		_ = traceWriter.Flush()
 	}
-	if checkpointStore != nil && job.Config.CheckpointInterval > 0 {
+	var persistenceErr error
+	if checkpointStore != nil {
 		if err := saveCheckpoint(jm, checkpointStore, rend, jobID); err != nil {
-			slog.Warn("Failed to save final checkpoint", "job_id", jobID, "error", err)
+			persistenceErr = fmt.Errorf("persist final result: %w", err)
+			_ = jm.UpdateJob(jobID, func(live *Job) {
+				live.Error = "failed to persist final result"
+			})
+			slog.Error("Failed to persist final job result", "job_id", jobID, "error", err)
 		}
-	}
-	if artifacts, ok := checkpointStore.(store.ArtifactStore); ok && result.BestImage != nil {
-		_ = artifacts.SavePNGArtifact(jobID, store.ArtifactBest, result.BestImage)
-		_ = artifacts.SavePNGArtifact(jobID, store.ArtifactDiff, computeDiffImage(ref, result.BestImage, fit.ColormapTurbo))
 	}
 
 	elapsed := time.Since(start).Seconds()
@@ -331,7 +397,111 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		PSNRInfinite: finalSample.PSNRInfinite, SSIM: cloneFloat(finalSample.SSIM), CPS: cps, Timestamp: completedAt,
 	})
 	slog.Info("Job completed", "job_id", jobID, "iterations", iterations, "evaluations", evaluations, "best_cost", result.BestCost)
-	return nil
+	return persistenceErr
+}
+
+func polishBatchResult(
+	ctx context.Context,
+	jm *JobManager,
+	checkpointStore store.Store,
+	rend renderer.Renderer,
+	job *Job,
+	batch *renderer.OptimizationResult,
+	observer opt.Observer,
+	baseIterations, baseEvaluations int,
+) (*renderer.OptimizationResult, error) {
+	seed := job.Config.EffectiveSeed
+	if seed == 0 {
+		seed = job.Config.Seed
+	}
+	polisher, err := opt.NewMayflyVariant(string(app.VariantStandard), job.Config.PolishingIters, job.Config.PopSize, seed,
+		opt.WithLogger(slog.Default()),
+		opt.WithEarlyStop(opt.Stop{
+			MinImprovement:  job.Config.PolishingMinImprovement,
+			StagnationIters: job.Config.PolishingStagnationIters,
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create polishing optimizer: %w", err)
+	}
+	polisher = opt.WithEpochs(polisher, job.Config.PolishingEpochs)
+
+	mainIterations := batch.Iterations
+	mainEvaluations := batch.Evaluations
+	if err := jm.UpdateProgress(
+		job.ID,
+		baseIterations+mainIterations,
+		baseEvaluations+mainEvaluations,
+		batch.BestParams,
+		batch.BestCost,
+	); err != nil {
+		return nil, fmt.Errorf("record pre-polishing result: %w", err)
+	}
+	if checkpointStore != nil {
+		if err := saveCheckpoint(jm, checkpointStore, rend, job.ID); err != nil {
+			return nil, fmt.Errorf("persist pre-polishing result: %w", err)
+		}
+	}
+
+	persistPolishingBoundary := func(params []float64, cost float64, iterations, evaluations int) error {
+		iterations += baseIterations + mainIterations
+		evaluations += baseEvaluations + mainEvaluations
+		if err := jm.UpdateJob(job.ID, func(live *Job) {
+			live.Iterations = iterations
+			live.Evaluations = evaluations
+			live.BestParams = append([]float64(nil), params...)
+			live.BestCost = cost
+		}); err != nil {
+			return err
+		}
+		if checkpointStore != nil {
+			return saveCheckpoint(jm, checkpointStore, rend, job.ID)
+		}
+		return nil
+	}
+
+	polish, err := renderer.PolishCircleBatchContext(ctx, rend, polisher, batch.BestParams, renderer.BatchPolishOptions{
+		ActiveSetSize: job.Config.PolishingActiveSetSize,
+		MaxSweeps:     job.Config.PolishingMaxSweeps,
+		Observer: func(progress opt.Progress) {
+			progress.Iterations += mainIterations
+			progress.Evaluations += mainEvaluations
+			observer(progress)
+		},
+		OnEpoch: func(boundary renderer.BatchPolishEpoch) error {
+			return persistPolishingBoundary(
+				boundary.BestParams,
+				boundary.BestCost,
+				boundary.Iterations,
+				boundary.Evaluations,
+			)
+		},
+		OnSweep: func(progress renderer.BatchPolishProgress) error {
+			return persistPolishingBoundary(
+				progress.BestParams,
+				progress.BestCost,
+				progress.Iterations,
+				progress.Evaluations,
+			)
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	batch.BestParams = append(batch.BestParams[:0], polish.BestParams...)
+	batch.BestCost = polish.BestCost
+	batch.BestImage = polish.BestImage
+	batch.Iterations += polish.Iterations
+	batch.Evaluations += polish.Evaluations
+	batch.Stages += polish.Sweeps
+	slog.Info("Batch polishing complete",
+		"job_id", job.ID,
+		"sweeps", polish.Sweeps,
+		"accepted_sweeps", polish.AcceptedSweeps,
+		"best_cost", polish.BestCost,
+	)
+	return batch, nil
 }
 
 func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (renderer.Renderer, func(), error) {
@@ -397,10 +567,14 @@ func saveCheckpoint(jm *JobManager, checkpointStore store.Store, rend renderer.R
 	if job.Termination != "" {
 		checkpoint.Termination = job.Termination
 	}
+	var persistenceErrors []error
 	if err := checkpointStore.SaveCheckpoint(jobID, checkpoint); err != nil {
-		return fmt.Errorf("save checkpoint: %w", err)
+		persistenceErrors = append(persistenceErrors, fmt.Errorf("save checkpoint: %w", err))
 	}
-	return saveCheckpointArtifacts(checkpointStore, rend, job.Config, jobID, job.BestParams)
+	if err := saveCheckpointArtifacts(checkpointStore, rend, job.Config, jobID, job.BestParams); err != nil {
+		persistenceErrors = append(persistenceErrors, err)
+	}
+	return errors.Join(persistenceErrors...)
 }
 
 func saveCheckpointArtifacts(checkpointStore store.Store, rend renderer.Renderer, config store.JobConfig, jobID string, bestParams []float64) error {
@@ -411,12 +585,16 @@ func saveCheckpointArtifacts(checkpointStore store.Store, rend renderer.Renderer
 	ref := rend.Reference()
 	snapshotRenderer, cleanup, err := rendererForJob(config, ref, len(bestParams)/7)
 	if err != nil {
-		return err
+		return fmt.Errorf("create artifact renderer: %w", err)
 	}
 	defer cleanup()
 	best := snapshotRenderer.Render(bestParams)
+	var artifactErrors []error
 	if err := artifacts.SavePNGArtifact(jobID, store.ArtifactBest, best); err != nil {
-		return err
+		artifactErrors = append(artifactErrors, fmt.Errorf("save best artifact: %w", err))
 	}
-	return artifacts.SavePNGArtifact(jobID, store.ArtifactDiff, computeDiffImage(ref, best, fit.ColormapTurbo))
+	if err := artifacts.SavePNGArtifact(jobID, store.ArtifactDiff, computeDiffImage(ref, best, fit.ColormapTurbo)); err != nil {
+		artifactErrors = append(artifactErrors, fmt.Errorf("save diff artifact: %w", err))
+	}
+	return errors.Join(artifactErrors...)
 }
