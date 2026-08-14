@@ -715,6 +715,12 @@ func TestServer_CreatePageGet(t *testing.T) {
 	if !containsString(body, "Optimization Parameters") {
 		t.Error("Expected page to contain 'Optimization Parameters'")
 	}
+	if !containsString(body, "batchSize") {
+		t.Error("Expected page to expose batch size")
+	}
+	if !containsString(body, "optimizerEpochs") {
+		t.Error("Expected page to expose optimizer epochs")
+	}
 }
 
 func TestServer_CreatePagePost_Success(t *testing.T) {
@@ -733,6 +739,8 @@ func TestServer_CreatePagePost_Success(t *testing.T) {
 	form.Add("circles", "5")
 	form.Add("iters", "50")
 	form.Add("popSize", "20")
+	form.Add("optimizerEpochs", "4")
+	form.Add("batchSize", "5")
 	form.Add("seed", "42")
 	form.Add("enableSSIM", "on")
 
@@ -773,6 +781,12 @@ func TestServer_CreatePagePost_Success(t *testing.T) {
 	}
 	if job.Config.PopSize != 20 {
 		t.Errorf("Expected popSize 20, got %d", job.Config.PopSize)
+	}
+	if job.Config.OptimizerEpochs != 4 {
+		t.Errorf("Expected optimizerEpochs 4, got %d", job.Config.OptimizerEpochs)
+	}
+	if job.Config.BatchSize != 5 {
+		t.Errorf("Expected batchSize 5, got %d", job.Config.BatchSize)
 	}
 	if job.Config.Seed != 42 {
 		t.Errorf("Expected seed 42, got %d", job.Config.Seed)

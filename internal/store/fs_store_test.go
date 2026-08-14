@@ -266,6 +266,13 @@ func TestListCheckpoints_SkipsInvalidDirectories(t *testing.T) {
 	if err := os.WriteFile(dummyFile, []byte("test"), 0644); err != nil {
 		t.Fatalf("Failed to create dummy file: %v", err)
 	}
+	artifactOnlyDir := filepath.Join(jobsDir, testJobID(98))
+	if err := os.Mkdir(artifactOnlyDir, 0700); err != nil {
+		t.Fatalf("Failed to create artifact-only job directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactOnlyDir, "trace.jsonl"), nil, 0600); err != nil {
+		t.Fatalf("Failed to create artifact-only trace: %v", err)
+	}
 
 	// List should only return valid checkpoint
 	infos, err := store.ListCheckpoints()

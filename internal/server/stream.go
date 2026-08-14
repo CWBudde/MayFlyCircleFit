@@ -14,6 +14,7 @@ type ProgressEvent struct {
 	JobID        string    `json:"jobId"`
 	State        JobState  `json:"state"`
 	Iterations   int       `json:"iterations"`
+	Evaluations  int       `json:"evaluations"`
 	BestCost     float64   `json:"bestCost"`
 	PSNR         *float64  `json:"psnr"`
 	PSNRInfinite bool      `json:"psnrInfinite,omitempty"`
@@ -164,6 +165,7 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 		JobID:        job.ID,
 		State:        job.State,
 		Iterations:   job.Iterations,
+		Evaluations:  job.Evaluations,
 		BestCost:     job.BestCost,
 		PSNR:         cloneFloat(job.PSNR),
 		PSNRInfinite: job.PSNRInfinite,

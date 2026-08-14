@@ -127,13 +127,14 @@ func TestJobManager_ReturnsDetachedSnapshots(t *testing.T) {
 	}
 }
 
-func TestJobManagerRecordsBoundedDetachedMetricHistory(t *testing.T) {
+func TestJobManagerRecordsCompleteDetachedMetricHistory(t *testing.T) {
 	jm := NewJobManager()
 	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
 	psnr, ssim := 30.0, 0.8
-	for i := 0; i < maxMetricHistory+5; i++ {
+	const sampleCount = 105
+	for i := 0; i < sampleCount; i++ {
 		if err := jm.RecordMetrics(job.ID, MetricSample{
-			Iteration: i, Cost: float64(maxMetricHistory - i), PSNR: &psnr, SSIM: &ssim, Timestamp: time.Now(),
+			Iteration: i, Cost: float64(sampleCount - i), PSNR: &psnr, SSIM: &ssim, Timestamp: time.Now(),
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -143,8 +144,8 @@ func TestJobManagerRecordsBoundedDetachedMetricHistory(t *testing.T) {
 	if !ok {
 		t.Fatal("job not found")
 	}
-	if len(snapshot.MetricHistory) != maxMetricHistory || snapshot.MetricHistory[0].Iteration != 5 {
-		t.Fatalf("bounded history = %#v", snapshot.MetricHistory)
+	if len(snapshot.MetricHistory) != sampleCount || snapshot.MetricHistory[0].Iteration != 0 {
+		t.Fatalf("complete history = %#v", snapshot.MetricHistory)
 	}
 	*snapshot.PSNR = 99
 	*snapshot.SSIM = 0

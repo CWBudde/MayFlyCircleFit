@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -217,6 +218,9 @@ func (fs *FSStore) ListCheckpoints() ([]CheckpointInfo, error) {
 		}
 		checkpoint, err := fs.LoadCheckpoint(entry.Name())
 		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
 			slog.Warn("Failed to load checkpoint for listing", "jobID", entry.Name(), "error", err)
 			continue
 		}

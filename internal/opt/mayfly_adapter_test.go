@@ -42,6 +42,153 @@ func TestMayflyAdapterLifecycleProgressAndCancellation(t *testing.T) {
 	}
 }
 
+func TestMayflyAdapterRepairsEvaluationsProgressAndResult(t *testing.T) {
+	const repairedValue = 0.75
+	optimizer := NewMayfly(2, 20, 42).(*MayflyAdapter)
+	observations := 0
+	result, err := optimizer.RunContext(context.Background(), Problem{
+		Eval: func(params []float64) float64 {
+			if params[0] != repairedValue {
+				t.Fatalf("evaluated parameter = %g, want repaired value %g", params[0], repairedValue)
+			}
+			return params[0]
+		},
+		Repair: func(params []float64) { params[0] = repairedValue },
+		Lower:  []float64{0},
+		Upper:  []float64{1},
+		Dim:    1,
+	}, RunOptions{Observer: func(progress Progress) {
+		observations++
+		if len(progress.BestParams) != 1 || progress.BestParams[0] != repairedValue {
+			t.Fatalf("progress params = %v, want [%g]", progress.BestParams, repairedValue)
+		}
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observations == 0 {
+		t.Fatal("observer received no progress")
+	}
+	if len(result.BestParams) != 1 || result.BestParams[0] != repairedValue {
+		t.Fatalf("result params = %v, want [%g]", result.BestParams, repairedValue)
+	}
+}
+
+func TestMayflyAdapterEvaluatesInequalitiesOnCanonicalParameters(t *testing.T) {
+	const repairedValue = 7.5
+	var constraintCalls int
+	optimizer := NewMayfly(2, 20, 42).(*MayflyAdapter)
+	result, err := optimizer.RunContext(context.Background(), Problem{
+		Eval: func(params []float64) float64 {
+			if params[0] != repairedValue {
+				t.Fatalf("objective parameter = %g, want repaired value %g", params[0], repairedValue)
+			}
+			return params[0] * params[0]
+		},
+		Repair: func(params []float64) { params[0] = repairedValue },
+		Inequalities: []InequalityConstraint{func(params []float64) float64 {
+			constraintCalls++
+			if params[0] != repairedValue {
+				t.Fatalf("constraint parameter = %g, want repaired value %g", params[0], repairedValue)
+			}
+			return 7 - params[0]
+		}},
+		Lower: []float64{0},
+		Upper: []float64{10},
+		Dim:   1,
+	}, RunOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if constraintCalls == 0 {
+		t.Fatal("inequality constraint was not evaluated")
+	}
+	if result.BestParams[0] != repairedValue || result.BestCost != repairedValue*repairedValue {
+		t.Fatalf("result = (%v, %g), want ([%g], %g)",
+			result.BestParams, result.BestCost, repairedValue, repairedValue*repairedValue)
+	}
+}
+
+func TestMayflyAdapterUsesFeasibilityAndReportsRawCost(t *testing.T) {
+	const minimum = 0.75
+	var updates []Progress
+	problem := Problem{
+		Eval: func(params []float64) float64 { return params[0] * params[0] },
+		Inequalities: []InequalityConstraint{func(params []float64) float64 {
+			return minimum - params[0]
+		}},
+		Lower: []float64{0},
+		Upper: []float64{1},
+		Dim:   1,
+	}
+	optimizer := NewMayfly(20, 20, 42).(*MayflyAdapter)
+	result, err := optimizer.RunContext(context.Background(), problem, RunOptions{
+		Observer: func(progress Progress) { updates = append(updates, progress) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updates) == 0 {
+		t.Fatal("observer received no progress")
+	}
+	for _, progress := range updates {
+		if progress.BestParams[0] < minimum {
+			t.Fatalf("progress exposed infeasible best: %+v", progress)
+		}
+		wantCost := progress.BestParams[0] * progress.BestParams[0]
+		if math.Abs(progress.BestCost-wantCost) > 1e-12 {
+			t.Fatalf("progress cost = %g, want raw objective %g", progress.BestCost, wantCost)
+		}
+	}
+	if result.BestParams[0] < minimum {
+		t.Fatalf("result params = %v, want a feasible value >= %g", result.BestParams, minimum)
+	}
+	wantCost := result.BestParams[0] * result.BestParams[0]
+	if math.Abs(result.BestCost-wantCost) > 1e-12 {
+		t.Fatalf("result cost = %g, want raw objective %g", result.BestCost, wantCost)
+	}
+}
+
+func TestMayflyAdapterFeasibleResultReplacesCheaperInfeasibleResumeSeed(t *testing.T) {
+	const minimum = 0.5
+	problem := Problem{
+		Eval: func(params []float64) float64 { return params[0] },
+		Inequalities: []InequalityConstraint{func(params []float64) float64 {
+			return minimum - params[0]
+		}},
+		Lower: []float64{0},
+		Upper: []float64{1},
+		Dim:   1,
+	}
+	optimizer := NewMayfly(5, 20, 42).(*MayflyAdapter)
+	result, err := optimizer.RunContext(context.Background(), problem, RunOptions{
+		Initial: &Candidate{Params: []float64{0}, Cost: 0},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.BestParams[0] < minimum {
+		t.Fatalf("result retained infeasible resume seed: %+v", result)
+	}
+	if result.BestCost != result.BestParams[0] {
+		t.Fatalf("result cost = %g, want raw objective %g", result.BestCost, result.BestParams[0])
+	}
+}
+
+func TestMayflyAdapterRejectsNilInequality(t *testing.T) {
+	optimizer := NewMayfly(1, 20, 42).(*MayflyAdapter)
+	_, err := optimizer.RunContext(context.Background(), Problem{
+		Eval:         sphere,
+		Inequalities: []InequalityConstraint{nil},
+		Lower:        []float64{-1},
+		Upper:        []float64{1},
+		Dim:          1,
+	}, RunOptions{})
+	if err == nil || err.Error() != "inequality constraint 0 is nil" {
+		t.Fatalf("RunContext error = %v, want nil-constraint validation error", err)
+	}
+}
+
 func TestMayflyAdapterSeedsResumePopulationAroundBest(t *testing.T) {
 	initial := Candidate{Params: []float64{2, -3}, Cost: 13}
 	var firstEvaluation []float64

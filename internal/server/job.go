@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"sync"
 	"time"
 
@@ -45,8 +46,8 @@ type Job struct {
 	MetricHistory []MetricSample `json:"-"`
 }
 
-// MetricSample is a bounded live-history point used by the detail page. The
-// complete persistent history remains in trace.jsonl when tracing is enabled.
+// MetricSample is a live-history point used by the detail page. The sampling
+// cadence and job iteration limit bound this in-memory history.
 type MetricSample struct {
 	Iteration    int       `json:"iteration"`
 	Cost         float64   `json:"cost"`
@@ -55,8 +56,6 @@ type MetricSample struct {
 	SSIM         *float64  `json:"ssim,omitempty"`
 	Timestamp    time.Time `json:"timestamp"`
 }
-
-const maxMetricHistory = 100
 
 var ErrInvalidTransition = errors.New("invalid job state transition")
 
@@ -112,7 +111,31 @@ func (jm *JobManager) ListJobs() []*Job {
 	for _, job := range jm.jobs {
 		jobs = append(jobs, cloneJob(job))
 	}
+	sort.Slice(jobs, func(i, j int) bool {
+		return jobs[i].StartTime.After(jobs[j].StartTime)
+	})
 	return jobs
+}
+
+// restoreJob adds a terminal job reconstructed from persisted state.
+func (jm *JobManager) restoreJob(job *Job) error {
+	if job == nil || job.ID == "" {
+		return fmt.Errorf("invalid restored job")
+	}
+	if job.State != StateCompleted && job.State != StateFailed && job.State != StateCancelled {
+		return fmt.Errorf("cannot restore non-terminal job state %q", job.State)
+	}
+	if job.StartTime.IsZero() || job.EndTime == nil {
+		return fmt.Errorf("restored job is missing lifecycle timestamps")
+	}
+
+	jm.mu.Lock()
+	defer jm.mu.Unlock()
+	if _, exists := jm.jobs[job.ID]; exists {
+		return fmt.Errorf("job already exists: %s", job.ID)
+	}
+	jm.jobs[job.ID] = cloneJob(job)
+	return nil
 }
 
 // UpdateJob atomically updates a job using the provided function
@@ -159,8 +182,8 @@ func (jm *JobManager) UpdateProgress(id string, iterations, evaluations int, bes
 	return nil
 }
 
-// RecordMetrics stores the latest quality metrics and one bounded UI-history
-// sample. Callers provide immutable pointer values; the manager clones them.
+// RecordMetrics stores the latest quality metrics and one UI-history sample.
+// Callers provide immutable pointer values; the manager clones them.
 func (jm *JobManager) RecordMetrics(id string, sample MetricSample) error {
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
@@ -176,10 +199,6 @@ func (jm *JobManager) RecordMetrics(id string, sample MetricSample) error {
 		job.SSIM = cloneFloat(sample.SSIM)
 	}
 	job.MetricHistory = append(job.MetricHistory, sample)
-	if len(job.MetricHistory) > maxMetricHistory {
-		copy(job.MetricHistory, job.MetricHistory[len(job.MetricHistory)-maxMetricHistory:])
-		job.MetricHistory = job.MetricHistory[:maxMetricHistory]
-	}
 	return nil
 }
 
@@ -243,6 +262,7 @@ func (jm *JobManager) transition(id string, next JobState, update func(*Job)) er
 		JobID:        job.ID,
 		State:        job.State,
 		Iterations:   job.Iterations,
+		Evaluations:  job.Evaluations,
 		BestCost:     job.BestCost,
 		PSNR:         cloneFloat(job.PSNR),
 		PSNRInfinite: job.PSNRInfinite,

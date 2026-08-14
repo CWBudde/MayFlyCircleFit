@@ -26,6 +26,14 @@ var (
 // instead of in the opt package.
 const TerminationStageConvergence opt.Termination = "stage_convergence"
 
+const (
+	// TerminationRefillLimit reports that batch mode exhausted its bounded
+	// replacement attempts before every requested slot became useful.
+	TerminationRefillLimit  opt.Termination = "refill_limit"
+	maxExtraBatchStages                     = 3
+	minBatchMSEContribution                 = 0.01
+)
+
 // OptimizationResult holds the output of an optimization run.
 type OptimizationResult struct {
 	BestParams       []float64
@@ -118,16 +126,23 @@ func OptimizeJointContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	if err != nil {
 		return nil, err
 	}
+	referenceBounds := base.Reference().Bounds()
+	parameterBounds := fit.NewBounds(circleCount, referenceBounds.Dx(), referenceBounds.Dy())
 
 	evaluations := 0
-	evaluate := func(params []float64) float64 {
+	evaluateRaw := func(params []float64) float64 {
 		evaluations++
 		return session.Cost(params)
 	}
+	evaluate := func(params []float64) float64 {
+		parameterBounds.ClampIndependentVector(params)
+		return evaluateRaw(params)
+	}
+	constraints := radiusConstraints(parameterBounds, circleCount)
 
 	baseline := transparentParams(circleCount)
-	initialCost := evaluate(baseline)
-	bestParams := baseline
+	initialCost := evaluateRaw(baseline)
+	var bestParams []float64
 	bestCost := initialCost
 	stages := 0
 	iterations := 0
@@ -136,7 +151,15 @@ func OptimizeJointContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	stagesStoppedEarly := 0
 
 	if circleCount > 0 {
-		outcome, err := runOptimizer(ctx, optimizer, evaluate, lower, upper, dim)
+		runOptions := opt.RunOptions{}
+		initialCanvas := cloneNRGBA(session.Render(baseline))
+		if seedParams, seedErr := SeedParamsFromResidual(initialCanvas, base.Reference(), circleCount, ResidualSeedOptions{}); seedErr == nil {
+			seedCost := evaluate(seedParams)
+			runOptions.Initial = &opt.Candidate{Params: seedParams, Cost: seedCost}
+		} else {
+			slog.Warn("Could not build residual joint seed; using optimizer initialization", "error", seedErr)
+		}
+		outcome, err := runOptimizer(ctx, optimizer, evaluate, parameterBounds.ClampIndependentVector, parameterBounds.ClampVector, constraints, lower, upper, dim, runOptions)
 		if err != nil {
 			return nil, err
 		}
@@ -151,13 +174,18 @@ func OptimizeJointContext(ctx context.Context, base Renderer, optimizer opt.Opti
 			return nil, fmt.Errorf("%w: optimizer result: %v", ErrInvalidOptimizationInput, err)
 		}
 		candidateCost := evaluate(outcome.Params)
-		if candidateCost < bestCost {
+		if parameterBounds.ValidVector(outcome.Params) && candidateCost <= bestCost {
 			bestParams = append([]float64(nil), outcome.Params...)
 			bestCost = candidateCost
 		}
 	}
 
-	result, err := finishResult(session, bestParams, bestCost, initialCost, evaluations, stages, circleCount)
+	var result *OptimizationResult
+	if len(bestParams) == 0 && circleCount > 0 {
+		result, err = finishBaseResult(base, bestCost, initialCost, evaluations, stages)
+	} else {
+		result, err = finishResult(session, bestParams, bestCost, initialCost, evaluations, stages, circleCount)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +198,7 @@ func OptimizeJointContext(ctx context.Context, base Renderer, optimizer opt.Opti
 }
 
 // OptimizeSequential optimizes circles one at a time while retaining the best
-// historical solution. A worsening stage is represented by a transparent circle.
+// historical solution. Invalid or worsening candidates are omitted.
 func OptimizeSequential(base Renderer, optimizer opt.Optimizer, totalCircles int, convergenceConfig ConvergenceConfig, callback CircleCallback) (*OptimizationResult, error) {
 	return OptimizeSequentialContext(context.Background(), base, optimizer, totalCircles, convergenceConfig, callback)
 }
@@ -202,7 +230,8 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 	termination := opt.TerminationCompleted
 
 	for circleNum := 1; circleNum <= totalCircles; circleNum++ {
-		sessionCircleCount := circleNum
+		retainedCircles := len(bestParams) / paramsPerCircle
+		sessionCircleCount := retainedCircles + 1
 		if accumulator != nil {
 			sessionCircleCount = 1
 		}
@@ -219,9 +248,7 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 		}
 		evaluate := func(newCircle []float64) float64 {
 			evaluations++
-			if len(newCircle) != paramsPerCircle {
-				return math.Inf(1)
-			}
+			bounds.ClampIndependentVector(newCircle)
 			params := newCircle
 			if combined != nil {
 				copy(combined[len(bestParams):], newCircle)
@@ -229,8 +256,17 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 			}
 			return session.Cost(params)
 		}
+		constraints := radiusConstraints(bounds, 1)
+		currentCanvas := currentStageCanvas(session, accumulator, combined)
+		runOptions := opt.RunOptions{}
+		if seedParams, seedErr := SeedParamsFromResidual(currentCanvas, base.Reference(), 1, ResidualSeedOptions{}); seedErr == nil {
+			seedCost := evaluate(seedParams)
+			runOptions.Initial = &opt.Candidate{Params: seedParams, Cost: seedCost}
+		} else {
+			slog.Warn("Could not build residual sequential seed; using optimizer initialization", "circle", circleNum, "error", seedErr)
+		}
 
-		outcome, err := runOptimizer(ctx, optimizer, evaluate, bounds.Lower, bounds.Upper, paramsPerCircle)
+		outcome, err := runOptimizer(ctx, optimizer, evaluate, bounds.ClampIndependentVector, bounds.ClampVector, constraints, bounds.Lower, bounds.Upper, paramsPerCircle, runOptions)
 		if err != nil {
 			cleanup()
 			return nil, err
@@ -247,18 +283,17 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 		}
 
 		candidateCost := evaluate(candidateCircle)
-		if candidateCost <= bestCost {
+		if bounds.ValidVector(candidateCircle) && candidateCost < bestCost {
 			bestParams = append(bestParams, candidateCircle...)
 			bestCost = candidateCost
 			if accumulator != nil {
 				accumulator.retain(session.Render(candidateCircle))
 			}
-		} else {
-			bestParams = appendTransparentCircles(bestParams, 1)
 		}
 
 		var retainedImage *image.NRGBA
-		if callback != nil {
+		candidateRetained := len(bestParams)/paramsPerCircle > retainedCircles
+		if callback != nil && candidateRetained {
 			if accumulator != nil {
 				retainedImage = cloneNRGBA(accumulator.canvas)
 			} else {
@@ -267,11 +302,11 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 		}
 		cleanup()
 
-		if callback != nil {
-			callback(circleNum, append([]float64(nil), bestParams...), bestCost, retainedImage)
+		if callback != nil && candidateRetained {
+			callback(len(bestParams)/paramsPerCircle, append([]float64(nil), bestParams...), bestCost, retainedImage)
 		}
 		if tracker.Update(bestCost) {
-			slog.Info("Sequential convergence detected", "circles_optimized", circleNum, "circles_requested", totalCircles)
+			slog.Info("Sequential convergence detected", "circles_optimized", len(bestParams)/paramsPerCircle, "circles_attempted", circleNum, "circles_requested", totalCircles)
 			termination = TerminationStageConvergence
 			break
 		}
@@ -293,8 +328,9 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 	return result, nil
 }
 
-// OptimizeBatch optimizes exactly totalCircles, adding at most batchSize circles
-// per stage. The final stage uses the remaining circle count.
+// OptimizeBatch attempts totalCircles, adding at most batchSize circles per
+// stage. Invalid or worsening batches are omitted, so a result can contain
+// fewer circles than requested. The final stage uses the remaining budget.
 func OptimizeBatch(base Renderer, optimizer opt.Optimizer, totalCircles, batchSize int, convergenceConfig ConvergenceConfig) (*OptimizationResult, error) {
 	return OptimizeBatchContext(context.Background(), base, optimizer, totalCircles, batchSize, convergenceConfig)
 }
@@ -329,10 +365,15 @@ func OptimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	stagesStoppedEarly := 0
 	termination := opt.TerminationCompleted
 
-	for currentCircles := 0; currentCircles < totalCircles; {
-		stageCircles := min(batchSize, totalCircles-currentCircles)
-		newTotal := currentCircles + stageCircles
-		sessionCircleCount := newTotal
+	plannedStages := 0
+	if totalCircles > 0 {
+		plannedStages = (totalCircles + batchSize - 1) / batchSize
+	}
+	maxStages := plannedStages + maxExtraBatchStages
+	for optimizedCircles < totalCircles && stages < maxStages {
+		stageCircles := min(batchSize, totalCircles-optimizedCircles)
+		retainedCircles := len(bestParams) / paramsPerCircle
+		sessionCircleCount := retainedCircles + stageCircles
 		if accumulator != nil {
 			sessionCircleCount = stageCircles
 		}
@@ -348,11 +389,10 @@ func OptimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 			combined = make([]float64, len(bestParams)+dim)
 			copy(combined, bestParams)
 		}
+		currentCanvas := currentStageCanvas(session, accumulator, combined)
 		evaluate := func(newBatch []float64) float64 {
 			evaluations++
-			if len(newBatch) != dim {
-				return math.Inf(1)
-			}
+			bounds.ClampIndependentVector(newBatch)
 			params := newBatch
 			if combined != nil {
 				copy(combined[len(bestParams):], newBatch)
@@ -360,8 +400,16 @@ func OptimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 			}
 			return session.Cost(params)
 		}
+		constraints := radiusConstraints(bounds, stageCircles)
+		seedParams, err := SeedParamsFromResidual(currentCanvas, base.Reference(), stageCircles, ResidualSeedOptions{})
+		if err != nil {
+			cleanup()
+			return nil, fmt.Errorf("%w: seed batch %d: %v", ErrInvalidOptimizationInput, stages+1, err)
+		}
+		seedCost := evaluate(seedParams)
+		runOptions := opt.RunOptions{Initial: &opt.Candidate{Params: seedParams, Cost: seedCost}}
 
-		outcome, err := runOptimizer(ctx, optimizer, evaluate, bounds.Lower, bounds.Upper, dim)
+		outcome, err := runOptimizer(ctx, optimizer, evaluate, bounds.ClampIndependentVector, bounds.ClampVector, constraints, bounds.Lower, bounds.Upper, dim, runOptions)
 		if err != nil {
 			cleanup()
 			return nil, err
@@ -377,26 +425,64 @@ func OptimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 			return nil, fmt.Errorf("%w: optimizer result for batch %d: %v", ErrInvalidOptimizationInput, stages, err)
 		}
 
-		candidateCost := evaluate(candidateBatch)
-		if candidateCost <= bestCost {
-			bestParams = append(bestParams, candidateBatch...)
-			bestCost = candidateCost
-			if accumulator != nil {
-				accumulator.retain(session.Render(candidateBatch))
+		retainedBatch := []float64(nil)
+		if bounds.ValidVector(candidateBatch) {
+			auditRenderer := NewCPURendererWithCanvas(base.Reference(), currentCanvas, stageCircles)
+			if cpu, ok := session.(*CPURenderer); ok {
+				auditRenderer.SetThreads(cpu.Threads())
 			}
-		} else {
-			bestParams = appendTransparentCircles(bestParams, stageCircles)
+			pruned, pruneErr := PruneCircleBatch(auditRenderer, candidateBatch, CirclePruneOptions{
+				MinChangedPixels:   1,
+				MinMSEContribution: minBatchMSEContribution,
+			})
+			if pruneErr != nil {
+				cleanup()
+				return nil, fmt.Errorf("audit batch %d: %w", stages, pruneErr)
+			}
+			retainedBatch = pruned.Params
+			if len(pruned.Removed) > 0 {
+				slog.Info("Pruned weak batch circles",
+					"stage", stages,
+					"removed", len(pruned.Removed),
+					"retained", len(retainedBatch)/paramsPerCircle,
+				)
+			}
 		}
 		cleanup()
 
-		currentCircles = newTotal
-		optimizedCircles = newTotal
+		if len(retainedBatch) > 0 {
+			retainedSessionCircles := retainedCircles + len(retainedBatch)/paramsPerCircle
+			if accumulator != nil {
+				retainedSessionCircles = len(retainedBatch) / paramsPerCircle
+			}
+			retainedSession, retainedCleanup, retainErr := newStagedSessionForAccumulator(base, accumulator, retainedSessionCircles)
+			if retainErr != nil {
+				return nil, retainErr
+			}
+			retainedParams := retainedBatch
+			if accumulator == nil {
+				retainedParams = append(append([]float64(nil), bestParams...), retainedBatch...)
+			}
+			evaluations++
+			retainedCost := retainedSession.Cost(retainedParams)
+			if retainedCost < bestCost {
+				bestParams = append(bestParams, retainedBatch...)
+				bestCost = retainedCost
+				if accumulator != nil {
+					accumulator.retain(retainedSession.Render(retainedBatch))
+				}
+			}
+			retainedCleanup()
+		}
+
+		optimizedCircles = len(bestParams) / paramsPerCircle
 		if tracker.Update(bestCost) {
-			// Keep the result cardinality exact while avoiding further optimizer work.
-			bestParams = appendTransparentCircles(bestParams, totalCircles-currentCircles)
 			termination = TerminationStageConvergence
 			break
 		}
+	}
+	if optimizedCircles < totalCircles && termination == opt.TerminationCompleted {
+		termination = TerminationRefillLimit
 	}
 
 	result, err := finishStagedResult(base, bestParams, bestCost, initialCost, evaluations, stages)
@@ -415,14 +501,25 @@ func OptimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	return result, nil
 }
 
-func runOptimizer(ctx context.Context, optimizer opt.Optimizer, evaluate func([]float64) float64, lower, upper []float64, dim int) (stageOutcome, error) {
+func runOptimizer(
+	ctx context.Context,
+	optimizer opt.Optimizer,
+	evaluate func([]float64) float64,
+	repair, fallbackRepair func([]float64),
+	inequalities []opt.InequalityConstraint,
+	lower, upper []float64,
+	dim int,
+	options opt.RunOptions,
+) (stageOutcome, error) {
 	if lifecycle, ok := optimizer.(opt.LifecycleOptimizer); ok {
 		result, err := lifecycle.RunContext(ctx, opt.Problem{
-			Eval:  evaluate,
-			Lower: lower,
-			Upper: upper,
-			Dim:   dim,
-		}, opt.RunOptions{})
+			Eval:         evaluate,
+			Repair:       repair,
+			Inequalities: inequalities,
+			Lower:        lower,
+			Upper:        upper,
+			Dim:          dim,
+		}, options)
 		if err != nil {
 			return stageOutcome{Iterations: result.Iterations, Termination: result.Termination}, err
 		}
@@ -438,7 +535,17 @@ func runOptimizer(ctx context.Context, optimizer opt.Optimizer, evaluate func([]
 		return stageOutcome{}, ctx.Err()
 	default:
 	}
-	params, _ := optimizer.Run(evaluate, lower, upper, dim)
+	plainEvaluate := evaluate
+	if fallbackRepair != nil {
+		plainEvaluate = func(params []float64) float64 {
+			fallbackRepair(params)
+			return evaluate(params)
+		}
+	}
+	params, _ := optimizer.Run(plainEvaluate, lower, upper, dim)
+	if fallbackRepair != nil {
+		fallbackRepair(params)
+	}
 	select {
 	case <-ctx.Done():
 		return stageOutcome{}, ctx.Err()
@@ -447,6 +554,21 @@ func runOptimizer(ctx context.Context, optimizer opt.Optimizer, evaluate func([]
 	// The plain Optimizer interface reports no reason; "completed" matches what
 	// the pipeline assumed before termination reasons were propagated.
 	return stageOutcome{Params: params, Termination: opt.TerminationCompleted}, nil
+}
+
+func radiusConstraints(bounds *fit.Bounds, circleCount int) []opt.InequalityConstraint {
+	constraints := make([]opt.InequalityConstraint, circleCount)
+	for circle := range circleCount {
+		circle := circle
+		constraints[circle] = func(params []float64) float64 {
+			if len(params) != circleCount*paramsPerCircle {
+				return math.Inf(1)
+			}
+			vector := fit.ParamVector{Data: params, K: circleCount, Width: bounds.Width, Height: bounds.Height}
+			return bounds.RadiusViolation(vector.DecodeCircle(circle))
+		}
+	}
+	return constraints
 }
 
 func validatePipelineInputs(renderer Renderer, optimizer opt.Optimizer, circleCount int) error {
@@ -523,6 +645,13 @@ func (a *stagedAccumulator) retain(canvas *image.NRGBA) {
 	a.canvas = cloneNRGBA(canvas)
 }
 
+func currentStageCanvas(session Renderer, accumulator *stagedAccumulator, combined []float64) *image.NRGBA {
+	if accumulator != nil {
+		return cloneNRGBA(accumulator.canvas)
+	}
+	return cloneNRGBA(session.Render(combined))
+}
+
 func baseCanvasCost(base Renderer, evaluations *int) (float64, error) {
 	session, cleanup, err := newStagedSession(base, 0)
 	if err != nil {
@@ -564,28 +693,25 @@ func finishResult(session Renderer, params []float64, bestCost, initialCost floa
 	}, nil
 }
 
+func finishBaseResult(base Renderer, bestCost, initialCost float64, evaluations, stages int) (*OptimizationResult, error) {
+	baseImage := base.Render(transparentParams(base.Dim() / paramsPerCircle))
+	if factory, ok := base.(accumulatedSessionFactory); ok {
+		baseImage = factory.initialCanvas()
+	}
+	return &OptimizationResult{
+		BestCost:    bestCost,
+		InitialCost: initialCost,
+		Evaluations: evaluations,
+		Stages:      stages,
+		BestImage:   cloneNRGBA(baseImage),
+		Termination: opt.TerminationCompleted,
+	}, nil
+}
+
 func transparentParams(circleCount int) []float64 {
 	params := make([]float64, circleCount*paramsPerCircle)
 	for i := 0; i < circleCount; i++ {
 		params[i*paramsPerCircle+2] = 1 // Valid radius; opacity remains zero.
-	}
-	return params
-}
-
-func appendTransparentCircles(params []float64, circleCount int) []float64 {
-	if circleCount <= 0 {
-		return params
-	}
-	additional := circleCount * paramsPerCircle
-	start := len(params)
-	if cap(params)-start < additional {
-		params = append(params, make([]float64, additional)...)
-	} else {
-		params = params[:start+additional]
-		clear(params[start:])
-	}
-	for offset := start; offset < len(params); offset += paramsPerCircle {
-		params[offset+2] = 1
 	}
 	return params
 }

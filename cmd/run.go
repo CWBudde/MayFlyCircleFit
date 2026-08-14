@@ -28,6 +28,8 @@ var (
 	circles           int
 	iters             int
 	popSize           int
+	optimizerEpochs   int
+	batchSize         int
 	threads           int
 	seed              int64
 	convergenceEnable bool
@@ -60,6 +62,8 @@ func init() {
 	runCmd.Flags().IntVar(&circles, "circles", 10, "Number of circles")
 	runCmd.Flags().IntVar(&iters, "iters", 100, "Max iterations")
 	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
+	runCmd.Flags().IntVar(&optimizerEpochs, "optimizer-epochs", 1, "Optimizer runs per stage, reseeding each continuation from the best result")
+	runCmd.Flags().IntVar(&batchSize, "batch-size", 0, "Circles optimized together in batch mode (0 selects the automatic default)")
 	runCmd.Flags().IntVar(&threads, "threads", runtime.GOMAXPROCS(0), "CPU rendering threads (capped at GOMAXPROCS)")
 	runCmd.Flags().Int64Var(&seed, "seed", 0, "Random seed (0 chooses and reports a random seed)")
 	runCmd.Flags().BoolVar(&enableSSIM, "enable-ssim", false, "Calculate the optional final structural similarity metric")
@@ -106,6 +110,8 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		Circles:              circles,
 		Iters:                iters,
 		PopSize:              popSize,
+		OptimizerEpochs:      optimizerEpochs,
+		BatchSize:            batchSize,
 		Threads:              threads,
 		Seed:                 seed,
 		EnableSSIM:           enableSSIM,
@@ -228,6 +234,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("create optimizer: %w", err)
 	}
+	optimizer = opt.WithEpochs(optimizer, config.OptimizerEpochs)
 
 	// Create convergence config
 	convergenceConfig := renderer.ConvergenceConfig{

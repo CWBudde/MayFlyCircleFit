@@ -30,9 +30,13 @@ type JobDetail struct {
 	State         string
 	RefPath       string
 	Mode          string
+	Variant       string
 	Circles       int
 	Iterations    int
+	Evaluations   int
 	MaxIters      int
+	ItersPerEpoch int
+	OptimizerEpochs int
 	PopSize       int
 	BestCost      float64
 	InitialCost   float64
@@ -101,53 +105,27 @@ templ JobDetailPage(job JobDetail) {
 			</div>
 		</div>
 		if job.Error != "" {
-			<div class="card" style="background-color: #fee2e2; border: 1px solid #fca5a5; margin-bottom: 1.5rem;">
-				<h3 style="color: #991b1b; font-weight: 600; margin-bottom: 0.5rem;">Error</h3>
-				<p style="color: #991b1b; font-family: monospace; font-size: 0.875rem;">
+			<div class="card" style="background-color: var(--error-bg); border: 1px solid var(--error-border); margin-bottom: 1.5rem;">
+				<h3 style="color: var(--error-text); font-weight: 600; margin-bottom: 0.5rem;">Error</h3>
+				<p style="color: var(--error-text); font-family: monospace; font-size: 0.875rem;">
 					{ job.Error }
 				</p>
 			</div>
 		}
-		<!-- Metrics Panel -->
-		<div class="card" style="margin-bottom: 1.5rem;">
-			<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-				<h2 style="font-size: 1.25rem; font-weight: 600;">
-					Metrics
-				</h2>
-				if job.State == "running" || job.State == "completed" {
-					<button id="sparkline-toggle" class="btn" style="font-size: 0.875rem; padding: 0.25rem 0.75rem; background-color: var(--border-color);">
-						Show History
-					</button>
-				}
-			</div>
-			<!-- Metric history sparkline (initially hidden) -->
-			<div id="cost-sparkline-container" style="display: none; margin-bottom: 1.5rem; padding: 1rem; background-color: var(--bg-color); border-radius: 0.375rem;">
-				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-					<label for="metric-history-series" style="font-size: 0.875rem; font-weight: 600; color: var(--text-muted);">
-						Metric History
-						<select id="metric-history-series" style="margin-left: 0.5rem; padding: 0.2rem 0.4rem; border: 1px solid var(--border-color); border-radius: 0.25rem; background: white;">
-							<option value="cost">Cost</option>
-							<option value="psnr">PSNR</option>
-							if job.SSIMEnabled {
-								<option value="ssim">SSIM</option>
-							}
-						</select>
-					</label>
-					<div id="sparkline-stats" style="font-size: 0.75rem; color: var(--text-muted);">
-						<span id="sparkline-samples">0</span> samples
-					</div>
-				</div>
-				<svg id="cost-sparkline" width="100%" height="80" style="border: 1px solid var(--border-color); border-radius: 0.25rem; background-color: white;">
-					<polyline id="sparkline-line" fill="none" stroke="var(--primary-color)" stroke-width="2"></polyline>
-					<circle id="sparkline-dot" r="3" fill="var(--primary-color)" style="display: none;"></circle>
-				</svg>
-				<div style="display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">
-					<span>Start: <span id="sparkline-start">-</span></span>
-					<span>Current: <span id="sparkline-current">-</span></span>
-					<span><span id="sparkline-best-label">Min</span>: <span id="sparkline-min">-</span></span>
-				</div>
-			</div>
-			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem;">
+		<style>
+			.detail-stack { display: flex; flex-direction: column; }
+			.detail-summary { order: 1; }
+			.detail-images { order: 2; }
+			.detail-history { order: 3; }
+			.detail-downloads { order: 4; }
+			.detail-configuration { order: 5; }
+			.detail-parameters { order: 6; }
+		</style>
+		<div class="detail-stack">
+			<!-- Compact metric summary -->
+			<div class="card detail-summary" style="margin-bottom: 1.5rem;">
+				<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">Metrics</h2>
+				<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem;">
 				<div>
 					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
 						Best Cost
@@ -155,7 +133,8 @@ templ JobDetailPage(job JobDetail) {
 					<div style="font-size: 1.5rem; font-weight: 600;" data-metric="best-cost">
 						{ fmt.Sprintf("%.4f", job.BestCost) }
 					</div>
-					if job.InitialCost > 0 && job.BestCost < job.InitialCost {
+					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">RGB mean squared error · lower is better</div>
+				if job.InitialCost > 0 && job.BestCost < job.InitialCost {
 						<div style="font-size: 0.75rem; color: var(--success-color); margin-top: 0.25rem;">
 							↓ { fmt.Sprintf("%.1f%%", (1-job.BestCost/job.InitialCost)*100) } improvement
 						</div>
@@ -177,7 +156,7 @@ templ JobDetailPage(job JobDetail) {
 						</span> dB
 					</div>
 					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-						Higher is better
+						Peak signal-to-noise ratio · higher is better
 					</div>
 				</div>
 				if job.SSIMEnabled {
@@ -198,22 +177,26 @@ templ JobDetailPage(job JobDetail) {
 					</div>
 				}
 				<div>
-					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
-						Iterations
-					</div>
-					<div style="font-size: 1.5rem; font-weight: 600;" data-metric="iterations">
-						{ fmt.Sprintf("%d", job.Iterations) }
+					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Iterations</div>
+					<div style="font-size: 1.5rem; font-weight: 600;">
+						<span data-metric="iterations">{ fmt.Sprintf("%d", job.Iterations) }</span>
 						if job.MaxIters > 0 {
-							<span style="font-size: 1rem; color: var(--text-muted);">
-								/ { fmt.Sprintf("%d", job.MaxIters) }
-							</span>
+							<span style="font-size: 1rem; color: var(--text-muted);">/ { fmt.Sprintf("%d", job.MaxIters) }</span>
 						}
 					</div>
-					if job.MaxIters > 0 && job.Iterations > 0 {
+					if job.MaxIters > 0 {
+						<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+							<span data-metric="iteration-progress">{ fmt.Sprintf("%.1f%%", progressPercent(job.Iterations, job.MaxIters)) }</span> of planned optimizer steps
+						</div>
 						<div style="margin-top: 0.5rem; background-color: var(--border-color); height: 4px; border-radius: 2px; overflow: hidden;">
-							<div style={ fmt.Sprintf("width: %.1f%%; height: 100%%; background-color: var(--primary-color);", float64(job.Iterations)/float64(job.MaxIters)*100) }></div>
+							<div id="iteration-progress-bar" style={ fmt.Sprintf("width: %.1f%%; height: 100%%; background-color: var(--primary-color);", progressPercent(job.Iterations, job.MaxIters)) }></div>
 						</div>
 					}
+				</div>
+				<div>
+					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Evaluations</div>
+					<div style="font-size: 1.5rem; font-weight: 600;" data-metric="evaluations" title={ fmt.Sprintf("%d objective evaluations", job.Evaluations) }>{ formatNumber(float64(job.Evaluations)) }</div>
+					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Objective function calls</div>
 				</div>
 				<div>
 					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
@@ -223,7 +206,7 @@ templ JobDetailPage(job JobDetail) {
 						{ formatNumber(job.CPS) }
 					</div>
 					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-						circles/sec
+						Evaluated circle candidates/sec
 					</div>
 				</div>
 				<div>
@@ -244,8 +227,8 @@ templ JobDetailPage(job JobDetail) {
 				</div>
 			</div>
 		</div>
-		<!-- Configuration Panel -->
-		<div class="card" style="margin-bottom: 1.5rem;">
+			<!-- Configuration Panel -->
+			<div class="card detail-configuration" style="margin-bottom: 1.5rem;">
 			<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
 				Configuration
 			</h2>
@@ -255,6 +238,10 @@ templ JobDetailPage(job JobDetail) {
 					<div style="font-weight: 500; text-transform: capitalize;">{ job.Mode }</div>
 				</div>
 				<div>
+					<div style="font-size: 0.875rem; color: var(--text-muted);">Variant</div>
+					<div style="font-weight: 500; text-transform: uppercase;">{ job.Variant }</div>
+				</div>
+				<div>
 					<div style="font-size: 0.875rem; color: var(--text-muted);">Circles</div>
 					<div style="font-weight: 500;">{ fmt.Sprintf("%d", job.Circles) }</div>
 				</div>
@@ -262,24 +249,32 @@ templ JobDetailPage(job JobDetail) {
 					<div style="font-size: 0.875rem; color: var(--text-muted);">Population Size</div>
 					<div style="font-weight: 500;">{ fmt.Sprintf("%d", job.PopSize) }</div>
 				</div>
+				<div>
+					<div style="font-size: 0.875rem; color: var(--text-muted);">Optimizer Schedule</div>
+					<div style="font-weight: 500;">{ fmt.Sprintf("%d × %d iterations", job.OptimizerEpochs, job.ItersPerEpoch) }</div>
+				</div>
 				<div style="grid-column: 1 / -1;">
 					<div style="font-size: 0.875rem; color: var(--text-muted);">Reference Image</div>
 					<div style="font-weight: 500; font-family: monospace; font-size: 0.875rem;">{ job.RefPath }</div>
 				</div>
 			</div>
 		</div>
-		<!-- Artifact downloads -->
+			<!-- Artifact downloads -->
 		<style>
-			.download-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.75rem; }
-			.download-button { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; background: var(--border-color); color: var(--text-color); text-align: center; }
-			.download-button:hover { background: #d1d5db; }
+			.download-card { padding: 1rem 1.25rem; }
+			.download-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem 1rem; margin-bottom: 0.75rem; }
+			.download-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+			.download-button { display: inline-flex; flex: 0 1 auto; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.4rem 0.7rem; background: var(--border-color); color: var(--text-color); text-align: center; font: inherit; font-size: 0.8125rem; }
+			.download-button:hover { background: var(--secondary-hover); }
 			.download-button[aria-disabled="true"], .download-button:disabled { pointer-events: none; cursor: not-allowed; opacity: 0.5; }
 			.download-button[aria-busy="true"]::before { content: ""; width: 0.8rem; height: 0.8rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; }
 		</style>
-		<div class="card" style="margin-bottom: 1.5rem;">
-			<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.25rem;">Downloads</h2>
-			<p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1rem;">Export the current immutable best snapshot or a self-contained report.</p>
-			<div class="download-grid">
+			<div class="card detail-downloads download-card" style="margin-bottom: 1.5rem;">
+				<div class="download-header">
+					<h2 style="font-size: 1.125rem; font-weight: 600;">Downloads</h2>
+					<p style="color: var(--text-muted); font-size: 0.8125rem;">Current immutable result artifacts</p>
+				</div>
+				<div class="download-grid">
 				<a
 					class="btn download-button"
 					data-result-download
@@ -287,7 +282,7 @@ templ JobDetailPage(job JobDetail) {
 					download={ fmt.Sprintf("job-%s-best.png", job.ID) }
 					aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
 					tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
-				>Download Best Image</a>
+				>Best PNG</a>
 				<a
 					class="btn download-button"
 					data-result-download
@@ -295,7 +290,7 @@ templ JobDetailPage(job JobDetail) {
 					download={ fmt.Sprintf("job-%s-params.json", job.ID) }
 					aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
 					tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
-				>Download Parameters</a>
+				>Parameters JSON</a>
 				<a
 					id="download-difference"
 					class="btn download-button"
@@ -304,7 +299,7 @@ templ JobDetailPage(job JobDetail) {
 					download={ fmt.Sprintf("job-%s-diff.png", job.ID) }
 					aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
 					tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
-				>Download Difference Image</a>
+				>Difference PNG</a>
 				<button
 					id="download-report"
 					class="btn download-button"
@@ -313,11 +308,11 @@ templ JobDetailPage(job JobDetail) {
 					if len(job.Parameters) == 0 {
 						disabled
 					}
-				>Download Report</button>
+				>HTML Report</button>
 			</div>
-			<p id="report-download-status" role="status" aria-live="polite" style="min-height: 1.25rem; margin-top: 0.75rem; color: var(--text-muted); font-size: 0.8rem;"></p>
+			<p id="report-download-status" role="status" aria-live="polite" style="min-height: 1rem; margin-top: 0.5rem; color: var(--text-muted); font-size: 0.75rem;"></p>
 		</div>
-		<!-- Current best parameter viewer -->
+			<!-- Current best parameter viewer -->
 		<style>
 			.parameter-viewer summary {
 				display: flex;
@@ -372,8 +367,8 @@ templ JobDetailPage(job JobDetail) {
 				opacity: 0.5;
 			}
 		</style>
-		<div class="card" style="margin-bottom: 1.5rem;">
-			<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem;">
+			<div class="card detail-parameters" style="margin-bottom: 1.5rem;">
+				<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem;">
 				<div>
 					<h2 style="font-size: 1.25rem; font-weight: 600;">Current Best Parameters</h2>
 					<p style="font-size: 0.875rem; color: var(--text-muted);">
@@ -452,8 +447,8 @@ templ JobDetailPage(job JobDetail) {
 			}
 			.view-mode-option input:checked + label {
 				border-color: var(--primary-color);
-				background-color: #dbeafe;
-				color: #1e40af;
+				background-color: var(--info-bg);
+				color: var(--info-text);
 			}
 			.view-mode-option input:focus-visible + label {
 				outline: 2px solid var(--primary-color);
@@ -489,7 +484,7 @@ templ JobDetailPage(job JobDetail) {
 				border: 1px solid var(--border-color);
 				border-radius: 0.375rem;
 				overflow: hidden;
-				background: repeating-conic-gradient(#f9fafb 0% 25%, #ffffff 0% 50%)
+				background: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%)
 					50% / 20px 20px;
 			}
 			.image-frame-difference {
@@ -577,7 +572,7 @@ templ JobDetailPage(job JobDetail) {
 				}
 			}
 		</style>
-		<div id="image-viewer" class="card image-viewer" data-view-mode="side-by-side" data-job-id={ job.ID } data-job-state={ job.State }>
+		<div id="image-viewer" class="card image-viewer detail-images" data-view-mode="side-by-side" data-job-id={ job.ID } data-job-state={ job.State } data-max-iters={ fmt.Sprintf("%d", job.MaxIters) }>
 			<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem;">
 				<h2 style="font-size: 1.25rem; font-weight: 600;">
 					Images
@@ -698,6 +693,56 @@ templ JobDetailPage(job JobDetail) {
 					</div>
 				</div>
 			</div>
+			</div>
+
+			<!-- Metric history, immediately after the images -->
+			<div id="metric-history-card" class="card detail-history" style="margin-bottom: 1.5rem;">
+				<div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+					<div>
+						<h2 style="font-size: 1.25rem; font-weight: 600;">Metric History</h2>
+						<p style="font-size: 0.8125rem; color: var(--text-muted);">Quality over optimizer iterations</p>
+					</div>
+					if len(job.MetricHistory) > 0 {
+						<button id="sparkline-toggle" class="btn" style="font-size: 0.8125rem; padding: 0.35rem 0.7rem; background-color: var(--border-color);">Hide History</button>
+					} else {
+						<button id="sparkline-toggle" class="btn" style="display: none; font-size: 0.8125rem; padding: 0.35rem 0.7rem; background-color: var(--border-color);">Hide History</button>
+					}
+				</div>
+				<p id="metric-history-empty" style={ fmt.Sprintf("display: %s; color: var(--text-muted); font-size: 0.875rem;", displayValue(len(job.MetricHistory) == 0)) }>No metric samples yet. History will appear when optimization begins.</p>
+				<div id="cost-sparkline-container" style={ fmt.Sprintf("display: %s; padding: 1rem; background-color: var(--bg-color); border-radius: 0.375rem;", displayValue(len(job.MetricHistory) > 0)) }>
+					<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
+						<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem;">
+							<label for="metric-history-series" style="font-size: 0.875rem; font-weight: 600; color: var(--text-muted);">Metric
+								<select id="metric-history-series" style="margin-left: 0.35rem; padding: 0.3rem 0.5rem; border: 1px solid var(--border-color); border-radius: 0.25rem; background: var(--control-bg);">
+									<option value="cost">Cost</option>
+									<option value="psnr">PSNR</option>
+									if job.SSIMEnabled {
+										<option value="ssim">SSIM</option>
+									}
+								</select>
+							</label>
+							<label for="metric-history-window" style="font-size: 0.875rem; font-weight: 600; color: var(--text-muted);">Window
+								<select id="metric-history-window" style="margin-left: 0.35rem; padding: 0.3rem 0.5rem; border: 1px solid var(--border-color); border-radius: 0.25rem; background: var(--control-bg);">
+									<option value="all" selected>All samples</option>
+									<option value="100">Last 100</option><option value="250">Last 250</option><option value="500">Last 500</option><option value="1000">Last 1,000</option>
+								</select>
+							</label>
+						</div>
+						<div id="sparkline-stats" style="font-size: 0.75rem; color: var(--text-muted);">Showing <span id="sparkline-samples">0</span> of <span id="sparkline-total-samples">0</span> samples</div>
+					</div>
+					<svg id="cost-sparkline" width="100%" height="280" tabindex="0" role="img" aria-label="Metric history chart" style="display: block; border: 1px solid var(--border-color); border-radius: 0.25rem; background-color: var(--control-bg); font-family: inherit; touch-action: none;">
+						<g id="sparkline-grid"></g><g id="sparkline-axes"></g>
+						<polyline id="sparkline-line" fill="none" stroke="var(--primary-color)" stroke-width="2"></polyline>
+						<circle id="sparkline-dot" r="3" fill="var(--primary-color)" style="display: none;"></circle>
+						<g id="sparkline-hover-layer" style="display: none; pointer-events: none;"><line id="sparkline-hover-line" stroke="var(--text-muted)" stroke-width="1" stroke-dasharray="3 3"></line><circle id="sparkline-hover-dot" r="4" fill="var(--primary-color)" stroke="var(--surface-color)" stroke-width="2"></circle></g>
+						<text id="sparkline-empty" text-anchor="middle" fill="var(--text-muted)" style="display: none; font-size: 13px;">No samples available</text>
+					</svg>
+					<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1rem; margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">
+						<span>Start: <span id="sparkline-start">-</span></span><span>Current: <span id="sparkline-current">-</span></span><span><span id="sparkline-best-label">Min</span>: <span id="sparkline-min">-</span></span>
+						<span id="sparkline-hover-readout" aria-live="polite">Move over the chart for an exact value</span>
+					</div>
+				</div>
+			</div>
 		</div>
 		@templ.JSONScript("metric-history-data", job.MetricHistory)
 		@templ.JSONScript("parameter-data", job.Parameters)
@@ -707,6 +752,7 @@ templ JobDetailPage(job JobDetail) {
 				const imageViewer = document.getElementById("image-viewer");
 				const jobId = imageViewer.dataset.jobId;
 				const jobState = imageViewer.dataset.jobState;
+				const maxIters = Number.parseInt(imageViewer.dataset.maxIters, 10) || 0;
 				const viewStorageKey = "mayflycirclefit.viewMode";
 				const viewModes = ["reference", "best", "side-by-side", "difference"];
 				const shortcutViews = {
@@ -737,8 +783,7 @@ templ JobDetailPage(job JobDetail) {
 				initializeParameterViewer();
 				initializeDownloadControls();
 
-				// Bounded server-seeded quality history for the selectable sparkline.
-				const MAX_SAMPLES = 100;
+				// Server-seeded quality history for the selectable chart.
 				let metricHistory = [];
 				const historyData = document.getElementById("metric-history-data");
 				if (historyData) {
@@ -748,15 +793,16 @@ templ JobDetailPage(job JobDetail) {
 						console.error("Unable to parse metric history:", err);
 					}
 				}
-				metricHistory = metricHistory.slice(-MAX_SAMPLES);
 
-				// Sparkline toggle
+				// History chart controls
 				const toggleBtn = document.getElementById("sparkline-toggle");
 				const sparklineContainer = document.getElementById(
 					"cost-sparkline-container",
 				);
 				const metricSeries = document.getElementById("metric-history-series");
-				let sparklineVisible = false;
+				const metricWindow = document.getElementById("metric-history-window");
+				let sparklineVisible = metricHistory.length > 0;
+				let sparklineInteraction = null;
 
 				if (toggleBtn) {
 					toggleBtn.addEventListener("click", function () {
@@ -775,9 +821,19 @@ templ JobDetailPage(job JobDetail) {
 				if (metricSeries) {
 					metricSeries.addEventListener("change", updateSparkline);
 				}
+				if (metricWindow) {
+					metricWindow.addEventListener("change", updateSparkline);
+				}
+				const sparkline = document.getElementById("cost-sparkline");
+				if (sparkline) {
+					sparkline.addEventListener("pointermove", updateSparklineHover);
+					sparkline.addEventListener("pointerleave", clearSparklineHover);
+					sparkline.addEventListener("focus", showLatestSparklinePoint);
+				}
 				window.addEventListener("resize", function () {
 					if (sparklineVisible) updateSparkline();
 				});
+				if (sparklineVisible) updateSparkline();
 
 				function initializeViewMode() {
 					const controls = document.querySelectorAll('input[name="view-mode"]');
@@ -863,6 +919,8 @@ templ JobDetailPage(job JobDetail) {
 						// Update metrics
 						updateMetric("best-cost", data.bestCost.toFixed(4));
 						updateMetric("iterations", data.iterations);
+						updateMetric("evaluations", formatNumber(data.evaluations));
+						updateIterationProgress(data.iterations);
 						updateMetric("cps", formatNumber(data.cps));
 						if (data.psnrInfinite) {
 							updateMetric("psnr", "∞");
@@ -922,6 +980,14 @@ templ JobDetailPage(job JobDetail) {
 					elements.forEach(function (el) {
 						el.textContent = value;
 					});
+				}
+
+				function updateIterationProgress(iterations) {
+					if (maxIters <= 0) return;
+					const percent = Math.max(0, Math.min(100, (iterations / maxIters) * 100));
+					updateMetric("iteration-progress", percent.toFixed(1) + "%");
+					const bar = document.getElementById("iteration-progress-bar");
+					if (bar) bar.style.width = percent.toFixed(1) + "%";
 				}
 
 				function initializeParameterViewer() {
@@ -1220,6 +1286,7 @@ templ JobDetailPage(job JobDetail) {
 				}
 
 				function addMetricSample(data) {
+					const firstSample = metricHistory.length === 0;
 					metricHistory.push({
 						iteration: data.iterations,
 						cost: data.bestCost,
@@ -1227,24 +1294,37 @@ templ JobDetailPage(job JobDetail) {
 						psnrInfinite: data.psnrInfinite === true,
 						ssim: typeof data.ssim === "number" ? data.ssim : null,
 					});
-					if (metricHistory.length > MAX_SAMPLES) metricHistory.shift();
+					if (firstSample) {
+						sparklineVisible = true;
+						const emptyState = document.getElementById("metric-history-empty");
+						if (emptyState) emptyState.style.display = "none";
+						if (sparklineContainer) sparklineContainer.style.display = "block";
+						if (toggleBtn) toggleBtn.style.display = "inline-flex";
+					}
 					if (sparklineVisible) updateSparkline();
 				}
 
-				function selectedMetricValues() {
+				function selectedMetricPoints() {
 					const series = metricSeries ? metricSeries.value : "cost";
+					const allPoints = metricHistory
+						.map(function (sample) {
+							const value = sample[series];
+							return typeof value === "number" && Number.isFinite(value)
+								? { iteration: sample.iteration, value: value }
+								: null;
+						})
+						.filter(function (point) {
+							return point !== null;
+						});
+					const windowValue = metricWindow ? metricWindow.value : "all";
+					const windowSize = Number.parseInt(windowValue, 10);
+					const points = Number.isFinite(windowSize)
+						? allPoints.slice(-windowSize)
+						: allPoints;
 					return {
 						series: series,
-						values: metricHistory
-							.map(function (sample) {
-								const value = sample[series];
-								return typeof value === "number" && Number.isFinite(value)
-									? value
-									: null;
-							})
-							.filter(function (value) {
-								return value !== null;
-							}),
+						points: points,
+						total: allPoints.length,
 					};
 				}
 
@@ -1253,56 +1333,115 @@ templ JobDetailPage(job JobDetail) {
 					return value.toFixed(4);
 				}
 
+				function formatAxisValue(series, value) {
+					const magnitude = Math.abs(value);
+					if (magnitude !== 0 && (magnitude >= 10000 || magnitude < 0.001)) {
+						return value.toExponential(2);
+					}
+					if (series === "ssim") return value.toFixed(3);
+					if (series === "psnr") return value.toFixed(1);
+					return value.toFixed(magnitude < 10 ? 3 : 1);
+				}
+
+				function appendSVG(parent, tag, attributes, text) {
+					const element = document.createElementNS("http://www.w3.org/2000/svg", tag);
+					Object.entries(attributes).forEach(function (entry) {
+						element.setAttribute(entry[0], entry[1]);
+					});
+					if (text !== undefined) element.textContent = text;
+					parent.appendChild(element);
+					return element;
+				}
+
 				function updateSparkline() {
 					const svg = document.getElementById("cost-sparkline");
 					const line = document.getElementById("sparkline-line");
 					const dot = document.getElementById("sparkline-dot");
-					if (!svg || !line) return;
-					const selected = selectedMetricValues();
-					const values = selected.values;
+					const grid = document.getElementById("sparkline-grid");
+					const axes = document.getElementById("sparkline-axes");
+					const empty = document.getElementById("sparkline-empty");
+					if (!svg || !line || !grid || !axes || !empty) return;
+					const selected = selectedMetricPoints();
+					const points = selected.points;
+					const values = points.map(function (point) { return point.value; });
 					document.getElementById("sparkline-samples").textContent =
 						values.length;
+					document.getElementById("sparkline-total-samples").textContent =
+						selected.total;
 					document.getElementById("sparkline-best-label").textContent =
 						selected.series === "cost" ? "Min" : "Max";
+					grid.replaceChildren();
+					axes.replaceChildren();
+					const width = Math.max(480, Math.round(svg.clientWidth || 960));
+					const height = 280;
+					const margin = { top: 18, right: 18, bottom: 48, left: 76 };
+					const plotWidth = width - margin.left - margin.right;
+					const plotHeight = height - margin.top - margin.bottom;
+					svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+					empty.setAttribute("x", width / 2);
+					empty.setAttribute("y", height / 2);
 					if (values.length === 0) {
+						sparklineInteraction = null;
 						line.setAttribute("points", "");
 						dot.style.display = "none";
+						empty.style.display = "block";
 						document.getElementById("sparkline-start").textContent = "-";
 						document.getElementById("sparkline-current").textContent = "-";
 						document.getElementById("sparkline-min").textContent = "-";
 						return;
 					}
+					empty.style.display = "none";
 
-					const width = svg.clientWidth;
-					const height = 80;
-					const padding = 10;
 					const minimum = Math.min(...values);
 					const maximum = Math.max(...values);
-					const range = maximum - minimum || 1;
-					const denominator = Math.max(1, values.length - 1);
-					const points = values
+					const rawRange = maximum - minimum;
+					const yPadding = rawRange === 0 ? Math.max(Math.abs(maximum) * 0.05, 1) : rawRange * 0.05;
+					const yMinimum = minimum - yPadding;
+					const yMaximum = maximum + yPadding;
+					const yRange = yMaximum - yMinimum;
+					const xMinimum = points[0].iteration;
+					const xMaximum = points[points.length - 1].iteration;
+					const xRange = xMaximum - xMinimum;
+					const xPosition = function (iteration) {
+						if (xRange === 0) return margin.left + plotWidth / 2;
+						return margin.left + ((iteration - xMinimum) / xRange) * plotWidth;
+					};
+					const yPosition = function (value) {
+						return margin.top + ((yMaximum - value) / yRange) * plotHeight;
+					};
+					sparklineInteraction = { series: selected.series, points: points, xPosition: xPosition, yPosition: yPosition, margin: margin, height: height, width: width };
+
+					const tickCount = 5;
+					for (let i = 0; i < tickCount; i++) {
+						const fraction = i / (tickCount - 1);
+						const y = margin.top + fraction * plotHeight;
+						const yValue = yMaximum - fraction * yRange;
+						appendSVG(grid, "line", { x1: margin.left, y1: y, x2: width - margin.right, y2: y, stroke: "var(--border-color)", "stroke-width": 1 });
+						appendSVG(axes, "text", { x: margin.left - 10, y: y + 4, "text-anchor": "end", fill: "var(--text-muted)", "font-size": 11 }, formatAxisValue(selected.series, yValue));
+					}
+					const xTickCount = xRange === 0 ? 1 : tickCount;
+					for (let i = 0; i < xTickCount; i++) {
+						const fraction = xTickCount === 1 ? 0.5 : i / (xTickCount - 1);
+						const x = margin.left + fraction * plotWidth;
+						const iteration = Math.round(xMinimum + fraction * xRange);
+						appendSVG(grid, "line", { x1: x, y1: margin.top, x2: x, y2: height - margin.bottom, stroke: "var(--grid-color)", "stroke-width": 1 });
+						appendSVG(axes, "text", { x: x, y: height - margin.bottom + 19, "text-anchor": "middle", fill: "var(--text-muted)", "font-size": 11 }, iteration.toLocaleString());
+					}
+					appendSVG(axes, "line", { x1: margin.left, y1: margin.top, x2: margin.left, y2: height - margin.bottom, stroke: "var(--text-muted)", "stroke-width": 1 });
+					appendSVG(axes, "line", { x1: margin.left, y1: height - margin.bottom, x2: width - margin.right, y2: height - margin.bottom, stroke: "var(--text-muted)", "stroke-width": 1 });
+					appendSVG(axes, "text", { x: margin.left + plotWidth / 2, y: height - 10, "text-anchor": "middle", fill: "var(--text-muted)", "font-size": 12, "font-weight": 600 }, "Iteration");
+					const yLabel = selected.series === "psnr" ? "PSNR (dB)" : selected.series.toUpperCase();
+					appendSVG(axes, "text", { x: 16, y: margin.top + plotHeight / 2, "text-anchor": "middle", fill: "var(--text-muted)", "font-size": 12, "font-weight": 600, transform: "rotate(-90 16 " + (margin.top + plotHeight / 2) + ")" }, yLabel);
+
+					const linePoints = values
 						.map((value, i) => {
-							const x = padding + (i / denominator) * (width - 2 * padding);
-							const y =
-								height -
-								padding -
-								((value - minimum) / range) * (height - 2 * padding);
-							return x + "," + y;
+							return xPosition(selected.points[i].iteration) + "," + yPosition(value);
 						})
 						.join(" ");
-					line.setAttribute("points", points);
+					line.setAttribute("points", linePoints);
 					const lastValue = values[values.length - 1];
-					dot.setAttribute(
-						"cx",
-						padding +
-							((values.length - 1) / denominator) * (width - 2 * padding),
-					);
-					dot.setAttribute(
-						"cy",
-						height -
-							padding -
-							((lastValue - minimum) / range) * (height - 2 * padding),
-					);
+					dot.setAttribute("cx", xPosition(selected.points[selected.points.length - 1].iteration));
+					dot.setAttribute("cy", yPosition(lastValue));
 					dot.style.display = "block";
 					document.getElementById("sparkline-start").textContent =
 						formatMetricValue(selected.series, values[0]);
@@ -1311,6 +1450,49 @@ templ JobDetailPage(job JobDetail) {
 					const best = selected.series === "cost" ? minimum : maximum;
 					document.getElementById("sparkline-min").textContent =
 						formatMetricValue(selected.series, best);
+					showLatestSparklinePoint();
+				}
+
+				function renderSparklineHover(point) {
+					if (!sparklineInteraction || !point) return;
+					const layer = document.getElementById("sparkline-hover-layer");
+					const line = document.getElementById("sparkline-hover-line");
+					const dot = document.getElementById("sparkline-hover-dot");
+					const x = sparklineInteraction.xPosition(point.iteration);
+					const y = sparklineInteraction.yPosition(point.value);
+					line.setAttribute("x1", x); line.setAttribute("x2", x);
+					line.setAttribute("y1", sparklineInteraction.margin.top); line.setAttribute("y2", sparklineInteraction.height - sparklineInteraction.margin.bottom);
+					dot.setAttribute("cx", x); dot.setAttribute("cy", y);
+					layer.style.display = "block";
+					document.getElementById("sparkline-hover-readout").textContent = "Iteration " + point.iteration.toLocaleString() + " · " + formatMetricValue(sparklineInteraction.series, point.value);
+				}
+
+				function updateSparklineHover(event) {
+					if (!sparklineInteraction) return;
+					const svg = document.getElementById("cost-sparkline");
+					const rect = svg.getBoundingClientRect();
+					const x = ((event.clientX - rect.left) / rect.width) * sparklineInteraction.width;
+					let nearest = sparklineInteraction.points[0];
+					let distance = Math.abs(sparklineInteraction.xPosition(nearest.iteration) - x);
+					sparklineInteraction.points.forEach(function (point) {
+						const candidate = Math.abs(sparklineInteraction.xPosition(point.iteration) - x);
+						if (candidate < distance) { nearest = point; distance = candidate; }
+					});
+					renderSparklineHover(nearest);
+				}
+
+				function showLatestSparklinePoint() {
+					if (!sparklineInteraction || sparklineInteraction.points.length === 0) return;
+					renderSparklineHover(sparklineInteraction.points[sparklineInteraction.points.length - 1]);
+				}
+
+				function clearSparklineHover() {
+					const layer = document.getElementById("sparkline-hover-layer");
+					if (layer) layer.style.display = "none";
+					if (sparklineInteraction) {
+						const latest = sparklineInteraction.points[sparklineInteraction.points.length - 1];
+						document.getElementById("sparkline-hover-readout").textContent = "Latest: iteration " + latest.iteration.toLocaleString() + " · " + formatMetricValue(sparklineInteraction.series, latest.value);
+					}
 				}
 			})();
 		</script>
@@ -1337,6 +1519,11 @@ templ JobNotFound(jobID string) {
 			</a>
 		</div>
 	}
+}
+
+func progressPercent(iterations, maximum int) float64 {
+	if maximum <= 0 { return 0 }
+	return min(100, max(0, float64(iterations)/float64(maximum)*100))
 }
 
 // Helper function to format large numbers with K/M suffix

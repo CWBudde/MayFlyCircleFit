@@ -502,7 +502,7 @@ func TestNewCheckpoint(t *testing.T) {
 // field is free-form, so these must survive a round trip and validation without
 // a schema-version bump.
 func TestCheckpointAcceptsNewTerminationValues(t *testing.T) {
-	for _, termination := range []string{"target_cost", "stagnation", "stage_convergence", "completed"} {
+	for _, termination := range []string{"target_cost", "stagnation", "stage_convergence", "refill_limit", "completed"} {
 		t.Run(termination, func(t *testing.T) {
 			original := &Checkpoint{
 				JobID:            "3f2504e0-4f89-41d3-9a0c-0305e82c3301",

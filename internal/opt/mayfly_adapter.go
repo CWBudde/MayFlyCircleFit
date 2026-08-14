@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"math/rand"
+	"slices"
 
 	"github.com/cwbudde/mayfly"
 )
@@ -207,10 +208,18 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 		return result
 	}
 
-	// Wrap eval function to handle normalization
+	// Canonicalize every callback input identically. Mayfly operates in a
+	// uniform [0,1] search space, while objectives and constraints use the
+	// problem's denormalized, repaired representation.
+	canonicalize := func(normalizedParams []float64) []float64 {
+		params := denormalize(normalizedParams)
+		repairCandidate(problem, params)
+		return params
+	}
+
+	// Wrap eval function to handle normalization.
 	normalizedEval := func(normalizedParams []float64) float64 {
-		denormalizedParams := denormalize(normalizedParams)
-		return problem.Eval(denormalizedParams)
+		return problem.Eval(canonicalize(normalizedParams))
 	}
 
 	config.ObjectiveFunc = normalizedEval
@@ -220,6 +229,18 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 	config.NPopF = m.popSize
 	config.LowerBound = 0.0
 	config.UpperBound = 1.0
+	if len(problem.Inequalities) > 0 {
+		// Aggregate after canonicalization so Repair runs once per constraint
+		// evaluation, regardless of how many inequalities a problem declares.
+		// Mayfly then applies feasibility ranking while retaining the raw
+		// objective cost in progress and results.
+		config.Constraints = &mayfly.ConstraintConfig{
+			Handling: mayfly.ConstraintHandlingFeasibility,
+			Inequalities: []mayfly.ConstraintFunction{func(normalizedParams []float64) float64 {
+				return inequalityViolation(problem.Inequalities, canonicalize(normalizedParams))
+			}},
+		}
+	}
 
 	// Leave Convergence nil unless a criterion is actually configured. An empty
 	// convergence config is inert today, but it would still engage the
@@ -250,13 +271,21 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 
 	var runOptions []mayfly.RunOption
 	best := Result{BestCost: math.Inf(1), Termination: TerminationCompleted}
+	bestViolation := math.Inf(1)
 	if options.Initial != nil {
-		if err := validateCandidate(*options.Initial, problem); err != nil {
+		initial := Candidate{Params: append([]float64(nil), options.Initial.Params...), Cost: options.Initial.Cost}
+		originalParams := append([]float64(nil), initial.Params...)
+		repairCandidate(problem, initial.Params)
+		if !slices.Equal(originalParams, initial.Params) {
+			initial.Cost = problem.Eval(initial.Params)
+		}
+		if err := validateCandidate(initial, problem); err != nil {
 			return Result{}, err
 		}
-		best.BestParams = append([]float64(nil), options.Initial.Params...)
-		best.BestCost = options.Initial.Cost
-		maleSeeds, femaleSeeds := seededPopulation(normalize(options.Initial.Params), m.popSize, rng)
+		best.BestParams = append([]float64(nil), initial.Params...)
+		best.BestCost = initial.Cost
+		bestViolation = inequalityViolation(problem.Inequalities, initial.Params)
+		maleSeeds, femaleSeeds := seededPopulation(normalize(initial.Params), m.popSize, rng)
 		runOptions = append(runOptions, mayfly.WithInitialPopulation(maleSeeds, femaleSeeds))
 	}
 	if m.logger != nil {
@@ -264,9 +293,17 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 	}
 	runOptions = append(runOptions, mayfly.WithProgressObserver(func(progress mayfly.Progress) {
 		params := denormalize(progress.Best.Position)
-		if progress.Best.Cost < best.BestCost {
+		repairCandidate(problem, params)
+		if betterCandidate(
+			progress.Best.Cost,
+			progress.Best.ConstraintViolation,
+			best.BestCost,
+			bestViolation,
+			config.Constraints,
+		) {
 			best.BestParams = append([]float64(nil), params...)
 			best.BestCost = progress.Best.Cost
+			bestViolation = progress.Best.ConstraintViolation
 		}
 		best.Iterations = progress.Iteration
 		best.Evaluations = progress.EvaluationCount
@@ -290,14 +327,54 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 	}
 
 	params := denormalize(result.GlobalBest.Position)
-	if result.GlobalBest.Cost < best.BestCost {
+	repairCandidate(problem, params)
+	if betterCandidate(
+		result.GlobalBest.Cost,
+		result.GlobalBest.ConstraintViolation,
+		best.BestCost,
+		bestViolation,
+		config.Constraints,
+	) {
 		best.BestParams = params
 		best.BestCost = result.GlobalBest.Cost
+		bestViolation = result.GlobalBest.ConstraintViolation
 	}
 	best.Iterations = result.IterationCount
 	best.Evaluations = result.FuncEvalCount
 	best.Termination = terminationFromMayfly(result.TerminationReason)
 	return best, nil
+}
+
+func repairCandidate(problem Problem, params []float64) {
+	if problem.Repair != nil {
+		problem.Repair(params)
+	}
+}
+
+// inequalityViolation mirrors Mayfly's inequality aggregation for parameters
+// already expressed in problem space. Keeping it here lets resume candidates
+// participate in the same feasibility ordering as the optimizer population.
+func inequalityViolation(constraints []InequalityConstraint, params []float64) float64 {
+	violation := 0.0
+	for _, constraint := range constraints {
+		value := constraint(params)
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return math.Inf(1)
+		}
+		violation += max(0, value)
+		if math.IsInf(violation, 1) {
+			return math.Inf(1)
+		}
+	}
+	return violation
+}
+
+func betterCandidate(cost, violation, incumbentCost, incumbentViolation float64, constraints *mayfly.ConstraintConfig) bool {
+	return mayfly.BetterConstrainedCandidate(
+		mayfly.CandidateEvaluation{Cost: cost, ConstraintViolation: violation},
+		mayfly.CandidateEvaluation{Cost: incumbentCost, ConstraintViolation: incumbentViolation},
+		constraints,
+	)
 }
 
 // terminationFromMayfly maps a Mayfly termination reason onto the application
@@ -324,6 +401,11 @@ func validateProblem(problem Problem) error {
 	for i := range problem.Dim {
 		if math.IsNaN(problem.Lower[i]) || math.IsNaN(problem.Upper[i]) || math.IsInf(problem.Lower[i], 0) || math.IsInf(problem.Upper[i], 0) || problem.Lower[i] >= problem.Upper[i] {
 			return fmt.Errorf("invalid bounds at dimension %d", i)
+		}
+	}
+	for i, constraint := range problem.Inequalities {
+		if constraint == nil {
+			return fmt.Errorf("inequality constraint %d is nil", i)
 		}
 	}
 	return nil

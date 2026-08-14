@@ -54,7 +54,7 @@ func (o *progressOptimizer) Run(eval func([]float64) float64, lower, upper []flo
 	return o.base.Run(eval, lower, upper, dim)
 }
 
-func (o *progressOptimizer) RunContext(ctx context.Context, problem opt.Problem, _ opt.RunOptions) (opt.Result, error) {
+func (o *progressOptimizer) RunContext(ctx context.Context, problem opt.Problem, options opt.RunOptions) (opt.Result, error) {
 	lifecycle, ok := o.base.(opt.LifecycleOptimizer)
 	if !ok {
 		return opt.Result{}, fmt.Errorf("optimizer does not support lifecycle execution")
@@ -62,20 +62,26 @@ func (o *progressOptimizer) RunContext(ctx context.Context, problem opt.Problem,
 
 	o.mu.Lock()
 	baseIterations, baseEvaluations := o.iterations, o.evaluations
-	initial := o.initial
-	if initial != nil && len(initial.Params) == problem.Dim {
+	initial := options.Initial
+	if o.initial != nil && len(o.initial.Params) == problem.Dim {
+		initial = o.initial
 		o.initial = nil
-	} else {
-		initial = nil
 	}
 	o.mu.Unlock()
+	resumeCount := options.ResumeCount
+	if o.resumeCount > 0 {
+		resumeCount = o.resumeCount
+	}
 
 	result, err := lifecycle.RunContext(ctx, problem, opt.RunOptions{
 		Initial:     initial,
-		ResumeCount: o.resumeCount,
+		ResumeCount: resumeCount,
 		Observer: func(progress opt.Progress) {
 			progress.Iterations += baseIterations
 			progress.Evaluations += baseEvaluations
+			if options.Observer != nil {
+				options.Observer(progress)
+			}
 			if o.observer != nil {
 				o.observer(progress)
 			}
@@ -131,6 +137,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		markJobFailed(jm, jobID, err)
 		return err
 	}
+	optimizer = opt.WithEpochs(optimizer, job.Config.OptimizerEpochs)
 	start := time.Now()
 	baseIterations, baseEvaluations := job.Iterations, job.Evaluations
 	initialCost := job.InitialCost
@@ -212,7 +219,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 			}
 			_ = jm.RecordMetrics(jobID, sample)
 			jm.broadcaster.Broadcast(ProgressEvent{
-				JobID: jobID, State: StateRunning, Iterations: iterations,
+				JobID: jobID, State: StateRunning, Iterations: iterations, Evaluations: evaluations,
 				BestCost: progress.BestCost, PSNR: cloneFloat(sample.PSNR),
 				PSNRInfinite: sample.PSNRInfinite, SSIM: cloneFloat(sample.SSIM), CPS: cps, Timestamp: now,
 			})
@@ -222,7 +229,10 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 
 	wrapped := &progressOptimizer{base: optimizer, observer: observer, resumeCount: job.Config.ResumeCount}
 	if len(job.BestParams) > 0 {
-		wrapped.initial = &opt.Candidate{Params: append([]float64(nil), job.BestParams...), Cost: job.BestCost}
+		initialParams := append([]float64(nil), job.BestParams...)
+		parameterBounds := fit.NewBounds(job.Config.Circles, ref.Bounds().Dx(), ref.Bounds().Dy())
+		parameterBounds.ClampVector(initialParams)
+		wrapped.initial = &opt.Candidate{Params: initialParams, Cost: rend.Cost(initialParams)}
 	}
 
 	convergence := buildConvergenceConfig(job.Config)
@@ -316,7 +326,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		cps = float64(result.Evaluations*job.Config.Circles) / elapsed
 	}
 	jm.broadcaster.Broadcast(ProgressEvent{
-		JobID: jobID, State: StateCompleted, Iterations: iterations,
+		JobID: jobID, State: StateCompleted, Iterations: iterations, Evaluations: evaluations,
 		BestCost: result.BestCost, PSNR: cloneFloat(finalSample.PSNR),
 		PSNRInfinite: finalSample.PSNRInfinite, SSIM: cloneFloat(finalSample.SSIM), CPS: cps, Timestamp: completedAt,
 	})

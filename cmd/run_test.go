@@ -61,3 +61,10 @@ func TestRunSSIMFlagDefaultsToDisabled(t *testing.T) {
 		t.Fatalf("--enable-ssim default = %q, want false", flag.DefValue)
 	}
 }
+
+func TestRunBatchSizeFlagDefaultsToAutomatic(t *testing.T) {
+	flag := runCmd.Flags().Lookup("batch-size")
+	if flag == nil || flag.DefValue != "0" {
+		t.Fatalf("batch-size flag = %#v, want default 0", flag)
+	}
+}

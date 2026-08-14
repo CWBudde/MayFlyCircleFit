@@ -69,6 +69,9 @@ func TestJobStreamPublishesTerminalTransitionsAndCloses(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			server := NewServer(":8080", nil)
 			job := server.jobManager.CreateJob(JobConfig{})
+			if err := server.jobManager.UpdateJob(job.ID, func(current *Job) { current.Evaluations = 42 }); err != nil {
+				t.Fatal(err)
+			}
 			request := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+job.ID+"/stream", nil)
 			response := httptest.NewRecorder()
 			done := make(chan struct{})
@@ -94,6 +97,9 @@ func TestJobStreamPublishesTerminalTransitionsAndCloses(t *testing.T) {
 			}
 			if events[0].State != StatePending || events[1].State != test.wantState {
 				t.Fatalf("states = [%s, %s], want [pending, %s]", events[0].State, events[1].State, test.wantState)
+			}
+			if events[0].Evaluations != 42 || events[1].Evaluations != 42 {
+				t.Fatalf("evaluations = [%d, %d], want [42, 42]", events[0].Evaluations, events[1].Evaluations)
 			}
 
 			server.jobManager.broadcaster.mu.RLock()

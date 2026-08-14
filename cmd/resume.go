@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cwbudde/mayflycirclefit/internal/fit"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
@@ -211,6 +212,7 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	if err != nil {
 		return fmt.Errorf("create optimizer: %w", err)
 	}
+	optimizer = opt.WithEpochs(optimizer, max(checkpoint.Config.OptimizerEpochs, 1))
 	lifecycle, ok := optimizer.(opt.LifecycleOptimizer)
 	if !ok {
 		return fmt.Errorf("optimizer does not support lifecycle resume")
@@ -225,10 +227,28 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	switch checkpoint.Config.Mode {
 	case "joint":
 		lower, upper := rend.Bounds()
+		imageBounds := ref.Bounds()
+		parameterBounds := fit.NewBounds(checkpoint.Config.Circles, imageBounds.Dx(), imageBounds.Dy())
+		resumeParams := append([]float64(nil), checkpoint.BestParams...)
+		parameterBounds.ClampVector(resumeParams)
+		resumeCost := rend.Cost(resumeParams)
+		evaluate := func(params []float64) float64 {
+			parameterBounds.ClampIndependentVector(params)
+			return rend.Cost(params)
+		}
+		constraints := make([]opt.InequalityConstraint, checkpoint.Config.Circles)
+		for circle := range checkpoint.Config.Circles {
+			circle := circle
+			constraints[circle] = func(params []float64) float64 {
+				vector := fit.ParamVector{Data: params, K: checkpoint.Config.Circles, Width: imageBounds.Dx(), Height: imageBounds.Dy()}
+				return parameterBounds.RadiusViolation(vector.DecodeCircle(circle))
+			}
+		}
 		optimization, err = lifecycle.RunContext(ctx, opt.Problem{
-			Eval: rend.Cost, Lower: lower, Upper: upper, Dim: rend.Dim(),
+			Eval: evaluate, Repair: parameterBounds.ClampIndependentVector, Inequalities: constraints,
+			Lower: lower, Upper: upper, Dim: rend.Dim(),
 		}, opt.RunOptions{
-			Initial:     &opt.Candidate{Params: checkpoint.BestParams, Cost: checkpoint.BestCost},
+			Initial:     &opt.Candidate{Params: resumeParams, Cost: resumeCost},
 			ResumeCount: checkpoint.ResumeCount + 1,
 		})
 		if err != nil {

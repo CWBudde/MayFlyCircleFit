@@ -265,7 +265,7 @@ func JobCard(job JobListItem) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if job.Error != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div style=\"margin-top: 0.75rem; padding: 0.75rem; background-color: #fee2e2; border-radius: 0.375rem; color: #991b1b; font-size: 0.875rem;\"><strong>Error:</strong> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div style=\"margin-top: 0.75rem; padding: 0.75rem; background-color: var(--error-bg); border-radius: 0.375rem; color: var(--error-text); font-size: 0.875rem;\"><strong>Error:</strong> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -320,7 +320,7 @@ func StateBadge(state string) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		case "running":
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<span class=\"badge badge-info\" style=\"background-color: #dbeafe; color: #1e40af; animation: pulse 2s ease-in-out infinite;\">Running</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<span class=\"badge badge-info\" style=\"animation: pulse 2s ease-in-out infinite;\">Running</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

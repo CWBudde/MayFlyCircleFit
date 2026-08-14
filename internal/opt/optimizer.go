@@ -2,12 +2,20 @@ package opt
 
 import "context"
 
+// InequalityConstraint describes a continuous constraint g(params) <= 0.
+// Positive values are violations; zero and negative values are feasible.
+type InequalityConstraint func([]float64) float64
+
 // Problem describes one bounded minimization problem.
 type Problem struct {
-	Eval  func([]float64) float64
-	Lower []float64
-	Upper []float64
-	Dim   int
+	Eval func([]float64) float64
+	// Repair canonicalizes a bounded candidate before evaluation and before it
+	// is exposed through progress or results. It may be nil.
+	Repair       func([]float64)
+	Inequalities []InequalityConstraint
+	Lower        []float64
+	Upper        []float64
+	Dim          int
 }
 
 // Candidate is a known solution used to seed a continuation run.

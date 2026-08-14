@@ -12,14 +12,15 @@ import (
 )
 
 const (
-	MaxCircles       = 1000
-	MaxIterations    = 10000
-	MinPopulation    = 20
-	MaxPopulation    = 200
-	MaxBatchSize     = 100
-	MaxImagePixels   = 16_777_216
-	MaxImageFileSize = 64 << 20
-	MaxRequestBody   = 1 << 20
+	MaxCircles         = 1000
+	MaxIterations      = 10000
+	MinPopulation      = 20
+	MaxPopulation      = 200
+	MaxOptimizerEpochs = 32
+	MaxBatchSize       = 100
+	MaxImagePixels     = 16_777_216
+	MaxImageFileSize   = 64 << 20
+	MaxRequestBody     = 1 << 20
 )
 
 // Mode selects how circles are added to the canvas.
@@ -59,6 +60,7 @@ type JobConfig struct {
 	Circles              int     `json:"circles"`
 	Iters                int     `json:"iters"`
 	PopSize              int     `json:"popSize"`
+	OptimizerEpochs      int     `json:"optimizerEpochs,omitempty"`
 	BatchSize            int     `json:"batchSize,omitempty"`
 	Threads              int     `json:"threads,omitempty"`
 	Seed                 int64   `json:"seed"`
@@ -106,6 +108,7 @@ func DefaultConfig() JobConfig {
 		Circles:              10,
 		Iters:                100,
 		PopSize:              30,
+		OptimizerEpochs:      1,
 		BatchSize:            5,
 		Threads:              runtime.GOMAXPROCS(0),
 		EnableTrace:          true,
@@ -136,6 +139,9 @@ func (c *JobConfig) ApplyDefaults() error {
 	}
 	if c.PopSize == 0 {
 		c.PopSize = defaults.PopSize
+	}
+	if c.OptimizerEpochs == 0 {
+		c.OptimizerEpochs = defaults.OptimizerEpochs
 	}
 	if c.BatchSize == 0 {
 		c.BatchSize = defaults.BatchSize
@@ -206,6 +212,9 @@ func (c JobConfig) Validate() error {
 	}
 	if c.PopSize < MinPopulation || c.PopSize > MaxPopulation {
 		return invalid("popSize", fmt.Sprintf("must be between %d and %d", MinPopulation, MaxPopulation))
+	}
+	if c.OptimizerEpochs < 1 || c.OptimizerEpochs > MaxOptimizerEpochs {
+		return invalid("optimizerEpochs", fmt.Sprintf("must be between 1 and %d", MaxOptimizerEpochs))
 	}
 	if c.BatchSize < 1 || c.BatchSize > MaxBatchSize || c.Mode == ModeBatch && c.BatchSize > c.Circles {
 		return invalid("batchSize", "must be positive, within the limit, and no larger than circles")

@@ -14,7 +14,7 @@ func TestNormalizeAppliesCanonicalDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	defaults := DefaultConfig()
-	if config.Mode != defaults.Mode || config.Backend != defaults.Backend || config.Circles != defaults.Circles || config.Iters != defaults.Iters || config.PopSize != defaults.PopSize {
+	if config.Mode != defaults.Mode || config.Backend != defaults.Backend || config.Circles != defaults.Circles || config.Iters != defaults.Iters || config.PopSize != defaults.PopSize || config.OptimizerEpochs != 1 {
 		t.Fatalf("defaults not applied: %+v", config)
 	}
 	if config.Threads != defaults.Threads || config.Threads < 1 {
@@ -60,6 +60,8 @@ func TestValidateBoundaries(t *testing.T) {
 		{"iterations", func(c *JobConfig) { c.Iters = MaxIterations + 1 }, "iters"},
 		{"population low", func(c *JobConfig) { c.PopSize = MinPopulation - 1 }, "popSize"},
 		{"population high", func(c *JobConfig) { c.PopSize = MaxPopulation + 1 }, "popSize"},
+		{"optimizer epochs low", func(c *JobConfig) { c.OptimizerEpochs = -1 }, "optimizerEpochs"},
+		{"optimizer epochs high", func(c *JobConfig) { c.OptimizerEpochs = MaxOptimizerEpochs + 1 }, "optimizerEpochs"},
 		{"batch", func(c *JobConfig) { c.Mode, c.BatchSize = ModeBatch, c.Circles+1 }, "batchSize"},
 		{"threads", func(c *JobConfig) { c.Threads = -1 }, "threads"},
 		{"patience", func(c *JobConfig) { c.ConvergencePatience = 101 }, "convergencePatience"},

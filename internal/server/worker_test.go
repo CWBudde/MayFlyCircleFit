@@ -232,6 +232,19 @@ func (t terminationOptimizer) Run(_ func([]float64) float64, _, _ []float64, dim
 	return make([]float64, dim), 0
 }
 
+type optionsCaptureOptimizer struct {
+	options opt.RunOptions
+}
+
+func (o *optionsCaptureOptimizer) Run(_ func([]float64) float64, _, _ []float64, dim int) ([]float64, float64) {
+	return make([]float64, dim), 0
+}
+
+func (o *optionsCaptureOptimizer) RunContext(_ context.Context, problem opt.Problem, options opt.RunOptions) (opt.Result, error) {
+	o.options = options
+	return opt.Result{BestParams: append([]float64(nil), options.Initial.Params...), BestCost: options.Initial.Cost}, nil
+}
+
 func (t terminationOptimizer) RunContext(_ context.Context, problem opt.Problem, _ opt.RunOptions) (opt.Result, error) {
 	return opt.Result{
 		BestParams:  make([]float64, problem.Dim),
@@ -268,5 +281,19 @@ func TestProgressOptimizerPreservesTermination(t *testing.T) {
 				t.Fatalf("Termination = %q, want %q", result.Termination, reason)
 			}
 		})
+	}
+}
+
+func TestProgressOptimizerForwardsPipelineInitialSeed(t *testing.T) {
+	base := &optionsCaptureOptimizer{}
+	wrapped := &progressOptimizer{base: base}
+	initial := &opt.Candidate{Params: []float64{0.75}, Cost: 2}
+	if _, err := wrapped.RunContext(context.Background(), opt.Problem{
+		Eval: func([]float64) float64 { return 1 }, Lower: []float64{0}, Upper: []float64{1}, Dim: 1,
+	}, opt.RunOptions{Initial: initial, ResumeCount: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if base.options.Initial != initial || base.options.ResumeCount != 3 {
+		t.Fatalf("forwarded options = %+v, want initial seed and resume count 3", base.options)
 	}
 }

@@ -108,31 +108,35 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 
 	// Convert to UI job detail
 	jobDetail := ui.JobDetail{
-		ID:            job.ID,
-		State:         string(job.State),
-		RefPath:       job.Config.RefPath,
-		Mode:          string(job.Config.Mode),
-		Circles:       job.Config.Circles,
-		Iterations:    job.Iterations,
-		MaxIters:      job.Config.Iters,
-		PopSize:       job.Config.PopSize,
-		BestCost:      job.BestCost,
-		InitialCost:   job.InitialCost,
-		StartTime:     job.StartTime,
-		EndTime:       job.EndTime,
-		ElapsedSec:    elapsed,
-		CPS:           cps,
-		Termination:   job.Termination,
-		Error:         job.Error,
-		RefWidth:      refWidth,
-		RefHeight:     refHeight,
-		RefSize:       refSize,
-		PSNR:          psnr,
-		PSNRInfinite:  psnrInfinite,
-		SSIM:          cloneFloat(job.SSIM),
-		SSIMEnabled:   job.Config.EnableSSIM,
-		MetricHistory: metricHistory,
-		Parameters:    parameters,
+		ID:              job.ID,
+		State:           string(job.State),
+		RefPath:         job.Config.RefPath,
+		Mode:            string(job.Config.Mode),
+		Variant:         string(job.Config.Variant),
+		Circles:         job.Config.Circles,
+		Iterations:      job.Iterations,
+		Evaluations:     job.Evaluations,
+		MaxIters:        job.Config.Iters * max(job.Config.OptimizerEpochs, 1),
+		ItersPerEpoch:   job.Config.Iters,
+		OptimizerEpochs: max(job.Config.OptimizerEpochs, 1),
+		PopSize:         job.Config.PopSize,
+		BestCost:        job.BestCost,
+		InitialCost:     job.InitialCost,
+		StartTime:       job.StartTime,
+		EndTime:         job.EndTime,
+		ElapsedSec:      elapsed,
+		CPS:             cps,
+		Termination:     job.Termination,
+		Error:           job.Error,
+		RefWidth:        refWidth,
+		RefHeight:       refHeight,
+		RefSize:         refSize,
+		PSNR:            psnr,
+		PSNRInfinite:    psnrInfinite,
+		SSIM:            cloneFloat(job.SSIM),
+		SSIMEnabled:     job.Config.EnableSSIM,
+		MetricHistory:   metricHistory,
+		Parameters:      parameters,
 	}
 
 	// Render the job detail page using templ
@@ -199,6 +203,8 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	circlesStr := r.FormValue("circles")
 	itersStr := r.FormValue("iters")
 	popSizeStr := r.FormValue("popSize")
+	optimizerEpochsStr := r.FormValue("optimizerEpochs")
+	batchSizeStr := r.FormValue("batchSize")
 	seedStr := r.FormValue("seed")
 	convergenceEnabledStr := r.FormValue("convergenceEnabled")
 	convergencePatienceStr := r.FormValue("convergencePatience")
@@ -238,6 +244,26 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		ui.CreateJobPage("Population size must be between 2 and 200").Render(r.Context(), w)
 		return
+	}
+
+	optimizerEpochs := 1
+	if optimizerEpochsStr != "" {
+		optimizerEpochs, err = strconv.Atoi(optimizerEpochsStr)
+		if err != nil || optimizerEpochs < 1 || optimizerEpochs > app.MaxOptimizerEpochs {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			ui.CreateJobPage(fmt.Sprintf("Optimizer epochs must be between 1 and %d", app.MaxOptimizerEpochs)).Render(r.Context(), w)
+			return
+		}
+	}
+
+	batchSize := 0
+	if batchSizeStr != "" {
+		batchSize, err = strconv.Atoi(batchSizeStr)
+		if err != nil || batchSize < 0 {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			ui.CreateJobPage("Batch size must be zero or a positive whole number").Render(r.Context(), w)
+			return
+		}
 	}
 
 	seed, err := strconv.ParseInt(seedStr, 10, 64)
@@ -303,6 +329,8 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		Circles:              circles,
 		Iters:                iters,
 		PopSize:              popSize,
+		OptimizerEpochs:      optimizerEpochs,
+		BatchSize:            batchSize,
 		Seed:                 seed,
 		EnableSSIM:           enableSSIM,
 		ConvergenceEnabled:   convergenceEnabled,

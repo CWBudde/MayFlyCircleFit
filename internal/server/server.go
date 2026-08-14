@@ -67,7 +67,7 @@ func NewServerWithOptions(addr string, checkpointStore store.Store, options Serv
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	policy, policyErr := newInputPolicy(options.InputRoots)
-	return &Server{
+	server := &Server{
 		jobManager: NewJobManager(),
 		store:      checkpointStore,
 		addr:       addr,
@@ -79,6 +79,8 @@ func NewServerWithOptions(addr string, checkpointStore store.Store, options Serv
 		input:      policy,
 		inputErr:   policyErr,
 	}
+	server.restorePersistedJobs()
+	return server
 }
 
 // Start starts the HTTP server

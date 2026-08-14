@@ -11,15 +11,16 @@ import (
 func TestJobDetailPageViewModes(t *testing.T) {
 	psnr, ssim := 31.25, 0.9123
 	job := JobDetail{
-		ID:            "12345678-1234-1234-1234-123456789abc",
-		State:         "pending",
-		StartTime:     time.Date(2026, time.August, 13, 9, 0, 0, 0, time.UTC),
-		RefWidth:      640,
-		RefHeight:     480,
-		RefSize:       2048,
-		PSNR:          &psnr,
-		SSIM:          &ssim,
-		SSIMEnabled:   true,
+		ID:          "12345678-1234-1234-1234-123456789abc",
+		State:       "pending",
+		StartTime:   time.Date(2026, time.August, 13, 9, 0, 0, 0, time.UTC),
+		RefWidth:    640,
+		RefHeight:   480,
+		RefSize:     2048,
+		PSNR:        &psnr,
+		SSIM:        &ssim,
+		SSIMEnabled: true,
+		Iterations:  25, MaxIters: 100, Evaluations: 12_345,
 		MetricHistory: []MetricSample{{Iteration: 1, Cost: 10, PSNR: &psnr, SSIM: &ssim}},
 	}
 
@@ -54,10 +55,23 @@ func TestJobDetailPageViewModes(t *testing.T) {
 		`data-metric="psnr">31.25`,
 		`data-metric="ssim">0.9123`,
 		`id="metric-history-series"`,
+		`id="metric-history-window"`,
+		`<option value="all" selected>All samples</option>`,
 		`<option value="psnr">PSNR</option>`,
 		`<option value="ssim">SSIM</option>`,
 		`id="metric-history-data"`,
-		`selectedMetricValues()`,
+		`id="sparkline-grid"`,
+		`id="sparkline-axes"`,
+		`selectedMetricPoints()`,
+		`"Iteration"`,
+		`font: inherit`,
+		`class="card detail-summary"`, `class="card image-viewer detail-images"`,
+		`class="card detail-history"`, `class="card detail-downloads download-card"`,
+		`.detail-images {`, `order: 2;`, `data-metric="evaluations"`,
+		`RGB mean squared error · lower is better`, `Peak signal-to-noise ratio · higher is better`,
+		`Objective function calls`, `id="sparkline-hover-readout"`,
+		`let sparklineVisible = metricHistory.length > 0`,
+		`Best PNG`, `Parameters JSON`, `Difference PNG`, `HTML Report`,
 	} {
 		if !strings.Contains(body, marker) {
 			t.Errorf("rendered detail page missing %q", marker)
@@ -73,8 +87,12 @@ func TestJobDetailPageOmitsSSIMControlsWhenDisabled(t *testing.T) {
 	if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(output.String(), `<option value="ssim">`) {
+	body := output.String()
+	if strings.Contains(body, `<option value="ssim">`) {
 		t.Fatal("disabled SSIM was offered as a history series")
+	}
+	if !strings.Contains(body, `id="metric-history-empty" style="display: block;`) {
+		t.Fatal("empty history state was not visible")
 	}
 }
 
@@ -126,7 +144,7 @@ func TestJobDetailPageParameterViewerCircleCounts(t *testing.T) {
 			for _, marker := range []string{
 				`id="parameter-viewer"`, `id="parameter-list"`, `id="parameter-data"`,
 				`params.json`, `refreshParameterViewer()`, `formatParameter(circle)`,
-				`Download Best Image`, `Download Parameters`, `Download Difference Image`,
+				`Best PNG`, `Parameters JSON`, `Difference PNG`,
 				`id="download-report"`, `Generating report…`, `URL.createObjectURL(blob)`,
 				`syncArtifactDownloadColormap()`, `role="status" aria-live="polite"`,
 			} {
@@ -154,6 +172,19 @@ func TestJobDetailPageParameterViewerCircleCounts(t *testing.T) {
 				t.Errorf("export disabled = %v, want %v", gotDisabled, wantDisabled)
 			}
 		})
+	}
+}
+
+func TestProgressPercent(t *testing.T) {
+	for _, test := range []struct {
+		iterations, maximum int
+		want                float64
+	}{
+		{25, 100, 25}, {125, 100, 100}, {-5, 100, 0}, {10, 0, 0},
+	} {
+		if got := progressPercent(test.iterations, test.maximum); got != test.want {
+			t.Errorf("progressPercent(%d, %d) = %v, want %v", test.iterations, test.maximum, got, test.want)
+		}
 	}
 }
 
