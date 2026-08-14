@@ -305,9 +305,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		}
 	case app.ModeBatch:
 		if len(job.BestParams) > 0 {
-			if !job.Config.PolishingOnly || len(job.BestParams) != job.Config.Circles*7 {
-				err = fmt.Errorf("batch resume is not supported")
-			} else {
+			if job.Config.PolishingOnly && len(job.BestParams) == job.Config.Circles*7 {
 				bestParams := append([]float64(nil), job.BestParams...)
 				bestCost := rend.Cost(bestParams)
 				result = &renderer.OptimizationResult{
@@ -329,6 +327,26 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 					baseIterations,
 					baseEvaluations,
 				)
+			} else if job.Config.BatchSize >= job.Config.Circles && len(job.BestParams) == job.Config.Circles*7 {
+				// A full-size batch is one optimizer stage over the complete
+				// parameter vector, so progressOptimizer can safely replace that
+				// stage's seed with the checkpoint candidate.
+				result, err = renderer.OptimizeBatchContext(ctx, rend, wrapped, job.Config.Circles, job.Config.BatchSize, convergence)
+				if err == nil && job.Config.PolishingEnabled && result.OptimizedCircles == job.Config.Circles {
+					result, err = polishBatchResult(
+						ctx,
+						jm,
+						checkpointStore,
+						rend,
+						job,
+						result,
+						observer,
+						baseIterations,
+						baseEvaluations,
+					)
+				}
+			} else {
+				err = fmt.Errorf("batch resume is not supported")
 			}
 		} else {
 			result, err = renderer.OptimizeBatchContext(ctx, rend, wrapped, job.Config.Circles, job.Config.BatchSize, convergence)
