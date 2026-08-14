@@ -485,6 +485,7 @@ func polishBatchResult(
 	polish, err := renderer.PolishCircleBatchContext(ctx, rend, polisher, batch.BestParams, renderer.BatchPolishOptions{
 		ActiveSetSize: job.Config.PolishingActiveSetSize,
 		MaxSweeps:     job.Config.PolishingMaxSweeps,
+		Strategy:      renderer.BatchPolishStrategy(job.Config.PolishingStrategy),
 		Observer: func(progress opt.Progress) {
 			progress.Iterations += mainIterations
 			progress.Evaluations += mainEvaluations

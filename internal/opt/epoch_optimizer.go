@@ -59,14 +59,16 @@ func (o *epochOptimizer) RunContext(ctx context.Context, problem Problem, option
 	totalEvaluations := 0
 	best := Result{BestCost: math.Inf(1), Termination: TerminationCompleted}
 	initial := options.Initial
+	additionalSeeds := append([]Candidate(nil), options.AdditionalSeeds...)
 
 	for epoch := 0; epoch < o.epochs; epoch++ {
 		iterationOffset := totalIterations
 		evaluationOffset := totalEvaluations
 		epochOptions := RunOptions{
-			Initial:        initial,
-			ProgressMapper: options.ProgressMapper,
-			ResumeCount:    options.ResumeCount + epoch,
+			Initial:         initial,
+			AdditionalSeeds: additionalSeeds,
+			ProgressMapper:  options.ProgressMapper,
+			ResumeCount:     options.ResumeCount + epoch,
 		}
 		if options.Observer != nil {
 			epochOptions.Observer = func(progress Progress) {
@@ -112,6 +114,9 @@ func (o *epochOptimizer) RunContext(ctx context.Context, problem Problem, option
 			Params: append([]float64(nil), result.BestParams...),
 			Cost:   result.BestCost,
 		}
+		// Alternative basins are useful for the first mixed restart. Later
+		// epochs concentrate around the best candidate found so far.
+		additionalSeeds = nil
 	}
 
 	// Consuming the requested number of restart epochs is a completed run even

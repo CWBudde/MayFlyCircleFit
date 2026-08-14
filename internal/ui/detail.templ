@@ -41,6 +41,7 @@ type JobDetail struct {
 	PolishingEnabled bool
 	PolishingOnly bool
 	CanPolish bool
+	PolishingStrategy string
 	PolishingActiveSetSize int
 	PolishingMaxSweeps int
 	PolishingEpochs int
@@ -276,7 +277,7 @@ templ JobDetailPage(job JobDetail) {
 						} else {
 							<div style="font-weight: 500;">Enabled · { fmt.Sprintf("up to %d sweeps of %d circles", job.PolishingMaxSweeps, job.PolishingActiveSetSize) }</div>
 						}
-						<div style="font-size: 0.75rem; color: var(--text-muted);">{ fmt.Sprintf("%d × %d iterations · stagnation %d · progress threshold %.4g", job.PolishingEpochs, job.PolishingIters, job.PolishingStagnationIters, job.PolishingMinImprovement) }</div>
+						<div style="font-size: 0.75rem; color: var(--text-muted);">{ fmt.Sprintf("%s · %d × %d iterations · stagnation %d · progress threshold %.4g", job.PolishingStrategy, job.PolishingEpochs, job.PolishingIters, job.PolishingStagnationIters, job.PolishingMinImprovement) }</div>
 					} else {
 						<div style="font-weight: 500;">Disabled</div>
 					}

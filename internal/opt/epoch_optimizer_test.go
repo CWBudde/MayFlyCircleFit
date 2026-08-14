@@ -78,11 +78,12 @@ func TestEpochOptimizerReseedsAndReportsCumulativeProgress(t *testing.T) {
 	base := &epochProbeOptimizer{}
 	optimizer := WithEpochs(base, 4).(LifecycleOptimizer)
 	initial := &Candidate{Params: []float64{0}, Cost: 10}
+	alternative := Candidate{Params: []float64{9}, Cost: 11}
 	var progress []Progress
 	result, err := optimizer.RunContext(context.Background(), Problem{
 		Eval: func([]float64) float64 { return 0 }, Lower: []float64{0}, Upper: []float64{1}, Dim: 1,
 	}, RunOptions{
-		Initial: initial, ResumeCount: 5,
+		Initial: initial, AdditionalSeeds: []Candidate{alternative}, ResumeCount: 5,
 		Observer: func(sample Progress) { progress = append(progress, sample) },
 	})
 	if err != nil {
@@ -97,10 +98,16 @@ func TestEpochOptimizerReseedsAndReportsCumulativeProgress(t *testing.T) {
 	if base.options[0].Initial != initial {
 		t.Fatal("first epoch did not receive pipeline seed")
 	}
+	if len(base.options[0].AdditionalSeeds) != 1 || base.options[0].AdditionalSeeds[0].Params[0] != 9 {
+		t.Fatal("first epoch did not receive alternative seed")
+	}
 	for epoch := 1; epoch < 4; epoch++ {
 		want := float64(epoch)
 		if got := base.options[epoch].Initial.Params[0]; got != want {
 			t.Fatalf("epoch %d seed = %v, want prior best %v", epoch+1, got, want)
+		}
+		if len(base.options[epoch].AdditionalSeeds) != 0 {
+			t.Fatalf("epoch %d unexpectedly retained alternative basins", epoch+1)
 		}
 	}
 	if len(progress) != 4 || progress[0].Iterations != 2 || progress[3].Iterations != 8 || progress[3].Evaluations != 12 {

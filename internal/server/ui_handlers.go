@@ -124,6 +124,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		PopSize:                  job.Config.PopSize,
 		PolishingEnabled:         job.Config.PolishingEnabled,
 		PolishingOnly:            job.Config.PolishingOnly,
+		PolishingStrategy:        string(job.Config.PolishingStrategy),
 		CanPolish:                s.store != nil && job.State == StateCompleted && job.Config.Mode == app.ModeBatch && len(job.BestParams) == job.Config.Circles*7,
 		PolishingActiveSetSize:   job.Config.PolishingActiveSetSize,
 		PolishingMaxSweeps:       job.Config.PolishingMaxSweeps,

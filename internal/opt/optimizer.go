@@ -58,7 +58,11 @@ type RunOptions struct {
 	ProgressMapper ProgressMapper
 	EpochObserver  EpochObserver
 	Initial        *Candidate
-	ResumeCount    int
+	// AdditionalSeeds supplies alternative known candidates for a mixed
+	// continuation population. Initial remains the incumbent that must not be
+	// lost; additional seeds broaden exploration around other promising basins.
+	AdditionalSeeds []Candidate
+	ResumeCount     int
 }
 
 // Termination describes why an optimizer stopped.

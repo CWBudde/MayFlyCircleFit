@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"reflect"
 	"slices"
 	"testing"
 )
@@ -236,6 +237,32 @@ func TestMayflyAdapterSeedsResumePopulationAroundBest(t *testing.T) {
 	}
 	if result.Evaluations == 0 || result.Iterations != 1 {
 		t.Fatalf("missing measured work: %+v", result)
+	}
+}
+
+func TestMayflyAdapterMixesIncumbentAndAlternativeSeedPopulations(t *testing.T) {
+	incumbent := Candidate{Params: []float64{-3, 2}, Cost: 13}
+	alternative := Candidate{Params: []float64{4, -1}, Cost: 17}
+	var evaluations [][]float64
+	optimizer := NewMayfly(1, 20, 42).(*MayflyAdapter)
+	result, err := optimizer.RunContext(context.Background(), Problem{
+		Eval: func(params []float64) float64 {
+			evaluations = append(evaluations, append([]float64(nil), params...))
+			return sphere(params)
+		},
+		Lower: []float64{-10, -10}, Upper: []float64{10, 10}, Dim: 2,
+	}, RunOptions{
+		Initial:         &incumbent,
+		AdditionalSeeds: []Candidate{alternative},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evaluations) < 2 || !reflect.DeepEqual(evaluations[0], incumbent.Params) || !reflect.DeepEqual(evaluations[1], alternative.Params) {
+		t.Fatalf("first mixed seeds = %v, want incumbent %v then alternative %v", evaluations[:min(2, len(evaluations))], incumbent.Params, alternative.Params)
+	}
+	if result.BestCost > incumbent.Cost {
+		t.Fatalf("mixed continuation lost incumbent: %+v", result)
 	}
 }
 

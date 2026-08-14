@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -977,7 +978,18 @@ func TestPolishEndpointCreatesCheckpointContinuation(t *testing.T) {
 	// be inspected without racing the background optimizer.
 	server.cancel()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+source.ID+"/polish", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+source.ID+"/polish", strings.NewReader(`{
+		"strategy":"hybrid-overlap",
+		"activeSetSize":1,
+		"maxSweeps":2,
+		"epochs":2,
+		"iters":20,
+		"stagnationIters":10,
+		"minImprovement":0.01,
+		"popSize":40,
+		"seed":99
+	}`))
+	req.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, req)
 	if response.Code != http.StatusCreated {
@@ -995,6 +1007,12 @@ func TestPolishEndpointCreatesCheckpointContinuation(t *testing.T) {
 	}
 	if !continuation.Config.PolishingEnabled || !continuation.Config.PolishingOnly || continuation.Config.Mode != app.ModeBatch {
 		t.Fatalf("polishing continuation config = %+v", continuation.Config)
+	}
+	if continuation.Config.PolishingStrategy != app.PolishingHybridOverlap || continuation.Config.PolishingActiveSetSize != 1 ||
+		continuation.Config.PolishingMaxSweeps != 2 || continuation.Config.PolishingEpochs != 2 || continuation.Config.PolishingIters != 20 ||
+		continuation.Config.PolishingStagnationIters != 10 || continuation.Config.PolishingMinImprovement != 0.01 ||
+		continuation.Config.PopSize != 40 || continuation.Config.Seed != 99 || continuation.Config.EffectiveSeed != 99 {
+		t.Fatalf("polishing continuation overrides = %+v", continuation.Config)
 	}
 	if continuation.Iterations != 8000 || continuation.Evaluations != 900000 || !reflect.DeepEqual(continuation.BestParams, params) {
 		t.Fatalf("polishing continuation state = %+v", continuation)

@@ -20,7 +20,7 @@ func TestNormalizeAppliesCanonicalDefaults(t *testing.T) {
 	if config.PolishingEnabled {
 		t.Fatal("polishing must remain opt-in")
 	}
-	if config.PolishingActiveSetSize != 5 || config.PolishingMaxSweeps != 3 || config.PolishingEpochs != 2 || config.PolishingIters != 1000 || config.PolishingStagnationIters != 500 || config.PolishingMinImprovement != 0.001 {
+	if config.PolishingStrategy != PolishingReplacement || config.PolishingActiveSetSize != 5 || config.PolishingMaxSweeps != 3 || config.PolishingEpochs != 2 || config.PolishingIters != 1000 || config.PolishingStagnationIters != 500 || config.PolishingMinImprovement != 0.001 {
 		t.Fatalf("polishing defaults not applied: %+v", config)
 	}
 	if config.Threads != defaults.Threads || config.Threads < 1 {
@@ -71,6 +71,7 @@ func TestValidateBoundaries(t *testing.T) {
 		{"batch", func(c *JobConfig) { c.Mode, c.BatchSize = ModeBatch, c.Circles+1 }, "batchSize"},
 		{"polishing requires batch", func(c *JobConfig) { c.PolishingEnabled = true }, "polishingEnabled"},
 		{"polishing only requires polishing", func(c *JobConfig) { c.PolishingOnly = true }, "polishingOnly"},
+		{"polishing strategy", func(c *JobConfig) { c.PolishingStrategy = "invalid" }, "polishingStrategy"},
 		{"polishing active set low", func(c *JobConfig) { c.PolishingActiveSetSize = -1 }, "polishingActiveSetSize"},
 		{"polishing active set over circles", func(c *JobConfig) { c.PolishingActiveSetSize = c.Circles + 1 }, "polishingActiveSetSize"},
 		{"polishing sweeps low", func(c *JobConfig) { c.PolishingMaxSweeps = -1 }, "polishingMaxSweeps"},
@@ -118,6 +119,9 @@ func TestNormalizeOldConfigKeepsPolishingDisabled(t *testing.T) {
 	}
 	if config.PolishingEnabled {
 		t.Fatal("an old configuration unexpectedly enabled polishing")
+	}
+	if config.PolishingStrategy != PolishingReplacement {
+		t.Fatalf("old config strategy = %q, want replacement", config.PolishingStrategy)
 	}
 	if config.PolishingActiveSetSize != 3 {
 		t.Fatalf("active set size = %d, want clamped default 3", config.PolishingActiveSetSize)

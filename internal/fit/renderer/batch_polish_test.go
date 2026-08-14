@@ -10,8 +10,9 @@ import (
 )
 
 type fixedPolishOptimizer struct {
-	params []float64
-	calls  int
+	params  []float64
+	calls   int
+	options []opt.RunOptions
 }
 
 func (o *fixedPolishOptimizer) Run(eval func([]float64) float64, _, _ []float64, _ int) ([]float64, float64) {
@@ -21,6 +22,7 @@ func (o *fixedPolishOptimizer) Run(eval func([]float64) float64, _, _ []float64,
 
 func (o *fixedPolishOptimizer) RunContext(_ context.Context, problem opt.Problem, options opt.RunOptions) (opt.Result, error) {
 	o.calls++
+	o.options = append(o.options, options)
 	params := append([]float64(nil), o.params...)
 	cost := problem.Eval(params)
 	if options.Observer != nil {
@@ -152,6 +154,56 @@ func TestMergeActiveCircleParamsPreservesOriginalDrawSlots(t *testing.T) {
 	}
 }
 
+func TestSelectHybridOverlapCirclesCombinesWeakAnchorsAndPartners(t *testing.T) {
+	params := append(circleParams(2, 2, 2, color.NRGBA{A: 255}, 1), circleParams(17, 17, 2, color.NRGBA{A: 255}, 1)...)
+	params = append(params, circleParams(2, 2, 4, color.NRGBA{A: 255}, 1)...)
+	params = append(params, circleParams(17, 17, 4, color.NRGBA{A: 255}, 1)...)
+	params = append(params, circleParams(10, 10, 1, color.NRGBA{A: 255}, 1)...)
+	audit := BatchAudit{Circles: []CircleAudit{
+		{Circle: 1, OriginalCircle: 1, MSEContribution: 1, FinalChangedPixels: 10},
+		{Circle: 2, OriginalCircle: 2, MSEContribution: 2, FinalChangedPixels: 10},
+		{Circle: 3, OriginalCircle: 3, MSEContribution: 20, FinalChangedPixels: 10},
+		{Circle: 4, OriginalCircle: 4, MSEContribution: 30, FinalChangedPixels: 10},
+		{Circle: 5, OriginalCircle: 5, MSEContribution: 3, FinalChangedPixels: 10},
+	}}
+
+	got := selectHybridOverlapCircles(params, audit, 4, 20, 20)
+	want := []int{0, 1, 2, 3}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("hybrid active set = %v, want weak anchors plus overlap partners %v", got, want)
+	}
+	retained := removeActiveCircleParams(params, got)
+	if !reflect.DeepEqual(retained, params[4*paramsPerCircle:]) {
+		t.Fatal("hybrid removal did not preserve the retained draw order")
+	}
+}
+
+func TestPolishCircleBatchHybridSeedsIncumbentAndResidualAlternative(t *testing.T) {
+	ref := solidImage(7, 7, color.NRGBA{A: 255})
+	base := NewCPURenderer(ref, 1)
+	initial := circleParams(3, 3, 3, color.NRGBA{R: 96, G: 96, B: 96, A: 255}, 1)
+	optimizer := &fixedPolishOptimizer{params: initial}
+
+	result, err := PolishCircleBatchContext(context.Background(), base, optimizer, initial, BatchPolishOptions{
+		ActiveSetSize: 1,
+		MaxSweeps:     1,
+		Strategy:      BatchPolishHybridOverlap,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AcceptedSweeps != 0 || len(optimizer.options) != 1 {
+		t.Fatalf("hybrid result/options = %+v/%d", result, len(optimizer.options))
+	}
+	options := optimizer.options[0]
+	if options.Initial == nil || !reflect.DeepEqual(options.Initial.Params, initial) {
+		t.Fatalf("hybrid incumbent seed = %+v, want current active parameters", options.Initial)
+	}
+	if len(options.AdditionalSeeds) != 1 || reflect.DeepEqual(options.AdditionalSeeds[0].Params, initial) {
+		t.Fatalf("hybrid residual alternatives = %+v, want distinct seed", options.AdditionalSeeds)
+	}
+}
+
 func TestPolishCircleBatchValidatesOptions(t *testing.T) {
 	ref := solidImage(3, 3, color.NRGBA{A: 255})
 	base := NewCPURenderer(ref, 1)
@@ -160,6 +212,7 @@ func TestPolishCircleBatchValidatesOptions(t *testing.T) {
 		{ActiveSetSize: 0, MaxSweeps: 1},
 		{ActiveSetSize: 2, MaxSweeps: 1},
 		{ActiveSetSize: 1, MaxSweeps: -1},
+		{ActiveSetSize: 1, MaxSweeps: 1, Strategy: "unsupported"},
 	}
 	for _, options := range tests {
 		if _, err := PolishCircleBatchContext(context.Background(), base, &fixedPolishOptimizer{params: params}, params, options); err == nil {

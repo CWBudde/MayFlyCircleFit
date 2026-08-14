@@ -72,6 +72,7 @@ func TestRunBatchSizeFlagDefaultsToAutomatic(t *testing.T) {
 func TestRunPolishingFlagDefaults(t *testing.T) {
 	tests := map[string]string{
 		"polishing":                  "false",
+		"polishing-strategy":         "replacement",
 		"polishing-active-set-size":  "5",
 		"polishing-max-sweeps":       "3",
 		"polishing-epochs":           "2",

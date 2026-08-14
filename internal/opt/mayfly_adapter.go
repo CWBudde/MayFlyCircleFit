@@ -127,16 +127,9 @@ func NewMayflyVariant(variant string, maxIters, popSize int, seed int64, options
 
 // RunWithInitial executes optimization starting from an initial solution.
 //
-// IMPLEMENTATION NOTE: The external Mayfly library does not support custom
-// population initialization. Therefore, this implementation uses a simple
-// strategy: run the optimizer and return the better of (optimizer result, initial solution).
-//
-// This ensures we never lose progress when resuming from a checkpoint:
-//   - If the optimizer finds a better solution, we use it
-//   - If not, we keep the checkpoint solution
-//
-// Future improvement: Switch to a different optimizer library that supports
-// population seeding, or fork the Mayfly library to add this feature.
+// The initial solution seeds half of each Mayfly population with local
+// perturbations while the remaining slots stay random. The incumbent is also
+// retained independently, so a continuation cannot lose its checkpoint.
 func (m *MayflyAdapter) RunWithInitial(initialParams []float64, initialCost float64, eval func([]float64) float64, lower, upper []float64, dim int) ([]float64, float64) {
 	result, err := m.RunContext(context.Background(), Problem{
 		Eval: eval, Lower: lower, Upper: upper, Dim: dim,
@@ -272,20 +265,32 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 	var runOptions []mayfly.RunOption
 	best := Result{BestCost: math.Inf(1), Termination: TerminationCompleted}
 	bestViolation := math.Inf(1)
+	seedCandidates := make([]Candidate, 0, len(options.AdditionalSeeds)+1)
 	if options.Initial != nil {
-		initial := Candidate{Params: append([]float64(nil), options.Initial.Params...), Cost: options.Initial.Cost}
-		originalParams := append([]float64(nil), initial.Params...)
-		repairCandidate(problem, initial.Params)
-		if !slices.Equal(originalParams, initial.Params) {
-			initial.Cost = problem.Eval(initial.Params)
+		seedCandidates = append(seedCandidates, *options.Initial)
+	}
+	seedCandidates = append(seedCandidates, options.AdditionalSeeds...)
+	normalizedSeeds := make([][]float64, 0, len(seedCandidates))
+	for index, candidate := range seedCandidates {
+		candidate.Params = append([]float64(nil), candidate.Params...)
+		originalParams := append([]float64(nil), candidate.Params...)
+		repairCandidate(problem, candidate.Params)
+		if !slices.Equal(originalParams, candidate.Params) {
+			candidate.Cost = problem.Eval(candidate.Params)
 		}
-		if err := validateCandidate(initial, problem); err != nil {
-			return Result{}, err
+		if err := validateCandidate(candidate, problem); err != nil {
+			return Result{}, fmt.Errorf("initial candidate %d: %w", index, err)
 		}
-		best.BestParams = append([]float64(nil), initial.Params...)
-		best.BestCost = initial.Cost
-		bestViolation = inequalityViolation(problem.Inequalities, initial.Params)
-		maleSeeds, femaleSeeds := seededPopulation(normalize(initial.Params), m.popSize, rng)
+		violation := inequalityViolation(problem.Inequalities, candidate.Params)
+		if betterCandidate(candidate.Cost, violation, best.BestCost, bestViolation, config.Constraints) {
+			best.BestParams = append([]float64(nil), candidate.Params...)
+			best.BestCost = candidate.Cost
+			bestViolation = violation
+		}
+		normalizedSeeds = append(normalizedSeeds, normalize(candidate.Params))
+	}
+	if len(normalizedSeeds) > 0 {
+		maleSeeds, femaleSeeds := seededPopulationFromCandidates(normalizedSeeds, m.popSize, rng)
 		runOptions = append(runOptions, mayfly.WithInitialPopulation(maleSeeds, femaleSeeds))
 	}
 	if m.logger != nil {
@@ -428,6 +433,13 @@ func validateCandidate(candidate Candidate, problem Problem) error {
 }
 
 func seededPopulation(best []float64, population int, rng *rand.Rand) ([][]float64, [][]float64) {
+	return seededPopulationFromCandidates([][]float64{best}, population, rng)
+}
+
+func seededPopulationFromCandidates(candidates [][]float64, population int, rng *rand.Rand) ([][]float64, [][]float64) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
 	seedCount := population / 2
 	if seedCount < 1 {
 		seedCount = 1
@@ -435,8 +447,8 @@ func seededPopulation(best []float64, population int, rng *rand.Rand) ([][]float
 	makeSeeds := func(exact bool) [][]float64 {
 		seeds := make([][]float64, seedCount)
 		for i := range seeds {
-			seeds[i] = append([]float64(nil), best...)
-			if !exact || i > 0 {
+			seeds[i] = append([]float64(nil), candidates[i%len(candidates)]...)
+			if !exact || i >= len(candidates) {
 				for dimension := range seeds[i] {
 					seeds[i][dimension] += rng.NormFloat64() * 0.05
 					seeds[i][dimension] = math.Max(0, math.Min(1, seeds[i][dimension]))

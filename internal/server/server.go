@@ -547,7 +547,7 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 	response := jobStatusResponse{
 		ID: job.ID, State: job.State, Config: job.Config,
 		BestCost: job.BestCost, InitialCost: job.InitialCost,
-		PSNR:         psnr, PSNRInfinite: psnrInfinite, SSIM: cloneFloat(job.SSIM),
+		PSNR: psnr, PSNRInfinite: psnrInfinite, SSIM: cloneFloat(job.SSIM),
 		Iterations: job.Iterations, Evaluations: job.Evaluations,
 		Termination: job.Termination, Elapsed: elapsed.Seconds(), CPS: cps,
 		StartTime: job.StartTime, EndTime: job.EndTime, Error: job.Error,
@@ -846,6 +846,18 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 
 // handlePolishJob creates a continuation that runs only transactional
 // active-set polishing from a completed batch checkpoint.
+type polishJobRequest struct {
+	Strategy        *app.PolishingStrategy `json:"strategy,omitempty"`
+	ActiveSetSize   *int                   `json:"activeSetSize,omitempty"`
+	MaxSweeps       *int                   `json:"maxSweeps,omitempty"`
+	Epochs          *int                   `json:"epochs,omitempty"`
+	Iters           *int                   `json:"iters,omitempty"`
+	StagnationIters *int                   `json:"stagnationIters,omitempty"`
+	MinImprovement  *float64               `json:"minImprovement,omitempty"`
+	PopSize         *int                   `json:"popSize,omitempty"`
+	Seed            *int64                 `json:"seed,omitempty"`
+}
+
 func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID string) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -854,6 +866,14 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 	}
 	if s.store == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "checkpoint_unavailable", "checkpoint feature not enabled")
+		return
+	}
+	var request polishJobRequest
+	r.Body = http.MaxBytesReader(w, r.Body, app.MaxRequestBody)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil && !errors.Is(err, io.EOF) {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid polishing configuration")
 		return
 	}
 	source, ok := s.jobManager.GetJob(jobID)
@@ -904,6 +924,39 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 	config.PolishingOnly = true
 	config.EffectiveSeed = checkpoint.EffectiveSeed
 	config.ResumeCount = checkpoint.ResumeCount + 1
+	if request.Strategy != nil {
+		config.PolishingStrategy = *request.Strategy
+	}
+	if request.ActiveSetSize != nil {
+		config.PolishingActiveSetSize = *request.ActiveSetSize
+	}
+	if request.MaxSweeps != nil {
+		config.PolishingMaxSweeps = *request.MaxSweeps
+	}
+	if request.Epochs != nil {
+		config.PolishingEpochs = *request.Epochs
+	}
+	if request.Iters != nil {
+		config.PolishingIters = *request.Iters
+	}
+	if request.StagnationIters != nil {
+		config.PolishingStagnationIters = *request.StagnationIters
+	}
+	if request.MinImprovement != nil {
+		config.PolishingMinImprovement = *request.MinImprovement
+	}
+	if request.PopSize != nil {
+		config.PopSize = *request.PopSize
+	}
+	if request.Seed != nil {
+		config.Seed = *request.Seed
+		config.EffectiveSeed = *request.Seed
+	}
+	config, err = app.Normalize(config)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid polishing configuration")
+		return
+	}
 
 	evaluations := int(checkpoint.Evaluations)
 	if int64(evaluations) != checkpoint.Evaluations {
@@ -929,10 +982,12 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"jobId":        newJob.ID,
-		"polishedFrom": jobID,
-		"state":        string(newJob.State),
-		"previousCost": checkpoint.BestCost,
+		"jobId":         newJob.ID,
+		"polishedFrom":  jobID,
+		"state":         string(newJob.State),
+		"previousCost":  checkpoint.BestCost,
+		"strategy":      config.PolishingStrategy,
+		"activeSetSize": config.PolishingActiveSetSize,
 	})
 }
 

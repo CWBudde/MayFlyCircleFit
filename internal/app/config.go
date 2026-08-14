@@ -50,41 +50,51 @@ const (
 	VariantOLCE     Variant = "olce"
 )
 
+// PolishingStrategy selects how active circles and restart populations are
+// chosen during transactional batch polishing.
+type PolishingStrategy string
+
+const (
+	PolishingReplacement   PolishingStrategy = "replacement"
+	PolishingHybridOverlap PolishingStrategy = "hybrid-overlap"
+)
+
 // JobConfig is the canonical configuration shared by all application entry
 // points and persisted checkpoints.
 type JobConfig struct {
-	RefPath                  string  `json:"refPath"`
-	CanvasPath               string  `json:"canvasPath,omitempty"`
-	Mode                     Mode    `json:"mode"`
-	Backend                  Backend `json:"backend,omitempty"`
-	Variant                  Variant `json:"variant,omitempty"`
-	Circles                  int     `json:"circles"`
-	Iters                    int     `json:"iters"`
-	PopSize                  int     `json:"popSize"`
-	OptimizerEpochs          int     `json:"optimizerEpochs,omitempty"`
-	BatchSize                int     `json:"batchSize,omitempty"`
-	PolishingEnabled         bool    `json:"polishingEnabled,omitempty"`
-	PolishingOnly            bool    `json:"polishingOnly,omitempty"`
-	PolishingActiveSetSize   int     `json:"polishingActiveSetSize,omitempty"`
-	PolishingMaxSweeps       int     `json:"polishingMaxSweeps,omitempty"`
-	PolishingEpochs          int     `json:"polishingEpochs,omitempty"`
-	PolishingIters           int     `json:"polishingIters,omitempty"`
-	PolishingStagnationIters int     `json:"polishingStagnationIters,omitempty"`
-	PolishingMinImprovement  float64 `json:"polishingMinImprovement,omitempty"`
-	Threads                  int     `json:"threads,omitempty"`
-	Seed                     int64   `json:"seed"`
-	EffectiveSeed            int64   `json:"effectiveSeed,omitempty"`
-	ResumeCount              int     `json:"resumeCount,omitempty"`
-	CheckpointInterval       int     `json:"checkpointInterval,omitempty"`
-	TraceInterval            int     `json:"traceInterval,omitempty"`
-	EnableTrace              bool    `json:"enableTrace,omitempty"`
-	DisableTrace             bool    `json:"disableTrace,omitempty"`
-	EnableSSIM               bool    `json:"enableSSIM,omitempty"`
-	SaveSnapshots            bool    `json:"saveSnapshots,omitempty"`
-	ConvergenceEnabled       bool    `json:"convergenceEnabled,omitempty"`
-	DisableConvergence       bool    `json:"disableConvergence,omitempty"`
-	ConvergencePatience      int     `json:"convergencePatience,omitempty"`
-	ConvergenceThreshold     float64 `json:"convergenceThreshold,omitempty"`
+	RefPath                  string            `json:"refPath"`
+	CanvasPath               string            `json:"canvasPath,omitempty"`
+	Mode                     Mode              `json:"mode"`
+	Backend                  Backend           `json:"backend,omitempty"`
+	Variant                  Variant           `json:"variant,omitempty"`
+	Circles                  int               `json:"circles"`
+	Iters                    int               `json:"iters"`
+	PopSize                  int               `json:"popSize"`
+	OptimizerEpochs          int               `json:"optimizerEpochs,omitempty"`
+	BatchSize                int               `json:"batchSize,omitempty"`
+	PolishingEnabled         bool              `json:"polishingEnabled,omitempty"`
+	PolishingOnly            bool              `json:"polishingOnly,omitempty"`
+	PolishingStrategy        PolishingStrategy `json:"polishingStrategy,omitempty"`
+	PolishingActiveSetSize   int               `json:"polishingActiveSetSize,omitempty"`
+	PolishingMaxSweeps       int               `json:"polishingMaxSweeps,omitempty"`
+	PolishingEpochs          int               `json:"polishingEpochs,omitempty"`
+	PolishingIters           int               `json:"polishingIters,omitempty"`
+	PolishingStagnationIters int               `json:"polishingStagnationIters,omitempty"`
+	PolishingMinImprovement  float64           `json:"polishingMinImprovement,omitempty"`
+	Threads                  int               `json:"threads,omitempty"`
+	Seed                     int64             `json:"seed"`
+	EffectiveSeed            int64             `json:"effectiveSeed,omitempty"`
+	ResumeCount              int               `json:"resumeCount,omitempty"`
+	CheckpointInterval       int               `json:"checkpointInterval,omitempty"`
+	TraceInterval            int               `json:"traceInterval,omitempty"`
+	EnableTrace              bool              `json:"enableTrace,omitempty"`
+	DisableTrace             bool              `json:"disableTrace,omitempty"`
+	EnableSSIM               bool              `json:"enableSSIM,omitempty"`
+	SaveSnapshots            bool              `json:"saveSnapshots,omitempty"`
+	ConvergenceEnabled       bool              `json:"convergenceEnabled,omitempty"`
+	DisableConvergence       bool              `json:"disableConvergence,omitempty"`
+	ConvergencePatience      int               `json:"convergencePatience,omitempty"`
+	ConvergenceThreshold     float64           `json:"convergenceThreshold,omitempty"`
 
 	// Optimizer-level early stopping. These are per-iteration criteria applied
 	// inside a single optimizer run, and are unrelated to the Convergence*
@@ -120,6 +130,7 @@ func DefaultConfig() JobConfig {
 		OptimizerEpochs:          1,
 		BatchSize:                5,
 		PolishingActiveSetSize:   5,
+		PolishingStrategy:        PolishingReplacement,
 		PolishingMaxSweeps:       3,
 		PolishingEpochs:          2,
 		PolishingIters:           1000,
@@ -169,6 +180,9 @@ func (c *JobConfig) ApplyDefaults() error {
 		if c.Circles > 0 && c.PolishingActiveSetSize > c.Circles {
 			c.PolishingActiveSetSize = c.Circles
 		}
+	}
+	if c.PolishingStrategy == "" {
+		c.PolishingStrategy = defaults.PolishingStrategy
 	}
 	if c.PolishingMaxSweeps == 0 {
 		c.PolishingMaxSweeps = defaults.PolishingMaxSweeps
@@ -260,6 +274,11 @@ func (c JobConfig) Validate() error {
 	}
 	if c.PolishingOnly && !c.PolishingEnabled {
 		return invalid("polishingOnly", "requires polishing to be enabled")
+	}
+	switch c.PolishingStrategy {
+	case PolishingReplacement, PolishingHybridOverlap:
+	default:
+		return invalid("polishingStrategy", "must be replacement or hybrid-overlap")
 	}
 	if c.PolishingActiveSetSize < 1 || c.PolishingActiveSetSize > MaxBatchSize || c.PolishingActiveSetSize > c.Circles {
 		return invalid("polishingActiveSetSize", "must be positive, within the limit, and no larger than circles")
