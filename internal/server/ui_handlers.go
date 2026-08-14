@@ -132,6 +132,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		PolishingStagnationIters: job.Config.PolishingStagnationIters,
 		PolishingMinImprovement:  job.Config.PolishingMinImprovement,
 		BestCost:                 job.BestCost,
+		BestRevision:             job.BestRevision,
 		InitialCost:              job.InitialCost,
 		StartTime:                job.StartTime,
 		EndTime:                  job.EndTime,

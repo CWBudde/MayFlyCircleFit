@@ -457,6 +457,13 @@ func TestServer_GetDiffImageColormap(t *testing.T) {
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("%s diff status = %d, want 200: %s", test.name, recorder.Code, recorder.Body.String())
 		}
+		colormap := test.name
+		if colormap == "default" {
+			colormap = "turbo"
+		}
+		if got, want := recorder.Header().Get("ETag"), fmt.Sprintf(`"diff-%s-1"`, colormap); got != want {
+			t.Errorf("%s ETag = %q, want %q", test.name, got, want)
+		}
 		decoded, err := png.Decode(recorder.Body)
 		if err != nil {
 			t.Fatalf("decode %s diff: %v", test.name, err)

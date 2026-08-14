@@ -48,6 +48,7 @@ type JobDetail struct {
 	PolishingStagnationIters int
 	PolishingMinImprovement float64
 	BestCost      float64
+	BestRevision  uint64
 	InitialCost   float64
 	StartTime     time.Time
 	EndTime       *time.Time
@@ -599,7 +600,7 @@ templ JobDetailPage(job JobDetail) {
 				}
 			}
 		</style>
-		<div id="image-viewer" class="card image-viewer detail-images" data-view-mode="side-by-side" data-job-id={ job.ID } data-job-state={ job.State } data-max-iters={ fmt.Sprintf("%d", job.MaxIters) }>
+		<div id="image-viewer" class="card image-viewer detail-images" data-view-mode="side-by-side" data-job-id={ job.ID } data-job-state={ job.State } data-max-iters={ fmt.Sprintf("%d", job.MaxIters) } data-best-revision={ fmt.Sprintf("%d", job.BestRevision) }>
 			<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem;">
 				<h2 style="font-size: 1.25rem; font-weight: 600;">
 					Images
@@ -664,7 +665,7 @@ templ JobDetailPage(job JobDetail) {
 					<div class="image-frame">
 						<img
 							id="best-image"
-							src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/best.png?t=%d", job.ID, time.Now().Unix())) }
+							src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/best.png?v=%d", job.ID, job.BestRevision)) }
 							alt="Current Best Image"
 						/>
 						<div id="best-image-loading" class="image-state image-loading">
@@ -697,7 +698,7 @@ templ JobDetailPage(job JobDetail) {
 					<div class="image-frame image-frame-difference">
 						<img
 							id="diff-image"
-							src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/diff.png?colormap=turbo&t=%d", job.ID, time.Now().Unix())) }
+							src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/diff.png?colormap=turbo&v=%d", job.ID, job.BestRevision)) }
 							alt="False-color difference heatmap"
 						/>
 						<div id="diff-image-loading" class="image-state image-loading" style="color: #cccccc;">
@@ -780,6 +781,8 @@ templ JobDetailPage(job JobDetail) {
 				const jobId = imageViewer.dataset.jobId;
 				const jobState = imageViewer.dataset.jobState;
 				const maxIters = Number.parseInt(imageViewer.dataset.maxIters, 10) || 0;
+				let lastRenderedBestRevision =
+					Number.parseInt(imageViewer.dataset.bestRevision, 10) || 0;
 				const viewStorageKey = "mayflycirclefit.viewMode";
 				const viewModes = ["reference", "best", "side-by-side", "difference"];
 				const shortcutViews = {
@@ -943,6 +946,9 @@ templ JobDetailPage(job JobDetail) {
 
 					eventSource.onmessage = function (event) {
 						const data = JSON.parse(event.data);
+						const bestChanged =
+							typeof data.bestRevision === "number" &&
+							data.bestRevision > lastRenderedBestRevision;
 
 						// Update metrics
 						updateMetric("best-cost", data.bestCost.toFixed(4));
@@ -970,22 +976,22 @@ templ JobDetailPage(job JobDetail) {
 						) {
 							eventSource.close();
 							location.reload();
-						} else {
+						} else if (bestChanged) {
+							lastRenderedBestRevision = data.bestRevision;
 							// Refresh images with cache busting and loading states
-							const timestamp = new Date().getTime();
 							refreshImage(
 								"best-image",
 								"best-image-loading",
 								jobId,
 								"best.png",
-								timestamp,
+								lastRenderedBestRevision,
 							);
 							refreshImage(
 								"diff-image",
 								"diff-image-loading",
 								jobId,
 								"diff.png",
-								timestamp,
+								lastRenderedBestRevision,
 								selectedHeatmapColormap(),
 							);
 						}
@@ -1210,7 +1216,7 @@ templ JobDetailPage(job JobDetail) {
 					loadingId,
 					jobId,
 					filename,
-					timestamp,
+					revision,
 					colormap,
 				) {
 					const img = document.getElementById(imgId);
@@ -1252,7 +1258,7 @@ templ JobDetailPage(job JobDetail) {
 						}
 					};
 					let imageURL =
-						"/api/v1/jobs/" + jobId + "/" + filename + "?t=" + timestamp;
+						"/api/v1/jobs/" + jobId + "/" + filename + "?v=" + revision;
 					if (colormap) {
 						imageURL += "&colormap=" + encodeURIComponent(colormap);
 					}
@@ -1272,7 +1278,7 @@ templ JobDetailPage(job JobDetail) {
 							"diff-image-loading",
 							jobId,
 							"diff.png",
-							Date.now(),
+							lastRenderedBestRevision,
 							select.value,
 						);
 					});

@@ -21,6 +21,9 @@ func TestJobDetailPageViewModes(t *testing.T) {
 		SSIM:        &ssim,
 		SSIMEnabled: true,
 		Iterations:  25, MaxIters: 100, Evaluations: 12_345,
+		BestCost:      12.5,
+		BestRevision:  7,
+		Parameters:    []CircleParameter{{Number: 1}},
 		MetricHistory: []MetricSample{{Iteration: 1, Cost: 10, PSNR: &psnr, SSIM: &ssim}},
 	}
 
@@ -32,6 +35,7 @@ func TestJobDetailPageViewModes(t *testing.T) {
 
 	for _, marker := range []string{
 		`data-view-mode="side-by-side"`,
+		`data-best-revision="7"`,
 		`name="view-mode" value="reference" aria-keyshortcuts="1"`,
 		`name="view-mode" value="best" aria-keyshortcuts="2"`,
 		`name="view-mode" value="side-by-side" aria-keyshortcuts="3" checked`,
@@ -46,10 +50,13 @@ func TestJobDetailPageViewModes(t *testing.T) {
 		`id="heatmap-colormap"`,
 		`<option value="turbo" selected>Turbo</option>`,
 		`<option value="magma">Magma</option>`,
-		`diff.png?colormap=turbo&amp;t=`,
+		`diff.png?colormap=turbo&amp;v=7`,
 		`id="heatmap-legend-gradient"`,
 		`Mean absolute RGB error per pixel`,
 		`selectedHeatmapColormap()`,
+		`let lastRenderedBestRevision =`,
+		`data.bestRevision > lastRenderedBestRevision`,
+		`} else if (bestChanged) {`,
 		`640 × 480 px`,
 		`title="2048 bytes">2.0 KiB`,
 		`data-metric="psnr">31.25`,

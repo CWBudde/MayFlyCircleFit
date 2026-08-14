@@ -59,17 +59,18 @@ func jobFromCheckpoint(checkpoint *store.Checkpoint) *Job {
 
 	end := checkpoint.Timestamp
 	return &Job{
-		ID:          checkpoint.JobID,
-		State:       state,
-		Config:      checkpoint.Config,
-		BestParams:  append([]float64(nil), checkpoint.BestParams...),
-		BestCost:    checkpoint.BestCost,
-		InitialCost: checkpoint.InitialCost,
-		Iterations:  checkpoint.Iterations,
-		Evaluations: int(checkpoint.Evaluations),
-		Termination: checkpoint.Termination,
-		StartTime:   checkpoint.Timestamp,
-		EndTime:     &end,
+		ID:           checkpoint.JobID,
+		State:        state,
+		Config:       checkpoint.Config,
+		BestParams:   append([]float64(nil), checkpoint.BestParams...),
+		BestCost:     checkpoint.BestCost,
+		BestRevision: 1,
+		InitialCost:  checkpoint.InitialCost,
+		Iterations:   checkpoint.Iterations,
+		Evaluations:  int(checkpoint.Evaluations),
+		Termination:  checkpoint.Termination,
+		StartTime:    checkpoint.Timestamp,
+		EndTime:      &end,
 	}
 }
 

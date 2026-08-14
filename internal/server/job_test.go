@@ -2,9 +2,35 @@ package server
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 )
+
+func TestJobManagerBestRevisionAdvancesOnlyForStrictImprovements(t *testing.T) {
+	jm := NewJobManager()
+	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
+	if err := jm.StartJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := jm.UpdateProgress(job.ID, 1, 10, []float64{1}, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := jm.UpdateProgress(job.ID, 2, 20, []float64{2}, 3); err != nil {
+		t.Fatal(err)
+	}
+	unchanged, _ := jm.GetJob(job.ID)
+	if unchanged.BestRevision != 1 || !reflect.DeepEqual(unchanged.BestParams, []float64{1}) {
+		t.Fatalf("equal-cost update changed best result: revision %d params %v", unchanged.BestRevision, unchanged.BestParams)
+	}
+	if err := jm.UpdateProgress(job.ID, 3, 30, []float64{3}, 2); err != nil {
+		t.Fatal(err)
+	}
+	improved, _ := jm.GetJob(job.ID)
+	if improved.BestRevision != 2 || improved.BestCost != 2 || !reflect.DeepEqual(improved.BestParams, []float64{3}) {
+		t.Fatalf("improved result = revision %d cost %v params %v", improved.BestRevision, improved.BestCost, improved.BestParams)
+	}
+}
 
 func TestJobManager_CreateJob(t *testing.T) {
 	jm := NewJobManager()

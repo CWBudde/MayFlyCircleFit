@@ -547,7 +547,7 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 	response := jobStatusResponse{
 		ID: job.ID, State: job.State, Config: job.Config,
 		BestCost: job.BestCost, InitialCost: job.InitialCost,
-		PSNR: psnr, PSNRInfinite: psnrInfinite, SSIM: cloneFloat(job.SSIM),
+		PSNR:         psnr, PSNRInfinite: psnrInfinite, SSIM: cloneFloat(job.SSIM),
 		Iterations: job.Iterations, Evaluations: job.Evaluations,
 		Termination: job.Termination, Elapsed: elapsed.Seconds(), CPS: cps,
 		StartTime: job.StartTime, EndTime: job.EndTime, Error: job.Error,
@@ -573,6 +573,9 @@ func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobI
 	// Check if job has results
 	if len(job.BestParams) == 0 {
 		http.Error(w, "No results yet", http.StatusNotFound)
+		return
+	}
+	if snapshotNotModified(w, r, fmt.Sprintf(`"best-%d"`, job.BestRevision)) {
 		return
 	}
 
@@ -626,6 +629,9 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 		http.Error(w, "No results yet", http.StatusNotFound)
 		return
 	}
+	if snapshotNotModified(w, r, fmt.Sprintf(`"diff-%s-%d"`, colormap, job.BestRevision)) {
+		return
+	}
 
 	// Load reference image
 	ref, err := loadReferenceImage(job.Config.RefPath)
@@ -663,6 +669,16 @@ func renderBestSnapshot(job *Job, ref *image.NRGBA) (*image.NRGBA, func(), error
 		return nil, func() {}, err
 	}
 	return rend.Render(job.BestParams), cleanup, nil
+}
+
+func snapshotNotModified(w http.ResponseWriter, r *http.Request, etag string) bool {
+	w.Header().Set("Cache-Control", "private, no-cache")
+	w.Header().Set("ETag", etag)
+	if r.Header.Get("If-None-Match") != etag {
+		return false
+	}
+	w.WriteHeader(http.StatusNotModified)
+	return true
 }
 
 // corsMiddleware enforces the trusted-local same-origin browser policy. CLI
@@ -801,8 +817,7 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 
 	// Initialize the new job with checkpoint data
 	s.jobManager.UpdateJob(newJob.ID, func(j *Job) {
-		j.BestParams = checkpoint.BestParams
-		j.BestCost = checkpoint.BestCost
+		updateBestResult(j, checkpoint.BestParams, checkpoint.BestCost)
 		j.InitialCost = checkpoint.InitialCost
 		j.Iterations = checkpoint.Iteration
 		j.Evaluations = int(checkpoint.Evaluations)
@@ -897,8 +912,7 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 	}
 	newJob := s.jobManager.CreateJob(config)
 	if err := s.jobManager.UpdateJob(newJob.ID, func(job *Job) {
-		job.BestParams = append([]float64(nil), checkpoint.BestParams...)
-		job.BestCost = checkpoint.BestCost
+		updateBestResult(job, checkpoint.BestParams, checkpoint.BestCost)
 		job.InitialCost = checkpoint.InitialCost
 		job.Iterations = checkpoint.Iteration
 		job.Evaluations = evaluations

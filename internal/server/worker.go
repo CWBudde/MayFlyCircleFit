@@ -227,6 +227,10 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 			nextCheckpoint = now.Add(time.Duration(job.Config.CheckpointInterval) * time.Second)
 		}
 		if shouldBroadcast {
+			bestCost, bestRevision, ok := jm.bestSnapshot(jobID)
+			if !ok {
+				return
+			}
 			elapsed := now.Sub(start).Seconds()
 			cps := 0.0
 			if elapsed > 0 {
@@ -235,7 +239,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 			_ = jm.RecordMetrics(jobID, sample)
 			jm.broadcaster.Broadcast(ProgressEvent{
 				JobID: jobID, State: StateRunning, Iterations: iterations, Evaluations: evaluations,
-				BestCost: progress.BestCost, PSNR: cloneFloat(sample.PSNR),
+				BestCost: bestCost, BestRevision: bestRevision, PSNR: cloneFloat(sample.PSNR),
 				PSNRInfinite: sample.PSNRInfinite, SSIM: cloneFloat(sample.SSIM), CPS: cps, Timestamp: now,
 			})
 			nextBroadcast = now.Add(500 * time.Millisecond)
@@ -391,9 +395,10 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	if elapsed > 0 {
 		cps = float64(result.Evaluations*job.Config.Circles) / elapsed
 	}
+	bestCost, bestRevision, _ := jm.bestSnapshot(jobID)
 	jm.broadcaster.Broadcast(ProgressEvent{
 		JobID: jobID, State: StateCompleted, Iterations: iterations, Evaluations: evaluations,
-		BestCost: result.BestCost, PSNR: cloneFloat(finalSample.PSNR),
+		BestCost: bestCost, BestRevision: bestRevision, PSNR: cloneFloat(finalSample.PSNR),
 		PSNRInfinite: finalSample.PSNRInfinite, SSIM: cloneFloat(finalSample.SSIM), CPS: cps, Timestamp: completedAt,
 	})
 	slog.Info("Job completed", "job_id", jobID, "iterations", iterations, "evaluations", evaluations, "best_cost", result.BestCost)
@@ -449,8 +454,7 @@ func polishBatchResult(
 		if err := jm.UpdateJob(job.ID, func(live *Job) {
 			live.Iterations = iterations
 			live.Evaluations = evaluations
-			live.BestParams = append([]float64(nil), params...)
-			live.BestCost = cost
+			updateBestResult(live, params, cost)
 		}); err != nil {
 			return err
 		}

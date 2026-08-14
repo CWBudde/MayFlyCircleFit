@@ -38,6 +38,9 @@ func TestBestImagePreservesConfiguredCanvas(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
 	}
+	if got := response.Header().Get("ETag"); got != `"best-1"` {
+		t.Fatalf("ETag = %q, want %q", got, `"best-1"`)
+	}
 	decoded, err := png.Decode(response.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -45,6 +48,14 @@ func TestBestImagePreservesConfiguredCanvas(t *testing.T) {
 	got := color.NRGBAModel.Convert(decoded.At(0, 0)).(color.NRGBA)
 	if got != canvasColor {
 		t.Fatalf("best image pixel = %v, want canvas %v", got, canvasColor)
+	}
+
+	conditional := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+job.ID+"/best.png?v=1", nil)
+	conditional.Header.Set("If-None-Match", `"best-1"`)
+	notModified := httptest.NewRecorder()
+	server.handleGetBestImage(notModified, conditional, job.ID)
+	if notModified.Code != http.StatusNotModified || notModified.Body.Len() != 0 {
+		t.Fatalf("conditional response = %d with %d bytes, want 304 with empty body", notModified.Code, notModified.Body.Len())
 	}
 }
 

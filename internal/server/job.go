@@ -33,6 +33,7 @@ type Job struct {
 	Config        JobConfig      `json:"config"`
 	BestParams    []float64      `json:"bestParams,omitempty"`
 	BestCost      float64        `json:"bestCost"`
+	BestRevision  uint64         `json:"-"`
 	InitialCost   float64        `json:"initialCost"`
 	Iterations    int            `json:"iterations"`
 	Evaluations   int            `json:"evaluations"`
@@ -175,11 +176,30 @@ func (jm *JobManager) UpdateProgress(id string, iterations, evaluations int, bes
 	}
 	job.Iterations = iterations
 	job.Evaluations = evaluations
-	if len(bestParams) > 0 && (len(job.BestParams) == 0 || bestCost <= job.BestCost) {
-		job.BestParams = append([]float64(nil), bestParams...)
-		job.BestCost = bestCost
-	}
+	updateBestResult(job, bestParams, bestCost)
 	return nil
+}
+
+// updateBestResult records only strict improvements. BestRevision is the
+// stable identity used by live clients and image response validators.
+func updateBestResult(job *Job, bestParams []float64, bestCost float64) bool {
+	if len(bestParams) == 0 || (len(job.BestParams) > 0 && bestCost >= job.BestCost) {
+		return false
+	}
+	job.BestParams = append([]float64(nil), bestParams...)
+	job.BestCost = bestCost
+	job.BestRevision++
+	return true
+}
+
+func (jm *JobManager) bestSnapshot(id string) (float64, uint64, bool) {
+	jm.mu.RLock()
+	defer jm.mu.RUnlock()
+	job, ok := jm.jobs[id]
+	if !ok {
+		return 0, 0, false
+	}
+	return job.BestCost, job.BestRevision, true
 }
 
 // RecordMetrics stores the latest quality metrics and one UI-history sample.
@@ -207,8 +227,7 @@ func (jm *JobManager) CompleteJob(id string, iterations, evaluations int, bestPa
 	return jm.transition(id, StateCompleted, func(job *Job) {
 		job.Iterations = iterations
 		job.Evaluations = evaluations
-		job.BestParams = append([]float64(nil), bestParams...)
-		job.BestCost = bestCost
+		updateBestResult(job, bestParams, bestCost)
 		job.InitialCost = initialCost
 		job.Termination = termination
 	})
@@ -264,6 +283,7 @@ func (jm *JobManager) transition(id string, next JobState, update func(*Job)) er
 		Iterations:   job.Iterations,
 		Evaluations:  job.Evaluations,
 		BestCost:     job.BestCost,
+		BestRevision: job.BestRevision,
 		PSNR:         cloneFloat(job.PSNR),
 		PSNRInfinite: job.PSNRInfinite,
 		SSIM:         cloneFloat(job.SSIM),
