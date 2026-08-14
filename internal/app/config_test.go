@@ -128,6 +128,22 @@ func TestNormalizeOldConfigKeepsPolishingDisabled(t *testing.T) {
 	}
 }
 
+func TestNormalizeAcceptsResidualRegionPolishing(t *testing.T) {
+	config := DefaultConfig()
+	config.RefPath = "reference.png"
+	config.Mode = ModeBatch
+	config.PolishingEnabled = true
+	config.PolishingStrategy = PolishingResidualRegion
+
+	normalized, err := Normalize(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized.PolishingStrategy != PolishingResidualRegion {
+		t.Fatalf("polishing strategy = %q, want residual-region", normalized.PolishingStrategy)
+	}
+}
+
 func TestValidateImageDimensions(t *testing.T) {
 	for _, test := range []struct {
 		width, height int

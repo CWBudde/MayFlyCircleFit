@@ -236,6 +236,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	optimizerEpochsStr := r.FormValue("optimizerEpochs")
 	batchSizeStr := r.FormValue("batchSize")
 	polishingEnabled := r.FormValue("polishingEnabled") == "on"
+	polishingStrategy := app.PolishingStrategy(r.FormValue("polishingStrategy"))
 	polishingActiveSetSizeStr := r.FormValue("polishingActiveSetSize")
 	polishingMaxSweepsStr := r.FormValue("polishingMaxSweeps")
 	polishingEpochsStr := r.FormValue("polishingEpochs")
@@ -400,6 +401,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		OptimizerEpochs:          optimizerEpochs,
 		BatchSize:                batchSize,
 		PolishingEnabled:         polishingEnabled,
+		PolishingStrategy:        polishingStrategy,
 		PolishingActiveSetSize:   polishingActiveSetSize,
 		PolishingMaxSweeps:       polishingMaxSweeps,
 		PolishingEpochs:          polishingEpochs,

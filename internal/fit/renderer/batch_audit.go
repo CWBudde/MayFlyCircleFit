@@ -243,6 +243,9 @@ type ResidualSeedOptions struct {
 	Radius        float64
 	Opacity       float64
 	MinSeparation float64
+	// Region restricts candidate centers to an image subregion. An empty region
+	// uses the complete canvas.
+	Region image.Rectangle
 }
 
 type residualPixel struct {
@@ -273,6 +276,18 @@ func SeedCirclesFromResidual(canvas, reference *image.NRGBA, count int, options 
 	if count > width*height {
 		return nil, fmt.Errorf("circle count %d exceeds the %d distinct canvas pixels", count, width*height)
 	}
+	region := options.Region
+	if region.Empty() {
+		region = canvas.Bounds()
+	} else {
+		region = region.Intersect(canvas.Bounds())
+		if region.Empty() {
+			return nil, fmt.Errorf("residual seed region does not intersect the canvas")
+		}
+	}
+	if count > region.Dx()*region.Dy() {
+		return nil, fmt.Errorf("circle count %d exceeds the %d distinct region pixels", count, region.Dx()*region.Dy())
+	}
 
 	radius := options.Radius
 	if radius == 0 {
@@ -297,17 +312,17 @@ func SeedCirclesFromResidual(canvas, reference *image.NRGBA, count int, options 
 		return nil, fmt.Errorf("minimum separation must be finite and non-negative")
 	}
 
-	pixels := make([]residualPixel, 0, width*height)
+	pixels := make([]residualPixel, 0, region.Dx()*region.Dy())
 	canvasBounds := canvas.Bounds()
 	referenceBounds := reference.Bounds()
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			canvasOffset := canvas.PixOffset(canvasBounds.Min.X+x, canvasBounds.Min.Y+y)
-			referenceOffset := reference.PixOffset(referenceBounds.Min.X+x, referenceBounds.Min.Y+y)
+	for y := region.Min.Y; y < region.Max.Y; y++ {
+		for x := region.Min.X; x < region.Max.X; x++ {
+			canvasOffset := canvas.PixOffset(x, y)
+			referenceOffset := reference.PixOffset(referenceBounds.Min.X+x-canvasBounds.Min.X, referenceBounds.Min.Y+y-canvasBounds.Min.Y)
 			dr := int(canvas.Pix[canvasOffset]) - int(reference.Pix[referenceOffset])
 			dg := int(canvas.Pix[canvasOffset+1]) - int(reference.Pix[referenceOffset+1])
 			db := int(canvas.Pix[canvasOffset+2]) - int(reference.Pix[referenceOffset+2])
-			pixels = append(pixels, residualPixel{x: x, y: y, energy: uint32(dr*dr + dg*dg + db*db)})
+			pixels = append(pixels, residualPixel{x: x - canvasBounds.Min.X, y: y - canvasBounds.Min.Y, energy: uint32(dr*dr + dg*dg + db*db)})
 		}
 	}
 	sort.SliceStable(pixels, func(i, j int) bool { return pixels[i].energy > pixels[j].energy })

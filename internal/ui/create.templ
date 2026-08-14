@@ -213,21 +213,30 @@ templ CreateJobPage(errorMsg string) {
 							name="polishingEnabled"
 							style="margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;"
 						/>
-						<span style="font-weight: 500;">Polish weak circles after the batch run</span>
+						<span style="font-weight: 500;">Polish selected circles after the batch run</span>
 					</label>
 					<p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem; margin-left: 1.5rem;">
-						Batch mode only. Each sweep replaces and jointly optimizes the weakest circles; a sweep is kept only when the full-image cost improves.
+						Batch mode only. Every strategy preserves draw order, and a sweep is kept only when the complete image improves.
 					</p>
 					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
 						<div>
+							<label for="polishingStrategy" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Strategy</label>
+							<select id="polishingStrategy" name="polishingStrategy" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem; background-color: var(--control-bg);">
+								<option value="replacement" selected>Weakest replacement</option>
+								<option value="hybrid-overlap">Hybrid overlap</option>
+								<option value="residual-region">Residual region</option>
+							</select>
+							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Residual region visits distinct high-error tiles and optimizes their influencing circles</p>
+						</div>
+						<div>
 							<label for="polishingActiveSetSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Active Set Size</label>
 							<input type="number" id="polishingActiveSetSize" name="polishingActiveSetSize" value="5" min="1" max="100" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Weak circles optimized together</p>
+							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Circles optimized together</p>
 						</div>
 						<div>
 							<label for="polishingMaxSweeps" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Maximum Sweeps</label>
 							<input type="number" id="polishingMaxSweeps" name="polishingMaxSweeps" value="3" min="1" max="32" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Stops after the first rejected sweep</p>
+							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Regional polishing continues to the next tile after a rejection</p>
 						</div>
 						<div>
 							<label for="polishingEpochs" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Epochs per Sweep</label>

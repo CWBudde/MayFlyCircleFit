@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"context"
+	"image"
 	"image/color"
 	"reflect"
 	"testing"
@@ -201,6 +202,75 @@ func TestPolishCircleBatchHybridSeedsIncumbentAndResidualAlternative(t *testing.
 	}
 	if len(options.AdditionalSeeds) != 1 || reflect.DeepEqual(options.AdditionalSeeds[0].Params, initial) {
 		t.Fatalf("hybrid residual alternatives = %+v, want distinct seed", options.AdditionalSeeds)
+	}
+}
+
+func TestHighestResidualRegionSkipsVisitedTiles(t *testing.T) {
+	reference := solidImage(8, 8, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+	canvas := cloneNRGBA(reference)
+	canvas.SetNRGBA(1, 1, color.NRGBA{A: 255})
+	canvas.SetNRGBA(6, 6, color.NRGBA{R: 128, G: 128, B: 128, A: 255})
+
+	first, firstIndex, err := highestResidualRegion(canvas, reference, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstIndex != 0 || first != image.Rect(0, 0, 2, 2) {
+		t.Fatalf("first residual region = %v index %d, want top-left tile", first, firstIndex)
+	}
+	second, secondIndex, err := highestResidualRegion(canvas, reference, map[int]bool{firstIndex: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondIndex != 15 || second != image.Rect(6, 6, 8, 8) {
+		t.Fatalf("second residual region = %v index %d, want bottom-right tile", second, secondIndex)
+	}
+}
+
+func TestSelectResidualRegionActiveSetCombinesWeakSlotAndInfluencer(t *testing.T) {
+	white := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	black := color.NRGBA{A: 255}
+	canvasRef := solidImage(8, 8, white)
+	canvasRenderer := NewCPURenderer(canvasRef, 3)
+	params := append(circleParams(7, 7, 1, black, 0.1), circleParams(1, 1, 3, black, 0.5)...)
+	params = append(params, circleParams(6, 6, 3, black, 0.8)...)
+	reference := cloneNRGBA(canvasRenderer.Render(params))
+	for y := 0; y < 2; y++ {
+		for x := 0; x < 2; x++ {
+			reference.SetNRGBA(x, y, black)
+		}
+	}
+	base := NewCPURenderer(reference, 3)
+
+	selection, err := selectResidualRegionActiveSet(base, params, 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selection.RegionIndex != 0 || !reflect.DeepEqual(selection.ReplacementCircles, []int{0}) {
+		t.Fatalf("regional replacement selection = %+v, want weak circle 1 in top-left region", selection)
+	}
+	if !reflect.DeepEqual(selection.Circles, []int{0, 1}) {
+		t.Fatalf("regional active circles = %v, want weak slot and top-left influencer [0 1]", selection.Circles)
+	}
+}
+
+func TestPolishCircleBatchResidualRegionContinuesAfterRejectedTile(t *testing.T) {
+	black := color.NRGBA{A: 255}
+	ref := solidImage(5, 5, black)
+	base := NewCPURenderer(ref, 1)
+	initial := circleParams(2, 2, 5, color.NRGBA{R: 96, G: 96, B: 96, A: 255}, 1)
+	optimizer := &fixedPolishOptimizer{params: initial}
+
+	result, err := PolishCircleBatchContext(context.Background(), base, optimizer, initial, BatchPolishOptions{
+		ActiveSetSize: 1,
+		MaxSweeps:     2,
+		Strategy:      BatchPolishResidualRegion,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Sweeps != 2 || result.AcceptedSweeps != 0 || optimizer.calls != 2 {
+		t.Fatalf("regional sweeps/accepted/calls = %d/%d/%d, want 2/0/2", result.Sweeps, result.AcceptedSweeps, optimizer.calls)
 	}
 }
 

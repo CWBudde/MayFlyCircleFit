@@ -78,6 +78,23 @@ func TestAuditCircleBatchRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestSeedCirclesFromResidualRestrictsCentersToRegion(t *testing.T) {
+	canvas := solidImage(8, 8, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+	reference := cloneNRGBA(canvas)
+	reference.SetNRGBA(1, 1, color.NRGBA{A: 255})
+	reference.SetNRGBA(6, 6, color.NRGBA{A: 255})
+
+	circles, err := SeedCirclesFromResidual(canvas, reference, 1, ResidualSeedOptions{
+		Region: image.Rect(4, 4, 8, 8),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(circles) != 1 || circles[0].X != 6 || circles[0].Y != 6 {
+		t.Fatalf("regional residual seed = %+v, want center (6,6)", circles)
+	}
+}
+
 func TestPruneCircleBatchIteratesAndPreservesDrawOrder(t *testing.T) {
 	const width, height = 9, 9
 	circles := []fit.Circle{

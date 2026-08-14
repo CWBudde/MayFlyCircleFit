@@ -500,6 +500,14 @@ func polishBatchResult(
 			)
 		},
 		OnSweep: func(progress renderer.BatchPolishProgress) error {
+			slog.Info("Batch polishing sweep complete",
+				"job_id", job.ID,
+				"sweep", progress.Sweep,
+				"accepted", progress.Accepted,
+				"region", progress.Region,
+				"active_circles", progress.ActiveSet,
+				"best_cost", progress.BestCost,
+			)
 			return persistPolishingBoundary(
 				progress.BestParams,
 				progress.BestCost,

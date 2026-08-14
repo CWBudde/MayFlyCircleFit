@@ -55,8 +55,9 @@ const (
 type PolishingStrategy string
 
 const (
-	PolishingReplacement   PolishingStrategy = "replacement"
-	PolishingHybridOverlap PolishingStrategy = "hybrid-overlap"
+	PolishingReplacement    PolishingStrategy = "replacement"
+	PolishingHybridOverlap  PolishingStrategy = "hybrid-overlap"
+	PolishingResidualRegion PolishingStrategy = "residual-region"
 )
 
 // JobConfig is the canonical configuration shared by all application entry
@@ -276,9 +277,9 @@ func (c JobConfig) Validate() error {
 		return invalid("polishingOnly", "requires polishing to be enabled")
 	}
 	switch c.PolishingStrategy {
-	case PolishingReplacement, PolishingHybridOverlap:
+	case PolishingReplacement, PolishingHybridOverlap, PolishingResidualRegion:
 	default:
-		return invalid("polishingStrategy", "must be replacement or hybrid-overlap")
+		return invalid("polishingStrategy", "must be replacement, hybrid-overlap, or residual-region")
 	}
 	if c.PolishingActiveSetSize < 1 || c.PolishingActiveSetSize > MaxBatchSize || c.PolishingActiveSetSize > c.Circles {
 		return invalid("polishingActiveSetSize", "must be positive, within the limit, and no larger than circles")
