@@ -16,6 +16,20 @@ type fixedPolishOptimizer struct {
 	options []opt.RunOptions
 }
 
+type incumbentPolishOptimizer struct {
+	options []opt.RunOptions
+}
+
+func (o *incumbentPolishOptimizer) Run(func([]float64) float64, []float64, []float64, int) ([]float64, float64) {
+	return nil, 0
+}
+
+func (o *incumbentPolishOptimizer) RunContext(_ context.Context, problem opt.Problem, options opt.RunOptions) (opt.Result, error) {
+	o.options = append(o.options, options)
+	params := append([]float64(nil), options.Initial.Params...)
+	return opt.Result{BestParams: params, BestCost: problem.Eval(params), Iterations: 1, Evaluations: 1}, nil
+}
+
 func (o *fixedPolishOptimizer) Run(eval func([]float64) float64, _, _ []float64, _ int) ([]float64, float64) {
 	params := append([]float64(nil), o.params...)
 	return params, eval(params)
@@ -89,14 +103,41 @@ func TestPolishCircleBatchRollsBackRejectedSweepExactly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Sweeps != 1 || result.AcceptedSweeps != 0 {
-		t.Fatalf("sweeps/accepted = %d/%d, want 1/0", result.Sweeps, result.AcceptedSweeps)
+	if result.Sweeps != 3 || result.AcceptedSweeps != 0 {
+		t.Fatalf("sweeps/accepted = %d/%d, want 3/0", result.Sweeps, result.AcceptedSweeps)
 	}
 	if result.BestCost != initialCost || !reflect.DeepEqual(result.BestParams, initial) {
 		t.Fatalf("rejected sweep changed result: cost %v params %v", result.BestCost, result.BestParams)
 	}
 	if got, want := result.BestImage.NRGBAAt(2, 2), base.Render(initial).NRGBAAt(2, 2); got != want {
 		t.Fatalf("rollback image center = %#v, want %#v", got, want)
+	}
+}
+
+func TestPolishCircleBatchRejectedSweepsRotateAcrossCircleGroups(t *testing.T) {
+	ref := solidImage(12, 4, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+	base := NewCPURenderer(ref, 3)
+	initial := append(circleParams(1, 1, 1, color.NRGBA{R: 32, A: 255}, 0.2), circleParams(5, 1, 1, color.NRGBA{R: 64, A: 255}, 0.3)...)
+	initial = append(initial, circleParams(9, 1, 1, color.NRGBA{R: 96, A: 255}, 0.4)...)
+	optimizer := &incumbentPolishOptimizer{}
+
+	result, err := PolishCircleBatchContext(context.Background(), base, optimizer, initial, BatchPolishOptions{
+		ActiveSetSize: 1,
+		MaxSweeps:     3,
+		Strategy:      BatchPolishHybridOverlap,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Sweeps != 3 || result.AcceptedSweeps != 0 || len(optimizer.options) != 3 {
+		t.Fatalf("rotating rejected sweeps = %d/%d options=%d, want 3/0/3", result.Sweeps, result.AcceptedSweeps, len(optimizer.options))
+	}
+	seenX := make(map[float64]bool)
+	for _, options := range optimizer.options {
+		seenX[options.Initial.Params[0]] = true
+	}
+	if len(seenX) != 3 {
+		t.Fatalf("rejected active groups used x coordinates %v, want all three circles", seenX)
 	}
 }
 
@@ -168,7 +209,7 @@ func TestSelectHybridOverlapCirclesCombinesWeakAnchorsAndPartners(t *testing.T) 
 		{Circle: 5, OriginalCircle: 5, MSEContribution: 3, FinalChangedPixels: 10},
 	}}
 
-	got := selectHybridOverlapCircles(params, audit, 4, 20, 20)
+	got := selectHybridOverlapCircles(params, audit, 4, 20, 20, nil)
 	want := []int{0, 1, 2, 3}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("hybrid active set = %v, want weak anchors plus overlap partners %v", got, want)
@@ -176,6 +217,25 @@ func TestSelectHybridOverlapCirclesCombinesWeakAnchorsAndPartners(t *testing.T) 
 	retained := removeActiveCircleParams(params, got)
 	if !reflect.DeepEqual(retained, params[4*paramsPerCircle:]) {
 		t.Fatal("hybrid removal did not preserve the retained draw order")
+	}
+}
+
+func TestSelectHybridOverlapCirclesRotatesAwayFromVisitedGroup(t *testing.T) {
+	params := make([]float64, 6*paramsPerCircle)
+	audit := BatchAudit{Circles: make([]CircleAudit, 6)}
+	for circle := range 6 {
+		copy(params[circle*paramsPerCircle:], circleParams(float64(circle*3), 1, 1, color.NRGBA{A: 255}, 1))
+		audit.Circles[circle] = CircleAudit{
+			Circle: circle + 1, OriginalCircle: circle + 1,
+			MSEContribution: float64(circle + 1), FinalChangedPixels: 1,
+		}
+	}
+
+	got := selectHybridOverlapCircles(params, audit, 3, 20, 5, map[int]int{0: 1, 1: 1, 2: 1})
+	for _, circle := range got {
+		if circle < 3 {
+			t.Fatalf("rotated active set = %v, want only previously unvisited circles", got)
+		}
 	}
 }
 
@@ -202,6 +262,11 @@ func TestPolishCircleBatchHybridSeedsIncumbentAndResidualAlternative(t *testing.
 	}
 	if len(options.AdditionalSeeds) != 1 || reflect.DeepEqual(options.AdditionalSeeds[0].Params, initial) {
 		t.Fatalf("hybrid residual alternatives = %+v, want distinct seed", options.AdditionalSeeds)
+	}
+	if options.Continuation == nil || options.Continuation.LocalFraction != 1 ||
+		options.Continuation.Sigma != 0.02 || options.Continuation.CoordinateRate != 0.2 ||
+		options.Continuation.MaxVelocity != 0.02 {
+		t.Fatalf("hybrid continuation profile = %+v, want local polishing profile", options.Continuation)
 	}
 }
 

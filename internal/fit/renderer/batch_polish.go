@@ -13,7 +13,7 @@ import (
 )
 
 // BatchPolishOptions controls transactional active-set polishing after a
-// complete batch solution has been found. The weakest circles are optimized
+// complete batch solution has been found. Selected circles are optimized
 // together while every other circle remains fixed in its original draw slot.
 type BatchPolishOptions struct {
 	ActiveSetSize int
@@ -85,10 +85,11 @@ type BatchPolishResult struct {
 	AcceptedSweeps int
 }
 
-// PolishCircleBatchContext repeatedly re-optimizes the weakest circle group.
-// Each sweep is transactional: it is committed only when every circle remains
-// useful and the cost of the complete, original-order parameter vector falls.
-// The first rejected sweep stops polishing.
+// PolishCircleBatchContext repeatedly re-optimizes coverage-aware circle
+// groups. Each sweep is transactional: it is committed only when every circle
+// remains useful and the cost of the complete, original-order parameter vector
+// falls. Rejected groups are rolled back, but do not prevent later sweeps from
+// visiting other circles.
 func PolishCircleBatchContext(
 	ctx context.Context,
 	base Renderer,
@@ -146,6 +147,7 @@ func PolishCircleBatchContext(
 	}
 
 	visitedRegions := make(map[int]bool)
+	visitCounts := make(map[int]int, circleCount)
 	for sweep := 1; sweep <= options.MaxSweeps; sweep++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -157,6 +159,7 @@ func PolishCircleBatchContext(
 			options.ActiveSetSize,
 			options.Strategy,
 			visitedRegions,
+			visitCounts,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("select polishing active set: %w", err)
@@ -221,6 +224,12 @@ func PolishCircleBatchContext(
 			Initial:         &initial,
 			AdditionalSeeds: additionalSeeds,
 			ResumeCount:     sweep,
+			Continuation: &opt.ContinuationProfile{
+				LocalFraction:  1,
+				Sigma:          0.02,
+				CoordinateRate: 0.2,
+				MaxVelocity:    0.02,
+			},
 		}
 		if observer != nil {
 			snapshot := append([]float64(nil), bestParams...)
@@ -307,8 +316,8 @@ func PolishCircleBatchContext(
 				return nil, fmt.Errorf("persist polishing sweep %d: %w", sweep, err)
 			}
 		}
-		if !accepted && options.Strategy != BatchPolishResidualRegion {
-			break
+		for _, circle := range activeCircles {
+			visitCounts[circle]++
 		}
 	}
 
@@ -346,25 +355,37 @@ func selectPolishingActiveSet(
 	activeSetSize int,
 	strategy BatchPolishStrategy,
 	visitedRegions map[int]bool,
+	visitCounts map[int]int,
 ) (polishingActiveSet, error) {
 	if strategy == BatchPolishWeakestReplacement {
-		pruned, err := PruneCircleBatch(base, params, CirclePruneOptions{
-			MinChangedPixels:   1,
-			MinMSEContribution: math.MaxFloat64,
-			MaxRemoved:         activeSetSize,
-		})
+		audit, err := AuditCircleBatch(base, params)
 		if err != nil {
 			return polishingActiveSet{}, err
 		}
-		if len(pruned.Removed) != activeSetSize {
-			return polishingActiveSet{}, fmt.Errorf("%w: selected %d polishing circles, want %d", ErrInvalidOptimizationInput, len(pruned.Removed), activeSetSize)
+		weakest := append([]CircleAudit(nil), audit.Circles...)
+		slices.SortFunc(weakest, func(left, right CircleAudit) int {
+			leftVisits := visitCounts[left.OriginalCircle-1]
+			rightVisits := visitCounts[right.OriginalCircle-1]
+			if leftVisits != rightVisits {
+				return leftVisits - rightVisits
+			}
+			if weakerAuditCircle(left, right) {
+				return -1
+			}
+			if weakerAuditCircle(right, left) {
+				return 1
+			}
+			return 0
+		})
+		if len(weakest) < activeSetSize {
+			return polishingActiveSet{}, fmt.Errorf("%w: selected %d polishing circles, want %d", ErrInvalidOptimizationInput, len(weakest), activeSetSize)
 		}
-		active := make([]int, len(pruned.Removed))
-		for i, removal := range pruned.Removed {
-			active[i] = removal.OriginalCircle - 1
+		active := make([]int, activeSetSize)
+		for i, circle := range weakest[:activeSetSize] {
+			active[i] = circle.OriginalCircle - 1
 		}
 		slices.Sort(active)
-		return polishingActiveSet{Circles: active, RetainedParams: pruned.Params}, nil
+		return polishingActiveSet{Circles: active, RetainedParams: removeActiveCircleParams(params, active)}, nil
 	}
 	if strategy == BatchPolishResidualRegion {
 		return selectResidualRegionActiveSet(base, params, activeSetSize, visitedRegions)
@@ -374,14 +395,19 @@ func selectPolishingActiveSet(
 	if err != nil {
 		return polishingActiveSet{}, err
 	}
-	active := selectHybridOverlapCircles(params, audit, activeSetSize, base.Reference().Bounds().Dx(), base.Reference().Bounds().Dy())
+	active := selectHybridOverlapCircles(params, audit, activeSetSize, base.Reference().Bounds().Dx(), base.Reference().Bounds().Dy(), visitCounts)
 	return polishingActiveSet{Circles: active, RetainedParams: removeActiveCircleParams(params, active)}, nil
 }
 
-func selectHybridOverlapCircles(params []float64, audit BatchAudit, activeSetSize, width, height int) []int {
+func selectHybridOverlapCircles(params []float64, audit BatchAudit, activeSetSize, width, height int, visitCounts map[int]int) []int {
 	weakest := make([]CircleAudit, len(audit.Circles))
 	copy(weakest, audit.Circles)
 	slices.SortFunc(weakest, func(left, right CircleAudit) int {
+		leftVisits := visitCounts[left.OriginalCircle-1]
+		rightVisits := visitCounts[right.OriginalCircle-1]
+		if leftVisits != rightVisits {
+			return leftVisits - rightVisits
+		}
 		if left.MSEContribution < right.MSEContribution {
 			return -1
 		}
@@ -404,7 +430,7 @@ func selectHybridOverlapCircles(params []float64, audit BatchAudit, activeSetSiz
 	}
 	vector := fit.ParamVector{Data: params, K: len(params) / paramsPerCircle, Width: width, Height: height}
 	for len(selected) < activeSetSize {
-		bestCircle, bestOverlap := -1, -1
+		bestCircle, bestOverlap, bestVisits := -1, -1, math.MaxInt
 		for candidate := 0; candidate < vector.K; candidate++ {
 			if selected[candidate] {
 				continue
@@ -413,8 +439,9 @@ func selectHybridOverlapCircles(params []float64, audit BatchAudit, activeSetSiz
 			for _, anchor := range anchors {
 				overlap += circleRasterOverlap(vector.DecodeCircle(candidate), vector.DecodeCircle(anchor), width, height)
 			}
-			if overlap > bestOverlap || overlap == bestOverlap && weakerAuditCircle(audit.Circles[candidate], audit.Circles[bestCircle]) {
-				bestCircle, bestOverlap = candidate, overlap
+			visits := visitCounts[candidate]
+			if visits < bestVisits || visits == bestVisits && (overlap > bestOverlap || overlap == bestOverlap && weakerAuditCircle(audit.Circles[candidate], audit.Circles[bestCircle])) {
+				bestCircle, bestOverlap, bestVisits = candidate, overlap, visits
 			}
 		}
 		if bestCircle < 0 {

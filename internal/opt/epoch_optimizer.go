@@ -69,6 +69,7 @@ func (o *epochOptimizer) RunContext(ctx context.Context, problem Problem, option
 			AdditionalSeeds: additionalSeeds,
 			ProgressMapper:  options.ProgressMapper,
 			ResumeCount:     options.ResumeCount + epoch,
+			Continuation:    options.Continuation,
 		}
 		if options.Observer != nil {
 			epochOptions.Observer = func(progress Progress) {

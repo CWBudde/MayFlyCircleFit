@@ -63,6 +63,29 @@ type RunOptions struct {
 	// lost; additional seeds broaden exploration around other promising basins.
 	AdditionalSeeds []Candidate
 	ResumeCount     int
+	// Continuation optionally concentrates a seeded run around its known
+	// candidates. Nil preserves the historical half-local, half-global Mayfly
+	// population and velocity scale. Active-set polishing uses this to request
+	// a genuinely local search without changing fresh/global optimization.
+	Continuation *ContinuationProfile
+}
+
+// ContinuationProfile controls how a Mayfly continuation population explores
+// around Initial and AdditionalSeeds. Values are expressed in the optimizer's
+// normalized [0,1] space.
+type ContinuationProfile struct {
+	// LocalFraction is the fraction of each male/female population supplied as
+	// seeded candidates. The remainder is initialized globally at random.
+	LocalFraction float64
+	// Sigma is the standard deviation of seeded perturbations.
+	Sigma float64
+	// CoordinateRate is the probability that an individual dimension is
+	// perturbed. Sparse perturbations avoid moving every variable at once in a
+	// high-dimensional active set.
+	CoordinateRate float64
+	// MaxVelocity caps Mayfly movement per iteration. Zero retains Mayfly's
+	// default 10% of the normalized search range.
+	MaxVelocity float64
 }
 
 // Termination describes why an optimizer stopped.

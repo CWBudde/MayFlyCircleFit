@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"math/rand"
 	"reflect"
 	"slices"
 	"testing"
@@ -273,6 +274,53 @@ func TestContinuationSeedIsStableAndAdvances(t *testing.T) {
 	}
 	if first == continuationSeed(42, 2) || first == 42 {
 		t.Fatal("continuation seed did not advance")
+	}
+}
+
+func TestSeededPopulationHonorsLocalContinuationProfile(t *testing.T) {
+	profile := &ContinuationProfile{
+		LocalFraction:  1,
+		Sigma:          0.01,
+		CoordinateRate: 0.1,
+		MaxVelocity:    0.02,
+	}
+	males, females := seededPopulationFromCandidates(
+		[][]float64{{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}},
+		20,
+		rand.New(rand.NewSource(42)),
+		profile,
+	)
+	if len(males) != 20 || len(females) != 20 {
+		t.Fatalf("local seeded populations = %d/%d, want 20/20", len(males), len(females))
+	}
+	if !reflect.DeepEqual(males[0], []float64{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}) {
+		t.Fatalf("exact incumbent seed = %v", males[0])
+	}
+	for populationIndex, population := range [][][]float64{males[1:], females} {
+		for seedIndex, seed := range population {
+			changed := 0
+			for _, value := range seed {
+				if value != 0.5 {
+					changed++
+				}
+			}
+			if changed == 0 || changed == len(seed) {
+				t.Fatalf("population %d seed %d changed %d coordinates, want a non-empty sparse perturbation", populationIndex, seedIndex, changed)
+			}
+		}
+	}
+}
+
+func TestMayflyAdapterRejectsInvalidContinuationProfile(t *testing.T) {
+	optimizer := NewMayfly(1, 20, 42).(*MayflyAdapter)
+	_, err := optimizer.RunContext(context.Background(), Problem{
+		Eval: sphere, Lower: []float64{-1}, Upper: []float64{1}, Dim: 1,
+	}, RunOptions{
+		Initial:      &Candidate{Params: []float64{0}, Cost: 0},
+		Continuation: &ContinuationProfile{LocalFraction: 1, Sigma: 0.02, CoordinateRate: 0},
+	})
+	if err == nil || err.Error() != "continuation coordinate rate must be in (0,1]" {
+		t.Fatalf("invalid continuation error = %v", err)
 	}
 }
 

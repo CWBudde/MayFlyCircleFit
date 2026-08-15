@@ -163,6 +163,9 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 	if options.ResumeCount < 0 {
 		return Result{}, fmt.Errorf("resume count cannot be negative")
 	}
+	if err := validateContinuationProfile(options.Continuation); err != nil {
+		return Result{}, err
+	}
 
 	var config *mayfly.Config
 
@@ -222,6 +225,10 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 	config.NPopF = m.popSize
 	config.LowerBound = 0.0
 	config.UpperBound = 1.0
+	if options.Continuation != nil && options.Continuation.MaxVelocity > 0 {
+		config.VelMax = options.Continuation.MaxVelocity
+		config.VelMin = -options.Continuation.MaxVelocity
+	}
 	if len(problem.Inequalities) > 0 {
 		// Aggregate after canonicalization so Repair runs once per constraint
 		// evaluation, regardless of how many inequalities a problem declares.
@@ -290,7 +297,7 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 		normalizedSeeds = append(normalizedSeeds, normalize(candidate.Params))
 	}
 	if len(normalizedSeeds) > 0 {
-		maleSeeds, femaleSeeds := seededPopulationFromCandidates(normalizedSeeds, m.popSize, rng)
+		maleSeeds, femaleSeeds := seededPopulationFromCandidates(normalizedSeeds, m.popSize, rng, options.Continuation)
 		runOptions = append(runOptions, mayfly.WithInitialPopulation(maleSeeds, femaleSeeds))
 	}
 	if m.logger != nil {
@@ -433,24 +440,43 @@ func validateCandidate(candidate Candidate, problem Problem) error {
 }
 
 func seededPopulation(best []float64, population int, rng *rand.Rand) ([][]float64, [][]float64) {
-	return seededPopulationFromCandidates([][]float64{best}, population, rng)
+	return seededPopulationFromCandidates([][]float64{best}, population, rng, nil)
 }
 
-func seededPopulationFromCandidates(candidates [][]float64, population int, rng *rand.Rand) ([][]float64, [][]float64) {
+func seededPopulationFromCandidates(candidates [][]float64, population int, rng *rand.Rand, profile *ContinuationProfile) ([][]float64, [][]float64) {
 	if len(candidates) == 0 {
 		return nil, nil
 	}
-	seedCount := population / 2
+	localFraction := 0.5
+	sigma := 0.05
+	coordinateRate := 1.0
+	if profile != nil {
+		localFraction = profile.LocalFraction
+		sigma = profile.Sigma
+		coordinateRate = profile.CoordinateRate
+	}
+	seedCount := int(math.Ceil(float64(population) * localFraction))
 	if seedCount < 1 {
 		seedCount = 1
 	}
+	seedCount = min(seedCount, population)
 	makeSeeds := func(exact bool) [][]float64 {
 		seeds := make([][]float64, seedCount)
 		for i := range seeds {
 			seeds[i] = append([]float64(nil), candidates[i%len(candidates)]...)
 			if !exact || i >= len(candidates) {
+				perturbed := false
 				for dimension := range seeds[i] {
-					seeds[i][dimension] += rng.NormFloat64() * 0.05
+					if coordinateRate < 1 && rng.Float64() > coordinateRate {
+						continue
+					}
+					seeds[i][dimension] += rng.NormFloat64() * sigma
+					seeds[i][dimension] = math.Max(0, math.Min(1, seeds[i][dimension]))
+					perturbed = true
+				}
+				if !perturbed && len(seeds[i]) > 0 {
+					dimension := rng.Intn(len(seeds[i]))
+					seeds[i][dimension] += rng.NormFloat64() * sigma
 					seeds[i][dimension] = math.Max(0, math.Min(1, seeds[i][dimension]))
 				}
 			}
@@ -458,6 +484,25 @@ func seededPopulationFromCandidates(candidates [][]float64, population int, rng 
 		return seeds
 	}
 	return makeSeeds(true), makeSeeds(false)
+}
+
+func validateContinuationProfile(profile *ContinuationProfile) error {
+	if profile == nil {
+		return nil
+	}
+	if profile.LocalFraction <= 0 || profile.LocalFraction > 1 {
+		return fmt.Errorf("continuation local fraction must be in (0,1]")
+	}
+	if profile.Sigma <= 0 || profile.Sigma > 1 {
+		return fmt.Errorf("continuation sigma must be in (0,1]")
+	}
+	if profile.CoordinateRate <= 0 || profile.CoordinateRate > 1 {
+		return fmt.Errorf("continuation coordinate rate must be in (0,1]")
+	}
+	if profile.MaxVelocity < 0 || profile.MaxVelocity > 1 {
+		return fmt.Errorf("continuation maximum velocity must be in [0,1]")
+	}
+	return nil
 }
 
 func continuationSeed(seed int64, resumeCount int) int64 {
