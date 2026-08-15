@@ -448,8 +448,20 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The form carries the project as a plain field; an absent one is the
+	// default project, which is the legacy jobs directory.
+	project, err := s.resolveRequestedProject(r.FormValue("project"), r)
+	if err == nil {
+		project, err = s.ensureProject(project)
+	}
+	if err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+		return
+	}
+
 	// Create the job
-	job := s.jobManager.CreateJob(config)
+	job := s.jobManager.CreateJob(project, config)
 
 	// The server owns every job context, including jobs created through the UI.
 	if err := s.enqueueJob(job.ID); err != nil {

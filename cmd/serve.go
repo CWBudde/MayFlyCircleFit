@@ -106,6 +106,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		InputRoots:        serveInputRoots,
 		MaxConcurrentJobs: serveMaxJobs,
 		QueueSize:         serveQueueSize,
+		DataRoot:          serveDataRoot,
 	})
 
 	// Channel for server errors

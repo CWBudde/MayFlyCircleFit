@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 )
 
 func TestDecodeParameterCircles(t *testing.T) {
@@ -55,7 +57,7 @@ func TestDecodeParameterCirclesRejectsPartialCircle(t *testing.T) {
 
 func TestServerGetParameters(t *testing.T) {
 	server := NewServer(":8080", nil)
-	job := server.jobManager.CreateJob(JobConfig{Circles: 2})
+	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{Circles: 2})
 	if err := server.jobManager.StartJob(job.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +113,7 @@ func TestServerGetParameters(t *testing.T) {
 
 func TestServerGetParametersErrors(t *testing.T) {
 	server := NewServer(":8080", nil)
-	job := server.jobManager.CreateJob(JobConfig{Circles: 1})
+	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{Circles: 1})
 
 	tests := []struct {
 		name   string
