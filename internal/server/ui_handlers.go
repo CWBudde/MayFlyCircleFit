@@ -88,6 +88,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	if len(job.BestParams) > 0 {
 		psnr, psnrInfinite = serializablePSNR(job.BestCost)
 	}
+	candidatePSNR, candidatePSNRInfinite := serializableCandidatePSNR(job.CandidateCost)
 	metricHistory := make([]ui.MetricSample, len(job.MetricHistory))
 	for i, sample := range job.MetricHistory {
 		metricHistory[i] = ui.MetricSample{
@@ -133,6 +134,9 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		PolishingStagnationIters: job.Config.PolishingStagnationIters,
 		PolishingMinImprovement:  job.Config.PolishingMinImprovement,
 		BestCost:                 job.BestCost,
+		CandidateCost:            cloneFloat(job.CandidateCost),
+		CandidatePSNR:            candidatePSNR,
+		CandidatePSNRInfinite:    candidatePSNRInfinite,
 		BestRevision:             job.BestRevision,
 		InitialCost:              job.InitialCost,
 		StartTime:                job.StartTime,

@@ -497,22 +497,25 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 }
 
 type jobStatusResponse struct {
-	ID           string     `json:"id"`
-	State        JobState   `json:"state"`
-	Config       JobConfig  `json:"config"`
-	BestCost     float64    `json:"bestCost"`
-	InitialCost  float64    `json:"initialCost"`
-	PSNR         *float64   `json:"psnr"`
-	PSNRInfinite bool       `json:"psnrInfinite,omitempty"`
-	SSIM         *float64   `json:"ssim,omitempty"`
-	Iterations   int        `json:"iterations"`
-	Evaluations  int        `json:"evaluations"`
-	Termination  string     `json:"termination,omitempty"`
-	Elapsed      float64    `json:"elapsed"`
-	CPS          float64    `json:"cps"`
-	StartTime    time.Time  `json:"startTime"`
-	EndTime      *time.Time `json:"endTime,omitempty"`
-	Error        string     `json:"error,omitempty"`
+	ID                    string     `json:"id"`
+	State                 JobState   `json:"state"`
+	Config                JobConfig  `json:"config"`
+	BestCost              float64    `json:"bestCost"`
+	CandidateCost         *float64   `json:"candidateCost,omitempty"`
+	CandidatePSNR         *float64   `json:"candidatePsnr,omitempty"`
+	CandidatePSNRInfinite bool       `json:"candidatePsnrInfinite,omitempty"`
+	InitialCost           float64    `json:"initialCost"`
+	PSNR                  *float64   `json:"psnr"`
+	PSNRInfinite          bool       `json:"psnrInfinite,omitempty"`
+	SSIM                  *float64   `json:"ssim,omitempty"`
+	Iterations            int        `json:"iterations"`
+	Evaluations           int        `json:"evaluations"`
+	Termination           string     `json:"termination,omitempty"`
+	Elapsed               float64    `json:"elapsed"`
+	CPS                   float64    `json:"cps"`
+	StartTime             time.Time  `json:"startTime"`
+	EndTime               *time.Time `json:"endTime,omitempty"`
+	Error                 string     `json:"error,omitempty"`
 }
 
 // handleGetJobStatus handles GET /api/v1/jobs/:id/status
@@ -548,15 +551,23 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 	}
 	response := jobStatusResponse{
 		ID: job.ID, State: job.State, Config: job.Config,
-		BestCost: job.BestCost, InitialCost: job.InitialCost,
+		BestCost: job.BestCost, CandidateCost: cloneFloat(job.CandidateCost), InitialCost: job.InitialCost,
 		PSNR: psnr, PSNRInfinite: psnrInfinite, SSIM: cloneFloat(job.SSIM),
 		Iterations: job.Iterations, Evaluations: job.Evaluations,
 		Termination: job.Termination, Elapsed: elapsed.Seconds(), CPS: cps,
 		StartTime: job.StartTime, EndTime: job.EndTime, Error: job.Error,
 	}
+	response.CandidatePSNR, response.CandidatePSNRInfinite = serializableCandidatePSNR(job.CandidateCost)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func serializableCandidatePSNR(cost *float64) (*float64, bool) {
+	if cost == nil {
+		return nil, false
+	}
+	return serializablePSNR(*cost)
 }
 
 // handleGetBestImage handles GET /api/v1/jobs/:id/best.png

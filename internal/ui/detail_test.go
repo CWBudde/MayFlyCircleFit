@@ -75,10 +75,31 @@ func TestJobDetailPageViewModes(t *testing.T) {
 		`class="card detail-summary"`, `class="card image-viewer detail-images"`,
 		`class="card detail-history"`, `class="card detail-downloads download-card"`,
 		`.detail-images {`, `order: 2;`, `data-metric="evaluations"`,
-		`RGB mean squared error · lower is better`, `Peak signal-to-noise ratio · higher is better`,
+		`RGB mean squared error · committed and checkpoint-safe · lower is better`, `Peak signal-to-noise ratio · higher is better`,
 		`Objective function calls`, `id="sparkline-hover-readout"`,
 		`let sparklineVisible = metricHistory.length > 0`,
 		`Best PNG`, `Parameters JSON`, `Difference PNG`, `HTML Report`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("rendered detail page missing %q", marker)
+		}
+	}
+}
+
+func TestJobDetailPageDistinguishesCandidateFromAuditedBest(t *testing.T) {
+	candidate := 95.25
+	job := JobDetail{
+		ID: "12345678-1234-1234-1234-123456789abc", State: "running", StartTime: time.Now(),
+		BestCost: 100, CandidateCost: &candidate,
+	}
+	var output bytes.Buffer
+	if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	body := output.String()
+	for _, marker := range []string{
+		"Audited Best Cost", "In-flight Candidate", "95.2500", "4.7500 (4.75%) provisional gain",
+		"pending full-image usefulness audit", `data-metric="candidate-psnr"`, "updateCandidateMetrics(data)",
 	} {
 		if !strings.Contains(body, marker) {
 			t.Errorf("rendered detail page missing %q", marker)

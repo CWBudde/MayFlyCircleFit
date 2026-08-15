@@ -32,6 +32,66 @@ func TestJobManagerBestRevisionAdvancesOnlyForStrictImprovements(t *testing.T) {
 	}
 }
 
+func TestJobManagerCandidateProgressIsProvisional(t *testing.T) {
+	jm := NewJobManager()
+	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
+	if err := jm.StartJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := jm.UpdateProgress(job.ID, 10, 100, []float64{1, 2}, 100); err != nil {
+		t.Fatal(err)
+	}
+	if err := jm.UpdateCandidateProgress(job.ID, 11, 110, 95.25); err != nil {
+		t.Fatal(err)
+	}
+
+	progress, _ := jm.GetJob(job.ID)
+	if progress.CandidateCost == nil || *progress.CandidateCost != 95.25 {
+		t.Fatalf("candidate cost = %v, want 95.25", progress.CandidateCost)
+	}
+	if progress.BestCost != 100 || progress.BestRevision != 1 || !reflect.DeepEqual(progress.BestParams, []float64{1, 2}) {
+		t.Fatalf("candidate mutated audited best: cost=%v revision=%d params=%v", progress.BestCost, progress.BestRevision, progress.BestParams)
+	}
+	if progress.Iterations != 11 || progress.Evaluations != 110 {
+		t.Fatalf("candidate counters = %d/%d, want 11/110", progress.Iterations, progress.Evaluations)
+	}
+
+	if err := jm.ClearCandidateProgress(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	cleared, _ := jm.GetJob(job.ID)
+	if cleared.CandidateCost != nil || cleared.BestCost != 100 {
+		t.Fatalf("cleared candidate = %v, audited cost = %v", cleared.CandidateCost, cleared.BestCost)
+	}
+}
+
+func TestJobManagerCandidateProgressKeepsBestCandidateAndClearsAtTerminalState(t *testing.T) {
+	jm := NewJobManager()
+	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
+	if err := jm.StartJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := jm.UpdateProgress(job.ID, 1, 10, []float64{1}, 100); err != nil {
+		t.Fatal(err)
+	}
+	for iteration, cost := range []float64{98, 99, 97} {
+		if err := jm.UpdateCandidateProgress(job.ID, iteration+2, (iteration+2)*10, cost); err != nil {
+			t.Fatal(err)
+		}
+	}
+	progress, _ := jm.GetJob(job.ID)
+	if progress.CandidateCost == nil || *progress.CandidateCost != 97 {
+		t.Fatalf("candidate cost = %v, want best provisional cost 97", progress.CandidateCost)
+	}
+	if err := jm.CancelJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	cancelled, _ := jm.GetJob(job.ID)
+	if cancelled.CandidateCost != nil {
+		t.Fatalf("terminal job retained candidate cost %v", *cancelled.CandidateCost)
+	}
+}
+
 func TestJobManager_CreateJob(t *testing.T) {
 	jm := NewJobManager()
 

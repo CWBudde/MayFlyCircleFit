@@ -11,17 +11,20 @@ import (
 
 // ProgressEvent represents a progress update event
 type ProgressEvent struct {
-	JobID        string    `json:"jobId"`
-	State        JobState  `json:"state"`
-	Iterations   int       `json:"iterations"`
-	Evaluations  int       `json:"evaluations"`
-	BestCost     float64   `json:"bestCost"`
-	BestRevision uint64    `json:"bestRevision"`
-	PSNR         *float64  `json:"psnr"`
-	PSNRInfinite bool      `json:"psnrInfinite,omitempty"`
-	SSIM         *float64  `json:"ssim,omitempty"`
-	CPS          float64   `json:"cps"`
-	Timestamp    time.Time `json:"timestamp"`
+	JobID                 string    `json:"jobId"`
+	State                 JobState  `json:"state"`
+	Iterations            int       `json:"iterations"`
+	Evaluations           int       `json:"evaluations"`
+	BestCost              float64   `json:"bestCost"`
+	BestRevision          uint64    `json:"bestRevision"`
+	CandidateCost         *float64  `json:"candidateCost,omitempty"`
+	CandidatePSNR         *float64  `json:"candidatePsnr,omitempty"`
+	CandidatePSNRInfinite bool      `json:"candidatePsnrInfinite,omitempty"`
+	PSNR                  *float64  `json:"psnr"`
+	PSNRInfinite          bool      `json:"psnrInfinite,omitempty"`
+	SSIM                  *float64  `json:"ssim,omitempty"`
+	CPS                   float64   `json:"cps"`
+	Timestamp             time.Time `json:"timestamp"`
 }
 
 func (e ProgressEvent) terminal() bool {
@@ -163,18 +166,20 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 
 	// Send initial event with current job state
 	initialEvent := ProgressEvent{
-		JobID:        job.ID,
-		State:        job.State,
-		Iterations:   job.Iterations,
-		Evaluations:  job.Evaluations,
-		BestCost:     job.BestCost,
-		BestRevision: job.BestRevision,
-		PSNR:         cloneFloat(job.PSNR),
-		PSNRInfinite: job.PSNRInfinite,
-		SSIM:         cloneFloat(job.SSIM),
-		CPS:          0,
-		Timestamp:    time.Now(),
+		JobID:         job.ID,
+		State:         job.State,
+		Iterations:    job.Iterations,
+		Evaluations:   job.Evaluations,
+		BestCost:      job.BestCost,
+		BestRevision:  job.BestRevision,
+		CandidateCost: cloneFloat(job.CandidateCost),
+		PSNR:          cloneFloat(job.PSNR),
+		PSNRInfinite:  job.PSNRInfinite,
+		SSIM:          cloneFloat(job.SSIM),
+		CPS:           0,
+		Timestamp:     time.Now(),
 	}
+	initialEvent.CandidatePSNR, initialEvent.CandidatePSNRInfinite = serializableCandidatePSNR(job.CandidateCost)
 
 	if err := writeSSEEvent(w, initialEvent); err != nil {
 		slog.Error("Failed to write initial SSE event", "error", err)

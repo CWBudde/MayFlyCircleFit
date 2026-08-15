@@ -160,6 +160,36 @@ func TestServerJobStatusRepresentsInfinitePSNRAndOptionalSSIM(t *testing.T) {
 	}
 }
 
+func TestServerJobStatusExposesProvisionalCandidateSeparately(t *testing.T) {
+	server := NewServer(":8080", nil)
+	job := server.jobManager.CreateJob(JobConfig{RefPath: "test.png"})
+	if err := server.jobManager.StartJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.jobManager.UpdateProgress(job.ID, 1, 10, []float64{1}, 100); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.jobManager.UpdateCandidateProgress(job.ID, 2, 20, 95.25); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	server.handleGetJobStatus(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+job.ID+"/status", nil), job.ID)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", recorder.Code)
+	}
+	var response jobStatusResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.BestCost != 100 || response.CandidateCost == nil || *response.CandidateCost != 95.25 {
+		t.Fatalf("audited/candidate costs = %v/%v, want 100/95.25", response.BestCost, response.CandidateCost)
+	}
+	if response.CandidatePSNR == nil || response.CandidatePSNRInfinite {
+		t.Fatalf("candidate PSNR = (%v, %v), want finite value", response.CandidatePSNR, response.CandidatePSNRInfinite)
+	}
+}
+
 func TestServer_GetJobStatus_NotFound(t *testing.T) {
 	s := NewServer(":8080", nil)
 

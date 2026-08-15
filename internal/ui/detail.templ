@@ -49,6 +49,9 @@ type JobDetail struct {
 	PolishingStagnationIters int
 	PolishingMinImprovement float64
 	BestCost      float64
+	CandidateCost *float64
+	CandidatePSNR *float64
+	CandidatePSNRInfinite bool
 	BestRevision  uint64
 	InitialCost   float64
 	StartTime     time.Time
@@ -144,21 +147,47 @@ templ JobDetailPage(job JobDetail) {
 				<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem;">
 				<div>
 					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
-						Best Cost
+						Audited Best Cost
 					</div>
 					<div style="font-size: 1.5rem; font-weight: 600;" data-metric="best-cost">
 						{ fmt.Sprintf("%.4f", job.BestCost) }
 					</div>
-					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">RGB mean squared error · lower is better</div>
+					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">RGB mean squared error · committed and checkpoint-safe · lower is better</div>
 				if job.InitialCost > 0 && job.BestCost < job.InitialCost {
 						<div style="font-size: 0.75rem; color: var(--success-color); margin-top: 0.25rem;">
 							↓ { fmt.Sprintf("%.1f%%", (1-job.BestCost/job.InitialCost)*100) } improvement
 						</div>
 					}
 				</div>
+				<div id="candidate-metrics" style={ fmt.Sprintf("display: %s; padding: 0.75rem; border: 1px solid var(--primary-color); border-radius: 0.5rem; background: color-mix(in srgb, var(--primary-color) 8%%, transparent);", displayValue(job.CandidateCost != nil)) }>
+					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">In-flight Candidate</div>
+					<div style="font-size: 1.5rem; font-weight: 600;" data-metric="candidate-cost">
+						if job.CandidateCost != nil {
+							{ fmt.Sprintf("%.4f", *job.CandidateCost) }
+						} else {
+							—
+						}
+					</div>
+					<div style="font-size: 0.75rem; color: var(--success-color); margin-top: 0.25rem;" data-metric="candidate-gain">
+						if job.CandidateCost != nil && *job.CandidateCost < job.BestCost {
+							↓ { fmt.Sprintf("%.4f (%.2f%%) provisional gain", job.BestCost-*job.CandidateCost, (1-*job.CandidateCost/job.BestCost)*100) }
+						}
+					</div>
+					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+						<span data-metric="candidate-psnr">
+							if job.CandidatePSNRInfinite {
+								∞
+							} else if job.CandidatePSNR != nil {
+								{ fmt.Sprintf("%.2f", *job.CandidatePSNR) }
+							} else {
+								—
+							}
+						</span> dB · pending full-image usefulness audit
+					</div>
+				</div>
 				<div>
 					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
-						PSNR
+						Audited PSNR
 					</div>
 					<div style="font-size: 1.5rem; font-weight: 600;">
 						<span data-metric="psnr">
@@ -953,6 +982,7 @@ templ JobDetailPage(job JobDetail) {
 
 						// Update metrics
 						updateMetric("best-cost", data.bestCost.toFixed(4));
+						updateCandidateMetrics(data);
 						updateMetric("iterations", data.iterations);
 						updateMetric("evaluations", formatNumber(data.evaluations));
 						updateIterationProgress(data.iterations);
@@ -1015,6 +1045,25 @@ templ JobDetailPage(job JobDetail) {
 					elements.forEach(function (el) {
 						el.textContent = value;
 					});
+				}
+
+				function updateCandidateMetrics(data) {
+					const panel = document.getElementById("candidate-metrics");
+					if (!panel) return;
+					if (typeof data.candidateCost !== "number") {
+						panel.style.display = "none";
+						return;
+					}
+					panel.style.display = "block";
+					updateMetric("candidate-cost", data.candidateCost.toFixed(4));
+					const gain = data.bestCost - data.candidateCost;
+					const percent = data.bestCost > 0 ? (gain / data.bestCost) * 100 : 0;
+					updateMetric("candidate-gain", "↓ " + gain.toFixed(4) + " (" + percent.toFixed(2) + "%) provisional gain");
+					if (data.candidatePsnrInfinite) {
+						updateMetric("candidate-psnr", "∞");
+					} else if (typeof data.candidatePsnr === "number") {
+						updateMetric("candidate-psnr", data.candidatePsnr.toFixed(2));
+					}
 				}
 
 				function updateIterationProgress(iterations) {

@@ -237,7 +237,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 			nextCheckpoint = now.Add(time.Duration(job.Config.CheckpointInterval) * time.Second)
 		}
 		if shouldBroadcast {
-			bestCost, bestRevision, ok := jm.bestSnapshot(jobID)
+			bestCost, bestRevision, candidateCost, ok := jm.bestSnapshot(jobID)
 			if !ok {
 				return
 			}
@@ -247,9 +247,11 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 				cps = float64(evaluations*job.Config.Circles) / elapsed
 			}
 			_ = jm.RecordMetrics(jobID, sample)
+			candidatePSNR, candidatePSNRInfinite := serializableCandidatePSNR(candidateCost)
 			jm.broadcaster.Broadcast(ProgressEvent{
 				JobID: jobID, State: StateRunning, Iterations: iterations, Evaluations: evaluations,
 				BestCost: bestCost, BestRevision: bestRevision, PSNR: cloneFloat(sample.PSNR),
+				CandidateCost: candidateCost, CandidatePSNR: candidatePSNR, CandidatePSNRInfinite: candidatePSNRInfinite,
 				PSNRInfinite: sample.PSNRInfinite, SSIM: cloneFloat(sample.SSIM), CPS: cps, Timestamp: now,
 			})
 			nextBroadcast = now.Add(500 * time.Millisecond)
@@ -446,7 +448,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	if elapsed > 0 {
 		cps = float64(result.Evaluations*job.Config.Circles) / elapsed
 	}
-	bestCost, bestRevision, _ := jm.bestSnapshot(jobID)
+	bestCost, bestRevision, _, _ := jm.bestSnapshot(jobID)
 	jm.broadcaster.Broadcast(ProgressEvent{
 		JobID: jobID, State: StateCompleted, Iterations: iterations, Evaluations: evaluations,
 		BestCost: bestCost, BestRevision: bestRevision, PSNR: cloneFloat(finalSample.PSNR),
@@ -501,13 +503,16 @@ func polishBatchResult(
 	committedParams := append([]float64(nil), batch.BestParams...)
 	committedCost := batch.BestCost
 
-	persistPolishingBoundary := func(params []float64, cost float64, iterations, evaluations int) error {
+	persistPolishingBoundary := func(params []float64, cost float64, iterations, evaluations int, clearCandidate bool) error {
 		iterations += baseIterations + mainIterations
 		evaluations += baseEvaluations + mainEvaluations
 		if err := jm.UpdateJob(job.ID, func(live *Job) {
 			live.Iterations = iterations
 			live.Evaluations = evaluations
 			updateBestResult(live, params, cost)
+			if clearCandidate {
+				live.CandidateCost = nil
+			}
 		}); err != nil {
 			return err
 		}
@@ -524,9 +529,18 @@ func polishBatchResult(
 		Observer: func(progress opt.Progress) {
 			progress.Iterations += mainIterations
 			progress.Evaluations += mainEvaluations
+			if err := jm.UpdateCandidateProgress(
+				job.ID,
+				baseIterations+progress.Iterations,
+				baseEvaluations+progress.Evaluations,
+				progress.BestCost,
+			); err != nil {
+				return
+			}
 			// Polishing is transactional. Publish counters continuously, but do
-			// not expose or checkpoint an in-flight candidate before the sweep's
-			// full-image usefulness audit accepts it.
+			// not use or checkpoint an in-flight candidate before the sweep's
+			// full-image usefulness audit accepts it. The separately labelled
+			// candidate cost is informational only.
 			progress.BestParams = append([]float64(nil), committedParams...)
 			progress.BestCost = committedCost
 			observer(progress)
@@ -537,6 +551,7 @@ func polishBatchResult(
 				committedCost,
 				boundary.Iterations,
 				boundary.Evaluations,
+				false,
 			)
 		},
 		OnSweep: func(progress renderer.BatchPolishProgress) error {
@@ -555,6 +570,7 @@ func polishBatchResult(
 				progress.BestCost,
 				progress.Iterations,
 				progress.Evaluations,
+				true,
 			)
 		},
 	})

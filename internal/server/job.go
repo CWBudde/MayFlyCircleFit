@@ -34,6 +34,7 @@ type Job struct {
 	BestParams    []float64      `json:"bestParams,omitempty"`
 	BestCost      float64        `json:"bestCost"`
 	BestRevision  uint64         `json:"-"`
+	CandidateCost *float64       `json:"candidateCost,omitempty"`
 	InitialCost   float64        `json:"initialCost"`
 	Iterations    int            `json:"iterations"`
 	Evaluations   int            `json:"evaluations"`
@@ -180,6 +181,36 @@ func (jm *JobManager) UpdateProgress(id string, iterations, evaluations int, bes
 	return nil
 }
 
+// UpdateCandidateProgress records a provisional full-image cost produced by a
+// transactional polishing sweep. It deliberately does not update BestParams,
+// BestCost, or BestRevision: those remain the audited, checkpoint-safe result.
+func (jm *JobManager) UpdateCandidateProgress(id string, iterations, evaluations int, candidateCost float64) error {
+	jm.mu.Lock()
+	defer jm.mu.Unlock()
+	job, ok := jm.jobs[id]
+	if !ok {
+		return fmt.Errorf("job not found: %s", id)
+	}
+	if job.State != StateRunning {
+		return fmt.Errorf("%w: cannot update %s job", ErrInvalidTransition, job.State)
+	}
+	if iterations < job.Iterations || evaluations < job.Evaluations || math.IsNaN(candidateCost) || math.IsInf(candidateCost, 0) {
+		return fmt.Errorf("invalid candidate progress snapshot")
+	}
+	job.Iterations = iterations
+	job.Evaluations = evaluations
+	if candidateCost < job.BestCost && (job.CandidateCost == nil || candidateCost < *job.CandidateCost) {
+		job.CandidateCost = cloneFloat(&candidateCost)
+	}
+	return nil
+}
+
+// ClearCandidateProgress removes an in-flight result after its sweep has been
+// accepted or rejected by the full-image usefulness audit.
+func (jm *JobManager) ClearCandidateProgress(id string) error {
+	return jm.UpdateJob(id, func(job *Job) { job.CandidateCost = nil })
+}
+
 // updateBestResult records only strict improvements. BestRevision is the
 // stable identity used by live clients and image response validators.
 func updateBestResult(job *Job, bestParams []float64, bestCost float64) bool {
@@ -192,14 +223,14 @@ func updateBestResult(job *Job, bestParams []float64, bestCost float64) bool {
 	return true
 }
 
-func (jm *JobManager) bestSnapshot(id string) (float64, uint64, bool) {
+func (jm *JobManager) bestSnapshot(id string) (float64, uint64, *float64, bool) {
 	jm.mu.RLock()
 	defer jm.mu.RUnlock()
 	job, ok := jm.jobs[id]
 	if !ok {
-		return 0, 0, false
+		return 0, 0, nil, false
 	}
-	return job.BestCost, job.BestRevision, true
+	return job.BestCost, job.BestRevision, cloneFloat(job.CandidateCost), true
 }
 
 // RecordMetrics stores the latest quality metrics and one UI-history sample.
@@ -274,20 +305,22 @@ func (jm *JobManager) transition(id string, next JobState, update func(*Job)) er
 	}
 	job.State = next
 	if next == StateCompleted || next == StateFailed || next == StateCancelled {
+		job.CandidateCost = nil
 		end := time.Now()
 		job.EndTime = &end
 	}
 	event := ProgressEvent{
-		JobID:        job.ID,
-		State:        job.State,
-		Iterations:   job.Iterations,
-		Evaluations:  job.Evaluations,
-		BestCost:     job.BestCost,
-		BestRevision: job.BestRevision,
-		PSNR:         cloneFloat(job.PSNR),
-		PSNRInfinite: job.PSNRInfinite,
-		SSIM:         cloneFloat(job.SSIM),
-		Timestamp:    time.Now(),
+		JobID:         job.ID,
+		State:         job.State,
+		Iterations:    job.Iterations,
+		Evaluations:   job.Evaluations,
+		BestCost:      job.BestCost,
+		BestRevision:  job.BestRevision,
+		CandidateCost: cloneFloat(job.CandidateCost),
+		PSNR:          cloneFloat(job.PSNR),
+		PSNRInfinite:  job.PSNRInfinite,
+		SSIM:          cloneFloat(job.SSIM),
+		Timestamp:     time.Now(),
 	}
 	jm.mu.Unlock()
 
@@ -334,6 +367,7 @@ func cloneJob(job *Job) *Job {
 
 	cloned := *job
 	cloned.BestParams = append([]float64(nil), job.BestParams...)
+	cloned.CandidateCost = cloneFloat(job.CandidateCost)
 	cloned.PSNR = cloneFloat(job.PSNR)
 	cloned.SSIM = cloneFloat(job.SSIM)
 	cloned.MetricHistory = make([]MetricSample, len(job.MetricHistory))
