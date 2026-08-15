@@ -1,10 +1,13 @@
 package renderer
 
 import (
+	"bytes"
 	"context"
 	"image"
 	"image/color"
 	"reflect"
+	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
@@ -352,6 +355,236 @@ func TestPolishCircleBatchValidatesOptions(t *testing.T) {
 	for _, options := range tests {
 		if _, err := PolishCircleBatchContext(context.Background(), base, &fixedPolishOptimizer{params: params}, params, options); err == nil {
 			t.Fatalf("PolishCircleBatchContext options %+v returned nil error", options)
+		}
+	}
+}
+
+// stagedOnlyRenderer forwards staged session creation and in-place compositing
+// but hides canvas-seeded sessions, so polishing evaluates the complete parameter
+// vector for every candidate the way it did before the fixed prefix was baked.
+// Everything else keeps working, which isolates baking in comparisons.
+type stagedOnlyRenderer struct {
+	Renderer
+	rendererSessionFactory
+	compositor inPlaceCompositor
+}
+
+func newStagedOnlyRenderer(cpu *CPURenderer) stagedOnlyRenderer {
+	return stagedOnlyRenderer{Renderer: cpu, rendererSessionFactory: cpu, compositor: cpu}
+}
+
+func (s stagedOnlyRenderer) compositeParams(img *image.NRGBA, params []float64, count int) {
+	s.compositor.compositeParams(img, params, count)
+}
+
+func (s stagedOnlyRenderer) initialCanvas() *image.NRGBA {
+	return s.compositor.initialCanvas()
+}
+
+// recordingPolishOptimizer evaluates a deterministic spread of candidates around
+// the incumbent and keeps every cost it saw, so two runs can be compared
+// evaluation by evaluation.
+type recordingPolishOptimizer struct {
+	steps int
+	costs []float64
+}
+
+func (o *recordingPolishOptimizer) Run(func([]float64) float64, []float64, []float64, int) ([]float64, float64) {
+	return nil, 0
+}
+
+func (o *recordingPolishOptimizer) RunContext(_ context.Context, problem opt.Problem, options opt.RunOptions) (opt.Result, error) {
+	steps := o.steps
+	if steps == 0 {
+		steps = 4
+	}
+	best := append([]float64(nil), options.Initial.Params...)
+	bestCost := problem.Eval(best)
+	o.costs = append(o.costs, bestCost)
+	for step := 1; step <= steps; step++ {
+		candidate := append([]float64(nil), options.Initial.Params...)
+		for i := range candidate {
+			candidate[i] += float64(step) * 0.75 * float64(i%3-1)
+		}
+		cost := problem.Eval(candidate)
+		o.costs = append(o.costs, cost)
+		if cost < bestCost {
+			best, bestCost = candidate, cost
+		}
+	}
+	return opt.Result{
+		BestParams:  best,
+		BestCost:    bestCost,
+		Iterations:  1,
+		Evaluations: len(o.costs),
+		Termination: opt.TerminationCompleted,
+	}, nil
+}
+
+func TestBakedSuffixSessionMatchesFullVector(t *testing.T) {
+	const width, height = 20, 16
+	ref := solidImage(width, height, color.NRGBA{R: 200, G: 40, B: 90, A: 255})
+	canvas := solidImage(width, height, color.NRGBA{R: 20, G: 220, B: 40, A: 255})
+	params := polishParityParams()
+	circleCount := len(params) / paramsPerCircle
+
+	for _, custom := range []bool{false, true} {
+		for prefixCircles := 1; prefixCircles < circleCount; prefixCircles++ {
+			var base *CPURenderer
+			if custom {
+				base = NewCPURendererWithCanvas(ref, canvas, circleCount)
+			} else {
+				base = NewCPURenderer(ref, circleCount)
+			}
+			wantImage := cloneNRGBA(base.Render(params))
+			wantCost := base.Cost(params)
+
+			suffix, cleanup, ok := bakedSuffixSession(base, params, prefixCircles, circleCount)
+			if !ok {
+				t.Fatalf("bakedSuffixSession(prefix %d) not applied", prefixCircles)
+			}
+			gotCost := suffix.Cost(params[prefixCircles*paramsPerCircle:])
+			gotImage := suffix.Render(params[prefixCircles*paramsPerCircle:])
+			if gotCost != wantCost {
+				t.Errorf("custom canvas %v prefix %d: cost = %v, want %v", custom, prefixCircles, gotCost, wantCost)
+			}
+			if !bytes.Equal(gotImage.Pix, wantImage.Pix) {
+				t.Errorf("custom canvas %v prefix %d: baked image differs from full render", custom, prefixCircles)
+			}
+			cleanup()
+		}
+	}
+}
+
+func TestBakedSuffixSessionSkipsUnsupportedInput(t *testing.T) {
+	ref := solidImage(6, 6, color.NRGBA{A: 255})
+	params := polishParityParams()
+	circleCount := len(params) / paramsPerCircle
+	base := NewCPURenderer(ref, circleCount)
+
+	if _, _, ok := bakedSuffixSession(base, params, 0, circleCount); ok {
+		t.Error("bakedSuffixSession(prefix 0) applied, want fallback")
+	}
+	if _, _, ok := bakedSuffixSession(base, params, circleCount, circleCount); ok {
+		t.Error("bakedSuffixSession(full prefix) applied, want fallback")
+	}
+	hidden := newStagedOnlyRenderer(base)
+	if _, _, ok := bakedSuffixSession(hidden, params, 1, circleCount); ok {
+		t.Error("bakedSuffixSession(unsupported backend) applied, want fallback")
+	}
+}
+
+func TestPolishCircleBatchBakedPrefixMatchesFullVector(t *testing.T) {
+	const width, height = 20, 16
+	ref := solidImage(width, height, color.NRGBA{R: 200, G: 40, B: 90, A: 255})
+	params := polishParityParams()
+	circleCount := len(params) / paramsPerCircle
+
+	run := func(bake bool) (*BatchPolishResult, []float64, [][]int) {
+		t.Helper()
+		cpu := NewCPURenderer(ref, circleCount)
+		cpu.SetThreads(1)
+		var base Renderer = cpu
+		if !bake {
+			base = newStagedOnlyRenderer(cpu)
+		}
+		optimizer := &recordingPolishOptimizer{}
+		var activeSets [][]int
+		result, err := PolishCircleBatchContext(context.Background(), base, optimizer, params, BatchPolishOptions{
+			ActiveSetSize: 2,
+			MaxSweeps:     3,
+			Strategy:      BatchPolishHybridOverlap,
+			OnSweep: func(progress BatchPolishProgress) error {
+				activeSets = append(activeSets, progress.ActiveSet)
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatalf("PolishCircleBatchContext(bake %v) error = %v", bake, err)
+		}
+		return result, optimizer.costs, activeSets
+	}
+
+	baked, bakedCosts, bakedSets := run(true)
+	full, fullCosts, fullSets := run(false)
+
+	if !reflect.DeepEqual(bakedSets, fullSets) {
+		t.Fatalf("active sets = %v, want %v", bakedSets, fullSets)
+	}
+	// Active sets are one-based, so a minimum above one means circles ahead of the
+	// first active slot were baked instead of replayed.
+	if !slices.ContainsFunc(bakedSets, func(set []int) bool { return slices.Min(set) > 1 }) {
+		t.Fatalf("active sets %v never left a bakeable prefix", bakedSets)
+	}
+	// A sweep that touches the first circle must still exercise the fallback.
+	if !slices.ContainsFunc(bakedSets, func(set []int) bool { return slices.Min(set) == 1 }) {
+		t.Fatalf("active sets %v never exercised the unbaked path", bakedSets)
+	}
+	if !reflect.DeepEqual(bakedCosts, fullCosts) {
+		t.Fatalf("evaluated costs = %v, want %v", bakedCosts, fullCosts)
+	}
+	if baked.BestCost != full.BestCost || !reflect.DeepEqual(baked.BestParams, full.BestParams) {
+		t.Fatalf("baked result = cost %v params %v, want cost %v params %v",
+			baked.BestCost, baked.BestParams, full.BestCost, full.BestParams)
+	}
+	if !bytes.Equal(baked.BestImage.Pix, full.BestImage.Pix) {
+		t.Fatal("baked polishing image differs from full-vector polishing image")
+	}
+}
+
+// polishParityParams places a large, strong circle first so weak-circle selection
+// leaves a non-empty fixed prefix to bake.
+func polishParityParams() []float64 {
+	params := circleParams(10, 8, 9, color.NRGBA{R: 190, G: 45, B: 85, A: 255}, 1)
+	params = append(params, circleParams(4, 4, 4, color.NRGBA{R: 210, G: 60, B: 100, A: 255}, 0.9)...)
+	params = append(params, circleParams(15, 5, 3, color.NRGBA{R: 120, G: 30, B: 60, A: 255}, 0.6)...)
+	params = append(params, circleParams(6, 12, 3, color.NRGBA{R: 80, G: 200, B: 120, A: 255}, 0.4)...)
+	params = append(params, circleParams(16, 12, 2, color.NRGBA{R: 30, G: 90, B: 220, A: 255}, 0.3)...)
+	return params
+}
+
+func BenchmarkPolishCircleBatch(b *testing.B) {
+	const width, height = 128, 128
+	for _, circleCount := range []int{64, 256} {
+		ref := solidImage(width, height, color.NRGBA{R: 60, G: 120, B: 180, A: 255})
+		params := make([]float64, 0, circleCount*paramsPerCircle)
+		for i := 0; i < circleCount; i++ {
+			params = append(params, circleParams(
+				float64((i*37)%width)+0.5,
+				float64((i*53)%height)+0.5,
+				4+float64(i%7),
+				color.NRGBA{R: uint8(i * 3), G: uint8(i * 5), B: uint8(i * 7), A: 255},
+				0.4+float64(i%4)/10,
+			)...)
+		}
+
+		newBase := func(bake bool) Renderer {
+			cpu := NewCPURenderer(ref, circleCount)
+			cpu.SetThreads(1)
+			if bake {
+				return cpu
+			}
+			return newStagedOnlyRenderer(cpu)
+		}
+		for _, bake := range []bool{true, false} {
+			name := "baked-"
+			if !bake {
+				name = "full-vector-"
+			}
+			b.Run(name+strconv.Itoa(circleCount), func(b *testing.B) {
+				base := newBase(bake)
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					_, err := PolishCircleBatchContext(context.Background(), base, &recordingPolishOptimizer{steps: 200}, params, BatchPolishOptions{
+						ActiveSetSize: 3,
+						MaxSweeps:     1,
+						Strategy:      BatchPolishHybridOverlap,
+					})
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
 		}
 	}
 }

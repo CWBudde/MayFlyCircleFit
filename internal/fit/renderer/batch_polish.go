@@ -148,6 +148,15 @@ func PolishCircleBatchContext(
 
 	visitedRegions := make(map[int]bool)
 	visitCounts := make(map[int]int, circleCount)
+	// Each sweep may open one baked-prefix session. Draining the cleanups once at
+	// return keeps the loop's error paths from leaking one; the count is bounded
+	// by MaxSweeps and only the current sweep's session stays reachable.
+	var sweepCleanups []func()
+	defer func() {
+		for _, sweepCleanup := range sweepCleanups {
+			sweepCleanup()
+		}
+	}()
 	for sweep := 1; sweep <= options.MaxSweeps; sweep++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -177,11 +186,24 @@ func PolishCircleBatchContext(
 
 		bounds := fit.NewBounds(options.ActiveSetSize, base.Reference().Bounds().Dx(), base.Reference().Bounds().Dy())
 		candidateFull := append([]float64(nil), bestParams...)
+		// Circles before the first active slot are fixed and drawn first, so they
+		// can be baked into a canvas once per sweep instead of being rasterized
+		// again for every candidate. The suffix still carries the inactive circles
+		// that are drawn after an active one, which preserves draw order exactly.
+		prefixCircles := slices.Min(activeCircles)
+		costOf := fullSession.Cost
+		if suffixSession, suffixCleanup, ok := bakedSuffixSession(base, bestParams, prefixCircles, circleCount); ok {
+			sweepCleanups = append(sweepCleanups, suffixCleanup)
+			suffixOffset := prefixCircles * paramsPerCircle
+			costOf = func(full []float64) float64 {
+				return suffixSession.Cost(full[suffixOffset:])
+			}
+		}
 		evaluate := func(activeParams []float64) float64 {
 			evaluations++
 			bounds.ClampIndependentVector(activeParams)
 			mergeActiveCircleParams(candidateFull, activeCircles, activeParams)
-			return fullSession.Cost(candidateFull)
+			return costOf(candidateFull)
 		}
 		incumbentParams := extractActiveCircleParams(bestParams, activeCircles)
 		initial := opt.Candidate{Params: incumbentParams, Cost: bestCost}

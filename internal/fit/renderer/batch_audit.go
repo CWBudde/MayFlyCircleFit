@@ -62,22 +62,10 @@ func AuditCircleBatch(r Renderer, params []float64) (BatchAudit, error) {
 		Width: referenceBounds.Dx(), Height: referenceBounds.Dy(),
 	}
 
-	progressive := append([]float64(nil), params...)
-	for offset := 0; offset < len(progressive); offset += paramsPerCircle {
-		progressive[offset+6] = 0
-	}
-	previous := cloneNRGBA(r.Render(progressive))
+	stepper := newAuditStepper(r, params, circleCount)
 
 	for circle := 0; circle < circleCount; circle++ {
-		offset := circle * paramsPerCircle
-		progressive[offset+6] = params[offset+6]
-		rendered := r.Render(progressive)
-		introduced := changedPixelCount(previous, rendered)
-		copy(previous.Pix, rendered.Pix)
-
-		without := append([]float64(nil), params...)
-		without[offset+6] = 0
-		withoutImage := r.Render(without)
+		introduced, withoutImage := stepper.step(circle)
 		costWithout := fit.FastMSECost(withoutImage, reference)
 		validationErr := parameterBounds.ValidateCircle(vector.DecodeCircle(circle))
 		audit.Circles[circle] = CircleAudit{
@@ -93,6 +81,98 @@ func AuditCircleBatch(r Renderer, params []float64) (BatchAudit, error) {
 	}
 
 	return audit, nil
+}
+
+// inPlaceCompositor is implemented by renderers that can draw a run of circles
+// onto a caller-owned canvas without resetting it. It lets the audit keep the
+// already-composited prefix instead of replaying the whole draw order for every
+// circle.
+type inPlaceCompositor interface {
+	compositeParams(img *image.NRGBA, params []float64, count int)
+	initialCanvas() *image.NRGBA
+}
+
+// auditStepper walks the draw order one circle at a time. step composites the
+// circle onto the retained prefix and returns both the pixels it introduced and
+// the image of the complete vector without it. The returned image stays valid
+// only until the next call.
+type auditStepper interface {
+	step(circle int) (int, *image.NRGBA)
+}
+
+func newAuditStepper(r Renderer, params []float64, circleCount int) auditStepper {
+	if compositor, ok := r.(inPlaceCompositor); ok {
+		prefix := compositor.initialCanvas()
+		if prefix != nil {
+			return &accumulatedAuditStepper{
+				compositor: compositor,
+				params:     params,
+				count:      circleCount,
+				prefix:     prefix,
+				next:       cloneNRGBA(prefix),
+				without:    cloneNRGBA(prefix),
+			}
+		}
+	}
+	progressive := append([]float64(nil), params...)
+	for offset := 0; offset < len(progressive); offset += paramsPerCircle {
+		progressive[offset+6] = 0
+	}
+	return &replayAuditStepper{
+		r:           r,
+		params:      params,
+		progressive: progressive,
+		without:     append([]float64(nil), params...),
+		previous:    cloneNRGBA(r.Render(progressive)),
+	}
+}
+
+// replayAuditStepper re-renders the complete parameter vector for every step. It
+// is the portable fallback for backends that cannot composite in place.
+type replayAuditStepper struct {
+	r           Renderer
+	params      []float64
+	progressive []float64
+	without     []float64
+	previous    *image.NRGBA
+}
+
+func (s *replayAuditStepper) step(circle int) (int, *image.NRGBA) {
+	offset := circle * paramsPerCircle
+	s.progressive[offset+6] = s.params[offset+6]
+	rendered := s.r.Render(s.progressive)
+	introduced := changedPixelCount(s.previous, rendered)
+	copy(s.previous.Pix, rendered.Pix)
+
+	copy(s.without, s.params)
+	s.without[offset+6] = 0
+	return introduced, s.r.Render(s.without)
+}
+
+// accumulatedAuditStepper retains the canvas holding circles [0, circle) and
+// composites forward from it. Draw order is sequential, so that prefix plus the
+// suffix after a circle is exactly the image rendered without that circle.
+type accumulatedAuditStepper struct {
+	compositor inPlaceCompositor
+	params     []float64
+	count      int
+	prefix     *image.NRGBA
+	next       *image.NRGBA
+	without    *image.NRGBA
+}
+
+func (s *accumulatedAuditStepper) step(circle int) (int, *image.NRGBA) {
+	offset := circle * paramsPerCircle
+
+	copy(s.without.Pix, s.prefix.Pix)
+	s.compositor.compositeParams(s.without, s.params[offset+paramsPerCircle:], s.count-circle-1)
+
+	copy(s.next.Pix, s.prefix.Pix)
+	s.compositor.compositeParams(s.next, s.params[offset:], 1)
+	introduced := changedPixelCount(s.prefix, s.next)
+	s.prefix, s.next = s.next, s.prefix
+
+	return introduced, s.without
 }
 
 // CirclePruneOptions controls iterative batch pruning. A circle is removed if

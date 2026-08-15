@@ -528,6 +528,7 @@ templ JobDetailPage(job JobDetail) {
 			}
 			.image-viewer[data-view-mode="reference"] [data-view-panel="reference"],
 			.image-viewer[data-view-mode="best"] [data-view-panel="best"],
+			.image-viewer[data-view-mode="overlay"] [data-view-panel="overlay"],
 			.image-viewer[data-view-mode="difference"] [data-view-panel="difference"],
 			.image-viewer[data-view-mode="side-by-side"]
 				[data-view-panel="reference"],
@@ -547,6 +548,53 @@ templ JobDetailPage(job JobDetail) {
 			}
 			.image-frame-difference {
 				background: #000000;
+			}
+			.image-frame-overlay {
+				min-height: 6rem;
+			}
+			.overlay-best-layer {
+				position: absolute;
+				inset: 0;
+			}
+			.overlay-best-layer img {
+				width: 100%;
+				height: 100%;
+				object-fit: fill;
+				transition: none;
+			}
+			.image-frame-overlay .image-state {
+				position: absolute;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+				padding: 0.5rem 0.75rem;
+				border-radius: 0.375rem;
+				background-color: var(--surface-color);
+			}
+			.overlay-heading {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				justify-content: space-between;
+				gap: 0.75rem;
+				margin-bottom: 0.75rem;
+			}
+			.overlay-opacity-control {
+				display: inline-flex;
+				align-items: center;
+				gap: 0.5rem;
+				font-size: 0.875rem;
+				color: var(--text-muted);
+			}
+			.overlay-opacity-control input[type="range"] {
+				width: 10rem;
+				accent-color: var(--primary-color);
+			}
+			.overlay-opacity-value {
+				min-width: 3rem;
+				font-family: monospace;
+				font-size: 0.8125rem;
+				text-align: right;
 			}
 			.image-frame img {
 				width: 100%;
@@ -653,6 +701,10 @@ templ JobDetailPage(job JobDetail) {
 						<input type="radio" id="view-mode-difference" name="view-mode" value="difference" aria-keyshortcuts="4"/>
 						<label for="view-mode-difference">Difference <span class="view-mode-shortcut" aria-hidden="true">4</span></label>
 					</div>
+					<div class="view-mode-option">
+						<input type="radio" id="view-mode-overlay" name="view-mode" value="overlay" aria-keyshortcuts="5"/>
+						<label for="view-mode-overlay">Overlay <span class="view-mode-shortcut" aria-hidden="true">5</span></label>
+					</div>
 				</fieldset>
 			</div>
 			<div class="image-view-panels">
@@ -750,6 +802,55 @@ templ JobDetailPage(job JobDetail) {
 						<span class="heatmap-legend-description">Mean absolute RGB error per pixel</span>
 					</div>
 				</div>
+				<!-- Best blended over Reference -->
+				<div class="image-view-panel" data-view-panel="overlay">
+					<div class="overlay-heading">
+						<h3 style="font-size: 1rem; font-weight: 600; color: var(--text-muted);">
+							Best over Reference
+						</h3>
+						<div class="overlay-opacity-control">
+							<label for="overlay-opacity">Best opacity</label>
+							<input
+								type="range"
+								id="overlay-opacity"
+								min="0"
+								max="100"
+								step="1"
+								value="50"
+								aria-label="Best image opacity in percent"
+							/>
+							<output id="overlay-opacity-value" class="overlay-opacity-value" for="overlay-opacity" aria-live="off">50%</output>
+						</div>
+					</div>
+					<div class="image-frame image-frame-overlay">
+						<img
+							id="overlay-reference-image"
+							src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/ref.png", job.ID)) }
+							alt="Reference image underlay"
+						/>
+						<div id="overlay-best-layer" class="overlay-best-layer" style="opacity: 0.5;">
+							<img
+								id="overlay-best-image"
+								src={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/best.png?v=%d", job.ID, job.BestRevision)) }
+								alt="Current best image blended over the reference"
+							/>
+						</div>
+						<div id="overlay-best-image-loading" class="image-state image-loading">
+							<div class="spinner"></div>
+							<p style="margin-top: 0.5rem; font-size: 0.875rem;">Loading...</p>
+						</div>
+						<div id="overlay-best-image-error" class="image-state">
+							if job.State == "pending" {
+								Optimization not started yet
+							} else {
+								No results yet
+							}
+						</div>
+					</div>
+					<p style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-muted);">
+						Drag the slider to blend the current best render over the reference. 0% shows the reference alone, 100% the best render alone.
+					</p>
+				</div>
 			</div>
 			</div>
 
@@ -814,12 +915,20 @@ templ JobDetailPage(job JobDetail) {
 				let lastRenderedBestRevision =
 					Number.parseInt(imageViewer.dataset.bestRevision, 10) || 0;
 				const viewStorageKey = "mayflycirclefit.viewMode";
-				const viewModes = ["reference", "best", "side-by-side", "difference"];
+				const overlayStorageKey = "mayflycirclefit.overlayOpacity";
+				const viewModes = [
+					"reference",
+					"best",
+					"side-by-side",
+					"difference",
+					"overlay",
+				];
 				const shortcutViews = {
 					1: "reference",
 					2: "best",
 					3: "side-by-side",
 					4: "difference",
+					5: "overlay",
 				};
 				let parameterRefreshPending = false;
 
@@ -839,7 +948,13 @@ templ JobDetailPage(job JobDetail) {
 					"diff-image-loading",
 					"diff-image-error",
 				);
+				initializeImageState(
+					"overlay-best-image",
+					"overlay-best-image-loading",
+					"overlay-best-image-error",
+				);
 				initializeHeatmapColormap();
+				initializeOverlayOpacity();
 				initializeParameterViewer();
 				initializeDownloadControls();
 				initializePolishControl();
@@ -1013,6 +1128,13 @@ templ JobDetailPage(job JobDetail) {
 							refreshImage(
 								"best-image",
 								"best-image-loading",
+								jobId,
+								"best.png",
+								lastRenderedBestRevision,
+							);
+							refreshImage(
+								"overlay-best-image",
+								"overlay-best-image-loading",
 								jobId,
 								"best.png",
 								lastRenderedBestRevision,
@@ -1333,6 +1455,61 @@ templ JobDetailPage(job JobDetail) {
 						);
 					});
 					updateHeatmapLegend(select.value);
+				}
+
+				function initializeOverlayOpacity() {
+					const slider = document.getElementById("overlay-opacity");
+					const layer = document.getElementById("overlay-best-layer");
+					const readout = document.getElementById("overlay-opacity-value");
+					if (!slider || !layer) {
+						return;
+					}
+
+					let initialPercent = clampOverlayPercent(
+						Number.parseInt(slider.value, 10),
+					);
+					try {
+						const stored = window.localStorage.getItem(overlayStorageKey);
+						if (stored !== null) {
+							const parsed = Number.parseInt(stored, 10);
+							if (Number.isFinite(parsed)) {
+								initialPercent = clampOverlayPercent(parsed);
+							}
+						}
+					} catch (err) {
+						// Storage can be unavailable in privacy-restricted browser contexts.
+					}
+					applyOverlayOpacity(initialPercent, false);
+
+					slider.addEventListener("input", function () {
+						applyOverlayOpacity(
+							clampOverlayPercent(Number.parseInt(slider.value, 10)),
+							true,
+						);
+					});
+
+					function applyOverlayOpacity(percent, persist) {
+						slider.value = String(percent);
+						layer.style.opacity = String(percent / 100);
+						if (readout) {
+							readout.textContent = percent + "%";
+						}
+						if (!persist) {
+							return;
+						}
+						try {
+							window.localStorage.setItem(overlayStorageKey, String(percent));
+						} catch (err) {
+							// The chosen blend still applies for the current page.
+						}
+					}
+				}
+
+				function clampOverlayPercent(percent) {
+					if (!Number.isFinite(percent)) {
+						return 50;
+					}
+					return Math.min(100, Math.max(0, Math.round(percent)));
 				}
 
 				function selectedHeatmapColormap() {

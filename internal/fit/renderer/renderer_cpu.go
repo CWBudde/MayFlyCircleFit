@@ -177,11 +177,49 @@ func (r *CPURenderer) renderRows(img *image.NRGBA, params []float64, minY, maxY 
 }
 
 func (r *CPURenderer) renderRowsTracked(img *image.NRGBA, params []float64, minY, maxY int, dirty *dirtySpanSet) {
-	pv := fit.ParamVector{Data: params, K: r.k, Width: r.width, Height: r.height}
-	for i := 0; i < r.k; i++ {
+	r.compositeRows(img, params, r.k, minY, maxY, dirty)
+}
+
+func (r *CPURenderer) compositeRows(img *image.NRGBA, params []float64, count, minY, maxY int, dirty *dirtySpanSet) {
+	pv := fit.ParamVector{Data: params, K: count, Width: r.width, Height: r.height}
+	for i := 0; i < count; i++ {
 		circle := pv.DecodeCircle(i)
 		r.renderCircleScanlineRowsTracked(img, circle, minY, maxY, dirty)
 	}
+}
+
+// compositeParams draws count circles from params onto img in draw order without
+// resetting it to the initial background. Callers own img and its prior content;
+// this is the primitive that lets an immutable prefix be rendered once and reused
+// instead of being replayed on every evaluation.
+func (r *CPURenderer) compositeParams(img *image.NRGBA, params []float64, count int) {
+	if img == nil || count <= 0 || r.height == 0 {
+		return
+	}
+	if len(params) < count*paramsPerCircle {
+		return
+	}
+	if img.Bounds().Dx() != r.width || img.Bounds().Dy() != r.height {
+		return
+	}
+
+	if r.threads <= 1 {
+		r.compositeRows(img, params, count, 0, r.height, nil)
+		return
+	}
+
+	var workers sync.WaitGroup
+	workers.Add(r.threads - 1)
+	for worker := 0; worker < r.threads-1; worker++ {
+		minY := worker * r.height / r.threads
+		maxY := (worker + 1) * r.height / r.threads
+		go func() {
+			defer workers.Done()
+			r.compositeRows(img, params, count, minY, maxY, nil)
+		}()
+	}
+	r.compositeRows(img, params, count, (r.threads-1)*r.height/r.threads, r.height, nil)
+	workers.Wait()
 }
 
 // Cost computes error between params and reference

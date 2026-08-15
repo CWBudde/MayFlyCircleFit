@@ -1049,7 +1049,10 @@ func TestPolishEndpointCreatesCheckpointContinuation(t *testing.T) {
 	}
 }
 
-func TestExtendEndpointCreatesOrderedBatchContinuation(t *testing.T) {
+// newExtendableBatchJob prepares a server holding one completed two-circle batch
+// job and its checkpoint, which is the only state the extend endpoint accepts.
+func newExtendableBatchJob(t *testing.T) (*Server, string, []float64) {
+	t.Helper()
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "ref.png")
 	createSimpleTestImage(t, imgPath)
@@ -1083,8 +1086,13 @@ func TestExtendEndpointCreatesOrderedBatchContinuation(t *testing.T) {
 		t.Fatal(err)
 	}
 	server.cancel()
+	return server, source.ID, params
+}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+source.ID+"/extend", strings.NewReader(`{
+func TestExtendEndpointCreatesOrderedBatchContinuation(t *testing.T) {
+	server, sourceID, params := newExtendableBatchJob(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+sourceID+"/extend", strings.NewReader(`{
 		"additionalCircles":10,
 		"batchSize":10,
 		"epochs":4,
@@ -1119,6 +1127,43 @@ func TestExtendEndpointCreatesOrderedBatchContinuation(t *testing.T) {
 	}
 	if continuation.Iterations != 8000 || continuation.Evaluations != 900000 || !reflect.DeepEqual(continuation.BestParams, params) {
 		t.Fatalf("extension continuation state = %+v", continuation)
+	}
+}
+
+func TestExtendEndpointPolishIsOptIn(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "absent", body: `{"additionalCircles":3}`, want: false},
+		{name: "disabled", body: `{"additionalCircles":3,"polish":false}`, want: false},
+		{name: "enabled", body: `{"additionalCircles":3,"polish":true}`, want: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			server, sourceID, _ := newExtendableBatchJob(t)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+sourceID+"/extend", strings.NewReader(testCase.body))
+			req.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			server.Handler().ServeHTTP(response, req)
+			if response.Code != http.StatusCreated {
+				t.Fatalf("extend status = %d body=%s", response.Code, response.Body.String())
+			}
+			var payload struct {
+				JobID string `json:"jobId"`
+			}
+			if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			continuation, ok := server.jobManager.GetJob(payload.JobID)
+			if !ok {
+				t.Fatal("extension continuation job not found")
+			}
+			if continuation.Config.PolishingEnabled != testCase.want || continuation.Config.PolishingOnly {
+				t.Fatalf("polishing enabled/only = %v/%v, want %v/false",
+					continuation.Config.PolishingEnabled, continuation.Config.PolishingOnly, testCase.want)
+			}
+		})
 	}
 }
 

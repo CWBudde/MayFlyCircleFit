@@ -1013,6 +1013,9 @@ type extendJobRequest struct {
 	Iters             *int   `json:"iters,omitempty"`
 	PopSize           *int   `json:"popSize,omitempty"`
 	Seed              *int64 `json:"seed,omitempty"`
+	// Polish re-enables active-set polishing once the appended circles complete.
+	// It is off unless requested, so an extension stays a pure append by default.
+	Polish *bool `json:"polish,omitempty"`
 }
 
 func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID string) {
@@ -1107,6 +1110,9 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 	if request.Seed != nil {
 		config.Seed = *request.Seed
 		config.EffectiveSeed = *request.Seed
+	}
+	if request.Polish != nil {
+		config.PolishingEnabled = *request.Polish
 	}
 	config, err = app.Normalize(config)
 	if err != nil {

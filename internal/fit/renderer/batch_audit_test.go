@@ -4,7 +4,9 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"reflect"
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
@@ -65,6 +67,114 @@ func TestAuditCircleBatchReportsHarmfulCircle(t *testing.T) {
 	}
 	if got := audit.Circles[0].MSEContribution; got >= 0 {
 		t.Fatalf("harmful circle contribution = %g, want < 0", got)
+	}
+}
+
+// replayOnlyRenderer hides the in-place compositor so AuditCircleBatch takes the
+// portable path that re-renders the complete vector for every circle.
+type replayOnlyRenderer struct {
+	Renderer
+}
+
+func TestAuditCircleBatchAccumulatedMatchesReplay(t *testing.T) {
+	const width, height = 24, 20
+	circles := auditParityCircles()
+	params := encodeAuditCircles(width, height, circles)
+	reference := opaqueAuditImage(width, height, color.NRGBA{R: 40, G: 90, B: 200, A: 255})
+
+	for _, threads := range []int{1, 4} {
+		for _, custom := range []bool{false, true} {
+			t.Run(auditParityName(threads, custom), func(t *testing.T) {
+				build := func() *CPURenderer {
+					var r *CPURenderer
+					if custom {
+						canvas := opaqueAuditImage(width, height, color.NRGBA{R: 10, G: 220, B: 30, A: 255})
+						r = NewCPURendererWithCanvas(reference, canvas, len(circles))
+					} else {
+						r = NewCPURenderer(reference, len(circles))
+					}
+					r.SetThreads(threads)
+					return r
+				}
+
+				accumulated, err := AuditCircleBatch(build(), params)
+				if err != nil {
+					t.Fatalf("accumulated AuditCircleBatch() error = %v", err)
+				}
+				replayed, err := AuditCircleBatch(replayOnlyRenderer{Renderer: build()}, params)
+				if err != nil {
+					t.Fatalf("replayed AuditCircleBatch() error = %v", err)
+				}
+				if !reflect.DeepEqual(accumulated, replayed) {
+					t.Fatalf("accumulated audit = %+v, want replayed audit %+v", accumulated, replayed)
+				}
+			})
+		}
+	}
+}
+
+// auditParityCircles mixes visible, overlapping, fully occluded, translucent, and
+// clipped circles so both audit paths meet every compositing case.
+func auditParityCircles() []fit.Circle {
+	return []fit.Circle{
+		{X: 8, Y: 8, R: 6, CR: 0.9, CG: 0.1, CB: 0.2, Opacity: 1},
+		{X: 9, Y: 9, R: 3, CR: 0.1, CG: 0.8, CB: 0.4, Opacity: 0.5},
+		{X: 8, Y: 8, R: 6, CR: 0.2, CG: 0.2, CB: 0.9, Opacity: 1},
+		{X: 18, Y: 6, R: 4, CR: 0.5, CG: 0.5, CB: 0.5, Opacity: 0.25},
+		{X: 0, Y: 19, R: 5, CR: 0.3, CG: 0.7, CB: 0.1, Opacity: 0.8},
+		{X: 15, Y: 15, R: 2, CR: 0.6, CG: 0.4, CB: 0.4, Opacity: 0},
+	}
+}
+
+func auditParityName(threads int, custom bool) string {
+	canvas := "white"
+	if custom {
+		canvas = "custom"
+	}
+	return canvas + "-threads-" + strconv.Itoa(threads)
+}
+
+func BenchmarkAuditCircleBatch(b *testing.B) {
+	const width, height = 128, 128
+	for _, circleCount := range []int{64, 256} {
+		reference := opaqueAuditImage(width, height, color.NRGBA{R: 60, G: 120, B: 180, A: 255})
+		circles := make([]fit.Circle, circleCount)
+		for i := range circles {
+			circles[i] = fit.Circle{
+				X:       float64((i*37)%width) + 0.5,
+				Y:       float64((i*53)%height) + 0.5,
+				R:       4 + float64(i%7),
+				CR:      float64(i%5) / 5,
+				CG:      float64(i%3) / 3,
+				CB:      float64(i%7) / 7,
+				Opacity: 0.4 + float64(i%4)/10,
+			}
+		}
+		params := encodeAuditCircles(width, height, circles)
+
+		newRenderer := func() *CPURenderer {
+			r := NewCPURenderer(reference, circleCount)
+			r.SetThreads(1)
+			return r
+		}
+		b.Run("accumulated-"+strconv.Itoa(circleCount), func(b *testing.B) {
+			r := newRenderer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				if _, err := AuditCircleBatch(r, params); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		b.Run("replay-"+strconv.Itoa(circleCount), func(b *testing.B) {
+			r := replayOnlyRenderer{Renderer: newRenderer()}
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				if _, err := AuditCircleBatch(r, params); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }
 
