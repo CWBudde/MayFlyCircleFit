@@ -87,6 +87,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 	fmt.Println("  GET    /api/v1/jobs/:id      - Get job status")
 	fmt.Println("  GET    /api/v1/jobs/:id/best.png  - Get current best image")
 	fmt.Println("  GET    /api/v1/jobs/:id/diff.png  - Get difference image")
+	fmt.Println("  POST   /api/v1/jobs/:id/extend    - Append circles from a completed checkpoint")
 	if servePprof {
 		fmt.Println("\nProfiling endpoints enabled for this trusted-local server:")
 		fmt.Printf("  GET    http://%s/debug/pprof/        - pprof index\n", addr)

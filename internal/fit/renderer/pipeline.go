@@ -348,6 +348,18 @@ func OptimizeBatch(base Renderer, optimizer opt.Optimizer, totalCircles, batchSi
 // OptimizeBatchContext is OptimizeBatch with cooperative cancellation when
 // the optimizer implements opt.LifecycleOptimizer.
 func OptimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Optimizer, totalCircles, batchSize int, convergenceConfig ConvergenceConfig) (*OptimizationResult, error) {
+	return optimizeBatchContext(ctx, base, optimizer, nil, totalCircles, batchSize, convergenceConfig)
+}
+
+// OptimizeBatchAppendContext preserves an already-rendered prefix and appends
+// circles after it. The prefix order is immutable: staged optimization only
+// receives the remaining suffix dimensions, while progress and the final
+// result contain the complete parameter vector.
+func OptimizeBatchAppendContext(ctx context.Context, base Renderer, optimizer opt.Optimizer, prefixParams []float64, totalCircles, batchSize int, convergenceConfig ConvergenceConfig) (*OptimizationResult, error) {
+	return optimizeBatchContext(ctx, base, optimizer, prefixParams, totalCircles, batchSize, convergenceConfig)
+}
+
+func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Optimizer, prefixParams []float64, totalCircles, batchSize int, convergenceConfig ConvergenceConfig) (*OptimizationResult, error) {
 	if err := validatePipelineInputs(base, optimizer, totalCircles); err != nil {
 		return nil, err
 	}
@@ -358,26 +370,60 @@ func OptimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 		return nil, fmt.Errorf("%w: %T", ErrStagedOptimizationUnsupported, base)
 	}
 
-	slog.Info("Starting batch optimization", "total_circles", totalCircles, "batch_size", batchSize)
+	if len(prefixParams)%paramsPerCircle != 0 {
+		return nil, fmt.Errorf("%w: prefix parameter length must be a multiple of %d", ErrInvalidOptimizationInput, paramsPerCircle)
+	}
+	prefixCircles := len(prefixParams) / paramsPerCircle
+	if prefixCircles > totalCircles {
+		return nil, fmt.Errorf("%w: prefix has %d circles but total is %d", ErrInvalidOptimizationInput, prefixCircles, totalCircles)
+	}
+	if prefixCircles > 0 {
+		prefixBounds := fit.NewBounds(prefixCircles, base.Reference().Bounds().Dx(), base.Reference().Bounds().Dy())
+		if !prefixBounds.ValidVector(prefixParams) {
+			return nil, fmt.Errorf("%w: prefix parameters are outside valid circle bounds", ErrInvalidOptimizationInput)
+		}
+	}
+
+	slog.Info("Starting batch optimization", "total_circles", totalCircles, "initial_circles", prefixCircles, "batch_size", batchSize)
 
 	evaluations := 0
-	initialCost, err := baseCanvasCost(base, &evaluations)
+	var initialCost float64
+	var err error
+	accumulator := newStagedAccumulator(base)
+	if prefixCircles == 0 {
+		initialCost, err = baseCanvasCost(base, &evaluations)
+	} else {
+		var prefixSession Renderer
+		var cleanup func()
+		prefixSession, cleanup, err = newStagedSession(base, prefixCircles)
+		if err == nil {
+			evaluations++
+			initialCost = prefixSession.Cost(prefixParams)
+			if accumulator != nil {
+				accumulator.retain(prefixSession.Render(prefixParams))
+			}
+			cleanup()
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
+	if math.IsNaN(initialCost) {
+		return nil, fmt.Errorf("%w: prefix cost is NaN", ErrInvalidOptimizationInput)
+	}
 	bestCost := initialCost
-	bestParams := make([]float64, 0, totalCircles*paramsPerCircle)
-	accumulator := newStagedAccumulator(base)
+	bestParams := make([]float64, len(prefixParams), totalCircles*paramsPerCircle)
+	copy(bestParams, prefixParams)
 	tracker := NewConvergenceTracker(convergenceConfig)
 	stages := 0
 	iterations := 0
-	optimizedCircles := 0
+	optimizedCircles := prefixCircles
 	stagesStoppedEarly := 0
 	termination := opt.TerminationCompleted
 
 	plannedStages := 0
-	if totalCircles > 0 {
-		plannedStages = (totalCircles + batchSize - 1) / batchSize
+	if remaining := totalCircles - optimizedCircles; remaining > 0 {
+		plannedStages = (remaining + batchSize - 1) / batchSize
 	}
 	maxStages := plannedStages + MaxExtraBatchStages
 	for optimizedCircles < totalCircles && stages < maxStages {

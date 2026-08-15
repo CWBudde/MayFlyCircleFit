@@ -166,7 +166,17 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	}
 	var initialSSIM *float64
 	if job.Config.EnableSSIM {
-		initialSSIM = calculateSSIM(rend.Render(metricParams), ref, jobID)
+		metricRenderer := rend
+		metricCleanup := func() {}
+		if len(metricParams) != rend.Dim() {
+			metricRenderer, metricCleanup, err = rendererForJob(job.Config, ref, len(metricParams)/7)
+			if err != nil {
+				markJobFailed(jm, jobID, err)
+				return err
+			}
+		}
+		initialSSIM = calculateSSIM(metricRenderer.Render(metricParams), ref, jobID)
+		metricCleanup()
 	}
 	initialSample := qualitySample(baseIterations, metricCost, initialSSIM, start)
 	_ = jm.RecordMetrics(jobID, initialSample)
@@ -260,7 +270,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		}
 		return nil
 	}
-	if len(job.BestParams) > 0 {
+	if len(job.BestParams) == job.Config.Circles*7 {
 		initialParams := append([]float64(nil), job.BestParams...)
 		parameterBounds := fit.NewBounds(job.Config.Circles, ref.Bounds().Dx(), ref.Bounds().Dy())
 		parameterBounds.ClampVector(initialParams)
@@ -327,6 +337,29 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 					baseIterations,
 					baseEvaluations,
 				)
+			} else if len(job.BestParams) < job.Config.Circles*7 && len(job.BestParams)%7 == 0 {
+				result, err = renderer.OptimizeBatchAppendContext(
+					ctx,
+					rend,
+					wrapped,
+					job.BestParams,
+					job.Config.Circles,
+					job.Config.BatchSize,
+					convergence,
+				)
+				if err == nil && job.Config.PolishingEnabled && result.OptimizedCircles == job.Config.Circles {
+					result, err = polishBatchResult(
+						ctx,
+						jm,
+						checkpointStore,
+						rend,
+						job,
+						result,
+						observer,
+						baseIterations,
+						baseEvaluations,
+					)
+				}
 			} else if job.Config.BatchSize >= job.Config.Circles && len(job.BestParams) == job.Config.Circles*7 {
 				// A full-size batch is one optimizer stage over the complete
 				// parameter vector, so progressOptimizer can safely replace that
@@ -465,6 +498,8 @@ func polishBatchResult(
 			return nil, fmt.Errorf("persist pre-polishing result: %w", err)
 		}
 	}
+	committedParams := append([]float64(nil), batch.BestParams...)
+	committedCost := batch.BestCost
 
 	persistPolishingBoundary := func(params []float64, cost float64, iterations, evaluations int) error {
 		iterations += baseIterations + mainIterations
@@ -489,17 +524,24 @@ func polishBatchResult(
 		Observer: func(progress opt.Progress) {
 			progress.Iterations += mainIterations
 			progress.Evaluations += mainEvaluations
+			// Polishing is transactional. Publish counters continuously, but do
+			// not expose or checkpoint an in-flight candidate before the sweep's
+			// full-image usefulness audit accepts it.
+			progress.BestParams = append([]float64(nil), committedParams...)
+			progress.BestCost = committedCost
 			observer(progress)
 		},
 		OnEpoch: func(boundary renderer.BatchPolishEpoch) error {
 			return persistPolishingBoundary(
-				boundary.BestParams,
-				boundary.BestCost,
+				committedParams,
+				committedCost,
 				boundary.Iterations,
 				boundary.Evaluations,
 			)
 		},
 		OnSweep: func(progress renderer.BatchPolishProgress) error {
+			committedParams = append(committedParams[:0], progress.BestParams...)
+			committedCost = progress.BestCost
 			slog.Info("Batch polishing sweep complete",
 				"job_id", job.ID,
 				"sweep", progress.Sweep,

@@ -207,6 +207,52 @@ func TestOptimizeBatchPreservesCustomCanvas(t *testing.T) {
 	}
 }
 
+func TestOptimizeBatchAppendPreservesPrefixOrder(t *testing.T) {
+	ref := solidImage(3, 3, color.NRGBA{A: 255})
+	prefix := []float64{1, 1, 1, 1, 0, 0, 0.5}
+
+	result, err := OptimizeBatchAppendContext(
+		context.Background(),
+		NewCPURenderer(ref, 2),
+		opaqueBlackOptimizer(),
+		prefix,
+		2,
+		1,
+		DisabledConvergenceConfig(),
+	)
+	if err != nil {
+		t.Fatalf("OptimizeBatchAppendContext() error = %v", err)
+	}
+	if result.OptimizedCircles != 2 || len(result.BestParams) != 2*paramsPerCircle {
+		t.Fatalf("appended result has %d circles and %d params", result.OptimizedCircles, len(result.BestParams))
+	}
+	for i := range prefix {
+		if result.BestParams[i] != prefix[i] {
+			t.Fatalf("prefix parameter %d changed from %v to %v", i, prefix[i], result.BestParams[i])
+		}
+	}
+	if result.BestCost >= result.InitialCost {
+		t.Fatalf("append cost did not improve: initial=%v best=%v", result.InitialCost, result.BestCost)
+	}
+	if replayCost := fit.FastMSECost(result.BestImage, ref); replayCost != result.BestCost {
+		t.Fatalf("final replay cost = %v, retained incremental cost = %v", replayCost, result.BestCost)
+	}
+}
+
+func TestOptimizeBatchAppendRejectsInvalidPrefix(t *testing.T) {
+	ref := solidImage(3, 3, color.NRGBA{A: 255})
+	base := NewCPURenderer(ref, 2)
+	for _, prefix := range [][]float64{
+		{1},
+		{1, 1, 1, 0, 0, 0, 0},
+		append(transparentParams(2), transparentParams(1)...),
+	} {
+		if _, err := OptimizeBatchAppendContext(context.Background(), base, opaqueBlackOptimizer(), prefix, 2, 1, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+			t.Fatalf("prefix %v error = %v, want ErrInvalidOptimizationInput", prefix, err)
+		}
+	}
+}
+
 func TestAccumulatedStagesMatchFinalFullReplay(t *testing.T) {
 	ref := solidImage(5, 5, color.NRGBA{A: 255})
 

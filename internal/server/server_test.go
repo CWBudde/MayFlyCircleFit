@@ -1019,6 +1019,79 @@ func TestPolishEndpointCreatesCheckpointContinuation(t *testing.T) {
 	}
 }
 
+func TestExtendEndpointCreatesOrderedBatchContinuation(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "ref.png")
+	createSimpleTestImage(t, imgPath)
+	fsStore, err := store.NewFSStore(filepath.Join(tmpDir, "data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithOptions(":0", fsStore, ServerOptions{InputRoots: []string{tmpDir}})
+	shutdownTestServer(t, server)
+	config, err := app.Normalize(JobConfig{
+		RefPath: imgPath, Mode: app.ModeBatch, Circles: 2, BatchSize: 2, Iters: 2,
+		OptimizerEpochs: 1, PopSize: 20, Threads: 1, Seed: 42,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := server.jobManager.CreateJob(config)
+	params := []float64{
+		1, 1, 1, 1, 0, 0, 1,
+		2, 2, 1, 0, 1, 0, 1,
+	}
+	if err := server.jobManager.StartJob(source.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.jobManager.CompleteJob(source.ID, 8000, 900000, params, 600, 1000, "completed"); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := store.NewCheckpoint(source.ID, params, 600, 1000, 8000, config)
+	checkpoint.Evaluations = 900000
+	if err := fsStore.SaveCheckpoint(source.ID, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	server.cancel()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+source.ID+"/extend", strings.NewReader(`{
+		"additionalCircles":10,
+		"batchSize":10,
+		"epochs":4,
+		"iters":2000,
+		"popSize":50,
+		"seed":99
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("extend status = %d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		JobID         string `json:"jobId"`
+		TargetCircles int    `json:"targetCircles"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.TargetCircles != 12 {
+		t.Fatalf("target circles = %d, want 12", payload.TargetCircles)
+	}
+	continuation, ok := server.jobManager.GetJob(payload.JobID)
+	if !ok {
+		t.Fatal("extension continuation job not found")
+	}
+	if continuation.Config.Circles != 12 || continuation.Config.BatchSize != 10 || continuation.Config.OptimizerEpochs != 4 ||
+		continuation.Config.Iters != 2000 || continuation.Config.PopSize != 50 || continuation.Config.Seed != 99 ||
+		continuation.Config.EffectiveSeed != 99 || continuation.Config.PolishingEnabled || continuation.Config.PolishingOnly {
+		t.Fatalf("extension continuation config = %+v", continuation.Config)
+	}
+	if continuation.Iterations != 8000 || continuation.Evaluations != 900000 || !reflect.DeepEqual(continuation.BestParams, params) {
+		t.Fatalf("extension continuation state = %+v", continuation)
+	}
+}
+
 func TestServer_CreatePage_Integration(t *testing.T) {
 	// Create temp directory and test image
 	tmpDir := t.TempDir()

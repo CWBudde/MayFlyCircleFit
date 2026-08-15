@@ -382,6 +382,8 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 		s.handleResumeJob(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "polish" {
 		s.handlePolishJob(w, r, jobID)
+	} else if len(parts) == 2 && parts[1] == "extend" {
+		s.handleExtendJob(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "cancel" {
 		s.handleCancelJob(w, r, jobID)
 	} else {
@@ -988,6 +990,150 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 		"previousCost":  checkpoint.BestCost,
 		"strategy":      config.PolishingStrategy,
 		"activeSetSize": config.PolishingActiveSetSize,
+	})
+}
+
+// extendJobRequest appends a new draw-order suffix to a completed batch. The
+// existing circles remain in their original slots and are never reordered.
+type extendJobRequest struct {
+	AdditionalCircles int    `json:"additionalCircles"`
+	BatchSize         *int   `json:"batchSize,omitempty"`
+	Epochs            *int   `json:"epochs,omitempty"`
+	Iters             *int   `json:"iters,omitempty"`
+	PopSize           *int   `json:"popSize,omitempty"`
+	Seed              *int64 `json:"seed,omitempty"`
+}
+
+func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+	if s.store == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "checkpoint_unavailable", "checkpoint feature not enabled")
+		return
+	}
+	var request extendJobRequest
+	r.Body = http.MaxBytesReader(w, r.Body, app.MaxRequestBody)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid extension configuration")
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "request body must contain one JSON object")
+		return
+	}
+	source, ok := s.jobManager.GetJob(jobID)
+	if !ok {
+		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
+		return
+	}
+	if source.State != StateCompleted {
+		writeAPIError(w, http.StatusConflict, "invalid_state", "only completed jobs can be extended")
+		return
+	}
+	checkpoint, err := s.store.LoadCheckpoint(jobID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "not_found", "completed checkpoint not found")
+		} else {
+			writeAPIError(w, http.StatusInternalServerError, "checkpoint_error", "failed to load completed checkpoint")
+		}
+		return
+	}
+	if err := checkpoint.Validate(); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "completed checkpoint is invalid")
+		return
+	}
+	config, err := app.Normalize(checkpoint.Config)
+	if err != nil || config.Mode != app.ModeBatch || len(checkpoint.BestParams) != config.Circles*7 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "extension requires a complete batch checkpoint")
+		return
+	}
+	if request.AdditionalCircles < 1 || request.AdditionalCircles > app.MaxCircles-config.Circles {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "additionalCircles exceeds the supported circle limit")
+		return
+	}
+	if s.inputErr != nil {
+		writeAPIError(w, http.StatusInternalServerError, "server_config", "server input roots are unavailable")
+		return
+	}
+	config.RefPath, err = s.input.resolveImage(config.RefPath)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint reference is outside configured input roots")
+		return
+	}
+	if config.CanvasPath != "" {
+		config.CanvasPath, err = s.input.resolveImage(config.CanvasPath)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint canvas is outside configured input roots")
+			return
+		}
+	}
+
+	previousCircles := config.Circles
+	config.Circles += request.AdditionalCircles
+	config.BatchSize = min(request.AdditionalCircles, app.MaxBatchSize)
+	config.PolishingEnabled = false
+	config.PolishingOnly = false
+	config.ResumeCount = checkpoint.ResumeCount + 1
+	config.EffectiveSeed = checkpoint.EffectiveSeed
+	if request.BatchSize != nil {
+		config.BatchSize = *request.BatchSize
+	}
+	if request.Epochs != nil {
+		config.OptimizerEpochs = *request.Epochs
+	}
+	if request.Iters != nil {
+		config.Iters = *request.Iters
+	}
+	if request.PopSize != nil {
+		config.PopSize = *request.PopSize
+	}
+	if request.Seed != nil {
+		config.Seed = *request.Seed
+		config.EffectiveSeed = *request.Seed
+	}
+	config, err = app.Normalize(config)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid extension configuration")
+		return
+	}
+
+	evaluations := int(checkpoint.Evaluations)
+	if int64(evaluations) != checkpoint.Evaluations {
+		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint evaluation count is out of range")
+		return
+	}
+	newJob := s.jobManager.CreateJob(config)
+	if err := s.jobManager.UpdateJob(newJob.ID, func(job *Job) {
+		updateBestResult(job, checkpoint.BestParams, checkpoint.BestCost)
+		job.InitialCost = checkpoint.InitialCost
+		job.Iterations = checkpoint.Iteration
+		job.Evaluations = evaluations
+	}); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "job_error", "failed to initialize extension job")
+		return
+	}
+	if err := s.enqueueJob(newJob.ID); err != nil {
+		_ = s.jobManager.FailJob(newJob.ID, "server job queue is full")
+		writeAPIError(w, http.StatusTooManyRequests, "queue_full", "server job queue is full")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"jobId":             newJob.ID,
+		"extendedFrom":      jobID,
+		"state":             string(newJob.State),
+		"previousCost":      checkpoint.BestCost,
+		"previousCircles":   previousCircles,
+		"additionalCircles": request.AdditionalCircles,
+		"targetCircles":     config.Circles,
 	})
 }
 

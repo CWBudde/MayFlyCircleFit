@@ -355,6 +355,41 @@ func TestRunJobResumesSingleStageBatch(t *testing.T) {
 	}
 }
 
+func TestRunJobAppendsBatchSuffix(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.png")
+	createTestImage(t, imgPath)
+	jm := NewJobManager()
+	job := jm.CreateJob(JobConfig{
+		RefPath: imgPath, Mode: app.ModeBatch, Backend: app.BackendCPU, Variant: app.VariantStandard,
+		Circles: 2, BatchSize: 1, Iters: 5, OptimizerEpochs: 1, PopSize: 20, Threads: 1,
+		Seed: 42, EffectiveSeed: 42, ResumeCount: 1, DisableConvergence: true,
+	})
+	prefix := []float64{25, 25, 10, 1, 0, 0, 1}
+	if err := jm.UpdateJob(job.ID, func(live *Job) {
+		updateBestResult(live, prefix, 1e9)
+		live.InitialCost = 2000
+		live.Iterations = 10
+		live.Evaluations = 100
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	completed, _ := jm.GetJob(job.ID)
+	if completed.State != StateCompleted || len(completed.BestParams) != 14 {
+		t.Fatalf("extended batch = state %s params %d", completed.State, len(completed.BestParams))
+	}
+	if !reflect.DeepEqual(completed.BestParams[:len(prefix)], prefix) {
+		t.Fatalf("prefix changed during append: got %v want %v", completed.BestParams[:len(prefix)], prefix)
+	}
+	if completed.Iterations <= 10 || completed.Evaluations <= 100 {
+		t.Fatalf("extension work = %d/%d, want counters beyond checkpoint", completed.Iterations, completed.Evaluations)
+	}
+}
+
 func TestRunJob_InvalidImage(t *testing.T) {
 	jm := NewJobManager()
 	config := JobConfig{
