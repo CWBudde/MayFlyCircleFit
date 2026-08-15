@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 )
 
 func TestBestImagePreservesConfiguredCanvas(t *testing.T) {
@@ -20,7 +22,7 @@ func TestBestImagePreservesConfiguredCanvas(t *testing.T) {
 	writeSolidPNG(t, canvasPath, canvasColor)
 
 	server := NewServerWithOptions(":0", nil, ServerOptions{InputRoots: []string{root}})
-	job := server.jobManager.CreateJob(JobConfig{
+	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{
 		RefPath: referencePath, CanvasPath: canvasPath, Mode: "joint", Backend: "cpu",
 		Circles: 1, Iters: 1, PopSize: 20, BatchSize: 1,
 	})

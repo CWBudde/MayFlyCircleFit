@@ -22,7 +22,50 @@ const (
 	MaxImagePixels     = 16_777_216
 	MaxImageFileSize   = 64 << 20
 	MaxRequestBody     = 1 << 20
+	MaxProjectSlugLen  = 64
 )
+
+// DefaultProject is the slug used when a job does not name a project. It also
+// names the legacy `<data-root>/jobs` tree that predates project support, so
+// existing installations keep listing their jobs without a migration.
+const DefaultProject = "default"
+
+// reservedProjectSlugs are names that would collide with the on-disk layout
+// `<data-root>/projects/<slug>/jobs/<uuid>`.
+var reservedProjectSlugs = map[string]bool{
+	"jobs":     true,
+	"projects": true,
+	"saved":    true,
+}
+
+// ValidateProjectSlug accepts lowercase alphanumerics and dashes only. The
+// charset is deliberately narrower than the filesystem allows so a slug can
+// never introduce a path separator, a traversal segment, or a leading dot.
+func ValidateProjectSlug(slug string) error {
+	if slug == "" {
+		return invalid("project", "is required")
+	}
+	if len(slug) > MaxProjectSlugLen {
+		return invalid("project", fmt.Sprintf("must be at most %d characters", MaxProjectSlugLen))
+	}
+	for i := 0; i < len(slug); i++ {
+		c := slug[i]
+		isLower := c >= 'a' && c <= 'z'
+		isDigit := c >= '0' && c <= '9'
+		if !isLower && !isDigit && c != '-' {
+			return invalid("project", "must contain only lowercase letters, digits, and dashes")
+		}
+	}
+	first := slug[0]
+	last := slug[len(slug)-1]
+	if first == '-' || last == '-' {
+		return invalid("project", "must start and end with a letter or digit")
+	}
+	if reservedProjectSlugs[slug] {
+		return invalid("project", fmt.Sprintf("%q is reserved", slug))
+	}
+	return nil
+}
 
 // Mode selects how circles are added to the canvas.
 type Mode string

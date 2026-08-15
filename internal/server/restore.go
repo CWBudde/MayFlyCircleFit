@@ -4,41 +4,20 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
 
 // restorePersistedJobs reconstructs terminal jobs from checkpoints so server
 // restarts do not make completed work disappear from the UI and API.
 func (s *Server) restorePersistedJobs() {
-	if s.store == nil {
-		return
-	}
-
-	checkpoints, err := s.store.ListCheckpoints()
-	if err != nil {
-		slog.Warn("Unable to list persisted jobs", "error", err)
+	if s.store == nil && s.projects == nil {
 		return
 	}
 
 	restored := 0
-	for _, info := range checkpoints {
-		checkpoint, err := s.store.LoadCheckpoint(info.JobID)
-		if err != nil {
-			slog.Warn("Unable to restore persisted job", "job_id", info.JobID, "error", err)
-			continue
-		}
-
-		job := jobFromCheckpoint(checkpoint)
-		if artifactStore, ok := s.store.(store.ArtifactStore); ok {
-			if err := restoreJobTrace(job, artifactStore); err != nil && !errors.Is(err, store.ErrNotFound) {
-				slog.Warn("Unable to restore persisted job history", "job_id", info.JobID, "error", err)
-			}
-		}
-		if err := s.jobManager.restoreJob(job); err != nil {
-			slog.Warn("Unable to register persisted job", "job_id", info.JobID, "error", err)
-			continue
-		}
-		restored++
+	for _, slug := range s.projectSlugsForRestore() {
+		restored += s.restoreProjectJobs(slug, s.storeForSlug(slug))
 	}
 
 	if restored > 0 {
@@ -46,7 +25,50 @@ func (s *Server) restorePersistedJobs() {
 	}
 }
 
-func jobFromCheckpoint(checkpoint *store.Checkpoint) *Job {
+// projectSlugsForRestore lists every project to scan. The default project is
+// the legacy `<data-root>/jobs` tree, so pre-project installations restore
+// exactly as before without any migration.
+func (s *Server) projectSlugsForRestore() []string {
+	if s.projects == nil {
+		return []string{app.DefaultProject}
+	}
+	return s.projects.Slugs()
+}
+
+func (s *Server) restoreProjectJobs(slug string, projectStore store.Store) int {
+	if projectStore == nil {
+		return 0
+	}
+	checkpoints, err := projectStore.ListCheckpoints()
+	if err != nil {
+		slog.Warn("Unable to list persisted jobs", "project", slug, "error", err)
+		return 0
+	}
+
+	restored := 0
+	for _, info := range checkpoints {
+		checkpoint, err := projectStore.LoadCheckpoint(info.JobID)
+		if err != nil {
+			slog.Warn("Unable to restore persisted job", "project", slug, "job_id", info.JobID, "error", err)
+			continue
+		}
+
+		job := jobFromCheckpoint(checkpoint, slug)
+		if artifactStore, ok := projectStore.(store.ArtifactStore); ok {
+			if err := restoreJobTrace(job, artifactStore); err != nil && !errors.Is(err, store.ErrNotFound) {
+				slog.Warn("Unable to restore persisted job history", "project", slug, "job_id", info.JobID, "error", err)
+			}
+		}
+		if err := s.jobManager.restoreJob(job); err != nil {
+			slog.Warn("Unable to register persisted job", "project", slug, "job_id", info.JobID, "error", err)
+			continue
+		}
+		restored++
+	}
+	return restored
+}
+
+func jobFromCheckpoint(checkpoint *store.Checkpoint, project string) *Job {
 	state := StateCancelled
 	switch checkpoint.Termination {
 	case "completed", "target_cost", "stagnation", "stage_convergence", "refill_limit":
@@ -60,6 +82,7 @@ func jobFromCheckpoint(checkpoint *store.Checkpoint) *Job {
 	end := checkpoint.Timestamp
 	return &Job{
 		ID:           checkpoint.JobID,
+		Project:      project,
 		State:        state,
 		Config:       checkpoint.Config,
 		BestParams:   append([]float64(nil), checkpoint.BestParams...),

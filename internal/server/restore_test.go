@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
 
@@ -65,7 +66,7 @@ func TestJobFromCheckpointTreatsRefillLimitAsCompleted(t *testing.T) {
 		RefPath: "test.png", Mode: "batch", Circles: 1, Iters: 100, PopSize: 20, BatchSize: 1,
 	})
 	checkpoint.Termination = "refill_limit"
-	job := jobFromCheckpoint(checkpoint)
+	job := jobFromCheckpoint(checkpoint, app.DefaultProject)
 	if job.State != StateCompleted || job.Termination != "refill_limit" {
 		t.Fatalf("restored refill-limited job = %#v", job)
 	}
