@@ -280,7 +280,17 @@ func TestCompositeSpanFollowsForcedTier(t *testing.T) {
 // declaration carries //go:noescape - route it through a function pointer and
 // every composited span mallocs 160 bytes, which costs more than the kernel
 // saves.
+//
+// The tier is forced rather than detected: an AVX2 host installs the scalar
+// kernel here, which builds no constant block at all, so an unforced run would
+// pass on every development machine without ever touching the thing under test.
 func TestCompositeOpaqueSpanDoesNotAllocate(t *testing.T) {
+	defer fit.ResetTierDetection()
+	fit.SetForcedTier(fit.TierSSE2)
+	if compositeSpanKernel != fit.TierSSE2 {
+		t.Fatalf("composite span kernel = %s after forcing sse2, want sse2", compositeSpanKernel)
+	}
+
 	pix := exactSpanFixture(512, rand.New(rand.NewSource(3)))
 
 	allocs := testing.AllocsPerRun(200, func() {
