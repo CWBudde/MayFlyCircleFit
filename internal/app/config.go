@@ -130,7 +130,15 @@ type JobConfig struct {
 	// compositor. It is additive and optional: checkpoints written before it
 	// existed decode as false, which is also the default, so the exact
 	// compositor stays in charge unless a run asks otherwise.
-	FastCompositing      bool    `json:"fastCompositing,omitempty"`
+	FastCompositing bool `json:"fastCompositing,omitempty"`
+	// ParallelEvaluation lets the optimizer evaluate population members
+	// concurrently over a pool of independent renderer sessions sized by
+	// Threads. It is additive and optional: checkpoints written before it
+	// existed decode as false, which is also the default. It is opt-in because
+	// the parallel optimizer path applies one global best per generation
+	// instead of updating it mid-population, so a seed reproduces exactly with
+	// the flag held fixed but not across the two settings.
+	ParallelEvaluation   bool    `json:"parallelEvaluation,omitempty"`
 	Seed                 int64   `json:"seed"`
 	EffectiveSeed        int64   `json:"effectiveSeed,omitempty"`
 	ResumeCount          int     `json:"resumeCount,omitempty"`

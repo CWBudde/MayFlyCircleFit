@@ -147,7 +147,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		seed = job.Config.Seed
 	}
 	optimizer, err := opt.NewMayflyVariant(string(job.Config.Variant), job.Config.Iters, job.Config.PopSize, seed,
-		opt.WithLogger(slog.Default()), opt.WithEarlyStop(buildEarlyStop(job.Config)))
+		opt.WithLogger(slog.Default()), opt.WithEarlyStop(buildEarlyStop(job.Config)),
+		parallelEvaluationOption(job.Config))
 	if err != nil {
 		markJobFailed(jm, jobID, err)
 		return err
@@ -593,6 +594,16 @@ func polishBatchResult(
 	return batch, nil
 }
 
+// parallelEvaluationOption maps the opt-in configuration field onto the
+// optimizer option. A configuration that leaves it false yields a no-op option,
+// so the optimizer stays configured exactly as it was before the field existed.
+func parallelEvaluationOption(config store.JobConfig) opt.MayflyOption {
+	if !config.ParallelEvaluation || config.Threads < 2 {
+		return func(*opt.MayflyAdapter) {}
+	}
+	return opt.WithParallelEvaluation(config.Threads)
+}
+
 func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (renderer.Renderer, func(), error) {
 	if config.CanvasPath != "" {
 		if config.Backend != "" && config.Backend != app.BackendCPU {
@@ -608,6 +619,9 @@ func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (
 		cpu := renderer.NewCPURendererWithCanvas(ref, canvas, circleCount)
 		cpu.SetThreads(config.Threads)
 		cpu.SetFastCompositing(config.FastCompositing)
+		if config.ParallelEvaluation {
+			cpu.SetParallelEvaluationWorkers(config.Threads)
+		}
 		return cpu, func() {}, nil
 	}
 	backend := config.Backend
@@ -618,6 +632,9 @@ func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (
 		cpu := renderer.NewCPURenderer(ref, circleCount)
 		cpu.SetThreads(config.Threads)
 		cpu.SetFastCompositing(config.FastCompositing)
+		if config.ParallelEvaluation {
+			cpu.SetParallelEvaluationWorkers(config.Threads)
+		}
 		return cpu, func() {}, nil
 	}
 	return renderer.NewRendererForBackend(string(backend), ref, circleCount)

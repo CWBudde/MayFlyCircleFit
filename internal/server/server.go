@@ -313,6 +313,9 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 			renderer := renderer.NewCPURenderer(ref, j.Config.Circles)
 			renderer.SetThreads(j.Config.Threads)
 			renderer.SetFastCompositing(j.Config.FastCompositing)
+			if j.Config.ParallelEvaluation {
+				renderer.SetParallelEvaluationWorkers(j.Config.Threads)
+			}
 
 			// Save checkpoint
 			err = saveCheckpoint(s.jobManager, s.storeForSlug(j.Project), renderer, j.ID)

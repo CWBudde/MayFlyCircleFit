@@ -131,10 +131,20 @@ func OptimizeJointContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	referenceBounds := base.Reference().Bounds()
 	parameterBounds := fit.NewBounds(circleCount, referenceBounds.Dx(), referenceBounds.Dy())
 
-	evaluations := 0
+	pool := newEvaluationPool(session, nil, evaluationWorkers(base), func() (Renderer, func(), error) {
+		factory, ok := base.(rendererSessionFactory)
+		if !ok {
+			return nil, nil, ErrStagedOptimizationUnsupported
+		}
+		return factory.newSession(circleCount)
+	})
+	defer pool.close()
+	// Evaluations run concurrently once the optimizer is configured for it, so
+	// they must touch nothing but their own leased slot.
 	evaluateRaw := func(params []float64) float64 {
-		evaluations++
-		return session.Cost(params)
+		slot := pool.acquire()
+		defer pool.release(slot)
+		return slot.session.Cost(params)
 	}
 	evaluate := func(params []float64) float64 {
 		parameterBounds.ClampIndependentVector(params)
@@ -182,6 +192,7 @@ func OptimizeJointContext(ctx context.Context, base Renderer, optimizer opt.Opti
 		}
 	}
 
+	evaluations := pool.count()
 	var result *OptimizationResult
 	if len(bestParams) == 0 && circleCount > 0 {
 		result, err = finishBaseResult(base, bestCost, initialCost, evaluations, stages)
@@ -237,7 +248,7 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 		if accumulator != nil {
 			sessionCircleCount = 1
 		}
-		session, cleanup, err := newStagedSessionForAccumulator(base, accumulator, sessionCircleCount)
+		session, sessionCleanup, err := newStagedSessionForAccumulator(base, accumulator, sessionCircleCount)
 		if err != nil {
 			return nil, err
 		}
@@ -248,15 +259,29 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 			combined = make([]float64, len(bestParams)+paramsPerCircle)
 			copy(combined, bestParams)
 		}
+		stageCircleCount := sessionCircleCount
+		pool := newEvaluationPool(session, combined, evaluationWorkers(base), func() (Renderer, func(), error) {
+			return newStagedSessionForAccumulator(base, accumulator, stageCircleCount)
+		})
+		// The pool owns every evaluation of this stage, so its count is the
+		// stage's evaluation total and must be folded in wherever it is closed.
+		cleanup := func() {
+			evaluations += pool.count()
+			pool.close()
+			sessionCleanup()
+		}
+		// Evaluations run concurrently once the optimizer is configured for it,
+		// so each one assembles its parameters in its own leased buffer.
 		evaluate := func(newCircle []float64) float64 {
-			evaluations++
+			slot := pool.acquire()
+			defer pool.release(slot)
 			bounds.ClampIndependentVector(newCircle)
 			params := newCircle
-			if combined != nil {
-				copy(combined[len(bestParams):], newCircle)
-				params = combined
+			if slot.combined != nil {
+				copy(slot.combined[len(bestParams):], newCircle)
+				params = slot.combined
 			}
-			return session.Cost(params)
+			return slot.session.Cost(params)
 		}
 		constraints := radiusConstraints(bounds, 1)
 		currentCanvas := currentStageCanvas(session, accumulator, combined)
@@ -433,7 +458,7 @@ func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 		if accumulator != nil {
 			sessionCircleCount = stageCircles
 		}
-		session, cleanup, err := newStagedSessionForAccumulator(base, accumulator, sessionCircleCount)
+		session, sessionCleanup, err := newStagedSessionForAccumulator(base, accumulator, sessionCircleCount)
 		if err != nil {
 			return nil, err
 		}
@@ -446,15 +471,29 @@ func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 			copy(combined, bestParams)
 		}
 		currentCanvas := currentStageCanvas(session, accumulator, combined)
+		stageSessionCircles := sessionCircleCount
+		pool := newEvaluationPool(session, combined, evaluationWorkers(base), func() (Renderer, func(), error) {
+			return newStagedSessionForAccumulator(base, accumulator, stageSessionCircles)
+		})
+		// The pool owns every evaluation of this stage, so its count is the
+		// stage's evaluation total and must be folded in wherever it is closed.
+		cleanup := func() {
+			evaluations += pool.count()
+			pool.close()
+			sessionCleanup()
+		}
+		// Evaluations run concurrently once the optimizer is configured for it,
+		// so each one assembles its parameters in its own leased buffer.
 		evaluate := func(newBatch []float64) float64 {
-			evaluations++
+			slot := pool.acquire()
+			defer pool.release(slot)
 			bounds.ClampIndependentVector(newBatch)
 			params := newBatch
-			if combined != nil {
-				copy(combined[len(bestParams):], newBatch)
-				params = combined
+			if slot.combined != nil {
+				copy(slot.combined[len(bestParams):], newBatch)
+				params = slot.combined
 			}
-			return session.Cost(params)
+			return slot.session.Cost(params)
 		}
 		constraints := radiusConstraints(bounds, stageCircles)
 		seedParams, err := SeedParamsFromResidual(currentCanvas, base.Reference(), stageCircles, ResidualSeedOptions{})
