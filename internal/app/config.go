@@ -172,6 +172,13 @@ type JobConfig struct {
 	// because the parallel optimizer path applies one global best per generation
 	// instead of updating it mid-population, so a seed reproduces exactly with
 	// the flag held fixed but not across the two settings.
+	//
+	// Transactional polishing leases from the same pool and carries the same
+	// caveat for the same reason: a parallel polish sweep applies one global
+	// best per generation, so a seed reproduces with the flag held fixed but not
+	// across the two settings. Pooling itself changes nothing -- a width-one
+	// pool is byte-identical to the serial sweep -- the trajectory changes only
+	// once the optimizer actually runs its parallel path.
 	ParallelEvaluation bool `json:"parallelEvaluation,omitempty"`
 	// EvaluationWorkers is how many cost evaluations run concurrently when
 	// ParallelEvaluation is set. It is deliberately separate from Threads:

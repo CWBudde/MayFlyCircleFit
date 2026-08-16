@@ -1607,34 +1607,34 @@ Two separate causes, and they compound:
 
 ### Task 15.1: Give Polishing a Session Pool (P1)
 
-- [ ] Lease a per-evaluation slot in the sweep evaluator instead of sharing one
+- [x] Lease a per-evaluation slot in the sweep evaluator instead of sharing one
       `candidateFull` vector and one session. `evaluationSlot{session, combined}`
       and `evaluationPool` in `internal/fit/renderer/evaluation_pool.go` already
       have exactly this shape for the staged pipelines; reuse them rather than
       adding a second pooling mechanism.
-- [ ] Give each slot its own baked-suffix session so the per-sweep bake is not
+- [x] Give each slot its own baked-suffix session so the per-sweep bake is not
       serialized behind the pool (`bakedSuffixSession`, `pipeline.go:757`).
-- [ ] Replace the blanket refusal at `batch_polish.go:125` with a check that the
+- [x] Replace the blanket refusal at `batch_polish.go:125` with a check that the
       pool width matches the optimizer's evaluation width, keeping the refusal for
       the pool-less case so the failure stays loud rather than silent.
-- [ ] Keep the sweep transactional: acceptance still evaluates the merged
+- [x] Keep the sweep transactional: acceptance still evaluates the merged
       candidate on the full session and still gates on
       `allCirclesUseful(audit, minBatchMSEContribution)`.
-- [ ] Plumb `evaluationWorkers` through `polishBatchResult` so polishing honors
+- [x] Plumb `evaluationWorkers` through `polishBatchResult` so polishing honors
       the same width as the main optimizer, and log the width alongside
       `accepted_sweeps` (`worker.go:605`).
-- [ ] Document the reproducibility consequence next to `ParallelEvaluation`
+- [x] Document the reproducibility consequence next to `ParallelEvaluation`
       (`internal/app/config.go:168`): parallel polishing applies one global best
       per generation, so a seed reproduces with the setting held fixed but not
       across the two settings — the same caveat the extend path already carries.
 
 **Acceptance Checks:**
 
-- [ ] A parity test asserts that pooled polishing with width 1 produces
+- [x] A parity test asserts that pooled polishing with width 1 produces
       byte-identical parameters, cost, and accepted-sweep count to the current
       serial path for a fixed seed.
-- [ ] A race test (`go test -race`) covers a multi-sweep polish at width > 1.
-- [ ] A benchmark reports sweep wall clock and allocations at widths 1, 8, and 48
+- [x] A race test (`go test -race`) covers a multi-sweep polish at width > 1.
+- [x] A benchmark reports sweep wall clock and allocations at widths 1, 8, and 48
       on the same fixture, with the machine and circle count stated.
 
 ### Task 15.2: Make Active-Set Selection Cheap (P2)

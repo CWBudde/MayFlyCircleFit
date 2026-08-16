@@ -287,6 +287,57 @@ func TestRunJobExecutesConfiguredBatchPolishing(t *testing.T) {
 	}
 }
 
+// TestRunJobPolishesAtTheConfiguredEvaluationWidth covers the path that used to
+// be impossible: a job configured for parallel evaluation now polishes at the
+// same width as its main optimizer instead of dropping to a serial polisher.
+// Polishing refuses a concurrent optimizer it cannot pool sessions for, so this
+// also proves the server hands it a renderer that can.
+func TestRunJobPolishesAtTheConfiguredEvaluationWidth(t *testing.T) {
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("needs at least two processors to enable parallel evaluation")
+	}
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.png")
+	createTestImage(t, imgPath)
+	jm := NewJobManager()
+	job := jm.CreateJob(app.DefaultProject, JobConfig{
+		RefPath:                  imgPath,
+		Mode:                     app.ModeBatch,
+		Backend:                  app.BackendCPU,
+		Variant:                  app.VariantStandard,
+		Circles:                  2,
+		BatchSize:                1,
+		Iters:                    2,
+		OptimizerEpochs:          1,
+		PopSize:                  20,
+		Threads:                  1,
+		ParallelEvaluation:       true,
+		EvaluationWorkers:        4,
+		Seed:                     42,
+		EffectiveSeed:            42,
+		PolishingEnabled:         true,
+		PolishingActiveSetSize:   1,
+		PolishingMaxSweeps:       2,
+		PolishingEpochs:          1,
+		PolishingIters:           2,
+		PolishingStagnationIters: 1,
+		PolishingMinImprovement:  0.001,
+		DisableConvergence:       true,
+	})
+
+	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
+		t.Fatalf("parallel polishing job failed: %v", err)
+	}
+	completed, ok := jm.GetJob(job.ID)
+	if !ok {
+		t.Fatal("completed job not found")
+	}
+	if completed.State != StateCompleted || len(completed.BestParams) != 14 {
+		t.Fatalf("completed polished job = state %s params %d, error %q",
+			completed.State, len(completed.BestParams), completed.Error)
+	}
+}
+
 func TestRunJobPolishingOnlyContinuesCompleteBatch(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")

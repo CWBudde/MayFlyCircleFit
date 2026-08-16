@@ -50,12 +50,19 @@ Rendering-side invariants live in
   backend without independent sessions (OpenCL) must decline with a warning;
   enabling the optimizer's parallel path against a one-slot pool buys nothing
   and still changes the trajectory.
-- Transactional polishing is the one optimizer-driven objective that is not
-  re-entrant: its sweep evaluator merges into a shared candidate vector and a
-  shared session. `PolishCircleBatchContext` rejects an optimizer reporting a
-  width above one, and the epoch and progress wrappers forward that width so the
-  guard cannot be bypassed. Do not wire parallel evaluation into a polisher
-  without first giving polishing its own session pool.
+- Transactional polishing is re-entrant only through its session pool. Each
+  sweep builds one pool of baked-suffix sessions, and every evaluation leases a
+  slot carrying its own scratch parameter vector, so nothing is shared. A
+  width-one pool leases the sweep's own session and vector and is byte-identical
+  to the serial sweep it replaced. `PolishCircleBatchContext` still rejects an
+  optimizer reporting a width above one when no pool can be built -- a backend
+  without independent sessions, OpenCL today -- and errors rather than degrading
+  to one slot when the pool comes up short, because the optimizer would still
+  call the evaluator from every goroutine. The epoch and progress wrappers
+  forward the width so neither check can be bypassed.
+- Acceptance stays serial and unchanged: a sweep is committed only after the
+  merged candidate is re-evaluated on the full session and `allCirclesUseful`
+  holds for the whole vector. Pooling applies to candidate evaluation only.
 - `--fast-compositing` is opt-in and defaults off, because it changes the
   result of a fixed seed. It is accurate to +/-1 per channel, not byte-identical
   to the default compositor. Compare runs only against runs with the same
