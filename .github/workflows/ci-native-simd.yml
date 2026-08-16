@@ -18,15 +18,23 @@ jobs:
           - platform: Linux AMD64 / AVX2
             runner: ubuntu-24.04
             backend: AVX2
+            maskedBackend: SSE2
+            sse2Tier: "yes"
           - platform: macOS ARM64 / NEON
             runner: macos-15
             backend: NEON
+            maskedBackend: scalar
+            sse2Tier: ""
           - platform: Windows AMD64 / AVX2
             runner: windows-2025
             backend: AVX2
+            maskedBackend: SSE2
+            sse2Tier: "yes"
           - platform: Linux ARM64 / NEON
             runner: ubuntu-24.04-arm
             backend: NEON
+            maskedBackend: scalar
+            sse2Tier: ""
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -38,10 +46,27 @@ jobs:
           CGO_ENABLED: "0"
           MAYFLY_REQUIRE_SSD_BACKEND: ${{ matrix.backend }}
         run: go test -count=1 ./internal/fit
-      - name: Run SSD tests with SIMD features disabled
+      # golang.org/x/sys/cpu marks sse2 Required on amd64, so cpu.all=off leaves
+      # cpu.X86.HasSSE2 set and amd64 dispatch drops to SSE2 rather than scalar.
+      # The expected backend is therefore per-runner, and only MAYFLY_DISABLE_SIMD
+      # below gates the complete scalar fallback on every architecture.
+      - name: Run SSD tests with maskable CPU features disabled
         env:
           CGO_ENABLED: "0"
           GODEBUG: cpu.all=off
+          MAYFLY_REQUIRE_SSD_BACKEND: ${{ matrix.maskedBackend }}
+        run: go test -count=1 ./internal/fit
+      - name: Run SSD tests with the SSE2 tier forced
+        if: matrix.sse2Tier != ''
+        env:
+          CGO_ENABLED: "0"
+          GODEBUG: cpu.avx2=off
+          MAYFLY_REQUIRE_SSD_BACKEND: SSE2
+        run: go test -count=1 ./internal/fit
+      - name: Run SSD tests with SIMD disabled entirely
+        env:
+          CGO_ENABLED: "0"
+          MAYFLY_DISABLE_SIMD: "1"
           MAYFLY_REQUIRE_SSD_BACKEND: scalar
         run: go test -count=1 ./internal/fit
       - name: Record native scalar and SIMD throughput

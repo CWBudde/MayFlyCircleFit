@@ -648,6 +648,57 @@ which optimizes only circle coverage geometry.
 - Zero steady-state allocations and safe scalar behavior on platforms without
   AVX2 or NEON
 
+### Task 10.17: SSE2 SIMD Tier for AMD64 Hosts Without AVX2 ✅ COMPLETE
+**Rationale:** AMD64 dispatch was AVX2 or scalar, so a CPU without AVX2 lost the
+entire Phase 10 speedup rather than part of it. A profile of that configuration
+attributes about 80% of flat samples to three symbols — `fit.ssdScalar` 29.96%,
+`renderer.compositeOpaqueSpanScalar` 25.17%, and `fit.MSECost` 24.63% — with
+`renderer.fixedCircleQ16.span` at only 2.80%. Baseline SSE2 covers those three.
+
+**10.17a — Tiered dispatch and the scalar opt-out:**
+- [x] Add `SSDBackendSSE2` and make AMD64 SSD dispatch AVX2, then SSE2, then
+  scalar, each behind a runtime `x/sys/cpu` check
+- [x] Add `MAYFLY_DISABLE_SIMD=1` and `fit.SIMDDisabledByEnv`, because
+  `x/sys/cpu` marks sse2 required on AMD64 and `GODEBUG=cpu.all=off` therefore
+  cannot reach the scalar kernel there
+- [x] Extend the cross-build source assertions to require the SSE2 sources on
+  AMD64 and reject them everywhere else
+
+**10.17b — Kernels:**
+- [x] Implement a four-pixel SSE2 SSD kernel with per-row int32 `PMADDWD`
+  accumulation, an exact scalar tail, and an `ssdSSE2MaxWidth` of 11000 that
+  routes wider rows to scalar rather than widening per iteration
+- [x] Implement an SSE2 delta-SSD kernel for discontiguous dirty spans and gate
+  `stagedIncremental` on `deltaSSDVectorized()` instead of AVX2 alone
+- [x] Implement a bit-identical SSE2 float32 circle-span edge search
+- [x] Add an opt-in float32 SIMD span compositor with SSE2 and AVX2 kernels
+  behind `--fast-compositing`
+- [x] Add opt-in concurrent population evaluation over a pool of independent
+  renderer sessions behind `--parallel-evaluation`
+- [x] Do not port SAD: `FastSAD` has no non-test callers and its AVX2 kernel
+  needs `VPMADDUBSW` (SSSE3) and `VPMULLD` (SSE4.1)
+- [x] Do not port the Q16.16 span: it needs `VPCMPGTQ` (64-bit signed compare),
+  it is 2.80% of the no-AVX2 profile, and the existing hardware-compare AVX2
+  kernel is already 1.6-3.0× slower than the scalar finite-difference span
+
+**10.17c — Validation and gates:**
+- [x] Require bit-exact parity with the scalar and float32 oracles across batch
+  boundaries, padded strides, and alpha-only differences
+- [x] Make the AMD64 native CI gate cover AVX2, `GODEBUG=cpu.avx2=off` for SSE2,
+  `GODEBUG=cpu.all=off` which also selects SSE2, and `MAYFLY_DISABLE_SIMD=1` for
+  scalar; add the `MAYFLY_DISABLE_SIMD` scalar step to the ARM64 runners too
+- [x] Publish measurements in `docs/task-10.17-sse2-report.md`
+
+**Measured results:** SSE2 SSD is 6.35×/6.48×/6.28×/6.08× scalar at 64² through
+512² and 4.66× at 1024², with zero allocations. Delta-SSD gains 1.67× to 3.65×
+over 4-256 px spans. The float32 compositor gains 3.3-4.3× (SSE2) and 3.9-6.8×
+(AVX2) over the exact float64 span. End to end in the no-AVX2 configuration,
+`FastMSE` cost improved 5.6× at 512² and 6.6× at 256², and the sequential, batch,
+and joint pipelines improved 1.52×, 1.33×, and 1.21×. On a real no-AVX2 target
+an identical 32-circle batch at seed 4242 fell from 300.81 s to 150.52 s (2.0×)
+at an identical final cost of 1032.75; the same run at 64 threads instead of 8
+was flat at 150.33 s.
+
 ---
 
 ## Phase 11: GPU Backends (Research → Prototype)
@@ -1388,6 +1439,7 @@ Completed: store-owned artifacts, canonical UUID/path containment, concurrent du
 - [x] Split SIMD wrappers by architecture/build tag so unsupported symbols are never referenced.
 - [x] Provide a real portable scalar fallback for non-AMD64 targets.
 - [x] Accurately label ARM64 as scalar fallback; a native NEON kernel remains future work.
+- [x] Give AMD64 hosts without AVX2 a real SIMD path instead of scalar execution, and add an environment opt-out that can still force the complete scalar fallback (see Task 10.17).
 - [x] Configure CI to cross-build at minimum (execution still requires a passing workflow run):
   - [x] linux/amd64
   - [x] linux/arm64
