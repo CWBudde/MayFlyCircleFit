@@ -38,6 +38,17 @@ const (
 	// BatchPolishResidualRegion visits high-error image regions, retaining the
 	// circles that influence each region while residual-seeding weak draw slots.
 	BatchPolishResidualRegion BatchPolishStrategy = "residual-region"
+	// BatchPolishContiguousWindow polishes a contiguous run of circles in draw
+	// order, sliding the window toward the front of the vector across sweeps.
+	//
+	// The other strategies pick circles by image-space merit, which scatters the
+	// active set through the draw order. Because only the circles before the
+	// first active slot can be baked into a reusable canvas, an active set that
+	// contains an early circle bakes nothing and every candidate rasterizes the
+	// whole image. Selecting a contiguous window instead makes the baked prefix
+	// exactly the window start, so per-candidate render cost is
+	// circleCount-windowStart rather than always circleCount.
+	BatchPolishContiguousWindow BatchPolishStrategy = "contiguous-window"
 )
 
 const residualPolishGridSize = 4
@@ -131,7 +142,8 @@ func PolishCircleBatchContext(
 	}
 	if options.Strategy != BatchPolishWeakestReplacement &&
 		options.Strategy != BatchPolishHybridOverlap &&
-		options.Strategy != BatchPolishResidualRegion {
+		options.Strategy != BatchPolishResidualRegion &&
+		options.Strategy != BatchPolishContiguousWindow {
 		return nil, fmt.Errorf("%w: unsupported polishing strategy %q", ErrInvalidOptimizationInput, options.Strategy)
 	}
 	fullSession, cleanup, err := sessionForJoint(base, circleCount)
@@ -222,7 +234,7 @@ func PolishCircleBatchContext(
 		initial := opt.Candidate{Params: incumbentParams, Cost: bestCost}
 		var additionalSeeds []opt.Candidate
 		switch options.Strategy {
-		case BatchPolishWeakestReplacement, BatchPolishHybridOverlap:
+		case BatchPolishWeakestReplacement, BatchPolishHybridOverlap, BatchPolishContiguousWindow:
 			retainedSession, retainedCleanup, sessionErr := newStagedSession(base, circleCount-options.ActiveSetSize)
 			if sessionErr != nil {
 				return nil, sessionErr
@@ -425,6 +437,11 @@ func selectPolishingActiveSet(
 	if strategy == BatchPolishResidualRegion {
 		return selectResidualRegionActiveSet(base, params, activeSetSize, visitedRegions)
 	}
+	if strategy == BatchPolishContiguousWindow {
+		circleCount := len(params) / paramsPerCircle
+		active := selectContiguousWindowCircles(circleCount, activeSetSize, visitCounts)
+		return polishingActiveSet{Circles: active, RetainedParams: removeActiveCircleParams(params, active)}, nil
+	}
 
 	audit, err := AuditCircleBatch(base, params)
 	if err != nil {
@@ -432,6 +449,54 @@ func selectPolishingActiveSet(
 	}
 	active := selectHybridOverlapCircles(params, audit, activeSetSize, base.Reference().Bounds().Dx(), base.Reference().Bounds().Dy(), visitCounts)
 	return polishingActiveSet{Circles: active, RetainedParams: removeActiveCircleParams(params, active)}, nil
+}
+
+// selectContiguousWindowCircles returns activeSetSize consecutive draw slots,
+// preferring the window whose circles have been polished least and, among
+// equally unvisited windows, the one that starts latest.
+//
+// Preferring the latest start is what makes the strategy cheap. The caller
+// bakes circles before the first active slot into a reusable canvas, so a
+// window starting at s costs circleCount-s circle rasterizations per candidate;
+// the last window costs exactly activeSetSize, the same as extending a batch.
+// Visit counts then slide the window toward the front on later sweeps, which
+// covers every circle in ceil(circleCount/activeSetSize) sweeps and makes the
+// per-sweep cost rise predictably instead of being maximal from the start.
+//
+// That coverage has to be paid for in sweeps, and the sweep budget is bounded:
+// app.MaxPolishingSweeps is 32, so a vector with more than 32*activeSetSize
+// circles cannot be covered at all, and the shipped default of three sweeps
+// only ever offers the last 3*activeSetSize slots to the optimizer. The
+// strategy is therefore cheaper per sweep but not better per second; see
+// docs/contiguous-window-polish-report.md for the measurement.
+//
+// The scan runs from the latest start downward and keeps a strictly better
+// total, so ties resolve to the latest window without a separate tie-break.
+func selectContiguousWindowCircles(circleCount, activeSetSize int, visitCounts map[int]int) []int {
+	if activeSetSize >= circleCount {
+		active := make([]int, circleCount)
+		for i := range active {
+			active[i] = i
+		}
+		return active
+	}
+
+	bestStart, bestVisits := 0, math.MaxInt
+	for start := circleCount - activeSetSize; start >= 0; start-- {
+		visits := 0
+		for circle := start; circle < start+activeSetSize; circle++ {
+			visits += visitCounts[circle]
+		}
+		if visits < bestVisits {
+			bestStart, bestVisits = start, visits
+		}
+	}
+
+	active := make([]int, activeSetSize)
+	for i := range active {
+		active[i] = bestStart + i
+	}
+	return active
 }
 
 func selectHybridOverlapCircles(params []float64, audit BatchAudit, activeSetSize, width, height int, visitCounts map[int]int) []int {

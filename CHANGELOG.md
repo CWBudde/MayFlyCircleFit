@@ -19,6 +19,26 @@ release is declared by this file.
   for measured scaling. Backends without independent sessions decline the
   request with a warning, and transactional polishing rejects a parallel
   optimizer outright because its sweep evaluator is not re-entrant.
+- A `contiguous-window` polishing strategy. It selects a consecutive run of draw
+  slots instead of scattering the active set by image-space merit, so the
+  circles ahead of the window can be baked into a reusable canvas. Only the
+  circles before the first active slot are bakeable, and the existing strategies
+  routinely select circle one, which bakes nothing and rasterizes the whole
+  vector for every candidate. Visit counts slide the window toward the front on
+  later sweeps, covering every circle in `ceil(circles/activeSetSize)` sweeps.
+  Per-candidate cost is `circles - windowStart` rather than always `circles`, so
+  unlike the other strategies it does not grow with the whole circle count.
+  It is not an unconditional improvement, and it is not the default. The
+  isolated render-cost gain, measured on a Ryzen 5 4600H with `activeSetSize` 3
+  and the optimizer stubbed out, is the first sweep of a coverage cycle:
+  36.9 ms to 17.6 ms at 64 circles (2.1x) and 111.7 ms to 21.1 ms at 256
+  circles (5.3x), falling to 1.44x averaged over a 13-sweep cycle. Measured
+  against error actually removed, it lost to `hybrid-overlap` at equal wall
+  clock in every configuration tried, and at the default
+  `--polishing-max-sweeps` of 3 it only reaches the last `3 * activeSetSize`
+  draw slots and removed no error at all. Raise `--polishing-max-sweeps` to at
+  least `ceil(circles / activeSetSize)` before selecting it. See
+  [docs/contiguous-window-polish-report.md](docs/contiguous-window-polish-report.md).
 - Optimizer-level early stopping, disabled by default. `--stop-target-cost`,
   `--stop-stagnation-iters`, `--stop-min-improvement`, and `--stop-min-iters`
   (and their `stop*` job-configuration fields) apply per iteration inside a

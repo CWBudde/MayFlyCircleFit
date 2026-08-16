@@ -232,8 +232,18 @@ templ CreateJobPage(errorMsg, project string) {
 								<option value="replacement" selected>Weakest replacement</option>
 								<option value="hybrid-overlap">Hybrid overlap</option>
 								<option value="residual-region">Residual region</option>
+								<option value="contiguous-window">Contiguous window</option>
 							</select>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Residual region visits distinct high-error tiles and optimizes their influencing circles</p>
+							<dl style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+								<dt style="font-weight: 500;">Weakest replacement</dt>
+								<dd style="margin: 0 0 0.25rem 0;">Reseeds the weakest circles from the residual image.</dd>
+								<dt style="font-weight: 500;">Hybrid overlap</dt>
+								<dd style="margin: 0 0 0.25rem 0;">Combines weak circles with the ones that overlap them.</dd>
+								<dt style="font-weight: 500;">Residual region</dt>
+								<dd style="margin: 0 0 0.25rem 0;">Visits distinct high-error tiles and optimizes their influencing circles.</dd>
+								<dt style="font-weight: 500;">Contiguous window</dt>
+								<dd style="margin: 0;">Polishes a consecutive run of slots, so the circles ahead of the window can be baked and each candidate evaluates fewer circles. Cheaper per sweep but selected by position rather than error, so it needs roughly circles / active set size sweeps to reach every circle.</dd>
+							</dl>
 						</div>
 						<div>
 							<label for="polishingActiveSetSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Active Set Size</label>

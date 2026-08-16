@@ -118,6 +118,23 @@ behavior is production-ready.
   transactional, and it has no session pool to lease from. Polishing now refuses
   an optimizer configured for concurrent evaluation rather than relying on its
   callers not to supply one.
+- Transactional polishing can be a complete no-op that still spends its whole
+  optimizer budget. A sweep is committed only when every circle in the candidate
+  vector is still useful, so a single circle whose MSE contribution has gone
+  negative blocks all of them until an active set happens to contain and repair
+  it. Fitted vectors routinely contain such circles: pruning runs per batch
+  stage against that stage's canvas, later stages composite on top of what an
+  earlier stage judged useful, and nothing re-audits the assembled result.
+  Measured on the output of a real 64-circle batch fit, three of the four
+  strategies accepted zero sweeps. Check the accepted-sweep count in the
+  polishing log record before concluding that a strategy or a sweep budget was
+  at fault.
+- `--polishing-strategy=contiguous-window` is cheaper per sweep, not better per
+  second. At the default `--polishing-max-sweeps` of 3 it only offers the last
+  `3 * activeSetSize` draw slots to the optimizer, and at equal wall clock it
+  reached a worse cost than `hybrid-overlap` in every configuration measured in
+  `docs/contiguous-window-polish-report.md`. Raise the sweep budget to at least
+  `ceil(circles / activeSetSize)` before selecting it.
 - Not every MayFly phase runs parallel even when the flag is on: GSASMA's
   opposition-based learning on the global best has no parallel branch upstream.
   For the AOBLMOA variant, enabling parallel evaluation also changes the

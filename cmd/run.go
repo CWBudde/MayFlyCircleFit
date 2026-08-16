@@ -76,7 +76,7 @@ func init() {
 	runCmd.Flags().IntVar(&optimizerEpochs, "optimizer-epochs", 1, "Optimizer runs per stage, reseeding each continuation from the best result")
 	runCmd.Flags().IntVar(&batchSize, "batch-size", 0, "Circles optimized together in batch mode (0 selects the automatic default)")
 	runCmd.Flags().BoolVar(&polishingEnabled, "polishing", false, "Polish weak circles transactionally after a batch run")
-	runCmd.Flags().StringVar(&polishingStrategy, "polishing-strategy", "replacement", "Polishing strategy: replacement, hybrid-overlap, or residual-region")
+	runCmd.Flags().StringVar(&polishingStrategy, "polishing-strategy", "replacement", "Polishing strategy: replacement, hybrid-overlap, residual-region, or contiguous-window")
 	runCmd.Flags().IntVar(&polishingActiveSetSize, "polishing-active-set-size", 5, "Circles optimized together in each polishing sweep")
 	runCmd.Flags().IntVar(&polishingMaxSweeps, "polishing-max-sweeps", 3, "Maximum transactional polishing sweeps")
 	runCmd.Flags().IntVar(&polishingEpochs, "polishing-epochs", 2, "Optimizer epochs per polishing sweep")
