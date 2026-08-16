@@ -1,0 +1,82 @@
+name: ci-benchmarks
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmarks:
+    name: Benchmark comparison (report only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOMAXPROCS: "2"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Download modules
+        run: go mod download
+      - name: Benchmark candidate
+        run: >-
+          go test -run '^$' -bench '^BenchmarkFit$' -benchmem
+          -benchtime=200ms -count=6 ./internal/fit
+          | tee benchmark-candidate.txt
+      - name: Benchmark base revision
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            : > benchmark-base.txt
+            exit 0
+          fi
+
+          base_dir="${RUNNER_TEMP}/mayfly-benchmark-base"
+          git worktree add --detach "$base_dir" "$BASE_SHA"
+          trap 'git worktree remove --force "$base_dir" >/dev/null 2>&1 || true' EXIT
+          (
+            cd "$base_dir"
+            go test -run '^$' -bench '^BenchmarkFit$' -benchmem \
+              -benchtime=200ms -count=6 ./internal/fit \
+              > "${GITHUB_WORKSPACE}/benchmark-base.txt"
+          )
+      - name: Publish comparison
+        shell: bash
+        run: |
+          if grep -q '^BenchmarkFit/' benchmark-base.txt \
+              && grep -q '^BenchmarkFit/' benchmark-candidate.txt; then
+            go tool benchstat benchmark-base.txt benchmark-candidate.txt \
+              > benchmark-comparison.txt
+          else
+            printf '%s\n' \
+              'No comparable BenchmarkFit baseline exists; candidate results establish it.' \
+              > benchmark-comparison.txt
+          fi
+
+          {
+            echo '### Canonical CPU benchmark comparison'
+            echo
+            echo 'Timing changes are report-only and do not gate CI.'
+            echo
+            echo '```text'
+            cat benchmark-comparison.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            benchmark-base.txt
+            benchmark-candidate.txt
+            benchmark-comparison.txt
+          if-no-files-found: warn
+          retention-days: 30
