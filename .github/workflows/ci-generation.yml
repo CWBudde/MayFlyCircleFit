@@ -1,0 +1,30 @@
+name: ci-generation
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  generation:
+    name: Generated UI is current
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Generate templ output
+        run: go tool templ generate
+      - name: Check generated-file drift
+        shell: bash
+        run: |
+          git diff --exit-code -- 'internal/ui/*_templ.go'
+          untracked="$(git ls-files --others --exclude-standard -- 'internal/ui/*_templ.go')"
+          if [[ -n "$untracked" ]]; then
+            printf 'Untracked generated files:\n%s\n' "$untracked"
+            exit 1
+          fi
