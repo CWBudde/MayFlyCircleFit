@@ -75,16 +75,23 @@ type ArtifactStore interface {
 // Use errors.Is(err, ErrNotFound) to check for this error.
 var ErrNotFound = &NotFoundError{}
 
-// NotFoundError represents a missing checkpoint error.
+// NotFoundError represents a missing store entity. Kind names what was missing
+// and defaults to a checkpoint, so the message a caller has always seen is
+// unchanged while a schedule can say what it actually is.
 type NotFoundError struct {
 	JobID string
+	Kind  string
 }
 
 func (e *NotFoundError) Error() string {
-	if e.JobID != "" {
-		return "checkpoint not found: " + e.JobID
+	kind := e.Kind
+	if kind == "" {
+		kind = "checkpoint"
 	}
-	return "checkpoint not found"
+	if e.JobID != "" {
+		return kind + " not found: " + e.JobID
+	}
+	return kind + " not found"
 }
 
 func (e *NotFoundError) Is(target error) bool {
