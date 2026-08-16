@@ -4,8 +4,28 @@ MayFlyCircleFit uses Semantic Versioning tags and publishes portable CPU builds.
 The repository's `CI` workflow (`.github/workflows/ci.yml`) is the authoritative
 automated release path; its `release` job cannot run until every required CI
 dependency succeeds for the tagged commit. The gates themselves live in reusable
-`ci-<concern>.yml` workflows that `ci.yml` calls, and `release` lists them in its
-`needs:` block, so a new gate is only release-blocking once it is added there.
+`ci-<concern>.yml` workflows that `ci.yml` calls.
+
+Not every gate blocks publication. `release` lists the release-blocking caller
+jobs in its `needs:` block, currently `generation`, `quality`, `staticcheck`,
+`test`, `e2e`, `coverage`, `race`, `build`, `cross-build`, `native-simd`,
+`gpu-compile`, and `vulnerability`. `benchmarks` runs on every commit but is
+deliberately not among them, because the timing comparison is report-only. A new
+gate is only release-blocking once it is added to that `needs:` list.
+
+## Check names
+
+Because the gates are reusable workflows, each one reports as
+`<caller job>` / `<job name>` rather than `<job name>` alone: the generation gate
+is `generation / Generated UI is current`, the vet gate is
+`quality / Format and vet`, and matrix gates expand per entry, such as
+`native-simd / Native SSD (Linux AMD64 / AVX2)`. Only `Publish release` keeps a
+bare name, because it still lives in `ci.yml`.
+
+Use these prefixed names anywhere a check is referenced by string. The default
+branch currently has no required-status-check rule, so nothing needed migrating
+when the workflow was split, but a ruleset or branch-protection entry added later
+must use the prefixed form or it will wait forever on a check that never reports.
 
 ## Prepare and verify
 

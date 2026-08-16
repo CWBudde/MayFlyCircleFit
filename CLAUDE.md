@@ -21,7 +21,10 @@ code and tests take precedence if this document becomes stale.
   `release` job; edit the gate's own file, not `ci.yml`. `needs:` cannot cross
   workflow files, so a gate becomes release-blocking only by being listed in
   `release`'s `needs:`. `benchmarks` is deliberately excluded there because the
-  timing comparison is report-only.
+  timing comparison is report-only. Reusable gates report as
+  `<caller job> / <job name>`, for example `generation / Generated UI is
+  current`, so anything that names a check by string must use the prefixed form.
+  See `docs/releasing.md`.
 - Phase 9 CPU measurements on the Ryzen 5 4600H show a 2.09-2.47×
   single-thread renderer speedup, zero timed allocations after canvas reuse,
   and a 6.39× median large-workload gain when Task 9.7 uses 12 workers. See
