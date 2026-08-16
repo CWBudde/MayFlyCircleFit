@@ -14,8 +14,10 @@ import (
 const ssdNEONDisabledHelper = "MAYFLY_TEST_SSD_NEON_DISABLED"
 
 func TestARM64SIMDDispatchMatchesCPUFeatures(t *testing.T) {
+	// The environment opt-out outranks the feature check: ASIMD is mandatory on
+	// ARM64 and stays reported even when the scalar fallback was requested.
 	wantSSD := SSDBackendScalar
-	if cpu.ARM64.HasASIMD {
+	if cpu.ARM64.HasASIMD && !SIMDDisabledByEnv() {
 		wantSSD = SSDBackendNEON
 	}
 	if ActiveSSDBackend != wantSSD {
