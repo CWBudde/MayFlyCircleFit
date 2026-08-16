@@ -1011,8 +1011,8 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 		return
 	}
-	if s.store == nil {
-		writeAPIError(w, http.StatusServiceUnavailable, "checkpoint_unavailable", "checkpoint feature not enabled")
+	if failure := s.requireCheckpointStore(); failure != nil {
+		writeContinuationError(w, failure)
 		return
 	}
 	var request polishJobRequest
@@ -1023,60 +1023,15 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid polishing configuration")
 		return
 	}
-	source, ok := s.jobManager.GetJob(jobID)
-	if !ok {
-		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
-		return
-	}
-	if source.State != StateCompleted {
-		writeAPIError(w, http.StatusConflict, "invalid_state", "only completed jobs can be polished")
+	source, failure := s.continuationSourceFor(jobID, polishContinuation)
+	if failure != nil {
+		writeContinuationError(w, failure)
 		return
 	}
 
-	jobStore, err := s.storeForJob(jobID)
-	if err != nil {
-		slog.Error("Failed to resolve project store for polish", "job_id", jobID, "error", err)
-		writeAPIError(w, http.StatusInternalServerError, "project_unavailable", "the project store is unavailable")
-		return
-	}
-	checkpoint, err := jobStore.LoadCheckpoint(jobID)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			writeAPIError(w, http.StatusNotFound, "not_found", "completed checkpoint not found")
-		} else {
-			writeAPIError(w, http.StatusInternalServerError, "checkpoint_error", "failed to load completed checkpoint")
-		}
-		return
-	}
-	if err := checkpoint.Validate(); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "completed checkpoint is invalid")
-		return
-	}
-	config, err := app.Normalize(checkpoint.Config)
-	if err != nil || config.Mode != app.ModeBatch || len(checkpoint.BestParams) != config.Circles*7 {
-		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "polishing requires a complete batch checkpoint")
-		return
-	}
-	if s.inputErr != nil {
-		writeAPIError(w, http.StatusInternalServerError, "server_config", "server input roots are unavailable")
-		return
-	}
-	config.RefPath, err = s.input.resolveImage(config.RefPath)
-	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint reference is outside configured input roots")
-		return
-	}
-	if config.CanvasPath != "" {
-		config.CanvasPath, err = s.input.resolveImage(config.CanvasPath)
-		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint canvas is outside configured input roots")
-			return
-		}
-	}
+	config := source.config
 	config.PolishingEnabled = true
 	config.PolishingOnly = true
-	config.EffectiveSeed = checkpoint.EffectiveSeed
-	config.ResumeCount = checkpoint.ResumeCount + 1
 	if request.Strategy != nil {
 		config.PolishingStrategy = *request.Strategy
 	}
@@ -1105,31 +1060,17 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 		config.Seed = *request.Seed
 		config.EffectiveSeed = *request.Seed
 	}
-	config, err = app.Normalize(config)
+	config, err := app.Normalize(config)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid polishing configuration")
 		return
 	}
 
-	evaluations := int(checkpoint.Evaluations)
-	if int64(evaluations) != checkpoint.Evaluations {
-		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint evaluation count is out of range")
-		return
-	}
-	newJob := s.jobManager.CreateJob(s.projectForJob(jobID), config)
-	if err := s.jobManager.UpdateJob(newJob.ID, func(job *Job) {
-		updateBestResult(job, checkpoint.BestParams, checkpoint.BestCost)
-		job.InitialCost = checkpoint.InitialCost
-		job.Iterations = checkpoint.Iteration
-		job.Evaluations = evaluations
+	newJob, failure := s.startContinuation("", s.projectForJob(jobID), config, source, func(job *Job) {
 		job.PolishedFrom = jobID
-	}); err != nil {
-		writeAPIError(w, http.StatusInternalServerError, "job_error", "failed to initialize polishing job")
-		return
-	}
-	if err := s.enqueueJob(newJob.ID); err != nil {
-		_ = s.jobManager.FailJob(newJob.ID, "server job queue is full")
-		writeAPIError(w, http.StatusTooManyRequests, "queue_full", "server job queue is full")
+	})
+	if failure != nil {
+		writeContinuationError(w, failure)
 		return
 	}
 
@@ -1139,7 +1080,7 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 		"jobId":         newJob.ID,
 		"polishedFrom":  jobID,
 		"state":         string(newJob.State),
-		"previousCost":  checkpoint.BestCost,
+		"previousCost":  source.checkpoint.BestCost,
 		"strategy":      config.PolishingStrategy,
 		"activeSetSize": config.PolishingActiveSetSize,
 	})
@@ -1165,8 +1106,8 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 		return
 	}
-	if s.store == nil {
-		writeAPIError(w, http.StatusServiceUnavailable, "checkpoint_unavailable", "checkpoint feature not enabled")
+	if failure := s.requireCheckpointStore(); failure != nil {
+		writeContinuationError(w, failure)
 		return
 	}
 	var request extendJobRequest
@@ -1181,67 +1122,22 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "request body must contain one JSON object")
 		return
 	}
-	source, ok := s.jobManager.GetJob(jobID)
-	if !ok {
-		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
+	source, failure := s.continuationSourceFor(jobID, extendContinuation)
+	if failure != nil {
+		writeContinuationError(w, failure)
 		return
 	}
-	if source.State != StateCompleted {
-		writeAPIError(w, http.StatusConflict, "invalid_state", "only completed jobs can be extended")
-		return
-	}
-	jobStore, err := s.storeForJob(jobID)
-	if err != nil {
-		slog.Error("Failed to resolve project store for extend", "job_id", jobID, "error", err)
-		writeAPIError(w, http.StatusInternalServerError, "project_unavailable", "the project store is unavailable")
-		return
-	}
-	checkpoint, err := jobStore.LoadCheckpoint(jobID)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			writeAPIError(w, http.StatusNotFound, "not_found", "completed checkpoint not found")
-		} else {
-			writeAPIError(w, http.StatusInternalServerError, "checkpoint_error", "failed to load completed checkpoint")
-		}
-		return
-	}
-	if err := checkpoint.Validate(); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "completed checkpoint is invalid")
-		return
-	}
-	config, err := app.Normalize(checkpoint.Config)
-	if err != nil || config.Mode != app.ModeBatch || len(checkpoint.BestParams) != config.Circles*7 {
-		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "extension requires a complete batch checkpoint")
-		return
-	}
-	if request.AdditionalCircles < 1 || request.AdditionalCircles > app.MaxCircles-config.Circles {
+	previousCircles := source.config.Circles
+	if request.AdditionalCircles < 1 || request.AdditionalCircles > app.MaxCircles-previousCircles {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "additionalCircles exceeds the supported circle limit")
 		return
 	}
-	if s.inputErr != nil {
-		writeAPIError(w, http.StatusInternalServerError, "server_config", "server input roots are unavailable")
-		return
-	}
-	config.RefPath, err = s.input.resolveImage(config.RefPath)
-	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint reference is outside configured input roots")
-		return
-	}
-	if config.CanvasPath != "" {
-		config.CanvasPath, err = s.input.resolveImage(config.CanvasPath)
-		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint canvas is outside configured input roots")
-			return
-		}
-	}
 
-	previousCircles := config.Circles
+	config := source.config
 	config.Circles += request.AdditionalCircles
 	config.BatchSize = min(request.AdditionalCircles, app.MaxBatchSize)
 	config.PolishingEnabled = false
 	config.PolishingOnly = false
-	config.ResumeCount = checkpoint.ResumeCount + 1
-	config.EffectiveSeed = checkpoint.EffectiveSeed
 	if request.BatchSize != nil {
 		config.BatchSize = *request.BatchSize
 	}
@@ -1261,31 +1157,17 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 	if request.Polish != nil {
 		config.PolishingEnabled = *request.Polish
 	}
-	config, err = app.Normalize(config)
+	config, err := app.Normalize(config)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid extension configuration")
 		return
 	}
 
-	evaluations := int(checkpoint.Evaluations)
-	if int64(evaluations) != checkpoint.Evaluations {
-		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint evaluation count is out of range")
-		return
-	}
-	newJob := s.jobManager.CreateJob(s.projectForJob(jobID), config)
-	if err := s.jobManager.UpdateJob(newJob.ID, func(job *Job) {
-		updateBestResult(job, checkpoint.BestParams, checkpoint.BestCost)
-		job.InitialCost = checkpoint.InitialCost
-		job.Iterations = checkpoint.Iteration
-		job.Evaluations = evaluations
+	newJob, failure := s.startContinuation("", s.projectForJob(jobID), config, source, func(job *Job) {
 		job.ExtendedFrom = jobID
-	}); err != nil {
-		writeAPIError(w, http.StatusInternalServerError, "job_error", "failed to initialize extension job")
-		return
-	}
-	if err := s.enqueueJob(newJob.ID); err != nil {
-		_ = s.jobManager.FailJob(newJob.ID, "server job queue is full")
-		writeAPIError(w, http.StatusTooManyRequests, "queue_full", "server job queue is full")
+	})
+	if failure != nil {
+		writeContinuationError(w, failure)
 		return
 	}
 
@@ -1295,7 +1177,7 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 		"jobId":             newJob.ID,
 		"extendedFrom":      jobID,
 		"state":             string(newJob.State),
-		"previousCost":      checkpoint.BestCost,
+		"previousCost":      source.checkpoint.BestCost,
 		"previousCircles":   previousCircles,
 		"additionalCircles": request.AdditionalCircles,
 		"targetCircles":     config.Circles,
