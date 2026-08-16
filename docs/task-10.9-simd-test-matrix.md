@@ -20,6 +20,12 @@ The ARM64 fallback has a subprocess test because Go consumes CPU feature
 overrides before package initialization. Native CI also runs the complete
 `internal/fit` suite a second time with `cpu.all=off` on each hardware runner.
 
+**Superseded on AMD64.** Since the SSE2 tier landed, `GODEBUG=cpu.avx2=off` and
+`GODEBUG=cpu.all=off` select SSE2 rather than scalar on AMD64, because
+`x/sys/cpu` marks sse2 as required on that architecture and never clears it. The
+AMD64 forced-scalar row is now `MAYFLY_DISABLE_SIMD=1`. See
+`docs/task-10.17-sse2-report.md`.
+
 ## Exactness
 
 NEON matched the scalar integer total exactly for:

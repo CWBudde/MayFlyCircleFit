@@ -84,6 +84,12 @@ go test -run '^$' -bench '^BenchmarkFastSSD_Comparison$' \
   -benchmem -benchtime=500ms -count=5 ./internal/fit
 ```
 
+On AMD64 the runtime-selected kernel is AVX2, SSE2, or scalar. Prefix the same
+command with `GODEBUG=cpu.avx2=off` to measure the SSE2 tier and with
+`MAYFLY_DISABLE_SIMD=1` to measure scalar. `GODEBUG=cpu.all=off` does not reach
+the scalar kernel on AMD64, because `golang.org/x/sys/cpu` marks sse2 as
+required there.
+
 Run the opaque-span microbenchmark and full renderer comparison with:
 
 ```sh
