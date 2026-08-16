@@ -1845,25 +1845,25 @@ and then runs unattended as a single observable entity.
 
 ### Task 16.1: Model a Schedule as a First-Class Entity (P1)
 
-- [ ] Define a schedule document: a reference image, a base stage, and an
+- [x] Define a schedule document: a reference image, a base stage, and an
       ordered list of steps, where each step is `extend` or `polish` with its own
       parameter overrides. Support a generator form (`repeat: 63` with
       `additionalCircles: 8`) so a 64-stage campaign is not 64 stanzas.
-- [ ] Persist the schedule and its realized stage lineage in `internal/store`,
+- [x] Persist the schedule and its realized stage lineage in `internal/store`,
       keyed independently of the job records, so the chain survives a server
       restart and can be read back without an external ledger.
-- [ ] Record `extendedFrom`/`polishedFrom` on the job checkpoint itself, so a
+- [x] Record `extendedFrom`/`polishedFrom` on the job checkpoint itself, so a
       chain is reconstructible from the job tree alone even for jobs created
       outside a schedule.
-- [ ] Validate the document strictly: unknown fields rejected, and any field
+- [x] Validate the document strictly: unknown fields rejected, and any field
       that `ApplyDefaults` would override reported as an error rather than
       silently dropped.
 
 **Acceptance Checks:**
 
-- [ ] A schedule round-trips through the store and reloads with its lineage
+- [x] A schedule round-trips through the store and reloads with its lineage
       intact after a server restart.
-- [ ] A document setting `convergenceEnabled: false` is rejected with a message
+- [x] A document setting `convergenceEnabled: false` is rejected with a message
       naming `disableConvergence` as the effective field.
 
 ### Task 16.2: Run Schedules Server-Side (P1)
