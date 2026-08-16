@@ -135,6 +135,14 @@ application configuration into the store package.
   to jobs, checkpoints, `status`, and `checkpoints list`. The checkpoint
   `termination` field is free-form, so new reasons need no schema bump, and
   readers reject a version above 2.
+- Batch polishing bakes only the circles before the first active draw slot into
+  a reusable canvas, so per-candidate cost is `circles - min(activeSet)`. The
+  `replacement`, `hybrid-overlap`, and `residual-region` strategies select by
+  image-space merit and routinely include circle one, which bakes nothing and
+  rasterizes the whole image for every candidate. `contiguous-window` selects a
+  consecutive run instead, keeping that cost near `activeSetSize` on the first
+  sweep. Do not change a selector to scatter its active set without accounting
+  for that cost.
 - The configured `variant` is honored at every optimizer construction site.
 - MayFly's `optimization_started` and `iteration_completed` events are demoted
   to debug, so `--log-level=debug` emits one record per optimizer iteration.
