@@ -17,9 +17,9 @@
 // eight-pixel stride and its single scalar comparison, so it costs what the
 // scalar search costs. SSE2 is then used exactly once per edge, for the part
 // the scalar search is bad at: after the coarse scan stops, the eight pixels
-// that bracket the edge are compared in one vector pair and the mask locates
-// the edge directly, replacing up to seven dependent scalar iterations. Both
-// edges stay bit-identical to circleSpanFloat32.
+// that bracket the edge are compared as one or two four-lane vectors and the
+// mask locates the edge directly, replacing up to seven dependent scalar
+// iterations. Both edges stay bit-identical to circleSpanFloat32.
 //
 // Plan 9 SSE mnemonics are two-operand and destructive, so comparisons are
 // restructured with explicit MOVAPS copies. Scalar broadcasts use MOVSS plus
@@ -59,10 +59,6 @@ GLOBL ·circleSSE2RightRefine<>(SB), RODATA|NOPTR, $32
 
 DATA ·circleSSE2One<>+0(SB)/4, $0x3f800000
 GLOBL ·circleSSE2One<>(SB), RODATA|NOPTR, $4
-DATA ·circleSSE2Seven<>+0(SB)/4, $0x40e00000
-GLOBL ·circleSSE2Seven<>(SB), RODATA|NOPTR, $4
-DATA ·circleSSE2Eight<>+0(SB)/4, $0x41000000
-GLOBL ·circleSSE2Eight<>(SB), RODATA|NOPTR, $4
 
 // func circleSpanFloat32SSE2Kernel(centerX, radiusSquaredMinusDY,
 //     roundedCenter float32, width int) (xStart, xEnd int)
@@ -71,55 +67,75 @@ TEXT ·circleSpanFloat32SSE2Kernel(SB), NOSPLIT, $0-40
 	SHUFPS $0x00, X0, X0
 	MOVSS  radiusSquaredMinusDY+4(FP), X1
 	SHUFPS $0x00, X1, X1
-	MOVSS  ·circleSSE2Eight<>(SB), X5
 	MOVQ   width+16(FP), SI
 
-	MOVSS     roundedCenter+8(FP), X8
-	CVTTSS2SQ X8, AX                  // xStart = rounded center
-	SUBSS     X5, X8                  // X8 lane zero tracks float32(xStart-8)
+	MOVSS     roundedCenter+8(FP), X2
+	CVTTSS2SQ X2, AX                  // xStart = rounded center
+
+	// The coarse scan keeps its candidate in an integer register and converts
+	// per iteration. Carrying a float32 candidate and subtracting eight from it
+	// instead would put a four-cycle SUBSS in the loop-carried dependency chain,
+	// which measured slower than the scalar search at large radii. The XORPS
+	// breaks CVTSQ2SS's false dependency on its destination register, which
+	// otherwise serializes the whole float chain across iterations and measured
+	// slower still. The loop test sits at the bottom so the back edge is the
+	// only extra branch, matching the instruction sequence the Go compiler
+	// emits for the scalar batch loop.
+	CMPQ AX, $8
+	JLT  left_scalar
 
 left_coarse:
-	CMPQ    AX, $8
-	JLT     left_scalar
-	MOVAPS  X8, X3
-	SUBSS   X0, X3
-	MULSS   X3, X3
-	UCOMISS X1, X3
-	JHI     left_refine
-	SUBQ    $8, AX
-	SUBSS   X5, X8
-	JMP     left_coarse
+	LEAQ     -8(AX), DX
+	XORPS    X3, X3
+	CVTSQ2SS DX, X3
+	SUBSS    X0, X3
+	MULSS    X3, X3
+	UCOMISS  X1, X3
+	JHI      left_refine
+	MOVQ     DX, AX
+	CMPQ     AX, $8
+	JGE      left_coarse
+	JMP      left_scalar
 
 left_refine:
 	// xStart >= 8 and pixel xStart-8 is outside, so the edge lies in
-	// [xStart-7, xStart]. One vector pair over [xStart-1, ..., xStart-8]
-	// locates it; the last lane is known outside, so the mask is never full.
-	MOVAPS   X8, X2
+	// [xStart-7, xStart]. The four nearest candidates resolve it whenever fewer
+	// than four of them are inside, which is the common case; only a full mask
+	// needs the second vector, whose last lane is known outside.
+	CVTSQ2SS DX, X2      // DX is xStart-8
 	SHUFPS   $0x00, X2, X2
 	MOVAPS   X2, X7
 	MOVUPS   ·circleSSE2LeftRefine<>+0(SB), X6
 	ADDPS    X6, X2
-	MOVUPS   ·circleSSE2LeftRefine<>+16(SB), X6
-	ADDPS    X6, X7
 	SUBPS    X0, X2
 	MULPS    X2, X2
-	SUBPS    X0, X7
-	MULPS    X7, X7
 	CMPPS    X1, X2, $2  // candidate squared <= remaining
-	CMPPS    X1, X7, $2
 	MOVMSKPS X2, DI
-	MOVMSKPS X7, R8
-	SHLL     $4, R8
-	ORL      R8, DI
+	CMPL     DI, $15
+	JEQ      left_refine_far
 	NOTL     DI
 	BSFL     DI, DI      // number of consecutive inside lanes
 	SUBQ     DI, AX
 	JMP      left_done
 
+left_refine_far:
+	MOVUPS   ·circleSSE2LeftRefine<>+16(SB), X6
+	ADDPS    X6, X7
+	SUBPS    X0, X7
+	MULPS    X7, X7
+	CMPPS    X1, X7, $2
+	MOVMSKPS X7, DI
+	NOTL     DI
+	BSFL     DI, DI
+	ADDQ     $4, DI
+	SUBQ     DI, AX
+	JMP      left_done
+
 left_scalar:
 	// Fewer than eight pixels remain to the left clip edge.
-	MOVAPS X8, X2
-	ADDSS  ·circleSSE2Seven<>(SB), X2  // X2 lane zero is float32(xStart-1)
+	LEAQ     -1(AX), DX
+	XORPS    X2, X2
+	CVTSQ2SS DX, X2  // X2 lane zero is float32(xStart-1)
 
 left_scalar_loop:
 	CMPQ    AX, $0
@@ -136,53 +152,63 @@ left_scalar_loop:
 left_done:
 	MOVQ AX, xStart+24(FP)
 
-	MOVSS     roundedCenter+8(FP), X9
-	CVTTSS2SQ X9, BX
+	MOVSS     roundedCenter+8(FP), X2
+	CVTTSS2SQ X2, BX
 	INCQ      BX                      // xEnd = rounded center + 1
-	ADDSS     X5, X9                  // X9 lane zero tracks float32(xEnd+7)
+
+	LEAQ 7(BX), DX
+	CMPQ DX, SI
+	JGE  right_scalar
 
 right_coarse:
-	LEAQ    7(BX), DI
-	CMPQ    DI, SI
-	JGE     right_scalar
-	MOVAPS  X9, X3
-	SUBSS   X0, X3
-	MULSS   X3, X3
-	UCOMISS X1, X3
-	JHI     right_refine
-	ADDQ    $8, BX
-	ADDSS   X5, X9
-	JMP     right_coarse
+	XORPS    X3, X3
+	CVTSQ2SS DX, X3
+	SUBSS    X0, X3
+	MULSS    X3, X3
+	UCOMISS  X1, X3
+	JHI      right_refine
+	ADDQ     $8, BX
+	LEAQ     7(BX), DX
+	CMPQ     DX, SI
+	JLT      right_coarse
+	JMP      right_scalar
 
 right_refine:
 	// xEnd+7 is inside the raster and outside the circle, so the edge lies in
 	// [xEnd, xEnd+7] and needs no clamping.
-	MOVAPS   X9, X2
+	CVTSQ2SS DX, X2      // DX is xEnd+7
 	SHUFPS   $0x00, X2, X2
 	MOVAPS   X2, X7
 	MOVUPS   ·circleSSE2RightRefine<>+0(SB), X6
 	ADDPS    X6, X2
-	MOVUPS   ·circleSSE2RightRefine<>+16(SB), X6
-	ADDPS    X6, X7
 	SUBPS    X0, X2
 	MULPS    X2, X2
-	SUBPS    X0, X7
-	MULPS    X7, X7
 	CMPPS    X1, X2, $2  // candidate squared <= remaining
-	CMPPS    X1, X7, $2
 	MOVMSKPS X2, DI
-	MOVMSKPS X7, R8
-	SHLL     $4, R8
-	ORL      R8, DI
+	CMPL     DI, $15
+	JEQ      right_refine_far
 	NOTL     DI
 	BSFL     DI, DI      // number of consecutive inside lanes
 	ADDQ     DI, BX
 	JMP      done
 
+right_refine_far:
+	MOVUPS   ·circleSSE2RightRefine<>+16(SB), X6
+	ADDPS    X6, X7
+	SUBPS    X0, X7
+	MULPS    X7, X7
+	CMPPS    X1, X7, $2
+	MOVMSKPS X7, DI
+	NOTL     DI
+	BSFL     DI, DI
+	ADDQ     $4, DI
+	ADDQ     DI, BX
+	JMP      done
+
 right_scalar:
 	// Fewer than eight pixels remain to the right clip edge.
-	MOVAPS X9, X2
-	SUBSS  ·circleSSE2Seven<>(SB), X2  // X2 lane zero is float32(xEnd)
+	XORPS    X2, X2
+	CVTSQ2SS BX, X2  // X2 lane zero is float32(xEnd)
 
 right_scalar_loop:
 	CMPQ    BX, SI
