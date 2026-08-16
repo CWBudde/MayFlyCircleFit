@@ -316,7 +316,11 @@ jobs:
           CGO_ENABLED: "0"
           GODEBUG: cpu.avx2=off
           MAYFLY_REQUIRE_SSD_BACKEND: SSE2
-        run: go test -count=1 ./internal/fit
+        # This step is amd64-only (sse2Tier is set on the amd64 rows), so it can
+        # cover the renderer too. Without ./internal/fit/renderer the renderer's
+        # SSE2 delta-SSD and circle-span dispatch never runs in the SSE2
+        # configuration and its SSE2 tests self-skip on an AVX2 host.
+        run: go test -count=1 ./internal/fit ./internal/fit/renderer
       # This deliberately covers ./internal/fit only. Widening it to
       # ./internal/fit/renderer is the right end state, because MAYFLY_DISABLE_SIMD
       # claims to force the scalar backend for every kernel and the renderer has
