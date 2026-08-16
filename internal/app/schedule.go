@@ -3,7 +3,9 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"sort"
 	"strings"
@@ -160,7 +162,7 @@ func ParseSchedule(data []byte) (*ScheduleDocument, error) {
 	if err := decoder.Decode(&doc); err != nil {
 		return nil, fmt.Errorf("decode schedule: %w", err)
 	}
-	if err := decoder.Decode(&struct{}{}); err == nil {
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return nil, invalid("schedule", "must contain exactly one JSON object")
 	}
 
