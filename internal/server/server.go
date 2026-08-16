@@ -40,6 +40,12 @@ type Server struct {
 	jobCancels map[string]context.CancelFunc
 	input      *inputPolicy
 	inputErr   error
+	// schedulesMu guards scheduleDrivers, which holds one entry per schedule
+	// with a live executor. It is the in-process guarantee that a schedule
+	// never has two executors, and so never two jobs for one stage.
+	schedulesMu     sync.Mutex
+	scheduleDrivers map[string]struct{}
+	scheduleWG      sync.WaitGroup
 }
 
 // ServerOptions configures the trusted-local HTTP boundary.
@@ -119,9 +125,14 @@ func NewServerWithOptions(addr string, checkpointStore store.Store, options Serv
 		jobCancels: make(map[string]context.CancelFunc),
 		input:      policy,
 		inputErr:   policyErr,
+
+		scheduleDrivers: make(map[string]struct{}),
 	}
 	server.projects = newProjectRegistry(options.DataRoot, checkpointStore)
 	server.restorePersistedJobs()
+	// Schedules are adopted after the jobs, because adopting an interrupted
+	// stage needs the restored job for that stage to already be visible.
+	server.restoreSchedules()
 	return server
 }
 
@@ -171,6 +182,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/jobs", s.handleJobs)
 	mux.HandleFunc("/api/v1/projects", s.handleProjects)
 	mux.HandleFunc("/api/v1/jobs/", s.handleJobsWithID)
+	mux.HandleFunc("/api/v1/schedules", s.handleSchedules)
+	mux.HandleFunc("/api/v1/schedules/", s.handleSchedulesWithID)
 
 	if s.options.EnablePprof {
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
@@ -204,6 +217,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 	waited := make(chan struct{})
 	go func() {
+		// Schedule executors are waited on beside the job workers. An executor
+		// that is mid-stage returns on the cancelled context and leaves its
+		// stage record in `running`, which is what the next start adopts.
+		s.scheduleWG.Wait()
 		s.workerWG.Wait()
 		close(waited)
 	}()
