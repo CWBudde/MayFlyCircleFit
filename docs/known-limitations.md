@@ -121,6 +121,20 @@ behavior is production-ready.
   establish actual-GPU performance.
 - Cross-compilation proves that packages compile for a target; it does not test
   runtime behavior on that operating system or architecture.
+- `internal/fit/renderer` has no ARM64 CI coverage. The `native-simd` matrix
+  supplies the only ARM64 runners in the repository and it runs `./internal/fit`
+  alone; every other job is `ubuntu-latest`. Running the renderer package on the
+  Linux ARM64 and macOS ARM64 runners was tried and fails:
+
+      --- FAIL: TestCPURendererMatchesPreOptimizationBaseline/fractional_overlaps
+          renderer_correctness_test.go:106: pixel (4,11) channel 3 = 205, baseline = 206
+
+  It reproduces at `threads_1` and `threads_4` and does not reproduce on amd64.
+  The case is a 31x23 custom canvas, which is well below the 256-pixel NEON span
+  cutoff, and channel 3 is alpha, which the span compositor never writes, so the
+  gated NEON span kernel is unlikely to be the cause. The defect predates the
+  SSE2 work and needs real ARM64 hardware to diagnose; it is not reproducible by
+  cross-compiling. Until it is fixed, ARM64 renderer output is unverified.
 - The existence of a workflow is not evidence that a revision passed it. Use
   the workflow result and Phase 14 acceptance checks for release decisions.
 - Valid SemVer tags run the complete required matrix before the repository's
