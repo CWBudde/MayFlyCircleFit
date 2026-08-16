@@ -1026,6 +1026,31 @@ type polishSerialResult struct {
 // must reproduce width one exactly: the same evaluated costs, the same
 // committed parameters and cost, the same accepted-sweep count, and the same
 // rendered image.
+//
+// How the goldens in the `serial` fields were produced, so that no reader has
+// to take a commit message on trust: a scratch worktree was checked out at
+// b0185a0 -- the commit before the session pool, where the sweep evaluator
+// still merged into one shared vector and evaluated on one shared session --
+// and a throwaway `_test.go` file was added there that runs exactly the
+// fixtures below (the same reference images, the same parameter vectors, the
+// same `BatchPolishOptions`, the same optimizers, declaring width one, which
+// the pre-pool refusal at `batch_polish.go:125` still permits) and prints the
+// evaluated costs, best parameters, best cost, accepted-sweep count, sweep
+// count and evaluation count as Go literals. Those literals were pasted here
+// unchanged. The two `hybrid-overlap` cases already existed and their recorded
+// numbers reproduced byte-for-byte in that capture, which is the evidence that
+// the capture harness matches the one the original goldens came from. Nothing
+// in this table was produced by the pooled code, so a passing width-one case
+// is a real comparison against the pre-pool behavior and not a self-check.
+//
+// Every strategy is covered because they reach the pooled `evaluate` closure by
+// different routes: `replacement` and `hybrid-overlap` seed once through
+// SeedParamsFromResidual, `residual-region` additionally builds and evaluates a
+// merged alternative through mergeReplacementSeedParams before the optimizer
+// starts, and `contiguous-window` is the only strategy that guarantees a large
+// baked prefix. `residual-region` is the strategy the production chain runs and
+// it scatters its active set through the draw order, so it is also covered with
+// an active set that contains the first circle and therefore bakes nothing.
 func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -1038,7 +1063,7 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 		{
 			// Every sweep is rejected here, which is the common case for a fitted
 			// vector: the whole-vector usefulness gate vetoes improvements.
-			name:      "rejected-sweeps",
+			name:      "rejected-sweeps-hybrid-overlap",
 			reference: solidImage(20, 16, color.NRGBA{R: 200, G: 40, B: 90, A: 255}),
 			params:    polishParityParams(),
 			options: BatchPolishOptions{
@@ -1065,7 +1090,7 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 		{
 			// Every sweep commits here, so the accepted-sweep count is a real
 			// assertion rather than a constant zero.
-			name:      "accepted-sweeps",
+			name:      "accepted-sweeps-hybrid-overlap",
 			reference: solidImage(12, 6, color.NRGBA{A: 255}),
 			params:    polishAcceptingParams(),
 			options: BatchPolishOptions{
@@ -1081,6 +1106,215 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 					44018.72222222222, 42125.625, 40754.88888888889, 39749.5,
 					39749.5, 38675.375, 37794.61111111111, 37107.208333333336,
 					37107.208333333336, 36427.208333333336, 35832.541666666664, 35323.208333333336,
+					35323.208333333336, 35209.208333333336, 35100.541666666664, 34997.208333333336,
+				},
+				params: []float64{
+					2, 3, 2, 0.1568627450980392, 0.1568627450980392, 0.1568627450980392, 0.9,
+					6, 3, 2, 0.11764705882352941, 0.11764705882352941, 0.11764705882352941, 0.8,
+					10, 3, 2, 0.022058823529411766, 0.022058823529411766, 0.022058823529411766, 0.7,
+				},
+				cost:        34997.208333333336,
+				accepted:    4,
+				sweeps:      4,
+				evaluations: 25,
+			},
+		},
+		{
+			// `replacement` seeds the active set from the residual once, the same
+			// route `hybrid-overlap` takes, but it selects different circles, so it
+			// bakes a different prefix.
+			name:      "rejected-sweeps-replacement",
+			reference: solidImage(20, 16, color.NRGBA{R: 200, G: 40, B: 90, A: 255}),
+			params:    polishParityParams(),
+			options: BatchPolishOptions{
+				ActiveSetSize: 2,
+				MaxSweeps:     3,
+				Strategy:      BatchPolishWeakestReplacement,
+			},
+			newOptimizer: func(workers int) polishParityOptimizer {
+				return &widthPolishOptimizer{workers: workers}
+			},
+			serial: polishSerialResult{
+				costs: []float64{
+					4969.403125, 5292.009375, 5358.133333333333, 5358.133333333333, 5405.978125,
+					6134.682291666667, 6474.50625, 6500.479166666667, 6500.479166666667, 6502.104166666667,
+					18986.515625, 19309.121875, 19375.245833333334, 19375.245833333334, 19423.080208333333,
+				},
+				params:      polishParityParams(),
+				cost:        5639.8125,
+				accepted:    0,
+				sweeps:      3,
+				evaluations: 22,
+			},
+		},
+		{
+			// The accepting fixture run under `replacement`. It rejects every sweep
+			// rather than committing -- `replacement` seeds a different active set
+			// than `hybrid-overlap` does on the same three circles -- so the golden
+			// records accepted 0. The value of the case is the evaluated-cost
+			// sequence, not the acceptance count.
+			name:      "accepting-fixture-replacement",
+			reference: solidImage(12, 6, color.NRGBA{A: 255}),
+			params:    polishAcceptingParams(),
+			options: BatchPolishOptions{
+				ActiveSetSize: 1,
+				MaxSweeps:     4,
+				Strategy:      BatchPolishWeakestReplacement,
+			},
+			newOptimizer: func(workers int) polishParityOptimizer {
+				return &improvingPolishOptimizer{workers: workers}
+			},
+			serial: polishSerialResult{
+				costs: []float64{
+					48078.25, 48078.25, 48078.25, 48078.25,
+					48904.88888888889, 48904.88888888889, 48904.88888888889, 48904.88888888889,
+					49073.055555555555, 49073.055555555555, 49073.055555555555, 49073.055555555555,
+					48078.25, 48078.25, 48078.25, 48078.25,
+				},
+				params:      polishAcceptingParams(),
+				cost:        44018.72222222222,
+				accepted:    0,
+				sweeps:      4,
+				evaluations: 25,
+			},
+		},
+		{
+			// `residual-region` is the strategy the production chain runs. It builds
+			// a merged alternative through mergeReplacementSeedParams and evaluates
+			// that on the pool before the optimizer starts, which no other strategy
+			// does. Its active set here is circles 0 and 3 in draw order, so the
+			// baked prefix is one circle of five.
+			name:      "rejected-sweeps-residual-region",
+			reference: solidImage(20, 16, color.NRGBA{R: 200, G: 40, B: 90, A: 255}),
+			params:    polishParityParams(),
+			options: BatchPolishOptions{
+				ActiveSetSize: 2,
+				MaxSweeps:     3,
+				Strategy:      BatchPolishResidualRegion,
+			},
+			newOptimizer: func(workers int) polishParityOptimizer {
+				return &widthPolishOptimizer{workers: workers}
+			},
+			serial: polishSerialResult{
+				costs: []float64{
+					5639.8125, 14598.391666666666, 19012.595833333333, 19172.329166666666, 19118.3375,
+					5639.8125, 14598.391666666666, 19012.595833333333, 19172.329166666666, 19118.3375,
+					5639.8125, 14598.391666666666, 19012.595833333333, 19172.329166666666, 19118.3375,
+				},
+				params:      polishParityParams(),
+				cost:        5639.8125,
+				accepted:    0,
+				sweeps:      3,
+				evaluations: 22,
+			},
+		},
+		{
+			// `residual-region` with an active set that spans the whole vector, so
+			// the first circle is active and the baked prefix is empty. That is the
+			// bake path the production strategy reaches most often -- measured
+			// min(activeCircles) on the live 512x512 vector is 7 of 256 and 11 of
+			// 512 -- and it is the one `hybrid-overlap` never exercised here.
+			name:      "empty-prefix-residual-region",
+			reference: solidImage(20, 16, color.NRGBA{R: 200, G: 40, B: 90, A: 255}),
+			params:    polishParityParams(),
+			options: BatchPolishOptions{
+				ActiveSetSize: 5,
+				MaxSweeps:     2,
+				Strategy:      BatchPolishResidualRegion,
+			},
+			newOptimizer: func(workers int) polishParityOptimizer {
+				return &widthPolishOptimizer{workers: workers}
+			},
+			serial: polishSerialResult{
+				costs: []float64{
+					5639.8125, 17280.785416666666, 22345.555208333335, 23095.908333333333, 23473.733333333334,
+					5639.8125, 17280.785416666666, 22345.555208333335, 23095.908333333333, 23473.733333333334,
+				},
+				params:      polishParityParams(),
+				cost:        5639.8125,
+				accepted:    0,
+				sweeps:      2,
+				evaluations: 15,
+			},
+		},
+		{
+			// `residual-region` on the accepting fixture, so the strategy that
+			// carries the extra pre-optimizer evaluation is also covered on a run
+			// that really commits every sweep.
+			name:      "accepted-sweeps-residual-region",
+			reference: solidImage(12, 6, color.NRGBA{A: 255}),
+			params:    polishAcceptingParams(),
+			options: BatchPolishOptions{
+				ActiveSetSize: 1,
+				MaxSweeps:     4,
+				Strategy:      BatchPolishResidualRegion,
+			},
+			newOptimizer: func(workers int) polishParityOptimizer {
+				return &improvingPolishOptimizer{workers: workers}
+			},
+			serial: polishSerialResult{
+				costs: []float64{
+					44018.72222222222, 42125.625, 40754.88888888889, 39749.5,
+					39749.5, 38675.375, 37794.61111111111, 37107.208333333336,
+					37107.208333333336, 36427.208333333336, 35832.541666666664, 35323.208333333336,
+					35323.208333333336, 35209.208333333336, 35100.541666666664, 34997.208333333336,
+				},
+				params: []float64{
+					2, 3, 2, 0.1568627450980392, 0.1568627450980392, 0.1568627450980392, 0.9,
+					6, 3, 2, 0.11764705882352941, 0.11764705882352941, 0.11764705882352941, 0.8,
+					10, 3, 2, 0.022058823529411766, 0.022058823529411766, 0.022058823529411766, 0.7,
+				},
+				cost:        34997.208333333336,
+				accepted:    4,
+				sweeps:      4,
+				evaluations: 25,
+			},
+		},
+		{
+			// `contiguous-window` is the only strategy that guarantees a contiguous
+			// active set, so it is the one whose baked prefix is large and whose
+			// suffix session therefore carries most of the work.
+			name:      "rejected-sweeps-contiguous-window",
+			reference: solidImage(20, 16, color.NRGBA{R: 200, G: 40, B: 90, A: 255}),
+			params:    polishParityParams(),
+			options: BatchPolishOptions{
+				ActiveSetSize: 2,
+				MaxSweeps:     3,
+				Strategy:      BatchPolishContiguousWindow,
+			},
+			newOptimizer: func(workers int) polishParityOptimizer {
+				return &widthPolishOptimizer{workers: workers}
+			},
+			serial: polishSerialResult{
+				costs: []float64{
+					5639.8125, 5413.929166666667, 5370.835416666667, 5337.932291666667, 5323.808333333333,
+					5639.8125, 6554.388541666666, 6713.795833333334, 6569.333333333333, 6640.315625,
+					5639.8125, 16916.385416666668, 21602.385416666668, 21916.28125, 22048.005208333332,
+				},
+				params:      polishParityParams(),
+				cost:        5639.8125,
+				accepted:    0,
+				sweeps:      3,
+				evaluations: 22,
+			},
+		},
+		{
+			name:      "accepted-sweeps-contiguous-window",
+			reference: solidImage(12, 6, color.NRGBA{A: 255}),
+			params:    polishAcceptingParams(),
+			options: BatchPolishOptions{
+				ActiveSetSize: 1,
+				MaxSweeps:     4,
+				Strategy:      BatchPolishContiguousWindow,
+			},
+			newOptimizer: func(workers int) polishParityOptimizer {
+				return &improvingPolishOptimizer{workers: workers}
+			},
+			serial: polishSerialResult{
+				costs: []float64{
+					44018.72222222222, 43329.38888888889, 42727.48611111111, 42208.375,
+					42208.375, 41128.72222222222, 40241.166666666664, 39548.430555555555,
+					39548.430555555555, 37669.333333333336, 36312.59722222222, 35323.208333333336,
 					35323.208333333336, 35209.208333333336, 35100.541666666664, 34997.208333333336,
 				},
 				params: []float64{
@@ -1218,42 +1452,65 @@ func (o *concurrentPolishOptimizer) RunContext(_ context.Context, problem opt.Pr
 // Run under -race it is the check that the leased vectors and sessions are the
 // only mutable state an evaluation touches; without a pool this raced the
 // shared candidate vector, the session canvas, and the evaluation counter.
+//
+// Every strategy is driven, not just one, because each reaches the pooled
+// evaluator differently: `residual-region` -- the strategy production runs --
+// evaluates a merged alternative through mergeReplacementSeedParams before the
+// optimizer starts, and its scattered active set leaves a small or empty baked
+// prefix, so it leases slots whose suffix session covers nearly the whole
+// vector. `contiguous-window` is the opposite extreme.
 func TestPolishCircleBatchPoolServesConcurrentEvaluations(t *testing.T) {
-	const width, height = 20, 16
-	ref := solidImage(width, height, color.NRGBA{R: 200, G: 40, B: 90, A: 255})
-	params := polishParityParams()
-	circleCount := len(params) / paramsPerCircle
-	cpu := NewCPURenderer(ref, circleCount)
-	cpu.SetThreads(1)
-	initialCost := cpu.Cost(params)
+	strategies := []BatchPolishStrategy{
+		BatchPolishWeakestReplacement,
+		BatchPolishHybridOverlap,
+		BatchPolishResidualRegion,
+		BatchPolishContiguousWindow,
+	}
+	// Active set size 5 is the whole fixture vector, so the first circle is
+	// active and nothing is baked; the small sizes leave a prefix.
+	activeSetSizes := []int{2, 5}
+	for _, strategy := range strategies {
+		for _, activeSetSize := range activeSetSizes {
+			name := string(strategy) + "-active-" + strconv.Itoa(activeSetSize)
+			t.Run(name, func(t *testing.T) {
+				const width, height = 20, 16
+				ref := solidImage(width, height, color.NRGBA{R: 200, G: 40, B: 90, A: 255})
+				params := polishParityParams()
+				circleCount := len(params) / paramsPerCircle
+				cpu := NewCPURenderer(ref, circleCount)
+				cpu.SetThreads(1)
+				initialCost := cpu.Cost(params)
 
-	optimizer := &concurrentPolishOptimizer{workers: 4, candidates: 32}
-	sweeps := 0
-	result, err := PolishCircleBatchContext(context.Background(), cpu, optimizer, params, BatchPolishOptions{
-		ActiveSetSize: 2,
-		MaxSweeps:     3,
-		Strategy:      BatchPolishHybridOverlap,
-		OnSweep:       func(BatchPolishProgress) error { sweeps++; return nil },
-	})
-	if err != nil {
-		t.Fatalf("PolishCircleBatchContext error = %v", err)
-	}
-	if sweeps != 3 || result.Sweeps != 3 {
-		t.Fatalf("sweeps = %d/%d, want 3/3", sweeps, result.Sweeps)
-	}
-	if len(optimizer.costs) < optimizer.candidates {
-		t.Fatalf("optimizer recorded %d costs, want at least %d", len(optimizer.costs), optimizer.candidates)
-	}
-	// Polishing is transactional, so the committed cost can only improve, and it
-	// must be the cost of the committed vector evaluated on the full session.
-	if result.BestCost > initialCost {
-		t.Fatalf("best cost = %v, want no worse than the initial %v", result.BestCost, initialCost)
-	}
-	if got := cpu.Cost(result.BestParams); got != result.BestCost {
-		t.Fatalf("committed cost = %v, want the full-session cost %v", result.BestCost, got)
-	}
-	if result.Evaluations < len(optimizer.costs) {
-		t.Fatalf("evaluations = %d, want at least the %d the optimizer made", result.Evaluations, len(optimizer.costs))
+				optimizer := &concurrentPolishOptimizer{workers: 4, candidates: 32}
+				sweeps := 0
+				result, err := PolishCircleBatchContext(context.Background(), cpu, optimizer, params, BatchPolishOptions{
+					ActiveSetSize: activeSetSize,
+					MaxSweeps:     3,
+					Strategy:      strategy,
+					OnSweep:       func(BatchPolishProgress) error { sweeps++; return nil },
+				})
+				if err != nil {
+					t.Fatalf("PolishCircleBatchContext error = %v", err)
+				}
+				if sweeps != 3 || result.Sweeps != 3 {
+					t.Fatalf("sweeps = %d/%d, want 3/3", sweeps, result.Sweeps)
+				}
+				if len(optimizer.costs) < optimizer.candidates {
+					t.Fatalf("optimizer recorded %d costs, want at least %d", len(optimizer.costs), optimizer.candidates)
+				}
+				// Polishing is transactional, so the committed cost can only improve, and it
+				// must be the cost of the committed vector evaluated on the full session.
+				if result.BestCost > initialCost {
+					t.Fatalf("best cost = %v, want no worse than the initial %v", result.BestCost, initialCost)
+				}
+				if got := cpu.Cost(result.BestParams); got != result.BestCost {
+					t.Fatalf("committed cost = %v, want the full-session cost %v", result.BestCost, got)
+				}
+				if result.Evaluations < len(optimizer.costs) {
+					t.Fatalf("evaluations = %d, want at least the %d the optimizer made", result.Evaluations, len(optimizer.costs))
+				}
+			})
+		}
 	}
 }
 
