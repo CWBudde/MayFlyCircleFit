@@ -128,6 +128,58 @@ func TestNormalizeOldConfigKeepsPolishingDisabled(t *testing.T) {
 	}
 }
 
+// TestNormalizeOldConfigKeepsParallelEvaluationDisabled pins that a checkpoint
+// or request written before parallel evaluation existed still decodes and
+// normalizes to the serial path. The setting changes which solution a seed
+// produces, so silently switching it on for an old configuration would make a
+// resumed run diverge from the run it resumes.
+func TestNormalizeOldConfigKeepsParallelEvaluationDisabled(t *testing.T) {
+	var old JobConfig
+	if err := json.Unmarshal([]byte(`{"refPath":"reference.png","mode":"joint","circles":3,"iters":100,"popSize":30}`), &old); err != nil {
+		t.Fatal(err)
+	}
+	config, err := Normalize(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.ParallelEvaluation {
+		t.Fatal("an old configuration unexpectedly enabled parallel evaluation")
+	}
+}
+
+// TestNormalizeEvaluationWorkersFallsBackToThreads pins the documented zero
+// value. Before evaluation width had its own field it was always the thread
+// count, so an omitted value has to keep resolving that way for old
+// checkpoints to resume with the concurrency they were written with.
+func TestNormalizeEvaluationWorkersFallsBackToThreads(t *testing.T) {
+	var old JobConfig
+	if err := json.Unmarshal([]byte(
+		`{"refPath":"reference.png","mode":"joint","circles":3,"iters":100,"popSize":30,"threads":3,"parallelEvaluation":true}`,
+	), &old); err != nil {
+		t.Fatal(err)
+	}
+	config, err := Normalize(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.EvaluationWorkers != 3 {
+		t.Fatalf("evaluationWorkers = %d, want the thread count 3", config.EvaluationWorkers)
+	}
+
+	explicit := old
+	explicit.EvaluationWorkers = 2
+	config, err = Normalize(explicit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.EvaluationWorkers != 2 {
+		t.Fatalf("evaluationWorkers = %d, want the explicit 2 to survive", config.EvaluationWorkers)
+	}
+	if config.Threads != 3 {
+		t.Fatalf("threads = %d, want 3; the two knobs must stay independent", config.Threads)
+	}
+}
+
 func TestNormalizeAcceptsResidualRegionPolishing(t *testing.T) {
 	config := DefaultConfig()
 	config.RefPath = "reference.png"

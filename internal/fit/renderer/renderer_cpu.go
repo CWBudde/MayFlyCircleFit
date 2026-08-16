@@ -395,6 +395,22 @@ func (r *CPURenderer) ParallelEvaluationWorkers() int {
 	return r.parallelEvaluationWorkers
 }
 
+// ConfigureCPUParallelism applies both parallelism settings a job configuration
+// carries. They are independent knobs: threads shards the rows of one render,
+// while evaluationWorkers runs whole independent renders side by side, and the
+// two compete for the same cores.
+//
+// Evaluation width is left alone unless parallelEvaluation is set, so the
+// setting is inert until it is opted into. Every entry point that builds a CPU
+// renderer from a configuration goes through here, so the two settings cannot
+// drift apart between the CLI, resume, and the server.
+func ConfigureCPUParallelism(cpu *CPURenderer, threads, evaluationWorkers int, parallelEvaluation bool) {
+	cpu.SetThreads(threads)
+	if parallelEvaluation {
+		cpu.SetParallelEvaluationWorkers(evaluationWorkers)
+	}
+}
+
 // effectiveEvaluationWorkers clamps a requested evaluation width into
 // [1, GOMAXPROCS], resolving non-positive requests to GOMAXPROCS exactly as
 // effectiveThreadCount does. Unlike effectiveThreadCount it ignores the image

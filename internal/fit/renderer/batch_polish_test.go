@@ -3,6 +3,7 @@ package renderer
 import (
 	"bytes"
 	"context"
+	"errors"
 	"image"
 	"image/color"
 	"reflect"
@@ -598,5 +599,57 @@ func circleParams(x, y, radius float64, c color.NRGBA, opacity float64) []float6
 		float64(c.G) / 255,
 		float64(c.B) / 255,
 		opacity,
+	}
+}
+
+// parallelPolishOptimizer reports a concurrent evaluation width the way a
+// MayflyAdapter configured with opt.WithParallelEvaluation does.
+type parallelPolishOptimizer struct {
+	fixedPolishOptimizer
+	workers int
+}
+
+func (o *parallelPolishOptimizer) ParallelEvaluationWorkers() int { return o.workers }
+
+// TestPolishCircleBatchRejectsParallelOptimizer guards the one optimizer-driven
+// objective in the repository that is not re-entrant. Polishing's sweep
+// evaluator merges every candidate into one shared parameter vector and
+// evaluates it on one shared session, which is what makes a sweep
+// transactional; the staged pipelines avoid that by leasing a session per
+// evaluation, and polishing has no such pool.
+//
+// Until now nothing enforced the separation: safety rested entirely on the two
+// polisher construction sites happening not to pass the parallel option, and
+// wiring it in would have raced the shared vector, the session canvas, and the
+// evaluation counter. Every one of those failures is silent -- a plausible
+// wrong cost and a corrupt image, with no error -- so the run must be refused.
+func TestPolishCircleBatchRejectsParallelOptimizer(t *testing.T) {
+	ref := solidImage(5, 5, color.NRGBA{A: 255})
+	base := NewCPURenderer(ref, 1)
+	initial := circleParams(2, 2, 5, color.NRGBA{R: 128, G: 128, B: 128, A: 255}, 1)
+	optimizer := &parallelPolishOptimizer{workers: 4}
+
+	_, err := PolishCircleBatchContext(context.Background(), base, optimizer, initial, BatchPolishOptions{
+		ActiveSetSize: 1,
+		MaxSweeps:     1,
+	})
+	if err == nil {
+		t.Fatal("polishing accepted an optimizer configured for concurrent evaluation")
+	}
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
+		t.Fatalf("error = %v, want ErrInvalidOptimizationInput", err)
+	}
+	if optimizer.calls != 0 {
+		t.Fatalf("optimizer ran %d times, want 0; the guard must refuse before evaluating", optimizer.calls)
+	}
+
+	// A serially configured optimizer of the same shape must still run.
+	serial := &parallelPolishOptimizer{workers: 1}
+	serial.params = circleParams(2, 2, 5, color.NRGBA{A: 255}, 1)
+	if _, err := PolishCircleBatchContext(context.Background(), base, serial, initial, BatchPolishOptions{
+		ActiveSetSize: 1,
+		MaxSweeps:     1,
+	}); err != nil {
+		t.Fatalf("polishing rejected a serial optimizer: %v", err)
 	}
 }

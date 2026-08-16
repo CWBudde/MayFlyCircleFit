@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
@@ -132,6 +133,15 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 		return fmt.Errorf("invalid checkpoint: %w", err)
 	}
 
+	// Fill omitted fields the way the server already does for its own resume
+	// paths. A checkpoint only carries what was set when it was written, so
+	// without this an omitted threads or evaluationWorkers reaches the renderer
+	// as zero and the run silently differs from the one being resumed.
+	checkpoint.Config, err = app.Normalize(checkpoint.Config)
+	if err != nil {
+		return fmt.Errorf("invalid checkpoint configuration: %w", err)
+	}
+
 	fmt.Printf("Loaded checkpoint:\n")
 	fmt.Printf("  Job ID: %s\n", checkpoint.JobID)
 	fmt.Printf("  Iteration: %d\n", checkpoint.Iteration)
@@ -183,10 +193,7 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 			}
 		}
 		cpu := renderer.NewCPURendererWithCanvas(ref, canvas, checkpoint.Config.Circles)
-		cpu.SetThreads(checkpoint.Config.Threads)
-		if checkpoint.Config.ParallelEvaluation {
-			cpu.SetParallelEvaluationWorkers(checkpoint.Config.Threads)
-		}
+		configureCPURendererForResume(cpu, checkpoint.Config)
 		rend = cpu
 	} else {
 		backend := checkpoint.Config.Backend
@@ -195,10 +202,7 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 		}
 		if backend == "cpu" {
 			cpu := renderer.NewCPURenderer(ref, checkpoint.Config.Circles)
-			cpu.SetThreads(checkpoint.Config.Threads)
-			if checkpoint.Config.ParallelEvaluation {
-				cpu.SetParallelEvaluationWorkers(checkpoint.Config.Threads)
-			}
+			configureCPURendererForResume(cpu, checkpoint.Config)
 			rend = cpu
 		} else {
 			rend, cleanup, err = renderer.NewRendererForBackend(string(backend), ref, checkpoint.Config.Circles)
@@ -311,6 +315,15 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	}
 
 	return nil
+}
+
+// configureCPURendererForResume applies a checkpoint's parallelism settings and
+// reports the effective evaluation width, which is what a resumed run should be
+// compared against rather than the width the checkpoint asked for.
+func configureCPURendererForResume(cpu *renderer.CPURenderer, config app.JobConfig) {
+	renderer.ConfigureCPUParallelism(cpu, config.Threads, config.EvaluationWorkers, config.ParallelEvaluation)
+	slog.Info("Configured CPU renderer", "threads", cpu.Threads(),
+		"evaluationWorkers", renderer.EvaluationWidth(cpu))
 }
 
 // resumeJointProblem carries the optimizer problem a joint resume runs, the

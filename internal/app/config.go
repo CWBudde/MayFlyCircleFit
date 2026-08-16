@@ -403,8 +403,11 @@ func (c JobConfig) Validate() error {
 	if c.Threads < 1 {
 		return invalid("threads", "must be positive")
 	}
-	if c.EvaluationWorkers < 1 {
-		return invalid("evaluationWorkers", "must be positive")
+	// Zero is meaningful here rather than merely unset: it means "use Threads",
+	// so it stays valid even on a configuration that never went through
+	// ApplyDefaults. Only an explicit negative is a mistake.
+	if c.EvaluationWorkers < 0 {
+		return invalid("evaluationWorkers", "cannot be negative")
 	}
 	if c.CheckpointInterval < 0 {
 		return invalid("checkpointInterval", "cannot be negative")
