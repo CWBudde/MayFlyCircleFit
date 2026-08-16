@@ -139,10 +139,29 @@ application configuration into the store package.
   a reusable canvas, so per-candidate cost is `circles - min(activeSet)`. The
   `replacement`, `hybrid-overlap`, and `residual-region` strategies select by
   image-space merit and routinely include circle one, which bakes nothing and
-  rasterizes the whole image for every candidate. `contiguous-window` selects a
+  rasterizes the whole vector for every candidate. `contiguous-window` selects a
   consecutive run instead, keeping that cost near `activeSetSize` on the first
   sweep. Do not change a selector to scatter its active set without accounting
   for that cost.
+- `contiguous-window` is cheaper per sweep but not better per second, and it is
+  not the default. Measured in `docs/contiguous-window-polish-report.md`: the
+  2.1x/5.3x render-cost figures describe the first sweep of a coverage cycle
+  with the optimizer stubbed out and fall to 1.44x over a full cycle, and at
+  equal wall clock the strategy reached a worse cost than `hybrid-overlap` in
+  every configuration measured. At the default three sweeps it only offers the
+  last `3 * activeSetSize` draw slots to the optimizer. Do not describe it as an
+  end-to-end speedup.
+- A polishing sweep is committed only when `allCirclesUseful` holds for the
+  whole candidate vector, so one circle with a negative `MSEContribution`
+  blocks every sweep until an active set repairs it. Fitted vectors routinely
+  contain such circles, because `PruneCircleBatch` runs per stage against that
+  stage's canvas while this gate is global over the final vector, and nothing
+  re-audits the assembled result. Polishing a real batch fit was therefore a
+  complete no-op for three of the four strategies in the measurements above,
+  and it still spends the full optimizer budget before the gate is consulted.
+  This is pre-existing behavior, not a property of any one strategy; do not
+  attribute a zero-improvement polishing run to the selector without checking
+  `accepted_sweeps` first.
 - The configured `variant` is honored at every optimizer construction site.
 - MayFly's `optimization_started` and `iteration_completed` events are demoted
   to debug, so `--log-level=debug` emits one record per optimizer iteration.

@@ -23,6 +23,14 @@ The suite covers three layers:
   comparison is against the default rather than against one thread. See
   [parallel-evaluation-report.md](parallel-evaluation-report.md) for measured
   results and the configurations that lose to the default.
+- **Polishing strategies:** `BenchmarkPolishCircleBatchStrategy` isolates the
+  render cost of one sweep with the optimizer stubbed out, while
+  `BenchmarkPolishStrategyQuality` and
+  `BenchmarkPolishStrategyQualityAfterBatchFit` run the real optimizer and
+  report `final_cost`, `reduction_pct`, and `accepted_sweeps` per run so the
+  strategies can be compared at equal wall clock rather than at equal sweeps.
+  See [contiguous-window-polish-report.md](contiguous-window-polish-report.md);
+  a cheaper sweep is not the same as a better run.
 
 `BenchmarkFastSSD_Comparison` is the architecture-level SIMD suite. It compares
 the portable scalar kernel with the runtime-selected kernel at 64×64, 128×128,

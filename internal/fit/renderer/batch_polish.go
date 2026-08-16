@@ -463,6 +463,13 @@ func selectPolishingActiveSet(
 // covers every circle in ceil(circleCount/activeSetSize) sweeps and makes the
 // per-sweep cost rise predictably instead of being maximal from the start.
 //
+// That coverage has to be paid for in sweeps, and the sweep budget is bounded:
+// app.MaxPolishingSweeps is 32, so a vector with more than 32*activeSetSize
+// circles cannot be covered at all, and the shipped default of three sweeps
+// only ever offers the last 3*activeSetSize slots to the optimizer. The
+// strategy is therefore cheaper per sweep but not better per second; see
+// docs/contiguous-window-polish-report.md for the measurement.
+//
 // The scan runs from the latest start downward and keeps a strictly better
 // total, so ties resolve to the latest window without a separate tie-break.
 func selectContiguousWindowCircles(circleCount, activeSetSize int, visitCounts map[int]int) []int {

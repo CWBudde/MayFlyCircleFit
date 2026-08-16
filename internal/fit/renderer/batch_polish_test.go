@@ -650,6 +650,66 @@ func TestPolishCircleBatchContiguousWindowBakesPrefixAndMatchesFullVector(t *tes
 	}
 }
 
+// TestPolishCircleBatchRejectsImprovementWhileAnUntouchedCircleIsHarmful pins the
+// acceptance rule that dominates every strategy's usefulness.
+//
+// A sweep is committed only when allCirclesUseful holds for the complete
+// candidate, so a circle outside the active set whose MSEContribution has gone
+// negative rejects the sweep even when the sweep strictly lowers the cost of the
+// whole vector. Fitted vectors do contain such circles: PruneCircleBatch runs
+// per batch stage against that stage's canvas, later stages composite over what
+// an earlier stage judged useful, and nothing re-audits the assembled result.
+//
+// The consequence measured in docs/contiguous-window-polish-report.md is that
+// polishing a real batch fit can accept nothing at all while spending its whole
+// optimizer budget. Change this rule deliberately or not at all.
+func TestPolishCircleBatchRejectsImprovementWhileAnUntouchedCircleIsHarmful(t *testing.T) {
+	ref := solidImage(8, 8, color.NRGBA{R: 200, G: 200, B: 200, A: 255})
+	base := NewCPURenderer(ref, 2)
+
+	// Circle one is worse than the white background it covers, so removing it
+	// improves the image and its contribution is negative. Circle two is the
+	// one the sweep repairs.
+	harmful := circleParams(2, 2, 2, color.NRGBA{A: 255}, 1)
+	initial := append(append([]float64(nil), harmful...),
+		circleParams(6, 6, 2, color.NRGBA{R: 100, G: 100, B: 100, A: 255}, 1)...)
+	repaired := circleParams(6, 6, 2, color.NRGBA{R: 200, G: 200, B: 200, A: 255}, 1)
+
+	initialCost := base.Cost(initial)
+	improved := append(append([]float64(nil), harmful...), repaired...)
+	improvedCost := base.Cost(improved)
+	if improvedCost >= initialCost {
+		t.Fatalf("test setup is vacuous: repaired cost %v is not below %v", improvedCost, initialCost)
+	}
+	audit, err := AuditCircleBatch(base, improved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audit.Circles[0].MSEContribution > minBatchMSEContribution {
+		t.Fatalf("test setup is vacuous: circle one contributes %v, want it to be harmful",
+			audit.Circles[0].MSEContribution)
+	}
+
+	// contiguous-window with one active slot selects the last circle, leaving
+	// the harmful one untouched.
+	result, err := PolishCircleBatchContext(context.Background(), base, &fixedPolishOptimizer{params: repaired}, initial, BatchPolishOptions{
+		ActiveSetSize: 1,
+		MaxSweeps:     1,
+		Strategy:      BatchPolishContiguousWindow,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AcceptedSweeps != 0 || result.Sweeps != 1 {
+		t.Fatalf("accepted/sweeps = %d/%d, want 0/1: a strict improvement was committed despite a harmful circle",
+			result.AcceptedSweeps, result.Sweeps)
+	}
+	if result.BestCost != initialCost || !reflect.DeepEqual(result.BestParams, initial) {
+		t.Fatalf("rejected sweep changed the result: cost %v params %v, want %v and the initial vector",
+			result.BestCost, result.BestParams, initialCost)
+	}
+}
+
 // polishParityParams places a large, strong circle first so weak-circle selection
 // leaves a non-empty fixed prefix to bake.
 func polishParityParams() []float64 {
