@@ -199,7 +199,7 @@ func TestProjectsEndpoint(t *testing.T) {
 	if err := json.NewDecoder(recorder.Body).Decode(&projects); err != nil {
 		t.Fatal(err)
 	}
-	found := map[string]int{}
+	found := map[app.Project]int{}
 	for _, p := range projects {
 		found[p.Slug] = p.Jobs
 	}
@@ -373,7 +373,7 @@ func TestDiscoverLogsUnusableProjectDirectory(t *testing.T) {
 // explicit skip the meaning depended on whether a store was injected.
 func TestDiscoverIgnoresDefaultProjectDirectory(t *testing.T) {
 	root := t.TempDir()
-	shadow := filepath.Join(root, projectsDirName, app.DefaultProject)
+	shadow := filepath.Join(root, projectsDirName, string(app.DefaultProject))
 	if err := os.MkdirAll(shadow, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -467,8 +467,8 @@ func TestJobStatusResponseCarriesProject(t *testing.T) {
 
 	for _, tc := range []struct {
 		name    string
-		project string
-		want    string
+		project app.Project
+		want    app.Project
 	}{
 		{"named project", "christian", "christian"},
 		{"default project", app.DefaultProject, app.DefaultProject},
@@ -487,6 +487,8 @@ func TestJobStatusResponseCarriesProject(t *testing.T) {
 				if recorder.Code != http.StatusOK {
 					t.Fatalf("%s status = %d, want 200", path, recorder.Code)
 				}
+				// Decoding into a plain string field is deliberate: it is the
+				// wire-format check that app.Project still marshals as a string.
 				var decoded struct {
 					ID      string `json:"id"`
 					Project string `json:"project"`
@@ -497,7 +499,7 @@ func TestJobStatusResponseCarriesProject(t *testing.T) {
 				if decoded.ID != job.ID {
 					t.Fatalf("%s id = %q, want %q", path, decoded.ID, job.ID)
 				}
-				if decoded.Project != tc.want {
+				if decoded.Project != string(tc.want) {
 					t.Fatalf("%s project = %q, want %q", path, decoded.Project, tc.want)
 				}
 			}
@@ -582,7 +584,7 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 	}
 
 	recorder = httptest.NewRecorder()
-	restarted.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/jobs?project="+app.DefaultProject, nil))
+	restarted.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/jobs?project="+string(app.DefaultProject), nil))
 	if err := json.Unmarshal(recorder.Body.Bytes(), &listed); err != nil {
 		t.Fatal(err)
 	}
@@ -604,7 +606,7 @@ func TestProjectsEndpointOrderingIsStable(t *testing.T) {
 
 	// Registered out of order, and deliberately only as jobs so they reach the
 	// response through the map-ordered union rather than through Slugs().
-	for _, slug := range []string{"zebra", "alpha", "mango", "beta", "yak"} {
+	for _, slug := range []app.Project{"zebra", "alpha", "mango", "beta", "yak"} {
 		server.jobManager.CreateJob(slug, store.JobConfig{RefPath: "a.png"})
 	}
 
@@ -621,7 +623,7 @@ func TestProjectsEndpointOrderingIsStable(t *testing.T) {
 		}
 		got := make([]string, len(decoded))
 		for j, p := range decoded {
-			got[j] = p.Slug
+			got[j] = string(p.Slug)
 		}
 		if i == 0 {
 			first = got

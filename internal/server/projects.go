@@ -30,7 +30,7 @@ var (
 type projectRegistry struct {
 	mu       sync.RWMutex
 	dataRoot string
-	stores   map[string]store.Store
+	stores   map[app.Project]store.Store
 }
 
 // newProjectRegistry seeds the registry with the default store and adopts any
@@ -40,7 +40,7 @@ type projectRegistry struct {
 func newProjectRegistry(dataRoot string, defaultStore store.Store) *projectRegistry {
 	registry := &projectRegistry{
 		dataRoot: dataRoot,
-		stores:   make(map[string]store.Store),
+		stores:   make(map[app.Project]store.Store),
 	}
 	if defaultStore != nil {
 		registry.stores[app.DefaultProject] = defaultStore
@@ -66,16 +66,18 @@ func (r *projectRegistry) discover() {
 		return
 	}
 	for _, entry := range entries {
-		slug := entry.Name()
+		// Boundary: a directory name read off disk is untrusted input. It becomes
+		// an app.Project only here, immediately before ValidateProjectSlug.
+		slug := app.Project(entry.Name())
 		if !entry.IsDir() {
 			// Stray files never were projects, so this is informational only.
 			slog.Debug("Ignoring non-directory entry in the projects container",
-				"directory", container, "entry", slug)
+				"directory", container, "entry", string(slug))
 			continue
 		}
 		if err := app.ValidateProjectSlug(slug); err != nil {
 			slog.Warn("Ignoring project directory with an unusable name; its jobs stay hidden",
-				"directory", filepath.Join(container, slug), "error", err)
+				"directory", filepath.Join(container, string(slug)), "error", err)
 			continue
 		}
 		if slug == app.DefaultProject {
@@ -84,14 +86,14 @@ func (r *projectRegistry) discover() {
 			// the same name two meanings, differing by whether the server was
 			// built with an injected store; refusing it keeps the alias single.
 			slog.Warn("Ignoring the reserved default project directory; the default project is the legacy jobs tree",
-				"directory", filepath.Join(container, slug))
+				"directory", filepath.Join(container, string(slug)))
 			continue
 		}
 		if _, err := r.GetOrCreate(slug); err != nil {
 			// The directory is a valid project that failed to open. Its jobs
 			// disappear from the API and UI, so this is a fault, not a skip.
 			slog.Error("Unable to adopt project directory; its jobs stay hidden",
-				"directory", filepath.Join(container, slug), "error", err)
+				"directory", filepath.Join(container, string(slug)), "error", err)
 			continue
 		}
 	}
@@ -101,12 +103,12 @@ func (r *projectRegistry) discover() {
 // time. store.EnsureSecureSubdir refuses separators, traversal, and symlinks,
 // so this is a second gate independent of app.ValidateProjectSlug rather than a
 // bare filepath.Join of caller-supplied input.
-func (r *projectRegistry) makeProjectDir(slug string) (string, error) {
+func (r *projectRegistry) makeProjectDir(slug app.Project) (string, error) {
 	container, err := store.EnsureSecureSubdir(r.dataRoot, projectsDirName)
 	if err != nil {
 		return "", fmt.Errorf("create projects directory: %w", err)
 	}
-	dir, err := store.EnsureSecureSubdir(container, slug)
+	dir, err := store.EnsureSecureSubdir(container, string(slug))
 	if err != nil {
 		return "", fmt.Errorf("create project directory: %w", err)
 	}
@@ -114,7 +116,7 @@ func (r *projectRegistry) makeProjectDir(slug string) (string, error) {
 }
 
 // Get returns the store for an existing project.
-func (r *projectRegistry) Get(slug string) (store.Store, bool) {
+func (r *projectRegistry) Get(slug app.Project) (store.Store, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	s, ok := r.stores[slug]
@@ -122,7 +124,7 @@ func (r *projectRegistry) Get(slug string) (store.Store, bool) {
 }
 
 // GetOrCreate returns the store for a slug, creating it on first use.
-func (r *projectRegistry) GetOrCreate(slug string) (store.Store, error) {
+func (r *projectRegistry) GetOrCreate(slug app.Project) (store.Store, error) {
 	if err := app.ValidateProjectSlug(slug); err != nil {
 		return nil, err
 	}
@@ -154,13 +156,13 @@ func (r *projectRegistry) GetOrCreate(slug string) (store.Store, error) {
 }
 
 // Slugs returns every known project slug in stable order.
-func (r *projectRegistry) Slugs() []string {
+func (r *projectRegistry) Slugs() []app.Project {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	slugs := make([]string, 0, len(r.stores))
+	slugs := make([]app.Project, 0, len(r.stores))
 	for slug := range r.stores {
 		slugs = append(slugs, slug)
 	}
-	sort.Strings(slugs)
+	sort.Slice(slugs, func(i, j int) bool { return slugs[i] < slugs[j] })
 	return slugs
 }

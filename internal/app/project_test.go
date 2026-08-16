@@ -3,7 +3,7 @@ package app
 import "testing"
 
 func TestValidateProjectSlug(t *testing.T) {
-	valid := []string{
+	valid := []Project{
 		"default",
 		"ref",
 		"christian",
@@ -18,7 +18,7 @@ func TestValidateProjectSlug(t *testing.T) {
 		}
 	}
 
-	invalidSlugs := []string{
+	invalidSlugs := []Project{
 		"",          // empty
 		".",         // traversal
 		"..",        // traversal
@@ -45,7 +45,7 @@ func TestValidateProjectSlug(t *testing.T) {
 	}
 
 	// The length limit is inclusive, so both sides of the boundary are checked.
-	atLimit := ""
+	atLimit := Project("")
 	for range MaxProjectSlugLen {
 		atLimit += "a"
 	}

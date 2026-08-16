@@ -30,7 +30,7 @@ type JobConfig = store.JobConfig
 // Job represents an optimization job
 type Job struct {
 	ID            string         `json:"id"`
-	Project       string         `json:"project"`
+	Project       app.Project    `json:"project"`
 	State         JobState       `json:"state"`
 	Config        JobConfig      `json:"config"`
 	BestParams    []float64      `json:"bestParams,omitempty"`
@@ -82,7 +82,7 @@ func NewJobManager() *JobManager {
 // in-memory mirror of where the job's artifacts live on disk; the directory
 // itself stays authoritative, so nothing about it is written into the
 // checkpoint.
-func (jm *JobManager) CreateJob(project string, config JobConfig) *Job {
+func (jm *JobManager) CreateJob(project app.Project, config JobConfig) *Job {
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
 
