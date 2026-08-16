@@ -8,6 +8,7 @@ relevant `PLAN.md` task or issue.
 ## Before changing code
 
 1. Read `AGENTS.md`, the active Phase 14 section of `PLAN.md`, the
+   [behavior invariants](docs/behavior-invariants.md), the
    [support matrix](docs/support-matrix.md), and
    [known limitations](docs/known-limitations.md).
 2. Use Go 1.24 or newer.
