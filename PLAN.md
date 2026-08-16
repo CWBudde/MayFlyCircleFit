@@ -1601,9 +1601,19 @@ Two separate causes, and they compound:
    in a low-index circle because `replacementCount = max(1, activeSetSize/5)`
    selects the globally weakest one. Observed active sets on the run above were
    `[2,3,6,7,8,10,14,16]` and `[3,4,6,7,8,26,29,31]`, so the prefix was 2 and 3 of
-   32 circles and each candidate rasterized ~30. At 512 circles the prefix would
-   still be ~2 and each candidate would rasterize ~510, so per-candidate cost
-   grows linearly with the vector for every strategy except `contiguous-window`.
+   32 circles and each candidate rasterized ~30. Measured again on the live
+   512x512 vector, `min(activeCircles)` under `residual-region` is 7 of 256
+   circles and 11 of 512, so the bake covers 3-4% of the vector and each
+   candidate still rasterizes essentially all of it.
+
+   The prefix collapse is real, but the cost it recovers is not what this
+   preamble originally claimed. Per-candidate cost does **not** grow linearly
+   with the vector: measured at 512x512 on the production-shape benchmark it is
+   1 881 us at 256 circles against 2 056 us at 512, only +9% for twice the
+   circles. It is dominated by the full-canvas clear and the full-image SSD
+   pass, not by circle rasterization, so a larger baked prefix buys much less
+   than the rasterization count suggests. That is a cost argument against
+   Task 15.3, not for it.
 
 ### Task 15.1: Give Polishing a Session Pool (P1)
 
@@ -1633,11 +1643,59 @@ Two separate causes, and they compound:
 - [x] A parity test asserts that pooled polishing with width 1 produces
       byte-identical parameters, cost, and accepted-sweep count to the current
       serial path for a fixed seed.
+      `TestPolishCircleBatchPoolWidthParity` covers all four strategies against
+      goldens captured by running the same fixtures on the pre-pool evaluator at
+      `b0185a0`; the capture reproduced the two original `hybrid-overlap`
+      goldens byte-for-byte, so the table is not self-referential. Widths 2, 4
+      and 8 must then reproduce width 1 exactly, including the rendered image.
 - [x] A race test (`go test -race`) covers a multi-sweep polish at width > 1.
+      `TestPolishCircleBatchPoolServesConcurrentEvaluations` drives all four
+      strategies, with a small baked prefix and with an empty one.
 - [x] A benchmark reports sweep wall clock and allocations at widths 1, 8, and 48
       on the same fixture, with the machine and circle count stated.
 
-### Task 15.2: Make Active-Set Selection Cheap (P2)
+**Measured 2026-08-16/17** on an AMD Ryzen 5 4600H, 12 threads,
+`GOMAXPROCS=12`, at 512x512 with `residual-region`, `activeSetSize 8`, renderer
+threads pinned to 1, `-benchtime 1x -count 5`. Sweeps were run at 4 000 and
+16 000 candidates, `t = fixed + n * perCandidate` was fitted through the two
+points, and the fit was extrapolated to the 690 000-candidate sweep a
+production run performs:
+
+| Circles | width 8 | width 12 | width 48 |
+| ---: | ---: | ---: | ---: |
+| 256 | **4.09x** | 3.04x | 3.92x |
+| 512 | **4.33x** | 3.60x | 3.65x |
+
+Minima instead of medians give the same picture. Three things this does and
+does not show:
+
+- The earlier 2.1x reported at 128x128 with 1 920 candidates per sweep
+  understated the win, because a sweep that short is dominated by the pool
+  setup and by the serial active-set selection rather than by evaluation
+  throughput.
+- Width 48 cannot run 48-wide on a 12-thread box. It allocates 48 slots and 48
+  canvases and overlaps at most 12 evaluations, so no width-48 number here is
+  evidence about 48-wide behavior.
+- Width 12 is reproducibly slower than width 8, at both circle counts, on both
+  revisions, and in both medians and minima. Running as many evaluation
+  goroutines as hardware threads leaves nothing for the runtime and saturates
+  memory bandwidth. See Task 15.5.
+
+Memory at 512x512, 512 circles, 16 000 candidates: width 1 = 37.9 MB /
+16 686 allocs, width 8 = 80.5 MB, width 12 = 101.8 MB, width 48 = 293.8 MB /
+17 656 allocs. A slot holds ~5.3 MB at 512x512. Pool setup costs 15-130 ms and
+saves ~1.5 us per candidate, so break-even is ~13 candidates at width 8 and ~90
+at width 48 against 690 000 in production: it is never a net loss for a real
+sweep. `274715b` roughly halved setup time and memory at width 48.
+
+### Task 15.2: Make Active-Set Selection Cheap (P1)
+
+Reprioritised from P2 after the Task 15.1 benchmark. `residual-region` selection
+is the dominant per-sweep fixed cost — 1.47 s at 256 circles and 4.14 s at 512,
+measured on the same Ryzen 5 4600H run — it is entirely serial, and the session
+pool does not parallelize any of it. For scale, pool setup is 1-3% of it. Once
+15.1 has widened evaluation, selection is the largest remaining per-sweep cost,
+which makes this task more valuable than 15.1 was.
 
 - [ ] Parallelize the leave-one-out renders in `AuditCircleBatch`
       (`internal/fit/renderer/batch_audit.go:37`) and the region-influence loop in
@@ -1660,9 +1718,20 @@ Two separate causes, and they compound:
 
 ### Task 15.3: Stop Destroying the Baked Prefix (P2)
 
-- [ ] Measure how much of the per-candidate cost the prefix actually recovers,
+Direct evidence, measured on the live 512x512 vector: `min(activeCircles)` under
+`residual-region` is 7 of 256 circles and 11 of 512, so the bake covers 3-4% of
+the vector. The optimization the comment on `bakedSuffixSession` describes is
+therefore nearly inert on the strategy production actually runs. The other half
+of the measurement argues against chasing it: per-candidate cost rises only 9%
+for a doubling of the circle count (1 881 us at 256, 2 056 us at 512), because
+the full-canvas clear and the full-image SSD pass dominate rather than
+rasterization, so recovering the prefix recovers much less than the 3-4% figure
+suggests. Keep this at P2 and behind a measured quality comparison.
+
+- [x] Measure how much of the per-candidate cost the prefix actually recovers,
       by recording `min(activeCircles)` and per-candidate rasterization count per
-      sweep.
+      sweep. Measured: prefix 7/256 and 11/512, per-candidate 1 881 us and
+      2 056 us, i.e. +9% for twice the circles.
 - [ ] Evaluate biasing selection toward later draw slots when region energy is
       close, so the prefix stays large without abandoning merit-based selection.
       This changes what polishing selects, so it ships only with a measured
@@ -1693,6 +1762,44 @@ Two separate causes, and they compound:
 
 - [ ] Defaults are justified by a measurement in a committed report, not by
       inheritance from the batch configuration.
+
+### Task 15.5: Derive the Evaluation Width from a Measurement (P2)
+
+`EvaluationWorkers` resolves to `Threads` when it is zero
+(`internal/app/config.go:321`) and `effectiveEvaluationWorkers`
+(`internal/fit/renderer/renderer_cpu.go:395`) clamps it to `GOMAXPROCS`, so a
+default configuration ends up running as many concurrent evaluations as the
+machine has hardware threads. That is the core count talking, not a
+measurement, and the measurement disagrees.
+
+On the AMD Ryzen 5 4600H, 12 threads, `GOMAXPROCS=12`, at 512x512 with
+`residual-region` and `activeSetSize 8` (the Task 15.1 methodology: fitted over
+4 000 and 16 000 candidates, extrapolated to a 690 000-candidate sweep), width
+12 was reproducibly slower than width 8: 3.04x against 4.09x at 256 circles and
+3.60x against 4.33x at 512. The result held at both circle counts, on both
+revisions, and for medians and minima alike. It also costs more memory —
+101.8 MB at width 12 against 80.5 MB at width 8, on 16 000 candidates at 512
+circles — because a slot holds ~5.3 MB at 512x512. Running one evaluation
+goroutine per hardware thread leaves nothing for the runtime and saturates
+memory bandwidth.
+
+- [ ] Replace the `EvaluationWorkers = Threads` default with one derived from a
+      measurement across widths, not from the core count.
+- [ ] Establish whether the right rule is a fraction of `GOMAXPROCS`, a fixed
+      headroom below it, or something image-size dependent, by benchmarking
+      widths on more than one machine and more than one canvas size. One data
+      point on one 12-thread box is not enough to pick a formula.
+- [ ] Document the chosen rule next to `EvaluationWorkers`
+      (`internal/app/config.go:183`) with the measurement behind it, and keep the
+      explicit setting authoritative so an operator can still override it.
+
+**Acceptance Checks:**
+
+- [ ] A benchmark table shows sweep cost against evaluation width on the stated
+      machines, and the default the code picks is the width that table
+      recommends.
+- [ ] An explicitly configured `EvaluationWorkers` is still honored up to the
+      `GOMAXPROCS` clamp, with a test covering it.
 
 ---
 
