@@ -340,6 +340,7 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 			// width is irrelevant here.
 			renderer := renderer.NewCPURenderer(ref, j.Config.Circles)
 			renderer.SetThreads(j.Config.Threads)
+			renderer.SetFastCompositing(j.Config.FastCompositing)
 
 			// Save checkpoint
 			err = saveCheckpoint(s.jobManager, jobStore, renderer, j.ID)

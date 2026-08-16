@@ -653,8 +653,8 @@ func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (
 // line, so a job's actual concurrency was invisible in the server log.
 func configureJobCPURenderer(cpu *renderer.CPURenderer, config store.JobConfig) {
 	renderer.ConfigureCPUParallelism(cpu, config.Threads, config.EvaluationWorkers, config.ParallelEvaluation)
-	slog.Info("Configured CPU renderer", "threads", cpu.Threads(),
-		"evaluationWorkers", renderer.EvaluationWidth(cpu))
+	renderer.ConfigureCPUCompositing(cpu, config.FastCompositing)
+	renderer.LogCPURendererConfiguration(cpu)
 }
 
 func markJobFailed(jm *JobManager, jobID string, err error) {

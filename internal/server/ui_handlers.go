@@ -118,6 +118,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		Mode:                     string(job.Config.Mode),
 		Variant:                  string(job.Config.Variant),
 		EvaluationWorkers:        job.EvaluationWidth,
+		FastCompositing:          job.Config.FastCompositing,
 		Circles:                  job.Config.Circles,
 		Iterations:               job.Iterations,
 		Evaluations:              job.Evaluations,

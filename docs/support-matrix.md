@@ -84,15 +84,23 @@ same tier for the renderer's own kernels. The ARM64 steps do not, for the
 pre-existing reason recorded in `docs/known-limitations.md`.
 
 Opaque CPU-renderer spans additionally have an exact float64 vector compositor
-on both architectures, on by default because both are byte-identical to the
-scalar span: an ASIMD-gated eight-pixel NEON kernel on ARM64 for spans of at
-least 256 pixels, and an SSE2-gated two-pixel kernel on AMD64 for spans of at
-least 24. The cutoffs differ because the kernels have very different setup costs
-and were measured separately, on an Apple M5 and on a KVM host that genuinely
-lacks AVX2. An AVX2 host still composites scalar; that kernel is a separate
-change. Translucent custom canvases always retain the general scalar Porter-Duff
-path. This renderer kernel is natively validated on macOS
-ARM64 but is not currently a required Linux/ARM64 timing gate.
+at every tier, on by default because all are byte-identical to the scalar span:
+an ASIMD-gated eight-pixel NEON kernel on ARM64 for spans of at least 256
+pixels, and two-pixel AMD64 kernels for spans of at least 16 under AVX2 and at
+least 24 under SSE2. The cutoffs differ because the kernels have very different
+setup costs and were measured separately, on an Apple M5, a Ryzen 5 4600H, and a
+KVM host that genuinely lacks AVX2. Translucent custom canvases always retain
+the general scalar Porter-Duff path. The NEON kernel is natively validated on
+macOS ARM64 but is not a required Linux/ARM64 timing gate.
+
+`--fast-compositing` replaces that exact span with an opt-in float32 SIMD
+compositor on AMD64, using AVX2 or SSE2. It is accurate to +/-1 per channel and
+is therefore not byte-identical, so it is off by default; it is kept because it
+is still 2.4x to 4.2x faster than the exact vector compositor at realistic span
+lengths. Below 16 pixels it is slower than the exact path as well as less
+accurate. Non-AMD64 targets have no vector kernel for it and fall back to a
+float32 scalar span, which is slower than the exact float64 span it replaces, so
+enabling it there is a pure loss and startup warns.
 
 ## OpenCL
 

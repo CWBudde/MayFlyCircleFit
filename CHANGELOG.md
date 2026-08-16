@@ -8,15 +8,28 @@ release is declared by this file.
 
 ### Added
 
-- An exact float64 SSE2 span compositor for AMD64, the baseline-tier counterpart
-  of the existing NEON one. It is byte-identical to the scalar span, so it is on
-  by default with no flag and no reproducibility caveat. Measured on a host that
-  genuinely lacks AVX2 rather than one masked with `GODEBUG=cpu.avx2=off`: about
-  1.07x on the kernel and 1.06x end to end at 256x256 and larger, nothing below
-  its 24-pixel cutoff. The span compositor is the largest symbol in every
-  profile this repository has taken, and AMD64 previously had no vector span
-  compositor at any tier. An AVX2 host still composites scalar. See
-  [docs/task-10.19-sse2-compositor.md](docs/task-10.19-sse2-compositor.md).
+- Exact float64 AVX2 and SSE2 span compositors for AMD64, the counterparts of
+  the existing NEON one. Both are byte-identical to the scalar span, so both are
+  on by default with no flag and no reproducibility caveat. AVX2 renders 1.09x
+  to 1.43x faster and whole pipelines 1.05x to 1.14x; SSE2, measured on a host
+  that genuinely lacks AVX2 rather than one masked with `GODEBUG=cpu.avx2=off`,
+  is about 1.07x on the kernel and 1.06x end to end at 256x256 and larger, and
+  nothing below its 24-pixel cutoff. AMD64 previously had no vector span
+  compositor at any tier, while the span compositor is the largest symbol in
+  every profile this repository has taken. See
+  [docs/task-10.19-sse2-compositor.md](docs/task-10.19-sse2-compositor.md) and
+  [docs/task-10.18-exact-compositor.md](docs/task-10.18-exact-compositor.md).
+- `run --fast-compositing` selects an opt-in float32 SIMD span compositor with
+  SSE2 and AVX2 kernels. It is accurate to +/-1 per channel rather than
+  byte-identical, and defaults to off. It is kept now that an exact vector
+  compositor exists because it is still 2.4x to 4.2x faster than that at
+  realistic span lengths - the comparison that decides its fate, rather than the
+  comparison against the scalar loop it was originally measured against.
+- Startup logs the resolved SIMD tier and both installed compositors alongside
+  the thread and evaluation-worker counts, and warns when `--fast-compositing`
+  has no kernel on the host or is ignored by a non-CPU backend. The server job
+  detail view shows the setting next to the seed. A run's log and its checkpoint
+  are now enough to tell whether two runs are comparable.
 - An SSE2 SIMD tier for AMD64. Hand-written Plan 9 kernels for SSD
   (`ssd_sse2_amd64.s`, four NRGBA pixels per batch) and for the dirty-span
   delta-SSD of the incremental cost path give AMD64 hosts without AVX2 a real
@@ -181,6 +194,13 @@ release is declared by this file.
 - OpenCL remains experimental and joint-only.
 - Restart-from-best does not restore the full optimizer state, and server resume
   of sequential/batch jobs is unsupported.
+- `--fast-compositing` changes the output of a fixed seed and is therefore
+  opt-in and off by default. Its +/-1 bound is now swept over every byte value
+  against 2010 colours rather than asserted at five points; its speed impact is
+  measured and its quality impact is not.
+- There is still no exact SSE2 span compositor and no float32 NEON kernel, so a
+  no-AVX2 AMD64 host composites scalar and `--fast-compositing` is a pure loss
+  outside AMD64.
 - SAD and the Q16.16 circle-span kernel have no SSE2 port. Both need
   instructions above baseline SSE2, and neither carries enough measured cost to
   justify emulating them.

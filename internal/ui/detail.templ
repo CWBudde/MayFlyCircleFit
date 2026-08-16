@@ -38,6 +38,11 @@ type JobDetail struct {
 	// because a wrong number here is worse than none -- the value exists so two
 	// runs can be told apart.
 	EvaluationWorkers int
+	// FastCompositing records that the job ran the reduced-precision span
+	// compositor. It belongs next to the seed, not with the tuning knobs: two
+	// runs that differ in it are not pixel-comparable, so a completed job has to
+	// be able to say which one it was.
+	FastCompositing bool
 	Circles       int
 	Iterations    int
 	Evaluations   int
@@ -297,6 +302,12 @@ templ JobDetailPage(job JobDetail) {
 					<div>
 						<div style="font-size: 0.875rem; color: var(--text-muted);">Parallel Evaluation</div>
 						<div style="font-weight: 500;">{ fmt.Sprintf("%d workers", job.EvaluationWorkers) }</div>
+					</div>
+				}
+				if job.FastCompositing {
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted);">Compositing</div>
+						<div style="font-weight: 500;">Fast (+/-1 per channel)</div>
 					</div>
 				}
 				<div>

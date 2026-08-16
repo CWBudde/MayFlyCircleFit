@@ -1,23 +1,24 @@
-// Exact float64 SSE2 span compositor for opaque NRGBA canvases.
+// Exact float64 AVX2 span compositor for opaque NRGBA canvases.
 //
-// This is the baseline-AMD64 counterpart of the NEON kernel in
-// composite_span_arm64.s and, like it, is byte-identical to
-// compositeOpaqueSpanScalar rather than an approximation.
+// This is the amd64 counterpart of the NEON kernel in composite_span_arm64.s
+// and, like it, is byte-identical to compositeOpaqueSpanScalar rather than an
+// approximation. Two pixels are blended per iteration: eight bytes widen to
+// eight dwords, split into two YMM registers of four float64 lanes, so one
+// register holds exactly one pixel's R, G, B and A and no shuffling is needed.
 //
 // The op order is load-bearing. compositeOpaqueSpanScalar compiles on amd64 to
 // MULSD/ADDSD pairs - Go's amd64 backend does not contract a*b+c into an FMA -
-// and this kernel reproduces that sequence with MULPD/ADDPD:
+// and this kernel reproduces that sequence with VMULPD/VADDPD:
 //
 //	v = pix * inv255
 //	v = v * bgBlend + fg
 //	v = v * 255 + 0.5
 //	byte = trunc(v)
 //
-// Do not fold any of those pairs into an FMA. It would change the rounding and
+// Do not fold any of those pairs into VFMADD. It would change the rounding and
 // silently break byte parity with the scalar path, which is exactly the failure
 // mode that looks like a harmless precision artifact. TestCompositeSpanExact
-// FusionContract pins this. ARM64 has the mirror-image dependency: its NEON
-// kernel needs the fusion that Go's arm64 backend does perform.
+// FusionContract pins this.
 //
 // Alpha passes through arithmetically rather than by masking the store. Lane 3
 // of each constant vector is (inv255=1, bgBlend=1, fg=0, scale=1, half=0.5), so
@@ -25,16 +26,68 @@
 // byte value, because integers below 2^53 are exact in float64.
 //
 // constants points at five consecutive four-lane float64 vectors, in the order
-// the chain uses them: inv255, bgBlend, fg, scale, half. This kernel reads that
-// block as ten two-lane vectors, so the layout is shared with the AVX2 kernel
-// that lands separately.
+// the chain uses them: inv255, bgBlend, fg, scale, half. The SSE2 kernel below
+// reads the same block as ten two-lane vectors, so both kernels share
+// exactSpanConstants and there is one layout to keep right.
+//
+// Everything above applies to compositeSpanExactSSE2 too: same op order, same
+// alpha-by-identity trick, same byte-for-byte guarantee. It differs only in how
+// it gets bytes into float64 lanes, because SSE2 predates both VPMOVZXBD and
+// three-operand encodings.
 
 #include "textflag.h"
 
+// func compositeSpanExactAVX2(pix *byte, pairs int, constants *float64)
+TEXT ·compositeSpanExactAVX2(SB), NOSPLIT, $0-24
+	MOVQ pix+0(FP), SI
+	MOVQ pairs+8(FP), CX
+	MOVQ constants+16(FP), DX
+
+	VMOVUPD 0(DX), Y8    // inv255
+	VMOVUPD 32(DX), Y9   // bgBlend
+	VMOVUPD 64(DX), Y10  // fg
+	VMOVUPD 96(DX), Y11  // scale
+	VMOVUPD 128(DX), Y12 // half
+
+	TESTQ CX, CX
+	JZ    done
+
+loop:
+	VPMOVZXBD    (SI), Y0
+	VEXTRACTI128 $1, Y0, X1
+	VCVTDQ2PD    X0, Y2
+	VCVTDQ2PD    X1, Y3
+
+	VMULPD Y8, Y2, Y2
+	VMULPD Y8, Y3, Y3
+	VMULPD Y9, Y2, Y2
+	VMULPD Y9, Y3, Y3
+	VADDPD Y10, Y2, Y2
+	VADDPD Y10, Y3, Y3
+	VMULPD Y11, Y2, Y2
+	VMULPD Y11, Y3, Y3
+	VADDPD Y12, Y2, Y2
+	VADDPD Y12, Y3, Y3
+
+	VCVTTPD2DQY Y2, X2
+	VCVTTPD2DQY Y3, X3
+	VPACKSSDW  X3, X2, X2
+	VPACKUSWB  X2, X2, X2
+	MOVQ       X2, (SI)
+
+	ADDQ $8, SI
+	DECQ CX
+	JNZ  loop
+
+done:
+	VZEROUPPER
+	RET
+
 // func compositeSpanExactSSE2(pix *byte, pairs int, constants *float64)
 //
-// Two pixels per iteration. An XMM register holds two float64 lanes, so one
-// pixel needs two registers and a pair needs four.
+// Two pixels per iteration, the same batch as the AVX2 kernel, but reached
+// differently: an XMM register holds two float64 lanes, so one pixel needs two
+// registers and a pair needs four.
 //
 // SSE2 has no PMOVZXBD, so bytes widen in two PUNPCK steps against a zero
 // register, and no VCVTDQ2PD-from-the-upper-half, so the high two dwords are
@@ -43,7 +96,7 @@
 // five - that is the whole register file, and it is why this kernel is not
 // unrolled further.
 //
-// All ten constant loads are MOVOU: Go aligns a [20]float64 to eight bytes,
+// All sixteen constant loads are MOVOU: Go aligns a [20]float64 to eight bytes,
 // so a 16-byte-aligned load or an SSE2 memory operand would fault.
 TEXT ·compositeSpanExactSSE2(SB), NOSPLIT, $0-24
 	MOVQ pix+0(FP), SI

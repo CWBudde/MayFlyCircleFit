@@ -57,17 +57,20 @@ behavior is production-ready.
   `FastSAD` has no non-test callers, and its AVX2 kernel uses `VPMADDUBSW`
   (SSSE3) and `VPMULLD` (SSE4.1), neither of which baseline SSE2 provides.
   Porting it would mean adding SSSE3/SSE4.1 tiers for an unused cost function.
-- The span compositor has an exact AMD64 vector kernel only at the SSE2 tier, so
-  an AVX2 host - the common case - still composites scalar. The exact AVX2
-  kernel is a separate change.
 - The SSE2 span compositor returns far less than its share of the profile
   suggests: about 1.07x, so roughly 1.06x end to end on the larger canvases and
   nothing below its 24-pixel cutoff. Half its instructions are format
-  conversion, and SSE2 has neither `PMOVZXBD` nor `PSHUFB` to shorten that.
+  conversion, and SSE2 has neither `PMOVZXBD` nor `PSHUFB` to shorten that. The
+  AVX2 kernel at the same job is worth 1.09x to 1.43x.
 - The per-span constant block is rebuilt for every span of every row, though the
   colour is constant for a whole circle. That setup is the entire difference
   between the SSE2 kernel's 8-pixel crossover measured directly and the 24-pixel
-  cutoff the dispatcher has to use.
+  cutoff the dispatcher has to use, and it is why the AVX2 cutoff is 16 rather
+  than around 4.
+- Both exact vector compositors depend on the Go compiler's multiply-add
+  contraction behaviour, in opposite directions on the two architectures. This
+  is a real coupling to the toolchain, not a stylistic preference; a Go release
+  that changed it would break byte parity on one of them.
 - The SSE2 SSD kernel accumulates a row in int32 lanes, so it accepts rows up to
   11000 pixels wide and hands wider rows to the scalar kernel. That bound is far
   above any canvas size this program produces, but it is a real limit. The SSE2
@@ -87,6 +90,22 @@ behavior is production-ready.
   flat samples to that span, so emulating the compare was not worth its cost.
   The float32 form is reachable only through `CPURenderer.forceFloat32Geometry`,
   which no configuration path sets, so it has no production effect at any tier.
+- `--fast-compositing` is not byte-exact. It computes the opaque span blend in
+  float32 with a regrouped multiply-add, which is accurate to +/-1 per channel
+  against the default compositor - swept over every byte value against 2010
+  colours, where 0.001% of channel writes reached the bound. It is off by
+  default, and a run that enables it is not comparable to a run without it:
+  a changed channel changes the SSD, so the optimizer takes a different
+  trajectory and converges to a different circle set, not merely a slightly
+  different picture. Its speed impact is measured; its quality impact is not.
+- Below 16 pixels `--fast-compositing` is slower than the exact compositor as
+  well as less accurate, because its scalar fallback is slower than the exact
+  float64 loop. Circle edges are exactly where short spans occur. The
+  measurements behind the cutoffs are in
+  `docs/task-10.18-exact-compositor.md`.
+- Non-AMD64 targets have no float32 kernel, so `--fast-compositing` there is a
+  pure loss. Startup warns rather than failing, because a checkpoint written on
+  AMD64 can legitimately be resumed elsewhere.
 - The production CPU renderer uses `FastMSECost`; parity tests cover the scalar
   reference, SIMD dispatch, independent origins/strides, empty images, and
   dimension mismatches. This remains a numeric RGB objective, not a perceptual

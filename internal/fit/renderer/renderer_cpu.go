@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
+	"log/slog"
 	"math"
 	"runtime"
 	"sync"
@@ -38,6 +39,11 @@ type CPURenderer struct {
 	// It never affects this renderer's own rendering, only how many sessions
 	// the pipeline creates.
 	parallelEvaluationWorkers int
+	// fastCompositing selects the reduced-precision float32 SIMD span
+	// compositor. It is opt-in because that kernel regroups the blend
+	// arithmetic and is only accurate to +/-1 per channel, so it is not
+	// byte-identical to the default float64 path and changes rendered output.
+	fastCompositing bool
 	// initialSSD is the exact, unnormalized RGB SSD between initialBg and the
 	// reference. It is prepared once for future incremental-cost evaluation.
 	initialSSD      uint64
@@ -266,6 +272,7 @@ func (r *CPURenderer) newSession(circleCount int) (Renderer, func(), error) {
 		forceFloatGeometry:   r.forceFloatGeometry,
 		forceFloat32Geometry: r.forceFloat32Geometry,
 		enableRowSymmetry:    r.enableRowSymmetry,
+		fastCompositing:      r.fastCompositing,
 		initialSSD:           r.initialSSD,
 		initialSSDValid:      r.initialSSDValid,
 		fastCostSelected:     r.fastCostSelected,
@@ -311,6 +318,7 @@ func (r *CPURenderer) newSessionWithCanvas(canvas *image.NRGBA, circleCount int)
 	session.forceFloatGeometry = r.forceFloatGeometry
 	session.forceFloat32Geometry = r.forceFloat32Geometry
 	session.enableRowSymmetry = r.enableRowSymmetry
+	session.fastCompositing = r.fastCompositing
 	return session, noopCleanup, nil
 }
 
@@ -425,6 +433,60 @@ func effectiveEvaluationWorkers(workers int) int {
 		return 1
 	}
 	return workers
+}
+
+// SetFastCompositing selects the reduced-precision float32 SIMD span
+// compositor. Rendered output then differs from the exact float64 path by up to
+// one unit per channel, so callers opt in explicitly.
+func (r *CPURenderer) SetFastCompositing(enabled bool) {
+	r.fastCompositing = enabled
+}
+
+// FastCompositing reports whether the reduced-precision span compositor is
+// selected.
+func (r *CPURenderer) FastCompositing() bool {
+	return r.fastCompositing
+}
+
+// FastCompositingBackend names the kernel the fast compositor would use on this
+// host. Callers that log the flag should log this too: on a build with no fast
+// kernel the flag is a pure pessimisation, and "fastCompositing=true" on its own
+// hides that.
+func FastCompositingBackend() string {
+	return fastCompositeKernel.String()
+}
+
+// CompositingBackend names the kernel the default, exact compositor uses.
+func CompositingBackend() string {
+	return compositeSpanKernel.String()
+}
+
+// ConfigureCPUCompositing selects the span compositor and says out loud what
+// the process will actually run.
+//
+// The warning is the point. On a target with no float32 kernel the fast path
+// falls back to a float32 scalar loop that is both less accurate and slower
+// than the exact compositor it replaces, so the flag is a pure loss there - and
+// a log line reading only "fastCompositing=true" would hide that completely.
+func ConfigureCPUCompositing(cpu *CPURenderer, fastCompositing bool) {
+	cpu.SetFastCompositing(fastCompositing)
+	if fastCompositing && FastCompositingBackend() == fit.TierScalar.String() {
+		slog.Warn("Fast compositing has no vector kernel on this host; it is slower and less accurate than the exact compositor",
+			"tier", fit.Tier(), "exactCompositor", CompositingBackend())
+	}
+}
+
+// LogCPURendererConfiguration records the settings that change what a run
+// computes or how fast it computes it, including which kernels were installed.
+// A run's log should be enough to tell whether two runs are comparable.
+func LogCPURendererConfiguration(cpu *CPURenderer) {
+	slog.Info("Configured CPU renderer",
+		"threads", cpu.Threads(),
+		"evaluationWorkers", EvaluationWidth(cpu),
+		"simdTier", fit.Tier(),
+		"compositor", CompositingBackend(),
+		"fastCompositing", cpu.FastCompositing(),
+		"fastCompositor", FastCompositingBackend())
 }
 
 func effectiveThreadCount(threads, height int) int {
@@ -684,6 +746,10 @@ func (r *CPURenderer) compositeCircleSpan(img *image.NRGBA, c fit.Circle, y, xSt
 	// Opaque canvases remain opaque under source-over compositing, so their
 	// spans can use the runtime-dispatched SIMD implementation.
 	if r.opaqueCanvas {
+		if r.fastCompositing {
+			compositeOpaqueSpanFast(img.Pix, y*img.Stride+xStart*4, xEnd-xStart, c.CR, c.CG, c.CB, c.Opacity)
+			return
+		}
 		compositeOpaqueSpan(img.Pix, y*img.Stride+xStart*4, xEnd-xStart, c.CR, c.CG, c.CB, c.Opacity)
 		return
 	}
@@ -694,6 +760,13 @@ func (r *CPURenderer) compositeCircleSpan(img *image.NRGBA, c fit.Circle, y, xSt
 
 func (r *CPURenderer) compositeCircleSpanPair(img *image.NRGBA, c fit.Circle, firstY, secondY, xStart, xEnd int) {
 	if r.opaqueCanvas {
+		if r.fastCompositing {
+			// The float32 kernel has no paired variant; two vector spans keep the
+			// same crossover behaviour as the single-span path.
+			r.compositeCircleSpan(img, c, firstY, xStart, xEnd)
+			r.compositeCircleSpan(img, c, secondY, xStart, xEnd)
+			return
+		}
 		compositeOpaqueSpanPair(
 			img.Pix,
 			firstY*img.Stride+xStart*4,
