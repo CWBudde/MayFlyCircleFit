@@ -140,14 +140,12 @@ func TestCompositeOpaqueSpanFastWithinToleranceOfExact(t *testing.T) {
 
 	colours := make([]struct{ r, g, b, alpha float64 }, 0, 2048)
 	// Corners and near-degenerate alphas first, then a randomised sweep.
-	for _, c := range []struct{ r, g, b, alpha float64 }{
+	colours = append(colours, []struct{ r, g, b, alpha float64 }{
 		{0, 0, 0, 0}, {1, 1, 1, 1}, {0, 0, 0, 1}, {1, 1, 1, 0},
 		{0.5, 0.5, 0.5, 0.5}, {0.2, 0.6, 0.9, 0.37},
 		{0.13, 0.87, 0.41, 0.02}, {0.99, 0.01, 0.5, 0.98},
 		{1, 0, 0, 1.0 / 255}, {1, 1, 1, 254.0 / 255},
-	} {
-		colours = append(colours, c)
-	}
+	}...)
 	for range 2000 {
 		colours = append(colours, struct{ r, g, b, alpha float64 }{
 			source.Float64(), source.Float64(), source.Float64(), source.Float64(),
