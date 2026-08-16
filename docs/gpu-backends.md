@@ -53,7 +53,7 @@ Parallel to the OpenCL prototype, scope an **OpenGL fragment-shader fallback** f
 ## Implementation Status
 - `internal/fit/renderer/backend.go` centralises backend selection and normalises CLI input.
 - `internal/fit/gpu/opencl_runtime_*.go` enumerates platforms/devices and bootstraps an OpenCL context (GPU preferred, CPU fallback) when built with `-tags gpu`; non-GPU builds return a helpful error.
-- `internal/fit/renderer/renderer_opencl_gpu.go` implements rendering and cost evaluation in OpenCL with CPU degradation on runtime errors. Cost reduction is entirely on-device: the host reads only the final float rather than a full pixel-error buffer.
+- `internal/fit/renderer/opencl/renderer_gpu.go` implements rendering and cost evaluation in OpenCL with CPU degradation on runtime errors. It lives in its own package because Go forbids Plan 9 assembly in a package that uses cgo, and `internal/fit/renderer` carries the SIMD kernels; `internal/fit/renderer/renderer_opencl_gpu.go` is the gpu-tagged adapter that injects the CPU fallback and supplies the unexported session hook. Cost reduction is entirely on-device: the host reads only the final float rather than a full pixel-error buffer.
 - Cost and image caching are separate. `Cost` leaves the rendered output resident; `Render` reads the full image only when requested and can reuse output from a matching cost evaluation without dispatching the kernels again.
 - The kernel quantizes composited channels to NRGBA semantics before scoring, so the reduced cost describes the image returned by `Render`. CPU/OpenCL parity tests allow a 1% cost tolerance and two channel values for float32 geometry and edge-coverage differences.
 - CLI exposes `--backend` (default `cpu`) and reports the selected backend during runs. GPU mode renders and scores joint, sequential, and batch pipelines via OpenCL when compiled with `-tags gpu`.
@@ -103,7 +103,7 @@ driver compatibility.
 Run the same focused tests on each target GPU before relying on the backend:
 
 ```sh
-go test -tags gpu -count=1 ./internal/fit/renderer -run '^TestOpenCL'
+go test -tags gpu -count=1 ./internal/fit/renderer/... -run '^TestOpenCL'
 go test -tags gpu ./internal/fit/renderer -bench '^BenchmarkRenderer'
 ```
 
@@ -162,10 +162,10 @@ Reproduce the focused correctness and transfer-sensitive benchmarks with:
 
 ```sh
 MAYFLY_REQUIRE_OPENCL=1 go test -tags gpu -count=1 \
-  ./internal/fit/renderer -run '^TestOpenCL'
+  ./internal/fit/renderer/... -run '^TestOpenCL'
 MAYFLY_REQUIRE_OPENCL=1 go test -tags gpu -run '^$' \
   -bench '^BenchmarkOpenCL(ParameterPackAndUpload|ResidentImageReadback)$' \
-  -benchmem -benchtime=2s -count=5 ./internal/fit/renderer
+  -benchmem -benchtime=2s -count=5 ./internal/fit/renderer/opencl
 go test -tags gpu -run '^$' -bench '^BenchmarkRenderer(Cost|CostThenRender)$' \
   -benchmem -benchtime=2s -count=5 ./internal/fit/renderer
 MAYFLY_REQUIRE_OPENCL=1 go test -tags gpu -run '^$' \

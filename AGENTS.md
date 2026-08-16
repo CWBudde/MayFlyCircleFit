@@ -23,8 +23,11 @@ take precedence if this document goes stale.
 - `internal/app`: canonical typed configuration, defaults, limits, and seed
   resolution shared by CLI, server, and persistence.
 - `internal/fit`: image costs and architecture-specific SIMD dispatch.
-- `internal/fit/renderer`: CPU/OpenCL renderers and joint/sequential/batch
-  pipelines.
+- `internal/fit/renderer`: CPU renderer, SIMD kernels, and
+  joint/sequential/batch pipelines.
+- `internal/fit/renderer/opencl`: the cgo OpenCL renderer (`gpu` tag). It is a
+  separate package because Go forbids Plan 9 assembly in a package that uses
+  cgo; it must never import `internal/fit/renderer`.
 - `internal/opt`: optimizer interfaces and the MayFly v0.4.0 adapter.
 - `internal/server`: trusted-local HTTP boundary and background job lifecycle.
 - `internal/store`: filesystem checkpoint, trace, and artifact ownership.
