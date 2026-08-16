@@ -31,10 +31,12 @@ type JobDetail struct {
 	RefPath       string
 	Mode          string
 	Variant       string
-	// EvaluationWorkers is the concurrent evaluation width, and is zero unless
-	// the job opted into parallel evaluation. The setting changes which solution
-	// a seed produces, so it has to be visible next to the variant for two runs
-	// to be comparable at all.
+	// EvaluationWorkers is the width the job's renderer actually ran at, not the
+	// width its configuration requested: a backend without independent sessions
+	// runs serially however many workers were asked for, and a CPU request above
+	// GOMAXPROCS is clamped. Zero means serial or unknown and renders nothing,
+	// because a wrong number here is worse than none -- the value exists so two
+	// runs can be told apart.
 	EvaluationWorkers int
 	Circles       int
 	Iterations    int

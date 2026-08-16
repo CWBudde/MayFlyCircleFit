@@ -147,6 +147,14 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		return err
 	}
 	defer cleanup()
+	// Record what the renderer will actually do, not what the configuration
+	// asked for. This is the only point where the backend's decision and the
+	// GOMAXPROCS clamp have both been applied.
+	if width := renderer.EvaluationWidth(rend); width > 1 {
+		if err := jm.UpdateJob(jobID, func(j *Job) { j.EvaluationWidth = width }); err != nil {
+			return err
+		}
+	}
 
 	seed := job.Config.EffectiveSeed
 	if seed == 0 {
@@ -638,16 +646,6 @@ func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (
 		return cpu, func() {}, nil
 	}
 	return renderer.NewRendererForBackend(string(backend), ref, circleCount)
-}
-
-// parallelEvaluationWidth reports the concurrent evaluation width a job ran
-// with, or zero when it did not opt in. It reads the configuration rather than
-// a renderer because the detail view outlives the job's renderer.
-func parallelEvaluationWidth(config store.JobConfig) int {
-	if !config.ParallelEvaluation {
-		return 0
-	}
-	return config.EvaluationWorkers
 }
 
 // configureJobCPURenderer applies a job's parallelism settings and records the

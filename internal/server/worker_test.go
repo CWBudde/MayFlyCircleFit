@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -613,5 +614,56 @@ func TestProgressOptimizerMapsAndOffsetsEpochBoundary(t *testing.T) {
 	}
 	if !reflect.DeepEqual(boundary.Progress.BestParams, []float64{9, 4}) {
 		t.Fatalf("boundary params = %v, want complete mapped vector", boundary.Progress.BestParams)
+	}
+}
+
+// TestEvaluationWidthReportsWhatRanNotWhatWasAsked is the regression test for
+// reporting Config.EvaluationWorkers as if it were the concurrency a job used.
+// The configured value is only the request. A CPU request above GOMAXPROCS is
+// clamped, and a backend without independent sessions declines the request and
+// evaluates serially, so echoing the request back would claim a concurrency the
+// job never had -- in a field whose whole purpose is telling two runs apart.
+func TestEvaluationWidthReportsWhatRanNotWhatWasAsked(t *testing.T) {
+	ref := image.NewNRGBA(image.Rect(0, 0, 32, 32))
+	oversized := runtime.GOMAXPROCS(0) * 100
+
+	rend, cleanup, err := rendererForJob(JobConfig{
+		Backend:            "cpu",
+		Threads:            1,
+		ParallelEvaluation: true,
+		EvaluationWorkers:  oversized,
+	}, ref, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	width := renderer.EvaluationWidth(rend)
+	if width != runtime.GOMAXPROCS(0) {
+		t.Fatalf("effective width = %d, want the GOMAXPROCS clamp %d", width, runtime.GOMAXPROCS(0))
+	}
+	if width >= oversized {
+		t.Fatalf("effective width %d still reflects the unclamped request %d", width, oversized)
+	}
+}
+
+// TestEvaluationWidthIsZeroWithoutParallelEvaluation pins that a job which did
+// not opt in reports nothing rather than a worker count, so the detail page and
+// status output stay silent instead of showing a concurrency of one as if it
+// were a deliberate setting.
+func TestEvaluationWidthIsZeroWithoutParallelEvaluation(t *testing.T) {
+	ref := image.NewNRGBA(image.Rect(0, 0, 32, 32))
+	rend, cleanup, err := rendererForJob(JobConfig{
+		Backend:           "cpu",
+		Threads:           2,
+		EvaluationWorkers: 8,
+	}, ref, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	if width := renderer.EvaluationWidth(rend); width != 1 {
+		t.Fatalf("effective width = %d, want 1 without the opt-in", width)
 	}
 }

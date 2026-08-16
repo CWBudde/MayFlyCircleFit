@@ -117,7 +117,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		RefPath:                  job.Config.RefPath,
 		Mode:                     string(job.Config.Mode),
 		Variant:                  string(job.Config.Variant),
-		EvaluationWorkers:        parallelEvaluationWidth(job.Config),
+		EvaluationWorkers:        job.EvaluationWidth,
 		Circles:                  job.Config.Circles,
 		Iterations:               job.Iterations,
 		Evaluations:              job.Evaluations,

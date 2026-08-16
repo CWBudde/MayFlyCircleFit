@@ -29,25 +29,37 @@ type JobConfig = store.JobConfig
 
 // Job represents an optimization job
 type Job struct {
-	ID            string         `json:"id"`
-	Project       app.Project    `json:"project"`
-	State         JobState       `json:"state"`
-	Config        JobConfig      `json:"config"`
-	BestParams    []float64      `json:"bestParams,omitempty"`
-	BestCost      float64        `json:"bestCost"`
-	BestRevision  uint64         `json:"-"`
-	CandidateCost *float64       `json:"candidateCost,omitempty"`
-	InitialCost   float64        `json:"initialCost"`
-	Iterations    int            `json:"iterations"`
-	Evaluations   int            `json:"evaluations"`
-	Termination   string         `json:"termination,omitempty"`
-	StartTime     time.Time      `json:"startTime"`
-	EndTime       *time.Time     `json:"endTime,omitempty"`
-	Error         string         `json:"error,omitempty"`
-	PSNR          *float64       `json:"-"`
-	PSNRInfinite  bool           `json:"-"`
-	SSIM          *float64       `json:"-"`
-	MetricHistory []MetricSample `json:"-"`
+	ID            string      `json:"id"`
+	Project       app.Project `json:"project"`
+	State         JobState    `json:"state"`
+	Config        JobConfig   `json:"config"`
+	BestParams    []float64   `json:"bestParams,omitempty"`
+	BestCost      float64     `json:"bestCost"`
+	BestRevision  uint64      `json:"-"`
+	CandidateCost *float64    `json:"candidateCost,omitempty"`
+	InitialCost   float64     `json:"initialCost"`
+	Iterations    int         `json:"iterations"`
+	Evaluations   int         `json:"evaluations"`
+	// EvaluationWidth is how many cost evaluations this job's renderer actually
+	// ran concurrently, recorded when the renderer was built. It is deliberately
+	// not Config.EvaluationWorkers, which is only what was requested: a backend
+	// without independent sessions declines the request and runs serially, and a
+	// CPU request above GOMAXPROCS is clamped. Reporting the request would claim
+	// a concurrency the job never had, and the value exists precisely so two
+	// runs can be compared.
+	//
+	// Zero means serial or not known -- a job restored from a checkpoint has not
+	// built a renderer in this process -- and readers must show nothing rather
+	// than guess, because the clamp depends on the machine that ran the job.
+	EvaluationWidth int            `json:"evaluationWidth,omitempty"`
+	Termination     string         `json:"termination,omitempty"`
+	StartTime       time.Time      `json:"startTime"`
+	EndTime         *time.Time     `json:"endTime,omitempty"`
+	Error           string         `json:"error,omitempty"`
+	PSNR            *float64       `json:"-"`
+	PSNRInfinite    bool           `json:"-"`
+	SSIM            *float64       `json:"-"`
+	MetricHistory   []MetricSample `json:"-"`
 }
 
 // MetricSample is a live-history point used by the detail page. The sampling
