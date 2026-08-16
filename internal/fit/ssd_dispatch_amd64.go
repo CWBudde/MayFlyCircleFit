@@ -9,6 +9,13 @@ import (
 )
 
 func init() {
+	if SIMDDisabledByEnv() {
+		ActiveSSDBackend = SSDBackendScalar
+		fastSSD = fastSSD_Scalar
+		slog.Debug("SSD kernel initialized", "backend", "scalar", "reason", simdDisableEnv)
+		return
+	}
+
 	if cpu.X86.HasAVX2 {
 		ActiveSSDBackend = SSDBackendAVX2
 		fastSSD = fastSSD_AVX2

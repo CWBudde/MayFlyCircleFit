@@ -24,10 +24,13 @@ import (
 // SSDBackend indicates which SIMD backend is active
 type SSDBackend int
 
+// New backends must be appended. String() output is the wire value compared by
+// MAYFLY_REQUIRE_SSD_BACKEND, so reordering would silently change what CI asserts.
 const (
 	SSDBackendScalar SSDBackend = iota // Scalar fallback (no SIMD)
 	SSDBackendAVX2                     // AVX2 (x86-64, 256-bit)
 	SSDBackendNEON                     // NEON (ARM64, 128-bit)
+	SSDBackendSSE2                     // SSE2 (x86-64, 128-bit)
 )
 
 func (b SSDBackend) String() string {
@@ -36,6 +39,8 @@ func (b SSDBackend) String() string {
 		return "AVX2"
 	case SSDBackendNEON:
 		return "NEON"
+	case SSDBackendSSE2:
+		return "SSE2"
 	case SSDBackendScalar:
 		return "scalar"
 	default:
