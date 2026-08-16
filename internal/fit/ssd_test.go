@@ -363,6 +363,58 @@ func TestFastSSD_NEONExactLargeSum(t *testing.T) {
 	}
 }
 
+// TestFastSSD_SSE2_BatchBoundaries tests SSE2 batch processing with various widths.
+// SSE2 processes 4 pixels per batch (128-bit registers), so we test multiples of 4
+// and the scalar-tail remainders around them.
+func TestFastSSD_SSE2_BatchBoundaries(t *testing.T) {
+	if ActiveSSDBackend != SSDBackendSSE2 {
+		t.Skipf("Skipping SSE2 batch boundary test: active backend is %s, not SSE2", ActiveSSDBackend)
+	}
+
+	widths := []int{3, 4, 5, 7, 8, 9, 11, 12, 13, 15, 16, 17}
+	height := 10
+
+	for _, width := range widths {
+		t.Run(fmt.Sprintf("width_%d", width), func(t *testing.T) {
+			img1 := randomNRGBA(width, height, 100)
+			img2 := randomNRGBA(width, height, 200)
+
+			// Compute with SSE2 backend
+			sse2Result := fastSSD(img1.Pix, img2.Pix, img1.Stride, width, height)
+
+			// Compute with scalar reference
+			scalarResult := fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, width, height)
+
+			if sse2Result != scalarResult {
+				t.Errorf("SSE2 batch boundary error: width=%d, sse2=%f, scalar=%f",
+					width, sse2Result, scalarResult)
+			}
+		})
+	}
+}
+
+// TestFastSSD_SSE2ExactLargeSum guards against overflowing 32-bit SIMD lanes.
+// The SSE2 kernel accumulates a whole row in 32-bit lanes before widening, so
+// this total (100270080000) can only be exact with the per-row 64-bit widening.
+func TestFastSSD_SSE2ExactLargeSum(t *testing.T) {
+	if ActiveSSDBackend != SSDBackendSSE2 {
+		t.Skipf("Skipping SSE2 accumulator test: active backend is %s, not SSE2", ActiveSSDBackend)
+	}
+
+	const width, height = 512, 512
+	black := solidColorNRGBA(width, height, color.NRGBA{A: 0})
+	white := solidColorNRGBA(width, height, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+
+	got := fastSSD(black.Pix, white.Pix, black.Stride, width, height)
+	want := float64(width) * float64(height) * 3 * 255 * 255
+	if got != want {
+		t.Fatalf("SSE2 large SSD = %.0f, want %.0f", got, want)
+	}
+	if scalar := fastSSD_Scalar(black.Pix, white.Pix, black.Stride, width, height); got != scalar {
+		t.Fatalf("SSE2 large SSD = %.0f, scalar = %.0f", got, scalar)
+	}
+}
+
 // ---------------------- Concurrency Tests ----------------------
 
 // TestFastSSD_ConcurrentAccess tests thread-safety of SSD computation
@@ -497,10 +549,15 @@ func TestFastSSD_PaddedStride(t *testing.T) {
 
 // ---------------------- Backend Selection Tests ----------------------
 
+// requiredSSDBackendEnv pins the backend that runtime feature detection must
+// select. Subprocess tests strip it so an inherited value cannot fail a run
+// that deliberately selects a different backend.
+const requiredSSDBackendEnv = "MAYFLY_REQUIRE_SSD_BACKEND"
+
 // TestFastSSD_RequiredBackend lets native hardware CI require that runtime
 // feature detection selected the backend expected for its runner.
 func TestFastSSD_RequiredBackend(t *testing.T) {
-	required := os.Getenv("MAYFLY_REQUIRE_SSD_BACKEND")
+	required := os.Getenv(requiredSSDBackendEnv)
 	if required == "" {
 		t.Skip("MAYFLY_REQUIRE_SSD_BACKEND is not set")
 	}
@@ -513,10 +570,11 @@ func TestFastSSD_RequiredBackend(t *testing.T) {
 func TestFastSSD_BackendSelection(t *testing.T) {
 	t.Logf("Active SSD backend: %s", ActiveSSDBackend)
 
-	// Verify backend is consistent with CPU features
+	// Verify backend is consistent with CPU features. amd64 dispatch is tiered:
+	// AVX2, then SSE2, then scalar.
 	if cpu.X86.HasAVX2 {
 		if ActiveSSDBackend != SSDBackendAVX2 {
-			t.Logf("Note: AVX2 available but backend is %s (may be disabled via GODEBUG)", ActiveSSDBackend)
+			t.Logf("Note: AVX2 available but backend is %s (may be disabled via GODEBUG or %s)", ActiveSSDBackend, simdDisableEnv)
 		} else {
 			t.Logf("AVX2 backend correctly selected")
 		}
@@ -524,6 +582,17 @@ func TestFastSSD_BackendSelection(t *testing.T) {
 		if ActiveSSDBackend == SSDBackendAVX2 {
 			t.Errorf("AVX2 backend selected but CPU doesn't support AVX2")
 		}
+	}
+
+	// SSE2 tier check
+	if ActiveSSDBackend == SSDBackendSSE2 {
+		if !cpu.X86.HasSSE2 {
+			t.Errorf("SSE2 backend selected but CPU doesn't support SSE2")
+		}
+		if cpu.X86.HasAVX2 {
+			t.Errorf("SSE2 backend selected although AVX2 is available")
+		}
+		t.Logf("SSE2 backend correctly selected")
 	}
 
 	// ARM64 NEON check
@@ -624,6 +693,18 @@ func BenchmarkFastSSD_Comparison(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				ssdBenchmarkSink = fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height)
+			}
+			mpixelsPerSec := BenchmarkSSDBackend(b.N, sz.width, sz.height, b.Elapsed().Nanoseconds())
+			b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
+		})
+
+		// On non-amd64 builds fastSSD_SSE2 is the scalar stub, so this
+		// sub-benchmark simply repeats the scalar measurement there.
+		b.Run(sz.name+"_sse2", func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				ssdBenchmarkSink = fastSSD_SSE2(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height)
 			}
 			mpixelsPerSec := BenchmarkSSDBackend(b.N, sz.width, sz.height, b.Elapsed().Nanoseconds())
 			b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
