@@ -313,7 +313,7 @@ func TestSelectResidualRegionActiveSetCombinesWeakSlotAndInfluencer(t *testing.T
 	}
 	base := NewCPURenderer(reference, 3)
 
-	selection, err := selectResidualRegionActiveSet(base, params, 2, nil)
+	selection, err := selectResidualRegionActiveSet(base, &incumbentAuditCache{session: base}, params, 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -652,20 +652,23 @@ func TestPolishCircleBatchContiguousWindowBakesPrefixAndMatchesFullVector(t *tes
 	}
 }
 
-// TestPolishCircleBatchRejectsImprovementWhileAnUntouchedCircleIsHarmful pins the
+// TestPolishCircleBatchCommitsImprovementBesideAnUntouchedHarmfulCircle pins the
 // acceptance rule that dominates every strategy's usefulness.
 //
-// A sweep is committed only when allCirclesUseful holds for the complete
-// candidate, so a circle outside the active set whose MSEContribution has gone
-// negative rejects the sweep even when the sweep strictly lowers the cost of the
-// whole vector. Fitted vectors do contain such circles: PruneCircleBatch runs
+// A circle outside the active set is copied through a sweep unchanged, so
+// demanding that it be useful demands that the sweep repair something it never
+// touched. Fitted vectors routinely carry such circles: PruneCircleBatch runs
 // per batch stage against that stage's canvas, later stages composite over what
 // an earlier stage judged useful, and nothing re-audits the assembled result.
+// The absolute gate therefore vetoed every sweep of a long incremental run --
+// measured at 12 of 12 rejections with a net cost gain of 0.00 at both 64 and 96
+// circles -- no matter how much the candidate improved the cost.
 //
-// The consequence measured in docs/contiguous-window-polish-report.md is that
-// polishing a real batch fit can accept nothing at all while spending its whole
-// optimizer budget. Change this rule deliberately or not at all.
-func TestPolishCircleBatchRejectsImprovementWhileAnUntouchedCircleIsHarmful(t *testing.T) {
+// The gate is a non-regression rule instead: the sweep must keep every active
+// circle useful and must not add a non-useful circle outside the active set. A
+// pre-existing harmful circle that the sweep leaves exactly as it found it no
+// longer blocks acceptance. Change this rule deliberately or not at all.
+func TestPolishCircleBatchCommitsImprovementBesideAnUntouchedHarmfulCircle(t *testing.T) {
 	ref := solidImage(8, 8, color.NRGBA{R: 200, G: 200, B: 200, A: 255})
 	base := NewCPURenderer(ref, 2)
 
@@ -702,13 +705,205 @@ func TestPolishCircleBatchRejectsImprovementWhileAnUntouchedCircleIsHarmful(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
+	if result.AcceptedSweeps != 1 || result.Sweeps != 1 {
+		t.Fatalf("accepted/sweeps = %d/%d, want 1/1: a strict improvement was vetoed by an untouched harmful circle",
+			result.AcceptedSweeps, result.Sweeps)
+	}
+	if result.BestCost != improvedCost || !reflect.DeepEqual(result.BestParams, improved) {
+		t.Fatalf("committed sweep = cost %v params %v, want %v and the improved vector",
+			result.BestCost, result.BestParams, improvedCost)
+	}
+}
+
+// TestPolishCircleBatchRejectsImprovementThatKillsAnUntouchedCircle is the other
+// half of the non-regression rule: a sweep may inherit a harmful circle, but it
+// may not create one. Circle two is useful in the incumbent; the sweep grows the
+// active circle one until it completely covers circle two, which lowers the cost
+// of the whole vector and drops circle two's contribution to zero.
+func TestPolishCircleBatchRejectsImprovementThatKillsAnUntouchedCircle(t *testing.T) {
+	ref := solidImage(16, 16, color.NRGBA{R: 200, G: 200, B: 200, A: 255})
+	base := NewCPURenderer(ref, 2)
+
+	// Circle one is a small, badly coloured blob. Circle two is a correct patch
+	// far from it, so it changes pixels and helps.
+	initial := append(
+		circleParams(4, 4, 2, color.NRGBA{A: 255}, 1),
+		circleParams(11, 11, 3, color.NRGBA{R: 200, G: 200, B: 200, A: 255}, 1)...,
+	)
+	// Grown circle one paints the reference colour across the whole canvas, which
+	// both lowers the cost and buries circle two: it is drawn first, so circle two
+	// still changes pixels relative to it only if their colours differ. They do
+	// not, so circle two becomes a no-op.
+	grown := circleParams(8, 8, 24, color.NRGBA{R: 200, G: 200, B: 200, A: 255}, 1)
+
+	improved := append(append([]float64(nil), grown...), initial[paramsPerCircle:]...)
+	initialCost := base.Cost(initial)
+	improvedCost := base.Cost(improved)
+	if improvedCost >= initialCost {
+		t.Fatalf("test setup is vacuous: grown cost %v is not below %v", improvedCost, initialCost)
+	}
+	incumbentAudit, err := AuditCircleBatch(base, initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !circleUseful(incumbentAudit.Circles[1], minBatchMSEContribution) {
+		t.Fatalf("test setup is vacuous: circle two is already not useful in the incumbent: %+v",
+			incumbentAudit.Circles[1])
+	}
+	candidateAudit, err := AuditCircleBatch(base, improved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if circleUseful(candidateAudit.Circles[1], minBatchMSEContribution) {
+		t.Fatalf("test setup is vacuous: circle two survives the sweep: %+v", candidateAudit.Circles[1])
+	}
+
+	// A one-slot contiguous window prefers the latest unvisited window, so pin
+	// the active set to circle one with a two-slot window over a two-circle
+	// vector instead, and let the optimizer return circle two unchanged.
+	outcome := append(append([]float64(nil), grown...), initial[paramsPerCircle:]...)
+	result, err := PolishCircleBatchContext(context.Background(), base, &fixedPolishOptimizer{params: outcome}, initial, BatchPolishOptions{
+		ActiveSetSize: 2,
+		MaxSweeps:     1,
+		Strategy:      BatchPolishContiguousWindow,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if result.AcceptedSweeps != 0 || result.Sweeps != 1 {
-		t.Fatalf("accepted/sweeps = %d/%d, want 0/1: a strict improvement was committed despite a harmful circle",
+		t.Fatalf("accepted/sweeps = %d/%d, want 0/1: the sweep killed a circle it was optimizing",
 			result.AcceptedSweeps, result.Sweeps)
 	}
 	if result.BestCost != initialCost || !reflect.DeepEqual(result.BestParams, initial) {
 		t.Fatalf("rejected sweep changed the result: cost %v params %v, want %v and the initial vector",
 			result.BestCost, result.BestParams, initialCost)
+	}
+}
+
+// allCirclesUsefulReference is the absolute acceptance predicate the
+// non-regression gate replaced. It exists so the equivalence case below can
+// assert that the two agree exactly whenever the incumbent carries no
+// pre-existing blockers, which is the only situation the old rule described
+// correctly.
+func allCirclesUsefulReference(audit BatchAudit, minContribution float64) bool {
+	for _, circle := range audit.Circles {
+		if !circle.Valid || circle.FinalChangedPixels < 1 || circle.MSEContribution <= minContribution {
+			return false
+		}
+	}
+	return true
+}
+
+func usefulAuditCircle(index int) CircleAudit {
+	return CircleAudit{
+		Circle:             index + 1,
+		OriginalCircle:     index + 1,
+		FinalChangedPixels: 100,
+		MSEContribution:    1,
+		Valid:              true,
+	}
+}
+
+func harmfulAuditCircle(index int) CircleAudit {
+	circle := usefulAuditCircle(index)
+	circle.MSEContribution = -0.4
+	return circle
+}
+
+func auditOf(circles ...CircleAudit) BatchAudit {
+	return BatchAudit{Circles: circles}
+}
+
+func TestSweepKeepsCirclesUsefulIsANonRegressionRule(t *testing.T) {
+	cases := []struct {
+		name          string
+		incumbent     BatchAudit
+		candidate     BatchAudit
+		activeCircles []int
+		wantOK        bool
+		wantBlockers  []int
+	}{
+		{
+			name:          "all useful commits",
+			incumbent:     auditOf(usefulAuditCircle(0), usefulAuditCircle(1), usefulAuditCircle(2)),
+			candidate:     auditOf(usefulAuditCircle(0), usefulAuditCircle(1), usefulAuditCircle(2)),
+			activeCircles: []int{1},
+			wantOK:        true,
+		},
+		{
+			name:          "pre-existing blocker outside the active set is excused",
+			incumbent:     auditOf(usefulAuditCircle(0), harmfulAuditCircle(1), usefulAuditCircle(2)),
+			candidate:     auditOf(usefulAuditCircle(0), harmfulAuditCircle(1), usefulAuditCircle(2)),
+			activeCircles: []int{2},
+			wantOK:        true,
+		},
+		{
+			name:          "a blocker the sweep introduces outside the active set rejects",
+			incumbent:     auditOf(usefulAuditCircle(0), usefulAuditCircle(1), usefulAuditCircle(2)),
+			candidate:     auditOf(usefulAuditCircle(0), harmfulAuditCircle(1), usefulAuditCircle(2)),
+			activeCircles: []int{2},
+			wantOK:        false,
+			wantBlockers:  []int{2},
+		},
+		{
+			name:          "a pre-existing blocker inside the active set still rejects",
+			incumbent:     auditOf(usefulAuditCircle(0), harmfulAuditCircle(1)),
+			candidate:     auditOf(usefulAuditCircle(0), harmfulAuditCircle(1)),
+			activeCircles: []int{1},
+			wantOK:        false,
+			wantBlockers:  []int{2},
+		},
+		{
+			name: "repairing one blocker while inheriting another commits",
+			incumbent: auditOf(harmfulAuditCircle(0), harmfulAuditCircle(1),
+				harmfulAuditCircle(2), usefulAuditCircle(3)),
+			candidate: auditOf(usefulAuditCircle(0), harmfulAuditCircle(1),
+				harmfulAuditCircle(2), usefulAuditCircle(3)),
+			activeCircles: []int{0, 3},
+			wantOK:        true,
+		},
+		{
+			name:          "a zero-pixel circle blocks like a harmful one",
+			incumbent:     auditOf(usefulAuditCircle(0), usefulAuditCircle(1)),
+			candidate:     auditOf(usefulAuditCircle(0), CircleAudit{Circle: 2, OriginalCircle: 2, Valid: true, MSEContribution: 1}),
+			activeCircles: []int{0},
+			wantOK:        false,
+			wantBlockers:  []int{2},
+		},
+		{
+			name:          "an out-of-bounds circle blocks like a harmful one",
+			incumbent:     auditOf(usefulAuditCircle(0), usefulAuditCircle(1)),
+			candidate:     auditOf(usefulAuditCircle(0), CircleAudit{Circle: 2, OriginalCircle: 2, FinalChangedPixels: 5, MSEContribution: 1}),
+			activeCircles: []int{0},
+			wantOK:        false,
+			wantBlockers:  []int{2},
+		},
+		{
+			name:          "an incumbent audit of the wrong length excuses nothing",
+			incumbent:     auditOf(usefulAuditCircle(0)),
+			candidate:     auditOf(usefulAuditCircle(0), harmfulAuditCircle(1)),
+			activeCircles: []int{0},
+			wantOK:        false,
+			wantBlockers:  []int{2},
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			ok, blockers := sweepKeepsCirclesUseful(
+				testCase.incumbent, testCase.candidate, testCase.activeCircles, minBatchMSEContribution)
+			if ok != testCase.wantOK || !slices.Equal(blockers, testCase.wantBlockers) {
+				t.Fatalf("gate = %v blockers %v, want %v blockers %v",
+					ok, blockers, testCase.wantOK, testCase.wantBlockers)
+			}
+			// Wherever the incumbent carries no blockers at all, the new rule must
+			// reproduce the old absolute predicate exactly.
+			if allCirclesUsefulReference(testCase.incumbent, minBatchMSEContribution) {
+				if want := allCirclesUsefulReference(testCase.candidate, minBatchMSEContribution); ok != want {
+					t.Fatalf("gate = %v on a blocker-free incumbent, want the absolute predicate %v", ok, want)
+				}
+			}
+		})
 	}
 }
 
@@ -1061,9 +1256,13 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 		serial       polishSerialResult
 	}{
 		{
-			// Every sweep is rejected here, which is the common case for a fitted
-			// vector: the whole-vector usefulness gate vetoes improvements.
-			name:      "rejected-sweeps-hybrid-overlap",
+			// This fixture carries pre-existing blockers, which is the common case
+			// for a fitted vector: circles 3, 4, and 5 contribute -89.7, -221.6, and
+			// -65.5 against a threshold of 0.01. Under the old absolute gate every
+			// sweep was rejected. The non-regression gate lets sweep 2 commit, whose
+			// active set [3 5] repairs two of the three blockers while inheriting
+			// circle 4 untouched; sweeps 1 and 3 still lose on cost.
+			name:      "inherited-blocker-sweeps-hybrid-overlap",
 			reference: solidImage(20, 16, color.NRGBA{R: 200, G: 40, B: 90, A: 255}),
 			params:    polishParityParams(),
 			options: BatchPolishOptions{
@@ -1078,11 +1277,17 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 				costs: []float64{
 					5639.8125, 14598.391666666666, 19012.595833333333, 19172.329166666666, 19118.3375,
 					5639.8125, 5545.864583333333, 5503.739583333333, 5470.673958333334, 5456.420833333334,
-					5639.8125, 16916.385416666668, 21602.385416666668, 21916.28125, 22048.005208333332,
+					5456.420833333334, 18332.851041666665, 23794.814583333333, 24108.763541666667, 24240.4875,
 				},
-				params:      polishParityParams(),
-				cost:        5639.8125,
-				accepted:    0,
+				params: []float64{
+					10, 8, 9, 0.7450980392156863, 0.17647058823529413, 0.3333333333333333, 1,
+					4, 4, 4, 0.8235294117647058, 0.23529411764705882, 0.39215686274509803, 0.9,
+					12, 5, 6, 0, 0.11764705882352941, 1, 0.00392156862745098,
+					6, 12, 3, 0.3137254901960784, 0.7843137254901961, 0.47058823529411764, 0.4,
+					16, 15, 1, 0.11764705882352941, 1, 0, 0.3,
+				},
+				cost:        5456.420833333334,
+				accepted:    1,
 				sweeps:      3,
 				evaluations: 22,
 			},
