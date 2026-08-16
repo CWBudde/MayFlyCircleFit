@@ -495,6 +495,7 @@ func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 			auditRenderer := NewCPURendererWithCanvas(base.Reference(), currentCanvas, stageCircles)
 			if cpu, ok := session.(*CPURenderer); ok {
 				auditRenderer.SetThreads(cpu.Threads())
+				auditRenderer.SetFastCompositing(cpu.FastCompositing())
 			}
 			pruned, pruneErr := PruneCircleBatch(auditRenderer, candidateBatch, CirclePruneOptions{
 				MinChangedPixels:   1,

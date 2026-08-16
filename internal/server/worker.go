@@ -607,6 +607,7 @@ func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (
 		}
 		cpu := renderer.NewCPURendererWithCanvas(ref, canvas, circleCount)
 		cpu.SetThreads(config.Threads)
+		cpu.SetFastCompositing(config.FastCompositing)
 		return cpu, func() {}, nil
 	}
 	backend := config.Backend
@@ -616,6 +617,7 @@ func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (
 	if backend == app.BackendCPU {
 		cpu := renderer.NewCPURenderer(ref, circleCount)
 		cpu.SetThreads(config.Threads)
+		cpu.SetFastCompositing(config.FastCompositing)
 		return cpu, func() {}, nil
 	}
 	return renderer.NewRendererForBackend(string(backend), ref, circleCount)

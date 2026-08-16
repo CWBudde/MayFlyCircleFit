@@ -312,6 +312,7 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 			// Create renderer
 			renderer := renderer.NewCPURenderer(ref, j.Config.Circles)
 			renderer.SetThreads(j.Config.Threads)
+			renderer.SetFastCompositing(j.Config.FastCompositing)
 
 			// Save checkpoint
 			err = saveCheckpoint(s.jobManager, s.storeForSlug(j.Project), renderer, j.ID)

@@ -126,19 +126,24 @@ type JobConfig struct {
 	PolishingStagnationIters int               `json:"polishingStagnationIters,omitempty"`
 	PolishingMinImprovement  float64           `json:"polishingMinImprovement,omitempty"`
 	Threads                  int               `json:"threads,omitempty"`
-	Seed                     int64             `json:"seed"`
-	EffectiveSeed            int64             `json:"effectiveSeed,omitempty"`
-	ResumeCount              int               `json:"resumeCount,omitempty"`
-	CheckpointInterval       int               `json:"checkpointInterval,omitempty"`
-	TraceInterval            int               `json:"traceInterval,omitempty"`
-	EnableTrace              bool              `json:"enableTrace,omitempty"`
-	DisableTrace             bool              `json:"disableTrace,omitempty"`
-	EnableSSIM               bool              `json:"enableSSIM,omitempty"`
-	SaveSnapshots            bool              `json:"saveSnapshots,omitempty"`
-	ConvergenceEnabled       bool              `json:"convergenceEnabled,omitempty"`
-	DisableConvergence       bool              `json:"disableConvergence,omitempty"`
-	ConvergencePatience      int               `json:"convergencePatience,omitempty"`
-	ConvergenceThreshold     float64           `json:"convergenceThreshold,omitempty"`
+	// FastCompositing selects the reduced-precision float32 SIMD span
+	// compositor. It is additive and optional: checkpoints written before it
+	// existed decode as false, which is also the default, so the exact
+	// compositor stays in charge unless a run asks otherwise.
+	FastCompositing      bool    `json:"fastCompositing,omitempty"`
+	Seed                 int64   `json:"seed"`
+	EffectiveSeed        int64   `json:"effectiveSeed,omitempty"`
+	ResumeCount          int     `json:"resumeCount,omitempty"`
+	CheckpointInterval   int     `json:"checkpointInterval,omitempty"`
+	TraceInterval        int     `json:"traceInterval,omitempty"`
+	EnableTrace          bool    `json:"enableTrace,omitempty"`
+	DisableTrace         bool    `json:"disableTrace,omitempty"`
+	EnableSSIM           bool    `json:"enableSSIM,omitempty"`
+	SaveSnapshots        bool    `json:"saveSnapshots,omitempty"`
+	ConvergenceEnabled   bool    `json:"convergenceEnabled,omitempty"`
+	DisableConvergence   bool    `json:"disableConvergence,omitempty"`
+	ConvergencePatience  int     `json:"convergencePatience,omitempty"`
+	ConvergenceThreshold float64 `json:"convergenceThreshold,omitempty"`
 
 	// Optimizer-level early stopping. These are per-iteration criteria applied
 	// inside a single optimizer run, and are unrelated to the Convergence*

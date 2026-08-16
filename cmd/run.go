@@ -40,6 +40,7 @@ var (
 	polishingStagnationIters int
 	polishingMinImprovement  float64
 	threads                  int
+	fastCompositing          bool
 	seed                     int64
 	convergenceEnable        bool
 	patience                 int
@@ -82,6 +83,7 @@ func init() {
 	runCmd.Flags().IntVar(&polishingStagnationIters, "polishing-stagnation-iters", 500, "Stop a polishing epoch after this many iterations without sufficient progress")
 	runCmd.Flags().Float64Var(&polishingMinImprovement, "polishing-min-improvement", 0.001, "Absolute optimizer cost reduction counted as progress during polishing")
 	runCmd.Flags().IntVar(&threads, "threads", runtime.GOMAXPROCS(0), "CPU rendering threads (capped at GOMAXPROCS)")
+	runCmd.Flags().BoolVar(&fastCompositing, "fast-compositing", false, "Use the reduced-precision float32 SIMD span compositor (output may differ by 1 per channel)")
 	runCmd.Flags().Int64Var(&seed, "seed", 0, "Random seed (0 chooses and reports a random seed)")
 	runCmd.Flags().BoolVar(&enableSSIM, "enable-ssim", false, "Calculate the optional final structural similarity metric")
 
@@ -138,6 +140,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		PolishingStagnationIters: polishingStagnationIters,
 		PolishingMinImprovement:  polishingMinImprovement,
 		Threads:                  threads,
+		FastCompositing:          fastCompositing,
 		Seed:                     seed,
 		EnableSSIM:               enableSSIM,
 		ConvergenceEnabled:       convergenceEnable,
@@ -238,7 +241,9 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		}
 		cpuRenderer := rend.(*renderer.CPURenderer)
 		cpuRenderer.SetThreads(config.Threads)
-		slog.Info("Configured CPU renderer", "threads", cpuRenderer.Threads())
+		cpuRenderer.SetFastCompositing(config.FastCompositing)
+		slog.Info("Configured CPU renderer", "threads", cpuRenderer.Threads(),
+			"fastCompositing", cpuRenderer.FastCompositing())
 		cleanup = func() {} // No cleanup needed for CPU renderer
 	} else {
 		// Other backends don't support canvas yet

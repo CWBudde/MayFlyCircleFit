@@ -184,6 +184,7 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 		}
 		cpu := renderer.NewCPURendererWithCanvas(ref, canvas, checkpoint.Config.Circles)
 		cpu.SetThreads(checkpoint.Config.Threads)
+		cpu.SetFastCompositing(checkpoint.Config.FastCompositing)
 		rend = cpu
 	} else {
 		backend := checkpoint.Config.Backend
@@ -193,6 +194,7 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 		if backend == "cpu" {
 			cpu := renderer.NewCPURenderer(ref, checkpoint.Config.Circles)
 			cpu.SetThreads(checkpoint.Config.Threads)
+			cpu.SetFastCompositing(checkpoint.Config.FastCompositing)
 			rend = cpu
 		} else {
 			rend, cleanup, err = renderer.NewRendererForBackend(string(backend), ref, checkpoint.Config.Circles)
