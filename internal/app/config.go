@@ -101,6 +101,11 @@ const (
 	PolishingReplacement    PolishingStrategy = "replacement"
 	PolishingHybridOverlap  PolishingStrategy = "hybrid-overlap"
 	PolishingResidualRegion PolishingStrategy = "residual-region"
+	// PolishingContiguousWindow polishes a consecutive run of draw slots so the
+	// circles before the window can be baked into a reusable canvas. It is the
+	// cheapest strategy per candidate; the others scatter the active set and so
+	// rasterize the whole image for every evaluation.
+	PolishingContiguousWindow PolishingStrategy = "contiguous-window"
 )
 
 // JobConfig is the canonical configuration shared by all application entry
@@ -333,9 +338,9 @@ func (c JobConfig) Validate() error {
 		return invalid("polishingOnly", "requires polishing to be enabled")
 	}
 	switch c.PolishingStrategy {
-	case PolishingReplacement, PolishingHybridOverlap, PolishingResidualRegion:
+	case PolishingReplacement, PolishingHybridOverlap, PolishingResidualRegion, PolishingContiguousWindow:
 	default:
-		return invalid("polishingStrategy", "must be replacement, hybrid-overlap, or residual-region")
+		return invalid("polishingStrategy", "must be replacement, hybrid-overlap, residual-region, or contiguous-window")
 	}
 	if c.PolishingActiveSetSize < 1 || c.PolishingActiveSetSize > MaxBatchSize || c.PolishingActiveSetSize > c.Circles {
 		return invalid("polishingActiveSetSize", "must be positive, within the limit, and no larger than circles")

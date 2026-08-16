@@ -534,12 +534,171 @@ func TestPolishCircleBatchBakedPrefixMatchesFullVector(t *testing.T) {
 
 // polishParityParams places a large, strong circle first so weak-circle selection
 // leaves a non-empty fixed prefix to bake.
+func TestSelectContiguousWindowCirclesPrefersLatestUnvisitedWindow(t *testing.T) {
+	visits := make(map[int]int)
+	active := selectContiguousWindowCircles(10, 3, visits)
+	if !reflect.DeepEqual(active, []int{7, 8, 9}) {
+		t.Fatalf("first window = %v, want the last three draw slots", active)
+	}
+	// Baking depends on the window being consecutive and starting as late as
+	// possible: a start of 7 leaves seven circles bakeable instead of none.
+	for _, circle := range active {
+		visits[circle]++
+	}
+	if next := selectContiguousWindowCircles(10, 3, visits); !reflect.DeepEqual(next, []int{4, 5, 6}) {
+		t.Fatalf("second window = %v, want the next unvisited run below it", next)
+	}
+}
+
+func TestSelectContiguousWindowCirclesCoversEveryCircle(t *testing.T) {
+	const circleCount, activeSetSize = 10, 3
+	visits := make(map[int]int)
+	seen := make(map[int]bool, circleCount)
+	// ceil(10/3) sweeps is the point at which every draw slot must have been
+	// offered to the optimizer at least once.
+	for sweep := 0; sweep < (circleCount+activeSetSize-1)/activeSetSize; sweep++ {
+		active := selectContiguousWindowCircles(circleCount, activeSetSize, visits)
+		for i, circle := range active {
+			if i > 0 && circle != active[i-1]+1 {
+				t.Fatalf("sweep %d selected non-contiguous window %v", sweep, active)
+			}
+			seen[circle] = true
+			visits[circle]++
+		}
+	}
+	for circle := range circleCount {
+		if !seen[circle] {
+			t.Fatalf("circle %d was never polished, seen = %v", circle, seen)
+		}
+	}
+}
+
+func TestSelectContiguousWindowCirclesClampsOversizedActiveSet(t *testing.T) {
+	active := selectContiguousWindowCircles(3, 5, make(map[int]int))
+	if !reflect.DeepEqual(active, []int{0, 1, 2}) {
+		t.Fatalf("oversized active set = %v, want every circle", active)
+	}
+}
+
+func TestPolishCircleBatchContiguousWindowBakesPrefixAndMatchesFullVector(t *testing.T) {
+	const width, height = 20, 16
+	ref := solidImage(width, height, color.NRGBA{R: 200, G: 40, B: 90, A: 255})
+	params := polishParityParams()
+	circleCount := len(params) / paramsPerCircle
+
+	run := func(bake bool) (*BatchPolishResult, []float64, [][]int) {
+		t.Helper()
+		cpu := NewCPURenderer(ref, circleCount)
+		cpu.SetThreads(1)
+		var base Renderer = cpu
+		if !bake {
+			base = newStagedOnlyRenderer(cpu)
+		}
+		optimizer := &recordingPolishOptimizer{}
+		var activeSets [][]int
+		result, err := PolishCircleBatchContext(context.Background(), base, optimizer, params, BatchPolishOptions{
+			ActiveSetSize: 2,
+			MaxSweeps:     3,
+			Strategy:      BatchPolishContiguousWindow,
+			OnSweep: func(progress BatchPolishProgress) error {
+				activeSets = append(activeSets, progress.ActiveSet)
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatalf("PolishCircleBatchContext(bake %v) error = %v", bake, err)
+		}
+		return result, optimizer.costs, activeSets
+	}
+
+	baked, bakedCosts, bakedSets := run(true)
+	full, fullCosts, fullSets := run(false)
+
+	if !reflect.DeepEqual(bakedSets, fullSets) {
+		t.Fatalf("active sets = %v, want %v", bakedSets, fullSets)
+	}
+	// Active sets are one-based. The first sweep must sit at the end of the draw
+	// order, which is the whole point of the strategy.
+	if !reflect.DeepEqual(bakedSets[0], []int{circleCount - 1, circleCount}) {
+		t.Fatalf("first active set = %v, want the last two draw slots", bakedSets[0])
+	}
+	for _, set := range bakedSets {
+		for i := 1; i < len(set); i++ {
+			if set[i] != set[i-1]+1 {
+				t.Fatalf("active set %v is not contiguous", set)
+			}
+		}
+	}
+	// Sliding the window eventually reaches circle one, which has no bakeable
+	// prefix, so both the baked and the fallback path are exercised here.
+	if !slices.ContainsFunc(bakedSets, func(set []int) bool { return slices.Min(set) > 1 }) {
+		t.Fatalf("active sets %v never left a bakeable prefix", bakedSets)
+	}
+	if !slices.ContainsFunc(bakedSets, func(set []int) bool { return slices.Min(set) == 1 }) {
+		t.Fatalf("active sets %v never exercised the unbaked path", bakedSets)
+	}
+	// Baking must be a pure speed optimization: every evaluated cost, the final
+	// parameters, and the rendered image have to match the unbaked replay.
+	if !reflect.DeepEqual(bakedCosts, fullCosts) {
+		t.Fatalf("evaluated costs = %v, want %v", bakedCosts, fullCosts)
+	}
+	if baked.BestCost != full.BestCost || !reflect.DeepEqual(baked.BestParams, full.BestParams) {
+		t.Fatalf("baked result = cost %v params %v, want cost %v params %v",
+			baked.BestCost, baked.BestParams, full.BestCost, full.BestParams)
+	}
+	if !bytes.Equal(baked.BestImage.Pix, full.BestImage.Pix) {
+		t.Fatal("baked and unbaked polishing produced different images")
+	}
+}
+
 func polishParityParams() []float64 {
 	params := circleParams(10, 8, 9, color.NRGBA{R: 190, G: 45, B: 85, A: 255}, 1)
 	params = append(params, circleParams(4, 4, 4, color.NRGBA{R: 210, G: 60, B: 100, A: 255}, 0.9)...)
 	params = append(params, circleParams(15, 5, 3, color.NRGBA{R: 120, G: 30, B: 60, A: 255}, 0.6)...)
 	params = append(params, circleParams(6, 12, 3, color.NRGBA{R: 80, G: 200, B: 120, A: 255}, 0.4)...)
 	params = append(params, circleParams(16, 12, 2, color.NRGBA{R: 30, G: 90, B: 220, A: 255}, 0.3)...)
+	return params
+}
+
+// BenchmarkPolishCircleBatchStrategy contrasts a scattered active set against a
+// contiguous one on an otherwise identical sweep. Both bake, so the only
+// difference is how many circles the selected active set leaves bakeable.
+func BenchmarkPolishCircleBatchStrategy(b *testing.B) {
+	const width, height = 128, 128
+	for _, circleCount := range []int{64, 256} {
+		ref := solidImage(width, height, color.NRGBA{R: 60, G: 120, B: 180, A: 255})
+		params := benchmarkPolishParams(circleCount, width, height)
+		for _, strategy := range []BatchPolishStrategy{BatchPolishHybridOverlap, BatchPolishContiguousWindow} {
+			b.Run(string(strategy)+"-"+strconv.Itoa(circleCount), func(b *testing.B) {
+				cpu := NewCPURenderer(ref, circleCount)
+				cpu.SetThreads(1)
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					_, err := PolishCircleBatchContext(context.Background(), cpu, &recordingPolishOptimizer{steps: 200}, params, BatchPolishOptions{
+						ActiveSetSize: 3,
+						MaxSweeps:     1,
+						Strategy:      strategy,
+					})
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		}
+	}
+}
+
+func benchmarkPolishParams(circleCount, width, height int) []float64 {
+	params := make([]float64, 0, circleCount*paramsPerCircle)
+	for i := 0; i < circleCount; i++ {
+		params = append(params, circleParams(
+			float64((i*37)%width)+0.5,
+			float64((i*53)%height)+0.5,
+			4+float64(i%7),
+			color.NRGBA{R: uint8(i * 3), G: uint8(i * 5), B: uint8(i * 7), A: 255},
+			0.4+float64(i%4)/10,
+		)...)
+	}
 	return params
 }
 

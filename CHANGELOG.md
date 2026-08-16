@@ -8,6 +8,18 @@ release is declared by this file.
 
 ### Added
 
+- A `contiguous-window` polishing strategy. It selects a consecutive run of draw
+  slots instead of scattering the active set by image-space merit, so the
+  circles ahead of the window can be baked into a reusable canvas. Only the
+  circles before the first active slot are bakeable, and the existing strategies
+  routinely select circle one, which bakes nothing and rasterizes the whole
+  image for every candidate. Visit counts slide the window toward the front on
+  later sweeps, covering every circle in `ceil(circles/activeSetSize)` sweeps.
+  Measured on a Ryzen 5 4600H with `activeSetSize` 3 over one sweep, medians of
+  five: 36.9 ms to 17.6 ms at 64 circles (2.1x) and 111.7 ms to 21.1 ms at 256
+  circles (5.3x). Per-candidate cost is `circles - windowStart` rather than
+  always `circles`, so unlike the other strategies it stays nearly flat as the
+  image grows.
 - An SSE2 SIMD tier for AMD64. Hand-written Plan 9 kernels for SSD
   (`ssd_sse2_amd64.s`, four NRGBA pixels per batch), dirty-span delta-SSD, and
   the float32 circle-span edge search give AMD64 hosts without AVX2 a real
