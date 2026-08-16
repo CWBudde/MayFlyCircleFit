@@ -70,6 +70,26 @@ Related documents:
 - ARM64 includes an exact float64, eight-pixel NEON span kernel. Runtime ASIMD
   detection and a measured 256-pixel cutoff guard it; shorter spans and tails
   use scalar, because that is faster on Apple M5.
+- AMD64 includes an exact float64, two-pixel SSE2 span kernel, on by default
+  because it is byte-identical to `compositeOpaqueSpanScalar`. Its cutoff is 24
+  pixels. An AVX2 host still composites scalar: the exact AVX2 kernel is a
+  separate change, and the dispatch switch must not claim a tier it has no
+  assembly for.
+- The SSE2 cutoff is 24 rather than the 8 a masked AVX2 machine suggests,
+  because dispatch reaches SSE2 only when AVX2 is absent, so the machine that
+  actually runs it sets the constant. It is worth about 1.07x there and roughly
+  1.06x end to end on 256x256 and larger canvases - a real but modest win, and
+  the reason it ships is that it is byte-identical and needs no flag. Cutoffs
+  are never shared between kernels; the NEON one has a far larger setup cost.
+- The exact vector kernels depend on the Go backend's multiply-add contraction,
+  in opposite directions. arm64 fuses `fg + bg*blend` into FMADDD and the NEON
+  kernel must fuse to match; amd64 does not fuse and the SSE2 kernel must not.
+  Never introduce an FMA into either without re-establishing byte parity.
+  `TestCompositeSpanExactFusionContract` pins the amd64 half.
+- `compositeSpanExactSSE2` is called directly, never through a function pointer.
+  Routing it indirectly defeats `//go:noescape` and heap-allocates the 160-byte
+  constant block once per span, which costs more than the kernel saves.
+  `TestCompositeOpaqueSpanDoesNotAllocate` pins this.
 - Translucent custom canvases retain the general per-pixel Porter-Duff path.
   Preserve that split, and the byte-exact span tests, when changing renderer
   math.

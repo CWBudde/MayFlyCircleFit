@@ -8,6 +8,15 @@ release is declared by this file.
 
 ### Added
 
+- An exact float64 SSE2 span compositor for AMD64, the baseline-tier counterpart
+  of the existing NEON one. It is byte-identical to the scalar span, so it is on
+  by default with no flag and no reproducibility caveat. Measured on a host that
+  genuinely lacks AVX2 rather than one masked with `GODEBUG=cpu.avx2=off`: about
+  1.07x on the kernel and 1.06x end to end at 256x256 and larger, nothing below
+  its 24-pixel cutoff. The span compositor is the largest symbol in every
+  profile this repository has taken, and AMD64 previously had no vector span
+  compositor at any tier. An AVX2 host still composites scalar. See
+  [docs/task-10.19-sse2-compositor.md](docs/task-10.19-sse2-compositor.md).
 - An SSE2 SIMD tier for AMD64. Hand-written Plan 9 kernels for SSD
   (`ssd_sse2_amd64.s`, four NRGBA pixels per batch) and for the dirty-span
   delta-SSD of the incremental cost path give AMD64 hosts without AVX2 a real

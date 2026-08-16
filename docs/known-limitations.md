@@ -57,9 +57,17 @@ behavior is production-ready.
   `FastSAD` has no non-test callers, and its AVX2 kernel uses `VPMADDUBSW`
   (SSSE3) and `VPMULLD` (SSE4.1), neither of which baseline SSE2 provides.
   Porting it would mean adding SSSE3/SSE4.1 tiers for an unused cost function.
-- The span compositor has no AMD64 vector kernel at any tier. ARM64 has an exact
-  float64 NEON kernel; the AMD64 equivalent has not been written, so the widest
-  AMD64 tier still composites scalar.
+- The span compositor has an exact AMD64 vector kernel only at the SSE2 tier, so
+  an AVX2 host - the common case - still composites scalar. The exact AVX2
+  kernel is a separate change.
+- The SSE2 span compositor returns far less than its share of the profile
+  suggests: about 1.07x, so roughly 1.06x end to end on the larger canvases and
+  nothing below its 24-pixel cutoff. Half its instructions are format
+  conversion, and SSE2 has neither `PMOVZXBD` nor `PSHUFB` to shorten that.
+- The per-span constant block is rebuilt for every span of every row, though the
+  colour is constant for a whole circle. That setup is the entire difference
+  between the SSE2 kernel's 8-pixel crossover measured directly and the 24-pixel
+  cutoff the dispatcher has to use.
 - The SSE2 SSD kernel accumulates a row in int32 lanes, so it accepts rows up to
   11000 pixels wide and hands wider rows to the scalar kernel. That bound is far
   above any canvas size this program produces, but it is a real limit. The SSE2
