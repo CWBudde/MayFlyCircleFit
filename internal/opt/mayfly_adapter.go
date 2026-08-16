@@ -38,6 +38,10 @@ type MayflyAdapter struct {
 	variant  string // "standard", "desma", "olce", "eobbma", "gsasma", "mpma", "aoblmoa"
 	logger   *slog.Logger
 	stop     Stop
+	// parallelWorkers enables Mayfly's concurrent population evaluation and
+	// bounds its worker pool. Values below two keep evaluation serial, which is
+	// the default.
+	parallelWorkers int
 }
 
 // Stop configures optimizer-level early stopping, evaluated per iteration
@@ -80,6 +84,21 @@ func WithLogger(logger *slog.Logger) MayflyOption {
 // leaves the optimizer configured exactly as it is without this option.
 func WithEarlyStop(stop Stop) MayflyOption {
 	return func(m *MayflyAdapter) { m.stop = stop }
+}
+
+// WithParallelEvaluation makes Mayfly evaluate population members concurrently
+// with at most workers goroutines. The caller must guarantee that the objective
+// function is safe to call from several goroutines at once; the renderer
+// pipeline does that by leasing an independent session per evaluation.
+//
+// Parallel evaluation is reproducible for a fixed seed but is not bit-identical
+// to a serial run of the same seed. Mayfly's serial male loop lets a member
+// that improves the global best steer the very next member of the same
+// generation, while the parallel loop holds the global best fixed for the whole
+// generation and merges afterwards. Both orders are deterministic; they are
+// different search trajectories.
+func WithParallelEvaluation(workers int) MayflyOption {
+	return func(m *MayflyAdapter) { m.parallelWorkers = workers }
 }
 
 func newAdapter(variant string, maxIters, popSize int, seed int64, options ...MayflyOption) *MayflyAdapter {
@@ -225,6 +244,10 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 	config.NPopF = m.popSize
 	config.LowerBound = 0.0
 	config.UpperBound = 1.0
+	if m.parallelWorkers > 1 {
+		config.EnableParallel = true
+		config.MaxWorkers = m.parallelWorkers
+	}
 	if options.Continuation != nil && options.Continuation.MaxVelocity > 0 {
 		config.VelMax = options.Continuation.MaxVelocity
 		config.VelMin = -options.Continuation.MaxVelocity

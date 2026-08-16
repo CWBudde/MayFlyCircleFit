@@ -40,6 +40,7 @@ var (
 	polishingStagnationIters int
 	polishingMinImprovement  float64
 	threads                  int
+	parallelEvaluation       bool
 	seed                     int64
 	convergenceEnable        bool
 	patience                 int
@@ -82,6 +83,7 @@ func init() {
 	runCmd.Flags().IntVar(&polishingStagnationIters, "polishing-stagnation-iters", 500, "Stop a polishing epoch after this many iterations without sufficient progress")
 	runCmd.Flags().Float64Var(&polishingMinImprovement, "polishing-min-improvement", 0.001, "Absolute optimizer cost reduction counted as progress during polishing")
 	runCmd.Flags().IntVar(&threads, "threads", runtime.GOMAXPROCS(0), "CPU rendering threads (capped at GOMAXPROCS)")
+	runCmd.Flags().BoolVar(&parallelEvaluation, "parallel-evaluation", false, "Evaluate optimizer population members concurrently over --threads independent renderer sessions (reproducible per seed, but not identical to a serial run of the same seed)")
 	runCmd.Flags().Int64Var(&seed, "seed", 0, "Random seed (0 chooses and reports a random seed)")
 	runCmd.Flags().BoolVar(&enableSSIM, "enable-ssim", false, "Calculate the optional final structural similarity metric")
 
@@ -103,6 +105,28 @@ func init() {
 
 	runCmd.MarkFlagRequired("ref")
 	rootCmd.AddCommand(runCmd)
+}
+
+// parallelEvaluationOption maps the opt-in configuration field onto the
+// optimizer option. A configuration that leaves it false yields a no-op option,
+// so the optimizer stays configured exactly as it was before the field existed.
+//
+// The worker count comes from the renderer rather than from config.Threads,
+// because the renderer clamps the request to GOMAXPROCS. Handing MayFly the
+// raw value would start more evaluation goroutines than the renderer has
+// sessions for, so every surplus goroutine would only queue on the pool.
+func parallelEvaluationOption(config app.JobConfig, rend renderer.Renderer) opt.MayflyOption {
+	if !config.ParallelEvaluation {
+		return func(*opt.MayflyAdapter) {}
+	}
+	workers := config.Threads
+	if configured, ok := rend.(interface{ ParallelEvaluationWorkers() int }); ok {
+		workers = configured.ParallelEvaluationWorkers()
+	}
+	if workers < 2 {
+		return func(*opt.MayflyAdapter) {}
+	}
+	return opt.WithParallelEvaluation(workers)
 }
 
 // earlyStopFromConfig maps the optimizer-level stopping fields onto the adapter
@@ -138,6 +162,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		PolishingStagnationIters: polishingStagnationIters,
 		PolishingMinImprovement:  polishingMinImprovement,
 		Threads:                  threads,
+		ParallelEvaluation:       parallelEvaluation,
 		Seed:                     seed,
 		EnableSSIM:               enableSSIM,
 		ConvergenceEnabled:       convergenceEnable,
@@ -238,7 +263,11 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		}
 		cpuRenderer := rend.(*renderer.CPURenderer)
 		cpuRenderer.SetThreads(config.Threads)
-		slog.Info("Configured CPU renderer", "threads", cpuRenderer.Threads())
+		if config.ParallelEvaluation {
+			cpuRenderer.SetParallelEvaluationWorkers(config.Threads)
+		}
+		slog.Info("Configured CPU renderer", "threads", cpuRenderer.Threads(),
+			"parallelEvaluationWorkers", cpuRenderer.ParallelEvaluationWorkers())
 		cleanup = func() {} // No cleanup needed for CPU renderer
 	} else {
 		// Other backends don't support canvas yet
@@ -255,7 +284,8 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 
 	// Create optimizer
 	optimizer, err := opt.NewMayflyVariant(string(config.Variant), config.Iters, config.PopSize, config.EffectiveSeed,
-		opt.WithLogger(slog.Default()), opt.WithEarlyStop(earlyStopFromConfig(config)))
+		opt.WithLogger(slog.Default()), opt.WithEarlyStop(earlyStopFromConfig(config)),
+		parallelEvaluationOption(config, rend))
 	if err != nil {
 		return fmt.Errorf("create optimizer: %w", err)
 	}

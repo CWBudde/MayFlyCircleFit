@@ -32,6 +32,12 @@ type CPURenderer struct {
 	// centers. The measured prototype remains opt-in because ordinary optimizer
 	// centers are almost never eligible and row sharding removes the gain.
 	enableRowSymmetry bool
+	// parallelEvaluationWorkers is the number of concurrent cost evaluations
+	// the optimization pipeline may run against independent sessions of this
+	// renderer. Values below two keep the historical single-session behavior.
+	// It never affects this renderer's own rendering, only how many sessions
+	// the pipeline creates.
+	parallelEvaluationWorkers int
 	// initialSSD is the exact, unnormalized RGB SSD between initialBg and the
 	// reference. It is prepared once for future incremental-cost evaluation.
 	initialSSD      uint64
@@ -355,6 +361,50 @@ func (r *CPURenderer) SetThreads(threads int) {
 // Threads returns the effective number of rendering workers.
 func (r *CPURenderer) Threads() int {
 	return r.threads
+}
+
+// SetParallelEvaluationWorkers configures how many concurrent cost evaluations
+// the optimization pipeline may run. The pipeline then creates that many
+// independent sessions, each with its own canvas, and gives every session a
+// single rendering thread: with many evaluations in flight the row-band
+// fan-out inside one render is pure overhead. Values below two keep the
+// historical single-session behavior. Call it before starting an optimization.
+//
+// The value is capped at GOMAXPROCS, which is the documented contract of the
+// --threads flag. The cap is not merely advisory: every worker above one costs
+// a full extra session with its own canvas and background copy (about
+// 2*W*H*4 bytes), so an unclamped --threads 10000 would try to allocate
+// hundreds of gigabytes at HD resolution. The cap deliberately does not reuse
+// effectiveThreadCount, which additionally clamps to the image height: that is
+// right for row sharding but wrong here, because evaluation concurrency is
+// unrelated to how many rows a single render can split into.
+func (r *CPURenderer) SetParallelEvaluationWorkers(workers int) {
+	r.parallelEvaluationWorkers = effectiveEvaluationWorkers(workers)
+}
+
+// ParallelEvaluationWorkers reports the configured concurrent evaluation width.
+func (r *CPURenderer) ParallelEvaluationWorkers() int {
+	if r.parallelEvaluationWorkers < 1 {
+		return 1
+	}
+	return r.parallelEvaluationWorkers
+}
+
+// effectiveEvaluationWorkers clamps a requested evaluation width into
+// [1, GOMAXPROCS]. Unlike effectiveThreadCount it ignores the image height,
+// because concurrent evaluations are whole independent renders rather than row
+// shards of one render.
+func effectiveEvaluationWorkers(workers int) int {
+	if workers < 1 {
+		return 1
+	}
+	if maxWorkers := runtime.GOMAXPROCS(0); workers > maxWorkers {
+		workers = maxWorkers
+	}
+	if workers < 1 {
+		return 1
+	}
+	return workers
 }
 
 func effectiveThreadCount(threads, height int) int {

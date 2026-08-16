@@ -160,19 +160,27 @@ type JobConfig struct {
 	PolishingStagnationIters int               `json:"polishingStagnationIters,omitempty"`
 	PolishingMinImprovement  float64           `json:"polishingMinImprovement,omitempty"`
 	Threads                  int               `json:"threads,omitempty"`
-	Seed                     int64             `json:"seed"`
-	EffectiveSeed            int64             `json:"effectiveSeed,omitempty"`
-	ResumeCount              int               `json:"resumeCount,omitempty"`
-	CheckpointInterval       int               `json:"checkpointInterval,omitempty"`
-	TraceInterval            int               `json:"traceInterval,omitempty"`
-	EnableTrace              bool              `json:"enableTrace,omitempty"`
-	DisableTrace             bool              `json:"disableTrace,omitempty"`
-	EnableSSIM               bool              `json:"enableSSIM,omitempty"`
-	SaveSnapshots            bool              `json:"saveSnapshots,omitempty"`
-	ConvergenceEnabled       bool              `json:"convergenceEnabled,omitempty"`
-	DisableConvergence       bool              `json:"disableConvergence,omitempty"`
-	ConvergencePatience      int               `json:"convergencePatience,omitempty"`
-	ConvergenceThreshold     float64           `json:"convergenceThreshold,omitempty"`
+	// ParallelEvaluation lets the optimizer evaluate population members
+	// concurrently over a pool of independent renderer sessions sized by
+	// Threads. It is additive and optional: checkpoints written before it
+	// existed decode as false, which is also the default. It is opt-in because
+	// the parallel optimizer path applies one global best per generation
+	// instead of updating it mid-population, so a seed reproduces exactly with
+	// the flag held fixed but not across the two settings.
+	ParallelEvaluation   bool    `json:"parallelEvaluation,omitempty"`
+	Seed                 int64   `json:"seed"`
+	EffectiveSeed        int64   `json:"effectiveSeed,omitempty"`
+	ResumeCount          int     `json:"resumeCount,omitempty"`
+	CheckpointInterval   int     `json:"checkpointInterval,omitempty"`
+	TraceInterval        int     `json:"traceInterval,omitempty"`
+	EnableTrace          bool    `json:"enableTrace,omitempty"`
+	DisableTrace         bool    `json:"disableTrace,omitempty"`
+	EnableSSIM           bool    `json:"enableSSIM,omitempty"`
+	SaveSnapshots        bool    `json:"saveSnapshots,omitempty"`
+	ConvergenceEnabled   bool    `json:"convergenceEnabled,omitempty"`
+	DisableConvergence   bool    `json:"disableConvergence,omitempty"`
+	ConvergencePatience  int     `json:"convergencePatience,omitempty"`
+	ConvergenceThreshold float64 `json:"convergenceThreshold,omitempty"`
 
 	// Optimizer-level early stopping. These are per-iteration criteria applied
 	// inside a single optimizer run, and are unrelated to the Convergence*

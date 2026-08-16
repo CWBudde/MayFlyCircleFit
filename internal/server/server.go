@@ -335,6 +335,9 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 			}
 
 			// Create renderer
+			// This renderer only supplies the reference image and renders the
+			// shutdown artifacts; it never runs an optimizer, so evaluation
+			// width is irrelevant here.
 			renderer := renderer.NewCPURenderer(ref, j.Config.Circles)
 			renderer.SetThreads(j.Config.Threads)
 

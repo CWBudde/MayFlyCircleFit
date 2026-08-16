@@ -86,6 +86,12 @@ application configuration into the store package.
 - CPU renderers use `FastMSECost` after parity coverage against `MSECost`.
   Independent image origins and strides, empty images, and dimension mismatch
   behavior have dedicated correctness handling/tests.
+- `--parallel-evaluation` is opt-in and defaults off, because it changes the
+  result of a fixed seed. It leases one independent renderer session per
+  concurrent evaluation and reproduces bit-identically for a fixed seed and any
+  worker count, but its trajectory differs from a serial run of that seed
+  because MayFly holds the global best fixed for a whole parallel generation.
+  Compare runs only against runs with the same settings.
 - Resume is restart-from-best: the MayFly v0.4.0 population is seeded with the
   saved best and deterministic nearby variations. It is not an exact restoration
   of optimizer internals. Server restart-from-best for sequential and batch jobs
