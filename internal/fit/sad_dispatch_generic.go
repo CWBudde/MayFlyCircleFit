@@ -5,9 +5,14 @@ package fit
 import "log/slog"
 
 func init() {
-	ActiveSADBackend = SADBackendScalar
+	RegisterTierConsumer(installSADKernel)
+}
+
+// installSADKernel has only the scalar kernel outside amd64.
+func installSADKernel(tier SIMDTier) {
+	activeSADKernel = TierScalar
 	fastSAD = fastSAD_Scalar
-	slog.Debug("SAD kernel initialized", "backend", "scalar", "reason", "no native SIMD kernel for architecture")
+	slog.Debug("SAD kernel installed", "tier", tier, "kernel", activeSADKernel)
 }
 
 // fastSAD_AVX2 remains available to architecture-neutral tests, but never

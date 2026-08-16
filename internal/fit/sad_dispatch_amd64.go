@@ -2,23 +2,24 @@
 
 package fit
 
-import (
-	"log/slog"
-
-	"golang.org/x/sys/cpu"
-)
+import "log/slog"
 
 func init() {
-	if cpu.X86.HasAVX2 {
-		ActiveSADBackend = SADBackendAVX2
-		fastSAD = fastSAD_AVX2
-		slog.Debug("SAD kernel initialized", "backend", "AVX2", "instruction", "VPSADBW")
-		return
-	}
+	RegisterTierConsumer(installSADKernel)
+}
 
-	ActiveSADBackend = SADBackendScalar
-	fastSAD = fastSAD_Scalar
-	slog.Debug("SAD kernel initialized", "backend", "scalar", "reason", "AVX2 unavailable")
+// installSADKernel selects the SAD kernel for a tier. Every tier below AVX2
+// lands on scalar; see the comment in sad.go for why there is no SSE2 kernel.
+func installSADKernel(tier SIMDTier) {
+	switch tier {
+	case TierAVX2:
+		activeSADKernel = TierAVX2
+		fastSAD = fastSAD_AVX2
+	case TierScalar, TierSSE2, TierNEON:
+		activeSADKernel = TierScalar
+		fastSAD = fastSAD_Scalar
+	}
+	slog.Debug("SAD kernel installed", "tier", tier, "kernel", activeSADKernel)
 }
 
 // fastSAD_AVX2 calls the amd64 assembly kernel. Dispatch must verify AVX2

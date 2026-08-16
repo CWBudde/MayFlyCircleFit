@@ -5,16 +5,32 @@ package renderer
 import (
 	"unsafe"
 
-	"golang.org/x/sys/cpu"
+	"github.com/cwbudde/mayflycirclefit/internal/fit"
 )
 
-var compositeSpanBackend = "scalar"
+// compositeSpanKernel is the tier whose span compositor is installed.
+var compositeSpanKernel = fit.TierScalar
 
 func init() {
-	if cpu.ARM64.HasASIMD {
-		compositeSpanBackend = "neon"
-	}
+	fit.RegisterTierConsumer(func(tier fit.SIMDTier) {
+		if tier == fit.TierNEON {
+			compositeSpanKernel = fit.TierNEON
+			return
+		}
+		compositeSpanKernel = fit.TierScalar
+	})
 }
+
+// compositeSpanNEONMinPixels is the span length at which the exact float64 NEON
+// kernel starts to beat the scalar span.
+//
+// The kernel pays for VLD4 byte deinterleaving and three stages of
+// widening/narrowing before it composites anything, so short spans lose. 256 is
+// the crossover measured on an Apple M5 and is the only measurement behind it:
+// it is a single machine's number applied to every ARM64 CPU, which is wrong in
+// principle and has not yet been shown to be wrong in practice. Re-measure
+// before assuming it transfers to a different ARM implementation.
+const compositeSpanNEONMinPixels = 256
 
 func compositeOpaqueSpan(pix []byte, offset, pixels int, r, g, b, alpha float64) {
 	if pixels <= 0 {
@@ -22,10 +38,7 @@ func compositeOpaqueSpan(pix []byte, offset, pixels int, r, g, b, alpha float64)
 	}
 
 	vectorPixels := 0
-	// The exact float64 kernel pays for byte deinterleaving and three stages
-	// of widening/narrowing. M5 measurements show that scalar wins on short
-	// spans; dispatch NEON only once that setup cost is amortized.
-	if cpu.ARM64.HasASIMD && pixels >= 256 {
+	if compositeSpanKernel == fit.TierNEON && pixels >= compositeSpanNEONMinPixels {
 		vectorPixels = pixels &^ 7
 	}
 	if vectorPixels != 0 {

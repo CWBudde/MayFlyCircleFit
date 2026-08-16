@@ -2,23 +2,23 @@
 
 package fit
 
-import (
-	"log/slog"
-
-	"golang.org/x/sys/cpu"
-)
+import "log/slog"
 
 func init() {
-	if cpu.ARM64.HasASIMD {
-		ActiveSSDBackend = SSDBackendNEON
-		fastSSD = fastSSD_NEON
-		slog.Debug("SSD kernel initialized", "backend", "NEON", "width", "128-bit")
-		return
-	}
+	RegisterTierConsumer(installSSDKernel)
+}
 
-	ActiveSSDBackend = SSDBackendScalar
-	fastSSD = fastSSD_Scalar
-	slog.Debug("SSD kernel initialized", "backend", "scalar", "reason", "NEON unavailable")
+// installSSDKernel selects the SSD kernel for a tier. See the amd64 twin.
+func installSSDKernel(tier SIMDTier) {
+	switch tier {
+	case TierNEON:
+		activeSSDKernel = TierNEON
+		fastSSD = fastSSD_NEON
+	case TierScalar, TierSSE2, TierAVX2:
+		activeSSDKernel = TierScalar
+		fastSSD = fastSSD_Scalar
+	}
+	slog.Debug("SSD kernel installed", "tier", tier, "kernel", activeSSDKernel)
 }
 
 // fastSSD_NEON calls the ARM64 assembly kernel. Dispatch must verify ASIMD
@@ -33,5 +33,11 @@ func fastSSD_NEON(a, b []uint8, stride, width, height int) float64 {
 // fastSSD_AVX2 remains available to architecture-neutral tests, but never
 // attempts to execute amd64 assembly on ARM64.
 func fastSSD_AVX2(a, b []uint8, stride, width, height int) float64 {
+	return fastSSD_Scalar(a, b, stride, width, height)
+}
+
+// fastSSD_SSE2 remains available to architecture-neutral tests and benchmarks,
+// but never attempts to execute amd64 assembly on ARM64.
+func fastSSD_SSE2(a, b []uint8, stride, width, height int) float64 {
 	return fastSSD_Scalar(a, b, stride, width, height)
 }

@@ -86,7 +86,7 @@ func NewCPURenderer(reference *image.NRGBA, k int) *CPURenderer {
 		initialSSD:        initialSSD,
 		initialSSDValid:   initialSSDValid,
 		fastCostSelected:  true,
-		stagedIncremental: deltaSSDBackend == "avx2",
+		stagedIncremental: deltaSSDVectorized(),
 		canvas:            canvas,
 		initialBg:         whiteBg,
 	}
@@ -131,7 +131,7 @@ func NewCPURendererWithCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int
 		initialSSD:        initialSSD,
 		initialSSDValid:   initialSSDValid,
 		fastCostSelected:  true,
-		stagedIncremental: deltaSSDBackend == "avx2",
+		stagedIncremental: deltaSSDVectorized(),
 		canvas:            canvasCopy,
 		initialBg:         initialBg,
 	}

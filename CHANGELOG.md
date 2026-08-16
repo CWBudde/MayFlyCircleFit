@@ -8,6 +8,35 @@ release is declared by this file.
 
 ### Added
 
+- An SSE2 SIMD tier for AMD64. Hand-written Plan 9 kernels for SSD
+  (`ssd_sse2_amd64.s`, four NRGBA pixels per batch) and for the dirty-span
+  delta-SSD of the incremental cost path give AMD64 hosts without AVX2 a real
+  vector path instead of scalar execution. Both accumulate in int32 lanes and
+  widen once at the end. Measured on a CPU that genuinely lacks AVX2: SSD is
+  5.3x to 6.2x over scalar, delta-SSD 2.25x to 4.45x, and `BenchmarkFit` cost
+  5.85x to 6.12x with whole pipelines 1.13x to 1.24x. See
+  [docs/task-10.17-sse2-report.md](docs/task-10.17-sse2-report.md).
+- A single resolved SIMD tier. `fit.Tier()` decides once which instruction set
+  the process uses, and every kernel installs from it through
+  `fit.RegisterTierConsumer` instead of reading `x/sys/cpu` itself. This
+  replaces nine independent dispatch initializers that recorded their choice in
+  four different ways and could disagree without anything noticing.
+- `MAYFLY_SIMD_TIER=avx2|sse2|neon|scalar` pins the tier for every kernel on
+  every architecture, and rejects an unreachable value with a panic rather than
+  falling back. `MAYFLY_DISABLE_SIMD=1` is retained as its scalar alias, and is
+  still needed because `golang.org/x/sys/cpu` marks sse2 as required on AMD64,
+  so `GODEBUG=cpu.all=off` cannot reach the scalar path there.
+- `MAYFLY_REQUIRE_SIMD_TIER` asserts the detected tier without setting one, in
+  both `internal/fit` and `internal/fit/renderer`. It replaces
+  `MAYFLY_REQUIRE_SSD_BACKEND`, which described a single kernel in a single
+  package: a CI step could set it, run the renderer package, and assert nothing
+  about the renderer.
+- A cross-backend differential test. Every SSD kernel the host can execute is
+  called directly and compared for exact equality, over batch boundaries,
+  padded strides, non-zero start offsets, scrambled alpha, and a seeded random
+  sweep. The per-backend tests it replaces each skipped unless the host had
+  already selected that backend, so on an AVX2 development machine the SSE2 and
+  NEON kernels had no correctness coverage at all.
 - `run --parallel-evaluation` evaluates optimizer population members
   concurrently over independent renderer sessions, each with its own canvas.
   `--evaluation-workers` (job field `evaluationWorkers`) sets how many, clamped
@@ -87,6 +116,26 @@ release is declared by this file.
   points.
 - Sequential and batch CPU stages evaluate only newly added circles over the
   retained canvas, reducing replay work and per-evaluation allocations.
+- The SSE2 delta-SSD kernel now accumulates in int32 and widens once, matching
+  the SSD kernel instead of the AVX2 delta kernel it was transliterated from.
+  Worth 1.11x to 1.45x over spans of eight pixels and up, A/B in one binary on a
+  Ryzen 5 4600H. Its Go wrapper splits spans longer than 8192 pixels so the
+  narrower accumulator cannot overflow, which the previous width-capped design
+  would have needed a scalar cliff for.
+- `deltaSSDSpan` dispatches down the tier ladder rather than to a single width,
+  so an AVX2 host now uses the SSE2 kernel for four-to-seven-pixel spans instead
+  of dropping to scalar.
+- The staged incremental cost path is enabled at the SSE2 tier. Its crossover
+  constants model AVX2 measurements, so the extension was measured on a no-AVX2
+  CPU rather than assumed; the curves match in shape and the SSE2 crossover sits
+  slightly later, so the AVX2-tuned constants are conservative there.
+- The AMD64 native SSD CI gate covers five states: native AVX2,
+  `GODEBUG=cpu.all=off` asserting that feature masking demotes to SSE2, the SSE2
+  tier pinned, the scalar tier pinned, and the legacy `MAYFLY_DISABLE_SIMD=1`
+  alias. The AMD64 steps also run `./internal/fit/renderer`, which now honours
+  the same assertion. ARM64 runners gained the pinned-scalar and legacy-alias
+  steps; they still exclude the renderer package for the pre-existing reason in
+  `docs/known-limitations.md`.
 
 ### Fixed
 
@@ -107,11 +156,25 @@ release is declared by this file.
   `run` also gained the `--variant` flag that makes the setting reachable from
   the CLI.
 
+### Removed
+
+- `circle_geometry_sse2_amd64.s`. The float32 circle-span kernel it added was
+  unreachable in production: `circleSpanFloat32Selected` is gated on
+  `CPURenderer.forceFloat32Geometry`, which no configuration path or CLI flag
+  sets. Its test table was kept and retargeted at the AVX2 kernel, which had a
+  weaker one.
+- `CompareSSDImplementations`. It had no callers, compared only the installed
+  kernel, and used a floating-point tolerance for kernels that reduce an integer
+  sum exactly. The differential test replaces it.
+
 ### Known limitations
 
 - OpenCL remains experimental and joint-only.
 - Restart-from-best does not restore the full optimizer state, and server resume
   of sequential/batch jobs is unsupported.
+- SAD and the Q16.16 circle-span kernel have no SSE2 port. Both need
+  instructions above baseline SSE2, and neither carries enough measured cost to
+  justify emulating them.
 - `--parallel-evaluation` reproduces bit-identically for a fixed seed, but takes
   a different search trajectory from a serial run of that seed, so runs are only
   comparable to runs with the same setting. It is opt-in and off by default for

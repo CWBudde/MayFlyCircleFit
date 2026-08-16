@@ -2,7 +2,9 @@
 
 package renderer
 
-const circleSpanFloat32Backend = "scalar"
+import "github.com/cwbudde/mayflycirclefit/internal/fit"
+
+const circleSpanFloat32Kernel = fit.TierScalar
 
 var circleSpanFloat32Selected = circleSpanFloat32
 

@@ -40,9 +40,12 @@ CI has native jobs for the four hardware/OS combinations required by the task:
 | Windows AMD64 | AVX2 | Complete `internal/fit` tests + SSD comparison benchmark |
 | Linux ARM64 | NEON | Complete `internal/fit` tests + SSD comparison benchmark |
 
-`MAYFLY_REQUIRE_SSD_BACKEND` turns backend selection into a hard assertion for
-these jobs. A runner that silently selects scalar therefore fails rather than
-skipping the architecture-specific correctness cases. The ARM64 dispatch test
+`MAYFLY_REQUIRE_SIMD_TIER` turns tier detection into a hard assertion for these
+jobs. A runner that silently selects scalar therefore fails rather than skipping
+the architecture-specific correctness cases. Unlike the
+`MAYFLY_REQUIRE_SSD_BACKEND` variable it replaces, it is honored by both
+`internal/fit` and `internal/fit/renderer`, so a step that runs the renderer
+package asserts the renderer's own dispatch too. The ARM64 dispatch test
 also accounts for ASIMD feature detection explicitly and confirms that SAD,
 which has no ARM64 assembly kernel, remains on its scalar path.
 
@@ -84,8 +87,8 @@ a stable, comprehensive cross-machine performance comparison.
 ```sh
 just cross-build
 
-MAYFLY_REQUIRE_SSD_BACKEND=AVX2 \
-  go test -count=1 ./internal/fit
+MAYFLY_REQUIRE_SIMD_TIER=avx2 \
+  go test -count=1 ./internal/fit ./internal/fit/renderer
 
 go test -run '^$' -bench '^BenchmarkFastSSD_Comparison$' \
   -benchmem -benchtime=300ms -count=5 ./internal/fit

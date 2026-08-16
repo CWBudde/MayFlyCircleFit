@@ -132,7 +132,7 @@ func TestFastSSD_AlphaIgnored(t *testing.T) {
 
 // TestFastSSD_ScalarEquivalence tests that active backend matches scalar reference
 func TestFastSSD_ScalarEquivalence(t *testing.T) {
-	if ActiveSSDBackend == SSDBackendScalar {
+	if ActiveSSDKernel() == TierScalar {
 		t.Skip("Skipping equivalence test: active backend is scalar")
 	}
 
@@ -161,7 +161,7 @@ func TestFastSSD_ScalarEquivalence(t *testing.T) {
 			if simdResult != scalarResult {
 				t.Errorf("SIMD result differs from scalar: SIMD=%f, scalar=%f",
 					simdResult, scalarResult)
-				t.Logf("Active backend: %s", ActiveSSDBackend)
+				t.Logf("Active backend: %s", ActiveSSDKernel())
 			}
 		})
 	}
@@ -169,7 +169,7 @@ func TestFastSSD_ScalarEquivalence(t *testing.T) {
 
 // TestFastSSD_CompareImplementations uses the built-in comparison utility
 func TestFastSSD_CompareImplementations(t *testing.T) {
-	if ActiveSSDBackend == SSDBackendScalar {
+	if ActiveSSDKernel() == TierScalar {
 		t.Skip("Skipping comparison test: active backend is scalar")
 	}
 
@@ -191,12 +191,15 @@ func TestFastSSD_CompareImplementations(t *testing.T) {
 			img1 := randomNRGBA(tc.width, tc.height, tc.seed1)
 			img2 := randomNRGBA(tc.width, tc.height, tc.seed2)
 
-			// Use built-in comparison utility (allows floating-point tolerance)
-			tolerance := 1e-9
-			if !CompareSSDImplementations(img1, img2, tolerance) {
-				t.Errorf("Implementation comparison failed for %s (%dx%d)",
-					tc.name, tc.width, tc.height)
-				t.Logf("Active backend: %s", ActiveSSDBackend)
+			// Every kernel this host can run, compared exactly. The former
+			// helper compared only the installed kernel, and did so within a
+			// tolerance; see the note in ssd.go.
+			want := fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, tc.width, tc.height)
+			for _, kernel := range hostSSDKernels() {
+				if got := kernel.fn(img1.Pix, img2.Pix, img1.Stride, tc.width, tc.height); got != want {
+					t.Errorf("%s (%dx%d): %s = %.0f, scalar = %.0f",
+						tc.name, tc.width, tc.height, kernel.tier, got, want)
+				}
 			}
 		})
 	}
@@ -263,105 +266,12 @@ func TestFastSSD_DimensionMismatch(t *testing.T) {
 
 // ---------------------- SIMD-Specific Tests ----------------------
 
-// TestFastSSD_AVX2_BatchBoundaries tests AVX2 batch processing with various widths
-// AVX2 processes 8 pixels per batch, so we test exact multiples and remainders
-func TestFastSSD_AVX2_BatchBoundaries(t *testing.T) {
-	if ActiveSSDBackend != SSDBackendAVX2 {
-		t.Skipf("Skipping AVX2 batch boundary test: active backend is %s, not AVX2", ActiveSSDBackend)
-	}
-
-	// Test widths that are multiples of 8 (exact batches) and non-multiples (with remainders)
-	widths := []int{7, 8, 9, 15, 16, 17, 23, 24, 25, 31, 32, 33, 63, 64, 65}
-	height := 10
-
-	for _, width := range widths {
-		t.Run(fmt.Sprintf("width_%d", width), func(t *testing.T) {
-			img1 := randomNRGBA(width, height, 100)
-			img2 := randomNRGBA(width, height, 200)
-
-			// Compute with AVX2 backend
-			avx2Result := fastSSD(img1.Pix, img2.Pix, img1.Stride, width, height)
-
-			// Compute with scalar reference
-			scalarResult := fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, width, height)
-
-			if avx2Result != scalarResult {
-				t.Errorf("AVX2 batch boundary error: width=%d, avx2=%f, scalar=%f",
-					width, avx2Result, scalarResult)
-			}
-		})
-	}
-}
-
-// TestFastSSD_AVX2ExactLargeSum guards against overflowing 32-bit SIMD lanes.
-func TestFastSSD_AVX2ExactLargeSum(t *testing.T) {
-	if ActiveSSDBackend != SSDBackendAVX2 {
-		t.Skipf("Skipping AVX2 accumulator test: active backend is %s, not AVX2", ActiveSSDBackend)
-	}
-
-	const width, height = 512, 512
-	black := solidColorNRGBA(width, height, color.NRGBA{A: 0})
-	white := solidColorNRGBA(width, height, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
-
-	got := fastSSD(black.Pix, white.Pix, black.Stride, width, height)
-	want := float64(width) * float64(height) * 3 * 255 * 255
-	if got != want {
-		t.Fatalf("AVX2 large SSD = %.0f, want %.0f", got, want)
-	}
-	if scalar := fastSSD_Scalar(black.Pix, white.Pix, black.Stride, width, height); got != scalar {
-		t.Fatalf("AVX2 large SSD = %.0f, scalar = %.0f", got, scalar)
-	}
-}
-
-// TestFastSSD_NEON_BatchBoundaries tests NEON batch processing with various widths
-// NEON processes 4 pixels per batch (128-bit registers), so we test multiples of 4
-func TestFastSSD_NEON_BatchBoundaries(t *testing.T) {
-	if ActiveSSDBackend != SSDBackendNEON {
-		t.Skipf("Skipping NEON batch boundary test: active backend is %s, not NEON", ActiveSSDBackend)
-	}
-
-	// Test widths that are multiples of 4 (exact batches) and non-multiples (with remainders)
-	widths := []int{3, 4, 5, 7, 8, 9, 11, 12, 13, 15, 16, 17}
-	height := 10
-
-	for _, width := range widths {
-		t.Run(fmt.Sprintf("width_%d", width), func(t *testing.T) {
-			img1 := randomNRGBA(width, height, 100)
-			img2 := randomNRGBA(width, height, 200)
-
-			// Compute with NEON backend
-			neonResult := fastSSD(img1.Pix, img2.Pix, img1.Stride, width, height)
-
-			// Compute with scalar reference
-			scalarResult := fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, width, height)
-
-			if neonResult != scalarResult {
-				t.Errorf("NEON batch boundary error: width=%d, neon=%f, scalar=%f",
-					width, neonResult, scalarResult)
-			}
-		})
-	}
-}
-
-// TestFastSSD_NEONExactLargeSum guards against overflowing SIMD accumulator lanes.
-func TestFastSSD_NEONExactLargeSum(t *testing.T) {
-	if ActiveSSDBackend != SSDBackendNEON {
-		t.Skipf("Skipping NEON accumulator test: active backend is %s, not NEON", ActiveSSDBackend)
-	}
-
-	const width, height = 512, 512
-	black := solidColorNRGBA(width, height, color.NRGBA{A: 0})
-	white := solidColorNRGBA(width, height, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
-
-	got := fastSSD(black.Pix, white.Pix, black.Stride, width, height)
-	want := float64(width) * float64(height) * 3 * 255 * 255
-	if got != want {
-		t.Fatalf("NEON large SSD = %.0f, want %.0f", got, want)
-	}
-	if scalar := fastSSD_Scalar(black.Pix, white.Pix, black.Stride, width, height); got != scalar {
-		t.Fatalf("NEON large SSD = %.0f, scalar = %.0f", got, scalar)
-	}
-}
+// The former per-backend batch-boundary and accumulator tests lived here. They
+// were replaced by ssd_differential_test.go, which calls every executable
+// kernel directly instead of gating on the one dispatch installed: each of the
+// six skipped itself on any host whose active backend was not its own, so on an
+// AVX2 development machine the SSE2 and NEON kernels had no correctness
+// coverage at all.
 
 // ---------------------- Concurrency Tests ----------------------
 
@@ -495,64 +405,106 @@ func TestFastSSD_PaddedStride(t *testing.T) {
 	t.Logf("Padded stride test passed: width=%d, stride=%d, result=%f", width, stride, result)
 }
 
-// ---------------------- Backend Selection Tests ----------------------
+// ---------------------- Tier And Kernel Selection Tests ----------------------
 
-// TestFastSSD_RequiredBackend lets native hardware CI require that runtime
-// feature detection selected the backend expected for its runner.
-func TestFastSSD_RequiredBackend(t *testing.T) {
-	required := os.Getenv("MAYFLY_REQUIRE_SSD_BACKEND")
+// requiredTierEnv lets native-hardware CI assert which tier detection landed
+// on. It is deliberately a different variable from simdTierEnv: that one
+// *forces* a tier, so asserting against it would be a tautology. This one
+// asserts, which is what makes a step like GODEBUG=cpu.avx2=off plus
+// MAYFLY_REQUIRE_SIMD_TIER=sse2 a real check that feature masking still demotes
+// the way the documentation claims.
+const requiredTierEnv = "MAYFLY_REQUIRE_SIMD_TIER"
+
+// TestRequiredSIMDTier is the CI-facing assertion. It replaces
+// MAYFLY_REQUIRE_SSD_BACKEND, which only ever described one kernel in one
+// package: the renderer's dispatch was invisible to it, so a CI step could ask
+// for SSE2, run the renderer package, and pass while the renderer had silently
+// fallen back to scalar.
+func TestRequiredSIMDTier(t *testing.T) {
+	required := os.Getenv(requiredTierEnv)
 	if required == "" {
-		t.Skip("MAYFLY_REQUIRE_SSD_BACKEND is not set")
+		t.Skipf("%s is not set", requiredTierEnv)
 	}
-	if got := ActiveSSDBackend.String(); got != required {
-		t.Fatalf("active SSD backend = %s, required %s", got, required)
+	want, ok := ParseSIMDTier(required)
+	if !ok {
+		t.Fatalf("%s=%q is not a tier name", requiredTierEnv, required)
+	}
+	if got := Tier(); got != want {
+		t.Fatalf("detected tier = %s, required %s", got, want)
 	}
 }
 
-// TestFastSSD_BackendSelection validates that the correct backend was selected based on CPU features
-func TestFastSSD_BackendSelection(t *testing.T) {
-	t.Logf("Active SSD backend: %s", ActiveSSDBackend)
+// TestInstalledKernelsMatchTier is the invariant that the old per-kernel
+// dispatch could not express: every kernel in the process agrees with one
+// resolved tier, and the exceptions are the documented ones rather than an
+// accident of which init ran.
+func TestInstalledKernelsMatchTier(t *testing.T) {
+	tier := Tier()
+	t.Logf("tier %s: SSD kernel %s, SAD kernel %s", tier, ActiveSSDKernel(), ActiveSADKernel())
 
-	// Verify backend is consistent with CPU features
-	if cpu.X86.HasAVX2 {
-		if ActiveSSDBackend != SSDBackendAVX2 {
-			t.Logf("Note: AVX2 available but backend is %s (may be disabled via GODEBUG)", ActiveSSDBackend)
-		} else {
-			t.Logf("AVX2 backend correctly selected")
-		}
-	} else {
-		if ActiveSSDBackend == SSDBackendAVX2 {
-			t.Errorf("AVX2 backend selected but CPU doesn't support AVX2")
-		}
+	if !tierSupported(tier) {
+		t.Fatalf("resolved tier %s is not supported on this build", tier)
 	}
 
-	// ARM64 NEON check
-	if cpu.ARM64.HasASIMD {
-		if ActiveSSDBackend != SSDBackendNEON {
-			t.Logf("Note: NEON available but backend is %s", ActiveSSDBackend)
-		} else {
-			t.Logf("NEON backend correctly selected")
-		}
-	} else {
-		if ActiveSSDBackend == SSDBackendNEON {
-			t.Errorf("NEON backend selected but CPU doesn't support NEON")
-		}
+	// SSD has a kernel for every tier this architecture offers, so it must
+	// match exactly.
+	if got := ActiveSSDKernel(); got != tier {
+		t.Errorf("SSD kernel = %s, tier = %s", got, tier)
 	}
 
-	// Verify fastSSD function pointer is set
+	// SAD has an AVX2 kernel and nothing else; see sad.go.
+	wantSAD := TierScalar
+	if tier == TierAVX2 {
+		wantSAD = TierAVX2
+	}
+	if got := ActiveSADKernel(); got != wantSAD {
+		t.Errorf("SAD kernel = %s, want %s at tier %s", got, wantSAD, tier)
+	}
+
 	if fastSSD == nil {
 		t.Error("fastSSD function pointer is nil")
 	}
+	if fastSAD == nil {
+		t.Error("fastSAD function pointer is nil")
+	}
+}
 
-	// Smoke test
-	img := randomNRGBA(16, 16, 42)
-	result := FastSSD(img, img)
-
-	if result != 0.0 {
-		t.Errorf("SSD of identical images should be 0.0, got %f", result)
+// TestDetectedTierMatchesCPUFeatures checks the other direction: that detection
+// did not select a tier this CPU cannot execute. A forced tier is excluded,
+// because forcing a narrower tier than the CPU offers is the supported way to
+// test a fallback.
+func TestDetectedTierMatchesCPUFeatures(t *testing.T) {
+	if os.Getenv(simdTierEnv) != "" || os.Getenv(simdDisableEnv) == "1" {
+		t.Skip("tier is pinned by the environment")
 	}
 
-	t.Logf("Backend selection validated: %s", ActiveSSDBackend)
+	switch tier := Tier(); tier {
+	case TierAVX2:
+		if !cpu.X86.HasAVX2 {
+			t.Error("AVX2 tier selected but the CPU does not report AVX2")
+		}
+	case TierSSE2:
+		if !cpu.X86.HasSSE2 {
+			t.Error("SSE2 tier selected but the CPU does not report SSE2")
+		}
+		if cpu.X86.HasAVX2 {
+			t.Error("SSE2 tier selected although AVX2 is available")
+		}
+	case TierNEON:
+		if !cpu.ARM64.HasASIMD {
+			t.Error("NEON tier selected but the CPU does not report ASIMD")
+		}
+	case TierScalar:
+		if cpu.X86.HasAVX2 || cpu.ARM64.HasASIMD {
+			t.Error("scalar tier selected although a vector kernel is available")
+		}
+	}
+
+	// Smoke test: identical images cost nothing whatever the tier.
+	img := randomNRGBA(16, 16, 42)
+	if result := FastSSD(img, img); result != 0.0 {
+		t.Errorf("SSD of identical images = %f, want 0", result)
+	}
 }
 
 // ---------------------- Benchmark Tests ----------------------
@@ -572,12 +524,12 @@ func BenchmarkFastSSD_Scalar(b *testing.B) {
 	b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
 }
 
-// BenchmarkFastSSD_Active benchmarks currently active backend (AVX2/NEON/scalar)
+// BenchmarkFastSSD_Active benchmarks whichever kernel dispatch installed
 func BenchmarkFastSSD_Active(b *testing.B) {
 	img1 := randomNRGBA(256, 256, 1)
 	img2 := randomNRGBA(256, 256, 2)
 
-	b.Logf("Active backend: %s", ActiveSSDBackend)
+	b.Logf("Active backend: %s", ActiveSSDKernel())
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -629,8 +581,20 @@ func BenchmarkFastSSD_Comparison(b *testing.B) {
 			b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
 		})
 
+		// On non-amd64 builds fastSSD_SSE2 is the scalar stub, so this
+		// sub-benchmark simply repeats the scalar measurement there.
+		b.Run(sz.name+"_sse2", func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				ssdBenchmarkSink = fastSSD_SSE2(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height)
+			}
+			mpixelsPerSec := BenchmarkSSDBackend(b.N, sz.width, sz.height, b.Elapsed().Nanoseconds())
+			b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
+		})
+
 		b.Run(sz.name+"_active", func(b *testing.B) {
-			b.Logf("Active backend: %s", ActiveSSDBackend)
+			b.Logf("Active backend: %s", ActiveSSDKernel())
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -682,7 +646,7 @@ func TestFastMSECost_EquivalentToMSECost(t *testing.T) {
 
 // TestSSDBackendDetection validates that the correct backend was selected
 func TestSSDBackendDetection(t *testing.T) {
-	t.Logf("Active SSD backend: %s", ActiveSSDBackend)
+	t.Logf("Active SSD backend: %s", ActiveSSDKernel())
 
 	// Validate that backend selection is consistent
 	if fastSSD == nil {

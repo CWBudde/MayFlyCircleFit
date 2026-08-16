@@ -5,11 +5,14 @@ package fit
 import "testing"
 
 func TestGenericSIMDDispatchUsesScalarBackends(t *testing.T) {
-	if ActiveSSDBackend != SSDBackendScalar {
-		t.Fatalf("SSD backend = %s, want scalar", ActiveSSDBackend)
+	if Tier() != TierScalar {
+		t.Fatalf("tier = %s, want scalar", Tier())
 	}
-	if ActiveSADBackend != SADBackendScalar {
-		t.Fatalf("SAD backend = %s, want scalar", ActiveSADBackend)
+	if ActiveSSDKernel() != TierScalar {
+		t.Fatalf("SSD kernel = %s, want scalar", ActiveSSDKernel())
+	}
+	if ActiveSADKernel() != TierScalar {
+		t.Fatalf("SAD kernel = %s, want scalar", ActiveSADKernel())
 	}
 
 	a := []uint8{10, 20, 30, 255}

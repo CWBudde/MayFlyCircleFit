@@ -5,8 +5,8 @@
 **ARM64 host:** macOS 26.6.1, Apple M5 MacBook Air, 10 logical CPUs
 
 The SSD matrix now exercises native SIMD and forced scalar dispatch on both
-architectures. Every native SIMD run requires the expected backend through
-`MAYFLY_REQUIRE_SSD_BACKEND`, so a silent scalar fallback is a failure rather
+architectures. Every native SIMD run requires the expected tier through
+`MAYFLY_REQUIRE_SIMD_TIER`, so a silent scalar fallback is a failure rather
 than a skipped SIMD test.
 
 | Architecture | Feature state | Required backend | Result |
@@ -19,6 +19,15 @@ than a skipped SIMD test.
 The ARM64 fallback has a subprocess test because Go consumes CPU feature
 overrides before package initialization. Native CI also runs the complete
 `internal/fit` suite a second time with `cpu.all=off` on each hardware runner.
+
+**Superseded on AMD64.** Since the SSE2 tier landed, `GODEBUG=cpu.avx2=off` and
+`GODEBUG=cpu.all=off` select SSE2 rather than scalar on AMD64, because
+`x/sys/cpu` marks sse2 as required on that architecture and never clears it. The
+AMD64 forced-scalar row is now `MAYFLY_SIMD_TIER=scalar`, and every tier can be
+pinned by name rather than approached through a GODEBUG side effect. Within one
+test process `fit.SetForcedTier` walks the whole ladder, so the table above is
+now a detection matrix rather than a dispatch matrix. See
+`docs/task-10.17-sse2-report.md`.
 
 ## Exactness
 

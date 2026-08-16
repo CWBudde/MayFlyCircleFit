@@ -14,17 +14,19 @@ import (
 const ssdNEONDisabledHelper = "MAYFLY_TEST_SSD_NEON_DISABLED"
 
 func TestARM64SIMDDispatchMatchesCPUFeatures(t *testing.T) {
-	wantSSD := SSDBackendScalar
-	if cpu.ARM64.HasASIMD {
-		wantSSD = SSDBackendNEON
+	// The environment overrides outrank the feature check: ASIMD is mandatory
+	// on ARM64 and stays reported even when the scalar fallback was requested.
+	wantSSD := TierScalar
+	if cpu.ARM64.HasASIMD && Tier() == TierNEON {
+		wantSSD = TierNEON
 	}
-	if ActiveSSDBackend != wantSSD {
-		t.Fatalf("SSD backend = %s, want %s", ActiveSSDBackend, wantSSD)
+	if ActiveSSDKernel() != wantSSD {
+		t.Fatalf("SSD kernel = %s, want %s", ActiveSSDKernel(), wantSSD)
 	}
 
 	// SAD does not have an ARM64 assembly kernel.
-	if ActiveSADBackend != SADBackendScalar {
-		t.Fatalf("SAD backend = %s, want scalar", ActiveSADBackend)
+	if ActiveSADKernel() != TierScalar {
+		t.Fatalf("SAD kernel = %s, want scalar", ActiveSADKernel())
 	}
 
 	a := []uint8{10, 20, 30, 255}
@@ -37,17 +39,50 @@ func TestARM64SIMDDispatchMatchesCPUFeatures(t *testing.T) {
 	}
 }
 
+// TestARM64SSDKernelPerForcedTier is the in-process ladder walk, the arm64 twin
+// of the amd64 test. It needs no subprocess because tier forcing re-runs every
+// registered dispatch site.
+func TestARM64SSDKernelPerForcedTier(t *testing.T) {
+	tiers := []SIMDTier{TierScalar}
+	if cpu.ARM64.HasASIMD {
+		tiers = append(tiers, TierNEON)
+	}
+
+	a := []uint8{0, 10, 20, 255}
+	b := []uint8{30, 40, 50, 0}
+
+	for _, tier := range tiers {
+		t.Run(tier.String(), func(t *testing.T) {
+			SetForcedTier(tier)
+			defer ResetTierDetection()
+
+			if got := ActiveSSDKernel(); got != tier {
+				t.Fatalf("forced tier %s installed the %s kernel", tier, got)
+			}
+			if got, want := fastSSD(a, b, 4, 1, 1), fastSSD_Scalar(a, b, 4, 1, 1); got != want {
+				t.Fatalf("%s SSD = %v, scalar = %v", tier, got, want)
+			}
+		})
+	}
+}
+
 // TestSSDNEONDisabledFallback starts a fresh process because GODEBUG CPU
-// overrides are consumed before package initialization. cpu.all=off is used
-// because ASIMD is mandatory on ARM64 and is not exposed as an individual Go
-// runtime feature override on every supported toolchain.
+// overrides are consumed before package initialization. Unlike the forcing test
+// above, this one checks detection: that masking the feature bit really moves
+// the detected tier down.
+//
+// cpu.all=off is used because ASIMD is mandatory on ARM64 and is not exposed as
+// an individual Go runtime feature override on every supported toolchain.
 func TestSSDNEONDisabledFallback(t *testing.T) {
 	if os.Getenv(ssdNEONDisabledHelper) == "1" {
 		if cpu.ARM64.HasASIMD {
 			t.Fatal("cpu.ARM64.HasASIMD is true with GODEBUG=cpu.all=off")
 		}
-		if ActiveSSDBackend != SSDBackendScalar {
-			t.Fatalf("SSD backend = %s, want scalar", ActiveSSDBackend)
+		if Tier() != TierScalar {
+			t.Fatalf("detected tier = %s, want scalar", Tier())
+		}
+		if ActiveSSDKernel() != TierScalar {
+			t.Fatalf("SSD kernel = %s, want scalar", ActiveSSDKernel())
 		}
 
 		a := []uint8{0, 10, 20, 255}
@@ -76,7 +111,10 @@ func ssdNEONDisabledEnv(environ []string) []string {
 			}
 			continue
 		}
-		if strings.HasPrefix(entry, ssdNEONDisabledHelper+"=") {
+		if strings.HasPrefix(entry, ssdNEONDisabledHelper+"=") ||
+			strings.HasPrefix(entry, simdTierEnv+"=") ||
+			strings.HasPrefix(entry, simdDisableEnv+"=") ||
+			strings.HasPrefix(entry, requiredTierEnv+"=") {
 			continue
 		}
 		env = append(env, entry)

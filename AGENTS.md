@@ -1,19 +1,118 @@
-# Repository Guidelines
+# Repository guidelines
 
-## Project Structure & Module Organization
-MayFlyCircleFit is a Go 1.24 CLI; the entry point `main.go` compiles to `bin/`. Core rendering and evaluation reside in `internal/fit`, optimizers in `internal/opt`, and orchestration code in `internal/server`. UI templ files live in `internal/ui`, persistence helpers in `internal/store`, while assets, data fixtures, and research notes are in `assets/`, `data/`, and `docs/` or `profiles/`.
+Concise working context for humans and coding assistants. The code and its tests
+take precedence if this document goes stale.
 
-## Build, Test, and Development Commands
-Prefer the `just` recipes defined in `justfile`. Run `just build` to compile `bin/mayflycirclefit`, and `just run` to exercise the binary. Enforce formatting with `just fmt`, then confirm static checks via `just lint`. Use `just test` for unit and integration suites, `just test-coverage` to emit `coverage.out` and `coverage.html`, and `just clean` to drop build or coverage artifacts.
+## Read before broad changes
 
-## Coding Style & Naming Conventions
-Stick to idiomatic Go: gofmt tabs, exported identifiers in PascalCase, unexported helpers camelCase. Reserve SCREAMING_SNAKE_CASE for grouped constants. Mirror the existing `internal/*` layering before adding packages. Cobra commands should use short imperative verbs (`resume`, `render`). After editing templ files, regenerate outputs with `just templ` or `just templ-watch`.
+- [`docs/behavior-invariants.md`](docs/behavior-invariants.md) — observable
+  behavior that must stay explicit (backends, SIMD dispatch, parallel
+  evaluation, polishing, determinism, early stopping, server trust boundary).
+- [`docs/rendering-internals.md`](docs/rendering-internals.md) — SIMD SSD
+  kernels, dispatch, and CPU span compositing.
+- [`docs/support-matrix.md`](docs/support-matrix.md),
+  [`docs/known-limitations.md`](docs/known-limitations.md), and the active
+  Phase 14 section of `PLAN.md`.
 
-## Testing Guidelines
-Locate tests alongside their packages using filenames such as `optimizer_test.go`. Favor table-driven cases for optimizer inputs and assert behavior on CPU and GPU paths when applicable. Maintain or improve coverage; if it dips, explain the gap and attach fresh `just test-coverage` results. Place long-running optimizer fixtures in `profiles/` with documented seeds for reproducibility.
+## Architecture
 
-## Commit & Pull Request Guidelines
-Follow Conventional Commits (`feat:`, `fix:`, `refactor:`); scoped prefixes (`feat(server): resume endpoint`) help reviewers. Keep commits focused and avoid mixing formatting with logic. Pull requests should link the relevant PLAN.md task or issue, summarize impact, and include renders or metrics when optimization quality shifts. Confirm lint, fmt, and tests in the PR notes, and flag any reviewer setup needs.
+`main.go` is the entry point and builds to `bin/`.
 
-## Runtime & Configuration Tips
-The CLI reads reference imagery from `assets/`; pass relative paths in scripts and docs. GPU acceleration is optional—note hardware assumptions and fallbacks when you update those paths. Generated artifacts (`coverage.html`, resume snapshots, `out*.png`) stay untracked; clean them before publishing branches.
+- `cmd`: Cobra commands (`run`, `serve`, `status`, `resume`, `checkpoints`,
+  `version`).
+- `internal/app`: canonical typed configuration, defaults, limits, and seed
+  resolution shared by CLI, server, and persistence.
+- `internal/fit`: image costs and architecture-specific SIMD dispatch.
+- `internal/fit/renderer`: CPU/OpenCL renderers and joint/sequential/batch
+  pipelines.
+- `internal/opt`: optimizer interfaces and the MayFly v0.4.0 adapter.
+- `internal/server`: trusted-local HTTP boundary and background job lifecycle.
+- `internal/store`: filesystem checkpoint, trace, and artifact ownership.
+- `internal/ui`: templ views plus committed generated Go output.
+
+Assets, fixtures, and notes live in `assets/`, `data/`, `docs/`, and
+`profiles/`. Keep dependencies flowing toward the lower-level packages; do not
+reintroduce application configuration into the store package.
+
+## Toolchain
+
+- Go 1.24 source-compatibility floor (`go 1.24.0`). Production binaries should
+  use a currently supported, security-patched release; vulnerability CI is
+  pinned to Go 1.26.6.
+- MayFly is pinned to `github.com/cwbudde/mayfly v0.4.0`; templ to
+  `github.com/a-h/templ v0.3.960` as a Go tool; `github.com/google/pprof` as a
+  Go tool because some Go installations do not bundle it.
+- `internal/ui/*_templ.go` is generated and committed. After changing a `.templ`
+  source, run `go tool templ generate` (or `just templ`) and commit the
+  generated change alongside it.
+
+## Commands
+
+Prefer the `just` recipes in `justfile`: `just build`, `just run`, `just fmt`,
+`just lint`, `just test`, `just test-coverage`, `just templ`, `just clean`.
+`just check` covers generation drift, tests, vet, formatting, and the ordinary
+build.
+
+## Style
+
+Idiomatic Go: gofmt tabs, exported identifiers in PascalCase, unexported helpers
+camelCase, SCREAMING_SNAKE_CASE only for grouped constants. Mirror the existing
+`internal/*` layering before adding packages. Cobra commands use short
+imperative verbs (`resume`, `render`).
+
+## Tests
+
+Keep tests beside their package (`optimizer_test.go`). Favor table-driven cases
+for optimizer inputs and assert behavior on CPU and GPU paths where applicable.
+Maintain or improve coverage; if it dips, explain the gap and attach fresh
+`just test-coverage` results. Put long-running optimizer fixtures in `profiles/`
+with documented seeds.
+
+Run the narrowest relevant package test while developing. Before handoff, run
+the applicable subset of:
+
+```sh
+go tool templ generate
+git diff --exit-code -- 'internal/ui/*_templ.go'
+test -z "$(gofmt -s -l .)"
+go vet ./...
+go test -short ./...
+go test -race -short ./...
+go build ./...
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...
+```
+
+GPU checks require an explicitly prepared runner with OpenCL headers and
+runtime; a CGO-disabled portable build is not GPU validation.
+
+**Never describe a check or release gate as passing unless its command or CI
+result was actually observed for the revision being discussed.** Include
+benchmark conditions and allocation counts when claiming a performance change.
+
+## CI
+
+CI is split one gate per file. `.github/workflows/ci.yml` is an orchestrator
+that only calls reusable `ci-<concern>.yml` workflows and holds the tag-gated
+`release` job; edit the gate's own file, not `ci.yml`. `needs:` cannot cross
+workflow files, so a gate becomes release-blocking only by being listed in
+`release`'s `needs:`. `benchmarks` is deliberately excluded there because the
+timing comparison is report-only. Reusable gates report as
+`<caller job> / <job name>`, for example `generation / Generated UI is current`,
+so anything naming a check by string must use the prefixed form. See
+[`docs/releasing.md`](docs/releasing.md).
+
+## Commits and pull requests
+
+Use Conventional Commits with a scope where it helps (`feat(server): resume
+endpoint`, `fix(renderer): preserve custom canvas`). Keep commits focused; do
+not mix formatting or unrelated refactors with logic. Pull requests should link
+the relevant `PLAN.md` task or issue, summarize impact, include renders or
+metrics when optimization quality shifts, state which checks were run, and flag
+reviewer setup needs.
+
+## Runtime notes
+
+The CLI reads reference imagery from `assets/`; pass relative paths in scripts
+and docs. GPU acceleration is optional — note hardware assumptions and fallbacks
+when updating those paths. Generated artifacts (`coverage.html`, resume
+snapshots, `out*.png`) stay untracked; clean them before publishing branches.

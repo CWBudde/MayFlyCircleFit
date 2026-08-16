@@ -13,7 +13,7 @@ import (
 
 func TestDeltaSSDSpanMatchesScalar(t *testing.T) {
 	rng := rand.New(rand.NewSource(10_016))
-	for _, pixels := range []int{0, 1, 2, 3, 4, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255, 256, 257} {
+	for _, pixels := range []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255, 256, 257} {
 		t.Run(fmt.Sprintf("%d", pixels), func(t *testing.T) {
 			candidate := make([]byte, pixels*4)
 			base := make([]byte, pixels*4)
@@ -24,7 +24,7 @@ func TestDeltaSSDSpanMatchesScalar(t *testing.T) {
 			got := deltaSSDSpan(candidate, base, reference, pixels)
 			want := deltaSSDSpanScalar(candidate, base, reference, pixels)
 			if got != want {
-				t.Fatalf("%s delta = %d, scalar = %d", deltaSSDBackend, got, want)
+				t.Fatalf("%s delta = %d, scalar = %d", deltaSSDKernel, got, want)
 			}
 		})
 	}
@@ -356,7 +356,7 @@ func BenchmarkDeltaSSDSpan(b *testing.B) {
 				rendererDeltaSink = deltaSSDSpanScalar(candidate, base, reference, pixels)
 			}
 		})
-		b.Run(fmt.Sprintf("auto_%s/%d", deltaSSDBackend, pixels), func(b *testing.B) {
+		b.Run(fmt.Sprintf("auto_%s/%d", deltaSSDKernel, pixels), func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(pixels * 12))
 			for range b.N {

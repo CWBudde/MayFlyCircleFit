@@ -127,11 +127,11 @@ func TestCPURendererPrecomputesInitialSSD(t *testing.T) {
 		t.Fatalf("staged SSD = (%d, %v), want (%d, true)", staged.initialSSD, staged.initialSSDValid, wantRetained)
 	}
 	wantMode := incrementalCostDisabled
-	if deltaSSDBackend == "avx2" {
+	if deltaSSDVectorized() {
 		wantMode = incrementalCostAuto
 	}
 	if staged.incrementalCostMode != wantMode {
-		t.Fatalf("staged CPU cost mode = %d, want %d for %s", staged.incrementalCostMode, wantMode, deltaSSDBackend)
+		t.Fatalf("staged CPU cost mode = %d, want %d for %s", staged.incrementalCostMode, wantMode, deltaSSDKernel)
 	}
 }
 
@@ -157,7 +157,7 @@ func BenchmarkCPURenderer_Cost_Fast(b *testing.B) {
 	r.SetThreads(1)
 	params := deterministicParams(20, 128, 128, 99)
 
-	b.Logf("Using SSD backend: %s", fit.ActiveSSDBackend)
+	b.Logf("Using SSD backend: %s", fit.ActiveSSDKernel())
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -197,7 +197,7 @@ func BenchmarkCPURenderer_CostComparison(b *testing.B) {
 			r := NewCPURenderer(ref, sz.circles)
 			r.SetThreads(1)
 			b.ReportAllocs()
-			b.Logf("Using SSD backend: %s", fit.ActiveSSDBackend)
+			b.Logf("Using SSD backend: %s", fit.ActiveSSDKernel())
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				rendererCostSink = r.Cost(params)
@@ -233,7 +233,7 @@ func BenchmarkIncrementalCostBaseline(b *testing.B) {
 		{name: "batch_K5", circles: 5, baseCanvas: retained},
 	}
 
-	b.Logf("Using SSD backend: %s", fit.ActiveSSDBackend)
+	b.Logf("Using SSD backend: %s", fit.ActiveSSDKernel())
 	for _, workload := range workloads {
 		params := deterministicParams(workload.circles, width, height, int64(200+workload.circles))
 		newRenderer := func() *CPURenderer {

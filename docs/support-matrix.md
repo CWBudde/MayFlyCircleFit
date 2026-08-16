@@ -45,11 +45,11 @@ excludes OpenCL.
 
 | Target | CPU build path | SIMD path | CI cross-build gate | Native SSD gate |
 | --- | --- | --- | --- | --- |
-| Linux/AMD64 | Available | AVX2 with runtime detection; scalar fallback | Configured | AVX2 required |
-| Linux/ARM64 | Available | NEON with runtime detection; scalar fallback | Configured | NEON required |
-| macOS/AMD64 | Available | AVX2 with runtime detection; scalar fallback | Configured | Not configured |
-| macOS/ARM64 | Available | NEON with runtime detection; scalar fallback | Configured | NEON required |
-| Windows/AMD64 | Available | AVX2 with runtime detection; scalar fallback | Configured | AVX2 required |
+| Linux/AMD64 | Available | AVX2, then SSE2, then scalar, with runtime detection | Configured | AVX2, SSE2, and scalar required |
+| Linux/ARM64 | Available | NEON with runtime detection; scalar fallback | Configured | NEON and scalar required |
+| macOS/AMD64 | Available | AVX2, then SSE2, then scalar, with runtime detection | Configured | Not configured |
+| macOS/ARM64 | Available | NEON with runtime detection; scalar fallback | Configured | NEON and scalar required |
+| Windows/AMD64 | Available | AVX2, then SSE2, then scalar, with runtime detection | Configured | AVX2, SSE2, and scalar required |
 | Linux/386 | Portability only | Scalar | Configured | Not configured |
 
 “Configured” means the CI workflows contain that gate. Each gate lives in its
@@ -62,6 +62,26 @@ dispatch does not select the required SIMD backend. Check the CI run
 before treating a commit as verified. Linux/386 is not a release artifact;
 other Go targets may compile but are not claimed as supported until they are
 added to the matrix and exercised.
+
+The native gate distinguishes two things that were previously conflated.
+`MAYFLY_REQUIRE_SIMD_TIER` asserts which tier detection selected and never sets
+one; `MAYFLY_SIMD_TIER` pins a tier and is therefore useless as an assertion
+target. Each step pairs exactly one of them with the assertion.
+
+The AMD64 native gate runs five steps: natively for AVX2, under
+`GODEBUG=cpu.all=off` asserting that feature masking demotes to SSE2, with the
+SSE2 tier pinned, with the scalar tier pinned, and once through the legacy
+`MAYFLY_DISABLE_SIMD=1` alias. `GODEBUG` cannot mask SSE2 on AMD64 because
+`golang.org/x/sys/cpu` marks it as required there, so pinning is the only way to
+reach the scalar tier on that architecture. The ARM64 gates run natively for
+NEON, under `GODEBUG=cpu.all=off` for scalar, with the scalar tier pinned, and
+through the legacy alias; they have no middle tier to pin. SAD has no SSE2
+kernel, so it stays scalar on AMD64 hosts without AVX2, as it already does on
+ARM64.
+
+The AMD64 steps additionally run `./internal/fit/renderer`, which asserts the
+same tier for the renderer's own kernels. The ARM64 steps do not, for the
+pre-existing reason recorded in `docs/known-limitations.md`.
 
 On ARM64, opaque CPU-renderer spans additionally have an ASIMD-gated NEON
 compositor for spans of at least 256 pixels, with an exact scalar span and

@@ -648,6 +648,82 @@ which optimizes only circle coverage geometry.
 - Zero steady-state allocations and safe scalar behavior on platforms without
   AVX2 or NEON
 
+### Task 10.17: SSE2 SIMD Tier for AMD64 Hosts Without AVX2 🚧 IN PROGRESS
+**Rationale:** AMD64 dispatch was AVX2 or scalar, so a CPU without AVX2 lost the
+entire Phase 10 speedup rather than part of it. A profile of that configuration
+attributes about 80% of flat samples to three symbols — `fit.ssdScalar` 29.96%,
+`renderer.compositeOpaqueSpanScalar` 25.17%, and `fit.MSECost` 24.63% — with
+`renderer.fixedCircleQ16.span` at only 2.80%. Baseline SSE2 covers those three.
+
+**10.17a — One resolved tier, and the levers around it:**
+- [x] Resolve the instruction set once in `fit.Tier()` and have every dispatch
+  site install from it through `fit.RegisterTierConsumer`, replacing nine
+  independent `init` functions and four different representations of "which
+  backend am I on"
+- [x] Make AMD64 dispatch AVX2, then SSE2, then scalar, and keep a kernel free
+  to be narrower than the tier where it has no implementation - never wider,
+  asserted by `TestInstalledKernelsMatchTier` and `TestRendererKernelsMatchTier`
+- [x] Add `MAYFLY_SIMD_TIER` to pin any reachable tier, panicking on an
+  unreachable one, with `MAYFLY_DISABLE_SIMD=1` retained as its scalar alias;
+  `x/sys/cpu` marks sse2 required on AMD64, so `GODEBUG=cpu.all=off` cannot
+  reach the scalar kernel there
+- [x] Add `MAYFLY_REQUIRE_SIMD_TIER`, which asserts the detected tier without
+  setting one, honoured by both `internal/fit` and `internal/fit/renderer`
+- [x] Add `fit.SetForcedTier`, which re-runs every dispatch site so one test
+  process walks the whole ladder instead of re-execing per configuration
+- [x] Extend the cross-build source assertions to require the SSE2 sources on
+  AMD64 and reject them everywhere else
+
+**10.17b — Kernels:**
+- [x] Implement a four-pixel SSE2 SSD kernel with int32 `PMADDWD` accumulation,
+  an exact scalar tail, and an `ssdSSE2MaxWidth` of 11000 that routes wider rows
+  to scalar rather than widening per iteration
+- [x] Implement an SSE2 delta-SSD kernel for discontiguous dirty spans, with the
+  same int32 accumulator rather than the AVX2 kernel's per-iteration widening,
+  and a wrapper that splits long spans so there is no width cliff
+- [x] Measure whether the AVX2-calibrated staged-incremental crossover transfers
+  to SSE2, on a CPU that genuinely lacks AVX2, before gating
+  `stagedIncremental` on any vectorized delta kernel
+- [x] Make `deltaSSDSpan` a real ladder, so an AVX2 host uses the SSE2 kernel
+  for four-to-seven-pixel spans instead of dropping to scalar
+- [ ] Add an opt-in float32 SIMD span compositor with SSE2 and AVX2 kernels
+  behind `--fast-compositing`
+- [ ] Add opt-in concurrent population evaluation over a pool of independent
+  renderer sessions behind `--parallel-evaluation`
+- [x] Do not port SAD: `FastSAD` has no non-test callers and its AVX2 kernel
+  needs `VPMADDUBSW` (SSSE3) and `VPMULLD` (SSE4.1)
+- [x] Do not port the Q16.16 span: it needs `VPCMPGTQ` (64-bit signed compare),
+  it is 2.80% of the no-AVX2 profile, and the existing hardware-compare AVX2
+  kernel is already 1.6-3.0× slower than the scalar finite-difference span
+- [x] Do not add a float32 circle-span kernel: `circleSpanFloat32Selected` is
+  reachable only through `CPURenderer.forceFloat32Geometry`, which no
+  configuration path sets. An SSE2 kernel for it was written and then removed;
+  its test table was retargeted at the AVX2 kernel
+
+**10.17c — Validation and gates:**
+- [x] Require bit-exact parity with the scalar oracle across batch boundaries,
+  padded strides, non-zero start offsets, alpha-only differences, and a seeded
+  random sweep
+- [x] Compare every kernel the host can execute, directly and in one process,
+  rather than skipping unless the host already selected that backend
+- [x] Make the native CI gate assert the detected tier rather than one kernel's
+  backend string, and run `./internal/fit/renderer` under it on AMD64
+- [x] Publish measurements in `docs/task-10.17-sse2-report.md`, taken on the
+  no-AVX2 target rather than on an AVX2 host under GODEBUG
+
+**Measured results (no-AVX2 target, median of three):** SSE2 SSD is
+6.03×/6.02×/6.22×/5.72× scalar at 64² through 512² and 5.33× at 1024², with zero
+allocations. Delta-SSD gains 2.25× to 4.45× over 4-256 px spans. Against
+`origin/master` on the same machine, `BenchmarkFit` cost improved 5.85× at 256²
+and 6.12× at 512², and the sequential, batch, and joint pipelines improved
+1.24×, 1.20×, and 1.13×. The staged-incremental crossover curve matches the AVX2
+one in shape, with the SSE2 crossover at radius 96 against roughly 72.
+
+An earlier revision also recorded a full 32-circle batch at seed 4242 on that
+target falling from 300.81 s to 150.52 s at an identical final cost of 1032.75,
+flat at 150.33 s with 64 threads instead of 8. That predates the delta-SSD
+accumulator change and has not been repeated.
+
 ---
 
 ## Phase 11: GPU Backends (Research → Prototype)
@@ -1388,6 +1464,7 @@ Completed: store-owned artifacts, canonical UUID/path containment, concurrent du
 - [x] Split SIMD wrappers by architecture/build tag so unsupported symbols are never referenced.
 - [x] Provide a real portable scalar fallback for non-AMD64 targets.
 - [x] Accurately label ARM64 as scalar fallback; a native NEON kernel remains future work.
+- [x] Give AMD64 hosts without AVX2 a real SIMD path instead of scalar execution, and add an environment opt-out that can still force the complete scalar fallback (see Task 10.17).
 - [x] Configure CI to cross-build at minimum (execution still requires a passing workflow run):
   - [x] linux/amd64
   - [x] linux/arm64
