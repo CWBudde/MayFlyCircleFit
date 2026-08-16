@@ -128,11 +128,39 @@ func NewJobManager() *JobManager {
 // itself stays authoritative, so nothing about it is written into the
 // checkpoint.
 func (jm *JobManager) CreateJob(project app.Project, config JobConfig) *Job {
+	job, err := jm.CreateJobWithID("", project, config)
+	if err != nil {
+		// Unreachable: a minted UUID is canonical and the manager cannot already
+		// hold it. Panicking here would change a long-standing signature's
+		// contract, so the impossible branch keeps the original behavior.
+		panic(err)
+	}
+	return job
+}
+
+// CreateJobWithID creates a job under an identifier the caller already holds.
+// An empty id mints one, which is what CreateJob does.
+//
+// Supplying the identifier exists for the schedule executor. A stage must name
+// its job in the durable stage record before that job can exist, because a
+// running job that no record names is exactly the orphan fork Phase 16 is
+// designed against. That is only possible if the identifier is chosen before
+// the job is.
+func (jm *JobManager) CreateJobWithID(id string, project app.Project, config JobConfig) (*Job, error) {
+	if id == "" {
+		id = uuid.New().String()
+	} else if parsed, err := uuid.Parse(id); err != nil || parsed == uuid.Nil || parsed.String() != id {
+		return nil, fmt.Errorf("job ID must be a canonical non-zero UUID")
+	}
+
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
+	if existing, exists := jm.jobs[id]; exists {
+		return nil, &duplicateJobError{jobID: id, owner: app.NormalizeProject(existing.Project)}
+	}
 
 	job := &Job{
-		ID:        uuid.New().String(),
+		ID:        id,
 		Project:   app.NormalizeProject(project),
 		State:     StatePending,
 		Config:    config,
@@ -140,7 +168,7 @@ func (jm *JobManager) CreateJob(project app.Project, config JobConfig) *Job {
 	}
 
 	jm.jobs[job.ID] = job
-	return cloneJob(job)
+	return cloneJob(job), nil
 }
 
 // GetJob retrieves a job by ID

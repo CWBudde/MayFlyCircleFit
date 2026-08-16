@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/google/uuid"
 )
 
 func TestJobManagerBestRevisionAdvancesOnlyForStrictImprovements(t *testing.T) {
@@ -320,5 +321,41 @@ func TestJobManager_ThreadSafety(t *testing.T) {
 	_, exists := jm.GetJob(job.ID)
 	if !exists {
 		t.Error("Job should still exist after concurrent updates")
+	}
+}
+
+// TestCreateJobWithIDHoldsTheIdentifierTheCallerChose covers the property the
+// schedule executor depends on: a stage can name its job before that job
+// exists, and no second job can then take that name.
+func TestCreateJobWithIDHoldsTheIdentifierTheCallerChose(t *testing.T) {
+	manager := NewJobManager()
+	chosen := uuid.NewString()
+
+	job, err := manager.CreateJobWithID(chosen, app.DefaultProject, JobConfig{RefPath: "ref.png"})
+	if err != nil {
+		t.Fatalf("CreateJobWithID() error = %v", err)
+	}
+	if job.ID != chosen {
+		t.Fatalf("job ID = %q, want %q", job.ID, chosen)
+	}
+	if _, ok := manager.GetJob(chosen); !ok {
+		t.Fatal("job was not registered under the chosen identifier")
+	}
+	if _, err := manager.CreateJobWithID(chosen, app.DefaultProject, JobConfig{RefPath: "ref.png"}); !errors.Is(err, errDuplicateJobID) {
+		t.Fatalf("second create error = %v, want errDuplicateJobID", err)
+	}
+
+	minted, err := manager.CreateJobWithID("", app.DefaultProject, JobConfig{RefPath: "ref.png"})
+	if err != nil {
+		t.Fatalf("CreateJobWithID(\"\") error = %v", err)
+	}
+	if minted.ID == "" || minted.ID == chosen {
+		t.Fatalf("minted ID = %q", minted.ID)
+	}
+
+	for _, bad := range []string{"not-a-uuid", "00000000-0000-0000-0000-000000000000", "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"} {
+		if _, err := manager.CreateJobWithID(bad, app.DefaultProject, JobConfig{}); err == nil {
+			t.Fatalf("CreateJobWithID(%q) was accepted", bad)
+		}
 	}
 }
