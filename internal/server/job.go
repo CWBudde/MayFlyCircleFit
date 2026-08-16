@@ -51,15 +51,26 @@ type Job struct {
 	// Zero means serial or not known -- a job restored from a checkpoint has not
 	// built a renderer in this process -- and readers must show nothing rather
 	// than guess, because the clamp depends on the machine that ran the job.
-	EvaluationWidth int            `json:"evaluationWidth,omitempty"`
-	Termination     string         `json:"termination,omitempty"`
-	StartTime       time.Time      `json:"startTime"`
-	EndTime         *time.Time     `json:"endTime,omitempty"`
-	Error           string         `json:"error,omitempty"`
-	PSNR            *float64       `json:"-"`
-	PSNRInfinite    bool           `json:"-"`
-	SSIM            *float64       `json:"-"`
-	MetricHistory   []MetricSample `json:"-"`
+	EvaluationWidth int `json:"evaluationWidth,omitempty"`
+	// ExtendedFrom and PolishedFrom name the completed job this one continued
+	// from, and at most one is ever set. They are persisted onto the job's
+	// checkpoint, so the chain a campaign builds is readable from the job tree
+	// after a restart instead of only from the HTTP response that created it.
+	ExtendedFrom string `json:"extendedFrom,omitempty"`
+	PolishedFrom string `json:"polishedFrom,omitempty"`
+	// ScheduleID and StageIndex place the job in a declarative schedule.
+	// StageIndex is only meaningful while ScheduleID is set, which is why it can
+	// be a plain int: stage zero of no schedule is not a thing.
+	ScheduleID    string         `json:"scheduleId,omitempty"`
+	StageIndex    int            `json:"stageIndex,omitempty"`
+	Termination   string         `json:"termination,omitempty"`
+	StartTime     time.Time      `json:"startTime"`
+	EndTime       *time.Time     `json:"endTime,omitempty"`
+	Error         string         `json:"error,omitempty"`
+	PSNR          *float64       `json:"-"`
+	PSNRInfinite  bool           `json:"-"`
+	SSIM          *float64       `json:"-"`
+	MetricHistory []MetricSample `json:"-"`
 }
 
 // MetricSample is a live-history point used by the detail page. The sampling

@@ -103,8 +103,16 @@ func jobFromCheckpoint(checkpoint *store.Checkpoint, project app.Project) *Job {
 	}
 
 	end := checkpoint.Timestamp
+	stageIndex := 0
+	if checkpoint.StageIndex != nil {
+		stageIndex = *checkpoint.StageIndex
+	}
 	return &Job{
 		ID:           checkpoint.JobID,
+		ExtendedFrom: checkpoint.ExtendedFrom,
+		PolishedFrom: checkpoint.PolishedFrom,
+		ScheduleID:   checkpoint.ScheduleID,
+		StageIndex:   stageIndex,
 		Project:      project,
 		State:        state,
 		Config:       checkpoint.Config,
@@ -117,6 +125,23 @@ func jobFromCheckpoint(checkpoint *store.Checkpoint, project app.Project) *Job {
 		Termination:  checkpoint.Termination,
 		StartTime:    checkpoint.Timestamp,
 		EndTime:      &end,
+	}
+}
+
+// applyJobLineage copies a job's lineage onto the checkpoint about to be
+// written. It is the one place the in-memory chain becomes durable, so a job
+// created outside a schedule records its parent just the same.
+func applyJobLineage(checkpoint *store.Checkpoint, job *Job) {
+	if checkpoint == nil || job == nil {
+		return
+	}
+	checkpoint.ExtendedFrom = job.ExtendedFrom
+	checkpoint.PolishedFrom = job.PolishedFrom
+	checkpoint.ScheduleID = job.ScheduleID
+	checkpoint.StageIndex = nil
+	if job.ScheduleID != "" {
+		index := job.StageIndex
+		checkpoint.StageIndex = &index
 	}
 }
 
