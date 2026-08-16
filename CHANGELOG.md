@@ -17,6 +17,9 @@ release is declared by this file.
   profile this repository has taken, and AMD64 previously had no vector span
   compositor at any tier. An AVX2 host still composites scalar. See
   [docs/task-10.19-sse2-compositor.md](docs/task-10.19-sse2-compositor.md).
+- `run --fast-compositing` selects an opt-in float32 SIMD span compositor with
+  SSE2 and AVX2 kernels. It is accurate to +/-1 per channel rather than
+  byte-identical to the default float64 span, and defaults to off.
 - An SSE2 SIMD tier for AMD64. Hand-written Plan 9 kernels for SSD
   (`ssd_sse2_amd64.s`, four NRGBA pixels per batch) and for the dirty-span
   delta-SSD of the incremental cost path give AMD64 hosts without AVX2 a real
@@ -181,6 +184,8 @@ release is declared by this file.
 - OpenCL remains experimental and joint-only.
 - Restart-from-best does not restore the full optimizer state, and server resume
   of sequential/batch jobs is unsupported.
+- `--fast-compositing` changes the output of a fixed seed and is therefore
+  opt-in and off by default.
 - SAD and the Q16.16 circle-span kernel have no SSE2 port. Both need
   instructions above baseline SSE2, and neither carries enough measured cost to
   justify emulating them.

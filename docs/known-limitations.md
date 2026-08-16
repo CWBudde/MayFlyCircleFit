@@ -87,6 +87,11 @@ behavior is production-ready.
   flat samples to that span, so emulating the compare was not worth its cost.
   The float32 form is reachable only through `CPURenderer.forceFloat32Geometry`,
   which no configuration path sets, so it has no production effect at any tier.
+- `--fast-compositing` is not byte-exact. It computes the opaque span blend in
+  float32 with a regrouped multiply-add, which is accurate to +/-1 per channel
+  against the default float64 compositor. It is off by default, and a run that
+  enables it is not comparable pixel-for-pixel to a run without it. Non-AMD64
+  targets have no vector kernel for it and would run its slower scalar form.
 - The production CPU renderer uses `FastMSECost`; parity tests cover the scalar
   reference, SIMD dispatch, independent origins/strides, empty images, and
   dimension mismatches. This remains a numeric RGB objective, not a perceptual

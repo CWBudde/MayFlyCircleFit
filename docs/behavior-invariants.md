@@ -56,6 +56,10 @@ Rendering-side invariants live in
   width above one, and the epoch and progress wrappers forward that width so the
   guard cannot be bypassed. Do not wire parallel evaluation into a polisher
   without first giving polishing its own session pool.
+- `--fast-compositing` is opt-in and defaults off, because it changes the
+  result of a fixed seed. It is accurate to +/-1 per channel, not byte-identical
+  to the default compositor. Compare runs only against runs with the same
+  settings.
 
 ## Polishing strategies
 

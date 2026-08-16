@@ -93,6 +93,11 @@ Related documents:
 - Translucent custom canvases retain the general per-pixel Porter-Duff path.
   Preserve that split, and the byte-exact span tests, when changing renderer
   math.
+- `--fast-compositing` selects an opt-in float32 SIMD span compositor
+  (`composite_span_fast*`, SSE2 and AVX2 kernels behind the same feature gate).
+  It regroups the blend into one multiply-add per pixel, is accurate to +/-1 per
+  channel, and is therefore not byte-identical to the default float64 span. It
+  defaults off; the exact path stays the default and the oracle.
 - Circle-span geometry has no SSE2 kernel in either form. The Q16.16 AVX2 kernel
   compares Q32.32 products with `VPCMPGTQ`, SSE2 has no 64-bit signed compare,
   and a measured no-AVX2 profile attributes only 2.80% of flat samples to

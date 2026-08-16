@@ -94,6 +94,13 @@ change. Translucent custom canvases always retain the general scalar Porter-Duff
 path. This renderer kernel is natively validated on macOS
 ARM64 but is not currently a required Linux/ARM64 timing gate.
 
+`--fast-compositing` replaces the exact float64 span with an opt-in float32
+SIMD compositor on AMD64, using AVX2 or SSE2 behind the same feature gate. It is
+accurate to +/-1 per channel and is therefore not byte-identical to the default
+path, so it is off by default. Non-AMD64 targets have no vector kernel for it
+and fall back to the portable float32 scalar span, which is slower than the
+exact float64 span it replaces.
+
 ## OpenCL
 
 OpenCL is an experimental, opt-in renderer for all optimization modes:
