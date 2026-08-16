@@ -29,6 +29,13 @@ func (s *Server) restorePersistedJobs() {
 // projectSlugsForRestore lists every project to scan. The default project is
 // the legacy `<data-root>/jobs` tree, so pre-project installations restore
 // exactly as before without any migration.
+//
+// The order is Slugs()' sorted order, and that is load-bearing rather than
+// incidental: if the same job ID exists under two projects, the first project
+// scanned registers it and the second is refused. Sorting makes the winner the
+// alphabetically-first project on every run, so a collision produces the same
+// outcome and the same diagnostic each time instead of alternating with Go's
+// randomized map iteration.
 func (s *Server) projectSlugsForRestore() []app.Project {
 	return s.projects.Slugs()
 }
@@ -58,6 +65,24 @@ func (s *Server) restoreProjectJobs(slug app.Project, projectStore store.Store) 
 			}
 		}
 		if err := s.jobManager.restoreJob(job); err != nil {
+			// A duplicate ID is not an ordinary skip: the same job UUID exists
+			// under two projects on disk, so this project's copy is dropped from
+			// the API and the UI entirely while its files stay where they are.
+			// Say so, and name both sides, or the operator sees a job vanish
+			// with no way to tell which directory to look at.
+			if errors.Is(err, errDuplicateJobID) {
+				owner := app.Project("unknown")
+				var duplicate *duplicateJobError
+				if errors.As(err, &duplicate) {
+					owner = duplicate.owner
+				}
+				slog.Error("Cross-project job ID collision; this project's copy is not registered",
+					"job_id", info.JobID,
+					"owning_project", string(owner),
+					"skipped_project", string(slug),
+					"detail", "the same job ID exists under both projects; the alphabetically-first project wins and the skipped copy's artifacts remain on disk")
+				continue
+			}
 			slog.Warn("Unable to register persisted job", "project", string(slug), "job_id", info.JobID, "error", err)
 			continue
 		}

@@ -63,6 +63,27 @@ type MetricSample struct {
 
 var ErrInvalidTransition = errors.New("invalid job state transition")
 
+// errDuplicateJobID reports that restoreJob was handed an ID the manager
+// already holds. Job IDs are UUIDs and the manager is keyed by ID alone, so the
+// realistic cause is the same checkpoint directory existing under two projects
+// — a copied or restored-from-backup `<data-root>/projects/<slug>/jobs/<uuid>`.
+// It is a sentinel so restoreProjectJobs can name both projects in the log
+// instead of reporting a generic registration failure.
+var errDuplicateJobID = errors.New("job already exists")
+
+// duplicateJobError names the project that already owns the ID so the caller
+// can report which side of the collision was kept.
+type duplicateJobError struct {
+	jobID string
+	owner app.Project
+}
+
+func (e *duplicateJobError) Error() string {
+	return fmt.Sprintf("job already exists: %s (owned by project %q)", e.jobID, e.owner)
+}
+
+func (e *duplicateJobError) Unwrap() error { return errDuplicateJobID }
+
 // JobManager manages the lifecycle of jobs
 type JobManager struct {
 	mu          sync.RWMutex
@@ -139,8 +160,8 @@ func (jm *JobManager) restoreJob(job *Job) error {
 
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
-	if _, exists := jm.jobs[job.ID]; exists {
-		return fmt.Errorf("job already exists: %s", job.ID)
+	if existing, exists := jm.jobs[job.ID]; exists {
+		return &duplicateJobError{jobID: job.ID, owner: app.NormalizeProject(existing.Project)}
 	}
 	jm.jobs[job.ID] = cloneJob(job)
 	return nil

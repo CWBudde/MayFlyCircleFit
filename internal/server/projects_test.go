@@ -694,3 +694,101 @@ func TestCreateFormEchoesProjectOnValidationError(t *testing.T) {
 		t.Fatalf("validation error dropped the project from the re-rendered form")
 	}
 }
+
+// writeProjectCheckpoint plants a terminal job in `<root>/projects/<slug>/jobs`.
+func writeProjectCheckpoint(t *testing.T, root string, slug app.Project, jobID string) {
+	t.Helper()
+	dir := filepath.Join(root, projectsDirName, string(slug))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	projectStore, err := store.NewFSStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := &store.Checkpoint{
+		SchemaVersion: 2,
+		JobID:         jobID,
+		BestParams:    []float64{1, 2, 3, 4, 5, 6, 7},
+		BestCost:      12.5,
+		Iterations:    3,
+		Termination:   "completed",
+		Timestamp:     time.Now(),
+		Config:        store.JobConfig{RefPath: "example/Ref.png", Mode: app.ModeJoint, Circles: 1, Iters: 10, PopSize: 30},
+	}
+	if err := projectStore.SaveCheckpoint(jobID, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestCrossProjectDuplicateJobIDIsDiagnosable covers the vanishing job: the job
+// manager is keyed by ID alone, so the same UUID under two projects on disk can
+// only register once. The refusal is correct — the second copy must not
+// overwrite the first — but it used to be reported as a generic "Unable to
+// register persisted job" warning, which named one project and never said the
+// cause was a collision. The operator saw a job disappear and had nothing to
+// go looking for.
+func TestCrossProjectDuplicateJobIDIsDiagnosable(t *testing.T) {
+	root := t.TempDir()
+	jobID := "12345678-1234-4234-8234-123456789abc"
+	// Deliberately written out of alphabetical order: the sorted scan order is
+	// what makes the winner reproducible, not the order the copies were made.
+	writeProjectCheckpoint(t, root, "zulu", jobID)
+	writeProjectCheckpoint(t, root, "alpha", jobID)
+
+	persistence, err := store.NewFSStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	logs := captureLogs(t)
+	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
+
+	// (a) The ID registers exactly once.
+	jobs := server.jobManager.ListJobs()
+	if len(jobs) != 1 {
+		t.Fatalf("registered %d jobs, want exactly 1: %+v", len(jobs), jobs)
+	}
+	if jobs[0].ID != jobID {
+		t.Fatalf("registered job ID = %q, want %q", jobs[0].ID, jobID)
+	}
+
+	// (b) The alphabetically-first project owns it, on every run.
+	if jobs[0].Project != app.Project("alpha") {
+		t.Fatalf("surviving job project = %q, want %q", jobs[0].Project, "alpha")
+	}
+	survivingStore, err := server.storeForJob(jobID)
+	if err != nil {
+		t.Fatalf("surviving job store: %v", err)
+	}
+	if alphaStore, _ := server.projects.Get("alpha"); survivingStore != alphaStore {
+		t.Fatalf("surviving job did not resolve to alpha's own store")
+	}
+
+	// (c) The log identifies the collision and names both projects.
+	output := logs.String()
+	if !strings.Contains(output, "collision") {
+		t.Fatalf("log does not identify the failure as a collision: %s", output)
+	}
+	if !strings.Contains(output, "owning_project=alpha") {
+		t.Fatalf("log does not name the project that kept the ID: %s", output)
+	}
+	if !strings.Contains(output, "skipped_project=zulu") {
+		t.Fatalf("log does not name the project whose copy was dropped: %s", output)
+	}
+	if !strings.Contains(output, "level=ERROR") {
+		t.Fatalf("a job disappearing must be logged at Error, not skipped quietly: %s", output)
+	}
+	if !strings.Contains(output, "remain on disk") {
+		t.Fatalf("log does not say the skipped copy's artifacts are still on disk: %s", output)
+	}
+	if !strings.Contains(output, jobID) {
+		t.Fatalf("log does not name the colliding job ID: %s", output)
+	}
+
+	// The skipped project's checkpoint is untouched: detection only, with no
+	// rename and no migration.
+	if _, err := os.Stat(filepath.Join(root, projectsDirName, "zulu", "jobs", jobID)); err != nil {
+		t.Fatalf("the skipped project's artifacts must stay on disk: %v", err)
+	}
+}
