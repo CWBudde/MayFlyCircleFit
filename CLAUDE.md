@@ -52,9 +52,14 @@ application configuration into the store package.
   non-multiple widths to an exact scalar tail.
 - The SSE2 kernel accumulates a whole row's `PMADDWD` results in int32 lanes and
   widens to int64 once per row. That is the source of its speedup, and it bounds
-  the row: `width*3*255*255` must stay below 2^31, so `ssdSSE2MaxWidth` is 11000
-  and `fastSSD_SSE2` routes wider rows to the scalar kernel instead of widening
-  per iteration.
+  the row, so `ssdSSE2MaxWidth` is 11000 and `fastSSD_SSE2` routes wider rows to
+  the scalar kernel instead of widening per iteration. The constant is
+  deliberately conservative rather than tight: the whole-row total
+  `width*3*255*255` first exceeds 2^31 at width 11009, and no single lane ever
+  holds that total, because `PMADDWD` splits each pixel into `R²+G²` and `B²`
+  dwords, so the busiest lane accumulates at most `width*65025` and would not
+  overflow until roughly width 33026. Treat 11000 as a safety margin; do not
+  "correct" it upward from the row-total arithmetic alone.
 - The assembly is hand-written in Go Plan 9 syntax. The implemented workflow
   does not use GoAT, C sources, cgo, or an external assembler.
 - Architecture-specific initialization checks `x/sys/cpu` once and installs an
