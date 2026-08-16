@@ -2,20 +2,10 @@
 
 package renderer
 
-import (
-	"golang.org/x/sys/cpu"
+import "github.com/cwbudde/mayflycirclefit/internal/fit"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
-)
-
-var fastCompositeBackend = "scalar"
-
-// fastCompositeAVX2Enabled and fastCompositeSSE2Enabled cache the feature gates
-// together with the environment opt-out. At most one is ever true.
-var (
-	fastCompositeAVX2Enabled bool
-	fastCompositeSSE2Enabled bool
-)
+// fastCompositeKernel is the tier whose fast span kernel is installed.
+var fastCompositeKernel = fit.TierScalar
 
 // Minimum span lengths worth entering a vector kernel for, measured as exactly
 // one vector batch. Higher cutoffs were tried and lost: the scalar float32
@@ -28,17 +18,14 @@ const (
 )
 
 func init() {
-	if fit.SIMDDisabledByEnv() {
-		return
-	}
-	switch {
-	case cpu.X86.HasAVX2:
-		fastCompositeBackend = "avx2"
-		fastCompositeAVX2Enabled = true
-	case cpu.X86.HasSSE2:
-		fastCompositeBackend = "sse2"
-		fastCompositeSSE2Enabled = true
-	}
+	fit.RegisterTierConsumer(func(tier fit.SIMDTier) {
+		switch tier {
+		case fit.TierAVX2, fit.TierSSE2:
+			fastCompositeKernel = tier
+		case fit.TierScalar, fit.TierNEON:
+			fastCompositeKernel = fit.TierScalar
+		}
+	})
 }
 
 func compositeOpaqueSpanFast(pix []byte, offset, pixels int, r, g, b, alpha float64) {
@@ -54,10 +41,10 @@ func compositeOpaqueSpanFast(pix []byte, offset, pixels int, r, g, b, alpha floa
 
 	vectorPixels := 0
 	switch {
-	case fastCompositeAVX2Enabled && pixels >= fastCompositeAVX2MinPixels:
+	case fastCompositeKernel == fit.TierAVX2 && pixels >= fastCompositeAVX2MinPixels:
 		vectorPixels = pixels &^ 7
 		compositeSpanFastAVX2(&pix[offset], vectorPixels/8, &addend[0], &multiplier[0])
-	case fastCompositeSSE2Enabled && pixels >= fastCompositeSSE2MinPixels:
+	case fastCompositeKernel != fit.TierScalar && pixels >= fastCompositeSSE2MinPixels:
 		vectorPixels = pixels &^ 3
 		compositeSpanFastSSE2(&pix[offset], vectorPixels/4, &addend[0], &multiplier[0])
 	}

@@ -690,13 +690,16 @@ attributes about 80% of flat samples to three symbols — `fit.ssdScalar` 29.96%
   compositing scalar in the largest single item of its profile. It returns less
   than that framing implied: about 1.07x on the kernel and 1.06x end to end,
   measured on a host that genuinely lacks AVX2
-- [ ] Add the exact float64 AVX2 span compositor, so an AVX2 host gets the same
-  treatment. It shares the SSE2 kernel's constant layout
+- [x] Add the exact float64 AVX2 span compositor, the amd64 counterpart of the
+  NEON one, byte-identical to the scalar span and therefore on by default with
+  no flag. It shares the SSE2 kernel's constant layout
+- [x] Add an opt-in float32 SIMD span compositor with SSE2 and AVX2 kernels
+  behind `--fast-compositing`, kept after measuring it against the exact vector
+  compositor rather than against the scalar loop
 - [ ] Hoist the per-span constant block to once per circle. It is the whole
   difference between the SSE2 kernel's 8-pixel crossover measured directly and
-  the 24-pixel cutoff the dispatcher has to use
-- [ ] Add an opt-in float32 SIMD span compositor with SSE2 and AVX2 kernels
-  behind `--fast-compositing`
+  the 24-pixel cutoff the dispatcher has to use, and it would lower the AVX2
+  cutoff from 16 to around 4
 - [ ] Add opt-in concurrent population evaluation over a pool of independent
   renderer sessions behind `--parallel-evaluation`
 - [x] Do not port SAD: `FastSAD` has no non-test callers and its AVX2 kernel

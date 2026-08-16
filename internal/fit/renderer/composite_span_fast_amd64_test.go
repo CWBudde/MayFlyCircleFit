@@ -12,32 +12,74 @@ import (
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
 )
 
-// TestFastCompositeDispatchSelection pins the amd64 tier that
-// compositeOpaqueSpanFast actually enters, so the parity tests cannot quietly
-// stop covering the backend they claim to. Under GODEBUG=cpu.avx2=off this
-// asserts that the SSE2 kernel really is the one under test; without it a
-// masked run would still pass while exercising AVX2 or scalar.
-func TestFastCompositeDispatchSelection(t *testing.T) {
-	want := "scalar"
-	switch {
-	case fit.SIMDDisabledByEnv():
-	case cpu.X86.HasAVX2:
-		want = "avx2"
-	case cpu.X86.HasSSE2:
-		want = "sse2"
+// TestFastCompositeKernelMatchesTier pins the kernel the fast compositor
+// installs against the resolved tier.
+//
+// Its predecessor re-typed the init function it was testing - it read the same
+// package variables the switch had just written and compared them to a
+// transcription of that switch - and its doc comment claimed to pin the tier
+// "compositeOpaqueSpanFast actually enters" while never calling that function.
+// This version does call it, and compares against the kernel invoked directly.
+func TestFastCompositeKernelMatchesTier(t *testing.T) {
+	if got := fastCompositeKernel; got != fit.Tier() {
+		t.Fatalf("fast composite kernel = %s, tier = %s", got, fit.Tier())
 	}
 
-	if fastCompositeBackend != want {
-		t.Fatalf("fastCompositeBackend = %q, want %q", fastCompositeBackend, want)
+	const pixels = 64
+	const r, g, b, alpha = 0.2, 0.6, 0.9, 0.37
+
+	got := fastSpanFixture(pixels, 0xfa57)
+	want := bytes.Clone(got)
+	compositeOpaqueSpanFast(got, 4, pixels, r, g, b, alpha)
+
+	addR, addG, addB, mul := fastSpanConstants(r, g, b, alpha)
+	switch fastCompositeKernel {
+	case fit.TierAVX2:
+		addend := [8]float32{addR, addG, addB, 0, addR, addG, addB, 0}
+		multiplier := [8]float32{mul, mul, mul, 1, mul, mul, mul, 1}
+		compositeSpanFastAVX2(&want[4], pixels/8, &addend[0], &multiplier[0])
+	case fit.TierSSE2:
+		addend := [4]float32{addR, addG, addB, 0}
+		multiplier := [4]float32{mul, mul, mul, 1}
+		compositeSpanFastSSE2(&want[4], pixels/4, &addend[0], &multiplier[0])
+	default:
+		compositeOpaqueSpanFastScalar(want, 4, pixels, r, g, b, alpha)
 	}
-	if fastCompositeAVX2Enabled != (want == "avx2") {
-		t.Fatalf("fastCompositeAVX2Enabled = %v for backend %q", fastCompositeAVX2Enabled, want)
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("dispatched fast span differs from the %s kernel invoked directly", fastCompositeKernel)
 	}
-	if fastCompositeSSE2Enabled != (want == "sse2") {
-		t.Fatalf("fastCompositeSSE2Enabled = %v for backend %q", fastCompositeSSE2Enabled, want)
+}
+
+// TestCompositeSpanFastAVX2DirectMatchesScalarOracle is the AVX2 twin of the
+// SSE2 direct test below. It was missing: the only CI step that ran this
+// package set GODEBUG=cpu.avx2=off, so the AVX2 kernel had no direct coverage
+// anywhere.
+func TestCompositeSpanFastAVX2DirectMatchesScalarOracle(t *testing.T) {
+	if !cpu.X86.HasAVX2 {
+		t.Skip("host CPU lacks AVX2")
 	}
-	if fastCompositeAVX2Enabled && fastCompositeSSE2Enabled {
-		t.Fatal("at most one fast-composite tier may be enabled")
+
+	rng := rand.New(rand.NewPCG(0xa1e2, 0x61767832))
+	for iteration := 0; iteration < 128; iteration++ {
+		pixels := 8 * (1 + rng.IntN(40))
+		want := fastSpanFixture(pixels, uint64(iteration))
+		got := bytes.Clone(want)
+
+		r, g, b := rng.Float64(), rng.Float64(), rng.Float64()
+		alpha := rng.Float64()
+
+		compositeOpaqueSpanFastScalar(want, 4, pixels, r, g, b, alpha)
+
+		addR, addG, addB, mul := fastSpanConstants(r, g, b, alpha)
+		addend := [8]float32{addR, addG, addB, 0, addR, addG, addB, 0}
+		multiplier := [8]float32{mul, mul, mul, 1, mul, mul, mul, 1}
+		compositeSpanFastAVX2(&got[4], pixels/8, &addend[0], &multiplier[0])
+
+		if !bytes.Equal(want, got) {
+			t.Fatalf("avx2 direct, iteration %d, %d px, color=(%v,%v,%v,%v) mismatch",
+				iteration, pixels, r, g, b, alpha)
+		}
 	}
 }
 

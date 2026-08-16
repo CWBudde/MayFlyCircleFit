@@ -7,8 +7,21 @@
 // through unchanged via a multiplier of 1 and an addend of 0.
 //
 // Conversion back to bytes uses truncation (CVTTPS2PL / VCVTTPS2DQ) to match
-// Go's uint8() conversion, and saturating packs, which is safe because the
-// blend keeps every result inside [0, 255.5).
+// Go's uint8() conversion, and saturating packs.
+//
+// The saturating packs are safe only because the blend keeps every result
+// inside [0, 255.5), and that in turn holds only while the caller's colour and
+// opacity stay in [0, 1]. CPURenderer.render does not clamp; the optimizer does
+// (fit.Circle clamping, called from pipeline.go). Rendering a raw unclamped
+// parameter vector is therefore outside this kernel's contract - and outside
+// the exact scalar path's too, whose uint8() conversion of an out-of-range
+// double is implementation-defined and already differs between architectures.
+//
+// MULPS and ADDPS must stay separate. compositeOpaqueSpanFastScalar is the
+// oracle these kernels must match byte for byte, and Go's amd64 backend
+// compiles it unfused; contracting these into VFMADD231PS would change the
+// rounding and break parity. See the comment on that function - the same trap
+// runs the other way on ARM64.
 //
 // Callers pass only whole vector batches; short spans and tails stay in Go.
 

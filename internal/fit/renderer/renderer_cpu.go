@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
+	"log/slog"
 	"math"
 	"runtime"
 	"sync"
@@ -447,9 +448,45 @@ func (r *CPURenderer) FastCompositing() bool {
 	return r.fastCompositing
 }
 
-// FastCompositingBackend names the kernel the fast compositor would use.
+// FastCompositingBackend names the kernel the fast compositor would use on this
+// host. Callers that log the flag should log this too: on a build with no fast
+// kernel the flag is a pure pessimisation, and "fastCompositing=true" on its own
+// hides that.
 func FastCompositingBackend() string {
-	return fastCompositeBackend
+	return fastCompositeKernel.String()
+}
+
+// CompositingBackend names the kernel the default, exact compositor uses.
+func CompositingBackend() string {
+	return compositeSpanKernel.String()
+}
+
+// ConfigureCPUCompositing selects the span compositor and says out loud what
+// the process will actually run.
+//
+// The warning is the point. On a target with no float32 kernel the fast path
+// falls back to a float32 scalar loop that is both less accurate and slower
+// than the exact compositor it replaces, so the flag is a pure loss there - and
+// a log line reading only "fastCompositing=true" would hide that completely.
+func ConfigureCPUCompositing(cpu *CPURenderer, fastCompositing bool) {
+	cpu.SetFastCompositing(fastCompositing)
+	if fastCompositing && FastCompositingBackend() == fit.TierScalar.String() {
+		slog.Warn("Fast compositing has no vector kernel on this host; it is slower and less accurate than the exact compositor",
+			"tier", fit.Tier(), "exactCompositor", CompositingBackend())
+	}
+}
+
+// LogCPURendererConfiguration records the settings that change what a run
+// computes or how fast it computes it, including which kernels were installed.
+// A run's log should be enough to tell whether two runs are comparable.
+func LogCPURendererConfiguration(cpu *CPURenderer) {
+	slog.Info("Configured CPU renderer",
+		"threads", cpu.Threads(),
+		"evaluationWorkers", EvaluationWidth(cpu),
+		"simdTier", fit.Tier(),
+		"compositor", CompositingBackend(),
+		"fastCompositing", cpu.FastCompositing(),
+		"fastCompositor", FastCompositingBackend())
 }
 
 func effectiveThreadCount(threads, height int) int {

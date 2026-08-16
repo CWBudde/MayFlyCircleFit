@@ -259,15 +259,20 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		}
 		cpuRenderer := rend.(*renderer.CPURenderer)
 		renderer.ConfigureCPUParallelism(cpuRenderer, config.Threads, config.EvaluationWorkers, config.ParallelEvaluation)
-		cpuRenderer.SetFastCompositing(config.FastCompositing)
-		slog.Info("Configured CPU renderer", "threads", cpuRenderer.Threads(),
-			"evaluationWorkers", renderer.EvaluationWidth(cpuRenderer),
-			"fastCompositing", cpuRenderer.FastCompositing())
+		renderer.ConfigureCPUCompositing(cpuRenderer, config.FastCompositing)
+		renderer.LogCPURendererConfiguration(cpuRenderer)
 		cleanup = func() {} // No cleanup needed for CPU renderer
 	} else {
 		// Other backends don't support canvas yet
 		if canvas != nil {
 			return fmt.Errorf("canvas loading only supported with CPU backend")
+		}
+		// The compositing and parallelism knobs are CPU-renderer settings. A
+		// non-CPU backend ignores them, which is fine, but silently ignoring a
+		// flag the user set is not.
+		if config.FastCompositing {
+			slog.Warn("--fast-compositing applies to the CPU backend only and is ignored here",
+				"backend", config.Backend)
 		}
 		var err error
 		rend, cleanup, err = renderer.NewRendererForBackend(string(config.Backend), ref, config.Circles)

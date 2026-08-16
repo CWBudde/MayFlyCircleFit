@@ -29,9 +29,19 @@ func fastSpanConstants(r, g, b, alpha float64) (addR, addG, addB, mul float32) {
 		bgBlend
 }
 
-// compositeOpaqueSpanFastScalar is the portable float32 reference. It is the
-// oracle the SIMD kernels must match exactly, and the fallback for spans
-// shorter than a vector batch.
+// compositeOpaqueSpanFastScalar is the float32 reference: the oracle the SIMD
+// kernels must match exactly, and the fallback for spans shorter than a vector
+// batch.
+//
+// It is not portable, and must not be described as such. Go's arm64 backend
+// contracts the multiply-add on line 40 into FMADDS while its amd64 backend
+// emits MULSS plus ADDSS, so this function produces different bytes on the two
+// architectures this repository targets. The amd64 kernels match it only
+// because they are also unfused; folding their VMULPS and VADDPS into
+// VFMADD231PS - the obvious optimisation - would silently break parity, and the
+// symptom would look like a precision artifact rather than a defect. The exact
+// float64 path has the mirror-image dependency and documents it in
+// composite_span.go; TestCompositeSpanExactFusionContract pins the amd64 half.
 func compositeOpaqueSpanFastScalar(pix []byte, offset, pixels int, r, g, b, alpha float64) {
 	addR, addG, addB, mul := fastSpanConstants(r, g, b, alpha)
 
