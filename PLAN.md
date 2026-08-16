@@ -1803,6 +1803,155 @@ memory bandwidth.
 
 ---
 
+## Phase 16: Declarative Run Schedules
+
+### Why
+
+Growing a fit incrementally is the project's most valuable workflow and the one
+it supports least. There is no way to express "start at 8 circles, append 8 at a
+time to 512, polish at these milestones, and stop polishing once it stops
+paying." `extend` and `polish` are HTTP-only (`internal/server/server.go:1149`
+and `:996`), each call mints a *new* job id, and `extendedFrom`/`polishedFrom`
+come back in the response but are **not persisted anywhere**. A multi-hour
+incremental run is therefore a chain of unrelated job records that only an
+external script knows how to read.
+
+Both incremental runs to date were driven by throwaway Python on the compute
+box. That is where the real requirements come from, because it is where the
+failures happened:
+
+- **The lineage lived outside the system.** The orchestrator kept its own
+  append-only ledger purely because the server does not record which job
+  extended which. Nothing in the UI, the store, or the API can reconstruct the
+  chain.
+- **Bookkeeping drifted from reality.** The first run's `continue.state` pointed
+  at a 160-circle job while its own log showed the chain had reached 512 — four
+  hours and 352 circles of divergence, with no error anywhere.
+- **A crash between "server accepted the stage" and "orchestrator recorded it"
+  forks the chain.** The second run hit exactly this: a `KeyError` left an
+  orphaned 16-circle extend job running with nothing tracking it. Recovery meant
+  hand-adopting it back into the ledger.
+- **Every policy decision was hardcoded in the script.** Polish milestones, the
+  minimum gain worth continuing for, and the give-up-after-N-barren-stages rule
+  are all schedule policy, and all of them were Python constants that required
+  killing and restarting the orchestrator to change.
+- **Silent field drops cost hours.** `convergenceEnabled: false` is `omitempty`
+  and re-enabled by `ApplyDefaults` (`internal/app/config.go:323`); the real
+  lever is `disableConvergence`. A schedule document must reject or warn on
+  anything it did not actually apply.
+
+The goal of this phase is that the whole campaign is stated once, up front,
+and then runs unattended as a single observable entity.
+
+### Task 16.1: Model a Schedule as a First-Class Entity (P1)
+
+- [ ] Define a schedule document: a reference image, a base stage, and an
+      ordered list of steps, where each step is `extend` or `polish` with its own
+      parameter overrides. Support a generator form (`repeat: 63` with
+      `additionalCircles: 8`) so a 64-stage campaign is not 64 stanzas.
+- [ ] Persist the schedule and its realized stage lineage in `internal/store`,
+      keyed independently of the job records, so the chain survives a server
+      restart and can be read back without an external ledger.
+- [ ] Record `extendedFrom`/`polishedFrom` on the job checkpoint itself, so a
+      chain is reconstructible from the job tree alone even for jobs created
+      outside a schedule.
+- [ ] Validate the document strictly: unknown fields rejected, and any field
+      that `ApplyDefaults` would override reported as an error rather than
+      silently dropped.
+
+**Acceptance Checks:**
+
+- [ ] A schedule round-trips through the store and reloads with its lineage
+      intact after a server restart.
+- [ ] A document setting `convergenceEnabled: false` is rejected with a message
+      naming `disableConvergence` as the effective field.
+
+### Task 16.2: Run Schedules Server-Side (P1)
+
+- [ ] Execute the schedule inside the server's job lifecycle
+      (`internal/server`), not from a client. The run must survive the client
+      disconnecting, and must respect `--max-jobs` so a schedule cannot
+      oversubscribe the host.
+- [ ] Make the executor crash-safe at the stage boundary: on startup, adopt any
+      in-flight stage belonging to a schedule rather than starting a second one.
+      This is the orphan-fork failure described above and it must be impossible
+      by construction, not by convention.
+- [ ] One source of truth for progress. Do not add a second state file that can
+      drift from the stage records.
+- [ ] Cancel, pause, and resume operate on the schedule as a whole, and cancelling
+      a schedule cancels its in-flight stage.
+
+**Acceptance Checks:**
+
+- [ ] Killing the server mid-stage and restarting it resumes the same schedule
+      without duplicating or skipping a stage — asserted by a test, not by
+      inspection.
+- [ ] A schedule and a manually created job cannot exceed `--max-jobs` together.
+
+### Task 16.3: Express Stage Policy Declaratively (P2)
+
+- [ ] Support conditional steps: run a polish only at listed circle counts, and
+      stop scheduling polishes after N consecutive stages gained less than a
+      threshold. Both were hardcoded Python constants; both are policy.
+- [ ] Support per-step budget overrides (`iters`, `epochs`, `popSize`,
+      `activeSetSize`, `maxSweeps`) so polish budget can differ from extend
+      budget without a second document.
+- [ ] Seed handling is explicit: one campaign seed, inherited by every stage, and
+      recorded per stage so a single stage can be replayed.
+
+**Acceptance Checks:**
+
+- [ ] A schedule expressing the second run's policy — base 8, `+8` to 512, polish
+      at 32/64/96/128/192/256, abort polishing after two stages under 1.0 cost
+      units — is representable without custom code, and a table-driven test
+      asserts the exact stage sequence it produces.
+
+### Task 16.4: Estimate Before Committing Hours (P2)
+
+- [ ] `--dry-run` prints the full realized stage list with per-stage parameters
+      and the total optimizer iteration count, without touching the store.
+- [ ] After the first few stages complete, report a projected finish time derived
+      from observed stage wall clock. Extend stages are roughly flat in circle
+      count because the frozen prefix is baked once
+      (`internal/fit/renderer/pipeline.go`), so a projection is meaningful —
+      but it must come from measurement, never from an a-priori model.
+
+**Acceptance Checks:**
+
+- [ ] `--dry-run` on the 512-circle campaign lists all stages and reports a
+      total iteration count matching a hand computation.
+
+### Task 16.5: Surface the Campaign in the UI and CLI (P2)
+
+- [ ] A schedule view showing the stage table — circles, cost, PSNR, elapsed,
+      accepted sweeps for polish stages — as one run rather than N unrelated
+      jobs.
+- [ ] Plot cost against circle count across the whole chain, which is the one
+      view that actually answers "is this schedule better than the last one."
+- [ ] A `schedule` CLI command mirroring the HTTP surface, following the existing
+      short-imperative-verb convention (`run`, `resume`, `status`).
+
+**Acceptance Checks:**
+
+- [ ] The 96-circle chain already on disk can be imported and rendered as a
+      single campaign view.
+
+### Task 16.6: Retire the External Orchestrator (P2)
+
+- [ ] Reproduce a short campaign (base 8, three `+8` extends, one polish) through
+      the schedule feature and through the Python orchestrator, and confirm the
+      cost sequence matches.
+- [ ] Document the schedule format in `docs/`, with the 512-circle campaign as
+      the worked example, and note the run-to-run comparability caveats
+      (compositor version, SIMD tier, `fastCompositing`).
+
+**Acceptance Checks:**
+
+- [ ] The worked example in the docs is a file the test suite actually parses,
+      so the documented format cannot drift from the implemented one.
+
+---
+
 ## Summary and Next Steps
 
 This plan covers **Phases 0-14** in complete detail with bite-sized, testable tasks. Each task follows TDD principles:
