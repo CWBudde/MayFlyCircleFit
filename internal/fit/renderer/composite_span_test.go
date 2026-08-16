@@ -158,7 +158,7 @@ func BenchmarkCPURendererOpaqueSpan(b *testing.B) {
 		circles = 100
 	)
 	reference := randomNRGBA(width, height, 42)
-	params := randomParams(circles, width, height)
+	params := benchmarkParams(circles, width, height, 20260816)
 
 	for _, test := range []struct {
 		name         string

@@ -8,7 +8,6 @@ import (
 	"math/rand"
 	"runtime"
 	"testing"
-	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
 )
@@ -262,7 +261,7 @@ func BenchmarkCPURenderer_Render(b *testing.B) {
 			ref := randomNRGBA(sz.width, sz.height, 42)
 			renderer := NewCPURenderer(ref, sz.circles)
 			renderer.SetThreads(1)
-			params := randomParams(sz.circles, sz.width, sz.height)
+			params := benchmarkParams(sz.circles, sz.width, sz.height, 20260816)
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -319,7 +318,7 @@ func BenchmarkCPURenderer_Cost(b *testing.B) {
 		b.Run(sz.name, func(b *testing.B) {
 			ref := randomNRGBA(sz.width, sz.height, 42)
 			renderer := NewCPURenderer(ref, sz.circles)
-			params := randomParams(sz.circles, sz.width, sz.height)
+			params := benchmarkParams(sz.circles, sz.width, sz.height, 20260816)
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -415,13 +414,26 @@ func compositePixelGeneral(img *image.NRGBA, x, y int, r, g, b, alpha float64) {
 	img.Pix[i+3] = uint8(outA*255 + 0.5)
 }
 
-// BenchmarkRenderCircle benchmarks rendering a single circle
+// BenchmarkRenderCircle compares the three circle rasterizers.
+//
+// Two properties of the earlier version made it useless for comparing builds,
+// and both are corrected here.
+//
+// It built CPURenderer as a struct literal, which leaves opaqueCanvas false, so
+// every case measured the per-pixel Porter-Duff path and none of them ever
+// reached the span compositor that production uses on an opaque canvas. The
+// canvas kind is now an explicit axis, so both paths are measured and neither
+// can be selected by accident.
+//
+// And it refilled the whole 256x256 canvas inside the timed loop, which cost
+// more than the circle did: every radius from 5 to 50 landed within a few
+// percent of the same number, and comparing two binaries mostly compared the
+// code layout of that fill loop. The canvas is now filled once, before the
+// timer starts. Compositing the same circle repeatedly drives the covered
+// pixels toward the circle color, but none of these paths branch on pixel
+// values, so every iteration performs the identical arithmetic.
 func BenchmarkRenderCircle(b *testing.B) {
-	img := image.NewNRGBA(image.Rect(0, 0, 256, 256))
-	renderer := &CPURenderer{
-		width:  256,
-		height: 256,
-	}
+	const width, height = 256, 256
 
 	circles := []struct {
 		name string
@@ -434,36 +446,45 @@ func BenchmarkRenderCircle(b *testing.B) {
 		{"R50_large", fit.Circle{X: 128, Y: 128, R: 50, CR: 1.0, CG: 0.5, CB: 0.0, Opacity: 0.7}},
 	}
 
-	for _, tc := range circles {
-		b.Run(tc.name+"/Original", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				// Reset canvas to white
-				for j := range img.Pix {
-					img.Pix[j] = 255
-				}
-				renderer.renderCircle(img, tc.c)
-			}
-		})
+	strategies := []struct {
+		name   string
+		render func(*CPURenderer, *image.NRGBA, fit.Circle)
+	}{
+		{"Original", (*CPURenderer).renderCircle},
+		{"Scanline", (*CPURenderer).renderCircleScanline},
+		{"Hybrid", (*CPURenderer).renderCircleHybrid},
+	}
 
-		b.Run(tc.name+"/Scanline", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				// Reset canvas to white
-				for j := range img.Pix {
-					img.Pix[j] = 255
-				}
-				renderer.renderCircleScanline(img, tc.c)
-			}
-		})
+	reference := randomNRGBA(width, height, 42)
+	for _, canvas := range []struct {
+		name   string
+		opaque bool
+	}{
+		// The canvas is white either way; the flag decides which compositor the
+		// renderer is allowed to use for it.
+		{"opaque_span", true},
+		{"pixel_loop", false},
+	} {
+		for _, tc := range circles {
+			for _, strategy := range strategies {
+				b.Run(canvas.name+"/"+tc.name+"/"+strategy.name, func(b *testing.B) {
+					renderer := NewCPURenderer(reference, 1)
+					renderer.SetThreads(1)
+					renderer.opaqueCanvas = canvas.opaque
 
-		b.Run(tc.name+"/Hybrid", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				// Reset canvas to white
-				for j := range img.Pix {
-					img.Pix[j] = 255
-				}
-				renderer.renderCircleHybrid(img, tc.c)
+					img := image.NewNRGBA(image.Rect(0, 0, width, height))
+					for j := range img.Pix {
+						img.Pix[j] = 255
+					}
+
+					b.ReportAllocs()
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						strategy.render(renderer, img, tc.c)
+					}
+				})
 			}
-		})
+		}
 	}
 }
 
@@ -479,10 +500,16 @@ func randomNRGBA(width, height int, seed int64) *image.NRGBA {
 	return img
 }
 
-// Helper function to create random circle parameters
-func randomParams(k, width, height int) []float64 {
+// benchmarkParams builds a circle vector for a benchmark workload.
+//
+// The seed is a parameter, and every caller passes a literal, because this used
+// to seed from time.Now().UnixNano(). Two runs of the same benchmark therefore
+// rendered different geometry, which put a 10-40% spread on results that are
+// routinely compared across builds - large enough to hide the effect being
+// measured. Change a seed only together with the numbers recorded against it.
+func benchmarkParams(k, width, height int, seed int64) []float64 {
 	const paramsPerCircle = 7 // X, Y, R, CR, CG, CB, Opacity
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	r := rand.New(rand.NewSource(seed))
 	params := make([]float64, k*paramsPerCircle)
 	for i := 0; i < k; i++ {
 		offset := i * paramsPerCircle
