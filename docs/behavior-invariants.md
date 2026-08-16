@@ -174,3 +174,32 @@ bounded. pprof is off by default and `--enable-pprof` requires a loopback bind.
 
 These controls do not make the server multi-user or internet-ready. Do not add
 documentation suggesting otherwise.
+
+## Schedule execution
+
+A schedule runs inside the server, not in a client. `POST /api/v1/schedules`
+persists the campaign and starts it; the client may disconnect immediately.
+
+- **Stages are ordinary jobs.** Each stage is created and queued through the
+  same path a hand-issued `POST /api/v1/jobs` uses, so a schedule and manual
+  jobs share `--max-jobs` and a campaign cannot oversubscribe the host. The
+  executor goroutine itself holds no worker slot.
+- **The stage records are the only progress.** There is no cursor file and no
+  authoritative in-memory index. The executor re-derives the next stage from the
+  persisted records on every iteration, so nothing can drift from what actually
+  ran.
+- **A stage is recorded before it can start.** The job identifier is chosen
+  first, written into the stage record as `running`, and only then used to
+  create the job. A crash therefore leaves an adoptable record, never a running
+  job no record names.
+- **Restart adopts, it does not restart the campaign.** On startup every
+  schedule still in `running` resumes. An interrupted stage is re-run under the
+  identifier its record already names; the partial checkpoint from the
+  interrupted attempt is discarded, because neither `extend` nor `polish` can
+  continue from anything but a completed batch checkpoint.
+- **Pause is a stage boundary.** `POST /api/v1/schedules/:id/pause` lets the
+  in-flight stage finish and stops before the next one; `resume` continues from
+  the first stage the records do not show as completed. `cancel` is terminal and
+  does cancel the in-flight stage.
+- **Schedules run in the default project.** They are keyed independently of jobs
+  and the store does not know about projects.

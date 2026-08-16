@@ -1953,25 +1953,28 @@ and then runs unattended as a single observable entity.
 
 ### Task 16.2: Run Schedules Server-Side (P1)
 
-- [ ] Execute the schedule inside the server's job lifecycle
+- [x] Execute the schedule inside the server's job lifecycle
       (`internal/server`), not from a client. The run must survive the client
       disconnecting, and must respect `--max-jobs` so a schedule cannot
       oversubscribe the host.
-- [ ] Make the executor crash-safe at the stage boundary: on startup, adopt any
+- [x] Make the executor crash-safe at the stage boundary: on startup, adopt any
       in-flight stage belonging to a schedule rather than starting a second one.
       This is the orphan-fork failure described above and it must be impossible
       by construction, not by convention.
-- [ ] One source of truth for progress. Do not add a second state file that can
+- [x] One source of truth for progress. Do not add a second state file that can
       drift from the stage records.
-- [ ] Cancel, pause, and resume operate on the schedule as a whole, and cancelling
+- [x] Cancel, pause, and resume operate on the schedule as a whole, and cancelling
       a schedule cancels its in-flight stage.
 
 **Acceptance Checks:**
 
-- [ ] Killing the server mid-stage and restarting it resumes the same schedule
+- [x] Killing the server mid-stage and restarting it resumes the same schedule
       without duplicating or skipping a stage — asserted by a test, not by
       inspection.
-- [ ] A schedule and a manually created job cannot exceed `--max-jobs` together.
+      (`TestScheduleResumesTheSameStageAfterRestart`,
+      `TestScheduleAdoptsAStageWhoseJobNeverStarted`)
+- [x] A schedule and a manually created job cannot exceed `--max-jobs` together.
+      (`TestScheduleAndManualJobShareTheJobLimit`)
 
 ### Task 16.3: Express Stage Policy Declaratively (P2)
 

@@ -126,6 +126,36 @@ The stream sends an immediate snapshot, at most one optimization progress event
 per 500 ms, and a final `completed`, `failed`, or `cancelled` event before it
 closes. A comment heartbeat is sent every 30 seconds while otherwise idle.
 
+### Run schedules
+
+A whole incremental campaign -- a base run plus an ordered list of `extend` and
+`polish` continuations -- can be stated once and run unattended by the server.
+The client may disconnect; the campaign keeps going, and it shares `--max-jobs`
+with ordinary jobs.
+
+```sh
+curl -fsS http://localhost:8080/api/v1/schedules \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "name": "8 to 32",
+    "seed": 42,
+    "base": {"refPath":"assets/test.png","mode":"batch","circles":8,"batchSize":8,"iters":200,"popSize":30},
+    "steps": [{"type":"extend","repeat":3,"additionalCircles":8}]
+  }'
+
+# The stage table is the campaign's progress; there is no second state file.
+curl -fsS http://localhost:8080/api/v1/schedules/SCHEDULE_ID
+
+curl -fsS -X POST http://localhost:8080/api/v1/schedules/SCHEDULE_ID/pause
+curl -fsS -X POST http://localhost:8080/api/v1/schedules/SCHEDULE_ID/resume
+curl -fsS -X POST http://localhost:8080/api/v1/schedules/SCHEDULE_ID/cancel
+```
+
+Pausing stops at the next stage boundary and lets the in-flight stage finish;
+cancelling also cancels the in-flight stage. Restarting the server resumes any
+schedule that was running, continuing the stage it was on rather than starting a
+second one.
+
 ## Backends and optimization modes
 
 | Backend | Joint | Sequential | Batch | Notes |
