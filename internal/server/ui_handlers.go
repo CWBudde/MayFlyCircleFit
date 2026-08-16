@@ -450,13 +450,16 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 
 	// The form carries the project as a plain field; an absent one is the
 	// default project, which is the legacy jobs directory.
-	project, err := s.resolveRequestedProject(r.FormValue("project"), r)
+	requested, err := s.resolveRequestedProject(r.FormValue("project"), r)
+	project := requested
 	if err == nil {
-		project, err = s.ensureProject(project)
+		project, err = s.ensureProject(requested)
 	}
 	if err != nil {
+		// A store fault is logged server-side and shown generically; only the
+		// charset-constrained validation message is echoed to the browser.
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+		ui.CreateJobPage(projectErrorMessage(requested, err)).Render(r.Context(), w)
 		return
 	}
 

@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,15 +19,10 @@ const projectsDirName = "projects"
 
 var (
 	errConflictingProject = errors.New("project in the request body and query string disagree")
-	errUnknownProject     = errors.New("named projects require a configured data root")
+	// errUnknownProject reports a slug that the registry cannot resolve. It is
+	// deliberately not a fallback to the default project: see storeForSlug.
+	errUnknownProject = errors.New("unknown project")
 )
-
-// ProjectInfo is the API and UI projection of one project.
-type ProjectInfo struct {
-	Slug   string `json:"slug"`
-	Jobs   int    `json:"jobs"`
-	Legacy bool   `json:"legacy,omitempty"`
-}
 
 // projectRegistry owns one store per project slug. The store package stays
 // project-unaware: each project is just an FSStore rooted at its own
@@ -35,7 +31,6 @@ type projectRegistry struct {
 	mu       sync.RWMutex
 	dataRoot string
 	stores   map[string]store.Store
-	legacy   string
 }
 
 // newProjectRegistry seeds the registry with the default store and adopts any
@@ -49,7 +44,6 @@ func newProjectRegistry(dataRoot string, defaultStore store.Store) *projectRegis
 	}
 	if defaultStore != nil {
 		registry.stores[app.DefaultProject] = defaultStore
-		registry.legacy = app.DefaultProject
 	}
 	registry.discover()
 	return registry
@@ -61,19 +55,43 @@ func (r *projectRegistry) discover() {
 	if r.dataRoot == "" {
 		return
 	}
-	entries, err := os.ReadDir(filepath.Join(r.dataRoot, projectsDirName))
+	container := filepath.Join(r.dataRoot, projectsDirName)
+	entries, err := os.ReadDir(container)
 	if err != nil {
+		// A missing container is the ordinary pre-project layout, not a fault.
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Error("Unable to read the projects container; no project is visible",
+				"directory", container, "error", err)
+		}
 		return
 	}
 	for _, entry := range entries {
+		slug := entry.Name()
 		if !entry.IsDir() {
+			// Stray files never were projects, so this is informational only.
+			slog.Debug("Ignoring non-directory entry in the projects container",
+				"directory", container, "entry", slug)
 			continue
 		}
-		slug := entry.Name()
-		if app.ValidateProjectSlug(slug) != nil {
+		if err := app.ValidateProjectSlug(slug); err != nil {
+			slog.Warn("Ignoring project directory with an unusable name; its jobs stay hidden",
+				"directory", filepath.Join(container, slug), "error", err)
+			continue
+		}
+		if slug == app.DefaultProject {
+			// The default project is always the legacy `<data-root>/jobs` tree,
+			// so this directory can only be a stray one. Adopting it would give
+			// the same name two meanings, differing by whether the server was
+			// built with an injected store; refusing it keeps the alias single.
+			slog.Warn("Ignoring the reserved default project directory; the default project is the legacy jobs tree",
+				"directory", filepath.Join(container, slug))
 			continue
 		}
 		if _, err := r.GetOrCreate(slug); err != nil {
+			// The directory is a valid project that failed to open. Its jobs
+			// disappear from the API and UI, so this is a fault, not a skip.
+			slog.Error("Unable to adopt project directory; its jobs stay hidden",
+				"directory", filepath.Join(container, slug), "error", err)
 			continue
 		}
 	}
@@ -135,12 +153,6 @@ func (r *projectRegistry) GetOrCreate(slug string) (store.Store, error) {
 	return created, nil
 }
 
-// Default returns the store used when a job names no project.
-func (r *projectRegistry) Default() store.Store {
-	s, _ := r.Get(app.DefaultProject)
-	return s
-}
-
 // Slugs returns every known project slug in stable order.
 func (r *projectRegistry) Slugs() []string {
 	r.mu.RLock()
@@ -151,15 +163,4 @@ func (r *projectRegistry) Slugs() []string {
 	}
 	sort.Strings(slugs)
 	return slugs
-}
-
-// All returns a snapshot of every project store, keyed by slug.
-func (r *projectRegistry) All() map[string]store.Store {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	snapshot := make(map[string]store.Store, len(r.stores))
-	for slug, s := range r.stores {
-		snapshot[slug] = s
-	}
-	return snapshot
 }

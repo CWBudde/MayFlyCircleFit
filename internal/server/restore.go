@@ -4,20 +4,20 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
 
 // restorePersistedJobs reconstructs terminal jobs from checkpoints so server
 // restarts do not make completed work disappear from the UI and API.
 func (s *Server) restorePersistedJobs() {
-	if s.store == nil && s.projects == nil {
-		return
-	}
-
 	restored := 0
 	for _, slug := range s.projectSlugsForRestore() {
-		restored += s.restoreProjectJobs(slug, s.storeForSlug(slug))
+		projectStore, err := s.storeForSlug(slug)
+		if err != nil {
+			slog.Error("Unable to resolve project store for restore", "project", slug, "error", err)
+			continue
+		}
+		restored += s.restoreProjectJobs(slug, projectStore)
 	}
 
 	if restored > 0 {
@@ -29,9 +29,6 @@ func (s *Server) restorePersistedJobs() {
 // the legacy `<data-root>/jobs` tree, so pre-project installations restore
 // exactly as before without any migration.
 func (s *Server) projectSlugsForRestore() []string {
-	if s.projects == nil {
-		return []string{app.DefaultProject}
-	}
 	return s.projects.Slugs()
 }
 

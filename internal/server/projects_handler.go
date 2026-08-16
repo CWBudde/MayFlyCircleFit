@@ -2,6 +2,8 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -45,19 +47,60 @@ func (s *Server) resolveRequestedProject(fromBody string, r *http.Request) (stri
 	}
 }
 
+// projectStoreError marks a server-side failure to create or open a project's
+// store. It exists so callers can tell a rejected slug (the client's fault, and
+// safe to echo) from a filesystem fault, whose wrapped os error carries the
+// absolute data root and must never reach a client.
+type projectStoreError struct {
+	slug string
+	err  error
+}
+
+func (e *projectStoreError) Error() string {
+	return fmt.Sprintf("prepare project %q: %v", e.slug, e.err)
+}
+
+func (e *projectStoreError) Unwrap() error { return e.err }
+
 // ensureProject creates the project's store on first use. The default project
-// is never created here: it is the store the server was built with.
+// is never created here: it is the store the server was built with. A slug that
+// fails validation is returned as-is; every other failure is wrapped in a
+// *projectStoreError so the caller can answer 500 instead of 400.
 func (s *Server) ensureProject(slug string) (string, error) {
 	if slug == "" || slug == app.DefaultProject {
 		return app.DefaultProject, nil
 	}
-	if s.projects == nil {
-		return "", errUnknownProject
-	}
-	if _, err := s.projects.GetOrCreate(slug); err != nil {
+	if err := app.ValidateProjectSlug(slug); err != nil {
 		return "", err
 	}
+	if _, err := s.projects.GetOrCreate(slug); err != nil {
+		return "", &projectStoreError{slug: slug, err: err}
+	}
 	return slug, nil
+}
+
+// writeProjectError answers an ensureProject failure. Validation messages are
+// charset-constrained and safe to echo; store faults are logged server-side and
+// answered generically so no filesystem path is disclosed.
+func (s *Server) writeProjectError(w http.ResponseWriter, slug string, err error) {
+	var storeErr *projectStoreError
+	if errors.As(err, &storeErr) {
+		slog.Error("Unable to prepare project store", "project", slug, "error", storeErr.err)
+		writeAPIError(w, http.StatusInternalServerError, "project_unavailable", "the project store is unavailable")
+		return
+	}
+	writeAPIError(w, http.StatusBadRequest, "invalid_project", err.Error())
+}
+
+// projectErrorMessage is the UI counterpart of writeProjectError: it logs a
+// store fault and returns the text the create page should display.
+func projectErrorMessage(slug string, err error) string {
+	var storeErr *projectStoreError
+	if errors.As(err, &storeErr) {
+		slog.Error("Unable to prepare project store", "project", slug, "error", storeErr.err)
+		return "The project store is unavailable"
+	}
+	return err.Error()
 }
 
 // handleProjects serves GET /api/v1/projects.
@@ -76,10 +119,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 		counts[slug]++
 	}
 
-	slugs := []string{app.DefaultProject}
-	if s.projects != nil {
-		slugs = s.projects.Slugs()
-	}
+	slugs := s.projects.Slugs()
 	// A project may exist only in memory (jobs created before its directory was
 	// written), so union the two sources rather than trusting either alone.
 	seen := make(map[string]bool, len(slugs))

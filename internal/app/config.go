@@ -30,9 +30,20 @@ const (
 // existing installations keep listing their jobs without a migration.
 const DefaultProject = "default"
 
-// reservedProjectSlugs are names that would collide with the on-disk layout
-// `<data-root>/projects/<slug>/jobs/<uuid>`.
+// reservedProjectSlugs are names a project may not take. Two reasons apply:
+//
+//   - "all" is the wire sentinel for "do not filter". The jobs API reads
+//     `?project=all` as a request for every job in every project, so a project
+//     actually named "all" would be created and filled normally and then be
+//     permanently unfilterable.
+//   - "jobs", "projects", and "saved" collide with nothing today, because every
+//     project directory lives one level down in `<data-root>/projects/<slug>`.
+//     They are held back defensively: they name components of the on-disk layout
+//     `<data-root>/projects/<slug>/jobs/<uuid>`, so a path built from them reads
+//     as directory structure rather than as a project, and flattening the layout
+//     later would turn them into real collisions.
 var reservedProjectSlugs = map[string]bool{
+	"all":      true,
 	"jobs":     true,
 	"projects": true,
 	"saved":    true,

@@ -31,6 +31,7 @@ func TestValidateProjectSlug(t *testing.T) {
 		"has_score", // underscore
 		"-lead",     // leading dash
 		"trail-",    // trailing dash
+		"all",       // reserved: "no filter" sentinel
 		"jobs",      // reserved
 		"projects",  // reserved
 		"saved",     // reserved
@@ -43,10 +44,16 @@ func TestValidateProjectSlug(t *testing.T) {
 		}
 	}
 
-	long := ""
-	for range MaxProjectSlugLen + 1 {
-		long += "a"
+	// The length limit is inclusive, so both sides of the boundary are checked.
+	atLimit := ""
+	for range MaxProjectSlugLen {
+		atLimit += "a"
 	}
+	if err := ValidateProjectSlug(atLimit); err != nil {
+		t.Errorf("ValidateProjectSlug(%d chars) = %v, want nil", len(atLimit), err)
+	}
+
+	long := atLimit + "a"
 	if err := ValidateProjectSlug(long); err == nil {
 		t.Errorf("ValidateProjectSlug(%d chars) = nil, want error", len(long))
 	}
