@@ -15,8 +15,19 @@ const (
 )
 
 func validateJobID(jobID string) error {
-	parsed, err := uuid.Parse(jobID)
-	if err != nil || parsed == uuid.Nil || parsed.String() != jobID {
+	return validateIdentifier(jobID)
+}
+
+// validateScheduleID applies the job-ID rule to a schedule. Schedules are keyed
+// independently of jobs but live in the same tree, so the identifier has to
+// meet the same containment guarantee.
+func validateScheduleID(scheduleID string) error {
+	return validateIdentifier(scheduleID)
+}
+
+func validateIdentifier(id string) error {
+	parsed, err := uuid.Parse(id)
+	if err != nil || parsed == uuid.Nil || parsed.String() != id {
 		return fmt.Errorf("must be a canonical non-zero UUID")
 	}
 	return nil
