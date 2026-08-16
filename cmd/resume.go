@@ -184,6 +184,9 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 		}
 		cpu := renderer.NewCPURendererWithCanvas(ref, canvas, checkpoint.Config.Circles)
 		cpu.SetThreads(checkpoint.Config.Threads)
+		if checkpoint.Config.ParallelEvaluation {
+			cpu.SetParallelEvaluationWorkers(checkpoint.Config.Threads)
+		}
 		rend = cpu
 	} else {
 		backend := checkpoint.Config.Backend
@@ -193,6 +196,9 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 		if backend == "cpu" {
 			cpu := renderer.NewCPURenderer(ref, checkpoint.Config.Circles)
 			cpu.SetThreads(checkpoint.Config.Threads)
+			if checkpoint.Config.ParallelEvaluation {
+				cpu.SetParallelEvaluationWorkers(checkpoint.Config.Threads)
+			}
 			rend = cpu
 		} else {
 			rend, cleanup, err = renderer.NewRendererForBackend(string(backend), ref, checkpoint.Config.Circles)
@@ -208,7 +214,8 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 		seed = checkpoint.Config.Seed
 	}
 	optimizer, err := opt.NewMayflyVariant(string(checkpoint.Config.Variant), checkpoint.Config.Iters, checkpoint.Config.PopSize, seed,
-		opt.WithLogger(slog.Default()), opt.WithEarlyStop(earlyStopFromConfig(checkpoint.Config)))
+		opt.WithLogger(slog.Default()), opt.WithEarlyStop(earlyStopFromConfig(checkpoint.Config)),
+		parallelEvaluationOption(checkpoint.Config))
 	if err != nil {
 		return fmt.Errorf("create optimizer: %w", err)
 	}

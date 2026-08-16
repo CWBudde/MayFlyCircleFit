@@ -77,11 +77,24 @@ behavior is production-ready.
   configuration but is not comparable to a run without it.
 - `--log-level=debug` now emits one MayFly record per optimizer iteration.
   Long runs produce correspondingly large logs.
-- MayFly's `EnableParallel`/`MaxWorkers` evaluation parallelism is deliberately
-  unused. `CPURenderer.Render` composites into one reusable canvas, so
-  concurrent cost evaluations would interleave, and CPU rendering already
-  parallelizes across row bands. Enabling it would require a concurrency-safe
-  cost path and has not been shown to pay for itself.
+- MayFly's `EnableParallel`/`MaxWorkers` evaluation parallelism is opt-in
+  through `--parallel-evaluation` and the `parallelEvaluation` job field, and is
+  off by default. The pipeline then leases one independent renderer session per
+  concurrent evaluation, each with its own canvas and its own single rendering
+  thread, so `CPURenderer.Render` never composites into a shared canvas. The
+  default still evaluates serially over one session.
+- Parallel evaluation is reproducible but not equivalent to a serial run of the
+  same seed. Evaluation order does not leak into the result: MayFly advances its
+  RNG only from serial phase code and breaks ties in a parallel batch by
+  population index, so a seed reproduces bit-identically and the result does not
+  depend on the worker count. The trajectory differs because MayFly's serial
+  male loop updates the global best in the middle of a generation, steering the
+  remaining members, while its parallel loop holds the global best fixed for the
+  whole generation and merges afterwards. Compare `--parallel-evaluation` runs
+  only against other runs with the same setting.
+- Transactional polishing (`--polishing`) always evaluates serially, even when
+  `--parallel-evaluation` is set. Its sweep evaluator still merges into one
+  shared candidate vector and one shared session.
 - MayFly's constraint handling and convergence-curve CSV/JSON export are unused.
   The problem is box-bounded, and trace ownership belongs to the store package.
 

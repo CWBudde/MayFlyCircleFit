@@ -32,6 +32,12 @@ type CPURenderer struct {
 	// centers. The measured prototype remains opt-in because ordinary optimizer
 	// centers are almost never eligible and row sharding removes the gain.
 	enableRowSymmetry bool
+	// parallelEvaluationWorkers is the number of concurrent cost evaluations
+	// the optimization pipeline may run against independent sessions of this
+	// renderer. Values below two keep the historical single-session behavior.
+	// It never affects this renderer's own rendering, only how many sessions
+	// the pipeline creates.
+	parallelEvaluationWorkers int
 	// initialSSD is the exact, unnormalized RGB SSD between initialBg and the
 	// reference. It is prepared once for future incremental-cost evaluation.
 	initialSSD      uint64
@@ -359,6 +365,27 @@ func (r *CPURenderer) SetThreads(threads int) {
 // Threads returns the effective number of rendering workers.
 func (r *CPURenderer) Threads() int {
 	return r.threads
+}
+
+// SetParallelEvaluationWorkers configures how many concurrent cost evaluations
+// the optimization pipeline may run. The pipeline then creates that many
+// independent sessions, each with its own canvas, and gives every session a
+// single rendering thread: with many evaluations in flight the row-band
+// fan-out inside one render is pure overhead. Values below two keep the
+// historical single-session behavior. Call it before starting an optimization.
+func (r *CPURenderer) SetParallelEvaluationWorkers(workers int) {
+	if workers < 1 {
+		workers = 1
+	}
+	r.parallelEvaluationWorkers = workers
+}
+
+// ParallelEvaluationWorkers reports the configured concurrent evaluation width.
+func (r *CPURenderer) ParallelEvaluationWorkers() int {
+	if r.parallelEvaluationWorkers < 1 {
+		return 1
+	}
+	return r.parallelEvaluationWorkers
 }
 
 func effectiveThreadCount(threads, height int) int {
