@@ -144,6 +144,34 @@ func TestNormalizeAcceptsResidualRegionPolishing(t *testing.T) {
 	}
 }
 
+func TestNormalizeAcceptsContiguousWindowPolishing(t *testing.T) {
+	config := DefaultConfig()
+	config.RefPath = "reference.png"
+	config.Mode = ModeBatch
+	config.PolishingEnabled = true
+	config.PolishingStrategy = PolishingContiguousWindow
+
+	normalized, err := Normalize(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized.PolishingStrategy != PolishingContiguousWindow {
+		t.Fatalf("polishing strategy = %q, want contiguous-window", normalized.PolishingStrategy)
+	}
+}
+
+func TestValidateRejectsUnknownPolishingStrategy(t *testing.T) {
+	config := DefaultConfig()
+	config.RefPath = "reference.png"
+	config.Mode = ModeBatch
+	config.PolishingEnabled = true
+	config.PolishingStrategy = PolishingStrategy("sliding-window")
+
+	if _, err := Normalize(config); err == nil {
+		t.Fatal("Normalize accepted an unknown polishing strategy")
+	}
+}
+
 func TestValidateImageDimensions(t *testing.T) {
 	for _, test := range []struct {
 		width, height int
