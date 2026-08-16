@@ -32,7 +32,11 @@ stopping applies to each stage independently, so it can shorten stages without
 ending the run; the run then reports `completed`. Reported termination reasons
 are `completed`, `cancelled`, `target_cost`, `stagnation`, and
 `stage_convergence`. MayFly evaluation parallelism (`EnableParallel`) is opt-in
-through `--parallel-evaluation` and off by default.
+through `--parallel-evaluation`, sized by `--evaluation-workers`, and off by
+default. It requires a backend that can hand out independent renderer sessions,
+so it applies to the CPU backend only; OpenCL declines it with a warning and
+evaluates serially. Transactional polishing always evaluates serially and
+rejects a parallel optimizer.
 
 ## Build targets
 

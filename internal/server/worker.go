@@ -640,6 +640,16 @@ func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (
 	return renderer.NewRendererForBackend(string(backend), ref, circleCount)
 }
 
+// parallelEvaluationWidth reports the concurrent evaluation width a job ran
+// with, or zero when it did not opt in. It reads the configuration rather than
+// a renderer because the detail view outlives the job's renderer.
+func parallelEvaluationWidth(config store.JobConfig) int {
+	if !config.ParallelEvaluation {
+		return 0
+	}
+	return config.EvaluationWorkers
+}
+
 // configureJobCPURenderer applies a job's parallelism settings and records the
 // effective evaluation width. The server had no equivalent of the CLI's startup
 // line, so a job's actual concurrency was invisible in the server log.

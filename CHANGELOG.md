@@ -9,9 +9,16 @@ release is declared by this file.
 ### Added
 
 - `run --parallel-evaluation` evaluates optimizer population members
-  concurrently over `--threads` independent renderer sessions, each with its own
-  canvas. It is reproducible for a fixed seed and worker-count independent, but
-  its trajectory differs from a serial run of the same seed. It defaults to off.
+  concurrently over independent renderer sessions, each with its own canvas.
+  `--evaluation-workers` (job field `evaluationWorkers`) sets how many, clamped
+  to `GOMAXPROCS` and defaulting to `--threads`. It is reproducible for a fixed
+  seed and worker-count independent, but its trajectory differs from a serial
+  run of the same seed. It defaults to off. Evaluation width trades against
+  `--threads` rather than adding to it, and narrow pools are slower than the
+  default; see [docs/parallel-evaluation-report.md](docs/parallel-evaluation-report.md)
+  for measured scaling. Backends without independent sessions decline the
+  request with a warning, and transactional polishing rejects a parallel
+  optimizer outright because its sweep evaluator is not re-entrant.
 - Optimizer-level early stopping, disabled by default. `--stop-target-cost`,
   `--stop-stagnation-iters`, `--stop-min-improvement`, and `--stop-min-iters`
   (and their `stop*` job-configuration fields) apply per iteration inside a
@@ -85,8 +92,11 @@ release is declared by this file.
 - OpenCL remains experimental and joint-only.
 - Restart-from-best does not restore the full optimizer state, and server resume
   of sequential/batch jobs is unsupported.
-- `--parallel-evaluation` changes the output of a fixed seed and is therefore
-  opt-in and off by default.
+- `--parallel-evaluation` reproduces bit-identically for a fixed seed, but takes
+  a different search trajectory from a serial run of that seed, so runs are only
+  comparable to runs with the same setting. It is opt-in and off by default for
+  that reason. Its speedup is workload-dependent and can be negative; measure
+  before enabling it.
 - Real-device GPU runtime, long-running end-to-end, per-package coverage, and
   performance-regression gates remain outside the required CI matrix. See
   [docs/known-limitations.md](docs/known-limitations.md).

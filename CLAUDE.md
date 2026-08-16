@@ -92,6 +92,26 @@ application configuration into the store package.
   worker count, but its trajectory differs from a serial run of that seed
   because MayFly holds the global best fixed for a whole parallel generation.
   Compare runs only against runs with the same settings.
+- `--evaluation-workers` sizes that pool and is separate from `--threads` on
+  purpose: threads shard the rows of one render, evaluation workers run whole
+  independent renders, and a pooled session always renders single-threaded. The
+  two compete for the same cores instead of adding up. Measured scaling is in
+  `docs/parallel-evaluation-report.md`: 2.34x at 128x128 but only 1.18x at
+  512x512, and below roughly four workers the flag is slower than the default.
+  Do not describe it as an unconditional speedup. Each worker above one costs a
+  full canvas and background copy, so the pool is clamped to GOMAXPROCS.
+- `renderer.ParallelEvaluationOption` is the only place allowed to decide
+  whether the optimizer runs its parallel path, and it decides from the
+  renderer's reported width, never from a requested configuration value. A
+  backend without independent sessions (OpenCL) must decline with a warning;
+  enabling the optimizer's parallel path against a one-slot pool buys nothing
+  and still changes the trajectory.
+- Transactional polishing is the one optimizer-driven objective here that is not
+  re-entrant: its sweep evaluator merges into a shared candidate vector and a
+  shared session. `PolishCircleBatchContext` rejects an optimizer reporting a
+  width above one, and the epoch and progress wrappers forward that width so the
+  guard cannot be bypassed. Do not wire parallel evaluation into a polisher
+  without first giving polishing its own session pool.
 - Resume is restart-from-best: the MayFly v0.4.0 population is seeded with the
   saved best and deterministic nearby variations. It is not an exact restoration
   of optimizer internals. Server restart-from-best for sequential and batch jobs

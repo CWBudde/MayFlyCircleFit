@@ -17,6 +17,12 @@ The suite covers three layers:
 - **Pipeline:** complete joint, sequential, and batch orchestration at 64×64,
   using the real Mayfly optimizer with bounded iteration/population counts and
   a fixed seed.
+- **Evaluation parallelism:** `BenchmarkParallelEvaluationScaling` compares the
+  default row-sharded serial path against `--parallel-evaluation` at several
+  worker counts. The two strategies compete for the same cores, so the
+  comparison is against the default rather than against one thread. See
+  [parallel-evaluation-report.md](parallel-evaluation-report.md) for measured
+  results and the configurations that lose to the default.
 
 `BenchmarkFastSSD_Comparison` is the architecture-level SIMD suite. It compares
 the portable scalar kernel with the runtime-selected kernel at 64×64, 128×128,

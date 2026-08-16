@@ -161,7 +161,14 @@ func getJobStatus(ctx context.Context, output io.Writer, endpoint, jobID string)
 	fmt.Fprintf(output, "  Mode: %s\n", status.Config.Mode)
 	fmt.Fprintf(output, "  Circles: %d\n", status.Config.Circles)
 	fmt.Fprintf(output, "  Iterations: %d\n", status.Config.Iters)
-	fmt.Fprintf(output, "  Population: %d\n\n", status.Config.PopSize)
+	fmt.Fprintf(output, "  Population: %d\n", status.Config.PopSize)
+	// Parallel evaluation changes which solution a seed produces, so a run is
+	// only comparable to another run with the same setting. Printing it only
+	// when set keeps the default output unchanged.
+	if status.Config.ParallelEvaluation {
+		fmt.Fprintf(output, "  Parallel evaluation: %d workers\n", status.Config.EvaluationWorkers)
+	}
+	fmt.Fprintln(output)
 
 	fmt.Fprintln(output, "Progress:")
 	if *status.InitialCost > 0 {
