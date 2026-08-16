@@ -30,7 +30,7 @@ type JobConfig = store.JobConfig
 // Job represents an optimization job
 type Job struct {
 	ID            string         `json:"id"`
-	Project       string         `json:"project"`
+	Project       app.Project    `json:"project"`
 	State         JobState       `json:"state"`
 	Config        JobConfig      `json:"config"`
 	BestParams    []float64      `json:"bestParams,omitempty"`
@@ -63,6 +63,27 @@ type MetricSample struct {
 
 var ErrInvalidTransition = errors.New("invalid job state transition")
 
+// errDuplicateJobID reports that restoreJob was handed an ID the manager
+// already holds. Job IDs are UUIDs and the manager is keyed by ID alone, so the
+// realistic cause is the same checkpoint directory existing under two projects
+// — a copied or restored-from-backup `<data-root>/projects/<slug>/jobs/<uuid>`.
+// It is a sentinel so restoreProjectJobs can name both projects in the log
+// instead of reporting a generic registration failure.
+var errDuplicateJobID = errors.New("job already exists")
+
+// duplicateJobError names the project that already owns the ID so the caller
+// can report which side of the collision was kept.
+type duplicateJobError struct {
+	jobID string
+	owner app.Project
+}
+
+func (e *duplicateJobError) Error() string {
+	return fmt.Sprintf("job already exists: %s (owned by project %q)", e.jobID, e.owner)
+}
+
+func (e *duplicateJobError) Unwrap() error { return errDuplicateJobID }
+
 // JobManager manages the lifecycle of jobs
 type JobManager struct {
 	mu          sync.RWMutex
@@ -82,16 +103,13 @@ func NewJobManager() *JobManager {
 // in-memory mirror of where the job's artifacts live on disk; the directory
 // itself stays authoritative, so nothing about it is written into the
 // checkpoint.
-func (jm *JobManager) CreateJob(project string, config JobConfig) *Job {
+func (jm *JobManager) CreateJob(project app.Project, config JobConfig) *Job {
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
 
-	if project == "" {
-		project = app.DefaultProject
-	}
 	job := &Job{
 		ID:        uuid.New().String(),
-		Project:   project,
+		Project:   app.NormalizeProject(project),
 		State:     StatePending,
 		Config:    config,
 		StartTime: time.Now(),
@@ -142,8 +160,8 @@ func (jm *JobManager) restoreJob(job *Job) error {
 
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
-	if _, exists := jm.jobs[job.ID]; exists {
-		return fmt.Errorf("job already exists: %s", job.ID)
+	if existing, exists := jm.jobs[job.ID]; exists {
+		return &duplicateJobError{jobID: job.ID, owner: app.NormalizeProject(existing.Project)}
 	}
 	jm.jobs[job.ID] = cloneJob(job)
 	return nil

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
@@ -19,21 +20,26 @@ import (
 type createJobRequest struct {
 	app.JobConfig
 	Project string `json:"project,omitempty"`
+	// Project stays a string here because this is the raw decoded request body.
+	// resolveRequestedProject performs the one conversion to app.Project,
+	// immediately before validation.
 }
 
 // projectResponse is the API projection. It deliberately exposes no filesystem
 // path: the trusted-local boundary gains nothing from leaking the data root.
 type projectResponse struct {
-	Slug    string `json:"slug"`
-	Default bool   `json:"default,omitempty"`
-	Jobs    int    `json:"jobCount"`
+	Slug    app.Project `json:"slug"`
+	Default bool        `json:"default,omitempty"`
+	Jobs    int         `json:"jobCount"`
 }
 
 // resolveRequestedProject picks the slug from the body, falling back to the
 // `?project=` query parameter and finally the default project.
-func (s *Server) resolveRequestedProject(fromBody string, r *http.Request) (string, error) {
-	fromQuery := strings.TrimSpace(r.URL.Query().Get("project"))
-	body := strings.TrimSpace(fromBody)
+func (s *Server) resolveRequestedProject(fromBody string, r *http.Request) (app.Project, error) {
+	// Boundary: the query parameter and the decoded body field are untrusted
+	// input. They become app.Project here, immediately before validation.
+	fromQuery := app.Project(strings.TrimSpace(r.URL.Query().Get("project")))
+	body := app.Project(strings.TrimSpace(fromBody))
 
 	switch {
 	case body != "" && fromQuery != "" && body != fromQuery:
@@ -52,7 +58,7 @@ func (s *Server) resolveRequestedProject(fromBody string, r *http.Request) (stri
 // safe to echo) from a filesystem fault, whose wrapped os error carries the
 // absolute data root and must never reach a client.
 type projectStoreError struct {
-	slug string
+	slug app.Project
 	err  error
 }
 
@@ -66,7 +72,7 @@ func (e *projectStoreError) Unwrap() error { return e.err }
 // is never created here: it is the store the server was built with. A slug that
 // fails validation is returned as-is; every other failure is wrapped in a
 // *projectStoreError so the caller can answer 500 instead of 400.
-func (s *Server) ensureProject(slug string) (string, error) {
+func (s *Server) ensureProject(slug app.Project) (app.Project, error) {
 	if slug == "" || slug == app.DefaultProject {
 		return app.DefaultProject, nil
 	}
@@ -82,10 +88,10 @@ func (s *Server) ensureProject(slug string) (string, error) {
 // writeProjectError answers an ensureProject failure. Validation messages are
 // charset-constrained and safe to echo; store faults are logged server-side and
 // answered generically so no filesystem path is disclosed.
-func (s *Server) writeProjectError(w http.ResponseWriter, slug string, err error) {
+func (s *Server) writeProjectError(w http.ResponseWriter, slug app.Project, err error) {
 	var storeErr *projectStoreError
 	if errors.As(err, &storeErr) {
-		slog.Error("Unable to prepare project store", "project", slug, "error", storeErr.err)
+		slog.Error("Unable to prepare project store", "project", string(slug), "error", storeErr.err)
 		writeAPIError(w, http.StatusInternalServerError, "project_unavailable", "the project store is unavailable")
 		return
 	}
@@ -94,10 +100,10 @@ func (s *Server) writeProjectError(w http.ResponseWriter, slug string, err error
 
 // projectErrorMessage is the UI counterpart of writeProjectError: it logs a
 // store fault and returns the text the create page should display.
-func projectErrorMessage(slug string, err error) string {
+func projectErrorMessage(slug app.Project, err error) string {
 	var storeErr *projectStoreError
 	if errors.As(err, &storeErr) {
-		slog.Error("Unable to prepare project store", "project", slug, "error", storeErr.err)
+		slog.Error("Unable to prepare project store", "project", string(slug), "error", storeErr.err)
 		return "The project store is unavailable"
 	}
 	return err.Error()
@@ -110,19 +116,15 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	counts := make(map[string]int)
+	counts := make(map[app.Project]int)
 	for _, job := range s.jobManager.ListJobs() {
-		slug := job.Project
-		if slug == "" {
-			slug = app.DefaultProject
-		}
-		counts[slug]++
+		counts[app.NormalizeProject(job.Project)]++
 	}
 
 	slugs := s.projects.Slugs()
 	// A project may exist only in memory (jobs created before its directory was
 	// written), so union the two sources rather than trusting either alone.
-	seen := make(map[string]bool, len(slugs))
+	seen := make(map[app.Project]bool, len(slugs))
 	for _, slug := range slugs {
 		seen[slug] = true
 	}
@@ -132,6 +134,9 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 			slugs = append(slugs, slug)
 		}
 	}
+	// Slugs() is sorted, but the union above appends in Go map order, so the
+	// response is only stable once everything is sorted together.
+	sort.Slice(slugs, func(i, j int) bool { return slugs[i] < slugs[j] })
 
 	response := make([]projectResponse, 0, len(slugs))
 	for _, slug := range slugs {

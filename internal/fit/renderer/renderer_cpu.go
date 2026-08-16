@@ -172,10 +172,6 @@ func (r *CPURenderer) render(params []float64, dirty *dirtySpanSet) *image.NRGBA
 	return r.canvas
 }
 
-func (r *CPURenderer) renderRows(img *image.NRGBA, params []float64, minY, maxY int) {
-	r.renderRowsTracked(img, params, minY, maxY, nil)
-}
-
 func (r *CPURenderer) renderRowsTracked(img *image.NRGBA, params []float64, minY, maxY int, dirty *dirtySpanSet) {
 	r.compositeRows(img, params, r.k, minY, maxY, dirty)
 }

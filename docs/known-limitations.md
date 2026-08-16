@@ -90,7 +90,7 @@ behavior is production-ready.
 - Go 1.24 is the source-compatibility floor, not a promise that an old Go 1.24
   patch is safe for production. Build production binaries with a currently
   supported, security-patched Go release; vulnerability CI currently uses Go
-  1.26.5.
+  1.26.6.
 - The standard gates cover generation drift, formatting, vet, pinned
   staticcheck, short tests, race short tests, a 50% aggregate coverage floor and
   artifact, ordinary builds, selected CGO-disabled cross-builds, an

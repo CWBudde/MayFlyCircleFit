@@ -62,7 +62,7 @@ var ErrJobQueueFull = errors.New("job queue is full")
 // existed. Any other slug must be in the registry: a project that failed to
 // load has no store, and silently substituting another project's directory
 // would write its checkpoints into, and read them from, the wrong place.
-func (s *Server) storeForSlug(slug string) (store.Store, error) {
+func (s *Server) storeForSlug(slug app.Project) (store.Store, error) {
 	if slug == "" || slug == app.DefaultProject {
 		return s.store, nil
 	}
@@ -85,9 +85,9 @@ func (s *Server) storeForJob(jobID string) (store.Store, error) {
 }
 
 // projectForJob returns the slug a continuation job should inherit.
-func (s *Server) projectForJob(jobID string) string {
-	if job, ok := s.jobManager.GetJob(jobID); ok && job.Project != "" {
-		return job.Project
+func (s *Server) projectForJob(jobID string) app.Project {
+	if job, ok := s.jobManager.GetJob(jobID); ok {
+		return app.NormalizeProject(job.Project)
 	}
 	return app.DefaultProject
 }
@@ -251,7 +251,7 @@ func (s *Server) workerLoop() {
 			jobStore, err := s.storeForJob(jobID)
 			if err != nil {
 				slog.Error("Refusing to run job with an unresolvable project",
-					"job_id", jobID, "project", job.Project, "error", err)
+					"job_id", jobID, "project", string(job.Project), "error", err)
 				_ = s.jobManager.FailJob(jobID, "project store is unavailable")
 				continue
 			}
@@ -316,7 +316,7 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 			if err != nil {
 				slog.Error("Failed to resolve project store for shutdown checkpoint",
 					"job_id", j.ID,
-					"project", j.Project,
+					"project", string(j.Project),
 					"error", err,
 				)
 				results <- checkpointResult{jobID: j.ID, err: err}
@@ -583,7 +583,9 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	// An absent or "all" filter keeps the pre-project contract of listing every
 	// job, which cmd/status.go relies on. Filtering is read-only and never
 	// creates a project.
-	if filter := strings.TrimSpace(r.URL.Query().Get("project")); filter != "" && filter != "all" {
+	// Boundary: the `?project=` query parameter is untrusted input. It becomes
+	// an app.Project here, immediately before ValidateProjectSlug.
+	if filter := app.Project(strings.TrimSpace(r.URL.Query().Get("project"))); filter != "" && filter != "all" {
 		if err := app.ValidateProjectSlug(filter); err != nil {
 			writeAPIError(w, http.StatusBadRequest, "invalid_project", err.Error())
 			return
@@ -597,14 +599,10 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 
 // filterJobsByProject keeps jobs belonging to slug, treating an empty project
 // on a job as the default project.
-func filterJobsByProject(jobs []*Job, slug string) []*Job {
+func filterJobsByProject(jobs []*Job, slug app.Project) []*Job {
 	filtered := make([]*Job, 0, len(jobs))
 	for _, job := range jobs {
-		project := job.Project
-		if project == "" {
-			project = app.DefaultProject
-		}
-		if project == slug {
+		if app.NormalizeProject(job.Project) == slug {
 			filtered = append(filtered, job)
 		}
 	}
@@ -612,25 +610,30 @@ func filterJobsByProject(jobs []*Job, slug string) []*Job {
 }
 
 type jobStatusResponse struct {
-	ID                    string     `json:"id"`
-	State                 JobState   `json:"state"`
-	Config                JobConfig  `json:"config"`
-	BestCost              float64    `json:"bestCost"`
-	CandidateCost         *float64   `json:"candidateCost,omitempty"`
-	CandidatePSNR         *float64   `json:"candidatePsnr,omitempty"`
-	CandidatePSNRInfinite bool       `json:"candidatePsnrInfinite,omitempty"`
-	InitialCost           float64    `json:"initialCost"`
-	PSNR                  *float64   `json:"psnr"`
-	PSNRInfinite          bool       `json:"psnrInfinite,omitempty"`
-	SSIM                  *float64   `json:"ssim,omitempty"`
-	Iterations            int        `json:"iterations"`
-	Evaluations           int        `json:"evaluations"`
-	Termination           string     `json:"termination,omitempty"`
-	Elapsed               float64    `json:"elapsed"`
-	CPS                   float64    `json:"cps"`
-	StartTime             time.Time  `json:"startTime"`
-	EndTime               *time.Time `json:"endTime,omitempty"`
-	Error                 string     `json:"error,omitempty"`
+	ID string `json:"id"`
+	// Project mirrors Job.Project so a client holding only a job ID can learn
+	// which project owns it. Create and list responses serialize the Job itself
+	// and so have always carried it; this projection did not, which left the
+	// single-job endpoints the only way to see a job without seeing its project.
+	Project               app.Project `json:"project"`
+	State                 JobState    `json:"state"`
+	Config                JobConfig   `json:"config"`
+	BestCost              float64     `json:"bestCost"`
+	CandidateCost         *float64    `json:"candidateCost,omitempty"`
+	CandidatePSNR         *float64    `json:"candidatePsnr,omitempty"`
+	CandidatePSNRInfinite bool        `json:"candidatePsnrInfinite,omitempty"`
+	InitialCost           float64     `json:"initialCost"`
+	PSNR                  *float64    `json:"psnr"`
+	PSNRInfinite          bool        `json:"psnrInfinite,omitempty"`
+	SSIM                  *float64    `json:"ssim,omitempty"`
+	Iterations            int         `json:"iterations"`
+	Evaluations           int         `json:"evaluations"`
+	Termination           string      `json:"termination,omitempty"`
+	Elapsed               float64     `json:"elapsed"`
+	CPS                   float64     `json:"cps"`
+	StartTime             time.Time   `json:"startTime"`
+	EndTime               *time.Time  `json:"endTime,omitempty"`
+	Error                 string      `json:"error,omitempty"`
 }
 
 // handleGetJobStatus handles GET /api/v1/jobs/:id/status
@@ -665,7 +668,7 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 		psnr, psnrInfinite = serializablePSNR(job.BestCost)
 	}
 	response := jobStatusResponse{
-		ID: job.ID, State: job.State, Config: job.Config,
+		ID: job.ID, Project: app.NormalizeProject(job.Project), State: job.State, Config: job.Config,
 		BestCost: job.BestCost, CandidateCost: cloneFloat(job.CandidateCost), InitialCost: job.InitialCost,
 		PSNR: psnr, PSNRInfinite: psnrInfinite, SSIM: cloneFloat(job.SSIM),
 		Iterations: job.Iterations, Evaluations: job.Evaluations,

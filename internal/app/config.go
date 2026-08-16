@@ -25,10 +25,21 @@ const (
 	MaxProjectSlugLen  = 64
 )
 
+// Project is a project slug. It is a named string type so the compiler can tell
+// a slug apart from the other bare strings that travel beside it — a job ID, a
+// reference image path, a termination reason. A named string type marshals to
+// and from JSON exactly like a string, so the wire format is unaffected.
+//
+// The type carries no validation guarantee by itself: a Project produced by
+// converting untrusted input is only trustworthy once ValidateProjectSlug has
+// accepted it. What it does buy is that such a conversion has to be written
+// out, so an unvalidated string cannot drift inward unnoticed.
+type Project string
+
 // DefaultProject is the slug used when a job does not name a project. It also
 // names the legacy `<data-root>/jobs` tree that predates project support, so
 // existing installations keep listing their jobs without a migration.
-const DefaultProject = "default"
+const DefaultProject Project = "default"
 
 // reservedProjectSlugs are names a project may not take. Two reasons apply:
 //
@@ -42,17 +53,29 @@ const DefaultProject = "default"
 //     `<data-root>/projects/<slug>/jobs/<uuid>`, so a path built from them reads
 //     as directory structure rather than as a project, and flattening the layout
 //     later would turn them into real collisions.
-var reservedProjectSlugs = map[string]bool{
+var reservedProjectSlugs = map[Project]bool{
 	"all":      true,
 	"jobs":     true,
 	"projects": true,
 	"saved":    true,
 }
 
+// NormalizeProject maps the empty slug onto DefaultProject. A job persisted
+// before projects existed carries no slug, and several call sites have to read
+// that absence as the default project; doing it in one place keeps them from
+// drifting apart. It deliberately does not validate: callers that accept a slug
+// from a client must still run it through ValidateProjectSlug.
+func NormalizeProject(slug Project) Project {
+	if slug == "" {
+		return DefaultProject
+	}
+	return slug
+}
+
 // ValidateProjectSlug accepts lowercase alphanumerics and dashes only. The
 // charset is deliberately narrower than the filesystem allows so a slug can
 // never introduce a path separator, a traversal segment, or a leading dot.
-func ValidateProjectSlug(slug string) error {
+func ValidateProjectSlug(slug Project) error {
 	if slug == "" {
 		return invalid("project", "is required")
 	}

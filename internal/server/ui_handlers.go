@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
@@ -213,8 +214,12 @@ func (s *Server) handleCreatePage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreatePageGet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
+	// The form posts to a bare "/create", so the project has to survive the
+	// round trip in a hidden field rather than in the query string.
+	requestedProject := strings.TrimSpace(r.URL.Query().Get("project"))
+
 	// Render the create job page with no error message
-	if err := ui.CreateJobPage("").Render(r.Context(), w); err != nil {
+	if err := ui.CreateJobPage("", requestedProject).Render(r.Context(), w); err != nil {
 		http.Error(w, "Failed to render page", http.StatusInternalServerError)
 		return
 	}
@@ -226,9 +231,15 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, app.MaxRequestBody)
 	if err := r.ParseForm(); err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage("Failed to parse form data").Render(r.Context(), w)
+		ui.CreateJobPage("Failed to parse form data", "").Render(r.Context(), w)
 		return
 	}
+
+	// Echoed back into the re-rendered form so a validation error does not
+	// silently move the job to the default project. It is deliberately the raw
+	// submitted value: resolveRequestedProject below validates it, and templ
+	// escapes it on the way out.
+	formProject := strings.TrimSpace(r.FormValue("project"))
 
 	// Extract and validate form fields
 	refPath := r.FormValue("refPath")
@@ -256,13 +267,13 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	// Validate required fields
 	if refPath == "" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage("Reference image path is required").Render(r.Context(), w)
+		ui.CreateJobPage("Reference image path is required", formProject).Render(r.Context(), w)
 		return
 	}
 
 	if mode == "" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage("Mode is required").Render(r.Context(), w)
+		ui.CreateJobPage("Mode is required", formProject).Render(r.Context(), w)
 		return
 	}
 
@@ -270,21 +281,21 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	circles, err := strconv.Atoi(circlesStr)
 	if err != nil || circles < 1 || circles > 1000 {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage("Circles must be between 1 and 1000").Render(r.Context(), w)
+		ui.CreateJobPage("Circles must be between 1 and 1000", formProject).Render(r.Context(), w)
 		return
 	}
 
 	iters, err := strconv.Atoi(itersStr)
 	if err != nil || iters < 1 || iters > 10000 {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage("Iterations must be between 1 and 10000").Render(r.Context(), w)
+		ui.CreateJobPage("Iterations must be between 1 and 10000", formProject).Render(r.Context(), w)
 		return
 	}
 
 	popSize, err := strconv.Atoi(popSizeStr)
 	if err != nil || popSize < 2 || popSize > 200 {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage("Population size must be between 2 and 200").Render(r.Context(), w)
+		ui.CreateJobPage("Population size must be between 2 and 200", formProject).Render(r.Context(), w)
 		return
 	}
 
@@ -293,7 +304,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		optimizerEpochs, err = strconv.Atoi(optimizerEpochsStr)
 		if err != nil || optimizerEpochs < 1 || optimizerEpochs > app.MaxOptimizerEpochs {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			ui.CreateJobPage(fmt.Sprintf("Optimizer epochs must be between 1 and %d", app.MaxOptimizerEpochs)).Render(r.Context(), w)
+			ui.CreateJobPage(fmt.Sprintf("Optimizer epochs must be between 1 and %d", app.MaxOptimizerEpochs), formProject).Render(r.Context(), w)
 			return
 		}
 	}
@@ -303,46 +314,46 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		batchSize, err = strconv.Atoi(batchSizeStr)
 		if err != nil || batchSize < 0 {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			ui.CreateJobPage("Batch size must be zero or a positive whole number").Render(r.Context(), w)
+			ui.CreateJobPage("Batch size must be zero or a positive whole number", formProject).Render(r.Context(), w)
 			return
 		}
 	}
 
 	polishingActiveSetSize, err := formIntOrDefault(polishingActiveSetSizeStr, 0, "Polishing active set size")
 	if err != nil {
-		renderCreateError(w, r, err)
+		renderCreateError(w, r, formProject, err)
 		return
 	}
 	polishingMaxSweeps, err := formIntOrDefault(polishingMaxSweepsStr, 0, "Polishing max sweeps")
 	if err != nil {
-		renderCreateError(w, r, err)
+		renderCreateError(w, r, formProject, err)
 		return
 	}
 	polishingEpochs, err := formIntOrDefault(polishingEpochsStr, 0, "Polishing epochs")
 	if err != nil {
-		renderCreateError(w, r, err)
+		renderCreateError(w, r, formProject, err)
 		return
 	}
 	polishingIters, err := formIntOrDefault(polishingItersStr, 0, "Polishing iterations")
 	if err != nil {
-		renderCreateError(w, r, err)
+		renderCreateError(w, r, formProject, err)
 		return
 	}
 	polishingStagnationIters, err := formIntOrDefault(polishingStagnationItersStr, 0, "Polishing stagnation iterations")
 	if err != nil {
-		renderCreateError(w, r, err)
+		renderCreateError(w, r, formProject, err)
 		return
 	}
 	polishingMinImprovement, err := formFloatOrDefault(polishingMinImprovementStr, 0, "Polishing minimum improvement")
 	if err != nil {
-		renderCreateError(w, r, err)
+		renderCreateError(w, r, formProject, err)
 		return
 	}
 
 	seed, err := strconv.ParseInt(seedStr, 10, 64)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage("Invalid seed value").Render(r.Context(), w)
+		ui.CreateJobPage("Invalid seed value", formProject).Render(r.Context(), w)
 		return
 	}
 	// Parse convergence fields (with defaults)
@@ -352,7 +363,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		convergencePatience, err = strconv.Atoi(convergencePatienceStr)
 		if err != nil || convergencePatience < 1 || convergencePatience > 100 {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			ui.CreateJobPage("Convergence patience must be between 1 and 100").Render(r.Context(), w)
+			ui.CreateJobPage("Convergence patience must be between 1 and 100", formProject).Render(r.Context(), w)
 			return
 		}
 	}
@@ -362,7 +373,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		convergenceThreshold, err = strconv.ParseFloat(convergenceThresholdStr, 64)
 		if err != nil || convergenceThreshold < 0.0001 || convergenceThreshold > 0.1 {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			ui.CreateJobPage("Convergence threshold must be between 0.0001 and 0.1").Render(r.Context(), w)
+			ui.CreateJobPage("Convergence threshold must be between 0.0001 and 0.1", formProject).Render(r.Context(), w)
 			return
 		}
 	}
@@ -372,25 +383,25 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	stopTargetCost, err := optionalFormFloat(r, "stopTargetCost")
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+		ui.CreateJobPage(err.Error(), formProject).Render(r.Context(), w)
 		return
 	}
 	stopMinImprovement, err := optionalFormFloat(r, "stopMinImprovement")
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+		ui.CreateJobPage(err.Error(), formProject).Render(r.Context(), w)
 		return
 	}
 	stopStagnationIters, err := optionalFormInt(r, "stopStagnationIters")
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+		ui.CreateJobPage(err.Error(), formProject).Render(r.Context(), w)
 		return
 	}
 	stopMinIters, err := optionalFormInt(r, "stopMinIters")
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+		ui.CreateJobPage(err.Error(), formProject).Render(r.Context(), w)
 		return
 	}
 
@@ -425,25 +436,25 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+		ui.CreateJobPage(err.Error(), formProject).Render(r.Context(), w)
 		return
 	}
 	if s.inputErr != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage("Server input roots are unavailable").Render(r.Context(), w)
+		ui.CreateJobPage("Server input roots are unavailable", formProject).Render(r.Context(), w)
 		return
 	}
 	config.RefPath, err = s.input.resolveImage(config.RefPath)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+		ui.CreateJobPage(err.Error(), formProject).Render(r.Context(), w)
 		return
 	}
 	if config.CanvasPath != "" {
 		config.CanvasPath, err = s.input.resolveImage(config.CanvasPath)
 		if err != nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+			ui.CreateJobPage(err.Error(), formProject).Render(r.Context(), w)
 			return
 		}
 	}
@@ -459,7 +470,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		// A store fault is logged server-side and shown generically; only the
 		// charset-constrained validation message is echoed to the browser.
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage(projectErrorMessage(requested, err)).Render(r.Context(), w)
+		ui.CreateJobPage(projectErrorMessage(requested, err), formProject).Render(r.Context(), w)
 		return
 	}
 
@@ -470,7 +481,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	if err := s.enqueueJob(job.ID); err != nil {
 		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage("Server job queue is full").Render(r.Context(), w)
+		ui.CreateJobPage("Server job queue is full", formProject).Render(r.Context(), w)
 		return
 	}
 
@@ -478,9 +489,9 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/jobs/"+job.ID, http.StatusSeeOther)
 }
 
-func renderCreateError(w http.ResponseWriter, r *http.Request, err error) {
+func renderCreateError(w http.ResponseWriter, r *http.Request, project string, err error) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = ui.CreateJobPage(err.Error()).Render(r.Context(), w)
+	_ = ui.CreateJobPage(err.Error(), project).Render(r.Context(), w)
 }
 
 func formIntOrDefault(raw string, defaultValue int, label string) (int, error) {

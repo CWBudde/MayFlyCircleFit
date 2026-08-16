@@ -439,10 +439,6 @@ func validateCandidate(candidate Candidate, problem Problem) error {
 	return nil
 }
 
-func seededPopulation(best []float64, population int, rng *rand.Rand) ([][]float64, [][]float64) {
-	return seededPopulationFromCandidates([][]float64{best}, population, rng, nil)
-}
-
 func seededPopulationFromCandidates(candidates [][]float64, population int, rng *rand.Rand, profile *ContinuationProfile) ([][]float64, [][]float64) {
 	if len(candidates) == 0 {
 		return nil, nil

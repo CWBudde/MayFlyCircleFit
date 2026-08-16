@@ -100,7 +100,7 @@ canonicalized and checked against those roots.
 | Component | Baseline |
 | --- | --- |
 | Go source compatibility | 1.24 or newer |
-| Production/security toolchain | A currently supported patched Go release; vulnerability CI uses 1.26.5 |
+| Production/security toolchain | A currently supported patched Go release; vulnerability CI uses 1.26.6 |
 | templ | `v0.3.960`, pinned Go tool; generated Go committed |
 | MayFly | `v0.4.0` |
 | govulncheck in CI | `v1.1.4`, installed at an explicit version |
