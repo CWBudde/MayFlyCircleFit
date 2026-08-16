@@ -367,8 +367,13 @@ func (r *CPURenderer) Threads() int {
 // the optimization pipeline may run. The pipeline then creates that many
 // independent sessions, each with its own canvas, and gives every session a
 // single rendering thread: with many evaluations in flight the row-band
-// fan-out inside one render is pure overhead. Values below two keep the
-// historical single-session behavior. Call it before starting an optimization.
+// fan-out inside one render is pure overhead. Call it before starting an
+// optimization.
+//
+// Non-positive values select GOMAXPROCS, matching SetThreads. The two setters
+// must agree on what zero means: they are fed from adjacent configuration
+// fields, and a setter that read zero as "one" would silently disable
+// evaluation parallelism for any caller that had not filled the field in.
 //
 // The value is capped at GOMAXPROCS, which is the documented contract of the
 // --threads flag. The cap is not merely advisory: every worker above one costs
@@ -391,14 +396,13 @@ func (r *CPURenderer) ParallelEvaluationWorkers() int {
 }
 
 // effectiveEvaluationWorkers clamps a requested evaluation width into
-// [1, GOMAXPROCS]. Unlike effectiveThreadCount it ignores the image height,
-// because concurrent evaluations are whole independent renders rather than row
-// shards of one render.
+// [1, GOMAXPROCS], resolving non-positive requests to GOMAXPROCS exactly as
+// effectiveThreadCount does. Unlike effectiveThreadCount it ignores the image
+// height, because concurrent evaluations are whole independent renders rather
+// than row shards of one render.
 func effectiveEvaluationWorkers(workers int) int {
-	if workers < 1 {
-		return 1
-	}
-	if maxWorkers := runtime.GOMAXPROCS(0); workers > maxWorkers {
+	maxWorkers := runtime.GOMAXPROCS(0)
+	if workers < 1 || workers > maxWorkers {
 		workers = maxWorkers
 	}
 	if workers < 1 {

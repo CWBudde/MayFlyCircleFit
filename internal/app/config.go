@@ -162,12 +162,22 @@ type JobConfig struct {
 	Threads                  int               `json:"threads,omitempty"`
 	// ParallelEvaluation lets the optimizer evaluate population members
 	// concurrently over a pool of independent renderer sessions sized by
-	// Threads. It is additive and optional: checkpoints written before it
-	// existed decode as false, which is also the default. It is opt-in because
-	// the parallel optimizer path applies one global best per generation
+	// EvaluationWorkers. It is additive and optional: checkpoints written before
+	// it existed decode as false, which is also the default. It is opt-in
+	// because the parallel optimizer path applies one global best per generation
 	// instead of updating it mid-population, so a seed reproduces exactly with
 	// the flag held fixed but not across the two settings.
-	ParallelEvaluation   bool    `json:"parallelEvaluation,omitempty"`
+	ParallelEvaluation bool `json:"parallelEvaluation,omitempty"`
+	// EvaluationWorkers is how many cost evaluations run concurrently when
+	// ParallelEvaluation is set. It is deliberately separate from Threads:
+	// Threads shards the rows of a single render, while this shards whole
+	// independent renders across sessions. The two trade against each other, so
+	// a machine is rarely best served by the same number for both.
+	//
+	// Zero means "use Threads", which is what this setting did before it had its
+	// own field, so checkpoints written without it resume unchanged. It has no
+	// effect at all unless ParallelEvaluation is true.
+	EvaluationWorkers    int     `json:"evaluationWorkers,omitempty"`
 	Seed                 int64   `json:"seed"`
 	EffectiveSeed        int64   `json:"effectiveSeed,omitempty"`
 	ResumeCount          int     `json:"resumeCount,omitempty"`
@@ -288,6 +298,12 @@ func (c *JobConfig) ApplyDefaults() error {
 	if c.Threads == 0 {
 		c.Threads = defaults.Threads
 	}
+	// Evaluation width falls back to Threads rather than to a default of its
+	// own. That keeps a configuration written before the field existed, and one
+	// that only sets --parallel-evaluation, behaving exactly as it did.
+	if c.EvaluationWorkers == 0 {
+		c.EvaluationWorkers = c.Threads
+	}
 	if !c.EnableTrace && !c.DisableTrace {
 		c.EnableTrace = defaults.EnableTrace
 	}
@@ -386,6 +402,9 @@ func (c JobConfig) Validate() error {
 	}
 	if c.Threads < 1 {
 		return invalid("threads", "must be positive")
+	}
+	if c.EvaluationWorkers < 1 {
+		return invalid("evaluationWorkers", "must be positive")
 	}
 	if c.CheckpointInterval < 0 {
 		return invalid("checkpointInterval", "cannot be negative")
