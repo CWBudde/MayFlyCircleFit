@@ -15,18 +15,27 @@ var (
 	circleSpanFloat32Selected = circleSpanFloat32
 )
 
-// circleSpanAVX2Enabled caches the AVX2 gate together with the environment
-// opt-out so per-call checks stay a single boolean load.
-var circleSpanAVX2Enabled bool
+// circleSpanAVX2Enabled and circleSpanSSE2Enabled cache the feature gates
+// together with the environment opt-out so per-call checks stay a single
+// boolean load. At most one of them is ever true.
+var (
+	circleSpanAVX2Enabled bool
+	circleSpanSSE2Enabled bool
+)
 
 func init() {
 	if fit.SIMDDisabledByEnv() {
 		return
 	}
-	if cpu.X86.HasAVX2 {
+	switch {
+	case cpu.X86.HasAVX2:
 		circleSpanFloat32Backend = "avx2"
 		circleSpanFloat32Selected = circleSpanFloat32AVX2Unchecked
 		circleSpanAVX2Enabled = true
+	case cpu.X86.HasSSE2:
+		circleSpanFloat32Backend = "sse2"
+		circleSpanFloat32Selected = circleSpanFloat32SSE2Unchecked
+		circleSpanSSE2Enabled = true
 	}
 }
 
@@ -42,6 +51,24 @@ func circleSpanFloat32AVX2Unchecked(centerX, radiusSquaredMinusDY float32, width
 	return circleSpanFloat32AVX2Kernel(centerX, radiusSquaredMinusDY, float32(cx), width)
 }
 
+func circleSpanFloat32SSE2(centerX, radiusSquaredMinusDY float32, width int) (xStart, xEnd int) {
+	if !circleSpanSSE2Enabled {
+		return circleSpanFloat32(centerX, radiusSquaredMinusDY, width)
+	}
+	return circleSpanFloat32SSE2Unchecked(centerX, radiusSquaredMinusDY, width)
+}
+
+func circleSpanFloat32SSE2Unchecked(centerX, radiusSquaredMinusDY float32, width int) (xStart, xEnd int) {
+	cx := int(centerX + 0.5)
+	return circleSpanFloat32SSE2Kernel(centerX, radiusSquaredMinusDY, float32(cx), width)
+}
+
+// Q16.16 geometry has no SSE2 kernel. The AVX2 version compares Q32.32
+// products with VPCMPGTQ, and SSE2 has no 64-bit signed compare. Emulating one
+// costs several extra instructions per vector, while a measured profile of the
+// no-AVX2 configuration attributes only 2.80% of flat samples to
+// fixedCircleQ16.span. spanAVX2 therefore falls through to the scalar
+// finite-difference span on non-AVX2 CPUs.
 func (g fixedCircleQ16) spanAVX2(y, width int) (xStart, xEnd int, intersects bool) {
 	const vectorMarginQ = 8 * circleQ16Scale
 	roundedCenterQ := int64(g.centerX) << circleQ16FractionBits
@@ -65,6 +92,12 @@ func (g fixedCircleQ16) spanAVX2(y, width int) (xStart, xEnd int, intersects boo
 //
 //go:noescape
 func circleSpanFloat32AVX2Kernel(centerX, radiusSquaredMinusDY, roundedCenter float32, width int) (xStart, xEnd int)
+
+// circleSpanFloat32SSE2Kernel finds both half-open span edges using four
+// float32 squared-distance comparisons per SSE2 iteration.
+//
+//go:noescape
+func circleSpanFloat32SSE2Kernel(centerX, radiusSquaredMinusDY, roundedCenter float32, width int) (xStart, xEnd int)
 
 // circleSpanQ16AVX2Kernel finds both half-open span edges using eight Q16.16
 // squared-distance comparisons per AVX2 iteration.
