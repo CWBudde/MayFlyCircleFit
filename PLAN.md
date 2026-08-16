@@ -1568,6 +1568,134 @@ Implement in dependency-aware waves:
 
 ---
 
+## Phase 15: Polishing Throughput
+
+Active-set polishing is the only optimizer path in the codebase that is still
+single-threaded, and it is now the dominant cost of a long incremental run.
+
+**Measured 2026-08-16** on the Xeon Gold 5520+ (64 vCPU, `GOMAXPROCS=48`),
+polishing a 32-circle fit of `Christian_after.jpeg` at 512x512 with
+`residual-region`, `activeSetSize 8`, `iters 800`, `epochs 2`, `popSize 200`:
+
+| | Extend stage (+8 circles) | Polish sweep |
+| --- | ---: | ---: |
+| Wall clock | 135 s | ~480 s |
+| Process CPU | ~2000% | **223%** |
+| Concurrency | 48 evaluations | 1 |
+
+The machine is 95% idle for the whole polish. On the earlier 32→512 chain the
+same imbalance cost 5 h 30 m of a 6 h 55 m run to remove 83 cost units, while
+66 minutes of extends removed 710.
+
+Two separate causes, and they compound:
+
+1. `PolishCircleBatchContext` refuses any optimizer configured for concurrent
+   evaluation (`internal/fit/renderer/batch_polish.go:125`), so
+   `polishBatchResult` (`internal/server/worker.go:490`) builds a serial Mayfly.
+   The refusal is correct as written — the sweep evaluator merges every candidate
+   into one shared parameter vector and evaluates it on one shared session, which
+   is what makes a sweep transactional — but the fix is a session pool, not a
+   permanent serial path. The refusal comment already says so.
+2. The baked prefix is `min(activeCircles)` circles
+   (`batch_polish.go:218`, `pipeline.go:757`), and `residual-region` always drags
+   in a low-index circle because `replacementCount = max(1, activeSetSize/5)`
+   selects the globally weakest one. Observed active sets on the run above were
+   `[2,3,6,7,8,10,14,16]` and `[3,4,6,7,8,26,29,31]`, so the prefix was 2 and 3 of
+   32 circles and each candidate rasterized ~30. At 512 circles the prefix would
+   still be ~2 and each candidate would rasterize ~510, so per-candidate cost
+   grows linearly with the vector for every strategy except `contiguous-window`.
+
+### Task 15.1: Give Polishing a Session Pool (P1)
+
+- [ ] Lease a per-evaluation slot in the sweep evaluator instead of sharing one
+      `candidateFull` vector and one session. `evaluationSlot{session, combined}`
+      and `evaluationPool` in `internal/fit/renderer/evaluation_pool.go` already
+      have exactly this shape for the staged pipelines; reuse them rather than
+      adding a second pooling mechanism.
+- [ ] Give each slot its own baked-suffix session so the per-sweep bake is not
+      serialized behind the pool (`bakedSuffixSession`, `pipeline.go:757`).
+- [ ] Replace the blanket refusal at `batch_polish.go:125` with a check that the
+      pool width matches the optimizer's evaluation width, keeping the refusal for
+      the pool-less case so the failure stays loud rather than silent.
+- [ ] Keep the sweep transactional: acceptance still evaluates the merged
+      candidate on the full session and still gates on
+      `allCirclesUseful(audit, minBatchMSEContribution)`.
+- [ ] Plumb `evaluationWorkers` through `polishBatchResult` so polishing honors
+      the same width as the main optimizer, and log the width alongside
+      `accepted_sweeps` (`worker.go:605`).
+- [ ] Document the reproducibility consequence next to `ParallelEvaluation`
+      (`internal/app/config.go:168`): parallel polishing applies one global best
+      per generation, so a seed reproduces with the setting held fixed but not
+      across the two settings — the same caveat the extend path already carries.
+
+**Acceptance Checks:**
+
+- [ ] A parity test asserts that pooled polishing with width 1 produces
+      byte-identical parameters, cost, and accepted-sweep count to the current
+      serial path for a fixed seed.
+- [ ] A race test (`go test -race`) covers a multi-sweep polish at width > 1.
+- [ ] A benchmark reports sweep wall clock and allocations at widths 1, 8, and 48
+      on the same fixture, with the machine and circle count stated.
+
+### Task 15.2: Make Active-Set Selection Cheap (P2)
+
+- [ ] Parallelize the leave-one-out renders in `AuditCircleBatch`
+      (`internal/fit/renderer/batch_audit.go:37`) and the region-influence loop in
+      `selectResidualRegionActiveSet` (`batch_polish.go:614`). Both are N
+      independent full renders per sweep and both are serial today: ~65 renders
+      per sweep at 32 circles, ~1025 at 512.
+- [ ] Render only `selection.Region` in the influence loop.
+      `imageDifferenceEnergy` reads nothing outside it, but `base.Render(without)`
+      paints the whole canvas — on the 4x4 grid (`residualPolishGridSize = 4`)
+      that is 16x more pixels than are examined.
+- [ ] Skip the selection audit after a rejected sweep. A rejected sweep leaves
+      `bestParams` untouched, so the next sweep recomputes an identical audit.
+
+**Acceptance Checks:**
+
+- [ ] Selection returns the same active set, replacement set, and region as the
+      serial implementation for a fixed seed and fixture.
+- [ ] A benchmark shows selection cost per sweep against circle count at 32, 128,
+      and 512 circles, before and after.
+
+### Task 15.3: Stop Destroying the Baked Prefix (P2)
+
+- [ ] Measure how much of the per-candidate cost the prefix actually recovers,
+      by recording `min(activeCircles)` and per-candidate rasterization count per
+      sweep.
+- [ ] Evaluate biasing selection toward later draw slots when region energy is
+      close, so the prefix stays large without abandoning merit-based selection.
+      This changes what polishing selects, so it ships only with a measured
+      quality comparison, not on the cost argument alone.
+- [ ] Record the outcome in `docs/contiguous-window-polish-report.md`, which
+      currently documents the cost argument for `contiguous-window` but not the
+      prefix collapse in the merit-based strategies.
+
+**Acceptance Checks:**
+
+- [ ] A report compares final cost and wall clock for the current and
+      prefix-aware selection at equal optimizer budget, on the same seed.
+
+### Task 15.4: Right-Size the Polishing Defaults (P2)
+
+- [ ] Re-derive `PolishingIters`, `PolishingEpochs`, and the population used for
+      polishing against the active set's actual dimensionality. The defaults reuse
+      the job's `popSize` (`worker.go:490`), so a run tuned for a 512-circle
+      vector polishes a 56-dimensional active set with 200 members.
+- [ ] Give polishing its own population knob rather than inheriting `popSize`,
+      and expose it on `polishJobRequest` (`internal/server/server.go:996`).
+- [ ] Record the measured sweep-by-sweep drop-off in the report. Observed on the
+      run above: sweep 1 removed 85.5 cost units, sweep 2 removed 16.8 — a 5x
+      falloff in one step, against a default `PolishingMaxSweeps` of 3 and a
+      ceiling of 32.
+
+**Acceptance Checks:**
+
+- [ ] Defaults are justified by a measurement in a committed report, not by
+      inheritance from the batch configuration.
+
+---
+
 ## Summary and Next Steps
 
 This plan covers **Phases 0-14** in complete detail with bite-sized, testable tasks. Each task follows TDD principles:
