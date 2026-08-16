@@ -97,10 +97,11 @@ func BenchmarkPolishSweepProductionShape(b *testing.B) {
 }
 
 // BenchmarkPolishSweepPoolSetup measures only the fixed cost a sweep pays
-// before its first candidate: one baked-suffix session per pool slot, each of
-// which renders the fixed draw-order prefix and clones a full canvas. It is the
-// cost that pooling adds outright, so it decides whether a short sweep is a net
-// loss, and its allocation figure is what a 512x512 slot really holds.
+// before its first candidate: one bake of the fixed draw-order prefix, then one
+// session per pool slot over a copy of that canvas. It mirrors what
+// PolishCircleBatchContext does per sweep, so it is the cost pooling adds
+// outright -- what decides whether a short sweep is a net loss -- and its
+// allocation figure is what a 512x512 slot really holds.
 //
 // The prefix length is the one residual-region selection produces at this shape
 // -- the strategy picks by image-space merit, so the first active circle sits
@@ -125,9 +126,13 @@ func BenchmarkPolishSweepPoolSetup(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for range b.N {
+					baked, baking := bakePrefixCanvas(cpu, params, prefixCircles, circleCount)
+					if !baking {
+						b.Fatal("prefix canvas not baked")
+					}
 					pool := newEvaluationPool(primary, params, workers, func() (Renderer, func(), error) {
-						session, cleanup, baked := bakedSuffixSession(cpu, params, prefixCircles, circleCount)
-						if !baked {
+						session, cleanup, created := sessionOverBakedCanvas(cpu, baked, circleCount-prefixCircles)
+						if !created {
 							return nil, nil, ErrStagedOptimizationUnsupported
 						}
 						return session, cleanup, nil
