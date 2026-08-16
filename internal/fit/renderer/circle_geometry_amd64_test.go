@@ -16,24 +16,12 @@ func TestCircleSpanFloat32AVX2MatchesScalar(t *testing.T) {
 		t.Skip("AVX2 unavailable")
 	}
 
-	tests := []struct {
-		center, remaining float32
-		width             int
-	}{
-		{center: 16.125, remaining: 0, width: 33},
-		{center: 16.125, remaining: 1, width: 33},
-		{center: 16.125, remaining: 49, width: 33},
-		{center: 16.125, remaining: 64, width: 33},
-		{center: 16.125, remaining: 65, width: 33},
-		{center: 1.25, remaining: 400, width: 33},
-		{center: 31.25, remaining: 400, width: 33},
-	}
-	for _, test := range tests {
+	for _, test := range circleSpanFloat32Cases {
 		wantStart, wantEnd := circleSpanFloat32(test.center, test.remaining, test.width)
 		gotStart, gotEnd := circleSpanFloat32AVX2(test.center, test.remaining, test.width)
 		if gotStart != wantStart || gotEnd != wantEnd {
-			t.Fatalf("circleSpanFloat32AVX2(%v, %v, %d) = [%d,%d), want [%d,%d)",
-				test.center, test.remaining, test.width, gotStart, gotEnd, wantStart, wantEnd)
+			t.Fatalf("%s: circleSpanFloat32AVX2(%v, %v, %d) = [%d,%d), want [%d,%d)",
+				test.name, test.center, test.remaining, test.width, gotStart, gotEnd, wantStart, wantEnd)
 		}
 	}
 
@@ -52,11 +40,15 @@ func TestCircleSpanFloat32AVX2MatchesScalar(t *testing.T) {
 	}
 }
 
-// circleSpanFloat32SSE2Cases covers the geometry the span search has to get
+// circleSpanFloat32Cases covers the geometry the span search has to get
 // exactly right: fully interior circles, both clip edges, empty rows, tiny and
 // sub-pixel radii, centers outside the raster, and widths that are and are not
-// multiples of four.
-var circleSpanFloat32SSE2Cases = []struct {
+// multiples of four or eight.
+//
+// The table was written for an SSE2 kernel that has since been removed - see
+// circle_geometry_amd64.go for why - and is kept because it is a stronger table
+// than the AVX2 test had of its own.
+var circleSpanFloat32Cases = []struct {
 	name              string
 	center, remaining float32
 	width             int
@@ -86,78 +78,45 @@ var circleSpanFloat32SSE2Cases = []struct {
 	{name: "width_three", center: 1.25, remaining: 400, width: 3},
 }
 
-func TestCircleSpanFloat32SSE2MatchesScalar(t *testing.T) {
-	if !cpu.X86.HasSSE2 {
-		t.Skip("SSE2 unavailable")
+// TestCircleSpanFloat32KernelMatchesTier pins the installed float32 span kernel
+// against the resolved tier, and checks that the gated wrapper agrees with the
+// scalar oracle in whichever configuration it lands in.
+func TestCircleSpanFloat32KernelMatchesTier(t *testing.T) {
+	want := fit.TierScalar
+	if fit.Tier() == fit.TierAVX2 {
+		want = fit.TierAVX2
+	}
+	if circleSpanFloat32Kernel != want {
+		t.Fatalf("float32 geometry kernel = %s, want %s at tier %s", circleSpanFloat32Kernel, want, fit.Tier())
 	}
 
-	for _, test := range circleSpanFloat32SSE2Cases {
-		t.Run(test.name, func(t *testing.T) {
-			wantStart, wantEnd := circleSpanFloat32(test.center, test.remaining, test.width)
-			gotStart, gotEnd := circleSpanFloat32SSE2Unchecked(test.center, test.remaining, test.width)
-			if gotStart != wantStart || gotEnd != wantEnd {
-				t.Fatalf("circleSpanFloat32SSE2(%v, %v, %d) = [%d,%d), want [%d,%d)",
-					test.center, test.remaining, test.width, gotStart, gotEnd, wantStart, wantEnd)
-			}
-		})
-	}
-
-	rng := rand.New(rand.NewSource(1013))
-	for range 100_000 {
-		width := rng.Intn(2048) + 1
-		center := rng.Float32() * float32(width-1)
-		radius := rng.Float32() * float32(width)
-		remaining := radius * radius * rng.Float32()
-		wantStart, wantEnd := circleSpanFloat32(center, remaining, width)
-		gotStart, gotEnd := circleSpanFloat32SSE2Unchecked(center, remaining, width)
-		if gotStart != wantStart || gotEnd != wantEnd {
-			t.Fatalf("random circleSpanFloat32SSE2(%v, %v, %d) = [%d,%d), want [%d,%d)",
-				center, remaining, width, gotStart, gotEnd, wantStart, wantEnd)
-		}
-	}
-
-	// Centers outside the raster and rows that miss the circle entirely.
-	rng = rand.New(rand.NewSource(20250816))
-	for range 100_000 {
-		width := rng.Intn(64) + 1
-		center := (rng.Float32()*4 - 2) * float32(width)
-		radius := rng.Float32() * float32(width)
-		remaining := radius*radius*rng.Float32()*2 - float32(width)
-		wantStart, wantEnd := circleSpanFloat32(center, remaining, width)
-		gotStart, gotEnd := circleSpanFloat32SSE2Unchecked(center, remaining, width)
-		if gotStart != wantStart || gotEnd != wantEnd {
-			t.Fatalf("offset circleSpanFloat32SSE2(%v, %v, %d) = [%d,%d), want [%d,%d)",
-				center, remaining, width, gotStart, gotEnd, wantStart, wantEnd)
-		}
-	}
-}
-
-// TestCircleSpanFloat32SSE2DispatchMatchesScalar exercises the gated wrapper,
-// which falls back to scalar when SSE2 is unavailable or disabled by env.
-func TestCircleSpanFloat32SSE2DispatchMatchesScalar(t *testing.T) {
-	for _, test := range circleSpanFloat32SSE2Cases {
+	for _, test := range circleSpanFloat32Cases {
 		wantStart, wantEnd := circleSpanFloat32(test.center, test.remaining, test.width)
-		gotStart, gotEnd := circleSpanFloat32SSE2(test.center, test.remaining, test.width)
+		gotStart, gotEnd := circleSpanFloat32Selected(test.center, test.remaining, test.width)
 		if gotStart != wantStart || gotEnd != wantEnd {
-			t.Fatalf("%s: circleSpanFloat32SSE2 dispatch = [%d,%d), want [%d,%d)",
+			t.Fatalf("%s: selected span = [%d,%d), want [%d,%d)",
 				test.name, gotStart, gotEnd, wantStart, wantEnd)
 		}
 	}
 }
 
-func TestCircleSpanFloat32Backend(t *testing.T) {
-	want := "scalar"
-	switch {
-	case cpu.X86.HasAVX2:
-		want = "avx2"
-	case cpu.X86.HasSSE2:
-		want = "sse2"
+// TestCircleSpanFloat32KernelFollowsForcedTier proves the geometry dispatch is
+// wired to the same tier switch as everything else, rather than having made its
+// own decision at init.
+func TestCircleSpanFloat32KernelFollowsForcedTier(t *testing.T) {
+	fit.SetForcedTier(fit.TierScalar)
+	defer fit.ResetTierDetection()
+
+	if circleSpanFloat32Kernel != fit.TierScalar {
+		t.Fatalf("float32 geometry kernel = %s after forcing scalar", circleSpanFloat32Kernel)
 	}
-	if fit.SIMDDisabledByEnv() {
-		want = "scalar"
-	}
-	if circleSpanFloat32Backend != want {
-		t.Fatalf("float32 geometry backend = %q, want %q", circleSpanFloat32Backend, want)
+	for _, test := range circleSpanFloat32Cases {
+		wantStart, wantEnd := circleSpanFloat32(test.center, test.remaining, test.width)
+		gotStart, gotEnd := circleSpanFloat32Selected(test.center, test.remaining, test.width)
+		if gotStart != wantStart || gotEnd != wantEnd {
+			t.Fatalf("%s: forced-scalar span = [%d,%d), want [%d,%d)",
+				test.name, gotStart, gotEnd, wantStart, wantEnd)
+		}
 	}
 }
 
@@ -204,27 +163,6 @@ func BenchmarkCircleSpanFloat32AVX2Direct(b *testing.B) {
 		b.Run("avx2_R"+benchmarkFloatName(radius), func(b *testing.B) {
 			for range b.N {
 				xStart, xEnd := circleSpanFloat32AVX2Kernel(256.125, remaining, 256, 513)
-				geometryBenchmarkSink = xEnd - xStart
-			}
-		})
-	}
-}
-
-func BenchmarkCircleSpanFloat32SSE2Direct(b *testing.B) {
-	if !cpu.X86.HasSSE2 {
-		b.Skip("SSE2 unavailable")
-	}
-	for _, radius := range []float32{5.25, 25.25, 100.25, 256.25} {
-		remaining := radius * radius
-		b.Run("scalar_R"+benchmarkFloatName(radius), func(b *testing.B) {
-			for range b.N {
-				xStart, xEnd := circleSpanFloat32(256.125, remaining, 513)
-				geometryBenchmarkSink = xEnd - xStart
-			}
-		})
-		b.Run("sse2_R"+benchmarkFloatName(radius), func(b *testing.B) {
-			for range b.N {
-				xStart, xEnd := circleSpanFloat32SSE2Kernel(256.125, remaining, 256, 513)
 				geometryBenchmarkSink = xEnd - xStart
 			}
 		})

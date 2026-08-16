@@ -42,7 +42,7 @@ func TestCompositeOpaqueSpanMatchesPixelPath(t *testing.T) {
 				if !bytes.Equal(got, want) {
 					for i := range got {
 						if got[i] != want[i] {
-							t.Fatalf("backend %s differs at byte %d: got %d, want %d\ngot span:  %v\nwant span: %v", compositeSpanBackend, i, got[i], want[i], got[offset:offset+pixels*4], want[offset:offset+pixels*4])
+							t.Fatalf("backend %s differs at byte %d: got %d, want %d\ngot span:  %v\nwant span: %v", compositeSpanKernel, i, got[i], want[i], got[offset:offset+pixels*4], want[offset:offset+pixels*4])
 						}
 					}
 				}
@@ -72,7 +72,7 @@ func TestCompositeOpaqueSpanRandomMatchesPixelPath(t *testing.T) {
 		if !bytes.Equal(got, want) {
 			for i := range got {
 				if got[i] != want[i] {
-					t.Fatalf("iteration %d, backend %s differs at byte %d: got %d, want %d", iteration, compositeSpanBackend, i, got[i], want[i])
+					t.Fatalf("iteration %d, backend %s differs at byte %d: got %d, want %d", iteration, compositeSpanKernel, i, got[i], want[i])
 				}
 			}
 		}
@@ -145,7 +145,7 @@ func BenchmarkCompositeOpaqueSpan(b *testing.B) {
 		b.Run(fmt.Sprintf("scalar/%d", pixels), func(b *testing.B) {
 			benchmarkCompositeOpaqueSpan(b, pixels, compositeOpaqueSpanScalar)
 		})
-		b.Run(fmt.Sprintf("auto_%s/%d", compositeSpanBackend, pixels), func(b *testing.B) {
+		b.Run(fmt.Sprintf("auto_%s/%d", compositeSpanKernel, pixels), func(b *testing.B) {
 			benchmarkCompositeOpaqueSpan(b, pixels, compositeOpaqueSpan)
 		})
 	}
@@ -165,7 +165,7 @@ func BenchmarkCPURendererOpaqueSpan(b *testing.B) {
 		opaqueCanvas bool
 	}{
 		{name: "pixel_loop", opaqueCanvas: false},
-		{name: "horizontal_span_" + compositeSpanBackend, opaqueCanvas: true},
+		{name: "horizontal_span_" + compositeSpanKernel.String(), opaqueCanvas: true},
 	} {
 		b.Run(test.name, func(b *testing.B) {
 			renderer := NewCPURenderer(reference, circles)

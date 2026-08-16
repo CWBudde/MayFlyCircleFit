@@ -18,14 +18,37 @@ import (
 const compositeNEONDisabledHelper = "MAYFLY_TEST_COMPOSITE_NEON_DISABLED"
 
 func TestCompositeSpanARM64DispatchMatchesCPUFeatures(t *testing.T) {
-	// The environment opt-out outranks the feature check: ASIMD is mandatory on
-	// ARM64 and stays reported even when the scalar fallback was requested.
-	want := "scalar"
-	if cpu.ARM64.HasASIMD && !fit.SIMDDisabledByEnv() {
-		want = "neon"
+	// The environment overrides outrank the feature check: ASIMD is mandatory
+	// on ARM64 and stays reported even when the scalar fallback was requested.
+	want := fit.TierScalar
+	if cpu.ARM64.HasASIMD && fit.Tier() == fit.TierNEON {
+		want = fit.TierNEON
 	}
-	if compositeSpanBackend != want {
-		t.Fatalf("composite backend = %s, want %s", compositeSpanBackend, want)
+	if compositeSpanKernel != want {
+		t.Fatalf("composite span kernel = %s, want %s", compositeSpanKernel, want)
+	}
+}
+
+// TestCompositeSpanFollowsForcedTier proves the span compositor is wired to the
+// same tier switch as every other kernel, and that the scalar fallback it
+// reaches is byte-identical. The subprocess test below still earns its keep: it
+// covers detection under GODEBUG, which forcing cannot.
+func TestCompositeSpanFollowsForcedTier(t *testing.T) {
+	fit.SetForcedTier(fit.TierScalar)
+	defer fit.ResetTierDetection()
+
+	if compositeSpanKernel != fit.TierScalar {
+		t.Fatalf("composite span kernel = %s after forcing scalar", compositeSpanKernel)
+	}
+
+	// 512 pixels is above compositeSpanNEONMinPixels, so an unforced host would
+	// have taken the NEON path here.
+	got := makeOpaqueSpanFixture(512)
+	want := append([]byte(nil), got...)
+	compositeOpaqueSpan(got, 0, 512, 0.13, 0.57, 0.91, 0.37)
+	compositeOpaqueSpanScalar(want, 0, 512, 0.13, 0.57, 0.91, 0.37)
+	if !bytes.Equal(got, want) {
+		t.Fatal("forced-scalar span dispatch differs from the scalar compositor")
 	}
 }
 
@@ -34,8 +57,8 @@ func TestCompositeSpanNEONDisabledFallback(t *testing.T) {
 		if cpu.ARM64.HasASIMD {
 			t.Fatal("cpu.ARM64.HasASIMD is true with GODEBUG=cpu.all=off")
 		}
-		if compositeSpanBackend != "scalar" {
-			t.Fatalf("composite backend = %s, want scalar", compositeSpanBackend)
+		if compositeSpanKernel != fit.TierScalar {
+			t.Fatalf("composite span kernel = %s, want scalar", compositeSpanKernel)
 		}
 		got := makeOpaqueSpanFixture(256)
 		want := append([]byte(nil), got...)

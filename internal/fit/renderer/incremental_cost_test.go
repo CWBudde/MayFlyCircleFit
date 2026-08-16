@@ -24,7 +24,7 @@ func TestDeltaSSDSpanMatchesScalar(t *testing.T) {
 			got := deltaSSDSpan(candidate, base, reference, pixels)
 			want := deltaSSDSpanScalar(candidate, base, reference, pixels)
 			if got != want {
-				t.Fatalf("%s delta = %d, scalar = %d", deltaSSDBackend, got, want)
+				t.Fatalf("%s delta = %d, scalar = %d", deltaSSDKernel, got, want)
 			}
 		})
 	}
@@ -356,7 +356,7 @@ func BenchmarkDeltaSSDSpan(b *testing.B) {
 				rendererDeltaSink = deltaSSDSpanScalar(candidate, base, reference, pixels)
 			}
 		})
-		b.Run(fmt.Sprintf("auto_%s/%d", deltaSSDBackend, pixels), func(b *testing.B) {
+		b.Run(fmt.Sprintf("auto_%s/%d", deltaSSDKernel, pixels), func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(pixels * 12))
 			for range b.N {

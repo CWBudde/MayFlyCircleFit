@@ -4,6 +4,17 @@
 // pixels per vector iteration. It stays inside the SSE2 instruction set:
 // widening uses PUNPCK* against a zeroed register instead of the SSE4.1
 // PMOVZX forms, and no VEX encoding or VZEROUPPER is involved.
+//
+// Accumulator strategy: PMADDWD results are summed as int32 with PADDL and
+// widened to int64 exactly once, at the end. This matches ssd_sse2_amd64.s and
+// deliberately does not match the AVX2 delta kernel next door, which widens per
+// iteration and pays sixteen extra instructions per four pixels for it.
+//
+// The bound is per lane. PMADDWD pairwise-adds the widened R,G,B,0 words, so
+// the busiest lane carries at most pixels*2*255*255 = pixels*130050 and first
+// exceeds 2^31 at 16512 pixels. deltaSSDSpanSSE2's Go wrapper splits longer
+// spans into deltaSSDSSE2MaxPixels-sized chunks and sums them in int64, so this
+// assembly never sees a span that could overflow and there is no width cliff.
 
 #include "textflag.h"
 
@@ -11,16 +22,16 @@ DATA ·deltaSSDRGBMaskSSE2<>+0(SB)/8, $0x00ffffff00ffffff
 DATA ·deltaSSDRGBMaskSSE2<>+8(SB)/8, $0x00ffffff00ffffff
 GLOBL ·deltaSSDRGBMaskSSE2<>(SB), RODATA|NOPTR, $16
 
-// func deltaSSDSpanSSE2(candidate, base, reference *byte, pixels int) int64
-TEXT ·deltaSSDSpanSSE2(SB), NOSPLIT, $32-40
+// func deltaSSDSpanSSE2Kernel(candidate, base, reference *byte, pixels int) int64
+TEXT ·deltaSSDSpanSSE2Kernel(SB), NOSPLIT, $32-40
 	MOVQ candidate+0(FP), R8
 	MOVQ base+8(FP), R9
 	MOVQ reference+16(FP), R10
 	MOVQ pixels+24(FP), R11
 
 	XORQ  R12, R12                        // scalar signed delta
-	PXOR  X12, X12                        // candidate uint64 totals
-	PXOR  X13, X13                        // base uint64 totals
+	PXOR  X12, X12                        // candidate int32 totals
+	PXOR  X13, X13                        // base int32 totals
 	PXOR  X14, X14                        // zero, for PUNPCK widening
 	MOVOU ·deltaSSDRGBMaskSSE2<>(SB), X15
 	XORQ  DX, DX                          // x = 0
@@ -56,39 +67,23 @@ vector_loop:
 	MOVOU     X4, X7
 	PUNPCKLBW X14, X7
 	PMADDWL   X7, X7
-	MOVOU     X7, X8
-	PUNPCKLLQ X14, X8
-	PADDQ     X8, X12
-	PUNPCKHLQ X14, X7
-	PADDQ     X7, X12
+	PADDL     X7, X12
 
 	// Candidate upper two pixels.
 	PUNPCKHBW X14, X4
 	PMADDWL   X4, X4
-	MOVOU     X4, X8
-	PUNPCKLLQ X14, X8
-	PADDQ     X8, X12
-	PUNPCKHLQ X14, X4
-	PADDQ     X4, X12
+	PADDL     X4, X12
 
 	// Base lower two pixels.
 	MOVOU     X6, X7
 	PUNPCKLBW X14, X7
 	PMADDWL   X7, X7
-	MOVOU     X7, X8
-	PUNPCKLLQ X14, X8
-	PADDQ     X8, X13
-	PUNPCKHLQ X14, X7
-	PADDQ     X7, X13
+	PADDL     X7, X13
 
 	// Base upper two pixels.
 	PUNPCKHBW X14, X6
 	PMADDWL   X6, X6
-	MOVOU     X6, X8
-	PUNPCKLLQ X14, X8
-	PADDQ     X8, X13
-	PUNPCKHLQ X14, X6
-	PADDQ     X6, X13
+	PADDL     X6, X13
 
 	ADDQ $4, DX
 	JMP  vector_loop
@@ -137,11 +132,28 @@ scalar_tail:
 	JMP     scalar_tail
 
 reduce:
-	MOVOU X12, 0(SP)
+	// Widen the four int32 lanes of each accumulator to int64 exactly once, in
+	// the vector registers. The lanes are non-negative sums of squares, so
+	// unpacking against the zero register is the correct widening.
+	//
+	// The subtraction happens here rather than after the scalar reduction, so
+	// only one 16-byte spill and two scalar adds are needed instead of eight
+	// loads. That epilogue is the whole cost at a four-pixel span, where the
+	// loop runs exactly once.
+	MOVOU     X12, X0
+	PUNPCKLLQ X14, X0
+	PUNPCKHLQ X14, X12
+	PADDQ     X12, X0
+
+	MOVOU     X13, X1
+	PUNPCKLLQ X14, X1
+	PUNPCKHLQ X14, X13
+	PADDQ     X13, X1
+
+	PSUBQ X1, X0
+	MOVOU X0, 0(SP)
 	ADDQ  0(SP), R12
 	ADDQ  8(SP), R12
-	MOVOU X13, 16(SP)
-	SUBQ  16(SP), R12
-	SUBQ  24(SP), R12
-	MOVQ  R12, ret+32(FP)
+
+	MOVQ R12, ret+32(FP)
 	RET

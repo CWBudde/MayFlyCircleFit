@@ -2,33 +2,28 @@
 
 package renderer
 
-import (
-	"golang.org/x/sys/cpu"
+import "github.com/cwbudde/mayflycirclefit/internal/fit"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
-)
-
-var deltaSSDBackend = "scalar"
-
-// deltaSSDNEONEnabled caches the dispatch gate so the per-call check does not
-// re-read the environment opt-out.
-var deltaSSDNEONEnabled bool
+// deltaSSDKernel is the tier whose kernels deltaSSDSpan may use. See the amd64
+// twin; the two files deliberately share the variable name and dispatch shape.
+var deltaSSDKernel = fit.TierScalar
 
 func init() {
-	if fit.SIMDDisabledByEnv() {
-		return
-	}
-	if cpu.ARM64.HasASIMD {
-		deltaSSDBackend = "neon"
-		deltaSSDNEONEnabled = true
-	}
+	fit.RegisterTierConsumer(func(tier fit.SIMDTier) {
+		switch tier {
+		case fit.TierNEON:
+			deltaSSDKernel = fit.TierNEON
+		case fit.TierScalar, fit.TierSSE2, fit.TierAVX2:
+			deltaSSDKernel = fit.TierScalar
+		}
+	})
 }
 
 func deltaSSDSpan(candidate, base, reference []byte, pixels int) int64 {
-	if pixels < 4 || !deltaSSDNEONEnabled {
-		return deltaSSDSpanScalar(candidate, base, reference, pixels)
+	if deltaSSDKernel == fit.TierNEON && pixels >= 4 {
+		return deltaSSDSpanNEON(&candidate[0], &base[0], &reference[0], pixels)
 	}
-	return deltaSSDSpanNEON(&candidate[0], &base[0], &reference[0], pixels)
+	return deltaSSDSpanScalar(candidate, base, reference, pixels)
 }
 
 // deltaSSDSpanNEON computes an exact signed RGB SSD delta for one NRGBA span.

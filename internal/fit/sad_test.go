@@ -61,7 +61,7 @@ func TestSAD_ScalarEquivalence(t *testing.T) {
 			// They should match exactly (no floating point tolerance needed)
 			if math.Abs(scalarCost-activeCost) > 1e-9 {
 				t.Errorf("SAD mismatch: scalar=%f, active=%f, backend=%s",
-					scalarCost, activeCost, ActiveSADBackend)
+					scalarCost, activeCost, ActiveSADKernel())
 			}
 		})
 	}
@@ -128,8 +128,8 @@ func TestSAD_AlphaIgnored(t *testing.T) {
 // TestSAD_AVX2_BatchBoundaries tests AVX2 batch processing with various widths
 // AVX2 processes 8 pixels per batch, so we test exact multiples and remainders
 func TestSAD_AVX2_BatchBoundaries(t *testing.T) {
-	if ActiveSADBackend != SADBackendAVX2 {
-		t.Skipf("Skipping AVX2 batch boundary test: active backend is %s, not AVX2", ActiveSADBackend)
+	if ActiveSADKernel() != TierAVX2 {
+		t.Skipf("Skipping AVX2 batch boundary test: active backend is %s, not AVX2", ActiveSADKernel())
 	}
 
 	// Test widths that are multiples of 8 (exact batches) and non-multiples (with remainders)
@@ -162,8 +162,8 @@ func TestSAD_AVX2_BatchBoundaries(t *testing.T) {
 // TestSAD_NEON_BatchBoundaries tests NEON batch processing with various widths
 // NEON processes 4 pixels per batch (128-bit registers), so we test multiples of 4
 func TestSAD_NEON_BatchBoundaries(t *testing.T) {
-	if ActiveSADBackend != SADBackendNEON {
-		t.Skipf("Skipping NEON batch boundary test: active backend is %s, not NEON", ActiveSADBackend)
+	if ActiveSADKernel() != TierNEON {
+		t.Skipf("Skipping NEON batch boundary test: active backend is %s, not NEON", ActiveSADKernel())
 	}
 
 	// Test widths that are multiples of 4 (exact batches) and non-multiples (with remainders)
@@ -329,30 +329,30 @@ func TestSAD_PaddedStride(t *testing.T) {
 
 // TestSAD_BackendSelection validates that the correct backend was selected based on CPU features
 func TestSAD_BackendSelection(t *testing.T) {
-	t.Logf("Active SAD backend: %s", ActiveSADBackend)
+	t.Logf("Active SAD backend: %s", ActiveSADKernel())
 
 	// Verify backend is consistent with CPU features
 	if cpu.X86.HasAVX2 {
-		if ActiveSADBackend != SADBackendAVX2 {
-			t.Logf("Note: AVX2 available but backend is %s (may be disabled via GODEBUG)", ActiveSADBackend)
+		if ActiveSADKernel() != TierAVX2 {
+			t.Logf("Note: AVX2 available but backend is %s (may be disabled via GODEBUG)", ActiveSADKernel())
 		} else {
 			t.Logf("AVX2 backend correctly selected")
 		}
 	} else {
-		if ActiveSADBackend == SADBackendAVX2 {
+		if ActiveSADKernel() == TierAVX2 {
 			t.Errorf("AVX2 backend selected but CPU doesn't support AVX2")
 		}
 	}
 
 	// ARM64 NEON check
 	if cpu.ARM64.HasASIMD {
-		if ActiveSADBackend != SADBackendNEON {
-			t.Logf("Note: NEON available but backend is %s", ActiveSADBackend)
+		if ActiveSADKernel() != TierNEON {
+			t.Logf("Note: NEON available but backend is %s", ActiveSADKernel())
 		} else {
 			t.Logf("NEON backend correctly selected")
 		}
 	} else {
-		if ActiveSADBackend == SADBackendNEON {
+		if ActiveSADKernel() == TierNEON {
 			t.Errorf("NEON backend selected but CPU doesn't support NEON")
 		}
 	}
@@ -370,7 +370,7 @@ func TestSAD_BackendSelection(t *testing.T) {
 		t.Errorf("SAD of identical images should be 0.0, got %f", result)
 	}
 
-	t.Logf("Backend selection validated: %s", ActiveSADBackend)
+	t.Logf("Backend selection validated: %s", ActiveSADKernel())
 }
 
 // BenchmarkSAD_Scalar benchmarks scalar SAD implementation
@@ -393,7 +393,7 @@ func BenchmarkSAD_Active(b *testing.B) {
 	img1 := randomNRGBA(256, 256, 100)
 	img2 := randomNRGBA(256, 256, 200)
 
-	b.Logf("Active backend: %s", ActiveSADBackend)
+	b.Logf("Active backend: %s", ActiveSADKernel())
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -436,7 +436,7 @@ func BenchmarkSADvsSSD(b *testing.B) {
 	})
 
 	b.Run("SAD_active", func(b *testing.B) {
-		b.Logf("Backend: %s", ActiveSADBackend)
+		b.Logf("Backend: %s", ActiveSADKernel())
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			fastSAD(img1.Pix, img2.Pix, img1.Stride, 256, 256)
@@ -457,7 +457,7 @@ func BenchmarkSADvsSSD(b *testing.B) {
 	})
 
 	b.Run("SSD_active", func(b *testing.B) {
-		b.Logf("Backend: %s", ActiveSSDBackend)
+		b.Logf("Backend: %s", ActiveSSDKernel())
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			fastSSD(img1.Pix, img2.Pix, img1.Stride, 256, 256)

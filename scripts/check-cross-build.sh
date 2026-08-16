@@ -68,20 +68,29 @@ for target in "${targets[@]}"; do
 		require_source "$sources" ssd_amd64.s
 		require_source "$sources" ssd_sse2_amd64.go
 		require_source "$sources" ssd_sse2_amd64.s
+		require_source "$sources" simd_tier_amd64.go
 		reject_source "$sources" ssd_dispatch_arm64.go
 		reject_source "$sources" ssd_dispatch_generic.go
+		reject_source "$sources" simd_tier_arm64.go
+		reject_source "$sources" simd_tier_generic.go
 		;;
 	arm64)
 		require_source "$sources" ssd_arm64.go
 		require_source "$sources" ssd_dispatch_arm64.go
 		require_source "$sources" ssd_arm64.s
+		require_source "$sources" simd_tier_arm64.go
 		reject_source "$sources" ssd_dispatch_amd64.go
 		reject_source "$sources" ssd_dispatch_generic.go
 		reject_source "$sources" ssd_sse2_amd64.go
 		reject_source "$sources" ssd_sse2_amd64.s
+		reject_source "$sources" simd_tier_amd64.go
+		reject_source "$sources" simd_tier_generic.go
 		;;
 	*)
 		require_source "$sources" ssd_dispatch_generic.go
+		require_source "$sources" simd_tier_generic.go
+		reject_source "$sources" simd_tier_amd64.go
+		reject_source "$sources" simd_tier_arm64.go
 		reject_source "$sources" ssd_amd64.go
 		reject_source "$sources" ssd_arm64.go
 		reject_source "$sources" ssd_amd64.s

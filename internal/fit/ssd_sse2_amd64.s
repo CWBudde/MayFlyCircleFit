@@ -9,11 +9,13 @@
 // no VEX encodings. Byte->word and dword->qword widening therefore go through
 // PUNPCK* against a PXOR-zeroed register.
 //
-// Accumulator strategy: PMADDWL results are summed as int32 with PADDD for a
-// whole row and widened to int64 exactly once per row. A row's maximum value is
-// width*3*65025, which stays below 2^31 for width <= 11000. The Go wrapper
-// fastSSD_SSE2 enforces that bound and routes wider images to the scalar
-// kernel, so this assembly never sees a row that could overflow.
+// Accumulator strategy: PMADDWD results are summed as int32 with PADDD for a
+// whole row and widened to int64 exactly once per row. The limit is per lane:
+// PMADDWD pairwise-adds the widened R,G,B,0 words, so the busiest lane carries
+// at most width*2*65025 and overflows at width 16512. The Go wrapper
+// fastSSD_SSE2 caps the width at ssdSSE2MaxWidth (11000, a deliberate margin,
+// derived there) and routes wider images to the scalar kernel, so this assembly
+// never sees a row that could overflow.
 
 #include "textflag.h"
 

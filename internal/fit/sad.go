@@ -22,30 +22,19 @@ import (
 //   - sad_scalar.go: portable fallback for non-amd64 platforms and amd64
 //     processors without AVX2
 
-// SADBackend indicates which SIMD backend is active for SAD
-type SADBackend int
+// SAD has no SSE2 and no NEON kernel, so it is the one cost function whose
+// installed kernel is routinely narrower than Tier(). The AVX2 kernel uses
+// VPMADDUBSW (SSSE3) and VPMULLD (SSE4.1), neither of which baseline SSE2
+// provides, and FastSAD has no non-test callers — porting it would mean adding
+// SSSE3 and SSE4.1 tiers for an unused cost function. ARM64 has no kernel at
+// all. Both cases fall back to fastSAD_Scalar.
 
-const (
-	SADBackendScalar SADBackend = iota
-	SADBackendAVX2
-	SADBackendNEON
-)
+// activeSADKernel names the kernel the SAD dispatch installed. It is written
+// only from the RegisterTierConsumer callback in the dispatch files.
+var activeSADKernel SIMDTier
 
-func (b SADBackend) String() string {
-	switch b {
-	case SADBackendAVX2:
-		return "AVX2"
-	case SADBackendNEON:
-		return "NEON"
-	case SADBackendScalar:
-		return "scalar"
-	default:
-		return "unknown"
-	}
-}
-
-// ActiveSADBackend reports which backend was selected for SAD
-var ActiveSADBackend SADBackend
+// ActiveSADKernel reports which kernel SAD dispatch installed.
+func ActiveSADKernel() SIMDTier { return activeSADKernel }
 
 // fastSAD is the function pointer for runtime-dispatched SAD computation
 var fastSAD func(a, b []uint8, stride, width, height int) float64

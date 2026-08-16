@@ -13,6 +13,7 @@ import (
 //
 // Architecture-specific implementations:
 //   - ssd_amd64.s: AVX2 implementation (256-bit, processes 8 pixels/iteration)
+//   - ssd_sse2_amd64.s: SSE2 implementation (128-bit, processes 4 pixels/iteration)
 //   - ssd_arm64.s: NEON implementation (128-bit, processes 4 pixels/iteration)
 //   - ssd_dispatch_generic.go: scalar dispatch for other platforms
 //
@@ -20,39 +21,23 @@ import (
 //   - AVX2: approximately 6x measured speedup on AMD Ryzen 5 4600H
 //   - NEON: approximately 5.2x measured speedup on Apple M5
 //   - Scalar: baseline and portable fallback
+//
+// Which of these runs is decided once, by Tier(), and never by an inline CPU
+// feature check here. See simd_tier.go.
 
-// SSDBackend indicates which SIMD backend is active
-type SSDBackend int
+// activeSSDKernel names the kernel the SSD dispatch installed. It is written
+// only from the RegisterTierConsumer callback below.
+var activeSSDKernel SIMDTier
 
-// New backends must be appended. String() output is the wire value compared by
-// MAYFLY_REQUIRE_SSD_BACKEND, so reordering would silently change what CI asserts.
-const (
-	SSDBackendScalar SSDBackend = iota // Scalar fallback (no SIMD)
-	SSDBackendAVX2                     // AVX2 (x86-64, 256-bit)
-	SSDBackendNEON                     // NEON (ARM64, 128-bit)
-	SSDBackendSSE2                     // SSE2 (x86-64, 128-bit)
-)
-
-func (b SSDBackend) String() string {
-	switch b {
-	case SSDBackendAVX2:
-		return "AVX2"
-	case SSDBackendNEON:
-		return "NEON"
-	case SSDBackendSSE2:
-		return "SSE2"
-	case SSDBackendScalar:
-		return "scalar"
-	default:
-		return "unknown"
-	}
-}
-
-// ActiveSSDBackend reports which backend was selected at initialization
-var ActiveSSDBackend SSDBackend
+// ActiveSSDKernel reports which kernel SSD dispatch installed.
+//
+// This can legitimately be narrower than Tier(): a cost function without a
+// kernel for the process tier falls back, and FastSAD does exactly that below
+// AVX2. Tests assert the relationship rather than assuming equality.
+func ActiveSSDKernel() SIMDTier { return activeSSDKernel }
 
 // fastSSD is the function pointer for runtime-dispatched SSD computation.
-// Set by an architecture-specific init function.
+// Installed by an architecture-specific tier consumer.
 var fastSSD func(a, b []uint8, stride, width, height int) float64
 
 const (
@@ -101,7 +86,7 @@ func ExactSSD(current, reference *image.NRGBA) (uint64, bool) {
 //
 // Returns: MSE = sum(squared differences) / (width * height * 3)
 //
-// Performance: Uses runtime-dispatched SIMD kernel (AVX2/NEON/scalar).
+// Performance: uses the kernel Tier() selected (AVX2, SSE2, NEON, or scalar).
 func FastSSD(current, reference *image.NRGBA) float64 {
 	bounds := current.Bounds()
 	width := bounds.Dx()
@@ -187,42 +172,13 @@ func FastMSECost(current, reference *image.NRGBA) float64 {
 
 // ---------------------- Testing and Validation Utilities ----------------------
 
-// CompareSSDImplementations validates SIMD implementations against scalar reference.
-//
-// This utility function compares the output of all available SSD implementations
-// (scalar, AVX2, NEON) to ensure bit-exact equivalence (within floating-point tolerance).
-//
-// Useful for:
-//   - Unit tests (Task 10.4/10.5)
-//   - Regression testing (ensure SIMD and scalar produce same results)
-//   - Performance benchmarking (measure speedup vs scalar baseline)
-//
-// Returns: true if all implementations match within tolerance, false otherwise
-//
-// Example usage in tests:
-//
-//	if !CompareSSDImplementations(imgA, imgB, 1e-9) {
-//	    t.Error("SIMD implementation differs from scalar reference")
-//	}
-func CompareSSDImplementations(a, b *image.NRGBA, tolerance float64) bool {
-	width := a.Bounds().Dx()
-	height := a.Bounds().Dy()
-	stride := a.Stride
-
-	// Compute with scalar reference
-	scalarResult := fastSSD_Scalar(a.Pix, b.Pix, stride, width, height)
-
-	// Compute with current backend (may be AVX2, NEON, or scalar)
-	activeResult := fastSSD(a.Pix, b.Pix, stride, width, height)
-
-	// Check if results match within tolerance
-	diff := scalarResult - activeResult
-	if diff < 0 {
-		diff = -diff
-	}
-
-	return diff <= tolerance
-}
+// CompareSSDImplementations used to live here. It compared the active backend
+// against scalar within a floating-point tolerance and had no callers. Both
+// properties were wrong: only one kernel was ever compared, whichever dispatch
+// happened to install, and a tolerance is the wrong comparison for kernels that
+// reduce an integer sum and convert exactly once at the end. Its replacement is
+// ssd_differential_test.go, which calls every executable kernel directly and
+// requires exact equality.
 
 // BenchmarkSSDBackend measures throughput of a specific SSD backend.
 //

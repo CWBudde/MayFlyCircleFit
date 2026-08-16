@@ -14,128 +14,198 @@ import (
 )
 
 const (
-	ssdAVX2DisabledHelper = "MAYFLY_TEST_SSD_AVX2_DISABLED"
-	ssdSIMDDisabledHelper = "MAYFLY_TEST_SSD_SIMD_DISABLED"
+	ssdDetectedTierHelper = "MAYFLY_TEST_SSD_DETECTED_TIER"
+	ssdForcedTierHelper   = "MAYFLY_TEST_SSD_FORCED_TIER"
 )
 
-// TestSSDAVX2DisabledFallback starts a fresh test process because GODEBUG CPU
-// overrides are consumed before package initialization and cannot be tested by
-// changing the environment in the current process.
+// TestSSDKernelPerForcedTier is the in-process replacement for what used to
+// need one subprocess per configuration. Tier forcing re-runs every registered
+// dispatch site, so a single test can walk the whole amd64 ladder and check
+// both which kernel was installed and that it agrees with scalar.
+func TestSSDKernelPerForcedTier(t *testing.T) {
+	tiers := []SIMDTier{TierScalar, TierSSE2}
+	if cpu.X86.HasAVX2 {
+		tiers = append(tiers, TierAVX2)
+	}
+
+	a := []uint8{0, 10, 20, 255}
+	b := []uint8{30, 40, 50, 0}
+
+	for _, tier := range tiers {
+		t.Run(tier.String(), func(t *testing.T) {
+			SetForcedTier(tier)
+			defer ResetTierDetection()
+
+			if got := ActiveSSDKernel(); got != tier {
+				t.Fatalf("forced tier %s installed the %s kernel", tier, got)
+			}
+			if got, want := fastSSD(a, b, 4, 1, 1), fastSSD_Scalar(a, b, 4, 1, 1); got != want {
+				t.Fatalf("%s SSD = %v, scalar = %v", tier, got, want)
+			}
+		})
+	}
+}
+
+// TestSSDForcedTierRestored proves ResetTierDetection puts the process back,
+// which is what makes the forcing above safe for the rest of the suite.
+func TestSSDForcedTierRestored(t *testing.T) {
+	before := ActiveSSDKernel()
+	SetForcedTier(TierScalar)
+	ResetTierDetection()
+	if after := ActiveSSDKernel(); after != before {
+		t.Fatalf("kernel after reset = %s, want %s", after, before)
+	}
+}
+
+// TestSSDDetectedTierWithoutAVX2 starts a fresh process because GODEBUG CPU
+// overrides are consumed before package initialization. Unlike the forcing test
+// above, this one checks *detection*: that masking the feature bit really moves
+// the detected tier down, rather than that dispatch honors a value we handed it.
 //
 // Without AVX2 the amd64 tier below it is SSE2, not scalar.
-func TestSSDAVX2DisabledFallback(t *testing.T) {
-	if os.Getenv(ssdAVX2DisabledHelper) == "1" {
+func TestSSDDetectedTierWithoutAVX2(t *testing.T) {
+	if os.Getenv(ssdDetectedTierHelper) == "1" {
 		if cpu.X86.HasAVX2 {
 			t.Fatal("cpu.X86.HasAVX2 is true with GODEBUG=cpu.avx2=off")
 		}
-		if ActiveSSDBackend != SSDBackendSSE2 {
-			t.Fatalf("SSD backend = %s, want SSE2", ActiveSSDBackend)
+		if Tier() != TierSSE2 {
+			t.Fatalf("detected tier = %s, want sse2", Tier())
 		}
-
-		a := []uint8{0, 10, 20, 255}
-		b := []uint8{30, 40, 50, 0}
-		if got, want := fastSSD(a, b, 4, 1, 1), fastSSD_Scalar(a, b, 4, 1, 1); got != want {
-			t.Fatalf("fallback SSD = %v, scalar = %v", got, want)
+		if ActiveSSDKernel() != TierSSE2 {
+			t.Fatalf("SSD kernel = %s, want sse2", ActiveSSDKernel())
 		}
 		return
 	}
 
-	cmd := exec.Command(os.Args[0], "-test.run=^TestSSDAVX2DisabledFallback$")
-	cmd.Env = ssdAVX2DisabledEnv(os.Environ())
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("AVX2-disabled subprocess failed: %v\n%s", err, output)
-	}
+	runTierSubprocess(t, "^TestSSDDetectedTierWithoutAVX2$", ssdDetectedTierHelper, map[string]string{
+		"GODEBUG": "cpu.avx2=off",
+	})
 }
 
-// TestSSDSIMDDisabledFallback verifies that MAYFLY_DISABLE_SIMD=1 reaches the
-// scalar kernel. GODEBUG=cpu.all=off cannot express this on amd64 because SSE2
-// is a required feature there. It re-execs for the same reason as the test
-// above: dispatch reads the environment once during package initialization.
-func TestSSDSIMDDisabledFallback(t *testing.T) {
-	if os.Getenv(ssdSIMDDisabledHelper) == "1" {
-		if !SIMDDisabledByEnv() {
-			t.Fatalf("%s is not observed as set", simdDisableEnv)
+// TestSSDTierEnvForcesScalar verifies the operator lever end to end, in the one
+// place where it cannot be checked in-process: MAYFLY_SIMD_TIER is read during
+// package initialization.
+//
+// GODEBUG=cpu.all=off cannot express this on amd64, because x/sys/cpu marks
+// sse2 Required there and ORs the requirement back in after processing GODEBUG.
+func TestSSDTierEnvForcesScalar(t *testing.T) {
+	if os.Getenv(ssdForcedTierHelper) == "1" {
+		if Tier() != TierScalar {
+			t.Fatalf("detected tier = %s, want scalar", Tier())
 		}
-		if ActiveSSDBackend != SSDBackendScalar {
-			t.Fatalf("SSD backend = %s, want scalar", ActiveSSDBackend)
+		if ActiveSSDKernel() != TierScalar {
+			t.Fatalf("SSD kernel = %s, want scalar", ActiveSSDKernel())
 		}
-
-		a := []uint8{0, 10, 20, 255}
-		b := []uint8{30, 40, 50, 0}
-		if got, want := fastSSD(a, b, 4, 1, 1), fastSSD_Scalar(a, b, 4, 1, 1); got != want {
-			t.Fatalf("fallback SSD = %v, scalar = %v", got, want)
+		if ActiveSADKernel() != TierScalar {
+			t.Fatalf("SAD kernel = %s, want scalar", ActiveSADKernel())
 		}
 		return
 	}
 
-	cmd := exec.Command(os.Args[0], "-test.run=^TestSSDSIMDDisabledFallback$")
-	cmd.Env = ssdSIMDDisabledEnv(os.Environ())
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("SIMD-disabled subprocess failed: %v\n%s", err, output)
+	runTierSubprocess(t, "^TestSSDTierEnvForcesScalar$", ssdForcedTierHelper, map[string]string{
+		simdTierEnv: TierScalar.String(),
+	})
+}
+
+// TestSSDDisableEnvIsTierScalarAlias keeps the older lever working, because CI
+// steps and operator notes already use it.
+func TestSSDDisableEnvIsTierScalarAlias(t *testing.T) {
+	if os.Getenv(ssdForcedTierHelper) == "2" {
+		if Tier() != TierScalar {
+			t.Fatalf("detected tier = %s, want scalar", Tier())
+		}
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSSDDisableEnvIsTierScalarAlias$")
+	cmd.Env = append(tierSubprocessEnv(os.Environ()), simdDisableEnv+"=1", ssdForcedTierHelper+"=2")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("subprocess failed: %v\n%s", err, output)
 	}
 }
 
-func ssdAVX2DisabledEnv(environ []string) []string {
-	env := make([]string, 0, len(environ)+2)
-	godebug := "cpu.avx2=off"
-	for _, entry := range environ {
-		if strings.HasPrefix(entry, "GODEBUG=") {
-			if value := strings.TrimPrefix(entry, "GODEBUG="); value != "" {
-				godebug = value + "," + godebug
+// TestSIMDTierEnvRejectsUnknownValue proves the env lever fails loudly. Quietly
+// substituting a detected tier for an unparseable request would let a CI gate
+// that asks for SSE2 pass while measuring AVX2.
+func TestSIMDTierEnvRejectsUnknownValue(t *testing.T) {
+	if os.Getenv(ssdForcedTierHelper) == "3" {
+		// Reaching any assertion here means the panic did not happen.
+		t.Fatalf("package initialized with %s=nonsense, tier = %s", simdTierEnv, Tier())
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSIMDTierEnvRejectsUnknownValue$")
+	cmd.Env = append(tierSubprocessEnv(os.Environ()), simdTierEnv+"=nonsense", ssdForcedTierHelper+"=3")
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("subprocess succeeded with %s=nonsense\n%s", simdTierEnv, output)
+	}
+	if !strings.Contains(string(output), "is not a tier name") {
+		t.Fatalf("subprocess failed without the expected diagnostic:\n%s", output)
+	}
+}
+
+// runTierSubprocess re-execs this test binary with extra environment. GODEBUG
+// is merged rather than replaced so an outer setting is not silently dropped.
+func runTierSubprocess(t *testing.T, pattern, helper string, extra map[string]string) {
+	t.Helper()
+
+	env := tierSubprocessEnv(os.Environ())
+	for key, value := range extra {
+		if key == "GODEBUG" {
+			if existing := os.Getenv("GODEBUG"); existing != "" {
+				value = existing + "," + value
 			}
-			continue
 		}
-		if strings.HasPrefix(entry, ssdAVX2DisabledHelper+"=") {
-			continue
-		}
-		if strings.HasPrefix(entry, simdDisableEnv+"=") {
-			continue
-		}
-		if strings.HasPrefix(entry, requiredSSDBackendEnv+"=") {
-			continue
-		}
-		env = append(env, entry)
+		env = append(env, key+"="+value)
 	}
-	return append(env, "GODEBUG="+godebug, ssdAVX2DisabledHelper+"=1")
+	env = append(env, helper+"=1")
+
+	cmd := exec.Command(os.Args[0], "-test.run="+pattern)
+	cmd.Env = env
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("subprocess failed: %v\n%s", err, output)
+	}
 }
 
-func ssdSIMDDisabledEnv(environ []string) []string {
+// tierSubprocessEnv strips every variable that would otherwise leak the outer
+// configuration into the child.
+func tierSubprocessEnv(environ []string) []string {
+	stripped := []string{
+		"GODEBUG=", simdTierEnv + "=", simdDisableEnv + "=",
+		ssdDetectedTierHelper + "=", ssdForcedTierHelper + "=",
+	}
+
 	env := make([]string, 0, len(environ)+2)
 	for _, entry := range environ {
-		if strings.HasPrefix(entry, ssdSIMDDisabledHelper+"=") {
-			continue
+		skip := false
+		for _, prefix := range stripped {
+			if strings.HasPrefix(entry, prefix) {
+				skip = true
+				break
+			}
 		}
-		if strings.HasPrefix(entry, simdDisableEnv+"=") {
-			continue
+		if !skip {
+			env = append(env, entry)
 		}
-		if strings.HasPrefix(entry, requiredSSDBackendEnv+"=") {
-			continue
-		}
-		env = append(env, entry)
 	}
-	return append(env, simdDisableEnv+"=1", ssdSIMDDisabledHelper+"=1")
+	return env
 }
 
 // TestFastSSD_SSE2MaxWidthDispatchBoundary exercises the width > ssdSSE2MaxWidth
 // branch in fastSSD_SSE2. No other test reaches it, because the rest of the
 // suite stops at width 512.
 //
+// It calls fastSSD_SSE2 directly rather than going through the installed
+// kernel, so it runs on an AVX2 development machine too. The SSE2 kernel is
+// safe to call on any amd64 CPU; gating this on the active tier only meant the
+// boundary went unchecked everywhere except one CI step.
+//
 // This is a dispatch-boundary test, not an overflow test: it proves that the
 // strict comparison routes ssdSSE2MaxWidth to the SSE2 kernel and
-// ssdSSE2MaxWidth+1 to the scalar kernel, and that both sides agree. The
-// constant is deliberately about 3x conservative, so neither width comes close
-// to overflowing. A maximum-difference row totals width*3*255*255 =
-// width*195075, which stays inside int32 up to width 11008, and no single lane
-// even holds that aggregate: PMADDWD pairwise-adds into (R^2+G^2) and B^2
-// dwords, so the busiest lane carries at most width*65025 and would not
-// overflow until roughly width 33026.
+// ssdSSE2MaxWidth+1 to the scalar kernel, and that both sides agree. Neither
+// width comes close to overflowing; see the derivation on ssdSSE2MaxWidth.
 func TestFastSSD_SSE2MaxWidthDispatchBoundary(t *testing.T) {
-	if ActiveSSDBackend != SSDBackendSSE2 {
-		t.Skipf("Skipping SSE2 dispatch boundary test: active backend is %s, not SSE2", ActiveSSDBackend)
-	}
-
 	// Black against white maximizes the per-pixel difference on every channel.
 	black := color.NRGBA{A: 255}
 	white := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
@@ -147,13 +217,13 @@ func TestFastSSD_SSE2MaxWidthDispatchBoundary(t *testing.T) {
 			a := solidColorNRGBA(width, height, black)
 			b := solidColorNRGBA(width, height, white)
 
-			got := fastSSD(a.Pix, b.Pix, a.Stride, width, height)
+			got := fastSSD_SSE2(a.Pix, b.Pix, a.Stride, width, height)
 
 			if want := fastSSD_Scalar(a.Pix, b.Pix, a.Stride, width, height); got != want {
-				t.Fatalf("width %d: dispatched SSD = %.0f, scalar = %.0f", width, got, want)
+				t.Fatalf("width %d: SSE2 SSD = %.0f, scalar = %.0f", width, got, want)
 			}
 			if exact := float64(width) * float64(height) * 3 * 255 * 255; got != exact {
-				t.Fatalf("width %d: dispatched SSD = %.0f, exact = %.0f", width, got, exact)
+				t.Fatalf("width %d: SSE2 SSD = %.0f, exact = %.0f", width, got, exact)
 			}
 		})
 	}

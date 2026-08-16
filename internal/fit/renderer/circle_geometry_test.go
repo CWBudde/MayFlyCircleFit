@@ -144,7 +144,7 @@ func TestCircleSpanFloat32CoverageError(t *testing.T) {
 	if changedRows > totalRows/100_000+1 {
 		t.Fatalf("float32 changed %d of %d intersecting rows; want at most 0.001%%", changedRows, totalRows)
 	}
-	t.Logf("float32/%s changed %d of %d intersecting rows", circleSpanFloat32Backend, changedRows, totalRows)
+	t.Logf("float32/%s changed %d of %d intersecting rows", circleSpanFloat32Kernel, changedRows, totalRows)
 }
 
 func TestFixedCircleQ16ExactRepresentableBoundaries(t *testing.T) {
@@ -265,7 +265,7 @@ func BenchmarkCircleSpanGeometry(b *testing.B) {
 			geometryBenchmarkSink = widthSum
 		})
 
-		b.Run(test.name+"/float32_selected_"+circleSpanFloat32Backend, func(b *testing.B) {
+		b.Run(test.name+"/float32_selected_"+circleSpanFloat32Kernel.String(), func(b *testing.B) {
 			widthSum := 0
 			b.ReportAllocs()
 			for range b.N {
@@ -328,7 +328,7 @@ func BenchmarkCPURendererGeometry(b *testing.B) {
 	}{
 		{name: "float64_oracle", forceFloat: true},
 		{name: "float32_scalar", forceFloat32: true, float32Span: circleSpanFloat32},
-		{name: "float32_" + circleSpanFloat32Backend, forceFloat32: true},
+		{name: "float32_" + circleSpanFloat32Kernel.String(), forceFloat32: true},
 		{name: "q16.16"},
 	} {
 		b.Run(test.name, func(b *testing.B) {
