@@ -1,7 +1,11 @@
 package ui
 
-// CreateJobPage displays the job creation form
-templ CreateJobPage(errorMsg string) {
+// CreateJobPage displays the job creation form. project is the slug the job
+// will be created in; it is carried through as a hidden field because the form
+// posts to a bare "/create" action, which discards the query string the page
+// was opened with. Without it every job created from the UI silently lands in
+// the default project. An empty slug means the default project.
+templ CreateJobPage(errorMsg, project string) {
 	@Layout("Create Job") {
 		<div style="max-width: 800px; margin: 0 auto;">
 			<div style="margin-bottom: 2rem;">
@@ -24,6 +28,9 @@ templ CreateJobPage(errorMsg string) {
 			}
 
 			<form method="POST" action="/create" enctype="multipart/form-data" class="card">
+				if project != "" {
+					<input type="hidden" name="project" value={ project }/>
+				}
 				<!-- Reference Image Section -->
 				<div style="margin-bottom: 2rem;">
 					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">

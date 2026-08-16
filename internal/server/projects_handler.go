@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
@@ -112,11 +113,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 
 	counts := make(map[string]int)
 	for _, job := range s.jobManager.ListJobs() {
-		slug := job.Project
-		if slug == "" {
-			slug = app.DefaultProject
-		}
-		counts[slug]++
+		counts[app.NormalizeProject(job.Project)]++
 	}
 
 	slugs := s.projects.Slugs()
@@ -132,6 +129,9 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 			slugs = append(slugs, slug)
 		}
 	}
+	// Slugs() is sorted, but the union above appends in Go map order, so the
+	// response is only stable once everything is sorted together.
+	sort.Strings(slugs)
 
 	response := make([]projectResponse, 0, len(slugs))
 	for _, slug := range slugs {

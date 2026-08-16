@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -446,5 +447,248 @@ func TestStoreFaultIsServerErrorWithoutPath(t *testing.T) {
 	server.Handler().ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("invalid slug status = %d, want 400; body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+// TestJobStatusResponseCarriesProject covers the projection gap: create and
+// list serialize the Job itself and so always exposed the project, but the
+// single-job endpoints build jobStatusResponse by hand and used to drop it,
+// leaving a client holding only a job ID unable to learn who owns it.
+func TestJobStatusResponseCarriesProject(t *testing.T) {
+	root := t.TempDir()
+	persistence, err := store.NewFSStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
+	if _, err := server.ensureProject("christian"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		project string
+		want    string
+	}{
+		{"named project", "christian", "christian"},
+		{"default project", app.DefaultProject, app.DefaultProject},
+		// A job restored from a pre-project checkpoint carries no slug and must
+		// still report the default project rather than an empty string.
+		{"legacy empty slug", "", app.DefaultProject},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			job := server.jobManager.CreateJob(tc.project, store.JobConfig{RefPath: "a.png"})
+			for _, path := range []string{
+				"/api/v1/jobs/" + job.ID,
+				"/api/v1/jobs/" + job.ID + "/status",
+			} {
+				recorder := httptest.NewRecorder()
+				server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+				if recorder.Code != http.StatusOK {
+					t.Fatalf("%s status = %d, want 200", path, recorder.Code)
+				}
+				var decoded struct {
+					ID      string `json:"id"`
+					Project string `json:"project"`
+				}
+				if err := json.Unmarshal(recorder.Body.Bytes(), &decoded); err != nil {
+					t.Fatalf("%s: %v", path, err)
+				}
+				if decoded.ID != job.ID {
+					t.Fatalf("%s id = %q, want %q", path, decoded.ID, job.ID)
+				}
+				if decoded.Project != tc.want {
+					t.Fatalf("%s project = %q, want %q", path, decoded.Project, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// TestNamedProjectJobSurvivesRestart is the round trip the whole feature exists
+// for: a job placed in a named project over HTTP must come back in that same
+// project after the process restarts, reading only what is on disk.
+func TestNamedProjectJobSurvivesRestart(t *testing.T) {
+	root := t.TempDir()
+	persistence, err := store.NewFSStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
+
+	// Place the job through the HTTP boundary so the project travels the same
+	// path a real client uses, rather than being handed to CreateJob directly.
+	if _, err := server.ensureProject("christian"); err != nil {
+		t.Fatal(err)
+	}
+	projectStore, err := server.storeForSlug("christian")
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := server.jobManager.CreateJob("christian", store.JobConfig{RefPath: "example/Ref.png"})
+	checkpoint := &store.Checkpoint{
+		SchemaVersion: 2,
+		JobID:         job.ID,
+		BestParams:    []float64{1, 2, 3, 4, 5, 6, 7},
+		BestCost:      12.5,
+		Iterations:    3,
+		Termination:   "completed",
+		Timestamp:     time.Now(),
+		Config:        store.JobConfig{RefPath: "example/Ref.png", Mode: app.ModeJoint, Circles: 1, Iters: 10, PopSize: 30},
+	}
+	if err := projectStore.SaveCheckpoint(job.ID, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+
+	// Restart: a brand-new server over the same data root, sharing no state.
+	restartedPersistence, err := store.NewFSStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted := NewServerWithOptions("localhost:0", restartedPersistence, ServerOptions{DataRoot: root})
+
+	restored, ok := restarted.jobManager.GetJob(job.ID)
+	if !ok {
+		t.Fatalf("job %s did not survive the restart", job.ID)
+	}
+	if restored.Project != "christian" {
+		t.Fatalf("restored project = %q, want %q", restored.Project, "christian")
+	}
+
+	// It must resolve to the project's own store, not the legacy tree.
+	restoredStore, err := restarted.storeForJob(job.ID)
+	if err != nil {
+		t.Fatalf("restored job store: %v", err)
+	}
+	if restoredStore == restartedPersistence {
+		t.Fatalf("restored job resolved to the legacy store instead of its project store")
+	}
+
+	// And the filter must find it under its project and only there.
+	recorder := httptest.NewRecorder()
+	restarted.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/jobs?project=christian", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("filtered list status = %d, want 200", recorder.Code)
+	}
+	var listed []struct {
+		ID      string `json:"id"`
+		Project string `json:"project"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 || listed[0].ID != job.ID || listed[0].Project != "christian" {
+		t.Fatalf("filtered list = %+v, want exactly job %s in christian", listed, job.ID)
+	}
+
+	recorder = httptest.NewRecorder()
+	restarted.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/jobs?project="+app.DefaultProject, nil))
+	if err := json.Unmarshal(recorder.Body.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 0 {
+		t.Fatalf("default project listed %d jobs, want 0", len(listed))
+	}
+}
+
+// TestProjectsEndpointOrderingIsStable guards the union in handleProjects:
+// Slugs() is sorted, but projects known only from in-memory jobs are appended
+// in Go map order, which is randomized per run.
+func TestProjectsEndpointOrderingIsStable(t *testing.T) {
+	root := t.TempDir()
+	persistence, err := store.NewFSStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
+
+	// Registered out of order, and deliberately only as jobs so they reach the
+	// response through the map-ordered union rather than through Slugs().
+	for _, slug := range []string{"zebra", "alpha", "mango", "beta", "yak"} {
+		server.jobManager.CreateJob(slug, store.JobConfig{RefPath: "a.png"})
+	}
+
+	var first []string
+	for i := 0; i < 20; i++ {
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", recorder.Code)
+		}
+		var decoded []projectResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &decoded); err != nil {
+			t.Fatal(err)
+		}
+		got := make([]string, len(decoded))
+		for j, p := range decoded {
+			got[j] = p.Slug
+		}
+		if i == 0 {
+			first = got
+			if !sort.StringsAreSorted(got) {
+				t.Fatalf("projects are not sorted: %v", got)
+			}
+			continue
+		}
+		if strings.Join(got, ",") != strings.Join(first, ",") {
+			t.Fatalf("ordering changed between requests: %v then %v", first, got)
+		}
+	}
+}
+
+// TestCreateFormCarriesProjectThroughPost covers the plumbing gap: the create
+// form posts to a bare "/create", which discards the query string the page was
+// opened with, so without a hidden field every job created from the UI landed
+// in the default project no matter which project the user came from.
+func TestCreateFormCarriesProjectThroughPost(t *testing.T) {
+	root := t.TempDir()
+	persistence, err := store.NewFSStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/create?project=christian", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("GET /create status = %d, want 200", recorder.Code)
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, `name="project"`) || !strings.Contains(body, `value="christian"`) {
+		t.Fatalf("create form does not carry the project into the POST body")
+	}
+
+	// The default project needs no hidden field, and emitting one would make
+	// "default" indistinguishable from a project a user actually chose.
+	recorder = httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/create", nil))
+	if strings.Contains(recorder.Body.String(), `name="project"`) {
+		t.Fatalf("bare /create must not emit a project field")
+	}
+}
+
+// TestCreateFormEchoesProjectOnValidationError keeps a rejected submission from
+// silently relocating the job: the re-rendered form must still name the project
+// the user was creating in.
+func TestCreateFormEchoesProjectOnValidationError(t *testing.T) {
+	root := t.TempDir()
+	persistence, err := store.NewFSStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
+
+	form := strings.NewReader("project=christian&mode=joint")
+	request := httptest.NewRequest(http.MethodPost, "/create", form)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+
+	// refPath is missing, so this must re-render the form rather than redirect.
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (re-rendered form)", recorder.Code)
+	}
+	if !strings.Contains(recorder.Body.String(), `value="christian"`) {
+		t.Fatalf("validation error dropped the project from the re-rendered form")
 	}
 }

@@ -86,12 +86,9 @@ func (jm *JobManager) CreateJob(project string, config JobConfig) *Job {
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
 
-	if project == "" {
-		project = app.DefaultProject
-	}
 	job := &Job{
 		ID:        uuid.New().String(),
-		Project:   project,
+		Project:   app.NormalizeProject(project),
 		State:     StatePending,
 		Config:    config,
 		StartTime: time.Now(),

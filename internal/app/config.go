@@ -49,6 +49,18 @@ var reservedProjectSlugs = map[string]bool{
 	"saved":    true,
 }
 
+// NormalizeProject maps the empty slug onto DefaultProject. A job persisted
+// before projects existed carries no slug, and several call sites have to read
+// that absence as the default project; doing it in one place keeps them from
+// drifting apart. It deliberately does not validate: callers that accept a slug
+// from a client must still run it through ValidateProjectSlug.
+func NormalizeProject(slug string) string {
+	if slug == "" {
+		return DefaultProject
+	}
+	return slug
+}
+
 // ValidateProjectSlug accepts lowercase alphanumerics and dashes only. The
 // charset is deliberately narrower than the filesystem allows so a slug can
 // never introduce a path separator, a traversal segment, or a leading dot.

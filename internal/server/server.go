@@ -86,8 +86,8 @@ func (s *Server) storeForJob(jobID string) (store.Store, error) {
 
 // projectForJob returns the slug a continuation job should inherit.
 func (s *Server) projectForJob(jobID string) string {
-	if job, ok := s.jobManager.GetJob(jobID); ok && job.Project != "" {
-		return job.Project
+	if job, ok := s.jobManager.GetJob(jobID); ok {
+		return app.NormalizeProject(job.Project)
 	}
 	return app.DefaultProject
 }
@@ -600,11 +600,7 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 func filterJobsByProject(jobs []*Job, slug string) []*Job {
 	filtered := make([]*Job, 0, len(jobs))
 	for _, job := range jobs {
-		project := job.Project
-		if project == "" {
-			project = app.DefaultProject
-		}
-		if project == slug {
+		if app.NormalizeProject(job.Project) == slug {
 			filtered = append(filtered, job)
 		}
 	}
@@ -612,7 +608,12 @@ func filterJobsByProject(jobs []*Job, slug string) []*Job {
 }
 
 type jobStatusResponse struct {
-	ID                    string     `json:"id"`
+	ID string `json:"id"`
+	// Project mirrors Job.Project so a client holding only a job ID can learn
+	// which project owns it. Create and list responses serialize the Job itself
+	// and so have always carried it; this projection did not, which left the
+	// single-job endpoints the only way to see a job without seeing its project.
+	Project               string     `json:"project"`
 	State                 JobState   `json:"state"`
 	Config                JobConfig  `json:"config"`
 	BestCost              float64    `json:"bestCost"`
@@ -665,7 +666,7 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 		psnr, psnrInfinite = serializablePSNR(job.BestCost)
 	}
 	response := jobStatusResponse{
-		ID: job.ID, State: job.State, Config: job.Config,
+		ID: job.ID, Project: app.NormalizeProject(job.Project), State: job.State, Config: job.Config,
 		BestCost: job.BestCost, CandidateCost: cloneFloat(job.CandidateCost), InitialCost: job.InitialCost,
 		PSNR: psnr, PSNRInfinite: psnrInfinite, SSIM: cloneFloat(job.SSIM),
 		Iterations: job.Iterations, Evaluations: job.Evaluations,
