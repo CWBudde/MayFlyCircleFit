@@ -32,6 +32,11 @@ type CPURenderer struct {
 	// centers. The measured prototype remains opt-in because ordinary optimizer
 	// centers are almost never eligible and row sharding removes the gain.
 	enableRowSymmetry bool
+	// fastCompositing selects the reduced-precision float32 SIMD span
+	// compositor. It is opt-in because that kernel regroups the blend
+	// arithmetic and is only accurate to +/-1 per channel, so it is not
+	// byte-identical to the default float64 path and changes rendered output.
+	fastCompositing bool
 	// initialSSD is the exact, unnormalized RGB SSD between initialBg and the
 	// reference. It is prepared once for future incremental-cost evaluation.
 	initialSSD      uint64
@@ -618,6 +623,10 @@ func (r *CPURenderer) compositeCircleSpan(img *image.NRGBA, c fit.Circle, y, xSt
 	// Opaque canvases remain opaque under source-over compositing, so their
 	// spans can use the runtime-dispatched SIMD implementation.
 	if r.opaqueCanvas {
+		if r.fastCompositing {
+			compositeOpaqueSpanFast(img.Pix, y*img.Stride+xStart*4, xEnd-xStart, c.CR, c.CG, c.CB, c.Opacity)
+			return
+		}
 		compositeOpaqueSpan(img.Pix, y*img.Stride+xStart*4, xEnd-xStart, c.CR, c.CG, c.CB, c.Opacity)
 		return
 	}
@@ -628,6 +637,13 @@ func (r *CPURenderer) compositeCircleSpan(img *image.NRGBA, c fit.Circle, y, xSt
 
 func (r *CPURenderer) compositeCircleSpanPair(img *image.NRGBA, c fit.Circle, firstY, secondY, xStart, xEnd int) {
 	if r.opaqueCanvas {
+		if r.fastCompositing {
+			// The float32 kernel has no paired variant; two vector spans keep the
+			// same crossover behaviour as the single-span path.
+			r.compositeCircleSpan(img, c, firstY, xStart, xEnd)
+			r.compositeCircleSpan(img, c, secondY, xStart, xEnd)
+			return
+		}
 		compositeOpaqueSpanPair(
 			img.Pix,
 			firstY*img.Stride+xStart*4,
