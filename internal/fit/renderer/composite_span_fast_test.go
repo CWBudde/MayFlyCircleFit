@@ -125,10 +125,6 @@ func TestCompositeOpaqueSpanFastWithinToleranceOfExact(t *testing.T) {
 // this feature existed.
 func TestCPURendererFastCompositingDefaultsOff(t *testing.T) {
 	reference := image.NewNRGBA(image.Rect(0, 0, 64, 64))
-	r := NewCPURenderer(reference, 4)
-	if r.fastCompositing {
-		t.Fatal("fastCompositing must default to false")
-	}
 
 	circles := []fit.Circle{
 		{X: 32, Y: 32, R: 20, CR: 0.9, CG: 0.2, CB: 0.4, Opacity: 0.6},
@@ -139,11 +135,33 @@ func TestCPURendererFastCompositingDefaultsOff(t *testing.T) {
 		params = append(params, c.X, c.Y, c.R, c.CR, c.CG, c.CB, c.Opacity)
 	}
 
+	r := NewCPURenderer(reference, len(circles))
+	if r.fastCompositing {
+		t.Fatal("fastCompositing must default to false")
+	}
+	// Render silently returns the untouched canvas when the parameter vector
+	// does not match Dim(). Without this guard the comparison below degrades
+	// into two identical blank canvases and stops exercising either
+	// compositor, which is exactly how this test once passed vacuously.
+	if len(params) != r.Dim() {
+		t.Fatalf("params length %d does not match renderer Dim() %d; the render would be skipped", len(params), r.Dim())
+	}
+
 	exact := bytes.Clone(r.Render(params).Pix)
 
-	fastRenderer := NewCPURenderer(reference, 4)
+	fastRenderer := NewCPURenderer(reference, len(circles))
 	fastRenderer.fastCompositing = true
 	fast := fastRenderer.Render(params).Pix
+
+	// The circles must actually mark the canvas; a blank result would again
+	// make the byte comparison meaningless.
+	blank := bytes.Clone(NewCPURenderer(reference, len(circles)).canvas.Pix)
+	if bytes.Equal(exact, blank) {
+		t.Fatal("exact renderer produced the untouched background; the compositor never ran")
+	}
+	if bytes.Equal(fast, blank) {
+		t.Fatal("fast renderer produced the untouched background; the compositor never ran")
+	}
 
 	if len(exact) != len(fast) {
 		t.Fatalf("length mismatch: %d vs %d", len(exact), len(fast))
