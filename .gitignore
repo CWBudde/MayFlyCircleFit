@@ -55,3 +55,7 @@ diff.png
 
 # AI Agents
 .claude/
+
+# Local example inputs (personal images; keep them out of the public repo)
+/example/*.jpg
+/example/*.jpeg
