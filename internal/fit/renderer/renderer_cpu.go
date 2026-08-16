@@ -271,6 +271,7 @@ func (r *CPURenderer) newSession(circleCount int) (Renderer, func(), error) {
 		forceFloatGeometry:   r.forceFloatGeometry,
 		forceFloat32Geometry: r.forceFloat32Geometry,
 		enableRowSymmetry:    r.enableRowSymmetry,
+		fastCompositing:      r.fastCompositing,
 		initialSSD:           r.initialSSD,
 		initialSSDValid:      r.initialSSDValid,
 		fastCostSelected:     r.fastCostSelected,
@@ -316,6 +317,7 @@ func (r *CPURenderer) newSessionWithCanvas(canvas *image.NRGBA, circleCount int)
 	session.forceFloatGeometry = r.forceFloatGeometry
 	session.forceFloat32Geometry = r.forceFloat32Geometry
 	session.enableRowSymmetry = r.enableRowSymmetry
+	session.fastCompositing = r.fastCompositing
 	return session, noopCleanup, nil
 }
 
@@ -430,6 +432,24 @@ func effectiveEvaluationWorkers(workers int) int {
 		return 1
 	}
 	return workers
+}
+
+// SetFastCompositing selects the reduced-precision float32 SIMD span
+// compositor. Rendered output then differs from the exact float64 path by up to
+// one unit per channel, so callers opt in explicitly.
+func (r *CPURenderer) SetFastCompositing(enabled bool) {
+	r.fastCompositing = enabled
+}
+
+// FastCompositing reports whether the reduced-precision span compositor is
+// selected.
+func (r *CPURenderer) FastCompositing() bool {
+	return r.fastCompositing
+}
+
+// FastCompositingBackend names the kernel the fast compositor would use.
+func FastCompositingBackend() string {
+	return fastCompositeBackend
 }
 
 func effectiveThreadCount(threads, height int) int {

@@ -322,8 +322,10 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 // compared against rather than the width the checkpoint asked for.
 func configureCPURendererForResume(cpu *renderer.CPURenderer, config app.JobConfig) {
 	renderer.ConfigureCPUParallelism(cpu, config.Threads, config.EvaluationWorkers, config.ParallelEvaluation)
+	cpu.SetFastCompositing(config.FastCompositing)
 	slog.Info("Configured CPU renderer", "threads", cpu.Threads(),
-		"evaluationWorkers", renderer.EvaluationWidth(cpu))
+		"evaluationWorkers", renderer.EvaluationWidth(cpu),
+		"fastCompositing", cpu.FastCompositing())
 }
 
 // resumeJointProblem carries the optimizer problem a joint resume runs, the

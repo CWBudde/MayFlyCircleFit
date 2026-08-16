@@ -182,7 +182,12 @@ type JobConfig struct {
 	// Zero means "use Threads", which is what this setting did before it had its
 	// own field, so checkpoints written without it resume unchanged. It has no
 	// effect at all unless ParallelEvaluation is true.
-	EvaluationWorkers    int     `json:"evaluationWorkers,omitempty"`
+	EvaluationWorkers int `json:"evaluationWorkers,omitempty"`
+	// FastCompositing selects the reduced-precision float32 SIMD span
+	// compositor. It is additive and optional: checkpoints written before it
+	// existed decode as false, which is also the default, so the exact
+	// compositor stays in charge unless a run asks otherwise.
+	FastCompositing      bool    `json:"fastCompositing,omitempty"`
 	Seed                 int64   `json:"seed"`
 	EffectiveSeed        int64   `json:"effectiveSeed,omitempty"`
 	ResumeCount          int     `json:"resumeCount,omitempty"`

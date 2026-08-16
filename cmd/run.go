@@ -42,6 +42,7 @@ var (
 	threads                  int
 	parallelEvaluation       bool
 	evaluationWorkers        int
+	fastCompositing          bool
 	seed                     int64
 	convergenceEnable        bool
 	patience                 int
@@ -86,6 +87,7 @@ func init() {
 	runCmd.Flags().IntVar(&threads, "threads", runtime.GOMAXPROCS(0), "CPU rendering threads (capped at GOMAXPROCS)")
 	runCmd.Flags().BoolVar(&parallelEvaluation, "parallel-evaluation", false, "Evaluate optimizer population members concurrently over independent renderer sessions (reproducible per seed, but not identical to a serial run of the same seed)")
 	runCmd.Flags().IntVar(&evaluationWorkers, "evaluation-workers", 0, "Concurrent cost evaluations when --parallel-evaluation is set, capped at GOMAXPROCS (0 uses --threads). Each worker holds its own full-size canvas")
+	runCmd.Flags().BoolVar(&fastCompositing, "fast-compositing", false, "Use the reduced-precision float32 SIMD span compositor (output may differ by 1 per channel)")
 	runCmd.Flags().Int64Var(&seed, "seed", 0, "Random seed (0 chooses and reports a random seed)")
 	runCmd.Flags().BoolVar(&enableSSIM, "enable-ssim", false, "Calculate the optional final structural similarity metric")
 
@@ -156,6 +158,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		Threads:                  threads,
 		ParallelEvaluation:       parallelEvaluation,
 		EvaluationWorkers:        evaluationWorkers,
+		FastCompositing:          fastCompositing,
 		Seed:                     seed,
 		EnableSSIM:               enableSSIM,
 		ConvergenceEnabled:       convergenceEnable,
@@ -256,8 +259,10 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		}
 		cpuRenderer := rend.(*renderer.CPURenderer)
 		renderer.ConfigureCPUParallelism(cpuRenderer, config.Threads, config.EvaluationWorkers, config.ParallelEvaluation)
+		cpuRenderer.SetFastCompositing(config.FastCompositing)
 		slog.Info("Configured CPU renderer", "threads", cpuRenderer.Threads(),
-			"evaluationWorkers", renderer.EvaluationWidth(cpuRenderer))
+			"evaluationWorkers", renderer.EvaluationWidth(cpuRenderer),
+			"fastCompositing", cpuRenderer.FastCompositing())
 		cleanup = func() {} // No cleanup needed for CPU renderer
 	} else {
 		// Other backends don't support canvas yet
