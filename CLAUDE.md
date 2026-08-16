@@ -16,6 +16,12 @@ code and tests take precedence if this document becomes stale.
 - Prefer the `just` recipes. `just check` covers generation drift, tests, vet,
   formatting, and the ordinary build; CI adds race, pinned static analysis,
   aggregate coverage, vulnerability, GPU-compile, and cross-build jobs.
+- CI is split one gate per file. `.github/workflows/ci.yml` is an orchestrator
+  that only calls reusable `ci-<concern>.yml` workflows and holds the tag-gated
+  `release` job; edit the gate's own file, not `ci.yml`. `needs:` cannot cross
+  workflow files, so a gate becomes release-blocking only by being listed in
+  `release`'s `needs:`. `benchmarks` is deliberately excluded there because the
+  timing comparison is report-only.
 - Phase 9 CPU measurements on the Ryzen 5 4600H show a 2.09-2.47×
   single-thread renderer speedup, zero timed allocations after canvas reuse,
   and a 6.39× median large-workload gain when Task 9.7 uses 12 workers. See

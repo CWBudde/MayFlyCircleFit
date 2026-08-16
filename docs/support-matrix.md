@@ -52,10 +52,13 @@ excludes OpenCL.
 | Windows/AMD64 | Available | AVX2 with runtime detection; scalar fallback | Configured | AVX2 required |
 | Linux/386 | Portability only | Scalar | Configured | Not configured |
 
-“Configured” means the workflow contains that gate. Cross-build jobs also
+“Configured” means the CI workflows contain that gate. Each gate lives in its
+own reusable workflow, `.github/workflows/ci-<concern>.yml`, called from the
+`ci.yml` orchestrator; the cross-build gate is `ci-cross-build.yml` and the
+native SSD gate is `ci-native-simd.yml`. Cross-build jobs also
 assert that Go selected the expected SSD Go and assembly files. Native gates
 run the SSD correctness suite on the stated architecture and fail if runtime
-dispatch does not select the required SIMD backend. Check the workflow run
+dispatch does not select the required SIMD backend. Check the CI run
 before treating a commit as verified. Linux/386 is not a release artifact;
 other Go targets may compile but are not claimed as supported until they are
 added to the matrix and exercised.

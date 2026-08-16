@@ -1,9 +1,11 @@
 # Releasing
 
 MayFlyCircleFit uses Semantic Versioning tags and publishes portable CPU builds.
-The repository workflow is the authoritative automated release path; its release
-job cannot run until every required CI dependency succeeds for the tagged
-commit.
+The repository's `CI` workflow (`.github/workflows/ci.yml`) is the authoritative
+automated release path; its `release` job cannot run until every required CI
+dependency succeeds for the tagged commit. The gates themselves live in reusable
+`ci-<concern>.yml` workflows that `ci.yml` calls, and `release` lists them in its
+`needs:` block, so a new gate is only release-blocking once it is added there.
 
 ## Prepare and verify
 
