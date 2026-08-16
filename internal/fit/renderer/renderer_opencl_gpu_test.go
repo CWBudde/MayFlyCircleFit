@@ -152,10 +152,21 @@ func TestOpenCLCostDefersImageReadback(t *testing.T) {
 func TestOpenCLOptimizationPipelines(t *testing.T) {
 	ref := solidImage(3, 3, color.NRGBA{A: 255})
 
+	// Every opaqueBlackOptimizer circle covers this 3x3 reference completely, so
+	// the first one drives the cost to zero and visibility pruning correctly
+	// discards the rest. wantCircles therefore tracks what survives pruning, not
+	// the requested count, and batch exhausts its refill budget. The CPU
+	// equivalents are TestOptimizeBatchRejectsIneffectiveCirclesAfterBoundedRefill
+	// and TestStagedOptimizationRollsBackWorseningStage.
+	//
+	// Session counts follow the replay path: the OpenCL renderer offers
+	// newSession but no accumulated canvas, so each stage replays retained
+	// circles into a fresh session.
 	tests := []struct {
 		name        string
 		circles     int
 		wantStages  int
+		wantCircles int
 		wantSession int
 		run         func(Renderer) (*OptimizationResult, error)
 	}{
@@ -163,6 +174,7 @@ func TestOpenCLOptimizationPipelines(t *testing.T) {
 			name:        "joint",
 			circles:     3,
 			wantStages:  1,
+			wantCircles: 3,
 			wantSession: 0,
 			run: func(r Renderer) (*OptimizationResult, error) {
 				return OptimizeJoint(r, opaqueBlackOptimizer(), 3, DisabledConvergenceConfig())
@@ -172,6 +184,7 @@ func TestOpenCLOptimizationPipelines(t *testing.T) {
 			name:        "sequential",
 			circles:     3,
 			wantStages:  3,
+			wantCircles: 1, // stages two and three add nothing and are pruned
 			wantSession: 5, // baseline, three stages, and final replay
 			run: func(r Renderer) (*OptimizationResult, error) {
 				return OptimizeSequential(r, opaqueBlackOptimizer(), 3, DisabledConvergenceConfig(), nil)
@@ -180,8 +193,9 @@ func TestOpenCLOptimizationPipelines(t *testing.T) {
 		{
 			name:        "batch",
 			circles:     5,
-			wantStages:  3,
-			wantSession: 5, // baseline, 2+2+1 stages, and final replay
+			wantStages:  6, // 2+2+1 stages plus MaxExtraBatchStages refill attempts
+			wantCircles: 1,
+			wantSession: 9,
 			run: func(r Renderer) (*OptimizationResult, error) {
 				return OptimizeBatch(r, opaqueBlackOptimizer(), 5, 2, DisabledConvergenceConfig())
 			},
@@ -201,7 +215,7 @@ func TestOpenCLOptimizationPipelines(t *testing.T) {
 			if result.Stages != tt.wantStages {
 				t.Fatalf("stages = %d, want %d", result.Stages, tt.wantStages)
 			}
-			if got, want := len(result.BestParams), tt.circles*paramsPerCircle; got != want {
+			if got, want := len(result.BestParams), tt.wantCircles*paramsPerCircle; got != want {
 				t.Fatalf("parameter count = %d, want %d", got, want)
 			}
 			if result.BestCost != 0 {
