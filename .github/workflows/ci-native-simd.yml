@@ -17,73 +17,109 @@ jobs:
         include:
           - platform: Linux AMD64 / AVX2
             runner: ubuntu-24.04
-            backend: AVX2
-            maskedBackend: SSE2
-            sse2Tier: "yes"
+            tier: avx2
+            # golang.org/x/sys/cpu marks sse2 Required on amd64 and ORs the
+            # requirement back in after processing GODEBUG, so masking every
+            # maskable feature demotes this runner to SSE2, not to scalar.
+            maskedTier: sse2
+            # Only amd64 has a tier between the widest one and scalar.
+            middleTier: sse2
+            # internal/fit/renderer has no ARM64 coverage yet; see the comment
+            # on the renderer steps below.
+            rendererPackage: ./internal/fit/renderer
           - platform: macOS ARM64 / NEON
             runner: macos-15
-            backend: NEON
-            maskedBackend: scalar
-            sse2Tier: ""
+            tier: neon
+            maskedTier: scalar
+            middleTier: ""
+            rendererPackage: ""
           - platform: Windows AMD64 / AVX2
             runner: windows-2025
-            backend: AVX2
-            maskedBackend: SSE2
-            sse2Tier: "yes"
+            tier: avx2
+            maskedTier: sse2
+            middleTier: sse2
+            rendererPackage: ./internal/fit/renderer
           - platform: Linux ARM64 / NEON
             runner: ubuntu-24.04-arm
-            backend: NEON
-            maskedBackend: scalar
-            sse2Tier: ""
+            tier: neon
+            maskedTier: scalar
+            middleTier: ""
+            rendererPackage: ""
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
-      - name: Run SSD tests on native hardware
+
+      # MAYFLY_REQUIRE_SIMD_TIER asserts which tier was detected; it never sets
+      # one. MAYFLY_SIMD_TIER, used further down, is the opposite: it pins the
+      # tier, so asserting against it would be a tautology. Every step below
+      # pairs exactly one of the two with the assertion.
+      #
+      # The pair replaces MAYFLY_REQUIRE_SSD_BACKEND, which named one kernel in
+      # one package. Setting it while running internal/fit/renderer asserted
+      # nothing at all about the renderer's own dispatch.
+      - name: Detected tier on native hardware
         env:
           CGO_ENABLED: "0"
-          MAYFLY_REQUIRE_SSD_BACKEND: ${{ matrix.backend }}
-        run: go test -count=1 ./internal/fit
-      # golang.org/x/sys/cpu marks sse2 Required on amd64, so cpu.all=off leaves
-      # cpu.X86.HasSSE2 set and amd64 dispatch drops to SSE2 rather than scalar.
-      # The expected backend is therefore per-runner, and only MAYFLY_DISABLE_SIMD
-      # below gates the complete scalar fallback on every architecture.
-      - name: Run SSD tests with maskable CPU features disabled
+          MAYFLY_REQUIRE_SIMD_TIER: ${{ matrix.tier }}
+        run: go test -count=1 ./internal/fit ${{ matrix.rendererPackage }}
+
+      # This is a detection check, not a dispatch check: it proves that masking
+      # the CPU feature bits still moves the detected tier where the
+      # documentation says it does. Dispatch across tiers is covered in-process
+      # by the forced-tier tests, which need no separate CI step.
+      - name: Detected tier with maskable CPU features disabled
         env:
           CGO_ENABLED: "0"
           GODEBUG: cpu.all=off
-          MAYFLY_REQUIRE_SSD_BACKEND: ${{ matrix.maskedBackend }}
+          MAYFLY_REQUIRE_SIMD_TIER: ${{ matrix.maskedTier }}
         run: go test -count=1 ./internal/fit
-      - name: Run SSD tests with the SSE2 tier forced
-        if: matrix.sse2Tier != ''
+
+      - name: Middle tier pinned
+        if: matrix.middleTier != ''
         env:
           CGO_ENABLED: "0"
-          GODEBUG: cpu.avx2=off
-          MAYFLY_REQUIRE_SSD_BACKEND: SSE2
-        # This step is amd64-only (sse2Tier is set on the amd64 rows), so it can
-        # cover the renderer too. Without ./internal/fit/renderer the renderer's
-        # SSE2 delta-SSD and circle-span dispatch never runs in the SSE2
-        # configuration and its SSE2 tests self-skip on an AVX2 host.
-        run: go test -count=1 ./internal/fit ./internal/fit/renderer
-      # This deliberately covers ./internal/fit only. Widening it to
-      # ./internal/fit/renderer is the right end state, because MAYFLY_DISABLE_SIMD
-      # claims to force the scalar backend for every kernel and the renderer has
-      # its own gates. Doing so was tried and turned the ARM64 runners red on
-      # TestCPURendererMatchesPreOptimizationBaseline/fractional_overlaps, which
-      # is an unrelated pre-existing defect: this matrix is the only ARM64 CI
-      # coverage in the repository, every other job is ubuntu-latest, so the
-      # renderer package has never executed on ARM64 here. See
-      # docs/known-limitations.md; widen this once that is fixed on real hardware.
-      - name: Run SSD tests with SIMD disabled entirely
+          MAYFLY_SIMD_TIER: ${{ matrix.middleTier }}
+          MAYFLY_REQUIRE_SIMD_TIER: ${{ matrix.middleTier }}
+        run: go test -count=1 ./internal/fit ${{ matrix.rendererPackage }}
+
+      - name: Scalar tier pinned
+        env:
+          CGO_ENABLED: "0"
+          MAYFLY_SIMD_TIER: scalar
+          MAYFLY_REQUIRE_SIMD_TIER: scalar
+        run: go test -count=1 ./internal/fit ${{ matrix.rendererPackage }}
+
+      # MAYFLY_DISABLE_SIMD is the older lever and now means exactly
+      # MAYFLY_SIMD_TIER=scalar. It is kept working, and kept gated, because
+      # operator notes and external scripts already use it.
+      - name: Legacy scalar opt-out still reaches the scalar tier
         env:
           CGO_ENABLED: "0"
           MAYFLY_DISABLE_SIMD: "1"
-          MAYFLY_REQUIRE_SSD_BACKEND: scalar
+          MAYFLY_REQUIRE_SIMD_TIER: scalar
         run: go test -count=1 ./internal/fit
+
+      # rendererPackage is empty on both ARM64 rows. This matrix supplies the
+      # only ARM64 runners in the repository - every other job is
+      # ubuntu-latest - so internal/fit/renderer has never executed on ARM64
+      # here, and running it fails:
+      #
+      #   --- FAIL: TestCPURendererMatchesPreOptimizationBaseline/fractional_overlaps
+      #       renderer_correctness_test.go:106: pixel (4,11) channel 3 = 205, baseline = 206
+      #
+      # It reproduces at threads_1 and threads_4, does not reproduce on amd64,
+      # and predates this work. The case is a 31x23 custom canvas, well below
+      # the NEON span cutoff, and channel 3 is alpha, which the span compositor
+      # never writes - so the gated NEON span is unlikely to be the cause. It
+      # needs real ARM64 hardware to diagnose and is not reproducible by
+      # cross-compiling. See docs/known-limitations.md; fill in rendererPackage
+      # on the ARM64 rows once it is fixed.
+
       - name: Record native scalar and SIMD throughput
         env:
           CGO_ENABLED: "0"
-          MAYFLY_REQUIRE_SSD_BACKEND: ${{ matrix.backend }}
+          MAYFLY_REQUIRE_SIMD_TIER: ${{ matrix.tier }}
         run: go test -run '^$' -bench '^BenchmarkFastSSD_Comparison$' -benchtime=200ms -count=1 ./internal/fit

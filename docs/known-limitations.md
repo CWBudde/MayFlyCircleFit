@@ -49,23 +49,36 @@ behavior is production-ready.
   parity tests when GPU execution matters.
 - ARM64 uses NEON for SSD when ASIMD is available, with a scalar fallback. SAD
   remains scalar because it has no native ARM64 kernel.
-- AMD64 SSD dispatch is tiered: AVX2 when the CPU reports it, otherwise SSE2,
-  otherwise scalar. Each tier is chosen only after a runtime feature check.
+- AMD64 dispatch is tiered: AVX2 when the CPU reports it, otherwise SSE2,
+  otherwise scalar. The tier is resolved once, by `fit.Tier()`, and every kernel
+  installs from it. A kernel may be narrower than the tier where it has no
+  implementation, and the cases below are the whole list; it is never wider.
 - SAD has no SSE2 kernel, so it stays scalar on AMD64 hosts without AVX2.
   `FastSAD` has no non-test callers, and its AVX2 kernel uses `VPMADDUBSW`
   (SSSE3) and `VPMULLD` (SSE4.1), neither of which baseline SSE2 provides.
   Porting it would mean adding SSSE3/SSE4.1 tiers for an unused cost function.
+- The span compositor has no AMD64 vector kernel at any tier. ARM64 has an exact
+  float64 NEON kernel; the AMD64 equivalent has not been written, so the widest
+  AMD64 tier still composites scalar.
 - The SSE2 SSD kernel accumulates a row in int32 lanes, so it accepts rows up to
   11000 pixels wide and hands wider rows to the scalar kernel. That bound is far
-  above any canvas size this program produces, but it is a real limit.
+  above any canvas size this program produces, but it is a real limit. The SSE2
+  delta-SSD kernel uses the same accumulator strategy but its wrapper splits
+  long spans instead, so it has no equivalent cliff.
+- `MAYFLY_SIMD_TIER` pins a tier and rejects an unreachable one with a panic at
+  initialization. That is deliberate: quietly substituting the detected tier
+  would let a CI gate asking for SSE2 pass while measuring AVX2.
 - `GODEBUG=cpu.all=off` does not produce scalar execution on AMD64.
   `golang.org/x/sys/cpu` marks sse2 as required on that architecture and ORs the
-  requirement back in, so dispatch selects SSE2. Use `MAYFLY_DISABLE_SIMD=1` to
-  force the scalar backend on every kernel and architecture.
-- The Q16.16 circle-span kernel stays scalar without AVX2. Its vector form
-  compares Q32.32 products with `VPCMPGTQ`, and SSE2 has no 64-bit signed
-  compare; a measured no-AVX2 profile attributes only 2.80% of flat samples to
-  that span, so emulating the compare was not worth its cost.
+  requirement back in, so detection lands on SSE2. Use `MAYFLY_SIMD_TIER=scalar`
+  (or its alias `MAYFLY_DISABLE_SIMD=1`) to force the scalar tier on every
+  kernel and architecture.
+- Circle-span geometry stays scalar without AVX2, in both of its forms. The
+  Q16.16 vector form compares Q32.32 products with `VPCMPGTQ`, SSE2 has no
+  64-bit signed compare, and a measured no-AVX2 profile attributes only 2.80% of
+  flat samples to that span, so emulating the compare was not worth its cost.
+  The float32 form is reachable only through `CPURenderer.forceFloat32Geometry`,
+  which no configuration path sets, so it has no production effect at any tier.
 - The production CPU renderer uses `FastMSECost`; parity tests cover the scalar
   reference, SIMD dispatch, independent origins/strides, empty images, and
   dimension mismatches. This remains a numeric RGB objective, not a perceptual
