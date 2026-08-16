@@ -1,0 +1,23 @@
+name: ci-e2e
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Release lifecycle E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run release lifecycle E2E test
+        env:
+          MAYFLY_RUN_E2E: "1"
+        run: go test -count=1 -timeout=3m ./tests/e2e
