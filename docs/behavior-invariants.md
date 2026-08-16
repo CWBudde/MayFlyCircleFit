@@ -52,11 +52,17 @@ Rendering-side invariants live in
   and still changes the trajectory.
 - Transactional polishing is re-entrant only through its session pool. Each
   sweep builds one pool of baked-suffix sessions, and every evaluation leases a
-  slot carrying its own scratch parameter vector, so nothing is shared. A
-  width-one pool leases the sweep's own session and vector and is byte-identical
-  to the serial sweep it replaced. `PolishCircleBatchContext` still rejects an
-  optimizer reporting a width above one when no pool can be built -- a backend
-  without independent sessions, OpenCL today -- and errors rather than degrading
+  slot carrying its own scratch parameter vector, so nothing is shared. The
+  fixed prefix behind those sessions is rasterized once per sweep and every slot
+  starts from a copy of that canvas; baking per slot would redraw the prefix
+  once per worker and eat the throughput the pool exists to win. A width-one
+  pool leases the sweep's own session and vector and is byte-identical to the
+  serial sweep it replaced. `PolishCircleBatchContext` still rejects an
+  optimizer reporting a width above one unless the backend both hands out
+  independent sessions and advertises concurrent evaluation. Both are required:
+  OpenCL can create sessions, but each carries its own device state and several
+  of them evaluating at once has never been validated, so it withholds the
+  parallel marker and is refused. Polishing errors rather than degrading
   to one slot when the pool comes up short, because the optimizer would still
   call the evaluator from every goroutine. The epoch and progress wrappers
   forward the width so neither check can be bypassed.

@@ -122,11 +122,19 @@ func PolishCircleBatchContext(
 	// evaluator from a parallel optimizer would race the vector, the canvas, and
 	// the evaluation counter -- silently, as a plausible wrong cost and a wrong
 	// image, with no error. Refuse that combination rather than run it.
+	//
+	// Handing out sessions is necessary but not sufficient: OpenCL can create
+	// sessions too, yet each one carries its own device state and the backend
+	// has never been validated with several of them evaluating at once. So the
+	// backend must also advertise concurrent evaluation by implementing
+	// parallelEvaluationRenderer, which is exactly the marker OpenCL withholds.
 	optimizerWorkers := opt.ParallelEvaluationWidth(optimizer)
 	if optimizerWorkers > 1 {
-		if _, ok := base.(rendererSessionFactory); !ok {
+		_, poolable := base.(rendererSessionFactory)
+		_, concurrent := base.(parallelEvaluationRenderer)
+		if !poolable || !concurrent {
 			return nil, fmt.Errorf(
-				"%w: polishing cannot pool sessions for %T, so it requires a serial optimizer, got one configured for %d concurrent evaluations",
+				"%w: polishing cannot pool concurrent sessions for %T, so it requires a serial optimizer, got one configured for %d concurrent evaluations",
 				ErrInvalidOptimizationInput, base, optimizerWorkers)
 		}
 	}
@@ -223,25 +231,45 @@ func PolishCircleBatchContext(
 		// again for every candidate. The suffix still carries the inactive circles
 		// that are drawn after an active one, which preserves draw order exactly.
 		prefixCircles := slices.Min(activeCircles)
-		// Every pooled slot needs a session of its own, because a bake shared by
-		// the pool would serialize every candidate behind one canvas and defeat
-		// the point. The bake depends on prefixCircles, which the selector changes
-		// every sweep, so the slots are rebuilt per sweep rather than reused.
+		// Every pooled slot needs a session of its own, because a canvas shared by
+		// the pool would serialize every candidate behind it and defeat the point.
+		// The prefix canvas itself is identical for all of them, though, so it is
+		// rasterized once per sweep and every slot session starts from a copy of
+		// it: baking per slot would redraw the same fixed prefix once per worker,
+		// which for contiguous-window is nearly the whole vector. The bake depends
+		// on prefixCircles, which the selector changes every sweep, so the slots
+		// are rebuilt per sweep rather than reused.
 		suffixOffset := 0
 		primarySession := fullSession
 		newSlotSession := func() (Renderer, func(), error) {
 			return newStagedSession(base, circleCount)
 		}
-		if suffixSession, suffixCleanup, ok := bakedSuffixSession(base, bestParams, prefixCircles, circleCount); ok {
-			sweepCleanups = append(sweepCleanups, suffixCleanup)
+		if baked, ok := bakePrefixCanvas(base, bestParams, prefixCircles, circleCount); ok {
 			suffixOffset = prefixCircles * paramsPerCircle
-			primarySession = suffixSession
+			suffixCircles := circleCount - prefixCircles
 			newSlotSession = func() (Renderer, func(), error) {
-				session, cleanup, baked := bakedSuffixSession(base, bestParams, prefixCircles, circleCount)
-				if !baked {
+				session, cleanup, created := sessionOverBakedCanvas(base, baked, suffixCircles)
+				if !created {
 					return nil, nil, ErrStagedOptimizationUnsupported
 				}
 				return session, cleanup, nil
+			}
+			// A pool wider than one slot leases only sessions it created itself and
+			// never evaluates the primary, so opening a baked primary alongside them
+			// would pay for a session and a canvas nothing reads. Width one does
+			// lease the primary, so that path still gets one.
+			//
+			// The wide path therefore leaves primarySession on the full vector,
+			// which does not match suffixOffset. That is only reachable if the pool
+			// fails to create a single slot, and the width check below refuses the
+			// run before any evaluation.
+			if optimizerWorkers < 2 {
+				session, cleanup, err := newSlotSession()
+				if err != nil {
+					return nil, err
+				}
+				sweepCleanups = append(sweepCleanups, cleanup)
+				primarySession = session
 			}
 		}
 		// A single-slot pool leases the sweep's own session and its own

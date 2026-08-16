@@ -746,34 +746,58 @@ func newStagedSessionForAccumulator(base Renderer, accumulator *stagedAccumulato
 	return accumulator.factory.newSessionWithCanvas(accumulator.canvas, circleCount)
 }
 
-// bakedSuffixSession renders an immutable draw-order prefix once and returns a
-// session that evaluates only the suffix over that canvas. The caller keeps
-// passing complete parameter vectors and hands the session the matching suffix,
-// so the fixed prefix is never rasterized again per evaluation.
+// bakePrefixCanvas rasterizes an immutable draw-order prefix once and returns
+// the canvas it produced. The canvas depends only on the fixed prefix, so one
+// bake backs every session a caller needs over it -- rendering the prefix again
+// per session would pay the very cost baking exists to remove.
 //
-// The second result reports whether baking applies. It does not for a zero-length
-// prefix, or for backends that cannot start a session from a supplied canvas; the
-// caller then keeps evaluating the complete vector.
-func bakedSuffixSession(base Renderer, params []float64, prefixCircles, circleCount int) (Renderer, func(), bool) {
+// The second result reports whether baking applies. It does not for a
+// zero-length prefix, or for backends that cannot start a session from a
+// supplied canvas; the caller then keeps evaluating the complete vector.
+func bakePrefixCanvas(base Renderer, params []float64, prefixCircles, circleCount int) (*image.NRGBA, bool) {
 	if prefixCircles <= 0 || prefixCircles >= circleCount {
-		return nil, noopCleanup, false
+		return nil, false
 	}
+	factory, ok := base.(accumulatedSessionFactory)
+	if !ok {
+		return nil, false
+	}
+	prefixSession, prefixCleanup, err := factory.newSession(prefixCircles)
+	if err != nil {
+		return nil, false
+	}
+	defer prefixCleanup()
+	return cloneNRGBA(prefixSession.Render(params[:prefixCircles*paramsPerCircle])), true
+}
+
+// sessionOverBakedCanvas creates a session that evaluates only suffixCircles
+// circles over an already-baked canvas. The caller keeps passing complete
+// parameter vectors and hands the session the matching suffix, so the fixed
+// prefix is never rasterized again per evaluation.
+//
+// The session copies the canvas it is given, so several independent sessions
+// may be created from one baked canvas.
+func sessionOverBakedCanvas(base Renderer, baked *image.NRGBA, suffixCircles int) (Renderer, func(), bool) {
 	factory, ok := base.(accumulatedSessionFactory)
 	if !ok {
 		return nil, noopCleanup, false
 	}
-	prefixSession, prefixCleanup, err := factory.newSession(prefixCircles)
-	if err != nil {
-		return nil, noopCleanup, false
-	}
-	baked := cloneNRGBA(prefixSession.Render(params[:prefixCircles*paramsPerCircle]))
-	prefixCleanup()
-
-	session, cleanup, err := factory.newSessionWithCanvas(baked, circleCount-prefixCircles)
+	session, cleanup, err := factory.newSessionWithCanvas(baked, suffixCircles)
 	if err != nil {
 		return nil, noopCleanup, false
 	}
 	return session, cleanup, true
+}
+
+// bakedSuffixSession bakes the prefix and opens a single session over it. Use
+// bakePrefixCanvas directly when more than one session is needed, so the prefix
+// is rendered once rather than once per session.
+func bakedSuffixSession(base Renderer, params []float64, prefixCircles, circleCount int) (Renderer, func(), bool) {
+	baked, ok := bakePrefixCanvas(base, params, prefixCircles, circleCount)
+	if !ok {
+		return nil, noopCleanup, false
+	}
+	return sessionOverBakedCanvas(base, baked, circleCount-prefixCircles)
 }
 
 func (a *stagedAccumulator) retain(canvas *image.NRGBA) {

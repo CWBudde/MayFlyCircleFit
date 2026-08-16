@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -299,6 +300,7 @@ func TestRunJobPolishesAtTheConfiguredEvaluationWidth(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createTestImage(t, imgPath)
+	logs := captureLogs(t)
 	jm := NewJobManager()
 	job := jm.CreateJob(app.DefaultProject, JobConfig{
 		RefPath:                  imgPath,
@@ -336,6 +338,36 @@ func TestRunJobPolishesAtTheConfiguredEvaluationWidth(t *testing.T) {
 		t.Fatalf("completed polished job = state %s params %d, error %q",
 			completed.State, len(completed.BestParams), completed.Error)
 	}
+	// Completion alone proves nothing: the serial polisher completed this job
+	// too. What has to hold is the width polishing actually ran at, which the
+	// completion record reports.
+	width := polishingWidthFromLogs(t, logs.String())
+	if width < 2 {
+		t.Fatalf("polishing evaluation width = %d, want more than one worker", width)
+	}
+}
+
+// polishingWidthFromLogs reads the evaluation width off the record polishing
+// writes when it finishes. It is the only place the width polishing really used
+// is observable from outside, since the polisher is built inside runJob.
+func polishingWidthFromLogs(t *testing.T, logs string) int {
+	t.Helper()
+	for line := range strings.SplitSeq(logs, "\n") {
+		if !strings.Contains(line, "Batch polishing complete") {
+			continue
+		}
+		_, rest, ok := strings.Cut(line, "evaluation_workers=")
+		if !ok {
+			t.Fatalf("polishing completion record has no evaluation_workers: %s", line)
+		}
+		workers, err := strconv.Atoi(strings.Fields(rest)[0])
+		if err != nil {
+			t.Fatalf("evaluation_workers is not a number in %q: %v", line, err)
+		}
+		return workers
+	}
+	t.Fatalf("no polishing completion record in logs: %s", logs)
+	return 0
 }
 
 func TestRunJobPolishingOnlyContinuesCompleteBatch(t *testing.T) {

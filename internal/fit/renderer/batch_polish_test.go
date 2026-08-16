@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
@@ -879,6 +880,24 @@ func TestPolishCircleBatchRejectsParallelOptimizerWithoutSessionPool(t *testing.
 		t.Fatalf("polishing rejected a serial optimizer: %v", err)
 	}
 
+	// A backend that can hand out sessions but does not advertise concurrent
+	// evaluation must be refused just as firmly. That is the OpenCL shape: it
+	// implements the session factory, so a factory-only guard would let several
+	// device sessions evaluate at once, which the backend has never been
+	// validated for.
+	unadvertised := newStagedOnlyRenderer(NewCPURenderer(ref, 1))
+	silent := &parallelPolishOptimizer{workers: 4}
+	_, err = PolishCircleBatchContext(context.Background(), unadvertised, silent, initial, BatchPolishOptions{
+		ActiveSetSize: 1,
+		MaxSweeps:     1,
+	})
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
+		t.Fatalf("error = %v, want ErrInvalidOptimizationInput for a backend without a parallel marker", err)
+	}
+	if silent.calls != 0 {
+		t.Fatalf("optimizer ran %d times, want 0; the guard must refuse before evaluating", silent.calls)
+	}
+
 	// So must a concurrent optimizer over a renderer that can pool sessions.
 	pooled := &parallelPolishOptimizer{workers: 4}
 	pooled.params = circleParams(2, 2, 5, color.NRGBA{A: 255}, 1)
@@ -887,6 +906,80 @@ func TestPolishCircleBatchRejectsParallelOptimizerWithoutSessionPool(t *testing.
 		MaxSweeps:     1,
 	}); err != nil {
 		t.Fatalf("polishing rejected a concurrent optimizer over a poolable renderer: %v", err)
+	}
+}
+
+// sessionCounts records how a run created its sessions: sessions counts the
+// ones rendered from scratch, which is what baking a fixed prefix costs, and
+// canvasSessions the ones started from an already-baked canvas.
+type sessionCounts struct {
+	sessions       atomic.Int64
+	canvasSessions atomic.Int64
+}
+
+// sessionCountingRenderer is a working CPU renderer that counts how its
+// sessions were created, so a test can tell one bake per sweep from one bake
+// per pooled worker.
+type sessionCountingRenderer struct {
+	*CPURenderer
+	counts *sessionCounts
+}
+
+func (r sessionCountingRenderer) newSession(circleCount int) (Renderer, func(), error) {
+	r.counts.sessions.Add(1)
+	return r.CPURenderer.newSession(circleCount)
+}
+
+func (r sessionCountingRenderer) newSessionWithCanvas(canvas *image.NRGBA, circleCount int) (Renderer, func(), error) {
+	r.counts.canvasSessions.Add(1)
+	return r.CPURenderer.newSessionWithCanvas(canvas, circleCount)
+}
+
+// TestPolishCircleBatchBakesThePrefixOncePerSweep pins the cost of widening the
+// pool. Every slot needs a canvas of its own, but the fixed prefix painted onto
+// it is the same for all of them, so it must be rasterized once per sweep. A
+// bake per slot would redraw it once per worker during setup -- for
+// contiguous-window nearly the whole circle vector -- and eat the throughput the
+// pool exists to win.
+func TestPolishCircleBatchBakesThePrefixOncePerSweep(t *testing.T) {
+	const sweeps = 2
+	ref := solidImage(20, 16, color.NRGBA{R: 200, G: 40, B: 90, A: 255})
+	params := polishParityParams()
+	circleCount := len(params) / paramsPerCircle
+
+	run := func(workers int) (int, int) {
+		t.Helper()
+		cpu := NewCPURenderer(ref, circleCount)
+		cpu.SetThreads(1)
+		counts := &sessionCounts{}
+		base := sessionCountingRenderer{CPURenderer: cpu, counts: counts}
+		optimizer := &widthPolishOptimizer{workers: workers}
+		if _, err := PolishCircleBatchContext(context.Background(), base, optimizer, params, BatchPolishOptions{
+			ActiveSetSize: 2,
+			MaxSweeps:     sweeps,
+			// The window slides toward the front of the vector, so with this many
+			// sweeps every one of them keeps a non-empty prefix and bakes. A sweep
+			// that cannot bake would open a full session per slot instead, which
+			// would blur the very counts this test compares.
+			Strategy: BatchPolishContiguousWindow,
+		}); err != nil {
+			t.Fatalf("PolishCircleBatchContext(width %d) error = %v", workers, err)
+		}
+		return int(counts.sessions.Load()), int(counts.canvasSessions.Load())
+	}
+
+	serialRendered, serialBaked := run(1)
+	if serialBaked != sweeps {
+		t.Fatalf("serial run started %d sessions from a baked canvas, want one per sweep (%d)", serialBaked, sweeps)
+	}
+	pooledRendered, pooledBaked := run(4)
+	if pooledRendered != serialRendered {
+		t.Errorf("width 4 rendered %d sessions, want the serial run's %d: the fixed prefix must be baked once per sweep, not once per worker",
+			pooledRendered, serialRendered)
+	}
+	if pooledBaked <= serialBaked {
+		t.Errorf("width 4 started %d sessions from the baked canvas, want more than the serial run's %d: every slot needs its own canvas",
+			pooledBaked, serialBaked)
 	}
 }
 
