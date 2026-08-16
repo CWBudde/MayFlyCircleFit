@@ -135,9 +135,9 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 		return
 	}
-	// Check if job exists
-	job, exists := s.jobManager.GetJob(jobID)
-	if !exists {
+	// Check if job exists. The snapshot itself is taken again after
+	// subscribing, so only the existence answer matters here.
+	if _, exists := s.jobManager.GetJob(jobID); !exists {
 		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		return
 	}
@@ -159,7 +159,7 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 	// fall into the gap between the snapshot and channel registration.
 	eventChan := s.jobManager.broadcaster.Subscribe(jobID)
 	defer s.jobManager.broadcaster.Unsubscribe(jobID, eventChan)
-	job, exists = s.jobManager.GetJob(jobID)
+	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
 		return
 	}

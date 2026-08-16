@@ -7,7 +7,7 @@ code and tests take precedence if this document becomes stale.
 
 - The module has a Go 1.24 source-compatibility floor (`go 1.24.0` in
   `go.mod`). Production binaries should use a currently supported,
-  security-patched Go release; vulnerability CI is pinned to Go 1.26.5.
+  security-patched Go release; vulnerability CI is pinned to Go 1.26.6.
 - MayFly is pinned to `github.com/cwbudde/mayfly v0.4.0`.
 - templ is pinned as a Go tool at `github.com/a-h/templ v0.3.960`.
 - `internal/ui/*_templ.go` files are generated and committed. After changing a

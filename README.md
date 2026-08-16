@@ -197,7 +197,7 @@ go build ./...
 
 The CI workflow runs these gates, pinned `staticcheck`, a 50% aggregate coverage
 floor with an uploaded profile, portable cross-builds, an OpenCL/PoCL GPU-tag
-compile and focused runtime suite, pinned `govulncheck` under Go 1.26.5, and a
+compile and focused runtime suite, pinned `govulncheck` under Go 1.26.6, and a
 dedicated release-lifecycle E2E job equivalent to `just test-e2e`. Their
 presence is not a claim that the current branch or release candidate has passed
 them; consult the actual workflow result.
