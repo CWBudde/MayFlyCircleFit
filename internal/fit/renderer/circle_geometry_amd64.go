@@ -6,6 +6,8 @@ import (
 	"math"
 
 	"golang.org/x/sys/cpu"
+
+	"github.com/cwbudde/mayflycirclefit/internal/fit"
 )
 
 var (
@@ -13,15 +15,23 @@ var (
 	circleSpanFloat32Selected = circleSpanFloat32
 )
 
+// circleSpanAVX2Enabled caches the AVX2 gate together with the environment
+// opt-out so per-call checks stay a single boolean load.
+var circleSpanAVX2Enabled bool
+
 func init() {
+	if fit.SIMDDisabledByEnv() {
+		return
+	}
 	if cpu.X86.HasAVX2 {
 		circleSpanFloat32Backend = "avx2"
 		circleSpanFloat32Selected = circleSpanFloat32AVX2Unchecked
+		circleSpanAVX2Enabled = true
 	}
 }
 
 func circleSpanFloat32AVX2(centerX, radiusSquaredMinusDY float32, width int) (xStart, xEnd int) {
-	if !cpu.X86.HasAVX2 {
+	if !circleSpanAVX2Enabled {
 		return circleSpanFloat32(centerX, radiusSquaredMinusDY, width)
 	}
 	return circleSpanFloat32AVX2Unchecked(centerX, radiusSquaredMinusDY, width)
@@ -35,7 +45,7 @@ func circleSpanFloat32AVX2Unchecked(centerX, radiusSquaredMinusDY float32, width
 func (g fixedCircleQ16) spanAVX2(y, width int) (xStart, xEnd int, intersects bool) {
 	const vectorMarginQ = 8 * circleQ16Scale
 	roundedCenterQ := int64(g.centerX) << circleQ16FractionBits
-	if !cpu.X86.HasAVX2 || g.centerX < 0 || g.centerX >= width ||
+	if !circleSpanAVX2Enabled || g.centerX < 0 || g.centerX >= width ||
 		roundedCenterQ < math.MinInt32+vectorMarginQ || roundedCenterQ > math.MaxInt32-vectorMarginQ {
 		return g.span(y, width)
 	}

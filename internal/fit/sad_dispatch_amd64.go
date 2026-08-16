@@ -9,6 +9,13 @@ import (
 )
 
 func init() {
+	if SIMDDisabledByEnv() {
+		ActiveSADBackend = SADBackendScalar
+		fastSAD = fastSAD_Scalar
+		slog.Debug("SAD kernel initialized", "backend", "scalar", "reason", simdDisableEnv)
+		return
+	}
+
 	if cpu.X86.HasAVX2 {
 		ActiveSADBackend = SADBackendAVX2
 		fastSAD = fastSAD_AVX2
