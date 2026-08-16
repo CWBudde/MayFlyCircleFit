@@ -8,6 +8,10 @@ release is declared by this file.
 
 ### Added
 
+- `run --parallel-evaluation` evaluates optimizer population members
+  concurrently over `--threads` independent renderer sessions, each with its own
+  canvas. It is reproducible for a fixed seed and worker-count independent, but
+  its trajectory differs from a serial run of the same seed. It defaults to off.
 - Optimizer-level early stopping, disabled by default. `--stop-target-cost`,
   `--stop-stagnation-iters`, `--stop-min-improvement`, and `--stop-min-iters`
   (and their `stop*` job-configuration fields) apply per iteration inside a
@@ -81,6 +85,8 @@ release is declared by this file.
 - OpenCL remains experimental and joint-only.
 - Restart-from-best does not restore the full optimizer state, and server resume
   of sequential/batch jobs is unsupported.
+- `--parallel-evaluation` changes the output of a fixed seed and is therefore
+  opt-in and off by default.
 - Real-device GPU runtime, long-running end-to-end, per-package coverage, and
   performance-regression gates remain outside the required CI matrix. See
   [docs/known-limitations.md](docs/known-limitations.md).

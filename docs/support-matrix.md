@@ -31,8 +31,8 @@ Joint mode ignores stage-level convergence. In staged modes, optimizer-level
 stopping applies to each stage independently, so it can shorten stages without
 ending the run; the run then reports `completed`. Reported termination reasons
 are `completed`, `cancelled`, `target_cost`, `stagnation`, and
-`stage_convergence`. MayFly evaluation parallelism (`EnableParallel`) is not
-enabled.
+`stage_convergence`. MayFly evaluation parallelism (`EnableParallel`) is opt-in
+through `--parallel-evaluation` and off by default.
 
 ## Build targets
 
