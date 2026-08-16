@@ -313,6 +313,83 @@ func TestScheduleExpandRealizesTheReferenceCampaign(t *testing.T) {
 	}
 }
 
+func TestParseScheduleRejectsMalformedInput(t *testing.T) {
+	tests := []struct {
+		name     string
+		document string
+		wantErr  string
+	}{
+		{name: "not json", document: `not json`, wantErr: "decode schedule"},
+		{name: "two objects", document: baseDocument + baseDocument, wantErr: "one JSON object"},
+		{name: "no base", document: `{"schemaVersion": 1}`, wantErr: "refPath"},
+		{
+			name:     "budget override the optimizer refuses",
+			document: strings.Replace(baseDocument, `"steps": []`, `"steps": [{"type": "extend", "additionalCircles": 8, "popSize": 5}]`, 1),
+			wantErr:  "popSize",
+		},
+		{
+			name:     "polish batch size",
+			document: strings.Replace(baseDocument, `"steps": []`, `"steps": [{"type": "polish", "batchSize": 4}]`, 1),
+			wantErr:  "batchSize",
+		},
+		{
+			name:     "extend carrying a polish override",
+			document: strings.Replace(baseDocument, `"steps": []`, `"steps": [{"type": "extend", "additionalCircles": 8, "maxSweeps": 2}]`, 1),
+			wantErr:  "maxSweeps",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := ParseSchedule([]byte(test.document))
+			if err == nil {
+				t.Fatalf("ParseSchedule() error = nil, want one mentioning %q", test.wantErr)
+			}
+			if !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("ParseSchedule() error = %v, want it to mention %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+// TestScheduleStepBudgetOverrides pins that a step's budget lands on the field
+// the matching HTTP request would have set, polish included.
+func TestScheduleStepBudgetOverrides(t *testing.T) {
+	doc := documentWithSteps(t, `[
+    {"type": "extend", "additionalCircles": 8, "batchSize": 4, "epochs": 3, "iters": 500, "popSize": 40},
+    {"type": "polish", "strategy": "contiguous-window", "epochs": 2, "iters": 900, "stagnationIters": 100, "minImprovement": 0.5, "popSize": 60}
+  ]`)
+	stages, err := doc.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	extend := stages[1].Config
+	if extend.BatchSize != 4 || extend.OptimizerEpochs != 3 || extend.Iters != 500 || extend.PopSize != 40 {
+		t.Fatalf("extend overrides = %+v", extend)
+	}
+	polish := stages[2].Config
+	if polish.PolishingStrategy != PolishingContiguousWindow || polish.PolishingEpochs != 2 || polish.PolishingIters != 900 ||
+		polish.PolishingStagnationIters != 100 || polish.PolishingMinImprovement != 0.5 || polish.PopSize != 60 {
+		t.Fatalf("polish overrides = %+v", polish)
+	}
+	// Overrides are per step: each stage derives from the base configuration, so
+	// the extend step's budget does not leak into the polish that follows it.
+	if polish.Iters != 200 || polish.OptimizerEpochs != 1 || polish.BatchSize != 8 {
+		t.Fatalf("polish stage inherited the previous step's budget: %+v", polish)
+	}
+}
+
+func TestScheduleStepRepetitions(t *testing.T) {
+	tests := []struct {
+		repeat int
+		want   int
+	}{{0, 1}, {1, 1}, {63, 63}}
+	for _, test := range tests {
+		if got := (ScheduleStep{Repeat: test.repeat}).Repetitions(); got != test.want {
+			t.Fatalf("Repetitions() for repeat %d = %d, want %d", test.repeat, got, test.want)
+		}
+	}
+}
+
 func TestScheduleExpandIsDeterministicForAFixedSeed(t *testing.T) {
 	doc := documentWithSteps(t, `[{"type": "extend", "repeat": 2, "additionalCircles": 8}]`)
 	first, err := doc.Expand()
