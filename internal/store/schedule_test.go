@@ -409,3 +409,32 @@ func TestScheduleStoreSatisfiesTheInterface(t *testing.T) {
 	fsStore, _ := newScheduleStore(t)
 	var _ ScheduleStore = fsStore
 }
+
+// TestPausedIsAScheduleStateOnly pins the asymmetry Task 16.2 introduced: a
+// campaign can be paused between stages, but a stage cannot be, because a stage
+// is the unit that either runs to a result or does not.
+func TestPausedIsAScheduleStateOnly(t *testing.T) {
+	fsStore, _ := newScheduleStore(t)
+	record := testScheduleRecord(t)
+	record.State = ScheduleStatePaused
+	if err := fsStore.SaveSchedule(record); err != nil {
+		t.Fatalf("SaveSchedule(paused) error = %v", err)
+	}
+	reloaded, err := fsStore.LoadSchedule(testScheduleID)
+	if err != nil {
+		t.Fatalf("LoadSchedule() error = %v", err)
+	}
+	if reloaded.State != ScheduleStatePaused {
+		t.Fatalf("reloaded state = %q, want paused", reloaded.State)
+	}
+
+	plan, err := record.Document.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	stage := NewScheduleStageRecord(testScheduleID, plan[0])
+	stage.State = ScheduleStatePaused
+	if err := fsStore.SaveScheduleStage(testScheduleID, stage); err == nil {
+		t.Fatal("SaveScheduleStage() accepted a paused stage")
+	}
+}

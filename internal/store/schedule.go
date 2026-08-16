@@ -42,15 +42,27 @@ const (
 	ScheduleStateCompleted ScheduleState = "completed"
 	ScheduleStateFailed    ScheduleState = "failed"
 	ScheduleStateCancelled ScheduleState = "cancelled"
+
+	// ScheduleStatePaused is a campaign an operator has stopped between stages.
+	// It is a schedule-level state only: a stage is never paused, because a
+	// stage is the unit that either runs to a result or does not, and a paused
+	// stage would be a second thing progress could mean.
+	ScheduleStatePaused ScheduleState = "paused"
 )
 
-func validScheduleState(state ScheduleState) bool {
+// validScheduleStageState reports the states a stage record may hold. Pause is
+// absent by construction; see ScheduleStatePaused.
+func validScheduleStageState(state ScheduleState) bool {
 	switch state {
 	case ScheduleStatePending, ScheduleStateRunning, ScheduleStateCompleted, ScheduleStateFailed, ScheduleStateCancelled:
 		return true
 	default:
 		return false
 	}
+}
+
+func validScheduleState(state ScheduleState) bool {
+	return state == ScheduleStatePaused || validScheduleStageState(state)
 }
 
 // ScheduleRecord is a persisted campaign: the document as authored, plus the
@@ -206,7 +218,7 @@ func (s *ScheduleStageRecord) Validate() error {
 	default:
 		return &ValidationError{Field: "Kind", Reason: fmt.Sprintf("%q is not a stage kind", s.Kind)}
 	}
-	if !validScheduleState(s.State) {
+	if !validScheduleStageState(s.State) {
 		return &ValidationError{Field: "State", Reason: fmt.Sprintf("%q is not a stage state", s.State)}
 	}
 	if s.Circles < 1 {
