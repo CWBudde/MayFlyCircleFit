@@ -1,0 +1,501 @@
+package server
+
+import (
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/google/uuid"
+)
+
+// scheduleStagePollInterval is how often a driver looks at its stage's job. The
+// driver holds no worker slot, so this costs a map lookup per tick and nothing
+// else; it is short so a cancellation is observed promptly.
+const scheduleStagePollInterval = 20 * time.Millisecond
+
+// scheduleEnqueueTimeout bounds how long a stage waits for room in the job
+// queue. A full queue is transient — it means manual jobs are using the host —
+// so a campaign waits rather than dying, but not forever.
+const scheduleEnqueueTimeout = 30 * time.Second
+
+// errScheduleDriverRunning reports that a schedule already has a driver in this
+// process. It is the in-process half of the single-executor guarantee.
+var errScheduleDriverRunning = errors.New("schedule is already running")
+
+// A schedule executes as one goroutine per running schedule, and that goroutine
+// is deliberately not a job worker. It plans, records, and waits; the stages it
+// creates are ordinary jobs that go through s.enqueueJob and the same
+// MaxConcurrentJobs worker pool a hand-issued POST /api/v1/jobs uses. A
+// schedule therefore cannot oversubscribe the host, and cannot starve itself by
+// occupying the only worker slot while waiting for a stage to run in it.
+//
+// Progress has exactly one representation: the stage records in the store. The
+// driver holds no cursor. Every iteration reloads the records and derives the
+// next stage from them, so there is nothing that can disagree with the record
+// of what actually ran — the drift that put a previous orchestrator four hours
+// and 352 circles out of date with itself.
+//
+// The schedule record carries the operator's intent (run, pause, cancel) and
+// the campaign's terminal outcome. It never carries progress.
+
+// startScheduleDriver launches the executor for a schedule, refusing a second
+// driver for the same schedule.
+func (s *Server) startScheduleDriver(scheduleID string) error {
+	s.schedulesMu.Lock()
+	if _, running := s.scheduleDrivers[scheduleID]; running {
+		s.schedulesMu.Unlock()
+		return errScheduleDriverRunning
+	}
+	s.scheduleDrivers[scheduleID] = struct{}{}
+	s.schedulesMu.Unlock()
+
+	s.scheduleWG.Add(1)
+	go func() {
+		defer s.scheduleWG.Done()
+		defer func() {
+			s.schedulesMu.Lock()
+			delete(s.scheduleDrivers, scheduleID)
+			s.schedulesMu.Unlock()
+		}()
+		s.driveSchedule(scheduleID)
+	}()
+	return nil
+}
+
+// restoreSchedules adopts every schedule that was running when the process
+// last stopped. A schedule left running is resumed, which is what makes a
+// crash mid-stage recoverable; a paused or terminal schedule is left alone.
+func (s *Server) restoreSchedules() {
+	scheduleStore, err := s.scheduleStore()
+	if err != nil {
+		return
+	}
+	records, err := scheduleStore.ListSchedules()
+	if err != nil {
+		slog.Warn("Unable to list schedules for restore", "error", err)
+		return
+	}
+	for _, record := range records {
+		if record.State != store.ScheduleStateRunning {
+			continue
+		}
+		if err := s.startScheduleDriver(record.ScheduleID); err != nil {
+			slog.Error("Unable to resume schedule", "schedule_id", record.ScheduleID, "error", err)
+			continue
+		}
+		slog.Info("Resumed schedule", "schedule_id", record.ScheduleID)
+	}
+}
+
+// driveSchedule runs stages until the campaign finishes, is paused, is
+// cancelled, or the server shuts down.
+func (s *Server) driveSchedule(scheduleID string) {
+	scheduleStore, err := s.scheduleStore()
+	if err != nil {
+		slog.Error("Schedule executor has no schedule store", "schedule_id", scheduleID, "error", err)
+		return
+	}
+	for {
+		// Shutdown leaves the in-flight stage's record in `running`. That is the
+		// adoptable state, not a leak: the next start finds it and continues the
+		// same stage instead of planning a new one.
+		if s.ctx.Err() != nil {
+			return
+		}
+		record, err := scheduleStore.LoadSchedule(scheduleID)
+		if err != nil {
+			slog.Error("Unable to load schedule", "schedule_id", scheduleID, "error", err)
+			return
+		}
+		if record.State != store.ScheduleStateRunning {
+			slog.Info("Schedule executor stopping", "schedule_id", scheduleID, "state", string(record.State))
+			return
+		}
+		plan, err := record.Document.Expand()
+		if err != nil {
+			s.settleSchedule(scheduleID, store.ScheduleStateFailed, fmt.Sprintf("expand schedule: %v", err))
+			return
+		}
+		recorded, err := scheduleStore.LoadScheduleStages(scheduleID)
+		if err != nil {
+			slog.Error("Unable to load schedule stages", "schedule_id", scheduleID, "error", err)
+			return
+		}
+		index, existing, blocked := nextScheduleStage(plan, recorded)
+		if blocked != "" {
+			s.settleSchedule(scheduleID, store.ScheduleStateFailed, blocked)
+			return
+		}
+		if index < 0 {
+			s.settleSchedule(scheduleID, store.ScheduleStateCompleted, "")
+			return
+		}
+		outcome, err := s.runScheduleStage(scheduleStore, record, plan, recorded, index, existing)
+		if err != nil {
+			slog.Error("Schedule stage did not run", "schedule_id", scheduleID, "stage", index, "error", err)
+			s.settleSchedule(scheduleID, store.ScheduleStateFailed, err.Error())
+			return
+		}
+		switch outcome {
+		case store.ScheduleStateCompleted:
+			// Loop: the records now say this stage is done.
+		case store.ScheduleStateFailed:
+			s.settleSchedule(scheduleID, store.ScheduleStateFailed, fmt.Sprintf("stage %d failed", index))
+			return
+		default:
+			// Cancelled, or the server is going down mid-stage. Either way the
+			// records already say what happened; do not overwrite an operator's
+			// pause or cancel with a verdict of our own.
+			return
+		}
+	}
+}
+
+// nextScheduleStage derives the cursor from the records alone: the first
+// planned stage that is not recorded as completed. It returns the existing
+// record for that stage when there is one, which is the stage to adopt rather
+// than restart from nothing.
+//
+// A recorded stage that failed or was cancelled blocks the campaign with a
+// reason, because continuing past it would silently skip work the plan asked
+// for.
+func nextScheduleStage(plan []app.ScheduleStage, recorded []store.ScheduleStageRecord) (int, *store.ScheduleStageRecord, string) {
+	byIndex := make(map[int]*store.ScheduleStageRecord, len(recorded))
+	for i := range recorded {
+		byIndex[recorded[i].Index] = &recorded[i]
+	}
+	for index := range plan {
+		record, ok := byIndex[index]
+		if !ok {
+			return index, nil, ""
+		}
+		switch record.State {
+		case store.ScheduleStateCompleted:
+			continue
+		case store.ScheduleStateFailed, store.ScheduleStateCancelled:
+			return -1, nil, fmt.Sprintf("stage %d is %s", index, record.State)
+		default:
+			return index, record, ""
+		}
+	}
+	return -1, nil, ""
+}
+
+// runScheduleStage records, starts, and awaits one stage, returning the state
+// the stage settled in.
+//
+// The ordering here is the whole crash-safety argument, so it is spelled out:
+//
+//  1. The job identifier is minted before anything durable is written.
+//  2. The stage record is written as `running`, naming that identifier, before
+//     the job exists in the manager and therefore before it can be enqueued or
+//     started.
+//  3. Only then is the job created under that same identifier and queued.
+//
+// At every point where the process can die, a restart sees a consistent world.
+// Before (2) there is no record and no job. Between (2) and (3) there is a
+// `running` record naming a job that was never created, which the next start
+// adopts by index and re-runs under the same identifier. During (3) there is a
+// `running` record naming the job that is actually running, which the next
+// start also adopts. There is no window in which a job runs that no record
+// names, which is the orphan fork this design exists to prevent.
+func (s *Server) runScheduleStage(
+	scheduleStore store.ScheduleStore,
+	record *store.ScheduleRecord,
+	plan []app.ScheduleStage,
+	recorded []store.ScheduleStageRecord,
+	index int,
+	existing *store.ScheduleStageRecord,
+) (store.ScheduleState, error) {
+	stage := plan[index]
+
+	parentJobID := ""
+	if index > 0 {
+		previous := findStageRecord(recorded, index-1)
+		if previous == nil || previous.State != store.ScheduleStateCompleted || previous.JobID == "" {
+			return "", fmt.Errorf("stage %d has no completed predecessor", index)
+		}
+		parentJobID = previous.JobID
+	}
+
+	// An adopted stage keeps the identifier its record already names, so the
+	// stage and its job stay one-to-one across any number of restarts.
+	jobID := uuid.New().String()
+	if existing != nil && existing.JobID != "" {
+		jobID = existing.JobID
+		s.discardStageAttempt(jobID)
+	}
+
+	config, source, err := s.scheduleStageConfig(stage, plan, parentJobID)
+	if err != nil {
+		return "", err
+	}
+
+	stageRecord := store.NewScheduleStageRecord(record.ScheduleID, stage)
+	stageRecord.Config = config
+	stageRecord.State = store.ScheduleStateRunning
+	stageRecord.JobID = jobID
+	stageRecord.ParentJobID = parentJobID
+	startedAt := time.Now().UTC()
+	stageRecord.StartedAt = &startedAt
+	if err := scheduleStore.SaveScheduleStage(record.ScheduleID, stageRecord); err != nil {
+		return "", fmt.Errorf("record stage %d: %w", index, err)
+	}
+
+	if err := s.startScheduleStageJob(jobID, config, source, stage, record.ScheduleID, parentJobID); err != nil {
+		stageRecord.State = store.ScheduleStateFailed
+		stageRecord.Error = err.Error()
+		if saveErr := scheduleStore.SaveScheduleStage(record.ScheduleID, stageRecord); saveErr != nil {
+			slog.Error("Unable to record a stage that could not start",
+				"schedule_id", record.ScheduleID, "stage", index, "error", saveErr)
+		}
+		return store.ScheduleStateFailed, nil
+	}
+
+	job, settled := s.awaitJobTermination(jobID)
+	if !settled {
+		// The server is shutting down. The record stays `running` on purpose.
+		return store.ScheduleStateRunning, nil
+	}
+
+	completedAt := time.Now().UTC()
+	stageRecord.CompletedAt = &completedAt
+	stageRecord.BestCost = job.BestCost
+	stageRecord.Iterations = job.Iterations
+	stageRecord.Evaluations = int64(job.Evaluations)
+	switch job.State {
+	case StateCompleted:
+		stageRecord.State = store.ScheduleStateCompleted
+	case StateCancelled:
+		stageRecord.State = store.ScheduleStateCancelled
+	default:
+		stageRecord.State = store.ScheduleStateFailed
+		stageRecord.Error = job.Error
+	}
+	if err := scheduleStore.SaveScheduleStage(record.ScheduleID, stageRecord); err != nil {
+		return "", fmt.Errorf("record stage %d outcome: %w", index, err)
+	}
+	slog.Info("Schedule stage settled", "schedule_id", record.ScheduleID, "stage", index,
+		"kind", string(stage.Kind), "job_id", jobID, "state", string(stageRecord.State), "best_cost", job.BestCost)
+	return stageRecord.State, nil
+}
+
+// scheduleStageConfig builds the configuration a stage runs with. The plan owns
+// every optimizer field; the parent checkpoint owns only what continuity
+// requires — the resume count, the effective seed, and the resolved image
+// paths.
+//
+// The base stage has no parent and returns a nil source.
+func (s *Server) scheduleStageConfig(stage app.ScheduleStage, plan []app.ScheduleStage, parentJobID string) (JobConfig, *continuationSource, error) {
+	config := stage.Config
+	if parentJobID == "" {
+		if failure := s.resolveConfigPaths(&config, "schedule"); failure != nil {
+			return config, nil, failure
+		}
+		normalized, err := app.Normalize(config)
+		if err != nil {
+			return config, nil, fmt.Errorf("stage %d configuration: %w", stage.Index, err)
+		}
+		return normalized, nil, nil
+	}
+
+	kind := extendContinuation
+	if stage.Kind == app.ScheduleStagePolish {
+		kind = polishContinuation
+	}
+	source, failure := s.continuationSourceFor(parentJobID, kind)
+	if failure != nil {
+		return config, nil, fmt.Errorf("stage %d cannot continue job %s: %s", stage.Index, parentJobID, failure.message)
+	}
+	// The chain must still be the chain the plan describes. A parent holding a
+	// different circle count than the plan predicted means the campaign diverged
+	// from its document, and running on would append to the wrong canvas.
+	if expected := plan[stage.Index-1].Circles; source.config.Circles != expected {
+		return config, nil, fmt.Errorf("stage %d expected a %d circle parent, found %d",
+			stage.Index, expected, source.config.Circles)
+	}
+	config.RefPath = source.config.RefPath
+	config.CanvasPath = source.config.CanvasPath
+	config.ResumeCount = source.config.ResumeCount
+	config.EffectiveSeed = source.config.EffectiveSeed
+	normalized, err := app.Normalize(config)
+	if err != nil {
+		return config, nil, fmt.Errorf("stage %d configuration: %w", stage.Index, err)
+	}
+	return normalized, source, nil
+}
+
+// startScheduleStageJob creates the stage's job under the identifier the record
+// already names and puts it in the shared queue, waiting for room rather than
+// abandoning a campaign because manual jobs are momentarily using the host.
+func (s *Server) startScheduleStageJob(jobID string, config JobConfig, source *continuationSource, stage app.ScheduleStage, scheduleID, parentJobID string) error {
+	index := stage.Index
+	// The lineage is set here rather than left to the stage record, so a job the
+	// schedule created carries the same extendedFrom/polishedFrom onto its
+	// checkpoint that a hand-issued continuation would.
+	lineage := func(job *Job) {
+		job.ScheduleID = scheduleID
+		job.StageIndex = index
+		switch stage.Kind {
+		case app.ScheduleStageExtend:
+			job.ExtendedFrom = parentJobID
+		case app.ScheduleStagePolish:
+			job.PolishedFrom = parentJobID
+		}
+	}
+	deadline := time.Now().Add(scheduleEnqueueTimeout)
+	for {
+		var failure *continuationError
+		if source != nil {
+			_, failure = s.startContinuation(jobID, app.DefaultProject, config, source, lineage)
+		} else {
+			failure = s.startBaseStageJob(jobID, config, lineage)
+		}
+		if failure == nil {
+			return nil
+		}
+		if failure.code != "queue_full" || time.Now().After(deadline) {
+			return errors.New(failure.message)
+		}
+		// startContinuation failed the job it created, so the identifier is free
+		// again only after the manager forgets it.
+		s.discardStageAttempt(jobID)
+		select {
+		case <-s.ctx.Done():
+			return s.ctx.Err()
+		case <-time.After(scheduleStagePollInterval):
+		}
+	}
+}
+
+// startBaseStageJob creates and enqueues the campaign's first job, which
+// continues nothing and so cannot go through startContinuation.
+func (s *Server) startBaseStageJob(jobID string, config JobConfig, lineage func(*Job)) *continuationError {
+	job, err := s.jobManager.CreateJobWithID(jobID, app.DefaultProject, config)
+	if err != nil {
+		return continuationFailure(http.StatusInternalServerError, "job_error", fmt.Sprintf("failed to create base stage job: %v", err))
+	}
+	if err := s.jobManager.UpdateJob(job.ID, lineage); err != nil {
+		return continuationFailure(http.StatusInternalServerError, "job_error", "failed to initialize base stage job")
+	}
+	if err := s.enqueueJob(job.ID); err != nil {
+		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
+		return continuationFailure(http.StatusTooManyRequests, "queue_full", "server job queue is full")
+	}
+	return nil
+}
+
+// discardStageAttempt forgets an interrupted attempt at a stage so the stage's
+// identifier can be reused.
+//
+// Reuse is what keeps a stage and its job one-to-one, which in turn is what
+// makes "did this stage run twice?" a question the records can answer. The
+// discarded checkpoint is deliberate: it is a partial result, and neither the
+// extend nor the polish path can continue from anything but a completed batch
+// checkpoint, so nothing downstream could have used it.
+func (s *Server) discardStageAttempt(jobID string) {
+	jobStore, err := s.storeForJob(jobID)
+	if err != nil {
+		jobStore = s.store
+	}
+	if err := s.jobManager.DeleteJob(jobID); err != nil && !errors.Is(err, ErrInvalidTransition) {
+		slog.Debug("No restored job to discard for an adopted stage", "job_id", jobID, "error", err)
+	}
+	s.jobManager.broadcaster.CleanupJob(jobID)
+	if jobStore != nil {
+		if err := jobStore.DeleteCheckpoint(jobID); err != nil && !errors.Is(err, store.ErrNotFound) {
+			slog.Warn("Unable to discard an interrupted stage's checkpoint", "job_id", jobID, "error", err)
+		}
+	}
+}
+
+// awaitJobTermination blocks until a job reaches a terminal state, reporting
+// false when the server shuts down first.
+func (s *Server) awaitJobTermination(jobID string) (*Job, bool) {
+	ticker := time.NewTicker(scheduleStagePollInterval)
+	defer ticker.Stop()
+	for {
+		job, ok := s.jobManager.GetJob(jobID)
+		if !ok {
+			return nil, false
+		}
+		switch job.State {
+		case StateCancelled:
+			// Shutdown cancels every running job. That is the server stopping,
+			// not a verdict on the stage, so it must leave the record `running`
+			// and adoptable rather than recording a cancellation the operator
+			// never asked for.
+			if s.ctx.Err() != nil {
+				return nil, false
+			}
+			return job, true
+		case StateCompleted, StateFailed:
+			return job, true
+		}
+		select {
+		case <-s.ctx.Done():
+			return nil, false
+		case <-ticker.C:
+		}
+	}
+}
+
+// settleSchedule records a campaign's terminal state, refusing to overwrite one
+// an operator already chose.
+func (s *Server) settleSchedule(scheduleID string, state store.ScheduleState, reason string) {
+	scheduleStore, err := s.scheduleStore()
+	if err != nil {
+		return
+	}
+	record, err := scheduleStore.LoadSchedule(scheduleID)
+	if err != nil {
+		slog.Error("Unable to load schedule to settle it", "schedule_id", scheduleID, "error", err)
+		return
+	}
+	if record.State != store.ScheduleStateRunning {
+		return
+	}
+	record.State = state
+	record.Error = reason
+	if err := scheduleStore.SaveSchedule(record); err != nil {
+		slog.Error("Unable to record schedule outcome", "schedule_id", scheduleID, "state", string(state), "error", err)
+		return
+	}
+	slog.Info("Schedule settled", "schedule_id", scheduleID, "state", string(state), "reason", reason)
+}
+
+// cancelScheduleStage cancels whichever stage of a schedule is in flight. It is
+// best effort by nature: the stage may settle on its own between the read and
+// the cancel, which is not an error.
+func (s *Server) cancelScheduleStage(scheduleID string) {
+	scheduleStore, err := s.scheduleStore()
+	if err != nil {
+		return
+	}
+	stages, err := scheduleStore.LoadScheduleStages(scheduleID)
+	if err != nil {
+		slog.Warn("Unable to load stages to cancel a schedule", "schedule_id", scheduleID, "error", err)
+		return
+	}
+	for _, stage := range stages {
+		if stage.State != store.ScheduleStateRunning || stage.JobID == "" {
+			continue
+		}
+		if err := s.requestCancellation(stage.JobID); err != nil {
+			slog.Debug("In-flight stage was already settled", "schedule_id", scheduleID, "job_id", stage.JobID, "error", err)
+		}
+	}
+}
+
+func findStageRecord(records []store.ScheduleStageRecord, index int) *store.ScheduleStageRecord {
+	for i := range records {
+		if records[i].Index == index {
+			return &records[i]
+		}
+	}
+	return nil
+}
