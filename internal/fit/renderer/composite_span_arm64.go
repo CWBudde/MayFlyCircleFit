@@ -6,13 +6,23 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/cpu"
+
+	"github.com/cwbudde/mayflycirclefit/internal/fit"
 )
 
 var compositeSpanBackend = "scalar"
 
+// compositeSpanNEONEnabled caches the dispatch gate so the per-span check does
+// not re-read the environment opt-out.
+var compositeSpanNEONEnabled bool
+
 func init() {
+	if fit.SIMDDisabledByEnv() {
+		return
+	}
 	if cpu.ARM64.HasASIMD {
 		compositeSpanBackend = "neon"
+		compositeSpanNEONEnabled = true
 	}
 }
 
@@ -25,7 +35,7 @@ func compositeOpaqueSpan(pix []byte, offset, pixels int, r, g, b, alpha float64)
 	// The exact float64 kernel pays for byte deinterleaving and three stages
 	// of widening/narrowing. M5 measurements show that scalar wins on short
 	// spans; dispatch NEON only once that setup cost is amortized.
-	if cpu.ARM64.HasASIMD && pixels >= 256 {
+	if compositeSpanNEONEnabled && pixels >= 256 {
 		vectorPixels = pixels &^ 7
 	}
 	if vectorPixels != 0 {

@@ -11,13 +11,17 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/cpu"
+
+	"github.com/cwbudde/mayflycirclefit/internal/fit"
 )
 
 const compositeNEONDisabledHelper = "MAYFLY_TEST_COMPOSITE_NEON_DISABLED"
 
 func TestCompositeSpanARM64DispatchMatchesCPUFeatures(t *testing.T) {
+	// The environment opt-out outranks the feature check: ASIMD is mandatory on
+	// ARM64 and stays reported even when the scalar fallback was requested.
 	want := "scalar"
-	if cpu.ARM64.HasASIMD {
+	if cpu.ARM64.HasASIMD && !fit.SIMDDisabledByEnv() {
 		want = "neon"
 	}
 	if compositeSpanBackend != want {
