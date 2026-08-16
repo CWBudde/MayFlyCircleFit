@@ -6,7 +6,40 @@ import (
 	"bytes"
 	"math/rand/v2"
 	"testing"
+
+	"golang.org/x/sys/cpu"
+
+	"github.com/cwbudde/mayflycirclefit/internal/fit"
 )
+
+// TestFastCompositeDispatchSelection pins the amd64 tier that
+// compositeOpaqueSpanFast actually enters, so the parity tests cannot quietly
+// stop covering the backend they claim to. Under GODEBUG=cpu.avx2=off this
+// asserts that the SSE2 kernel really is the one under test; without it a
+// masked run would still pass while exercising AVX2 or scalar.
+func TestFastCompositeDispatchSelection(t *testing.T) {
+	want := "scalar"
+	switch {
+	case fit.SIMDDisabledByEnv():
+	case cpu.X86.HasAVX2:
+		want = "avx2"
+	case cpu.X86.HasSSE2:
+		want = "sse2"
+	}
+
+	if fastCompositeBackend != want {
+		t.Fatalf("fastCompositeBackend = %q, want %q", fastCompositeBackend, want)
+	}
+	if fastCompositeAVX2Enabled != (want == "avx2") {
+		t.Fatalf("fastCompositeAVX2Enabled = %v for backend %q", fastCompositeAVX2Enabled, want)
+	}
+	if fastCompositeSSE2Enabled != (want == "sse2") {
+		t.Fatalf("fastCompositeSSE2Enabled = %v for backend %q", fastCompositeSSE2Enabled, want)
+	}
+	if fastCompositeAVX2Enabled && fastCompositeSSE2Enabled {
+		t.Fatal("at most one fast-composite tier may be enabled")
+	}
+}
 
 // TestCompositeSpanFastSSE2DirectMatchesScalarOracle covers the SSE2 assembly
 // body regardless of the host CPU. Dispatch installs SSE2 only when AVX2 is
