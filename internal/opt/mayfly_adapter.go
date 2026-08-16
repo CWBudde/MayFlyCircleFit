@@ -101,6 +101,40 @@ func WithParallelEvaluation(workers int) MayflyOption {
 	return func(m *MayflyAdapter) { m.parallelWorkers = workers }
 }
 
+// ParallelEvaluationWorkers reports the concurrent evaluation width this
+// optimizer will drive, which is one unless WithParallelEvaluation raised it.
+//
+// It exists so a caller whose objective is not re-entrant can refuse the run
+// instead of corrupting it. Concurrency is invisible at the opt.Optimizer
+// interface, and an objective that shares a buffer or a canvas fails silently
+// rather than loudly: wrong costs, a wrong image, no error.
+func (m *MayflyAdapter) ParallelEvaluationWorkers() int {
+	if m.parallelWorkers < 1 {
+		return 1
+	}
+	return m.parallelWorkers
+}
+
+// parallelEvaluationReporter is implemented by optimizers that can say how many
+// goroutines will call the objective, and by every wrapper around one.
+type parallelEvaluationReporter interface {
+	ParallelEvaluationWorkers() int
+}
+
+// ParallelEvaluationWidth reports how many goroutines optimizer will call the
+// objective from. Optimizers that cannot report it are assumed serial, which is
+// what the plain Optimizer interface has always promised.
+func ParallelEvaluationWidth(optimizer Optimizer) int {
+	reporter, ok := optimizer.(parallelEvaluationReporter)
+	if !ok {
+		return 1
+	}
+	if workers := reporter.ParallelEvaluationWorkers(); workers > 1 {
+		return workers
+	}
+	return 1
+}
+
 func newAdapter(variant string, maxIters, popSize int, seed int64, options ...MayflyOption) *MayflyAdapter {
 	adapter := &MayflyAdapter{
 		maxIters: maxIters,

@@ -22,6 +22,11 @@ func rippledSphere(params []float64) float64 {
 
 func runRippledSphere(t *testing.T, workers int) Result {
 	t.Helper()
+	return runRippledSphereVariant(t, variantStandard, workers)
+}
+
+func runRippledSphereVariant(t *testing.T, variant string, workers int) Result {
+	t.Helper()
 	const dim = 8
 	lower := make([]float64, dim)
 	upper := make([]float64, dim)
@@ -32,7 +37,7 @@ func runRippledSphere(t *testing.T, workers int) Result {
 	if workers > 1 {
 		options = append(options, WithParallelEvaluation(workers))
 	}
-	optimizer, err := NewMayflyVariant(variantStandard, 25, 20, 4242, options...)
+	optimizer, err := NewMayflyVariant(variant, 25, 20, 4242, options...)
 	if err != nil {
 		t.Fatalf("NewMayflyVariant() error = %v", err)
 	}
@@ -174,5 +179,55 @@ func TestSerialEvaluationStaysSingleThreaded(t *testing.T) {
 	}
 	if peak.Load() != 1 {
 		t.Fatalf("peak concurrent evaluations = %d, want 1 without WithParallelEvaluation", peak.Load())
+	}
+}
+
+// TestParallelEvaluationIsReproducibleAcrossVariants extends the reproducibility
+// guarantee to every variant this adapter can construct, not just the default.
+// Each variant reaches a different set of Mayfly phases, and the guarantee rests
+// on all of them keeping their RNG draws on the optimizer goroutine; a variant
+// that drew from a worker would be reproducible for the default and broken here.
+func TestParallelEvaluationIsReproducibleAcrossVariants(t *testing.T) {
+	for variant := range supportedVariants {
+		t.Run(variant, func(t *testing.T) {
+			first := runRippledSphereVariant(t, variant, 4)
+			again := runRippledSphereVariant(t, variant, 4)
+			wider := runRippledSphereVariant(t, variant, 7)
+
+			if first.BestCost != again.BestCost || !slices.Equal(first.BestParams, again.BestParams) {
+				t.Fatalf("repeated parallel run differs: %.17g vs %.17g", first.BestCost, again.BestCost)
+			}
+			if wider.BestCost != first.BestCost || !slices.Equal(wider.BestParams, first.BestParams) {
+				t.Fatalf("worker count changed the result: 4 workers %.17g, 7 workers %.17g",
+					first.BestCost, wider.BestCost)
+			}
+		})
+	}
+}
+
+// TestParallelEvaluationWidthSeesThroughWrappers pins that a caller can still
+// discover the evaluation width after the optimizer has been wrapped. The
+// pipeline wraps optimizers for epochs and, on the server, for progress
+// reporting; a wrapper that dropped the report would turn polishing's
+// serial-only guard into a silent no-op, which is exactly the failure the guard
+// exists to prevent.
+func TestParallelEvaluationWidthSeesThroughWrappers(t *testing.T) {
+	serial, err := NewMayflyVariant(variantStandard, 5, 16, 99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ParallelEvaluationWidth(serial); got != 1 {
+		t.Fatalf("ParallelEvaluationWidth() = %d, want 1 for a serial optimizer", got)
+	}
+
+	parallel, err := NewMayflyVariant(variantStandard, 5, 16, 99, WithParallelEvaluation(4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ParallelEvaluationWidth(parallel); got != 4 {
+		t.Fatalf("ParallelEvaluationWidth() = %d, want 4", got)
+	}
+	if got := ParallelEvaluationWidth(WithEpochs(parallel, 3)); got != 4 {
+		t.Fatalf("ParallelEvaluationWidth() through WithEpochs = %d, want 4", got)
 	}
 }

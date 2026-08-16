@@ -84,10 +84,25 @@ behavior is production-ready.
   thread, so `CPURenderer.Render` never composites into a shared canvas. The
   default still evaluates serially over one session. `resume` takes the same
   leased-session path through `renderer.NewConcurrentEvaluator`.
-- The evaluation width is clamped to `GOMAXPROCS`, matching the documented
-  `--threads` contract. Each worker above one holds an extra full-size canvas
-  and background copy, so an unclamped request would be an out-of-memory
-  hazard rather than extra throughput.
+- The evaluation width is set by `--evaluation-workers` and clamped to
+  `GOMAXPROCS`, matching the documented `--threads` contract. It defaults to
+  `--threads` when unset, which is what it was before it had its own flag. Each
+  worker above one holds an extra full-size canvas and background copy, so an
+  unclamped request would be an out-of-memory hazard rather than extra
+  throughput. A measured twelve-worker pool at 512x512 holds 2.19x the memory of
+  the serial default.
+- Evaluation width and `--threads` are competing uses of the same cores, not
+  additive ones: a pooled session renders single-threaded, so raising evaluation
+  width gives up row sharding. Measured on a 12-core Ryzen 5 4600H, the flag is
+  worth 2.34x at 128x128 but only 1.18x at 512x512, and configurations below
+  about four workers are *slower* than the default -- 0.61x at 512x512 with two
+  workers. See [parallel-evaluation-report.md](parallel-evaluation-report.md).
+  Do not assume the flag is a speedup without measuring the intended workload.
+- Backends that cannot hand out independent sessions -- OpenCL today -- cannot
+  serve parallel evaluation. A request is declined with a warning and the run
+  evaluates serially, rather than driving the optimizer's parallel path against
+  a one-slot pool: that would have cost the altered search trajectory for no
+  throughput at all.
 - Parallel evaluation is reproducible but not equivalent to a serial run of the
   same seed. Evaluation order does not leak into the result: MayFly advances its
   RNG only from serial phase code and breaks ties in a parallel batch by
@@ -98,8 +113,18 @@ behavior is production-ready.
   whole generation and merges afterwards. Compare `--parallel-evaluation` runs
   only against other runs with the same setting.
 - Transactional polishing (`--polishing`) always evaluates serially, even when
-  `--parallel-evaluation` is set. Its sweep evaluator still merges into one
-  shared candidate vector and one shared session.
+  `--parallel-evaluation` is set. Its sweep evaluator merges into one shared
+  candidate vector and one shared session, which is what makes a sweep
+  transactional, and it has no session pool to lease from. Polishing now refuses
+  an optimizer configured for concurrent evaluation rather than relying on its
+  callers not to supply one.
+- Not every MayFly phase runs parallel even when the flag is on: GSASMA's
+  opposition-based learning on the global best has no parallel branch upstream.
+  For the AOBLMOA variant, enabling parallel evaluation also changes the
+  reported evaluation total, because MayFly's serial path estimates that count
+  while its parallel path reports the exact one. Neither variant is reachable
+  through `JobConfig`, which validates only `standard`, `desma`, and `olce`, so
+  this affects direct `internal/opt` callers only.
 - MayFly's constraint handling and convergence-curve CSV/JSON export are unused.
   The problem is box-bounded, and trace ownership belongs to the store package.
 

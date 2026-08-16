@@ -631,12 +631,17 @@ type jobStatusResponse struct {
 	SSIM                  *float64    `json:"ssim,omitempty"`
 	Iterations            int         `json:"iterations"`
 	Evaluations           int         `json:"evaluations"`
-	Termination           string      `json:"termination,omitempty"`
-	Elapsed               float64     `json:"elapsed"`
-	CPS                   float64     `json:"cps"`
-	StartTime             time.Time   `json:"startTime"`
-	EndTime               *time.Time  `json:"endTime,omitempty"`
-	Error                 string      `json:"error,omitempty"`
+	// EvaluationWidth is the concurrency the run measured from its renderer, and
+	// is omitted when the run was serial or the width is unknown. Config carries
+	// only the request, which differs whenever the backend declined it or the
+	// GOMAXPROCS clamp applied, so clients comparing two runs must read this.
+	EvaluationWidth int        `json:"evaluationWidth,omitempty"`
+	Termination     string     `json:"termination,omitempty"`
+	Elapsed         float64    `json:"elapsed"`
+	CPS             float64    `json:"cps"`
+	StartTime       time.Time  `json:"startTime"`
+	EndTime         *time.Time `json:"endTime,omitempty"`
+	Error           string     `json:"error,omitempty"`
 }
 
 // handleGetJobStatus handles GET /api/v1/jobs/:id/status
@@ -675,7 +680,8 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 		BestCost: job.BestCost, CandidateCost: cloneFloat(job.CandidateCost), InitialCost: job.InitialCost,
 		PSNR: psnr, PSNRInfinite: psnrInfinite, SSIM: cloneFloat(job.SSIM),
 		Iterations: job.Iterations, Evaluations: job.Evaluations,
-		Termination: job.Termination, Elapsed: elapsed.Seconds(), CPS: cps,
+		EvaluationWidth: job.EvaluationWidth,
+		Termination:     job.Termination, Elapsed: elapsed.Seconds(), CPS: cps,
 		StartTime: job.StartTime, EndTime: job.EndTime, Error: job.Error,
 	}
 	response.CandidatePSNR, response.CandidatePSNRInfinite = serializableCandidatePSNR(job.CandidateCost)

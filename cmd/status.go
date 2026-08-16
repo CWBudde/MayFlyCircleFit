@@ -49,12 +49,16 @@ type jobResponse struct {
 	InitialCost *float64       `json:"initialCost"`
 	Iterations  *int           `json:"iterations"`
 	Evaluations *int           `json:"evaluations"`
-	Termination string         `json:"termination,omitempty"`
-	Elapsed     *float64       `json:"elapsed,omitempty"`
-	CPS         *float64       `json:"cps,omitempty"`
-	StartTime   *time.Time     `json:"startTime"`
-	EndTime     *time.Time     `json:"endTime,omitempty"`
-	Error       string         `json:"error,omitempty"`
+	// EvaluationWidth is the concurrency the run actually used, which the server
+	// records from the renderer. Config.EvaluationWorkers is only the request,
+	// and differs from it whenever the backend declined or the clamp applied.
+	EvaluationWidth *int       `json:"evaluationWidth,omitempty"`
+	Termination     string     `json:"termination,omitempty"`
+	Elapsed         *float64   `json:"elapsed,omitempty"`
+	CPS             *float64   `json:"cps,omitempty"`
+	StartTime       *time.Time `json:"startTime"`
+	EndTime         *time.Time `json:"endTime,omitempty"`
+	Error           string     `json:"error,omitempty"`
 }
 
 type apiErrorResponse struct {
@@ -161,7 +165,17 @@ func getJobStatus(ctx context.Context, output io.Writer, endpoint, jobID string)
 	fmt.Fprintf(output, "  Mode: %s\n", status.Config.Mode)
 	fmt.Fprintf(output, "  Circles: %d\n", status.Config.Circles)
 	fmt.Fprintf(output, "  Iterations: %d\n", status.Config.Iters)
-	fmt.Fprintf(output, "  Population: %d\n\n", status.Config.PopSize)
+	fmt.Fprintf(output, "  Population: %d\n", status.Config.PopSize)
+	// Parallel evaluation changes which solution a seed produces, so a run is
+	// only comparable to another run with the same setting. Report the width the
+	// server measured from the renderer rather than the configured request: the
+	// request is not what ran when the backend declined it or the clamp applied.
+	// A server that reports no width leaves this line out entirely instead of
+	// falling back to the request, because a wrong width is worse than none.
+	if status.EvaluationWidth != nil && *status.EvaluationWidth > 1 {
+		fmt.Fprintf(output, "  Parallel evaluation: %d workers\n", *status.EvaluationWidth)
+	}
+	fmt.Fprintln(output)
 
 	fmt.Fprintln(output, "Progress:")
 	if *status.InitialCost > 0 {

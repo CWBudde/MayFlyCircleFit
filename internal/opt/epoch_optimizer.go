@@ -20,6 +20,13 @@ type epochOptimizer struct {
 	epochs int
 }
 
+// ParallelEvaluationWorkers forwards the wrapped optimizer's evaluation width.
+// A wrapper that dropped it would hide concurrency from callers that refuse to
+// run a non-re-entrant objective, turning their guard into a silent no-op.
+func (o *epochOptimizer) ParallelEvaluationWorkers() int {
+	return ParallelEvaluationWidth(o.base)
+}
+
 func (o *epochOptimizer) Run(eval func([]float64) float64, lower, upper []float64, dim int) ([]float64, float64) {
 	if _, ok := o.base.(LifecycleOptimizer); ok {
 		result, err := o.RunContext(

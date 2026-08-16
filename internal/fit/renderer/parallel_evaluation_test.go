@@ -232,3 +232,85 @@ func TestParallelEvaluationWorkersIgnoresImageHeight(t *testing.T) {
 		t.Fatalf("ParallelEvaluationWorkers() = %d, want 3 despite the two-row image", got)
 	}
 }
+
+// sessionlessRenderer stands in for a backend that cannot hand out independent
+// sessions -- OpenCL is the real one, but it needs CGO and a device, so it
+// cannot be exercised in a portable test. It deliberately does not implement
+// ParallelEvaluationWorkers.
+type sessionlessRenderer struct {
+	reference *image.NRGBA
+	circles   int
+}
+
+func (r *sessionlessRenderer) Render([]float64) *image.NRGBA { return r.reference }
+func (r *sessionlessRenderer) Cost([]float64) float64        { return 0 }
+func (r *sessionlessRenderer) Dim() int                      { return r.circles * paramsPerCircle }
+func (r *sessionlessRenderer) Reference() *image.NRGBA       { return r.reference }
+func (r *sessionlessRenderer) Bounds() ([]float64, []float64) {
+	return make([]float64, r.Dim()), make([]float64, r.Dim())
+}
+
+// TestParallelEvaluationOptionRequiresIndependentSessions is the regression test
+// for enabling the optimizer's parallel path on a backend that cannot feed it.
+// Deriving the worker count from the requested configuration instead of from the
+// renderer let an OpenCL run start N evaluation goroutines against a one-slot
+// pool: every goroutine queued on that slot, so the run gained no throughput at
+// all while still paying the different search trajectory that parallel
+// evaluation implies. The request must be declined, and visibly so.
+func TestParallelEvaluationOptionRequiresIndependentSessions(t *testing.T) {
+	sessionless := &sessionlessRenderer{reference: gradientReference(8, 8), circles: 2}
+	if got := EvaluationWidth(sessionless); got != 1 {
+		t.Fatalf("EvaluationWidth() = %d, want 1 for a renderer without sessions", got)
+	}
+	if _, enabled := ParallelEvaluationOption(sessionless, true); enabled {
+		t.Fatal("parallel evaluation was enabled for a renderer that cannot serve it")
+	}
+
+	capable := NewCPURenderer(gradientReference(8, 8), 2)
+	capable.SetParallelEvaluationWorkers(4)
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("needs at least two processors to enable parallel evaluation")
+	}
+	if _, enabled := ParallelEvaluationOption(capable, true); !enabled {
+		t.Fatal("parallel evaluation was declined for a renderer that can serve it")
+	}
+	if _, enabled := ParallelEvaluationOption(capable, false); enabled {
+		t.Fatal("parallel evaluation was enabled without being requested")
+	}
+}
+
+// TestEvaluationWorkersZeroMeansGOMAXPROCS pins that both parallelism setters
+// agree on what a non-positive request means. They are fed from adjacent
+// configuration fields, and while SetThreads has always read zero as GOMAXPROCS,
+// the evaluation setter first read it as one -- so a configuration that set only
+// --parallel-evaluation silently got no parallelism at all.
+func TestEvaluationWorkersZeroMeansGOMAXPROCS(t *testing.T) {
+	base := NewCPURenderer(gradientReference(16, 12), 2)
+	base.SetParallelEvaluationWorkers(0)
+	if got, want := base.ParallelEvaluationWorkers(), runtime.GOMAXPROCS(0); got != want {
+		t.Fatalf("ParallelEvaluationWorkers() = %d, want GOMAXPROCS %d", got, want)
+	}
+	base.SetThreads(0)
+	if got, want := base.Threads(), effectiveThreadCount(0, 12); got != want {
+		t.Fatalf("Threads() = %d, want %d", got, want)
+	}
+}
+
+// TestConfigureCPUParallelismLeavesEvaluationWidthOptIn pins that evaluation
+// width stays inert until it is opted into, so a configuration carrying a
+// worker count but no flag keeps the historical single-session path.
+func TestConfigureCPUParallelismLeavesEvaluationWidthOptIn(t *testing.T) {
+	base := NewCPURenderer(gradientReference(16, 12), 2)
+	ConfigureCPUParallelism(base, 2, 4, false)
+	if got := base.ParallelEvaluationWorkers(); got != 1 {
+		t.Fatalf("ParallelEvaluationWorkers() = %d, want 1 without the opt-in", got)
+	}
+	if got := base.Threads(); got != 2 {
+		t.Fatalf("Threads() = %d, want 2", got)
+	}
+
+	ConfigureCPUParallelism(base, 2, 4, true)
+	if got := base.ParallelEvaluationWorkers(); got != min(4, runtime.GOMAXPROCS(0)) {
+		t.Fatalf("ParallelEvaluationWorkers() = %d, want the requested 4", got)
+	}
+}

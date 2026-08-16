@@ -103,6 +103,19 @@ func PolishCircleBatchContext(
 	if optimizer == nil {
 		return nil, fmt.Errorf("%w: optimizer is nil", ErrInvalidOptimizationInput)
 	}
+	// Polishing's sweep evaluator is deliberately not re-entrant: it merges each
+	// candidate into one shared parameter vector and evaluates it on one shared
+	// session, which is what makes a sweep transactional. Driving it from an
+	// optimizer configured for parallel evaluation would race the vector, the
+	// session canvas, and the evaluation counter, and every one of those failures
+	// is silent -- a plausible wrong cost and a wrong image, with no error. Refuse
+	// the run instead. Unlike the staged pipelines, polishing has no session pool
+	// to lease from; giving it one is a feature, not a fix.
+	if workers := opt.ParallelEvaluationWidth(optimizer); workers > 1 {
+		return nil, fmt.Errorf(
+			"%w: polishing requires a serial optimizer, got one configured for %d concurrent evaluations",
+			ErrInvalidOptimizationInput, workers)
+	}
 	if len(initialParams) == 0 || len(initialParams)%paramsPerCircle != 0 {
 		return nil, fmt.Errorf("%w: polishing parameters must contain complete circles", ErrInvalidOptimizationInput)
 	}

@@ -1,6 +1,10 @@
 package renderer
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+
+	"github.com/cwbudde/mayflycirclefit/internal/opt"
+)
 
 // parallelEvaluationRenderer reports how many concurrent cost evaluations a
 // renderer's sessions may serve. Backends that do not implement it, including
@@ -20,6 +24,40 @@ func evaluationWorkers(base Renderer) int {
 		return workers
 	}
 	return 1
+}
+
+// EvaluationWidth reports how many cost evaluations the pipeline will actually
+// run concurrently for base, which is one for any backend that cannot hand out
+// independent sessions. Callers use it to report the width they really got
+// rather than the width they asked for.
+func EvaluationWidth(base Renderer) int {
+	return evaluationWorkers(base)
+}
+
+// ParallelEvaluationOption returns the optimizer option matching what base can
+// actually deliver, and reports whether parallel evaluation was enabled.
+//
+// It is the single place that decides this, because the decision is only safe
+// when made from the renderer's own reported width. Configuring the optimizer
+// from a requested worker count instead would let a backend without independent
+// sessions -- OpenCL today -- run the optimizer's parallel path against a
+// one-slot pool: every evaluation goroutine would queue on that slot for no
+// throughput at all, while the run still paid the altered search trajectory
+// that parallel evaluation implies. Callers must therefore configure the
+// renderer first, then derive the option from the renderer.
+//
+// A false second result with enabled set means the request could not be
+// honored, which is worth a warning rather than silence.
+func ParallelEvaluationOption(base Renderer, enabled bool) (opt.MayflyOption, bool) {
+	noop := func(*opt.MayflyAdapter) {}
+	if !enabled {
+		return noop, false
+	}
+	width := evaluationWorkers(base)
+	if width < 2 {
+		return noop, false
+	}
+	return opt.WithParallelEvaluation(width), true
 }
 
 // evaluationSlot pairs one independent renderer session with the scratch vector

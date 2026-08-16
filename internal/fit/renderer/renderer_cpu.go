@@ -367,8 +367,13 @@ func (r *CPURenderer) Threads() int {
 // the optimization pipeline may run. The pipeline then creates that many
 // independent sessions, each with its own canvas, and gives every session a
 // single rendering thread: with many evaluations in flight the row-band
-// fan-out inside one render is pure overhead. Values below two keep the
-// historical single-session behavior. Call it before starting an optimization.
+// fan-out inside one render is pure overhead. Call it before starting an
+// optimization.
+//
+// Non-positive values select GOMAXPROCS, matching SetThreads. The two setters
+// must agree on what zero means: they are fed from adjacent configuration
+// fields, and a setter that read zero as "one" would silently disable
+// evaluation parallelism for any caller that had not filled the field in.
 //
 // The value is capped at GOMAXPROCS, which is the documented contract of the
 // --threads flag. The cap is not merely advisory: every worker above one costs
@@ -390,15 +395,30 @@ func (r *CPURenderer) ParallelEvaluationWorkers() int {
 	return r.parallelEvaluationWorkers
 }
 
-// effectiveEvaluationWorkers clamps a requested evaluation width into
-// [1, GOMAXPROCS]. Unlike effectiveThreadCount it ignores the image height,
-// because concurrent evaluations are whole independent renders rather than row
-// shards of one render.
-func effectiveEvaluationWorkers(workers int) int {
-	if workers < 1 {
-		return 1
+// ConfigureCPUParallelism applies both parallelism settings a job configuration
+// carries. They are independent knobs: threads shards the rows of one render,
+// while evaluationWorkers runs whole independent renders side by side, and the
+// two compete for the same cores.
+//
+// Evaluation width is left alone unless parallelEvaluation is set, so the
+// setting is inert until it is opted into. Every entry point that builds a CPU
+// renderer from a configuration goes through here, so the two settings cannot
+// drift apart between the CLI, resume, and the server.
+func ConfigureCPUParallelism(cpu *CPURenderer, threads, evaluationWorkers int, parallelEvaluation bool) {
+	cpu.SetThreads(threads)
+	if parallelEvaluation {
+		cpu.SetParallelEvaluationWorkers(evaluationWorkers)
 	}
-	if maxWorkers := runtime.GOMAXPROCS(0); workers > maxWorkers {
+}
+
+// effectiveEvaluationWorkers clamps a requested evaluation width into
+// [1, GOMAXPROCS], resolving non-positive requests to GOMAXPROCS exactly as
+// effectiveThreadCount does. Unlike effectiveThreadCount it ignores the image
+// height, because concurrent evaluations are whole independent renders rather
+// than row shards of one render.
+func effectiveEvaluationWorkers(workers int) int {
+	maxWorkers := runtime.GOMAXPROCS(0)
+	if workers < 1 || workers > maxWorkers {
 		workers = maxWorkers
 	}
 	if workers < 1 {

@@ -55,6 +55,12 @@ func (o *progressOptimizer) Run(eval func([]float64) float64, lower, upper []flo
 	return o.base.Run(eval, lower, upper, dim)
 }
 
+// ParallelEvaluationWorkers forwards the wrapped optimizer's evaluation width so
+// callers that refuse a concurrent objective still see it through this wrapper.
+func (o *progressOptimizer) ParallelEvaluationWorkers() int {
+	return opt.ParallelEvaluationWidth(o.base)
+}
+
 func (o *progressOptimizer) RunContext(ctx context.Context, problem opt.Problem, options opt.RunOptions) (opt.Result, error) {
 	lifecycle, ok := o.base.(opt.LifecycleOptimizer)
 	if !ok {
@@ -141,6 +147,14 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		return err
 	}
 	defer cleanup()
+	// Record what the renderer will actually do, not what the configuration
+	// asked for. This is the only point where the backend's decision and the
+	// GOMAXPROCS clamp have both been applied.
+	if width := renderer.EvaluationWidth(rend); width > 1 {
+		if err := jm.UpdateJob(jobID, func(j *Job) { j.EvaluationWidth = width }); err != nil {
+			return err
+		}
+	}
 
 	seed := job.Config.EffectiveSeed
 	if seed == 0 {
@@ -594,26 +608,16 @@ func polishBatchResult(
 	return batch, nil
 }
 
-// parallelEvaluationOption maps the opt-in configuration field onto the
-// optimizer option. A configuration that leaves it false yields a no-op option,
-// so the optimizer stays configured exactly as it was before the field existed.
-//
-// The worker count comes from the renderer rather than from config.Threads,
-// because the renderer clamps the request to GOMAXPROCS. Handing MayFly the
-// raw value would start more evaluation goroutines than the renderer has
-// sessions for, so every surplus goroutine would only queue on the pool.
+// parallelEvaluationOption derives the optimizer option from what the renderer
+// can actually deliver and warns when an explicit request cannot be honored,
+// which is the case for every backend without independent sessions.
 func parallelEvaluationOption(config store.JobConfig, rend renderer.Renderer) opt.MayflyOption {
-	if !config.ParallelEvaluation {
-		return func(*opt.MayflyAdapter) {}
+	option, enabled := renderer.ParallelEvaluationOption(rend, config.ParallelEvaluation)
+	if config.ParallelEvaluation && !enabled {
+		slog.Warn("Parallel evaluation requested but unavailable; evaluating serially",
+			"backend", config.Backend, "evaluationWorkers", config.EvaluationWorkers)
 	}
-	workers := config.Threads
-	if configured, ok := rend.(interface{ ParallelEvaluationWorkers() int }); ok {
-		workers = configured.ParallelEvaluationWorkers()
-	}
-	if workers < 2 {
-		return func(*opt.MayflyAdapter) {}
-	}
-	return opt.WithParallelEvaluation(workers)
+	return option
 }
 
 func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (renderer.Renderer, func(), error) {
@@ -629,10 +633,7 @@ func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (
 			return nil, func() {}, fmt.Errorf("canvas dimensions do not match reference")
 		}
 		cpu := renderer.NewCPURendererWithCanvas(ref, canvas, circleCount)
-		cpu.SetThreads(config.Threads)
-		if config.ParallelEvaluation {
-			cpu.SetParallelEvaluationWorkers(config.Threads)
-		}
+		configureJobCPURenderer(cpu, config)
 		return cpu, func() {}, nil
 	}
 	backend := config.Backend
@@ -641,13 +642,19 @@ func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (
 	}
 	if backend == app.BackendCPU {
 		cpu := renderer.NewCPURenderer(ref, circleCount)
-		cpu.SetThreads(config.Threads)
-		if config.ParallelEvaluation {
-			cpu.SetParallelEvaluationWorkers(config.Threads)
-		}
+		configureJobCPURenderer(cpu, config)
 		return cpu, func() {}, nil
 	}
 	return renderer.NewRendererForBackend(string(backend), ref, circleCount)
+}
+
+// configureJobCPURenderer applies a job's parallelism settings and records the
+// effective evaluation width. The server had no equivalent of the CLI's startup
+// line, so a job's actual concurrency was invisible in the server log.
+func configureJobCPURenderer(cpu *renderer.CPURenderer, config store.JobConfig) {
+	renderer.ConfigureCPUParallelism(cpu, config.Threads, config.EvaluationWorkers, config.ParallelEvaluation)
+	slog.Info("Configured CPU renderer", "threads", cpu.Threads(),
+		"evaluationWorkers", renderer.EvaluationWidth(cpu))
 }
 
 func markJobFailed(jm *JobManager, jobID string, err error) {
