@@ -63,12 +63,16 @@ func circleSpanFloat32SSE2Unchecked(centerX, radiusSquaredMinusDY float32, width
 	return circleSpanFloat32SSE2Kernel(centerX, radiusSquaredMinusDY, float32(cx), width)
 }
 
-// Q16.16 geometry has no SSE2 kernel. The AVX2 version compares Q32.32
-// products with VPCMPGTQ, and SSE2 has no 64-bit signed compare. Emulating one
-// costs several extra instructions per vector, while a measured profile of the
-// no-AVX2 configuration attributes only 2.80% of flat samples to
-// fixedCircleQ16.span. spanAVX2 therefore falls through to the scalar
-// finite-difference span on non-AVX2 CPUs.
+// Q16.16 geometry deliberately has no SSE2 kernel. The AVX2 version compares
+// Q32.32 products with VPCMPGTQ, and SSE2 has no 64-bit signed compare, so an
+// SSE2 port would have to emulate one with several extra instructions per
+// vector. That cost cannot be recovered: BenchmarkCircleSpanQ16AVX2Direct on a
+// Ryzen 5 4600H measures the existing AVX2 kernel, which has the compare in
+// hardware, at 14.4/28.2/62.8/133 ns against 9.2/9.8/23.3/44.6 ns for the
+// scalar finite-difference span at radii 5.25/25.25/100.25/256.25 - already
+// 1.6x to 3.0x slower. A measured profile of the no-AVX2 configuration also
+// attributes only 2.80% of flat samples to fixedCircleQ16.span. spanAVX2
+// therefore falls through to the scalar span on non-AVX2 CPUs.
 func (g fixedCircleQ16) spanAVX2(y, width int) (xStart, xEnd int, intersects bool) {
 	const vectorMarginQ = 8 * circleQ16Scale
 	roundedCenterQ := int64(g.centerX) << circleQ16FractionBits
