@@ -41,11 +41,11 @@ excludes OpenCL.
 
 | Target | CPU build path | SIMD path | CI cross-build gate | Native SSD gate |
 | --- | --- | --- | --- | --- |
-| Linux/AMD64 | Available | AVX2 with runtime detection; scalar fallback | Configured | AVX2 required |
-| Linux/ARM64 | Available | NEON with runtime detection; scalar fallback | Configured | NEON required |
-| macOS/AMD64 | Available | AVX2 with runtime detection; scalar fallback | Configured | Not configured |
-| macOS/ARM64 | Available | NEON with runtime detection; scalar fallback | Configured | NEON required |
-| Windows/AMD64 | Available | AVX2 with runtime detection; scalar fallback | Configured | AVX2 required |
+| Linux/AMD64 | Available | AVX2, then SSE2, then scalar, with runtime detection | Configured | AVX2, SSE2, and scalar required |
+| Linux/ARM64 | Available | NEON with runtime detection; scalar fallback | Configured | NEON and scalar required |
+| macOS/AMD64 | Available | AVX2, then SSE2, then scalar, with runtime detection | Configured | Not configured |
+| macOS/ARM64 | Available | NEON with runtime detection; scalar fallback | Configured | NEON and scalar required |
+| Windows/AMD64 | Available | AVX2, then SSE2, then scalar, with runtime detection | Configured | AVX2, SSE2, and scalar required |
 | Linux/386 | Portability only | Scalar | Configured | Not configured |
 
 “Configured” means the workflow contains that gate. Cross-build jobs also
@@ -55,6 +55,15 @@ dispatch does not select the required SIMD backend. Check the workflow run
 before treating a commit as verified. Linux/386 is not a release artifact;
 other Go targets may compile but are not claimed as supported until they are
 added to the matrix and exercised.
+
+The AMD64 native gate runs the suite four times: natively for AVX2, under
+`GODEBUG=cpu.avx2=off` for SSE2, under `GODEBUG=cpu.all=off` which also selects
+SSE2, and under `MAYFLY_DISABLE_SIMD=1` for scalar. `GODEBUG` cannot mask SSE2
+on AMD64 because `golang.org/x/sys/cpu` marks it as required there, so
+`MAYFLY_DISABLE_SIMD=1` is the only forced-scalar gate on that architecture. The
+ARM64 gates run natively for NEON and under both `GODEBUG=cpu.all=off` and
+`MAYFLY_DISABLE_SIMD=1` for scalar. SAD has no SSE2 kernel, so it stays scalar
+on AMD64 hosts without AVX2, as it already does on ARM64.
 
 On ARM64, opaque CPU-renderer spans additionally have an ASIMD-gated NEON
 compositor for spans of at least 256 pixels, with an exact scalar span and

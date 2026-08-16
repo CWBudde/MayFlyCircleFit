@@ -47,20 +47,35 @@ application configuration into the store package.
 ### SIMD SSD architecture
 
 - `ssd_amd64.s` processes eight NRGBA pixels per AVX2 batch;
-  `ssd_arm64.s` processes four per NEON batch. Both ignore alpha, reduce into a
-  64-bit total, and leave non-multiple widths to an exact scalar tail.
+  `ssd_sse2_amd64.s` processes four per SSE2 batch; `ssd_arm64.s` processes four
+  per NEON batch. All ignore alpha, reduce into a 64-bit total, and leave
+  non-multiple widths to an exact scalar tail.
+- The SSE2 kernel accumulates a whole row's `PMADDWD` results in int32 lanes and
+  widens to int64 once per row. That is the source of its speedup, and it bounds
+  the row: `width*3*255*255` must stay below 2^31, so `ssdSSE2MaxWidth` is 11000
+  and `fastSSD_SSE2` routes wider rows to the scalar kernel instead of widening
+  per iteration.
 - The assembly is hand-written in Go Plan 9 syntax. The implemented workflow
   does not use GoAT, C sources, cgo, or an external assembler.
 - Architecture-specific initialization checks `x/sys/cpu` once and installs an
-  AVX2, NEON, or scalar function pointer. Do not call an assembly kernel without
-  passing through feature-gated dispatch.
+  AVX2, SSE2, NEON, or scalar function pointer. Do not call an assembly kernel
+  without passing through feature-gated dispatch.
 - `just cross-build` verifies the selected source set and compiles the CLI and
   `internal/fit` test binary for every supported CPU target with
   `CGO_ENABLED=0`.
-- Use `MAYFLY_REQUIRE_SSD_BACKEND` in native hardware validation and
-  `GODEBUG=cpu.all=off` to exercise a complete scalar fallback. Kernel
-  benchmarks must retain their result through `ssdBenchmarkSink` and report
-  allocations.
+- Use `MAYFLY_REQUIRE_SSD_BACKEND` in native hardware validation.
+  `GODEBUG=cpu.all=off` no longer reaches the scalar kernel on amd64:
+  `x/sys/cpu` registers sse2 with `Required: runtime.GOARCH == "amd64"` and
+  `processOptions` ORs `Required` back in, so `cpu.X86.HasSSE2` stays true and
+  dispatch selects SSE2. Set `MAYFLY_DISABLE_SIMD=1` (`fit.SIMDDisabledByEnv`)
+  to force the scalar backend on every kernel and architecture; that is the only
+  complete scalar-fallback lever. `GODEBUG=cpu.avx2=off` exercises the SSE2 tier
+  on an AVX2 host.
+- SAD is deliberately not ported to SSE2. `FastSAD` has no non-test callers, and
+  its AVX2 kernel depends on `VPMADDUBSW` (SSSE3) and `VPMULLD` (SSE4.1), which
+  baseline SSE2 does not provide.
+- Kernel benchmarks must retain their result through `ssdBenchmarkSink` and
+  report allocations.
 
 ### CPU span compositing
 
@@ -71,6 +86,14 @@ application configuration into the store package.
   use scalar because that is faster on Apple M5.
 - Translucent custom canvases retain the general per-pixel Porter-Duff path.
   Preserve that split and byte-exact span tests when changing renderer math.
+- The Q16.16 circle-span kernel is deliberately not ported to SSE2. It compares
+  Q32.32 products with `VPCMPGTQ`, SSE2 has no 64-bit signed compare, and a
+  measured no-AVX2 profile attributes only 2.80% of flat samples to
+  `fixedCircleQ16.span`. `spanAVX2` falls through to the scalar
+  finite-difference span on non-AVX2 CPUs.
+- `stagedIncremental` is gated on `deltaSSDVectorized()`, true for the AVX2 and
+  SSE2 delta-SSD kernels on amd64 and still false on other architectures. ARM64
+  has a NEON delta-SSD kernel, but the staged path was never profiled there.
 
 ## Current behavior that must remain explicit
 
@@ -80,9 +103,14 @@ application configuration into the store package.
   build tag, CGO, OpenCL development headers, and a usable runtime/device.
   Sequential and batch OpenCL requests must fail explicitly, not silently use a
   CPU staged renderer.
-- AMD64 SSD dispatch uses AVX2 only after a runtime CPU-feature check; ARM64 SSD
-  dispatch similarly requires ASIMD before selecting NEON. Unsupported CPUs and
-  architectures use the scalar kernel. SAD remains scalar on ARM64.
+- AMD64 SSD dispatch is tiered AVX2, then SSE2, then scalar, each after a
+  runtime CPU-feature check; ARM64 SSD dispatch requires ASIMD before selecting
+  NEON. Unsupported architectures use the scalar kernel. SAD remains scalar on
+  ARM64 and on amd64 hosts without AVX2.
+- `MAYFLY_DISABLE_SIMD=1` forces the scalar backend for every kernel on every
+  architecture. It exists because SSE2 is mandatory on amd64 and cannot be
+  masked through `GODEBUG`, so it is the only way to gate the complete scalar
+  fallback there.
 - CPU renderers use `FastMSECost` after parity coverage against `MSECost`.
   Independent image origins and strides, empty images, and dimension mismatch
   behavior have dedicated correctness handling/tests.

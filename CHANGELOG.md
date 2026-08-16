@@ -8,6 +8,17 @@ release is declared by this file.
 
 ### Added
 
+- An SSE2 SIMD tier for AMD64. Hand-written Plan 9 kernels for SSD
+  (`ssd_sse2_amd64.s`, four NRGBA pixels per batch), dirty-span delta-SSD, and
+  the float32 circle-span edge search give AMD64 hosts without AVX2 a real
+  vector path instead of scalar execution. SSD dispatch is now tiered AVX2, then
+  SSE2, then scalar, each behind a runtime `x/sys/cpu` check. On a real no-AVX2
+  target the same 32-circle batch workload dropped from 300.81 s to 150.52 s at
+  an identical final cost.
+- `MAYFLY_DISABLE_SIMD=1` forces the scalar backend for every kernel on every
+  architecture. It is needed because `golang.org/x/sys/cpu` marks sse2 as
+  required on AMD64, so `GODEBUG=cpu.all=off` cannot reach the scalar path
+  there any more.
 - Optimizer-level early stopping, disabled by default. `--stop-target-cost`,
   `--stop-stagnation-iters`, `--stop-min-improvement`, and `--stop-min-iters`
   (and their `stop*` job-configuration fields) apply per iteration inside a
@@ -56,6 +67,14 @@ release is declared by this file.
   points.
 - Sequential and batch CPU stages evaluate only newly added circles over the
   retained canvas, reducing replay work and per-evaluation allocations.
+- The staged incremental cost path is gated on any vectorized delta-SSD kernel
+  rather than on AVX2 alone, so AMD64 hosts without AVX2 now use it instead of
+  falling back to full-image evaluation.
+- The AMD64 native SSD CI gate covers four dispatch states: native AVX2,
+  `GODEBUG=cpu.avx2=off` for SSE2, `GODEBUG=cpu.all=off` which also selects
+  SSE2, and `MAYFLY_DISABLE_SIMD=1` for scalar. The forced-scalar step
+  previously used `GODEBUG=cpu.all=off`, which no longer selects scalar on
+  AMD64. ARM64 runners gained the `MAYFLY_DISABLE_SIMD=1` scalar step as well.
 
 ### Fixed
 
@@ -81,6 +100,9 @@ release is declared by this file.
 - OpenCL remains experimental and joint-only.
 - Restart-from-best does not restore the full optimizer state, and server resume
   of sequential/batch jobs is unsupported.
+- SAD and the Q16.16 circle-span kernel have no SSE2 port. Both need
+  instructions above baseline SSE2, and neither carries enough measured cost to
+  justify emulating them.
 - Real-device GPU runtime, long-running end-to-end, per-package coverage, and
   performance-regression gates remain outside the required CI matrix. See
   [docs/known-limitations.md](docs/known-limitations.md).
