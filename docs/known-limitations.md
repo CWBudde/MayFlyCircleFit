@@ -128,7 +128,8 @@ behavior is production-ready.
   Measured on the output of a real 64-circle batch fit, three of the four
   strategies accepted zero sweeps. Check the accepted-sweep count in the
   polishing log record before concluding that a strategy or a sweep budget was
-  at fault.
+  at fault. Task 14.13 in `PLAN.md` tracks the fix and the acceptance-rule
+  options.
 - `--polishing-strategy=contiguous-window` is cheaper per sweep, not better per
   second. At the default `--polishing-max-sweeps` of 3 it only offers the last
   `3 * activeSetSize` draw slots to the optimizer, and at equal wall clock it

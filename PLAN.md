@@ -1456,6 +1456,87 @@ Completed: typed DTOs, bounded cancellable clients, escaped IDs, validated logs,
 - [x] Every documented feature has corresponding coverage or is clearly marked experimental/limited.
 - [x] No document describes checkpoint/restart-from-best or server mode as production-ready while Phase 14 remains open.
 
+### Task 14.13: Make Transactional Polishing Acceptance Actionable (P1)
+
+**Problem.** `PolishCircleBatchContext` commits a sweep only when
+`allCirclesUseful` holds for the **whole** candidate vector: every circle must
+be valid, cover at least one pixel, and contribute more than
+`minBatchMSEContribution` (0.01) to MSE. Inactive circles are copied through a
+sweep unchanged, so a single circle with a negative `MSEContribution` rejects
+every sweep until some active set happens to repair it. Polishing then spends
+its entire optimizer budget and changes nothing.
+
+Such circles are routine in fitted output, not pathological.
+`optimizeBatchContext` prunes with `PruneCircleBatch` once per stage against
+that stage's canvas (`internal/fit/renderer/pipeline.go:534`); later stages
+composite on top and can occlude what an earlier stage judged useful. Nothing
+re-audits the assembled vector, so the pruner's per-stage guarantee does not
+imply the polisher's global one.
+
+Measured in `docs/contiguous-window-polish-report.md`: polishing the output of a
+real 64-circle `OptimizeBatch` run accepted **0 of 13 sweeps** for
+`replacement`, `hybrid-overlap`, and `contiguous-window` — 3.7 s to 5.0 s of
+optimizer time for zero change — while `residual-region` accepted 12 of 13 only
+because its active set reached the offending circle. This predates the
+`contiguous-window` work and is independent of any one strategy; it is recorded
+in `docs/known-limitations.md` and pinned by
+`TestPolishCircleBatchRejectsImprovementWhileAnUntouchedCircleIsHarmful`.
+
+**Decide the acceptance rule first.** These are alternatives, not a sequence;
+pick one and record the rationale in CLAUDE.md before writing code.
+
+- [ ] **Option A — scope the gate to what the sweep can influence.** Require
+      usefulness only for circles in the active set, and additionally require
+      that the sweep does not make any untouched circle's contribution worse
+      than it already was. Preserves the invariant's intent (a sweep must not
+      introduce a dead circle) without letting pre-existing damage veto
+      unrelated progress. Cheapest and the recommended default.
+- [ ] **Option B — repair the vector before polishing.** Re-audit and prune the
+      assembled vector at the end of `optimizeBatchContext`, so the polisher
+      receives input that already satisfies the global invariant. Fixes the
+      cause rather than the symptom, but changes batch-mode output for a fixed
+      seed and therefore needs its own reproducibility note.
+- [ ] **Option C — keep the gate, make it visible and escapable.** Leave the
+      semantics alone, surface the blocking circles, and let the operator lower
+      or disable `minBatchMSEContribution`. Weakest fix; only choose it if the
+      whole-vector invariant turns out to be load-bearing somewhere else.
+
+**Implementation (independent of the option chosen).**
+
+- [ ] Fail fast instead of burning the budget: audit the incoming vector once
+      before the first sweep and, when acceptance is already impossible under
+      the selected rule, either repair it or return without running the
+      optimizer.
+- [ ] Report why a sweep was rejected. `BatchPolishResult` currently exposes
+      `AcceptedSweeps` but no reason; add the rejecting circle indices and the
+      failing predicate so a zero-improvement run is diagnosable without a
+      debugger.
+- [ ] Log rejected sweeps at info level with that reason. A run that spends
+      minutes and improves nothing must say so.
+- [ ] Surface `accepted_sweeps` and the rejection reason in the polishing
+      progress/result path so `status` and the server UI show it.
+- [ ] Update `docs/known-limitations.md`, `CLAUDE.md`, and
+      `docs/contiguous-window-polish-report.md` once the rule changes; the
+      report's strategy ranking is currently dominated by this gate and will
+      need re-measuring.
+
+**Acceptance Checks:**
+
+- [ ] A vector containing one net-harmful circle outside the active set no
+      longer silently discards an otherwise strictly improving sweep; the
+      chosen option's behavior is asserted by a test, and
+      `TestPolishCircleBatchRejectsImprovementWhileAnUntouchedCircleIsHarmful`
+      is updated or replaced deliberately rather than deleted.
+- [ ] A sweep that would introduce a dead or negative-contribution circle is
+      still rejected.
+- [ ] Polishing a real `OptimizeBatch` result accepts at least one sweep for
+      every strategy on the benchmark workload, or exits early with a logged
+      reason instead of consuming the optimizer budget.
+- [ ] `BenchmarkPolishStrategyQualityAfterBatchFit` is re-run and the report
+      tables replaced; no document still attributes a zero-improvement
+      polishing run to the selector.
+- [ ] `go test -race -short ./internal/fit/renderer` passes.
+
 ### Phase 14 Execution Order
 
 Implement in dependency-aware waves:
@@ -1464,7 +1545,7 @@ Implement in dependency-aware waves:
 2. **Safety boundary:** 14.2, 14.3, and 14.4.
 3. **Execution model:** 14.5, followed by 14.6.
 4. **Durability:** 14.7 and 14.8.
-5. **Compatibility and efficiency:** 14.9 and 14.10.
+5. **Compatibility and efficiency:** 14.9, 14.10, and 14.13.
 6. **Release gate:** finish 14.11 and 14.12, then rerun every Phase 14 acceptance check.
 
 ### Phase 14 Definition of Done
