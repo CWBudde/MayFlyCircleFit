@@ -232,9 +232,9 @@ templ CreateJobPage(errorMsg, project string) {
 								<option value="replacement" selected>Weakest replacement</option>
 								<option value="hybrid-overlap">Hybrid overlap</option>
 								<option value="residual-region">Residual region</option>
-								<option value="contiguous-window">Contiguous window (fastest)</option>
+								<option value="contiguous-window">Contiguous window</option>
 							</select>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Residual region visits distinct high-error tiles and optimizes their influencing circles</p>
+							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Residual region visits distinct high-error tiles and optimizes their influencing circles. Contiguous window polishes a consecutive run of slots, so early sweeps can bake the circles ahead of the window and evaluate fewer circles per candidate.</p>
 						</div>
 						<div>
 							<label for="polishingActiveSetSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Active Set Size</label>

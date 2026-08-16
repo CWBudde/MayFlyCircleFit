@@ -136,9 +136,9 @@ const (
 	PolishingHybridOverlap  PolishingStrategy = "hybrid-overlap"
 	PolishingResidualRegion PolishingStrategy = "residual-region"
 	// PolishingContiguousWindow polishes a consecutive run of draw slots so the
-	// circles before the window can be baked into a reusable canvas. It is the
-	// cheapest strategy per candidate; the others scatter the active set and so
-	// rasterize the whole image for every evaluation.
+	// circles before the window can be baked into a reusable canvas. The other
+	// strategies select by image-space merit and routinely include circle one,
+	// which bakes nothing and rasterizes the whole image for that candidate.
 	PolishingContiguousWindow PolishingStrategy = "contiguous-window"
 )
 

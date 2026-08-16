@@ -533,8 +533,6 @@ func TestPolishCircleBatchBakedPrefixMatchesFullVector(t *testing.T) {
 	}
 }
 
-// polishParityParams places a large, strong circle first so weak-circle selection
-// leaves a non-empty fixed prefix to bake.
 func TestSelectContiguousWindowCirclesPrefersLatestUnvisitedWindow(t *testing.T) {
 	visits := make(map[int]int)
 	active := selectContiguousWindowCircles(10, 3, visits)
@@ -652,6 +650,8 @@ func TestPolishCircleBatchContiguousWindowBakesPrefixAndMatchesFullVector(t *tes
 	}
 }
 
+// polishParityParams places a large, strong circle first so weak-circle selection
+// leaves a non-empty fixed prefix to bake.
 func polishParityParams() []float64 {
 	params := circleParams(10, 8, 9, color.NRGBA{R: 190, G: 45, B: 85, A: 255}, 1)
 	params = append(params, circleParams(4, 4, 4, color.NRGBA{R: 210, G: 60, B: 100, A: 255}, 0.9)...)
