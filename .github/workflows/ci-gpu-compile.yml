@@ -1,0 +1,39 @@
+name: ci-gpu-compile
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  gpu-compile:
+    name: GPU-tag OpenCL (PoCL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install OpenCL development headers and PoCL runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            clinfo \
+            ocl-icd-opencl-dev \
+            pocl-opencl-icd
+      - name: Verify PoCL platform discovery
+        shell: bash
+        run: |
+          platforms="$(clinfo -l)"
+          printf '%s\n' "$platforms"
+          grep -q 'Platform #' <<<"$platforms"
+          grep -q 'Device #' <<<"$platforms"
+      - name: Compile GPU-tagged packages and tests
+        run: go test -tags gpu -run '^$' ./...
+      - name: Run focused OpenCL runtime tests
+        env:
+          MAYFLY_REQUIRE_OPENCL: "1"
+        run: go test -tags gpu -count=1 ./internal/fit/renderer -run '^TestOpenCL'

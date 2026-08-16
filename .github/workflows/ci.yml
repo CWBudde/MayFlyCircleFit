@@ -1,5 +1,11 @@
 name: CI
 
+# Orchestrator only. Every gate lives in its own reusable workflow next to this
+# file, named ci-<concern>.yml, so one gate can be edited without touching the
+# others. The job keys below must keep matching the release job's needs list;
+# `needs:` cannot cross workflow-file boundaries, which is why release stays here
+# rather than moving into a file of its own.
+
 on:
   push:
     branches: [master]
@@ -15,382 +21,49 @@ concurrency:
 
 jobs:
   generation:
-    name: Generated UI is current
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Generate templ output
-        run: go tool templ generate
-      - name: Check generated-file drift
-        shell: bash
-        run: |
-          git diff --exit-code -- 'internal/ui/*_templ.go'
-          untracked="$(git ls-files --others --exclude-standard -- 'internal/ui/*_templ.go')"
-          if [[ -n "$untracked" ]]; then
-            printf 'Untracked generated files:\n%s\n' "$untracked"
-            exit 1
-          fi
+    uses: ./.github/workflows/ci-generation.yml
 
   quality:
-    name: Format and vet
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Download modules
-        run: go mod download
-      - name: Check formatting
-        shell: bash
-        run: |
-          unformatted="$(gofmt -s -l .)"
-          if [[ -n "$unformatted" ]]; then
-            printf 'Files need gofmt -s:\n%s\n' "$unformatted"
-            exit 1
-          fi
-      - name: Vet
-        run: go vet ./...
+    uses: ./.github/workflows/ci-quality.yml
 
   staticcheck:
-    name: Staticcheck
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Install pinned staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@v0.6.1
-      - run: staticcheck ./...
+    uses: ./.github/workflows/ci-staticcheck.yml
 
   test:
-    name: Short tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - run: go test -short ./...
+    uses: ./.github/workflows/ci-test.yml
 
   benchmarks:
-    name: Benchmark comparison (report only)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      GOMAXPROCS: "2"
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Download modules
-        run: go mod download
-      - name: Benchmark candidate
-        run: >-
-          go test -run '^$' -bench '^BenchmarkFit$' -benchmem
-          -benchtime=200ms -count=6 ./internal/fit
-          | tee benchmark-candidate.txt
-      - name: Benchmark base revision
-        shell: bash
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
-            : > benchmark-base.txt
-            exit 0
-          fi
-
-          base_dir="${RUNNER_TEMP}/mayfly-benchmark-base"
-          git worktree add --detach "$base_dir" "$BASE_SHA"
-          trap 'git worktree remove --force "$base_dir" >/dev/null 2>&1 || true' EXIT
-          (
-            cd "$base_dir"
-            go test -run '^$' -bench '^BenchmarkFit$' -benchmem \
-              -benchtime=200ms -count=6 ./internal/fit \
-              > "${GITHUB_WORKSPACE}/benchmark-base.txt"
-          )
-      - name: Publish comparison
-        shell: bash
-        run: |
-          if grep -q '^BenchmarkFit/' benchmark-base.txt \
-              && grep -q '^BenchmarkFit/' benchmark-candidate.txt; then
-            go tool benchstat benchmark-base.txt benchmark-candidate.txt \
-              > benchmark-comparison.txt
-          else
-            printf '%s\n' \
-              'No comparable BenchmarkFit baseline exists; candidate results establish it.' \
-              > benchmark-comparison.txt
-          fi
-
-          {
-            echo '### Canonical CPU benchmark comparison'
-            echo
-            echo 'Timing changes are report-only and do not gate CI.'
-            echo
-            echo '```text'
-            cat benchmark-comparison.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload benchmark results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-results
-          path: |
-            benchmark-base.txt
-            benchmark-candidate.txt
-            benchmark-comparison.txt
-          if-no-files-found: warn
-          retention-days: 30
+    uses: ./.github/workflows/ci-benchmarks.yml
 
   e2e:
-    name: Release lifecycle E2E
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Run release lifecycle E2E test
-        env:
-          MAYFLY_RUN_E2E: "1"
-        run: go test -count=1 -timeout=3m ./tests/e2e
+    uses: ./.github/workflows/ci-e2e.yml
 
   coverage:
-    name: Coverage (50% aggregate floor)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Run coverage suite
-        run: go test -short -coverprofile=coverage.out ./...
-      - name: Enforce aggregate threshold
-        shell: bash
-        run: |
-          go tool cover -func=coverage.out
-          total="$(go tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/, "", $3); print $3}')"
-          if [[ -z "$total" ]] || ! awk -v total="$total" 'BEGIN { exit !(total + 0 >= 50) }'; then
-            printf 'Aggregate statement coverage %s%% is below the 50%% floor.\n' "${total:-unknown}"
-            exit 1
-          fi
-      - name: Upload coverage profile
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-profile
-          path: coverage.out
-          if-no-files-found: error
-          retention-days: 14
+    uses: ./.github/workflows/ci-coverage.yml
 
   race:
-    name: Race detector (short)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - run: go test -race -short ./...
+    uses: ./.github/workflows/ci-race.yml
 
   build:
-    name: Ordinary build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - run: go build ./...
+    uses: ./.github/workflows/ci-build.yml
 
   cross-build:
-    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: windows
-            goarch: amd64
-          - goos: linux
-            goarch: "386"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Cross-build and verify selected SSD sources
-        env:
-          CGO_ENABLED: "0"
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: bash scripts/check-cross-build.sh "${GOOS}/${GOARCH}"
+    uses: ./.github/workflows/ci-cross-build.yml
 
   native-simd:
-    name: Native SSD (${{ matrix.platform }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: Linux AMD64 / AVX2
-            runner: ubuntu-24.04
-            backend: AVX2
-            maskedBackend: SSE2
-            sse2Tier: "yes"
-          - platform: macOS ARM64 / NEON
-            runner: macos-15
-            backend: NEON
-            maskedBackend: scalar
-            sse2Tier: ""
-          - platform: Windows AMD64 / AVX2
-            runner: windows-2025
-            backend: AVX2
-            maskedBackend: SSE2
-            sse2Tier: "yes"
-          - platform: Linux ARM64 / NEON
-            runner: ubuntu-24.04-arm
-            backend: NEON
-            maskedBackend: scalar
-            sse2Tier: ""
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Run SSD tests on native hardware
-        env:
-          CGO_ENABLED: "0"
-          MAYFLY_REQUIRE_SSD_BACKEND: ${{ matrix.backend }}
-        run: go test -count=1 ./internal/fit
-      # golang.org/x/sys/cpu marks sse2 Required on amd64, so cpu.all=off leaves
-      # cpu.X86.HasSSE2 set and amd64 dispatch drops to SSE2 rather than scalar.
-      # The expected backend is therefore per-runner, and only MAYFLY_DISABLE_SIMD
-      # below gates the complete scalar fallback on every architecture.
-      - name: Run SSD tests with maskable CPU features disabled
-        env:
-          CGO_ENABLED: "0"
-          GODEBUG: cpu.all=off
-          MAYFLY_REQUIRE_SSD_BACKEND: ${{ matrix.maskedBackend }}
-        run: go test -count=1 ./internal/fit
-      - name: Run SSD tests with the SSE2 tier forced
-        if: matrix.sse2Tier != ''
-        env:
-          CGO_ENABLED: "0"
-          GODEBUG: cpu.avx2=off
-          MAYFLY_REQUIRE_SSD_BACKEND: SSE2
-        # This step is amd64-only (sse2Tier is set on the amd64 rows), so it can
-        # cover the renderer too. Without ./internal/fit/renderer the renderer's
-        # SSE2 delta-SSD and circle-span dispatch never runs in the SSE2
-        # configuration and its SSE2 tests self-skip on an AVX2 host.
-        run: go test -count=1 ./internal/fit ./internal/fit/renderer
-      # This deliberately covers ./internal/fit only. Widening it to
-      # ./internal/fit/renderer is the right end state, because MAYFLY_DISABLE_SIMD
-      # claims to force the scalar backend for every kernel and the renderer has
-      # its own gates. Doing so was tried and turned the ARM64 runners red on
-      # TestCPURendererMatchesPreOptimizationBaseline/fractional_overlaps, which
-      # is an unrelated pre-existing defect: this matrix is the only ARM64 CI
-      # coverage in the repository, every other job is ubuntu-latest, so the
-      # renderer package has never executed on ARM64 here. See
-      # docs/known-limitations.md; widen this once that is fixed on real hardware.
-      - name: Run SSD tests with SIMD disabled entirely
-        env:
-          CGO_ENABLED: "0"
-          MAYFLY_DISABLE_SIMD: "1"
-          MAYFLY_REQUIRE_SSD_BACKEND: scalar
-        run: go test -count=1 ./internal/fit
-      - name: Record native scalar and SIMD throughput
-        env:
-          CGO_ENABLED: "0"
-          MAYFLY_REQUIRE_SSD_BACKEND: ${{ matrix.backend }}
-        run: go test -run '^$' -bench '^BenchmarkFastSSD_Comparison$' -benchtime=200ms -count=1 ./internal/fit
+    uses: ./.github/workflows/ci-native-simd.yml
 
   gpu-compile:
-    name: GPU-tag OpenCL (PoCL)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Install OpenCL development headers and PoCL runtime
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-            clinfo \
-            ocl-icd-opencl-dev \
-            pocl-opencl-icd
-      - name: Verify PoCL platform discovery
-        shell: bash
-        run: |
-          platforms="$(clinfo -l)"
-          printf '%s\n' "$platforms"
-          grep -q 'Platform #' <<<"$platforms"
-          grep -q 'Device #' <<<"$platforms"
-      - name: Compile GPU-tagged packages and tests
-        run: go test -tags gpu -run '^$' ./...
-      - name: Run focused OpenCL runtime tests
-        env:
-          MAYFLY_REQUIRE_OPENCL: "1"
-        run: go test -tags gpu -count=1 ./internal/fit/renderer -run '^TestOpenCL'
+    uses: ./.github/workflows/ci-gpu-compile.yml
 
   vulnerability:
-    name: Vulnerability scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: 1.26.5
-          cache: true
-      - name: Install pinned govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
-      - name: Scan
-        run: govulncheck ./...
+    uses: ./.github/workflows/ci-vulnerability.yml
 
   release:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
+    # benchmarks is deliberately absent: the timing comparison is report-only
+    # and must never gate a release.
     needs:
       - generation
       - quality
