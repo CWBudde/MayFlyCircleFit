@@ -127,7 +127,7 @@ func TestCPURendererPrecomputesInitialSSD(t *testing.T) {
 		t.Fatalf("staged SSD = (%d, %v), want (%d, true)", staged.initialSSD, staged.initialSSDValid, wantRetained)
 	}
 	wantMode := incrementalCostDisabled
-	if deltaSSDBackend == "avx2" {
+	if deltaSSDVectorized() {
 		wantMode = incrementalCostAuto
 	}
 	if staged.incrementalCostMode != wantMode {
