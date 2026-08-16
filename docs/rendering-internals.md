@@ -35,6 +35,16 @@ Related documents:
 - The assembly is hand-written in Go Plan 9 syntax. The implemented workflow
   does **not** use GoAT, C sources, cgo, or an external assembler, despite what
   the original design document proposed.
+- **A package that uses cgo cannot contain Go assembly.** `cmd/go` hands `.s`
+  files in a cgo package to the C compiler and rejects any that carry Plan 9
+  directives (`TEXT`/`DATA`/`GLOBL`), so `-tags gpu` fails to build the whole
+  package with `package using cgo has Go assembly file …`. This is why the
+  OpenCL renderer lives in `internal/fit/renderer/opencl` rather than beside the
+  kernels it falls back to. `internal/fit/renderer/renderer_opencl_gpu.go` is
+  the gpu-tagged adapter that bridges the two: it injects the CPU renderer as
+  `opencl.Fallback` and implements the unexported `newSession` method that
+  `rendererSessionFactory` requires and no other package can provide. Keep the
+  dependency one-way — `opencl` must never import `renderer`.
 - **One tier, resolved once.** `fit.Tier()` is the single source of truth for
   which instruction set this process uses. Dispatch sites do not read
   `x/sys/cpu`; they call `fit.RegisterTierConsumer` at init and install their

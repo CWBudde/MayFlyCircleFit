@@ -85,8 +85,15 @@ func BenchmarkOptimizePipelineBackends(b *testing.B) {
 					}
 					defer cleanup()
 
-					if opencl, ok := r.(*openCLRenderer); ok {
-						reportOpenCLBenchmarkDevice(b, opencl)
+					if adapter, ok := r.(openCLAdapter); ok {
+						runtime := adapter.Runtime()
+						b.Logf(
+							"OpenCL platform=%q device=%q type=%s compute_units=%d",
+							runtime.Platform.Name,
+							runtime.Device.Name,
+							runtime.Device.Type,
+							runtime.Device.MaxComputeUnits,
+						)
 					}
 
 					optimizer := &pipelineComparisonOptimizer{evaluations: pipelineComparisonEvaluations}

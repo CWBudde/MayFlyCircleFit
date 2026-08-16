@@ -3,7 +3,6 @@
 package renderer
 
 import (
-	"fmt"
 	"image"
 	"image/color"
 	"math"
@@ -12,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer/opencl"
 )
 
 const (
@@ -33,9 +33,9 @@ func TestOpenCLRendererMatchesCPU(t *testing.T) {
 
 func TestOpenCLReductionBoundaries(t *testing.T) {
 	probeRef := patternedReference(image.Rect(0, 0, 1, 1))
-	probe := newOpenCLTestRenderer(t, probeRef, 0)
-	localSize := probe.localSize
-	probe.release()
+	probe, releaseProbe := newOpenCLTestRenderer(t, probeRef, 0)
+	localSize := probe.LocalSize()
+	releaseProbe()
 
 	pixelCounts := []int{
 		1,
@@ -83,68 +83,68 @@ func TestOpenCLReferenceOriginStrideAndAlpha(t *testing.T) {
 func TestOpenCLZeroCirclesAndInvalidParams(t *testing.T) {
 	ref := patternedReference(image.Rect(0, 0, 17, 9))
 	assertOpenCLParity(t, ref, nil)
-	empty := newOpenCLTestRenderer(t, image.NewNRGBA(image.Rect(0, 0, 0, 0)), 0)
+	empty, releaseEmpty := newOpenCLTestRenderer(t, image.NewNRGBA(image.Rect(0, 0, 0, 0)), 0)
 	if cost := empty.Cost(nil); !math.IsInf(cost, 1) {
-		empty.release()
+		releaseEmpty()
 		t.Fatalf("Cost(empty image) = %v, want +Inf", cost)
 	}
 	if bounds := empty.Render(nil).Bounds(); !bounds.Empty() {
-		empty.release()
+		releaseEmpty()
 		t.Fatalf("Render(empty image) bounds = %v, want empty", bounds)
 	}
-	empty.release()
+	releaseEmpty()
 
-	r := newOpenCLTestRenderer(t, ref, 1)
-	defer r.release()
+	r, release := newOpenCLTestRenderer(t, ref, 1)
+	defer release()
 	short := make([]float64, paramsPerCircle-1)
 	if cost := r.Cost(short); !math.IsInf(cost, 1) {
 		t.Fatalf("Cost(short params) = %v, want +Inf", cost)
 	}
-	if r.degraded {
+	if r.Degraded() {
 		t.Fatal("invalid parameters permanently degraded the OpenCL backend")
 	}
-	want := r.fallback.Render(short)
+	want := NewCPURenderer(ref, 1).Render(short)
 	got := r.Render(short)
 	assertNRGBAWithin(t, want, got, 0)
 }
 
 func TestOpenCLCostDefersImageReadback(t *testing.T) {
 	ref := patternedReference(image.Rect(0, 0, 31, 17))
-	r := newOpenCLTestRenderer(t, ref, 1)
-	defer r.release()
+	r, release := newOpenCLTestRenderer(t, ref, 1)
+	defer release()
 
 	params := []float64{15, 8, 6, 0.2, 0.6, 0.9, 0.75}
 	_ = r.Cost(params)
-	if !r.deviceValid {
+	if !r.DeviceValid() {
 		t.Fatal("Cost did not leave a valid device result")
 	}
-	if r.imageValid {
+	if r.ImageValid() {
 		t.Fatal("Cost materialized the output image on the host")
 	}
 
-	deviceHash := r.deviceHash
-	evaluations := r.evaluations
+	deviceHash := r.DeviceHash()
+	evaluations := r.Evaluations()
 	_ = r.Render(params)
-	if !r.imageValid {
+	if !r.ImageValid() {
 		t.Fatal("Render did not materialize the resident device image")
 	}
-	if r.deviceHash != deviceHash {
+	if r.DeviceHash() != deviceHash {
 		t.Fatal("Render changed the cached device evaluation for identical parameters")
 	}
-	if r.evaluations != evaluations {
+	if r.Evaluations() != evaluations {
 		t.Fatal("Render reran the kernels for identical parameters")
 	}
 
 	changed := append([]float64(nil), params...)
 	changed[0]++
 	_ = r.Cost(changed)
-	if !r.deviceValid || r.deviceHash == deviceHash {
+	if !r.DeviceValid() || r.DeviceHash() == deviceHash {
 		t.Fatal("changed parameters did not replace the cached device evaluation")
 	}
-	if r.evaluations != evaluations+1 {
+	if r.Evaluations() != evaluations+1 {
 		t.Fatal("changed parameters did not run exactly one new device evaluation")
 	}
-	if r.imageValid {
+	if r.ImageValid() {
 		t.Fatal("changed parameters did not invalidate the host image cache")
 	}
 }
@@ -190,9 +190,9 @@ func TestOpenCLOptimizationPipelines(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			base := newOpenCLTestRenderer(t, ref, tt.circles)
-			defer base.release()
-			tracking := &trackingOpenCLFactory{openCLRenderer: base}
+			base, release := newOpenCLTestRenderer(t, ref, tt.circles)
+			defer release()
+			tracking := &trackingOpenCLFactory{openCLAdapter: base}
 
 			result, err := tt.run(tracking)
 			if err != nil {
@@ -210,17 +210,17 @@ func TestOpenCLOptimizationPipelines(t *testing.T) {
 			if got := result.BestImage.NRGBAAt(1, 1); got != (color.NRGBA{A: 255}) {
 				t.Fatalf("best image pixel = %#v, want opaque black", got)
 			}
-			if base.degraded {
+			if base.Degraded() {
 				t.Fatal("base OpenCL renderer degraded to CPU")
 			}
 			if len(tracking.sessions) != tt.wantSession {
 				t.Fatalf("OpenCL sessions = %d, want %d", len(tracking.sessions), tt.wantSession)
 			}
 			for i, session := range tracking.sessions {
-				if session.degraded {
+				if session.Degraded() {
 					t.Fatalf("OpenCL session %d degraded to CPU", i)
 				}
-				if session.evaluations == 0 {
+				if session.Evaluations() == 0 {
 					t.Fatalf("OpenCL session %d performed no device evaluations", i)
 				}
 			}
@@ -229,71 +229,25 @@ func TestOpenCLOptimizationPipelines(t *testing.T) {
 }
 
 type trackingOpenCLFactory struct {
-	*openCLRenderer
-	sessions []*openCLRenderer
+	openCLAdapter
+	sessions []*opencl.Renderer
 }
 
 func (r *trackingOpenCLFactory) newSession(circleCount int) (Renderer, func(), error) {
-	session, cleanup, err := r.openCLRenderer.newSession(circleCount)
+	session, cleanup, err := r.openCLAdapter.Renderer.NewSession(circleCount)
 	if err != nil {
 		return nil, cleanup, err
 	}
-	openCLSession, ok := session.(*openCLRenderer)
-	if !ok {
-		cleanup()
-		return nil, noopCleanup, fmt.Errorf("OpenCL session has type %T", session)
-	}
-	r.sessions = append(r.sessions, openCLSession)
-	return session, cleanup, nil
-}
-
-func TestPackReferenceNRGBAPreservesOriginStrideAndChannels(t *testing.T) {
-	parent := image.NewNRGBA(image.Rect(-3, -2, 8, 7))
-	bounds := image.Rect(1, 1, 6, 5)
-	reference := parent.SubImage(bounds).(*image.NRGBA)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			reference.SetNRGBA(x, y, color.NRGBA{
-				R: uint8(x*17 + y),
-				G: uint8(x + y*19),
-				B: uint8(x*11 + y*7),
-				A: uint8(x*13 + y*5),
-			})
-		}
-	}
-
-	packed := packReferenceNRGBA(reference)
-	if got, want := len(packed), bounds.Dx()*bounds.Dy()*4; got != want {
-		t.Fatalf("packed byte count = %d, want %d", got, want)
-	}
-	for y := 0; y < bounds.Dy(); y++ {
-		for x := 0; x < bounds.Dx(); x++ {
-			gotOffset := (y*bounds.Dx() + x) * 4
-			wantOffset := reference.PixOffset(bounds.Min.X+x, bounds.Min.Y+y)
-			for channel := 0; channel < 4; channel++ {
-				if got, want := packed[gotOffset+channel], reference.Pix[wantOffset+channel]; got != want {
-					t.Fatalf("packed pixel (%d,%d) channel %d = %d, want %d", x, y, channel, got, want)
-				}
-			}
-		}
-	}
-}
-
-func TestPackReferenceNRGBAEmpty(t *testing.T) {
-	if got := packReferenceNRGBA(nil); got != nil {
-		t.Fatalf("packReferenceNRGBA(nil) = %v, want nil", got)
-	}
-	if got := packReferenceNRGBA(image.NewNRGBA(image.Rect(0, 0, 0, 0))); got != nil {
-		t.Fatalf("packReferenceNRGBA(empty) = %v, want nil", got)
-	}
+	r.sessions = append(r.sessions, session)
+	return openCLAdapter{session}, cleanup, nil
 }
 
 func assertOpenCLParity(t *testing.T, ref *image.NRGBA, params []float64) {
 	t.Helper()
 	circles := len(params) / paramsPerCircle
 	cpu := NewCPURenderer(ref, circles)
-	gpu := newOpenCLTestRenderer(t, ref, circles)
-	defer gpu.release()
+	gpu, release := newOpenCLTestRenderer(t, ref, circles)
+	defer release()
 
 	wantCost := cpu.Cost(params)
 	gotCost := gpu.Cost(params)
@@ -305,7 +259,7 @@ func assertOpenCLParity(t *testing.T, ref *image.NRGBA, params []float64) {
 	assertNRGBAWithin(t, cpu.Render(params), gpuImage, 2)
 }
 
-func newOpenCLTestRenderer(t *testing.T, ref *image.NRGBA, circles int) *openCLRenderer {
+func newOpenCLTestRenderer(t *testing.T, ref *image.NRGBA, circles int) (openCLAdapter, func()) {
 	t.Helper()
 	renderer, cleanup, err := NewOpenCLRenderer(ref, circles)
 	if err != nil {
@@ -314,12 +268,12 @@ func newOpenCLTestRenderer(t *testing.T, ref *image.NRGBA, circles int) *openCLR
 		}
 		t.Skipf("GPU backend unavailable: %v", err)
 	}
-	r, ok := renderer.(*openCLRenderer)
+	r, ok := renderer.(openCLAdapter)
 	if !ok {
 		cleanup()
-		t.Fatalf("NewOpenCLRenderer returned %T, want *openCLRenderer", renderer)
+		t.Fatalf("NewOpenCLRenderer returned %T, want openCLAdapter", renderer)
 	}
-	return r
+	return r, cleanup
 }
 
 func assertCostWithin(t *testing.T, want, got float64) {

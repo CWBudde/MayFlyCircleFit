@@ -36,4 +36,4 @@ jobs:
       - name: Run focused OpenCL runtime tests
         env:
           MAYFLY_REQUIRE_OPENCL: "1"
-        run: go test -tags gpu -count=1 ./internal/fit/renderer -run '^TestOpenCL'
+        run: go test -tags gpu -count=1 ./internal/fit/renderer/... -run '^TestOpenCL|^TestPackReferenceNRGBA'

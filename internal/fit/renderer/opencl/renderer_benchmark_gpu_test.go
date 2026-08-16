@@ -1,0 +1,151 @@
+//go:build gpu
+
+package opencl
+
+import (
+	"image"
+	"image/color"
+	"math"
+	"math/rand"
+	"os"
+	"strconv"
+	"testing"
+	"time"
+)
+
+func BenchmarkOpenCLParameterPackAndUpload(b *testing.B) {
+	for _, circles := range []int{1, 10, 50, 100} {
+		b.Run("K="+strconv.Itoa(circles), func(b *testing.B) {
+			ref := patternedReference(image.Rect(0, 0, 1, 1))
+			r, release := newOpenCLBenchmarkRenderer(b, ref, circles)
+			defer release()
+
+			params := randomParams(circles, 1, 1)
+			reportOpenCLBenchmarkDevice(b, r)
+			b.SetBytes(int64(len(params) * 4))
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				// Exercise both float64-to-float32 packing and the blocking OpenCL
+				// write even when consecutive uploads have the same shape.
+				params[0] = float64(i%32) * 0.03125
+				if err := r.uploadParams(params); err != nil {
+					b.Fatalf("upload parameters: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkOpenCLResidentImageReadback(b *testing.B) {
+	for _, size := range []int{64, 256, 512, 1024} {
+		b.Run(strconv.Itoa(size), func(b *testing.B) {
+			ref := patternedReference(image.Rect(0, 0, size, size))
+			r, release := newOpenCLBenchmarkRenderer(b, ref, 1)
+			defer release()
+
+			params := randomParams(1, size, size)
+			if err := r.ensure(params); err != nil {
+				b.Fatalf("prepare resident output: %v", err)
+			}
+			if err := r.materializeImage(r.deviceHash); err != nil {
+				b.Fatalf("warm image readback: %v", err)
+			}
+
+			reportOpenCLBenchmarkDevice(b, r)
+			b.SetBytes(int64(r.pixelCount * 4))
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				// Keep the rendered output resident while invalidating only the
+				// host-side cache, so this measures the image readback boundary.
+				r.imageValid = false
+				if err := r.materializeImage(r.deviceHash); err != nil {
+					b.Fatalf("read resident output: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func newOpenCLBenchmarkRenderer(b *testing.B, ref *image.NRGBA, circles int) (*Renderer, func()) {
+	b.Helper()
+	r, cleanup, err := New(ref, circles, newStubFallback)
+	if err != nil {
+		if os.Getenv("MAYFLY_REQUIRE_OPENCL") == "1" {
+			b.Fatalf("required OpenCL backend unavailable: %v", err)
+		}
+		b.Skipf("OpenCL backend unavailable: %v", err)
+	}
+	if r.Degraded() {
+		cleanup()
+		b.Skip("OpenCL backend degraded to the fallback renderer")
+	}
+	return r, cleanup
+}
+
+func reportOpenCLBenchmarkDevice(b *testing.B, r *Renderer) {
+	b.Helper()
+	b.Logf(
+		"OpenCL platform=%q platform_vendor=%q device=%q device_vendor=%q type=%s compute_units=%d",
+		r.runtime.Platform.Name,
+		r.runtime.Platform.Vendor,
+		r.runtime.Device.Name,
+		r.runtime.Device.Vendor,
+		r.runtime.Device.Type,
+		r.runtime.Device.MaxComputeUnits,
+	)
+}
+
+// stubFallback stands in for the CPU renderer. These benchmarks measure the
+// device path only, and newOpenCLBenchmarkRenderer skips as soon as the
+// renderer degrades, so the fallback is never exercised. The real CPU renderer
+// cannot be used here: it lives in the renderer package, which imports this one.
+type stubFallback struct {
+	reference *image.NRGBA
+}
+
+func newStubFallback(reference *image.NRGBA, _ int) Fallback {
+	return stubFallback{reference: reference}
+}
+
+func (f stubFallback) Render(_ []float64) *image.NRGBA {
+	return image.NewNRGBA(f.reference.Bounds())
+}
+
+func (f stubFallback) Cost(_ []float64) float64 { return math.Inf(1) }
+
+func patternedReference(bounds image.Rectangle) *image.NRGBA {
+	ref := image.NewNRGBA(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			ref.SetNRGBA(x, y, color.NRGBA{
+				R: uint8((x*31 + y*7) & 0xff),
+				G: uint8((x*13 + y*29) & 0xff),
+				B: uint8((x*3 + y*37) & 0xff),
+				A: uint8((x*17 + y*11) & 0xff),
+			})
+		}
+	}
+	return ref
+}
+
+// randomParams mirrors the renderer package helper of the same name. It is
+// duplicated because this package cannot import the renderer package.
+func randomParams(k, width, height int) []float64 {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	params := make([]float64, k*paramsPerCircle)
+	for i := 0; i < k; i++ {
+		offset := i * paramsPerCircle
+		params[offset+0] = r.Float64() * float64(width)
+		params[offset+1] = r.Float64() * float64(height)
+		params[offset+2] = 5 + r.Float64()*float64(width/4)
+		params[offset+3] = r.Float64()
+		params[offset+4] = r.Float64()
+		params[offset+5] = r.Float64()
+		params[offset+6] = 0.5 + 0.5*r.Float64()
+	}
+	return params
+}

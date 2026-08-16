@@ -95,6 +95,9 @@ ARM64 but is not currently a required Linux/ARM64 timing gate.
 OpenCL is an experimental, opt-in renderer for all optimization modes:
 
 - build with `-tags gpu` and `CGO_ENABLED=1`;
+- the cgo renderer lives in `internal/fit/renderer/opencl`, kept apart from the
+  assembly kernels in `internal/fit/renderer` because Go forbids Plan 9 assembly
+  in a package that uses cgo;
 - install platform-specific OpenCL headers, loader, driver, and runtime;
 - expect device/driver-specific behavior;
 - validate CPU/OpenCL parity on the actual target device.
