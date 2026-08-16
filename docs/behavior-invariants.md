@@ -50,12 +50,25 @@ Rendering-side invariants live in
   backend without independent sessions (OpenCL) must decline with a warning;
   enabling the optimizer's parallel path against a one-slot pool buys nothing
   and still changes the trajectory.
-- Transactional polishing is the one optimizer-driven objective that is not
-  re-entrant: its sweep evaluator merges into a shared candidate vector and a
-  shared session. `PolishCircleBatchContext` rejects an optimizer reporting a
-  width above one, and the epoch and progress wrappers forward that width so the
-  guard cannot be bypassed. Do not wire parallel evaluation into a polisher
-  without first giving polishing its own session pool.
+- Transactional polishing is re-entrant only through its session pool. Each
+  sweep builds one pool of baked-suffix sessions, and every evaluation leases a
+  slot carrying its own scratch parameter vector, so nothing is shared. The
+  fixed prefix behind those sessions is rasterized once per sweep and every slot
+  starts from a copy of that canvas; baking per slot would redraw the prefix
+  once per worker and eat the throughput the pool exists to win. A width-one
+  pool leases the sweep's own session and vector and is byte-identical to the
+  serial sweep it replaced. `PolishCircleBatchContext` still rejects an
+  optimizer reporting a width above one unless the backend both hands out
+  independent sessions and advertises concurrent evaluation. Both are required:
+  OpenCL can create sessions, but each carries its own device state and several
+  of them evaluating at once has never been validated, so it withholds the
+  parallel marker and is refused. Polishing errors rather than degrading
+  to one slot when the pool comes up short, because the optimizer would still
+  call the evaluator from every goroutine. The epoch and progress wrappers
+  forward the width so neither check can be bypassed.
+- Acceptance stays serial and unchanged: a sweep is committed only after the
+  merged candidate is re-evaluated on the full session and `allCirclesUseful`
+  holds for the whole vector. Pooling applies to candidate evaluation only.
 - `--fast-compositing` is opt-in and defaults off, because it changes the
   result of a fixed seed. It is accurate to +/-1 per channel, not byte-identical
   to the default compositor. Compare runs only against runs with the same

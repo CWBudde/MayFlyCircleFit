@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
@@ -830,22 +832,25 @@ type parallelPolishOptimizer struct {
 
 func (o *parallelPolishOptimizer) ParallelEvaluationWorkers() int { return o.workers }
 
-// TestPolishCircleBatchRejectsParallelOptimizer guards the one optimizer-driven
-// objective in the repository that is not re-entrant. Polishing's sweep
-// evaluator merges every candidate into one shared parameter vector and
-// evaluates it on one shared session, which is what makes a sweep
-// transactional; the staged pipelines avoid that by leasing a session per
-// evaluation, and polishing has no such pool.
-//
-// Until now nothing enforced the separation: safety rested entirely on the two
-// polisher construction sites happening not to pass the parallel option, and
-// wiring it in would have raced the shared vector, the session canvas, and the
+// poollessRenderer hides both session factories of a working CPU renderer, so
+// nothing can lease an independent session from it while everything else keeps
+// behaving. It is the backend shape -- OpenCL today -- for which polishing has
+// no pool to build and must keep refusing a concurrent optimizer.
+type poollessRenderer struct {
+	Renderer
+}
+
+// TestPolishCircleBatchRejectsParallelOptimizerWithoutSessionPool guards the
+// case that stays unsafe now that polishing pools sessions. A backend that
+// cannot hand out independent sessions leaves the sweep evaluator sharing one
+// vector and one canvas, and a parallel optimizer would race both plus the
 // evaluation counter. Every one of those failures is silent -- a plausible
-// wrong cost and a corrupt image, with no error -- so the run must be refused.
-func TestPolishCircleBatchRejectsParallelOptimizer(t *testing.T) {
+// wrong cost and a corrupt image, with no error -- so the run must be refused
+// rather than degraded to a one-slot pool.
+func TestPolishCircleBatchRejectsParallelOptimizerWithoutSessionPool(t *testing.T) {
 	ref := solidImage(5, 5, color.NRGBA{A: 255})
-	base := NewCPURenderer(ref, 1)
 	initial := circleParams(2, 2, 5, color.NRGBA{R: 128, G: 128, B: 128, A: 255}, 1)
+	base := poollessRenderer{Renderer: NewCPURenderer(ref, 1)}
 	optimizer := &parallelPolishOptimizer{workers: 4}
 
 	_, err := PolishCircleBatchContext(context.Background(), base, optimizer, initial, BatchPolishOptions{
@@ -853,7 +858,7 @@ func TestPolishCircleBatchRejectsParallelOptimizer(t *testing.T) {
 		MaxSweeps:     1,
 	})
 	if err == nil {
-		t.Fatal("polishing accepted an optimizer configured for concurrent evaluation")
+		t.Fatal("polishing accepted a concurrent optimizer over a renderer that cannot pool sessions")
 	}
 	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("error = %v, want ErrInvalidOptimizationInput", err)
@@ -862,13 +867,484 @@ func TestPolishCircleBatchRejectsParallelOptimizer(t *testing.T) {
 		t.Fatalf("optimizer ran %d times, want 0; the guard must refuse before evaluating", optimizer.calls)
 	}
 
-	// A serially configured optimizer of the same shape must still run.
+	// A serially configured optimizer of the same shape must still run on that
+	// same pool-less renderer. The strategy is residual-region because it is the
+	// one that never asks the backend for a staged session at all.
 	serial := &parallelPolishOptimizer{workers: 1}
 	serial.params = circleParams(2, 2, 5, color.NRGBA{A: 255}, 1)
 	if _, err := PolishCircleBatchContext(context.Background(), base, serial, initial, BatchPolishOptions{
 		ActiveSetSize: 1,
 		MaxSweeps:     1,
+		Strategy:      BatchPolishResidualRegion,
 	}); err != nil {
 		t.Fatalf("polishing rejected a serial optimizer: %v", err)
 	}
+
+	// A backend that can hand out sessions but does not advertise concurrent
+	// evaluation must be refused just as firmly. That is the OpenCL shape: it
+	// implements the session factory, so a factory-only guard would let several
+	// device sessions evaluate at once, which the backend has never been
+	// validated for.
+	unadvertised := newStagedOnlyRenderer(NewCPURenderer(ref, 1))
+	silent := &parallelPolishOptimizer{workers: 4}
+	_, err = PolishCircleBatchContext(context.Background(), unadvertised, silent, initial, BatchPolishOptions{
+		ActiveSetSize: 1,
+		MaxSweeps:     1,
+	})
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
+		t.Fatalf("error = %v, want ErrInvalidOptimizationInput for a backend without a parallel marker", err)
+	}
+	if silent.calls != 0 {
+		t.Fatalf("optimizer ran %d times, want 0; the guard must refuse before evaluating", silent.calls)
+	}
+
+	// So must a concurrent optimizer over a renderer that can pool sessions.
+	pooled := &parallelPolishOptimizer{workers: 4}
+	pooled.params = circleParams(2, 2, 5, color.NRGBA{A: 255}, 1)
+	if _, err := PolishCircleBatchContext(context.Background(), NewCPURenderer(ref, 1), pooled, initial, BatchPolishOptions{
+		ActiveSetSize: 1,
+		MaxSweeps:     1,
+	}); err != nil {
+		t.Fatalf("polishing rejected a concurrent optimizer over a poolable renderer: %v", err)
+	}
+}
+
+// sessionCounts records how a run created its sessions: sessions counts the
+// ones rendered from scratch, which is what baking a fixed prefix costs, and
+// canvasSessions the ones started from an already-baked canvas.
+type sessionCounts struct {
+	sessions       atomic.Int64
+	canvasSessions atomic.Int64
+}
+
+// sessionCountingRenderer is a working CPU renderer that counts how its
+// sessions were created, so a test can tell one bake per sweep from one bake
+// per pooled worker.
+type sessionCountingRenderer struct {
+	*CPURenderer
+	counts *sessionCounts
+}
+
+func (r sessionCountingRenderer) newSession(circleCount int) (Renderer, func(), error) {
+	r.counts.sessions.Add(1)
+	return r.CPURenderer.newSession(circleCount)
+}
+
+func (r sessionCountingRenderer) newSessionWithCanvas(canvas *image.NRGBA, circleCount int) (Renderer, func(), error) {
+	r.counts.canvasSessions.Add(1)
+	return r.CPURenderer.newSessionWithCanvas(canvas, circleCount)
+}
+
+// TestPolishCircleBatchBakesThePrefixOncePerSweep pins the cost of widening the
+// pool. Every slot needs a canvas of its own, but the fixed prefix painted onto
+// it is the same for all of them, so it must be rasterized once per sweep. A
+// bake per slot would redraw it once per worker during setup -- for
+// contiguous-window nearly the whole circle vector -- and eat the throughput the
+// pool exists to win.
+func TestPolishCircleBatchBakesThePrefixOncePerSweep(t *testing.T) {
+	const sweeps = 2
+	ref := solidImage(20, 16, color.NRGBA{R: 200, G: 40, B: 90, A: 255})
+	params := polishParityParams()
+	circleCount := len(params) / paramsPerCircle
+
+	run := func(workers int) (int, int) {
+		t.Helper()
+		cpu := NewCPURenderer(ref, circleCount)
+		cpu.SetThreads(1)
+		counts := &sessionCounts{}
+		base := sessionCountingRenderer{CPURenderer: cpu, counts: counts}
+		optimizer := &widthPolishOptimizer{workers: workers}
+		if _, err := PolishCircleBatchContext(context.Background(), base, optimizer, params, BatchPolishOptions{
+			ActiveSetSize: 2,
+			MaxSweeps:     sweeps,
+			// The window slides toward the front of the vector, so with this many
+			// sweeps every one of them keeps a non-empty prefix and bakes. A sweep
+			// that cannot bake would open a full session per slot instead, which
+			// would blur the very counts this test compares.
+			Strategy: BatchPolishContiguousWindow,
+		}); err != nil {
+			t.Fatalf("PolishCircleBatchContext(width %d) error = %v", workers, err)
+		}
+		return int(counts.sessions.Load()), int(counts.canvasSessions.Load())
+	}
+
+	serialRendered, serialBaked := run(1)
+	if serialBaked != sweeps {
+		t.Fatalf("serial run started %d sessions from a baked canvas, want one per sweep (%d)", serialBaked, sweeps)
+	}
+	pooledRendered, pooledBaked := run(4)
+	if pooledRendered != serialRendered {
+		t.Errorf("width 4 rendered %d sessions, want the serial run's %d: the fixed prefix must be baked once per sweep, not once per worker",
+			pooledRendered, serialRendered)
+	}
+	if pooledBaked <= serialBaked {
+		t.Errorf("width 4 started %d sessions from the baked canvas, want more than the serial run's %d: every slot needs its own canvas",
+			pooledBaked, serialBaked)
+	}
+}
+
+// widthPolishOptimizer is recordingPolishOptimizer with a declared concurrent
+// evaluation width. It still evaluates serially, so any difference between two
+// widths is the pool's doing and not the optimizer's.
+type widthPolishOptimizer struct {
+	recordingPolishOptimizer
+	workers int
+}
+
+func (o *widthPolishOptimizer) ParallelEvaluationWorkers() int { return o.workers }
+
+// polishParityOptimizer is a deterministic optimizer that reports the pool
+// width it wants and keeps every cost it evaluated, so two runs can be compared
+// evaluation by evaluation.
+type polishParityOptimizer interface {
+	opt.Optimizer
+	evaluatedCosts() []float64
+}
+
+func (o *recordingPolishOptimizer) evaluatedCosts() []float64 { return o.costs }
+func (o *improvingPolishOptimizer) evaluatedCosts() []float64 { return o.costs }
+
+// polishSerialResult is what the pre-pool serial implementation produced for a
+// parity fixture. The numbers were captured by running the same fixture against
+// the serial evaluator at b0185a0, the commit before the session pool, so a
+// pooled run at width one has something to be byte-identical to that does not
+// come from the pooled code itself.
+type polishSerialResult struct {
+	costs       []float64
+	params      []float64
+	cost        float64
+	accepted    int
+	sweeps      int
+	evaluations int
+}
+
+// TestPolishCircleBatchPoolWidthParity is the parity check for the session
+// pool. The evaluator now merges into a leased scratch vector and evaluates on
+// a leased baked-suffix session instead of one shared pair, so two properties
+// have to hold. Width one must reproduce the recorded serial run exactly, and
+// for an optimizer that calls the objective in a fixed order every wider pool
+// must reproduce width one exactly: the same evaluated costs, the same
+// committed parameters and cost, the same accepted-sweep count, and the same
+// rendered image.
+func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
+	cases := []struct {
+		name         string
+		reference    *image.NRGBA
+		params       []float64
+		options      BatchPolishOptions
+		newOptimizer func(workers int) polishParityOptimizer
+		serial       polishSerialResult
+	}{
+		{
+			// Every sweep is rejected here, which is the common case for a fitted
+			// vector: the whole-vector usefulness gate vetoes improvements.
+			name:      "rejected-sweeps",
+			reference: solidImage(20, 16, color.NRGBA{R: 200, G: 40, B: 90, A: 255}),
+			params:    polishParityParams(),
+			options: BatchPolishOptions{
+				ActiveSetSize: 2,
+				MaxSweeps:     3,
+				Strategy:      BatchPolishHybridOverlap,
+			},
+			newOptimizer: func(workers int) polishParityOptimizer {
+				return &widthPolishOptimizer{workers: workers}
+			},
+			serial: polishSerialResult{
+				costs: []float64{
+					5639.8125, 14598.391666666666, 19012.595833333333, 19172.329166666666, 19118.3375,
+					5639.8125, 5545.864583333333, 5503.739583333333, 5470.673958333334, 5456.420833333334,
+					5639.8125, 16916.385416666668, 21602.385416666668, 21916.28125, 22048.005208333332,
+				},
+				params:      polishParityParams(),
+				cost:        5639.8125,
+				accepted:    0,
+				sweeps:      3,
+				evaluations: 22,
+			},
+		},
+		{
+			// Every sweep commits here, so the accepted-sweep count is a real
+			// assertion rather than a constant zero.
+			name:      "accepted-sweeps",
+			reference: solidImage(12, 6, color.NRGBA{A: 255}),
+			params:    polishAcceptingParams(),
+			options: BatchPolishOptions{
+				ActiveSetSize: 1,
+				MaxSweeps:     4,
+				Strategy:      BatchPolishHybridOverlap,
+			},
+			newOptimizer: func(workers int) polishParityOptimizer {
+				return &improvingPolishOptimizer{workers: workers}
+			},
+			serial: polishSerialResult{
+				costs: []float64{
+					44018.72222222222, 42125.625, 40754.88888888889, 39749.5,
+					39749.5, 38675.375, 37794.61111111111, 37107.208333333336,
+					37107.208333333336, 36427.208333333336, 35832.541666666664, 35323.208333333336,
+					35323.208333333336, 35209.208333333336, 35100.541666666664, 34997.208333333336,
+				},
+				params: []float64{
+					2, 3, 2, 0.1568627450980392, 0.1568627450980392, 0.1568627450980392, 0.9,
+					6, 3, 2, 0.11764705882352941, 0.11764705882352941, 0.11764705882352941, 0.8,
+					10, 3, 2, 0.022058823529411766, 0.022058823529411766, 0.022058823529411766, 0.7,
+				},
+				cost:        34997.208333333336,
+				accepted:    4,
+				sweeps:      4,
+				evaluations: 25,
+			},
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			circleCount := len(testCase.params) / paramsPerCircle
+			run := func(workers int) (*BatchPolishResult, []float64) {
+				t.Helper()
+				cpu := NewCPURenderer(testCase.reference, circleCount)
+				cpu.SetThreads(1)
+				optimizer := testCase.newOptimizer(workers)
+				result, err := PolishCircleBatchContext(
+					context.Background(), cpu, optimizer, testCase.params, testCase.options)
+				if err != nil {
+					t.Fatalf("PolishCircleBatchContext(width %d) error = %v", workers, err)
+				}
+				return result, optimizer.evaluatedCosts()
+			}
+
+			serial, serialCosts := run(1)
+			want := testCase.serial
+			if !reflect.DeepEqual(serialCosts, want.costs) {
+				t.Errorf("width 1 evaluated costs = %v, want the serial run's %v", serialCosts, want.costs)
+			}
+			if !reflect.DeepEqual(serial.BestParams, want.params) {
+				t.Errorf("width 1 best params = %v, want the serial run's %v", serial.BestParams, want.params)
+			}
+			if serial.BestCost != want.cost {
+				t.Errorf("width 1 best cost = %v, want the serial run's %v", serial.BestCost, want.cost)
+			}
+			if serial.AcceptedSweeps != want.accepted || serial.Sweeps != want.sweeps {
+				t.Errorf("width 1 accepted/sweeps = %d/%d, want the serial run's %d/%d",
+					serial.AcceptedSweeps, serial.Sweeps, want.accepted, want.sweeps)
+			}
+			if serial.Evaluations != want.evaluations {
+				t.Errorf("width 1 evaluations = %d, want the serial run's %d", serial.Evaluations, want.evaluations)
+			}
+
+			for _, workers := range []int{2, 4, 8} {
+				pooled, pooledCosts := run(workers)
+				if !reflect.DeepEqual(pooledCosts, serialCosts) {
+					t.Errorf("width %d evaluated costs = %v, want %v", workers, pooledCosts, serialCosts)
+				}
+				if !reflect.DeepEqual(pooled.BestParams, serial.BestParams) {
+					t.Errorf("width %d best params = %v, want %v", workers, pooled.BestParams, serial.BestParams)
+				}
+				if pooled.BestCost != serial.BestCost {
+					t.Errorf("width %d best cost = %v, want %v", workers, pooled.BestCost, serial.BestCost)
+				}
+				if pooled.AcceptedSweeps != serial.AcceptedSweeps || pooled.Sweeps != serial.Sweeps {
+					t.Errorf("width %d accepted/sweeps = %d/%d, want %d/%d",
+						workers, pooled.AcceptedSweeps, pooled.Sweeps, serial.AcceptedSweeps, serial.Sweeps)
+				}
+				if pooled.Evaluations != serial.Evaluations {
+					t.Errorf("width %d evaluations = %d, want %d", workers, pooled.Evaluations, serial.Evaluations)
+				}
+				if !bytes.Equal(pooled.BestImage.Pix, serial.BestImage.Pix) {
+					t.Errorf("width %d best image differs from the serial image", workers)
+				}
+			}
+		})
+	}
+}
+
+// concurrentPolishOptimizer calls the objective from workers goroutines at
+// once, the way MayFly's parallel generation loop does. It exists so a polish
+// sweep can be driven the way the pool claims to support and checked under
+// -race.
+type concurrentPolishOptimizer struct {
+	workers    int
+	candidates int
+
+	costs []float64
+}
+
+func (o *concurrentPolishOptimizer) ParallelEvaluationWorkers() int { return o.workers }
+
+func (o *concurrentPolishOptimizer) Run(func([]float64) float64, []float64, []float64, int) ([]float64, float64) {
+	return nil, 0
+}
+
+func (o *concurrentPolishOptimizer) RunContext(_ context.Context, problem opt.Problem, options opt.RunOptions) (opt.Result, error) {
+	candidates := o.candidates
+	if candidates == 0 {
+		candidates = 4 * o.workers
+	}
+	best := append([]float64(nil), options.Initial.Params...)
+	bestCost := problem.Eval(best)
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for worker := range o.workers {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			for step := worker; step < candidates; step += o.workers {
+				candidate := append([]float64(nil), options.Initial.Params...)
+				for i := range candidate {
+					candidate[i] += float64(step+1) * 0.5 * float64(i%3-1)
+				}
+				cost := problem.Eval(candidate)
+				mu.Lock()
+				o.costs = append(o.costs, cost)
+				if cost < bestCost {
+					best, bestCost = candidate, cost
+				}
+				mu.Unlock()
+			}
+		}(worker)
+	}
+	wg.Wait()
+	return opt.Result{
+		BestParams:  best,
+		BestCost:    bestCost,
+		Iterations:  1,
+		Evaluations: candidates + 1,
+		Termination: opt.TerminationCompleted,
+	}, nil
+}
+
+// TestPolishCircleBatchPoolServesConcurrentEvaluations drives several sweeps
+// with an optimizer that really does call the objective from many goroutines.
+// Run under -race it is the check that the leased vectors and sessions are the
+// only mutable state an evaluation touches; without a pool this raced the
+// shared candidate vector, the session canvas, and the evaluation counter.
+func TestPolishCircleBatchPoolServesConcurrentEvaluations(t *testing.T) {
+	const width, height = 20, 16
+	ref := solidImage(width, height, color.NRGBA{R: 200, G: 40, B: 90, A: 255})
+	params := polishParityParams()
+	circleCount := len(params) / paramsPerCircle
+	cpu := NewCPURenderer(ref, circleCount)
+	cpu.SetThreads(1)
+	initialCost := cpu.Cost(params)
+
+	optimizer := &concurrentPolishOptimizer{workers: 4, candidates: 32}
+	sweeps := 0
+	result, err := PolishCircleBatchContext(context.Background(), cpu, optimizer, params, BatchPolishOptions{
+		ActiveSetSize: 2,
+		MaxSweeps:     3,
+		Strategy:      BatchPolishHybridOverlap,
+		OnSweep:       func(BatchPolishProgress) error { sweeps++; return nil },
+	})
+	if err != nil {
+		t.Fatalf("PolishCircleBatchContext error = %v", err)
+	}
+	if sweeps != 3 || result.Sweeps != 3 {
+		t.Fatalf("sweeps = %d/%d, want 3/3", sweeps, result.Sweeps)
+	}
+	if len(optimizer.costs) < optimizer.candidates {
+		t.Fatalf("optimizer recorded %d costs, want at least %d", len(optimizer.costs), optimizer.candidates)
+	}
+	// Polishing is transactional, so the committed cost can only improve, and it
+	// must be the cost of the committed vector evaluated on the full session.
+	if result.BestCost > initialCost {
+		t.Fatalf("best cost = %v, want no worse than the initial %v", result.BestCost, initialCost)
+	}
+	if got := cpu.Cost(result.BestParams); got != result.BestCost {
+		t.Fatalf("committed cost = %v, want the full-session cost %v", result.BestCost, got)
+	}
+	if result.Evaluations < len(optimizer.costs) {
+		t.Fatalf("evaluations = %d, want at least the %d the optimizer made", result.Evaluations, len(optimizer.costs))
+	}
+}
+
+// BenchmarkPolishCircleBatchEvaluationWidth measures one polish sweep at
+// several pool widths on one fixture. The optimizer makes the same number of
+// evaluations at every width, so the only variable is how many of them run at
+// once. Widths above GOMAXPROCS are reported for the record; they cannot
+// overlap further on the machine that runs them.
+//
+// The candidate count is deliberately large. A sweep pays for its pool up
+// front -- one baked-suffix session, and one canvas, per slot -- and pays a
+// serial active-set selection that this change does not touch, so a sweep with
+// only a few hundred candidates measures that fixed cost rather than the
+// evaluation throughput. A real sweep runs iters*popSize candidates, where the
+// fixed cost is noise.
+func BenchmarkPolishCircleBatchEvaluationWidth(b *testing.B) {
+	const width, height = 128, 128
+	const circleCount = 256
+	ref := solidImage(width, height, color.NRGBA{R: 60, G: 120, B: 180, A: 255})
+	params := benchmarkPolishParams(circleCount, width, height)
+	for _, workers := range []int{1, 8, 48} {
+		b.Run("width-"+strconv.Itoa(workers), func(b *testing.B) {
+			cpu := NewCPURenderer(ref, circleCount)
+			cpu.SetThreads(1)
+			b.ReportAllocs()
+			for range b.N {
+				_, err := PolishCircleBatchContext(context.Background(), cpu,
+					&concurrentPolishOptimizer{workers: workers, candidates: 1920}, params, BatchPolishOptions{
+						ActiveSetSize: 3,
+						MaxSweeps:     1,
+						Strategy:      BatchPolishHybridOverlap,
+					})
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// improvingPolishOptimizer walks the active circles' colors toward black in
+// fixed steps, so on a black reference every candidate it proposes is a strict
+// improvement that leaves the geometry -- and therefore every circle's
+// usefulness -- intact. It is what makes a parity fixture commit sweeps
+// instead of rejecting all of them.
+type improvingPolishOptimizer struct {
+	workers int
+	costs   []float64
+}
+
+func (o *improvingPolishOptimizer) ParallelEvaluationWorkers() int {
+	return max(o.workers, 1)
+}
+
+func (o *improvingPolishOptimizer) Run(func([]float64) float64, []float64, []float64, int) ([]float64, float64) {
+	return nil, 0
+}
+
+func (o *improvingPolishOptimizer) RunContext(_ context.Context, problem opt.Problem, options opt.RunOptions) (opt.Result, error) {
+	best := append([]float64(nil), options.Initial.Params...)
+	bestCost := problem.Eval(best)
+	o.costs = append(o.costs, bestCost)
+	for step := 1; step <= 3; step++ {
+		candidate := append([]float64(nil), options.Initial.Params...)
+		for circle := range len(candidate) / paramsPerCircle {
+			for channel := 3; channel < 6; channel++ {
+				candidate[circle*paramsPerCircle+channel] *= 1 - 0.25*float64(step)
+			}
+		}
+		cost := problem.Eval(candidate)
+		o.costs = append(o.costs, cost)
+		if cost < bestCost {
+			best, bestCost = candidate, cost
+		}
+	}
+	return opt.Result{
+		BestParams:  best,
+		BestCost:    bestCost,
+		Iterations:  1,
+		Evaluations: len(o.costs),
+		Termination: opt.TerminationCompleted,
+	}, nil
+}
+
+// polishAcceptingParams is a fixture whose sweeps really commit: three
+// separated circles that are each individually useful against a black
+// reference, so the whole-vector usefulness gate does not veto an improvement
+// the way it does for polishParityParams.
+func polishAcceptingParams() []float64 {
+	params := circleParams(2, 3, 2, color.NRGBA{R: 160, G: 160, B: 160, A: 255}, 0.9)
+	params = append(params, circleParams(6, 3, 2, color.NRGBA{R: 120, G: 120, B: 120, A: 255}, 0.8)...)
+	params = append(params, circleParams(10, 3, 2, color.NRGBA{R: 90, G: 90, B: 90, A: 255}, 0.7)...)
+	return params
 }

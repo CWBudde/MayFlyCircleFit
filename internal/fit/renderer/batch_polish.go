@@ -114,18 +114,29 @@ func PolishCircleBatchContext(
 	if optimizer == nil {
 		return nil, fmt.Errorf("%w: optimizer is nil", ErrInvalidOptimizationInput)
 	}
-	// Polishing's sweep evaluator is deliberately not re-entrant: it merges each
-	// candidate into one shared parameter vector and evaluates it on one shared
-	// session, which is what makes a sweep transactional. Driving it from an
-	// optimizer configured for parallel evaluation would race the vector, the
-	// session canvas, and the evaluation counter, and every one of those failures
-	// is silent -- a plausible wrong cost and a wrong image, with no error. Refuse
-	// the run instead. Unlike the staged pipelines, polishing has no session pool
-	// to lease from; giving it one is a feature, not a fix.
-	if workers := opt.ParallelEvaluationWidth(optimizer); workers > 1 {
-		return nil, fmt.Errorf(
-			"%w: polishing requires a serial optimizer, got one configured for %d concurrent evaluations",
-			ErrInvalidOptimizationInput, workers)
+	// Polishing's sweep evaluator is re-entrant only through a session pool: each
+	// evaluation leases a slot carrying its own scratch parameter vector and its
+	// own session, so no two candidates merge into the same vector or composite
+	// into the same canvas. A pool needs a backend that can hand out independent
+	// sessions. Without one there is nothing to lease, and driving the shared
+	// evaluator from a parallel optimizer would race the vector, the canvas, and
+	// the evaluation counter -- silently, as a plausible wrong cost and a wrong
+	// image, with no error. Refuse that combination rather than run it.
+	//
+	// Handing out sessions is necessary but not sufficient: OpenCL can create
+	// sessions too, yet each one carries its own device state and the backend
+	// has never been validated with several of them evaluating at once. So the
+	// backend must also advertise concurrent evaluation by implementing
+	// parallelEvaluationRenderer, which is exactly the marker OpenCL withholds.
+	optimizerWorkers := opt.ParallelEvaluationWidth(optimizer)
+	if optimizerWorkers > 1 {
+		_, poolable := base.(rendererSessionFactory)
+		_, concurrent := base.(parallelEvaluationRenderer)
+		if !poolable || !concurrent {
+			return nil, fmt.Errorf(
+				"%w: polishing cannot pool concurrent sessions for %T, so it requires a serial optimizer, got one configured for %d concurrent evaluations",
+				ErrInvalidOptimizationInput, base, optimizerWorkers)
+		}
 	}
 	if len(initialParams) == 0 || len(initialParams)%paramsPerCircle != 0 {
 		return nil, fmt.Errorf("%w: polishing parameters must contain complete circles", ErrInvalidOptimizationInput)
@@ -173,16 +184,20 @@ func PolishCircleBatchContext(
 
 	visitedRegions := make(map[int]bool)
 	visitCounts := make(map[int]int, circleCount)
-	// Each sweep may open one baked-prefix session. Draining the cleanups once at
-	// return keeps the loop's error paths from leaking one; the count is bounded
-	// by MaxSweeps and only the current sweep's session stays reachable.
+	// Each sweep opens its own baked-prefix sessions and its own evaluation pool.
+	// Draining the previous sweep's cleanups at the top of the next one, and
+	// whatever is left on return, runs every cleanup exactly once and keeps no
+	// more than one sweep's sessions alive, however the loop exits.
 	var sweepCleanups []func()
-	defer func() {
+	releaseSweep := func() {
 		for _, sweepCleanup := range sweepCleanups {
 			sweepCleanup()
 		}
-	}()
+		sweepCleanups = nil
+	}
+	defer releaseSweep()
 	for sweep := 1; sweep <= options.MaxSweeps; sweep++ {
+		releaseSweep()
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -216,19 +231,68 @@ func PolishCircleBatchContext(
 		// again for every candidate. The suffix still carries the inactive circles
 		// that are drawn after an active one, which preserves draw order exactly.
 		prefixCircles := slices.Min(activeCircles)
-		costOf := fullSession.Cost
-		if suffixSession, suffixCleanup, ok := bakedSuffixSession(base, bestParams, prefixCircles, circleCount); ok {
-			sweepCleanups = append(sweepCleanups, suffixCleanup)
-			suffixOffset := prefixCircles * paramsPerCircle
-			costOf = func(full []float64) float64 {
-				return suffixSession.Cost(full[suffixOffset:])
+		// Every pooled slot needs a session of its own, because a canvas shared by
+		// the pool would serialize every candidate behind it and defeat the point.
+		// The prefix canvas itself is identical for all of them, though, so it is
+		// rasterized once per sweep and every slot session starts from a copy of
+		// it: baking per slot would redraw the same fixed prefix once per worker,
+		// which for contiguous-window is nearly the whole vector. The bake depends
+		// on prefixCircles, which the selector changes every sweep, so the slots
+		// are rebuilt per sweep rather than reused.
+		suffixOffset := 0
+		primarySession := fullSession
+		newSlotSession := func() (Renderer, func(), error) {
+			return newStagedSession(base, circleCount)
+		}
+		if baked, ok := bakePrefixCanvas(base, bestParams, prefixCircles, circleCount); ok {
+			suffixOffset = prefixCircles * paramsPerCircle
+			suffixCircles := circleCount - prefixCircles
+			newSlotSession = func() (Renderer, func(), error) {
+				session, cleanup, created := sessionOverBakedCanvas(base, baked, suffixCircles)
+				if !created {
+					return nil, nil, ErrStagedOptimizationUnsupported
+				}
+				return session, cleanup, nil
+			}
+			// A pool wider than one slot leases only sessions it created itself and
+			// never evaluates the primary, so opening a baked primary alongside them
+			// would pay for a session and a canvas nothing reads. Width one does
+			// lease the primary, so that path still gets one.
+			//
+			// The wide path therefore leaves primarySession on the full vector,
+			// which does not match suffixOffset. That is only reachable if the pool
+			// fails to create a single slot, and the width check below refuses the
+			// run before any evaluation.
+			if optimizerWorkers < 2 {
+				session, cleanup, err := newSlotSession()
+				if err != nil {
+					return nil, err
+				}
+				sweepCleanups = append(sweepCleanups, cleanup)
+				primarySession = session
 			}
 		}
+		// A single-slot pool leases the sweep's own session and its own
+		// candidateFull, so width one stays exactly the historical serial path.
+		pool := newEvaluationPool(primarySession, candidateFull, optimizerWorkers, newSlotSession)
+		sweepCleanups = append(sweepCleanups, pool.close)
+		// newEvaluationPool degrades to one slot when a session cannot be created,
+		// which is only a throughput loss for the staged pipelines but a silent
+		// race here: the optimizer would still call the evaluator from
+		// optimizerWorkers goroutines. Keep that failure loud.
+		if pool.width() < optimizerWorkers {
+			return nil, fmt.Errorf(
+				"%w: polishing leased %d evaluation sessions for an optimizer configured for %d concurrent evaluations",
+				ErrInvalidOptimizationInput, pool.width(), optimizerWorkers)
+		}
+		// Evaluations run concurrently once the optimizer is configured for it, so
+		// each one merges into its own leased vector and its own leased session.
 		evaluate := func(activeParams []float64) float64 {
-			evaluations++
+			slot := pool.acquire()
+			defer pool.release(slot)
 			bounds.ClampIndependentVector(activeParams)
-			mergeActiveCircleParams(candidateFull, activeCircles, activeParams)
-			return costOf(candidateFull)
+			mergeActiveCircleParams(slot.combined, activeCircles, activeParams)
+			return slot.session.Cost(slot.combined[suffixOffset:])
 		}
 		incumbentParams := extractActiveCircleParams(bestParams, activeCircles)
 		initial := opt.Candidate{Params: incumbentParams, Cost: bestCost}
@@ -265,7 +329,10 @@ func PolishCircleBatchContext(
 		}
 
 		iterationOffset := result.Iterations
-		evaluationOffset := evaluations
+		// The pool owns every sweep evaluation, including the seeds already
+		// evaluated above, so its count is what the offsets and the running total
+		// are made of. Counting inside the evaluator instead would race.
+		evaluationOffset := evaluations + pool.count()
 		observer := options.Observer
 		runOptions := opt.RunOptions{
 			Initial:         &initial,
@@ -319,6 +386,7 @@ func PolishCircleBatchContext(
 			options.ActiveSetSize*paramsPerCircle,
 			runOptions,
 		)
+		evaluations += pool.count()
 		if err != nil {
 			return nil, err
 		}

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -285,6 +286,88 @@ func TestRunJobExecutesConfiguredBatchPolishing(t *testing.T) {
 	if completed.Iterations <= job.Config.Iters {
 		t.Fatalf("iterations = %d, want work from initial stage plus polishing", completed.Iterations)
 	}
+}
+
+// TestRunJobPolishesAtTheConfiguredEvaluationWidth covers the path that used to
+// be impossible: a job configured for parallel evaluation now polishes at the
+// same width as its main optimizer instead of dropping to a serial polisher.
+// Polishing refuses a concurrent optimizer it cannot pool sessions for, so this
+// also proves the server hands it a renderer that can.
+func TestRunJobPolishesAtTheConfiguredEvaluationWidth(t *testing.T) {
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("needs at least two processors to enable parallel evaluation")
+	}
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.png")
+	createTestImage(t, imgPath)
+	logs := captureLogs(t)
+	jm := NewJobManager()
+	job := jm.CreateJob(app.DefaultProject, JobConfig{
+		RefPath:                  imgPath,
+		Mode:                     app.ModeBatch,
+		Backend:                  app.BackendCPU,
+		Variant:                  app.VariantStandard,
+		Circles:                  2,
+		BatchSize:                1,
+		Iters:                    2,
+		OptimizerEpochs:          1,
+		PopSize:                  20,
+		Threads:                  1,
+		ParallelEvaluation:       true,
+		EvaluationWorkers:        4,
+		Seed:                     42,
+		EffectiveSeed:            42,
+		PolishingEnabled:         true,
+		PolishingActiveSetSize:   1,
+		PolishingMaxSweeps:       2,
+		PolishingEpochs:          1,
+		PolishingIters:           2,
+		PolishingStagnationIters: 1,
+		PolishingMinImprovement:  0.001,
+		DisableConvergence:       true,
+	})
+
+	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
+		t.Fatalf("parallel polishing job failed: %v", err)
+	}
+	completed, ok := jm.GetJob(job.ID)
+	if !ok {
+		t.Fatal("completed job not found")
+	}
+	if completed.State != StateCompleted || len(completed.BestParams) != 14 {
+		t.Fatalf("completed polished job = state %s params %d, error %q",
+			completed.State, len(completed.BestParams), completed.Error)
+	}
+	// Completion alone proves nothing: the serial polisher completed this job
+	// too. What has to hold is the width polishing actually ran at, which the
+	// completion record reports.
+	width := polishingWidthFromLogs(t, logs.String())
+	if width < 2 {
+		t.Fatalf("polishing evaluation width = %d, want more than one worker", width)
+	}
+}
+
+// polishingWidthFromLogs reads the evaluation width off the record polishing
+// writes when it finishes. It is the only place the width polishing really used
+// is observable from outside, since the polisher is built inside runJob.
+func polishingWidthFromLogs(t *testing.T, logs string) int {
+	t.Helper()
+	for line := range strings.SplitSeq(logs, "\n") {
+		if !strings.Contains(line, "Batch polishing complete") {
+			continue
+		}
+		_, rest, ok := strings.Cut(line, "evaluation_workers=")
+		if !ok {
+			t.Fatalf("polishing completion record has no evaluation_workers: %s", line)
+		}
+		workers, err := strconv.Atoi(strings.Fields(rest)[0])
+		if err != nil {
+			t.Fatalf("evaluation_workers is not a number in %q: %v", line, err)
+		}
+		return workers
+	}
+	t.Fatalf("no polishing completion record in logs: %s", logs)
+	return 0
 }
 
 func TestRunJobPolishingOnlyContinuesCompleteBatch(t *testing.T) {
