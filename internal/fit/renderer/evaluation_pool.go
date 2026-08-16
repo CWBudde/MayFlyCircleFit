@@ -120,3 +120,55 @@ func (p *evaluationPool) close() {
 	}
 	p.cleanups = nil
 }
+
+// ConcurrentEvaluator exposes the pipeline's re-entrant cost evaluation to
+// callers that drive an optimizer themselves instead of going through
+// OptimizeJoint. A renderer's Cost writes its own reusable canvas and dirty
+// span set, so calling it from several goroutines corrupts results silently.
+// The evaluator leases one independent session per in-flight evaluation, which
+// is exactly what OptimizeJointContext does.
+//
+// It is required wherever an optimizer is configured with
+// opt.WithParallelEvaluation. With a renderer that reports fewer than two
+// evaluation workers, or a backend that cannot create sessions, the evaluator
+// wraps the caller's renderer in a single slot: correct, and identical to the
+// historical serial path.
+type ConcurrentEvaluator struct {
+	pool *evaluationPool
+}
+
+// NewConcurrentEvaluator builds an evaluator over base sized by base's
+// configured evaluation width. Close must be called when the run finishes.
+func NewConcurrentEvaluator(base Renderer, circleCount int) *ConcurrentEvaluator {
+	pool := newEvaluationPool(base, nil, evaluationWorkers(base), func() (Renderer, func(), error) {
+		factory, ok := base.(rendererSessionFactory)
+		if !ok {
+			return nil, nil, ErrStagedOptimizationUnsupported
+		}
+		return factory.newSession(circleCount)
+	})
+	return &ConcurrentEvaluator{pool: pool}
+}
+
+// Cost evaluates params on a leased session. It is safe for concurrent use.
+func (e *ConcurrentEvaluator) Cost(params []float64) float64 {
+	slot := e.pool.acquire()
+	defer e.pool.release(slot)
+	return slot.session.Cost(params)
+}
+
+// Width reports how many evaluations run concurrently before callers queue.
+func (e *ConcurrentEvaluator) Width() int {
+	return e.pool.width()
+}
+
+// Evaluations reports how many evaluations the evaluator has served.
+func (e *ConcurrentEvaluator) Evaluations() int {
+	return e.pool.count()
+}
+
+// Close releases the sessions the evaluator created. It must not run while an
+// evaluation is in flight.
+func (e *ConcurrentEvaluator) Close() {
+	e.pool.close()
+}

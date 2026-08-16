@@ -82,7 +82,12 @@ behavior is production-ready.
   off by default. The pipeline then leases one independent renderer session per
   concurrent evaluation, each with its own canvas and its own single rendering
   thread, so `CPURenderer.Render` never composites into a shared canvas. The
-  default still evaluates serially over one session.
+  default still evaluates serially over one session. `resume` takes the same
+  leased-session path through `renderer.NewConcurrentEvaluator`.
+- The evaluation width is clamped to `GOMAXPROCS`, matching the documented
+  `--threads` contract. Each worker above one holds an extra full-size canvas
+  and background copy, so an unclamped request would be an out-of-memory
+  hazard rather than extra throughput.
 - Parallel evaluation is reproducible but not equivalent to a serial run of the
   same seed. Evaluation order does not leak into the result: MayFly advances its
   RNG only from serial phase code and breaks ties in a parallel batch by

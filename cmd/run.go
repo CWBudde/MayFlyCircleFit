@@ -109,11 +109,23 @@ func init() {
 // parallelEvaluationOption maps the opt-in configuration field onto the
 // optimizer option. A configuration that leaves it false yields a no-op option,
 // so the optimizer stays configured exactly as it was before the field existed.
-func parallelEvaluationOption(config app.JobConfig) opt.MayflyOption {
-	if !config.ParallelEvaluation || config.Threads < 2 {
+//
+// The worker count comes from the renderer rather than from config.Threads,
+// because the renderer clamps the request to GOMAXPROCS. Handing MayFly the
+// raw value would start more evaluation goroutines than the renderer has
+// sessions for, so every surplus goroutine would only queue on the pool.
+func parallelEvaluationOption(config app.JobConfig, rend renderer.Renderer) opt.MayflyOption {
+	if !config.ParallelEvaluation {
 		return func(*opt.MayflyAdapter) {}
 	}
-	return opt.WithParallelEvaluation(config.Threads)
+	workers := config.Threads
+	if configured, ok := rend.(interface{ ParallelEvaluationWorkers() int }); ok {
+		workers = configured.ParallelEvaluationWorkers()
+	}
+	if workers < 2 {
+		return func(*opt.MayflyAdapter) {}
+	}
+	return opt.WithParallelEvaluation(workers)
 }
 
 // earlyStopFromConfig maps the optimizer-level stopping fields onto the adapter
@@ -272,7 +284,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	// Create optimizer
 	optimizer, err := opt.NewMayflyVariant(string(config.Variant), config.Iters, config.PopSize, config.EffectiveSeed,
 		opt.WithLogger(slog.Default()), opt.WithEarlyStop(earlyStopFromConfig(config)),
-		parallelEvaluationOption(config))
+		parallelEvaluationOption(config, rend))
 	if err != nil {
 		return fmt.Errorf("create optimizer: %w", err)
 	}

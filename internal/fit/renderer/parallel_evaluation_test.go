@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"math/rand"
+	"runtime"
 	"slices"
 	"sync"
 	"testing"
@@ -196,5 +197,38 @@ func TestPooledSessionsRenderSingleThreaded(t *testing.T) {
 	}
 	if base.Threads() != 4 {
 		t.Fatalf("base renderer threads = %d, want the caller's 4", base.Threads())
+	}
+}
+
+// TestParallelEvaluationWorkersCapped guards the memory bound. Each evaluation
+// worker above one costs a full extra session with its own canvas and
+// background copy, roughly 2*W*H*4 bytes. Configuration only rejects
+// Threads < 1, so --threads 10000 is a valid request that reaches this setter
+// from the CLI and from the server job API alike; at 1920x1080 an unclamped
+// pool would try to allocate on the order of 166 GB.
+func TestParallelEvaluationWorkersCapped(t *testing.T) {
+	base := NewCPURenderer(gradientReference(16, 12), 2)
+	base.SetParallelEvaluationWorkers(10000)
+	maxWorkers := runtime.GOMAXPROCS(0)
+	if got := base.ParallelEvaluationWorkers(); got > maxWorkers {
+		t.Fatalf("ParallelEvaluationWorkers() = %d, want at most GOMAXPROCS %d", got, maxWorkers)
+	}
+	if got := base.ParallelEvaluationWorkers(); got != maxWorkers {
+		t.Fatalf("ParallelEvaluationWorkers() = %d, want the GOMAXPROCS cap %d", got, maxWorkers)
+	}
+}
+
+// TestParallelEvaluationWorkersIgnoresImageHeight documents why the cap does
+// not reuse effectiveThreadCount: that helper also clamps to the image height,
+// which is right for row sharding and wrong for evaluation width, because
+// concurrent evaluations are whole independent renders.
+func TestParallelEvaluationWorkersIgnoresImageHeight(t *testing.T) {
+	if runtime.GOMAXPROCS(0) < 3 {
+		t.Skip("needs at least three processors to distinguish the caps")
+	}
+	base := NewCPURenderer(gradientReference(8, 2), 2)
+	base.SetParallelEvaluationWorkers(3)
+	if got := base.ParallelEvaluationWorkers(); got != 3 {
+		t.Fatalf("ParallelEvaluationWorkers() = %d, want 3 despite the two-row image", got)
 	}
 }

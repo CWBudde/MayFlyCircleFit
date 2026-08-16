@@ -215,7 +215,7 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	}
 	optimizer, err := opt.NewMayflyVariant(string(checkpoint.Config.Variant), checkpoint.Config.Iters, checkpoint.Config.PopSize, seed,
 		opt.WithLogger(slog.Default()), opt.WithEarlyStop(earlyStopFromConfig(checkpoint.Config)),
-		parallelEvaluationOption(checkpoint.Config))
+		parallelEvaluationOption(checkpoint.Config, rend))
 	if err != nil {
 		return fmt.Errorf("create optimizer: %w", err)
 	}
@@ -233,28 +233,12 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 
 	switch checkpoint.Config.Mode {
 	case "joint":
-		lower, upper := rend.Bounds()
-		imageBounds := ref.Bounds()
-		parameterBounds := fit.NewBounds(checkpoint.Config.Circles, imageBounds.Dx(), imageBounds.Dy())
+		joint := newResumeJointProblem(rend, checkpoint.Config.Circles)
+		defer joint.close()
 		resumeParams := append([]float64(nil), checkpoint.BestParams...)
-		parameterBounds.ClampVector(resumeParams)
+		joint.bounds.ClampVector(resumeParams)
 		resumeCost := rend.Cost(resumeParams)
-		evaluate := func(params []float64) float64 {
-			parameterBounds.ClampIndependentVector(params)
-			return rend.Cost(params)
-		}
-		constraints := make([]opt.InequalityConstraint, checkpoint.Config.Circles)
-		for circle := range checkpoint.Config.Circles {
-			circle := circle
-			constraints[circle] = func(params []float64) float64 {
-				vector := fit.ParamVector{Data: params, K: checkpoint.Config.Circles, Width: imageBounds.Dx(), Height: imageBounds.Dy()}
-				return parameterBounds.RadiusViolation(vector.DecodeCircle(circle))
-			}
-		}
-		optimization, err = lifecycle.RunContext(ctx, opt.Problem{
-			Eval: evaluate, Repair: parameterBounds.ClampIndependentVector, Inequalities: constraints,
-			Lower: lower, Upper: upper, Dim: rend.Dim(),
-		}, opt.RunOptions{
+		optimization, err = lifecycle.RunContext(ctx, joint.problem, opt.RunOptions{
 			Initial:     &opt.Candidate{Params: resumeParams, Cost: resumeCost},
 			ResumeCount: checkpoint.ResumeCount + 1,
 		})
@@ -327,6 +311,57 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	}
 
 	return nil
+}
+
+// resumeJointProblem carries the optimizer problem a joint resume runs, the
+// parameter bounds the caller needs for the seeded candidate, and the release
+// hook for the evaluator's pooled sessions.
+type resumeJointProblem struct {
+	problem opt.Problem
+	bounds  *fit.Bounds
+	close   func()
+}
+
+// newResumeJointProblem builds the joint-resume optimizer problem.
+//
+// Every evaluation is leased from a renderer.ConcurrentEvaluator rather than
+// calling rend.Cost directly. Resume drives opt.LifecycleOptimizer.RunContext
+// itself instead of going through renderer.OptimizeJointContext, so it must
+// reproduce the pipeline's re-entrancy guarantee: with parallel evaluation
+// enabled MayFly calls Eval from a pool of goroutines, and a renderer's Cost
+// writes its own reusable canvas and dirty span set. Sharing one renderer
+// across those goroutines corrupts costs and the final image without ever
+// failing. With parallel evaluation off the evaluator wraps rend in a single
+// slot, which is exactly the previous serial behavior.
+func newResumeJointProblem(rend renderer.Renderer, circles int) resumeJointProblem {
+	imageBounds := rend.Reference().Bounds()
+	parameterBounds := fit.NewBounds(circles, imageBounds.Dx(), imageBounds.Dy())
+	evaluator := renderer.NewConcurrentEvaluator(rend, circles)
+
+	constraints := make([]opt.InequalityConstraint, circles)
+	for circle := range circles {
+		constraints[circle] = func(params []float64) float64 {
+			vector := fit.ParamVector{Data: params, K: circles, Width: imageBounds.Dx(), Height: imageBounds.Dy()}
+			return parameterBounds.RadiusViolation(vector.DecodeCircle(circle))
+		}
+	}
+
+	lower, upper := rend.Bounds()
+	return resumeJointProblem{
+		problem: opt.Problem{
+			Eval: func(params []float64) float64 {
+				parameterBounds.ClampIndependentVector(params)
+				return evaluator.Cost(params)
+			},
+			Repair:       parameterBounds.ClampIndependentVector,
+			Inequalities: constraints,
+			Lower:        lower,
+			Upper:        upper,
+			Dim:          rend.Dim(),
+		},
+		bounds: parameterBounds,
+		close:  evaluator.Close,
+	}
 }
 
 // Helper to save image

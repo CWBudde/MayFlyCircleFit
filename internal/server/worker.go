@@ -148,7 +148,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	}
 	optimizer, err := opt.NewMayflyVariant(string(job.Config.Variant), job.Config.Iters, job.Config.PopSize, seed,
 		opt.WithLogger(slog.Default()), opt.WithEarlyStop(buildEarlyStop(job.Config)),
-		parallelEvaluationOption(job.Config))
+		parallelEvaluationOption(job.Config, rend))
 	if err != nil {
 		markJobFailed(jm, jobID, err)
 		return err
@@ -597,11 +597,23 @@ func polishBatchResult(
 // parallelEvaluationOption maps the opt-in configuration field onto the
 // optimizer option. A configuration that leaves it false yields a no-op option,
 // so the optimizer stays configured exactly as it was before the field existed.
-func parallelEvaluationOption(config store.JobConfig) opt.MayflyOption {
-	if !config.ParallelEvaluation || config.Threads < 2 {
+//
+// The worker count comes from the renderer rather than from config.Threads,
+// because the renderer clamps the request to GOMAXPROCS. Handing MayFly the
+// raw value would start more evaluation goroutines than the renderer has
+// sessions for, so every surplus goroutine would only queue on the pool.
+func parallelEvaluationOption(config store.JobConfig, rend renderer.Renderer) opt.MayflyOption {
+	if !config.ParallelEvaluation {
 		return func(*opt.MayflyAdapter) {}
 	}
-	return opt.WithParallelEvaluation(config.Threads)
+	workers := config.Threads
+	if configured, ok := rend.(interface{ ParallelEvaluationWorkers() int }); ok {
+		workers = configured.ParallelEvaluationWorkers()
+	}
+	if workers < 2 {
+		return func(*opt.MayflyAdapter) {}
+	}
+	return opt.WithParallelEvaluation(workers)
 }
 
 func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (renderer.Renderer, func(), error) {
