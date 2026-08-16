@@ -13,7 +13,7 @@ import (
 
 func TestDeltaSSDSpanMatchesScalar(t *testing.T) {
 	rng := rand.New(rand.NewSource(10_016))
-	for _, pixels := range []int{0, 1, 2, 3, 4, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255, 256, 257} {
+	for _, pixels := range []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255, 256, 257} {
 		t.Run(fmt.Sprintf("%d", pixels), func(t *testing.T) {
 			candidate := make([]byte, pixels*4)
 			base := make([]byte, pixels*4)
