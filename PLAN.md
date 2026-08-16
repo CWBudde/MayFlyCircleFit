@@ -648,7 +648,7 @@ which optimizes only circle coverage geometry.
 - Zero steady-state allocations and safe scalar behavior on platforms without
   AVX2 or NEON
 
-### Task 10.17: SSE2 SIMD Tier for AMD64 Hosts Without AVX2 ✅ COMPLETE
+### Task 10.17: SSE2 SIMD Tier for AMD64 Hosts Without AVX2 🚧 IN PROGRESS
 **Rationale:** AMD64 dispatch was AVX2 or scalar, so a CPU without AVX2 lost the
 entire Phase 10 speedup rather than part of it. A profile of that configuration
 attributes about 80% of flat samples to three symbols — `fit.ssdScalar` 29.96%,
@@ -671,9 +671,9 @@ attributes about 80% of flat samples to three symbols — `fit.ssdScalar` 29.96%
 - [x] Implement an SSE2 delta-SSD kernel for discontiguous dirty spans and gate
   `stagedIncremental` on `deltaSSDVectorized()` instead of AVX2 alone
 - [x] Implement a bit-identical SSE2 float32 circle-span edge search
-- [x] Add an opt-in float32 SIMD span compositor with SSE2 and AVX2 kernels
+- [ ] Add an opt-in float32 SIMD span compositor with SSE2 and AVX2 kernels
   behind `--fast-compositing`
-- [x] Add opt-in concurrent population evaluation over a pool of independent
+- [ ] Add opt-in concurrent population evaluation over a pool of independent
   renderer sessions behind `--parallel-evaluation`
 - [x] Do not port SAD: `FastSAD` has no non-test callers and its AVX2 kernel
   needs `VPMADDUBSW` (SSSE3) and `VPMULLD` (SSE4.1)
@@ -691,8 +691,7 @@ attributes about 80% of flat samples to three symbols — `fit.ssdScalar` 29.96%
 
 **Measured results:** SSE2 SSD is 6.35×/6.48×/6.28×/6.08× scalar at 64² through
 512² and 4.66× at 1024², with zero allocations. Delta-SSD gains 1.67× to 3.65×
-over 4-256 px spans. The float32 compositor gains 3.3-4.3× (SSE2) and 3.9-6.8×
-(AVX2) over the exact float64 span. End to end in the no-AVX2 configuration,
+over 4-256 px spans. End to end in the no-AVX2 configuration,
 `FastMSE` cost improved 5.6× at 512² and 6.6× at 256², and the sequential, batch,
 and joint pipelines improved 1.52×, 1.33×, and 1.21×. On a real no-AVX2 target
 an identical 32-circle batch at seed 4242 fell from 300.81 s to 150.52 s (2.0×)

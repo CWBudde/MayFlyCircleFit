@@ -24,9 +24,9 @@ existed, so that setting still produced scalar dispatch:
 | `fit.MSECost` | 24.63% |
 | `renderer.fixedCircleQ16.span` | 2.80% |
 
-Three symbols hold about 80% of the profile, and the circle-span geometry that
+Three symbols hold about 80% of the profile, and the Q16.16 span geometry that
 dominates the AVX2-era profile holds almost none of it. The work was therefore
-scoped to SSD, delta-SSD, and span compositing.
+scoped to SSD, delta-SSD, and circle-span geometry.
 
 ## Kernels
 
@@ -50,9 +50,6 @@ four-lane vector compare (a second only when all four candidates are inside) to
 locate the edge, replacing up to seven dependent scalar iterations. Both edges
 stay bit-identical to `circleSpanFloat32`.
 
-`composite_span_fast_amd64.s` adds the opt-in float32 span compositor described
-below, with both an SSE2 four-lane and an AVX2 eight-lane kernel.
-
 ## Microbenchmarks
 
 SSD, SSE2 against the scalar oracle, 0 B/op and 0 allocs/op throughout:
@@ -74,17 +71,6 @@ Delta-SSD over dirty spans:
 | 64 px | 193.1 ns | 60.10 ns | 3.21× |
 | 128 px | 401.5 ns | 110.1 ns | 3.65× |
 | 256 px | 727.1 ns | 212.8 ns | 3.42× |
-
-float32 span compositor against the exact float64 span:
-
-| Span | float64 | SSE2 | AVX2 |
-| --- | ---: | ---: | ---: |
-| 64 px | 213 / 195 ns | 66 ns (3.3×) | 50 ns (3.9×) |
-| 256 px | 733 / 700 ns | 184 ns (4.0×) | 114 ns (6.1×) |
-| 1024 px | 3086 / 3200 ns | 717 ns (4.3×) | 470 ns (6.8×) |
-
-The two float64 columns are the separate baseline runs of the SSE2 and AVX2
-comparisons on the same machine.
 
 ## End to end
 
@@ -127,15 +113,8 @@ scalar and float32 oracles bit for bit, including at batch boundaries, padded
 strides, and alpha-only differences, and they are enabled unconditionally on
 capable hardware.
 
-Two additions are not exact and are therefore opt-in and off by default:
-
-- `--fast-compositing` regroups the opaque span blend into one float32
-  multiply-add per pixel, which is accurate to +/-1 per channel rather than
-  byte-identical to the default float64 span.
-- `--parallel-evaluation` reproduces bit-identically for a fixed seed and does
-  not depend on the worker count, but its trajectory differs from a serial run
-  of the same seed, because MayFly holds the global best fixed across a parallel
-  generation instead of updating it mid-generation.
+Every kernel in this revision is exact, so there is no opt-in flag to reason
+about; see the planned follow-up below for the two inexact additions.
 
 ## Forcing a backend
 
@@ -157,3 +136,33 @@ a failure in each of them.
 
 Numbers here are local measurements on the stated hardware, not portable
 guarantees, and they do not certify a CI result for any particular revision.
+
+## Planned follow-up (not in this revision)
+
+The measurements below were taken on a prototype and are recorded here so the
+follow-up branch can reclaim them. Neither the kernel file nor the flags exist
+in this revision.
+
+`composite_span_fast_amd64.s` would add an opt-in float32 span compositor with
+both an SSE2 four-lane and an AVX2 eight-lane kernel, against the exact float64
+span:
+
+| Span | float64 | SSE2 | AVX2 |
+| --- | ---: | ---: | ---: |
+| 64 px | 213 / 195 ns | 66 ns (3.3×) | 50 ns (3.9×) |
+| 256 px | 733 / 700 ns | 184 ns (4.0×) | 114 ns (6.1×) |
+| 1024 px | 3086 / 3200 ns | 717 ns (4.3×) | 470 ns (6.8×) |
+
+The two float64 columns are the separate baseline runs of the SSE2 and AVX2
+comparisons on the same machine.
+
+Both follow-up additions are inexact or non-serial and would therefore be
+opt-in and off by default:
+
+- `--fast-compositing` regroups the opaque span blend into one float32
+  multiply-add per pixel, which is accurate to +/-1 per channel rather than
+  byte-identical to the default float64 span.
+- `--parallel-evaluation` reproduces bit-identically for a fixed seed and does
+  not depend on the worker count, but its trajectory differs from a serial run
+  of the same seed, because MayFly holds the global best fixed across a parallel
+  generation instead of updating it mid-generation.

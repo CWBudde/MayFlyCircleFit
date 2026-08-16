@@ -26,8 +26,9 @@ func init() {
 		deltaSSDBackend = "avx2"
 		deltaSSDAVX2Enabled = true
 	case cpu.X86.HasSSE2:
-		// SSE2 is architecturally guaranteed on amd64; the feature check keeps
-		// dispatch uniform and honours GODEBUG=cpu.sse2=off style overrides.
+		// SSE2 is architecturally guaranteed on amd64 and x/sys/cpu marks it
+		// Required, so this check cannot be masked by GODEBUG; it only keeps
+		// dispatch uniform. MAYFLY_DISABLE_SIMD=1 is the scalar opt-out.
 		deltaSSDBackend = "sse2"
 		deltaSSDSSE2Enabled = true
 	}

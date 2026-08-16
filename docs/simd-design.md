@@ -716,8 +716,11 @@ if cpu.X86.HasFMA {
 
 **Testing fallback:**
 ```bash
-# Force scalar fallback for testing
+# Force the SSE2 tier on amd64 (not scalar: SSE2 is always available there)
 GODEBUG=cpu.avx2=off ./bin/mayflycirclefit run --ref test.png
+
+# Force the scalar kernels on every architecture
+MAYFLY_DISABLE_SIMD=1 ./bin/mayflycirclefit run --ref test.png
 ```
 
 ### NEON/ASIMD Detection on arm64
@@ -747,7 +750,9 @@ if cpu.ARM64.HasSVE {
 **When scalar is used:**
 - **Unsupported architectures:** 386 (32-bit x86), wasm, riscv64, mips64
 - **Remainder pixels:** After SIMD batch processing (e.g., 7 pixels when batch size is 8)
-- **Developer override:** `GODEBUG=cpu.avx2=off` for testing
+- **Developer override:** `MAYFLY_DISABLE_SIMD=1` forces scalar everywhere.
+  `GODEBUG=cpu.avx2=off` only demotes amd64 to the SSE2 tier, because SSE2 is a
+  required amd64 feature that GODEBUG cannot mask.
 - **Feature detection failure:** Conservative fallback if CPU detection errors
 
 **Fallback implementation:**
@@ -1151,8 +1156,11 @@ VMOVDQU Y10, (DI)         // Store 32 bytes to potentially unaligned address
    # Profile medium workload with SIMD
    ./scripts/profiling/profile-run.sh test-256x256.png 30 100 joint
 
-   # Force scalar fallback for comparison
+   # Compare against the SSE2 tier (GODEBUG cannot mask required SSE2)
    GODEBUG=cpu.avx2=off ./scripts/profiling/profile-run.sh test-256x256.png 30 100 joint
+
+   # Compare against the scalar kernels
+   MAYFLY_DISABLE_SIMD=1 ./scripts/profiling/profile-run.sh test-256x256.png 30 100 joint
    ```
 
 4. **Multi-platform testing:**
@@ -1339,7 +1347,8 @@ VMOVDQU Y10, (DI)         // Store 32 bytes to potentially unaligned address
    ```
 
 3. **Fallback validation:**
-   - Force scalar fallback: `GODEBUG=cpu.avx2=off go test`
+   - Force the SSE2 tier on amd64: `GODEBUG=cpu.avx2=off go test`
+   - Force scalar fallback: `MAYFLY_DISABLE_SIMD=1 go test`
    - Ensure all platforms pass tests (even without SIMD)
 
 **Success metrics:**
