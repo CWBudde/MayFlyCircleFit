@@ -66,6 +66,8 @@ for target in "${targets[@]}"; do
 		require_source "$sources" ssd_amd64.go
 		require_source "$sources" ssd_dispatch_amd64.go
 		require_source "$sources" ssd_amd64.s
+		require_source "$sources" ssd_sse2_amd64.go
+		require_source "$sources" ssd_sse2_amd64.s
 		reject_source "$sources" ssd_dispatch_arm64.go
 		reject_source "$sources" ssd_dispatch_generic.go
 		;;
@@ -75,6 +77,8 @@ for target in "${targets[@]}"; do
 		require_source "$sources" ssd_arm64.s
 		reject_source "$sources" ssd_dispatch_amd64.go
 		reject_source "$sources" ssd_dispatch_generic.go
+		reject_source "$sources" ssd_sse2_amd64.go
+		reject_source "$sources" ssd_sse2_amd64.s
 		;;
 	*)
 		require_source "$sources" ssd_dispatch_generic.go
@@ -82,6 +86,8 @@ for target in "${targets[@]}"; do
 		reject_source "$sources" ssd_arm64.go
 		reject_source "$sources" ssd_amd64.s
 		reject_source "$sources" ssd_arm64.s
+		reject_source "$sources" ssd_sse2_amd64.go
+		reject_source "$sources" ssd_sse2_amd64.s
 		;;
 	esac
 

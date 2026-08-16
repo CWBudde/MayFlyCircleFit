@@ -15,3 +15,9 @@ func init() {
 func fastSSD_AVX2(a, b []uint8, stride, width, height int) float64 {
 	return fastSSD_Scalar(a, b, stride, width, height)
 }
+
+// fastSSD_SSE2 remains available to architecture-neutral tests and benchmarks,
+// but never attempts to execute amd64 assembly on other architectures.
+func fastSSD_SSE2(a, b []uint8, stride, width, height int) float64 {
+	return fastSSD_Scalar(a, b, stride, width, height)
+}
