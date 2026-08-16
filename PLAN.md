@@ -686,6 +686,15 @@ attributes about 80% of flat samples to three symbols — `fit.ssdScalar` 29.96%
   `stagedIncremental` on any vectorized delta kernel
 - [x] Make `deltaSSDSpan` a real ladder, so an AVX2 host uses the SSE2 kernel
   for four-to-seven-pixel spans instead of dropping to scalar
+- [x] Add an exact float64 SSE2 span compositor, so a no-AVX2 host stops
+  compositing scalar in the largest single item of its profile. It returns less
+  than that framing implied: about 1.07x on the kernel and 1.06x end to end,
+  measured on a host that genuinely lacks AVX2
+- [ ] Add the exact float64 AVX2 span compositor, so an AVX2 host gets the same
+  treatment. It shares the SSE2 kernel's constant layout
+- [ ] Hoist the per-span constant block to once per circle. It is the whole
+  difference between the SSE2 kernel's 8-pixel crossover measured directly and
+  the 24-pixel cutoff the dispatcher has to use
 - [ ] Add an opt-in float32 SIMD span compositor with SSE2 and AVX2 kernels
   behind `--fast-compositing`
 - [ ] Add opt-in concurrent population evaluation over a pool of independent

@@ -83,11 +83,15 @@ The AMD64 steps additionally run `./internal/fit/renderer`, which asserts the
 same tier for the renderer's own kernels. The ARM64 steps do not, for the
 pre-existing reason recorded in `docs/known-limitations.md`.
 
-On ARM64, opaque CPU-renderer spans additionally have an ASIMD-gated NEON
-compositor for spans of at least 256 pixels, with an exact scalar span and
-remainder path. Shorter spans use scalar because native Apple M5 measurements
-show it is faster there. Translucent custom canvases always retain the general
-scalar Porter-Duff path. This renderer kernel is natively validated on macOS
+Opaque CPU-renderer spans additionally have an exact float64 vector compositor
+on both architectures, on by default because both are byte-identical to the
+scalar span: an ASIMD-gated eight-pixel NEON kernel on ARM64 for spans of at
+least 256 pixels, and an SSE2-gated two-pixel kernel on AMD64 for spans of at
+least 24. The cutoffs differ because the kernels have very different setup costs
+and were measured separately, on an Apple M5 and on a KVM host that genuinely
+lacks AVX2. An AVX2 host still composites scalar; that kernel is a separate
+change. Translucent custom canvases always retain the general scalar Porter-Duff
+path. This renderer kernel is natively validated on macOS
 ARM64 but is not currently a required Linux/ARM64 timing gate.
 
 ## OpenCL
