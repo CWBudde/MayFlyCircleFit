@@ -27,6 +27,7 @@ import (
 type Server struct {
 	jobManager *JobManager
 	store      store.Store
+	projects   *projectRegistry
 	addr       string
 	server     *http.Server
 	ctx        context.Context
@@ -47,9 +48,49 @@ type ServerOptions struct {
 	MaxConcurrentJobs int
 	QueueSize         int
 	InputRoots        []string
+	// DataRoot enables multi-project support. When empty the server holds a
+	// single project backed by the store passed to NewServerWithOptions, which
+	// is what keeps store-injecting callers and tests working unchanged.
+	DataRoot string
 }
 
 var ErrJobQueueFull = errors.New("job queue is full")
+
+// storeForSlug returns the store owning a project's artifacts. An empty slug
+// and the default project resolve to the store the server was built with, so a
+// server given an injected store behaves exactly as it did before projects
+// existed. Any other slug must be in the registry: a project that failed to
+// load has no store, and silently substituting another project's directory
+// would write its checkpoints into, and read them from, the wrong place.
+func (s *Server) storeForSlug(slug string) (store.Store, error) {
+	if slug == "" || slug == app.DefaultProject {
+		return s.store, nil
+	}
+	projectStore, ok := s.projects.Get(slug)
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", errUnknownProject, slug)
+	}
+	return projectStore, nil
+}
+
+// storeForJob resolves the store from the job's own project. It deliberately
+// never searches other projects: a job ID that is unknown here must resolve to
+// nothing rather than to another project's artifacts.
+func (s *Server) storeForJob(jobID string) (store.Store, error) {
+	job, ok := s.jobManager.GetJob(jobID)
+	if !ok {
+		return s.store, nil
+	}
+	return s.storeForSlug(job.Project)
+}
+
+// projectForJob returns the slug a continuation job should inherit.
+func (s *Server) projectForJob(jobID string) string {
+	if job, ok := s.jobManager.GetJob(jobID); ok && job.Project != "" {
+		return job.Project
+	}
+	return app.DefaultProject
+}
 
 // NewServer creates a new HTTP server with optional checkpoint store.
 // If store is nil, checkpointing is disabled.
@@ -79,6 +120,7 @@ func NewServerWithOptions(addr string, checkpointStore store.Store, options Serv
 		input:      policy,
 		inputErr:   policyErr,
 	}
+	server.projects = newProjectRegistry(options.DataRoot, checkpointStore)
 	server.restorePersistedJobs()
 	return server
 }
@@ -127,6 +169,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Register API routes
 	mux.HandleFunc("/api/v1/jobs", s.handleJobs)
+	mux.HandleFunc("/api/v1/projects", s.handleProjects)
 	mux.HandleFunc("/api/v1/jobs/", s.handleJobsWithID)
 
 	if s.options.EnablePprof {
@@ -202,11 +245,21 @@ func (s *Server) workerLoop() {
 			if !ok || job.State != StatePending {
 				continue
 			}
+			// A job whose project cannot be resolved must not run against
+			// another project's store, and the worker has nobody to return an
+			// error to, so it fails the job loudly instead.
+			jobStore, err := s.storeForJob(jobID)
+			if err != nil {
+				slog.Error("Refusing to run job with an unresolvable project",
+					"job_id", jobID, "project", job.Project, "error", err)
+				_ = s.jobManager.FailJob(jobID, "project store is unavailable")
+				continue
+			}
 			ctx, cancel := context.WithCancel(s.ctx)
 			s.cancelMu.Lock()
 			s.jobCancels[jobID] = cancel
 			s.cancelMu.Unlock()
-			_ = runJob(ctx, s.jobManager, s.store, jobID)
+			_ = runJob(ctx, s.jobManager, jobStore, jobID)
 			cancel()
 			s.cancelMu.Lock()
 			delete(s.jobCancels, jobID)
@@ -257,6 +310,19 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 
 	for _, job := range runningJobs {
 		go func(j *Job) {
+			// Resolve the owning store first: checkpointing into another
+			// project's directory would be worse than not checkpointing.
+			jobStore, err := s.storeForSlug(j.Project)
+			if err != nil {
+				slog.Error("Failed to resolve project store for shutdown checkpoint",
+					"job_id", j.ID,
+					"project", j.Project,
+					"error", err,
+				)
+				results <- checkpointResult{jobID: j.ID, err: err}
+				return
+			}
+
 			// Load reference image to create renderer
 			ref, err := loadReferenceImage(j.Config.RefPath)
 			if err != nil {
@@ -273,7 +339,7 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 			renderer.SetThreads(j.Config.Threads)
 
 			// Save checkpoint
-			err = saveCheckpoint(s.jobManager, s.store, renderer, j.ID)
+			err = saveCheckpoint(s.jobManager, jobStore, renderer, j.ID)
 
 			// Re-fetch job to get updated values after potential checkpoint
 			job, exists := s.jobManager.GetJob(j.ID)
@@ -393,11 +459,11 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateJob handles POST /api/v1/jobs
 func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
-	var config JobConfig
+	var request createJobRequest
 	r.Body = http.MaxBytesReader(w, r.Body, app.MaxRequestBody)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&config); err != nil {
+	if err := decoder.Decode(&request); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
 			writeAPIError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body exceeds the size limit")
@@ -410,7 +476,12 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "request body must contain one JSON object")
 		return
 	}
-	config, err := app.Normalize(config)
+	project, err := s.resolveRequestedProject(request.Project, r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_project", err.Error())
+		return
+	}
+	config, err := app.Normalize(request.JobConfig)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_config", err.Error())
 		return
@@ -436,8 +507,15 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Creating the project store before the job keeps a failed mkdir from
+	// leaving an unrunnable job behind.
+	if _, err := s.ensureProject(project); err != nil {
+		s.writeProjectError(w, project, err)
+		return
+	}
+
 	// Create job
-	job := s.jobManager.CreateJob(config)
+	job := s.jobManager.CreateJob(project, config)
 
 	if err := s.enqueueJob(job.ID); err != nil {
 		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
@@ -471,6 +549,16 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request, jobID s
 }
 
 func (s *Server) handleDeleteJob(w http.ResponseWriter, _ *http.Request, jobID string) {
+	// Resolve the owning store before the job leaves the manager: afterwards
+	// the project is unknown and the lookup could not find the real artifacts.
+	// An unresolvable project fails the request instead of half-deleting the
+	// job and stranding its checkpoint on disk.
+	jobStore, err := s.storeForJob(jobID)
+	if err != nil {
+		slog.Error("Failed to resolve project store for delete", "job_id", jobID, "error", err)
+		writeAPIError(w, http.StatusInternalServerError, "project_unavailable", "the project store is unavailable")
+		return
+	}
 	if err := s.jobManager.DeleteJob(jobID); err != nil {
 		if errors.Is(err, ErrInvalidTransition) {
 			writeAPIError(w, http.StatusConflict, "invalid_state", "active jobs must be cancelled before deletion")
@@ -480,8 +568,8 @@ func (s *Server) handleDeleteJob(w http.ResponseWriter, _ *http.Request, jobID s
 		return
 	}
 	s.jobManager.broadcaster.CleanupJob(jobID)
-	if s.store != nil {
-		if err := s.store.DeleteCheckpoint(jobID); err != nil && !errors.Is(err, store.ErrNotFound) {
+	if jobStore != nil {
+		if err := jobStore.DeleteCheckpoint(jobID); err != nil && !errors.Is(err, store.ErrNotFound) {
 			slog.Warn("Failed to delete persisted job", "job_id", jobID, "error", err)
 		}
 	}
@@ -492,8 +580,35 @@ func (s *Server) handleDeleteJob(w http.ResponseWriter, _ *http.Request, jobID s
 func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	jobs := s.jobManager.ListJobs()
 
+	// An absent or "all" filter keeps the pre-project contract of listing every
+	// job, which cmd/status.go relies on. Filtering is read-only and never
+	// creates a project.
+	if filter := strings.TrimSpace(r.URL.Query().Get("project")); filter != "" && filter != "all" {
+		if err := app.ValidateProjectSlug(filter); err != nil {
+			writeAPIError(w, http.StatusBadRequest, "invalid_project", err.Error())
+			return
+		}
+		jobs = filterJobsByProject(jobs, filter)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(jobs)
+}
+
+// filterJobsByProject keeps jobs belonging to slug, treating an empty project
+// on a job as the default project.
+func filterJobsByProject(jobs []*Job, slug string) []*Job {
+	filtered := make([]*Job, 0, len(jobs))
+	for _, job := range jobs {
+		project := job.Project
+		if project == "" {
+			project = app.DefaultProject
+		}
+		if project == slug {
+			filtered = append(filtered, job)
+		}
+	}
+	return filtered
 }
 
 type jobStatusResponse struct {
@@ -779,7 +894,13 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 	}
 
 	// Load checkpoint
-	checkpoint, err := s.store.LoadCheckpoint(jobID)
+	jobStore, err := s.storeForJob(jobID)
+	if err != nil {
+		slog.Error("Failed to resolve project store for resume", "job_id", jobID, "error", err)
+		writeAPIError(w, http.StatusInternalServerError, "project_unavailable", "the project store is unavailable")
+		return
+	}
+	checkpoint, err := jobStore.LoadCheckpoint(jobID)
 	if err != nil {
 		if _, ok := err.(*store.NotFoundError); ok {
 			http.Error(w, fmt.Sprintf("Checkpoint not found for job %s", jobID), http.StatusNotFound)
@@ -826,7 +947,7 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 	}
 	config.EffectiveSeed = checkpoint.EffectiveSeed
 	config.ResumeCount = checkpoint.ResumeCount + 1
-	newJob := s.jobManager.CreateJob(config)
+	newJob := s.jobManager.CreateJob(s.projectForJob(jobID), config)
 
 	// Initialize the new job with checkpoint data
 	s.jobManager.UpdateJob(newJob.ID, func(j *Job) {
@@ -899,7 +1020,13 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 		return
 	}
 
-	checkpoint, err := s.store.LoadCheckpoint(jobID)
+	jobStore, err := s.storeForJob(jobID)
+	if err != nil {
+		slog.Error("Failed to resolve project store for polish", "job_id", jobID, "error", err)
+		writeAPIError(w, http.StatusInternalServerError, "project_unavailable", "the project store is unavailable")
+		return
+	}
+	checkpoint, err := jobStore.LoadCheckpoint(jobID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeAPIError(w, http.StatusNotFound, "not_found", "completed checkpoint not found")
@@ -976,7 +1103,7 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint evaluation count is out of range")
 		return
 	}
-	newJob := s.jobManager.CreateJob(config)
+	newJob := s.jobManager.CreateJob(s.projectForJob(jobID), config)
 	if err := s.jobManager.UpdateJob(newJob.ID, func(job *Job) {
 		updateBestResult(job, checkpoint.BestParams, checkpoint.BestCost)
 		job.InitialCost = checkpoint.InitialCost
@@ -1049,7 +1176,13 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 		writeAPIError(w, http.StatusConflict, "invalid_state", "only completed jobs can be extended")
 		return
 	}
-	checkpoint, err := s.store.LoadCheckpoint(jobID)
+	jobStore, err := s.storeForJob(jobID)
+	if err != nil {
+		slog.Error("Failed to resolve project store for extend", "job_id", jobID, "error", err)
+		writeAPIError(w, http.StatusInternalServerError, "project_unavailable", "the project store is unavailable")
+		return
+	}
+	checkpoint, err := jobStore.LoadCheckpoint(jobID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeAPIError(w, http.StatusNotFound, "not_found", "completed checkpoint not found")
@@ -1125,7 +1258,7 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint evaluation count is out of range")
 		return
 	}
-	newJob := s.jobManager.CreateJob(config)
+	newJob := s.jobManager.CreateJob(s.projectForJob(jobID), config)
 	if err := s.jobManager.UpdateJob(newJob.ID, func(job *Job) {
 		updateBestResult(job, checkpoint.BestParams, checkpoint.BestCost)
 		job.InitialCost = checkpoint.InitialCost

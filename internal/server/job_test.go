@@ -5,11 +5,13 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 )
 
 func TestJobManagerBestRevisionAdvancesOnlyForStrictImprovements(t *testing.T) {
 	jm := NewJobManager()
-	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
+	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
 	if err := jm.StartJob(job.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +36,7 @@ func TestJobManagerBestRevisionAdvancesOnlyForStrictImprovements(t *testing.T) {
 
 func TestJobManagerCandidateProgressIsProvisional(t *testing.T) {
 	jm := NewJobManager()
-	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
+	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
 	if err := jm.StartJob(job.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +69,7 @@ func TestJobManagerCandidateProgressIsProvisional(t *testing.T) {
 
 func TestJobManagerCandidateProgressKeepsBestCandidateAndClearsAtTerminalState(t *testing.T) {
 	jm := NewJobManager()
-	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
+	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
 	if err := jm.StartJob(job.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +106,7 @@ func TestJobManager_CreateJob(t *testing.T) {
 		Seed:    42,
 	}
 
-	job := jm.CreateJob(config)
+	job := jm.CreateJob(app.DefaultProject, config)
 
 	if job.ID == "" {
 		t.Error("Job ID should not be empty")
@@ -121,7 +123,7 @@ func TestJobManager_CreateJob(t *testing.T) {
 
 func TestJobManagerLegalTransitions(t *testing.T) {
 	jm := NewJobManager()
-	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
+	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
 	if err := jm.StartJob(job.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +146,7 @@ func TestJobManagerLegalTransitions(t *testing.T) {
 
 func TestJobManagerRejectsRegressingProgress(t *testing.T) {
 	jm := NewJobManager()
-	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
+	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
 	if err := jm.StartJob(job.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +162,7 @@ func TestJobManager_GetJob(t *testing.T) {
 	jm := NewJobManager()
 
 	config := JobConfig{RefPath: "test.png", Mode: "joint"}
-	job := jm.CreateJob(config)
+	job := jm.CreateJob(app.DefaultProject, config)
 
 	retrieved, exists := jm.GetJob(job.ID)
 	if !exists {
@@ -179,7 +181,7 @@ func TestJobManager_GetJob(t *testing.T) {
 
 func TestJobManager_ReturnsDetachedSnapshots(t *testing.T) {
 	jm := NewJobManager()
-	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
+	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
 
 	params := []float64{1, 2, 3}
 	end := time.Now()
@@ -215,7 +217,7 @@ func TestJobManager_ReturnsDetachedSnapshots(t *testing.T) {
 
 func TestJobManagerRecordsCompleteDetachedMetricHistory(t *testing.T) {
 	jm := NewJobManager()
-	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
+	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
 	psnr, ssim := 30.0, 0.8
 	const sampleCount = 105
 	for i := 0; i < sampleCount; i++ {
@@ -251,8 +253,8 @@ func TestJobManager_ListJobs(t *testing.T) {
 		t.Error("Should start with no jobs")
 	}
 
-	jm.CreateJob(JobConfig{RefPath: "test1.png"})
-	jm.CreateJob(JobConfig{RefPath: "test2.png"})
+	jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test1.png"})
+	jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test2.png"})
 
 	jobs := jm.ListJobs()
 	if len(jobs) != 2 {
@@ -263,7 +265,7 @@ func TestJobManager_ListJobs(t *testing.T) {
 func TestJobManager_UpdateJob(t *testing.T) {
 	jm := NewJobManager()
 
-	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
+	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
 
 	err := jm.UpdateJob(job.ID, func(j *Job) {
 		j.State = StateRunning
@@ -295,7 +297,7 @@ func TestJobManager_UpdateJob(t *testing.T) {
 func TestJobManager_ThreadSafety(t *testing.T) {
 	jm := NewJobManager()
 
-	job := jm.CreateJob(JobConfig{RefPath: "test.png"})
+	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
 
 	// Simulate concurrent updates
 	done := make(chan bool)

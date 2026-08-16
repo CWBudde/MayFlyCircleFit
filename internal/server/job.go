@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 	"github.com/google/uuid"
 )
@@ -29,6 +30,7 @@ type JobConfig = store.JobConfig
 // Job represents an optimization job
 type Job struct {
 	ID            string         `json:"id"`
+	Project       string         `json:"project"`
 	State         JobState       `json:"state"`
 	Config        JobConfig      `json:"config"`
 	BestParams    []float64      `json:"bestParams,omitempty"`
@@ -76,13 +78,20 @@ func NewJobManager() *JobManager {
 	}
 }
 
-// CreateJob creates a new job with the given configuration
-func (jm *JobManager) CreateJob(config JobConfig) *Job {
+// CreateJob creates a new job in the given project. The project slug is the
+// in-memory mirror of where the job's artifacts live on disk; the directory
+// itself stays authoritative, so nothing about it is written into the
+// checkpoint.
+func (jm *JobManager) CreateJob(project string, config JobConfig) *Job {
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
 
+	if project == "" {
+		project = app.DefaultProject
+	}
 	job := &Job{
 		ID:        uuid.New().String(),
+		Project:   project,
 		State:     StatePending,
 		Config:    config,
 		StartTime: time.Now(),

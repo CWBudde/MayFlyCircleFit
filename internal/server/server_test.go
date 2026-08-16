@@ -74,8 +74,8 @@ func TestServer_ListJobs(t *testing.T) {
 	s := NewServer(":8080", nil)
 
 	// Create two jobs
-	s.jobManager.CreateJob(JobConfig{RefPath: imgPath})
-	s.jobManager.CreateJob(JobConfig{RefPath: imgPath})
+	s.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: imgPath})
+	s.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: imgPath})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil)
 	w := httptest.NewRecorder()
@@ -103,7 +103,7 @@ func TestServer_GetJobStatus(t *testing.T) {
 
 	s := NewServer(":8080", nil)
 
-	job := s.jobManager.CreateJob(JobConfig{RefPath: imgPath, Circles: 2})
+	job := s.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: imgPath, Circles: 2})
 
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/jobs/%s/status", job.ID), nil)
 	w := httptest.NewRecorder()
@@ -130,7 +130,7 @@ func TestServer_GetJobStatus(t *testing.T) {
 
 func TestServerJobStatusRepresentsInfinitePSNRAndOptionalSSIM(t *testing.T) {
 	server := NewServer(":8080", nil)
-	job := server.jobManager.CreateJob(JobConfig{RefPath: "test.png", EnableSSIM: true})
+	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png", EnableSSIM: true})
 	if err := server.jobManager.StartJob(job.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestServerJobStatusRepresentsInfinitePSNRAndOptionalSSIM(t *testing.T) {
 
 func TestServerJobStatusExposesProvisionalCandidateSeparately(t *testing.T) {
 	server := NewServer(":8080", nil)
-	job := server.jobManager.CreateJob(JobConfig{RefPath: "test.png"})
+	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
 	if err := server.jobManager.StartJob(job.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestServer_GetBestImage(t *testing.T) {
 
 	s := NewServer(":8080", nil)
 
-	job := s.jobManager.CreateJob(JobConfig{RefPath: imgPath, Mode: "joint", Circles: 2, Iters: 5, PopSize: 20, Seed: 42})
+	job := s.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: imgPath, Mode: "joint", Circles: 2, Iters: 5, PopSize: 20, Seed: 42})
 
 	// Run job and wait for completion
 	err := runJob(context.Background(), s.jobManager, nil, job.ID)
@@ -329,7 +329,7 @@ func TestServer_JobDetailPage(t *testing.T) {
 	s := NewServer(":8080", nil)
 
 	// Create a job
-	job := s.jobManager.CreateJob(JobConfig{
+	job := s.jobManager.CreateJob(app.DefaultProject, JobConfig{
 		RefPath: imgPath,
 		Mode:    "joint",
 		Circles: 5,
@@ -433,7 +433,7 @@ func TestServer_GetRefImage(t *testing.T) {
 	s := NewServer(":8080", nil)
 
 	// Create a job
-	job := s.jobManager.CreateJob(JobConfig{
+	job := s.jobManager.CreateJob(app.DefaultProject, JobConfig{
 		RefPath: imgPath,
 		Circles: 2,
 	})
@@ -463,7 +463,7 @@ func TestServer_GetDiffImageColormap(t *testing.T) {
 	createSimpleTestImage(t, path)
 
 	server := NewServer(":8080", nil)
-	job := server.jobManager.CreateJob(JobConfig{RefPath: path, Circles: 1, Threads: 1})
+	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: path, Circles: 1, Threads: 1})
 	if err := server.jobManager.StartJob(job.ID); err != nil {
 		t.Fatalf("start job: %v", err)
 	}
@@ -541,7 +541,7 @@ func TestServer_JobDetailPage_Integration(t *testing.T) {
 	s := NewServer(":8080", nil)
 
 	// Create a job with some test data
-	job := s.jobManager.CreateJob(JobConfig{
+	job := s.jobManager.CreateJob(app.DefaultProject, JobConfig{
 		RefPath: imgPath,
 		Mode:    "joint",
 		Circles: 2,
@@ -606,7 +606,7 @@ func TestServer_JobStream_SSE(t *testing.T) {
 	s := NewServer(":8080", nil)
 
 	// Create a job
-	job := s.jobManager.CreateJob(JobConfig{
+	job := s.jobManager.CreateJob(app.DefaultProject, JobConfig{
 		RefPath: imgPath,
 		Mode:    "joint",
 		Circles: 2,
@@ -991,7 +991,7 @@ func TestPolishEndpointCreatesCheckpointContinuation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := server.jobManager.CreateJob(config)
+	source := server.jobManager.CreateJob(app.DefaultProject, config)
 	params := []float64{1, 1, 1, 1, 0, 0, 1}
 	if err := server.jobManager.StartJob(source.ID); err != nil {
 		t.Fatal(err)
@@ -1069,7 +1069,7 @@ func newExtendableBatchJob(t *testing.T) (*Server, string, []float64) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := server.jobManager.CreateJob(config)
+	source := server.jobManager.CreateJob(app.DefaultProject, config)
 	params := []float64{
 		1, 1, 1, 1, 0, 0, 1,
 		2, 2, 1, 0, 1, 0, 1,
@@ -1241,7 +1241,7 @@ func TestServer_GracefulShutdownWithCheckpoint(t *testing.T) {
 		CheckpointInterval: 1, // Checkpoint every 1 second
 	}
 
-	job := server.jobManager.CreateJob(config)
+	job := server.jobManager.CreateJob(app.DefaultProject, config)
 
 	// Start worker in background
 	go runJob(server.ctx, server.jobManager, store, job.ID)

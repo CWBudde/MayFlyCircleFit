@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 )
 
 func TestEventBroadcasterConcurrentLifecycle(t *testing.T) {
@@ -68,7 +70,7 @@ func TestJobStreamPublishesTerminalTransitionsAndCloses(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			server := NewServer(":8080", nil)
-			job := server.jobManager.CreateJob(JobConfig{})
+			job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{})
 			if err := server.jobManager.UpdateJob(job.ID, func(current *Job) { current.Evaluations = 42 }); err != nil {
 				t.Fatal(err)
 			}

@@ -22,6 +22,42 @@ func validateJobID(jobID string) error {
 	return nil
 }
 
+// validatePathSegment rejects anything that is not a single, literal directory
+// name. It is a syntactic check only and carries no application meaning.
+func validatePathSegment(name string) error {
+	if name == "" {
+		return fmt.Errorf("path segment cannot be empty")
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf("path segment %q is not a directory name", name)
+	}
+	if strings.ContainsRune(name, 0) {
+		return fmt.Errorf("path segment contains a NUL byte")
+	}
+	if strings.ContainsRune(name, '/') || strings.ContainsRune(name, filepath.Separator) {
+		return fmt.Errorf("path segment %q must not contain a separator", name)
+	}
+	return nil
+}
+
+// EnsureSecureSubdir creates exactly one directory level beneath parent and
+// returns its path. It refuses separators, traversal segments, and symlinks, so
+// callers never have to join caller-supplied names into a path themselves.
+func EnsureSecureSubdir(parent, name string) (string, error) {
+	if err := validatePathSegment(name); err != nil {
+		return "", err
+	}
+	root, err := canonicalRoot(parent)
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(root, name)
+	if err := ensureSecureDir(root, path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
 func canonicalRoot(baseDir string) (string, error) {
 	if strings.TrimSpace(baseDir) == "" {
 		return "", fmt.Errorf("base directory cannot be empty")

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/store"
+
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 )
 
 func TestServerSupervisesCancellationAndBoundedQueue(t *testing.T) {
@@ -24,9 +26,9 @@ func TestServerSupervisesCancellationAndBoundedQueue(t *testing.T) {
 	})
 
 	config := JobConfig{RefPath: imagePath, Mode: "joint", Circles: 8, Iters: 10_000, PopSize: 30, Seed: 42}
-	first := server.jobManager.CreateJob(config)
-	second := server.jobManager.CreateJob(config)
-	third := server.jobManager.CreateJob(config)
+	first := server.jobManager.CreateJob(app.DefaultProject, config)
+	second := server.jobManager.CreateJob(app.DefaultProject, config)
+	third := server.jobManager.CreateJob(app.DefaultProject, config)
 	if err := server.enqueueJob(first.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +53,7 @@ func TestServerSupervisesCancellationAndBoundedQueue(t *testing.T) {
 
 func TestCancelledJobCanBeDeleted(t *testing.T) {
 	server := NewServer(":0", nil)
-	job := server.jobManager.CreateJob(JobConfig{RefPath: "unused.png"})
+	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: "unused.png"})
 	if err := server.requestCancellation(job.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +85,7 @@ func TestLongJobPublishesProgressTraceAndCheckpoint(t *testing.T) {
 		PopSize: 30, Seed: 42, EffectiveSeed: 42,
 		EnableTrace: true, CheckpointInterval: 1,
 	}
-	job := server.jobManager.CreateJob(config)
+	job := server.jobManager.CreateJob(app.DefaultProject, config)
 	if err := server.enqueueJob(job.ID); err != nil {
 		t.Fatal(err)
 	}

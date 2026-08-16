@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 )
 
 func TestArtifactDownloadHeaders(t *testing.T) {
@@ -103,7 +105,7 @@ func TestServerReportIsSelfContained(t *testing.T) {
 
 func TestServerReportErrors(t *testing.T) {
 	server := NewServer(":8080", nil)
-	job := server.jobManager.CreateJob(JobConfig{Circles: 1})
+	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{Circles: 1})
 	tests := []struct {
 		name   string
 		method string
@@ -145,7 +147,7 @@ func TestServerReportSnapshotFailures(t *testing.T) {
 				createSimpleTestImage(t, refPath)
 			}
 			server := NewServer(":8080", nil)
-			job := server.jobManager.CreateJob(JobConfig{RefPath: refPath, Mode: "joint", Circles: 1})
+			job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: refPath, Mode: "joint", Circles: 1})
 			if err := server.jobManager.StartJob(job.ID); err != nil {
 				t.Fatal(err)
 			}
@@ -171,7 +173,7 @@ func downloadTestJob(t *testing.T, enableSSIM bool) (*Server, string) {
 	imagePath := filepath.Join(t.TempDir(), "reference.png")
 	createSimpleTestImage(t, imagePath)
 	server := NewServer(":8080", nil)
-	job := server.jobManager.CreateJob(JobConfig{RefPath: imagePath, Mode: "joint", Circles: 1, EnableSSIM: enableSSIM})
+	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: imagePath, Mode: "joint", Circles: 1, EnableSSIM: enableSSIM})
 	if err := server.jobManager.StartJob(job.ID); err != nil {
 		t.Fatal(err)
 	}

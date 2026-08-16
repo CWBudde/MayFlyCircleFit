@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"image"
+	_ "image/jpeg"
 	"image/png"
 	"log/slog"
 	"math"

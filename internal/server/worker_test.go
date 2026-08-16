@@ -52,7 +52,7 @@ func TestRunJob_Success(t *testing.T) {
 		Seed:    42,
 	}
 
-	job := jm.CreateJob(config)
+	job := jm.CreateJob(app.DefaultProject, config)
 
 	ctx := context.Background()
 	err := runJob(ctx, jm, nil, job.ID)
@@ -87,7 +87,7 @@ func TestRunJobRecordsPSNRAndOptionalSSIM(t *testing.T) {
 		t.Fatal(err)
 	}
 	jm := NewJobManager()
-	job := jm.CreateJob(JobConfig{
+	job := jm.CreateJob(app.DefaultProject, JobConfig{
 		RefPath: imgPath, Mode: "joint", Circles: 2, Iters: 5, PopSize: 20, Seed: 42,
 		EnableTrace: true, EnableSSIM: true,
 	})
@@ -130,7 +130,7 @@ func TestRunJobPersistsExactFinalResultWithoutPeriodicCheckpointing(t *testing.T
 		t.Fatal(err)
 	}
 	jm := NewJobManager()
-	job := jm.CreateJob(JobConfig{
+	job := jm.CreateJob(app.DefaultProject, JobConfig{
 		RefPath: imgPath, Mode: "joint", Circles: 2, Iters: 5, PopSize: 20, Seed: 42,
 		CheckpointInterval: 0,
 	})
@@ -218,7 +218,7 @@ func TestRunJobReportsFinalPersistenceFailuresAndAttemptsBothArtifacts(t *testin
 				FSStore: fsStore, checkpointErr: test.checkpointErr, artifactErrs: test.artifactErrs,
 			}
 			jm := NewJobManager()
-			job := jm.CreateJob(JobConfig{
+			job := jm.CreateJob(app.DefaultProject, JobConfig{
 				RefPath: imgPath, Mode: "joint", Circles: 1, Iters: 2, PopSize: 20, Seed: 42,
 			})
 
@@ -248,7 +248,7 @@ func TestRunJobExecutesConfiguredBatchPolishing(t *testing.T) {
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createTestImage(t, imgPath)
 	jm := NewJobManager()
-	job := jm.CreateJob(JobConfig{
+	job := jm.CreateJob(app.DefaultProject, JobConfig{
 		RefPath:                  imgPath,
 		Mode:                     app.ModeBatch,
 		Backend:                  app.BackendCPU,
@@ -299,7 +299,7 @@ func TestRunJobPolishingOnlyContinuesCompleteBatch(t *testing.T) {
 		PolishingIters: 2, PolishingStagnationIters: 1, PolishingMinImprovement: 0.001,
 		DisableConvergence: true,
 	}
-	job := jm.CreateJob(config)
+	job := jm.CreateJob(app.DefaultProject, config)
 	params := []float64{25, 25, 10, 1, 0, 0, 1}
 	if err := jm.UpdateJob(job.ID, func(live *Job) {
 		live.BestParams = append([]float64(nil), params...)
@@ -328,7 +328,7 @@ func TestRunJobResumesSingleStageBatch(t *testing.T) {
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createTestImage(t, imgPath)
 	jm := NewJobManager()
-	job := jm.CreateJob(JobConfig{
+	job := jm.CreateJob(app.DefaultProject, JobConfig{
 		RefPath: imgPath, Mode: app.ModeBatch, Backend: app.BackendCPU, Variant: app.VariantStandard,
 		Circles: 1, BatchSize: 1, Iters: 2, OptimizerEpochs: 1, PopSize: 20, Threads: 1,
 		Seed: 42, EffectiveSeed: 42, ResumeCount: 1, DisableConvergence: true,
@@ -360,7 +360,7 @@ func TestRunJobAppendsBatchSuffix(t *testing.T) {
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createTestImage(t, imgPath)
 	jm := NewJobManager()
-	job := jm.CreateJob(JobConfig{
+	job := jm.CreateJob(app.DefaultProject, JobConfig{
 		RefPath: imgPath, Mode: app.ModeBatch, Backend: app.BackendCPU, Variant: app.VariantStandard,
 		Circles: 2, BatchSize: 1, Iters: 5, OptimizerEpochs: 1, PopSize: 20, Threads: 1,
 		Seed: 42, EffectiveSeed: 42, ResumeCount: 1, DisableConvergence: true,
@@ -401,7 +401,7 @@ func TestRunJob_InvalidImage(t *testing.T) {
 		Seed:    42,
 	}
 
-	job := jm.CreateJob(config)
+	job := jm.CreateJob(app.DefaultProject, config)
 
 	ctx := context.Background()
 	err := runJob(ctx, jm, nil, job.ID)
@@ -435,7 +435,7 @@ func TestRunJob_Cancellation(t *testing.T) {
 		Seed:    42,
 	}
 
-	job := jm.CreateJob(config)
+	job := jm.CreateJob(app.DefaultProject, config)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
