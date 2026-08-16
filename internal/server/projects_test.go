@@ -468,16 +468,29 @@ func TestJobStatusResponseCarriesProject(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		project app.Project
-		want    app.Project
+		// storeEmpty forces the stored job's project back to the empty string
+		// after creation. CreateJob normalizes "" to the default project, so
+		// passing an empty slug in is not enough to reach the handler with one:
+		// without this the case would be an exact duplicate of "default
+		// project" and would still pass if the response stopped normalizing.
+		storeEmpty bool
+		want       app.Project
 	}{
-		{"named project", "christian", "christian"},
-		{"default project", app.DefaultProject, app.DefaultProject},
+		{name: "named project", project: "christian", want: "christian"},
+		{name: "default project", project: app.DefaultProject, want: app.DefaultProject},
 		// A job restored from a pre-project checkpoint carries no slug and must
 		// still report the default project rather than an empty string.
-		{"legacy empty slug", "", app.DefaultProject},
+		{name: "legacy empty slug", project: app.DefaultProject, storeEmpty: true, want: app.DefaultProject},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			job := server.jobManager.CreateJob(tc.project, store.JobConfig{RefPath: "a.png"})
+			if tc.storeEmpty {
+				if err := server.jobManager.UpdateJob(job.ID, func(stored *Job) {
+					stored.Project = ""
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			for _, path := range []string{
 				"/api/v1/jobs/" + job.ID,
 				"/api/v1/jobs/" + job.ID + "/status",
@@ -518,8 +531,10 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 	}
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
 
-	// Place the job through the HTTP boundary so the project travels the same
-	// path a real client uses, rather than being handed to CreateJob directly.
+	// The job is created directly rather than over HTTP: what this test pins is
+	// the restart, and the restored side reads only the checkpoint written
+	// below plus the directory it sits in. Creation over HTTP is covered by
+	// TestCreateJobAcceptsProjectAndStillRejectsTypos.
 	if _, err := server.ensureProject("christian"); err != nil {
 		t.Fatal(err)
 	}
