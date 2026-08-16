@@ -10,7 +10,6 @@ import (
 	"os"
 	"strconv"
 	"testing"
-	"time"
 )
 
 func BenchmarkOpenCLParameterPackAndUpload(b *testing.B) {
@@ -20,7 +19,7 @@ func BenchmarkOpenCLParameterPackAndUpload(b *testing.B) {
 			r, release := newOpenCLBenchmarkRenderer(b, ref, circles)
 			defer release()
 
-			params := randomParams(circles, 1, 1)
+			params := benchmarkParams(circles, 1, 1, 20260816)
 			reportOpenCLBenchmarkDevice(b, r)
 			b.SetBytes(int64(len(params) * 4))
 			b.ReportAllocs()
@@ -45,7 +44,7 @@ func BenchmarkOpenCLResidentImageReadback(b *testing.B) {
 			r, release := newOpenCLBenchmarkRenderer(b, ref, 1)
 			defer release()
 
-			params := randomParams(1, size, size)
+			params := benchmarkParams(1, size, size, 20260816)
 			if err := r.ensure(params); err != nil {
 				b.Fatalf("prepare resident output: %v", err)
 			}
@@ -132,10 +131,11 @@ func patternedReference(bounds image.Rectangle) *image.NRGBA {
 	return ref
 }
 
-// randomParams mirrors the renderer package helper of the same name. It is
-// duplicated because this package cannot import the renderer package.
-func randomParams(k, width, height int) []float64 {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+// benchmarkParams mirrors the renderer package helper of the same name. It is
+// duplicated because this package cannot import the renderer package, so keep
+// the two bodies and the seeds in step.
+func benchmarkParams(k, width, height int, seed int64) []float64 {
+	r := rand.New(rand.NewSource(seed))
 	params := make([]float64, k*paramsPerCircle)
 	for i := 0; i < k; i++ {
 		offset := i * paramsPerCircle

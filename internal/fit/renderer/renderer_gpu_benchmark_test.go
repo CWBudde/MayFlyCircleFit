@@ -17,7 +17,7 @@ func BenchmarkRendererCost(b *testing.B) {
 			}
 
 			const circles = 64
-			params := randomParams(circles, size, size)
+			params := benchmarkParams(circles, size, size, 20260816)
 			for _, backend := range []string{"cpu", "opencl"} {
 				b.Run(backend, func(b *testing.B) {
 					benchmarkRendererEvaluation(b, backend, ref, params, false)
@@ -36,7 +36,7 @@ func BenchmarkRendererCostThenRender(b *testing.B) {
 			}
 
 			const circles = 64
-			params := randomParams(circles, size, size)
+			params := benchmarkParams(circles, size, size, 20260816)
 			for _, backend := range []string{"cpu", "opencl"} {
 				b.Run(backend, func(b *testing.B) {
 					benchmarkRendererEvaluation(b, backend, ref, params, true)

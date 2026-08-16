@@ -162,3 +162,15 @@ do not bundle it; use `go tool pprof` for profile analysis.
   every development machine.
 - Kernel benchmarks must retain their result through `ssdBenchmarkSink` and
   report allocations.
+- Benchmark workloads must be seeded from a literal, never from the clock.
+  `benchmarkParams` takes its seed as an argument for that reason: while it
+  seeded from `time.Now()`, two runs of `BenchmarkCPURenderer_Render` rendered
+  different circles and the same binary measured a 31% spread on the same
+  machine, which is wider than most changes worth measuring. With a fixed seed
+  the same case holds 1%.
+- A benchmark must exercise the path it is named after. `BenchmarkRenderCircle`
+  built `CPURenderer` as a struct literal, leaving `opaqueCanvas` false, so it
+  only ever measured the per-pixel compositor; and it refilled the canvas inside
+  the timed loop, which cost more than the circle did. Both are now explicit:
+  the canvas kind is a benchmark axis and the fill happens before the timer
+  starts.
