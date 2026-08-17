@@ -60,6 +60,69 @@ func ParallelEvaluationOption(base Renderer, enabled bool) (opt.MayflyOption, bo
 	return opt.WithParallelEvaluation(width), true
 }
 
+// threadedRenderer reports the rendering width a backend was configured for.
+// It is the budget for any fan-out a renderer's caller performs, so work
+// spread over independent sessions stays inside the same --threads contract a
+// single render honors.
+type threadedRenderer interface {
+	Threads() int
+}
+
+// renderWorkers reports how many independent renders base's configuration
+// allows to run at once. It is never below one.
+func renderWorkers(base Renderer) int {
+	threaded, ok := base.(threadedRenderer)
+	if !ok {
+		return 1
+	}
+	return max(1, threaded.Threads())
+}
+
+// concurrentSessions opens workers independent single-threaded sessions over
+// base, for diagnostic work that renders many variants of one vector -- the
+// batch audit and residual-region selection, neither of which is in the
+// optimizer hot path but both of which are quadratic in the circle count.
+//
+// Each session gets one rendering thread: the caller runs one session per
+// goroutine, so sharding a single render's rows on top of that would only
+// oversubscribe the machine. Sessions are single-threaded for the same reason
+// the evaluation pool's slots are.
+//
+// It returns nil, and leaves the caller on its serial path, for any backend
+// that cannot hand out independent sessions or does not advertise concurrent
+// evaluation. The second condition is what keeps OpenCL out: it can create
+// sessions, but several of them working at once has never been validated, and
+// that is exactly the marker it withholds.
+func concurrentSessions(base Renderer, circleCount, workers int) ([]Renderer, func()) {
+	if workers < 2 {
+		return nil, noopCleanup
+	}
+	factory, poolable := base.(rendererSessionFactory)
+	if _, concurrent := base.(parallelEvaluationRenderer); !poolable || !concurrent {
+		return nil, noopCleanup
+	}
+	var cleanups []func()
+	release := func() {
+		for _, cleanup := range cleanups {
+			cleanup()
+		}
+	}
+	sessions := make([]Renderer, 0, workers)
+	for range workers {
+		session, cleanup, err := factory.newSession(circleCount)
+		if err != nil || session == nil {
+			release()
+			return nil, noopCleanup
+		}
+		cleanups = append(cleanups, cleanup)
+		if cpu, ok := session.(*CPURenderer); ok {
+			cpu.SetThreads(1)
+		}
+		sessions = append(sessions, session)
+	}
+	return sessions, release
+}
+
 // evaluationSlot pairs one independent renderer session with the scratch vector
 // its evaluations assemble. A slot is leased by exactly one goroutine at a
 // time, so neither the session's canvas nor the scratch vector is shared.

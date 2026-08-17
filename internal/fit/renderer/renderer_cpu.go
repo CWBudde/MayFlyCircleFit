@@ -230,6 +230,33 @@ func (r *CPURenderer) compositeParams(img *image.NRGBA, params []float64, count 
 	workers.Wait()
 }
 
+// compositeParamsRows is the row-restricted form of compositeParams: it draws
+// count circles from params onto rows [minY, maxY) of img and leaves every
+// other row untouched. Rows composite independently, so the band it produces is
+// byte-identical to the same rows of a full render.
+//
+// It exists for callers that only read part of the result -- measuring a
+// circle's influence on one grid tile reads a sixteenth of the canvas -- and can
+// therefore pay for only that part. Unlike compositeParams it never shards the
+// band across threads, because its callers already run one band per goroutine.
+func (r *CPURenderer) compositeParamsRows(img *image.NRGBA, params []float64, count, minY, maxY int) {
+	if img == nil || count <= 0 || r.height == 0 {
+		return
+	}
+	if len(params) < count*paramsPerCircle {
+		return
+	}
+	if img.Bounds().Dx() != r.width || img.Bounds().Dy() != r.height {
+		return
+	}
+	minY = max(minY, 0)
+	maxY = min(maxY, r.height)
+	if minY >= maxY {
+		return
+	}
+	r.compositeRows(img, params, count, minY, maxY, nil)
+}
+
 // Cost computes error between params and reference
 func (r *CPURenderer) Cost(params []float64) float64 {
 	if len(params) != r.Dim() || r.width == 0 || r.height == 0 {

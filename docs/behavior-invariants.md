@@ -130,6 +130,20 @@ Rendering-side invariants live in
   becomes the new incumbent, so the cache adopts that audit
   (`incumbentAuditCache.adopt`). No vector is ever audited twice as an
   incumbent.
+- Active-set selection runs at the renderer's configured `--threads` width and
+  must return exactly what it returned serially. The batch audit walks runs of
+  the draw order on independent single-threaded sessions, and the
+  `residual-region` influence loop stripes its circles across the same kind of
+  sessions; both keep OpenCL serial through the concurrent-evaluation marker the
+  evaluation pool already uses. Selection is a ranking, not a search: it takes
+  no seed and its result is width-independent, so a change that made it depend
+  on the worker count would be a bug, not a trade-off.
+- The influence loop renders only the rows it reads. A circle writes pixels only
+  inside its own raster, so removing it cannot change anything outside that
+  raster; the comparison is `region ∩ circleRasterBounds` and a circle whose box
+  misses the region is scored zero without rendering. Widening what
+  `imageDifferenceEnergy` reads, or making compositing write outside a circle's
+  raster, breaks that equivalence.
 
 ## Determinism, resume, and termination
 
