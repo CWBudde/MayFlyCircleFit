@@ -2,6 +2,8 @@ package store
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +38,11 @@ func testScheduleDocument(t *testing.T) app.ScheduleDocument {
 func testScheduleRecord(t *testing.T) *ScheduleRecord {
 	t.Helper()
 	doc := testScheduleDocument(t)
-	return NewScheduleRecord(testScheduleID, doc)
+	record, err := NewScheduleRecord(testScheduleID, doc)
+	if err != nil {
+		t.Fatalf("NewScheduleRecord() error = %v", err)
+	}
+	return record
 }
 
 func newScheduleStore(t *testing.T) (*FSStore, string) {
@@ -269,6 +275,45 @@ func TestScheduleStoreRejectsInvalidInput(t *testing.T) {
 			wantErr: "JobID",
 		},
 		{
+			name: "embedded document from a newer build",
+			run: func() error {
+				record := testScheduleRecord(t)
+				record.Document.SchemaVersion = app.ScheduleSchemaVersion + 1
+				return fsStore.SaveSchedule(record)
+			},
+			wantErr: "schemaVersion",
+		},
+		{
+			name: "embedded document with an unknown step type",
+			run: func() error {
+				record := testScheduleRecord(t)
+				record.Document.Steps = []app.ScheduleStep{{Type: "shrink"}}
+				return fsStore.SaveSchedule(record)
+			},
+			wantErr: "type",
+		},
+		{
+			name: "campaign seed disagrees with the document",
+			run: func() error {
+				record := testScheduleRecord(t)
+				record.CampaignSeed = 7
+				return fsStore.SaveSchedule(record)
+			},
+			wantErr: "CampaignSeed",
+		},
+		{
+			name: "stage config describes another stage",
+			run: func() error {
+				if err := fsStore.SaveSchedule(valid); err != nil {
+					return err
+				}
+				stage := NewScheduleStageRecord(testScheduleID, stages[1])
+				stage.Circles = stage.Config.Circles + 8
+				return fsStore.SaveScheduleStage(testScheduleID, stage)
+			},
+			wantErr: "Config.Circles",
+		},
+		{
 			name: "unknown stage state",
 			run: func() error {
 				if err := fsStore.SaveSchedule(valid); err != nil {
@@ -291,6 +336,70 @@ func TestScheduleStoreRejectsInvalidInput(t *testing.T) {
 				t.Fatalf("error = %v, want it to mention %q", err, test.wantErr)
 			}
 		})
+	}
+}
+
+// TestScheduleRecordResolvesAnOmittedSeed keeps a campaign replayable: the
+// record must carry a concrete seed even when the document omitted one, or the
+// stages replanned after a restart would use a fresh random campaign seed.
+func TestScheduleRecordResolvesAnOmittedSeed(t *testing.T) {
+	doc, err := app.ParseSchedule([]byte(`{
+		"base": {"refPath": "assets/ref.png", "mode": "batch", "circles": 8, "batchSize": 8, "iters": 200, "popSize": 30},
+		"steps": [{"type": "extend", "additionalCircles": 8}]
+	}`))
+	if err != nil {
+		t.Fatalf("ParseSchedule() error = %v", err)
+	}
+	record, err := NewScheduleRecord(testScheduleID, *doc)
+	if err != nil {
+		t.Fatalf("NewScheduleRecord() error = %v", err)
+	}
+	if record.CampaignSeed == 0 || record.Document.Seed != record.CampaignSeed {
+		t.Fatalf("record seed = %d, document seed = %d, want one resolved seed", record.CampaignSeed, record.Document.Seed)
+	}
+
+	fsStore, dir := newScheduleStore(t)
+	if err := fsStore.SaveSchedule(record); err != nil {
+		t.Fatalf("SaveSchedule() error = %v", err)
+	}
+	restarted, err := NewFSStore(dir)
+	if err != nil {
+		t.Fatalf("NewFSStore() error = %v", err)
+	}
+	reloaded, err := restarted.LoadSchedule(testScheduleID)
+	if err != nil {
+		t.Fatalf("LoadSchedule() error = %v", err)
+	}
+	stages, err := reloaded.Document.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	if stages[0].Config.EffectiveSeed != record.CampaignSeed {
+		t.Fatalf("reloaded expansion used seed %d, want %d", stages[0].Config.EffectiveSeed, record.CampaignSeed)
+	}
+}
+
+// TestScheduleStoreRefusesASymlinkedRecord keeps the schedule reader inside the
+// store, matching the guard the checkpoint artifacts already have.
+func TestScheduleStoreRefusesASymlinkedRecord(t *testing.T) {
+	fsStore, dir := newScheduleStore(t)
+	record := testScheduleRecord(t)
+	if err := fsStore.SaveSchedule(record); err != nil {
+		t.Fatalf("SaveSchedule() error = %v", err)
+	}
+	outside := filepath.Join(t.TempDir(), "elsewhere.json")
+	if err := os.WriteFile(outside, []byte(`{"scheduleId": "`+testScheduleID+`"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	path := filepath.Join(dir, schedulesDirName, testScheduleID, "schedule.json")
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+	if err := os.Symlink(outside, path); err != nil {
+		t.Skipf("symlinks are unavailable here: %v", err)
+	}
+	if _, err := fsStore.LoadSchedule(testScheduleID); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("LoadSchedule() error = %v, want a refusal naming the symlink", err)
 	}
 }
 

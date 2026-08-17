@@ -76,8 +76,14 @@ type ScheduleRecord struct {
 	Error string `json:"error,omitempty"`
 }
 
-// NewScheduleRecord seeds a pending record from an accepted document.
-func NewScheduleRecord(scheduleID string, document app.ScheduleDocument) *ScheduleRecord {
+// NewScheduleRecord seeds a pending record from an accepted document. The
+// campaign seed is resolved here if the document omitted one, and written back
+// into the persisted document, so every later expansion — in this process or
+// after a restart — plans the same stages.
+func NewScheduleRecord(scheduleID string, document app.ScheduleDocument) (*ScheduleRecord, error) {
+	if err := document.ResolveSeed(); err != nil {
+		return nil, fmt.Errorf("resolve campaign seed: %w", err)
+	}
 	now := time.Now().UTC()
 	return &ScheduleRecord{
 		SchemaVersion: ScheduleRecordSchemaVersion,
@@ -87,7 +93,7 @@ func NewScheduleRecord(scheduleID string, document app.ScheduleDocument) *Schedu
 		Document:      document,
 		CreatedAt:     now,
 		UpdatedAt:     now,
-	}
+	}, nil
 }
 
 // Validate checks the record without reference to the filesystem.
@@ -107,8 +113,20 @@ func (r *ScheduleRecord) Validate() error {
 	if r.CreatedAt.IsZero() {
 		return &ValidationError{Field: "CreatedAt", Reason: "cannot be zero"}
 	}
-	if _, err := r.Document.Expand(); err != nil {
+	// The document is validated, not merely expanded: expansion alone would
+	// accept an embedded schema version or a step type this build does not
+	// understand, which is exactly what a record written by a newer binary looks
+	// like.
+	if err := r.Document.Validate(); err != nil {
 		return &ValidationError{Field: "Document", Reason: err.Error()}
+	}
+	// A campaign whose seed is unresolved, or disagrees with its document, would
+	// replan with a fresh random seed on the next expansion.
+	if r.CampaignSeed == 0 {
+		return &ValidationError{Field: "CampaignSeed", Reason: "must be resolved before a schedule is persisted"}
+	}
+	if r.Document.Seed != r.CampaignSeed {
+		return &ValidationError{Field: "CampaignSeed", Reason: fmt.Sprintf("must match the document seed (%d)", r.Document.Seed)}
 	}
 	return nil
 }
@@ -193,6 +211,15 @@ func (s *ScheduleStageRecord) Validate() error {
 	}
 	if s.Circles < 1 {
 		return &ValidationError{Field: "Circles", Reason: "must be positive"}
+	}
+	// The stage config is what a single stage is replayed from, so it is checked
+	// like any other persisted configuration, and it must describe this stage:
+	// a config for a different circle count cannot reproduce the run.
+	if err := s.Config.Validate(); err != nil {
+		return &ValidationError{Field: "Config", Reason: err.Error()}
+	}
+	if s.Config.Circles != s.Circles {
+		return &ValidationError{Field: "Config.Circles", Reason: fmt.Sprintf("must match the stage circle count (%d)", s.Circles)}
 	}
 	if s.JobID != "" {
 		if err := validateJobID(s.JobID); err != nil {
@@ -306,8 +333,23 @@ func (fs *FSStore) LoadSchedule(scheduleID string) (*ScheduleRecord, error) {
 	return record, nil
 }
 
+// readRegularFile refuses a symlink or other non-regular file before reading
+// it, the same guard ArtifactPath applies to checkpoint artifacts: a symlink
+// dropped into the store must not turn a schedule read into a read of any
+// file the server can reach.
+func readRegularFile(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("refusing non-regular or symlink path %q", filepath.Base(path))
+	}
+	return os.ReadFile(path)
+}
+
 func readScheduleRecord(path, scheduleID string) (*ScheduleRecord, error) {
-	data, err := os.ReadFile(path)
+	data, err := readRegularFile(path)
 	if os.IsNotExist(err) {
 		return nil, &NotFoundError{JobID: scheduleID, Kind: "schedule"}
 	}
@@ -409,10 +451,17 @@ func (fs *FSStore) LoadScheduleStages(scheduleID string) ([]ScheduleStageRecord,
 		return nil, err
 	}
 	stagesDir := filepath.Join(dir, stagesDirName)
-	entries, err := os.ReadDir(stagesDir)
+	info, err := os.Lstat(stagesDir)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
+	if err != nil {
+		return nil, fmt.Errorf("stat schedule stages directory: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return nil, fmt.Errorf("refusing non-directory or symlink stages path")
+	}
+	entries, err := os.ReadDir(stagesDir)
 	if err != nil {
 		return nil, fmt.Errorf("read schedule stages directory: %w", err)
 	}
@@ -422,7 +471,7 @@ func (fs *FSStore) LoadScheduleStages(scheduleID string) ([]ScheduleStageRecord,
 		if entry.IsDir() || !strings.HasPrefix(name, "stage-") || !strings.HasSuffix(name, ".json") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(stagesDir, name))
+		data, err := readRegularFile(filepath.Join(stagesDir, name))
 		if err != nil {
 			return nil, fmt.Errorf("read schedule stage: %w", err)
 		}
