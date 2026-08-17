@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "name": "512-circle campaign",
+  "seed": 4242,
+  "base": {
+    "refPath": "assets/ref.png",
+    "mode": "batch",
+    "circles": 8,
+    "batchSize": 8,
+    "iters": 200,
+    "popSize": 30
+  },
+  "steps": [
+    {"type": "extend", "repeat": 3, "additionalCircles": 8},
+    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
+    {"type": "extend", "repeat": 4, "additionalCircles": 8},
+    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
+    {"type": "extend", "repeat": 4, "additionalCircles": 8},
+    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
+    {"type": "extend", "repeat": 4, "additionalCircles": 8},
+    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
+    {"type": "extend", "repeat": 8, "additionalCircles": 8},
+    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
+    {"type": "extend", "repeat": 8, "additionalCircles": 8},
+    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
+    {"type": "extend", "repeat": 32, "additionalCircles": 8}
+  ]
+}

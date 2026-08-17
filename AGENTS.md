@@ -10,6 +10,8 @@ take precedence if this document goes stale.
   evaluation, polishing, determinism, early stopping, server trust boundary).
 - [`docs/rendering-internals.md`](docs/rendering-internals.md) — SIMD SSD
   kernels, dispatch, and CPU span compositing.
+- [`docs/schedule-format.md`](docs/schedule-format.md) — the schedule document
+  format, its worked example, and when two campaigns' costs are comparable.
 - [`docs/support-matrix.md`](docs/support-matrix.md),
   [`docs/known-limitations.md`](docs/known-limitations.md), and the active
   Phase 14 section of `PLAN.md`.
