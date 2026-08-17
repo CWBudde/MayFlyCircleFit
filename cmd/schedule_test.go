@@ -339,7 +339,8 @@ func TestScheduleDryRunListsTheReferenceCampaign(t *testing.T) {
 	for _, marker := range []string{
 		"nothing was submitted and no schedule was created",
 		"Stages: 70 (1 base, 63 extend, 6 polish; 6 conditional)",
-		"Planned optimizer iterations: 48800",
+		"Seed: 4242",
+		"Planned optimizer iterations (nominal): 48800",
 		"unconditional: 12800",
 		"conditional:   36000 across 6 stages",
 		// The first and last stages of the climb, and a polish in between.
@@ -514,6 +515,78 @@ func TestScheduleStatusRefusesToProjectFromOneStage(t *testing.T) {
 	if strings.Contains(body, "finishing around") {
 		t.Errorf("a single sample still produced a finish time:\n%s", body)
 	}
+}
+
+// TestScheduleStatusGivesNoFinishTimeToATerminalCampaign pins the review
+// finding: the projection anchors at the current clock, so a campaign the
+// server will never advance must not be handed a future finish time.
+func TestScheduleStatusGivesNoFinishTimeToATerminalCampaign(t *testing.T) {
+	for _, state := range []string{"failed", "cancelled", "completed"} {
+		t.Run(state, func(t *testing.T) {
+			fixture := projectionDetailFixture(2, []time.Duration{2 * time.Minute, 4 * time.Minute})
+			fixture["state"] = state
+			var detail scheduleDetailResponse
+			decodeFixture(t, fixture, &detail)
+
+			var output bytes.Buffer
+			printScheduleDetail(&output, detail, time.Date(2026, 8, 1, 13, 0, 0, 0, time.UTC))
+			body := output.String()
+			if !strings.Contains(body, "No projection: the campaign is "+state+" and will not advance.") {
+				t.Errorf("status output does not report the terminal campaign:\n%s", body)
+			}
+			if strings.Contains(body, "finishing around") {
+				t.Errorf("a %s campaign was still given a finish time:\n%s", state, body)
+			}
+		})
+	}
+}
+
+// TestScheduleStatusProjectsAPausedCampaignWithoutATimestamp keeps the rates
+// visible for a paused campaign while refusing the one thing that would be a
+// guess: when it starts again.
+func TestScheduleStatusProjectsAPausedCampaignWithoutATimestamp(t *testing.T) {
+	fixture := projectionDetailFixture(2, []time.Duration{2 * time.Minute, 4 * time.Minute})
+	fixture["state"] = "paused"
+	var detail scheduleDetailResponse
+	decodeFixture(t, fixture, &detail)
+
+	var output bytes.Buffer
+	printScheduleDetail(&output, detail, time.Date(2026, 8, 1, 13, 0, 0, 0, time.UTC))
+	body := output.String()
+	if !strings.Contains(body, "Remaining once the campaign runs again: 3m0s (no finish time while it is paused)") {
+		t.Errorf("status output missing the paused remaining workload:\n%s", body)
+	}
+	if strings.Contains(body, "finishing around") {
+		t.Errorf("a paused campaign was still given a finish time:\n%s", body)
+	}
+}
+
+// TestScheduleDryRunReportsAnOmittedSeedAsAutomatic pins the other review
+// finding: the document carries zero and every expansion draws a different
+// throwaway seed, so neither is a truthful thing to print.
+func TestScheduleDryRunReportsAnOmittedSeedAsAutomatic(t *testing.T) {
+	_, _ = newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
+		t.Error("a dry run reached the server")
+		writer.WriteHeader(http.StatusInternalServerError)
+	})
+	document := strings.Replace(referenceCampaignDocument, `"seed": 4242,`, "", 1)
+	body := dryRun(t, writeScheduleDocument(t, document))
+
+	if !strings.Contains(body, "Seed: automatic — resolved at submission") {
+		t.Errorf("dry run did not report the omitted seed as automatic:\n%s", firstLines(body, 6))
+	}
+	if strings.Contains(body, "Seed: 0") {
+		t.Errorf("dry run presented the omitted seed as seed zero:\n%s", firstLines(body, 6))
+	}
+}
+
+// firstLines keeps a failure message readable for a 70-stage plan.
+func firstLines(body string, count int) string {
+	lines := strings.SplitN(body, "\n", count+1)
+	if len(lines) > count {
+		lines = lines[:count]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // decodeFixture round-trips a fixture through JSON so the test reads exactly

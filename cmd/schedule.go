@@ -167,7 +167,7 @@ func runScheduleCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid schedule document %q: %w", args[0], err)
 	}
 	if scheduleDryRun {
-		return printSchedulePlan(cmd.OutOrStdout(), args[0], parsed)
+		return printSchedulePlan(cmd.OutOrStdout(), args[0], parsed, scheduleDocumentNamesSeed(document))
 	}
 	body, err := requestCLIBody(cmd.Context(), http.MethodPost, scheduleBaseURL()+"/schedules", document)
 	if err != nil {
