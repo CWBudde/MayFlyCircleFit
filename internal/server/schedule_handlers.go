@@ -136,7 +136,13 @@ func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	record := store.NewScheduleRecord(uuid.New().String(), *document)
+	// Building the record pins the campaign seed, so a zero seed is resolved once
+	// here and never re-derived per stage.
+	record, err := store.NewScheduleRecord(uuid.New().String(), *document)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_schedule", err.Error())
+		return
+	}
 	record.State = store.ScheduleStateRunning
 	if err := scheduleStore.SaveSchedule(record); err != nil {
 		slog.Error("Failed to persist schedule", "error", err)
