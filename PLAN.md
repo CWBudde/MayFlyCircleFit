@@ -1978,18 +1978,19 @@ and then runs unattended as a single observable entity.
 
 ### Task 16.3: Express Stage Policy Declaratively (P2)
 
-- [ ] Support conditional steps: run a polish only at listed circle counts, and
+- [x] Support conditional steps: run a polish only at listed circle counts, and
       stop scheduling polishes after N consecutive stages gained less than a
       threshold. Both were hardcoded Python constants; both are policy.
-- [ ] Support per-step budget overrides (`iters`, `epochs`, `popSize`,
+- [x] Support per-step budget overrides (`iters`, `epochs`, `popSize`,
       `activeSetSize`, `maxSweeps`) so polish budget can differ from extend
-      budget without a second document.
-- [ ] Seed handling is explicit: one campaign seed, inherited by every stage, and
-      recorded per stage so a single stage can be replayed.
+      budget without a second document. (Delivered by Task 16.1.)
+- [x] Seed handling is explicit: one campaign seed, inherited by every stage, and
+      recorded per stage so a single stage can be replayed. (Delivered by Task
+      16.1.)
 
 **Acceptance Checks:**
 
-- [ ] A schedule expressing the second run's policy — base 8, `+8` to 512, polish
+- [x] A schedule expressing the second run's policy — base 8, `+8` to 512, polish
       at 32/64/96/128/192/256, abort polishing after two stages under 1.0 cost
       units — is representable without custom code, and a table-driven test
       asserts the exact stage sequence it produces.
