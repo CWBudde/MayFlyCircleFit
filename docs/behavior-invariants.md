@@ -175,6 +175,16 @@ bounded. pprof is off by default and `--enable-pprof` requires a loopback bind.
 These controls do not make the server multi-user or internet-ready. Do not add
 documentation suggesting otherwise.
 
+## Job completion
+
+A job reports `completed` only once its final checkpoint is on disk. The worker
+records the measured outcome while the job is still `running`, writes the
+checkpoint and its artifacts, and publishes the terminal state last. This is
+what makes `completed` mean "there is a checkpoint to continue from", which is
+the precondition `extend`, `polish`, and every schedule stage read. A
+cancellation that lands while the result is being written wins: the job stays
+cancelled rather than being resurrected as a completed one.
+
 ## Schedule execution
 
 A schedule runs inside the server, not in a client. `POST /api/v1/schedules`

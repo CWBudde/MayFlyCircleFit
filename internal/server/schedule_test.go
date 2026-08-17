@@ -528,8 +528,16 @@ func TestScheduleAndManualJobShareTheJobLimit(t *testing.T) {
 			}
 			t.Fatalf("%d jobs running at once with --max-jobs %d: %v", len(running), fixture.maxJobs, ids)
 		}
-		if !scheduleDone && fixture.schedule(t, scheduleID).State == store.ScheduleStateCompleted {
-			scheduleDone = true
+		if !scheduleDone {
+			// A campaign that settled anywhere but `completed` will never reach
+			// it, so say why now instead of sitting out the deadline and
+			// reporting nothing but "not done".
+			switch current := fixture.schedule(t, scheduleID); current.State {
+			case store.ScheduleStateCompleted:
+				scheduleDone = true
+			case store.ScheduleStateFailed, store.ScheduleStateCancelled:
+				t.Fatalf("schedule settled as %q: %s", current.State, current.Error)
+			}
 		}
 		if !manualDone {
 			if job, ok := fixture.server.jobManager.GetJob(manualJob.ID); ok && job.State == StateCompleted {

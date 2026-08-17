@@ -332,7 +332,41 @@ func (jm *JobManager) RecordMetrics(id string, sample MetricSample) error {
 	return nil
 }
 
-// CompleteJob records the measured final result and transitions to completed.
+// RecordFinalResult stores a job's measured outcome while it is still running.
+//
+// It is the first half of completion. The second half, MarkJobCompleted, is
+// deliberately deferred until the result is durable: `completed` is the state
+// every continuation reads as "there is a checkpoint to extend or polish from",
+// so publishing it before the checkpoint exists hands out a promise the store
+// cannot yet keep.
+func (jm *JobManager) RecordFinalResult(id string, iterations, evaluations int, bestParams []float64, bestCost, initialCost float64, termination string) error {
+	jm.mu.Lock()
+	defer jm.mu.Unlock()
+
+	job, exists := jm.jobs[id]
+	if !exists {
+		return fmt.Errorf("job not found: %s", id)
+	}
+	if job.State != StateRunning {
+		return fmt.Errorf("%w: cannot record a final result for a %s job", ErrInvalidTransition, job.State)
+	}
+	job.Iterations = iterations
+	job.Evaluations = evaluations
+	updateBestResult(job, bestParams, bestCost)
+	job.InitialCost = initialCost
+	job.Termination = termination
+	return nil
+}
+
+// MarkJobCompleted transitions a running job whose result is already recorded
+// and persisted.
+func (jm *JobManager) MarkJobCompleted(id string) error {
+	return jm.transition(id, StateCompleted, nil)
+}
+
+// CompleteJob records the measured final result and transitions to completed in
+// one step. Production runs split the two around the checkpoint write; this
+// remains for callers that have nothing to persist.
 func (jm *JobManager) CompleteJob(id string, iterations, evaluations int, bestParams []float64, bestCost, initialCost float64, termination string) error {
 	return jm.transition(id, StateCompleted, func(job *Job) {
 		job.Iterations = iterations
