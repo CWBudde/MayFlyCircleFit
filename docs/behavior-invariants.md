@@ -240,6 +240,37 @@ persists the campaign and starts it; the client may disconnect immediately.
   record carrying its reason, and the decision is never revisited. The chain
   then continues from the last stage that actually ran.
 
+## Plan estimates
+
+`mayflycirclefit schedule create --dry-run` prints what a document would run,
+and `schedule status` projects when a running campaign will finish. Both are
+read-only, and both refuse to state anything they cannot derive.
+
+- **A dry run reaches nothing.** Expansion is a pure function of the document,
+  so the dry run never opens a socket: no schedule directory, no stage record,
+  no job, and no reference image is read.
+- **A conditional stage is printed as conditional.** A dry run has no outcomes
+  and therefore cannot decide a `when` clause. Every planned stage is listed,
+  and a conditional one is marked with its condition stated in full, rather than
+  being silently included or excluded. The iteration total is split the same
+  way, into the part that runs regardless and the part that depends on what the
+  campaign measures.
+- **The iteration count is a budget, not a prediction.** It is what the
+  configuration authorizes: batch stages times epochs times iterations, plus
+  sweeps times epochs times iterations for a polish stage. Early stopping and
+  convergence detection can only spend less. The bounded residual-refill batch
+  stages (`renderer.MaxExtraBatchStages`) are excluded, because they are
+  attempted only when a stage leaves circles unplaced.
+- **The finish projection is measured, never modelled.** It divides observed
+  stage wall clock by completed stages of the same kind and multiplies by the
+  stages of that kind still planned. Kinds are never blended: an extend is
+  roughly flat in circle count because its inherited prefix is baked once, while
+  a polish grows with the canvas, so a polish estimate is reported as a lower
+  bound. Below two completed stages of a kind the projection reports
+  insufficient data, and no finish time is given until every remaining kind has
+  a rate. A running stage counts as fully remaining, because discounting it
+  would need exactly the per-stage progress model this avoids.
+
 ## Campaign views
 
 `/schedules` lists campaigns, `/schedules/:id` shows one, and `mayflycirclefit
