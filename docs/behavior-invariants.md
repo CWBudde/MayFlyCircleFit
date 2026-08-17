@@ -185,6 +185,12 @@ the precondition `extend`, `polish`, and every schedule stage read. A
 cancellation that lands while the result is being written wins: the job stays
 cancelled rather than being resurrected as a completed one.
 
+The ordering is the invariant; a successful write is not. If the final
+checkpoint write itself fails, the job is still published as `completed` and
+carries `error: failed to persist final result`. A continuation issued
+afterwards therefore resumes from the last periodic checkpoint, or is refused
+outright when there is none.
+
 ## Schedule execution
 
 A schedule runs inside the server, not in a client. `POST /api/v1/schedules`
