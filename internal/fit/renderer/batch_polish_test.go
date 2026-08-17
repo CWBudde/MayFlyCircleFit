@@ -717,26 +717,27 @@ func TestPolishCircleBatchCommitsImprovementBesideAnUntouchedHarmfulCircle(t *te
 
 // TestPolishCircleBatchRejectsImprovementThatKillsAnUntouchedCircle is the other
 // half of the non-regression rule: a sweep may inherit a harmful circle, but it
-// may not create one. Circle two is useful in the incumbent; the sweep grows the
-// active circle one until it completely covers circle two, which lowers the cost
-// of the whole vector and drops circle two's contribution to zero.
+// may not create one outside the active set either. Circle one is useful in the
+// incumbent and stays outside the active set, so the sweep never touches its
+// parameters; growing the active circle two until it buries circle one lowers
+// the cost of the whole vector and still has to be rejected.
 func TestPolishCircleBatchRejectsImprovementThatKillsAnUntouchedCircle(t *testing.T) {
 	ref := solidImage(16, 16, color.NRGBA{R: 200, G: 200, B: 200, A: 255})
 	base := NewCPURenderer(ref, 2)
 
-	// Circle one is a small, badly coloured blob. Circle two is a correct patch
-	// far from it, so it changes pixels and helps.
+	// Circle one is a correct patch, so it changes pixels and helps. Circle two
+	// is a small, badly coloured blob far from it, and is the circle the sweep
+	// optimizes.
 	initial := append(
-		circleParams(4, 4, 2, color.NRGBA{A: 255}, 1),
-		circleParams(11, 11, 3, color.NRGBA{R: 200, G: 200, B: 200, A: 255}, 1)...,
+		circleParams(4, 4, 2, color.NRGBA{R: 200, G: 200, B: 200, A: 255}, 1),
+		circleParams(11, 11, 3, color.NRGBA{A: 255}, 1)...,
 	)
-	// Grown circle one paints the reference colour across the whole canvas, which
-	// both lowers the cost and buries circle two: it is drawn first, so circle two
-	// still changes pixels relative to it only if their colours differ. They do
-	// not, so circle two becomes a no-op.
+	// Grown circle two paints the reference colour across the whole canvas, which
+	// both lowers the cost and buries circle one: circle one is drawn first, so it
+	// changes no pixel of the final image once circle two covers it opaquely.
 	grown := circleParams(8, 8, 24, color.NRGBA{R: 200, G: 200, B: 200, A: 255}, 1)
 
-	improved := append(append([]float64(nil), grown...), initial[paramsPerCircle:]...)
+	improved := append(append([]float64(nil), initial[:paramsPerCircle]...), grown...)
 	initialCost := base.Cost(initial)
 	improvedCost := base.Cost(improved)
 	if improvedCost >= initialCost {
@@ -746,24 +747,23 @@ func TestPolishCircleBatchRejectsImprovementThatKillsAnUntouchedCircle(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !circleUseful(incumbentAudit.Circles[1], minBatchMSEContribution) {
-		t.Fatalf("test setup is vacuous: circle two is already not useful in the incumbent: %+v",
-			incumbentAudit.Circles[1])
+	if !circleUseful(incumbentAudit.Circles[0], minBatchMSEContribution) {
+		t.Fatalf("test setup is vacuous: circle one is already not useful in the incumbent: %+v",
+			incumbentAudit.Circles[0])
 	}
 	candidateAudit, err := AuditCircleBatch(base, improved)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if circleUseful(candidateAudit.Circles[1], minBatchMSEContribution) {
-		t.Fatalf("test setup is vacuous: circle two survives the sweep: %+v", candidateAudit.Circles[1])
+	if circleUseful(candidateAudit.Circles[0], minBatchMSEContribution) {
+		t.Fatalf("test setup is vacuous: circle one survives the sweep: %+v", candidateAudit.Circles[0])
 	}
 
-	// A one-slot contiguous window prefers the latest unvisited window, so pin
-	// the active set to circle one with a two-slot window over a two-circle
-	// vector instead, and let the optimizer return circle two unchanged.
-	outcome := append(append([]float64(nil), grown...), initial[paramsPerCircle:]...)
-	result, err := PolishCircleBatchContext(context.Background(), base, &fixedPolishOptimizer{params: outcome}, initial, BatchPolishOptions{
-		ActiveSetSize: 2,
+	// A one-slot contiguous window prefers the latest unvisited window, which is
+	// circle two, so circle one is genuinely outside the active set and the
+	// optimizer only ever returns the one grown slot.
+	result, err := PolishCircleBatchContext(context.Background(), base, &fixedPolishOptimizer{params: grown}, initial, BatchPolishOptions{
+		ActiveSetSize: 1,
 		MaxSweeps:     1,
 		Strategy:      BatchPolishContiguousWindow,
 	})
@@ -771,12 +771,32 @@ func TestPolishCircleBatchRejectsImprovementThatKillsAnUntouchedCircle(t *testin
 		t.Fatal(err)
 	}
 	if result.AcceptedSweeps != 0 || result.Sweeps != 1 {
-		t.Fatalf("accepted/sweeps = %d/%d, want 0/1: the sweep killed a circle it was optimizing",
+		t.Fatalf("accepted/sweeps = %d/%d, want 0/1: the sweep killed an untouched circle outside the active set",
 			result.AcceptedSweeps, result.Sweeps)
 	}
 	if result.BestCost != initialCost || !reflect.DeepEqual(result.BestParams, initial) {
 		t.Fatalf("rejected sweep changed the result: cost %v params %v, want %v and the initial vector",
 			result.BestCost, result.BestParams, initialCost)
+	}
+}
+
+// TestIncumbentAuditCacheAdoptsTheCommittedCandidateAudit pins the reason a
+// committing sweep does not drop the cache. The acceptance gate audits the
+// candidate immediately before it commits, and that candidate is the next
+// incumbent, so re-auditing it would be one wasted full render per circle after
+// every accepted sweep. The nil session is the assertion: a cache that fell back
+// to AuditCircleBatch here would panic.
+func TestIncumbentAuditCacheAdoptsTheCommittedCandidateAudit(t *testing.T) {
+	cache := &incumbentAuditCache{}
+	committed := auditOf(usefulAuditCircle(0), harmfulAuditCircle(1))
+
+	cache.adopt(committed)
+	got, err := cache.get(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Circles, committed.Circles) {
+		t.Fatalf("cached audit = %+v, want the adopted candidate audit %+v", got.Circles, committed.Circles)
 	}
 }
 

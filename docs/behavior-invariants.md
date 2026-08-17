@@ -121,11 +121,15 @@ Rendering-side invariants live in
   optimizer returned an out-of-bounds vector, and `Accepted polishing sweep`
   with `cost_removed` when it committed. A stalled run must stay diagnosable
   from the server log alone; do not reduce that to a single boolean.
-- The incumbent's audit is cached across sweeps (`incumbentAuditCache`) and
-  invalidated only when a sweep commits. `AuditCircleBatch` is one full render
-  per omitted circle, both active-set selection and the acceptance gate need it,
-  and a rejected sweep leaves the incumbent untouched, so it must be computed
-  once per incumbent rather than once per consumer or once per sweep.
+- The incumbent's audit is cached across sweeps (`incumbentAuditCache`).
+  `AuditCircleBatch` is one full render per omitted circle, both active-set
+  selection and the acceptance gate need it, and a rejected sweep leaves the
+  incumbent untouched, so it must be computed once per incumbent rather than
+  once per consumer or once per sweep. A committing sweep does not drop the
+  cache either: the acceptance gate has just audited exactly the vector that
+  becomes the new incumbent, so the cache adopts that audit
+  (`incumbentAuditCache.adopt`). No vector is ever audited twice as an
+  incumbent.
 
 ## Determinism, resume, and termination
 

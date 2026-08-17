@@ -399,18 +399,20 @@ func PolishCircleBatchContext(
 		// cached audit. It is consulted only after the candidate has already beaten
 		// the incumbent on cost, so the audits it pays for are never wasted on a
 		// sweep the cost check would have rejected anyway.
-		admitSweep := func(candidate []float64) (bool, []int, error) {
+		// It also hands the candidate's audit back, because a committed candidate
+		// becomes the incumbent and that audit already describes it exactly.
+		admitSweep := func(candidate []float64) (bool, []int, BatchAudit, error) {
 			candidateAudit, auditErr := AuditCircleBatch(fullSession, candidate)
 			if auditErr != nil {
-				return false, nil, fmt.Errorf("audit polishing sweep %d: %w", sweep, auditErr)
+				return false, nil, BatchAudit{}, fmt.Errorf("audit polishing sweep %d: %w", sweep, auditErr)
 			}
 			incumbent, auditErr := incumbentAudit.get(bestParams)
 			if auditErr != nil {
-				return false, nil, fmt.Errorf("audit polishing incumbent before sweep %d: %w", sweep, auditErr)
+				return false, nil, BatchAudit{}, fmt.Errorf("audit polishing incumbent before sweep %d: %w", sweep, auditErr)
 			}
 			commit, blockers := sweepKeepsCirclesUseful(
 				incumbent, candidateAudit, activeCircles, minBatchMSEContribution)
-			return commit, blockers, nil
+			return commit, blockers, candidateAudit, nil
 		}
 
 		// Every path out of the acceptance decision says why at Info, so a stalled
@@ -429,9 +431,10 @@ func PolishCircleBatchContext(
 			candidateCost := fullSession.Cost(candidate)
 			evaluations++
 			commit, blockers := false, []int(nil)
+			var candidateAudit BatchAudit
 			if candidateCost < bestCost {
 				var gateErr error
-				if commit, blockers, gateErr = admitSweep(candidate); gateErr != nil {
+				if commit, blockers, candidateAudit, gateErr = admitSweep(candidate); gateErr != nil {
 					return nil, gateErr
 				}
 			}
@@ -463,8 +466,10 @@ func PolishCircleBatchContext(
 				)
 				bestParams = candidate
 				bestCost = candidateCost
-				// The incumbent changed, so its cached audit no longer describes it.
-				incumbentAudit.invalidate()
+				// The incumbent changed, but the gate has just audited exactly this
+				// vector, so hand that audit over instead of discarding it and paying
+				// for another full render per circle on the next sweep.
+				incumbentAudit.adopt(candidateAudit)
 				result.AcceptedSweeps++
 				accepted = true
 			}
@@ -527,7 +532,9 @@ func extractActiveCircleParams(fullParams []float64, activeCircles []int) []floa
 // cost of a sweep, while both active-set selection and the acceptance gate need
 // the incumbent's audit. A rejected sweep leaves the incumbent untouched, so the
 // audit is computed once per incumbent rather than once per consumer or once per
-// sweep, and is invalidated only when a sweep actually commits.
+// sweep. A committing sweep replaces the incumbent, but the acceptance gate has
+// already audited that exact candidate, so the cache adopts that audit and no
+// incumbent is ever audited twice.
 //
 // The cached BatchAudit is shared by value; nothing may mutate audit.Circles in
 // place.
@@ -549,8 +556,12 @@ func (c *incumbentAuditCache) get(params []float64) (BatchAudit, error) {
 	return audit, nil
 }
 
-func (c *incumbentAuditCache) invalidate() {
-	c.audit, c.valid = BatchAudit{}, false
+// adopt installs an audit the caller has already computed for the vector that
+// is about to become the incumbent. A committed sweep is audited by the
+// acceptance gate immediately before it commits, so the cache can carry that
+// result forward rather than invalidate and re-render.
+func (c *incumbentAuditCache) adopt(audit BatchAudit) {
+	c.audit, c.valid = audit, true
 }
 
 func selectPolishingActiveSet(
@@ -946,8 +957,13 @@ func circleUseful(circle CircleAudit, minContribution float64) bool {
 // sweepKeepsCirclesUseful decides whether a cost-improving sweep may commit,
 // and names the one-based circles that block it when it may not.
 //
-// The invariant polishing protects is that it never leaves a dead circle
-// behind. The gate used to spell that as allCirclesUseful over the entire
+// The invariant polishing protects is that it never makes a circle dead: no
+// sweep may kill a circle that was alive in the incumbent. It does not promise
+// that the committed vector is free of dead circles, because a dead circle
+// inherited from an earlier stage and left outside the active set stays exactly
+// as the sweep found it.
+//
+// The gate used to spell the invariant as allCirclesUseful over the entire
 // candidate, which also demanded that a sweep repair dead circles it never
 // touched: circles outside the active set are copied through a sweep byte for
 // byte, so no amount of optimizer budget can clear them. Incrementally grown

@@ -1854,9 +1854,10 @@ a certain size. The same stall was observed live at 64 and again at 96 circles:
       contribution to improve. Those values drift by fractions as neighbours
       move; demanding monotone improvement on circles the sweep does not control
       would restore the stall.
-- [x] Cache the incumbent's audit (`incumbentAuditCache`) and invalidate it only
-      when a sweep commits. Both active-set selection and the gate need it, and
-      `AuditCircleBatch` is one full render per omitted circle. This also
+- [x] Cache the incumbent's audit (`incumbentAuditCache`) across sweeps, and on
+      a committing sweep adopt the audit the gate already computed for that
+      candidate instead of invalidating. Both active-set selection and the gate
+      need it, and `AuditCircleBatch` is one full render per omitted circle. This also
       satisfies task 15.2's third bullet — a rejected sweep no longer recomputes
       an identical selection audit — for `replacement`, `hybrid-overlap`, and
       `residual-region`.
@@ -1875,7 +1876,8 @@ a certain size. The same stall was observed live at 64 and again at 96 circles:
       harmful circle. It fails on `31fc02e`.
 - [x] `TestPolishCircleBatchRejectsImprovementThatKillsAnUntouchedCircle`
       asserts the other half: a sweep may inherit a dead circle but may not
-      create one.
+      create one, including outside the active set -- the killed circle is not
+      in the active set the sweep optimizes.
 - [x] `TestSweepKeepsCirclesUsefulIsANonRegressionRule` is table-driven over the
       gate and additionally asserts that, on any incumbent carrying no blockers,
       the new rule agrees with the old absolute predicate exactly.
