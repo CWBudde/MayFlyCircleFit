@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"slices"
+	"sync"
 
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
@@ -816,22 +817,20 @@ func selectResidualRegionActiveSet(
 		selected[index] = true
 	}
 
+	candidates := make([]int, 0, len(audit.Circles)-len(replacements))
+	for circle := range audit.Circles {
+		if !selected[circle] {
+			candidates = append(candidates, circle)
+		}
+	}
 	type regionInfluence struct {
 		circle int
 		energy uint64
 	}
-	influences := make([]regionInfluence, 0, len(audit.Circles)-len(replacements))
-	for circle := range audit.Circles {
-		if selected[circle] {
-			continue
-		}
-		without := append([]float64(nil), params...)
-		without[circle*paramsPerCircle+6] = 0
-		withoutImage := base.Render(without)
-		influences = append(influences, regionInfluence{
-			circle: circle,
-			energy: imageDifferenceEnergy(fullImage, withoutImage, region),
-		})
+	energies := regionInfluenceEnergies(base, params, fullImage, region, candidates)
+	influences := make([]regionInfluence, len(candidates))
+	for index, circle := range candidates {
+		influences[index] = regionInfluence{circle: circle, energy: energies[index]}
 	}
 	slices.SortFunc(influences, func(left, right regionInfluence) int {
 		if left.energy > right.energy {
@@ -868,6 +867,145 @@ func selectResidualRegionActiveSet(
 		Region:             region,
 		RegionIndex:        regionIndex,
 	}, nil
+}
+
+// rowBandCompositor can composite a run of circles onto a caller-owned canvas
+// one row band at a time. It is what lets a caller that reads only part of the
+// canvas render only that part.
+type rowBandCompositor interface {
+	compositeParamsRows(img *image.NRGBA, params []float64, count, minY, maxY int)
+	initialCanvas() *image.NRGBA
+}
+
+// regionInfluenceEnergies measures, for every candidate circle, how much the
+// image inside region changes when that circle alone is removed. It is the
+// ranking residual-region selection uses to keep the circles that actually
+// paint the worst tile.
+//
+// Two facts shrink this far below the one full render per circle the definition
+// suggests. Compositing only ever writes pixels inside a circle's own raster,
+// so removing a circle cannot change a pixel outside it: the comparison
+// rectangle is region intersected with the circle's bounding box, and a circle
+// whose box misses the region has energy zero and needs no render at all. And
+// because nothing outside that rectangle is ever read, only its rows have to be
+// composited -- on the 4x4 grid the region is a sixteenth of the canvas, and a
+// circle usually covers a small part of even that.
+//
+// Backends that cannot composite a row band in place keep rendering the whole
+// canvas per circle. Both paths return the same energies, because the pixels
+// the fast path skips contribute exactly zero to the slow path's sum.
+func regionInfluenceEnergies(
+	base Renderer,
+	params []float64,
+	fullImage *image.NRGBA,
+	region image.Rectangle,
+	candidates []int,
+) []uint64 {
+	energies := make([]uint64, len(candidates))
+	circleCount := len(params) / paramsPerCircle
+	compositor, banded := base.(rowBandCompositor)
+	var initial *image.NRGBA
+	if banded {
+		initial = compositor.initialCanvas()
+	}
+	if initial == nil {
+		for index, circle := range candidates {
+			without := append([]float64(nil), params...)
+			without[circle*paramsPerCircle+6] = 0
+			energies[index] = imageDifferenceEnergy(fullImage, base.Render(without), region)
+		}
+		return energies
+	}
+
+	bounds := fullImage.Bounds()
+	region = region.Intersect(bounds)
+	vector := fit.ParamVector{Data: params, K: circleCount, Width: bounds.Dx(), Height: bounds.Dy()}
+	measure := func(banded rowBandCompositor, scratch *image.NRGBA, without []float64, index int) {
+		circle := candidates[index]
+		compare := region.Intersect(circleRasterBounds(vector.DecodeCircle(circle)))
+		if compare.Empty() {
+			return
+		}
+		copy(without, params)
+		without[circle*paramsPerCircle+6] = 0
+		copyRowBand(scratch, initial, compare.Min.Y, compare.Max.Y)
+		banded.compositeParamsRows(scratch, without, circleCount, compare.Min.Y, compare.Max.Y)
+		energies[index] = imageDifferenceEnergy(fullImage, scratch, compare)
+	}
+
+	// Each worker owns its scratch canvas, its scratch vector, and its own
+	// session, so the circles are independent measurements from here on.
+	compositors := []rowBandCompositor{compositor}
+	sessions, release := concurrentSessions(base, circleCount, min(renderWorkers(base), len(candidates)))
+	defer release()
+	if pooled := rowBandCompositors(sessions); len(pooled) > 1 {
+		compositors = pooled
+	}
+	walk := func(worker int) {
+		scratch := image.NewNRGBA(bounds)
+		without := make([]float64, len(params))
+		for index := worker; index < len(candidates); index += len(compositors) {
+			measure(compositors[worker], scratch, without, index)
+		}
+	}
+	var workers sync.WaitGroup
+	workers.Add(len(compositors) - 1)
+	for worker := 1; worker < len(compositors); worker++ {
+		go func() {
+			defer workers.Done()
+			walk(worker)
+		}()
+	}
+	walk(0)
+	workers.Wait()
+	return energies
+}
+
+// rowBandCompositors returns the sessions as row-band compositors, or nil if
+// any of them is not one. All or nothing: a partial set would leave some
+// circles measured on a session and the rest queued behind the caller's own
+// renderer, which is exactly the serialization the sessions exist to avoid.
+func rowBandCompositors(sessions []Renderer) []rowBandCompositor {
+	compositors := make([]rowBandCompositor, 0, len(sessions))
+	for _, session := range sessions {
+		compositor, ok := session.(rowBandCompositor)
+		if !ok {
+			return nil
+		}
+		compositors = append(compositors, compositor)
+	}
+	return compositors
+}
+
+// circleRasterBounds is the pixel box a circle can write. It is widened by one
+// pixel on every side so that no rounding in the rasterizer's span arithmetic
+// can put a written pixel outside it: the box is used to skip work, so it has
+// to err toward being too large.
+func circleRasterBounds(circle fit.Circle) image.Rectangle {
+	if circle.Opacity == 0 {
+		return image.Rectangle{}
+	}
+	return image.Rect(
+		int(math.Floor(circle.X-circle.R))-1,
+		int(math.Floor(circle.Y-circle.R))-1,
+		int(math.Ceil(circle.X+circle.R))+2,
+		int(math.Ceil(circle.Y+circle.R))+2,
+	)
+}
+
+// copyRowBand copies rows [minY, maxY) from src to dst, which must share their
+// geometry. It restores a scratch canvas to the base background over just the
+// rows a measurement is about to composite and read.
+func copyRowBand(dst, src *image.NRGBA, minY, maxY int) {
+	if dst.Stride != src.Stride || !dst.Bounds().Eq(src.Bounds()) {
+		return
+	}
+	minY = max(minY, dst.Bounds().Min.Y)
+	maxY = min(maxY, dst.Bounds().Max.Y)
+	for y := minY; y < maxY; y++ {
+		row := dst.PixOffset(dst.Bounds().Min.X, y)
+		copy(dst.Pix[row:row+dst.Stride], src.Pix[row:row+src.Stride])
+	}
 }
 
 func highestResidualRegion(canvas, reference *image.NRGBA, visited map[int]bool) (image.Rectangle, int, error) {

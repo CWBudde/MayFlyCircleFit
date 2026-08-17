@@ -1697,24 +1697,83 @@ pool does not parallelize any of it. For scale, pool setup is 1-3% of it. Once
 15.1 has widened evaluation, selection is the largest remaining per-sweep cost,
 which makes this task more valuable than 15.1 was.
 
-- [ ] Parallelize the leave-one-out renders in `AuditCircleBatch`
+- [x] Parallelize the leave-one-out renders in `AuditCircleBatch`
       (`internal/fit/renderer/batch_audit.go:37`) and the region-influence loop in
       `selectResidualRegionActiveSet` (`batch_polish.go:614`). Both are N
       independent full renders per sweep and both are serial today: ~65 renders
       per sweep at 32 circles, ~1025 at 512.
-- [ ] Render only `selection.Region` in the influence loop.
+      `planAudit` opens one single-threaded session and stepper per rendering
+      thread and hands out runs of the draw order from a shared queue;
+      `regionInfluenceEnergies` stripes the circles across the same kind of
+      sessions. Both go through `concurrentSessions`, which keeps OpenCL on the
+      serial path through the marker the evaluation pool already uses.
+- [x] Render only `selection.Region` in the influence loop.
       `imageDifferenceEnergy` reads nothing outside it, but `base.Render(without)`
       paints the whole canvas — on the 4x4 grid (`residualPolishGridSize = 4`)
       that is 16x more pixels than are examined.
-- [ ] Skip the selection audit after a rejected sweep. A rejected sweep leaves
+      Done, and narrowed further: compositing writes only inside a circle's own
+      raster, so removing a circle cannot change a pixel outside it. The
+      comparison shrinks to `region ∩ circleRasterBounds`, only those rows are
+      composited (`compositeParamsRows`), and a circle whose box misses the
+      region is skipped without rendering at all.
+- [x] Skip the selection audit after a rejected sweep. A rejected sweep leaves
       `bestParams` untouched, so the next sweep recomputes an identical audit.
+      Shipped with the acceptance-gate rework as `incumbentAuditCache`, which
+      also adopts the audit the gate took on a committed candidate.
 
 **Acceptance Checks:**
 
-- [ ] Selection returns the same active set, replacement set, and region as the
+- [x] Selection returns the same active set, replacement set, and region as the
       serial implementation for a fixed seed and fixture.
-- [ ] A benchmark shows selection cost per sweep against circle count at 32, 128,
+      `TestSelectPolishingActiveSetMatchesSerial` compares the complete
+      `polishingActiveSet` at one thread against `GOMAXPROCS` for all four
+      strategies, from identical visit state.
+      `TestRegionInfluenceEnergiesMatchFullRenders` compares the row-band
+      energies against the full renders they replace over four regions, and
+      `TestAuditCircleBatchChunkedMatchesSerial` compares the chunked audit
+      against the serial one.
+- [x] A benchmark shows selection cost per sweep against circle count at 32, 128,
       and 512 circles, before and after.
+
+**Measured 2026-08-17** on the same AMD Ryzen 5 4600H, 12 threads,
+`GOMAXPROCS=12`, at 512x512 with `residual-region` and `activeSetSize 8`,
+`-benchtime 2x -count 3`, medians. `BenchmarkPolishResidualRegionSelection`
+pins one rendering thread, so its two columns isolate the region-render change;
+`BenchmarkPolishSelectionByCircleCount` adds the full-width column. One
+`residual-region` selection:
+
+| Circles | before, 1 thread | after, 1 thread | after, 12 threads |
+| ---: | ---: | ---: | ---: |
+| 32 | — | 0.11 s | 0.08 s |
+| 128 | — | 0.43 s | 0.12 s |
+| 256 | 1.62 s | 0.95 s | — |
+| 512 | 4.24 s | 2.30 s | 0.47 s |
+
+Three things this shows and one it costs:
+
+- The region restriction alone is 1.84x at 512 circles and 1.71x at 256.
+  Measured on the influence loop by itself (`BenchmarkRegionInfluenceEnergies`,
+  one thread) it is far larger — 1.86 s against 0.029 s at 512 circles, 0.151 s
+  against 0.003 s at 128 — but after it the loop is no longer what selection
+  spends its time on.
+- What remains is the audit, which is why the chunked walk is worth another
+  4.9x at 512 circles and 3.6x at 128. End to end that is 9.0x at 512.
+- At 32 circles there is little to win: `minAuditChunkCircles *
+  auditChunksPerWorker` admits only two workers, and the region loop was already
+  a small share of a tenth-of-a-second selection.
+- Peak allocation per selection rises from 21 MB to 119 MB at 512 circles and
+  512x512, because 12 audit sessions and steppers hold ~6 MB each and the
+  influence loop's 12 sessions and scratch canvases hold ~3 MB each. It is
+  transient — everything is released when selection returns — and it buys a
+  4.2 s serial selection back as 0.47 s.
+
+The audit is now the whole cost, and it is still one full-canvas render, two
+full-canvas `changedPixelCount` scans, and one full-image SSD per circle. The
+same argument that shrank the influence loop applies to it — a circle changes
+only its own raster, so `CostWithout` is `MSE` corrected over that raster — but
+it needs exact integer SSD to stay bit-identical to `fit.FastMSECost`, which
+would move every audit value in the last ulp and break the polishing goldens.
+Left for a task of its own rather than smuggled in here.
 
 ### Task 15.3: Stop Destroying the Baked Prefix (P2)
 

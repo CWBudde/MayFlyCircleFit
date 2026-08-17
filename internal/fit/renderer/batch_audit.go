@@ -6,6 +6,8 @@ import (
 	"image"
 	"math"
 	"sort"
+	"sync"
+	"sync/atomic"
 
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
 )
@@ -62,9 +64,10 @@ func AuditCircleBatch(r Renderer, params []float64) (BatchAudit, error) {
 		Width: referenceBounds.Dx(), Height: referenceBounds.Dy(),
 	}
 
-	stepper := newAuditStepper(r, params, circleCount)
-
-	for circle := 0; circle < circleCount; circle++ {
+	// Every circle writes its own slot, and the measurement of one circle reads
+	// nothing another circle produces, so walking several runs of the draw order
+	// at once changes throughput and nothing else.
+	measure := func(stepper auditStepper, circle int) {
 		introduced, withoutImage := stepper.step(circle)
 		costWithout := fit.FastMSECost(withoutImage, reference)
 		validationErr := parameterBounds.ValidateCircle(vector.DecodeCircle(circle))
@@ -80,7 +83,129 @@ func AuditCircleBatch(r Renderer, params []float64) (BatchAudit, error) {
 		}
 	}
 
+	plan, release := planAudit(r, params, circleCount)
+	defer release()
+	if len(plan.steppers) < 2 {
+		stepper := newAuditStepper(r, params, circleCount)
+		for circle := 0; circle < circleCount; circle++ {
+			measure(stepper, circle)
+		}
+		return audit, nil
+	}
+
+	// Chunks are taken from a shared queue rather than dealt out up front,
+	// because the work per circle is not uniform: auditing circle c composites
+	// the circleCount-c-1 circles drawn after it, so the front of the vector
+	// costs several times what the back does. A fixed split would leave the
+	// worker holding the front finishing long after the rest; a queue with
+	// several chunks per worker lets whoever finishes early take the next run.
+	var next atomic.Int64
+	walk := func(stepper *accumulatedAuditStepper) {
+		for {
+			index := int(next.Add(1)) - 1
+			if index >= len(plan.chunks) {
+				return
+			}
+			chunk := plan.chunks[index]
+			stepper.restart(chunk.start)
+			for circle := chunk.start; circle < chunk.end; circle++ {
+				measure(stepper, circle)
+			}
+		}
+	}
+	var workers sync.WaitGroup
+	workers.Add(len(plan.steppers) - 1)
+	for _, stepper := range plan.steppers[1:] {
+		go func() {
+			defer workers.Done()
+			walk(stepper)
+		}()
+	}
+	walk(plan.steppers[0])
+	workers.Wait()
+
 	return audit, nil
+}
+
+const (
+	// minAuditChunkCircles is the shortest run worth taking from the queue. Every
+	// chunk rebuilds the prefix its first circle sits on, so a run of one circle
+	// can cost more to set up than to walk.
+	minAuditChunkCircles = 4
+	// auditChunksPerWorker decides how finely the draw order is cut. More chunks
+	// balance the uneven per-circle work better and cost one more prefix rebuild
+	// each: rebuilds are linear in the circle count where the walk is quadratic,
+	// so a handful per worker is cheap insurance against a bad split.
+	auditChunksPerWorker = 4
+)
+
+// auditChunk is a contiguous run of draw slots one stepper walks in one go.
+type auditChunk struct {
+	start, end int
+}
+
+// auditPlan is a set of independent walkers over one parameter vector together
+// with the runs of circles they share out between them.
+type auditPlan struct {
+	steppers []*accumulatedAuditStepper
+	chunks   []auditChunk
+}
+
+// planAudit opens one stepper per worker, each with its own session and its own
+// canvases, and cuts the draw order into runs for them to take. A stepper that
+// picks up a run starting at s rebuilds the prefix holding circles [0, s),
+// which is linear in the circle count against the quadratic cost of the walk
+// itself.
+//
+// It returns an empty plan -- leaving the caller on the historical serial path,
+// canvases and all -- for a backend that cannot hand out independent in-place
+// compositors, and for a vector too short to be worth splitting.
+func planAudit(r Renderer, params []float64, circleCount int) (auditPlan, func()) {
+	if _, inPlace := r.(inPlaceCompositor); !inPlace {
+		return auditPlan{}, noopCleanup
+	}
+	workers := min(renderWorkers(r), circleCount/(minAuditChunkCircles*auditChunksPerWorker))
+	sessions, release := concurrentSessions(r, circleCount, workers)
+	if len(sessions) < 2 {
+		release()
+		return auditPlan{}, noopCleanup
+	}
+
+	plan := auditPlan{steppers: make([]*accumulatedAuditStepper, 0, len(sessions))}
+	for _, session := range sessions {
+		compositor, ok := session.(inPlaceCompositor)
+		if !ok {
+			release()
+			return auditPlan{}, noopCleanup
+		}
+		stepper := newAccumulatedAuditStepper(compositor, params, circleCount, 0)
+		if stepper == nil {
+			release()
+			return auditPlan{}, noopCleanup
+		}
+		plan.steppers = append(plan.steppers, stepper)
+	}
+	plan.chunks = auditChunks(circleCount, len(plan.steppers)*auditChunksPerWorker)
+	return plan, release
+}
+
+// auditChunks cuts [0, circleCount) into at most count contiguous runs of equal
+// length. Balancing is left to the queue the runs are taken from, so the cut
+// itself only has to be fine enough to give it something to balance.
+func auditChunks(circleCount, count int) []auditChunk {
+	count = min(count, circleCount)
+	if count < 1 {
+		count = 1
+	}
+	chunks := make([]auditChunk, 0, count)
+	for index := range count {
+		start := index * circleCount / count
+		end := (index + 1) * circleCount / count
+		if start < end {
+			chunks = append(chunks, auditChunk{start: start, end: end})
+		}
+	}
+	return chunks
 }
 
 // inPlaceCompositor is implemented by renderers that can draw a run of circles
@@ -102,16 +227,8 @@ type auditStepper interface {
 
 func newAuditStepper(r Renderer, params []float64, circleCount int) auditStepper {
 	if compositor, ok := r.(inPlaceCompositor); ok {
-		prefix := compositor.initialCanvas()
-		if prefix != nil {
-			return &accumulatedAuditStepper{
-				compositor: compositor,
-				params:     params,
-				count:      circleCount,
-				prefix:     prefix,
-				next:       cloneNRGBA(prefix),
-				without:    cloneNRGBA(prefix),
-			}
+		if stepper := newAccumulatedAuditStepper(compositor, params, circleCount, 0); stepper != nil {
+			return stepper
 		}
 	}
 	progressive := append([]float64(nil), params...)
@@ -156,9 +273,43 @@ type accumulatedAuditStepper struct {
 	compositor inPlaceCompositor
 	params     []float64
 	count      int
-	prefix     *image.NRGBA
-	next       *image.NRGBA
-	without    *image.NRGBA
+	// initial is the untouched base canvas every prefix is rebuilt from, which
+	// is what lets one stepper be repositioned instead of reallocated.
+	initial *image.NRGBA
+	prefix  *image.NRGBA
+	next    *image.NRGBA
+	without *image.NRGBA
+}
+
+// newAccumulatedAuditStepper opens a stepper positioned at start, with the
+// prefix already holding circles [0, start). It returns nil for a compositor
+// with no base canvas to start from.
+func newAccumulatedAuditStepper(compositor inPlaceCompositor, params []float64, circleCount, start int) *accumulatedAuditStepper {
+	initial := compositor.initialCanvas()
+	if initial == nil {
+		return nil
+	}
+	stepper := &accumulatedAuditStepper{
+		compositor: compositor,
+		params:     params,
+		count:      circleCount,
+		initial:    initial,
+		prefix:     cloneNRGBA(initial),
+		next:       cloneNRGBA(initial),
+		without:    cloneNRGBA(initial),
+	}
+	stepper.restart(start)
+	return stepper
+}
+
+// restart repositions the stepper at start by rebuilding the prefix holding
+// circles [0, start). It is what lets several steppers cover disjoint runs of
+// one vector concurrently, and one stepper cover several runs in turn.
+func (s *accumulatedAuditStepper) restart(start int) {
+	copy(s.prefix.Pix, s.initial.Pix)
+	if start > 0 {
+		s.compositor.compositeParams(s.prefix, s.params, start)
+	}
 }
 
 func (s *accumulatedAuditStepper) step(circle int) (int, *image.NRGBA) {
