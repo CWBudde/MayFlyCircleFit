@@ -193,13 +193,24 @@ persists the campaign and starts it; the client may disconnect immediately.
   create the job. A crash therefore leaves an adoptable record, never a running
   job no record names.
 - **Restart adopts, it does not restart the campaign.** On startup every
-  schedule still in `running` resumes. An interrupted stage is re-run under the
-  identifier its record already names; the partial checkpoint from the
-  interrupted attempt is discarded, because neither `extend` nor `polish` can
-  continue from anything but a completed batch checkpoint.
+  schedule still in `running` resumes. Jobs are restored before schedules, so
+  the executor can see how the interrupted attempt ended: a stage whose job is
+  restored as completed — the crash landed between the terminal checkpoint and
+  the outcome record — is settled from that job and not re-run. Only an attempt
+  that did not complete is re-run under the identifier its record already names,
+  and only then is its partial checkpoint discarded, because neither `extend`
+  nor `polish` can continue from anything but a completed batch checkpoint.
 - **Pause is a stage boundary.** `POST /api/v1/schedules/:id/pause` lets the
   in-flight stage finish and stops before the next one; `resume` continues from
   the first stage the records do not show as completed. `cancel` is terminal and
   does cancel the in-flight stage.
+- **The durable intent is re-read at the boundary it protects.** Pause and
+  cancel are persisted before the executor is touched, and the executor re-reads
+  that state immediately before it writes a stage record — so a paused campaign
+  starts no further stage — and again once the job exists, so a cancel that
+  arrived while the job was being created is replayed against it instead of
+  being lost. A driver that stops also re-reads the record as it deregisters, so
+  a `resume` that raced with the stop cannot leave a `running` schedule with no
+  executor.
 - **Schedules run in the default project.** They are keyed independently of jobs
   and the store does not know about projects.

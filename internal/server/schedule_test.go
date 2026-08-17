@@ -14,6 +14,7 @@ import (
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/google/uuid"
 )
 
 // scheduleFixture is one server over one data root, rebuildable so a test can
@@ -309,17 +310,177 @@ func TestScheduleAdoptsAStageWhoseJobNeverStarted(t *testing.T) {
 	if err := persistence.DeleteCheckpoint(interrupted.JobID); err != nil && !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("delete checkpoint: %v", err)
 	}
+	// There is nothing left for the restart to restore, which has to be checked
+	// here rather than through the job manager afterwards: the adopted stage runs
+	// under the very same identifier, so a driver that is quick off the mark puts
+	// a fresh job back under it before the assertion could look.
+	if _, err := persistence.LoadCheckpoint(interrupted.JobID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("checkpoint for %s survived the delete: %v", interrupted.JobID, err)
+	}
 
 	fixture.restart(t)
-	if _, ok := fixture.server.jobManager.GetJob(interrupted.JobID); ok {
-		t.Fatalf("job %s should not have been restored", interrupted.JobID)
-	}
 	adopted := fixture.waitForRunningStage(t, scheduleID, 30*time.Second)
 	if adopted.Index != 0 || adopted.JobID != interrupted.JobID {
 		t.Fatalf("adopted stage %d job %q, want stage 0 job %q", adopted.Index, adopted.JobID, interrupted.JobID)
 	}
 	if recorder := fixture.post(t, "/api/v1/schedules/"+scheduleID+"/cancel"); recorder.Code != http.StatusAccepted {
 		t.Fatalf("cancel status = %d", recorder.Code)
+	}
+}
+
+// TestScheduleAdoptsAStageThatAlreadyCompleted covers the other end of the
+// crash window: the stage's job wrote its terminal checkpoint and the process
+// died before the driver could record the outcome. Rerunning that stage would
+// delete a finished checkpoint and repeat every iteration of it, so the record
+// must be settled from the restored job instead.
+func TestScheduleAdoptsAStageThatAlreadyCompleted(t *testing.T) {
+	fixture := newScheduleFixture(t, 2)
+	scheduleID := fixture.createSchedule(t, scheduleDocument(fixture.imagePath, 5, 20))
+	fixture.waitForScheduleState(t, scheduleID, store.ScheduleStateCompleted, 60*time.Second)
+
+	stages := fixture.stages(t, scheduleID)
+	if len(stages) != 2 {
+		t.Fatalf("recorded %d stages, want 2", len(stages))
+	}
+	completed := stages[0]
+	before, err := fixture.server.store.LoadCheckpoint(completed.JobID)
+	if err != nil {
+		t.Fatalf("load stage 0 checkpoint: %v", err)
+	}
+	fixture.stop(t)
+
+	// Rewind the records to the instant before the driver wrote the outcome.
+	persistence, err := store.NewFSStore(filepath.Join(fixture.root, "artifacts"))
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	rewound := completed
+	rewound.State = store.ScheduleStateRunning
+	rewound.CompletedAt = nil
+	rewound.BestCost = 0
+	rewound.Iterations = 0
+	rewound.Evaluations = 0
+	if err := persistence.SaveScheduleStage(scheduleID, &rewound); err != nil {
+		t.Fatalf("rewind stage 0: %v", err)
+	}
+	record, err := persistence.LoadSchedule(scheduleID)
+	if err != nil {
+		t.Fatalf("load schedule: %v", err)
+	}
+	record.State = store.ScheduleStateRunning
+	if err := persistence.SaveSchedule(record); err != nil {
+		t.Fatalf("rewind schedule: %v", err)
+	}
+
+	fixture.restart(t)
+	fixture.waitForScheduleState(t, scheduleID, store.ScheduleStateCompleted, 60*time.Second)
+
+	after := fixture.stages(t, scheduleID)
+	if len(after) != 2 {
+		t.Fatalf("after the restart %d stages are recorded, want 2", len(after))
+	}
+	if after[0].JobID != completed.JobID {
+		t.Fatalf("adopted stage 0 job = %q, want %q", after[0].JobID, completed.JobID)
+	}
+	if after[0].State != store.ScheduleStateCompleted {
+		t.Fatalf("adopted stage 0 state = %q, want completed: %s", after[0].State, after[0].Error)
+	}
+	if after[0].BestCost != completed.BestCost || after[0].Iterations != completed.Iterations {
+		t.Fatalf("adopted stage 0 reports cost %v over %d iterations, want %v over %d",
+			after[0].BestCost, after[0].Iterations, completed.BestCost, completed.Iterations)
+	}
+	// The finished checkpoint is the thing a rerun would have thrown away.
+	reloaded, err := fixture.server.store.LoadCheckpoint(completed.JobID)
+	if err != nil {
+		t.Fatalf("stage 0 checkpoint did not survive the restart: %v", err)
+	}
+	if !reloaded.Timestamp.Equal(before.Timestamp) {
+		t.Fatalf("stage 0 was rerun: checkpoint written at %s, was %s", reloaded.Timestamp, before.Timestamp)
+	}
+}
+
+// TestScheduleStageIsNotStartedAfterAPause covers the window between the
+// driver reading the schedule as running and writing the stage record. Pause
+// and cancel are durable before they are acted on, so a driver holding a stale
+// read must notice and start nothing.
+func TestScheduleStageIsNotStartedAfterAPause(t *testing.T) {
+	fixture := newScheduleFixture(t, 2)
+	scheduleStore, err := fixture.server.scheduleStore()
+	if err != nil {
+		t.Fatalf("schedule store: %v", err)
+	}
+	document, err := app.ParseSchedule([]byte(scheduleDocument(fixture.imagePath, 5, 20)))
+	if err != nil {
+		t.Fatalf("parse schedule: %v", err)
+	}
+	record := store.NewScheduleRecord(uuid.New().String(), *document)
+	record.State = store.ScheduleStatePaused
+	if err := scheduleStore.SaveSchedule(record); err != nil {
+		t.Fatalf("save schedule: %v", err)
+	}
+	plan, err := document.Expand()
+	if err != nil {
+		t.Fatalf("expand schedule: %v", err)
+	}
+
+	// What the driver holds is the read it took before the pause landed.
+	stale := *record
+	stale.State = store.ScheduleStateRunning
+	outcome, err := fixture.server.runScheduleStage(scheduleStore, &stale, plan, nil, 0, nil)
+	if err != nil {
+		t.Fatalf("runScheduleStage() error = %v", err)
+	}
+	if outcome != store.ScheduleStateRunning {
+		t.Fatalf("outcome = %q, want the running signal that stops the driver without a verdict", outcome)
+	}
+	if stages := fixture.stages(t, record.ScheduleID); len(stages) != 0 {
+		t.Fatalf("a paused campaign recorded %d stages, want 0", len(stages))
+	}
+	for _, job := range fixture.server.jobManager.ListJobs() {
+		if job.ScheduleID == record.ScheduleID {
+			t.Fatalf("a paused campaign started job %s", job.ID)
+		}
+	}
+}
+
+// TestScheduleWantsDriverFollowsTheDurableState covers the handoff decision a
+// driver makes as it deregisters: a resume that raced with the stop saw the
+// registration and started nothing, so the exiting driver has to look at the
+// record rather than assume it is done.
+func TestScheduleWantsDriverFollowsTheDurableState(t *testing.T) {
+	fixture := newScheduleFixture(t, 1)
+	scheduleStore, err := fixture.server.scheduleStore()
+	if err != nil {
+		t.Fatalf("schedule store: %v", err)
+	}
+	document, err := app.ParseSchedule([]byte(scheduleDocument(fixture.imagePath, 5, 20)))
+	if err != nil {
+		t.Fatalf("parse schedule: %v", err)
+	}
+	record := store.NewScheduleRecord(uuid.New().String(), *document)
+	record.State = store.ScheduleStatePaused
+	if err := scheduleStore.SaveSchedule(record); err != nil {
+		t.Fatalf("save schedule: %v", err)
+	}
+	if fixture.server.scheduleWantsDriver(record.ScheduleID) {
+		t.Fatal("a paused schedule asked for a driver")
+	}
+	if fixture.server.scheduleWantsDriver(uuid.New().String()) {
+		t.Fatal("an unknown schedule asked for a driver")
+	}
+
+	record.State = store.ScheduleStateRunning
+	if err := scheduleStore.SaveSchedule(record); err != nil {
+		t.Fatalf("save schedule: %v", err)
+	}
+	if !fixture.server.scheduleWantsDriver(record.ScheduleID) {
+		t.Fatal("a resumed schedule was left without a driver")
+	}
+
+	// A server on its way down hands nothing over; the record stays adoptable.
+	fixture.server.cancel()
+	if fixture.server.scheduleWantsDriver(record.ScheduleID) {
+		t.Fatal("a shutting-down server handed the schedule back to its driver")
 	}
 }
 
