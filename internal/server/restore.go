@@ -103,9 +103,10 @@ func jobFromCheckpoint(checkpoint *store.Checkpoint, project app.Project) *Job {
 	}
 
 	end := checkpoint.Timestamp
-	stageIndex := 0
+	var stageIndex *int
 	if checkpoint.StageIndex != nil {
-		stageIndex = *checkpoint.StageIndex
+		index := *checkpoint.StageIndex
+		stageIndex = &index
 	}
 	return &Job{
 		ID:           checkpoint.JobID,
@@ -139,8 +140,8 @@ func applyJobLineage(checkpoint *store.Checkpoint, job *Job) {
 	checkpoint.PolishedFrom = job.PolishedFrom
 	checkpoint.ScheduleID = job.ScheduleID
 	checkpoint.StageIndex = nil
-	if job.ScheduleID != "" {
-		index := job.StageIndex
+	if job.ScheduleID != "" && job.StageIndex != nil {
+		index := *job.StageIndex
 		checkpoint.StageIndex = &index
 	}
 }

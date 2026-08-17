@@ -84,9 +84,10 @@ func TestJobLineageSurvivesTheCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	baseStage := 0
 	job := &Job{
 		ID: jobID, Project: app.DefaultProject, State: StateCompleted, Config: config,
-		ExtendedFrom: parentID, ScheduleID: schedule, StageIndex: 0,
+		ExtendedFrom: parentID, ScheduleID: schedule, StageIndex: &baseStage,
 	}
 	checkpoint := store.NewCheckpoint(jobID, []float64{1, 1, 1, 1, 0, 0, 1}, 5, 10, 3, config)
 	checkpoint.Timestamp = time.Now()
@@ -102,8 +103,12 @@ func TestJobLineageSurvivesTheCheckpoint(t *testing.T) {
 	}
 
 	restored := jobFromCheckpoint(checkpoint, app.DefaultProject)
-	if restored.ExtendedFrom != parentID || restored.ScheduleID != schedule || restored.StageIndex != 0 {
+	if restored.ExtendedFrom != parentID || restored.ScheduleID != schedule {
 		t.Fatalf("restored job lineage = %+v", restored)
+	}
+	// Stage zero must survive the round trip rather than look like no stage.
+	if restored.StageIndex == nil || *restored.StageIndex != 0 {
+		t.Fatalf("restored StageIndex = %v, want 0", restored.StageIndex)
 	}
 }
 

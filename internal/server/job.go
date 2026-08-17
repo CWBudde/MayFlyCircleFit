@@ -59,10 +59,11 @@ type Job struct {
 	ExtendedFrom string `json:"extendedFrom,omitempty"`
 	PolishedFrom string `json:"polishedFrom,omitempty"`
 	// ScheduleID and StageIndex place the job in a declarative schedule.
-	// StageIndex is only meaningful while ScheduleID is set, which is why it can
-	// be a plain int: stage zero of no schedule is not a thing.
+	// StageIndex is a pointer, and matches the checkpoint field it is persisted
+	// to, because stage zero is a real stage: with a plain int and omitempty the
+	// base stage of a campaign would serialize a schedule with no index at all.
 	ScheduleID    string         `json:"scheduleId,omitempty"`
-	StageIndex    int            `json:"stageIndex,omitempty"`
+	StageIndex    *int           `json:"stageIndex,omitempty"`
 	Termination   string         `json:"termination,omitempty"`
 	StartTime     time.Time      `json:"startTime"`
 	EndTime       *time.Time     `json:"endTime,omitempty"`
