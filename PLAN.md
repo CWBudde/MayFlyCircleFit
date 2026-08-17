@@ -1801,6 +1801,91 @@ memory bandwidth.
 - [ ] An explicitly configured `EvaluationWorkers` is still honored up to the
       `GOMAXPROCS` clamp, with a test covering it.
 
+### Task 15.6: Stop the Acceptance Gate Vetoing Every Sweep (P1) — correctness, not throughput
+
+This task sits in Phase 15 because it is where polishing lives, but it is a
+correctness bug, not a throughput one. Tasks 15.1–15.4 make polishing spend its
+budget faster; this one is about polishing having been unable to keep any of the
+work that budget bought.
+
+**Measured 2026-08-17** on an AMD Ryzen 5 4600H (12 logical cores,
+`GOMAXPROCS=12`), against the real stalled checkpoint of job `c2029645`
+(64 circles, 448 params, cost 572.3572196960449) polished against
+`Christian_after.jpeg` at 512x512 with the job's own configuration:
+`residual-region`, `activeSetSize 8`, `maxSweeps 12`, `polishingIters 400`,
+`polishingEpochs 2`, `popSize 50`, seed 920002, early stop 0.001/300,
+evaluation width 12.
+
+| | Sweeps | Accepted | Final cost | Cost removed | Wall clock |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Before (`31fc02e`, `allCirclesUseful`) | 12 | **0** | 572.357220 | **0.000000** | 9m10s |
+| After (`sweepKeepsCirclesUseful`) | 12 | **12** | 527.720599 | **44.636621** | 8m50s |
+
+The same budget, the same seed, the same wall clock; the difference is entirely
+whether the optimizer's output was allowed to be kept.
+
+The cause: acceptance required `allCirclesUseful` over the **entire** candidate,
+which also required a sweep to repair circles outside its active set — circles
+it copies through byte for byte and has no agency over. `AuditCircleBatch` on
+that checkpoint reports three such circles:
+
+```
+circle 20  contribution  -0.405724  pixels 2302
+circle 25  contribution  -0.072455  pixels 1541
+circle 37  contribution  -0.176453  pixels   18
+threshold 0.01 -> 3 of 64 circles block acceptance
+```
+
+`residual-region` reseeds `replacementCount = max(1, activeSetSize/5)` = 1
+circle per sweep, so it is structurally incapable of clearing three blockers at
+once and the gate vetoed forever. Occluded circles with negative contribution
+are the normal steady state of an incremental run — `PruneCircleBatch` runs per
+stage against that stage's canvas, later stages composite on top, and nothing
+re-audits the assembled vector — so this made polishing a guaranteed no-op past
+a certain size. The same stall was observed live at 64 and again at 96 circles:
+12 of 12 sweeps rejected, net cost gain 0.00, ~8 minutes per stage.
+
+- [x] Replace the absolute predicate with the non-regression rule
+      `sweepKeepsCirclesUseful` (`internal/fit/renderer/batch_polish.go`): every
+      circle **in the active set** must be useful after the sweep, and outside it
+      the set of non-useful circles may not grow. Containment is checked per
+      circle, so the count cannot grow either.
+- [x] Deliberately do **not** require an inherited non-useful circle's
+      contribution to improve. Those values drift by fractions as neighbours
+      move; demanding monotone improvement on circles the sweep does not control
+      would restore the stall.
+- [x] Cache the incumbent's audit (`incumbentAuditCache`) across sweeps, and on
+      a committing sweep adopt the audit the gate already computed for that
+      candidate instead of invalidating. Both active-set selection and the gate
+      need it, and `AuditCircleBatch` is one full render per omitted circle. This also
+      satisfies task 15.2's third bullet — a rejected sweep no longer recomputes
+      an identical selection audit — for `replacement`, `hybrid-overlap`, and
+      `residual-region`.
+- [x] Log the acceptance decision of every sweep at `INFO`: `cost`,
+      `usefulness-gate` with the one-based `blocking_circles`,
+      `invalid-candidate`, or an accepted record carrying `cost_removed`. A
+      stalled run must be diagnosable from the server log alone.
+- [x] Mark the superseded gate description in
+      `docs/contiguous-window-polish-report.md`; its accepted-sweep columns were
+      measured under the old rule and are not a prediction of current behavior.
+
+**Acceptance Checks:**
+
+- [x] `TestPolishCircleBatchCommitsImprovementBesideAnUntouchedHarmfulCircle`
+      asserts a strictly cost-improving sweep commits beside a pre-existing
+      harmful circle. It fails on `31fc02e`.
+- [x] `TestPolishCircleBatchRejectsImprovementThatKillsAnUntouchedCircle`
+      asserts the other half: a sweep may inherit a dead circle but may not
+      create one, including outside the active set -- the killed circle is not
+      in the active set the sweep optimizes.
+- [x] `TestSweepKeepsCirclesUsefulIsANonRegressionRule` is table-driven over the
+      gate and additionally asserts that, on any incumbent carrying no blockers,
+      the new rule agrees with the old absolute predicate exactly.
+- [ ] Re-measure `BenchmarkPolishStrategyQualityAfterBatchFit` and refresh
+      `docs/contiguous-window-polish-report.md`. Its strategy ranking was
+      dominated by which active set happened to cover the blockers, so the
+      comparison is worth redoing now that the gate no longer decides it.
+
 ---
 
 ## Phase 16: Declarative Run Schedules

@@ -313,7 +313,7 @@ func TestSelectResidualRegionActiveSetCombinesWeakSlotAndInfluencer(t *testing.T
 	}
 	base := NewCPURenderer(reference, 3)
 
-	selection, err := selectResidualRegionActiveSet(base, params, 2, nil)
+	selection, err := selectResidualRegionActiveSet(base, &incumbentAuditCache{session: base}, params, 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -652,20 +652,23 @@ func TestPolishCircleBatchContiguousWindowBakesPrefixAndMatchesFullVector(t *tes
 	}
 }
 
-// TestPolishCircleBatchRejectsImprovementWhileAnUntouchedCircleIsHarmful pins the
+// TestPolishCircleBatchCommitsImprovementBesideAnUntouchedHarmfulCircle pins the
 // acceptance rule that dominates every strategy's usefulness.
 //
-// A sweep is committed only when allCirclesUseful holds for the complete
-// candidate, so a circle outside the active set whose MSEContribution has gone
-// negative rejects the sweep even when the sweep strictly lowers the cost of the
-// whole vector. Fitted vectors do contain such circles: PruneCircleBatch runs
+// A circle outside the active set is copied through a sweep unchanged, so
+// demanding that it be useful demands that the sweep repair something it never
+// touched. Fitted vectors routinely carry such circles: PruneCircleBatch runs
 // per batch stage against that stage's canvas, later stages composite over what
 // an earlier stage judged useful, and nothing re-audits the assembled result.
+// The absolute gate therefore vetoed every sweep of a long incremental run --
+// measured at 12 of 12 rejections with a net cost gain of 0.00 at both 64 and 96
+// circles -- no matter how much the candidate improved the cost.
 //
-// The consequence measured in docs/contiguous-window-polish-report.md is that
-// polishing a real batch fit can accept nothing at all while spending its whole
-// optimizer budget. Change this rule deliberately or not at all.
-func TestPolishCircleBatchRejectsImprovementWhileAnUntouchedCircleIsHarmful(t *testing.T) {
+// The gate is a non-regression rule instead: the sweep must keep every active
+// circle useful and must not add a non-useful circle outside the active set. A
+// pre-existing harmful circle that the sweep leaves exactly as it found it no
+// longer blocks acceptance. Change this rule deliberately or not at all.
+func TestPolishCircleBatchCommitsImprovementBesideAnUntouchedHarmfulCircle(t *testing.T) {
 	ref := solidImage(8, 8, color.NRGBA{R: 200, G: 200, B: 200, A: 255})
 	base := NewCPURenderer(ref, 2)
 
@@ -702,13 +705,225 @@ func TestPolishCircleBatchRejectsImprovementWhileAnUntouchedCircleIsHarmful(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
+	if result.AcceptedSweeps != 1 || result.Sweeps != 1 {
+		t.Fatalf("accepted/sweeps = %d/%d, want 1/1: a strict improvement was vetoed by an untouched harmful circle",
+			result.AcceptedSweeps, result.Sweeps)
+	}
+	if result.BestCost != improvedCost || !reflect.DeepEqual(result.BestParams, improved) {
+		t.Fatalf("committed sweep = cost %v params %v, want %v and the improved vector",
+			result.BestCost, result.BestParams, improvedCost)
+	}
+}
+
+// TestPolishCircleBatchRejectsImprovementThatKillsAnUntouchedCircle is the other
+// half of the non-regression rule: a sweep may inherit a harmful circle, but it
+// may not create one outside the active set either. Circle one is useful in the
+// incumbent and stays outside the active set, so the sweep never touches its
+// parameters; growing the active circle two until it buries circle one lowers
+// the cost of the whole vector and still has to be rejected.
+func TestPolishCircleBatchRejectsImprovementThatKillsAnUntouchedCircle(t *testing.T) {
+	ref := solidImage(16, 16, color.NRGBA{R: 200, G: 200, B: 200, A: 255})
+	base := NewCPURenderer(ref, 2)
+
+	// Circle one is a correct patch, so it changes pixels and helps. Circle two
+	// is a small, badly coloured blob far from it, and is the circle the sweep
+	// optimizes.
+	initial := append(
+		circleParams(4, 4, 2, color.NRGBA{R: 200, G: 200, B: 200, A: 255}, 1),
+		circleParams(11, 11, 3, color.NRGBA{A: 255}, 1)...,
+	)
+	// Grown circle two paints the reference colour across the whole canvas, which
+	// both lowers the cost and buries circle one: circle one is drawn first, so it
+	// changes no pixel of the final image once circle two covers it opaquely.
+	grown := circleParams(8, 8, 24, color.NRGBA{R: 200, G: 200, B: 200, A: 255}, 1)
+
+	improved := append(append([]float64(nil), initial[:paramsPerCircle]...), grown...)
+	initialCost := base.Cost(initial)
+	improvedCost := base.Cost(improved)
+	if improvedCost >= initialCost {
+		t.Fatalf("test setup is vacuous: grown cost %v is not below %v", improvedCost, initialCost)
+	}
+	incumbentAudit, err := AuditCircleBatch(base, initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !circleUseful(incumbentAudit.Circles[0], minBatchMSEContribution) {
+		t.Fatalf("test setup is vacuous: circle one is already not useful in the incumbent: %+v",
+			incumbentAudit.Circles[0])
+	}
+	candidateAudit, err := AuditCircleBatch(base, improved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if circleUseful(candidateAudit.Circles[0], minBatchMSEContribution) {
+		t.Fatalf("test setup is vacuous: circle one survives the sweep: %+v", candidateAudit.Circles[0])
+	}
+
+	// A one-slot contiguous window prefers the latest unvisited window, which is
+	// circle two, so circle one is genuinely outside the active set and the
+	// optimizer only ever returns the one grown slot.
+	result, err := PolishCircleBatchContext(context.Background(), base, &fixedPolishOptimizer{params: grown}, initial, BatchPolishOptions{
+		ActiveSetSize: 1,
+		MaxSweeps:     1,
+		Strategy:      BatchPolishContiguousWindow,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if result.AcceptedSweeps != 0 || result.Sweeps != 1 {
-		t.Fatalf("accepted/sweeps = %d/%d, want 0/1: a strict improvement was committed despite a harmful circle",
+		t.Fatalf("accepted/sweeps = %d/%d, want 0/1: the sweep killed an untouched circle outside the active set",
 			result.AcceptedSweeps, result.Sweeps)
 	}
 	if result.BestCost != initialCost || !reflect.DeepEqual(result.BestParams, initial) {
 		t.Fatalf("rejected sweep changed the result: cost %v params %v, want %v and the initial vector",
 			result.BestCost, result.BestParams, initialCost)
+	}
+}
+
+// TestIncumbentAuditCacheAdoptsTheCommittedCandidateAudit pins the reason a
+// committing sweep does not drop the cache. The acceptance gate audits the
+// candidate immediately before it commits, and that candidate is the next
+// incumbent, so re-auditing it would be one wasted full render per circle after
+// every accepted sweep. The nil session is the assertion: a cache that fell back
+// to AuditCircleBatch here would panic.
+func TestIncumbentAuditCacheAdoptsTheCommittedCandidateAudit(t *testing.T) {
+	cache := &incumbentAuditCache{}
+	committed := auditOf(usefulAuditCircle(0), harmfulAuditCircle(1))
+
+	cache.adopt(committed)
+	got, err := cache.get(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Circles, committed.Circles) {
+		t.Fatalf("cached audit = %+v, want the adopted candidate audit %+v", got.Circles, committed.Circles)
+	}
+}
+
+// allCirclesUsefulReference is the absolute acceptance predicate the
+// non-regression gate replaced. It exists so the equivalence case below can
+// assert that the two agree exactly whenever the incumbent carries no
+// pre-existing blockers, which is the only situation the old rule described
+// correctly.
+func allCirclesUsefulReference(audit BatchAudit, minContribution float64) bool {
+	for _, circle := range audit.Circles {
+		if !circle.Valid || circle.FinalChangedPixels < 1 || circle.MSEContribution <= minContribution {
+			return false
+		}
+	}
+	return true
+}
+
+func usefulAuditCircle(index int) CircleAudit {
+	return CircleAudit{
+		Circle:             index + 1,
+		OriginalCircle:     index + 1,
+		FinalChangedPixels: 100,
+		MSEContribution:    1,
+		Valid:              true,
+	}
+}
+
+func harmfulAuditCircle(index int) CircleAudit {
+	circle := usefulAuditCircle(index)
+	circle.MSEContribution = -0.4
+	return circle
+}
+
+func auditOf(circles ...CircleAudit) BatchAudit {
+	return BatchAudit{Circles: circles}
+}
+
+func TestSweepKeepsCirclesUsefulIsANonRegressionRule(t *testing.T) {
+	cases := []struct {
+		name          string
+		incumbent     BatchAudit
+		candidate     BatchAudit
+		activeCircles []int
+		wantOK        bool
+		wantBlockers  []int
+	}{
+		{
+			name:          "all useful commits",
+			incumbent:     auditOf(usefulAuditCircle(0), usefulAuditCircle(1), usefulAuditCircle(2)),
+			candidate:     auditOf(usefulAuditCircle(0), usefulAuditCircle(1), usefulAuditCircle(2)),
+			activeCircles: []int{1},
+			wantOK:        true,
+		},
+		{
+			name:          "pre-existing blocker outside the active set is excused",
+			incumbent:     auditOf(usefulAuditCircle(0), harmfulAuditCircle(1), usefulAuditCircle(2)),
+			candidate:     auditOf(usefulAuditCircle(0), harmfulAuditCircle(1), usefulAuditCircle(2)),
+			activeCircles: []int{2},
+			wantOK:        true,
+		},
+		{
+			name:          "a blocker the sweep introduces outside the active set rejects",
+			incumbent:     auditOf(usefulAuditCircle(0), usefulAuditCircle(1), usefulAuditCircle(2)),
+			candidate:     auditOf(usefulAuditCircle(0), harmfulAuditCircle(1), usefulAuditCircle(2)),
+			activeCircles: []int{2},
+			wantOK:        false,
+			wantBlockers:  []int{2},
+		},
+		{
+			name:          "a pre-existing blocker inside the active set still rejects",
+			incumbent:     auditOf(usefulAuditCircle(0), harmfulAuditCircle(1)),
+			candidate:     auditOf(usefulAuditCircle(0), harmfulAuditCircle(1)),
+			activeCircles: []int{1},
+			wantOK:        false,
+			wantBlockers:  []int{2},
+		},
+		{
+			name: "repairing one blocker while inheriting another commits",
+			incumbent: auditOf(harmfulAuditCircle(0), harmfulAuditCircle(1),
+				harmfulAuditCircle(2), usefulAuditCircle(3)),
+			candidate: auditOf(usefulAuditCircle(0), harmfulAuditCircle(1),
+				harmfulAuditCircle(2), usefulAuditCircle(3)),
+			activeCircles: []int{0, 3},
+			wantOK:        true,
+		},
+		{
+			name:          "a zero-pixel circle blocks like a harmful one",
+			incumbent:     auditOf(usefulAuditCircle(0), usefulAuditCircle(1)),
+			candidate:     auditOf(usefulAuditCircle(0), CircleAudit{Circle: 2, OriginalCircle: 2, Valid: true, MSEContribution: 1}),
+			activeCircles: []int{0},
+			wantOK:        false,
+			wantBlockers:  []int{2},
+		},
+		{
+			name:          "an out-of-bounds circle blocks like a harmful one",
+			incumbent:     auditOf(usefulAuditCircle(0), usefulAuditCircle(1)),
+			candidate:     auditOf(usefulAuditCircle(0), CircleAudit{Circle: 2, OriginalCircle: 2, FinalChangedPixels: 5, MSEContribution: 1}),
+			activeCircles: []int{0},
+			wantOK:        false,
+			wantBlockers:  []int{2},
+		},
+		{
+			name:          "an incumbent audit of the wrong length excuses nothing",
+			incumbent:     auditOf(usefulAuditCircle(0)),
+			candidate:     auditOf(usefulAuditCircle(0), harmfulAuditCircle(1)),
+			activeCircles: []int{0},
+			wantOK:        false,
+			wantBlockers:  []int{2},
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			ok, blockers := sweepKeepsCirclesUseful(
+				testCase.incumbent, testCase.candidate, testCase.activeCircles, minBatchMSEContribution)
+			if ok != testCase.wantOK || !slices.Equal(blockers, testCase.wantBlockers) {
+				t.Fatalf("gate = %v blockers %v, want %v blockers %v",
+					ok, blockers, testCase.wantOK, testCase.wantBlockers)
+			}
+			// Wherever the incumbent carries no blockers at all, the new rule must
+			// reproduce the old absolute predicate exactly.
+			if allCirclesUsefulReference(testCase.incumbent, minBatchMSEContribution) {
+				if want := allCirclesUsefulReference(testCase.candidate, minBatchMSEContribution); ok != want {
+					t.Fatalf("gate = %v on a blocker-free incumbent, want the absolute predicate %v", ok, want)
+				}
+			}
+		})
 	}
 }
 
@@ -1039,9 +1254,23 @@ type polishSerialResult struct {
 // count and evaluation count as Go literals. Those literals were pasted here
 // unchanged. The two `hybrid-overlap` cases already existed and their recorded
 // numbers reproduced byte-for-byte in that capture, which is the evidence that
-// the capture harness matches the one the original goldens came from. Nothing
-// in this table was produced by the pooled code, so a passing width-one case
-// is a real comparison against the pre-pool behavior and not a self-check.
+// the capture harness matches the one the original goldens came from.
+//
+// Three fixtures are an explicit exception to that provenance, and the reader
+// should know it. The `inherited-blocker-sweeps-*` cases run on
+// polishParityParams, which carries circles that are already not useful, so
+// their recorded serial runs changed when the acceptance gate became the
+// non-regression rule sweepKeepsCirclesUseful: sweep one now commits a strict
+// improvement the old absolute gate vetoed. The pre-pool commit cannot produce
+// those numbers, because it predates the gate, so their literals were
+// re-captured from the current width-one run and are regression pins rather
+// than a pre-pool comparison. What makes that safe to do is that the divergence
+// is confined to exactly where the gate acts: sweep one's evaluated costs are
+// still bit-identical to the pre-pool capture in all three, and every later
+// value differs only because the incumbent the next sweep starts from is now
+// the committed candidate. The pool property itself is never asserted against
+// this table -- widths two, four, and eight are compared to the live width-one
+// run below -- so a stale golden cannot mask a pool regression.
 //
 // Every strategy is covered because they reach the pooled `evaluate` closure by
 // different routes: `replacement` and `hybrid-overlap` seed once through
@@ -1061,9 +1290,13 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 		serial       polishSerialResult
 	}{
 		{
-			// Every sweep is rejected here, which is the common case for a fitted
-			// vector: the whole-vector usefulness gate vetoes improvements.
-			name:      "rejected-sweeps-hybrid-overlap",
+			// This fixture carries pre-existing blockers, which is the common case
+			// for a fitted vector: circles 3, 4, and 5 contribute -89.7, -221.6, and
+			// -65.5 against a threshold of 0.01. Under the old absolute gate every
+			// sweep was rejected. The non-regression gate lets sweep 2 commit, whose
+			// active set [3 5] repairs two of the three blockers while inheriting
+			// circle 4 untouched; sweeps 1 and 3 still lose on cost.
+			name:      "inherited-blocker-sweeps-hybrid-overlap",
 			reference: solidImage(20, 16, color.NRGBA{R: 200, G: 40, B: 90, A: 255}),
 			params:    polishParityParams(),
 			options: BatchPolishOptions{
@@ -1078,11 +1311,17 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 				costs: []float64{
 					5639.8125, 14598.391666666666, 19012.595833333333, 19172.329166666666, 19118.3375,
 					5639.8125, 5545.864583333333, 5503.739583333333, 5470.673958333334, 5456.420833333334,
-					5639.8125, 16916.385416666668, 21602.385416666668, 21916.28125, 22048.005208333332,
+					5456.420833333334, 18332.851041666665, 23794.814583333333, 24108.763541666667, 24240.4875,
 				},
-				params:      polishParityParams(),
-				cost:        5639.8125,
-				accepted:    0,
+				params: []float64{
+					10, 8, 9, 0.7450980392156863, 0.17647058823529413, 0.3333333333333333, 1,
+					4, 4, 4, 0.8235294117647058, 0.23529411764705882, 0.39215686274509803, 0.9,
+					12, 5, 6, 0, 0.11764705882352941, 1, 0.00392156862745098,
+					6, 12, 3, 0.3137254901960784, 0.7843137254901961, 0.47058823529411764, 0.4,
+					16, 15, 1, 0.11764705882352941, 1, 0, 0.3,
+				},
+				cost:        5456.420833333334,
+				accepted:    1,
 				sweeps:      3,
 				evaluations: 22,
 			},
@@ -1122,8 +1361,11 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 		{
 			// `replacement` seeds the active set from the residual once, the same
 			// route `hybrid-overlap` takes, but it selects different circles, so it
-			// bakes a different prefix.
-			name:      "rejected-sweeps-replacement",
+			// bakes a different prefix. Like the hybrid-overlap fixture above it
+			// runs on the blocker-carrying parity vector, so sweep 1's active set
+			// [3 4] commits a strict improvement that the old absolute gate vetoed;
+			// sweeps 2 and 3 still lose on cost.
+			name:      "inherited-blocker-sweeps-replacement",
 			reference: solidImage(20, 16, color.NRGBA{R: 200, G: 40, B: 90, A: 255}),
 			params:    polishParityParams(),
 			options: BatchPolishOptions{
@@ -1137,12 +1379,18 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 			serial: polishSerialResult{
 				costs: []float64{
 					4969.403125, 5292.009375, 5358.133333333333, 5358.133333333333, 5405.978125,
-					6134.682291666667, 6474.50625, 6500.479166666667, 6500.479166666667, 6502.104166666667,
-					18986.515625, 19309.121875, 19375.245833333334, 19375.245833333334, 19423.080208333333,
+					5472.492708333333, 5786.842708333334, 5849.786458333333, 5847.935416666666, 5894.261458333333,
+					20995.696875, 21268.529166666667, 21340.423958333333, 21385, 21385.5375,
 				},
-				params:      polishParityParams(),
-				cost:        5639.8125,
-				accepted:    0,
+				params: []float64{
+					10, 8, 9, 0.7450980392156863, 0.17647058823529413, 0.3333333333333333, 1,
+					4, 4, 4, 0.8235294117647058, 0.23529411764705882, 0.39215686274509803, 0.9,
+					0, 0, 1, 0.5686274509803921, 0, 0, 0.5,
+					2, 0, 1, 0.5686274509803921, 0, 0, 0.5,
+					16, 12, 2, 0.11764705882352941, 0.35294117647058826, 0.8627450980392157, 0.3,
+				},
+				cost:        4969.403125,
+				accepted:    1,
 				sweeps:      3,
 				evaluations: 22,
 			},
@@ -1273,8 +1521,11 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 		{
 			// `contiguous-window` is the only strategy that guarantees a contiguous
 			// active set, so it is the one whose baked prefix is large and whose
-			// suffix session therefore carries most of the work.
-			name:      "rejected-sweeps-contiguous-window",
+			// suffix session therefore carries most of the work. It also runs on
+			// the blocker-carrying parity vector, so sweep 1's window [4 5] commits
+			// a strict improvement the old absolute gate vetoed; sweeps 2 and 3
+			// still lose on cost.
+			name:      "inherited-blocker-sweeps-contiguous-window",
 			reference: solidImage(20, 16, color.NRGBA{R: 200, G: 40, B: 90, A: 255}),
 			params:    polishParityParams(),
 			options: BatchPolishOptions{
@@ -1288,12 +1539,18 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 			serial: polishSerialResult{
 				costs: []float64{
 					5639.8125, 5413.929166666667, 5370.835416666667, 5337.932291666667, 5323.808333333333,
-					5639.8125, 6554.388541666666, 6713.795833333334, 6569.333333333333, 6640.315625,
-					5639.8125, 16916.385416666668, 21602.385416666668, 21916.28125, 22048.005208333332,
+					5323.808333333333, 6239.621875, 6397.716666666666, 6253.272916666667, 6324.140625,
+					5323.808333333333, 17376.132291666665, 22637.715625, 22951.715625, 23083.490625,
 				},
-				params:      polishParityParams(),
-				cost:        5639.8125,
-				accepted:    0,
+				params: []float64{
+					10, 8, 9, 0.7450980392156863, 0.17647058823529413, 0.3333333333333333, 1,
+					4, 4, 4, 0.8235294117647058, 0.23529411764705882, 0.39215686274509803, 0.9,
+					15, 5, 3, 0.47058823529411764, 0.11764705882352941, 0.23529411764705882, 0.6,
+					3, 12, 6, 0, 0.7843137254901961, 1, 0.00392156862745098,
+					16, 15, 1, 0.11764705882352941, 1, 0, 0.3,
+				},
+				cost:        5323.808333333333,
+				accepted:    1,
 				sweeps:      3,
 				evaluations: 22,
 			},

@@ -85,10 +85,14 @@ func BenchmarkPolishStrategyQuality(b *testing.B) {
 //
 // The distinction matters. A fitted vector can contain circles whose
 // MSEContribution has gone negative, because PruneCircleBatch runs per stage
-// against that stage's canvas while the polishing accept gate, allCirclesUseful,
-// is global over the final vector. A single such circle blocks every sweep from
-// being accepted until some active set repairs it, and that dominates any
-// difference between the strategies.
+// against that stage's canvas while the polishing accept gate is global over the
+// final vector. Under the old absolute gate a single such circle blocked every
+// sweep until some active set repaired it, which dominated any difference
+// between the strategies. sweepKeepsCirclesUseful now excuses a circle the sweep
+// neither touched nor worsened, so the strategies are comparable on this input
+// again -- but the numbers in docs/contiguous-window-polish-report.md were taken
+// under the old gate and are not a prediction of what this benchmark reports
+// today.
 func BenchmarkPolishStrategyQualityAfterBatchFit(b *testing.B) {
 	discardPolishBenchmarkLogs(b)
 
@@ -160,8 +164,8 @@ func runPolishQualityBenchmark(
 	}
 	// These are per run rather than per b.N, so they stay comparable across
 	// -benchtime values. reduction_pct is the share of the starting error the
-	// strategy removed; accepted_sweeps is how many sweeps survived the
-	// allCirclesUseful gate, and a zero there means the run was a no-op that
+	// strategy removed; accepted_sweeps is how many sweeps survived
+	// sweepKeepsCirclesUseful, and a zero there means the run was a no-op that
 	// still spent its whole optimizer budget.
 	finalCost := costSum / float64(b.N)
 	b.ReportMetric(finalCost, "final_cost")

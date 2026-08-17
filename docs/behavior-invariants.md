@@ -66,9 +66,9 @@ Rendering-side invariants live in
   to one slot when the pool comes up short, because the optimizer would still
   call the evaluator from every goroutine. The epoch and progress wrappers
   forward the width so neither check can be bypassed.
-- Acceptance stays serial and unchanged: a sweep is committed only after the
-  merged candidate is re-evaluated on the full session and `allCirclesUseful`
-  holds for the whole vector. Pooling applies to candidate evaluation only.
+- Acceptance stays serial: a sweep is committed only after the merged candidate
+  is re-evaluated on the full session and `sweepKeepsCirclesUseful` clears it.
+  Pooling applies to candidate evaluation only.
 - `--fast-compositing` is opt-in and defaults off, because it changes the
   result of a fixed seed. It is accurate to +/-1 per channel, not byte-identical
   to the default compositor. Compare runs only against runs with the same
@@ -93,17 +93,43 @@ Rendering-side invariants live in
   every configuration measured. At the default three sweeps it only offers the
   last `3 * activeSetSize` draw slots to the optimizer. Do not describe it as an
   end-to-end speedup.
-- A polishing sweep is committed only when `allCirclesUseful` holds for the
-  whole candidate vector, so one circle with a negative `MSEContribution` blocks
-  every sweep until an active set repairs it. Fitted vectors routinely contain
-  such circles, because `PruneCircleBatch` runs per stage against that stage's
-  canvas while this gate is global over the final vector, and nothing re-audits
-  the assembled result. Polishing a real batch fit was therefore a complete
-  no-op for three of the four strategies in the measurements above, and it still
-  spends the full optimizer budget before the gate is consulted. This is
-  pre-existing behavior, not a property of any one strategy; do not attribute a
-  zero-improvement polishing run to the selector without checking
-  `accepted_sweeps` first.
+- The polishing acceptance gate is a non-regression rule, not an absolute one.
+  `sweepKeepsCirclesUseful` requires every circle **in the active set** to be
+  useful after the sweep — valid, changing at least one pixel, and contributing
+  more than `minBatchMSEContribution` — and requires the set of non-useful
+  circles **outside** the active set not to grow. A circle the sweep never
+  touched and never made worse does not block acceptance.
+
+  The rule used to be `allCirclesUseful` over the whole candidate, which also
+  demanded that a sweep repair circles it had no agency over: inactive circles
+  are copied through a sweep byte for byte. Fitted vectors routinely carry such
+  circles, because `PruneCircleBatch` runs per stage against that stage's canvas
+  while the gate is global over the final vector, and nothing re-audits the
+  assembled result. That made polishing a guaranteed no-op past a certain size —
+  measured on a real 64-circle fit as 3 blocking circles against an active set
+  of 8 that reseeds one circle per sweep, so 12 of 12 sweeps were rejected for a
+  net cost gain of 0.00. Do not restore the absolute form.
+
+  On a vector with no pre-existing blockers the two rules agree exactly, which
+  `TestSweepKeepsCirclesUsefulIsANonRegressionRule` asserts. The gate
+  deliberately does not require an inherited non-useful circle's contribution to
+  improve; those values drift as neighbours move, and demanding monotone
+  improvement on uncontrolled circles would restore the stall.
+- Every polishing sweep logs its acceptance decision at `INFO`: `cost` when the
+  candidate did not beat the incumbent, `usefulness-gate` with the one-based
+  `blocking_circles` when the gate refused it, `invalid-candidate` when the
+  optimizer returned an out-of-bounds vector, and `Accepted polishing sweep`
+  with `cost_removed` when it committed. A stalled run must stay diagnosable
+  from the server log alone; do not reduce that to a single boolean.
+- The incumbent's audit is cached across sweeps (`incumbentAuditCache`).
+  `AuditCircleBatch` is one full render per omitted circle, both active-set
+  selection and the acceptance gate need it, and a rejected sweep leaves the
+  incumbent untouched, so it must be computed once per incumbent rather than
+  once per consumer or once per sweep. A committing sweep does not drop the
+  cache either: the acceptance gate has just audited exactly the vector that
+  becomes the new incumbent, so the cache adopts that audit
+  (`incumbentAuditCache.adopt`). No vector is ever audited twice as an
+  incumbent.
 
 ## Determinism, resume, and termination
 

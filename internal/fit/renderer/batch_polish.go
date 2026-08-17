@@ -184,6 +184,7 @@ func PolishCircleBatchContext(
 
 	visitedRegions := make(map[int]bool)
 	visitCounts := make(map[int]int, circleCount)
+	incumbentAudit := &incumbentAuditCache{session: fullSession}
 	// Each sweep opens its own baked-prefix sessions and its own evaluation pool.
 	// Draining the previous sweep's cleanups at the top of the next one, and
 	// whatever is left on return, runs every cleanup exactly once and keeps no
@@ -204,6 +205,7 @@ func PolishCircleBatchContext(
 
 		selection, err := selectPolishingActiveSet(
 			fullSession,
+			incumbentAudit,
 			bestParams,
 			options.ActiveSetSize,
 			options.Strategy,
@@ -393,23 +395,83 @@ func PolishCircleBatchContext(
 		result.Iterations += outcome.Iterations
 		result.Sweeps++
 
+		// admitSweep audits the candidate and compares it against the incumbent's
+		// cached audit. It is consulted only after the candidate has already beaten
+		// the incumbent on cost, so the audits it pays for are never wasted on a
+		// sweep the cost check would have rejected anyway.
+		// It also hands the candidate's audit back, because a committed candidate
+		// becomes the incumbent and that audit already describes it exactly.
+		admitSweep := func(candidate []float64) (bool, []int, BatchAudit, error) {
+			candidateAudit, auditErr := AuditCircleBatch(fullSession, candidate)
+			if auditErr != nil {
+				return false, nil, BatchAudit{}, fmt.Errorf("audit polishing sweep %d: %w", sweep, auditErr)
+			}
+			incumbent, auditErr := incumbentAudit.get(bestParams)
+			if auditErr != nil {
+				return false, nil, BatchAudit{}, fmt.Errorf("audit polishing incumbent before sweep %d: %w", sweep, auditErr)
+			}
+			commit, blockers := sweepKeepsCirclesUseful(
+				incumbent, candidateAudit, activeCircles, minBatchMSEContribution)
+			return commit, blockers, candidateAudit, nil
+		}
+
+		// Every path out of the acceptance decision says why at Info, so a stalled
+		// run is diagnosable from the server log alone: the sweep either lost on
+		// cost, named the circles the usefulness gate refused, or committed.
 		accepted := false
-		if len(outcome.Params) == options.ActiveSetSize*paramsPerCircle && bounds.ValidVector(outcome.Params) {
+		if len(outcome.Params) != options.ActiveSetSize*paramsPerCircle || !bounds.ValidVector(outcome.Params) {
+			slog.Info("Rejected polishing sweep",
+				"sweep", sweep,
+				"reason", "invalid-candidate",
+				"active_circles", oneBasedCircleIndices(activeCircles),
+			)
+		} else {
 			candidate := append([]float64(nil), bestParams...)
 			mergeActiveCircleParams(candidate, activeCircles, outcome.Params)
 			candidateCost := fullSession.Cost(candidate)
 			evaluations++
+			commit, blockers := false, []int(nil)
+			var candidateAudit BatchAudit
 			if candidateCost < bestCost {
-				audit, auditErr := AuditCircleBatch(fullSession, candidate)
-				if auditErr != nil {
-					return nil, fmt.Errorf("audit polishing sweep %d: %w", sweep, auditErr)
+				var gateErr error
+				if commit, blockers, candidateAudit, gateErr = admitSweep(candidate); gateErr != nil {
+					return nil, gateErr
 				}
-				if allCirclesUseful(audit, minBatchMSEContribution) {
-					bestParams = candidate
-					bestCost = candidateCost
-					result.AcceptedSweeps++
-					accepted = true
-				}
+			}
+			switch {
+			case candidateCost >= bestCost:
+				slog.Info("Rejected polishing sweep",
+					"sweep", sweep,
+					"reason", "cost",
+					"candidate_cost", candidateCost,
+					"best_cost", bestCost,
+					"active_circles", oneBasedCircleIndices(activeCircles),
+				)
+			case !commit:
+				slog.Info("Rejected polishing sweep",
+					"sweep", sweep,
+					"reason", "usefulness-gate",
+					"candidate_cost", candidateCost,
+					"best_cost", bestCost,
+					"active_circles", oneBasedCircleIndices(activeCircles),
+					"blocking_circles", blockers,
+				)
+			default:
+				slog.Info("Accepted polishing sweep",
+					"sweep", sweep,
+					"best_cost", candidateCost,
+					"previous_cost", bestCost,
+					"cost_removed", bestCost-candidateCost,
+					"active_circles", oneBasedCircleIndices(activeCircles),
+				)
+				bestParams = candidate
+				bestCost = candidateCost
+				// The incumbent changed, but the gate has just audited exactly this
+				// vector, so hand that audit over instead of discarding it and paying
+				// for another full render per circle on the next sweep.
+				incumbentAudit.adopt(candidateAudit)
+				result.AcceptedSweeps++
+				accepted = true
 			}
 		}
 
@@ -464,8 +526,47 @@ func extractActiveCircleParams(fullParams []float64, activeCircles []int) []floa
 	return active
 }
 
+// incumbentAuditCache holds the leave-one-out audit of the current incumbent.
+//
+// AuditCircleBatch is one full render per omitted circle and is the dominant
+// cost of a sweep, while both active-set selection and the acceptance gate need
+// the incumbent's audit. A rejected sweep leaves the incumbent untouched, so the
+// audit is computed once per incumbent rather than once per consumer or once per
+// sweep. A committing sweep replaces the incumbent, but the acceptance gate has
+// already audited that exact candidate, so the cache adopts that audit and no
+// incumbent is ever audited twice.
+//
+// The cached BatchAudit is shared by value; nothing may mutate audit.Circles in
+// place.
+type incumbentAuditCache struct {
+	session Renderer
+	audit   BatchAudit
+	valid   bool
+}
+
+func (c *incumbentAuditCache) get(params []float64) (BatchAudit, error) {
+	if c.valid {
+		return c.audit, nil
+	}
+	audit, err := AuditCircleBatch(c.session, params)
+	if err != nil {
+		return BatchAudit{}, err
+	}
+	c.audit, c.valid = audit, true
+	return audit, nil
+}
+
+// adopt installs an audit the caller has already computed for the vector that
+// is about to become the incumbent. A committed sweep is audited by the
+// acceptance gate immediately before it commits, so the cache can carry that
+// result forward rather than invalidate and re-render.
+func (c *incumbentAuditCache) adopt(audit BatchAudit) {
+	c.audit, c.valid = audit, true
+}
+
 func selectPolishingActiveSet(
 	base Renderer,
+	incumbentAudit *incumbentAuditCache,
 	params []float64,
 	activeSetSize int,
 	strategy BatchPolishStrategy,
@@ -473,7 +574,7 @@ func selectPolishingActiveSet(
 	visitCounts map[int]int,
 ) (polishingActiveSet, error) {
 	if strategy == BatchPolishWeakestReplacement {
-		audit, err := AuditCircleBatch(base, params)
+		audit, err := incumbentAudit.get(params)
 		if err != nil {
 			return polishingActiveSet{}, err
 		}
@@ -503,7 +604,7 @@ func selectPolishingActiveSet(
 		return polishingActiveSet{Circles: active, RetainedParams: removeActiveCircleParams(params, active)}, nil
 	}
 	if strategy == BatchPolishResidualRegion {
-		return selectResidualRegionActiveSet(base, params, activeSetSize, visitedRegions)
+		return selectResidualRegionActiveSet(base, incumbentAudit, params, activeSetSize, visitedRegions)
 	}
 	if strategy == BatchPolishContiguousWindow {
 		circleCount := len(params) / paramsPerCircle
@@ -511,7 +612,7 @@ func selectPolishingActiveSet(
 		return polishingActiveSet{Circles: active, RetainedParams: removeActiveCircleParams(params, active)}, nil
 	}
 
-	audit, err := AuditCircleBatch(base, params)
+	audit, err := incumbentAudit.get(params)
 	if err != nil {
 		return polishingActiveSet{}, err
 	}
@@ -681,6 +782,7 @@ func removeActiveCircleParams(params []float64, activeCircles []int) []float64 {
 
 func selectResidualRegionActiveSet(
 	base Renderer,
+	incumbentAudit *incumbentAuditCache,
 	params []float64,
 	activeSetSize int,
 	visitedRegions map[int]bool,
@@ -690,7 +792,7 @@ func selectResidualRegionActiveSet(
 	if err != nil {
 		return polishingActiveSet{}, err
 	}
-	audit, err := AuditCircleBatch(base, params)
+	audit, err := incumbentAudit.get(params)
 	if err != nil {
 		return polishingActiveSet{}, err
 	}
@@ -845,11 +947,67 @@ func mergeReplacementSeedParams(activeParams []float64, activeCircles, replaceme
 	}
 }
 
-func allCirclesUseful(audit BatchAudit, minContribution float64) bool {
-	for _, circle := range audit.Circles {
-		if !circle.Valid || circle.FinalChangedPixels < 1 || circle.MSEContribution <= minContribution {
-			return false
-		}
+// circleUseful reports whether a circle earns its place in the vector: it is
+// within bounds, it paints at least one pixel of the final image, and removing
+// it costs more than minContribution in MSE.
+func circleUseful(circle CircleAudit, minContribution float64) bool {
+	return circle.Valid && circle.FinalChangedPixels >= 1 && circle.MSEContribution > minContribution
+}
+
+// sweepKeepsCirclesUseful decides whether a cost-improving sweep may commit,
+// and names the one-based circles that block it when it may not.
+//
+// The invariant polishing protects is that it never makes a circle dead: no
+// sweep may kill a circle that was alive in the incumbent. It does not promise
+// that the committed vector is free of dead circles, because a dead circle
+// inherited from an earlier stage and left outside the active set stays exactly
+// as the sweep found it.
+//
+// The gate used to spell the invariant as allCirclesUseful over the entire
+// candidate, which also demanded that a sweep repair dead circles it never
+// touched: circles outside the active set are copied through a sweep byte for
+// byte, so no amount of optimizer budget can clear them. Incrementally grown
+// vectors carry such circles as their steady state, because PruneCircleBatch
+// runs per stage against that stage's canvas while later stages composite on
+// top and nothing re-audits the assembled result. On a real 64-circle fit three
+// occluded circles held contributions of -0.41, -0.18, and -0.07 against a
+// threshold of 0.01, and residual-region reseeds max(1, activeSetSize/5) = 1
+// circle per sweep, so the gate was structurally impossible to satisfy and
+// vetoed every sweep forever.
+//
+// The rule is therefore non-regression rather than absolute:
+//
+//   - every circle in the active set, where the sweep has agency, must be
+//     useful afterwards, exactly as strictly as before;
+//   - outside the active set the set of non-useful circles may not grow. A
+//     circle that was useful in the incumbent and is not in the candidate blocks
+//     the sweep; one that was already not useful does not.
+//
+// Containment is checked per circle, so the count cannot grow either. The rule
+// deliberately does not require the contribution of an inherited dead circle to
+// improve: those values drift by fractions as neighbouring circles move, and
+// demanding monotone improvement on circles the sweep does not control would
+// restore the stall this removes.
+//
+// When the incumbent has no dead circles it has nothing to excuse, so the rule
+// reduces to the old absolute predicate exactly.
+func sweepKeepsCirclesUseful(incumbent, candidate BatchAudit, activeCircles []int, minContribution float64) (bool, []int) {
+	active := make(map[int]bool, len(activeCircles))
+	for _, circle := range activeCircles {
+		active[circle] = true
 	}
-	return true
+	var blockers []int
+	for index, circle := range candidate.Circles {
+		if circleUseful(circle, minContribution) {
+			continue
+		}
+		// An incumbent audit that does not cover this circle describes a different
+		// vector and cannot excuse anything, so the circle blocks.
+		if !active[index] && index < len(incumbent.Circles) &&
+			!circleUseful(incumbent.Circles[index], minContribution) {
+			continue
+		}
+		blockers = append(blockers, index+1)
+	}
+	return len(blockers) == 0, blockers
 }

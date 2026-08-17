@@ -114,6 +114,14 @@ their entire optimizer budget to achieve it.
 
 ### Why
 
+> **Superseded.** The gate described below was replaced by the non-regression
+> rule `sweepKeepsCirclesUseful`, which excuses a non-useful circle outside the
+> active set as long as the sweep does not add one. Everything in this section
+> describes the behavior in force when these numbers were measured, and the
+> measurements above were taken under the old gate: their accepted-sweep columns
+> are not a prediction of what the same runs would do today. See
+> `docs/behavior-invariants.md` and PLAN task 15.6.
+
 `PolishCircleBatchContext` commits a sweep only when `allCirclesUseful` holds
 for the **whole** candidate vector: every circle must be valid, change at least
 one pixel, and contribute more than `minBatchMSEContribution` (0.01) to MSE.

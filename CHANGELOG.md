@@ -161,6 +161,21 @@ release is declared by this file.
 
 ### Fixed
 
+- Active-set polishing no longer vetoes every sweep on an incrementally grown
+  vector. The acceptance gate required every circle in the candidate to be
+  useful, which also required a sweep to repair circles outside its active set —
+  circles it copies through unchanged and has no agency over. Such circles are
+  the steady state of a long run, because `PruneCircleBatch` runs per stage
+  against that stage's canvas while later stages composite on top. On a real
+  64-circle fit three occluded circles contributed -0.41, -0.18, and -0.07
+  against a 0.01 threshold, and `residual-region` with `activeSetSize 8`
+  reseeds one circle per sweep, so the gate was impossible to satisfy: 12 of 12
+  sweeps rejected for a net cost gain of 0.00, twice over. The gate is now a
+  non-regression rule — every circle in the active set must be useful, and the
+  set of non-useful circles outside it may not grow — which agrees exactly with
+  the old rule on a vector carrying no pre-existing blockers. Rejected sweeps
+  now log why, naming the blocking circles, and the incumbent's audit is cached
+  across sweeps instead of recomputed per consumer.
 - Architecture-specific SIMD references no longer prevent non-AMD64 builds.
 - SSD/MSE handling supports independent image origins and strides and defines
   empty-image and mismatched-dimension behavior.
