@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -236,7 +238,7 @@ func TestScheduleSeedIsNeverReportedAsZero(t *testing.T) {
 	detail.CreatedAt, detail.UpdatedAt = started, started
 
 	var unstarted bytes.Buffer
-	printScheduleDetail(&unstarted, detail)
+	printScheduleDetail(&unstarted, detail, started)
 	if !strings.Contains(unstarted.String(), "Seed: unresolved") {
 		t.Fatalf("unstarted campaign output = %q, want an unresolved seed", unstarted.String())
 	}
@@ -254,7 +256,7 @@ func TestScheduleSeedIsNeverReportedAsZero(t *testing.T) {
 		Config:     store.JobConfig{RefPath: "assets/ref.png", EffectiveSeed: 987654321},
 	}}
 	var running bytes.Buffer
-	printScheduleDetail(&running, detail)
+	printScheduleDetail(&running, detail, started)
 	if !strings.Contains(running.String(), "Seed: 987654321") {
 		t.Fatalf("running campaign output = %q, want the seed the stage recorded", running.String())
 	}
@@ -270,5 +272,259 @@ func TestScheduleListReportsAnEmptyServer(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "No schedules found") {
 		t.Fatalf("list output = %q", output.String())
+	}
+}
+
+// referenceCampaignDocument is the 512-circle campaign of Task 16.4's
+// acceptance check: base 8 circles, +8 extends to 512, and a polish at
+// 32/64/96/128/192/256 that is abandoned after two consecutive barren sweeps.
+const referenceCampaignDocument = `{
+  "schemaVersion": 1,
+  "name": "512-circle campaign",
+  "seed": 4242,
+  "base": {"refPath": "assets/ref.png", "mode": "batch", "circles": 8, "batchSize": 8, "iters": 200, "popSize": 30},
+  "steps": [
+    {"type": "extend", "repeat": 3, "additionalCircles": 8},
+    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
+    {"type": "extend", "repeat": 4, "additionalCircles": 8},
+    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
+    {"type": "extend", "repeat": 4, "additionalCircles": 8},
+    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
+    {"type": "extend", "repeat": 4, "additionalCircles": 8},
+    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
+    {"type": "extend", "repeat": 8, "additionalCircles": 8},
+    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
+    {"type": "extend", "repeat": 8, "additionalCircles": 8},
+    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
+    {"type": "extend", "repeat": 32, "additionalCircles": 8}
+  ]
+}`
+
+// writeScheduleDocument drops a document in a temporary directory and hands
+// back its path.
+func writeScheduleDocument(t *testing.T, document string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "campaign.json")
+	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+		t.Fatalf("write document: %v", err)
+	}
+	return path
+}
+
+// dryRun runs `schedule create --dry-run` and restores the flag afterwards.
+func dryRun(t *testing.T, path string) string {
+	t.Helper()
+	previous := scheduleDryRun
+	scheduleDryRun = true
+	t.Cleanup(func() { scheduleDryRun = previous })
+	var output bytes.Buffer
+	if err := runScheduleCreate(testCommand(context.Background(), &output), []string{path}); err != nil {
+		t.Fatalf("runScheduleCreate(--dry-run) error = %v", err)
+	}
+	return output.String()
+}
+
+// TestScheduleDryRunListsTheReferenceCampaign is the Task 16.4 acceptance check
+// at the command level. The iteration total is hand-computed in
+// internal/app.TestReferenceCampaignPlanMatchesTheHandComputation, which writes
+// the arithmetic out; this test checks the command prints that same figure over
+// the whole stage list.
+func TestScheduleDryRunListsTheReferenceCampaign(t *testing.T) {
+	_, stub := newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
+		t.Error("a dry run reached the server")
+		writer.WriteHeader(http.StatusInternalServerError)
+	})
+	body := dryRun(t, writeScheduleDocument(t, referenceCampaignDocument))
+
+	for _, marker := range []string{
+		"nothing was submitted and no schedule was created",
+		"Stages: 70 (1 base, 63 extend, 6 polish; 6 conditional)",
+		"Planned optimizer iterations: 48800",
+		"unconditional: 12800",
+		"conditional:   36000 across 6 stages",
+		// The first and last stages of the climb, and a polish in between.
+		"0   base    8        200",
+		"69  extend  512      200",
+		// A conditional stage is shown as conditional, with its condition.
+		"conditional: only at 32/64/96/128/192/256 circles; abandoned after 2 consecutive stages gaining less than 1",
+		// Per-stage parameters.
+		"+8 circles, batch 8, 1 × 200 iters, pop 30",
+		"active set 5, 3 sweeps × 2 × 1000 iters",
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("dry run output missing %q:\n%s", marker, body)
+		}
+	}
+	// Every planned stage is listed, conditional ones included.
+	if lines := strings.Count(body, "\n"); lines < 70 {
+		t.Errorf("dry run printed %d lines, too few for 70 stages:\n%s", lines, body)
+	}
+	select {
+	case path := <-stub.paths:
+		t.Fatalf("the dry run called %q", path)
+	default:
+	}
+}
+
+// TestScheduleDryRunTouchesNoStore is the other half of the task: a dry run may
+// not create a schedule directory, a stage file, or a job. The positive control
+// writes one schedule through the store afterwards, so the comparison is known
+// to be able to see a write.
+func TestScheduleDryRunTouchesNoStore(t *testing.T) {
+	_, _ = newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
+		t.Error("a dry run reached the server")
+		writer.WriteHeader(http.StatusInternalServerError)
+	})
+	root := t.TempDir()
+	persistence, err := store.NewFSStore(root)
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	before := treeSnapshot(t, root)
+
+	dryRun(t, writeScheduleDocument(t, referenceCampaignDocument))
+
+	after := treeSnapshot(t, root)
+	if strings.Join(after, "\n") != strings.Join(before, "\n") {
+		t.Fatalf("the dry run changed the data root:\nbefore %v\nafter  %v", before, after)
+	}
+	for _, entry := range after {
+		if strings.Contains(entry, "schedules") {
+			t.Fatalf("the dry run left %q under the data root", entry)
+		}
+	}
+
+	document, err := app.ParseSchedule([]byte(referenceCampaignDocument))
+	if err != nil {
+		t.Fatalf("ParseSchedule() error = %v", err)
+	}
+	record, err := store.NewScheduleRecord(testScheduleID, *document)
+	if err != nil {
+		t.Fatalf("NewScheduleRecord() error = %v", err)
+	}
+	if err := persistence.SaveSchedule(record); err != nil {
+		t.Fatalf("SaveSchedule() error = %v", err)
+	}
+	control := treeSnapshot(t, root)
+	if strings.Join(control, "\n") == strings.Join(after, "\n") {
+		t.Fatal("saving a schedule left the data root unchanged, so the comparison proves nothing")
+	}
+}
+
+// treeSnapshot lists every path below root, relative and sorted.
+func treeSnapshot(t *testing.T, root string) []string {
+	t.Helper()
+	var paths []string
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		paths = append(paths, relative)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+// projectionDetailFixture is a four-stage campaign — base plus three extends —
+// with the first stages already completed, which is what a projection reads.
+func projectionDetailFixture(completedExtends int, extendElapsed []time.Duration) map[string]any {
+	started := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	config := map[string]any{"refPath": "assets/ref.png", "mode": "batch", "circles": 8,
+		"batchSize": 8, "iters": 200, "popSize": 30, "seed": 42}
+	stages := []map[string]any{{
+		"schemaVersion": 1, "scheduleId": testScheduleID, "index": 0, "kind": "base",
+		"stepIndex": -1, "repetition": 0, "circles": 8, "state": "completed",
+		"jobId": "11111111-1111-4111-8111-111111111111", "bestCost": 812.5,
+		"startedAt": started, "completedAt": started.Add(time.Minute), "updatedAt": started,
+		"config": config,
+	}}
+	at := started.Add(time.Minute)
+	for index := 1; index <= completedExtends; index++ {
+		elapsed := extendElapsed[index-1]
+		stages = append(stages, map[string]any{
+			"schemaVersion": 1, "scheduleId": testScheduleID, "index": index, "kind": "extend",
+			"stepIndex": 0, "repetition": index, "circles": 8 + 8*index, "additionalCircles": 8,
+			"state": "completed", "jobId": "22222222-2222-4222-8222-222222222222",
+			"bestCost": 700.0, "startedAt": at, "completedAt": at.Add(elapsed), "updatedAt": at,
+			"config": config,
+		})
+		at = at.Add(elapsed)
+	}
+	return map[string]any{
+		"scheduleId": testScheduleID, "name": "projected campaign", "state": "running",
+		"campaignSeed": 42, "totalStages": 4, "createdAt": started, "updatedAt": at,
+		"document": map[string]any{
+			"schemaVersion": 1, "seed": 42, "base": config,
+			"steps": []map[string]any{{"type": "extend", "repeat": 3, "additionalCircles": 8}},
+		},
+		"stages": stages,
+	}
+}
+
+// TestScheduleStatusProjectsFromMeasuredStages checks the projection is derived
+// from the recorded wall clock and from nothing else: two extends at 2 and 4
+// minutes make the one remaining extend 3 minutes.
+func TestScheduleStatusProjectsFromMeasuredStages(t *testing.T) {
+	fixture := projectionDetailFixture(2, []time.Duration{2 * time.Minute, 4 * time.Minute})
+	var detail scheduleDetailResponse
+	decodeFixture(t, fixture, &detail)
+
+	var output bytes.Buffer
+	printScheduleDetail(&output, detail, time.Date(2026, 8, 1, 13, 0, 0, 0, time.UTC))
+	body := output.String()
+	for _, marker := range []string{
+		"Projection (from measured stage wall clock only)",
+		"Remaining: 3m0s, finishing around 2026-08-01T13:03:00Z",
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("status output missing %q:\n%s", marker, body)
+		}
+	}
+	if !strings.Contains(body, "extend") || !strings.Contains(body, "3m0s") {
+		t.Errorf("status output missing the extend rate:\n%s", body)
+	}
+}
+
+// TestScheduleStatusRefusesToProjectFromOneStage is the honesty requirement: a
+// single sample is reported as insufficient rather than extrapolated.
+func TestScheduleStatusRefusesToProjectFromOneStage(t *testing.T) {
+	fixture := projectionDetailFixture(1, []time.Duration{2 * time.Minute})
+	var detail scheduleDetailResponse
+	decodeFixture(t, fixture, &detail)
+
+	var output bytes.Buffer
+	printScheduleDetail(&output, detail, time.Date(2026, 8, 1, 13, 0, 0, 0, time.UTC))
+	body := output.String()
+	for _, marker := range []string{
+		"insufficient data: 1 completed extend stage(s), 2 needed",
+		"No finish time: not every remaining stage kind has been measured yet.",
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("status output missing %q:\n%s", marker, body)
+		}
+	}
+	if strings.Contains(body, "finishing around") {
+		t.Errorf("a single sample still produced a finish time:\n%s", body)
+	}
+}
+
+// decodeFixture round-trips a fixture through JSON so the test reads exactly
+// what the CLI would decode from the server.
+func decodeFixture(t *testing.T, fixture map[string]any, target any) {
+	t.Helper()
+	encoded, err := json.Marshal(fixture)
+	if err != nil {
+		t.Fatalf("encode fixture: %v", err)
+	}
+	if err := json.Unmarshal(encoded, target); err != nil {
+		t.Fatalf("decode fixture: %v", err)
 	}
 }
