@@ -177,6 +177,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/jobs/", s.handleJobDetail)
 	mux.HandleFunc("/create", s.handleCreatePage)
+	mux.HandleFunc("/schedules", s.handleCampaignList)
+	mux.HandleFunc("/schedules/", s.handleCampaignDetail)
+	mux.HandleFunc("/chains/", s.handleChainDetail)
 
 	// Register API routes
 	mux.HandleFunc("/api/v1/jobs", s.handleJobs)
@@ -184,6 +187,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/jobs/", s.handleJobsWithID)
 	mux.HandleFunc("/api/v1/schedules", s.handleSchedules)
 	mux.HandleFunc("/api/v1/schedules/", s.handleSchedulesWithID)
+	mux.HandleFunc("/api/v1/chains", s.handleChains)
+	mux.HandleFunc("/api/v1/chains/", s.handleChainsWithID)
 
 	if s.options.EnablePprof {
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
