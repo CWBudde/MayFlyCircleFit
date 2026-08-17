@@ -2072,17 +2072,62 @@ and then runs unattended as a single observable entity.
 
 ### Task 16.6: Retire the External Orchestrator (P2)
 
-- [ ] Reproduce a short campaign (base 8, three `+8` extends, one polish) through
-      the schedule feature and through the Python orchestrator, and confirm the
-      cost sequence matches.
-- [ ] Document the schedule format in `docs/`, with the 512-circle campaign as
+- [x] ~~Reproduce a short campaign (base 8, three `+8` extends, one polish)
+      through the schedule feature and through the Python orchestrator, and
+      confirm the cost sequence matches.~~ **Amended: the Python orchestrator no
+      longer exists.** `chain.py` and `chain8.py` lived only under
+      `~/mayflycirclefit/` on the remote compute box whose directory was deleted
+      on 2026-08-17; they are unrecoverable and were not run. What that check
+      protected is preserved by comparing the executor against the endpoint
+      sequence the orchestrator wrapped, which it was never more than a client
+      for: `TestScheduleReproducesTheHandDrivenCampaign` in `internal/server`
+      runs base 8, `+8`, `+8`, `+8`, polish through the schedule feature and the
+      same five stages by hand through `POST /api/v1/jobs`, `/extend` ×3 and
+      `/polish`, and compares the two cost sequences. This is a narrower test
+      than the original, because the endpoints are all the two paths share and
+      the executor is the only variable. The comparison is **exact equality, no
+      tolerance**: the campaign fixes the seed at 4242, pins `threads: 1`, and
+      leaves `parallelEvaluation` and `fastCompositing` off, so both paths are
+      reproducible. Observed on this revision, identical across both paths:
+      `1517.790771484375 → 1228.1692708333333 → 902.0322265625 →
+      576.1515299479166 → 553.9036458333334`. The test runs in the ordinary
+      suite (about 1.4 s for all ten stages) rather than behind `-short`; its
+      reference is a 64×64 analytic gradient, because the existing 50×50 fixture
+      is fitted so completely by eight circles that later extends have nothing
+      to place and the batch pruner leaves an incomplete checkpoint `/extend`
+      rightly refuses.
+- [x] Document the schedule format in `docs/`, with the 512-circle campaign as
       the worked example, and note the run-to-run comparability caveats
       (compositor version, SIMD tier, `fastCompositing`).
+      [`docs/schedule-format.md`](docs/schedule-format.md). The caveats are
+      stated at the strength the measurements support rather than uniformly:
+      `fastCompositing` genuinely breaks comparability (±1 per channel over
+      2,074,320 measured channel writes, which flips accept/reject decisions),
+      while a SIMD tier swap does **not** move a cost within one architecture,
+      because every shipped kernel on the default path is byte-identical to its
+      scalar oracle — a property parity tests pin rather than one the format
+      guarantees. Two caveats the original bullet did not name are recorded
+      because they do bite: amd64 and arm64 round the blend differently (MUL+ADD
+      against a contracted FMA), and compositor-version parity says nothing
+      about a change to cost accumulation itself. The document also records that
+      `convergenceEnabled: false` is silently re-enabled by `ApplyDefaults` and
+      that `disableConvergence` is the effective lever, and that the historical
+      512-circle figure of cost 161.99 is a documented number, not a checkable
+      artifact — the parameter vectors were destroyed with the compute box.
 
 **Acceptance Checks:**
 
-- [ ] The worked example in the docs is a file the test suite actually parses,
+- [x] The worked example in the docs is a file the test suite actually parses,
       so the documented format cannot drift from the implemented one.
+      [`docs/examples/512-circle-campaign.json`](docs/examples/512-circle-campaign.json)
+      is read by three tests in two packages:
+      `app.TestDocumentedExamplePlansTheReferenceCampaign` parses it through
+      `app.ParseSchedule` and pins the 70 stages and 48,800 iterations the
+      document quotes; `app.TestDocumentedExampleIsTheCampaignTheTestsAlreadyPin`
+      ties it to the in-package `referenceCampaignSteps` so neither can be
+      edited without the other; and `cmd.TestScheduleDryRunListsTheReferenceCampaign`
+      now reads the same file instead of an inline copy, so the Task 16.4
+      acceptance check and the documented example are literally the same bytes.
 
 ---
 
@@ -2105,3 +2150,14 @@ This plan covers **Phases 0-14** in complete detail with bite-sized, testable ta
 - Document learnings and decisions in CLAUDE.md
 
 **Current Status:** Historical feature phases reached Phase 11-era implementation, and the main Phase 14 remediation waves now pass the local generation, build, test, race, static-analysis, 56.1% aggregate coverage, vulnerability, portability, GPU-compile, PoCL runtime, clean-clone recipe, metadata-free export, and release-lifecycle end-to-end gates. Automated SemVer releases are now dependency-gated in the repository workflow, but **Phase 14 remains active: remote CI must pass twice, repository-admin controls must prevent manual release bypass, and real-GPU vendor/performance validation is still required before promoting the experimental OpenCL backend.**
+
+**Phase 16** has all six tasks implemented and locally checked, but its work is
+**not merged**: the six branches form a stacked chain (`feat/schedule-model` →
+`feat/schedule-executor` → `feat/schedule-policy` → `feat/schedule-ui` →
+`feat/schedule-dry-run` → `docs/schedule-format`) with every pull request still
+open and based on its predecessor rather than on master. Two acceptance checks
+could not be run as written and are amended in place rather than ticked: the
+96-circle chain of Task 16.5 and the Python orchestrator of Task 16.6 both lived
+only on the compute box whose directory was deleted on 2026-08-17. Each is
+replaced by a test over what the check was protecting, and each replacement is
+labelled as such.
