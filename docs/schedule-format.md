@@ -127,6 +127,17 @@ at 32/64/96/128/192/256 with `minGain: 1.0` and `abortAfterBarren: 2`.
 The extends are written as several stanzas rather than one `repeat: 63` because
 the polishes sit between them; each stanza climbs to the next polish point.
 
+**Its `refPath` is a placeholder — replace it before submitting.**
+`assets/ref.png` is not in the repository: the reference the second incremental
+run actually used lived only on the compute box whose working directory was
+destroyed on 2026-08-17, and the one committed image, `assets/test.png`, is a
+50×50 unit-test fixture that no 512-circle campaign should be pointed at. The
+example is checked in so the parser and the documented format cannot drift, and
+neither `ParseSchedule` nor `schedule create --dry-run` opens the reference, so
+both work on the file as it stands. `POST /api/v1/schedules` does resolve it,
+eagerly and on purpose, and refuses an unreachable path up front rather than
+failing a stage hours in — so point `base.refPath` at your own reference first.
+
 `schedule create --dry-run` expands it without opening a socket:
 
 ```
@@ -211,12 +222,21 @@ compared.
   [`task-10.17-sse2-report.md`](task-10.17-sse2-report.md) is the example, and
   the report marks an earlier measurement as predating it for exactly this
   reason. Cite the revision when a cost is meant to be compared later.
-- **`parallelEvaluation` and `threads`.** Parallel evaluation reproduces
-  bit-identically for a fixed seed *and* a fixed worker count, but its
-  trajectory differs from a serial run of the same seed, because MayFly holds
-  the global best fixed for a whole parallel generation. `threads` shards the
-  rows of one render, so a different thread count is a different summation
-  order. Pin both when two runs must be compared exactly.
+- **`parallelEvaluation` — the mode must match, the worker count need not.**
+  Parallel evaluation reproduces bit-identically for a fixed seed at *any*
+  evaluation-worker count, but its trajectory differs from a serial run of the
+  same seed, because MayFly holds the global best fixed for a whole parallel
+  generation. So a parallel campaign is not comparable to a serial one of the
+  same seed, while two parallel campaigns of that seed are — including at
+  different `evaluationWorkers`.
+- **`threads` — comparable.** Threads shard the rows of one render into disjoint
+  bands, and every worker composites every circle in index order within its own
+  rows, so the image is pixel-exact at any thread count. The cost is then
+  reduced once, single-threaded, in row-major order over integer-valued data
+  (`CPURenderer.Cost`), so the thread count is not a summation order and cannot
+  move a cost. `renderer_correctness_test.go` compares one worker against
+  `GOMAXPROCS` with exact equality. Do not reject a comparison because two
+  campaigns used a different `threads`.
 
 `internal/server.TestScheduleReproducesTheHandDrivenCampaign` is the standing
 demonstration: the same campaign driven through the schedule executor and driven
