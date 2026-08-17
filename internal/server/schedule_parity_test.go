@@ -160,6 +160,7 @@ func handDrivenCampaign(t *testing.T, fixture *scheduleFixture) []float64 {
 	body := fmt.Sprintf("{%s}", parityConfig(fixture.imagePath))
 	jobID := postJob(t, fixture, "/api/v1/jobs", body)
 	costs = append(costs, awaitParityJob(t, fixture, jobID))
+	requireCompleteBatchCheckpoint(t, fixture, jobID, parityBaseCircles)
 
 	for range parityExtendCount {
 		extend := fmt.Sprintf(`{"additionalCircles": %d}`, parityExtendWidth)
@@ -191,6 +192,9 @@ func scheduledCampaign(t *testing.T, fixture *scheduleFixture) []float64 {
 	fixture.waitForScheduleState(t, scheduleID, store.ScheduleStateCompleted, parityJobTimeout)
 
 	stages := fixture.stages(t, scheduleID)
+	if len(stages) > 0 && stages[0].JobID != "" {
+		requireCompleteBatchCheckpoint(t, fixture, stages[0].JobID, parityBaseCircles)
+	}
 	costs := make([]float64, 0, len(stages))
 	for _, stage := range stages {
 		if stage.State != store.ScheduleStateCompleted {
@@ -199,6 +203,35 @@ func scheduledCampaign(t *testing.T, fixture *scheduleFixture) []float64 {
 		costs = append(costs, stage.BestCost)
 	}
 	return costs
+}
+
+// requireCompleteBatchCheckpoint states the precondition every later stage
+// depends on: the stage that just completed left behind a complete batch
+// checkpoint holding wantCircles circles.
+//
+// It is asserted directly rather than left to surface downstream because the
+// two ways it can break look nothing like each other three calls later. A base
+// stage whose circles were pruned — the reference is fitted so well that the
+// batch pruner retains fewer than it was asked for — reaches /extend as a 400
+// "extension requires a complete batch checkpoint"; a checkpoint that has not
+// been written yet reaches it as a 404. Both are far easier to read here, as
+// "base produced 6 of 8 circles" or "no checkpoint", than as an HTTP status on
+// an unrelated request.
+func requireCompleteBatchCheckpoint(t *testing.T, fixture *scheduleFixture, jobID string, wantCircles int) {
+	t.Helper()
+	jobStore, err := fixture.server.storeForJob(jobID)
+	if err != nil {
+		t.Fatalf("resolve store for job %s: %v", jobID, err)
+	}
+	checkpoint, err := jobStore.LoadCheckpoint(jobID)
+	if err != nil {
+		t.Fatalf("job %s reported completed but has no readable checkpoint: %v", jobID, err)
+	}
+	if got := len(checkpoint.BestParams) / 7; got != wantCircles || len(checkpoint.BestParams)%7 != 0 {
+		t.Fatalf("base produced %d of %d circles (%d parameters, termination %q); "+
+			"the campaign cannot continue from an incomplete batch checkpoint",
+			got, wantCircles, len(checkpoint.BestParams), checkpoint.Termination)
+	}
 }
 
 // postJob issues one of the three orchestrator calls and returns the identifier
@@ -231,6 +264,11 @@ func postJob(t *testing.T, fixture *scheduleFixture, path, body string) string {
 // awaitParityJob blocks until a hand-driven stage settles and returns its cost,
 // read back over the API rather than out of the manager so both paths report a
 // cost that survived serialization.
+//
+// `completed` is the only signal it waits for, and that is enough: the worker
+// persists a job's final checkpoint before it publishes that state, so a stage
+// observed completed can always be continued. It did not always do so, and the
+// resulting window turned CPU contention into a 404 from the next /extend.
 func awaitParityJob(t *testing.T, fixture *scheduleFixture, jobID string) float64 {
 	t.Helper()
 	deadline := time.Now().Add(parityJobTimeout)
