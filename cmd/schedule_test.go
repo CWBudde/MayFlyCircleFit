@@ -275,30 +275,24 @@ func TestScheduleListReportsAnEmptyServer(t *testing.T) {
 	}
 }
 
-// referenceCampaignDocument is the 512-circle campaign of Task 16.4's
-// acceptance check: base 8 circles, +8 extends to 512, and a polish at
+// referenceCampaignDocument reads the 512-circle campaign of Task 16.4's
+// acceptance check -- base 8 circles, +8 extends to 512, and a polish at
 // 32/64/96/128/192/256 that is abandoned after two consecutive barren sweeps.
-const referenceCampaignDocument = `{
-  "schemaVersion": 1,
-  "name": "512-circle campaign",
-  "seed": 4242,
-  "base": {"refPath": "assets/ref.png", "mode": "batch", "circles": 8, "batchSize": 8, "iters": 200, "popSize": 30},
-  "steps": [
-    {"type": "extend", "repeat": 3, "additionalCircles": 8},
-    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
-    {"type": "extend", "repeat": 4, "additionalCircles": 8},
-    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
-    {"type": "extend", "repeat": 4, "additionalCircles": 8},
-    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
-    {"type": "extend", "repeat": 4, "additionalCircles": 8},
-    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
-    {"type": "extend", "repeat": 8, "additionalCircles": 8},
-    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
-    {"type": "extend", "repeat": 8, "additionalCircles": 8},
-    {"type": "polish", "when": {"circles": [32, 64, 96, 128, 192, 256], "minGain": 1.0, "abortAfterBarren": 2}},
-    {"type": "extend", "repeat": 32, "additionalCircles": 8}
-  ]
-}`
+//
+// It is read from docs/ rather than inlined here on purpose. The documented
+// worked example and the document this command is asserted against are the same
+// bytes, so the documentation cannot describe a format the command would refuse.
+// internal/app.TestDocumentedExamplePlansTheReferenceCampaign parses the same
+// file and pins the stage and iteration figures the documentation quotes.
+func referenceCampaignDocument(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join("..", "docs", "examples", "512-circle-campaign.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the documented example: %v", err)
+	}
+	return string(data)
+}
 
 // writeScheduleDocument drops a document in a temporary directory and hands
 // back its path.
@@ -334,7 +328,7 @@ func TestScheduleDryRunListsTheReferenceCampaign(t *testing.T) {
 		t.Error("a dry run reached the server")
 		writer.WriteHeader(http.StatusInternalServerError)
 	})
-	body := dryRun(t, writeScheduleDocument(t, referenceCampaignDocument))
+	body := dryRun(t, writeScheduleDocument(t, referenceCampaignDocument(t)))
 
 	for _, marker := range []string{
 		"nothing was submitted and no schedule was created",
@@ -383,7 +377,7 @@ func TestScheduleDryRunTouchesNoStore(t *testing.T) {
 	}
 	before := treeSnapshot(t, root)
 
-	dryRun(t, writeScheduleDocument(t, referenceCampaignDocument))
+	dryRun(t, writeScheduleDocument(t, referenceCampaignDocument(t)))
 
 	after := treeSnapshot(t, root)
 	if strings.Join(after, "\n") != strings.Join(before, "\n") {
@@ -395,7 +389,7 @@ func TestScheduleDryRunTouchesNoStore(t *testing.T) {
 		}
 	}
 
-	document, err := app.ParseSchedule([]byte(referenceCampaignDocument))
+	document, err := app.ParseSchedule([]byte(referenceCampaignDocument(t)))
 	if err != nil {
 		t.Fatalf("ParseSchedule() error = %v", err)
 	}
@@ -569,7 +563,7 @@ func TestScheduleDryRunReportsAnOmittedSeedAsAutomatic(t *testing.T) {
 		t.Error("a dry run reached the server")
 		writer.WriteHeader(http.StatusInternalServerError)
 	})
-	document := strings.Replace(referenceCampaignDocument, `"seed": 4242,`, "", 1)
+	document := strings.Replace(referenceCampaignDocument(t), `"seed": 4242,`, "", 1)
 	body := dryRun(t, writeScheduleDocument(t, document))
 
 	if !strings.Contains(body, "Seed: automatic — resolved at submission") {
