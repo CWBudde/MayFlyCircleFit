@@ -695,6 +695,7 @@ func saveCheckpoint(jm *JobManager, checkpointStore store.Store, rend renderer.R
 	}
 	checkpoint := store.NewCheckpoint(jobID, job.BestParams, job.BestCost, job.InitialCost, job.Iterations, job.Config)
 	checkpoint.Evaluations = int64(job.Evaluations)
+	applyJobLineage(checkpoint, job)
 	if job.Termination != "" {
 		checkpoint.Termination = job.Termination
 	}

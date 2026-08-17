@@ -116,9 +116,44 @@ type Checkpoint struct {
 	// Timestamp records when this checkpoint was created
 	Timestamp time.Time `json:"timestamp"`
 
+	// ExtendedFrom and PolishedFrom name the completed job this one continued
+	// from, and at most one of them is set. They exist so a chain is
+	// reconstructible from the job tree alone: the extend and polish endpoints
+	// each mint a fresh job id and used to report the parent only in the HTTP
+	// response, which left a multi-hour campaign as a pile of unrelated job
+	// records that only an external ledger could read back.
+	//
+	// Both are additive and optional. A checkpoint written before they existed
+	// decodes with them empty, which is also what a job started from scratch
+	// records, so the schema version does not move.
+	ExtendedFrom string `json:"extendedFrom,omitempty"`
+	PolishedFrom string `json:"polishedFrom,omitempty"`
+
+	// ScheduleID and StageIndex place the job inside a declarative schedule.
+	// They are the reverse of the schedule's own stage records and are what lets
+	// a restarting server decide whether an unfinished job already belongs to a
+	// campaign. A job created by hand leaves both empty.
+	ScheduleID string `json:"scheduleId,omitempty"`
+	StageIndex *int   `json:"stageIndex,omitempty"`
+
 	// Config holds the job configuration, needed for validation during resume.
 	// We ensure that resumed jobs use compatible settings (same image, mode, etc.)
 	Config JobConfig `json:"config"`
+}
+
+// ContinuedFrom reports the job this checkpoint continues, if any, without the
+// caller having to know which of the two continuation kinds produced it.
+func (c *Checkpoint) ContinuedFrom() (string, bool) {
+	switch {
+	case c == nil:
+		return "", false
+	case c.ExtendedFrom != "":
+		return c.ExtendedFrom, true
+	case c.PolishedFrom != "":
+		return c.PolishedFrom, true
+	default:
+		return "", false
+	}
 }
 
 // CheckpointInfo contains metadata about a checkpoint without the full parameter data.
@@ -144,6 +179,12 @@ type CheckpointInfo struct {
 
 	// Timestamp records when this checkpoint was created
 	Timestamp time.Time `json:"timestamp"`
+
+	// ExtendedFrom, PolishedFrom, and ScheduleID mirror the checkpoint lineage so
+	// a chain can be walked from a listing without loading every checkpoint.
+	ExtendedFrom string `json:"extendedFrom,omitempty"`
+	PolishedFrom string `json:"polishedFrom,omitempty"`
+	ScheduleID   string `json:"scheduleId,omitempty"`
 
 	// Mode is the optimization mode (joint, sequential, batch)
 	Mode app.Mode `json:"mode"`
@@ -192,6 +233,9 @@ func (c *Checkpoint) ToInfo() CheckpointInfo {
 		ResumeCount:      normalized.ResumeCount,
 		Termination:      normalized.Termination,
 		Timestamp:        normalized.Timestamp,
+		ExtendedFrom:     normalized.ExtendedFrom,
+		PolishedFrom:     normalized.PolishedFrom,
+		ScheduleID:       normalized.ScheduleID,
 		Mode:             normalized.Config.Mode,
 		Circles:          normalized.Config.Circles,
 		RefPath:          normalized.Config.RefPath,
@@ -260,12 +304,49 @@ func (c *Checkpoint) Validate() error {
 	if normalized.ActualCircles < 1 || normalized.ActualCircles > normalized.RequestedCircles {
 		return &ValidationError{Field: "ActualCircles", Reason: "must be positive and no greater than RequestedCircles"}
 	}
+	if err := normalized.validateLineage(); err != nil {
+		return err
+	}
 	// Verify BestParams length matches the actual materialized circles.
 	expectedParams := normalized.ActualCircles * 7
 	if len(normalized.BestParams) != expectedParams {
 		return &ValidationError{
 			Field:  "BestParams",
 			Reason: fmt.Sprintf("length mismatch: expected %d params for %d actual circles", expectedParams, normalized.ActualCircles),
+		}
+	}
+	return nil
+}
+
+// validateLineage keeps a recorded chain trustworthy. A checkpoint that names
+// two parents, or names itself, describes a chain that cannot be walked, and a
+// stage index without a schedule points at nothing.
+func (c Checkpoint) validateLineage() error {
+	if c.ExtendedFrom != "" && c.PolishedFrom != "" {
+		return &ValidationError{Field: "PolishedFrom", Reason: "cannot be set together with ExtendedFrom"}
+	}
+	for field, parent := range map[string]string{"ExtendedFrom": c.ExtendedFrom, "PolishedFrom": c.PolishedFrom} {
+		if parent == "" {
+			continue
+		}
+		if err := validateJobID(parent); err != nil {
+			return &ValidationError{Field: field, Reason: err.Error()}
+		}
+		if parent == c.JobID {
+			return &ValidationError{Field: field, Reason: "cannot name the checkpoint's own job"}
+		}
+	}
+	if c.ScheduleID != "" {
+		if err := validateScheduleID(c.ScheduleID); err != nil {
+			return &ValidationError{Field: "ScheduleID", Reason: err.Error()}
+		}
+	}
+	if c.StageIndex != nil {
+		if c.ScheduleID == "" {
+			return &ValidationError{Field: "StageIndex", Reason: "requires ScheduleID"}
+		}
+		if *c.StageIndex < 0 {
+			return &ValidationError{Field: "StageIndex", Reason: "cannot be negative"}
 		}
 	}
 	return nil
@@ -311,6 +392,10 @@ func (c *Checkpoint) UnmarshalJSON(data []byte) error {
 		Termination:      wire.Termination,
 		Iteration:        iterations,
 		Timestamp:        wire.Timestamp,
+		ExtendedFrom:     wire.ExtendedFrom,
+		PolishedFrom:     wire.PolishedFrom,
+		ScheduleID:       wire.ScheduleID,
+		StageIndex:       wire.StageIndex,
 		Config:           wire.Config,
 	}
 	legacy := wire.SchemaVersion == 0 || wire.SchemaVersion == 1
@@ -341,6 +426,10 @@ type checkpointWire struct {
 	Termination      string    `json:"termination"`
 	Iteration        int       `json:"iteration,omitempty"`
 	Timestamp        time.Time `json:"timestamp"`
+	ExtendedFrom     string    `json:"extendedFrom,omitempty"`
+	PolishedFrom     string    `json:"polishedFrom,omitempty"`
+	ScheduleID       string    `json:"scheduleId,omitempty"`
+	StageIndex       *int      `json:"stageIndex,omitempty"`
 	Config           JobConfig `json:"config"`
 }
 
@@ -359,6 +448,10 @@ func checkpointWireFrom(c Checkpoint) checkpointWire {
 		Evaluations:      c.Evaluations,
 		Termination:      c.Termination,
 		Timestamp:        c.Timestamp,
+		ExtendedFrom:     c.ExtendedFrom,
+		PolishedFrom:     c.PolishedFrom,
+		ScheduleID:       c.ScheduleID,
+		StageIndex:       c.StageIndex,
 		Config:           c.Config,
 	}
 }
@@ -389,6 +482,10 @@ func (c Checkpoint) normalized() Checkpoint {
 	c.Config.EffectiveSeed = c.EffectiveSeed
 	c.Config.ResumeCount = c.ResumeCount
 	c.BestParams = append([]float64(nil), c.BestParams...)
+	if c.StageIndex != nil {
+		index := *c.StageIndex
+		c.StageIndex = &index
+	}
 	return c
 }
 

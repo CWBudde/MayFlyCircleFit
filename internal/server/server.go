@@ -1122,6 +1122,7 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 		job.InitialCost = checkpoint.InitialCost
 		job.Iterations = checkpoint.Iteration
 		job.Evaluations = evaluations
+		job.PolishedFrom = jobID
 	}); err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "job_error", "failed to initialize polishing job")
 		return
@@ -1277,6 +1278,7 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 		job.InitialCost = checkpoint.InitialCost
 		job.Iterations = checkpoint.Iteration
 		job.Evaluations = evaluations
+		job.ExtendedFrom = jobID
 	}); err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "job_error", "failed to initialize extension job")
 		return
