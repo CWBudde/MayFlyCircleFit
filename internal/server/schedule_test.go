@@ -81,6 +81,11 @@ func scheduleDocument(imagePath string, iters, popSize int) string {
 
 func (f *scheduleFixture) createSchedule(t *testing.T, document string) string {
 	t.Helper()
+	return f.createScheduleWithStages(t, document, 2)
+}
+
+func (f *scheduleFixture) createScheduleWithStages(t *testing.T, document string, wantStages int) string {
+	t.Helper()
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/schedules", strings.NewReader(document))
 	f.server.Handler().ServeHTTP(recorder, request)
@@ -94,8 +99,8 @@ func (f *scheduleFixture) createSchedule(t *testing.T, document string) string {
 	if response.State != store.ScheduleStateRunning {
 		t.Fatalf("created schedule state = %q, want running", response.State)
 	}
-	if response.TotalStages != 2 {
-		t.Fatalf("created schedule totalStages = %d, want 2", response.TotalStages)
+	if response.TotalStages != wantStages {
+		t.Fatalf("created schedule totalStages = %d, want %d", response.TotalStages, wantStages)
 	}
 	return response.ScheduleID
 }
@@ -731,6 +736,56 @@ func TestSchedulesAreUnavailableWithoutACheckpointStore(t *testing.T) {
 	}
 }
 
+// TestScheduleSkipsAStageItsPolicyDeclines is the executor half of Task 16.3.
+// The polish is planned, so a dry run would print it, but its circle condition
+// never matches; the campaign must record the skip and continue the chain from
+// the last stage that actually ran.
+func TestScheduleSkipsAStageItsPolicyDeclines(t *testing.T) {
+	fixture := newScheduleFixture(t, 2)
+	document := fmt.Sprintf(`{
+  "name": "conditional campaign",
+  "seed": 42,
+  "base": {"refPath": %q, "mode": "batch", "circles": 2, "batchSize": 1, "iters": 5, "popSize": 20},
+  "steps": [
+    {"type": "extend", "additionalCircles": 1},
+    {"type": "polish", "when": {"circles": [99]}},
+    {"type": "extend", "additionalCircles": 1}
+  ]
+}`, fixture.imagePath)
+	scheduleID := fixture.createScheduleWithStages(t, document, 4)
+	fixture.waitForScheduleState(t, scheduleID, store.ScheduleStateCompleted, 60*time.Second)
+
+	stages := fixture.stages(t, scheduleID)
+	if len(stages) != 4 {
+		t.Fatalf("recorded %d stages, want 4", len(stages))
+	}
+	wantStates := []store.ScheduleState{
+		store.ScheduleStateCompleted,
+		store.ScheduleStateCompleted,
+		store.ScheduleStateSkipped,
+		store.ScheduleStateCompleted,
+	}
+	for index, want := range wantStates {
+		if stages[index].State != want {
+			t.Fatalf("stage %d state = %q, want %q", index, stages[index].State, want)
+		}
+	}
+	skipped := stages[2]
+	if skipped.JobID != "" {
+		t.Fatalf("skipped stage names job %q", skipped.JobID)
+	}
+	if !strings.Contains(skipped.Reason, "99") {
+		t.Fatalf("skipped stage reason = %q, want the condition it failed", skipped.Reason)
+	}
+	// The chain steps over the skipped stage rather than breaking on it.
+	if stages[3].ParentJobID != stages[1].JobID {
+		t.Fatalf("stage 3 parent = %q, want stage 1's job %q", stages[3].ParentJobID, stages[1].JobID)
+	}
+	if stages[3].Circles != 4 {
+		t.Fatalf("stage 3 circles = %d, want 4", stages[3].Circles)
+	}
+}
+
 func TestNextScheduleStageDerivesTheCursorFromTheRecords(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -744,6 +799,16 @@ func TestNextScheduleStageDerivesTheCursorFromTheRecords(t *testing.T) {
 		{name: "first still running", states: []store.ScheduleState{store.ScheduleStateRunning}, wantNext: 0, wantHeld: true},
 		{name: "all completed", states: []store.ScheduleState{store.ScheduleStateCompleted, store.ScheduleStateCompleted, store.ScheduleStateCompleted}, wantNext: -1},
 		{name: "a failed stage blocks", states: []store.ScheduleState{store.ScheduleStateFailed}, wantNext: -1, blocked: true},
+		{
+			name:     "a skipped stage is settled, not pending",
+			states:   []store.ScheduleState{store.ScheduleStateCompleted, store.ScheduleStateSkipped},
+			wantNext: 2,
+		},
+		{
+			name:     "every stage settled, some by policy",
+			states:   []store.ScheduleState{store.ScheduleStateSkipped, store.ScheduleStateCompleted, store.ScheduleStateSkipped},
+			wantNext: -1,
+		},
 	}
 	planned := make([]app.ScheduleStage, 3)
 	for _, testCase := range cases {
