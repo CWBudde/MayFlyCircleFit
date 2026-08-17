@@ -224,3 +224,15 @@ persists the campaign and starts it; the client may disconnect immediately.
   executor.
 - **Schedules run in the default project.** They are keyed independently of jobs
   and the store does not know about projects.
+- **Expansion is unconditional; policy is a separate layer.** A document expands
+  to the same stage list whatever has happened, so a plan can be printed before
+  anything runs. A polish step may carry a `when` object — listed circle counts,
+  and a `minGain`/`abortAfterBarren` pair that abandons polishing once it stops
+  paying — and the executor evaluates it as a pure function of the plan and the
+  recorded stage outcomes when the stage comes up. No streak counter is stored:
+  it is recomputed from the records every time, so it cannot disagree with them.
+  Conditions are refused on extend steps, because skipping an extend would move
+  the circle count of every later stage.
+- **A declined stage is recorded, not omitted.** Policy writes a `skipped` stage
+  record carrying its reason, and the decision is never revisited. The chain
+  then continues from the last stage that actually ran.
