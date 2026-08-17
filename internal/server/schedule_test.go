@@ -211,8 +211,8 @@ func TestScheduleRunsEveryPlannedStageExactlyOnce(t *testing.T) {
 		if !ok {
 			t.Fatalf("stage %d job %s is not registered", index, stage.JobID)
 		}
-		if job.ScheduleID != scheduleID || job.StageIndex != index {
-			t.Fatalf("stage %d job carries schedule %q stage %d", index, job.ScheduleID, job.StageIndex)
+		if job.ScheduleID != scheduleID || job.StageIndex == nil || *job.StageIndex != index {
+			t.Fatalf("stage %d job carries schedule %q stage %v", index, job.ScheduleID, job.StageIndex)
 		}
 	}
 	checkpoint, err := fixture.server.store.LoadCheckpoint(stages[1].JobID)
@@ -413,7 +413,10 @@ func TestScheduleStageIsNotStartedAfterAPause(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse schedule: %v", err)
 	}
-	record := store.NewScheduleRecord(uuid.New().String(), *document)
+	record, err := store.NewScheduleRecord(uuid.New().String(), *document)
+	if err != nil {
+		t.Fatalf("build schedule record: %v", err)
+	}
 	record.State = store.ScheduleStatePaused
 	if err := scheduleStore.SaveSchedule(record); err != nil {
 		t.Fatalf("save schedule: %v", err)
@@ -457,7 +460,10 @@ func TestScheduleWantsDriverFollowsTheDurableState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse schedule: %v", err)
 	}
-	record := store.NewScheduleRecord(uuid.New().String(), *document)
+	record, err := store.NewScheduleRecord(uuid.New().String(), *document)
+	if err != nil {
+		t.Fatalf("build schedule record: %v", err)
+	}
 	record.State = store.ScheduleStatePaused
 	if err := scheduleStore.SaveSchedule(record); err != nil {
 		t.Fatalf("save schedule: %v", err)

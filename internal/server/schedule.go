@@ -421,7 +421,10 @@ func (s *Server) startScheduleStageJob(jobID string, config JobConfig, source *c
 	// checkpoint that a hand-issued continuation would.
 	lineage := func(job *Job) {
 		job.ScheduleID = scheduleID
-		job.StageIndex = index
+		// The index is a pointer so stage zero survives a JSON round trip; each
+		// job needs its own copy rather than a share of the loop's variable.
+		stageIndex := index
+		job.StageIndex = &stageIndex
 		switch stage.Kind {
 		case app.ScheduleStageExtend:
 			job.ExtendedFrom = parentJobID
@@ -507,7 +510,7 @@ func (s *Server) settleAdoptedStage(
 	// The completed job has to be this stage's job and no other. A checkpoint
 	// carrying a different schedule or index under the same identifier is not
 	// something to settle a campaign from.
-	if job.ScheduleID != scheduleID || job.StageIndex != index {
+	if job.ScheduleID != scheduleID || job.StageIndex == nil || *job.StageIndex != index {
 		return "", false, nil
 	}
 
