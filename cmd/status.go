@@ -253,7 +253,17 @@ func finiteNonnegative(value float64) bool {
 }
 
 func requestCLI(ctx context.Context, method, endpoint string) ([]byte, error) {
-	request, err := http.NewRequestWithContext(ctx, method, endpoint, nil)
+	return requestCLIBody(ctx, method, endpoint, nil)
+}
+
+// requestCLIBody is requestCLI with a request payload, which the schedule
+// commands need: a campaign is created by posting its document.
+func requestCLIBody(ctx context.Context, method, endpoint string, payload []byte) ([]byte, error) {
+	var requestBody io.Reader
+	if payload != nil {
+		requestBody = bytes.NewReader(payload)
+	}
+	request, err := http.NewRequestWithContext(ctx, method, endpoint, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
