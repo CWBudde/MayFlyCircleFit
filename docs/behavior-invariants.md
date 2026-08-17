@@ -239,3 +239,27 @@ persists the campaign and starts it; the client may disconnect immediately.
 - **A declined stage is recorded, not omitted.** Policy writes a `skipped` stage
   record carrying its reason, and the decision is never revisited. The chain
   then continues from the last stage that actually ran.
+
+## Campaign views
+
+`/schedules` lists campaigns, `/schedules/:id` shows one, and `mayflycirclefit
+schedule` mirrors the same endpoints from a terminal. A campaign view is a read
+model: it stores nothing, so it cannot drift from the stage records.
+
+- **A chain is reconstructible without a schedule.** `/chains/:jobID` and
+  `GET /api/v1/chains/:jobID` walk the `extendedFrom` and `polishedFrom` lineage
+  on each checkpoint back to the root of the chain, so a campaign driven by hand
+  through the extend and polish endpoints still reads as one run. Checkpoints
+  that already name a schedule are left out of the discovery listing, because
+  the schedule view knows strictly more than a reconstruction does.
+- **An unmeasured column stays empty.** A stage that has not completed shows no
+  cost and no PSNR rather than a zero, which would read as a perfect fit. PSNR
+  is derived from the stage cost. Elapsed comes from the stage record's
+  `startedAt`/`completedAt` and is therefore absent on an imported chain, since
+  a checkpoint records when it was written and not how long its job ran.
+- **Accepted polishing sweeps are not persisted.** The batch polisher reports
+  the count to the log only, so the column reports it as unrecorded on every
+  stage. Populating it needs a stage-record field, not a view change.
+- **The plot ships no assets.** Cost against circle count is inline SVG built
+  server-side from the stage list. The UI is served locally and has no CDN, so a
+  chart that needs one is a chart that does not render.

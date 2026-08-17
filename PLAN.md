@@ -2012,18 +2012,34 @@ and then runs unattended as a single observable entity.
 
 ### Task 16.5: Surface the Campaign in the UI and CLI (P2)
 
-- [ ] A schedule view showing the stage table — circles, cost, PSNR, elapsed,
+- [x] A schedule view showing the stage table — circles, cost, PSNR, elapsed,
       accepted sweeps for polish stages — as one run rather than N unrelated
-      jobs.
-- [ ] Plot cost against circle count across the whole chain, which is the one
+      jobs. `/schedules` lists campaigns and `/schedules/:id` shows one. Circles,
+      cost, elapsed, state, and the policy reason for a skipped stage come from
+      the stage records; PSNR is derived from the stage cost. The accepted-sweep
+      column could **not** be populated: `renderer.BatchPolishResult.AcceptedSweeps`
+      is only logged, never persisted, so the column reports it as unrecorded
+      rather than showing a zero. Populating it needs a stage-record field.
+- [x] Plot cost against circle count across the whole chain, which is the one
       view that actually answers "is this schedule better than the last one."
-- [ ] A `schedule` CLI command mirroring the HTTP surface, following the existing
-      short-imperative-verb convention (`run`, `resume`, `status`).
+      Inline SVG built server-side, with no charting library and no external
+      asset, because the UI is served locally.
+- [x] A `schedule` CLI command mirroring the HTTP surface, following the existing
+      short-imperative-verb convention (`run`, `resume`, `status`):
+      `create`, `list`, `status`, `cancel`, `pause`, `resume`, `import`.
 
 **Acceptance Checks:**
 
-- [ ] The 96-circle chain already on disk can be imported and rendered as a
-      single campaign view.
+- [x] ~~The 96-circle chain already on disk can be imported and rendered as a
+      single campaign view.~~ **Amended: that chain no longer exists.** It lived
+      only on the remote compute box whose directory was deleted on 2026-08-17,
+      and the data is unrecoverable, so this check cannot be run as written and
+      was not run. The import path it was protecting is implemented and tested
+      instead: `/chains/:jobID` and `GET /api/v1/chains/:jobID` walk the
+      `extendedFrom`/`polishedFrom` lineage back to the root of a chain, and
+      `TestImportedChainRendersAsOneCampaign` in `internal/server` renders a
+      **synthesized** four-stage chain — base, extend, polish, extend — as one
+      ordered campaign view. The fixture is labelled as synthesized in the test.
 
 ### Task 16.6: Retire the External Orchestrator (P2)
 
