@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -828,5 +829,39 @@ func TestNextScheduleStageDerivesTheCursorFromTheRecords(t *testing.T) {
 				t.Fatalf("blocked = %q, want blocked %v", blocked, testCase.blocked)
 			}
 		})
+	}
+}
+
+// TestScheduleStageOutcomesMarkOnlyCompletedCostsAsMeasured pins the bridge
+// between the store's records and the policy's view of them. A completed stage
+// that reached a perfect fit records a best cost of exactly zero, and policy
+// has to see that as a measurement; a record that never settled carries no cost
+// at all, and its zero must stay an absence.
+func TestScheduleStageOutcomesMarkOnlyCompletedCostsAsMeasured(t *testing.T) {
+	recorded := []store.ScheduleStageRecord{
+		{Index: 0, Kind: app.ScheduleStageBase, State: store.ScheduleStateCompleted, BestCost: 161.99},
+		{Index: 1, Kind: app.ScheduleStagePolish, State: store.ScheduleStateCompleted, BestCost: 0},
+		{Index: 2, Kind: app.ScheduleStagePolish, State: store.ScheduleStateSkipped},
+		{Index: 3, Kind: app.ScheduleStagePolish, State: store.ScheduleStateRunning},
+		{Index: 4, Kind: app.ScheduleStagePolish, State: store.ScheduleStateCompleted, BestCost: math.Inf(1)},
+		{Index: 5, Kind: app.ScheduleStagePolish, State: store.ScheduleStateCompleted, BestCost: math.NaN()},
+	}
+	wantMeasured := []bool{true, true, false, false, false, false}
+	wantState := []app.ScheduleOutcomeState{
+		app.ScheduleOutcomeCompleted, app.ScheduleOutcomeCompleted, app.ScheduleOutcomeSkipped,
+		app.ScheduleOutcomePending, app.ScheduleOutcomeCompleted, app.ScheduleOutcomeCompleted,
+	}
+
+	outcomes := scheduleStageOutcomes(recorded)
+	if len(outcomes) != len(recorded) {
+		t.Fatalf("projected %d outcomes, want %d", len(outcomes), len(recorded))
+	}
+	for index, outcome := range outcomes {
+		if outcome.State != wantState[index] {
+			t.Errorf("stage %d state = %q, want %q", index, outcome.State, wantState[index])
+		}
+		if outcome.CostMeasured != wantMeasured[index] {
+			t.Errorf("stage %d CostMeasured = %v, want %v", index, outcome.CostMeasured, wantMeasured[index])
+		}
 	}
 }

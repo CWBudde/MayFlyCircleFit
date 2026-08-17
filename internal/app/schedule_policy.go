@@ -90,10 +90,20 @@ const (
 // pure function that a table can drive, and what keeps the store's record type
 // out of the application layer.
 type ScheduleStageOutcome struct {
-	Index    int
-	Kind     ScheduleStageKind
-	State    ScheduleOutcomeState
+	Index int
+	Kind  ScheduleStageKind
+	State ScheduleOutcomeState
+
+	// BestCost is the cost the canvas held when the stage settled, and is
+	// meaningful only when CostMeasured is set. Zero is a legitimate value — a
+	// perfect fit costs exactly nothing — so it must never be read as "no
+	// measurement".
 	BestCost float64
+
+	// CostMeasured says whether BestCost is a number the stage actually
+	// produced. It defaults to false so an outcome built without one cannot
+	// pass an accidental zero off as a measurement.
+	CostMeasured bool
 }
 
 // ScheduleStageVerdict is the decision for one planned stage.
@@ -150,8 +160,11 @@ func EvaluateScheduleStage(plan []ScheduleStage, index int, outcomes []ScheduleS
 // A stage's gain is measured against the completed stage before it, whatever
 // kind that was, because that is the cost the canvas actually held when the
 // stage started. A gain that cannot be measured — no completed predecessor, or
-// a cost of zero, which no real fit reaches — ends the streak rather than
-// extending it: an unknown is not evidence that polishing has stopped paying.
+// either side missing a cost — ends the streak rather than extending it: an
+// unknown is not evidence that polishing has stopped paying. Absence is read
+// from CostMeasured and never from the number: a stage that reached a perfect
+// fit records a best cost of exactly zero, and its zero gain is the strongest
+// evidence there is that further polishing is barren.
 func barrenStreak(outcomes []ScheduleStageOutcome, kind ScheduleStageKind, before int, minGain float64) int {
 	completed := make([]ScheduleStageOutcome, 0, len(outcomes))
 	for _, outcome := range outcomes {
@@ -166,7 +179,7 @@ func barrenStreak(outcomes []ScheduleStageOutcome, kind ScheduleStageKind, befor
 		if completed[i].Kind != kind {
 			continue
 		}
-		if i == 0 || completed[i].BestCost <= 0 || completed[i-1].BestCost <= 0 {
+		if i == 0 || !completed[i].CostMeasured || !completed[i-1].CostMeasured {
 			break
 		}
 		if completed[i-1].BestCost-completed[i].BestCost >= minGain {

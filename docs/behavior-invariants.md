@@ -231,8 +231,11 @@ persists the campaign and starts it; the client may disconnect immediately.
   paying — and the executor evaluates it as a pure function of the plan and the
   recorded stage outcomes when the stage comes up. No streak counter is stored:
   it is recomputed from the records every time, so it cannot disagree with them.
-  Conditions are refused on extend steps, because skipping an extend would move
-  the circle count of every later stage.
+  Whether a stage measured a cost is carried explicitly beside the number, so a
+  perfect fit's cost of exactly zero counts as a measurement and its zero gain
+  ends polishing like any other barren stage; only a stage that never settled
+  leaves the gain unknown. Conditions are refused on extend steps, because
+  skipping an extend would move the circle count of every later stage.
 - **A declined stage is recorded, not omitted.** Policy writes a `skipped` stage
   record carrying its reason, and the decision is never revisited. The chain
   then continues from the last stage that actually ran.
