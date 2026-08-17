@@ -188,8 +188,15 @@ cancelled rather than being resurrected as a completed one.
 ## Schedule execution
 
 A schedule runs inside the server, not in a client. `POST /api/v1/schedules`
-persists the campaign and starts it; the client may disconnect immediately.
+persists the campaign and starts it; the client may disconnect immediately. The
+document format itself is [`schedule-format.md`](schedule-format.md).
 
+- **A schedule is the endpoints, not a second optimizer.** Driving a campaign
+  through the executor produces the same cost sequence as issuing the same
+  stages by hand against `POST /api/v1/jobs`, `/extend` and `/polish`. Exactly
+  the same, with no tolerance, once the seed, `threads`, evaluation width and
+  compositor are pinned — asserted by
+  `TestScheduleReproducesTheHandDrivenCampaign`.
 - **Stages are ordinary jobs.** Each stage is created and queued through the
   same path a hand-issued `POST /api/v1/jobs` uses, so a schedule and manual
   jobs share `--max-jobs` and a campaign cannot oversubscribe the host. The
