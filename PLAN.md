@@ -2000,15 +2000,17 @@ and then runs unattended as a single observable entity.
 - [x] `--dry-run` prints the full realized stage list with per-stage parameters
       and the total optimizer iteration count, without touching the store. It is
       a flag on `schedule create`, so the document argument and the local
-      validation are the same ones the real submission uses. Expansion is a pure
-      function of the document, so the dry run opens no socket at all: no
-      schedule directory, no stage file, no job, asserted against a real store
-      root with a positive control that a saved schedule does change it.
-      Conditional stages are listed and marked `conditional:` with their
-      condition spelled out, never silently included or excluded — a dry run has
-      no outcomes and cannot decide them. The iteration figure is the authorized
-      budget, split into unconditional and conditional; bounded residual-refill
-      batch stages are excluded because most stages never run them.
+      validation are the same ones the real submission uses. Expansion needs no
+      runtime state, so the dry run opens no socket at all: no schedule
+      directory, no stage file, no job, asserted against a real store root with
+      a positive control that a saved schedule does change it. A document that
+      omits its seed is reported as automatic rather than as seed zero, because
+      the seed is drawn afresh at submission. Conditional stages are listed and
+      marked `conditional:` with their condition spelled out, never silently
+      included or excluded — a dry run has no outcomes and cannot decide them.
+      The iteration figure is the nominal planned count, split into
+      unconditional and conditional; it is neither a prediction nor a ceiling,
+      since bounded residual-refill batch stages are excluded and may add work.
 - [x] After the first few stages complete, report a projected finish time derived
       from observed stage wall clock. Extend stages are roughly flat in circle
       count because the frozen prefix is baked once
@@ -2020,7 +2022,10 @@ and then runs unattended as a single observable entity.
       instead of extrapolating, and no finish time is printed until every
       remaining kind is measured. A polish estimate is labelled a lower bound,
       because selection cost climbs with the circle count. `schedule status`
-      renders it.
+      renders it, and only a running campaign gets a finish timestamp: a
+      completed, failed, or cancelled one gets no projection, and a paused one
+      gets its remaining workload without a time, because the projection anchors
+      at the current clock.
 
 **Acceptance Checks:**
 

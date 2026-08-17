@@ -45,9 +45,9 @@ var scheduleCreateCmd = &cobra.Command{
 	Long: `Validates a schedule document and submits it to the server.
 
 With --dry-run the document is expanded and printed — every realized stage, its
-parameters, and the total optimizer iteration budget — and nothing is submitted.
-Expansion needs no runtime state, so a dry run creates no schedule, no stage
-record, and no job.`,
+parameters, and the nominal optimizer iteration count — and nothing is
+submitted. Expansion needs no runtime state, so a dry run creates no schedule,
+no stage record, and no job.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runScheduleCreate,
 }
@@ -108,7 +108,7 @@ func init() {
 		scheduleCmd.AddCommand(command)
 	}
 	scheduleCreateCmd.Flags().BoolVar(&scheduleDryRun, "dry-run", false,
-		"Print the realized stage list and iteration budget without submitting anything")
+		"Print the realized stage list and nominal iteration count without submitting anything")
 	rootCmd.AddCommand(scheduleCmd)
 }
 

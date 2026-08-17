@@ -246,21 +246,29 @@ persists the campaign and starts it; the client may disconnect immediately.
 and `schedule status` projects when a running campaign will finish. Both are
 read-only, and both refuse to state anything they cannot derive.
 
-- **A dry run reaches nothing.** Expansion is a pure function of the document,
-  so the dry run never opens a socket: no schedule directory, no stage record,
-  no job, and no reference image is read.
+- **A dry run reaches nothing.** Expansion needs no runtime state, so the dry
+  run never opens a socket: no schedule directory, no stage record, no job, and
+  no reference image is read.
+- **An omitted seed is reported as automatic, never as seed zero.** A document
+  that names its seed expands identically every time. One that omits it has no
+  seed yet — `JobConfig.ApplyDefaults` draws a fresh one on each expansion, and
+  the real submission draws another — so the dry run says the seed is resolved
+  at submission instead of printing the document's zero or the throwaway value
+  this expansion happened to draw.
 - **A conditional stage is printed as conditional.** A dry run has no outcomes
   and therefore cannot decide a `when` clause. Every planned stage is listed,
   and a conditional one is marked with its condition stated in full, rather than
   being silently included or excluded. The iteration total is split the same
   way, into the part that runs regardless and the part that depends on what the
   campaign measures.
-- **The iteration count is a budget, not a prediction.** It is what the
-  configuration authorizes: batch stages times epochs times iterations, plus
-  sweeps times epochs times iterations for a polish stage. Early stopping and
-  convergence detection can only spend less. The bounded residual-refill batch
-  stages (`renderer.MaxExtraBatchStages`) are excluded, because they are
-  attempted only when a stage leaves circles unplaced.
+- **The iteration count is the nominal plan, not a prediction and not a
+  bound.** It is what the configuration lays out: batch stages times epochs
+  times iterations, plus sweeps times epochs times iterations for a polish
+  stage. Early stopping and convergence detection spend less than it, while a
+  batch stage that leaves circles unplaced may run up to
+  `renderer.MaxExtraBatchStages` residual-refill stages beyond its plan and
+  spend more. Those refills are excluded from the count because most stages
+  never run them, so every place that presents the figure labels it nominal.
 - **The finish projection is measured, never modelled.** It divides observed
   stage wall clock by completed stages of the same kind and multiplies by the
   stages of that kind still planned. Kinds are never blended: an extend is
@@ -270,6 +278,12 @@ read-only, and both refuse to state anything they cannot derive.
   insufficient data, and no finish time is given until every remaining kind has
   a rate. A running stage counts as fully remaining, because discounting it
   would need exactly the per-stage progress model this avoids.
+- **Only a running campaign gets a finish time.** The projection anchors at the
+  current clock, which is a claim only a campaign the server is advancing can
+  support. A completed, failed, or cancelled campaign is reported as one that
+  will not advance and gets no projection at all; a paused one still gets its
+  per-kind rates and a remaining workload, but no timestamp, because when it
+  resumes is unknowable.
 
 ## Campaign views
 
