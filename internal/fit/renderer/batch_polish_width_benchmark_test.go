@@ -151,6 +151,10 @@ func BenchmarkPolishSweepPoolSetup(b *testing.B) {
 // fixed cost, which the session pool does not touch at all: residual-region
 // selection renders the complete vector once per circle to rank each circle's
 // influence on the worst tile, so it is serial and linear in the circle count.
+//
+// Each iteration gets a fresh incumbentAuditCache so the benchmark keeps
+// measuring the full uncached selection. A warm cache would skip the
+// leave-one-out audit, which is the dominant term being measured here.
 func BenchmarkPolishResidualRegionSelection(b *testing.B) {
 	ref := solidImage(polishBenchmarkWidth, polishBenchmarkHeight, color.NRGBA{R: 60, G: 120, B: 180, A: 255})
 	for _, circleCount := range []int{256, 512} {
@@ -160,7 +164,8 @@ func BenchmarkPolishResidualRegionSelection(b *testing.B) {
 			cpu.SetThreads(1)
 			b.ReportAllocs()
 			for range b.N {
-				if _, err := selectResidualRegionActiveSet(cpu, params, polishBenchmarkActiveSetSize, nil); err != nil {
+				audit := &incumbentAuditCache{session: cpu}
+				if _, err := selectResidualRegionActiveSet(cpu, audit, params, polishBenchmarkActiveSetSize, nil); err != nil {
 					b.Fatal(err)
 				}
 			}

@@ -1254,9 +1254,23 @@ type polishSerialResult struct {
 // count and evaluation count as Go literals. Those literals were pasted here
 // unchanged. The two `hybrid-overlap` cases already existed and their recorded
 // numbers reproduced byte-for-byte in that capture, which is the evidence that
-// the capture harness matches the one the original goldens came from. Nothing
-// in this table was produced by the pooled code, so a passing width-one case
-// is a real comparison against the pre-pool behavior and not a self-check.
+// the capture harness matches the one the original goldens came from.
+//
+// Three fixtures are an explicit exception to that provenance, and the reader
+// should know it. The `inherited-blocker-sweeps-*` cases run on
+// polishParityParams, which carries circles that are already not useful, so
+// their recorded serial runs changed when the acceptance gate became the
+// non-regression rule sweepKeepsCirclesUseful: sweep one now commits a strict
+// improvement the old absolute gate vetoed. The pre-pool commit cannot produce
+// those numbers, because it predates the gate, so their literals were
+// re-captured from the current width-one run and are regression pins rather
+// than a pre-pool comparison. What makes that safe to do is that the divergence
+// is confined to exactly where the gate acts: sweep one's evaluated costs are
+// still bit-identical to the pre-pool capture in all three, and every later
+// value differs only because the incumbent the next sweep starts from is now
+// the committed candidate. The pool property itself is never asserted against
+// this table -- widths two, four, and eight are compared to the live width-one
+// run below -- so a stale golden cannot mask a pool regression.
 //
 // Every strategy is covered because they reach the pooled `evaluate` closure by
 // different routes: `replacement` and `hybrid-overlap` seed once through
@@ -1347,8 +1361,11 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 		{
 			// `replacement` seeds the active set from the residual once, the same
 			// route `hybrid-overlap` takes, but it selects different circles, so it
-			// bakes a different prefix.
-			name:      "rejected-sweeps-replacement",
+			// bakes a different prefix. Like the hybrid-overlap fixture above it
+			// runs on the blocker-carrying parity vector, so sweep 1's active set
+			// [3 4] commits a strict improvement that the old absolute gate vetoed;
+			// sweeps 2 and 3 still lose on cost.
+			name:      "inherited-blocker-sweeps-replacement",
 			reference: solidImage(20, 16, color.NRGBA{R: 200, G: 40, B: 90, A: 255}),
 			params:    polishParityParams(),
 			options: BatchPolishOptions{
@@ -1362,12 +1379,18 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 			serial: polishSerialResult{
 				costs: []float64{
 					4969.403125, 5292.009375, 5358.133333333333, 5358.133333333333, 5405.978125,
-					6134.682291666667, 6474.50625, 6500.479166666667, 6500.479166666667, 6502.104166666667,
-					18986.515625, 19309.121875, 19375.245833333334, 19375.245833333334, 19423.080208333333,
+					5472.492708333333, 5786.842708333334, 5849.786458333333, 5847.935416666666, 5894.261458333333,
+					20995.696875, 21268.529166666667, 21340.423958333333, 21385, 21385.5375,
 				},
-				params:      polishParityParams(),
-				cost:        5639.8125,
-				accepted:    0,
+				params: []float64{
+					10, 8, 9, 0.7450980392156863, 0.17647058823529413, 0.3333333333333333, 1,
+					4, 4, 4, 0.8235294117647058, 0.23529411764705882, 0.39215686274509803, 0.9,
+					0, 0, 1, 0.5686274509803921, 0, 0, 0.5,
+					2, 0, 1, 0.5686274509803921, 0, 0, 0.5,
+					16, 12, 2, 0.11764705882352941, 0.35294117647058826, 0.8627450980392157, 0.3,
+				},
+				cost:        4969.403125,
+				accepted:    1,
 				sweeps:      3,
 				evaluations: 22,
 			},
@@ -1498,8 +1521,11 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 		{
 			// `contiguous-window` is the only strategy that guarantees a contiguous
 			// active set, so it is the one whose baked prefix is large and whose
-			// suffix session therefore carries most of the work.
-			name:      "rejected-sweeps-contiguous-window",
+			// suffix session therefore carries most of the work. It also runs on
+			// the blocker-carrying parity vector, so sweep 1's window [4 5] commits
+			// a strict improvement the old absolute gate vetoed; sweeps 2 and 3
+			// still lose on cost.
+			name:      "inherited-blocker-sweeps-contiguous-window",
 			reference: solidImage(20, 16, color.NRGBA{R: 200, G: 40, B: 90, A: 255}),
 			params:    polishParityParams(),
 			options: BatchPolishOptions{
@@ -1513,12 +1539,18 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 			serial: polishSerialResult{
 				costs: []float64{
 					5639.8125, 5413.929166666667, 5370.835416666667, 5337.932291666667, 5323.808333333333,
-					5639.8125, 6554.388541666666, 6713.795833333334, 6569.333333333333, 6640.315625,
-					5639.8125, 16916.385416666668, 21602.385416666668, 21916.28125, 22048.005208333332,
+					5323.808333333333, 6239.621875, 6397.716666666666, 6253.272916666667, 6324.140625,
+					5323.808333333333, 17376.132291666665, 22637.715625, 22951.715625, 23083.490625,
 				},
-				params:      polishParityParams(),
-				cost:        5639.8125,
-				accepted:    0,
+				params: []float64{
+					10, 8, 9, 0.7450980392156863, 0.17647058823529413, 0.3333333333333333, 1,
+					4, 4, 4, 0.8235294117647058, 0.23529411764705882, 0.39215686274509803, 0.9,
+					15, 5, 3, 0.47058823529411764, 0.11764705882352941, 0.23529411764705882, 0.6,
+					3, 12, 6, 0, 0.7843137254901961, 1, 0.00392156862745098,
+					16, 15, 1, 0.11764705882352941, 1, 0, 0.3,
+				},
+				cost:        5323.808333333333,
+				accepted:    1,
 				sweeps:      3,
 				evaluations: 22,
 			},
