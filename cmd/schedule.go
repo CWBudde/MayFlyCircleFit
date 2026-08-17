@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -164,8 +165,22 @@ func runScheduleCreate(cmd *cobra.Command, args []string) error {
 	output := cmd.OutOrStdout()
 	fmt.Fprintf(output, "Schedule %s created (%s)\n", summary.ScheduleID, summary.State)
 	fmt.Fprintf(output, "  Stages: %d\n", summary.TotalStages)
-	fmt.Fprintf(output, "  Seed: %d\n", summary.CampaignSeed)
+	fmt.Fprintf(output, "  Seed: %s\n", formatCampaignSeed(summary.CampaignSeed))
 	return nil
+}
+
+// formatCampaignSeed renders the campaign seed for an operator.
+//
+// A document that omits the seed leaves campaignSeed at zero: that is the
+// "resolve one for me" sentinel, not the seed the campaign ran with. The
+// resolved value only reaches the record once a stage has run, so printing the
+// zero would name a seed that replays nothing. The word is printed instead, in
+// the same spirit as the unrecorded columns in the campaign view.
+func formatCampaignSeed(seed int64) string {
+	if seed == 0 {
+		return "unresolved"
+	}
+	return strconv.FormatInt(seed, 10)
 }
 
 func runScheduleList(cmd *cobra.Command, _ []string) error {
@@ -185,8 +200,9 @@ func runScheduleList(cmd *cobra.Command, _ []string) error {
 	writer := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(writer, "SCHEDULE\tSTATE\tSTAGES\tSEED\tNAME")
 	for _, summary := range summaries {
-		fmt.Fprintf(writer, "%s\t%s\t%d\t%d\t%s\n",
-			summary.ScheduleID, summary.State, summary.TotalStages, summary.CampaignSeed, summary.Name)
+		fmt.Fprintf(writer, "%s\t%s\t%d\t%s\t%s\n",
+			summary.ScheduleID, summary.State, summary.TotalStages,
+			formatCampaignSeed(summary.CampaignSeed), summary.Name)
 	}
 	return writer.Flush()
 }
@@ -213,6 +229,21 @@ func runScheduleStatus(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// detailCampaignSeed recovers the seed a campaign is actually running with. The
+// record only carries it when the document named one; otherwise the resolved
+// seed lives in the configuration of the first stage that ran.
+func detailCampaignSeed(detail scheduleDetailResponse) int64 {
+	if detail.CampaignSeed != 0 {
+		return detail.CampaignSeed
+	}
+	for _, stage := range detail.Stages {
+		if stage.Config.EffectiveSeed != 0 {
+			return stage.Config.EffectiveSeed
+		}
+	}
+	return 0
+}
+
 func printScheduleDetail(output io.Writer, detail scheduleDetailResponse) {
 	fmt.Fprintf(output, "Schedule: %s\n", detail.ScheduleID)
 	if detail.Name != "" {
@@ -220,7 +251,7 @@ func printScheduleDetail(output io.Writer, detail scheduleDetailResponse) {
 	}
 	fmt.Fprintf(output, "State: %s\n", detail.State)
 	fmt.Fprintf(output, "Stages: %d recorded of %d planned\n", len(detail.Stages), detail.TotalStages)
-	fmt.Fprintf(output, "Seed: %d\n", detail.CampaignSeed)
+	fmt.Fprintf(output, "Seed: %s\n", formatCampaignSeed(detailCampaignSeed(detail)))
 	if detail.Error != "" {
 		fmt.Fprintf(output, "Error: %s\n", detail.Error)
 	}

@@ -12,6 +12,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
 
 // The schedule command is a client, so its tests are contract tests: they stand
@@ -217,6 +220,43 @@ func TestScheduleImportRendersTheChain(t *testing.T) {
 		if !strings.Contains(body, marker) {
 			t.Errorf("import output missing %q:\n%s", marker, body)
 		}
+	}
+}
+
+// TestScheduleSeedIsNeverReportedAsZero covers a campaign whose document
+// omitted the seed. Zero is the "resolve one for me" sentinel, so printing it
+// would name a seed that replays nothing; the resolved value is read back from
+// the stage that ran, and before that the output says so.
+func TestScheduleSeedIsNeverReportedAsZero(t *testing.T) {
+	started := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	detail := scheduleDetailResponse{}
+	detail.ScheduleID = testScheduleID
+	detail.State = "running"
+	detail.TotalStages = 2
+	detail.CreatedAt, detail.UpdatedAt = started, started
+
+	var unstarted bytes.Buffer
+	printScheduleDetail(&unstarted, detail)
+	if !strings.Contains(unstarted.String(), "Seed: unresolved") {
+		t.Fatalf("unstarted campaign output = %q, want an unresolved seed", unstarted.String())
+	}
+	if strings.Contains(unstarted.String(), "Seed: 0") {
+		t.Fatalf("the zero sentinel was printed as a seed:\n%s", unstarted.String())
+	}
+
+	detail.Stages = []store.ScheduleStageRecord{{
+		ScheduleID: testScheduleID,
+		Index:      0,
+		Kind:       app.ScheduleStageBase,
+		StepIndex:  -1,
+		Circles:    8,
+		State:      store.ScheduleStateCompleted,
+		Config:     store.JobConfig{RefPath: "assets/ref.png", EffectiveSeed: 987654321},
+	}}
+	var running bytes.Buffer
+	printScheduleDetail(&running, detail)
+	if !strings.Contains(running.String(), "Seed: 987654321") {
+		t.Fatalf("running campaign output = %q, want the seed the stage recorded", running.String())
 	}
 }
 

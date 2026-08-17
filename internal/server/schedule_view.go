@@ -25,13 +25,14 @@ func campaignFromSchedule(record *store.ScheduleRecord, stages []store.ScheduleS
 	if plan, err := record.Document.Expand(); err == nil {
 		planned = len(plan)
 	}
+	seed, hasSeed := campaignSeed(record, stages)
 	campaign := ui.Campaign{
 		ID:            record.ScheduleID,
 		Name:          record.Document.Name,
 		State:         string(record.State),
 		Source:        ui.CampaignFromSchedule,
-		CampaignSeed:  record.CampaignSeed,
-		HasSeed:       record.CampaignSeed != 0,
+		CampaignSeed:  seed,
+		HasSeed:       hasSeed,
 		PlannedStages: planned,
 		Error:         record.Error,
 	}
@@ -40,6 +41,26 @@ func campaignFromSchedule(record *store.ScheduleRecord, stages []store.ScheduleS
 		campaign.Stages = append(campaign.Stages, campaignStageFromRecord(&stages[i]))
 	}
 	return campaign
+}
+
+// campaignSeed reports the seed the campaign actually ran with.
+//
+// A document that omits the seed leaves ScheduleRecord.CampaignSeed at zero,
+// because zero is the "resolve one for me" sentinel rather than a seed. The
+// resolved value does exist once a stage has run — every stage record keeps the
+// configuration it ran with — so it is read back from there. Before the first
+// stage there is nothing to read, and the view says the seed is absent instead
+// of presenting the sentinel as if it were the seed.
+func campaignSeed(record *store.ScheduleRecord, stages []store.ScheduleStageRecord) (int64, bool) {
+	if record.CampaignSeed != 0 {
+		return record.CampaignSeed, true
+	}
+	for i := range stages {
+		if seed := stages[i].Config.EffectiveSeed; seed != 0 {
+			return seed, true
+		}
+	}
+	return 0, false
 }
 
 // campaignStageFromRecord maps one stage record onto a table row.
@@ -134,7 +155,7 @@ func campaignFromChain(leafJobID string, chain []*store.Checkpoint) ui.Campaign 
 		stage := ui.CampaignStage{
 			Index:       index,
 			Kind:        chainStageKind(checkpoint),
-			State:       chainStageState(checkpoint),
+			State:       chainStageState(checkpoint.Termination),
 			Circles:     checkpoint.ActualCircles,
 			BestCost:    checkpoint.BestCost,
 			HasBestCost: true,
@@ -175,14 +196,20 @@ func chainStageKind(checkpoint *store.Checkpoint) string {
 // chainStageState reports the checkpoint's own termination, which is the only
 // state an imported stage has: the job records are long gone for a chain read
 // back off disk.
-func chainStageState(checkpoint *store.Checkpoint) string {
-	switch checkpoint.Termination {
-	case "", "unknown":
-		return "completed"
-	case "failed", "cancelled":
-		return checkpoint.Termination
+//
+// The mapping is the one jobFromCheckpoint in restore.go applies when it
+// rebuilds a job, and TestChainStageStateMatchesRestore pins the two together.
+// An unknown or legacy termination is not a finished run — it is a checkpoint
+// whose job never recorded how it ended — so it reads as cancelled here too
+// rather than claiming a campaign completed.
+func chainStageState(termination string) string {
+	switch termination {
+	case "completed", "target_cost", "stagnation", "stage_convergence", "refill_limit":
+		return string(StateCompleted)
+	case "failed":
+		return string(StateFailed)
 	default:
-		return "completed"
+		return string(StateCancelled)
 	}
 }
 
@@ -190,7 +217,7 @@ func chainState(chain []*store.Checkpoint) string {
 	if len(chain) == 0 {
 		return "pending"
 	}
-	return chainStageState(chain[len(chain)-1])
+	return chainStageState(chain[len(chain)-1].Termination)
 }
 
 // discoveredChain is a lineage found in a checkpoint listing, before it is
@@ -202,6 +229,11 @@ type discoveredChain struct {
 	Circles   int
 	BestCost  float64
 	UpdatedAt time.Time
+
+	// Termination is the leaf checkpoint's own termination, carried through so
+	// the listing card can state the chain the same way the detail page does.
+	// Without it the listing would have to assume every chain finished.
+	Termination string
 }
 
 // discoverChains finds every multi-stage lineage in a store. A checkpoint that
@@ -240,21 +272,29 @@ func discoverChains(infos []store.CheckpointInfo) []discoveredChain {
 			continue
 		}
 		chains = append(chains, discoveredChain{
-			LeafJobID: jobID,
-			RootJobID: root,
-			Stages:    length,
-			Circles:   chainCircles(info),
-			BestCost:  info.BestCost,
-			UpdatedAt: info.Timestamp,
+			LeafJobID:   jobID,
+			RootJobID:   root,
+			Stages:      length,
+			Circles:     chainCircles(info),
+			BestCost:    info.BestCost,
+			UpdatedAt:   info.Timestamp,
+			Termination: info.Termination,
 		})
 	}
+	sortDiscoveredChains(chains)
+	return chains
+}
+
+// sortDiscoveredChains puts the most recently updated chain first. It is a
+// function of its own because a listing merged from several project stores has
+// to be ordered again after the merge.
+func sortDiscoveredChains(chains []discoveredChain) {
 	sort.Slice(chains, func(i, j int) bool {
 		if !chains[i].UpdatedAt.Equal(chains[j].UpdatedAt) {
 			return chains[i].UpdatedAt.After(chains[j].UpdatedAt)
 		}
 		return chains[i].LeafJobID < chains[j].LeafJobID
 	})
-	return chains
 }
 
 // chainCampaignSummaries shapes discovered chains for the campaign listing.
@@ -264,7 +304,7 @@ func chainCampaignSummaries(chains []discoveredChain) []ui.CampaignSummary {
 		summaries = append(summaries, ui.CampaignSummary{
 			ID:             chain.LeafJobID,
 			Name:           "from " + shortJobID(chain.RootJobID),
-			State:          "completed",
+			State:          chainStageState(chain.Termination),
 			Source:         ui.CampaignFromChain,
 			RecordedStages: chain.Stages,
 			Circles:        chain.Circles,

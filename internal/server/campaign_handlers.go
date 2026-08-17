@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/a-h/templ"
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 	"github.com/cwbudde/mayflycirclefit/internal/ui"
 	"github.com/google/uuid"
@@ -47,15 +48,7 @@ func (s *Server) handleCampaignList(w http.ResponseWriter, r *http.Request) {
 		schedules = append(schedules, summarizeCampaign(&records[i], stages))
 	}
 
-	// Chain discovery reads the default project's checkpoints, which is where
-	// schedules live too. A per-project campaign listing would need the store to
-	// know about projects, which it deliberately does not.
-	var chains []ui.CampaignSummary
-	if infos, err := s.store.ListCheckpoints(); err != nil {
-		slog.Warn("Unable to list checkpoints for chain discovery", "error", err)
-	} else {
-		chains = chainCampaignSummaries(discoverChains(infos))
-	}
+	chains := chainCampaignSummaries(s.discoverAllChains())
 	s.renderCampaignPage(w, r, ui.CampaignListPage(schedules, chains, ""))
 }
 
@@ -125,13 +118,45 @@ func (s *Server) handleChains(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusServiceUnavailable, "checkpoints_unavailable", "checkpoint feature not enabled")
 		return
 	}
-	infos, err := s.store.ListCheckpoints()
-	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, "chain_error", "failed to list checkpoints")
-		return
-	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(chainSummaryWires(discoverChains(infos)))
+	_ = json.NewEncoder(w).Encode(chainSummaryWires(s.discoverAllChains()))
+}
+
+// discoverAllChains lists every hand-driven chain the server can reconstruct,
+// across every project it knows about. /chains/:jobID already resolves a job
+// through its own project store, so listing only the default project would make
+// the campaign page omit chains whose detail page renders perfectly well.
+//
+// Each store is discovered on its own rather than by pooling the listings:
+// lineage never crosses a project boundary, and a pooled parent map could link
+// a child to a same-named checkpoint in another project. The merged result is
+// ordered again because each store only sorted its own chains.
+func (s *Server) discoverAllChains() []discoveredChain {
+	chains := make([]discoveredChain, 0)
+	for _, slug := range s.chainProjects() {
+		checkpoints, err := s.storeForSlug(slug)
+		if err != nil || checkpoints == nil {
+			continue
+		}
+		infos, err := checkpoints.ListCheckpoints()
+		if err != nil {
+			slog.Warn("Unable to list checkpoints for chain discovery",
+				"project", string(slug), "error", err)
+			continue
+		}
+		chains = append(chains, discoverChains(infos)...)
+	}
+	sortDiscoveredChains(chains)
+	return chains
+}
+
+// chainProjects names the projects to scan. The registry already holds the
+// default project, so the fallback only covers a server built without one.
+func (s *Server) chainProjects() []app.Project {
+	if s.projects == nil {
+		return []app.Project{app.DefaultProject}
+	}
+	return s.projects.Slugs()
 }
 
 // handleChainsWithID handles GET /api/v1/chains/:jobID

@@ -257,6 +257,20 @@ model: it stores nothing, so it cannot drift from the stage records.
   is derived from the stage cost. Elapsed comes from the stage record's
   `startedAt`/`completedAt` and is therefore absent on an imported chain, since
   a checkpoint records when it was written and not how long its job ran.
+- **An imported stage is stated the way a restored job is.** A checkpoint's
+  `termination` is mapped by the same rule `jobFromCheckpoint` applies, in the
+  listing card as well as on the detail page. An unknown or legacy termination
+  is a job that never recorded how it ended, so it reads as cancelled rather
+  than as a completed campaign.
+- **Chain discovery covers every project.** `/chains/:jobID` resolves a job
+  through its own project store, so the campaign listing walks every registered
+  project rather than the default one alone. Each store is discovered on its own
+  because lineage never crosses a project boundary.
+- **The campaign seed is reported or declared absent, never zero.** A document
+  that omits `seed` leaves the record's `campaignSeed` at the resolve-me
+  sentinel; the seed that actually ran is read back from the first stage record,
+  and before any stage has run both the view and the CLI say the seed is
+  unresolved instead of printing the zero.
 - **Accepted polishing sweeps are not persisted.** The batch polisher reports
   the count to the log only, so the column reports it as unrecorded on every
   stage. Populating it needs a stage-record field, not a view change.

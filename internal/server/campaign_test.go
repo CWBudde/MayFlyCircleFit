@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -299,6 +300,131 @@ func TestCampaignListPageShowsSchedulesAndChains(t *testing.T) {
 		if !strings.Contains(body, marker) {
 			t.Errorf("campaign list missing %q", marker)
 		}
+	}
+}
+
+// TestChainStageStateMatchesRestore pins the imported-stage state mapping to
+// the one jobFromCheckpoint uses. The two read the same field for the same
+// purpose, and a chain that says "completed" where a restored job says
+// "cancelled" is the contradiction this guards against.
+func TestChainStageStateMatchesRestore(t *testing.T) {
+	terminations := []string{
+		"completed", "target_cost", "stagnation", "stage_convergence", "refill_limit",
+		"failed", "cancelled",
+		"", store.TerminationUnknown, store.TerminationLegacy,
+		"something_a_future_version_writes",
+	}
+	for _, termination := range terminations {
+		t.Run("termination="+termination, func(t *testing.T) {
+			checkpoint := &store.Checkpoint{JobID: chainBaseJob, Termination: termination}
+			want := string(jobFromCheckpoint(checkpoint, app.DefaultProject).State)
+			if got := chainStageState(termination); got != want {
+				t.Fatalf("chainStageState(%q) = %q, want %q", termination, got, want)
+			}
+		})
+	}
+}
+
+// TestChainListingReportsTheLeafTermination keeps the campaign card and the
+// campaign detail page telling the same story about how a chain ended.
+func TestChainListingReportsTheLeafTermination(t *testing.T) {
+	timestamp := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		termination string
+		want        string
+	}{
+		{termination: "completed", want: "completed"},
+		{termination: "failed", want: "failed"},
+		{termination: "cancelled", want: "cancelled"},
+		{termination: store.TerminationUnknown, want: "cancelled"},
+		{termination: store.TerminationLegacy, want: "cancelled"},
+	}
+	for _, test := range tests {
+		t.Run(test.termination, func(t *testing.T) {
+			infos := []store.CheckpointInfo{
+				{JobID: chainBaseJob, Termination: "completed", ActualCircles: 8, Timestamp: timestamp},
+				{
+					JobID: chainExtendJob, ExtendedFrom: chainBaseJob, Termination: test.termination,
+					ActualCircles: 16, Timestamp: timestamp.Add(time.Hour),
+				},
+			}
+			summaries := chainCampaignSummaries(discoverChains(infos))
+			if len(summaries) != 1 {
+				t.Fatalf("summarized %d chains, want 1", len(summaries))
+			}
+			if summaries[0].State != test.want {
+				t.Fatalf("summary state = %q, want %q", summaries[0].State, test.want)
+			}
+		})
+	}
+}
+
+// TestCampaignSeedFallsBackToARecordedStage covers a document that omitted the
+// seed: the record keeps the zero sentinel, but the stage that ran recorded the
+// seed it resolved, and that is the reproducible value the view must show.
+func TestCampaignSeedFallsBackToARecordedStage(t *testing.T) {
+	record := &store.ScheduleRecord{
+		SchemaVersion: store.ScheduleRecordSchemaVersion,
+		ScheduleID:    chainScheduleID,
+		State:         store.ScheduleStateRunning,
+		Document: app.ScheduleDocument{
+			Base: app.JobConfig{RefPath: "assets/ref.png", Mode: app.ModeBatch, Circles: 8, Iters: 100, PopSize: 30},
+		},
+	}
+	if campaign := campaignFromSchedule(record, nil); campaign.HasSeed {
+		t.Fatalf("an unstarted campaign must not claim a seed, got %d", campaign.CampaignSeed)
+	}
+	stages := []store.ScheduleStageRecord{{
+		Index: 0, Kind: app.ScheduleStageBase, State: store.ScheduleStateCompleted,
+		Circles: 8, JobID: chainBaseJob,
+		Config: store.JobConfig{RefPath: "assets/ref.png", EffectiveSeed: 987654321},
+	}}
+	campaign := campaignFromSchedule(record, stages)
+	if !campaign.HasSeed || campaign.CampaignSeed != 987654321 {
+		t.Fatalf("campaign seed = %d (has=%v), want the seed the stage recorded",
+			campaign.CampaignSeed, campaign.HasSeed)
+	}
+}
+
+// TestChainDiscoveryCoversEveryProject guards the campaign listing against
+// silently omitting a chain that /chains/:jobID renders perfectly well: the
+// detail route resolves a job through its own project store, so discovery has
+// to look in the same places.
+func TestChainDiscoveryCoversEveryProject(t *testing.T) {
+	root := t.TempDir()
+	persistence, err := store.NewFSStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imagePath := filepath.Join(root, "reference.png")
+	createSimpleTestImage(t, imagePath)
+	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{
+		DataRoot:   root,
+		InputRoots: rootList(root),
+	})
+
+	projectStore, err := server.projects.GetOrCreate(app.Project("wallpaper"))
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	synthesizeChain(t, persistence, imagePath, []synthesizedStage{
+		{jobID: chainBaseJob, circles: 8, cost: 812.5},
+		{jobID: chainExtendJob, parent: chainBaseJob, circles: 16, cost: 640.25},
+	})
+	synthesizeChain(t, projectStore, imagePath, []synthesizedStage{
+		{jobID: chainPolishJob, circles: 8, cost: 700},
+		{jobID: chainSecondJob, parent: chainPolishJob, circles: 16, cost: 500},
+	})
+
+	found := make(map[string]bool)
+	for _, chain := range server.discoverAllChains() {
+		found[chain.LeafJobID] = true
+	}
+	if !found[chainExtendJob] {
+		t.Error("the default project's chain is missing from the campaign listing")
+	}
+	if !found[chainSecondJob] {
+		t.Error("a named project's chain is missing from the campaign listing")
 	}
 }
 
