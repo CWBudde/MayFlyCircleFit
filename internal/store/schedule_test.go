@@ -438,3 +438,45 @@ func TestPausedIsAScheduleStateOnly(t *testing.T) {
 		t.Fatal("SaveScheduleStage() accepted a paused stage")
 	}
 }
+
+// TestSkippedIsAStageStateOnly is the mirror of the paused asymmetry: policy
+// declines individual stages, never whole campaigns, and a declined stage never
+// ran and so can name no job.
+func TestSkippedIsAStageStateOnly(t *testing.T) {
+	fsStore, _ := newScheduleStore(t)
+	record := testScheduleRecord(t)
+	if err := fsStore.SaveSchedule(record); err != nil {
+		t.Fatalf("SaveSchedule() error = %v", err)
+	}
+	plan, err := record.Document.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+
+	stage := NewScheduleStageRecord(testScheduleID, plan[0])
+	stage.State = ScheduleStateSkipped
+	stage.Reason = "polish is scheduled only at 32 circles"
+	if err := fsStore.SaveScheduleStage(testScheduleID, stage); err != nil {
+		t.Fatalf("SaveScheduleStage(skipped) error = %v", err)
+	}
+	reloadedStages, err := fsStore.LoadScheduleStages(testScheduleID)
+	if err != nil {
+		t.Fatalf("LoadScheduleStages() error = %v", err)
+	}
+	if len(reloadedStages) != 1 || reloadedStages[0].State != ScheduleStateSkipped {
+		t.Fatalf("reloaded stages = %+v, want one skipped stage", reloadedStages)
+	}
+	if reloadedStages[0].Reason != stage.Reason {
+		t.Fatalf("reloaded reason = %q, want %q", reloadedStages[0].Reason, stage.Reason)
+	}
+
+	stage.JobID = "11111111-2222-3333-4444-555555555555"
+	if err := fsStore.SaveScheduleStage(testScheduleID, stage); err == nil {
+		t.Fatal("SaveScheduleStage() accepted a skipped stage that names a job")
+	}
+
+	record.State = ScheduleStateSkipped
+	if err := fsStore.SaveSchedule(record); err == nil {
+		t.Fatal("SaveSchedule() accepted a skipped campaign")
+	}
+}
