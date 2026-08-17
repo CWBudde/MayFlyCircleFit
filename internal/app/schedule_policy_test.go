@@ -46,7 +46,8 @@ func realizeSchedule(plan []ScheduleStage, cost float64, gain func(ScheduleStage
 		}
 		cost -= gain(stage)
 		outcomes = append(outcomes, ScheduleStageOutcome{
-			Index: index, Kind: stage.Kind, State: ScheduleOutcomeCompleted, BestCost: cost,
+			Index: index, Kind: stage.Kind, State: ScheduleOutcomeCompleted,
+			BestCost: cost, CostMeasured: true,
 		})
 		run = append(run, stage)
 		ran[index] = true
@@ -204,7 +205,16 @@ func TestEvaluateScheduleStageIsPureOverTheOutcomes(t *testing.T) {
 		{Index: 3, Kind: ScheduleStagePolish, Circles: 8, When: condition},
 	}
 	completed := func(index int, kind ScheduleStageKind, cost float64) ScheduleStageOutcome {
-		return ScheduleStageOutcome{Index: index, Kind: kind, State: ScheduleOutcomeCompleted, BestCost: cost}
+		return ScheduleStageOutcome{
+			Index: index, Kind: kind, State: ScheduleOutcomeCompleted,
+			BestCost: cost, CostMeasured: true,
+		}
+	}
+	// unmeasured is a stage that settled without a cost anyone can read — the
+	// only thing that makes a gain unknown. Zero is not that; see the
+	// zero-cost case below.
+	unmeasured := func(index int, kind ScheduleStageKind) ScheduleStageOutcome {
+		return ScheduleStageOutcome{Index: index, Kind: kind, State: ScheduleOutcomeCompleted}
 	}
 
 	cases := []struct {
@@ -252,9 +262,33 @@ func TestEvaluateScheduleStageIsPureOverTheOutcomes(t *testing.T) {
 			name:  "an unmeasured predecessor is not evidence of barrenness",
 			index: 3,
 			outcomes: []ScheduleStageOutcome{
-				completed(0, ScheduleStageBase, 0),
+				unmeasured(0, ScheduleStageBase),
 				completed(1, ScheduleStagePolish, 99.5),
 				completed(2, ScheduleStagePolish, 99.1),
+			},
+			wantRun: true,
+		},
+		{
+			// A perfect fit costs exactly zero, which is a measurement and not a
+			// hole in the record. Two polishes that each gained nothing on top of
+			// it are as barren as a stage can be, so the third must be declined.
+			name:  "a completed zero-cost stage feeds the barren streak",
+			index: 3,
+			outcomes: []ScheduleStageOutcome{
+				completed(0, ScheduleStageBase, 0),
+				completed(1, ScheduleStagePolish, 0),
+				completed(2, ScheduleStagePolish, 0),
+			},
+			wantRun: false,
+		},
+		{
+			// The same zero seen only once still ends a streak that has not
+			// reached the limit, because one barren polish is tolerated.
+			name:  "a single zero-gain polish stays below the limit",
+			index: 2,
+			outcomes: []ScheduleStageOutcome{
+				completed(0, ScheduleStageBase, 0),
+				completed(1, ScheduleStagePolish, 0),
 			},
 			wantRun: true,
 		},

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"time"
 
@@ -231,11 +232,18 @@ func scheduleStageOutcomes(recorded []store.ScheduleStageRecord) []app.ScheduleS
 		case store.ScheduleStateSkipped:
 			state = app.ScheduleOutcomeSkipped
 		}
+		// Only a completed stage carries a cost it actually measured. A pending,
+		// skipped or failed record's zero is the absence of a number, and a
+		// non-finite cost is a job that never produced one; a completed stage's
+		// zero is a perfect fit and must reach policy as the measurement it is.
+		measured := state == app.ScheduleOutcomeCompleted &&
+			!math.IsNaN(stage.BestCost) && !math.IsInf(stage.BestCost, 0)
 		outcomes = append(outcomes, app.ScheduleStageOutcome{
-			Index:    stage.Index,
-			Kind:     stage.Kind,
-			State:    state,
-			BestCost: stage.BestCost,
+			Index:        stage.Index,
+			Kind:         stage.Kind,
+			State:        state,
+			BestCost:     stage.BestCost,
+			CostMeasured: measured,
 		})
 	}
 	return outcomes
