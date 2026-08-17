@@ -1997,18 +1997,47 @@ and then runs unattended as a single observable entity.
 
 ### Task 16.4: Estimate Before Committing Hours (P2)
 
-- [ ] `--dry-run` prints the full realized stage list with per-stage parameters
-      and the total optimizer iteration count, without touching the store.
-- [ ] After the first few stages complete, report a projected finish time derived
+- [x] `--dry-run` prints the full realized stage list with per-stage parameters
+      and the total optimizer iteration count, without touching the store. It is
+      a flag on `schedule create`, so the document argument and the local
+      validation are the same ones the real submission uses. Expansion needs no
+      runtime state, so the dry run opens no socket at all: no schedule
+      directory, no stage file, no job, asserted against a real store root with
+      a positive control that a saved schedule does change it. A document that
+      omits its seed is reported as automatic rather than as seed zero, because
+      the seed is drawn afresh at submission. Conditional stages are listed and
+      marked `conditional:` with their condition spelled out, never silently
+      included or excluded — a dry run has no outcomes and cannot decide them.
+      The iteration figure is the nominal planned count, split into
+      unconditional and conditional; it is neither a prediction nor a ceiling,
+      since bounded residual-refill batch stages are excluded and may add work.
+- [x] After the first few stages complete, report a projected finish time derived
       from observed stage wall clock. Extend stages are roughly flat in circle
       count because the frozen prefix is baked once
       (`internal/fit/renderer/pipeline.go`), so a projection is meaningful —
       but it must come from measurement, never from an a-priori model.
+      `app.ProjectScheduleFinish` is a pure function of (plan, timings, asOf)
+      that projects each stage kind from its own completed stages and never
+      blends them; a kind with fewer than two samples reports insufficient data
+      instead of extrapolating, and no finish time is printed until every
+      remaining kind is measured. A polish estimate is labelled a lower bound,
+      because selection cost climbs with the circle count. `schedule status`
+      renders it, and only a running campaign gets a finish timestamp: a
+      completed, failed, or cancelled one gets no projection, and a paused one
+      gets its remaining workload without a time, because the projection anchors
+      at the current clock.
 
 **Acceptance Checks:**
 
-- [ ] `--dry-run` on the 512-circle campaign lists all stages and reports a
-      total iteration count matching a hand computation.
+- [x] `--dry-run` on the 512-circle campaign lists all stages and reports a
+      total iteration count matching a hand computation. 70 stages and 48,800
+      iterations: 200 for the base (1 batch × 1 epoch × 200 iters), 12,600 for
+      the 63 extends (each 1 × 1 × 200, since only the appended circles are
+      optimized), and 36,000 for the 6 polishes (each 3 sweeps × 2 epochs ×
+      1,000 iters). The arithmetic is written out in
+      `app.TestReferenceCampaignPlanMatchesTheHandComputation`, and
+      `cmd.TestScheduleDryRunListsTheReferenceCampaign` checks the command
+      prints the same figure over the whole stage list.
 
 ### Task 16.5: Surface the Campaign in the UI and CLI (P2)
 

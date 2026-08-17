@@ -25,7 +25,10 @@ import (
 // owns the worker pool and survives the client hanging up, and a second
 // executor in the CLI is exactly the drift this phase set out to remove.
 
-var scheduleServerURL = "http://localhost:8080"
+var (
+	scheduleServerURL = "http://localhost:8080"
+	scheduleDryRun    bool
+)
 
 var scheduleCmd = &cobra.Command{
 	Use:   "schedule",
@@ -39,8 +42,14 @@ polish stages — stated once and executed by the server as a single run.`,
 var scheduleCreateCmd = &cobra.Command{
 	Use:   "create <document.json>",
 	Short: "Submit a schedule document and start the campaign",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runScheduleCreate,
+	Long: `Validates a schedule document and submits it to the server.
+
+With --dry-run the document is expanded and printed — every realized stage, its
+parameters, and the nominal optimizer iteration count — and nothing is
+submitted. Expansion needs no runtime state, so a dry run creates no schedule,
+no stage record, and no job.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runScheduleCreate,
 }
 
 var scheduleListCmd = &cobra.Command{
@@ -98,6 +107,8 @@ func init() {
 		command.Flags().StringVar(&scheduleServerURL, "server", "http://localhost:8080", "Server URL")
 		scheduleCmd.AddCommand(command)
 	}
+	scheduleCreateCmd.Flags().BoolVar(&scheduleDryRun, "dry-run", false,
+		"Print the realized stage list and nominal iteration count without submitting anything")
 	rootCmd.AddCommand(scheduleCmd)
 }
 
@@ -151,8 +162,12 @@ func runScheduleCreate(cmd *cobra.Command, args []string) error {
 	}
 	// Parsing before the request turns a typo into an error naming the field,
 	// on the same code path the server validates with, instead of a round trip.
-	if _, err := app.ParseSchedule(document); err != nil {
+	parsed, err := app.ParseSchedule(document)
+	if err != nil {
 		return fmt.Errorf("invalid schedule document %q: %w", args[0], err)
+	}
+	if scheduleDryRun {
+		return printSchedulePlan(cmd.OutOrStdout(), args[0], parsed, scheduleDocumentNamesSeed(document))
 	}
 	body, err := requestCLIBody(cmd.Context(), http.MethodPost, scheduleBaseURL()+"/schedules", document)
 	if err != nil {
@@ -225,7 +240,7 @@ func runScheduleStatus(cmd *cobra.Command, args []string) error {
 	if detail.ScheduleID != scheduleID {
 		return fmt.Errorf("invalid schedule response: schedule ID %q does not match requested ID %q", detail.ScheduleID, scheduleID)
 	}
-	printScheduleDetail(cmd.OutOrStdout(), detail)
+	printScheduleDetail(cmd.OutOrStdout(), detail, time.Now().UTC())
 	return nil
 }
 
@@ -244,7 +259,7 @@ func detailCampaignSeed(detail scheduleDetailResponse) int64 {
 	return 0
 }
 
-func printScheduleDetail(output io.Writer, detail scheduleDetailResponse) {
+func printScheduleDetail(output io.Writer, detail scheduleDetailResponse, asOf time.Time) {
 	fmt.Fprintf(output, "Schedule: %s\n", detail.ScheduleID)
 	if detail.Name != "" {
 		fmt.Fprintf(output, "Name: %s\n", detail.Name)
@@ -277,6 +292,7 @@ func printScheduleDetail(output io.Writer, detail scheduleDetailResponse) {
 	// the log, so no stage record can carry the count and the table would have
 	// to invent one.
 	fmt.Fprintln(output, "\nPSNR is derived from the stage cost. Accepted polishing sweeps are not persisted.")
+	printScheduleProjection(output, detail, asOf)
 }
 
 func runScheduleImport(cmd *cobra.Command, args []string) error {
