@@ -181,6 +181,21 @@ func TestParseScheduleValidation(t *testing.T) {
 			wantErr:  "seed",
 		},
 		{
+			name:     "base writes the derived effective seed",
+			document: strings.Replace(baseDocument, `"popSize": 30`, `"popSize": 30, "effectiveSeed": 7`, 1),
+			wantErr:  "effectiveSeed",
+		},
+		{
+			name:     "base writes the runtime resume count",
+			document: strings.Replace(baseDocument, `"popSize": 30`, `"popSize": 30, "resumeCount": 2`, 1),
+			wantErr:  "resumeCount",
+		},
+		{
+			name:     "base is polishing only",
+			document: strings.Replace(baseDocument, `"popSize": 30`, `"popSize": 30, "polishingOnly": true`, 1),
+			wantErr:  "polishingOnly",
+		},
+		{
 			name:     "steps require a batch base",
 			document: strings.Replace(strings.Replace(baseDocument, `"mode": "batch"`, `"mode": "joint"`, 1), `"steps": []`, `"steps": [{"type": "extend", "additionalCircles": 8}]`, 1),
 			wantErr:  "mode",
@@ -422,5 +437,80 @@ func TestScheduleCampaignSeedResolvesWhenOmitted(t *testing.T) {
 	}
 	if stages[0].Config.EffectiveSeed == 0 {
 		t.Fatal("Expand() left the effective seed unresolved")
+	}
+	// The resolved seed belongs to the document, not to one expansion: a
+	// campaign that omitted its seed must still replay after being written out
+	// and read back.
+	if doc.Seed != stages[0].Config.EffectiveSeed {
+		t.Fatalf("document seed = %d, want the resolved stage seed %d", doc.Seed, stages[0].Config.EffectiveSeed)
+	}
+	again, err := doc.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	if again[0].Config.EffectiveSeed != stages[0].Config.EffectiveSeed {
+		t.Fatalf("second expansion used seed %d, want %d", again[0].Config.EffectiveSeed, stages[0].Config.EffectiveSeed)
+	}
+}
+
+// TestScheduleDocumentValidateWithoutTheParser covers the documents the parser
+// never sees: reconstructed in code, or read back from the store.
+func TestScheduleDocumentValidateWithoutTheParser(t *testing.T) {
+	valid := *documentWithSteps(t, `[{"type": "extend", "additionalCircles": 8}]`)
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want nil", err)
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*ScheduleDocument)
+		wantErr string
+	}{
+		{
+			name:    "unsupported embedded schema version",
+			mutate:  func(d *ScheduleDocument) { d.SchemaVersion = ScheduleSchemaVersion + 1 },
+			wantErr: "schemaVersion",
+		},
+		{
+			name:    "unknown step type",
+			mutate:  func(d *ScheduleDocument) { d.Steps = []ScheduleStep{{Type: "shrink"}} },
+			wantErr: "type",
+		},
+		{
+			name:    "polishing-only base",
+			mutate:  func(d *ScheduleDocument) { d.Base.PolishingOnly = true },
+			wantErr: "polishingOnly",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			document := valid
+			document.Steps = append([]ScheduleStep(nil), valid.Steps...)
+			test.mutate(&document)
+			err := document.Validate()
+			if err == nil {
+				t.Fatalf("Validate() error = nil, want one mentioning %q", test.wantErr)
+			}
+			if !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("Validate() error = %v, want it to mention %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+// TestScheduleExpandIgnoresAnAuthoredEffectiveSeed guards the campaign seed
+// against a document assembled in code, where the parser's refusal of
+// base.effectiveSeed cannot help.
+func TestScheduleExpandIgnoresAnAuthoredEffectiveSeed(t *testing.T) {
+	doc := *documentWithSteps(t, `[{"type": "extend", "additionalCircles": 8}]`)
+	doc.Base.EffectiveSeed = 7
+	stages, err := doc.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	for i, stage := range stages {
+		if stage.Config.EffectiveSeed != doc.Seed {
+			t.Fatalf("stage %d ran with seed %d, want the campaign seed %d", i, stage.Config.EffectiveSeed, doc.Seed)
+		}
 	}
 }

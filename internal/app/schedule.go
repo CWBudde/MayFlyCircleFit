@@ -149,6 +149,15 @@ var scheduleEffectiveFields = map[string]string{
 	"enableTrace":        "disableTrace",
 }
 
+// scheduleRefusedBaseFields names base fields a document may never write
+// because they are derived while a job runs, not authored. A nonzero
+// effectiveSeed survives ApplyDefaults untouched, so accepting it would let a
+// document declare one campaign seed and run every stage with another.
+var scheduleRefusedBaseFields = map[string]string{
+	"effectiveSeed": "is derived from the campaign seed; use seed instead",
+	"resumeCount":   "is recorded by the run that resumes, not by the document",
+}
+
 // ParseSchedule decodes and fully validates a schedule document.
 //
 // Validation is strict in two senses. Unknown fields are refused, at every
@@ -173,6 +182,12 @@ func ParseSchedule(data []byte) (*ScheduleDocument, error) {
 	if err := doc.validate(present); err != nil {
 		return nil, err
 	}
+	// The campaign seed is pinned here rather than at expansion time: a document
+	// that omitted a seed must still expand the same way on every later call and
+	// after a restart.
+	if err := doc.ResolveSeed(); err != nil {
+		return nil, err
+	}
 	return &doc, nil
 }
 
@@ -193,19 +208,47 @@ func presentBaseFields(data []byte) (map[string]json.RawMessage, error) {
 	return raw.Base, nil
 }
 
+// validate is the parse-time check. It adds what only the raw document can
+// answer — which base keys were actually written — on top of the structural
+// validation any document must pass.
 func (d *ScheduleDocument) validate(presentBase map[string]json.RawMessage) error {
 	if d.SchemaVersion != 0 && d.SchemaVersion != ScheduleSchemaVersion {
 		return invalid("schemaVersion", fmt.Sprintf("must be %d", ScheduleSchemaVersion))
 	}
 	d.SchemaVersion = ScheduleSchemaVersion
-	if len(d.Steps) > MaxScheduleSteps {
-		return invalid("steps", fmt.Sprintf("must contain at most %d steps", MaxScheduleSteps))
+	for name, reason := range scheduleRefusedBaseFields {
+		if _, written := presentBase[name]; written {
+			return invalid("base."+name, reason)
+		}
 	}
 	if err := d.reconcileSeed(); err != nil {
 		return err
 	}
 	if err := validateNoDefaultOverrides("base", presentBase, d.Base); err != nil {
 		return err
+	}
+	return d.Validate()
+}
+
+// Validate checks a document that did not come from ParseSchedule — one
+// reconstructed in code or read back from the store. It applies the same
+// version, base and step checks the parser applies; only the "which keys were
+// written" checks, which need the raw JSON, are parse-time only.
+//
+// The receiver is a value so the checks, which normalize a copy, cannot mutate
+// the caller's document.
+func (d ScheduleDocument) Validate() error {
+	if d.SchemaVersion != 0 && d.SchemaVersion != ScheduleSchemaVersion {
+		return invalid("schemaVersion", fmt.Sprintf("must be %d", ScheduleSchemaVersion))
+	}
+	if len(d.Steps) > MaxScheduleSteps {
+		return invalid("steps", fmt.Sprintf("must contain at most %d steps", MaxScheduleSteps))
+	}
+	if err := d.reconcileSeed(); err != nil {
+		return err
+	}
+	if d.Base.PolishingOnly {
+		return invalid("base.polishingOnly", "cannot be set on the base stage, which has no earlier parameters to polish; add a polish step instead")
 	}
 	base := d.Base
 	if err := base.ApplyDefaults(); err != nil {
@@ -227,6 +270,24 @@ func (d *ScheduleDocument) validate(presentBase map[string]json.RawMessage) erro
 	// report an extension that walks past the circle limit.
 	_, err := d.Expand()
 	return err
+}
+
+// ResolveSeed pins the campaign seed, generating one when the document omitted
+// it. A schedule is persisted with the resolved value, so expanding it again —
+// in another process, after a restart — produces the same stage seeds instead
+// of a fresh random campaign.
+func (d *ScheduleDocument) ResolveSeed() error {
+	if d.Seed == 0 {
+		base := d.Base
+		base.Seed = 0
+		base.EffectiveSeed = 0
+		if err := base.ApplyDefaults(); err != nil {
+			return err
+		}
+		d.Seed = base.EffectiveSeed
+	}
+	d.Base.Seed = d.Seed
+	return nil
 }
 
 // reconcileSeed collapses the campaign seed and the base seed into one value.
@@ -302,13 +363,15 @@ func (s ScheduleStep) Repetitions() int {
 // over this list, driven by the recorded outcome of the stages already done.
 func (d ScheduleDocument) Expand() ([]ScheduleStage, error) {
 	config := d.Base
+	// One campaign seed, inherited by every stage. The effective seed is taken
+	// from the campaign seed rather than from the base configuration, so a
+	// document cannot declare one seed and run the stages with another; a
+	// document whose seed is still unresolved gets one from ApplyDefaults.
+	config.Seed = d.Seed
+	config.EffectiveSeed = d.Seed
 	if err := config.ApplyDefaults(); err != nil {
 		return nil, err
 	}
-	// One campaign seed, resolved once, inherited by every stage.
-	seed := config.EffectiveSeed
-	config.Seed = d.Seed
-	config.EffectiveSeed = seed
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("base: %w", err)
 	}
