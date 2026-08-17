@@ -48,21 +48,36 @@ const (
 	// stage is the unit that either runs to a result or does not, and a paused
 	// stage would be a second thing progress could mean.
 	ScheduleStatePaused ScheduleState = "paused"
+
+	// ScheduleStateSkipped is a planned stage the campaign's own policy declined
+	// to run. It is a stage-level state only, and it is recorded rather than
+	// left as a gap so the stage records still answer "what happened to every
+	// planned stage?" without anyone re-deriving the policy by hand.
+	ScheduleStateSkipped ScheduleState = "skipped"
 )
 
 // validScheduleStageState reports the states a stage record may hold. Pause is
 // absent by construction; see ScheduleStatePaused.
 func validScheduleStageState(state ScheduleState) bool {
 	switch state {
-	case ScheduleStatePending, ScheduleStateRunning, ScheduleStateCompleted, ScheduleStateFailed, ScheduleStateCancelled:
+	case ScheduleStatePending, ScheduleStateRunning, ScheduleStateCompleted,
+		ScheduleStateFailed, ScheduleStateCancelled, ScheduleStateSkipped:
 		return true
 	default:
 		return false
 	}
 }
 
+// validScheduleState reports the states a schedule record may hold. A schedule
+// is never skipped: policy declines stages, never whole campaigns.
 func validScheduleState(state ScheduleState) bool {
-	return state == ScheduleStatePaused || validScheduleStageState(state)
+	switch state {
+	case ScheduleStatePending, ScheduleStateRunning, ScheduleStateCompleted,
+		ScheduleStateFailed, ScheduleStateCancelled, ScheduleStatePaused:
+		return true
+	default:
+		return false
+	}
 }
 
 // ScheduleRecord is a persisted campaign: the document as authored, plus the
@@ -180,6 +195,12 @@ type ScheduleStageRecord struct {
 	UpdatedAt   time.Time  `json:"updatedAt"`
 
 	Error string `json:"error,omitempty"`
+
+	// Reason records why a stage is in the state it is when nothing went wrong
+	// — in practice, why policy declined a skipped stage. It is free text for an
+	// operator, never a control signal: the decision is re-derived from the
+	// outcomes, never read back from here.
+	Reason string `json:"reason,omitempty"`
 }
 
 // NewScheduleStageRecord seeds a pending stage record from a planned stage.
@@ -232,6 +253,11 @@ func (s *ScheduleStageRecord) Validate() error {
 	}
 	if s.Config.Circles != s.Circles {
 		return &ValidationError{Field: "Config.Circles", Reason: fmt.Sprintf("must match the stage circle count (%d)", s.Circles)}
+	}
+	// A skipped stage never ran, so a job identifier on one would mean the
+	// record and the job tree disagree about whether work happened.
+	if s.State == ScheduleStateSkipped && s.JobID != "" {
+		return &ValidationError{Field: "JobID", Reason: "a skipped stage cannot name a job"}
 	}
 	if s.JobID != "" {
 		if err := validateJobID(s.JobID); err != nil {
