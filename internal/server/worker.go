@@ -428,7 +428,15 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 
 	iterations := baseIterations + result.Iterations
 	evaluations := baseEvaluations + result.Evaluations
-	if err := jm.CompleteJob(jobID, iterations, evaluations, result.BestParams, result.BestCost, initialCost, string(result.Termination)); err != nil {
+	// The outcome is recorded first and published as `completed` last, with the
+	// checkpoint write in between. Completion is the signal every continuation
+	// waits on — the extend and polish endpoints and the schedule executor all
+	// read it as "a completed checkpoint exists" — so a job that announced it
+	// before saveCheckpoint returned handed out a checkpoint that was not on
+	// disk yet. On a loaded host the gap is wide enough that the very next stage
+	// of a campaign asked for the parent checkpoint and was told it did not
+	// exist, which failed the whole campaign.
+	if err := jm.RecordFinalResult(jobID, iterations, evaluations, result.BestParams, result.BestCost, initialCost, string(result.Termination)); err != nil {
 		return err
 	}
 	completedAt := time.Now()
@@ -456,6 +464,18 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 			})
 			slog.Error("Failed to persist final job result", "job_id", jobID, "error", err)
 		}
+	}
+
+	// Everything durable is on disk, so the job may now say so. A cancellation
+	// that landed while the result was being written wins: the transition is
+	// refused, and the job stays cancelled rather than being resurrected as a
+	// completed one whose caller was told it had stopped.
+	if err := jm.MarkJobCompleted(jobID); err != nil {
+		if errors.Is(err, ErrInvalidTransition) {
+			slog.Info("Job settled before its final result was published", "job_id", jobID, "error", err)
+			return persistenceErr
+		}
+		return err
 	}
 
 	elapsed := time.Since(start).Seconds()

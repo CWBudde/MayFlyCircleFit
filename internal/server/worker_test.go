@@ -163,6 +163,86 @@ func TestRunJobPersistsExactFinalResultWithoutPeriodicCheckpointing(t *testing.T
 	}
 }
 
+// observingWorkerStore reports what the job manager said about a job at the
+// instant its final checkpoint was written.
+type observingWorkerStore struct {
+	*store.FSStore
+	jm            *JobManager
+	stateAtSave   JobState
+	sawCheckpoint bool
+}
+
+func (s *observingWorkerStore) SaveCheckpoint(jobID string, checkpoint *store.Checkpoint) error {
+	if job, ok := s.jm.GetJob(jobID); ok {
+		s.stateAtSave = job.State
+		s.sawCheckpoint = true
+	}
+	return s.FSStore.SaveCheckpoint(jobID, checkpoint)
+}
+
+// TestRunJobPublishesCompletionOnlyAfterTheCheckpointIsDurable pins the
+// ordering every continuation depends on. `completed` is the state the extend
+// and polish endpoints and the schedule executor read as "there is a checkpoint
+// to continue from", so it must not be published while the checkpoint write is
+// still outstanding. Announcing it early cost a campaign its next stage on a
+// loaded host, which reported the parent's checkpoint as missing.
+func TestRunJobPublishesCompletionOnlyAfterTheCheckpointIsDurable(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.png")
+	createTestImage(t, imgPath)
+	fsStore, err := store.NewFSStore(filepath.Join(tmpDir, "artifacts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jm := NewJobManager()
+	persistence := &observingWorkerStore{FSStore: fsStore, jm: jm}
+	job := jm.CreateJob(app.DefaultProject, JobConfig{
+		RefPath: imgPath, Mode: "batch", Circles: 1, BatchSize: 1, Iters: 3, PopSize: 20, Seed: 42,
+	})
+
+	if err := runJob(context.Background(), jm, persistence, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if !persistence.sawCheckpoint {
+		t.Fatal("the job never wrote a final checkpoint")
+	}
+	if persistence.stateAtSave == StateCompleted {
+		t.Fatal("the job was already completed while its checkpoint was still being written")
+	}
+	if persistence.stateAtSave != StateRunning {
+		t.Fatalf("job state during the final checkpoint = %q, want running", persistence.stateAtSave)
+	}
+	settled, _ := jm.GetJob(job.ID)
+	if settled.State != StateCompleted {
+		t.Fatalf("job state after runJob = %q, want completed", settled.State)
+	}
+	if _, err := persistence.LoadCheckpoint(job.ID); err != nil {
+		t.Fatalf("a completed job has no checkpoint to continue from: %v", err)
+	}
+}
+
+func TestRunJobRefusesToRecordAFinalResultForASettledJob(t *testing.T) {
+	jm := NewJobManager()
+	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "ref.png", Mode: "batch", Circles: 1})
+	if err := jm.StartJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := jm.CancelJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	err := jm.RecordFinalResult(job.ID, 1, 1, []float64{1, 2, 3, 4, 5, 6, 7}, 1, 2, "completed")
+	if !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("RecordFinalResult on a cancelled job = %v, want ErrInvalidTransition", err)
+	}
+	if err := jm.MarkJobCompleted(job.ID); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("MarkJobCompleted on a cancelled job = %v, want ErrInvalidTransition", err)
+	}
+	settled, _ := jm.GetJob(job.ID)
+	if settled.State != StateCancelled {
+		t.Fatalf("job state = %q, want cancelled", settled.State)
+	}
+}
+
 type faultingWorkerStore struct {
 	*store.FSStore
 	checkpointErr error
