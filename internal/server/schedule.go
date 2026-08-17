@@ -180,6 +180,22 @@ func (s *Server) driveSchedule(scheduleID string) scheduleDriverExit {
 			s.settleSchedule(scheduleID, store.ScheduleStateCompleted, "")
 			return scheduleDriverStopped
 		}
+		// Policy is consulted only for a stage nothing has been recorded for
+		// yet. Once a stage has a record it has already been decided, and
+		// re-deciding it would let a restart argue with the campaign's own
+		// history.
+		if existing == nil {
+			verdict := app.EvaluateScheduleStage(plan, index, scheduleStageOutcomes(recorded))
+			if !verdict.Run {
+				if err := recordSkippedStage(scheduleStore, record.ScheduleID, plan[index], verdict.Reason); err != nil {
+					s.settleSchedule(scheduleID, store.ScheduleStateFailed, err.Error())
+					return scheduleDriverStopped
+				}
+				slog.Info("Schedule stage skipped by policy", "schedule_id", scheduleID,
+					"stage", index, "kind", string(plan[index].Kind), "reason", verdict.Reason)
+				continue
+			}
+		}
 		outcome, err := s.runScheduleStage(scheduleStore, record, plan, recorded, index, existing)
 		if err != nil {
 			slog.Error("Schedule stage did not run", "schedule_id", scheduleID, "stage", index, "error", err)
@@ -199,6 +215,43 @@ func (s *Server) driveSchedule(scheduleID string) scheduleDriverExit {
 			return scheduleDriverStopped
 		}
 	}
+}
+
+// scheduleStageOutcomes projects the persisted stage records onto the narrow
+// view policy is allowed to read. It is the only bridge between the store's
+// lifecycle states and the application's outcome states, and it exists so the
+// decision itself stays a pure function over plain values.
+func scheduleStageOutcomes(recorded []store.ScheduleStageRecord) []app.ScheduleStageOutcome {
+	outcomes := make([]app.ScheduleStageOutcome, 0, len(recorded))
+	for _, stage := range recorded {
+		state := app.ScheduleOutcomePending
+		switch stage.State {
+		case store.ScheduleStateCompleted:
+			state = app.ScheduleOutcomeCompleted
+		case store.ScheduleStateSkipped:
+			state = app.ScheduleOutcomeSkipped
+		}
+		outcomes = append(outcomes, app.ScheduleStageOutcome{
+			Index:    stage.Index,
+			Kind:     stage.Kind,
+			State:    state,
+			BestCost: stage.BestCost,
+		})
+	}
+	return outcomes
+}
+
+// recordSkippedStage writes the declined stage before the campaign moves past
+// it, so the records — the only progress there is — account for every planned
+// stage rather than leaving a hole the next reader has to explain.
+func recordSkippedStage(scheduleStore store.ScheduleStore, scheduleID string, stage app.ScheduleStage, reason string) error {
+	stageRecord := store.NewScheduleStageRecord(scheduleID, stage)
+	stageRecord.State = store.ScheduleStateSkipped
+	stageRecord.Reason = reason
+	if err := scheduleStore.SaveScheduleStage(scheduleID, stageRecord); err != nil {
+		return fmt.Errorf("record skipped stage %d: %w", stage.Index, err)
+	}
+	return nil
 }
 
 // nextScheduleStage derives the cursor from the records alone: the first
@@ -221,6 +274,11 @@ func nextScheduleStage(plan []app.ScheduleStage, recorded []store.ScheduleStageR
 		}
 		switch record.State {
 		case store.ScheduleStateCompleted:
+			continue
+		case store.ScheduleStateSkipped:
+			// Policy already declined this stage and said so on disk. The
+			// decision is not revisited, which is what keeps the loop from
+			// re-deciding the same stage forever.
 			continue
 		case store.ScheduleStateFailed, store.ScheduleStateCancelled:
 			return -1, nil, fmt.Sprintf("stage %d is %s", index, record.State)
@@ -264,12 +322,14 @@ func (s *Server) runScheduleStage(
 	stage := plan[index]
 
 	parentJobID := ""
+	parentIndex := -1
 	if index > 0 {
-		previous := findStageRecord(recorded, index-1)
+		previous := lastRunStageRecord(recorded, index)
 		if previous == nil || previous.State != store.ScheduleStateCompleted || previous.JobID == "" {
 			return "", fmt.Errorf("stage %d has no completed predecessor", index)
 		}
 		parentJobID = previous.JobID
+		parentIndex = previous.Index
 	}
 
 	// An adopted stage keeps the identifier its record already names, so the
@@ -287,7 +347,7 @@ func (s *Server) runScheduleStage(
 		s.discardStageAttempt(jobID)
 	}
 
-	config, source, err := s.scheduleStageConfig(stage, plan, parentJobID)
+	config, source, err := s.scheduleStageConfig(stage, plan, parentJobID, parentIndex)
 	if err != nil {
 		return "", err
 	}
@@ -371,8 +431,10 @@ func (s *Server) runScheduleStage(
 // requires — the resume count, the effective seed, and the resolved image
 // paths.
 //
-// The base stage has no parent and returns a nil source.
-func (s *Server) scheduleStageConfig(stage app.ScheduleStage, plan []app.ScheduleStage, parentJobID string) (JobConfig, *continuationSource, error) {
+// The base stage has no parent and returns a nil source. parentIndex is the
+// planned index of the stage the parent job realized, which is the stage before
+// this one unless policy skipped some in between.
+func (s *Server) scheduleStageConfig(stage app.ScheduleStage, plan []app.ScheduleStage, parentJobID string, parentIndex int) (JobConfig, *continuationSource, error) {
 	config := stage.Config
 	if parentJobID == "" {
 		if failure := s.resolveConfigPaths(&config, "schedule"); failure != nil {
@@ -396,7 +458,7 @@ func (s *Server) scheduleStageConfig(stage app.ScheduleStage, plan []app.Schedul
 	// The chain must still be the chain the plan describes. A parent holding a
 	// different circle count than the plan predicted means the campaign diverged
 	// from its document, and running on would append to the wrong canvas.
-	if expected := plan[stage.Index-1].Circles; source.config.Circles != expected {
+	if expected := plan[parentIndex].Circles; source.config.Circles != expected {
 		return config, nil, fmt.Errorf("stage %d expected a %d circle parent, found %d",
 			stage.Index, expected, source.config.Circles)
 	}
@@ -638,11 +700,20 @@ func (s *Server) cancelScheduleStage(scheduleID string) {
 	}
 }
 
-func findStageRecord(records []store.ScheduleStageRecord, index int) *store.ScheduleStageRecord {
+// lastRunStageRecord returns the record of the newest stage before index that
+// policy did not skip. A skipped stage produced no checkpoint, so the chain
+// continues from the last stage that actually ran; because only polish stages
+// may be skipped, and a polish leaves the circle count alone, that parent still
+// holds exactly the canvas the plan predicted.
+func lastRunStageRecord(records []store.ScheduleStageRecord, index int) *store.ScheduleStageRecord {
+	var found *store.ScheduleStageRecord
 	for i := range records {
-		if records[i].Index == index {
-			return &records[i]
+		if records[i].Index >= index || records[i].State == store.ScheduleStateSkipped {
+			continue
+		}
+		if found == nil || records[i].Index > found.Index {
+			found = &records[i]
 		}
 	}
-	return nil
+	return found
 }
