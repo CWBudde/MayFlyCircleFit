@@ -114,6 +114,12 @@ type ScheduleStep struct {
 	Epochs  *int `json:"epochs,omitempty"`
 	Iters   *int `json:"iters,omitempty"`
 	PopSize *int `json:"popSize,omitempty"`
+
+	// When is the optional runtime condition. It does not affect expansion —
+	// the stage is planned either way — it decides whether the planned stage is
+	// started once the stages before it have measured something. See
+	// ScheduleCondition.
+	When *ScheduleCondition `json:"when,omitempty"`
 }
 
 // ScheduleStage is one realized stage: what the step became once repeats were
@@ -136,6 +142,12 @@ type ScheduleStage struct {
 	// AdditionalCircles is how many circles this stage appends, zero for base
 	// and polish stages.
 	AdditionalCircles int `json:"additionalCircles,omitempty"`
+
+	// When is the condition the stage is subject to, carried through from its
+	// step so a plan states on its face which stages are conditional and on
+	// what. A dry run prints it; the executor evaluates it against the recorded
+	// outcomes when the stage comes up.
+	When *ScheduleCondition `json:"when,omitempty"`
 
 	Config JobConfig `json:"config"`
 }
@@ -317,7 +329,13 @@ func (s ScheduleStep) validate(index int) error {
 	if s.Repeat > MaxScheduleRepeat {
 		return invalid(field("repeat"), fmt.Sprintf("must be at most %d", MaxScheduleRepeat))
 	}
+	if err := s.When.validate(field); err != nil {
+		return err
+	}
 	if s.Type == ScheduleStepExtend {
+		if s.When != nil {
+			return invalid(field("when"), "is valid on a polish step only, because skipping an extend would move the circle count of every later stage")
+		}
 		if s.AdditionalCircles < 1 {
 			return invalid(field("additionalCircles"), "must be positive on an extend step")
 		}
@@ -359,8 +377,11 @@ func (s ScheduleStep) Repetitions() int {
 // Expansion is total and unconditional: each step contributes its repetitions
 // in order. Conditional policy — polishing only at listed circle counts, or
 // abandoning polish after barren stages — is deliberately not here, because it
-// cannot be decided before the stages have run. It layers on top as a filter
-// over this list, driven by the recorded outcome of the stages already done.
+// cannot be decided before the stages have run. Each stage instead carries the
+// condition it is subject to, and EvaluateScheduleStage decides it against the
+// recorded outcomes when the stage comes up. A plan therefore stays meaningful
+// with no outcomes at all: a dry run prints every planned stage and says which
+// ones are conditional and on what.
 func (d ScheduleDocument) Expand() ([]ScheduleStage, error) {
 	config := d.Base
 	// One campaign seed, inherited by every stage. The effective seed is taken
@@ -410,6 +431,7 @@ func (s ScheduleStep) realize(config JobConfig, circles, index, stepIndex, repet
 		Index:      index,
 		StepIndex:  stepIndex,
 		Repetition: repetition,
+		When:       s.When,
 	}
 	next := circles
 	staged := config
