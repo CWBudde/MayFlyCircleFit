@@ -431,11 +431,20 @@ func saveCampaignScheduleForDashboard(
 // endpoint serves as the same shape, so a field renamed on one side and not the
 // other fails here rather than after the island's first refetch swaps a
 // populated dashboard for an empty one.
+//
+// The seed is a subset of the endpoint, so agreement alone would say nothing
+// about the fields only the endpoint carries. Those are checked separately
+// against the names the island reads, because a drifting metricHistory tag
+// costs every sparkline its history without emptying anything else.
 func TestDashboardPageSeedMatchesEndpointShape(t *testing.T) {
 	payload := dashboardResponse{
-		RunningJobs: []dashboardRunningJob{{ID: "job-1", Project: app.DefaultProject, State: string(StateRunning), CPS: 2.5, EvaluationWidth: 4, ElapsedSec: 1.5}},
-		Aggregates:  dashboardAggregates{Running: 1, Pending: 2, Completed: 3, CPS: 2.5},
-		HostFacts:   HostFacts{GOARCH: "amd64", SIMD: "avx2", GPU: GPUInfo{State: GPUStateAvailable}},
+		RunningJobs: []dashboardRunningJob{{
+			ID: "job-1", Project: app.DefaultProject, State: string(StateRunning),
+			CPS: 2.5, EvaluationWidth: 4, ElapsedSec: 1.5,
+			MetricHistory: []ui.MetricSample{{Iteration: 7, Cost: 1.25}},
+		}},
+		Aggregates: dashboardAggregates{Running: 1, Pending: 2, Completed: 3, CPS: 2.5},
+		HostFacts:  HostFacts{GOARCH: "amd64", SIMD: "avx2", GPU: GPUInfo{State: GPUStateAvailable}},
 	}
 	seed := ui.DashboardPageData{
 		RunningJobs: []ui.DashboardRunningJob{{ID: "job-1", Project: string(app.DefaultProject), State: string(StateRunning), CPS: 2.5, EvaluationWidth: 4, ElapsedSec: 1.5}},
@@ -454,6 +463,18 @@ func TestDashboardPageSeedMatchesEndpointShape(t *testing.T) {
 		}
 		if got != want {
 			t.Errorf("%q = %v in the endpoint payload, want %v as in the page seed", path, got, want)
+		}
+	}
+
+	// Endpoint-only wire names the island reads. The seed cannot pin these: it
+	// deliberately omits the metric history, and the island seeds its
+	// sparklines from the endpoint alone.
+	for _, path := range []string{
+		"runningJobs.0.metricHistory.0.iteration",
+		"runningJobs.0.metricHistory.0.cost",
+	} {
+		if _, ok := endpointKeys[path]; !ok {
+			t.Errorf("the endpoint payload has no %q, which the island's sparklines read", path)
 		}
 	}
 }

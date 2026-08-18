@@ -1,5 +1,4 @@
 import {
-	CategoryScale,
 	Chart,
 	Filler,
 	LinearScale,
@@ -16,8 +15,9 @@ import { mountIslands } from "./islands";
 // Register only what the two charts draw. Chart.js ships every controller,
 // scale, and plugin, and the tree shaking is driven by these registrations, so
 // importing the `auto` bundle instead would cost the binary a chart library it
-// does not use.
-Chart.register(CategoryScale, LinearScale, LineController, LineElement, PointElement, Tooltip, Filler);
+// does not use. No category scale: both charts have a numeric x axis, and a
+// category scale would space their points evenly regardless of its value.
+Chart.register(LinearScale, LineController, LineElement, PointElement, Tooltip, Filler);
 
 // DashboardResponse is the shape of both GET /api/v1/dashboard and the
 // server-rendered seed in `#dashboard-page`. The Go side keeps those two in
@@ -298,8 +298,8 @@ function mergeJobFromEvent(payload: DashboardResponse, event: ProgressEventPaylo
 
 	if (index < 0) {
 		// A job that started after the last fetch. Only the stream's fields are
-		// known; the next refetch fills in the project, the iteration budget,
-		// and the initial cost.
+		// known here; the refetch applyProgress triggers for a first-seen id is
+		// what fills in the project, the iteration budget, and the initial cost.
 		runningJobs.push({
 			id: event.jobId,
 			project: "",
@@ -446,13 +446,19 @@ function CampaignPointPlot({ points, palette }: { points: CampaignSeriesPoint[];
 		() =>
 			new Chart(canvasRef.current!.getContext("2d")!, {
 				type: "line",
-				data: { labels: [], datasets: [{ label: "best cost", data: [] }] },
+				data: { datasets: [{ label: "best cost", data: [] }] },
 				options: {
 					responsive: true,
 					maintainAspectRatio: false,
 					animation: false,
 					scales: {
-						x: { title: { display: true, text: "Circles" } },
+						// Linear, not categorical: circle counts are what the axis
+						// means, and stages neither advance by a fixed width nor
+						// always advance at all — a polish stage repeats the count
+						// its extend stage reached. Even spacing would draw a
+						// different curve than the server SVG, whose scaleX
+						// interpolates between the smallest and largest count.
+						x: { type: "linear", title: { display: true, text: "Circles" } },
 						y: { title: { display: true, text: "Best cost" } },
 					},
 					plugins: {
@@ -474,8 +480,7 @@ function CampaignPointPlot({ points, palette }: { points: CampaignSeriesPoint[];
 			}),
 		(chart) => {
 			const current = pointsRef.current;
-			chart.data.labels = current.map((point) => `${point.circles}`);
-			chart.data.datasets[0].data = current.map((point) => point.bestCost);
+			chart.data.datasets[0].data = current.map((point) => ({ x: point.circles, y: point.bestCost }));
 			Object.assign(chart.data.datasets[0], {
 				borderColor: palette.primary,
 				backgroundColor: `${palette.primary}22`,
@@ -510,19 +515,18 @@ function JobSparkline({ history, palette }: { history: MetricSample[]; palette: 
 		() =>
 			new Chart(canvasRef.current!.getContext("2d")!, {
 				type: "line",
-				data: { labels: [], datasets: [{ label: "best cost", data: [] }] },
+				data: { datasets: [{ label: "best cost", data: [] }] },
 				options: {
 					responsive: true,
 					maintainAspectRatio: false,
 					animation: false,
-					scales: { x: { display: false }, y: { display: false } },
+					scales: { x: { type: "linear", display: false }, y: { display: false } },
 					plugins: { legend: { display: false }, tooltip: { enabled: false } },
 				},
 			}),
 		(chart) => {
 			const current = historyRef.current;
-			chart.data.labels = current.map((sample) => `${sample.iteration}`);
-			chart.data.datasets[0].data = current.map((sample) => sample.cost);
+			chart.data.datasets[0].data = current.map((sample) => ({ x: sample.iteration, y: sample.cost }));
 			Object.assign(chart.data.datasets[0], {
 				borderColor: palette.primary,
 				backgroundColor: `${palette.primary}22`,
@@ -567,6 +571,9 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 	const streamRef = useRef<EventSource | null>(null);
 	const reconnectTimerRef = useRef<number | null>(null);
 	const mountedRef = useRef(false);
+	// Job ids the read model has already reported on, so a job seen only through
+	// the stream triggers exactly one refetch rather than one per event.
+	const seenJobsRef = useRef<Set<string>>(new Set());
 
 	const closeStream = useCallback(() => {
 		if (streamRef.current) {
@@ -593,6 +600,9 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 			if (!mountedRef.current) {
 				return;
 			}
+			for (const job of next?.runningJobs ?? []) {
+				seenJobsRef.current.add(job.id);
+			}
 			setPayload(next);
 			setErrorText(null);
 		} catch (error) {
@@ -607,15 +617,51 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 	// every reconnect alike: the stream reports progress, not the job table, so
 	// whatever happened while the connection was down is only visible in the
 	// read model.
+	const applyProgress = useCallback(
+		(progress: ProgressEventPayload) => {
+			setPayload((current) => (current ? mergeJobFromEvent(current, progress) : current));
+
+			if (isTerminal(progress.state)) {
+				// Only the read model knows the pending and completed counts and
+				// whether a campaign advanced with this job.
+				void fetchDashboard();
+				return;
+			}
+
+			// A job that started after the last fetch reaches the island through
+			// the stream alone, and a progress event carries none of the metadata
+			// its row needs: no project, no iteration budget, no initial cost. Ask
+			// the read model once, the first time the id is seen, rather than
+			// leaving the row without its project, progress bar, and gain for the
+			// whole run.
+			if (!seenJobsRef.current.has(progress.jobId)) {
+				seenJobsRef.current.add(progress.jobId);
+				void fetchDashboard();
+			}
+		},
+		[fetchDashboard],
+	);
+
+	// connectStream subscribes first and fetches second.
+	//
+	// The other order loses whatever happens in between: the global stream's
+	// opening snapshot lists only running jobs, so a job that reached a terminal
+	// state after the fetch returned and before the subscription existed would
+	// be in neither, and its row would sit there running until an unrelated
+	// reconnect. Subscribing first cannot miss that event, but it can deliver
+	// events the fetch is about to contradict, so frames that arrive while the
+	// fetch is in flight are queued and replayed on top of its result.
 	const connectStream = useCallback(async () => {
-		await fetchDashboard();
+		closeStream();
 		if (!mountedRef.current) {
 			return;
 		}
 
-		closeStream();
 		const source = new EventSource("/api/v1/stream");
 		streamRef.current = source;
+
+		let ready = false;
+		const queued: ProgressEventPayload[] = [];
 
 		source.onopen = () => setStreamConnected(true);
 		source.onmessage = (event) => {
@@ -629,11 +675,10 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 			if (!progress.jobId) {
 				return;
 			}
-			setPayload((current) => (current ? mergeJobFromEvent(current, progress) : current));
-			if (isTerminal(progress.state)) {
-				// Only the read model knows the pending and completed counts and
-				// whether a campaign advanced with this job.
-				void fetchDashboard();
+			if (ready) {
+				applyProgress(progress);
+			} else {
+				queued.push(progress);
 			}
 		};
 
@@ -647,7 +692,19 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 				}
 			}, STREAM_RECONNECT_MS);
 		};
-	}, [closeStream, fetchDashboard]);
+
+		await fetchDashboard();
+
+		// The connection may have failed or been replaced while the fetch was in
+		// flight; its queue belongs to a stream nobody is listening to any more.
+		if (!mountedRef.current || streamRef.current !== source) {
+			return;
+		}
+		ready = true;
+		for (const progress of queued) {
+			applyProgress(progress);
+		}
+	}, [applyProgress, closeStream, fetchDashboard]);
 
 	useEffect(() => {
 		mountedRef.current = true;
