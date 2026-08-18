@@ -54,9 +54,9 @@ func TestDocumentedExamplePlansTheReferenceCampaign(t *testing.T) {
 		{"extend stages", summary.Extends, 63},
 		{"polish stages", summary.Polishes, 6},
 		{"conditional stages", summary.Conditional, 6},
-		{"total iterations", summary.TotalIterations, 48800},
+		{"total iterations", summary.TotalIterations, 32000},
 		{"unconditional iterations", summary.FirmIterations(), 12800},
-		{"conditional iterations", summary.ConditionalIterations, 36000},
+		{"conditional iterations", summary.ConditionalIterations, 19200},
 		{"final circle count", plan[len(plan)-1].Circles, 512},
 	}
 	for _, check := range checks {

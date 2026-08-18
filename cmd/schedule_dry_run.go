@@ -113,7 +113,7 @@ func stagePlanParameters(stage app.ScheduleStage) string {
 	case app.ScheduleStagePolish:
 		return fmt.Sprintf("%s, active set %d, %d sweeps × %d × %d iters, pop %d",
 			config.PolishingStrategy, config.PolishingActiveSetSize, config.PolishingMaxSweeps,
-			config.PolishingEpochs, config.PolishingIters, config.PopSize)
+			config.PolishingEpochs, config.PolishingIters, config.PolishingPopSize)
 	case app.ScheduleStageExtend:
 		return fmt.Sprintf("+%d circles, batch %d, %d × %d iters, pop %d",
 			stage.AdditionalCircles, config.BatchSize, config.OptimizerEpochs, config.Iters, config.PopSize)

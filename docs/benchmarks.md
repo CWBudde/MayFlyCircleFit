@@ -31,6 +31,15 @@ The suite covers three layers:
   strategies can be compared at equal wall clock rather than at equal sweeps.
   See [contiguous-window-polish-report.md](contiguous-window-polish-report.md);
   a cheaper sweep is not the same as a better run.
+- **Polishing budget:** `BenchmarkPolishBudgetShape`,
+  `BenchmarkPolishBudgetSweepFalloff`,
+  `BenchmarkPolishBudgetShippedConfiguration`, and
+  `BenchmarkPolishBudgetProductionShape` measure what a polishing population,
+  iteration count, epoch count, and sweep budget buy per second at the
+  dimensionality of an active set rather than of the whole vector. They report
+  `removed_per_s` beside the quality metrics, and are the measurement the
+  polishing defaults are set from. See
+  [polishing-budget-report.md](polishing-budget-report.md).
 
 `BenchmarkFastSSD_Comparison` is the architecture-level SIMD suite. It compares
 the portable scalar kernel with the runtime-selected kernel at 64×64, 128×128,

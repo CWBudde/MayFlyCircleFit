@@ -37,6 +37,7 @@ var (
 	polishingMaxSweeps       int
 	polishingEpochs          int
 	polishingIters           int
+	polishingPopSize         int
 	polishingStagnationIters int
 	polishingMinImprovement  float64
 	threads                  int
@@ -79,10 +80,11 @@ func init() {
 	runCmd.Flags().BoolVar(&polishingEnabled, "polishing", false, "Polish weak circles transactionally after a batch run")
 	runCmd.Flags().StringVar(&polishingStrategy, "polishing-strategy", "replacement", "Polishing strategy: replacement, hybrid-overlap, residual-region, or contiguous-window")
 	runCmd.Flags().IntVar(&polishingActiveSetSize, "polishing-active-set-size", 5, "Circles optimized together in each polishing sweep")
-	runCmd.Flags().IntVar(&polishingMaxSweeps, "polishing-max-sweeps", 3, "Maximum transactional polishing sweeps")
-	runCmd.Flags().IntVar(&polishingEpochs, "polishing-epochs", 2, "Optimizer epochs per polishing sweep")
-	runCmd.Flags().IntVar(&polishingIters, "polishing-iters", 1000, "Iterations per polishing epoch")
-	runCmd.Flags().IntVar(&polishingStagnationIters, "polishing-stagnation-iters", 500, "Stop a polishing epoch after this many iterations without sufficient progress")
+	runCmd.Flags().IntVar(&polishingMaxSweeps, "polishing-max-sweeps", app.DefaultPolishingMaxSweeps, "Maximum transactional polishing sweeps")
+	runCmd.Flags().IntVar(&polishingEpochs, "polishing-epochs", app.DefaultPolishingEpochs, "Optimizer epochs per polishing sweep")
+	runCmd.Flags().IntVar(&polishingIters, "polishing-iters", app.DefaultPolishingIters, "Iterations per polishing epoch")
+	runCmd.Flags().IntVar(&polishingPopSize, "polishing-pop", app.DefaultPolishingPopSize, "Population a polishing sweep optimizes its active set with (--pop sizes the whole vector instead)")
+	runCmd.Flags().IntVar(&polishingStagnationIters, "polishing-stagnation-iters", app.DefaultPolishingStagnationIters, "Stop a polishing epoch after this many iterations without sufficient progress")
 	runCmd.Flags().Float64Var(&polishingMinImprovement, "polishing-min-improvement", 0.001, "Absolute optimizer cost reduction counted as progress during polishing")
 	runCmd.Flags().IntVar(&threads, "threads", runtime.GOMAXPROCS(0), "CPU rendering threads (capped at GOMAXPROCS)")
 	runCmd.Flags().BoolVar(&parallelEvaluation, "parallel-evaluation", false, "Evaluate optimizer population members concurrently over independent renderer sessions (reproducible per seed, but not identical to a serial run of the same seed)")
@@ -153,6 +155,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		PolishingMaxSweeps:       polishingMaxSweeps,
 		PolishingEpochs:          polishingEpochs,
 		PolishingIters:           polishingIters,
+		PolishingPopSize:         polishingPopSize,
 		PolishingStagnationIters: polishingStagnationIters,
 		PolishingMinImprovement:  polishingMinImprovement,
 		Threads:                  threads,
@@ -315,7 +318,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		result, err = renderer.OptimizeBatch(rend, optimizer, config.Circles, config.BatchSize, convergenceConfig)
 		if err == nil && config.PolishingEnabled && result.OptimizedCircles == config.Circles {
 			var polishOptimizer opt.Optimizer
-			polishOptimizer, err = opt.NewMayflyVariant(string(app.VariantStandard), config.PolishingIters, config.PopSize, config.EffectiveSeed,
+			polishOptimizer, err = opt.NewMayflyVariant(string(app.VariantStandard), config.PolishingIters, config.PolishingPopSize, config.EffectiveSeed,
 				opt.WithLogger(slog.Default()),
 				opt.WithEarlyStop(opt.Stop{
 					MinImprovement:  config.PolishingMinImprovement,
@@ -337,7 +340,11 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 					result.Iterations += polished.Iterations
 					result.Evaluations += polished.Evaluations
 					result.Stages += polished.Sweeps
-					slog.Info("Batch polishing complete", "sweeps", polished.Sweeps, "accepted_sweeps", polished.AcceptedSweeps, "best_cost", polished.BestCost)
+					slog.Info("Batch polishing complete",
+						"sweeps", polished.Sweeps,
+						"accepted_sweeps", polished.AcceptedSweeps,
+						"population", config.PolishingPopSize,
+						"best_cost", polished.BestCost)
 				}
 			}
 		}

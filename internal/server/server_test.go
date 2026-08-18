@@ -1041,8 +1041,13 @@ func TestPolishEndpointCreatesCheckpointContinuation(t *testing.T) {
 	if continuation.Config.PolishingStrategy != app.PolishingResidualRegion || continuation.Config.PolishingActiveSetSize != 1 ||
 		continuation.Config.PolishingMaxSweeps != 2 || continuation.Config.PolishingEpochs != 2 || continuation.Config.PolishingIters != 20 ||
 		continuation.Config.PolishingStagnationIters != 10 || continuation.Config.PolishingMinImprovement != 0.01 ||
-		continuation.Config.PopSize != 40 || continuation.Config.Seed != 99 || continuation.Config.EffectiveSeed != 99 {
+		continuation.Config.PolishingPopSize != 40 || continuation.Config.Seed != 99 || continuation.Config.EffectiveSeed != 99 {
 		t.Fatalf("polishing continuation overrides = %+v", continuation.Config)
+	}
+	// popSize on a polish request is the polishing population, which is the one
+	// the continuation runs at; the inherited job-wide population is untouched.
+	if continuation.Config.PopSize != 20 {
+		t.Fatalf("polishing continuation popSize = %d, want the inherited 20 to stay put", continuation.Config.PopSize)
 	}
 	if continuation.Iterations != 8000 || continuation.Evaluations != 900000 || !reflect.DeepEqual(continuation.BestParams, params) {
 		t.Fatalf("polishing continuation state = %+v", continuation)

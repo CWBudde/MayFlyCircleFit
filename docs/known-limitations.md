@@ -173,20 +173,27 @@ behavior is production-ready.
   transactional, and it has no session pool to lease from. Polishing now refuses
   an optimizer configured for concurrent evaluation rather than relying on its
   callers not to supply one.
-- Transactional polishing can be a complete no-op that still spends its whole
-  optimizer budget. A sweep is committed only when every circle in the candidate
-  vector is still useful, so a single circle whose MSE contribution has gone
-  negative blocks all of them until an active set happens to contain and repair
-  it. Fitted vectors routinely contain such circles: pruning runs per batch
-  stage against that stage's canvas, later stages composite on top of what an
-  earlier stage judged useful, and nothing re-audits the assembled result.
-  Measured on the output of a real 64-circle batch fit, three of the four
-  strategies accepted zero sweeps. Check the accepted-sweep count in the
-  polishing log record before concluding that a strategy or a sweep budget was
-  at fault.
+- Transactional polishing can still be a no-op that spends its whole optimizer
+  budget, though no longer for the reason recorded here before. A sweep is
+  committed only when it improves the cost and keeps every circle in its active
+  set useful without adding a non-useful circle outside it
+  (`sweepKeepsCirclesUseful`); a circle the sweep never touched and never made
+  worse no longer blocks it. What remains is that a sweep which finds nothing, or
+  whose candidate fails the gate, contributes nothing while costing its full
+  budget. Check the accepted-sweep count in the polishing log record before
+  concluding that a strategy or a sweep budget was at fault.
+- A polishing budget is not monotone in quality. Measured in
+  `docs/polishing-budget-report.md`, a larger population can reach a *worse*
+  final cost than a smaller one at several times the wall clock, because
+  acceptance is discrete: a sweep either clears the gate or contributes nothing,
+  and a different search trajectory lands on a different side of it. Raise
+  `--polishing-max-sweeps` before raising `--polishing-pop` or
+  `--polishing-iters`; sweeps are the only axis that moves polishing onto
+  different circles.
 - `--polishing-strategy=contiguous-window` is cheaper per sweep, not better per
-  second. At the default `--polishing-max-sweeps` of 3 it only offers the last
-  `3 * activeSetSize` draw slots to the optimizer, and at equal wall clock it
+  second. It only offers the last `maxSweeps * activeSetSize` draw slots to the
+  optimizer, so at the default sweep budget it never sees the front of the draw
+  order on a large vector, and at equal wall clock it
   reached a worse cost than `hybrid-overlap` in every configuration measured in
   `docs/contiguous-window-polish-report.md`. Raise the sweep budget to at least
   `ceil(circles / activeSetSize)` before selecting it.

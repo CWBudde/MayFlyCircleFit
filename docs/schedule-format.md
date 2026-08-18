@@ -71,7 +71,7 @@ appends.
 | Field | Meaning |
 | --- | --- |
 | `strategy`, `activeSetSize`, `maxSweeps`, `stagnationIters`, `minImprovement` | Polishing overrides. |
-| `epochs`, `iters`, `popSize` | Budget overrides; on a polish these address the *polishing* budget. |
+| `epochs`, `iters`, `popSize` | Budget overrides; on a polish these address the *polishing* budget, so `popSize` sets `polishingPopSize` rather than the job-wide population a polish-only stage never spends. |
 | `when` | The runtime condition. See below. |
 
 An extend override on a polish step, or a polish override on an extend step, is
@@ -147,28 +147,28 @@ Name: 512-circle campaign
 Seed: 4242
 Stages: 70 (1 base, 63 extend, 6 polish; 6 conditional)
 
-#   KIND    CIRCLES  ITERATIONS  PARAMETERS                                                    WHEN
-0   base    8        200         batch, batch 8, 1 × 200 iters, pop 30                         always
-1   extend  16       200         +8 circles, batch 8, 1 × 200 iters, pop 30                    always
-2   extend  24       200         +8 circles, batch 8, 1 × 200 iters, pop 30                    always
-3   extend  32       200         +8 circles, batch 8, 1 × 200 iters, pop 30                    always
-4   polish  32       6000        replacement, active set 5, 3 sweeps × 2 × 1000 iters, pop 30  conditional: only at 32/64/96/128/192/256 circles; abandoned after 2 consecutive stages gaining less than 1
+#   KIND    CIRCLES  ITERATIONS  PARAMETERS                                                   WHEN
+0   base    8        200         batch, batch 8, 1 × 200 iters, pop 30                        always
+1   extend  16       200         +8 circles, batch 8, 1 × 200 iters, pop 30                   always
+2   extend  24       200         +8 circles, batch 8, 1 × 200 iters, pop 30                   always
+3   extend  32       200         +8 circles, batch 8, 1 × 200 iters, pop 30                   always
+4   polish  32       3200        replacement, active set 5, 8 sweeps × 2 × 200 iters, pop 30  conditional: only at 32/64/96/128/192/256 circles; abandoned after 2 consecutive stages gaining less than 1
 ...
-69  extend  512      200         +8 circles, batch 8, 1 × 200 iters, pop 30                    always
+69  extend  512      200         +8 circles, batch 8, 1 × 200 iters, pop 30                   always
 
-Planned optimizer iterations: 48800
+Planned optimizer iterations (nominal): 32000
   unconditional: 12800
-  conditional:   36000 across 6 stages, decided at run time
+  conditional:   19200 across 6 stages, decided at run time
 ```
 
-70 stages and 48,800 iterations, which is:
+70 stages and 32,000 iterations, which is:
 
 ```
 stages   1 base + 63 extends + 6 polishes                     =    70
 base     1 batch run × 1 epoch × 200 iters                    =   200
 extend   1 batch run × 1 epoch × 200 iters, × 63              = 12600
-polish   3 sweeps × 2 epochs × 1000 iters, × 6                = 36000
-total                                                          = 48800
+polish   8 sweeps × 2 epochs × 200 iters, × 6                 = 19200
+total                                                          = 32000
 ```
 
 63 extends because the canvas climbs 8 → 512 in steps of 8, and

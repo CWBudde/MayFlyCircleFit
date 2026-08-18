@@ -459,6 +459,9 @@ func (s ScheduleStep) realize(config JobConfig, circles, index, stepIndex, repet
 		if s.Iters != nil {
 			staged.Iters = *s.Iters
 		}
+		if s.PopSize != nil {
+			staged.PopSize = *s.PopSize
+		}
 	case ScheduleStepPolish:
 		stage.Kind = ScheduleStagePolish
 		staged.PolishingEnabled = true
@@ -484,9 +487,12 @@ func (s ScheduleStep) realize(config JobConfig, circles, index, stepIndex, repet
 		if s.Iters != nil {
 			staged.PolishingIters = *s.Iters
 		}
-	}
-	if s.PopSize != nil {
-		staged.PopSize = *s.PopSize
+		// A polish step's budget overrides address the polishing budget, which is
+		// what the format documents, so popSize sets the polishing population
+		// rather than the job-wide one the stage never uses.
+		if s.PopSize != nil {
+			staged.PolishingPopSize = *s.PopSize
+		}
 	}
 	if err := staged.Validate(); err != nil {
 		return ScheduleStage{}, 0, fmt.Errorf("steps[%d] stage %d: %w", stepIndex, index, err)

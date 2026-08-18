@@ -1804,23 +1804,77 @@ suggests. Keep this at P2 and behind a measured quality comparison.
 - [ ] A report compares final cost and wall clock for the current and
       prefix-aware selection at equal optimizer budget, on the same seed.
 
-### Task 15.4: Right-Size the Polishing Defaults (P2)
+### Task 15.4: Right-Size the Polishing Defaults (P2) ✅
 
-- [ ] Re-derive `PolishingIters`, `PolishingEpochs`, and the population used for
+- [x] Re-derive `PolishingIters`, `PolishingEpochs`, and the population used for
       polishing against the active set's actual dimensionality. The defaults reuse
       the job's `popSize` (`worker.go:490`), so a run tuned for a 512-circle
       vector polishes a 56-dimensional active set with 200 members.
-- [ ] Give polishing its own population knob rather than inheriting `popSize`,
+      Re-derived in `docs/polishing-budget-report.md`: `PolishingIters`
+      1000 → 200, `PolishingMaxSweeps` 3 → 8, `PolishingStagnationIters`
+      500 → 100 (half its epoch, as before), `PolishingEpochs` kept at 2 because
+      two epochs of 200 beat one of 400 at equal wall clock and four are worse
+      than two at twice the cost.
+- [x] Give polishing its own population knob rather than inheriting `popSize`,
       and expose it on `polishJobRequest` (`internal/server/server.go:996`).
-- [ ] Record the measured sweep-by-sweep drop-off in the report. Observed on the
+      `PolishingPopSize` / `--polishing-pop` / `polishingPopSize`, defaulting to
+      30 and resolving to that rather than to `PopSize`, which is the one place
+      polishing departs from the `EvaluationWorkers` compatibility rule. The
+      `/polish` request's `popSize` and a schedule polish step's `popSize` both
+      address it, which is what those overrides already claimed to mean.
+- [x] Record the measured sweep-by-sweep drop-off in the report. Observed on the
       run above: sweep 1 removed 85.5 cost units, sweep 2 removed 16.8 — a 5x
       falloff in one step, against a default `PolishingMaxSweeps` of 3 and a
       ceiling of 32.
+      Re-measured under the current gate, and the falloff does not hold:
+      `residual-region` removed 25.2, 24.9, 23.9, **55.0**, 17.9, 7.7, 4.0, 7.6
+      over eight sweeps — its largest single gain is sweep 4 — and `replacement`
+      removed 10.0 in sweep 1, nothing in sweeps 2–4, then 7.2 in sweep 5. The
+      original 5x figure was measured under the superseded absolute gate
+      (Task 15.6), where most sweeps were vetoed whatever they found. Three
+      sweeps captured 44% of what eight remove, which is why the default moved
+      to 8 rather than down.
 
 **Acceptance Checks:**
 
-- [ ] Defaults are justified by a measurement in a committed report, not by
+- [x] Defaults are justified by a measurement in a committed report, not by
       inheritance from the batch configuration.
+      `docs/polishing-budget-report.md`, and every default is a named constant in
+      `internal/app/config.go` so the CLI flag and the configuration cannot
+      drift; `cmd.TestRunPolishingPopulationFlagMatchesConfigDefault` and
+      `app.TestNormalizeAppliesCanonicalDefaults` pin that.
+
+**Measured 2026-08-17/18** on an AMD Ryzen 5 4600H, 12 threads,
+`GOMAXPROCS=12`, on the 64-circle vector a real `OptimizeBatch` produces at
+128x128 (starting cost 625.2), `activeSetSize` 5, seed 4242, one render thread,
+`-benchtime 1x`. Whole configurations, each carrying the stagnation rule it
+ships with, medians of three except the six-minute inherited-population row
+(median of two):
+
+| Configuration | Strategy | Wall clock | Accepted | Removed |
+| --- | --- | ---: | ---: | ---: |
+| Previous defaults: pop 30, 1000 × 2, 3 sweeps | `replacement` | 36.7 s | 3 / 3 | 8.1% |
+| Previous defaults | `residual-region` | 72.5 s | 3 / 3 | 9.0% |
+| Inherited population: pop 200, 1000 × 2, 3 sweeps | `residual-region` | 373.9 s | 3 / 3 | 11.5% |
+| Current defaults: pop 30, 200 × 2, 8 sweeps | `replacement` | **27.1 s** | 4 / 8 | **11.1%** |
+| Current defaults | `residual-region` | **40.3 s** | 7 / 8 | **23.2%** |
+
+The current defaults remove 2.6x the error of the previous ones in 56% of the
+wall clock on `residual-region`, and 1.4x in 74% of it on `replacement`. The
+inherited population buys 1.28x the error for 5.2x the time, which is the whole
+case for the knob. Two further findings are in the report and are worth knowing
+before tuning anything here: quality is **not monotone** in the budget — on
+`replacement`, population 200 reached a worse cost than population 50, because
+acceptance is discrete — and at 512x512 with 256 circles a fixed 200-iteration
+sweep landed an accepted sweep at population 20 and at no larger population,
+while costing 11.8x more wall clock at population 200.
+
+Consequences recorded elsewhere: a polish stage now authorizes 3 200 optimizer
+iterations rather than 6 000, so the documented 512-circle campaign's planned
+figure drops from 48 800 to 32 000 (`docs/schedule-format.md`,
+`app.TestReferenceCampaignPlanMatchesTheHandComputation`), and a checkpoint
+written before `polishingPopSize` existed resumes at the polishing default
+rather than at its own `popSize`.
 
 ### Task 15.5: Derive the Evaluation Width from a Measurement (P2)
 
