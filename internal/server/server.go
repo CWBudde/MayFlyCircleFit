@@ -49,6 +49,10 @@ type Server struct {
 	schedulesMu     sync.Mutex
 	scheduleDrivers map[string]struct{}
 	scheduleWG      sync.WaitGroup
+
+	dashboardMu           sync.Mutex
+	dashboardChainScan    []discoveredChain
+	dashboardChainScanned time.Time
 }
 
 // ServerOptions configures the trusted-local HTTP boundary.
@@ -195,6 +199,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/jobs", s.handleJobs)
 	mux.HandleFunc("/api/v1/stream", s.handleAllJobStream)
 	mux.HandleFunc("/api/v1/projects", s.handleProjects)
+	mux.HandleFunc("/api/v1/dashboard", s.handleDashboard)
 	mux.HandleFunc("/api/v1/jobs/", s.handleJobsWithID)
 	mux.HandleFunc("/api/v1/system", s.handleSystem)
 	mux.HandleFunc("/api/v1/schedules", s.handleSchedules)
@@ -742,19 +747,8 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 		return
 	}
 
-	// Compute elapsed time and CPS
-	var elapsed time.Duration
-	if job.EndTime != nil {
-		elapsed = job.EndTime.Sub(job.StartTime)
-	} else {
-		elapsed = time.Since(job.StartTime)
-	}
-
-	cps := float64(0)
-	if elapsed.Seconds() > 0 {
-		totalCircles := job.Evaluations * max(1, len(job.BestParams)/7)
-		cps = float64(totalCircles) / elapsed.Seconds()
-	}
+	elapsed := jobElapsed(job)
+	cps := circlesPerSecond(job, elapsed)
 
 	psnr, psnrInfinite := cloneFloat(job.PSNR), job.PSNRInfinite
 	if len(job.BestParams) > 0 {

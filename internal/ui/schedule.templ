@@ -86,21 +86,37 @@ type Campaign struct {
 	Error  string
 }
 
-// CampaignSummary is a campaign in a listing.
+// CampaignSummary is a campaign in a listing. It is also the JSON the dashboard
+// endpoint serves, so its tags carry the same camelCase the rest of the API
+// uses; the island and the server-rendered card read the identical shape.
 type CampaignSummary struct {
-	ID     string
-	Name   string
-	State  string
-	Source CampaignSource
+	ID     string         `json:"id"`
+	Name   string         `json:"name"`
+	State  string         `json:"state"`
+	Source CampaignSource `json:"source"`
 
-	RecordedStages int
-	PlannedStages  int
+	RecordedStages int `json:"recordedStages"`
+	PlannedStages  int `json:"plannedStages"`
 
-	Circles     int
-	BestCost    float64
-	HasBestCost bool
+	CampaignSeries []CampaignSeriesPoint `json:"campaignSeries"`
+	LeafJobID      string                `json:"leafJobId,omitempty"`
 
-	UpdatedAt time.Time
+	Circles     int     `json:"circles"`
+	BestCost    float64 `json:"bestCost"`
+	HasBestCost bool    `json:"hasBestCost"`
+
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// CampaignSeriesPoint is one stage in the compact campaign line preview used by
+// dashboard summaries and mini charts.
+type CampaignSeriesPoint struct {
+	Index   int    `json:"index"`
+	Kind    string `json:"kind"`
+	Circles int    `json:"circles"`
+
+	BestCost    float64 `json:"bestCost"`
+	HasBestCost bool    `json:"hasBestCost"`
 }
 
 // CampaignListPage lists every campaign the server can reconstruct: the

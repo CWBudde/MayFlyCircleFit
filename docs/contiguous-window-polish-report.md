@@ -14,6 +14,16 @@ narrower than the render-cost measurement suggests. The strategy is genuinely
 cheaper per sweep. On these workloads it is not cheaper per unit of error
 removed, and at the shipped default sweep budget it removed no error at all.
 
+> **Scope correction, 2026-08-18.** That conclusion holds for the benchmarks
+> here and does not generalize. On a real 1000-circle greedy fit,
+> `contiguous-window` sized for total coverage beat `hybrid-overlap` by roughly
+> 1.5x per hour and removed more error in one pass than two merit-based passes
+> combined. The benchmarks below fit 64 circles of 2%-jittered truth, where no
+> circle is systematically worse placed than any other; a greedy fit is the
+> opposite. Read the benchmark sections as measurements of that workload, and
+> see "A 1000-circle greedy fit reverses the conclusion" before choosing a
+> strategy for a fitted vector.
+
 ## What the strategy does
 
 Batch polishing bakes the circles before the first active draw slot into a
@@ -151,6 +161,98 @@ ever offers the last `3 * activeSetSize` draw slots to the optimizer. With 256
 circles and the default `activeSetSize` of 5, that is 15 of 256 slots, all at
 the end of the draw order.
 
+## A 1000-circle greedy fit reverses the conclusion
+
+**Measured 2026-08-18** on the Ryzen 5 4600H box, against the 1000-circle fit of
+`example/Christian_after.jpeg` -- a real campaign, not a synthetic vector. The
+benchmarks above cover 64 circles of jittered truth; this is the regime the
+report did not test, and `contiguous-window` wins it outright.
+
+The vector was first polished by two `hybrid-overlap` passes, then by three
+`contiguous-window` passes sized for total coverage (`activeSetSize` 32,
+`maxSweeps` 32, `iters` 700, `epochs` 2, `popSize` 60, `stagnationIters` 500,
+`minImprovement` 0.0005, one fresh seed per pass):
+
+| Pass | Strategy | Wall clock | Cost | Gain | Gain/hour |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 1 | `hybrid-overlap`, active set 8 | 101m01s | 106.514 | -1.303 | 0.774 |
+| 2 | `hybrid-overlap`, active set 8 | 44m20s | 105.872 | -0.643 | 0.870 |
+| 3 | `contiguous-window`, active set 32 | 130m31s | 103.126 | **-2.746** | **1.262** |
+| 4 | `contiguous-window`, active set 32 | 124m01s | 100.880 | **-2.245** | **1.086** |
+
+One coverage pass removed more error than both merit-based passes combined
+(-2.746 against -1.946) in less wall clock than the first of them.
+
+### Why position beats merit here
+
+`selectHybridOverlapCircles` sorts by visit count, then by *weakest*
+`MSEContribution`. An audit of the vector at cost 105.872 shows that tail has
+nothing left to give: of 1000 circles exactly 1 has negative contribution, none
+is zero, none is invisible, and **the weakest 500 hold 2.2% of the summed
+contribution** (27.50 of 1259.74; median 0.132, p90 1.361, max 212.86). The
+merit selector spends its budget where there is least to win.
+
+`contiguous-window` selects by draw position instead, and draw position is
+where a *greedy* fit hides its error. Gain by quarter of each coverage pass:
+
+| Pass | Q1 | Q2 | Q3 | Q4 |
+| ---: | ---: | ---: | ---: | ---: |
+| 3 | -0.015 | -0.383 | -1.058 | -1.290 |
+| 4 | -0.021 | -0.277 | -0.600 | **-1.348** |
+
+The window walks backwards from slot 968, so the last quarter is when it
+reaches draw slots below ~250 -- the early, large circles placed against a
+nearly empty canvas and never revisited since. That quarter got *bigger* on the
+second pass, and pass 4's largest single improvement (0.6277) exceeded pass 3's
+(0.4404). The decay that makes merit-based chains not worth continuing
+(-1.303 -> -0.643, 51% falloff) does not appear here (-2.746 -> -2.245, 18%).
+
+The benchmarks above cannot see this because every circle in a 2%-jittered
+truth vector is equally close to right, so there is no positional structure for
+the window to exploit. **A fitted vector is not a jittered one**, and the
+difference is the whole result.
+
+### Early stopping was hiding it
+
+The `hybrid-overlap` passes ran `minImprovement` 0.01 with `stagnationIters`
+200 of 400 iters and spent **15,658 of a possible 25,600 optimizer iterations
+(61%)**, because at cost ~106 a whole sweep gains about 0.02, so almost no
+single iteration clears a 0.01 bar and the counter runs out mid-epoch. At
+`minImprovement` 0.0005 the coverage passes spent 44,672 and 44,147 of 44,800
+(99.7% and 98.5%). Polishing wires only `MinImprovement` and `StagnationIters`
+into `opt.Stop` (`internal/server/worker.go:505`) -- there is no `MinIters`
+floor to protect a sweep, unlike the fitting path.
+
+Note that `minImprovement` is an **absolute** cost reduction
+(`internal/opt/mayfly_adapter.go:50`). It has to be set against the gains a
+sweep can actually produce at the current cost, not left at a default chosen
+for a vector 100x further from converged.
+
+### Latest-first ordering costs a full pass its first half
+
+Simulating `selectContiguousWindowCircles` for `circleCount` 1000,
+`activeSetSize` 32, 32 sweeps gives starts 968, 936, ..., 40, 8, 0: all 1000
+slots covered, 24 of them twice. Summed rasterizations per candidate across the
+32 sweeps:
+
+| Traversal | Rasterizations/candidate | Coverage |
+| --- | ---: | ---: |
+| latest-first (current) | 16,872 | 1000/1000 |
+| earliest-first | **16,152** | 1000/1000 |
+
+**Over a full coverage cycle, latest-first is not the cheaper traversal** -- it
+is 4.5% more expensive, because it is the same 32 windows in the opposite
+order and the arithmetic barely favours starting wide. The docstring's
+rationale holds only for a *partial* budget, where a late window bakes a larger
+prefix and the run stops before the window slides forward.
+
+The measured cost of that ordering is the Q1/Q2 columns above: the first half
+of each pass returned 0.398 and 0.298 against second halves of 2.348 and 1.947.
+Because `visitCounts` is rebuilt per `PolishCircleBatchContext` call
+(`internal/fit/renderer/batch_polish.go:187`), every new job restarts at slot
+968 and re-walks the cheap end before reaching the valuable one. See PLAN Task
+16.8.
+
 ## Recommendation
 
 - The default three sweeps are not enough for `contiguous-window` to be worth
@@ -160,9 +262,19 @@ the end of the draw order.
   budget at 32, so full coverage is unreachable above `32 * activeSetSize`
   circles -- 160 at the default active set size. Raise
   `--polishing-active-set-size` alongside the sweep budget for larger vectors.
-- Even at full coverage, prefer a merit-based strategy when wall clock is the
-  budget. `contiguous-window` reached a worse cost than `hybrid-overlap` at
-  equal time in every configuration measured here.
+- Prefer a merit-based strategy when wall clock is the budget **and the vector
+  is not a greedy fit**. `contiguous-window` reached a worse cost than
+  `hybrid-overlap` at equal time in every configuration measured on the
+  jittered-truth vector. On the 1000-circle fitted vector the result inverts,
+  and by a wide margin -- 1.262 and 1.086 cost units per hour against 0.774 and
+  0.870. Which regime you are in is the deciding question, not the strategy.
+- On a fitted vector, size `contiguous-window` for total coverage in a single
+  pass: `activeSetSize >= ceil(circles / 32)` so that 32 sweeps reach every draw
+  slot. Below that the pass never reaches the low draw slots, which is where all
+  of its value turned out to be.
+- Set `--polishing-min-improvement` against the gain a sweep can actually
+  produce at the current cost. It is an absolute bar, and the default retired
+  39% of the optimizer budget mid-epoch at cost ~106.
 - `contiguous-window` is worth having where per-sweep latency is the constraint
   rather than total error -- an interactive sweep, a large circle count where a
   merit-based sweep is too slow to run at all, or a UI that shows intermediate

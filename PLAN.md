@@ -2307,6 +2307,74 @@ sounds for a campaign designed to run unattended overnight on a headless box.
 
 ---
 
+### Task 16.8: Let a Coverage Pass Start Where the Value Is (P2)
+
+`contiguous-window` sized for total coverage is the strongest polishing recipe
+measured on a fitted vector -- see the 2026-08-18 section of
+[`docs/contiguous-window-polish-report.md`](docs/contiguous-window-polish-report.md)
+-- but it spends the first half of every pass on the cheap end of the vector.
+Gain by quarter, two consecutive passes over the 1000-circle fit of
+`example/Christian_after.jpeg` (`activeSetSize` 32, 32 sweeps):
+
+| Pass | Q1 | Q2 | Q3 | Q4 | Total |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 3 | -0.015 | -0.383 | -1.058 | -1.290 | -2.746 |
+| 4 | -0.021 | -0.277 | -0.600 | -1.348 | -2.245 |
+
+`selectContiguousWindowCircles` scans from the latest start downward and keeps a
+strictly better total, so with empty visit counts it picks slot 968 first and
+steps back 32 slots per sweep (`internal/fit/renderer/batch_polish.go:645`). The
+low draw slots -- the early, large circles placed against a nearly empty canvas
+and never revisited -- are reached only in the final quarter, and that is where
+essentially all of the gain is.
+
+`visitCounts` is rebuilt per `PolishCircleBatchContext` call
+(`batch_polish.go:187`), so **every continuation restarts at slot 968** and
+re-walks the low-value end before reaching the high-value one, no matter how
+many passes have already covered it.
+
+The docstring justifies latest-first as a render-cost optimization: a window
+starting at `s` costs `circleCount - s` rasterizations per candidate because the
+prefix is baked, so a late window is cheap. That holds for a partial budget.
+**Over a full coverage cycle it is false** -- simulating both traversals for
+`circleCount` 1000, `activeSetSize` 32, 32 sweeps:
+
+| Traversal | Rasterizations/candidate | Coverage |
+| --- | ---: | ---: |
+| latest-first (current) | 16,872 | 1000/1000 |
+| earliest-first | 16,152 | 1000/1000 |
+
+Same 32 windows, opposite order, and the current one is 4.5% *more* expensive.
+There is no render-cost argument for the current ordering once the budget covers
+everything; the ordering is costing gain and buying nothing.
+
+- [ ] Order the traversal by where the budget is worth spending rather than by
+      window start. Deciding between "earliest-first when the sweep budget
+      covers the vector, latest-first otherwise" and a residual- or
+      contribution-weighted window choice is part of the task; the partial-budget
+      case must keep its current cheapness.
+- [ ] Carry visit counts across a polish continuation so a chained pass does not
+      re-walk ground its parent already covered. The counts are per-call today;
+      the parent's coverage is derivable from the chain, and `polishedFrom`
+      already records the link.
+- [ ] Leave the selector deterministic. Identical config, parent, and seed must
+      still reproduce bit-for-bit — the property that makes a fresh seed the
+      only thing distinguishing one pass from the next.
+
+**Acceptance Checks:**
+
+- [ ] A unit test asserts the traversal covers every draw slot for
+      `circleCount` 1000, `activeSetSize` 32, 32 sweeps, and that summed
+      rasterizations per candidate do not regress against latest-first.
+- [ ] A test pins the partial-budget case: at the shipped default sweep count,
+      the chosen windows are no more expensive than they are today.
+- [ ] A chained continuation starts on slots its parent did not cover, asserted
+      on the selected active sets rather than on cost.
+- [ ] Determinism regression: same config, parent, and seed produce an identical
+      cost across two runs.
+
+---
+
 ## Phase 17: Dashboard Start Page
 
 **Goal:** Turn `/` from a flat job list into a dashboard: campaigns at a glance
@@ -2487,17 +2555,17 @@ Reuse rather than reimplement: `Server.discoverAllChains()`,
 `ScheduleStore.LoadScheduleStages`, `JobManager.GetRunningJobs()`, and
 `JobManager.ListJobs()` already produce everything needed.
 
-- [ ] `ui.CampaignSummary` gains a compact stage series — `Index`, `Kind`,
+- [x] `ui.CampaignSummary` gains a compact stage series — `Index`, `Kind`,
       `Circles`, `BestCost`, `HasBestCost` per stage — to feed the per-card mini
       chart, and `LeafJobID`, the newest stage carrying a checkpoint, for the
       thumbnail.
-- [ ] Ordering: running and pending campaigns first, then the N most recently
+- [x] Ordering: running and pending campaigns first, then the N most recently
       updated by `UpdatedAt`. N is capped and the chain scan is cached (risk 4).
-- [ ] Running-job rows carry `Iterations`, `MaxIters` (from
+- [x] Running-job rows carry `Iterations`, `MaxIters` (from
       `plannedOptimizerIterations`), `BestCost`, `InitialCost`, `CPS`,
       `EvaluationWidth`, `ElapsedSec`, and a **bounded** slice of
       `MetricHistory` to seed each sparkline.
-- [ ] Aggregate tiles: running, pending, and completed counts; summed CPS across
+- [x] Aggregate tiles: running, pending, and completed counts; summed CPS across
       running jobs; and the Task 17.2 host block.
 
 ### Task 17.5: Routing and the templ Shell

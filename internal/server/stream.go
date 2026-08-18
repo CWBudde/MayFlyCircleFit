@@ -347,12 +347,7 @@ func (s *Server) handleAllJobStream(w http.ResponseWriter, r *http.Request) {
 
 // jobProgressSnapshot converts a live job into a SSE-compatible progress event.
 func jobProgressSnapshot(job *Job) ProgressEvent {
-	elapsed := time.Since(job.StartTime)
-	cps := 0.0
-	if elapsed.Seconds() > 0 {
-		totalCircles := job.Evaluations * max(1, len(job.BestParams)/7)
-		cps = float64(totalCircles) / elapsed.Seconds()
-	}
+	cps := circlesPerSecond(job, time.Since(job.StartTime))
 
 	event := ProgressEvent{
 		JobID:         job.ID,

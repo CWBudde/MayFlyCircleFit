@@ -52,6 +52,13 @@ type Job struct {
 	// built a renderer in this process -- and readers must show nothing rather
 	// than guess, because the clamp depends on the machine that ran the job.
 	EvaluationWidth int `json:"evaluationWidth,omitempty"`
+	// InheritedEvaluations is what Evaluations already stood at when this job
+	// started running. A continuation is seeded from its parent's checkpoint so
+	// the campaign total stays readable, but its wall clock starts at this
+	// stage; throughput has to divide only the work this stage did. It is not
+	// persisted: a job restored from a checkpoint has no clock of its own left
+	// to report throughput against.
+	InheritedEvaluations int `json:"-"`
 	// ExtendedFrom and PolishedFrom name the completed job this one continued
 	// from, and at most one is ever set. They are persisted onto the job's
 	// checkpoint, so the chain a campaign builds is readable from the job tree
@@ -237,6 +244,7 @@ func (jm *JobManager) UpdateJob(id string, updateFn func(*Job)) error {
 func (jm *JobManager) StartJob(id string) error {
 	return jm.transition(id, StateRunning, func(job *Job) {
 		job.StartTime = time.Now()
+		job.InheritedEvaluations = job.Evaluations
 	})
 }
 
@@ -469,6 +477,50 @@ func (jm *JobManager) GetRunningJobs() []*Job {
 		}
 	}
 	return runningJobs
+}
+
+// jobElapsed is the wall clock a job has been alive: to its end if it reached
+// one, otherwise to now.
+func jobElapsed(job *Job) time.Duration {
+	if job.EndTime != nil {
+		return job.EndTime.Sub(job.StartTime)
+	}
+	return time.Since(job.StartTime)
+}
+
+// circlesPerSecond is the throughput every view reports: each evaluation
+// rasterized the whole vector, so the circle count is what the optimizer
+// actually drew, over the elapsed wall clock. Only the evaluations this job ran
+// itself count, because only its own wall clock is being measured.
+func circlesPerSecond(job *Job, elapsed time.Duration) float64 {
+	if elapsed <= 0 {
+		return 0
+	}
+	evaluations := max(0, job.Evaluations-job.InheritedEvaluations)
+	totalCircles := evaluations * max(1, len(job.BestParams)/7)
+	return float64(totalCircles) / elapsed.Seconds()
+}
+
+// StateCountsWithRunning tallies the jobs by state and clones the running ones,
+// both under one read lock. The dashboard prints the counts beside the rows, so
+// two snapshots can contradict each other: a job that finishes between them
+// leaves a running count with no row explaining it, and a terminal event that
+// lands before the page opens its stream never corrects it. Only the running
+// jobs are cloned, because a ListJobs snapshot would copy every job's
+// parameters and metric history just to produce three integers.
+func (jm *JobManager) StateCountsWithRunning() (map[JobState]int, []*Job) {
+	jm.mu.RLock()
+	defer jm.mu.RUnlock()
+
+	counts := make(map[JobState]int, len(jm.jobs))
+	running := make([]*Job, 0)
+	for _, job := range jm.jobs {
+		counts[job.State]++
+		if job.State == StateRunning {
+			running = append(running, cloneJob(job))
+		}
+	}
+	return counts, running
 }
 
 // cloneJob returns a fully detached snapshot. Callers may safely retain or

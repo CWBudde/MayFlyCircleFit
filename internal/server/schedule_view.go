@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -193,6 +194,17 @@ func chainStageKind(checkpoint *store.Checkpoint) string {
 	}
 }
 
+func chainStageKindFromInfo(info store.CheckpointInfo) string {
+	switch {
+	case info.ExtendedFrom != "":
+		return "extend"
+	case info.PolishedFrom != "":
+		return "polish"
+	default:
+		return "base"
+	}
+}
+
 // chainStageState reports the checkpoint's own termination, which is the only
 // state an imported stage has: the job records are long gone for a chain read
 // back off disk.
@@ -226,6 +238,7 @@ type discoveredChain struct {
 	LeafJobID string
 	RootJobID string
 	Stages    int
+	Series    []ui.CampaignSeriesPoint
 	Circles   int
 	BestCost  float64
 	UpdatedAt time.Time
@@ -267,17 +280,36 @@ func discoverChains(infos []store.CheckpointInfo) []discoveredChain {
 		if _, hasChild := continued[jobID]; hasChild {
 			continue
 		}
-		length, root := chainLength(jobID, byID, parents)
+		stages, root := chainRunOrder(jobID, byID, parents)
+		length := len(stages)
 		if length < 2 {
 			continue
+		}
+		// The leaf carries the chain's current state, but an imported
+		// checkpoint may have no timestamp of its own; fall back to the newest
+		// one the lineage recorded.
+		updatedAt := info.Timestamp
+		series := make([]ui.CampaignSeriesPoint, 0, len(stages))
+		for index, stage := range stages {
+			series = append(series, ui.CampaignSeriesPoint{
+				Index:       index,
+				Kind:        chainStageKindFromInfo(stage),
+				Circles:     chainCircles(stage),
+				BestCost:    stage.BestCost,
+				HasBestCost: true,
+			})
+			if stage.Timestamp.After(updatedAt) {
+				updatedAt = stage.Timestamp
+			}
 		}
 		chains = append(chains, discoveredChain{
 			LeafJobID:   jobID,
 			RootJobID:   root,
 			Stages:      length,
+			Series:      series,
 			Circles:     chainCircles(info),
 			BestCost:    info.BestCost,
-			UpdatedAt:   info.Timestamp,
+			UpdatedAt:   updatedAt,
 			Termination: info.Termination,
 		})
 	}
@@ -307,6 +339,8 @@ func chainCampaignSummaries(chains []discoveredChain) []ui.CampaignSummary {
 			State:          chainStageState(chain.Termination),
 			Source:         ui.CampaignFromChain,
 			RecordedStages: chain.Stages,
+			CampaignSeries: chain.Series,
+			LeafJobID:      chain.LeafJobID,
 			Circles:        chain.Circles,
 			BestCost:       chain.BestCost,
 			HasBestCost:    true,
@@ -323,13 +357,13 @@ func shortJobID(jobID string) string {
 	return jobID[:8]
 }
 
-// chainLength counts the members of a leaf's chain and names its root, walking
-// only the listing so no checkpoint has to be loaded.
-func chainLength(leafJobID string, byID map[string]store.CheckpointInfo, parents map[string]string) (int, string) {
+// chainRunOrder returns a leaf's chain in run order, from base to leaf, and
+// names its root. It walks only the listing so no checkpoint has to be loaded.
+func chainRunOrder(leafJobID string, byID map[string]store.CheckpointInfo, parents map[string]string) ([]store.CheckpointInfo, string) {
 	seen := make(map[string]struct{})
-	length := 0
 	current, root := leafJobID, leafJobID
-	for current != "" && length < maxChainLength {
+	stages := make([]store.CheckpointInfo, 0, maxChainLength)
+	for current != "" && len(stages) < maxChainLength {
 		if _, repeated := seen[current]; repeated {
 			break
 		}
@@ -337,11 +371,12 @@ func chainLength(leafJobID string, byID map[string]store.CheckpointInfo, parents
 		if _, known := byID[current]; !known {
 			break
 		}
-		length++
+		stages = append(stages, byID[current])
 		root = current
 		current = parents[current]
 	}
-	return length, root
+	slices.Reverse(stages)
+	return stages, root
 }
 
 func chainCircles(info store.CheckpointInfo) int {
@@ -365,15 +400,28 @@ func summarizeCampaign(record *store.ScheduleRecord, stages []store.ScheduleStag
 		RecordedStages: len(stages),
 		PlannedStages:  planned,
 		UpdatedAt:      record.UpdatedAt,
+		CampaignSeries: make([]ui.CampaignSeriesPoint, 0, len(stages)),
 	}
 	// The best cost of a campaign is the last stage that produced one, not the
 	// smallest: a polish that made things worse is still where the chain is.
+	// LeafJobID follows the same rule, because only a completed stage is
+	// guaranteed to have left a checkpoint behind for the thumbnail.
 	for i := range stages {
+		summary.CampaignSeries = append(summary.CampaignSeries, ui.CampaignSeriesPoint{
+			Index:       stages[i].Index,
+			Kind:        string(stages[i].Kind),
+			Circles:     stages[i].Circles,
+			BestCost:    stages[i].BestCost,
+			HasBestCost: stages[i].State == store.ScheduleStateCompleted,
+		})
 		if stages[i].State != store.ScheduleStateCompleted {
 			continue
 		}
 		summary.BestCost, summary.HasBestCost = stages[i].BestCost, true
 		summary.Circles = stages[i].Circles
+		if stages[i].JobID != "" {
+			summary.LeafJobID = stages[i].JobID
+		}
 	}
 	if summary.Circles == 0 && len(stages) > 0 {
 		summary.Circles = stages[len(stages)-1].Circles
