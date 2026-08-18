@@ -2723,21 +2723,28 @@ The five modes still have no `ImageViewer` render test; Task 17.9 owns it.
 
 ### Task 17.9: Tests, Docs, and Gates
 
-- [ ] `internal/ui`: dashboard render tests following the `schedule_test.go`
+- [x] `internal/ui`: dashboard render tests following the `schedule_test.go`
       fixture-and-substring pattern, and an `ImageViewer` test asserting all
       five modes.
-- [ ] `internal/server`: handler tests for `/api/v1/system`,
+- [x] `internal/server`: handler tests for `/api/v1/system`,
       `/api/v1/dashboard`, `/api/v1/stream` (including wildcard unsubscribe
       under `-race`), `/jobs`, and `/static/`.
-- [ ] `AGENTS.md`: Toolchain gains esbuild, npm, and the committed bundle;
+- [x] `AGENTS.md`: Toolchain gains esbuild, npm, and the committed bundle;
       Architecture gains `web/`; Commands gains `just bundle`.
-- [ ] `docs/behavior-invariants.md`: `/static/` is a new surface on the
+- [x] `docs/behavior-invariants.md`: `/static/` is a new surface on the
       trusted-local boundary, and the global SSE stream is new observable
       behavior.
-- [ ] `docs/releasing.md`: the new `bundle` gate and its prefixed reporting
+- [x] `docs/releasing.md`: the new `bundle` gate and its prefixed reporting
       name.
-- [ ] `README.md`: the new routes and a screenshot.
-- [ ] Coverage does not dip; fresh `just test-coverage` results attached.
+- [ ] `README.md`: the new routes are documented; the screenshot is still
+      outstanding because headless Firefox could not composite a frame on this
+      host and no Chromium is installed.
+- [x] Coverage does not dip; fresh `go test -short -cover` results, measured
+      2026-08-19 against `master`: `internal/ui` 56.5% -> 57.3%,
+      `internal/server` 75.2% -> 75.4%. Whole-tree run: `cmd` 54.5%,
+      `internal/app` 93.3%, `internal/fit` 89.0%,
+      `internal/fit/renderer` 89.1%, `internal/opt` 85.4%,
+      `internal/store` 75.8%.
 
 **Deliverables:**
 
@@ -2751,8 +2758,11 @@ The five modes still have no `ImageViewer` render test; Task 17.9 owns it.
 **Acceptance Checks:**
 
 - [ ] `just check` passes, including the new bundle drift gate, and fails when
-      the committed bundle is stale
-- [ ] `go build ./...` succeeds with no node installed
+      the committed bundle is stale. The Go half was observed here
+      (`gofmt -s -l .` clean, `go vet ./...`, `go test -short ./...`,
+      `go test -race -short ./internal/server/... ./internal/ui/...`,
+      `go build ./...`); the bundle drift half needs a runner with `npm`.
+- [x] `go build ./...` succeeds with no node installed
 - [ ] `/` shows stat tiles, campaign cards, and running jobs; the architecture
       badge matches `MAYFLY_SIMD_TIER` when that variable forces a tier
 - [ ] Starting a campaign moves its card to the top, marked running, with a

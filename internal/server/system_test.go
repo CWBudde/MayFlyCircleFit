@@ -143,6 +143,38 @@ func TestHandleSystemMethodNotAllowed(t *testing.T) {
 	}
 }
 
+func TestRoutingSystemEndpoint(t *testing.T) {
+	// This test drives the real handler stack, which reaches the OpenCL probe.
+	// Stub it like every other test here so the route assertion does not depend
+	// on the host's drivers or block on enumeration.
+	stubPlatformDiscovery(t, func() ([]gpu.PlatformInfo, error) {
+		return nil, nil
+	})
+
+	server := NewServer("localhost:0", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/v1/system status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got, want := rec.Header().Get("Content-Type"), "application/json"; got != want {
+		t.Fatalf("content-type = %q, want %q", got, want)
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode /api/v1/system body: %v", err)
+	}
+	if _, ok := payload["hostFacts"]; ok {
+		t.Fatal("unexpected hostFacts key in system response")
+	}
+	if _, ok := payload["version"]; !ok {
+		t.Fatalf("system payload missing version key: %v", payload)
+	}
+}
+
 // TestGPUProbeRunsOncePerProcess pins the caching. OpenCL enumeration talks to
 // the driver and the answer cannot change while the process runs, so a dashboard
 // polling /api/v1/system must not pay for it on every request.

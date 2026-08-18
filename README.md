@@ -126,6 +126,16 @@ The stream sends an immediate snapshot, at most one optimization progress event
 per 500 ms, and a final `completed`, `failed`, or `cancelled` event before it
 closes. A comment heartbeat is sent every 30 seconds while otherwise idle.
 
+Recent pages and API endpoints:
+
+- `GET /` renders the dashboard with live aggregate metrics and running jobs.
+- `GET /jobs` lists all jobs.
+- `GET /api/v1/dashboard` returns the JSON model backing the dashboard.
+- `GET /api/v1/system` returns runtime and host capability facts.
+- `GET /api/v1/stream` streams global progress updates for all running jobs.
+- `GET /static/dashboard.js` serves the committed React island bundle (versioned
+  with a short content hash).
+
 ### Run schedules
 
 A whole incremental campaign -- a base run plus an ordered list of `extend` and
