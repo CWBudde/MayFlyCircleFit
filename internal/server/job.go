@@ -471,6 +471,40 @@ func (jm *JobManager) GetRunningJobs() []*Job {
 	return runningJobs
 }
 
+// jobElapsed is the wall clock a job has been alive: to its end if it reached
+// one, otherwise to now.
+func jobElapsed(job *Job) time.Duration {
+	if job.EndTime != nil {
+		return job.EndTime.Sub(job.StartTime)
+	}
+	return time.Since(job.StartTime)
+}
+
+// circlesPerSecond is the throughput every view reports: each evaluation
+// rasterized the whole vector, so the circle count is what the optimizer
+// actually drew, over the elapsed wall clock.
+func circlesPerSecond(job *Job, elapsed time.Duration) float64 {
+	if elapsed <= 0 {
+		return 0
+	}
+	totalCircles := job.Evaluations * max(1, len(job.BestParams)/7)
+	return float64(totalCircles) / elapsed.Seconds()
+}
+
+// CountStates tallies the jobs by state. The dashboard needs only the counts on
+// every refresh, and a ListJobs snapshot would copy every job's parameters and
+// metric history to produce them.
+func (jm *JobManager) CountStates() map[JobState]int {
+	jm.mu.RLock()
+	defer jm.mu.RUnlock()
+
+	counts := make(map[JobState]int, len(jm.jobs))
+	for _, job := range jm.jobs {
+		counts[job.State]++
+	}
+	return counts
+}
+
 // cloneJob returns a fully detached snapshot. Callers may safely retain or
 // serialize it while the manager continues updating the live job.
 func cloneJob(job *Job) *Job {

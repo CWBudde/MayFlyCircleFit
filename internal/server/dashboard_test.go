@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -48,6 +49,7 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 			state,
 			base.Add(time.Duration(i)*time.Minute),
 			"campaign-"+uuid.NewString(),
+			uuid.NewString(),
 		)
 	}
 
@@ -65,6 +67,7 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 	if err := fixture.server.jobManager.UpdateJob(running.ID, func(job *Job) {
 		job.State = StateRunning
 		job.StartTime = time.Now().Add(-2 * time.Second)
+		job.Iterations = 55
 		job.BestCost = 42.5
 		job.InitialCost = 100
 		job.Evaluations = 120
@@ -128,8 +131,8 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 	if response.RunningJobs[0].ID != running.ID {
 		t.Fatalf("running job id = %q, want %q", response.RunningJobs[0].ID, running.ID)
 	}
-	if response.RunningJobs[0].Iterations != 0 {
-		t.Fatalf("running iterations = %d, want 0", response.RunningJobs[0].Iterations)
+	if response.RunningJobs[0].Iterations != 55 {
+		t.Fatalf("running iterations = %d, want 55", response.RunningJobs[0].Iterations)
 	}
 	if response.RunningJobs[0].Project != app.DefaultProject {
 		t.Fatalf("running project = %q, want %q", response.RunningJobs[0].Project, app.DefaultProject)
@@ -143,6 +146,81 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 
 	if response.HostFacts.Version == "" {
 		t.Fatalf("host facts version is missing")
+	}
+
+	runningCampaign := response.Campaigns[0]
+	if len(runningCampaign.CampaignSeries) != 1 {
+		t.Fatalf("campaign series = %d points, want 1", len(runningCampaign.CampaignSeries))
+	}
+	point := runningCampaign.CampaignSeries[0]
+	if point.Kind != string(app.ScheduleStageBase) || point.Circles != 4 || point.BestCost != 10 {
+		t.Fatalf("campaign series point = %+v, want a base stage of 4 circles at cost 10", point)
+	}
+	if point.HasBestCost {
+		t.Fatalf("a running stage reported a best cost")
+	}
+	if runningCampaign.LeafJobID != "" {
+		t.Fatalf("running campaign leaf job = %q, want empty until a stage completes", runningCampaign.LeafJobID)
+	}
+	completedCampaign := response.Campaigns[2]
+	if !completedCampaign.CampaignSeries[0].HasBestCost {
+		t.Fatalf("a completed stage reported no best cost")
+	}
+	if completedCampaign.LeafJobID == "" {
+		t.Fatalf("completed campaign has no leaf job for its thumbnail")
+	}
+}
+
+// TestDashboardChainCampaignCarriesRunOrderSeries pins the series a chain
+// contributes: the mini chart plots cost against circles in run order, so the
+// base stage has to come first even though discovery walks from the leaf up.
+func TestDashboardChainCampaignCarriesRunOrderSeries(t *testing.T) {
+	root := t.TempDir()
+	persistence, err := store.NewFSStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imagePath := filepath.Join(root, "reference.png")
+	createSimpleTestImage(t, imagePath)
+	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{
+		DataRoot:   root,
+		InputRoots: rootList(root),
+	})
+	synthesizeChain(t, persistence, imagePath, defaultSynthesizedChain())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
+	}
+
+	var response dashboardResponse
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+		t.Fatalf("decode dashboard: %v", err)
+	}
+	if len(response.Campaigns) != 1 {
+		t.Fatalf("campaigns = %d, want the one synthesized chain", len(response.Campaigns))
+	}
+
+	campaign := response.Campaigns[0]
+	if campaign.LeafJobID != chainSecondJob {
+		t.Fatalf("leaf job = %q, want %q", campaign.LeafJobID, chainSecondJob)
+	}
+	wantKinds := []string{"base", "extend", "polish", "extend"}
+	wantCircles := []int{8, 16, 16, 24}
+	wantCosts := []float64{812.5, 640.25, 631.75, 572.357}
+	if len(campaign.CampaignSeries) != len(wantKinds) {
+		t.Fatalf("series = %d points, want %d", len(campaign.CampaignSeries), len(wantKinds))
+	}
+	for i, point := range campaign.CampaignSeries {
+		if point.Index != i || point.Kind != wantKinds[i] || point.Circles != wantCircles[i] || point.BestCost != wantCosts[i] {
+			t.Fatalf("series point %d = %+v, want index %d kind %q circles %d cost %g",
+				i, point, i, wantKinds[i], wantCircles[i], wantCosts[i])
+		}
+		if !point.HasBestCost {
+			t.Fatalf("chain series point %d reported no best cost", i)
+		}
 	}
 }
 
@@ -208,6 +286,7 @@ func saveCampaignScheduleForDashboard(
 	state store.ScheduleState,
 	updated time.Time,
 	name string,
+	stageJobID string,
 ) string {
 	t.Helper()
 	scheduleID := uuid.NewString()
@@ -248,6 +327,7 @@ func saveCampaignScheduleForDashboard(
 	})
 	stage.State = state
 	stage.UpdatedAt = updated
+	stage.JobID = stageJobID
 	stage.BestCost = 10
 	stage.Iterations = 1
 	stage.Evaluations = 1

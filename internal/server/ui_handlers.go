@@ -8,7 +8,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
@@ -70,19 +69,8 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	// Compute elapsed time and CPS
-	var elapsed float64
-	if job.EndTime != nil {
-		elapsed = job.EndTime.Sub(job.StartTime).Seconds()
-	} else {
-		elapsed = time.Since(job.StartTime).Seconds()
-	}
-
-	cps := float64(0)
-	if elapsed > 0 {
-		totalCircles := job.Evaluations * max(1, len(job.BestParams)/7)
-		cps = float64(totalCircles) / elapsed
-	}
+	elapsed := jobElapsed(job)
+	cps := circlesPerSecond(job, elapsed)
 
 	refWidth, refHeight, refSize, _ := referenceImageMetadata(job.Config.RefPath)
 	psnr, psnrInfinite := cloneFloat(job.PSNR), job.PSNRInfinite
@@ -145,7 +133,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		InitialCost:              job.InitialCost,
 		StartTime:                job.StartTime,
 		EndTime:                  job.EndTime,
-		ElapsedSec:               elapsed,
+		ElapsedSec:               elapsed.Seconds(),
 		CPS:                      cps,
 		Termination:              job.Termination,
 		Error:                    job.Error,

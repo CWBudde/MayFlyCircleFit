@@ -747,19 +747,8 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 		return
 	}
 
-	// Compute elapsed time and CPS
-	var elapsed time.Duration
-	if job.EndTime != nil {
-		elapsed = job.EndTime.Sub(job.StartTime)
-	} else {
-		elapsed = time.Since(job.StartTime)
-	}
-
-	cps := float64(0)
-	if elapsed.Seconds() > 0 {
-		totalCircles := job.Evaluations * max(1, len(job.BestParams)/7)
-		cps = float64(totalCircles) / elapsed.Seconds()
-	}
+	elapsed := jobElapsed(job)
+	cps := circlesPerSecond(job, elapsed)
 
 	psnr, psnrInfinite := cloneFloat(job.PSNR), job.PSNRInfinite
 	if len(job.BestParams) > 0 {

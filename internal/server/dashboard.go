@@ -52,33 +52,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scheduleStore, err := s.scheduleStore()
-	summaries := make([]ui.CampaignSummary, 0)
-	if err == nil {
-		records, listErr := scheduleStore.ListSchedules()
-		if listErr != nil {
-			slog.Warn("Failed to list schedules for dashboard", "error", listErr)
-		} else {
-			for i := range records {
-				stages, loadErr := scheduleStore.LoadScheduleStages(records[i].ScheduleID)
-				if loadErr != nil {
-					slog.Warn("Unable to load schedule stages for dashboard", "schedule_id", records[i].ScheduleID, "error", loadErr)
-					stages = nil
-				}
-				summaries = append(summaries, summarizeCampaign(&records[i], stages))
-			}
-		}
-	}
-	chains := chainCampaignSummaries(s.dashboardChains())
-	summaries = append(summaries, chains...)
-	sortDashboardCampaigns(summaries)
-	if len(summaries) > dashboardCampaignLimit {
-		summaries = summaries[:dashboardCampaignLimit]
-	}
-
 	runningJobs, aggregates := s.dashboardRows()
 	response := dashboardResponse{
-		Campaigns:   summaries,
+		Campaigns:   s.dashboardCampaigns(),
 		RunningJobs: runningJobs,
 		Aggregates:  aggregates,
 		HostFacts:   HostFactsFromMetadata(s.metadata),
@@ -90,19 +66,43 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// dashboardCampaigns merges the planned schedules with the chains reconstructed
+// from checkpoint lineage, then keeps the active ones and the most recently
+// updated. A read model that cannot be built is reported as empty rather than
+// as an error: the rest of the dashboard is still worth serving.
+func (s *Server) dashboardCampaigns() []ui.CampaignSummary {
+	summaries := make([]ui.CampaignSummary, 0)
+	scheduleStore, err := s.scheduleStore()
+	if err != nil {
+		slog.Warn("Unable to open the schedule store for the dashboard", "error", err)
+	} else if records, listErr := scheduleStore.ListSchedules(); listErr != nil {
+		slog.Warn("Unable to list schedules for the dashboard", "error", listErr)
+	} else {
+		for i := range records {
+			stages, loadErr := scheduleStore.LoadScheduleStages(records[i].ScheduleID)
+			if loadErr != nil {
+				slog.Warn("Unable to load schedule stages for the dashboard",
+					"schedule_id", records[i].ScheduleID, "error", loadErr)
+			}
+			summaries = append(summaries, summarizeCampaign(&records[i], stages))
+		}
+	}
+
+	summaries = append(summaries, chainCampaignSummaries(s.dashboardChains())...)
+	sortDashboardCampaigns(summaries)
+	if len(summaries) > dashboardCampaignLimit {
+		summaries = summaries[:dashboardCampaignLimit]
+	}
+	return summaries
+}
+
 func (s *Server) dashboardRows() ([]dashboardRunningJob, dashboardAggregates) {
 	runningRows := make([]dashboardRunningJob, 0)
-	aggregates := dashboardAggregates{}
-	allJobs := s.jobManager.ListJobs()
-	for _, job := range allJobs {
-		switch job.State {
-		case StateRunning:
-			aggregates.Running++
-		case StatePending:
-			aggregates.Pending++
-		case StateCompleted:
-			aggregates.Completed++
-		}
+	counts := s.jobManager.CountStates()
+	aggregates := dashboardAggregates{
+		Running:   counts[StateRunning],
+		Pending:   counts[StatePending],
+		Completed: counts[StateCompleted],
 	}
 
 	for _, job := range s.jobManager.GetRunningJobs() {
@@ -128,30 +128,20 @@ func dashboardRunningJobFrom(job *Job) dashboardRunningJob {
 		history = history[len(history)-dashboardMetricHistoryLimit:]
 	}
 
-	elapsed := time.Since(job.StartTime).Seconds()
-	iterations := plannedOptimizerIterations(job.Config)
+	elapsed := jobElapsed(job)
 	return dashboardRunningJob{
 		ID:              job.ID,
 		Project:         app.NormalizeProject(job.Project),
 		State:           string(job.State),
 		Iterations:      job.Iterations,
-		MaxIters:        iterations,
+		MaxIters:        plannedOptimizerIterations(job.Config),
 		BestCost:        job.BestCost,
 		InitialCost:     job.InitialCost,
-		CPS:             jobProgressCPS(job),
+		CPS:             circlesPerSecond(job, elapsed),
 		EvaluationWidth: job.EvaluationWidth,
-		ElapsedSec:      elapsed,
+		ElapsedSec:      elapsed.Seconds(),
 		MetricHistory:   history,
 	}
-}
-
-func jobProgressCPS(job *Job) float64 {
-	elapsed := time.Since(job.StartTime).Seconds()
-	if elapsed <= 0 {
-		return 0
-	}
-	totalCircles := job.Evaluations * max(1, len(job.BestParams)/7)
-	return float64(totalCircles) / elapsed
 }
 
 func sortDashboardCampaigns(campaigns []ui.CampaignSummary) {

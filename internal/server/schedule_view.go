@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -284,16 +285,10 @@ func discoverChains(infos []store.CheckpointInfo) []discoveredChain {
 		if length < 2 {
 			continue
 		}
-		leafJob := info.JobID
-		bestCost := info.BestCost
+		// The leaf carries the chain's current state, but an imported
+		// checkpoint may have no timestamp of its own; fall back to the newest
+		// one the lineage recorded.
 		updatedAt := info.Timestamp
-		if updatedAt.IsZero() {
-			for _, stage := range stages {
-				if stage.Timestamp.After(updatedAt) {
-					updatedAt = stage.Timestamp
-				}
-			}
-		}
 		series := make([]ui.CampaignSeriesPoint, 0, len(stages))
 		for index, stage := range stages {
 			series = append(series, ui.CampaignSeriesPoint{
@@ -303,17 +298,17 @@ func discoverChains(infos []store.CheckpointInfo) []discoveredChain {
 				BestCost:    stage.BestCost,
 				HasBestCost: true,
 			})
-			leafJob = stage.JobID
-			bestCost = stage.BestCost
-			updatedAt = stage.Timestamp
+			if stage.Timestamp.After(updatedAt) {
+				updatedAt = stage.Timestamp
+			}
 		}
 		chains = append(chains, discoveredChain{
-			LeafJobID:   leafJob,
+			LeafJobID:   jobID,
 			RootJobID:   root,
 			Stages:      length,
 			Series:      series,
 			Circles:     chainCircles(info),
-			BestCost:    bestCost,
+			BestCost:    info.BestCost,
 			UpdatedAt:   updatedAt,
 			Termination: info.Termination,
 		})
@@ -362,20 +357,13 @@ func shortJobID(jobID string) string {
 	return jobID[:8]
 }
 
-// chainLength counts the members of a leaf's chain and names its root, walking
-// only the listing so no checkpoint has to be loaded.
-func chainLength(leafJobID string, byID map[string]store.CheckpointInfo, parents map[string]string) (int, string) {
-	chains, root := chainRunOrder(leafJobID, byID, parents)
-	return len(chains), root
-}
-
-// chainRunOrder returns the chain in run order, from base to leaf, and the
-// chain's root job id.
+// chainRunOrder returns a leaf's chain in run order, from base to leaf, and
+// names its root. It walks only the listing so no checkpoint has to be loaded.
 func chainRunOrder(leafJobID string, byID map[string]store.CheckpointInfo, parents map[string]string) ([]store.CheckpointInfo, string) {
 	seen := make(map[string]struct{})
 	current, root := leafJobID, leafJobID
-	chains := make([]store.CheckpointInfo, 0)
-	for current != "" && len(chains) < maxChainLength {
+	stages := make([]store.CheckpointInfo, 0, maxChainLength)
+	for current != "" && len(stages) < maxChainLength {
 		if _, repeated := seen[current]; repeated {
 			break
 		}
@@ -383,14 +371,12 @@ func chainRunOrder(leafJobID string, byID map[string]store.CheckpointInfo, paren
 		if _, known := byID[current]; !known {
 			break
 		}
-		chains = append(chains, byID[current])
+		stages = append(stages, byID[current])
 		root = current
 		current = parents[current]
 	}
-	for i, j := 0, len(chains)-1; i < j; i, j = i+1, j-1 {
-		chains[i], chains[j] = chains[j], chains[i]
-	}
-	return chains, root
+	slices.Reverse(stages)
+	return stages, root
 }
 
 func chainCircles(info store.CheckpointInfo) int {
@@ -416,13 +402,11 @@ func summarizeCampaign(record *store.ScheduleRecord, stages []store.ScheduleStag
 		UpdatedAt:      record.UpdatedAt,
 		CampaignSeries: make([]ui.CampaignSeriesPoint, 0, len(stages)),
 	}
-	var leafJobID string
 	// The best cost of a campaign is the last stage that produced one, not the
 	// smallest: a polish that made things worse is still where the chain is.
+	// LeafJobID follows the same rule, because only a completed stage is
+	// guaranteed to have left a checkpoint behind for the thumbnail.
 	for i := range stages {
-		if stages[i].JobID != "" {
-			leafJobID = stages[i].JobID
-		}
 		summary.CampaignSeries = append(summary.CampaignSeries, ui.CampaignSeriesPoint{
 			Index:       stages[i].Index,
 			Kind:        string(stages[i].Kind),
@@ -435,8 +419,10 @@ func summarizeCampaign(record *store.ScheduleRecord, stages []store.ScheduleStag
 		}
 		summary.BestCost, summary.HasBestCost = stages[i].BestCost, true
 		summary.Circles = stages[i].Circles
+		if stages[i].JobID != "" {
+			summary.LeafJobID = stages[i].JobID
+		}
 	}
-	summary.LeafJobID = leafJobID
 	if summary.Circles == 0 && len(stages) > 0 {
 		summary.Circles = stages[len(stages)-1].Circles
 	}
