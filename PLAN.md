@@ -2242,6 +2242,69 @@ and then runs unattended as a single observable entity.
       now reads the same file instead of an inline copy, so the Task 16.4
       acceptance check and the documented example are literally the same bytes.
 
+### Task 16.7: Make a Large Campaign Readable from the CLI (P2)
+
+`schedule status` cannot display a campaign the schedule format explicitly
+allows. The command errors and prints its usage instead of the stage table:
+
+```
+$ mayflycirclefit schedule status d8755b85-e689-490a-acf3-d576922822f9
+Error: query schedule "d8755b85-...": server response exceeds 1048576 bytes
+```
+
+**Measured 2026-08-18** against a completed 1016-stage campaign (1 base, 999
+`+1` extends, 16 polishes) on the Ryzen 5 4600H box:
+
+| Endpoint | Body | Stages | Per stage | Cap reached at |
+| --- | ---: | ---: | ---: | ---: |
+| `GET /api/v1/schedules/:id` | 1,230,905 B | 1016 | ~1,211 B | ~865 stages |
+| `GET /api/v1/chains/:jobID` | 295,767 B | 1013 | ~292 B | ~3,590 stages |
+
+The cap is `maxCLIResponseBytes = 1 << 20` (`cmd/status.go:20`), applied by the
+shared `io.LimitReader` in the CLI response reader (`cmd/status.go:291`). It is
+not the defect — an unbounded decode of a response that grows with stage count
+is worth refusing — but it is reached far inside the documented budget.
+`MaxScheduleStages` is 4096, so roughly **79% of the stage counts a schedule may
+legally expand to cannot be inspected from the terminal**, and `schedule import`
+hits the same wall at ~3,590 of the same 4096. Both limits are reachable: the
+campaign above spends one stage per circle, which is the shape
+`MaxScheduleStages` was sized for ("one stage per circle plus a polish between
+every pair", `internal/app/schedule.go:25`).
+
+The size is dominated by data the table never prints. A stage record carries its
+whole normalized `JobConfig`; the chain view carries none, which is the entire
+difference between 1,211 and 292 bytes per stage. The CLI table needs index,
+kind, state, circles, cost, elapsed, job ID and reason — and the projection
+needs only per-kind elapsed on top of that.
+
+Affected commands are every caller of the shared reader: all ten call sites in
+`cmd/schedule.go`, plus `cmd/status.go` and `cmd/resume.go`. The web view is
+**unaffected** — `/schedules/:id` renders server-side and does not cross the
+CLI boundary — so this is a terminal-only blindness, which is worse than it
+sounds for a campaign designed to run unattended overnight on a headless box.
+
+- [ ] Give the stage listing a summary projection that omits per-stage
+      `JobConfig`, and have `schedule status` read that. Raising the cap alone is
+      refused as a fix: the response still grows without bound with stage count,
+      so it moves the wall rather than removing it.
+- [ ] Keep a stage's full configuration retrievable on its own, since replaying
+      one stage in isolation is what the recorded config is for.
+- [ ] Apply the same treatment to `GET /api/v1/chains/:jobID`, which is on the
+      same curve with a longer fuse.
+- [ ] Keep the projection identical to what it computes today; the estimate is
+      derived from stage elapsed times and must not change because its input got
+      smaller.
+
+**Acceptance Checks:**
+
+- [ ] `schedule status` prints the stage table and projection for a campaign at
+      `MaxScheduleStages`, with the response measured under
+      `maxCLIResponseBytes` — a regression test that synthesizes 4096 stage
+      records, so the assertion is the byte count and not a live run.
+- [ ] `schedule import` renders a 4096-stage chain under the same cap.
+- [ ] The projection printed from the summary equals the projection printed from
+      full stage records for the same fixture, asserted field by field.
+
 ---
 
 ## Phase 17: Dashboard Start Page
@@ -2579,7 +2642,10 @@ could not be run as written and are amended in place rather than ticked: the
 96-circle chain of Task 16.5 and the Python orchestrator of Task 16.6 both lived
 only on the compute box whose directory was deleted on 2026-08-17. Each is
 replaced by a test over what the check was protecting, and each replacement is
-labelled as such.
+labelled as such. **Task 16.7 is open and was found by using the feature**: a
+1016-stage campaign run on 2026-08-18 cannot be displayed by `schedule status`,
+because the response exceeds the CLI's 1 MiB cap at roughly 865 stages of the
+4096 a schedule may expand to.
 
 **Phase 17** is planned but not started. It is the first phase to introduce a
 JavaScript build step into a Go-only repository, so Task 17.1 is deliberately
