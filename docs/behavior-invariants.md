@@ -198,6 +198,16 @@ origins are rejected; input image paths must resolve beneath configured
 `--input-root` directories; request and image sizes and the job queue are
 bounded. pprof is off by default and `--enable-pprof` requires a loopback bind.
 
+- **Embedded assets on `/static/` are immutable and local-only.** The dashboard
+  frontend bundle is compiled in `web`, committed into `internal/ui/static`, and
+  served through `go:embed`. A request that is not under that embedded prefix
+  is a `404`, and no filesystem path under `/static/` can escape that boundary.
+- **Global stream is an observable server behavior.** `GET /api/v1/stream`
+  emits one snapshot of all currently running jobs, then streams live progress for
+  all jobs over one connection. A dropped connection closes that stream, and
+  unsubscribing the wildcard client is required to prevent event fan-out
+  accumulation.
+
 These controls do not make the server multi-user or internet-ready. Do not add
 documentation suggesting otherwise.
 

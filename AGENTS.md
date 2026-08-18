@@ -34,6 +34,8 @@ take precedence if this document goes stale.
 - `internal/server`: trusted-local HTTP boundary and background job lifecycle.
 - `internal/store`: filesystem checkpoint, trace, and artifact ownership.
 - `internal/ui`: templ views plus committed generated Go output.
+- `web/`: TypeScript/React dashboard and campaign-island sources.
+- `internal/ui/static`: bundled JavaScript asset served from `go:embed`.
 
 Assets, fixtures, and notes live in `assets/`, `data/`, `docs/`, and
 `profiles/`. Keep dependencies flowing toward the lower-level packages; do not
@@ -47,6 +49,8 @@ reintroduce application configuration into the store package.
 - MayFly is pinned to `github.com/cwbudde/mayfly v0.4.0`; templ to
   `github.com/a-h/templ v0.3.960` as a Go tool; `github.com/google/pprof` as a
   Go tool because some Go installations do not bundle it.
+- `github.com/evanw/esbuild/cmd/esbuild` is installed as a Go tool to compile the
+  frontend bundle, while `npm` is only used to fetch TypeScript dependency files.
 - `internal/ui/*_templ.go` is generated and committed. After changing a `.templ`
   source, run `go tool templ generate` (or `just templ`) and commit the
   generated change alongside it.
@@ -54,7 +58,8 @@ reintroduce application configuration into the store package.
 ## Commands
 
 Prefer the `just` recipes in `justfile`: `just build`, `just run`, `just fmt`,
-`just lint`, `just test`, `just test-coverage`, `just templ`, `just clean`.
+`just lint`, `just test`, `just test-coverage`, `just templ`, `just clean`, `just
+bundle`.
 `just check` covers generation drift, tests, vet, formatting, and the ordinary
 build.
 

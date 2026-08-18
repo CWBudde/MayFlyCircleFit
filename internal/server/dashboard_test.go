@@ -28,6 +28,28 @@ func TestHandleDashboardMethodNotAllowed(t *testing.T) {
 	}
 }
 
+func TestRoutingDashboardEndpoint(t *testing.T) {
+	fixture := newScheduleFixture(t, 1)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard", nil)
+
+	fixture.server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/v1/dashboard status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got, want := rec.Header().Get("Content-Type"), "application/json"; got != want {
+		t.Fatalf("content-type = %q, want %q", got, want)
+	}
+
+	var payload dashboardResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode /api/v1/dashboard body: %v", err)
+	}
+	if payload.Campaigns == nil {
+		t.Fatal("dashboard response should include campaigns")
+	}
+}
+
 func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 	fixture := newScheduleFixture(t, 2)
 	scheduleStore, err := fixture.server.scheduleStore()

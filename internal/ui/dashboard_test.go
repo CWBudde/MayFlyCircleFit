@@ -157,6 +157,100 @@ func TestDashboardCampaignURL(t *testing.T) {
 	}
 }
 
+func dashboardPageFixture() DashboardPageData {
+	return DashboardPageData{
+		Campaigns: []CampaignSummary{
+			{
+				ID:             "11111111-1111-1111-1111-111111111111",
+				Name:           "Chain campaign",
+				State:          "running",
+				Source:         CampaignFromChain,
+				RecordedStages: 2,
+				PlannedStages:  3,
+				Circles:        32,
+				BestCost:       18.25,
+				HasBestCost:    true,
+				UpdatedAt:      time.Date(2026, 8, 13, 12, 34, 56, 0, time.UTC),
+			},
+			{
+				ID:             "22222222-2222-2222-2222-222222222222",
+				Name:           "Scheduled campaign",
+				State:          "pending",
+				Source:         CampaignFromSchedule,
+				LeafJobID:      "33333333-3333-3333-3333-333333333333",
+				RecordedStages: 1,
+				Circles:        16,
+				CampaignSeries: []CampaignSeriesPoint{{Kind: "base", Circles: 16, BestCost: 99.9, HasBestCost: true}},
+				UpdatedAt:      time.Date(2026, 8, 14, 9, 0, 0, 0, time.UTC),
+			},
+		},
+		RunningJobs: []DashboardRunningJob{
+			{ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Project: "default", State: "running", Iterations: 55, MaxIters: 120, BestCost: 9.9, InitialCost: 11.1, CPS: 4.4},
+			{ID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", Project: "default", State: "completed", Iterations: 10, MaxIters: 10, BestCost: 1.1, InitialCost: 2.2, CPS: 0.2},
+		},
+		Aggregates: DashboardAggregates{
+			Running:   1,
+			Pending:   1,
+			Completed: 0,
+			CPS:       4.4,
+		},
+		HostFacts: HostFacts{
+			GOOS:   "linux",
+			GOARCH: "amd64",
+			SIMD:   "avx2",
+			GPU:    GPUFacts{State: "available"},
+		},
+	}
+}
+
+func renderDashboardPage(t *testing.T, page DashboardPageData) string {
+	t.Helper()
+	var output bytes.Buffer
+	if err := DashboardPage(page).Render(context.Background(), &output); err != nil {
+		t.Fatalf("render dashboard page: %v", err)
+	}
+	return output.String()
+}
+
+func TestDashboardPageRendersCampaignCardsWithLinksAndActions(t *testing.T) {
+	body := renderDashboardPage(t, dashboardPageFixture())
+	markers := []string{
+		"/chains/11111111-1111-1111-1111-111111111111",
+		"/schedules/22222222-2222-2222-2222-222222222222",
+		"/api/v1/stream",
+		`Running jobs`,
+		`Campaigns`,
+		`Open campaigns`,
+		`Open jobs page`,
+		`Stream updates`,
+		BundleURL(),
+		`Dashboard`,
+		`Monitor jobs, campaigns, and host state from one view.`,
+	}
+	for _, marker := range markers {
+		if !strings.Contains(body, marker) {
+			t.Errorf("dashboard page missing %q", marker)
+		}
+	}
+}
+
+func TestDashboardPageDisplaysRunningJobsAndAggregates(t *testing.T) {
+	body := renderDashboardPage(t, dashboardPageFixture())
+	for _, marker := range []string{
+		`<strong>Running:</strong> 1`,
+		`<strong>Pending:</strong> 1`,
+		`<strong>Completed:</strong> 0`,
+		`<strong>Circles/sec:</strong> 4.40`,
+		`Host`,
+		`<strong>SIMD:</strong> avx2`,
+		`<strong>GPU:</strong> available`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("dashboard page missing %q", marker)
+		}
+	}
+}
+
 func TestFormatJobImprovement(t *testing.T) {
 	for _, test := range []struct {
 		name          string

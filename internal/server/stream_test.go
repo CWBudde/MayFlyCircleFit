@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -352,6 +353,74 @@ func TestAllJobStream_SnapshotAndUpdates(t *testing.T) {
 
 	if events[2].JobID != first.ID || events[2].Iterations != 12 {
 		t.Fatalf("live event = %+v", events[2])
+	}
+}
+
+func TestAllJobStreamRoute(t *testing.T) {
+	server := NewServer(":8080", nil)
+	root := t.TempDir()
+	refImage := filepath.Join(root, "ref.png")
+	createSimpleTestImage(t, refImage)
+
+	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{
+		RefPath: refImage,
+		Mode:    app.ModeBatch,
+		Circles: 8,
+		Iters:   100,
+		PopSize: 30,
+		Seed:    42,
+	})
+	if err := server.jobManager.UpdateJob(job.ID, func(current *Job) {
+		current.State = StateRunning
+		current.StartTime = time.Now().Add(-time.Second)
+	}); err != nil {
+		t.Fatalf("seed running job %s: %v", job.ID, err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/stream", nil).WithContext(ctx)
+	response := &safeResponseRecorder{}
+	done := make(chan struct{})
+	go func() {
+		server.Handler().ServeHTTP(response, request)
+		close(done)
+	}()
+
+	waitForSubscriberCount(t, server.jobManager.broadcaster, wildcardJobID, 1)
+	events := waitForSSEEvents(t, response, 1)
+	if len(events) != 1 || events[0].JobID != job.ID {
+		t.Fatalf("stream snapshot = %+v", events)
+	}
+	if got, want := response.Header().Get("Content-Type"), "text/event-stream"; got != want {
+		t.Fatalf("Content-Type = %q, want %q", got, want)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("stream did not stop after cancel")
+	}
+	server.jobManager.broadcaster.mu.RLock()
+	_, wildcardRemaining := server.jobManager.broadcaster.clients[wildcardJobID]
+	server.jobManager.broadcaster.mu.RUnlock()
+	if wildcardRemaining {
+		t.Fatal("wildcard SSE client remained registered after disconnect")
+	}
+}
+
+func TestAllJobStreamRouteMethodNotAllowed(t *testing.T) {
+	server := NewServer(":8080", nil)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/stream", nil)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST /api/v1/stream status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
+	}
+	if got, want := response.Header().Get("Allow"), http.MethodGet; got != want {
+		t.Fatalf("Allow = %q, want %q", got, want)
 	}
 }
 
