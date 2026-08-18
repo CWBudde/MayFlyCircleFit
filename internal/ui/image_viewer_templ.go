@@ -13,6 +13,13 @@ import (
 	"strings"
 )
 
+// ImageViewerData drives ImageViewer.
+//
+// One instance per page. The component owns the fixed ids "image-viewer",
+// "view-mode-*", "overlay-opacity" and the rest, and its script reaches them
+// through document.getElementById, so a second instance on the same page would
+// silently drive the first one's controls. Both callers today — the job detail
+// page and the campaign page's latest completed stage — render exactly one.
 type ImageViewerData struct {
 	JobID string
 
@@ -96,7 +103,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(imageViewerMode(data.DefaultMode))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 46, Col: 109}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 53, Col: 109}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -109,7 +116,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(data.JobID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 46, Col: 136}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 53, Col: 136}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -122,7 +129,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(data.JobState)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 46, Col: 169}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 53, Col: 169}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -135,7 +142,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", data.MaxIterations))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 46, Col: 226}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 53, Col: 226}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -148,7 +155,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", data.BestRevision))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 46, Col: 286}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 53, Col: 286}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -158,7 +165,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if data.DefaultMode == "reference" {
+		if imageViewerMode(data.DefaultMode) == "reference" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, " checked")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -168,7 +175,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if data.DefaultMode == "best" {
+		if imageViewerMode(data.DefaultMode) == "best" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, " checked")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -178,7 +185,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if data.DefaultMode == "side-by-side" {
+		if imageViewerMode(data.DefaultMode) == "side-by-side" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, " checked")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -188,7 +195,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if data.DefaultMode == "difference" {
+		if imageViewerMode(data.DefaultMode) == "difference" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, " checked")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -198,7 +205,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if data.DefaultMode == "overlay" {
+		if imageViewerMode(data.DefaultMode) == "overlay" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, " checked")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -211,7 +218,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(data.ReferenceImageURL))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 295, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 302, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -234,7 +241,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d × %d px", data.ReferenceWidth, data.ReferenceHeight))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 309, Col: 84}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 316, Col: 84}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -253,7 +260,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d bytes", data.ReferenceSize))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 312, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 319, Col: 64}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -266,7 +273,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(formatFileSize(data.ReferenceSize))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 312, Col: 103}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 319, Col: 103}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -295,7 +302,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(imageViewerSrc(data.BestImageURL, data.BestRevision)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 327, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 334, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
@@ -323,7 +330,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(imageViewerSrc(data.DiffImageURL+"?colormap=turbo", data.BestRevision)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 359, Col: 97}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 366, Col: 97}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -351,7 +358,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(data.ReferenceImageURL))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 403, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 410, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -364,7 +371,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(imageViewerSrc(data.BestImageURL, data.BestRevision)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 409, Col: 80}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 416, Col: 80}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -401,11 +408,17 @@ func imageViewerClasses(data ImageViewerData) string {
 	return classes
 }
 
+// imageViewerMode clamps DefaultMode to a mode the markup actually has. The
+// panel CSS keys off data-view-mode, so an unrecognized value would match no
+// selector and the no-JS view would show no image at all — a caller's typo has
+// to degrade to the default view, not to a blank card.
 func imageViewerMode(defaultMode string) string {
-	if defaultMode == "" {
+	switch defaultMode {
+	case "reference", "best", "side-by-side", "difference", "overlay":
+		return defaultMode
+	default:
 		return "side-by-side"
 	}
-	return defaultMode
 }
 
 var _ = templruntime.GeneratedTemplate

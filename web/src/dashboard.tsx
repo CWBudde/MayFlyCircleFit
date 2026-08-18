@@ -698,7 +698,10 @@ function CampaignCard({ campaign, palette }: { campaign: CampaignSummary; palett
 						</>
 					) : null}
 				</div>
-				<div style={{ flex: "0 1 420px", minWidth: "240px", display: "flex", gap: "0.75rem", justifyContent: "flex-end", alignItems: "stretch" }}>
+				{/* Wraps because the thumbnail is a fixed 140px and the chart needs
+				    room of its own: side by side they do not fit a phone-width card,
+				    and without wrapping the card would scroll sideways instead. */}
+				<div style={{ flex: "0 1 420px", minWidth: "180px", display: "flex", flexWrap: "wrap", gap: "0.75rem", justifyContent: "flex-end", alignItems: "stretch" }}>
 					{campaign.leafJobId ? (
 						<a
 							href={`/jobs/${campaign.leafJobId}`}
@@ -722,7 +725,7 @@ function CampaignCard({ campaign, palette }: { campaign: CampaignSummary; palett
 						</a>
 					) : null}
 					{plotted.length > 0 ? (
-						<div style={{ flex: "1 1 260px", minWidth: "240px", minHeight: "120px" }}>
+						<div style={{ flex: "1 1 180px", minWidth: "180px", minHeight: "120px" }}>
 							<CampaignCostChart points={plotted} palette={palette} />
 						</div>
 					) : null}

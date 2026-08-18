@@ -275,3 +275,49 @@ func parseCoord(t *testing.T, value string) float64 {
 	}
 	return parsed
 }
+
+// TestCampaignPageShowsTheLatestCompletedStageImages covers the branch Task
+// 17.8 added: the campaign page borrows the job detail page's viewer to show
+// the newest stage that actually produced artifacts. The stage it picks matters
+// as much as the viewer being there — pointing the viewer at a running stage
+// would render three broken images.
+func TestCampaignPageShowsTheLatestCompletedStageImages(t *testing.T) {
+	body := renderCampaign(t, synthesizedCampaign())
+	if !strings.Contains(body, `class="card image-viewer campaign-images"`) {
+		t.Fatal("campaign page does not render the shared image viewer")
+	}
+	// Stage 4 is running and stage 3 was skipped, so stage 2 is the newest one
+	// with artifacts to show.
+	const polishJob = "33333333-3333-4333-8333-333333333333"
+	if !strings.Contains(body, "/api/v1/jobs/"+polishJob+"/best.png") {
+		t.Errorf("viewer is not pointed at the latest completed stage %s", polishJob)
+	}
+	for _, unfinished := range []string{"44444444-4444-4444-8444-444444444444"} {
+		if strings.Contains(body, "/api/v1/jobs/"+unfinished+"/best.png") {
+			t.Errorf("viewer is pointed at stage job %s, which has produced no artifacts", unfinished)
+		}
+	}
+	if !strings.Contains(body, `data-view-mode="side-by-side"`) {
+		t.Error("campaign viewer does not open on the side-by-side comparison")
+	}
+}
+
+// TestCampaignPageWithoutCompletedStagesSaysSo is the other half of the branch:
+// a campaign whose stages have all yet to finish must say there is nothing to
+// show rather than render a viewer whose images 404.
+func TestCampaignPageWithoutCompletedStagesSaysSo(t *testing.T) {
+	body := renderCampaign(t, Campaign{
+		ID:     "66666666-6666-4666-8666-666666666666",
+		State:  "running",
+		Source: CampaignFromSchedule,
+		Stages: []CampaignStage{
+			{Index: 0, Kind: "base", State: "running", Circles: 8, JobID: "11111111-1111-4111-8111-111111111111"},
+		},
+	})
+	if strings.Contains(body, `class="card image-viewer`) {
+		t.Error("campaign page renders an image viewer before any stage has finished")
+	}
+	if !strings.Contains(body, "No completed stage has produced image artifacts yet.") {
+		t.Error("campaign page does not explain why it shows no images")
+	}
+}
