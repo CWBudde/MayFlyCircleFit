@@ -49,6 +49,10 @@ type Server struct {
 	schedulesMu     sync.Mutex
 	scheduleDrivers map[string]struct{}
 	scheduleWG      sync.WaitGroup
+
+	dashboardMu           sync.Mutex
+	dashboardChainScan    []discoveredChain
+	dashboardChainScanned time.Time
 }
 
 // ServerOptions configures the trusted-local HTTP boundary.
@@ -195,6 +199,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/jobs", s.handleJobs)
 	mux.HandleFunc("/api/v1/stream", s.handleAllJobStream)
 	mux.HandleFunc("/api/v1/projects", s.handleProjects)
+	mux.HandleFunc("/api/v1/dashboard", s.handleDashboard)
 	mux.HandleFunc("/api/v1/jobs/", s.handleJobsWithID)
 	mux.HandleFunc("/api/v1/system", s.handleSystem)
 	mux.HandleFunc("/api/v1/schedules", s.handleSchedules)

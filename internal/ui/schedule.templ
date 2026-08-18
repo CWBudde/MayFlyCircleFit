@@ -96,11 +96,25 @@ type CampaignSummary struct {
 	RecordedStages int
 	PlannedStages  int
 
+	CampaignSeries []CampaignSeriesPoint
+	LeafJobID     string
+
 	Circles     int
 	BestCost    float64
 	HasBestCost bool
 
 	UpdatedAt time.Time
+}
+
+// CampaignSeriesPoint is one stage in the compact campaign line preview used by
+// dashboard summaries and mini charts.
+type CampaignSeriesPoint struct {
+	Index  int
+	Kind   string
+	Circles int
+
+	BestCost    float64
+	HasBestCost bool
 }
 
 // CampaignListPage lists every campaign the server can reconstruct: the
