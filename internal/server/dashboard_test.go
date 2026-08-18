@@ -279,6 +279,83 @@ func TestDashboardRunningJobFromBoundsMetricHistory(t *testing.T) {
 	}
 }
 
+// TestDashboardCountsAndRowsComeFromOneSnapshot pins the property the split
+// accessors could not offer: the running tally and the rows printed beside it
+// are read under one lock, so the page cannot claim a running job it does not
+// show.
+func TestDashboardCountsAndRowsComeFromOneSnapshot(t *testing.T) {
+	manager := NewJobManager()
+	config := app.JobConfig{Mode: app.ModeBatch, Circles: 8, Iters: 100, PopSize: 30, Seed: 42}
+	for i := range 3 {
+		job := manager.CreateJob(app.DefaultProject, config)
+		if i == 0 {
+			continue
+		}
+		if err := manager.StartJob(job.ID); err != nil {
+			t.Fatalf("start job: %v", err)
+		}
+	}
+
+	counts, running := manager.StateCountsWithRunning()
+	if counts[StateRunning] != len(running) {
+		t.Fatalf("running count = %d, rows = %d, want them to agree", counts[StateRunning], len(running))
+	}
+	if counts[StatePending] != 1 {
+		t.Fatalf("pending count = %d, want 1", counts[StatePending])
+	}
+	for _, job := range running {
+		if job.State != StateRunning {
+			t.Fatalf("row state = %q, want running", job.State)
+		}
+	}
+}
+
+// TestCirclesPerSecondExcludesInheritedEvaluations covers a continuation:
+// Evaluations carries the parent's work so the campaign total stays readable,
+// but the clock restarts with the stage, and dividing one by the other reports
+// a throughput the machine never reached.
+func TestCirclesPerSecondExcludesInheritedEvaluations(t *testing.T) {
+	job := &Job{
+		Evaluations:          300,
+		InheritedEvaluations: 200,
+		BestParams:           make([]float64, 70),
+	}
+
+	if got := circlesPerSecond(job, 10*time.Second); got != 100 {
+		t.Fatalf("cps = %f, want 100 from the 100 evaluations this stage ran", got)
+	}
+	if got := circlesPerSecond(&Job{Evaluations: 300, BestParams: make([]float64, 70)}, 10*time.Second); got != 300 {
+		t.Fatalf("cps = %f, want 300 for a job that inherited nothing", got)
+	}
+}
+
+// TestStartJobRecordsInheritedEvaluations ties the two halves together: the
+// seed is taken when the job starts its own clock, so every continuation path
+// records it without having to remember to.
+func TestStartJobRecordsInheritedEvaluations(t *testing.T) {
+	manager := NewJobManager()
+	job := manager.CreateJob(app.DefaultProject, app.JobConfig{
+		Mode: app.ModeBatch, Circles: 8, Iters: 100, PopSize: 30, Seed: 42,
+	})
+	if err := manager.UpdateJob(job.ID, func(live *Job) { live.Evaluations = 5000 }); err != nil {
+		t.Fatalf("seed inherited evaluations: %v", err)
+	}
+	if err := manager.StartJob(job.ID); err != nil {
+		t.Fatalf("start job: %v", err)
+	}
+
+	started, ok := manager.GetJob(job.ID)
+	if !ok {
+		t.Fatalf("missing started job")
+	}
+	if started.InheritedEvaluations != 5000 {
+		t.Fatalf("inherited evaluations = %d, want 5000", started.InheritedEvaluations)
+	}
+	if cps := circlesPerSecond(started, time.Second); cps != 0 {
+		t.Fatalf("cps = %f, want 0 before the stage evaluates anything of its own", cps)
+	}
+}
+
 func saveCampaignScheduleForDashboard(
 	t *testing.T,
 	scheduleStore store.ScheduleStore,

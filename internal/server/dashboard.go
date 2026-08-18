@@ -97,15 +97,15 @@ func (s *Server) dashboardCampaigns() []ui.CampaignSummary {
 }
 
 func (s *Server) dashboardRows() ([]dashboardRunningJob, dashboardAggregates) {
-	runningRows := make([]dashboardRunningJob, 0)
-	counts := s.jobManager.CountStates()
+	counts, running := s.jobManager.StateCountsWithRunning()
 	aggregates := dashboardAggregates{
 		Running:   counts[StateRunning],
 		Pending:   counts[StatePending],
 		Completed: counts[StateCompleted],
 	}
 
-	for _, job := range s.jobManager.GetRunningJobs() {
+	runningRows := make([]dashboardRunningJob, 0, len(running))
+	for _, job := range running {
 		row := dashboardRunningJobFrom(job)
 		aggregates.CPS += row.CPS
 		runningRows = append(runningRows, row)
@@ -114,8 +114,14 @@ func (s *Server) dashboardRows() ([]dashboardRunningJob, dashboardAggregates) {
 }
 
 func dashboardRunningJobFrom(job *Job) dashboardRunningJob {
-	history := make([]ui.MetricSample, 0, len(job.MetricHistory))
-	for _, sample := range job.MetricHistory {
+	// The sparkline seed is bounded, so only the tail is worth converting: a
+	// long-running job's history is refetched whole on every dashboard load.
+	samples := job.MetricHistory
+	if len(samples) > dashboardMetricHistoryLimit {
+		samples = samples[len(samples)-dashboardMetricHistoryLimit:]
+	}
+	history := make([]ui.MetricSample, 0, len(samples))
+	for _, sample := range samples {
 		history = append(history, ui.MetricSample{
 			Iteration:    sample.Iteration,
 			Cost:         sample.Cost,
@@ -123,9 +129,6 @@ func dashboardRunningJobFrom(job *Job) dashboardRunningJob {
 			PSNRInfinite: sample.PSNRInfinite,
 			SSIM:         cloneFloat(sample.SSIM),
 		})
-	}
-	if len(history) > dashboardMetricHistoryLimit {
-		history = history[len(history)-dashboardMetricHistoryLimit:]
 	}
 
 	elapsed := jobElapsed(job)
