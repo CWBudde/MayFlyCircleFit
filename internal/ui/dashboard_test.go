@@ -3,6 +3,7 @@ package ui
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -49,7 +50,7 @@ func TestDashboardPageRenders(t *testing.T) {
 			GOOS:      "linux",
 			GOARCH:    "amd64",
 			SIMD:      "avx2",
-			GPUState:  "available",
+			GPU:       GPUFacts{State: "available"},
 			Version:   "dev",
 			Commit:    "abc123",
 			BuildDate: "2026-08-13",
@@ -68,15 +69,83 @@ func TestDashboardPageRenders(t *testing.T) {
 		`Campaigns`,
 		`/jobs`,
 		`/schedules`,
-		`data-island="placeholder"`,
+		`data-island="dashboard"`,
 		`data-island-label="dashboard"`,
 		`/api/v1/stream`,
 		`>CPS</th>`,
+		`id="dashboard-page"`,
 	} {
 		if !strings.Contains(body, marker) {
 			t.Errorf("rendered dashboard page missing %q", marker)
 		}
 	}
+}
+
+// TestDashboardPageSeedsTheIsland pins the JSON the island reads before its
+// first fetch. The names matter as much as the values: the island parses this
+// script and later parses /api/v1/dashboard into the same shape, so a tag
+// renamed on only one side would leave the page correct until it refreshed.
+func TestDashboardPageSeedsTheIsland(t *testing.T) {
+	page := DashboardPageData{
+		RunningJobs: []DashboardRunningJob{{ID: "job-1", Project: "default", State: "running", Iterations: 7, MaxIters: 10, CPS: 1.5}},
+		Aggregates:  DashboardAggregates{Running: 1, Pending: 2, Completed: 3, CPS: 1.5},
+		HostFacts:   HostFacts{GOARCH: "amd64", SIMD: "avx2", GPU: GPUFacts{State: "available"}},
+	}
+
+	var output bytes.Buffer
+	if err := DashboardPage(page).Render(context.Background(), &output); err != nil {
+		t.Fatalf("render dashboard page: %v", err)
+	}
+
+	seed := extractDashboardSeed(t, output.String())
+	var decoded struct {
+		RunningJobs []struct {
+			ID  string  `json:"id"`
+			CPS float64 `json:"cps"`
+		} `json:"runningJobs"`
+		Aggregates struct {
+			Running int     `json:"running"`
+			CPS     float64 `json:"runningCps"`
+		} `json:"aggregates"`
+		HostFacts struct {
+			GOARCH string `json:"goarch"`
+			GPU    struct {
+				State string `json:"state"`
+			} `json:"gpu"`
+		} `json:"hostFacts"`
+	}
+	if err := json.Unmarshal([]byte(seed), &decoded); err != nil {
+		t.Fatalf("decode dashboard seed: %v", err)
+	}
+
+	if len(decoded.RunningJobs) != 1 || decoded.RunningJobs[0].ID != "job-1" || decoded.RunningJobs[0].CPS != 1.5 {
+		t.Errorf("seed running jobs = %+v, want one job-1 row at 1.5 cps", decoded.RunningJobs)
+	}
+	if decoded.Aggregates.Running != 1 || decoded.Aggregates.CPS != 1.5 {
+		t.Errorf("seed aggregates = %+v, want running 1 at 1.5 cps", decoded.Aggregates)
+	}
+	if decoded.HostFacts.GOARCH != "amd64" || decoded.HostFacts.GPU.State != "available" {
+		t.Errorf("seed host facts = %+v, want amd64 with an available GPU", decoded.HostFacts)
+	}
+}
+
+func extractDashboardSeed(t *testing.T, body string) string {
+	t.Helper()
+	const open = `id="dashboard-page"`
+	start := strings.Index(body, open)
+	if start < 0 {
+		t.Fatal("rendered dashboard page has no seed script")
+	}
+	start = strings.Index(body[start:], ">")
+	if start < 0 {
+		t.Fatal("dashboard seed script tag is unterminated")
+	}
+	rest := body[strings.Index(body, open)+start+1:]
+	end := strings.Index(rest, "</script>")
+	if end < 0 {
+		t.Fatal("dashboard seed script is unterminated")
+	}
+	return rest[:end]
 }
 
 func TestDashboardCampaignURL(t *testing.T) {

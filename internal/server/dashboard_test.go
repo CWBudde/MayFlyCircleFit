@@ -2,9 +2,11 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -422,4 +424,91 @@ func saveCampaignScheduleForDashboard(
 		t.Fatalf("save schedule stage %s: %v", scheduleID, err)
 	}
 	return scheduleID
+}
+
+// TestDashboardPageSeedMatchesEndpointShape pins the contract the island
+// depends on. It reads the payload the page embeds and the payload the JSON
+// endpoint serves as the same shape, so a field renamed on one side and not the
+// other fails here rather than after the island's first refetch swaps a
+// populated dashboard for an empty one.
+//
+// The seed is a subset of the endpoint, so agreement alone would say nothing
+// about the fields only the endpoint carries. Those are checked separately
+// against the names the island reads, because a drifting metricHistory tag
+// costs every sparkline its history without emptying anything else.
+func TestDashboardPageSeedMatchesEndpointShape(t *testing.T) {
+	payload := dashboardResponse{
+		RunningJobs: []dashboardRunningJob{{
+			ID: "job-1", Project: app.DefaultProject, State: string(StateRunning),
+			CPS: 2.5, EvaluationWidth: 4, ElapsedSec: 1.5,
+			MetricHistory: []ui.MetricSample{{Iteration: 7, Cost: 1.25}},
+		}},
+		Aggregates: dashboardAggregates{Running: 1, Pending: 2, Completed: 3, CPS: 2.5},
+		HostFacts:  HostFacts{GOARCH: "amd64", SIMD: "avx2", GPU: GPUInfo{State: GPUStateAvailable}},
+	}
+	seed := ui.DashboardPageData{
+		RunningJobs: []ui.DashboardRunningJob{{ID: "job-1", Project: string(app.DefaultProject), State: string(StateRunning), CPS: 2.5, EvaluationWidth: 4, ElapsedSec: 1.5}},
+		Aggregates:  ui.DashboardAggregates{Running: 1, Pending: 2, Completed: 3, CPS: 2.5},
+		HostFacts:   ui.HostFacts{GOARCH: "amd64", SIMD: "avx2", GPU: ui.GPUFacts{State: GPUStateAvailable}},
+	}
+
+	endpointKeys := jsonLeafKeys(t, payload)
+	seedKeys := jsonLeafKeys(t, seed)
+
+	for path, want := range seedKeys {
+		got, ok := endpointKeys[path]
+		if !ok {
+			t.Errorf("the page seed carries %q but the endpoint does not", path)
+			continue
+		}
+		if got != want {
+			t.Errorf("%q = %v in the endpoint payload, want %v as in the page seed", path, got, want)
+		}
+	}
+
+	// Endpoint-only wire names the island reads. The seed cannot pin these: it
+	// deliberately omits the metric history, and the island seeds its
+	// sparklines from the endpoint alone.
+	for _, path := range []string{
+		"runningJobs.0.metricHistory.0.iteration",
+		"runningJobs.0.metricHistory.0.cost",
+	} {
+		if _, ok := endpointKeys[path]; !ok {
+			t.Errorf("the endpoint payload has no %q, which the island's sparklines read", path)
+		}
+	}
+}
+
+// jsonLeafKeys marshals a value and flattens it to dotted paths. Arrays are
+// indexed, so runningJobs.0.cps is one path; only leaves are reported, which is
+// what makes two payloads comparable without sharing a Go type.
+func jsonLeafKeys(t *testing.T, value any) map[string]any {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	var decoded any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+
+	leaves := make(map[string]any)
+	var walk func(prefix string, node any)
+	walk = func(prefix string, node any) {
+		switch typed := node.(type) {
+		case map[string]any:
+			for key, child := range typed {
+				walk(strings.TrimPrefix(prefix+"."+key, "."), child)
+			}
+		case []any:
+			for i, child := range typed {
+				walk(fmt.Sprintf("%s.%d", prefix, i), child)
+			}
+		default:
+			leaves[prefix] = node
+		}
+	}
+	walk("", decoded)
+	return leaves
 }
