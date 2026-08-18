@@ -1,0 +1,12 @@
+{
+  "name": "mayflycirclefit-web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "React islands for the MayFlyCircleFit dashboard. npm only fetches dependencies; bundling is done by esbuild, which is a Go tool (see go.mod).",
+  "license": "MIT",
+  "dependencies": {
+    "chart.js": "^4.5.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  }
+}

@@ -55,7 +55,7 @@ lint: templ-check
 	@echo "All checks passed!"
 
 # Run the complete local/CI verification suite
-check: templ-check
+check: templ-check bundle-check
 	go test ./...
 	go vet ./...
 	@echo "Checking formatting..."
@@ -90,3 +90,17 @@ templ-watch:
 # Format templ files
 templ-fmt:
 	go tool templ fmt .
+
+# Install the frontend dependencies esbuild bundles (npm fetches, it does not build)
+web-deps:
+	cd web && npm ci
+
+# Bundle the React islands into the committed internal/ui/static output
+bundle:
+	bash scripts/bundle-web.sh
+
+# Verify the committed island bundle is current
+bundle-check:
+	bash scripts/bundle-web.sh
+	git diff --exit-code -- 'internal/ui/static/*'
+	@test -z "$(git ls-files --others --exclude-standard -- 'internal/ui/static/*')" || (git ls-files --others --exclude-standard -- 'internal/ui/static/*' && echo "Bundled assets are untracked" && exit 1)

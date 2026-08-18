@@ -440,3 +440,15 @@ templ Layout(title string) {
 		</body>
 	</html>
 }
+
+// IslandBundle links the React island bundle. Only pages that actually render
+// a data-island element should call it: the bundle is large, and on a page
+// with no island it would download and parse just to run an empty query.
+//
+// The bundle is committed and embedded, so this binary serves it rather than
+// fetching it from a network the host may not have. Module scripts are
+// deferred, and every island server-renders its content first, so loading the
+// script from the end of the body costs the page nothing.
+templ IslandBundle() {
+	<script type="module" src={ BundleURL() }></script>
+}

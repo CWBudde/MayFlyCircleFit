@@ -1,0 +1,42 @@
+name: ci-bundle
+
+# The island bundle is committed and go:embed-ed, so no other gate and no
+# ordinary `go build` needs node. This is the only workflow that installs it,
+# and its whole job is to prove the committed bundle still matches web/src.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    name: Committed island bundle is current
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: web
+      - name: Bundle the islands
+        run: bash scripts/bundle-web.sh
+      - name: Check bundle drift
+        shell: bash
+        run: |
+          git diff --exit-code -- 'internal/ui/static/*'
+          untracked="$(git ls-files --others --exclude-standard -- 'internal/ui/static/*')"
+          if [[ -n "$untracked" ]]; then
+            printf 'Untracked bundled assets:\n%s\n' "$untracked"
+            exit 1
+          fi

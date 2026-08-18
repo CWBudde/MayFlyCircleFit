@@ -20,6 +20,7 @@ import (
 	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/mayflycirclefit/internal/ui"
 	"github.com/google/uuid"
 )
 
@@ -180,6 +181,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/schedules", s.handleCampaignList)
 	mux.HandleFunc("/schedules/", s.handleCampaignDetail)
 	mux.HandleFunc("/chains/", s.handleChainDetail)
+
+	// Embedded frontend assets. Nothing below this prefix touches the
+	// filesystem; ui.StaticHandler serves only what is compiled into the
+	// binary.
+	mux.Handle(ui.StaticPrefix, ui.StaticHandler())
 
 	// Register API routes
 	mux.HandleFunc("/api/v1/jobs", s.handleJobs)

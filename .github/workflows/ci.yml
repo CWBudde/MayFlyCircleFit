@@ -23,6 +23,9 @@ jobs:
   generation:
     uses: ./.github/workflows/ci-generation.yml
 
+  bundle:
+    uses: ./.github/workflows/ci-bundle.yml
+
   quality:
     uses: ./.github/workflows/ci-quality.yml
 
@@ -66,6 +69,7 @@ jobs:
     # and must never gate a release.
     needs:
       - generation
+      - bundle
       - quality
       - staticcheck
       - test

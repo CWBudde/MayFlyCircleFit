@@ -64,8 +64,10 @@ the tag and verifies that its commit belongs to `master`, reruns the complete CI
 matrix, builds the archives, checks their SHA-256 hashes, creates a draft with
 generated release notes, uploads every artifact, and publishes the draft last.
 
-Each archive contains the platform binary, README, LICENSE, CHANGELOG, and
-`assets/test.png`. Release binaries report the version, full commit hash, and
+Each archive contains the platform binary, README, LICENSE,
+`THIRD-PARTY-NOTICES.md`, CHANGELOG, and `assets/test.png`. The notices file
+covers the npm packages compiled into the embedded island bundle, which the
+binary redistributes. Release binaries report the version, full commit hash, and
 tag-commit date through both `version` and `--version`.
 
 ## Install a release archive

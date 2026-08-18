@@ -2242,6 +2242,69 @@ and then runs unattended as a single observable entity.
       now reads the same file instead of an inline copy, so the Task 16.4
       acceptance check and the documented example are literally the same bytes.
 
+### Task 16.7: Make a Large Campaign Readable from the CLI (P2)
+
+`schedule status` cannot display a campaign the schedule format explicitly
+allows. The command errors and prints its usage instead of the stage table:
+
+```
+$ mayflycirclefit schedule status d8755b85-e689-490a-acf3-d576922822f9
+Error: query schedule "d8755b85-...": server response exceeds 1048576 bytes
+```
+
+**Measured 2026-08-18** against a completed 1016-stage campaign (1 base, 999
+`+1` extends, 16 polishes) on the Ryzen 5 4600H box:
+
+| Endpoint | Body | Stages | Per stage | Cap reached at |
+| --- | ---: | ---: | ---: | ---: |
+| `GET /api/v1/schedules/:id` | 1,230,905 B | 1016 | ~1,211 B | ~865 stages |
+| `GET /api/v1/chains/:jobID` | 295,767 B | 1013 | ~292 B | ~3,590 stages |
+
+The cap is `maxCLIResponseBytes = 1 << 20` (`cmd/status.go:20`), applied by the
+shared `io.LimitReader` in the CLI response reader (`cmd/status.go:291`). It is
+not the defect — an unbounded decode of a response that grows with stage count
+is worth refusing — but it is reached far inside the documented budget.
+`MaxScheduleStages` is 4096, so roughly **79% of the stage counts a schedule may
+legally expand to cannot be inspected from the terminal**, and `schedule import`
+hits the same wall at ~3,590 of the same 4096. Both limits are reachable: the
+campaign above spends one stage per circle, which is the shape
+`MaxScheduleStages` was sized for ("one stage per circle plus a polish between
+every pair", `internal/app/schedule.go:25`).
+
+The size is dominated by data the table never prints. A stage record carries its
+whole normalized `JobConfig`; the chain view carries none, which is the entire
+difference between 1,211 and 292 bytes per stage. The CLI table needs index,
+kind, state, circles, cost, elapsed, job ID and reason — and the projection
+needs only per-kind elapsed on top of that.
+
+Affected commands are every caller of the shared reader: all ten call sites in
+`cmd/schedule.go`, plus `cmd/status.go` and `cmd/resume.go`. The web view is
+**unaffected** — `/schedules/:id` renders server-side and does not cross the
+CLI boundary — so this is a terminal-only blindness, which is worse than it
+sounds for a campaign designed to run unattended overnight on a headless box.
+
+- [ ] Give the stage listing a summary projection that omits per-stage
+      `JobConfig`, and have `schedule status` read that. Raising the cap alone is
+      refused as a fix: the response still grows without bound with stage count,
+      so it moves the wall rather than removing it.
+- [ ] Keep a stage's full configuration retrievable on its own, since replaying
+      one stage in isolation is what the recorded config is for.
+- [ ] Apply the same treatment to `GET /api/v1/chains/:jobID`, which is on the
+      same curve with a longer fuse.
+- [ ] Keep the projection identical to what it computes today; the estimate is
+      derived from stage elapsed times and must not change because its input got
+      smaller.
+
+**Acceptance Checks:**
+
+- [ ] `schedule status` prints the stage table and projection for a campaign at
+      `MaxScheduleStages`, with the response measured under
+      `maxCLIResponseBytes` — a regression test that synthesizes 4096 stage
+      records, so the assertion is the byte count and not a live run.
+- [ ] `schedule import` renders a 4096-stage chain under the same cap.
+- [ ] The projection printed from the summary equals the projection printed from
+      full stage records for the same fixture, asserted field by field.
+
 ---
 
 ## Phase 17: Dashboard Start Page
@@ -2302,31 +2365,79 @@ tasks below, and because a later reader will otherwise assume they were missed:
 Everything else depends on this. Land it alone and prove it with a trivial
 island before any dashboard code is written.
 
-- [ ] `web/package.json` and `package-lock.json` carrying **dependencies only**:
-      `react`, `react-dom`, `chart.js`. Add `react-chartjs-2` only if the
-      wrapper earns its weight — Chart.js driven from a `useEffect` is often
-      less code than the wrapper plus its own lifecycle rules.
-- [ ] `go get -tool github.com/evanw/esbuild/cmd/esbuild`, adding it to the
-      `tool` block in `go.mod` alongside `templ`, `pprof`, and `benchstat`. The
-      bundling step is then Go, not node; npm is only a dependency fetcher.
-- [ ] `web/src/` holds the TSX sources. `web/tsconfig.json` exists for editor
-      support only — esbuild strips types, it does not typecheck.
-- [ ] The bundle is **committed** to `internal/ui/static/dashboard.js`.
-- [ ] New `internal/ui/static.go` with `//go:embed static/dashboard.js` and
-      `ui.StaticHandler() http.Handler`, serving the file with a correct content
-      type and an immutable cache header keyed on a content hash.
-- [ ] New `mux.Handle("/static/", ...)` route in `internal/server/server.go`.
-      No static route exists today and `assets/` is not served, so this is a new
-      surface on the trusted-local boundary.
-- [ ] `justfile` gains `bundle` and `bundle-check`, mirroring the existing
-      `templ` / `templ-check` pair, and `bundle-check` joins `just check`.
-- [ ] New `.github/workflows/ci-bundle.yml`. CI is one gate per file, so the
-      gate gets its own workflow; `ci.yml` is edited only to add the `bundle:`
-      job and to list it in `release`'s `needs:`.
+- [x] `web/package.json` and `package-lock.json` carrying **dependencies only**:
+      `react`, `react-dom`, `chart.js`. `react-chartjs-2` was not taken: the
+      wrapper's own lifecycle rules cost more than driving Chart.js from a
+      `useEffect`, and Task 17.6 needs imperative `chart.update()` calls for the
+      theme hook regardless. Resolved versions: react and react-dom 19.2.8,
+      chart.js 4.5.1, five packages in total.
+- [x] `go get -tool github.com/evanw/esbuild/cmd/esbuild` (v0.28.2), adding it
+      to the `tool` block in `go.mod` alongside `templ`, `pprof`, and
+      `benchstat`. The bundling step is Go, not node; npm is only a dependency
+      fetcher. The invocation lives in `scripts/bundle-web.sh` so the `just`
+      recipe and the CI gate cannot drift apart.
+- [x] `web/src/` holds the TSX sources — `dashboard.tsx` (entry),
+      `islands.tsx` (the `data-island` mount convention), and `Placeholder.tsx`
+      (the trivial island). `web/tsconfig.json` exists for editor support only;
+      esbuild strips types and does not typecheck.
+- [x] The bundle is **committed** to `internal/ui/static/dashboard.js`
+      (194,350 bytes, minified ESM, `--target=es2020`). Two consecutive runs of
+      `scripts/bundle-web.sh` produced byte-identical output
+      (sha256 `0431460a…491f`), which is what makes the drift gate meaningful
+      rather than flaky. `--legal-comments=eof` keeps each dependency's
+      `@license` banner in the bundle, and `THIRD-PARTY-NOTICES.md` — shipped in
+      every release archive — carries the full texts those banners point at,
+      because the bundle is redistributed inside the binary.
+- [x] New `internal/ui/static.go` embedding the whole `static` directory and
+      exposing `ui.StaticHandler() http.Handler`, `ui.StaticPrefix`, and
+      `ui.BundleURL()`. Assets are served with an explicit content type plus
+      `nosniff`, an ETag, and `Cache-Control: public, max-age=31536000,
+      immutable` **only** when the request's `?v=` matches the content hash —
+      an unversioned or stale URL gets `no-cache`, because it may have come
+      from a cached page that predates the current bundle. `BundleURL()` is what
+      the `ui.IslandBundle()` component renders, so a rebuilt bundle is a new
+      URL. The script tag is deliberately **not** in the shared layout: only a
+      page that renders a `data-island` element should pay for the bundle.
+- [x] New `mux.Handle(ui.StaticPrefix, ui.StaticHandler())` route in
+      `internal/server/server.go`. The handler serves only names that are
+      actually embedded: no directory listing, no nested path, and nothing that
+      reaches the filesystem, so the new surface on the trusted-local boundary
+      cannot be walked. `internal/server/static_test.go` pins that an unknown
+      asset is a 404 rather than the catch-all `/` handler's HTML.
+- [x] `justfile` gains `web-deps`, `bundle`, and `bundle-check`, the latter
+      mirroring `templ-check`; `just check` now depends on `bundle-check`.
+- [x] New `.github/workflows/ci-bundle.yml`, reporting as
+      `bundle / Committed island bundle is current`. It is the only workflow
+      that installs node. `ci.yml` is edited only to add the `bundle:` job and
+      to list it in `release`'s `needs:`.
 
 **Done when:** a placeholder island renders inside a templ page, `just check`
 fails if the committed bundle is stale, and `go build ./...` succeeds on a
 machine with no node installed.
+
+**Observed on this revision:** `just bundle-check` fails both ways it is meant
+to — with the bundle untracked ("Bundled assets are untracked") and with a TSX
+source edited but the bundle not rebuilt (`git diff --exit-code` on
+`internal/ui/static/*`) — and passes with the tree consistent. `go vet ./...`,
+`go test -short ./...`, `go test -race -short ./internal/ui/ ./internal/server/`,
+and `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...` all pass, and
+regenerating templ output changes nothing. `go build ./...` was also run on a
+`PATH` holding only `$(go env GOROOT)/bin` and a directory containing `sh`, with
+both `node` and `npm` confirmed absent from it, and succeeded — the no-node
+property is a measurement, not an assumption.
+
+The browser half of "renders inside a templ page" was **not** observed: headless
+Firefox is the only browser on this machine and it hangs before producing a
+screenshot, so nothing here drove `createRoot` against a real DOM. What was
+observed instead is that the same TSX compiles and renders through the same
+esbuild pipeline — `renderToStaticMarkup(<Placeholder root={…}/>)` executed under
+node emits `<span data-island-mounted="true">pipeline mounted</span>` — and that
+the shipped minified bundle contains the mount code
+(`document.querySelectorAll(\`[data-island="${t}"]\`)` followed by
+`createRoot(n).render(...)`). The gap left is the DOM query and mount themselves.
+Task 17.5 is the first task to render a `data-island` element into a real page;
+closing this gap belongs there, and the placeholder island stays in the bundle
+until it does.
 
 ### Task 17.2: Host Facts Endpoint (`GET /api/v1/system`)
 
@@ -2531,7 +2642,10 @@ could not be run as written and are amended in place rather than ticked: the
 96-circle chain of Task 16.5 and the Python orchestrator of Task 16.6 both lived
 only on the compute box whose directory was deleted on 2026-08-17. Each is
 replaced by a test over what the check was protecting, and each replacement is
-labelled as such.
+labelled as such. **Task 16.7 is open and was found by using the feature**: a
+1016-stage campaign run on 2026-08-18 cannot be displayed by `schedule status`,
+because the response exceeds the CLI's 1 MiB cap at roughly 865 stages of the
+4096 a schedule may expand to.
 
 **Phase 17** is planned but not started. It is the first phase to introduce a
 JavaScript build step into a Go-only repository, so Task 17.1 is deliberately
