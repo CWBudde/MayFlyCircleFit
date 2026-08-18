@@ -8,6 +8,25 @@ release is declared by this file.
 
 ### Added
 
+- `run --polishing-pop` and the `polishingPopSize` configuration field give
+  polishing a population of its own. It used to borrow the job-wide `popSize`,
+  which is sized for the whole vector, so a 512-circle run optimized an
+  eight-circle active set of 56 parameters with a population of 200. Measured on
+  a 64-circle fitted vector, that population costs 5.2x the wall clock of 30 for
+  1.28x the error removed, and on `replacement` a larger population reached a
+  *worse* final cost than a fifth of it. `popSize` on a `/polish` request and on
+  a schedule's polish step now addresses this field, which is what those
+  overrides always meant. See
+  [docs/polishing-budget-report.md](docs/polishing-budget-report.md).
+- Polishing benchmarks for the budget itself: `BenchmarkPolishBudgetShape`,
+  `BenchmarkPolishBudgetSweepFalloff`,
+  `BenchmarkPolishBudgetShippedConfiguration`, and
+  `BenchmarkPolishBudgetProductionShape` report cost removed per second beside
+  the quality metrics, and are the measurement the polishing defaults are now
+  set from.
+- The polishing completion log record and the job detail view report the
+  population a sweep ran at, beside the evaluation width.
+
 - Exact float64 AVX2 and SSE2 span compositors for AMD64, the counterparts of
   the existing NEON one. Both are byte-identical to the scalar span, so both are
   on by default with no flag and no reproducibility caveat. AVX2 renders 1.09x
@@ -85,10 +104,10 @@ release is declared by this file.
   36.9 ms to 17.6 ms at 64 circles (2.1x) and 111.7 ms to 21.1 ms at 256
   circles (5.3x), falling to 1.44x averaged over a 13-sweep cycle. Measured
   against error actually removed, it lost to `hybrid-overlap` at equal wall
-  clock in every configuration tried, and at the default
-  `--polishing-max-sweeps` of 3 it only reaches the last `3 * activeSetSize`
-  draw slots and removed no error at all. Raise `--polishing-max-sweeps` to at
-  least `ceil(circles / activeSetSize)` before selecting it. See
+  clock in every configuration tried, and it only reaches the last
+  `maxSweeps * activeSetSize` draw slots, which at the three sweeps then in
+  force removed no error at all. Raise `--polishing-max-sweeps` to at least
+  `ceil(circles / activeSetSize)` before selecting it. See
   [docs/contiguous-window-polish-report.md](docs/contiguous-window-polish-report.md).
 - Optimizer-level early stopping, disabled by default. `--stop-target-cost`,
   `--stop-stagnation-iters`, `--stop-min-improvement`, and `--stop-min-iters`
@@ -126,6 +145,20 @@ release is declared by this file.
 
 ### Changed
 
+- The polishing defaults are re-derived from a measurement rather than inherited
+  from the batch configuration: `polishingIters` 1000 -> 200,
+  `polishingMaxSweeps` 3 -> 8, `polishingStagnationIters` 500 -> 100 (half its
+  epoch, as before), `polishingEpochs` unchanged at 2, and `polishingPopSize` 30
+  instead of whatever `popSize` happened to be. Together they removed 2.6x the
+  error of the previous defaults in 56% of the wall clock on `residual-region`,
+  and 1.4x in 74% of it on `replacement`. A sweep is the only axis that
+  re-selects which circles are optimized, which is why the budget moved onto it.
+  Two consequences: a polish stage authorizes 3 200 optimizer iterations instead
+  of 6 000, so the documented 512-circle campaign's planned figure drops from
+  48 800 to 32 000; and a checkpoint written before `polishingPopSize` existed
+  resumes at the polishing default rather than at its own `popSize`, so a fixed
+  seed reproduces such a run only when the field is set explicitly. See
+  [docs/polishing-budget-report.md](docs/polishing-budget-report.md).
 - templ is pinned as a Go tool and generated UI Go files are committed.
 - CPU joint, sequential, and batch pipelines preserve their supplied base canvas;
   staged OpenCL requests report an unsupported-mode error.

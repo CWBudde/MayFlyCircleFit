@@ -35,8 +35,10 @@ are `completed`, `cancelled`, `target_cost`, `stagnation`, and
 through `--parallel-evaluation`, sized by `--evaluation-workers`, and off by
 default. It requires a backend that can hand out independent renderer sessions,
 so it applies to the CPU backend only; OpenCL declines it with a warning and
-evaluates serially. Transactional polishing always evaluates serially and
-rejects a parallel optimizer.
+evaluates serially. Transactional polishing leases a session per evaluation from
+the same pool, so it honors the job's evaluation width too; it rejects a parallel
+optimizer only when the backend cannot pool sessions for it. Its population is
+`--polishing-pop`, which is its own knob rather than the job-wide `--pop`.
 
 ## Build targets
 

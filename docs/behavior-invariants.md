@@ -90,9 +90,21 @@ Rendering-side invariants live in
   the 2.1×/5.3× render-cost figures describe the first sweep of a coverage cycle
   with the optimizer stubbed out and fall to 1.44× over a full cycle, and at
   equal wall clock the strategy reached a worse cost than `hybrid-overlap` in
-  every configuration measured. At the default three sweeps it only offers the
-  last `3 * activeSetSize` draw slots to the optimizer. Do not describe it as an
-  end-to-end speedup.
+  every configuration measured. It only offers the last
+  `maxSweeps * activeSetSize` draw slots to the optimizer, so it needs a sweep
+  budget of at least `ceil(circles / activeSetSize)` to have seen every circle
+  once. Do not describe it as an end-to-end speedup.
+- Polishing has its own population, `polishingPopSize`, and does not inherit
+  `popSize`. The two size different problems: `popSize` is chosen for the whole
+  vector, while a sweep optimizes one active set — seven parameters per circle,
+  35 at the default active-set size. An omitted `polishingPopSize` resolves to
+  its own default rather than to `popSize`, which is deliberate and is the one
+  place polishing departs from the `evaluationWorkers` compatibility rule: a
+  checkpoint written before the field resumes at the polishing default, so a
+  fixed seed reproduces such a run only when the field is set explicitly. The
+  defaults come from [`polishing-budget-report.md`](polishing-budget-report.md),
+  where quality is measured to be non-monotone in the population, so a larger
+  inherited one is not a safe bet.
 - The polishing acceptance gate is a non-regression rule, not an absolute one.
   `sweepKeepsCirclesUseful` requires every circle **in the active set** to be
   useful after the sweep — valid, changing at least one pixel, and contributing
