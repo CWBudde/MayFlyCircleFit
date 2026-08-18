@@ -2469,15 +2469,15 @@ Status: Completed and shipped in PR on feature branch.
 `EventBroadcaster` is keyed by job ID today, so a dashboard watching several
 jobs would need one `EventSource` per job.
 
-- [ ] `SubscribeAll() chan ProgressEvent` and `UnsubscribeAll(ch)` on
+- [x] `SubscribeAll() chan ProgressEvent` and `UnsubscribeAll(ch)` on
       `EventBroadcaster`.
-- [ ] `Broadcast` fans out to per-job **and** wildcard subscribers, preserving
+- [x] `Broadcast` fans out to per-job **and** wildcard subscribers, preserving
       the existing non-blocking-send-and-drop semantics.
-- [ ] `CleanupJob` must not leak wildcard channels.
-- [ ] New `GET /api/v1/stream` handler modelled on `handleJobStream`: an
+- [x] `CleanupJob` must not leak wildcard channels.
+- [x] New `GET /api/v1/stream` handler modelled on `handleJobStream`: an
       immediate snapshot of every running job, then live events, reusing
       `writeSSEEvent` and the existing 500 ms worker throttle.
-- [ ] Race-tested fan-out: `go test -race -short ./internal/server/...`.
+- [x] Race-tested fan-out: `go test -race -short ./internal/server/...`.
 
 ### Task 17.4: Dashboard Read Model (`GET /api/v1/dashboard`)
 
