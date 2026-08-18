@@ -86,7 +86,10 @@ func TestCampaignPlotIsSelfContained(t *testing.T) {
 	if !strings.Contains(body, "<svg") || !strings.Contains(body, "<polyline") {
 		t.Fatal("campaign page does not draw an inline SVG plot")
 	}
-	for _, forbidden := range []string{"cdn.", "https://unpkg", "http://", "https://"} {
+	// Scoped to the attributes that actually fetch something: a bare
+	// "https://" also matches an SVG namespace or a link in prose, neither of
+	// which loads anything off the host.
+	for _, forbidden := range []string{`src="http`, `src="//`, `href="http`, `href="//`, `url(http`, `url(//`} {
 		if strings.Contains(bodyWithoutLayout(body), forbidden) {
 			t.Errorf("campaign plot pulls in %q, but the UI is served with no external assets", forbidden)
 		}

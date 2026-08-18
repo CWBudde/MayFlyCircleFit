@@ -1,6 +1,7 @@
 import { Chart } from "chart.js";
 import type { TooltipItem } from "chart.js";
-import { useMemo, useRef } from "react";
+import { useId, useMemo, useRef } from "react";
+import type { CSSProperties } from "react";
 import { applyAxisTheme, useLineChart } from "./charts";
 import type { Palette } from "./charts";
 
@@ -71,10 +72,30 @@ function plottableStages(points: CampaignCostChartPoint[]): CampaignCostChartPoi
 		.sort((left, right) => left.index - right.index);
 }
 
+// chartLabel repeats the aria-label the server SVG carries, so replacing the
+// SVG with a canvas does not take the plot's name away from a screen reader.
+const chartLabel = "Best cost against circle count across the campaign";
+
+// srOnly keeps the textual reading of the plot in the accessibility tree while
+// leaving it out of the drawing. A canvas has no structure to announce, so the
+// stage sentences the SVG puts in each point's <title> live here instead.
+const srOnly: CSSProperties = {
+	position: "absolute",
+	width: "1px",
+	height: "1px",
+	margin: "-1px",
+	padding: 0,
+	overflow: "hidden",
+	clip: "rect(0 0 0 0)",
+	whiteSpace: "nowrap",
+	border: 0,
+};
+
 // CampaignCostChart is the React port of CampaignCostPlot: best cost against
 // circle count, one point per stage that recorded one.
 export function CampaignCostChart({ points, palette, variant = "mini" }: CampaignCostChartProps) {
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
+	const descriptionId = useId();
 	const plotted = useMemo(() => plottableStages(points), [points]);
 	// The tooltip callback runs outside React's render, so it reads the points
 	// through a ref rather than closing over the render they were built in.
@@ -165,8 +186,15 @@ export function CampaignCostChart({ points, palette, variant = "mini" }: Campaig
 							}),
 				}}
 			>
-				<canvas ref={canvasRef} />
+				<canvas ref={canvasRef} role="img" aria-label={chartLabel} aria-describedby={descriptionId} />
 			</div>
+			<ul id={descriptionId} style={srOnly}>
+				{plotted.map((point) => (
+					<li key={point.index}>
+						{`stage ${point.index} (${point.kind}): ${point.circles} circles, cost ${point.bestCost.toFixed(3)}`}
+					</li>
+				))}
+			</ul>
 			<CampaignCostLegend palette={palette} compact={compact} />
 		</div>
 	);
