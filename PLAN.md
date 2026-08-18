@@ -2570,13 +2570,13 @@ Reuse rather than reimplement: `Server.discoverAllChains()`,
 
 ### Task 17.5: Routing and the templ Shell
 
-- [ ] `/` routes to a new `handleDashboard`; the job-list rendering currently
+- [x] `/` routes to a new `handleDashboard`; the job-list rendering currently
       inside `handleIndex` moves to a new `/jobs` route. `/jobs` and `/jobs/`
       are distinct `http.ServeMux` patterns and both must be registered.
-- [ ] Delete `internal/ui/index.templ` and `index_templ.go` — `ui.Index()` is
+- [x] Delete `internal/ui/index.templ` and `index_templ.go` — `ui.Index()` is
       dead code with no caller.
-- [ ] Navigation becomes Dashboard / Jobs / Campaigns / Create Job / GitHub.
-- [ ] New `internal/ui/dashboard.templ` **server-renders the complete
+- [x] Navigation becomes Dashboard / Jobs / Campaigns / Create Job / GitHub.
+- [x] New `internal/ui/dashboard.templ` **server-renders the complete
       dashboard** — stat tiles, campaign cards, running-job rows — reusing
       `.card`, the `.badge-*` classes, `StateBadge`, and the CSS custom
       properties already defined in `layout.templ`. The React island hydrates in

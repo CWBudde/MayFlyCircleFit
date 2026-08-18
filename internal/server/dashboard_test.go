@@ -264,7 +264,7 @@ func TestDashboardRunningJobFromBoundsMetricHistory(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing seeded job")
 	}
-	row := dashboardRunningJobFrom(jobState)
+	row := dashboardRunningJobFrom(jobState, true)
 	if row.Project != app.DefaultProject {
 		t.Fatalf("row project = %q, want %q", row.Project, app.DefaultProject)
 	}
@@ -276,6 +276,16 @@ func TestDashboardRunningJobFromBoundsMetricHistory(t *testing.T) {
 	}
 	if row.ElapsedSec <= 0 {
 		t.Fatalf("elapsed seconds = %f, want >0", row.ElapsedSec)
+	}
+
+	// The server-rendered page has no sparkline to seed, so it must not pay to
+	// convert the history — but everything it does print has to survive.
+	lite := dashboardRunningJobFrom(jobState, false)
+	if len(lite.MetricHistory) != 0 {
+		t.Fatalf("history-free row carries %d samples, want 0", len(lite.MetricHistory))
+	}
+	if lite.ID != row.ID || lite.Iterations != row.Iterations || lite.BestCost != row.BestCost {
+		t.Fatalf("history-free row = %+v, want the same job fields as %+v", lite, row)
 	}
 }
 

@@ -9,7 +9,7 @@ templ CreateJobPage(errorMsg, project string) {
 	@Layout("Create Job") {
 		<div style="max-width: 800px; margin: 0 auto;">
 			<div style="margin-bottom: 2rem;">
-				<a href="/" style="color: var(--text-muted); text-decoration: none; font-size: 0.875rem; margin-bottom: 0.5rem; display: inline-block;">
+				<a href="/jobs" style="color: var(--text-muted); text-decoration: none; font-size: 0.875rem; margin-bottom: 0.5rem; display: inline-block;">
 					← Back to Jobs
 				</a>
 				<h1 style="font-size: 2rem; font-weight: 700;">
@@ -448,7 +448,7 @@ templ CreateJobPage(errorMsg, project string) {
 
 				<!-- Submit Button -->
 				<div style="display: flex; gap: 1rem; justify-content: flex-end; padding-top: 1rem; border-top: 1px solid var(--border-color);">
-					<a href="/" class="btn" style="background-color: var(--border-color); text-decoration: none;">
+					<a href="/jobs" class="btn" style="background-color: var(--border-color); text-decoration: none;">
 						Cancel
 					</a>
 					<button type="submit" class="btn btn-primary">

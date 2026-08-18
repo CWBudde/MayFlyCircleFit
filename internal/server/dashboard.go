@@ -52,17 +52,34 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	runningJobs, aggregates := s.dashboardRows()
-	response := dashboardResponse{
-		Campaigns:   s.dashboardCampaigns(),
-		RunningJobs: runningJobs,
-		Aggregates:  aggregates,
-		HostFacts:   HostFactsFromMetadata(s.metadata),
-	}
+	response := s.dashboardPayload()
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		slog.Error("Failed to encode dashboard response", "error", err)
+	}
+}
+
+// dashboardPayload builds the whole read model, metric history included. The
+// island seeds its sparklines from that history, so the JSON endpoint owes it.
+func (s *Server) dashboardPayload() dashboardResponse {
+	return s.buildDashboardPayload(true)
+}
+
+// dashboardPagePayload leaves the metric history out. The server-rendered page
+// draws no sparkline, so converting up to dashboardMetricHistoryLimit samples
+// per running job would be work thrown away on every page load.
+func (s *Server) dashboardPagePayload() dashboardResponse {
+	return s.buildDashboardPayload(false)
+}
+
+func (s *Server) buildDashboardPayload(includeHistory bool) dashboardResponse {
+	runningJobs, aggregates := s.dashboardRows(includeHistory)
+	return dashboardResponse{
+		Campaigns:   s.dashboardCampaigns(),
+		RunningJobs: runningJobs,
+		Aggregates:  aggregates,
+		HostFacts:   HostFactsFromMetadata(s.metadata),
 	}
 }
 
@@ -96,7 +113,7 @@ func (s *Server) dashboardCampaigns() []ui.CampaignSummary {
 	return summaries
 }
 
-func (s *Server) dashboardRows() ([]dashboardRunningJob, dashboardAggregates) {
+func (s *Server) dashboardRows(includeHistory bool) ([]dashboardRunningJob, dashboardAggregates) {
 	counts, running := s.jobManager.StateCountsWithRunning()
 	aggregates := dashboardAggregates{
 		Running:   counts[StateRunning],
@@ -106,29 +123,33 @@ func (s *Server) dashboardRows() ([]dashboardRunningJob, dashboardAggregates) {
 
 	runningRows := make([]dashboardRunningJob, 0, len(running))
 	for _, job := range running {
-		row := dashboardRunningJobFrom(job)
+		row := dashboardRunningJobFrom(job, includeHistory)
 		aggregates.CPS += row.CPS
 		runningRows = append(runningRows, row)
 	}
 	return runningRows, aggregates
 }
 
-func dashboardRunningJobFrom(job *Job) dashboardRunningJob {
+func dashboardRunningJobFrom(job *Job, includeHistory bool) dashboardRunningJob {
 	// The sparkline seed is bounded, so only the tail is worth converting: a
 	// long-running job's history is refetched whole on every dashboard load.
-	samples := job.MetricHistory
-	if len(samples) > dashboardMetricHistoryLimit {
-		samples = samples[len(samples)-dashboardMetricHistoryLimit:]
-	}
-	history := make([]ui.MetricSample, 0, len(samples))
-	for _, sample := range samples {
-		history = append(history, ui.MetricSample{
-			Iteration:    sample.Iteration,
-			Cost:         sample.Cost,
-			PSNR:         cloneFloat(sample.PSNR),
-			PSNRInfinite: sample.PSNRInfinite,
-			SSIM:         cloneFloat(sample.SSIM),
-		})
+	// A caller that draws no sparkline pays for none of it.
+	var history []ui.MetricSample
+	if includeHistory {
+		samples := job.MetricHistory
+		if len(samples) > dashboardMetricHistoryLimit {
+			samples = samples[len(samples)-dashboardMetricHistoryLimit:]
+		}
+		history = make([]ui.MetricSample, 0, len(samples))
+		for _, sample := range samples {
+			history = append(history, ui.MetricSample{
+				Iteration:    sample.Iteration,
+				Cost:         sample.Cost,
+				PSNR:         cloneFloat(sample.PSNR),
+				PSNRInfinite: sample.PSNRInfinite,
+				SSIM:         cloneFloat(sample.SSIM),
+			})
+		}
 	}
 
 	elapsed := jobElapsed(job)
