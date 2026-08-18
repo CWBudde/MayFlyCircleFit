@@ -99,23 +99,12 @@ func BenchmarkPolishStrategyQualityAfterBatchFit(b *testing.B) {
 	const width, height, circleCount, batchSize = 128, 128, 64, 8
 	truth := polishQualityTruth(circleCount, width, height)
 	reference := polishQualityReference(truth, width, height)
-
-	fitOptimizer, err := opt.NewMayflyVariant("standard", 400, 30, 4242)
-	if err != nil {
-		b.Fatalf("NewMayflyVariant() error = %v", err)
-	}
-	fitRenderer := NewCPURenderer(reference, circleCount)
-	fitRenderer.SetThreads(1)
-	fitted, err := OptimizeBatch(fitRenderer, fitOptimizer, circleCount, batchSize, DisabledConvergenceConfig())
-	if err != nil {
-		b.Fatalf("OptimizeBatch() error = %v", err)
-	}
-	fittedCircles := len(fitted.BestParams) / paramsPerCircle
+	fitted, fittedCircles := fittedPolishVector(b, reference, circleCount, batchSize)
 
 	for _, sweeps := range []int{3, 13} {
 		for _, strategy := range polishStrategies {
 			b.Run(fmt.Sprintf("fitted/sweeps=%d/%s", sweeps, strategy), func(b *testing.B) {
-				runPolishQualityBenchmark(b, reference, fitted.BestParams, fittedCircles, sweeps, strategy)
+				runPolishQualityBenchmark(b, reference, fitted, fittedCircles, sweeps, strategy)
 			})
 		}
 	}
