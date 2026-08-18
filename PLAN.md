@@ -2318,10 +2318,13 @@ island before any dashboard code is written.
       (the trivial island). `web/tsconfig.json` exists for editor support only;
       esbuild strips types and does not typecheck.
 - [x] The bundle is **committed** to `internal/ui/static/dashboard.js`
-      (192,815 bytes, minified ESM, `--target=es2020`). Two consecutive runs of
+      (194,350 bytes, minified ESM, `--target=es2020`). Two consecutive runs of
       `scripts/bundle-web.sh` produced byte-identical output
-      (sha256 `5b2fb999…06da`), which is what makes the drift gate meaningful
-      rather than flaky.
+      (sha256 `0431460a…491f`), which is what makes the drift gate meaningful
+      rather than flaky. `--legal-comments=eof` keeps each dependency's
+      `@license` banner in the bundle, and `THIRD-PARTY-NOTICES.md` — shipped in
+      every release archive — carries the full texts those banners point at,
+      because the bundle is redistributed inside the binary.
 - [x] New `internal/ui/static.go` embedding the whole `static` directory and
       exposing `ui.StaticHandler() http.Handler`, `ui.StaticPrefix`, and
       `ui.BundleURL()`. Assets are served with an explicit content type plus
@@ -2329,7 +2332,9 @@ island before any dashboard code is written.
       immutable` **only** when the request's `?v=` matches the content hash —
       an unversioned or stale URL gets `no-cache`, because it may have come
       from a cached page that predates the current bundle. `BundleURL()` is what
-      `layout.templ` renders, so a rebuilt bundle is a new URL.
+      the `ui.IslandBundle()` component renders, so a rebuilt bundle is a new
+      URL. The script tag is deliberately **not** in the shared layout: only a
+      page that renders a `data-island` element should pay for the bundle.
 - [x] New `mux.Handle(ui.StaticPrefix, ui.StaticHandler())` route in
       `internal/server/server.go`. The handler serves only names that are
       actually embedded: no directory listing, no nested path, and nothing that

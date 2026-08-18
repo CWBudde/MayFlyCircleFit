@@ -44,7 +44,7 @@ case "$release_build_date" in
 		;;
 esac
 
-for required_file in README.md LICENSE CHANGELOG.md assets/test.png; do
+for required_file in README.md LICENSE THIRD-PARTY-NOTICES.md CHANGELOG.md assets/test.png; do
 	if [[ ! -f "$repo_root/$required_file" ]]; then
 		printf 'required release file is missing: %s\n' "$required_file" >&2
 		exit 1
@@ -83,7 +83,10 @@ for platform in "${platforms[@]}"; do
 		CGO_ENABLED=0 GOOS="$release_os" GOARCH="$release_arch" \
 			go build -buildvcs=false -trimpath -ldflags "$ldflags" -o "$stage_dir/$binary_name" .
 	)
-	cp "$repo_root/README.md" "$repo_root/LICENSE" "$repo_root/CHANGELOG.md" "$stage_dir/"
+	# THIRD-PARTY-NOTICES.md covers the npm packages compiled into the
+	# embedded island bundle; they ship inside the binary, so the notices
+	# have to ship in the archive.
+	cp "$repo_root/README.md" "$repo_root/LICENSE" "$repo_root/THIRD-PARTY-NOTICES.md" "$repo_root/CHANGELOG.md" "$stage_dir/"
 	cp "$repo_root/assets/test.png" "$stage_dir/assets/"
 
 	if [[ "$release_os" == "windows" ]]; then

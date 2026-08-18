@@ -121,21 +121,51 @@ func TestStaticHandlerRejectsAnythingNotEmbedded(t *testing.T) {
 	}
 }
 
-func TestLayoutLoadsTheIslandBundle(t *testing.T) {
+func TestIslandBundleLoadsTheVersionedBundle(t *testing.T) {
 	var output bytes.Buffer
-	if err := Layout("Bundle test").Render(context.Background(), &output); err != nil {
-		t.Fatalf("render layout: %v", err)
+	if err := IslandBundle().Render(context.Background(), &output); err != nil {
+		t.Fatalf("render island bundle: %v", err)
 	}
 
 	body := output.String()
 	if !strings.Contains(body, `type="module"`) {
-		t.Error("layout does not load the bundle as a module script")
+		t.Error("IslandBundle does not load the bundle as a module script")
 	}
 	// The versioned URL must reach the markup: a page that links the
 	// unversioned path would keep serving a stale bundle from cache after a
 	// rebuild.
 	if !strings.Contains(body, BundleURL()) {
-		t.Errorf("layout does not reference %q", BundleURL())
+		t.Errorf("IslandBundle does not reference %q", BundleURL())
+	}
+}
+
+// The bundle is opt-in per page. Loading it from the shared layout would make
+// every page in the UI fetch and parse it, including the ones that have no
+// island for it to mount into.
+func TestLayoutDoesNotLoadTheIslandBundle(t *testing.T) {
+	var output bytes.Buffer
+	if err := Layout("Bundle test").Render(context.Background(), &output); err != nil {
+		t.Fatalf("render layout: %v", err)
+	}
+
+	if body := output.String(); strings.Contains(body, bundleName) {
+		t.Errorf("layout links %s; only pages with an island may load it", bundleName)
+	}
+}
+
+// The bundle embeds compiled copies of its npm dependencies and is
+// redistributed inside release binaries, so their licence banners have to
+// survive minification. See THIRD-PARTY-NOTICES.md.
+func TestBundleKeepsDependencyLicenseNotices(t *testing.T) {
+	bundle, err := staticFS.ReadFile("static/" + bundleName)
+	if err != nil {
+		t.Fatalf("read bundle: %v", err)
+	}
+
+	for _, notice := range []string{"@license React", "Copyright (c) Meta Platforms, Inc. and affiliates."} {
+		if !bytes.Contains(bundle, []byte(notice)) {
+			t.Errorf("bundle is missing the notice %q; is --legal-comments still set?", notice)
+		}
 	}
 }
 
