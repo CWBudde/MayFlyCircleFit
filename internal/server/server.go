@@ -183,7 +183,8 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	// Register UI routes
-	mux.HandleFunc("/", s.handleIndex)
+	mux.HandleFunc("/", s.handleDashboardPage)
+	mux.HandleFunc("/jobs", s.handleJobsPage)
 	mux.HandleFunc("/jobs/", s.handleJobDetail)
 	mux.HandleFunc("/create", s.handleCreatePage)
 	mux.HandleFunc("/schedules", s.handleCampaignList)

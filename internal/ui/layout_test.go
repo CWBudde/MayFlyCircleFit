@@ -24,6 +24,11 @@ func TestLayoutIncludesThemeSwitcher(t *testing.T) {
 		`mayflycirclefit.theme`,
 		`localStorage.removeItem(storageKey)`,
 		`aria-label="Use system theme" aria-pressed="true"`,
+		`>Dashboard<`,
+		`>Jobs<`,
+		`/jobs`,
+		`>Campaigns<`,
+		`>Create Job<`,
 	} {
 		if !strings.Contains(body, marker) {
 			t.Errorf("rendered layout missing %q", marker)

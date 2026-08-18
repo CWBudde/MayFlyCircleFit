@@ -1,0 +1,204 @@
+package ui
+
+import "fmt"
+
+// DashboardPageData is the server-side projection for the HTML dashboard.
+type DashboardPageData struct {
+	Campaigns   []CampaignSummary
+	RunningJobs []DashboardRunningJob
+	Aggregates  DashboardAggregates
+	HostFacts   HostFacts
+}
+
+// DashboardRunningJob is the per-job row model for server rendering.
+type DashboardRunningJob struct {
+	ID              string
+	Project         string
+	State           string
+	Iterations      int
+	MaxIters        int
+	BestCost        float64
+	InitialCost     float64
+	CPS             float64
+	EvaluationWidth int
+	ElapsedSec      float64
+}
+
+// DashboardAggregates matches the dashboard endpoint’s aggregate block.
+type DashboardAggregates struct {
+	Running   int
+	Pending   int
+	Completed int
+	CPS       float64
+}
+
+// HostFacts is a rendered subset of /api/v1/system for the dashboard.
+type HostFacts struct {
+	Version         string
+	Commit          string
+	BuildDate       string
+	GOOS            string
+	GOARCH          string
+	GOMAXPROCS      int
+	GoVersion       string
+	SIMD            string
+	ActiveSSDKernel string
+	ActiveSADKernel string
+	Compositing     string
+	FastCompositing string
+	GPUState        string
+}
+
+// DashboardPage renders a static dashboard with jobs, campaigns, and host metadata.
+templ DashboardPage(page DashboardPageData) {
+	@Layout("Dashboard") {
+		<div style="margin-bottom: 2rem;">
+			<h1 style="font-size: 2rem; font-weight: 700;">Dashboard</h1>
+			<p style="color: var(--text-muted);">
+				Monitor jobs, campaigns, and host state from one view.
+			</p>
+		</div>
+
+		<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+			<div class="card">
+				<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem;">Jobs</h2>
+				<div style="display: grid; gap: 0.5rem; color: var(--text-muted);">
+					<p><strong>Running:</strong> { fmt.Sprintf("%d", page.Aggregates.Running) }</p>
+					<p><strong>Pending:</strong> { fmt.Sprintf("%d", page.Aggregates.Pending) }</p>
+					<p><strong>Completed:</strong> { fmt.Sprintf("%d", page.Aggregates.Completed) }</p>
+				</div>
+			</div>
+			<div class="card">
+				<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem;">Throughput</h2>
+				<div style="display: grid; gap: 0.5rem; color: var(--text-muted);">
+					<p><strong>Circles/sec:</strong> { fmt.Sprintf("%.2f", page.Aggregates.CPS) }</p>
+				</div>
+			</div>
+			<div class="card">
+				<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem;">Host</h2>
+				<div style="display: grid; gap: 0.5rem; color: var(--text-muted);">
+					<p><strong>Runtime:</strong> { page.HostFacts.GOOS }/{ page.HostFacts.GOARCH }</p>
+					<p><strong>SIMD:</strong> { page.HostFacts.SIMD }</p>
+					<p><strong>GPU:</strong> { page.HostFacts.GPUState }</p>
+					<p><strong>Build:</strong> { page.HostFacts.Version }</p>
+				</div>
+			</div>
+		</div>
+
+		<div class="card" style="margin-bottom: 1.5rem;">
+			<div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
+				<h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">Running jobs</h2>
+				<a href="/jobs" class="btn" style="background-color: var(--border-color);">Open jobs page</a>
+			</div>
+			if len(page.RunningJobs) == 0 {
+				<p style="color: var(--text-muted);">No jobs are running right now.</p>
+			} else {
+				<div style="overflow-x: auto;">
+					<table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
+						<thead>
+							<tr style="text-align: left; border-bottom: 1px solid var(--border-color);">
+								<th style="padding: 0.5rem 0.5rem 0.5rem 0;">Job</th>
+								<th style="padding: 0.5rem;">State</th>
+								<th style="padding: 0.5rem; text-align: right;">Iter</th>
+								<th style="padding: 0.5rem; text-align: right;">Best cost</th>
+								<th style="padding: 0.5rem; text-align: right;">Gain</th>
+								<th style="padding: 0.5rem; text-align: right;">CPS</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, job := range page.RunningJobs {
+								<tr style="border-bottom: 1px solid var(--border-color);">
+									<td style="padding: 0.75rem 0.5rem 0.75rem 0;">
+										<a href={ templ.URL(fmt.Sprintf("/jobs/%s", job.ID)) } style="font-family: monospace; color: var(--text-color); text-decoration: none;">
+											{ shortID(job.ID) }
+										</a>
+										<div style="font-size: 0.75rem; color: var(--text-muted);">{ job.Project }</div>
+									</td>
+									<td style="padding: 0.75rem 0.5rem;">
+										@StateBadge(job.State)
+									</td>
+													<td style="padding: 0.75rem 0.5rem; text-align: right;">{ fmt.Sprintf("%d", job.Iterations) }</td>
+									<td style="padding: 0.75rem 0.5rem; text-align: right;">{ fmt.Sprintf("%.4f", job.BestCost) }</td>
+									<td style="padding: 0.75rem 0.5rem; text-align: right; color: var(--success-color);">{ formatJobImprovement(job.InitialCost, job.BestCost) }</td>
+									<td style="padding: 0.75rem 0.5rem; text-align: right;">{ fmt.Sprintf("%.2f", job.CPS) }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+			<a href="/api/v1/stream" style="display:inline-block; margin-top: 0.75rem; color: var(--primary-color);">Stream updates</a>
+		</div>
+
+		<div class="card" style="margin-bottom: 1.5rem;">
+			<div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
+				<h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">Campaigns</h2>
+				<a href="/schedules" class="btn" style="background-color: var(--border-color);">Open campaigns</a>
+			</div>
+			if len(page.Campaigns) == 0 {
+				<p style="color: var(--text-muted);">No campaigns yet. Start one via <code>POST /api/v1/schedules</code>.</p>
+			} else {
+				<div style="display: grid; gap: 1rem;">
+					for _, campaign := range page.Campaigns {
+						@dashboardCampaignCard(campaign)
+					}
+				</div>
+			}
+			<div style="margin-top: 1rem;" data-island="placeholder" data-island-label="dashboard">
+				<p style="color: var(--text-muted);">Interactive charts and updates load client-side.</p>
+			</div>
+			@IslandBundle()
+		</div>
+	}
+}
+
+templ dashboardCampaignCard(summary CampaignSummary) {
+	<a href={ templ.URL(dashboardCampaignURL(summary)) } style="text-decoration: none; color: inherit;">
+		<div class="card" style="border-left: 4px solid var(--primary-color);">
+			<div style="display: flex; justify-content: space-between; align-items: start; gap: 1rem;">
+				<div>
+					<div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+						<h3 style="font-size: 1.125rem; font-weight: 600; font-family: monospace;">{ shortID(summary.ID) }</h3>
+							if summary.Name != "" {
+								<span style="color: var(--text-muted);">{ summary.Name }</span>
+							}
+					</div>
+					<div style="display: flex; gap: 1rem; color: var(--text-muted); font-size: 0.875rem;">
+						<span><strong>Stages:</strong> { campaignStageCount(summary) }</span>
+						<span><strong>Circles:</strong> { fmt.Sprintf("%d", summary.Circles) }</span>
+					</div>
+				</div>
+					<div style="text-align: right;">
+						if summary.State != "" {
+							@ScheduleStateBadge(summary.State)
+						}
+						if summary.HasBestCost {
+						<div style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.5rem;">Best cost</div>
+						<div style="font-size: 1.125rem; font-weight: 600;">{ fmt.Sprintf("%.2f", summary.BestCost) }</div>
+					}
+					if !summary.UpdatedAt.IsZero() {
+						<div style="font-size: 0.75rem; color: var(--text-muted);">{ formatTime(summary.UpdatedAt) }</div>
+					}
+				</div>
+			</div>
+		</div>
+	</a>
+}
+
+func dashboardCampaignURL(summary CampaignSummary) string {
+	switch summary.Source {
+	case CampaignFromChain:
+		return fmt.Sprintf("/chains/%s", summary.ID)
+	case CampaignFromSchedule:
+		return fmt.Sprintf("/schedules/%s", summary.ID)
+	default:
+		return fmt.Sprintf("/schedules/%s", summary.ID)
+	}
+}
+
+func formatJobImprovement(initialCost, bestCost float64) string {
+	if initialCost <= 0 || bestCost > initialCost {
+		return "—"
+	}
+	return fmt.Sprintf("↓ %.1f%%", (1-bestCost/initialCost)*100)
+}

@@ -52,17 +52,21 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	runningJobs, aggregates := s.dashboardRows()
-	response := dashboardResponse{
-		Campaigns:   s.dashboardCampaigns(),
-		RunningJobs: runningJobs,
-		Aggregates:  aggregates,
-		HostFacts:   HostFactsFromMetadata(s.metadata),
-	}
+	response := s.dashboardPayload()
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		slog.Error("Failed to encode dashboard response", "error", err)
+	}
+}
+
+func (s *Server) dashboardPayload() dashboardResponse {
+	runningJobs, aggregates := s.dashboardRows()
+	return dashboardResponse{
+		Campaigns:   s.dashboardCampaigns(),
+		RunningJobs: runningJobs,
+		Aggregates:  aggregates,
+		HostFacts:   HostFactsFromMetadata(s.metadata),
 	}
 }
 

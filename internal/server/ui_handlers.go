@@ -14,14 +14,78 @@ import (
 	"github.com/cwbudde/mayflycirclefit/internal/ui"
 )
 
-// handleIndex handles GET /
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+// handleDashboardPage handles GET /
+func (s *Server) handleDashboardPage(w http.ResponseWriter, r *http.Request) {
 	// Only handle exact root path
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
+	payload := s.dashboardPayload()
+	jobs := make([]ui.DashboardRunningJob, 0, len(payload.RunningJobs))
+	for _, runningJob := range payload.RunningJobs {
+		jobs = append(jobs, ui.DashboardRunningJob{
+			ID:              runningJob.ID,
+			Project:         string(runningJob.Project),
+			State:           runningJob.State,
+			Iterations:      runningJob.Iterations,
+			MaxIters:        runningJob.MaxIters,
+			BestCost:        runningJob.BestCost,
+			InitialCost:     runningJob.InitialCost,
+			CPS:             runningJob.CPS,
+			EvaluationWidth: runningJob.EvaluationWidth,
+			ElapsedSec:      runningJob.ElapsedSec,
+		})
+	}
+	if err := ui.DashboardPage(ui.DashboardPageData{
+		Campaigns:   payload.Campaigns,
+		RunningJobs: jobs,
+		Aggregates: ui.DashboardAggregates{
+			Running:   payload.Aggregates.Running,
+			Pending:   payload.Aggregates.Pending,
+			Completed: payload.Aggregates.Completed,
+			CPS:       payload.Aggregates.CPS,
+		},
+		HostFacts: ui.HostFacts{
+			Version:         payload.HostFacts.Version,
+			Commit:          payload.HostFacts.Commit,
+			BuildDate:       payload.HostFacts.BuildDate,
+			GOOS:            payload.HostFacts.GOOS,
+			GOARCH:          payload.HostFacts.GOARCH,
+			GOMAXPROCS:      payload.HostFacts.GOMAXPROCS,
+			GoVersion:       payload.HostFacts.GoVersion,
+			SIMD:            payload.HostFacts.SIMD,
+			ActiveSSDKernel: payload.HostFacts.ActiveSSDKernel,
+			ActiveSADKernel: payload.HostFacts.ActiveSADKernel,
+			Compositing:     payload.HostFacts.CompositingBackend,
+			FastCompositing: payload.HostFacts.FastCompositingBackend,
+			GPUState:        payload.HostFacts.GPU.State,
+		},
+	}).Render(r.Context(), w); err != nil {
+		http.Error(w, "Failed to render page", http.StatusInternalServerError)
+		return
+	}
+}
+
+// handleJobsPage handles GET /jobs
+func (s *Server) handleJobsPage(w http.ResponseWriter, r *http.Request) {
+	// Only handle exact jobs path
+	if r.URL.Path != "/jobs" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	// Get all jobs from job manager

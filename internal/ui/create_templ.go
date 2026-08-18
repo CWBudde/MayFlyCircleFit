@@ -46,7 +46,7 @@ func CreateJobPage(errorMsg, project string) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div style=\"max-width: 800px; margin: 0 auto;\"><div style=\"margin-bottom: 2rem;\"><a href=\"/\" style=\"color: var(--text-muted); text-decoration: none; font-size: 0.875rem; margin-bottom: 0.5rem; display: inline-block;\">← Back to Jobs</a><h1 style=\"font-size: 2rem; font-weight: 700;\">Create New Job</h1><p style=\"color: var(--text-muted); margin-top: 0.5rem;\">Configure and start a new circle fitting optimization job.</p></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div style=\"max-width: 800px; margin: 0 auto;\"><div style=\"margin-bottom: 2rem;\"><a href=\"/jobs\" style=\"color: var(--text-muted); text-decoration: none; font-size: 0.875rem; margin-bottom: 0.5rem; display: inline-block;\">← Back to Jobs</a><h1 style=\"font-size: 2rem; font-weight: 700;\">Create New Job</h1><p style=\"color: var(--text-muted); margin-top: 0.5rem;\">Configure and start a new circle fitting optimization job.</p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
