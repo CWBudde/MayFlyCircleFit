@@ -87,9 +87,6 @@ type Runtime struct {
 	Device     DeviceInfo
 }
 
-// ErrNoDevices indicates that no usable OpenCL devices were found.
-var ErrNoDevices = errors.New("no OpenCL devices found")
-
 // InitOpenCL selects a device (GPU preferred, then CPU) and creates a context.
 func InitOpenCL() (*Runtime, error) {
 	records, err := enumeratePlatformRecords()
