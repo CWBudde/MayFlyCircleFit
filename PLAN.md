@@ -2446,7 +2446,8 @@ island before any dashboard code is written.
       recipe and the CI gate cannot drift apart.
 - [x] `web/src/` holds the TSX sources — `dashboard.tsx` (entry),
       `islands.tsx` (the `data-island` mount convention), and `Placeholder.tsx`
-      (the trivial island). `web/tsconfig.json` exists for editor support only;
+      (the trivial island; Task 17.6 replaced it with the real dashboard island
+      and deleted it). `web/tsconfig.json` exists for editor support only;
       esbuild strips types and does not typecheck.
 - [x] The bundle is **committed** to `internal/ui/static/dashboard.js`
       (194,350 bytes, minified ESM, `--target=es2020`). Two consecutive runs of
@@ -2585,20 +2586,41 @@ Reuse rather than reimplement: `Server.discoverAllChains()`,
 
 ### Task 17.6: React Island — Charts and Live Updates
 
-- [ ] `web/src/dashboard.tsx` mounts on the server-rendered root.
-- [ ] Per-campaign mini Chart.js line chart of best cost against circle count,
+- [x] `web/src/dashboard.tsx` mounts on the server-rendered root.
+- [x] Per-campaign mini Chart.js line chart of best cost against circle count,
       with points styled by stage kind to match `campaignPointFill`: base uses
       `--success-color`, extend `--primary-color`, polish `--warning-color`.
-- [ ] Per-running-job cost sparkline, seeded from `MetricHistory` and grown from
+- [x] Per-running-job cost sparkline, seeded from `MetricHistory` and grown from
       the stream.
-- [ ] `EventSource("/api/v1/stream")` updates costs, iterations, progress bars,
+- [x] `EventSource("/api/v1/stream")` updates costs, iterations, progress bars,
       and CPS in place; a reconnect refetches `/api/v1/dashboard`.
-- [ ] A `useChartTheme()` hook resolves palette tokens through
+- [x] A `useChartTheme()` hook resolves palette tokens through
       `getComputedStyle(document.documentElement)` and re-resolves on both a
       `MutationObserver` watching `data-theme` and a `prefers-color-scheme`
       `matchMedia` listener, then calls `chart.update()` (risk 2).
-- [ ] Stat tiles show total circles per second, the running job count, and an
-      architecture badge such as `amd64 · avx2 · cpu` from the host block.
+- [x] Stat tiles show total circles per second, the running job count, and an
+      architecture badge such as `amd64 · avx2 · cpu` from the host block. The
+      third component is the render backend, which is what the GPU probe
+      reports; `compositingBackend` names a SIMD kernel and is already covered
+      by the second component.
+- [x] The page seeds the island through `templ.JSONScript("dashboard-page",
+      page)`, so `ui.DashboardPageData` and the endpoint's `dashboardResponse`
+      have to deserialize into the same shape — the island parses the seed
+      before mount and `/api/v1/dashboard` after it. `ui.HostFacts` therefore
+      nests its GPU block the way the endpoint does, and
+      `TestDashboardPageSeedMatchesEndpointShape` compares the two payloads
+      field by field so a tag renamed on one side alone fails there rather than
+      at the island's first refetch.
+- [x] A progress event carries a job's own counters and nothing else, so
+      merging one updates the running count and the CPS total but leaves the
+      pending and completed counts as the read model last reported them: the
+      island holds the running jobs, not the whole job table, and cannot count
+      the others. A terminal event drops the job and triggers a refetch, which
+      is what makes those counts and any campaign advance correct again.
+- [x] Each chart is created once and updated in place. Rebuilding a Chart.js
+      instance whenever its data changed would mean a canvas reallocation per
+      stream frame, which is exactly the cost the imperative `chart.update()`
+      path exists to avoid.
 
 ### Task 17.7: Port the Campaign Cost Plot
 
