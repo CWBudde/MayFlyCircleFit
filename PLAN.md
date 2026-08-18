@@ -2302,31 +2302,74 @@ tasks below, and because a later reader will otherwise assume they were missed:
 Everything else depends on this. Land it alone and prove it with a trivial
 island before any dashboard code is written.
 
-- [ ] `web/package.json` and `package-lock.json` carrying **dependencies only**:
-      `react`, `react-dom`, `chart.js`. Add `react-chartjs-2` only if the
-      wrapper earns its weight — Chart.js driven from a `useEffect` is often
-      less code than the wrapper plus its own lifecycle rules.
-- [ ] `go get -tool github.com/evanw/esbuild/cmd/esbuild`, adding it to the
-      `tool` block in `go.mod` alongside `templ`, `pprof`, and `benchstat`. The
-      bundling step is then Go, not node; npm is only a dependency fetcher.
-- [ ] `web/src/` holds the TSX sources. `web/tsconfig.json` exists for editor
-      support only — esbuild strips types, it does not typecheck.
-- [ ] The bundle is **committed** to `internal/ui/static/dashboard.js`.
-- [ ] New `internal/ui/static.go` with `//go:embed static/dashboard.js` and
-      `ui.StaticHandler() http.Handler`, serving the file with a correct content
-      type and an immutable cache header keyed on a content hash.
-- [ ] New `mux.Handle("/static/", ...)` route in `internal/server/server.go`.
-      No static route exists today and `assets/` is not served, so this is a new
-      surface on the trusted-local boundary.
-- [ ] `justfile` gains `bundle` and `bundle-check`, mirroring the existing
-      `templ` / `templ-check` pair, and `bundle-check` joins `just check`.
-- [ ] New `.github/workflows/ci-bundle.yml`. CI is one gate per file, so the
-      gate gets its own workflow; `ci.yml` is edited only to add the `bundle:`
-      job and to list it in `release`'s `needs:`.
+- [x] `web/package.json` and `package-lock.json` carrying **dependencies only**:
+      `react`, `react-dom`, `chart.js`. `react-chartjs-2` was not taken: the
+      wrapper's own lifecycle rules cost more than driving Chart.js from a
+      `useEffect`, and Task 17.6 needs imperative `chart.update()` calls for the
+      theme hook regardless. Resolved versions: react and react-dom 19.2.8,
+      chart.js 4.5.1, five packages in total.
+- [x] `go get -tool github.com/evanw/esbuild/cmd/esbuild` (v0.28.2), adding it
+      to the `tool` block in `go.mod` alongside `templ`, `pprof`, and
+      `benchstat`. The bundling step is Go, not node; npm is only a dependency
+      fetcher. The invocation lives in `scripts/bundle-web.sh` so the `just`
+      recipe and the CI gate cannot drift apart.
+- [x] `web/src/` holds the TSX sources — `dashboard.tsx` (entry),
+      `islands.tsx` (the `data-island` mount convention), and `Placeholder.tsx`
+      (the trivial island). `web/tsconfig.json` exists for editor support only;
+      esbuild strips types and does not typecheck.
+- [x] The bundle is **committed** to `internal/ui/static/dashboard.js`
+      (192,815 bytes, minified ESM, `--target=es2020`). Two consecutive runs of
+      `scripts/bundle-web.sh` produced byte-identical output
+      (sha256 `5b2fb999…06da`), which is what makes the drift gate meaningful
+      rather than flaky.
+- [x] New `internal/ui/static.go` embedding the whole `static` directory and
+      exposing `ui.StaticHandler() http.Handler`, `ui.StaticPrefix`, and
+      `ui.BundleURL()`. Assets are served with an explicit content type plus
+      `nosniff`, an ETag, and `Cache-Control: public, max-age=31536000,
+      immutable` **only** when the request's `?v=` matches the content hash —
+      an unversioned or stale URL gets `no-cache`, because it may have come
+      from a cached page that predates the current bundle. `BundleURL()` is what
+      `layout.templ` renders, so a rebuilt bundle is a new URL.
+- [x] New `mux.Handle(ui.StaticPrefix, ui.StaticHandler())` route in
+      `internal/server/server.go`. The handler serves only names that are
+      actually embedded: no directory listing, no nested path, and nothing that
+      reaches the filesystem, so the new surface on the trusted-local boundary
+      cannot be walked. `internal/server/static_test.go` pins that an unknown
+      asset is a 404 rather than the catch-all `/` handler's HTML.
+- [x] `justfile` gains `web-deps`, `bundle`, and `bundle-check`, the latter
+      mirroring `templ-check`; `just check` now depends on `bundle-check`.
+- [x] New `.github/workflows/ci-bundle.yml`, reporting as
+      `bundle / Committed island bundle is current`. It is the only workflow
+      that installs node. `ci.yml` is edited only to add the `bundle:` job and
+      to list it in `release`'s `needs:`.
 
 **Done when:** a placeholder island renders inside a templ page, `just check`
 fails if the committed bundle is stale, and `go build ./...` succeeds on a
 machine with no node installed.
+
+**Observed on this revision:** `just bundle-check` fails both ways it is meant
+to — with the bundle untracked ("Bundled assets are untracked") and with a TSX
+source edited but the bundle not rebuilt (`git diff --exit-code` on
+`internal/ui/static/*`) — and passes with the tree consistent. `go vet ./...`,
+`go test -short ./...`, `go test -race -short ./internal/ui/ ./internal/server/`,
+and `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...` all pass, and
+regenerating templ output changes nothing. `go build ./...` was also run on a
+`PATH` holding only `$(go env GOROOT)/bin` and a directory containing `sh`, with
+both `node` and `npm` confirmed absent from it, and succeeded — the no-node
+property is a measurement, not an assumption.
+
+The browser half of "renders inside a templ page" was **not** observed: headless
+Firefox is the only browser on this machine and it hangs before producing a
+screenshot, so nothing here drove `createRoot` against a real DOM. What was
+observed instead is that the same TSX compiles and renders through the same
+esbuild pipeline — `renderToStaticMarkup(<Placeholder root={…}/>)` executed under
+node emits `<span data-island-mounted="true">pipeline mounted</span>` — and that
+the shipped minified bundle contains the mount code
+(`document.querySelectorAll(\`[data-island="${t}"]\`)` followed by
+`createRoot(n).render(...)`). The gap left is the DOM query and mount themselves.
+Task 17.5 is the first task to render a `data-island` element into a real page;
+closing this gap belongs there, and the placeholder island stays in the bundle
+until it does.
 
 ### Task 17.2: Host Facts Endpoint (`GET /api/v1/system`)
 

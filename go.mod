@@ -4,6 +4,7 @@ go 1.24.0
 
 tool (
 	github.com/a-h/templ/cmd/templ
+	github.com/evanw/esbuild/cmd/esbuild
 	github.com/google/pprof
 	golang.org/x/perf/cmd/benchstat
 )
@@ -23,6 +24,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/cli/browser v1.3.0 // indirect
+	github.com/evanw/esbuild v0.28.2 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/google/pprof v0.0.0-20250630185457-6e76a2b096b5 // indirect

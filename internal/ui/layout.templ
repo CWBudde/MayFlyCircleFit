@@ -367,6 +367,12 @@ templ Layout(title string) {
 					}
 				}
 			</style>
+			// The island bundle is committed and embedded, so it is served by
+			// this binary rather than fetched from a network the host may not
+			// have. Module scripts are deferred by default; every page that
+			// uses an island server-renders its content first, so loading late
+			// costs nothing.
+			<script type="module" src={ BundleURL() }></script>
 		</head>
 		<body>
 			<nav>

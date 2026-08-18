@@ -53,6 +53,9 @@ diff.png
 # Cache
 .cache/
 
+# Frontend dependencies (fetched by `just web-deps`; the bundle itself is committed)
+/web/node_modules/
+
 # AI Agents
 .claude/
 
