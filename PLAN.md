@@ -2190,6 +2190,264 @@ and then runs unattended as a single observable entity.
 
 ---
 
+## Phase 17: Dashboard Start Page
+
+**Goal:** Turn `/` from a flat job list into a dashboard: campaigns at a glance
+with running ones marked and charted, every running job with a live chart,
+throughput and host stats, and the best result of a campaign shown with the same
+image viewer the job detail page already has.
+
+**Why now:** `GET /` renders `ui.JobList` while `ui.Index()` in
+`internal/ui/index.templ` is unreferenced dead code. There is no overview:
+campaigns live only at `/schedules`, running jobs have no aggregate view, and
+the host's actual execution characteristics are never surfaced anywhere —
+`fit.Tier()`, `fit.ActiveSSDKernel()`, `fit.ActiveSADKernel()` and
+`gpu.EnumeratePlatforms()` have zero non-test callers outside `internal/fit`,
+and `cmd/version.go` prints only a version string. A user cannot currently tell
+from the UI whether a run is on AVX2, NEON, scalar, or OpenCL.
+
+**Decisions taken up front** (recorded so a later reader does not re-litigate
+them):
+
+| Decision | Choice |
+| --- | --- |
+| Frontend | templ shell plus a **React island**, Chart.js for charts |
+| Bundler | **esbuild as a `go tool`**; npm only fetches dependencies |
+| Live updates | **Global SSE stream** (new wildcard subscription) |
+| Campaign overview | Active campaigns first, then N most recently updated |
+| Routing | `/` is the dashboard, `/jobs` is the job list, `ui.Index()` deleted |
+| Island scope | The dashboard **and** the campaign cost plot |
+| Campaign image | Full viewer on the campaign page, newest stage with a checkpoint |
+
+This phase is the first JavaScript build step in a Go-only repository. Four
+risks are named here because each one has a specific mitigation baked into the
+tasks below, and because a later reader will otherwise assume they were missed:
+
+1. **npm enters a Go-only CI.** Phase 14 has a clean-clone gate and `npm ci`
+   needs network access. The mitigation is structural rather than procedural:
+   the bundle is **committed and `go:embed`-ed**, exactly like
+   `internal/ui/*_templ.go`, so `go build ./...` never needs npm or node. Only
+   the new drift gate does.
+2. **Chart.js draws to a canvas and cannot read `var(--primary-color)`.**
+   Palette tokens must be resolved with `getComputedStyle` and re-applied when
+   the theme changes. The layout supports three theme states — an explicit
+   `data-theme` attribute in either direction, plus an unset default that
+   follows `prefers-color-scheme` — and all three must be handled.
+3. **Porting the campaign plot to React means the campaign page needs
+   JavaScript for its main chart.** The mitigation is progressive enhancement:
+   `buildCampaignPlot`'s server-rendered SVG stays as the pre-hydration render
+   and React replaces it after mount, so the page still works with JavaScript
+   disabled and `internal/ui/schedule_test.go` keeps passing unchanged.
+4. **`Server.discoverAllChains()` scans every project's checkpoints from
+   disk.** That is acceptable for `/schedules`, which is visited deliberately,
+   but not for a start page that reloads often. The dashboard endpoint must cap
+   the result set and cache the scan.
+
+### Task 17.1: Frontend Build Pipeline (esbuild as a Go tool)
+
+Everything else depends on this. Land it alone and prove it with a trivial
+island before any dashboard code is written.
+
+- [ ] `web/package.json` and `package-lock.json` carrying **dependencies only**:
+      `react`, `react-dom`, `chart.js`. Add `react-chartjs-2` only if the
+      wrapper earns its weight — Chart.js driven from a `useEffect` is often
+      less code than the wrapper plus its own lifecycle rules.
+- [ ] `go get -tool github.com/evanw/esbuild/cmd/esbuild`, adding it to the
+      `tool` block in `go.mod` alongside `templ`, `pprof`, and `benchstat`. The
+      bundling step is then Go, not node; npm is only a dependency fetcher.
+- [ ] `web/src/` holds the TSX sources. `web/tsconfig.json` exists for editor
+      support only — esbuild strips types, it does not typecheck.
+- [ ] The bundle is **committed** to `internal/ui/static/dashboard.js`.
+- [ ] New `internal/ui/static.go` with `//go:embed static/dashboard.js` and
+      `ui.StaticHandler() http.Handler`, serving the file with a correct content
+      type and an immutable cache header keyed on a content hash.
+- [ ] New `mux.Handle("/static/", ...)` route in `internal/server/server.go`.
+      No static route exists today and `assets/` is not served, so this is a new
+      surface on the trusted-local boundary.
+- [ ] `justfile` gains `bundle` and `bundle-check`, mirroring the existing
+      `templ` / `templ-check` pair, and `bundle-check` joins `just check`.
+- [ ] New `.github/workflows/ci-bundle.yml`. CI is one gate per file, so the
+      gate gets its own workflow; `ci.yml` is edited only to add the `bundle:`
+      job and to list it in `release`'s `needs:`.
+
+**Done when:** a placeholder island renders inside a templ page, `just check`
+fails if the committed bundle is stale, and `go build ./...` succeeds on a
+machine with no node installed.
+
+### Task 17.2: Host Facts Endpoint (`GET /api/v1/system`)
+
+The first time the process says out loud what it is actually running on.
+
+- [ ] New handler in `internal/server` returning `runtime.GOOS`,
+      `runtime.GOARCH`, `runtime.GOMAXPROCS(0)`, and `runtime.Version()`.
+- [ ] SIMD: `fit.Tier()` (the process-wide resolved tier),
+      `fit.ActiveSSDKernel()`, and `fit.ActiveSADKernel()`.
+- [ ] Compositing: `renderer.CompositingBackend()` and
+      `renderer.FastCompositingBackend()`. Report both — a `fastCompositing`
+      flag without its kernel name hides the case where the fast path is a pure
+      pessimisation.
+- [ ] Backends: `renderer.SupportedBackends()`.
+- [ ] GPU via `gpu.EnumeratePlatforms()`, reporting **three distinct states**:
+      built with `-tags gpu` and devices found, built with no devices
+      (`gpu.ErrNoDevices`), and not built (`gpu.ErrNotBuilt`). Reporting a
+      non-GPU build as "unavailable" would be a lie about the binary.
+- [ ] Version, commit, and build date passed into the server from `cmd` rather
+      than imported, keeping dependency direction toward the lower-level
+      packages.
+- [ ] Optional but preferred: `mayflycirclefit version --verbose` prints the
+      same struct, so the CLI and the UI cannot disagree about the host.
+
+### Task 17.3: Global SSE Stream
+
+`EventBroadcaster` is keyed by job ID today, so a dashboard watching several
+jobs would need one `EventSource` per job.
+
+- [ ] `SubscribeAll() chan ProgressEvent` and `UnsubscribeAll(ch)` on
+      `EventBroadcaster`.
+- [ ] `Broadcast` fans out to per-job **and** wildcard subscribers, preserving
+      the existing non-blocking-send-and-drop semantics.
+- [ ] `CleanupJob` must not leak wildcard channels.
+- [ ] New `GET /api/v1/stream` handler modelled on `handleJobStream`: an
+      immediate snapshot of every running job, then live events, reusing
+      `writeSSEEvent` and the existing 500 ms worker throttle.
+- [ ] Race-tested fan-out: `go test -race -short ./internal/server/...`.
+
+### Task 17.4: Dashboard Read Model (`GET /api/v1/dashboard`)
+
+The initial state the island renders from, and what it refetches on reconnect.
+Reuse rather than reimplement: `Server.discoverAllChains()`,
+`chainCampaignSummaries`, `summarizeCampaign`, `ScheduleStore.ListSchedules`,
+`ScheduleStore.LoadScheduleStages`, `JobManager.GetRunningJobs()`, and
+`JobManager.ListJobs()` already produce everything needed.
+
+- [ ] `ui.CampaignSummary` gains a compact stage series — `Index`, `Kind`,
+      `Circles`, `BestCost`, `HasBestCost` per stage — to feed the per-card mini
+      chart, and `LeafJobID`, the newest stage carrying a checkpoint, for the
+      thumbnail.
+- [ ] Ordering: running and pending campaigns first, then the N most recently
+      updated by `UpdatedAt`. N is capped and the chain scan is cached (risk 4).
+- [ ] Running-job rows carry `Iterations`, `MaxIters` (from
+      `plannedOptimizerIterations`), `BestCost`, `InitialCost`, `CPS`,
+      `EvaluationWidth`, `ElapsedSec`, and a **bounded** slice of
+      `MetricHistory` to seed each sparkline.
+- [ ] Aggregate tiles: running, pending, and completed counts; summed CPS across
+      running jobs; and the Task 17.2 host block.
+
+### Task 17.5: Routing and the templ Shell
+
+- [ ] `/` routes to a new `handleDashboard`; the job-list rendering currently
+      inside `handleIndex` moves to a new `/jobs` route. `/jobs` and `/jobs/`
+      are distinct `http.ServeMux` patterns and both must be registered.
+- [ ] Delete `internal/ui/index.templ` and `index_templ.go` — `ui.Index()` is
+      dead code with no caller.
+- [ ] Navigation becomes Dashboard / Jobs / Campaigns / Create Job / GitHub.
+- [ ] New `internal/ui/dashboard.templ` **server-renders the complete
+      dashboard** — stat tiles, campaign cards, running-job rows — reusing
+      `.card`, the `.badge-*` classes, `StateBadge`, and the CSS custom
+      properties already defined in `layout.templ`. The React island hydrates in
+      place and adds charts and live updates on top. The page must be readable
+      with JavaScript disabled.
+
+### Task 17.6: React Island — Charts and Live Updates
+
+- [ ] `web/src/dashboard.tsx` mounts on the server-rendered root.
+- [ ] Per-campaign mini Chart.js line chart of best cost against circle count,
+      with points styled by stage kind to match `campaignPointFill`: base uses
+      `--success-color`, extend `--primary-color`, polish `--warning-color`.
+- [ ] Per-running-job cost sparkline, seeded from `MetricHistory` and grown from
+      the stream.
+- [ ] `EventSource("/api/v1/stream")` updates costs, iterations, progress bars,
+      and CPS in place; a reconnect refetches `/api/v1/dashboard`.
+- [ ] A `useChartTheme()` hook resolves palette tokens through
+      `getComputedStyle(document.documentElement)` and re-resolves on both a
+      `MutationObserver` watching `data-theme` and a `prefers-color-scheme`
+      `matchMedia` listener, then calls `chart.update()` (risk 2).
+- [ ] Stat tiles show total circles per second, the running job count, and an
+      architecture badge such as `amd64 · avx2 · cpu` from the host block.
+
+### Task 17.7: Port the Campaign Cost Plot
+
+- [ ] `web/src/CampaignCostChart.tsx` reproduces what `buildCampaignPlot` draws:
+      axes labelled Circles and Best cost, per-point tooltips reading
+      `stage %d (%s): %d circles, cost %.3f`, the base/extend/polish legend, and
+      the rule that stages without `HasBestCost` are **skipped, never plotted at
+      zero** — a running stage has no result yet, and drawing it as a perfect
+      fit would invert the meaning of the chart.
+- [ ] `CampaignCostPlot` and `buildCampaignPlot` are **kept** as the
+      server-rendered pre-hydration SVG (risk 3). React swaps into the same
+      container after mount, and `internal/ui/schedule_test.go` passes untouched.
+- [ ] The same component serves the dashboard's mini charts at a smaller size.
+      The server-side plot is fixed at 960×340 by package constants, which is
+      precisely why the small variant goes to React rather than to a second set
+      of constants.
+
+### Task 17.8: Shared Image Viewer and the Campaign Best Image
+
+The viewer already exists on the job detail page — reference, best,
+side-by-side (default), difference, and overlay with an opacity slider and
+`1`–`5` keyboard shortcuts. Extract it; do not rewrite it.
+
+- [ ] New `ui.ImageViewer(ImageViewerData)` in `internal/ui/image_viewer.templ`,
+      parameterised by job ID, image URLs, cache-busting revision, and default
+      mode.
+- [ ] `detail.templ` consumes the extracted component. Its output must stay
+      equivalent; `internal/ui/detail_test.go` is the guard.
+- [ ] `ui.CampaignPage` gains the viewer, pointed at the newest stage carrying a
+      checkpoint and served by the existing
+      `/api/v1/jobs/:id/{ref,best,diff}.png` endpoints. Default mode is
+      side-by-side.
+- [ ] A campaign with no completed stage renders a placeholder, not a broken
+      image.
+- [ ] Dashboard campaign cards get a plain `best.png` thumbnail that links
+      through — not the full viewer, which would put several difference and
+      overlay layers on one page.
+
+### Task 17.9: Tests, Docs, and Gates
+
+- [ ] `internal/ui`: dashboard render tests following the `schedule_test.go`
+      fixture-and-substring pattern, and an `ImageViewer` test asserting all
+      five modes.
+- [ ] `internal/server`: handler tests for `/api/v1/system`,
+      `/api/v1/dashboard`, `/api/v1/stream` (including wildcard unsubscribe
+      under `-race`), `/jobs`, and `/static/`.
+- [ ] `AGENTS.md`: Toolchain gains esbuild, npm, and the committed bundle;
+      Architecture gains `web/`; Commands gains `just bundle`.
+- [ ] `docs/behavior-invariants.md`: `/static/` is a new surface on the
+      trusted-local boundary, and the global SSE stream is new observable
+      behavior.
+- [ ] `docs/releasing.md`: the new `bundle` gate and its prefixed reporting
+      name.
+- [ ] `README.md`: the new routes and a screenshot.
+- [ ] Coverage does not dip; fresh `just test-coverage` results attached.
+
+**Deliverables:**
+
+- A dashboard at `/` showing campaigns, running jobs, throughput, and host
+  execution facts
+- A first React island with a reproducible, committed, `go:embed`-ed bundle
+  built by a Go tool
+- `GET /api/v1/system`, `GET /api/v1/dashboard`, and `GET /api/v1/stream`
+- A shared image viewer used by both the job detail page and the campaign page
+
+**Acceptance Checks:**
+
+- [ ] `just check` passes, including the new bundle drift gate, and fails when
+      the committed bundle is stale
+- [ ] `go build ./...` succeeds with no node installed
+- [ ] `/` shows stat tiles, campaign cards, and running jobs; the architecture
+      badge matches `MAYFLY_SIMD_TIER` when that variable forces a tier
+- [ ] Starting a campaign moves its card to the top, marked running, with a
+      ticking chart
+- [ ] Charts stay legible in all three theme states: auto, forced light, and
+      forced dark
+- [ ] The campaign page image viewer offers all five modes, the opacity slider,
+      and the `1`–`5` shortcuts
+- [ ] With JavaScript disabled, the dashboard and the campaign cost plot still
+      render
+- [ ] Killing the server mid-view leads the SSE client to reconnect and refetch
+
+---
+
 ## Summary and Next Steps
 
 This plan covers **Phases 0-14** in complete detail with bite-sized, testable tasks. Each task follows TDD principles:
@@ -2220,3 +2478,10 @@ could not be run as written and are amended in place rather than ticked: the
 only on the compute box whose directory was deleted on 2026-08-17. Each is
 replaced by a test over what the check was protecting, and each replacement is
 labelled as such.
+
+**Phase 17** is planned but not started. It is the first phase to introduce a
+JavaScript build step into a Go-only repository, so Task 17.1 is deliberately
+landed and verified on its own — with a placeholder island — before any
+dashboard code depends on it. The committed, `go:embed`-ed bundle is what keeps
+`go build ./...` free of node and npm; if that property is ever lost, the
+clean-clone gate of Phase 14 is what will notice.
