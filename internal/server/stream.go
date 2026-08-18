@@ -283,8 +283,20 @@ func (s *Server) handleAllJobStream(w http.ResponseWriter, r *http.Request) {
 	defer s.jobManager.broadcaster.UnsubscribeAll(eventChan)
 
 	// Send one snapshot of all running jobs.
+	//
+	// Subscribing first means an event can already be queued by the time the
+	// snapshot reads the manager, and the manager will by then have advanced
+	// past it. Writing the snapshot and then draining that backlog unchanged
+	// would walk the client backwards -- iteration 20 followed by iteration 10 --
+	// so each job carries a floor until one of its events catches up. The
+	// manager rejects a non-monotonic progress update, so the floor cannot
+	// outrun the job, and terminal events bypass it so a cancellation is never
+	// the event that gets dropped.
+	iterationFloor := make(map[string]int)
 	for _, job := range s.jobManager.GetRunningJobs() {
-		if err := writeSSEEvent(w, jobProgressSnapshot(job)); err != nil {
+		snapshot := jobProgressSnapshot(job)
+		iterationFloor[snapshot.JobID] = snapshot.Iterations
+		if err := writeSSEEvent(w, snapshot); err != nil {
 			slog.Error("Failed to write initial SSE event", "error", err)
 			return
 		}
@@ -307,6 +319,16 @@ func (s *Server) handleAllJobStream(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				// Channel closed
 				return
+			}
+
+			if floor, guarded := iterationFloor[event.JobID]; guarded {
+				if !event.terminal() && event.Iterations < floor {
+					continue
+				}
+				// The stream is ordered from here on: Broadcast is serialized
+				// and this channel is FIFO, so only the snapshot gap needed a
+				// guard.
+				delete(iterationFloor, event.JobID)
 			}
 
 			if err := writeSSEEvent(w, event); err != nil {
