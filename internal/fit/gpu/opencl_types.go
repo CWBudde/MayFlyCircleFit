@@ -1,5 +1,18 @@
 package gpu
 
+import "errors"
+
+// Both sentinels live in this untagged file so that callers outside the package
+// can compare against either one in both builds. Each build returns only the one
+// that can actually happen: the stub always fails with ErrNotBuilt, and the GPU
+// build never returns it.
+var (
+	// ErrNotBuilt indicates the binary was built without GPU support.
+	ErrNotBuilt = errors.New("opencl support requires building with '-tags gpu'")
+	// ErrNoDevices indicates that no usable OpenCL devices were found.
+	ErrNoDevices = errors.New("no OpenCL devices found")
+)
+
 // DeviceType describes the class of an OpenCL device.
 type DeviceType string
 

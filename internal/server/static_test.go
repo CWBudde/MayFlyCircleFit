@@ -53,3 +53,97 @@ func TestUnknownStaticAssetIsNotFound(t *testing.T) {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
 	}
 }
+
+// TestStaticRouteRejectsNonCanonicalPaths pins the boundary behavior of the
+// /static/ prefix against http.ServeMux's path canonicalization.
+//
+// The mux answers a non-canonical path with a redirect to the cleaned one, which
+// takes the request out of the static prefix entirely: "/static/../go.mod"
+// would become a redirect to "/go.mod", handled by whatever owns that route.
+// staticPathGuard rejects those before the mux sees them, so the prefix answers
+// only for names that are actually embedded. Without the guard, those cases are
+// handled by the mux redirect first.
+func TestStaticRouteRejectsNonCanonicalPaths(t *testing.T) {
+	root := t.TempDir()
+	persistence, err := store.NewFSStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root}).Handler()
+
+	testCases := []struct {
+		name string
+		url  string
+	}{
+		{"parent traversal", "/static/../go.mod"},
+		{"traversal through a subdirectory", "/static/subdir/../dashboard.js"},
+		{"current directory segment", "/static/./dashboard.js"},
+		{"doubled separator", "/static//dashboard.js"},
+		{"percent-encoded traversal", "/static/%2e%2e/go.mod"},
+		{"percent-encoded separator", "/static/..%2fgo.mod"},
+		// path.Clean turns this into "/evil.example.com/x". It stays host
+		// relative, so the mux redirect was never an open redirect, but the
+		// request still has no business leaving the static prefix.
+		{"traversal toward a host-like segment", "/static/..//evil.example.com/x"},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, testCase.url, nil))
+
+			if recorder.Code != http.StatusNotFound {
+				t.Errorf("status = %d, want %d", recorder.Code, http.StatusNotFound)
+			}
+			if location := recorder.Header().Get("Location"); location != "" {
+				t.Errorf("Location = %q, want no redirect out of the static prefix", location)
+			}
+		})
+	}
+}
+
+// TestNonStaticRoutesKeepMuxCanonicalization guards the guard: it must apply to
+// the static prefix only, leaving every other route with the mux's ordinary
+// redirect. A guard that swallowed all non-canonical paths would silently
+// change the API surface.
+func TestNonStaticRoutesKeepMuxCanonicalization(t *testing.T) {
+	root := t.TempDir()
+	persistence, err := store.NewFSStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root}).Handler()
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/./jobs", nil))
+
+	if status := recorder.Code; status != http.StatusMovedPermanently && status != http.StatusTemporaryRedirect {
+		t.Fatalf("status = %d, want %d or %d", status, http.StatusMovedPermanently, http.StatusTemporaryRedirect)
+	}
+	if got, want := recorder.Header().Get("Location"), "/api/v1/jobs"; got != want {
+		t.Errorf("Location = %q, want %q", got, want)
+	}
+}
+
+func TestIsCanonicalPath(t *testing.T) {
+	testCases := []struct {
+		path string
+		want bool
+	}{
+		{"/static/dashboard.js", true},
+		// The mux treats a trailing slash as significant while path.Clean drops
+		// it, so the prefix itself must not be mistaken for non-canonical.
+		{"/static/", true},
+		{"/static", true},
+		{"/", true},
+		{"/static/../go.mod", false},
+		{"/static/./dashboard.js", false},
+		{"/static//dashboard.js", false},
+	}
+
+	for _, testCase := range testCases {
+		if got := isCanonicalPath(testCase.path); got != testCase.want {
+			t.Errorf("isCanonicalPath(%q) = %t, want %t", testCase.path, got, testCase.want)
+		}
+	}
+}

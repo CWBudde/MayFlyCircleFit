@@ -2,16 +2,10 @@
 
 package gpu
 
-import (
-	"fmt"
-	"unsafe"
-)
+import "unsafe"
 
 // Runtime is a placeholder when GPU support is not compiled.
 type Runtime struct{}
-
-// ErrNotBuilt indicates the binary was built without GPU support.
-var ErrNotBuilt = fmt.Errorf("opencl support requires building with '-tags gpu'")
 
 // InitOpenCL returns an error when GPU support is not compiled in.
 func InitOpenCL() (*Runtime, error) {
