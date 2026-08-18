@@ -25,6 +25,27 @@ const (
 	MaxProjectSlugLen  = 64
 )
 
+// The polishing budget defaults are a measurement, not an inheritance. Each is
+// named rather than written inline because the CLI flag default and the
+// configuration default have to agree, and because the number came from a run
+// that is worth being able to find: see docs/polishing-budget-report.md.
+//
+// The short version, on the 64-circle fitted vector that report measures: a
+// sweep optimizes one active set of 35 parameters, so a population sized for the
+// whole vector buys nothing -- 200 costs 5.7x the wall clock of 30 for 1.3x the
+// error removed -- and neither does a long epoch, whose return per second falls
+// monotonically past ~100 iterations. Sweeps are the only axis that moves
+// polishing onto different circles, and the per-sweep gain was still at full
+// rate at sweep four. Together these defaults removed 2.6x the error of the
+// previous ones in 57% of the wall clock.
+const (
+	DefaultPolishingPopSize         = 30
+	DefaultPolishingIters           = 200
+	DefaultPolishingEpochs          = 2
+	DefaultPolishingMaxSweeps       = 8
+	DefaultPolishingStagnationIters = 100
+)
+
 // Project is a project slug. It is a named string type so the compiler can tell
 // a slug apart from the other bare strings that travel beside it — a job ID, a
 // reference image path, a termination reason. A named string type marshals to
@@ -162,6 +183,7 @@ type JobConfig struct {
 	PolishingMaxSweeps       int               `json:"polishingMaxSweeps,omitempty"`
 	PolishingEpochs          int               `json:"polishingEpochs,omitempty"`
 	PolishingIters           int               `json:"polishingIters,omitempty"`
+	PolishingPopSize         int               `json:"polishingPopSize,omitempty"`
 	PolishingStagnationIters int               `json:"polishingStagnationIters,omitempty"`
 	PolishingMinImprovement  float64           `json:"polishingMinImprovement,omitempty"`
 	Threads                  int               `json:"threads,omitempty"`
@@ -244,10 +266,11 @@ func DefaultConfig() JobConfig {
 		BatchSize:                5,
 		PolishingActiveSetSize:   5,
 		PolishingStrategy:        PolishingReplacement,
-		PolishingMaxSweeps:       3,
-		PolishingEpochs:          2,
-		PolishingIters:           1000,
-		PolishingStagnationIters: 500,
+		PolishingMaxSweeps:       DefaultPolishingMaxSweeps,
+		PolishingEpochs:          DefaultPolishingEpochs,
+		PolishingIters:           DefaultPolishingIters,
+		PolishingPopSize:         DefaultPolishingPopSize,
+		PolishingStagnationIters: DefaultPolishingStagnationIters,
 		PolishingMinImprovement:  0.001,
 		Threads:                  runtime.GOMAXPROCS(0),
 		EnableTrace:              true,
@@ -305,6 +328,22 @@ func (c *JobConfig) ApplyDefaults() error {
 	}
 	if c.PolishingIters == 0 {
 		c.PolishingIters = defaults.PolishingIters
+	}
+	// The polishing population resolves to its own default rather than to
+	// PopSize. Polishing optimizes one active set -- seven parameters per circle,
+	// so 35 at the default active-set size -- while PopSize is chosen for the
+	// whole vector, and a run sized for 512 circles used to spend a population of
+	// 200 on that active set. docs/polishing-budget-report.md measures what that
+	// buys: past a point a larger population removes no more error and, at the
+	// production shape, removed none at all.
+	//
+	// This deliberately does not follow the EvaluationWorkers fallback below.
+	// That field kept inheriting so old checkpoints would resume unchanged; here
+	// inheritance is the defect being removed, so a checkpoint written before the
+	// field resumes at the measured default instead of at its own popSize. Set
+	// polishingPopSize explicitly to reproduce such a run exactly.
+	if c.PolishingPopSize == 0 {
+		c.PolishingPopSize = defaults.PolishingPopSize
 	}
 	if c.PolishingStagnationIters == 0 {
 		c.PolishingStagnationIters = defaults.PolishingStagnationIters
@@ -410,6 +449,9 @@ func (c JobConfig) Validate() error {
 	}
 	if c.PolishingIters < 1 || c.PolishingIters > MaxIterations {
 		return invalid("polishingIters", fmt.Sprintf("must be between 1 and %d", MaxIterations))
+	}
+	if c.PolishingPopSize < MinPopulation || c.PolishingPopSize > MaxPopulation {
+		return invalid("polishingPopSize", fmt.Sprintf("must be between %d and %d", MinPopulation, MaxPopulation))
 	}
 	if c.PolishingStagnationIters < 1 || c.PolishingStagnationIters > c.PolishingIters {
 		return invalid("polishingStagnationIters", "must be positive and no larger than polishingIters")

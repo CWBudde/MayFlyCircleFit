@@ -4,6 +4,8 @@ import (
 	"runtime"
 	"strconv"
 	"testing"
+
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 )
 
 func TestRunThreadsFlagDefaultsToGOMAXPROCS(t *testing.T) {
@@ -74,10 +76,11 @@ func TestRunPolishingFlagDefaults(t *testing.T) {
 		"polishing":                  "false",
 		"polishing-strategy":         "replacement",
 		"polishing-active-set-size":  "5",
-		"polishing-max-sweeps":       "3",
-		"polishing-epochs":           "2",
-		"polishing-iters":            "1000",
-		"polishing-stagnation-iters": "500",
+		"polishing-max-sweeps":       strconv.Itoa(app.DefaultPolishingMaxSweeps),
+		"polishing-epochs":           strconv.Itoa(app.DefaultPolishingEpochs),
+		"polishing-iters":            strconv.Itoa(app.DefaultPolishingIters),
+		"polishing-pop":              strconv.Itoa(app.DefaultPolishingPopSize),
+		"polishing-stagnation-iters": strconv.Itoa(app.DefaultPolishingStagnationIters),
 		"polishing-min-improvement":  "0.001",
 	}
 	for name, want := range tests {
@@ -85,5 +88,26 @@ func TestRunPolishingFlagDefaults(t *testing.T) {
 		if flag == nil || flag.DefValue != want {
 			t.Errorf("--%s = %#v, want default %q", name, flag, want)
 		}
+	}
+}
+
+// TestRunPolishingPopulationFlagMatchesConfigDefault keeps the flag and the
+// configuration default from drifting apart. --polishing-pop is the only way to
+// see the population a polish runs at from the command line, so a flag default
+// that disagreed with DefaultConfig would misreport every unconfigured run.
+func TestRunPolishingPopulationFlagMatchesConfigDefault(t *testing.T) {
+	flag := runCmd.Flags().Lookup("polishing-pop")
+	if flag == nil {
+		t.Fatal("--polishing-pop is not registered")
+	}
+	if want := strconv.Itoa(app.DefaultConfig().PolishingPopSize); flag.DefValue != want {
+		t.Errorf("--polishing-pop default = %q, want %q", flag.DefValue, want)
+	}
+	if app.DefaultConfig().PolishingPopSize == app.DefaultConfig().PopSize {
+		return
+	}
+	// The two differ deliberately: polishing sizes an active set, not a vector.
+	if flag.DefValue == strconv.Itoa(app.DefaultConfig().PopSize) {
+		t.Errorf("--polishing-pop default = %q, which is --pop rather than the polishing default", flag.DefValue)
 	}
 }

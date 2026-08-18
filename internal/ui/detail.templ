@@ -58,6 +58,7 @@ type JobDetail struct {
 	PolishingMaxSweeps int
 	PolishingEpochs int
 	PolishingIters int
+	PolishingPopSize int
 	PolishingStagnationIters int
 	PolishingMinImprovement float64
 	BestCost      float64
@@ -330,7 +331,7 @@ templ JobDetailPage(job JobDetail) {
 						} else {
 							<div style="font-weight: 500;">Enabled · { fmt.Sprintf("up to %d sweeps of %d circles", job.PolishingMaxSweeps, job.PolishingActiveSetSize) }</div>
 						}
-						<div style="font-size: 0.75rem; color: var(--text-muted);">{ fmt.Sprintf("%s · %d × %d iterations · stagnation %d · progress threshold %.4g", job.PolishingStrategy, job.PolishingEpochs, job.PolishingIters, job.PolishingStagnationIters, job.PolishingMinImprovement) }</div>
+						<div style="font-size: 0.75rem; color: var(--text-muted);">{ fmt.Sprintf("%s · population %d · %d × %d iterations · stagnation %d · progress threshold %.4g", job.PolishingStrategy, job.PolishingPopSize, job.PolishingEpochs, job.PolishingIters, job.PolishingStagnationIters, job.PolishingMinImprovement) }</div>
 					} else {
 						<div style="font-weight: 500;">Disabled</div>
 					}

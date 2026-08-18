@@ -1075,8 +1075,12 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 	if request.MinImprovement != nil {
 		config.PolishingMinImprovement = *request.MinImprovement
 	}
+	// popSize on a polish request addresses the polishing population, which is
+	// the only population this continuation ever runs at. It used to reach the
+	// polisher through the job-wide PopSize; now that polishing has a population
+	// of its own, the request field keeps meaning what it always meant.
 	if request.PopSize != nil {
-		config.PopSize = *request.PopSize
+		config.PolishingPopSize = *request.PopSize
 	}
 	if request.Seed != nil {
 		config.Seed = *request.Seed

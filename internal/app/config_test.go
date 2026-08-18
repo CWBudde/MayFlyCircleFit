@@ -20,8 +20,18 @@ func TestNormalizeAppliesCanonicalDefaults(t *testing.T) {
 	if config.PolishingEnabled {
 		t.Fatal("polishing must remain opt-in")
 	}
-	if config.PolishingStrategy != PolishingReplacement || config.PolishingActiveSetSize != 5 || config.PolishingMaxSweeps != 3 || config.PolishingEpochs != 2 || config.PolishingIters != 1000 || config.PolishingStagnationIters != 500 || config.PolishingMinImprovement != 0.001 {
+	if config.PolishingStrategy != PolishingReplacement || config.PolishingActiveSetSize != 5 ||
+		config.PolishingMaxSweeps != DefaultPolishingMaxSweeps || config.PolishingEpochs != DefaultPolishingEpochs ||
+		config.PolishingIters != DefaultPolishingIters || config.PolishingPopSize != DefaultPolishingPopSize ||
+		config.PolishingStagnationIters != DefaultPolishingStagnationIters || config.PolishingMinImprovement != 0.001 {
 		t.Fatalf("polishing defaults not applied: %+v", config)
+	}
+	// The polishing budget is a measurement (docs/polishing-budget-report.md),
+	// and two of its numbers only make sense together: an epoch that stagnates
+	// for half its length stops, which is the ratio every default has shipped.
+	if DefaultPolishingStagnationIters*2 != DefaultPolishingIters {
+		t.Fatalf("stagnation %d is not half of the %d-iteration epoch it stops",
+			DefaultPolishingStagnationIters, DefaultPolishingIters)
 	}
 	if config.Threads != defaults.Threads || config.Threads < 1 {
 		t.Fatalf("threads = %d, want default %d", config.Threads, defaults.Threads)
@@ -78,6 +88,8 @@ func TestValidateBoundaries(t *testing.T) {
 		{"polishing sweeps high", func(c *JobConfig) { c.PolishingMaxSweeps = MaxPolishingSweeps + 1 }, "polishingMaxSweeps"},
 		{"polishing epochs high", func(c *JobConfig) { c.PolishingEpochs = MaxOptimizerEpochs + 1 }, "polishingEpochs"},
 		{"polishing iterations high", func(c *JobConfig) { c.PolishingIters = MaxIterations + 1 }, "polishingIters"},
+		{"polishing population low", func(c *JobConfig) { c.PolishingPopSize = MinPopulation - 1 }, "polishingPopSize"},
+		{"polishing population high", func(c *JobConfig) { c.PolishingPopSize = MaxPopulation + 1 }, "polishingPopSize"},
 		{"polishing stagnation over budget", func(c *JobConfig) { c.PolishingStagnationIters = c.PolishingIters + 1 }, "polishingStagnationIters"},
 		{"polishing improvement NaN", func(c *JobConfig) { c.PolishingMinImprovement = math.NaN() }, "polishingMinImprovement"},
 		{"polishing improvement negative", func(c *JobConfig) { c.PolishingMinImprovement = -1 }, "polishingMinImprovement"},
@@ -177,6 +189,45 @@ func TestNormalizeEvaluationWorkersFallsBackToThreads(t *testing.T) {
 	}
 	if config.Threads != 3 {
 		t.Fatalf("threads = %d, want 3; the two knobs must stay independent", config.Threads)
+	}
+}
+
+// TestNormalizePolishingPopulationDoesNotInheritPopSize is the inverse of
+// TestNormalizeEvaluationWorkersFallsBackToThreads, and deliberately so.
+// Evaluation width kept inheriting for compatibility; the polishing population
+// stops inheriting, because inheritance is the defect it was added to remove: a
+// run sized for a whole vector spent that population on one active set. A
+// checkpoint written before the field therefore polishes at the measured default
+// rather than at its own popSize.
+func TestNormalizePolishingPopulationDoesNotInheritPopSize(t *testing.T) {
+	var old JobConfig
+	if err := json.Unmarshal([]byte(
+		`{"refPath":"reference.png","mode":"batch","circles":8,"iters":100,"popSize":200,"batchSize":8}`,
+	), &old); err != nil {
+		t.Fatal(err)
+	}
+	config, err := Normalize(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.PolishingPopSize != DefaultPolishingPopSize {
+		t.Fatalf("polishingPopSize = %d, want the default %d", config.PolishingPopSize, DefaultPolishingPopSize)
+	}
+	if config.PopSize != 200 {
+		t.Fatalf("popSize = %d, want the written 200 to survive", config.PopSize)
+	}
+
+	explicit := old
+	explicit.PolishingPopSize = 50
+	config, err = Normalize(explicit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.PolishingPopSize != 50 {
+		t.Fatalf("polishingPopSize = %d, want the explicit 50 to survive", config.PolishingPopSize)
+	}
+	if config.PopSize != 200 {
+		t.Fatalf("popSize = %d, want 200; the two knobs must stay independent", config.PopSize)
 	}
 }
 

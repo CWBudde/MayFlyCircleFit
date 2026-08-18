@@ -348,6 +348,7 @@ func TestRunJobExecutesConfiguredBatchPolishing(t *testing.T) {
 		PolishingMaxSweeps:       1,
 		PolishingEpochs:          1,
 		PolishingIters:           2,
+		PolishingPopSize:         20,
 		PolishingStagnationIters: 1,
 		PolishingMinImprovement:  0.001,
 		DisableConvergence:       true,
@@ -402,6 +403,7 @@ func TestRunJobPolishesAtTheConfiguredEvaluationWidth(t *testing.T) {
 		PolishingMaxSweeps:       2,
 		PolishingEpochs:          1,
 		PolishingIters:           2,
+		PolishingPopSize:         20,
 		PolishingStagnationIters: 1,
 		PolishingMinImprovement:  0.001,
 		DisableConvergence:       true,
@@ -427,24 +429,81 @@ func TestRunJobPolishesAtTheConfiguredEvaluationWidth(t *testing.T) {
 	}
 }
 
+// TestRunJobPolishesAtItsOwnPopulation pins that polishing runs at
+// PolishingPopSize and not at the job-wide PopSize. The two are deliberately
+// far apart here, because before the polishing population existed the job-wide
+// one was what a sweep spent on its active set.
+func TestRunJobPolishesAtItsOwnPopulation(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.png")
+	createTestImage(t, imgPath)
+	logs := captureLogs(t)
+	jm := NewJobManager()
+	job := jm.CreateJob(app.DefaultProject, JobConfig{
+		RefPath:                  imgPath,
+		Mode:                     app.ModeBatch,
+		Backend:                  app.BackendCPU,
+		Variant:                  app.VariantStandard,
+		Circles:                  1,
+		BatchSize:                1,
+		Iters:                    2,
+		OptimizerEpochs:          1,
+		PopSize:                  200,
+		Threads:                  1,
+		Seed:                     42,
+		EffectiveSeed:            42,
+		PolishingEnabled:         true,
+		PolishingActiveSetSize:   1,
+		PolishingMaxSweeps:       1,
+		PolishingEpochs:          1,
+		PolishingIters:           2,
+		PolishingPopSize:         20,
+		PolishingStagnationIters: 1,
+		PolishingMinImprovement:  0.001,
+		DisableConvergence:       true,
+	})
+
+	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if population := polishingPopulationFromLogs(t, logs.String()); population != 20 {
+		t.Fatalf("polishing population = %d, want the configured 20 rather than the job's 200", population)
+	}
+}
+
+// polishingPopulationFromLogs reads the population off the same completion
+// record polishingWidthFromLogs reads the width from, for the same reason: the
+// polisher is built inside runJob and its budget is not otherwise observable.
+func polishingPopulationFromLogs(t *testing.T, logs string) int {
+	t.Helper()
+	return polishingRecordField(t, logs, "population=")
+}
+
 // polishingWidthFromLogs reads the evaluation width off the record polishing
 // writes when it finishes. It is the only place the width polishing really used
 // is observable from outside, since the polisher is built inside runJob.
 func polishingWidthFromLogs(t *testing.T, logs string) int {
 	t.Helper()
+	return polishingRecordField(t, logs, "evaluation_workers=")
+}
+
+// polishingRecordField pulls one integer attribute off the polishing completion
+// record.
+func polishingRecordField(t *testing.T, logs, key string) int {
+	t.Helper()
 	for line := range strings.SplitSeq(logs, "\n") {
 		if !strings.Contains(line, "Batch polishing complete") {
 			continue
 		}
-		_, rest, ok := strings.Cut(line, "evaluation_workers=")
+		_, rest, ok := strings.Cut(line, key)
 		if !ok {
-			t.Fatalf("polishing completion record has no evaluation_workers: %s", line)
+			t.Fatalf("polishing completion record has no %s: %s", key, line)
 		}
-		workers, err := strconv.Atoi(strings.Fields(rest)[0])
+		value, err := strconv.Atoi(strings.Fields(rest)[0])
 		if err != nil {
-			t.Fatalf("evaluation_workers is not a number in %q: %v", line, err)
+			t.Fatalf("%s is not a number in %q: %v", key, line, err)
 		}
-		return workers
+		return value
 	}
 	t.Fatalf("no polishing completion record in logs: %s", logs)
 	return 0
@@ -460,7 +519,7 @@ func TestRunJobPolishingOnlyContinuesCompleteBatch(t *testing.T) {
 		Circles: 1, BatchSize: 1, Iters: 2, OptimizerEpochs: 1, PopSize: 20, Threads: 1,
 		Seed: 42, EffectiveSeed: 42, PolishingEnabled: true, PolishingOnly: true,
 		PolishingActiveSetSize: 1, PolishingMaxSweeps: 1, PolishingEpochs: 1,
-		PolishingIters: 2, PolishingStagnationIters: 1, PolishingMinImprovement: 0.001,
+		PolishingIters: 2, PolishingPopSize: 20, PolishingStagnationIters: 1, PolishingMinImprovement: 0.001,
 		DisableConvergence: true,
 	}
 	job := jm.CreateJob(app.DefaultProject, config)

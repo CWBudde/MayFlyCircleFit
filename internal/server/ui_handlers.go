@@ -134,6 +134,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		PolishingMaxSweeps:       job.Config.PolishingMaxSweeps,
 		PolishingEpochs:          job.Config.PolishingEpochs,
 		PolishingIters:           job.Config.PolishingIters,
+		PolishingPopSize:         job.Config.PolishingPopSize,
 		PolishingStagnationIters: job.Config.PolishingStagnationIters,
 		PolishingMinImprovement:  job.Config.PolishingMinImprovement,
 		BestCost:                 job.BestCost,
@@ -258,6 +259,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	polishingMaxSweepsStr := r.FormValue("polishingMaxSweeps")
 	polishingEpochsStr := r.FormValue("polishingEpochs")
 	polishingItersStr := r.FormValue("polishingIters")
+	polishingPopSizeStr := r.FormValue("polishingPopSize")
 	polishingStagnationItersStr := r.FormValue("polishingStagnationIters")
 	polishingMinImprovementStr := r.FormValue("polishingMinImprovement")
 	seedStr := r.FormValue("seed")
@@ -337,6 +339,11 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	polishingIters, err := formIntOrDefault(polishingItersStr, 0, "Polishing iterations")
+	if err != nil {
+		renderCreateError(w, r, formProject, err)
+		return
+	}
+	polishingPopSize, err := formIntOrDefault(polishingPopSizeStr, 0, "Polishing population size")
 	if err != nil {
 		renderCreateError(w, r, formProject, err)
 		return
@@ -423,6 +430,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		PolishingMaxSweeps:       polishingMaxSweeps,
 		PolishingEpochs:          polishingEpochs,
 		PolishingIters:           polishingIters,
+		PolishingPopSize:         polishingPopSize,
 		PolishingStagnationIters: polishingStagnationIters,
 		PolishingMinImprovement:  polishingMinImprovement,
 		Seed:                     seed,

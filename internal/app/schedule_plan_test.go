@@ -42,7 +42,7 @@ func TestPlannedIterationsCountsTheStageBudget(t *testing.T) {
 			// A polish stage runs no batch stage at all, only sweeps.
 			name:  "polish uses the polishing budget",
 			steps: `[{"type": "polish"}]`,
-			want:  3 * 2 * 1000,
+			want:  DefaultPolishingMaxSweeps * DefaultPolishingEpochs * DefaultPolishingIters,
 		},
 		{
 			name:  "polish budget overrides apply",
@@ -100,7 +100,7 @@ func TestConditionDescribeStatesBothClauses(t *testing.T) {
 // The campaign is base 8 circles, +8 extends to 512, and a conditional polish
 // at 32/64/96/128/192/256, over the standard test base: batch mode, batch size
 // 8, 200 iterations, one optimizer epoch, and the shipped polishing defaults of
-// 3 sweeps × 2 epochs × 1000 iterations.
+// 8 sweeps × 2 epochs × 200 iterations.
 //
 //	stages   1 base + 63 extends + 6 polishes                     =    70
 //
@@ -112,11 +112,11 @@ func TestConditionDescribeStatesBothClauses(t *testing.T) {
 //	         1 run × 1 epoch × 200 iters                          =   200
 //	         × 63 extends                                         = 12600
 //
-//	polish   no batch stage; 3 sweeps × 2 epochs × 1000 iters     =  6000
-//	         × 6 polishes                                         = 36000
+//	polish   no batch stage; 8 sweeps × 2 epochs × 200 iters      =  3200
+//	         × 6 polishes                                         = 19200
 //
-//	total    200 + 12600 + 36000                                  = 48800
-//	  of which conditional (the 6 polishes)                       = 36000
+//	total    200 + 12600 + 19200                                  = 32000
+//	  of which conditional (the 6 polishes)                       = 19200
 //	  of which unconditional (base + extends)                     = 12800
 //
 // 63 extends because the canvas climbs from 8 to 512 in steps of 8, and
@@ -132,11 +132,11 @@ func TestReferenceCampaignPlanMatchesTheHandComputation(t *testing.T) {
 		wantStages      = 1 + 63 + 6
 		wantBase        = 1 * 1 * 200
 		wantExtends     = 63 * (1 * 1 * 200)
-		wantPolishes    = 6 * (3 * 2 * 1000)
+		wantPolishes    = 6 * (8 * 2 * 200)
 		wantTotal       = wantBase + wantExtends + wantPolishes
 		wantConditional = wantPolishes
 	)
-	if wantTotal != 48800 {
+	if wantTotal != 32000 {
 		t.Fatalf("the hand computation itself is inconsistent: %d", wantTotal)
 	}
 

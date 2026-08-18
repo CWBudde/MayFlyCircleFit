@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -334,9 +335,9 @@ func TestScheduleDryRunListsTheReferenceCampaign(t *testing.T) {
 		"nothing was submitted and no schedule was created",
 		"Stages: 70 (1 base, 63 extend, 6 polish; 6 conditional)",
 		"Seed: 4242",
-		"Planned optimizer iterations (nominal): 48800",
+		"Planned optimizer iterations (nominal): 32000",
 		"unconditional: 12800",
-		"conditional:   36000 across 6 stages",
+		"conditional:   19200 across 6 stages",
 		// The first and last stages of the climb, and a polish in between.
 		"0   base    8        200",
 		"69  extend  512      200",
@@ -344,7 +345,10 @@ func TestScheduleDryRunListsTheReferenceCampaign(t *testing.T) {
 		"conditional: only at 32/64/96/128/192/256 circles; abandoned after 2 consecutive stages gaining less than 1",
 		// Per-stage parameters.
 		"+8 circles, batch 8, 1 × 200 iters, pop 30",
-		"active set 5, 3 sweeps × 2 × 1000 iters",
+		// A polish stage reports the polishing population, which is its own
+		// default rather than the base stage's popSize.
+		fmt.Sprintf("active set 5, %d sweeps × %d × %d iters, pop %d",
+			app.DefaultPolishingMaxSweeps, app.DefaultPolishingEpochs, app.DefaultPolishingIters, app.DefaultPolishingPopSize),
 	} {
 		if !strings.Contains(body, marker) {
 			t.Errorf("dry run output missing %q:\n%s", marker, body)

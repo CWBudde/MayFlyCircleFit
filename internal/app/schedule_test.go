@@ -366,6 +366,25 @@ func TestParseScheduleRejectsMalformedInput(t *testing.T) {
 	}
 }
 
+// TestScheduleBaseCarriesThePolishingPopulation pins the JSON name a document
+// writes the polishing population under, and that a written value survives the
+// defaults it would otherwise be replaced by.
+func TestScheduleBaseCarriesThePolishingPopulation(t *testing.T) {
+	source := strings.Replace(baseDocument, `"popSize": 30`, `"popSize": 30,
+    "polishingPopSize": 50`, 1)
+	doc, err := ParseSchedule([]byte(source))
+	if err != nil {
+		t.Fatalf("ParseSchedule() error = %v", err)
+	}
+	stages, err := doc.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	if got := stages[0].Config.PolishingPopSize; got != 50 {
+		t.Fatalf("base polishingPopSize = %d, want 50", got)
+	}
+}
+
 // TestScheduleStepBudgetOverrides pins that a step's budget lands on the field
 // the matching HTTP request would have set, polish included.
 func TestScheduleStepBudgetOverrides(t *testing.T) {
@@ -383,8 +402,14 @@ func TestScheduleStepBudgetOverrides(t *testing.T) {
 	}
 	polish := stages[2].Config
 	if polish.PolishingStrategy != PolishingContiguousWindow || polish.PolishingEpochs != 2 || polish.PolishingIters != 900 ||
-		polish.PolishingStagnationIters != 100 || polish.PolishingMinImprovement != 0.5 || polish.PopSize != 60 {
+		polish.PolishingStagnationIters != 100 || polish.PolishingMinImprovement != 0.5 || polish.PolishingPopSize != 60 {
 		t.Fatalf("polish overrides = %+v", polish)
+	}
+	// A polish step's popSize is its polishing population, exactly as popSize on
+	// a /polish request is. It does not touch the job-wide population, which a
+	// polish-only stage never spends.
+	if polish.PopSize != 30 {
+		t.Fatalf("polish stage popSize = %d, want the base document's 30 untouched", polish.PopSize)
 	}
 	// Overrides are per step: each stage derives from the base configuration, so
 	// the extend step's budget does not leak into the polish that follows it.

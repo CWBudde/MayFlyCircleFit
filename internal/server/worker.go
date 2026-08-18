@@ -510,7 +510,7 @@ func polishBatchResult(
 	// Polishing leases a session per evaluation like the staged pipelines do, so
 	// it honors the job's evaluation width instead of falling back to a serial
 	// optimizer while the rest of the run is 48 evaluations wide.
-	polisher, err := opt.NewMayflyVariant(string(app.VariantStandard), job.Config.PolishingIters, job.Config.PopSize, seed,
+	polisher, err := opt.NewMayflyVariant(string(app.VariantStandard), job.Config.PolishingIters, job.Config.PolishingPopSize, seed,
 		opt.WithLogger(slog.Default()),
 		opt.WithEarlyStop(opt.Stop{
 			MinImprovement:  job.Config.PolishingMinImprovement,
@@ -629,6 +629,7 @@ func polishBatchResult(
 		"sweeps", polish.Sweeps,
 		"accepted_sweeps", polish.AcceptedSweeps,
 		"evaluation_workers", polishingWidth,
+		"population", job.Config.PolishingPopSize,
 		"best_cost", polish.BestCost,
 	)
 	return batch, nil
