@@ -117,7 +117,7 @@ templ DashboardPage(page DashboardPageData) {
 									<td style="padding: 0.75rem 0.5rem;">
 										@StateBadge(job.State)
 									</td>
-													<td style="padding: 0.75rem 0.5rem; text-align: right;">{ fmt.Sprintf("%d", job.Iterations) }</td>
+									<td style="padding: 0.75rem 0.5rem; text-align: right;">{ fmt.Sprintf("%d", job.Iterations) }</td>
 									<td style="padding: 0.75rem 0.5rem; text-align: right;">{ fmt.Sprintf("%.4f", job.BestCost) }</td>
 									<td style="padding: 0.75rem 0.5rem; text-align: right; color: var(--success-color);">{ formatJobImprovement(job.InitialCost, job.BestCost) }</td>
 									<td style="padding: 0.75rem 0.5rem; text-align: right;">{ fmt.Sprintf("%.2f", job.CPS) }</td>
@@ -159,20 +159,20 @@ templ dashboardCampaignCard(summary CampaignSummary) {
 				<div>
 					<div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
 						<h3 style="font-size: 1.125rem; font-weight: 600; font-family: monospace;">{ shortID(summary.ID) }</h3>
-							if summary.Name != "" {
-								<span style="color: var(--text-muted);">{ summary.Name }</span>
-							}
+						if summary.Name != "" {
+							<span style="color: var(--text-muted);">{ summary.Name }</span>
+						}
 					</div>
 					<div style="display: flex; gap: 1rem; color: var(--text-muted); font-size: 0.875rem;">
 						<span><strong>Stages:</strong> { campaignStageCount(summary) }</span>
 						<span><strong>Circles:</strong> { fmt.Sprintf("%d", summary.Circles) }</span>
 					</div>
 				</div>
-					<div style="text-align: right;">
-						if summary.State != "" {
-							@ScheduleStateBadge(summary.State)
-						}
-						if summary.HasBestCost {
+				<div style="text-align: right;">
+					if summary.State != "" {
+						@ScheduleStateBadge(summary.State)
+					}
+					if summary.HasBestCost {
 						<div style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.5rem;">Best cost</div>
 						<div style="font-size: 1.125rem; font-weight: 600;">{ fmt.Sprintf("%.2f", summary.BestCost) }</div>
 					}

@@ -22,7 +22,7 @@ func (s *Server) handleDashboardPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Set("Allow", http.MethodGet)
+		w.Header().Set("Allow", http.MethodGet+", "+http.MethodHead)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -82,7 +82,7 @@ func (s *Server) handleJobsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Set("Allow", http.MethodGet)
+		w.Header().Set("Allow", http.MethodGet+", "+http.MethodHead)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
