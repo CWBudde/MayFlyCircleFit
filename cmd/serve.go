@@ -84,6 +84,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 	fmt.Println("API endpoints:")
 	fmt.Println("  POST   /api/v1/jobs          - Create new job")
 	fmt.Println("  GET    /api/v1/jobs          - List all jobs")
+	fmt.Println("  GET    /api/v1/system        - Process capabilities")
 	fmt.Println("  GET    /api/v1/jobs/:id      - Get job status")
 	fmt.Println("  GET    /api/v1/jobs/:id/best.png  - Get current best image")
 	fmt.Println("  GET    /api/v1/jobs/:id/diff.png  - Get difference image")
@@ -104,6 +105,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 	srv := server.NewServerWithOptions(addr, checkpointStore, server.ServerOptions{
 		EnablePprof:       servePprof,
 		InputRoots:        serveInputRoots,
+		BuildMetadata:     server.BuildMetadata{Version: version, Commit: commit, BuildDate: buildDate},
 		MaxConcurrentJobs: serveMaxJobs,
 		QueueSize:         serveQueueSize,
 		DataRoot:          serveDataRoot,

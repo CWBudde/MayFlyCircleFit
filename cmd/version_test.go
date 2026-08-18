@@ -2,8 +2,12 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/cwbudde/mayflycirclefit/internal/server"
 )
 
 func TestVersionInfo(t *testing.T) {
@@ -33,8 +37,41 @@ func TestVersionCommandWritesConfiguredOutput(t *testing.T) {
 	versionCmd.SetOut(&output)
 	t.Cleanup(func() { versionCmd.SetOut(nil) })
 
-	versionCmd.Run(versionCmd, nil)
+	if err := runVersion(versionCmd, nil); err != nil {
+		t.Fatalf("runVersion: %v", err)
+	}
 	if got := strings.TrimSpace(output.String()); got != "mayflycirclefit version 2.0.0 (commit abc123, built 2026-08-11T10:00:00Z)" {
 		t.Fatalf("version output = %q", got)
+	}
+}
+
+func TestVersionCommandVerboseOutput(t *testing.T) {
+	originalVersion, originalCommit, originalBuildDate := version, commit, buildDate
+	originalVerbose := versionVerbose
+	t.Cleanup(func() {
+		version, commit, buildDate = originalVersion, originalCommit, originalBuildDate
+		versionVerbose = originalVerbose
+	})
+
+	version, commit, buildDate = "2.1.0", "123456", "2026-08-11T11:11:11Z"
+	versionVerbose = true
+
+	var output bytes.Buffer
+	versionCmd.SetOut(&output)
+	t.Cleanup(func() { versionCmd.SetOut(nil) })
+
+	if err := runVersion(versionCmd, nil); err != nil {
+		t.Fatalf("runVersion: %v", err)
+	}
+
+	var facts server.HostFacts
+	if err := json.Unmarshal(output.Bytes(), &facts); err != nil {
+		t.Fatalf("decode verbose payload: %v", err)
+	}
+	if facts.Version != "2.1.0" || facts.Commit != "123456" || facts.BuildDate != "2026-08-11T11:11:11Z" {
+		t.Fatalf("host facts version/commit/build = (%q, %q, %q), want (2.1.0, 123456, 2026-08-11T11:11:11Z)", facts.Version, facts.Commit, facts.BuildDate)
+	}
+	if facts.GOOS != runtime.GOOS || facts.GOARCH != runtime.GOARCH {
+		t.Fatalf("host facts goos/goarch = (%q, %q), want (%q, %q)", facts.GOOS, facts.GOARCH, runtime.GOOS, runtime.GOARCH)
 	}
 }

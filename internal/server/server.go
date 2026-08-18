@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +35,7 @@ type Server struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	options    ServerOptions
+	metadata   BuildMetadata
 	queue      chan string
 	workerOnce sync.Once
 	workerWG   sync.WaitGroup
@@ -55,6 +57,7 @@ type ServerOptions struct {
 	MaxConcurrentJobs int
 	QueueSize         int
 	InputRoots        []string
+	BuildMetadata     BuildMetadata
 	// DataRoot enables multi-project support. When empty the server holds a
 	// single project backed by the store passed to NewServerWithOptions, which
 	// is what keeps store-injecting callers and tests working unchanged.
@@ -122,6 +125,7 @@ func NewServerWithOptions(addr string, checkpointStore store.Store, options Serv
 		ctx:        ctx,
 		cancel:     cancel,
 		options:    options,
+		metadata:   normalizeBuildMetadata(options.BuildMetadata),
 		queue:      make(chan string, options.QueueSize),
 		jobCancels: make(map[string]context.CancelFunc),
 		input:      policy,
@@ -191,6 +195,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/jobs", s.handleJobs)
 	mux.HandleFunc("/api/v1/projects", s.handleProjects)
 	mux.HandleFunc("/api/v1/jobs/", s.handleJobsWithID)
+	mux.HandleFunc("/api/v1/system", s.handleSystem)
 	mux.HandleFunc("/api/v1/schedules", s.handleSchedules)
 	mux.HandleFunc("/api/v1/schedules/", s.handleSchedulesWithID)
 	mux.HandleFunc("/api/v1/chains", s.handleChains)
@@ -204,7 +209,42 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 	}
 
-	return s.loggingMiddleware(s.corsMiddleware(mux))
+	return s.loggingMiddleware(s.corsMiddleware(staticPathGuard(mux)))
+}
+
+// staticPathGuard answers non-canonical /static/ paths with 404 instead of
+// letting http.ServeMux redirect them.
+//
+// ServeMux replies to a non-canonical path with a 307 to the cleaned one, so
+// "/static/../go.mod" becomes a redirect to "/go.mod" and leaves the static
+// prefix behind. Nothing is exposed by that today — the cleaned path lands on
+// the catch-all, which serves only "/" and 404s everything else — but it makes
+// the boundary of an embedded-asset route depend on what some unrelated route
+// happens to do. Rejecting the request outright keeps the property local to
+// the prefix: below /static/, only names that are actually embedded answer,
+// and nothing walks anywhere.
+//
+// Only the /static/ prefix is guarded; every other route keeps the mux's
+// ordinary redirect behavior.
+func staticPathGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, ui.StaticPrefix) && !isCanonicalPath(r.URL.Path) {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isCanonicalPath reports whether p is already the path http.ServeMux would
+// redirect it to, mirroring net/http's own cleanPath: a trailing slash is
+// significant to the mux but is dropped by path.Clean.
+func isCanonicalPath(p string) bool {
+	cleaned := path.Clean(p)
+	if strings.HasSuffix(p, "/") && cleaned != "/" {
+		cleaned += "/"
+	}
+	return cleaned == p
 }
 
 // Shutdown gracefully shuts down the server
@@ -439,6 +479,21 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.Header().Set("Allow", "GET, POST")
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+	}
+}
+
+// handleSystem handles GET /api/v1/system.
+func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+
+	facts := HostFactsFromMetadata(s.metadata)
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(facts); err != nil {
+		slog.Error("Failed to encode system facts response", "error", err)
 	}
 }
 
