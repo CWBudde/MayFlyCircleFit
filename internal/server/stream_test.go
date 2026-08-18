@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +13,50 @@ import (
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
 )
+
+type safeResponseRecorder struct {
+	header http.Header
+	buf    bytes.Buffer
+	mu     sync.Mutex
+	code   int
+}
+
+func (w *safeResponseRecorder) Header() http.Header {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.header == nil {
+		w.header = make(http.Header)
+	}
+	return w.header
+}
+
+func (w *safeResponseRecorder) WriteHeader(statusCode int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.code = statusCode
+}
+
+func (w *safeResponseRecorder) Write(data []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(data)
+}
+
+func (w *safeResponseRecorder) Flush() {
+	// no-op
+}
+
+func (w *safeResponseRecorder) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}
+
+func (w *safeResponseRecorder) Code() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.code
+}
 
 func TestEventBroadcasterConcurrentLifecycle(t *testing.T) {
 	eb := NewEventBroadcaster()
@@ -41,6 +87,150 @@ func TestEventBroadcasterConcurrentLifecycle(t *testing.T) {
 	}
 	if _, ok := eb.lastEvent[jobID]; ok {
 		t.Fatal("last-event cache was not removed")
+	}
+}
+
+func TestEventBroadcasterAllSubscribers(t *testing.T) {
+	eb := NewEventBroadcaster()
+	all := eb.SubscribeAll()
+	job := eb.Subscribe("job")
+	defer eb.UnsubscribeAll(all)
+	defer eb.Unsubscribe("job", job)
+
+	eb.Broadcast(ProgressEvent{JobID: "job", State: StateRunning, Timestamp: time.Now()})
+
+	select {
+	case event, ok := <-job:
+		if !ok {
+			t.Fatal("expected job subscriber to receive broadcast event")
+		}
+		if event.JobID != "job" {
+			t.Fatalf("job subscriber event = %q, want %q", event.JobID, "job")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("job subscriber timed out")
+	}
+
+	select {
+	case event, ok := <-all:
+		if !ok {
+			t.Fatal("expected wildcard subscriber to receive broadcast event")
+		}
+		if event.JobID != "job" {
+			t.Fatalf("wildcard event = %q, want %q", event.JobID, "job")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("wildcard subscriber timed out")
+	}
+}
+
+func TestEventBroadcasterCleanupKeepsWildcardSubscribers(t *testing.T) {
+	eb := NewEventBroadcaster()
+	all := eb.SubscribeAll()
+	defer eb.UnsubscribeAll(all)
+	job := eb.Subscribe("job")
+
+	eb.Broadcast(ProgressEvent{JobID: "job", State: StateRunning, Iterations: 1, Timestamp: time.Now()})
+	event, ok := <-job
+	if !ok {
+		t.Fatal("expected job channel to be open")
+	}
+	if event.JobID != "job" {
+		t.Fatalf("unexpected job event %q", event.JobID)
+	}
+	// Drain the wildcard copy of that same broadcast. Left buffered, it would
+	// satisfy the post-cleanup receive below and the assertion would hold even
+	// if cleanup had severed the wildcard fan-out entirely.
+	if event, ok := <-all; !ok || event.Iterations != 1 {
+		t.Fatalf("wildcard copy of the pre-cleanup broadcast = %+v, open = %t", event, ok)
+	}
+
+	eb.CleanupJob("job")
+	// Read under the lock but assert outside it: t.Fatal unwinds with
+	// runtime.Goexit, which runs deferred calls only, so failing inside the
+	// critical section would skip this explicit RUnlock and deadlock the
+	// deferred UnsubscribeAll instead of reporting.
+	eb.mu.RLock()
+	_, jobClientsKept := eb.clients["job"]
+	_, jobEventKept := eb.lastEvent["job"]
+	_, wildcardKept := eb.clients[wildcardJobID]
+	eb.mu.RUnlock()
+
+	if jobClientsKept {
+		t.Fatal("job clients should be removed on cleanup")
+	}
+	if jobEventKept {
+		t.Fatal("job event cache should be removed on cleanup")
+	}
+	if !wildcardKept {
+		t.Fatal("wildcard clients should stay after job cleanup")
+	}
+
+	select {
+	case _, ok := <-job:
+		if ok {
+			t.Fatal("expected job channel to close on cleanup")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected job channel to close after cleanup")
+	}
+
+	eb.Broadcast(ProgressEvent{JobID: "job", State: StateRunning, Iterations: 2, Timestamp: time.Now()})
+	select {
+	case event, ok := <-all:
+		if !ok {
+			t.Fatal("wildcard channel should remain open after job cleanup")
+		}
+		if event.Iterations != 2 {
+			t.Fatalf("wildcard event iterations = %d, want the post-cleanup broadcast (2)", event.Iterations)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("wildcard subscriber should receive broadcast after job cleanup")
+	}
+}
+
+// TestEventBroadcasterConcurrentWildcardLifecycle race-tests the fan-out itself.
+// The other wildcard tests are sequential, so running them under -race says
+// nothing about Broadcast reaching two subscriber sets while clients churn.
+func TestEventBroadcasterConcurrentWildcardLifecycle(t *testing.T) {
+	eb := NewEventBroadcaster()
+	const jobID = "6f2c0d21-3f4a-4f0e-9c2d-2a1f5c8b7e04"
+
+	var wg sync.WaitGroup
+	for i := 0; i < 25; i++ {
+		wg.Add(2)
+		go func(iteration int) {
+			defer wg.Done()
+			ch := eb.SubscribeAll()
+			eb.Broadcast(ProgressEvent{
+				JobID:      jobID,
+				State:      StateRunning,
+				Iterations: iteration,
+				Timestamp:  time.Now(),
+			})
+			eb.UnsubscribeAll(ch)
+		}(i)
+		go func(iteration int) {
+			defer wg.Done()
+			ch := eb.Subscribe(jobID)
+			eb.Broadcast(ProgressEvent{
+				JobID:      jobID,
+				State:      StateRunning,
+				Iterations: iteration,
+				Timestamp:  time.Now(),
+			})
+			eb.Unsubscribe(jobID, ch)
+		}(i)
+	}
+	wg.Wait()
+
+	eb.mu.RLock()
+	defer eb.mu.RUnlock()
+	if _, ok := eb.clients[wildcardJobID]; ok {
+		t.Fatal("wildcard clients leaked after every global subscriber unsubscribed")
+	}
+	if _, ok := eb.clients[jobID]; ok {
+		t.Fatal("job clients leaked after every subscriber unsubscribed")
 	}
 }
 
@@ -114,6 +304,145 @@ func TestJobStreamPublishesTerminalTransitionsAndCloses(t *testing.T) {
 	}
 }
 
+func TestAllJobStream_SnapshotAndUpdates(t *testing.T) {
+	server := NewServer(":8080", nil)
+	first := server.jobManager.CreateJob(app.DefaultProject, JobConfig{})
+	second := server.jobManager.CreateJob(app.DefaultProject, JobConfig{})
+	if err := server.jobManager.StartJob(first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.jobManager.StartJob(second.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/stream", nil).WithContext(ctx)
+	w := &safeResponseRecorder{}
+	done := make(chan struct{})
+	go func() {
+		server.handleAllJobStream(w, req)
+		close(done)
+	}()
+	waitForSubscriberCount(t, server.jobManager.broadcaster, wildcardJobID, 1)
+
+	events := waitForSSEEvents(t, w, 2)
+	running := map[string]bool{first.ID: true, second.ID: true}
+	for _, event := range events {
+		if !running[event.JobID] {
+			t.Fatalf("snapshot contains %s, expected only running jobs", event.JobID)
+		}
+		if event.State != StateRunning {
+			t.Fatalf("snapshot event state = %s, want running", event.State)
+		}
+		delete(running, event.JobID)
+	}
+	if len(running) != 0 {
+		t.Fatalf("snapshot missed jobs: %v", running)
+	}
+
+	server.jobManager.broadcaster.Broadcast(ProgressEvent{JobID: first.ID, State: StateRunning, Iterations: 12, Timestamp: time.Now()})
+	events = waitForSSEEvents(t, w, 3)
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("stream did not terminate")
+	}
+
+	if events[2].JobID != first.ID || events[2].Iterations != 12 {
+		t.Fatalf("live event = %+v", events[2])
+	}
+}
+
+// TestAllJobStreamDropsEventsOlderThanTheSnapshot covers the snapshot gap. The
+// handler subscribes before it reads the manager, so an event queued in between
+// is older than the snapshot that gets written first; forwarding it would walk
+// the dashboard's iteration count backwards.
+func TestAllJobStreamDropsEventsOlderThanTheSnapshot(t *testing.T) {
+	server := NewServer(":8080", nil)
+	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{})
+	if err := server.jobManager.StartJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.jobManager.UpdateProgress(job.ID, 20, 20, nil, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/stream", nil).WithContext(ctx)
+	w := &safeResponseRecorder{}
+	done := make(chan struct{})
+	go func() {
+		server.handleAllJobStream(w, req)
+		close(done)
+	}()
+	waitForSubscriberCount(t, server.jobManager.broadcaster, wildcardJobID, 1)
+
+	events := waitForSSEEvents(t, w, 1)
+	if events[0].Iterations != 20 {
+		t.Fatalf("snapshot iterations = %d, want 20", events[0].Iterations)
+	}
+
+	// Stale: this is what a broadcast queued during connection setup looks like.
+	server.jobManager.broadcaster.Broadcast(ProgressEvent{JobID: job.ID, State: StateRunning, Iterations: 10, Timestamp: time.Now()})
+	// Newer: proves the guard lifts instead of muting the job for good.
+	server.jobManager.broadcaster.Broadcast(ProgressEvent{JobID: job.ID, State: StateRunning, Iterations: 30, Timestamp: time.Now()})
+
+	events = waitForSSEEvents(t, w, 2)
+	if events[1].Iterations != 30 {
+		t.Fatalf("second event iterations = %d, want 30 -- the stale event was forwarded", events[1].Iterations)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("stream did not terminate")
+	}
+}
+
+// TestAllJobStreamKeepsTerminalEventsInTheSnapshotGap pins the guard's
+// exemption: a cancellation carries whatever iteration count the job reached,
+// so an iteration floor must never be what drops it.
+func TestAllJobStreamKeepsTerminalEventsInTheSnapshotGap(t *testing.T) {
+	server := NewServer(":8080", nil)
+	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{})
+	if err := server.jobManager.StartJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.jobManager.UpdateProgress(job.ID, 20, 20, nil, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/stream", nil).WithContext(ctx)
+	w := &safeResponseRecorder{}
+	done := make(chan struct{})
+	go func() {
+		server.handleAllJobStream(w, req)
+		close(done)
+	}()
+	waitForSubscriberCount(t, server.jobManager.broadcaster, wildcardJobID, 1)
+	waitForSSEEvents(t, w, 1)
+
+	server.jobManager.broadcaster.Broadcast(ProgressEvent{JobID: job.ID, State: StateCancelled, Iterations: 5, Timestamp: time.Now()})
+
+	events := waitForSSEEvents(t, w, 2)
+	if events[1].State != StateCancelled {
+		t.Fatalf("second event state = %s, want cancelled", events[1].State)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("stream did not terminate")
+	}
+}
+
 func TestEventBroadcasterDoesNotRegressTerminalState(t *testing.T) {
 	broadcaster := NewEventBroadcaster()
 	terminal := ProgressEvent{JobID: "job", State: StateCancelled, Timestamp: time.Now()}
@@ -128,19 +457,47 @@ func TestEventBroadcasterDoesNotRegressTerminalState(t *testing.T) {
 	}
 }
 
-func waitForSubscriber(t *testing.T, broadcaster *EventBroadcaster, jobID string) {
+func waitForSubscriberCount(t *testing.T, broadcaster *EventBroadcaster, jobID string, expected int) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		broadcaster.mu.RLock()
 		count := len(broadcaster.clients[jobID])
 		broadcaster.mu.RUnlock()
-		if count == 1 {
+		if count == expected {
 			return
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatal("SSE client did not subscribe")
+	broadcaster.mu.RLock()
+	count := len(broadcaster.clients[jobID])
+	broadcaster.mu.RUnlock()
+	t.Fatalf("SSE clients for %q = %d, want %d", jobID, count, expected)
+}
+
+func waitForSubscriber(t *testing.T, broadcaster *EventBroadcaster, jobID string) {
+	t.Helper()
+	waitForSubscriberCount(t, broadcaster, jobID, 1)
+}
+
+// waitForSSEEvents polls the recorder until the handler has written the events
+// under test. The handler writes from its own goroutine, so sleeping a fixed
+// interval and reading once only asserts that the machine was fast enough.
+func waitForSSEEvents(t *testing.T, recorder *safeResponseRecorder, expected int) []ProgressEvent {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	var events []ProgressEvent
+	for time.Now().Before(deadline) {
+		events = decodeSSEEvents(t, recorder.String())
+		if len(events) >= expected {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if len(events) != expected {
+		t.Fatalf("SSE event count = %d, want %d", len(events), expected)
+	}
+	return events
 }
 
 func decodeSSEEvents(t *testing.T, body string) []ProgressEvent {

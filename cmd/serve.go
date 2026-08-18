@@ -85,6 +85,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 	fmt.Println("  POST   /api/v1/jobs          - Create new job")
 	fmt.Println("  GET    /api/v1/jobs          - List all jobs")
 	fmt.Println("  GET    /api/v1/system        - Process capabilities")
+	fmt.Println("  GET    /api/v1/stream        - Live progress for all jobs")
 	fmt.Println("  GET    /api/v1/jobs/:id      - Get job status")
 	fmt.Println("  GET    /api/v1/jobs/:id/best.png  - Get current best image")
 	fmt.Println("  GET    /api/v1/jobs/:id/diff.png  - Get difference image")

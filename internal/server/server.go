@@ -193,6 +193,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Register API routes
 	mux.HandleFunc("/api/v1/jobs", s.handleJobs)
+	mux.HandleFunc("/api/v1/stream", s.handleAllJobStream)
 	mux.HandleFunc("/api/v1/projects", s.handleProjects)
 	mux.HandleFunc("/api/v1/jobs/", s.handleJobsWithID)
 	mux.HandleFunc("/api/v1/system", s.handleSystem)
