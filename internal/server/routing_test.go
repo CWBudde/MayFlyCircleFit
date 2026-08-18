@@ -22,6 +22,30 @@ func TestRouting_RootIsDashboard(t *testing.T) {
 	if got := recorder.Body.String(); !strings.Contains(got, "<h1") || !strings.Contains(got, "Dashboard") {
 		t.Fatalf("GET / should render dashboard page, got %q", got)
 	}
+
+	assertPageMethods(t, server, "/")
+}
+
+// assertPageMethods pins the method contract of a server-rendered page: HEAD is
+// served like GET, anything else is refused, and the refusal names both methods
+// it would have accepted rather than only GET.
+func assertPageMethods(t *testing.T, server *Server, path string) {
+	t.Helper()
+
+	headRecorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(headRecorder, httptest.NewRequest(http.MethodHead, path, nil))
+	if got, want := headRecorder.Code, http.StatusOK; got != want {
+		t.Fatalf("HEAD %s status = %d, want %d", path, got, want)
+	}
+
+	postRecorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(postRecorder, httptest.NewRequest(http.MethodPost, path, strings.NewReader("")))
+	if got, want := postRecorder.Code, http.StatusMethodNotAllowed; got != want {
+		t.Fatalf("POST %s status = %d, want %d", path, got, want)
+	}
+	if got, want := postRecorder.Header().Get("Allow"), "GET, HEAD"; got != want {
+		t.Fatalf("POST %s Allow = %q, want %q", path, got, want)
+	}
 }
 
 func TestRouting_JobsListAndJobDetailRoutes(t *testing.T) {
@@ -40,12 +64,7 @@ func TestRouting_JobsListAndJobDetailRoutes(t *testing.T) {
 		t.Fatalf("GET /jobs redirected unexpectedly to %s", got)
 	}
 
-	jobsPathRecorder := httptest.NewRecorder()
-	jobsPostReq := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(""))
-	server.Handler().ServeHTTP(jobsPathRecorder, jobsPostReq)
-	if got, want := jobsPathRecorder.Code, http.StatusMethodNotAllowed; got != want {
-		t.Fatalf("POST /jobs status = %d, want %d", got, want)
-	}
+	assertPageMethods(t, server, "/jobs")
 
 	imgPath := createTempRefImage(t)
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: imgPath, Mode: "batch", Circles: 1, Iters: 1, PopSize: 2, Seed: 42})

@@ -179,9 +179,11 @@ The vector was first polished by two `hybrid-overlap` passes, then by three
 | 2 | `hybrid-overlap`, active set 8 | 44m20s | 105.872 | -0.643 | 0.870 |
 | 3 | `contiguous-window`, active set 32 | 130m31s | 103.126 | **-2.746** | **1.262** |
 | 4 | `contiguous-window`, active set 32 | 124m01s | 100.880 | **-2.245** | **1.086** |
+| 5 | `contiguous-window`, active set 32 | 133m31s | 100.091 | -0.790 | 0.355 |
 
 One coverage pass removed more error than both merit-based passes combined
-(-2.746 against -1.946) in less wall clock than the first of them.
+(-2.746 against -1.946) in less wall clock than the first of them. Across all
+five the vector went 107.817 -> 100.091, PSNR 27.85 -> 28.13.
 
 ### Why position beats merit here
 
@@ -195,17 +197,40 @@ merit selector spends its budget where there is least to win.
 `contiguous-window` selects by draw position instead, and draw position is
 where a *greedy* fit hides its error. Gain by quarter of each coverage pass:
 
-| Pass | Q1 | Q2 | Q3 | Q4 |
-| ---: | ---: | ---: | ---: | ---: |
-| 3 | -0.015 | -0.383 | -1.058 | -1.290 |
-| 4 | -0.021 | -0.277 | -0.600 | **-1.348** |
+| Pass | Q1 | Q2 | Q3 | Q4 | Largest single drop |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 3 | -0.015 | -0.383 | -1.058 | -1.290 | 0.4404 |
+| 4 | -0.021 | -0.277 | -0.600 | **-1.348** | 0.6277 |
+| 5 | -0.056 | -0.212 | -0.277 | -0.245 | 0.1043 |
 
 The window walks backwards from slot 968, so the last quarter is when it
 reaches draw slots below ~250 -- the early, large circles placed against a
 nearly empty canvas and never revisited since. That quarter got *bigger* on the
 second pass, and pass 4's largest single improvement (0.6277) exceeded pass 3's
 (0.4404). The decay that makes merit-based chains not worth continuing
-(-1.303 -> -0.643, 51% falloff) does not appear here (-2.746 -> -2.245, 18%).
+(-1.303 -> -0.643, 51% falloff) did not appear across those two
+(-2.746 -> -2.245, 18%).
+
+### The positional advantage is finite, and three passes spend it
+
+Pass 5 is where it ends. Q4 fell from -1.348 to -0.245, the largest single
+improvement fell 6x, and **the profile went flat** -- 0.056 / 0.212 / 0.277 /
+0.245 against the steep rise of passes 3 and 4. A flat profile means the window
+no longer finds the low draw slots any more rewarding than the high ones, which
+is the direct measurement that the early circles are no longer systematically
+misplaced. The gain fell 65% in one pass, against 18% the pass before.
+
+Read this as the strategy's stopping rule: **watch the shape, not the total.**
+A pass whose gain still rises toward Q4 has more to give; a pass whose quarters
+are level has finished, and the next one will not surprise you. Three coverage
+passes exhausted a 1000-circle greedy fit.
+
+What remains after that is bounded by the placement itself, not by the polisher.
+`app.MaxCircles` is 1000, so the vector cannot grow, and no local repair reaches
+past where the greedy fit put things. The lesson for the *next* campaign is to
+polish while the canvas is small enough for the foundation to still move --
+value per hour measured across one campaign runs 2597 cost units/hour at 32
+circles against 1.26 at 1000, tracking coverage almost exactly.
 
 The benchmarks above cannot see this because every circle in a 2%-jittered
 truth vector is equally close to right, so there is no positional structure for

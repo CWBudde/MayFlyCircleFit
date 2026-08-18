@@ -28,7 +28,7 @@ func (s *Server) handleDashboardPage(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	payload := s.dashboardPayload()
+	payload := s.dashboardPagePayload()
 	jobs := make([]ui.DashboardRunningJob, 0, len(payload.RunningJobs))
 	for _, runningJob := range payload.RunningJobs {
 		jobs = append(jobs, ui.DashboardRunningJob{
