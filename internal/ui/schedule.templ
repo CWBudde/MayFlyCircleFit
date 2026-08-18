@@ -226,6 +226,24 @@ templ CampaignPage(campaign Campaign) {
 				@CampaignCostPlot(campaign.Stages)
 			</div>
 		</div>
+		if stage, ok := latestCompletedCampaignStage(campaign.Stages); ok {
+			@ImageViewer(ImageViewerData{
+				JobID:             stage.JobID,
+				DefaultMode:       "side-by-side",
+				BestRevision:      0,
+				ReferenceImageURL: fmt.Sprintf("/api/v1/jobs/%s/ref.png", stage.JobID),
+				BestImageURL:      fmt.Sprintf("/api/v1/jobs/%s/best.png", stage.JobID),
+				DiffImageURL:      fmt.Sprintf("/api/v1/jobs/%s/diff.png", stage.JobID),
+				JobState:          stage.State,
+				MaxIterations:     stage.Iterations,
+				ShowMetadata:      false,
+				ExtraClass:        "campaign-images",
+			})
+		} else {
+			<div class="card" style="color: var(--text-muted);">
+				No completed stage has produced image artifacts yet.
+			</div>
+		}
 		<div class="card">
 			<h2 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 0.75rem;">Stages</h2>
 			if len(campaign.Stages) == 0 {
@@ -602,6 +620,17 @@ func campaignStageCount(summary CampaignSummary) string {
 		return fmt.Sprintf("%d / %d", summary.RecordedStages, summary.PlannedStages)
 	}
 	return fmt.Sprintf("%d", summary.RecordedStages)
+}
+
+func latestCompletedCampaignStage(stages []CampaignStage) (CampaignStage, bool) {
+	for index := len(stages) - 1; index >= 0; index-- {
+		stage := stages[index]
+		if !stage.HasBestCost || stage.JobID == "" {
+			continue
+		}
+		return stage, true
+	}
+	return CampaignStage{}, false
 }
 
 func shortID(id string) string {

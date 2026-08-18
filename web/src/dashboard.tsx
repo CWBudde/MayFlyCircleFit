@@ -698,11 +698,35 @@ function CampaignCard({ campaign, palette }: { campaign: CampaignSummary; palett
 						</>
 					) : null}
 				</div>
-				{plotted.length > 0 ? (
-					<div style={{ flex: "0 1 320px", minWidth: "240px" }}>
-						<CampaignCostChart points={plotted} palette={palette} />
-					</div>
-				) : null}
+				<div style={{ flex: "0 1 420px", minWidth: "240px", display: "flex", gap: "0.75rem", justifyContent: "flex-end", alignItems: "stretch" }}>
+					{campaign.leafJobId ? (
+						<a
+							href={`/jobs/${campaign.leafJobId}`}
+							style={{ display: "block", textDecoration: "none", flex: "0 0 auto" }}
+							title={`Open campaign leaf job ${campaign.leafJobId}`}
+						>
+							<img
+								src={`/api/v1/jobs/${campaign.leafJobId}/best.png`}
+								alt="Latest campaign best result"
+								style={{
+									display: "block",
+									width: "140px",
+									height: "100px",
+									objectFit: "cover",
+									objectPosition: "center",
+									borderRadius: "0.375rem",
+									border: "1px solid var(--border-color)",
+									backgroundColor: "var(--bg-color)",
+								}}
+							/>
+						</a>
+					) : null}
+					{plotted.length > 0 ? (
+						<div style={{ flex: "1 1 260px", minWidth: "240px", minHeight: "120px" }}>
+							<CampaignCostChart points={plotted} palette={palette} />
+						</div>
+					) : null}
+				</div>
 			</div>
 		</div>
 	);
