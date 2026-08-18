@@ -231,6 +231,26 @@ func TestNormalizePolishingPopulationDoesNotInheritPopSize(t *testing.T) {
 	}
 }
 
+// TestValidateAcceptsAnOmittedPolishingPopulation covers the restore boundary.
+// A checkpoint written before polishingPopSize existed carries zero, and
+// jobFromCheckpoint hands that configuration out without normalizing it — so
+// `status`, which validates what the API returned, must be able to display such
+// a job rather than failing on it. Zero is the omitted value, not a population.
+func TestValidateAcceptsAnOmittedPolishingPopulation(t *testing.T) {
+	legacy := DefaultConfig()
+	legacy.RefPath = "reference.png"
+	legacy.PolishingPopSize = 0
+	if err := legacy.Validate(); err != nil {
+		t.Fatalf("Validate() rejected an omitted polishingPopSize: %v", err)
+	}
+
+	// The bounds still apply to a value that was actually written.
+	legacy.PolishingPopSize = MinPopulation - 1
+	if err := legacy.Validate(); err == nil {
+		t.Fatalf("Validate() accepted polishingPopSize %d", MinPopulation-1)
+	}
+}
+
 func TestNormalizeAcceptsResidualRegionPolishing(t *testing.T) {
 	config := DefaultConfig()
 	config.RefPath = "reference.png"

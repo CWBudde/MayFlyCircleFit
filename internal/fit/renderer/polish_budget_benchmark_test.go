@@ -22,15 +22,23 @@ import (
 // sweep; the question is whether it removes more per second than spending the
 // same wall clock differently.
 //
-// The axes are swept one at a time around the shipped defaults rather than as a
-// full grid, because a full grid at these budgets does not finish in a sitting.
+// The axes are swept one at a time around a fixed centre rather than as a full
+// grid, because a full grid at these budgets does not finish in a sitting.
 // Cross terms are therefore not measured; see docs/polishing-budget-report.md.
 const (
 	// polishBudgetSeed is the seed every configuration shares, so the axes
 	// differ only by budget.
 	polishBudgetSeed = 4242
-	// The shipped defaults, held fixed while another axis moves
-	// (internal/app/config.go DefaultConfig).
+	// The centre of the sweep: the value each axis holds while another axis
+	// moves. It is not the shipped configuration, and must not be read as one.
+	// The population and the iteration count coincide with what
+	// internal/app/config.go now ships, because this measurement is where those
+	// two defaults came from; the epoch and sweep counts deliberately do not.
+	// One epoch keeps an axis point costing what its budget says, and three
+	// sweeps was the sweep default at the time of measurement -- the sweep
+	// budget the report then argues up to the shipped eight.
+	// BenchmarkPolishBudgetShippedConfiguration is the benchmark that runs
+	// whole shipped configurations.
 	polishBudgetDefaultIters  = 200
 	polishBudgetDefaultPop    = 30
 	polishBudgetDefaultEpochs = 1

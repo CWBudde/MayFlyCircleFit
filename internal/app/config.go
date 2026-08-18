@@ -32,12 +32,12 @@ const (
 //
 // The short version, on the 64-circle fitted vector that report measures: a
 // sweep optimizes one active set of 35 parameters, so a population sized for the
-// whole vector buys nothing -- 200 costs 5.7x the wall clock of 30 for 1.3x the
+// whole vector buys nothing -- 200 costs 5.2x the wall clock of 30 for 1.28x the
 // error removed -- and neither does a long epoch, whose return per second falls
 // monotonically past ~100 iterations. Sweeps are the only axis that moves
 // polishing onto different circles, and the per-sweep gain was still at full
 // rate at sweep four. Together these defaults removed 2.6x the error of the
-// previous ones in 57% of the wall clock.
+// previous ones in 56% of the wall clock.
 const (
 	DefaultPolishingPopSize         = 30
 	DefaultPolishingIters           = 200
@@ -450,7 +450,17 @@ func (c JobConfig) Validate() error {
 	if c.PolishingIters < 1 || c.PolishingIters > MaxIterations {
 		return invalid("polishingIters", fmt.Sprintf("must be between 1 and %d", MaxIterations))
 	}
-	if c.PolishingPopSize < MinPopulation || c.PolishingPopSize > MaxPopulation {
+	// Zero is the omitted value, not a population of zero: ApplyDefaults fills
+	// it with DefaultPolishingPopSize, so every configuration that reaches an
+	// optimizer went through Normalize and carries a real number. What still
+	// carries zero is a checkpoint written before this field existed, and
+	// restore hands that configuration out unchanged — jobFromCheckpoint
+	// deliberately does not normalize, because ApplyDefaults would also resolve
+	// the seed and invent one the run never used. Rejecting zero here would
+	// therefore make `status` fail on a legacy job instead of displaying it.
+	// This is the same allowance evaluationWorkers gets below, for the same
+	// reason.
+	if c.PolishingPopSize != 0 && (c.PolishingPopSize < MinPopulation || c.PolishingPopSize > MaxPopulation) {
 		return invalid("polishingPopSize", fmt.Sprintf("must be between %d and %d", MinPopulation, MaxPopulation))
 	}
 	if c.PolishingStagnationIters < 1 || c.PolishingStagnationIters > c.PolishingIters {
