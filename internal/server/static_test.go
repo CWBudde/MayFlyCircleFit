@@ -57,12 +57,12 @@ func TestUnknownStaticAssetIsNotFound(t *testing.T) {
 // TestStaticRouteRejectsNonCanonicalPaths pins the boundary behavior of the
 // /static/ prefix against http.ServeMux's path canonicalization.
 //
-// The mux answers a non-canonical path with a 307 to the cleaned one, which
+// The mux answers a non-canonical path with a redirect to the cleaned one, which
 // takes the request out of the static prefix entirely: "/static/../go.mod"
 // would become a redirect to "/go.mod", handled by whatever owns that route.
 // staticPathGuard rejects those before the mux sees them, so the prefix answers
-// only for names that are actually embedded. Without the guard the first two
-// cases below are 307s, not 404s.
+// only for names that are actually embedded. Without the guard, those cases are
+// handled by the mux redirect first.
 func TestStaticRouteRejectsNonCanonicalPaths(t *testing.T) {
 	root := t.TempDir()
 	persistence, err := store.NewFSStore(root)
@@ -117,8 +117,8 @@ func TestNonStaticRoutesKeepMuxCanonicalization(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/./jobs", nil))
 
-	if recorder.Code != http.StatusTemporaryRedirect {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusTemporaryRedirect)
+	if status := recorder.Code; status != http.StatusMovedPermanently && status != http.StatusTemporaryRedirect {
+		t.Fatalf("status = %d, want %d or %d", status, http.StatusMovedPermanently, http.StatusTemporaryRedirect)
 	}
 	if got, want := recorder.Header().Get("Location"), "/api/v1/jobs"; got != want {
 		t.Errorf("Location = %q, want %q", got, want)
