@@ -2443,24 +2443,26 @@ until it does.
 
 The first time the process says out loud what it is actually running on.
 
-- [ ] New handler in `internal/server` returning `runtime.GOOS`,
+- [x] New handler in `internal/server` returning `runtime.GOOS`,
       `runtime.GOARCH`, `runtime.GOMAXPROCS(0)`, and `runtime.Version()`.
-- [ ] SIMD: `fit.Tier()` (the process-wide resolved tier),
+- [x] SIMD: `fit.Tier()` (the process-wide resolved tier),
       `fit.ActiveSSDKernel()`, and `fit.ActiveSADKernel()`.
-- [ ] Compositing: `renderer.CompositingBackend()` and
+- [x] Compositing: `renderer.CompositingBackend()` and
       `renderer.FastCompositingBackend()`. Report both — a `fastCompositing`
       flag without its kernel name hides the case where the fast path is a pure
       pessimisation.
-- [ ] Backends: `renderer.SupportedBackends()`.
-- [ ] GPU via `gpu.EnumeratePlatforms()`, reporting **three distinct states**:
+- [x] Backends: `renderer.SupportedBackends()`.
+- [x] GPU via `gpu.EnumeratePlatforms()`, reporting **three distinct states**:
       built with `-tags gpu` and devices found, built with no devices
       (`gpu.ErrNoDevices`), and not built (`gpu.ErrNotBuilt`). Reporting a
       non-GPU build as "unavailable" would be a lie about the binary.
-- [ ] Version, commit, and build date passed into the server from `cmd` rather
+- [x] Version, commit, and build date passed into the server from `cmd` rather
       than imported, keeping dependency direction toward the lower-level
       packages.
-- [ ] Optional but preferred: `mayflycirclefit version --verbose` prints the
+- [x] Optional but preferred: `mayflycirclefit version --verbose` prints the
       same struct, so the CLI and the UI cannot disagree about the host.
+
+Status: Completed and shipped in PR on feature branch.
 
 ### Task 17.3: Global SSE Stream
 
