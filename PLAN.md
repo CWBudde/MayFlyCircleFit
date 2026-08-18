@@ -2689,20 +2689,37 @@ The viewer already exists on the job detail page — reference, best,
 side-by-side (default), difference, and overlay with an opacity slider and
 `1`–`5` keyboard shortcuts. Extract it; do not rewrite it.
 
-- [ ] New `ui.ImageViewer(ImageViewerData)` in `internal/ui/image_viewer.templ`,
+- [x] New `ui.ImageViewer(ImageViewerData)` in `internal/ui/image_viewer.templ`,
       parameterised by job ID, image URLs, cache-busting revision, and default
       mode.
-- [ ] `detail.templ` consumes the extracted component. Its output must stay
+- [x] `detail.templ` consumes the extracted component. Its output must stay
       equivalent; `internal/ui/detail_test.go` is the guard.
-- [ ] `ui.CampaignPage` gains the viewer, pointed at the newest stage carrying a
+- [x] `ui.CampaignPage` gains the viewer, pointed at the newest stage carrying a
       checkpoint and served by the existing
       `/api/v1/jobs/:id/{ref,best,diff}.png` endpoints. Default mode is
       side-by-side.
-- [ ] A campaign with no completed stage renders a placeholder, not a broken
+- [x] A campaign with no completed stage renders a placeholder, not a broken
       image.
-- [ ] Dashboard campaign cards get a plain `best.png` thumbnail that links
+- [x] Dashboard campaign cards get a plain `best.png` thumbnail that links
       through — not the full viewer, which would put several difference and
       overlay layers on one page.
+
+**Observed on this revision:** `go tool templ generate` is idempotent, two
+consecutive `scripts/bundle-web.sh` runs are byte-identical (sha256
+`15d3132c…7428`, 372,752 bytes — the thumbnail costs the bundle 1,073 bytes
+over Task 17.7's), and `gofmt -s -l .` is empty. `go test -short ./...`,
+`go vet ./...`, `go test -race -short ./internal/ui/ ./internal/server/`,
+`go build ./...`, and `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...`
+all pass. `internal/ui/detail_test.go` passes untouched, which is the
+equivalence guard the task asked for: the extraction moved the viewer's markup
+and script into `ImageViewer` without changing what the job detail page emits.
+
+The browser half is **not** observed, for the reason Tasks 17.1 and 17.7
+recorded: headless Firefox is the only browser here and it hangs, and this
+shell cannot reach a loopback listener. What is unverified is the viewer's
+runtime behavior on the campaign page — the mode selector, the opacity slider,
+and the `1`–`5` shortcuts against a real stage's artifacts — not the markup.
+The five modes still have no `ImageViewer` render test; Task 17.9 owns it.
 
 ### Task 17.9: Tests, Docs, and Gates
 

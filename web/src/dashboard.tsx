@@ -698,11 +698,38 @@ function CampaignCard({ campaign, palette }: { campaign: CampaignSummary; palett
 						</>
 					) : null}
 				</div>
-				{plotted.length > 0 ? (
-					<div style={{ flex: "0 1 320px", minWidth: "240px" }}>
-						<CampaignCostChart points={plotted} palette={palette} />
-					</div>
-				) : null}
+				{/* Wraps because the thumbnail is a fixed 140px and the chart needs
+				    room of its own: side by side they do not fit a phone-width card,
+				    and without wrapping the card would scroll sideways instead. */}
+				<div style={{ flex: "0 1 420px", minWidth: "180px", display: "flex", flexWrap: "wrap", gap: "0.75rem", justifyContent: "flex-end", alignItems: "stretch" }}>
+					{campaign.leafJobId ? (
+						<a
+							href={`/jobs/${campaign.leafJobId}`}
+							style={{ display: "block", textDecoration: "none", flex: "0 0 auto" }}
+							title={`Open campaign leaf job ${campaign.leafJobId}`}
+						>
+							<img
+								src={`/api/v1/jobs/${campaign.leafJobId}/best.png`}
+								alt="Latest campaign best result"
+								style={{
+									display: "block",
+									width: "140px",
+									height: "100px",
+									objectFit: "cover",
+									objectPosition: "center",
+									borderRadius: "0.375rem",
+									border: "1px solid var(--border-color)",
+									backgroundColor: "var(--bg-color)",
+								}}
+							/>
+						</a>
+					) : null}
+					{plotted.length > 0 ? (
+						<div style={{ flex: "1 1 180px", minWidth: "180px", minHeight: "120px" }}>
+							<CampaignCostChart points={plotted} palette={palette} />
+						</div>
+					) : null}
+				</div>
 			</div>
 		</div>
 	);
