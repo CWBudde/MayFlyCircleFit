@@ -144,6 +144,13 @@ func TestHandleSystemMethodNotAllowed(t *testing.T) {
 }
 
 func TestRoutingSystemEndpoint(t *testing.T) {
+	// This test drives the real handler stack, which reaches the OpenCL probe.
+	// Stub it like every other test here so the route assertion does not depend
+	// on the host's drivers or block on enumeration.
+	stubPlatformDiscovery(t, func() ([]gpu.PlatformInfo, error) {
+		return nil, nil
+	})
+
 	server := NewServer("localhost:0", nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/system", nil)
 	rec := httptest.NewRecorder()
