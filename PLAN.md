@@ -2624,19 +2624,64 @@ Reuse rather than reimplement: `Server.discoverAllChains()`,
 
 ### Task 17.7: Port the Campaign Cost Plot
 
-- [ ] `web/src/CampaignCostChart.tsx` reproduces what `buildCampaignPlot` draws:
+- [x] `web/src/CampaignCostChart.tsx` reproduces what `buildCampaignPlot` draws:
       axes labelled Circles and Best cost, per-point tooltips reading
       `stage %d (%s): %d circles, cost %.3f`, the base/extend/polish legend, and
       the rule that stages without `HasBestCost` are **skipped, never plotted at
       zero** — a running stage has no result yet, and drawing it as a perfect
       fit would invert the meaning of the chart.
-- [ ] `CampaignCostPlot` and `buildCampaignPlot` are **kept** as the
+- [x] `CampaignCostPlot` and `buildCampaignPlot` are **kept** as the
       server-rendered pre-hydration SVG (risk 3). React swaps into the same
-      container after mount, and `internal/ui/schedule_test.go` passes untouched.
-- [ ] The same component serves the dashboard's mini charts at a smaller size.
-      The server-side plot is fixed at 960×340 by package constants, which is
+      container after mount: `CampaignPage` wraps the SVG in a
+      `data-island="campaign-cost"` element, seeds it with
+      `templ.JSONScript("campaign-cost-series", campaignStageSeries(…))`, and
+      loads `@IslandBundle()`. `campaignStageSeries` projects the stage table
+      onto `ui.CampaignSeriesPoint`, which is what the dashboard endpoint
+      already serves, so both sides of the port read one shape.
+- [x] The same component serves the dashboard's mini charts at a smaller size,
+      as a `variant` prop rather than a second component: `mini` is 130px with
+      four x ticks, `full` is 340px with six and the SVG's framed box. The
+      server-side plot is fixed at 960×340 by package constants, which is
       precisely why the small variant goes to React rather than to a second set
       of constants.
+- [x] `web/src/charts.ts` holds what both islands need — the Chart.js
+      registration, the `Palette` type, `useChartTheme`, `useLineChart`, and
+      `applyAxisTheme`. Task 17.6 left them in `dashboard.tsx`, and a campaign
+      island importing that entry point would have pulled the whole dashboard
+      island in behind them.
+
+**Deviation:** the bullet above originally expected
+`internal/ui/schedule_test.go` to pass untouched, and it does not.
+`TestCampaignPlotIsSelfContained` forbade the substring `<script` anywhere in
+the campaign markup, which the JSON seed and the module tag both trip. The
+constraint it was written for — nothing loads off a network the host may not
+have — is intact, so the test now asserts that instead: no `http://`,
+`https://`, or CDN reference, and every `src` under `ui.StaticPrefix`. Nothing
+else in the file changed, and `buildCampaignPlot`'s geometry tests are
+untouched.
+
+**Observed on this revision:** `go tool templ generate` is idempotent and two
+consecutive `scripts/bundle-web.sh` runs are byte-identical
+(sha256 `6cb03807…c2ce`, 371,679 bytes — the campaign island costs the bundle
+1,882 bytes over Task 17.6's). `go test -short ./...`, `go vet ./...`,
+`go test -race -short ./internal/ui/ ./internal/server/`, `go build ./...`, and
+`CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...` all pass, and
+`gofmt -s -l .` is empty. Three new tests cover the port:
+`TestCampaignPlotHydratesInPlace` (the mount point wraps the seed and the SVG,
+in that order, and the page loads the bundle),
+`TestCampaignStageSeriesSkipsUnmeasuredStages` (an unmeasured or non-finite
+stage is seeded as `hasBestCost: false` with a zeroed cost, and the series
+marshals), and the reworked `TestCampaignPlotIsSelfContained`.
+`renderToStaticMarkup` under node emits the expected markup for all three
+component states — `full` at 340px in the framed box, `mini` at 130px bare,
+and the empty case as the same "No stage has recorded a cost yet." sentence the
+SVG shows.
+
+The browser half is **not** observed, for the same reason Task 17.1 recorded:
+headless Firefox is the only browser here and it hangs, and this shell cannot
+reach a loopback listener at all, so no request was made against a running
+`serve`. What is unverified is the mount itself — that `createRoot` replaces the
+SVG with the canvas — not the markup either side of it.
 
 ### Task 17.8: Shared Image Viewer and the Campaign Best Image
 

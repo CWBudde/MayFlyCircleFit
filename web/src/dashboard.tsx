@@ -1,23 +1,10 @@
-import {
-	Chart,
-	Filler,
-	LinearScale,
-	LineController,
-	LineElement,
-	PointElement,
-	Tooltip,
-} from "chart.js";
-import type { Chart as ChartInstance, TooltipItem } from "chart.js";
+import { Chart } from "chart.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { RefObject } from "react";
+import { CampaignCostChart } from "./CampaignCostChart";
+import { CampaignCostIsland } from "./CampaignCostIsland";
+import { useChartTheme, useLineChart } from "./charts";
+import type { Palette } from "./charts";
 import { mountIslands } from "./islands";
-
-// Register only what the two charts draw. Chart.js ships every controller,
-// scale, and plugin, and the tree shaking is driven by these registrations, so
-// importing the `auto` bundle instead would cost the binary a chart library it
-// does not use. No category scale: both charts have a numeric x axis, and a
-// category scale would space their points evenly regardless of its value.
-Chart.register(LinearScale, LineController, LineElement, PointElement, Tooltip, Filler);
 
 // DashboardResponse is the shape of both GET /api/v1/dashboard and the
 // server-rendered seed in `#dashboard-page`. The Go side keeps those two in
@@ -108,70 +95,12 @@ type ProgressEventPayload = {
 	cps: number;
 };
 
-type Palette = {
-	primary: string;
-	success: string;
-	warning: string;
-	text: string;
-	textMuted: string;
-	border: string;
-	grid: string;
-	background: string;
-};
-
 // A running job emits an event per iteration, so an unbounded history would
 // grow without limit in a tab left open overnight. The endpoint caps its seed
 // at 100 samples; this is the client's own ceiling on what it keeps after that.
 const MAX_HISTORY_POINTS = 1000;
 
 const STREAM_RECONNECT_MS = 2000;
-
-function readThemePalette(): Palette {
-	const style = getComputedStyle(document.documentElement);
-	return {
-		primary: style.getPropertyValue("--primary-color").trim(),
-		success: style.getPropertyValue("--success-color").trim(),
-		warning: style.getPropertyValue("--warning-color").trim(),
-		text: style.getPropertyValue("--text-color").trim(),
-		textMuted: style.getPropertyValue("--text-muted").trim(),
-		border: style.getPropertyValue("--border-color").trim(),
-		grid: style.getPropertyValue("--grid-color").trim(),
-		background: style.getPropertyValue("--control-bg").trim(),
-	};
-}
-
-// useChartTheme resolves the page's palette tokens and re-resolves them when
-// the theme changes. Chart.js bakes colors into its own state at draw time, so
-// a CSS variable alone would leave a mounted chart painted for the old theme;
-// the components that consume this palette call chart.update() when it changes.
-//
-// Both triggers are needed: the theme switcher stamps data-theme on the root
-// element, and the "auto" setting has no attribute at all, so only the media
-// query reports a system theme change.
-function useChartTheme(): Palette {
-	const [palette, setPalette] = useState<Palette>(readThemePalette);
-
-	useEffect(() => {
-		const refresh = () => setPalette(readThemePalette());
-		refresh();
-
-		const themeObserver = new MutationObserver(refresh);
-		themeObserver.observe(document.documentElement, {
-			attributes: true,
-			attributeFilter: ["data-theme"],
-		});
-
-		const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-		mediaQuery.addEventListener("change", refresh);
-
-		return () => {
-			themeObserver.disconnect();
-			mediaQuery.removeEventListener("change", refresh);
-		};
-	}, []);
-
-	return palette;
-}
 
 // readDashboardSeed parses the payload the server rendered into the island
 // root. It has to run before React's first commit, because that commit clears
@@ -240,21 +169,6 @@ function stateLabel(state: string): string {
 		return "unknown";
 	}
 	return state.charAt(0).toUpperCase() + state.slice(1);
-}
-
-// campaignPointColor matches campaignPointFill in the server-rendered SVG plot,
-// so a campaign keeps its stage colors when React swaps in.
-function campaignPointColor(kind: string, palette: Palette): string {
-	switch (kind) {
-		case "base":
-			return palette.success;
-		case "extend":
-			return palette.primary;
-		case "polish":
-			return palette.warning;
-		default:
-			return palette.primary;
-	}
 }
 
 function normalizeHistory(samples: MetricSample[]): MetricSample[] {
@@ -384,125 +298,6 @@ function architectureBadge(host: HostFacts | undefined): string {
 	return `${host.goarch || "unknown"} · ${host.simd || "unknown"} · ${backend}`;
 }
 
-// useLineChart owns one Chart.js instance for the lifetime of the component.
-//
-// Creating the chart in an effect that depends on the data would destroy and
-// rebuild it on every stream frame, which is both an animation restart and a
-// canvas reallocation per event. Instead the chart is built once and every
-// later change — new samples, a new theme — goes through chart.update().
-function useLineChart(
-	canvasRef: RefObject<HTMLCanvasElement | null>,
-	build: () => ChartInstance,
-	apply: (chart: ChartInstance) => void,
-	deps: unknown[],
-): void {
-	const chartRef = useRef<ChartInstance | null>(null);
-	const buildRef = useRef(build);
-	const applyRef = useRef(apply);
-	buildRef.current = build;
-	applyRef.current = apply;
-
-	useEffect(() => {
-		const context = canvasRef.current?.getContext("2d");
-		if (!context) {
-			return;
-		}
-		const chart = buildRef.current();
-		chartRef.current = chart;
-		applyRef.current(chart);
-		chart.update("none");
-
-		return () => {
-			chart.destroy();
-			chartRef.current = null;
-		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
-
-	useEffect(() => {
-		const chart = chartRef.current;
-		if (!chart) {
-			return;
-		}
-		applyRef.current(chart);
-		chart.update("none");
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, deps);
-}
-
-// CampaignPointPlot is the mini version of the server-rendered campaign cost
-// plot: best cost against circle count, one point per recorded stage.
-//
-// Stages without a recorded cost are the caller's to filter out. They are never
-// plotted at zero: a running stage has no result yet, and drawing it as a
-// perfect fit would invert the meaning of the chart.
-function CampaignPointPlot({ points, palette }: { points: CampaignSeriesPoint[]; palette: Palette }) {
-	const canvasRef = useRef<HTMLCanvasElement | null>(null);
-	const pointsRef = useRef(points);
-	pointsRef.current = points;
-
-	useLineChart(
-		canvasRef,
-		() =>
-			new Chart(canvasRef.current!.getContext("2d")!, {
-				type: "line",
-				data: { datasets: [{ label: "best cost", data: [] }] },
-				options: {
-					responsive: true,
-					maintainAspectRatio: false,
-					animation: false,
-					scales: {
-						// Linear, not categorical: circle counts are what the axis
-						// means, and stages neither advance by a fixed width nor
-						// always advance at all — a polish stage repeats the count
-						// its extend stage reached. Even spacing would draw a
-						// different curve than the server SVG, whose scaleX
-						// interpolates between the smallest and largest count.
-						x: { type: "linear", title: { display: true, text: "Circles" } },
-						y: { title: { display: true, text: "Best cost" } },
-					},
-					plugins: {
-						legend: { display: false },
-						tooltip: {
-							displayColors: false,
-							callbacks: {
-								label(item: TooltipItem<"line">) {
-									const point = pointsRef.current[item.dataIndex];
-									if (!point) {
-										return "";
-									}
-									return `stage ${point.index} (${point.kind}): ${point.circles} circles, cost ${point.bestCost.toFixed(3)}`;
-								},
-							},
-						},
-					},
-				},
-			}),
-		(chart) => {
-			const current = pointsRef.current;
-			chart.data.datasets[0].data = current.map((point) => ({ x: point.circles, y: point.bestCost }));
-			Object.assign(chart.data.datasets[0], {
-				borderColor: palette.primary,
-				backgroundColor: `${palette.primary}22`,
-				pointBackgroundColor: current.map((point) => campaignPointColor(point.kind, palette)),
-				pointBorderColor: current.map((point) => campaignPointColor(point.kind, palette)),
-				pointRadius: 3,
-				borderWidth: 2,
-				tension: 0,
-				fill: false,
-			});
-			applyAxisTheme(chart, palette, { xTicks: { maxTicksLimit: 4 } });
-		},
-		[points, palette],
-	);
-
-	return (
-		<div style={{ height: "130px" }}>
-			<canvas ref={canvasRef} />
-		</div>
-	);
-}
-
 // JobSparkline draws the cost curve of one running job, seeded from the
 // endpoint's metric history and grown by the stream.
 function JobSparkline({ history, palette }: { history: MetricSample[]; palette: Palette }) {
@@ -544,23 +339,6 @@ function JobSparkline({ history, palette }: { history: MetricSample[]; palette: 
 			<canvas ref={canvasRef} />
 		</div>
 	);
-}
-
-function applyAxisTheme(
-	chart: ChartInstance,
-	palette: Palette,
-	extra?: { xTicks?: Record<string, unknown> },
-): void {
-	for (const [name, scale] of Object.entries(chart.options.scales ?? {})) {
-		if (!scale) {
-			continue;
-		}
-		scale.ticks = { ...scale.ticks, color: palette.textMuted, ...(name === "x" ? extra?.xTicks : {}) };
-		scale.grid = { ...scale.grid, color: palette.grid };
-		if (scale.title) {
-			scale.title = { ...scale.title, color: palette.textMuted };
-		}
-	}
 }
 
 function DashboardIsland({ root }: { root: HTMLElement }) {
@@ -922,7 +700,7 @@ function CampaignCard({ campaign, palette }: { campaign: CampaignSummary; palett
 				</div>
 				{plotted.length > 0 ? (
 					<div style={{ flex: "0 1 320px", minWidth: "240px" }}>
-						<CampaignPointPlot points={plotted} palette={palette} />
+						<CampaignCostChart points={plotted} palette={palette} />
 					</div>
 				) : null}
 			</div>
@@ -932,4 +710,5 @@ function CampaignCard({ campaign, palette }: { campaign: CampaignSummary; palett
 
 mountIslands({
 	dashboard: DashboardIsland,
+	"campaign-cost": CampaignCostIsland,
 });

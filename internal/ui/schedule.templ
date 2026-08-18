@@ -221,7 +221,10 @@ templ CampaignPage(campaign Campaign) {
 		}
 		<div class="card">
 			<h2 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 0.75rem;">Cost against circle count</h2>
-			@CampaignCostPlot(campaign.Stages)
+			<div data-island="campaign-cost" data-island-label="campaign cost plot">
+				@templ.JSONScript("campaign-cost-series", campaignStageSeries(campaign.Stages))
+				@CampaignCostPlot(campaign.Stages)
+			</div>
 		</div>
 		<div class="card">
 			<h2 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 0.75rem;">Stages</h2>
@@ -279,6 +282,7 @@ templ CampaignPage(campaign Campaign) {
 				</p>
 			}
 		</div>
+		@IslandBundle()
 	}
 }
 
@@ -519,6 +523,32 @@ func buildCampaignPlot(stages []CampaignStage) campaignPlot {
 		})
 	}
 	return plot
+}
+
+// campaignStageSeries projects the stage table onto the compact series the
+// campaign cost island reads. It is the shape ui.CampaignSeriesPoint defines
+// and the dashboard endpoint already serves, so one React component draws the
+// campaign page's full plot and the dashboard's mini charts alike.
+//
+// A cost that is not finite clears HasBestCost and is zeroed rather than
+// carried: encoding/json refuses NaN and infinities outright, and the stage is
+// one buildCampaignPlot skips anyway.
+func campaignStageSeries(stages []CampaignStage) []CampaignSeriesPoint {
+	series := make([]CampaignSeriesPoint, 0, len(stages))
+	for _, stage := range stages {
+		point := CampaignSeriesPoint{
+			Index:       stage.Index,
+			Kind:        stage.Kind,
+			Circles:     stage.Circles,
+			BestCost:    stage.BestCost,
+			HasBestCost: stage.HasBestCost,
+		}
+		if math.IsNaN(point.BestCost) || math.IsInf(point.BestCost, 0) {
+			point.BestCost, point.HasBestCost = 0, false
+		}
+		series = append(series, point)
+	}
+	return series
 }
 
 func campaignPointFill(kind string) string {

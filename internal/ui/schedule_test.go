@@ -3,6 +3,7 @@ package ui
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"math"
 	"strconv"
 	"strings"
@@ -76,17 +77,96 @@ func TestCampaignPageShowsTheStageTable(t *testing.T) {
 }
 
 // TestCampaignPlotIsSelfContained is the constraint that matters for a locally
-// served UI: the chart must be markup, not a library and not a remote asset.
+// served UI: the chart is markup first, and nothing it loads comes from a
+// network the host may not have. The React island added in Task 17.7 only
+// upgrades the plot after mount, so the SVG stays the page's own drawing and
+// every script the page pulls is embedded in this binary.
 func TestCampaignPlotIsSelfContained(t *testing.T) {
 	body := renderCampaign(t, synthesizedCampaign())
 	if !strings.Contains(body, "<svg") || !strings.Contains(body, "<polyline") {
 		t.Fatal("campaign page does not draw an inline SVG plot")
 	}
-	for _, forbidden := range []string{"<script", "cdn.", "https://unpkg", "http://", "https://"} {
+	for _, forbidden := range []string{"cdn.", "https://unpkg", "http://", "https://"} {
 		if strings.Contains(bodyWithoutLayout(body), forbidden) {
 			t.Errorf("campaign plot pulls in %q, but the UI is served with no external assets", forbidden)
 		}
 	}
+	for _, source := range scriptSources(bodyWithoutLayout(body)) {
+		if !strings.HasPrefix(source, StaticPrefix) {
+			t.Errorf("campaign page loads %q, which is not an embedded asset under %s", source, StaticPrefix)
+		}
+	}
+}
+
+// TestCampaignPlotHydratesInPlace pins the swap contract: the island mounts on
+// the container the SVG is already in, and reads the same series the dashboard
+// endpoint serves. A seed rendered outside the mount point, or a mount point
+// without one, leaves the React chart with nothing to draw.
+func TestCampaignPlotHydratesInPlace(t *testing.T) {
+	body := renderCampaign(t, synthesizedCampaign())
+	island := bodyWithoutLayout(body)
+	start := strings.Index(island, `data-island="campaign-cost"`)
+	if start < 0 {
+		t.Fatal("campaign page renders no campaign-cost island mount point")
+	}
+	island = island[start:]
+	seed := strings.Index(island, `id="campaign-cost-series"`)
+	svg := strings.Index(island, "<svg")
+	if seed < 0 || svg < 0 || seed > svg {
+		t.Error("campaign-cost island does not wrap the seed and the server-rendered SVG together")
+	}
+	if !strings.Contains(body, BundleURL()) {
+		t.Error("campaign page renders an island but never loads the bundle that mounts it")
+	}
+}
+
+// TestCampaignStageSeriesSkipsUnmeasuredStages is the seed's half of the rule
+// buildCampaignPlot already applies: a stage with no recorded cost is never
+// handed to the chart as a zero.
+func TestCampaignStageSeriesSkipsUnmeasuredStages(t *testing.T) {
+	series := campaignStageSeries([]CampaignStage{
+		{Index: 0, Kind: "base", Circles: 100, BestCost: 900, HasBestCost: true},
+		{Index: 1, Kind: "extend", Circles: 200, State: "running"},
+		{Index: 2, Kind: "polish", Circles: 200, BestCost: math.Inf(1), HasBestCost: true},
+	})
+	if len(series) != 3 {
+		t.Fatalf("campaignStageSeries returned %d points, want one per stage", len(series))
+	}
+	if !series[0].HasBestCost || series[0].BestCost != 900 {
+		t.Errorf("measured stage lost its cost: %+v", series[0])
+	}
+	for _, point := range series[1:] {
+		if point.HasBestCost {
+			t.Errorf("stage %d is reported as measured: %+v", point.Index, point)
+		}
+		if point.BestCost != 0 {
+			t.Errorf("stage %d carries a cost JSON cannot encode: %v", point.Index, point.BestCost)
+		}
+	}
+	if _, err := json.Marshal(series); err != nil {
+		t.Fatalf("campaign series does not marshal, so the seed cannot render: %v", err)
+	}
+}
+
+// scriptSources collects the src of every script tag in the markup. A script
+// without one is inline — the JSON seed — and loads nothing.
+func scriptSources(markup string) []string {
+	var sources []string
+	for _, fragment := range strings.Split(markup, "<script")[1:] {
+		tag, _, ok := strings.Cut(fragment, ">")
+		if !ok {
+			continue
+		}
+		_, after, ok := strings.Cut(tag, `src="`)
+		if !ok {
+			continue
+		}
+		source, _, ok := strings.Cut(after, `"`)
+		if ok {
+			sources = append(sources, source)
+		}
+	}
+	return sources
 }
 
 // bodyWithoutLayout drops the shared layout so the assertion is about the
