@@ -623,6 +623,7 @@ templ JobDetailPage(job JobDetail) {
 				const maxIters = Number.parseInt(imageViewer.dataset.maxIters, 10) || 0;
 				const circleCount = Number.parseInt({ fmt.Sprintf("%d", job.Circles) }, 10) || 0;
 				const visibleMetricStorageKey = "mayflycirclefit.visibleMetrics";
+				const imageRefreshIntervalMs = readImageRefreshInterval();
 				const initialCPS = Number.parseFloat(
 					document.querySelector('[data-metric="cps"]')?.dataset.rawCps || "0",
 				) || 0;
@@ -724,8 +725,43 @@ templ JobDetailPage(job JobDetail) {
 				});
 				if (sparklineVisible) updateSparkline();
 
+				// Applies one progress payload to the metric panel. The stream event and
+				// the status endpoint share these field names, so both update paths feed
+				// the same function.
+				function applyProgressMetrics(data) {
+					updateMetric("best-cost", data.bestCost.toFixed(4));
+					updateCandidateMetrics(data);
+					updateMetric("iterations", data.iterations);
+					updateMetric("evaluations", formatNumber(data.evaluations));
+					updateIterationProgress(data.iterations);
+					if (data.psnrInfinite) {
+						updateMetric("psnr", "∞");
+					} else if (typeof data.psnr === "number") {
+						updateMetric("psnr", data.psnr.toFixed(2));
+					}
+					if (typeof data.ssim === "number") {
+						updateMetric("ssim", data.ssim.toFixed(4));
+					}
+					addMetricSample(data);
+					refreshParameterViewer();
+				}
+
 				// Keep the stream live for pending and running jobs and after pausing.
-				if (jobState === "running" || jobState === "pending" || jobState === "paused") {
+				// An explicit refresh interval means the viewer polls the status endpoint
+				// instead; opening the stream as well would reload the page every five
+				// seconds through onerror in exactly the environments that interval was
+				// chosen for.
+				const jobIsActive =
+					jobState === "running" || jobState === "pending" || jobState === "paused";
+				if (jobIsActive && imageRefreshIntervalMs > 0) {
+					// The image viewer owns the polling loop and the image refreshes; it
+					// republishes each status payload so the metric panel stays current.
+					document.addEventListener("mayflycirclefit:job-status", function (event) {
+						if (event.detail) {
+							applyProgressMetrics(event.detail);
+						}
+					});
+				} else if (jobIsActive) {
 					const eventSource = new EventSource(
 						"/api/v1/jobs/" + jobId + "/stream",
 					);
@@ -736,22 +772,7 @@ templ JobDetailPage(job JobDetail) {
 							typeof data.bestRevision === "number" &&
 							data.bestRevision > lastRenderedBestRevision;
 
-						// Update metrics
-						updateMetric("best-cost", data.bestCost.toFixed(4));
-						updateCandidateMetrics(data);
-						updateMetric("iterations", data.iterations);
-						updateMetric("evaluations", formatNumber(data.evaluations));
-						updateIterationProgress(data.iterations);
-						if (data.psnrInfinite) {
-							updateMetric("psnr", "∞");
-						} else if (typeof data.psnr === "number") {
-							updateMetric("psnr", data.psnr.toFixed(2));
-						}
-						if (typeof data.ssim === "number") {
-							updateMetric("ssim", data.ssim.toFixed(4));
-						}
-						addMetricSample(data);
-						refreshParameterViewer();
+						applyProgressMetrics(data);
 
 						// If job completed, reload to update images
 						if (

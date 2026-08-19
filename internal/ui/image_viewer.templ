@@ -779,8 +779,22 @@ templ ImageViewer(data ImageViewerData) {
 
 			let lastRevision = Number.parseInt(viewer.dataset.bestRevision, 10) || 0;
 			let timer = null;
+			let inFlight = false;
 
+			function stopPolling() {
+				if (timer) {
+					window.clearInterval(timer);
+					timer = null;
+				}
+			}
+
+			// One request at a time: a slow network must not let ticks pile up into
+			// overlapping fetches that apply their updates out of order.
 			async function checkImageRevision() {
+				if (inFlight) {
+					return;
+				}
+				inFlight = true;
 				try {
 					const response = await fetch(
 						"/api/v1/jobs/" + encodeURIComponent(jobId) + "/status",
@@ -790,6 +804,10 @@ templ ImageViewer(data ImageViewerData) {
 						return;
 					}
 					const status = await response.json();
+					// Republish for the job detail page, which owns the metric panel.
+					document.dispatchEvent(
+						new CustomEvent("mayflycirclefit:job-status", { detail: status }),
+					);
 					const nextRevision = Number.parseInt(status.bestRevision, 10);
 					if (Number.isFinite(nextRevision) && nextRevision > lastRevision) {
 						lastRevision = nextRevision;
@@ -823,18 +841,23 @@ templ ImageViewer(data ImageViewerData) {
 						status.state === "failed" ||
 						status.state === "cancelled"
 					) {
-						if (timer) {
-							window.clearInterval(timer);
-							timer = null;
-						}
+						stopPolling();
 						viewer.dataset.jobState = status.state;
+						// The status badge, controls and completion artifacts are all
+						// server-rendered, so a terminal transition needs a reload rather
+						// than a data attribute update. Without the stream running, this
+						// is the only place that observes it.
+						window.location.reload();
 					}
 				} catch (_err) {
 					// Keep polling and let errors self-recover.
+				} finally {
+					inFlight = false;
 				}
 			}
 
 			timer = window.setInterval(checkImageRevision, intervalMs);
+			window.addEventListener("pagehide", stopPolling);
 			checkImageRevision();
 		}
 
