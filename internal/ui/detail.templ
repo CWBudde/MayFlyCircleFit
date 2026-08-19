@@ -117,6 +117,8 @@ func statusBorderColor(state string) string {
 	switch state {
 	case "running":
 		return "var(--info-text)"
+	case "paused":
+		return "var(--warning-text)"
 	case "completed":
 		return "var(--success-text)"
 	case "failed":
@@ -143,6 +145,11 @@ templ JobDetailPage(job JobDetail) {
 				</div>
 				<div style="text-align: right;">
 					@StateBadge(job.State)
+					if job.State == "running" {
+						<button id="pause-job" class="btn" style="margin-left: 0.5rem; background-color: var(--warning-color); color: var(--text-color);">
+							Pause job
+						</button>
+					}
 					if job.CanPolish {
 						<button id="polish-job" class="btn btn-primary" style="margin-left: 0.5rem;">
 							Polish weak circles
@@ -607,6 +614,7 @@ templ JobDetailPage(job JobDetail) {
 
 				initializeParameterViewer();
 				initializeDownloadControls();
+				initializePauseControl();
 				initializePolishControl();
 
 				// Server-seeded quality history for the selectable chart.
@@ -684,8 +692,8 @@ templ JobDetailPage(job JobDetail) {
 				});
 				if (sparklineVisible) updateSparkline();
 
-				// Only connect SSE if job is running or pending
-				if (jobState === "running" || jobState === "pending") {
+				// Keep the stream live for pending and running jobs and after pausing.
+				if (jobState === "running" || jobState === "pending" || jobState === "paused") {
 					const eventSource = new EventSource(
 						"/api/v1/jobs/" + jobId + "/stream",
 					);
@@ -987,6 +995,30 @@ templ JobDetailPage(job JobDetail) {
 						reportButton.addEventListener("click", downloadReport);
 					}
 					syncArtifactDownloadColormap();
+				}
+
+				function initializePauseControl() {
+					const button = document.getElementById("pause-job");
+					if (!button) return;
+					button.addEventListener("click", async function () {
+						button.disabled = true;
+						button.textContent = "Pausing…";
+						try {
+							const response = await fetch(
+								"/api/v1/jobs/" + jobId + "/pause",
+								{ method: "POST" },
+							);
+							if (!response.ok) {
+								const payload = await response.json();
+								throw new Error(payload?.error?.message || "Unable to pause job");
+							}
+							location.reload();
+						} catch (err) {
+							window.alert(err.message || "Unable to pause job");
+							button.disabled = false;
+							button.textContent = "Pause job";
+						}
+					});
 				}
 
 				function initializePolishControl() {

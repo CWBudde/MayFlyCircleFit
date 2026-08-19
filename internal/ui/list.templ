@@ -130,10 +130,12 @@ templ StateBadge(state string) {
 			<span class="badge badge-info" style="animation: pulse 2s ease-in-out infinite;">
 				Running
 			</span>
-		case "completed":
+	case "completed":
 			<span class="badge badge-success">Completed</span>
 		case "failed":
 			<span class="badge badge-error">Failed</span>
+		case "paused":
+			<span class="badge badge-warning">Paused</span>
 		case "cancelled":
 			<span class="badge badge-warning">Cancelled</span>
 		default:

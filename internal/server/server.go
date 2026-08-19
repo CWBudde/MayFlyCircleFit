@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -71,6 +72,7 @@ type ServerOptions struct {
 }
 
 var ErrJobQueueFull = errors.New("job queue is full")
+var errPausedWithoutCheckpoint = errors.New("pause requires a checkpointable state")
 
 // storeForSlug returns the store owning a project's artifacts. An empty slug
 // and the default project resolve to the store the server was built with, so a
@@ -394,6 +396,56 @@ func (s *Server) requestCancellation(jobID string) error {
 	return nil
 }
 
+func (s *Server) requestPause(jobID string) error {
+	job, ok := s.jobManager.GetJob(jobID)
+	if !ok {
+		return store.ErrNotFound
+	}
+	if job.State == StateRunning {
+		if err := s.persistPauseCheckpoint(jobID, job); err != nil {
+			return err
+		}
+	}
+	if err := s.jobManager.PauseJob(jobID); err != nil {
+		return err
+	}
+	s.cancelMu.Lock()
+	cancel := s.jobCancels[jobID]
+	s.cancelMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	return nil
+}
+
+func (s *Server) persistPauseCheckpoint(jobID string, job *Job) error {
+	if s.store == nil {
+		return errPausedWithoutCheckpoint
+	}
+	if job == nil {
+		return store.ErrNotFound
+	}
+	if len(job.BestParams) == 0 || math.IsNaN(job.BestCost) || math.IsInf(job.BestCost, 0) {
+		return errPausedWithoutCheckpoint
+	}
+	jobStore, err := s.storeForJob(jobID)
+	if err != nil {
+		return err
+	}
+	if jobStore == nil {
+		return errPausedWithoutCheckpoint
+	}
+	checkpoint := store.NewCheckpoint(job.ID, job.BestParams, job.BestCost, job.InitialCost, job.Iterations, job.Config)
+	checkpoint.Evaluations = int64(job.Evaluations)
+	checkpoint.Termination = job.Termination
+	applyJobLineage(checkpoint, job)
+	if err := jobStore.SaveCheckpoint(jobID, checkpoint); err != nil {
+		slog.Error("Failed to persist pause checkpoint", "job_id", jobID, "error", err)
+		return err
+	}
+	return nil
+}
+
 // checkpointRunningJobs saves checkpoints for all running jobs
 func (s *Server) checkpointRunningJobs(ctx context.Context) {
 	runningJobs := s.jobManager.GetRunningJobs()
@@ -570,6 +622,8 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 		s.handleJobStream(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "resume" {
 		s.handleResumeJob(w, r, jobID)
+	} else if len(parts) == 2 && parts[1] == "pause" {
+		s.handlePauseJob(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "polish" {
 		s.handlePolishJob(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "extend" {
@@ -667,6 +721,29 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request, jobID s
 			writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		} else {
 			writeAPIError(w, http.StatusConflict, "invalid_state", err.Error())
+		}
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *Server) handlePauseJob(w http.ResponseWriter, r *http.Request, jobID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+	if err := s.requestPause(jobID); err != nil {
+		slog.Warn("Failed to pause job", "job_id", jobID, "error", err)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
+		case errors.Is(err, errPausedWithoutCheckpoint):
+			writeAPIError(w, http.StatusConflict, "invalid_state", "job has no checkpointable progress yet")
+		case errors.Is(err, ErrInvalidTransition):
+			writeAPIError(w, http.StatusConflict, "invalid_state", "job cannot be paused in its current state")
+		default:
+			writeAPIError(w, http.StatusInternalServerError, "pause_failed", "unable to pause job")
 		}
 		return
 	}

@@ -1028,10 +1028,10 @@ customization workflow.
 - [x] Test with various optimization scenarios
 
 ### Task 12.8: Add Job Control Actions
-- [ ] Add "Pause" button (if feasible)
-  - [ ] Endpoint: `POST /api/v1/jobs/:id/pause`
-  - [ ] Checkpoint and suspend worker
-  - [ ] Update UI to show paused state
+- [x] Add "Pause" button (if feasible)
+  - [x] Endpoint: `POST /api/v1/jobs/:id/pause`
+  - [x] Checkpoint and suspend worker
+  - [x] Update UI to show paused state
 - [ ] Add "Resume" button (for paused jobs)
   - [ ] Endpoint: `POST /api/v1/jobs/:id/resume`
   - [ ] Resume from checkpoint

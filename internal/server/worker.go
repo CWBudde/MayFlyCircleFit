@@ -18,6 +18,14 @@ import (
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
 
+func getJobState(jm *JobManager, jobID string) JobState {
+	job, ok := jm.GetJob(jobID)
+	if !ok {
+		return ""
+	}
+	return job.State
+}
+
 // buildEarlyStop maps the optimizer-level stopping fields onto the adapter's
 // option. A configuration that sets none of them yields a zero Stop, which
 // leaves the optimizer unchanged.
@@ -128,7 +136,9 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		return err
 	}
 	if err := ctx.Err(); err != nil {
-		markJobCancelled(jm, jobID)
+		if state := jm.getJobState(jobID); state != StatePaused {
+			markJobCancelled(jm, jobID)
+		}
 		return err
 	}
 
@@ -445,7 +455,9 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			markJobCancelled(jm, jobID)
+			if state := jm.getJobState(jobID); state != StatePaused {
+				markJobCancelled(jm, jobID)
+			}
 			return err
 		}
 		markJobFailed(jm, jobID, err)

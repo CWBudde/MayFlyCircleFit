@@ -19,6 +19,7 @@ type JobState string
 const (
 	StatePending   JobState = "pending"
 	StateRunning   JobState = "running"
+	StatePaused    JobState = "paused"
 	StateCompleted JobState = "completed"
 	StateFailed    JobState = "failed"
 	StateCancelled JobState = "cancelled"
@@ -401,6 +402,11 @@ func (jm *JobManager) CancelJob(id string) error {
 	return jm.transition(id, StateCancelled, nil)
 }
 
+// PauseJob transitions a pending/running job to paused.
+func (jm *JobManager) PauseJob(id string) error {
+	return jm.transition(id, StatePaused, nil)
+}
+
 // DeleteJob removes a terminal job. Active jobs must be cancelled first.
 func (jm *JobManager) DeleteJob(id string) error {
 	jm.mu.Lock()
@@ -463,9 +469,11 @@ func (jm *JobManager) transition(id string, next JobState, update func(*Job)) er
 func canTransition(current, next JobState) bool {
 	switch current {
 	case StatePending:
-		return next == StateRunning || next == StateFailed || next == StateCancelled
+		return next == StateRunning || next == StateFailed || next == StateCancelled || next == StatePaused
 	case StateRunning:
-		return next == StateCompleted || next == StateFailed || next == StateCancelled
+		return next == StateCompleted || next == StateFailed || next == StateCancelled || next == StatePaused
+	case StatePaused:
+		return next == StateRunning || next == StateCompleted || next == StateFailed || next == StateCancelled
 	default:
 		return false
 	}
