@@ -117,6 +117,8 @@ func statusBorderColor(state string) string {
 	switch state {
 	case "running":
 		return "var(--info-text)"
+	case "paused":
+		return "var(--warning-text)"
 	case "completed":
 		return "var(--success-text)"
 	case "failed":
@@ -143,6 +145,32 @@ templ JobDetailPage(job JobDetail) {
 				</div>
 				<div style="text-align: right;">
 					@StateBadge(job.State)
+					if job.State == "running" {
+						<button id="pause-job" class="btn" style="margin-left: 0.5rem; background-color: var(--warning-color); color: var(--text-color);">
+							Pause job
+						</button>
+						<button id="cancel-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);">
+							Cancel job
+						</button>
+					}
+					if job.State == "paused" {
+						<button id="resume-job" class="btn btn-primary" style="margin-left: 0.5rem;">
+							Resume job
+						</button>
+						<button id="cancel-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);">
+							Cancel job
+						</button>
+					}
+					if job.State == "pending" {
+						<button id="cancel-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);">
+							Cancel job
+						</button>
+					}
+					if job.State == "completed" || job.State == "failed" || job.State == "cancelled" {
+						<button id="delete-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);">
+							Delete job
+						</button>
+					}
 					if job.CanPolish {
 						<button id="polish-job" class="btn btn-primary" style="margin-left: 0.5rem;">
 							Polish weak circles
@@ -605,9 +633,13 @@ templ JobDetailPage(job JobDetail) {
 				let sparklineTooltip = null;
 				let hoveredSample = null;
 
-				initializeParameterViewer();
-				initializeDownloadControls();
-				initializePolishControl();
+									initializeParameterViewer();
+									initializeDownloadControls();
+									initializePauseControl();
+									initializeResumeControl();
+									initializeCancelControl();
+									initializeDeleteControl();
+									initializePolishControl();
 
 				// Server-seeded quality history for the selectable chart.
 				function parseSampleTimestamp(value) {
@@ -684,8 +716,8 @@ templ JobDetailPage(job JobDetail) {
 				});
 				if (sparklineVisible) updateSparkline();
 
-				// Only connect SSE if job is running or pending
-				if (jobState === "running" || jobState === "pending") {
+				// Keep the stream live for pending and running jobs and after pausing.
+				if (jobState === "running" || jobState === "pending" || jobState === "paused") {
 					const eventSource = new EventSource(
 						"/api/v1/jobs/" + jobId + "/stream",
 					);
@@ -988,6 +1020,109 @@ templ JobDetailPage(job JobDetail) {
 					}
 					syncArtifactDownloadColormap();
 				}
+
+				function initializePauseControl() {
+				const button = document.getElementById("pause-job");
+				if (!button) return;
+				button.addEventListener("click", async function () {
+					if (!window.confirm("Pause this job?")) {
+						return;
+					}
+					button.disabled = true;
+					button.textContent = "Pausing…";
+					try {
+						const response = await fetch(
+								"/api/v1/jobs/" + jobId + "/pause",
+								{ method: "POST" },
+							);
+							if (!response.ok) {
+								const payload = await response.json();
+								throw new Error(payload?.error?.message || "Unable to pause job");
+							}
+							location.reload();
+						} catch (err) {
+							window.alert(err.message || "Unable to pause job");
+							button.disabled = false;
+							button.textContent = "Pause job";
+						}
+					});
+				}
+
+			function initializeResumeControl() {
+				const button = document.getElementById("resume-job");
+				if (!button) return;
+				button.addEventListener("click", async function () {
+					button.disabled = true;
+						button.textContent = "Resuming…";
+						try {
+							const response = await fetch(
+								"/api/v1/jobs/" + jobId + "/resume",
+								{ method: "POST" },
+							);
+							if (!response.ok) {
+								const payload = await response.json();
+								throw new Error(payload?.error?.message || "Unable to resume job");
+							}
+							location.reload();
+						} catch (err) {
+							window.alert(err.message || "Unable to resume job");
+							button.disabled = false;
+							button.textContent = "Resume job";
+					}
+				});
+			}
+
+				function initializeCancelControl() {
+				const button = document.getElementById("cancel-job");
+				if (!button) return;
+				button.addEventListener("click", async function () {
+					if (!window.confirm("Cancel this job?")) {
+						return;
+					}
+					button.disabled = true;
+				button.textContent = "Cancelling...";
+				try {
+					const response = await fetch("/api/v1/jobs/" + jobId + "/cancel", {
+							method: "POST",
+						});
+						if (!response.ok) {
+							const payload = await response.json();
+							throw new Error(payload?.error?.message || "Unable to cancel job");
+						}
+						location.reload();
+					} catch (err) {
+						window.alert(err.message || "Unable to cancel job");
+						button.disabled = false;
+						button.textContent = "Cancel job";
+					}
+				});
+			}
+
+			function initializeDeleteControl() {
+				const button = document.getElementById("delete-job");
+				if (!button) return;
+				button.addEventListener("click", async function () {
+					if (!window.confirm("Delete this job? This cannot be undone.")) {
+						return;
+					}
+					button.disabled = true;
+					button.textContent = "Deleting…";
+					try {
+						const response = await fetch("/api/v1/jobs/" + jobId, {
+							method: "DELETE",
+						});
+						if (!response.ok) {
+							const payload = await response.json();
+							throw new Error(payload?.error?.message || "Unable to delete job");
+						}
+						window.location.href = "/jobs";
+					} catch (err) {
+						window.alert(err.message || "Unable to delete job");
+						button.disabled = false;
+						button.textContent = "Delete job";
+					}
+				});
+			}
 
 				function initializePolishControl() {
 					const button = document.getElementById("polish-job");

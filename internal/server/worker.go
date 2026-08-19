@@ -128,7 +128,9 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		return err
 	}
 	if err := ctx.Err(); err != nil {
-		markJobCancelled(jm, jobID)
+		if state := jm.getJobState(jobID); state != StatePaused {
+			markJobCancelled(jm, jobID)
+		}
 		return err
 	}
 
@@ -445,7 +447,9 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			markJobCancelled(jm, jobID)
+			if state := jm.getJobState(jobID); state != StatePaused {
+				markJobCancelled(jm, jobID)
+			}
 			return err
 		}
 		markJobFailed(jm, jobID, err)
@@ -747,11 +751,7 @@ func safeJobError(err error) string {
 	case errors.Is(err, renderer.ErrStagedOptimizationUnsupported):
 		return "selected backend does not support this optimization mode"
 	case errors.Is(err, renderer.ErrBackendUnavailable):
-		detail := err.Error()
-		prefix := renderer.ErrBackendUnavailable.Error() + ": "
-		if strings.HasPrefix(detail, prefix) {
-			detail = strings.TrimPrefix(detail, prefix)
-		}
+		detail := strings.TrimPrefix(err.Error(), renderer.ErrBackendUnavailable.Error()+": ")
 		return fmt.Sprintf("renderer backend unavailable: %v", detail)
 	case errors.Is(err, renderer.ErrInvalidOptimizationInput):
 		return "optimizer produced an invalid result"

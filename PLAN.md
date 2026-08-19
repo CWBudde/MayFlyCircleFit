@@ -1028,24 +1028,24 @@ customization workflow.
 - [x] Test with various optimization scenarios
 
 ### Task 12.8: Add Job Control Actions
-- [ ] Add "Pause" button (if feasible)
-  - [ ] Endpoint: `POST /api/v1/jobs/:id/pause`
-  - [ ] Checkpoint and suspend worker
-  - [ ] Update UI to show paused state
-- [ ] Add "Resume" button (for paused jobs)
-  - [ ] Endpoint: `POST /api/v1/jobs/:id/resume`
-  - [ ] Resume from checkpoint
-  - [ ] Update UI to show running state
-- [ ] Add "Cancel" button
-  - [ ] Endpoint: `POST /api/v1/jobs/:id/cancel`
-  - [ ] Gracefully stop worker
-  - [ ] Update UI to show cancelled state
-- [ ] Add "Delete" button
-  - [ ] Endpoint: `DELETE /api/v1/jobs/:id`
-  - [ ] Remove job and artifacts
-  - [ ] Redirect to job list
-- [ ] Add confirmation dialogs for destructive actions
-- [ ] Test all control actions end-to-end
+- [x] Add "Pause" button (if feasible)
+  - [x] Endpoint: `POST /api/v1/jobs/:id/pause`
+  - [x] Checkpoint and suspend worker
+  - [x] Update UI to show paused state
+- [x] Add "Resume" button (for paused jobs)
+  - [x] Endpoint: `POST /api/v1/jobs/:id/resume`
+  - [x] Resume from checkpoint
+  - [x] Update UI to show running state
+- [x] Add "Cancel" button
+  - [x] Endpoint: `POST /api/v1/jobs/:id/cancel`
+  - [x] Gracefully stop worker
+  - [x] Update UI to show cancelled state
+- [x] Add "Delete" button
+  - [x] Endpoint: `DELETE /api/v1/jobs/:id`
+  - [x] Remove job and artifacts
+  - [x] Redirect to job list
+- [x] Add confirmation dialogs for destructive actions
+- [x] Test all control actions end-to-end
 
 ### Task 12.9: Improve Responsive Design and Accessibility
 - [ ] Test UI on mobile devices (phone, tablet)

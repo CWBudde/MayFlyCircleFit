@@ -19,6 +19,7 @@ type JobState string
 const (
 	StatePending   JobState = "pending"
 	StateRunning   JobState = "running"
+	StatePaused    JobState = "paused"
 	StateCompleted JobState = "completed"
 	StateFailed    JobState = "failed"
 	StateCancelled JobState = "cancelled"
@@ -316,6 +317,18 @@ func updateBestResult(job *Job, bestParams []float64, bestCost float64) bool {
 	return true
 }
 
+// getJobState reports the current state of a job, or the empty state when the
+// job is unknown.
+func (jm *JobManager) getJobState(id string) JobState {
+	jm.mu.RLock()
+	defer jm.mu.RUnlock()
+	job, ok := jm.jobs[id]
+	if !ok {
+		return ""
+	}
+	return job.State
+}
+
 func (jm *JobManager) bestSnapshot(id string) (float64, uint64, *float64, bool) {
 	jm.mu.RLock()
 	defer jm.mu.RUnlock()
@@ -401,6 +414,35 @@ func (jm *JobManager) CancelJob(id string) error {
 	return jm.transition(id, StateCancelled, nil)
 }
 
+// PauseJob transitions a running job to paused.
+func (jm *JobManager) PauseJob(id string) error {
+	return jm.transition(id, StatePaused, nil)
+}
+
+// claimPause transitions a running job to paused and returns the snapshot the
+// caller must checkpoint. Claiming the state and taking the snapshot under one
+// lock is what makes the pause safe: a job that published its final result
+// first is no longer running, so the claim is refused and no stale snapshot can
+// replace the checkpoint a completed job guarantees to its continuations.
+func (jm *JobManager) claimPause(id string) (*Job, error) {
+	jm.mu.Lock()
+	defer jm.mu.Unlock()
+	job, ok := jm.jobs[id]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	if job.State != StateRunning {
+		return nil, fmt.Errorf("%w: job is %s", ErrInvalidTransition, job.State)
+	}
+	job.State = StatePaused
+	return cloneJob(job), nil
+}
+
+// ResumeJob transitions a paused job to running.
+func (jm *JobManager) ResumeJob(id string) error {
+	return jm.transition(id, StateRunning, nil)
+}
+
 // DeleteJob removes a terminal job. Active jobs must be cancelled first.
 func (jm *JobManager) DeleteJob(id string) error {
 	jm.mu.Lock()
@@ -463,9 +505,18 @@ func (jm *JobManager) transition(id string, next JobState, update func(*Job)) er
 func canTransition(current, next JobState) bool {
 	switch current {
 	case StatePending:
+		// A pending job cannot be paused: the worker loop only picks up pending
+		// work, and resuming reads a checkpoint a job that never ran has not
+		// written, so pausing here would strand the job in a state it cannot
+		// leave.
 		return next == StateRunning || next == StateFailed || next == StateCancelled
 	case StateRunning:
-		return next == StateCompleted || next == StateFailed || next == StateCancelled
+		return next == StateCompleted || next == StateFailed || next == StateCancelled || next == StatePaused
+	case StatePaused:
+		// Completion is deliberately absent. A worker that finishes after the
+		// pause was claimed must not publish the job as completed, because the
+		// checkpoint on disk is the pause snapshot the operator asked for.
+		return next == StateRunning || next == StateFailed || next == StateCancelled
 	default:
 		return false
 	}

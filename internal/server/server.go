@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -71,6 +72,9 @@ type ServerOptions struct {
 }
 
 var ErrJobQueueFull = errors.New("job queue is full")
+var errPausedWithoutCheckpoint = errors.New("pause requires a checkpointable state")
+var errScheduleStagePause = errors.New("a schedule stage is paused through its schedule")
+var errResumeCheckpointOverflow = errors.New("resume checkpoint evaluation count is out of range")
 
 // storeForSlug returns the store owning a project's artifacts. An empty slug
 // and the default project resolve to the store the server was built with, so a
@@ -347,7 +351,7 @@ func (s *Server) workerLoop() {
 			return
 		case jobID := <-s.queue:
 			job, ok := s.jobManager.GetJob(jobID)
-			if !ok || job.State != StatePending {
+			if !ok || (job.State != StatePending && job.State != StateRunning) {
 				continue
 			}
 			// A job whose project cannot be resolved must not run against
@@ -391,6 +395,117 @@ func (s *Server) requestCancellation(jobID string) error {
 		return fmt.Errorf("job cancellation is not yet available")
 	}
 	cancel()
+	return nil
+}
+
+// requestPause pauses one running job. The paused state is claimed before the
+// checkpoint is written so the snapshot cannot outlive the state it describes;
+// a failed write puts the job back to running rather than leaving it paused
+// without anything to resume from.
+func (s *Server) requestPause(jobID string) error {
+	job, ok := s.jobManager.GetJob(jobID)
+	if !ok {
+		return store.ErrNotFound
+	}
+	// A stage of a campaign is driven by the schedule executor, which waits for
+	// a terminal job state and would wait forever on a paused one. Pausing a
+	// campaign is the schedule's own action, and it stops at a stage boundary.
+	if job.ScheduleID != "" {
+		return errScheduleStagePause
+	}
+
+	claimed, err := s.jobManager.claimPause(jobID)
+	if err != nil {
+		return err
+	}
+	if err := s.persistPauseCheckpoint(jobID, claimed); err != nil {
+		if resumeErr := s.jobManager.ResumeJob(jobID); resumeErr != nil && !errors.Is(resumeErr, ErrInvalidTransition) {
+			slog.Error("Unable to restore a job after a failed pause", "job_id", jobID, "error", resumeErr)
+		}
+		return err
+	}
+
+	s.cancelMu.Lock()
+	cancel := s.jobCancels[jobID]
+	s.cancelMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	return nil
+}
+
+func (s *Server) requestResume(jobID string) (*store.Checkpoint, error) {
+	job, ok := s.jobManager.GetJob(jobID)
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	if job.State != StatePaused {
+		return nil, fmt.Errorf("%w: job is %s", ErrInvalidTransition, job.State)
+	}
+
+	jobStore, err := s.storeForJob(jobID)
+	if err != nil {
+		return nil, err
+	}
+	if jobStore == nil {
+		return nil, errPausedWithoutCheckpoint
+	}
+	checkpoint, err := jobStore.LoadCheckpoint(jobID)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkpoint.Validate(); err != nil {
+		return nil, err
+	}
+	if int64(int(checkpoint.Evaluations)) != checkpoint.Evaluations {
+		return nil, errResumeCheckpointOverflow
+	}
+	if err := s.jobManager.UpdateJob(jobID, func(j *Job) {
+		j.BestParams = append([]float64(nil), checkpoint.BestParams...)
+		j.BestCost = checkpoint.BestCost
+		j.InitialCost = checkpoint.InitialCost
+		j.Iterations = checkpoint.Iterations
+		j.Evaluations = int(checkpoint.Evaluations)
+		j.Config.EffectiveSeed = checkpoint.EffectiveSeed
+		j.Config.ResumeCount = checkpoint.ResumeCount + 1
+		j.CandidateCost = nil
+		j.Error = ""
+		j.Termination = checkpoint.Termination
+	}); err != nil {
+		return nil, err
+	}
+	if err := s.jobManager.ResumeJob(jobID); err != nil {
+		return nil, err
+	}
+
+	return checkpoint, nil
+}
+
+func (s *Server) persistPauseCheckpoint(jobID string, job *Job) error {
+	if s.store == nil {
+		return errPausedWithoutCheckpoint
+	}
+	if job == nil {
+		return store.ErrNotFound
+	}
+	if len(job.BestParams) == 0 || math.IsNaN(job.BestCost) || math.IsInf(job.BestCost, 0) {
+		return errPausedWithoutCheckpoint
+	}
+	jobStore, err := s.storeForJob(jobID)
+	if err != nil {
+		return err
+	}
+	if jobStore == nil {
+		return errPausedWithoutCheckpoint
+	}
+	checkpoint := store.NewCheckpoint(job.ID, job.BestParams, job.BestCost, job.InitialCost, job.Iterations, job.Config)
+	checkpoint.Evaluations = int64(job.Evaluations)
+	checkpoint.Termination = job.Termination
+	applyJobLineage(checkpoint, job)
+	if err := jobStore.SaveCheckpoint(jobID, checkpoint); err != nil {
+		slog.Error("Failed to persist pause checkpoint", "job_id", jobID, "error", err)
+		return err
+	}
 	return nil
 }
 
@@ -570,6 +685,8 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 		s.handleJobStream(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "resume" {
 		s.handleResumeJob(w, r, jobID)
+	} else if len(parts) == 2 && parts[1] == "pause" {
+		s.handlePauseJob(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "polish" {
 		s.handlePolishJob(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "extend" {
@@ -667,6 +784,31 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request, jobID s
 			writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		} else {
 			writeAPIError(w, http.StatusConflict, "invalid_state", err.Error())
+		}
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *Server) handlePauseJob(w http.ResponseWriter, r *http.Request, jobID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+	if err := s.requestPause(jobID); err != nil {
+		slog.Warn("Failed to pause job", "job_id", jobID, "error", err)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
+		case errors.Is(err, errPausedWithoutCheckpoint):
+			writeAPIError(w, http.StatusConflict, "invalid_state", "job has no checkpointable progress yet")
+		case errors.Is(err, errScheduleStagePause):
+			writeAPIError(w, http.StatusConflict, "invalid_state", "pause the schedule that owns this stage instead")
+		case errors.Is(err, ErrInvalidTransition):
+			writeAPIError(w, http.StatusConflict, "invalid_state", "job cannot be paused in its current state")
+		default:
+			writeAPIError(w, http.StatusInternalServerError, "pause_failed", "unable to pause job")
 		}
 		return
 	}
@@ -1002,21 +1144,83 @@ func (s *Server) handleGetRefImage(w http.ResponseWriter, r *http.Request, jobID
 	}
 }
 
-// handleResumeJob handles POST /api/v1/jobs/:id/resume
+// handleResumeJob handles POST /api/v1/jobs/:id/resume. The route carries two
+// continuations that the job's own state tells apart. A paused job is one an
+// operator suspended, so it resumes in place, under its own ID, from the
+// snapshot the pause wrote. Any other job resumes the way it always has: its
+// checkpoint seeds a new job, which is the answer the `resume` CLI command and
+// the release lifecycle expect for a run that has already stopped.
 func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID string) {
-	// Only allow POST
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		w.Header().Set("Allow", http.MethodPost)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+	if failure := s.requireCheckpointStore(); failure != nil {
+		writeContinuationError(w, failure)
+		return
+	}
+	if job, ok := s.jobManager.GetJob(jobID); ok && job.State == StatePaused {
+		s.resumePausedJob(w, jobID)
+		return
+	}
+	s.forkJobFromCheckpoint(w, jobID)
+}
+
+// resumePausedJob restarts a suspended job under its own identity.
+func (s *Server) resumePausedJob(w http.ResponseWriter, jobID string) {
+	checkpoint, err := s.requestResume(jobID)
+	if err != nil {
+		slog.Warn("Failed to resume job", "job_id", jobID, "error", err)
+		var validationErr *store.ValidationError
+		switch {
+		case errors.As(err, &validationErr):
+			writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", validationErr.Error())
+		case errors.Is(err, store.ErrNotFound):
+			writeAPIError(w, http.StatusNotFound, "not_found", "job or checkpoint not found")
+		case errors.Is(err, errResumeCheckpointOverflow):
+			writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint evaluation count is out of range")
+		case errors.Is(err, ErrInvalidTransition):
+			writeAPIError(w, http.StatusConflict, "invalid_state", err.Error())
+		case errors.Is(err, errPausedWithoutCheckpoint):
+			writeAPIError(w, http.StatusConflict, "invalid_state", "job has no checkpoint to resume from")
+		default:
+			writeAPIError(w, http.StatusInternalServerError, "resume_failed", "unable to resume job")
+		}
 		return
 	}
 
-	// Check if checkpoint store is available
-	if s.store == nil {
-		http.Error(w, "Checkpoint feature not enabled", http.StatusServiceUnavailable)
+	if err := s.enqueueJob(jobID); err != nil {
+		if resumeErr := s.jobManager.PauseJob(jobID); resumeErr != nil {
+			slog.Warn("Failed to restore job to paused state", "job_id", jobID, "error", resumeErr)
+		}
+		if errors.Is(err, ErrJobQueueFull) {
+			writeAPIError(w, http.StatusTooManyRequests, "queue_full", "server job queue is full")
+		} else {
+			writeAPIError(w, http.StatusInternalServerError, "resume_failed", "unable to resume job")
+		}
 		return
 	}
 
-	// Load checkpoint
+	slog.Info("Resuming job from checkpoint", "job_id", jobID, "iteration", checkpoint.Iteration, "best_cost", checkpoint.BestCost)
+	response := map[string]interface{}{
+		"jobId":         jobID,
+		"resumedFrom":   jobID,
+		"state":         string(StateRunning),
+		"previousCost":  checkpoint.BestCost,
+		"previousIters": checkpoint.Iterations,
+		"message":       "Job resumed from checkpoint",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(response)
+}
+
+// forkJobFromCheckpoint seeds a new job from a stopped job's checkpoint. The
+// source job is left exactly as it is, so a cancelled run stays cancelled and
+// its artifacts stay addressable under the original ID.
+func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string) {
 	jobStore, err := s.storeForJob(jobID)
 	if err != nil {
 		slog.Error("Failed to resolve project store for resume", "job_id", jobID, "error", err)
@@ -1025,17 +1229,16 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 	}
 	checkpoint, err := jobStore.LoadCheckpoint(jobID)
 	if err != nil {
-		if _, ok := err.(*store.NotFoundError); ok {
-			http.Error(w, fmt.Sprintf("Checkpoint not found for job %s", jobID), http.StatusNotFound)
+		if errors.Is(err, store.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "not_found", "job or checkpoint not found")
 			return
 		}
-		http.Error(w, fmt.Sprintf("Failed to load checkpoint: %v", err), http.StatusInternalServerError)
+		slog.Error("Failed to load checkpoint for resume", "job_id", jobID, "error", err)
+		writeAPIError(w, http.StatusInternalServerError, "resume_failed", "unable to load checkpoint")
 		return
 	}
-
-	// Validate checkpoint
 	if err := checkpoint.Validate(); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid checkpoint: %v", err), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", err.Error())
 		return
 	}
 
@@ -1045,8 +1248,6 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 		"best_cost", checkpoint.BestCost,
 	)
 
-	// Create a new job with resumed state
-	// We use the same configuration but mark it as a resumed job
 	config, err := app.Normalize(checkpoint.Config)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint configuration is invalid")
@@ -1072,13 +1273,15 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 	config.ResumeCount = checkpoint.ResumeCount + 1
 	newJob := s.jobManager.CreateJob(s.projectForJob(jobID), config)
 
-	// Initialize the new job with checkpoint data
-	s.jobManager.UpdateJob(newJob.ID, func(j *Job) {
+	if err := s.jobManager.UpdateJob(newJob.ID, func(j *Job) {
 		updateBestResult(j, checkpoint.BestParams, checkpoint.BestCost)
 		j.InitialCost = checkpoint.InitialCost
 		j.Iterations = checkpoint.Iteration
 		j.Evaluations = int(checkpoint.Evaluations)
-	})
+	}); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "resume_failed", "unable to seed the resumed job")
+		return
+	}
 
 	if err := s.enqueueJob(newJob.ID); err != nil {
 		_ = s.jobManager.FailJob(newJob.ID, "server job queue is full")
@@ -1086,7 +1289,6 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 		return
 	}
 
-	// Return response
 	response := map[string]interface{}{
 		"jobId":         newJob.ID,
 		"resumedFrom":   jobID,
