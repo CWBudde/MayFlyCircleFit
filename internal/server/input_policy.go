@@ -5,6 +5,7 @@ import (
 	"image"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
 )
@@ -81,9 +82,19 @@ func (p *inputPolicy) resolveImage(path string) (string, error) {
 func (p *inputPolicy) contains(path string) bool {
 	for _, root := range p.roots {
 		relative, err := filepath.Rel(root, path)
-		if err == nil && relative != ".." && !filepath.IsAbs(relative) && (relative == "." || len(relative) < 3 || relative[:3] != ".."+string(filepath.Separator)) {
+		if err != nil {
+			continue
+		}
+		if relative == "." {
 			return true
 		}
+		if relative == ".." || filepath.IsAbs(relative) {
+			continue
+		}
+		if strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			continue
+		}
+		return true
 	}
 	return false
 }
