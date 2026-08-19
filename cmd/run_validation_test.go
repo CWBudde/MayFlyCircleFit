@@ -212,9 +212,25 @@ func TestRunOptimizationRejectsInvalidInputs(t *testing.T) {
 			wantErrMsg: "iters must be between 1 and",
 		},
 		{
-			name:       "invalid popSize",
-			mutate:     func() { popSize = 1 },
-			wantErrMsg: "population size must be between 20 and 200",
+			// A flag's zero is typed, never absent, so the configuration
+			// defaults must not fill it. Without that, `--threads 0` runs on
+			// every core the host has instead of failing.
+			name:       "invalid threads",
+			mutate:     func() { threads = 0 },
+			wantErrMsg: "threads must be positive",
+		},
+		{
+			name:       "invalid optimizer epochs",
+			mutate:     func() { optimizerEpochs = 0 },
+			wantErrMsg: "optimizerEpochs must be between 1 and",
+		},
+		{
+			name:   "invalid popSize",
+			mutate: func() { popSize = 1 },
+			// The message names the flag's configuration field, as every other
+			// case here does: the API error contract spells fields with their
+			// JSON names, and internal/server asserts the same "popSize".
+			wantErrMsg: "popSize must be between 20 and 200",
 		},
 	}
 

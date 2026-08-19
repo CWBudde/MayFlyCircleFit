@@ -4,6 +4,7 @@ package app
 import (
 	cryptorand "crypto/rand"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -573,6 +574,29 @@ func Normalize(config JobConfig) (JobConfig, error) {
 		return JobConfig{}, err
 	}
 	return config, nil
+}
+
+// NormalizeRequest normalizes a configuration that arrived as JSON, refusing any
+// field the caller wrote that ApplyDefaults would silently replace.
+//
+// Once a body is decoded into a value struct, an omitted field and an explicit
+// zero are the same thing: `"circles": 0` reaches ApplyDefaults looking exactly
+// like a caller who never mentioned circles, and comes back as the default, so
+// a request for zero circles runs ten instead. The raw body still knows which
+// keys were written, which is the same evidence ParseSchedule uses to keep a
+// schedule document from having a field quietly dropped.
+//
+// body is the request body the configuration was decoded from; keys that name
+// no configuration field — a request envelope's own fields, say — are ignored.
+func NormalizeRequest(body []byte, config JobConfig) (JobConfig, error) {
+	var present map[string]json.RawMessage
+	if err := json.Unmarshal(body, &present); err != nil {
+		return JobConfig{}, invalid("request", "must be a JSON object")
+	}
+	if err := validateNoDefaultOverrides("", present, config); err != nil {
+		return JobConfig{}, err
+	}
+	return Normalize(config)
 }
 
 // ValidateImageDimensions rejects empty images and dimensions that exceed the

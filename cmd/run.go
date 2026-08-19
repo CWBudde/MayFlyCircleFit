@@ -182,6 +182,29 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return NewUsageError(fmt.Errorf("invalid configuration: %w", err))
 	}
+	// The configuration defaults exist for fields a caller omitted, and a flag
+	// is never omitted: it carries either its own default or what the operator
+	// typed. ApplyDefaults cannot tell those apart and fills any zero, so
+	// `--circles 0` would come back as ten circles and run something nobody
+	// asked for. Every flag restored here defaults to a non-zero value, so a
+	// zero in one of them was typed; the flags whose zero means "decide for me"
+	// — --batch-size, --evaluation-workers, --seed and the --stop-* windows —
+	// are deliberately absent, and keep being resolved by the defaults.
+	config.Circles = circles
+	config.Iters = iters
+	config.PopSize = popSize
+	config.OptimizerEpochs = optimizerEpochs
+	config.PolishingActiveSetSize = polishingActiveSetSize
+	config.PolishingMaxSweeps = polishingMaxSweeps
+	config.PolishingEpochs = polishingEpochs
+	config.PolishingIters = polishingIters
+	config.PolishingPopSize = polishingPopSize
+	config.PolishingStagnationIters = polishingStagnationIters
+	config.Threads = threads
+	config.ConvergencePatience = patience
+	if err := config.Validate(); err != nil {
+		return NewUsageError(fmt.Errorf("invalid configuration: %w", err))
+	}
 
 	// Start CPU profiling if requested
 	if cpuProfile != "" {

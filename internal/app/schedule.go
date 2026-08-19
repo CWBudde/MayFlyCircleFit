@@ -538,6 +538,9 @@ func (s ScheduleStep) realize(config JobConfig, circles, index, stepIndex, repet
 // replace. The comparison is made against the caller's own document rather than
 // against a fixed list, so a future default cannot start swallowing a field
 // without this check noticing.
+//
+// An empty prefix names the field on its own, which is what a request body
+// carrying a configuration directly needs; a schedule passes "base".
 func validateNoDefaultOverrides(prefix string, present map[string]json.RawMessage, config JobConfig) error {
 	if len(present) == 0 {
 		return nil
@@ -567,9 +570,16 @@ func validateNoDefaultOverrides(prefix string, present map[string]json.RawMessag
 		if reflect.DeepEqual(before, after) {
 			continue
 		}
-		return invalid(prefix+"."+name, defaultOverrideReason(name))
+		return invalid(qualifiedField(prefix, name), defaultOverrideReason(name))
 	}
 	return nil
+}
+
+func qualifiedField(prefix, name string) string {
+	if prefix == "" {
+		return name
+	}
+	return prefix + "." + name
 }
 
 func defaultOverrideReason(name string) string {

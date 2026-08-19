@@ -33,6 +33,7 @@ open, a `Suggestion:` line follows with the concrete next step.
 | `unknown command "…"` / `unknown flag: --…` | Typo in the invocation. | `mayflycirclefit --help`, or `mayflycirclefit <command> --help`. |
 | `max-jobs must be between 1 and 16`, `queue-size must be between 1 and 100`, `invalid backend: …`, `invalid configuration: …` | A flag value is outside its accepted range or set. | Correct the flag; the message names the bound or the accepted values. |
 | `server response exceeds 1048576 bytes` | The CLI refuses to decode an unbounded response. The stage listing and the chain view are projections sized to stay under it for any campaign a document may expand to, so this now means a different endpoint, or a server older than the projection. | Compare versions with `mayflycirclefit version`; a campaign's per-stage configuration is read one stage at a time from `/api/v1/schedules/:id/stages/:index`. |
+| `invalid configuration: circles must be between 1 and 1000` from a flag you set to `0` | A flag always carries a value, so a zero is a value you asked for, not an omission. | Drop the flag to get the default; the defaults only fill flags and fields you leave out. |
 | OpenCL device errors, or a GPU request falling back to the CPU | The `gpu` build tag, the OpenCL runtime, or a usable device is missing. | See [`gpu-backends.md`](gpu-backends.md) and [`support-matrix.md`](support-matrix.md). A CGO-disabled build has no GPU backend at all. |
 
 ## HTTP API errors
@@ -56,6 +57,12 @@ Frequently seen codes:
 | Status | Code | Meaning |
 | ------ | ---- | ------- |
 | 400 | `invalid_request`, `invalid_config`, `invalid_job_id`, `invalid_schedule_id`, `invalid_colormap`, `invalid_ref_path`, `invalid_canvas_path`, `invalid_checkpoint` | The request or one of its fields did not validate. The message names the field. |
+
+`invalid_config` with a message like `circles is silently replaced by the
+configuration defaults` means the body wrote a value the defaults would swallow
+— most often `"circles": 0` from marshalling a zero-valued configuration
+struct. Omit a field you have no opinion on rather than sending its zero; only
+an omitted field is defaulted.
 | 403 | `origin_forbidden` | The request's `Origin` is not a trusted local origin. |
 | 404 | `not_found` | No job, schedule, checkpoint, or project with that identifier — or no API endpoint at that path. |
 | 404 | `no_results` | The job exists but has not produced a best result yet. Poll the status endpoint or the SSE stream first. |

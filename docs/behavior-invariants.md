@@ -204,6 +204,22 @@ bounded. pprof is off by default and `--enable-pprof` requires a loopback bind.
   prefix is a `404`, and no path under `/static/` can escape that boundary into
   the host filesystem. Other routes are unaffected: `/`, `/jobs`, and the API
   endpoints continue to be served by the mux.
+- **A written field is used as written; only an omitted one is defaulted.**
+  `POST /api/v1/jobs` reads the raw body to see which keys the caller actually
+  wrote, and refuses any of them that `ApplyDefaults` would replace — so
+  `"circles": 0` is `400 invalid_config` naming `circles`, rather than a
+  ten-circle run nobody asked for. It is the rule `ParseSchedule` already
+  applies to a document's base stage, for the reason Phase 16 records: a
+  silently dropped field costs hours before anyone notices. The corollary is
+  that a client must *omit* a field it has no opinion on. Marshalling a
+  zero-valued configuration struct writes explicit zeros and is a request for
+  them, because nothing on the wire distinguishes the two.
+- **A CLI flag is never omitted, so its value is never defaulted.** A flag
+  carries either its own default or what the operator typed, so `run` keeps the
+  typed value and validates it: `--circles 0` fails instead of fitting ten. The
+  flags whose zero means "decide for me" — `--batch-size`,
+  `--evaluation-workers`, `--seed`, `--stop-*` — are excluded and still resolve
+  through the defaults.
 - **Global stream is an observable server behavior.** `GET /api/v1/stream`
   emits one snapshot of all currently running jobs, then streams live progress for
   all jobs over one connection. A dropped connection closes that stream, and

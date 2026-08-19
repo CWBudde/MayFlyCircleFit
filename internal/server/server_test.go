@@ -78,8 +78,12 @@ func TestServer_CreateJob_BackendDefaults(t *testing.T) {
 	})
 	shutdownTestServer(t, s)
 
+	// The bodies are written as JSON objects rather than marshalled from
+	// JobConfig: a zero-valued struct field serializes as an explicit zero, and
+	// the create endpoint refuses a written value the defaults would replace, so
+	// a marshalled partial struct is a request for zero circles.
 	t.Run("uses server default backend when omitted", func(t *testing.T) {
-		body, _ := json.Marshal(JobConfig{RefPath: imgPath})
+		body, _ := json.Marshal(map[string]any{"refPath": imgPath})
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewReader(body))
 		w := httptest.NewRecorder()
 
@@ -98,9 +102,9 @@ func TestServer_CreateJob_BackendDefaults(t *testing.T) {
 	})
 
 	t.Run("keeps explicit backend override", func(t *testing.T) {
-		body, _ := json.Marshal(JobConfig{
-			RefPath: imgPath,
-			Backend: app.BackendCPU,
+		body, _ := json.Marshal(map[string]any{
+			"refPath": imgPath,
+			"backend": app.BackendCPU,
 		})
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewReader(body))
 		w := httptest.NewRecorder()
