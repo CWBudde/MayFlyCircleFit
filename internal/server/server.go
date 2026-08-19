@@ -243,6 +243,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/chains", s.handleChains)
 	mux.HandleFunc("/api/v1/chains/", s.handleChainsWithID)
 
+	// Catch-all for the API subtree. Without it an unrouted /api/v1 path falls
+	// through to the dashboard handler and answers with a plain-text 404, which
+	// would break the promise that every API failure parses as the JSON error
+	// envelope. The mux prefers the longest registered pattern, so the routes
+	// above still win.
+	mux.HandleFunc("/api/v1/", s.handleAPINotFound)
+
 	if s.options.EnablePprof {
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
 		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
@@ -1117,6 +1124,13 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string) {
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		slog.Error("Failed to encode API error", "error", err)
 	}
+}
+
+// handleAPINotFound answers any /api/v1 path that no route claims.
+func (s *Server) handleAPINotFound(w http.ResponseWriter, r *http.Request) {
+	// The requested path is deliberately not echoed back into the response.
+	slog.Debug("No API route for request", "method", r.Method, "path", r.URL.Path)
+	writeAPIError(w, http.StatusNotFound, "not_found", "no API endpoint at this path")
 }
 
 // handleGetRefImage handles GET /api/v1/jobs/:id/ref.png

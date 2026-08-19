@@ -27,9 +27,18 @@ func TestIsUsageError(t *testing.T) {
 	}
 }
 
+func TestNewUsageErrorPassesNilThrough(t *testing.T) {
+	if err := NewUsageError(nil); err != nil {
+		t.Fatalf("NewUsageError(nil) = %v, want nil", err)
+	}
+}
+
 func TestUsageErrorUnwrapsCause(t *testing.T) {
 	cause := errors.New("unknown flag: --nope")
 	err := NewUsageError(cause)
+	if err == nil {
+		t.Fatal("NewUsageError returned nil for a non-nil cause")
+	}
 	if !errors.Is(err, cause) {
 		t.Fatalf("NewUsageError does not unwrap to its cause")
 	}
@@ -49,6 +58,7 @@ func TestClassifyExecuteError(t *testing.T) {
 		{name: "minimum args", err: errors.New("requires at least 1 arg(s), only received 0"), want: true},
 		{name: "already typed", err: NewUsageError(errors.New("unknown flag")), want: true},
 		{name: "work failure", err: errors.New("failed to load reference image"), want: false},
+		{name: "phrase inside a work failure", err: errors.New("write out.png: invalid argument"), want: false},
 		{name: "nil", err: nil, want: false},
 	}
 	for _, test := range tests {
@@ -73,6 +83,9 @@ func TestExecuteClassifiesRealInvocations(t *testing.T) {
 		{name: "flag needs an argument", args: []string{"--log-level"}, want: true},
 		{name: "unknown command", args: []string{"renderr"}, want: true},
 		{name: "invalid log level", args: []string{"status", "--log-level", "chatty"}, want: true},
+		{name: "out of range max-jobs", args: []string{"serve", "--max-jobs", "0"}, want: true},
+		{name: "out of range queue-size", args: []string{"serve", "--queue-size", "0"}, want: true},
+		{name: "unknown backend", args: []string{"serve", "--backend", "definitely-not-a-backend"}, want: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -94,11 +107,19 @@ func resetRootCommand(t *testing.T) func() {
 	t.Helper()
 	rootCmd.SetOut(io.Discard)
 	rootCmd.SetErr(io.Discard)
+	// Flag targets are package-level variables that pflag writes in place, so a
+	// parsed invocation would otherwise leak into every later test.
 	previousLevel := logLevel
+	previousMaxJobs := serveMaxJobs
+	previousQueueSize := serveQueueSize
+	previousBackend := serveBackend
 	return func() {
 		rootCmd.SetArgs(nil)
 		rootCmd.SetOut(nil)
 		rootCmd.SetErr(nil)
 		logLevel = previousLevel
+		serveMaxJobs = previousMaxJobs
+		serveQueueSize = previousQueueSize
+		serveBackend = previousBackend
 	}
 }

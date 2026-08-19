@@ -214,7 +214,9 @@ func TestCheckpointsCleanCommand_NoFlags(t *testing.T) {
 	checkpointDataDir = tmpDir
 	defer func() { checkpointDataDir = originalDataDir }()
 
-	// Reset flags
+	// Reset flags, restoring them so the values do not leak into later tests.
+	originalKeepLast, originalOlderThan := keepLast, olderThanDays
+	defer func() { keepLast, olderThanDays = originalKeepLast, originalOlderThan }()
 	keepLast = 0
 	olderThanDays = 0
 
@@ -256,7 +258,13 @@ func TestCheckpointsCleanCommand_WithForce(t *testing.T) {
 	checkpointDataDir = tmpDir
 	defer func() { checkpointDataDir = originalDataDir }()
 
-	// Set flags
+	// Set flags. They are package-level variables, so they must be restored:
+	// leaving forceClean set would let a later test delete real checkpoints
+	// without the confirmation prompt.
+	originalKeepLast, originalOlderThan, originalForce := keepLast, olderThanDays, forceClean
+	defer func() {
+		keepLast, olderThanDays, forceClean = originalKeepLast, originalOlderThan, originalForce
+	}()
 	keepLast = 0
 	olderThanDays = 7
 	forceClean = true

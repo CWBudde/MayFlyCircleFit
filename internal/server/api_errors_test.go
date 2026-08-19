@@ -57,6 +57,20 @@ func TestAPIErrorsUseTheJSONEnvelope(t *testing.T) {
 			wantCode:   "not_found",
 		},
 		{
+			name:       "unrouted API path",
+			method:     http.MethodGet,
+			target:     "/api/v1/typo",
+			wantStatus: http.StatusNotFound,
+			wantCode:   "not_found",
+		},
+		{
+			name:       "unrouted API subtree path",
+			method:     http.MethodPost,
+			target:     "/api/v1/jobs-not-a-route/17/best.png",
+			wantStatus: http.StatusNotFound,
+			wantCode:   "not_found",
+		},
+		{
 			name:       "wrong method",
 			method:     http.MethodDelete,
 			target:     "/api/v1/jobs/2b6f0cc9-04d4-4a1b-9f6a-6ec1f9a3c0d1/ref.png",

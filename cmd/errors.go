@@ -12,8 +12,13 @@ type UsageError struct {
 	err error
 }
 
-// NewUsageError wraps err as an invocation error.
-func NewUsageError(err error) *UsageError {
+// NewUsageError wraps err as an invocation error. It returns nil for a nil
+// error so that `return NewUsageError(validate())` cannot turn success into a
+// failure with exit status 2.
+func NewUsageError(err error) error {
+	if err == nil {
+		return nil
+	}
 	return &UsageError{err: err}
 }
 
@@ -42,6 +47,10 @@ func IsUsageError(err error) bool {
 // Flag parsing errors are typed by SetFlagErrorFunc, and command handlers
 // report their own invocation problems through NewUsageError, so this string
 // match only has to cover what Cobra reports without a distinguishable type.
+//
+// The match is anchored at the start of the message, because these phrases also
+// occur inside failures that are not invocation errors at all: a syscall EINVAL
+// renders as "invalid argument", and it must not turn into exit status 2.
 var cobraUsagePrefixes = []string{
 	"unknown command",
 	"unknown flag",
@@ -61,7 +70,7 @@ func classifyExecuteError(err error) error {
 	}
 	message := strings.ToLower(err.Error())
 	for _, prefix := range cobraUsagePrefixes {
-		if strings.Contains(message, prefix) {
+		if strings.HasPrefix(message, prefix) {
 			return NewUsageError(err)
 		}
 	}

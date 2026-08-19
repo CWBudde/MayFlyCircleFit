@@ -55,18 +55,20 @@ func init() {
 }
 
 func runServer(cmd *cobra.Command, args []string) error {
+	// Flag values the user typed are invocation errors, so they exit with
+	// status 2 rather than the status reserved for work that failed.
 	if serveMaxJobs < 1 || serveMaxJobs > 16 {
-		return fmt.Errorf("max-jobs must be between 1 and 16")
+		return NewUsageError(fmt.Errorf("max-jobs must be between 1 and 16"))
 	}
 	if serveQueueSize < 1 || serveQueueSize > 100 {
-		return fmt.Errorf("queue-size must be between 1 and 100")
+		return NewUsageError(fmt.Errorf("queue-size must be between 1 and 100"))
 	}
 	backend, err := parseBackendFlag(serveBackend)
 	if err != nil {
-		return fmt.Errorf("invalid backend: %w", err)
+		return NewUsageError(fmt.Errorf("invalid backend: %w", err))
 	}
 	if servePprof && serverAddr != "localhost" && serverAddr != "127.0.0.1" && serverAddr != "::1" {
-		return fmt.Errorf("pprof requires a trusted loopback bind address")
+		return NewUsageError(fmt.Errorf("pprof requires a trusted loopback bind address"))
 	}
 
 	// Start CPU profiling if requested

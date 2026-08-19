@@ -138,9 +138,11 @@ func earlyStopFromConfig(config app.JobConfig) opt.Stop {
 }
 
 func runOptimization(cmd *cobra.Command, args []string) error {
+	// Flag values the user typed are invocation errors, so they exit with
+	// status 2 rather than the status reserved for work that failed.
 	backend, err := parseBackendFlag(backendName)
 	if err != nil {
-		return fmt.Errorf("invalid backend: %w", err)
+		return NewUsageError(fmt.Errorf("invalid backend: %w", err))
 	}
 	config, err := app.Normalize(app.JobConfig{
 		RefPath:                  refPath,
@@ -178,7 +180,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		StopMinIters:             stopMinIters,
 	})
 	if err != nil {
-		return fmt.Errorf("invalid configuration: %w", err)
+		return NewUsageError(fmt.Errorf("invalid configuration: %w", err))
 	}
 
 	// Start CPU profiling if requested
@@ -272,7 +274,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	} else {
 		// Other backends don't support canvas yet
 		if canvas != nil {
-			return fmt.Errorf("canvas loading only supported with CPU backend")
+			return NewUsageError(fmt.Errorf("canvas loading only supported with CPU backend"))
 		}
 		// The compositing and parallelism knobs are CPU-renderer settings. A
 		// non-CPU backend ignores them, which is fine, but silently ignoring a
