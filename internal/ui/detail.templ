@@ -150,6 +150,11 @@ templ JobDetailPage(job JobDetail) {
 							Pause job
 						</button>
 					}
+					if job.State == "paused" {
+						<button id="resume-job" class="btn btn-primary" style="margin-left: 0.5rem;">
+							Resume job
+						</button>
+					}
 					if job.CanPolish {
 						<button id="polish-job" class="btn btn-primary" style="margin-left: 0.5rem;">
 							Polish weak circles
@@ -615,6 +620,7 @@ templ JobDetailPage(job JobDetail) {
 				initializeParameterViewer();
 				initializeDownloadControls();
 				initializePauseControl();
+				initializeResumeControl();
 				initializePolishControl();
 
 				// Server-seeded quality history for the selectable chart.
@@ -1017,6 +1023,30 @@ templ JobDetailPage(job JobDetail) {
 							window.alert(err.message || "Unable to pause job");
 							button.disabled = false;
 							button.textContent = "Pause job";
+						}
+					});
+				}
+
+				function initializeResumeControl() {
+					const button = document.getElementById("resume-job");
+					if (!button) return;
+					button.addEventListener("click", async function () {
+						button.disabled = true;
+						button.textContent = "Resuming…";
+						try {
+							const response = await fetch(
+								"/api/v1/jobs/" + jobId + "/resume",
+								{ method: "POST" },
+							);
+							if (!response.ok) {
+								const payload = await response.json();
+								throw new Error(payload?.error?.message || "Unable to resume job");
+							}
+							location.reload();
+						} catch (err) {
+							window.alert(err.message || "Unable to resume job");
+							button.disabled = false;
+							button.textContent = "Resume job";
 						}
 					});
 				}

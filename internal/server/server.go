@@ -73,6 +73,7 @@ type ServerOptions struct {
 
 var ErrJobQueueFull = errors.New("job queue is full")
 var errPausedWithoutCheckpoint = errors.New("pause requires a checkpointable state")
+var errResumeCheckpointOverflow = errors.New("resume checkpoint evaluation count is out of range")
 
 // storeForSlug returns the store owning a project's artifacts. An empty slug
 // and the default project resolve to the store the server was built with, so a
@@ -349,7 +350,7 @@ func (s *Server) workerLoop() {
 			return
 		case jobID := <-s.queue:
 			job, ok := s.jobManager.GetJob(jobID)
-			if !ok || job.State != StatePending {
+			if !ok || (job.State != StatePending && job.State != StateRunning) {
 				continue
 			}
 			// A job whose project cannot be resolved must not run against
@@ -416,6 +417,53 @@ func (s *Server) requestPause(jobID string) error {
 		cancel()
 	}
 	return nil
+}
+
+func (s *Server) requestResume(jobID string) (*store.Checkpoint, error) {
+	job, ok := s.jobManager.GetJob(jobID)
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	if job.State != StatePaused {
+		return nil, fmt.Errorf("%w: job is %s", ErrInvalidTransition, job.State)
+	}
+
+	jobStore, err := s.storeForJob(jobID)
+	if err != nil {
+		return nil, err
+	}
+	if jobStore == nil {
+		return nil, errPausedWithoutCheckpoint
+	}
+	checkpoint, err := jobStore.LoadCheckpoint(jobID)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkpoint.Validate(); err != nil {
+		return nil, err
+	}
+	if int64(int(checkpoint.Evaluations)) != checkpoint.Evaluations {
+		return nil, errResumeCheckpointOverflow
+	}
+	if err := s.jobManager.UpdateJob(jobID, func(j *Job) {
+		j.BestParams = append([]float64(nil), checkpoint.BestParams...)
+		j.BestCost = checkpoint.BestCost
+		j.InitialCost = checkpoint.InitialCost
+		j.Iterations = checkpoint.Iterations
+		j.Evaluations = int(checkpoint.Evaluations)
+		j.Config.EffectiveSeed = checkpoint.EffectiveSeed
+		j.Config.ResumeCount = checkpoint.ResumeCount + 1
+		j.CandidateCost = nil
+		j.Error = ""
+		j.Termination = checkpoint.Termination
+	}); err != nil {
+		return nil, err
+	}
+	if err := s.jobManager.ResumeJob(jobID); err != nil {
+		return nil, err
+	}
+
+	return checkpoint, nil
 }
 
 func (s *Server) persistPauseCheckpoint(jobID string, job *Job) error {
@@ -1081,100 +1129,60 @@ func (s *Server) handleGetRefImage(w http.ResponseWriter, r *http.Request, jobID
 
 // handleResumeJob handles POST /api/v1/jobs/:id/resume
 func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID string) {
-	// Only allow POST
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		w.Header().Set("Allow", http.MethodPost)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 		return
 	}
-
-	// Check if checkpoint store is available
-	if s.store == nil {
-		http.Error(w, "Checkpoint feature not enabled", http.StatusServiceUnavailable)
+	if failure := s.requireCheckpointStore(); failure != nil {
+		writeContinuationError(w, failure)
 		return
 	}
-
-	// Load checkpoint
-	jobStore, err := s.storeForJob(jobID)
+	checkpoint, err := s.requestResume(jobID)
 	if err != nil {
-		slog.Error("Failed to resolve project store for resume", "job_id", jobID, "error", err)
-		writeAPIError(w, http.StatusInternalServerError, "project_unavailable", "the project store is unavailable")
-		return
-	}
-	checkpoint, err := jobStore.LoadCheckpoint(jobID)
-	if err != nil {
-		if _, ok := err.(*store.NotFoundError); ok {
-			http.Error(w, fmt.Sprintf("Checkpoint not found for job %s", jobID), http.StatusNotFound)
-			return
+		slog.Warn("Failed to resume job", "job_id", jobID, "error", err)
+		var validationErr *store.ValidationError
+		switch {
+		case errors.As(err, &validationErr):
+			writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", validationErr.Error())
+		case errors.Is(err, store.ErrNotFound):
+			writeAPIError(w, http.StatusNotFound, "not_found", "job or checkpoint not found")
+		case errors.Is(err, errResumeCheckpointOverflow):
+			writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint evaluation count is out of range")
+		case errors.Is(err, ErrInvalidTransition):
+			writeAPIError(w, http.StatusConflict, "invalid_state", err.Error())
+		case errors.Is(err, errPausedWithoutCheckpoint):
+			writeAPIError(w, http.StatusConflict, "invalid_state", "job has no checkpoint to resume from")
+		default:
+			writeAPIError(w, http.StatusInternalServerError, "resume_failed", "unable to resume job")
 		}
-		http.Error(w, fmt.Sprintf("Failed to load checkpoint: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Validate checkpoint
-	if err := checkpoint.Validate(); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid checkpoint: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	slog.Info("Resuming job from checkpoint",
-		"job_id", jobID,
-		"iteration", checkpoint.Iteration,
-		"best_cost", checkpoint.BestCost,
-	)
-
-	// Create a new job with resumed state
-	// We use the same configuration but mark it as a resumed job
-	config, err := app.Normalize(checkpoint.Config)
-	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint configuration is invalid")
-		return
-	}
-	if s.inputErr != nil {
-		writeAPIError(w, http.StatusInternalServerError, "server_config", "server input roots are unavailable")
-		return
-	}
-	config.RefPath, err = s.input.resolveImage(config.RefPath)
-	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint reference is outside configured input roots")
-		return
-	}
-	if config.CanvasPath != "" {
-		config.CanvasPath, err = s.input.resolveImage(config.CanvasPath)
-		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint canvas is outside configured input roots")
-			return
+	if err := s.enqueueJob(jobID); err != nil {
+		if resumeErr := s.jobManager.PauseJob(jobID); resumeErr != nil {
+			slog.Warn("Failed to restore job to paused state", "job_id", jobID, "error", resumeErr)
 		}
-	}
-	config.EffectiveSeed = checkpoint.EffectiveSeed
-	config.ResumeCount = checkpoint.ResumeCount + 1
-	newJob := s.jobManager.CreateJob(s.projectForJob(jobID), config)
-
-	// Initialize the new job with checkpoint data
-	s.jobManager.UpdateJob(newJob.ID, func(j *Job) {
-		updateBestResult(j, checkpoint.BestParams, checkpoint.BestCost)
-		j.InitialCost = checkpoint.InitialCost
-		j.Iterations = checkpoint.Iteration
-		j.Evaluations = int(checkpoint.Evaluations)
-	})
-
-	if err := s.enqueueJob(newJob.ID); err != nil {
-		_ = s.jobManager.FailJob(newJob.ID, "server job queue is full")
-		writeAPIError(w, http.StatusTooManyRequests, "queue_full", "server job queue is full")
+		if errors.Is(err, ErrJobQueueFull) {
+			writeAPIError(w, http.StatusTooManyRequests, "queue_full", "server job queue is full")
+		} else {
+			writeAPIError(w, http.StatusInternalServerError, "resume_failed", "unable to resume job")
+		}
 		return
 	}
 
-	// Return response
+	slog.Info("Resuming job from checkpoint", "job_id", jobID, "iteration", checkpoint.Iteration, "best_cost", checkpoint.BestCost)
 	response := map[string]interface{}{
-		"jobId":         newJob.ID,
+		"jobId":         jobID,
 		"resumedFrom":   jobID,
-		"state":         string(newJob.State),
+		"state":         string(StateRunning),
 		"previousCost":  checkpoint.BestCost,
-		"previousIters": checkpoint.Iteration,
-		"message":       "Job resumed successfully from checkpoint",
+		"previousIters": checkpoint.Iterations,
+		"message":       "Job resumed from checkpoint",
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(response)
 }
 

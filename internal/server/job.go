@@ -407,6 +407,11 @@ func (jm *JobManager) PauseJob(id string) error {
 	return jm.transition(id, StatePaused, nil)
 }
 
+// ResumeJob transitions a paused job to running.
+func (jm *JobManager) ResumeJob(id string) error {
+	return jm.transition(id, StateRunning, nil)
+}
+
 // DeleteJob removes a terminal job. Active jobs must be cancelled first.
 func (jm *JobManager) DeleteJob(id string) error {
 	jm.mu.Lock()
