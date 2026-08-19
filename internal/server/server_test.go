@@ -181,6 +181,97 @@ func TestServer_GetJobStatus(t *testing.T) {
 	}
 }
 
+func TestServer_JobControlActions_E2E(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.png")
+	createSimpleTestImage(t, imgPath)
+	persistence, err := createTestStore(filepath.Join(tmpDir, "checkpoints"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := NewServerWithOptions(":8080", persistence, ServerOptions{
+		InputRoots: []string{tmpDir},
+	})
+	shutdownTestServer(t, server)
+
+	pauseAndResume := server.jobManager.CreateJob(app.DefaultProject, JobConfig{
+		RefPath: imgPath,
+		Mode:    "joint",
+		Circles: 2,
+		Iters:   10_000,
+		PopSize: 30,
+		Seed:    42,
+	})
+	if err := server.jobManager.StartJob(pauseAndResume.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.jobManager.UpdateProgress(pauseAndResume.ID, 1, 1, []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7}, 125); err != nil {
+		t.Fatal(err)
+	}
+
+	pause := httptest.NewRecorder()
+	server.Handler().ServeHTTP(pause, httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+pauseAndResume.ID+"/pause", nil))
+	if pause.Code != http.StatusAccepted {
+		t.Fatalf("pause status = %d, body %s", pause.Code, pause.Body.String())
+	}
+	waitForJobState(t, server.jobManager, pauseAndResume.ID, StatePaused)
+
+	resume := httptest.NewRecorder()
+	server.Handler().ServeHTTP(resume, httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+pauseAndResume.ID+"/resume", nil))
+	if resume.Code != http.StatusAccepted {
+		t.Fatalf("resume status = %d, body %s", resume.Code, resume.Body.String())
+	}
+	waitForJobState(t, server.jobManager, pauseAndResume.ID, StateRunning)
+
+	cancelJob := server.jobManager.CreateJob(app.DefaultProject, JobConfig{
+		RefPath: imgPath,
+		Mode:    "joint",
+		Circles: 2,
+		Iters:   10,
+		PopSize: 30,
+		Seed:    43,
+	})
+	cancel := httptest.NewRecorder()
+	server.Handler().ServeHTTP(cancel, httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+cancelJob.ID+"/cancel", nil))
+	if cancel.Code != http.StatusAccepted {
+		t.Fatalf("cancel status = %d, body %s", cancel.Code, cancel.Body.String())
+	}
+	waitForJobState(t, server.jobManager, cancelJob.ID, StateCancelled)
+
+	completedJob := server.jobManager.CreateJob(app.DefaultProject, JobConfig{
+		RefPath: imgPath,
+		Mode:    "joint",
+		Circles: 2,
+		Iters:   10,
+		PopSize: 30,
+		Seed:    44,
+	})
+	if err := server.jobManager.StartJob(completedJob.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.jobManager.MarkJobCompleted(
+		completedJob.ID,
+		10,
+		100,
+		[]float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7},
+		1.23,
+		1.25,
+		"completed",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	delete := httptest.NewRecorder()
+	server.Handler().ServeHTTP(delete, httptest.NewRequest(http.MethodDelete, "/api/v1/jobs/"+completedJob.ID, nil))
+	if delete.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, body %s", delete.Code, delete.Body.String())
+	}
+	if _, ok := server.jobManager.GetJob(completedJob.ID); ok {
+		t.Fatalf("completed job %s was not deleted", completedJob.ID)
+	}
+}
+
 func TestServerJobStatusRepresentsInfinitePSNRAndOptionalSSIM(t *testing.T) {
 	server := NewServer(":8080", nil)
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png", EnableSSIM: true})

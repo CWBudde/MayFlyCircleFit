@@ -1044,8 +1044,8 @@ customization workflow.
   - [x] Endpoint: `DELETE /api/v1/jobs/:id`
   - [x] Remove job and artifacts
   - [x] Redirect to job list
-- [ ] Add confirmation dialogs for destructive actions
-- [ ] Test all control actions end-to-end
+- [x] Add confirmation dialogs for destructive actions
+- [x] Test all control actions end-to-end
 
 ### Task 12.9: Improve Responsive Design and Accessibility
 - [ ] Test UI on mobile devices (phone, tablet)

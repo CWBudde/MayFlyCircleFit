@@ -1022,13 +1022,16 @@ templ JobDetailPage(job JobDetail) {
 				}
 
 				function initializePauseControl() {
-					const button = document.getElementById("pause-job");
-					if (!button) return;
-					button.addEventListener("click", async function () {
-						button.disabled = true;
-						button.textContent = "Pausing…";
-						try {
-							const response = await fetch(
+				const button = document.getElementById("pause-job");
+				if (!button) return;
+				button.addEventListener("click", async function () {
+					if (!window.confirm("Pause this job?")) {
+						return;
+					}
+					button.disabled = true;
+					button.textContent = "Pausing…";
+					try {
+						const response = await fetch(
 								"/api/v1/jobs/" + jobId + "/pause",
 								{ method: "POST" },
 							);
@@ -1070,13 +1073,16 @@ templ JobDetailPage(job JobDetail) {
 			}
 
 				function initializeCancelControl() {
-					const button = document.getElementById("cancel-job");
-					if (!button) return;
-					button.addEventListener("click", async function () {
-						button.disabled = true;
-					button.textContent = "Cancelling...";
-					try {
-						const response = await fetch("/api/v1/jobs/" + jobId + "/cancel", {
+				const button = document.getElementById("cancel-job");
+				if (!button) return;
+				button.addEventListener("click", async function () {
+					if (!window.confirm("Cancel this job?")) {
+						return;
+					}
+					button.disabled = true;
+				button.textContent = "Cancelling...";
+				try {
+					const response = await fetch("/api/v1/jobs/" + jobId + "/cancel", {
 							method: "POST",
 						});
 						if (!response.ok) {
@@ -1096,6 +1102,9 @@ templ JobDetailPage(job JobDetail) {
 				const button = document.getElementById("delete-job");
 				if (!button) return;
 				button.addEventListener("click", async function () {
+					if (!window.confirm("Delete this job? This cannot be undone.")) {
+						return;
+					}
 					button.disabled = true;
 					button.textContent = "Deleting…";
 					try {
