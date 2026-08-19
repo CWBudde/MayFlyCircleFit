@@ -217,6 +217,11 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		metricCleanup()
 	}
 	initialSample := qualitySample(baseIterations, metricCost, initialSSIM, start)
+	initialElapsed := time.Since(start).Seconds()
+	if initialElapsed > 0 {
+		initialSample.CPS = float64((baseEvaluations * job.Config.Circles)) / initialElapsed
+	}
+	initialSample.Evaluations = baseEvaluations
 	_ = jm.RecordMetrics(jobID, initialSample)
 
 	var traceWriter *store.TraceWriter
@@ -265,6 +270,11 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 			}
 		}
 		sample := qualitySample(iterations, progress.BestCost, sampledSSIM, now)
+		sample.Evaluations = evaluations
+		elapsed := now.Sub(start).Seconds()
+		if elapsed > 0 {
+			sample.CPS = float64(evaluations*job.Config.Circles) / elapsed
+		}
 		if traceWriter != nil {
 			_ = traceWriter.Write(traceEntry(sample))
 		}
@@ -468,6 +478,11 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		finalSSIM = calculateSSIM(result.BestImage, ref, jobID)
 	}
 	finalSample := qualitySample(iterations, result.BestCost, finalSSIM, completedAt)
+	finalSample.Evaluations = evaluations
+	elapsed := time.Since(start).Seconds()
+	if elapsed > 0 {
+		finalSample.CPS = float64(evaluations*job.Config.Circles) / elapsed
+	}
 	_ = jm.RecordMetrics(jobID, finalSample)
 	if len(circleData) > 0 {
 		if err := checkpointStore.SaveCircleData(jobID, circleData); err != nil {
@@ -501,10 +516,10 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		return err
 	}
 
-	elapsed := time.Since(start).Seconds()
+	elapsed = time.Since(start).Seconds()
 	cps := 0.0
 	if elapsed > 0 {
-		cps = float64(result.Evaluations*job.Config.Circles) / elapsed
+		cps = float64(evaluations*job.Config.Circles) / elapsed
 	}
 	bestCost, bestRevision, _, _ := jm.bestSnapshot(jobID)
 	jm.broadcaster.Broadcast(ProgressEvent{

@@ -144,10 +144,13 @@ func dashboardRunningJobFrom(job *Job, includeHistory bool) dashboardRunningJob 
 		for _, sample := range samples {
 			history = append(history, ui.MetricSample{
 				Iteration:    sample.Iteration,
+				Evaluations:  sample.Evaluations,
 				Cost:         sample.Cost,
+				CPS:          sample.CPS,
 				PSNR:         cloneFloat(sample.PSNR),
 				PSNRInfinite: sample.PSNRInfinite,
 				SSIM:         cloneFloat(sample.SSIM),
+				Timestamp:    sample.Timestamp,
 			})
 		}
 	}
