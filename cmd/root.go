@@ -18,6 +18,10 @@ var rootCmd = &cobra.Command{
 	Short: "High-performance circle fitting with mayfly optimization",
 	Long: `MayFlyCircleFit uses evolutionary algorithms to approximate images
 with colored circles, featuring CPU/GPU backends and live visualization.`,
+	// CLI output should be normalized in main for consistent user-facing messages
+	// and explicit exit status handling.
+	SilenceErrors: true,
+	SilenceUsage:  true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Setup logger
 		var level slog.Level
@@ -31,7 +35,7 @@ with colored circles, featuring CPU/GPU backends and live visualization.`,
 		case "error":
 			level = slog.LevelError
 		default:
-			return fmt.Errorf("invalid log level %q: use debug, info, warn, or error", logLevel)
+			return NewUsageError(fmt.Errorf("invalid log level %q: use debug, info, warn, or error", logLevel))
 		}
 
 		opts := &slog.HandlerOptions{Level: level}
@@ -44,9 +48,15 @@ with colored circles, featuring CPU/GPU backends and live visualization.`,
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
+	// Subcommands inherit this from the root, so every flag parsing failure
+	// arrives at main already typed as an invocation error.
+	rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return NewUsageError(err)
+	})
 }
 
-// Execute runs the root command
+// Execute runs the root command. Invocation failures come back wrapped in
+// UsageError so the caller can pick the exit status.
 func Execute() error {
-	return rootCmd.Execute()
+	return classifyExecuteError(rootCmd.Execute())
 }

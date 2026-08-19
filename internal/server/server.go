@@ -656,7 +656,7 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/jobs/")
 	parts := strings.Split(path, "/")
 	if len(parts) == 0 || parts[0] == "" {
-		http.Error(w, "Job ID required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid_job_id", "job ID required")
 		return
 	}
 
@@ -919,7 +919,7 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 	}
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
-		http.Error(w, "Job not found", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		return
 	}
 
@@ -962,13 +962,13 @@ func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobI
 	}
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
-		http.Error(w, "Job not found", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		return
 	}
 
 	// Check if job has results
 	if len(job.BestParams) == 0 {
-		http.Error(w, "No results yet", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "no_results", "no results yet")
 		return
 	}
 	if snapshotNotModified(w, r, fmt.Sprintf(`"best-%d"`, job.BestRevision)) {
@@ -978,7 +978,8 @@ func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobI
 	// Load reference image to get dimensions
 	ref, err := loadReferenceImage(job.Config.RefPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load reference: %v", err), http.StatusInternalServerError)
+		slog.Error("Failed to load reference image", "job_id", jobID, "path", job.Config.RefPath, "error", err)
+		writeAPIError(w, http.StatusInternalServerError, "reference_load_failed", "failed to load reference image")
 		return
 	}
 
@@ -1016,13 +1017,13 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 	}
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
-		http.Error(w, "Job not found", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		return
 	}
 
 	// Check if job has results
 	if len(job.BestParams) == 0 {
-		http.Error(w, "No results yet", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "no_results", "no results yet")
 		return
 	}
 	if snapshotNotModified(w, r, fmt.Sprintf(`"diff-%s-%d"`, colormap, job.BestRevision)) {
@@ -1032,7 +1033,8 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 	// Load reference image
 	ref, err := loadReferenceImage(job.Config.RefPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load reference: %v", err), http.StatusInternalServerError)
+		slog.Error("Failed to load reference image", "job_id", jobID, "path", job.Config.RefPath, "error", err)
+		writeAPIError(w, http.StatusInternalServerError, "reference_load_failed", "failed to load reference image")
 		return
 	}
 
@@ -1126,14 +1128,15 @@ func (s *Server) handleGetRefImage(w http.ResponseWriter, r *http.Request, jobID
 	}
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
-		http.Error(w, "Job not found", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		return
 	}
 
 	// Load reference image
 	ref, err := loadReferenceImage(job.Config.RefPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load reference: %v", err), http.StatusInternalServerError)
+		slog.Error("Failed to load reference image", "job_id", jobID, "path", job.Config.RefPath, "error", err)
+		writeAPIError(w, http.StatusInternalServerError, "reference_load_failed", "failed to load reference image")
 		return
 	}
 

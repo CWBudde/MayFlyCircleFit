@@ -8,7 +8,8 @@ renderer is available for all three modes in GPU-tagged builds.
 The project is under active production-readiness remediation. Read the
 [support matrix](docs/support-matrix.md) and
 [known limitations](docs/known-limitations.md) before relying on it for long or
-unattended runs.
+unattended runs, and [troubleshooting](docs/troubleshooting.md) when a run or a
+request fails.
 
 ## Requirements
 

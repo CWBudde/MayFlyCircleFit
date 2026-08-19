@@ -13,7 +13,9 @@ take precedence if this document goes stale.
 - [`docs/schedule-format.md`](docs/schedule-format.md) — the schedule document
   format, its worked example, and when two campaigns' costs are comparable.
 - [`docs/support-matrix.md`](docs/support-matrix.md),
-  [`docs/known-limitations.md`](docs/known-limitations.md), and the active
+  [`docs/known-limitations.md`](docs/known-limitations.md),
+  [`docs/troubleshooting.md`](docs/troubleshooting.md) — CLI exit statuses and
+  the JSON API error envelope — and the active
   Phase 14 section of `PLAN.md`.
 
 ## Architecture

@@ -176,7 +176,7 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 	// Get flusher
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "SSE not supported", http.StatusInternalServerError)
+		writeAPIError(w, http.StatusNotImplemented, "sse_not_supported", "server-sent events are not supported")
 		return
 	}
 
@@ -275,7 +275,7 @@ func (s *Server) handleAllJobStream(w http.ResponseWriter, r *http.Request) {
 	// Get flusher
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "SSE not supported", http.StatusInternalServerError)
+		writeAPIError(w, http.StatusNotImplemented, "sse_not_supported", "server-sent events are not supported")
 		return
 	}
 
