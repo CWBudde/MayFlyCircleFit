@@ -73,6 +73,7 @@ type ServerOptions struct {
 
 var ErrJobQueueFull = errors.New("job queue is full")
 var errPausedWithoutCheckpoint = errors.New("pause requires a checkpointable state")
+var errScheduleStagePause = errors.New("a schedule stage is paused through its schedule")
 var errResumeCheckpointOverflow = errors.New("resume checkpoint evaluation count is out of range")
 
 // storeForSlug returns the store owning a project's artifacts. An empty slug
@@ -397,19 +398,33 @@ func (s *Server) requestCancellation(jobID string) error {
 	return nil
 }
 
+// requestPause pauses one running job. The paused state is claimed before the
+// checkpoint is written so the snapshot cannot outlive the state it describes;
+// a failed write puts the job back to running rather than leaving it paused
+// without anything to resume from.
 func (s *Server) requestPause(jobID string) error {
 	job, ok := s.jobManager.GetJob(jobID)
 	if !ok {
 		return store.ErrNotFound
 	}
-	if job.State == StateRunning {
-		if err := s.persistPauseCheckpoint(jobID, job); err != nil {
-			return err
-		}
+	// A stage of a campaign is driven by the schedule executor, which waits for
+	// a terminal job state and would wait forever on a paused one. Pausing a
+	// campaign is the schedule's own action, and it stops at a stage boundary.
+	if job.ScheduleID != "" {
+		return errScheduleStagePause
 	}
-	if err := s.jobManager.PauseJob(jobID); err != nil {
+
+	claimed, err := s.jobManager.claimPause(jobID)
+	if err != nil {
 		return err
 	}
+	if err := s.persistPauseCheckpoint(jobID, claimed); err != nil {
+		if resumeErr := s.jobManager.ResumeJob(jobID); resumeErr != nil && !errors.Is(resumeErr, ErrInvalidTransition) {
+			slog.Error("Unable to restore a job after a failed pause", "job_id", jobID, "error", resumeErr)
+		}
+		return err
+	}
+
 	s.cancelMu.Lock()
 	cancel := s.jobCancels[jobID]
 	s.cancelMu.Unlock()
@@ -788,6 +803,8 @@ func (s *Server) handlePauseJob(w http.ResponseWriter, r *http.Request, jobID st
 			writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		case errors.Is(err, errPausedWithoutCheckpoint):
 			writeAPIError(w, http.StatusConflict, "invalid_state", "job has no checkpointable progress yet")
+		case errors.Is(err, errScheduleStagePause):
+			writeAPIError(w, http.StatusConflict, "invalid_state", "pause the schedule that owns this stage instead")
 		case errors.Is(err, ErrInvalidTransition):
 			writeAPIError(w, http.StatusConflict, "invalid_state", "job cannot be paused in its current state")
 		default:

@@ -18,14 +18,6 @@ import (
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
 
-func getJobState(jm *JobManager, jobID string) JobState {
-	job, ok := jm.GetJob(jobID)
-	if !ok {
-		return ""
-	}
-	return job.State
-}
-
 // buildEarlyStop maps the optimizer-level stopping fields onto the adapter's
 // option. A configuration that sets none of them yields a zero Stop, which
 // leaves the optimizer unchanged.
