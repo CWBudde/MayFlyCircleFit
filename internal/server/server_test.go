@@ -66,6 +66,59 @@ func TestServer_CreateJob(t *testing.T) {
 	}
 }
 
+func TestServer_CreateJob_BackendDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.png")
+	createSimpleTestImage(t, imgPath)
+
+	s := NewServerWithOptions(":8080", nil, ServerOptions{
+		InputRoots:     []string{tmpDir},
+		DefaultBackend: app.BackendOpenCL,
+	})
+	shutdownTestServer(t, s)
+
+	t.Run("uses server default backend when omitted", func(t *testing.T) {
+		body, _ := json.Marshal(JobConfig{RefPath: imgPath})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewReader(body))
+		w := httptest.NewRecorder()
+
+		s.handleCreateJob(w, req)
+
+		if w.Code != http.StatusCreated {
+			t.Fatalf("Expected status 201, got %d", w.Code)
+		}
+		var job Job
+		if err := json.NewDecoder(w.Body).Decode(&job); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+		if job.Config.Backend != app.BackendOpenCL {
+			t.Fatalf("job backend = %q, want %q", job.Config.Backend, app.BackendOpenCL)
+		}
+	})
+
+	t.Run("keeps explicit backend override", func(t *testing.T) {
+		body, _ := json.Marshal(JobConfig{
+			RefPath: imgPath,
+			Backend: app.BackendCPU,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewReader(body))
+		w := httptest.NewRecorder()
+
+		s.handleCreateJob(w, req)
+
+		if w.Code != http.StatusCreated {
+			t.Fatalf("Expected status 201, got %d", w.Code)
+		}
+		var job Job
+		if err := json.NewDecoder(w.Body).Decode(&job); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+		if job.Config.Backend != app.BackendCPU {
+			t.Fatalf("job backend = %q, want %q", job.Config.Backend, app.BackendCPU)
+		}
+	})
+}
+
 func TestServer_ListJobs(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")

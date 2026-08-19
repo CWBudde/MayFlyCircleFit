@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"runtime"
+	"strings"
 	"strconv"
 	"testing"
 
@@ -51,6 +52,19 @@ func TestRunVariantFlagDefaultsToStandard(t *testing.T) {
 	}
 	if flag.DefValue != "standard" {
 		t.Fatalf("--variant default = %q, want %q", flag.DefValue, "standard")
+	}
+}
+
+func TestRunBackendFlagDefaultsToCPU(t *testing.T) {
+	flag := runCmd.Flags().Lookup("backend")
+	if flag == nil {
+		t.Fatal("run command has no --backend flag")
+	}
+	if flag.DefValue != "cpu" {
+		t.Fatalf("--backend default = %q, want cpu", flag.DefValue)
+	}
+	if !strings.Contains(flag.Usage, "gpu") {
+		t.Fatalf("--backend usage = %q, want alias help", flag.Usage)
 	}
 }
 

@@ -789,11 +789,11 @@ Completed: joint, sequential, and batch optimization use same-backend OpenCL ses
 
 ### Task 11.8: Add GPU Backend Selection to CLI
 - [x] Update `run` command to accept `--backend cpu|<gpu>`
-- [ ] Update `serve` command to accept `--backend` flag
-- [ ] Add validation for GPU availability
-- [ ] Provide helpful error messages if GPU unavailable
-- [ ] Document backend selection in help text
-- [ ] Test backend switching
+- [x] Update `serve` command to accept `--backend` flag
+- [x] Add validation for backend selection
+- [x] Provide helpful error messages if backend unavailable
+- [x] Document backend selection in help text
+- [x] Test backend switching
 
 ### Task 11.9: Create GPU Performance Benchmarks
 - [ ] Benchmark GPU rendering for various K values (1, 10, 50, 100)

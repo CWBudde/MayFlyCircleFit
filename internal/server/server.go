@@ -62,6 +62,8 @@ type ServerOptions struct {
 	QueueSize         int
 	InputRoots        []string
 	BuildMetadata     BuildMetadata
+	// DefaultBackend is used when a create-job request omits backend.
+	DefaultBackend app.Backend
 	// DataRoot enables multi-project support. When empty the server holds a
 	// single project backed by the store passed to NewServerWithOptions, which
 	// is what keeps store-injecting callers and tests working unchanged.
@@ -120,6 +122,7 @@ func NewServerWithOptions(addr string, checkpointStore store.Store, options Serv
 	if options.QueueSize <= 0 {
 		options.QueueSize = 16
 	}
+	options.DefaultBackend = normalizeServerBackend(options.DefaultBackend)
 	ctx, cancel := context.WithCancel(context.Background())
 	policy, policyErr := newInputPolicy(options.InputRoots)
 	server := &Server{
@@ -143,6 +146,20 @@ func NewServerWithOptions(addr string, checkpointStore store.Store, options Serv
 	// stage needs the restored job for that stage to already be visible.
 	server.restoreSchedules()
 	return server
+}
+
+func normalizeServerBackend(raw app.Backend) app.Backend {
+	switch renderer.NormalizeBackend(string(raw)) {
+	case renderer.BackendCPU:
+		return app.BackendCPU
+	case renderer.BackendOpenCL:
+		return app.BackendOpenCL
+	default:
+		if raw != "" {
+			slog.Warn("Invalid server default backend, falling back to cpu", "backend", raw)
+		}
+		return app.BackendCPU
+	}
 }
 
 // Start starts the HTTP server
@@ -575,6 +592,10 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_project", err.Error())
 		return
 	}
+	if request.Backend == "" {
+		request.Backend = s.options.DefaultBackend
+	}
+	request.Backend = app.Backend(renderer.NormalizeBackend(string(request.Backend)))
 	config, err := app.Normalize(request.JobConfig)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_config", err.Error())

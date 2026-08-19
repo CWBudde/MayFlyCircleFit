@@ -70,7 +70,7 @@ func init() {
 	runCmd.Flags().StringVar(&canvasPath, "canvas", "", "Canvas image path (optional: start from existing result)")
 	runCmd.Flags().StringVar(&outPath, "out", "out.png", "Output image path")
 	runCmd.Flags().StringVar(&mode, "mode", "joint", "Optimization mode: joint, sequential, batch")
-	runCmd.Flags().StringVar(&backendName, "backend", "cpu", "Renderer backend to use (cpu, opencl)")
+	runCmd.Flags().StringVar(&backendName, "backend", "cpu", "Renderer backend to use (cpu, opencl; aliases: gpu, cl)")
 	runCmd.Flags().StringVar(&variantName, "variant", "standard", "MayFly algorithm variant: standard, desma, olce")
 	runCmd.Flags().IntVar(&circles, "circles", 10, "Number of circles")
 	runCmd.Flags().IntVar(&iters, "iters", 100, "Max iterations")
@@ -138,11 +138,15 @@ func earlyStopFromConfig(config app.JobConfig) opt.Stop {
 }
 
 func runOptimization(cmd *cobra.Command, args []string) error {
+	backend, err := parseBackendFlag(backendName)
+	if err != nil {
+		return fmt.Errorf("invalid backend: %w", err)
+	}
 	config, err := app.Normalize(app.JobConfig{
 		RefPath:                  refPath,
 		CanvasPath:               canvasPath,
 		Mode:                     app.Mode(mode),
-		Backend:                  app.Backend(backendName),
+		Backend:                  backend,
 		Variant:                  app.Variant(variantName),
 		Circles:                  circles,
 		Iters:                    iters,
