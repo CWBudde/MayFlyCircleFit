@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -444,7 +445,9 @@ func TestScheduleExpandIsDeterministicForAFixedSeed(t *testing.T) {
 		t.Fatalf("stage counts differ: %d and %d", len(first), len(second))
 	}
 	for i := range first {
-		if first[i].Config != second[i].Config {
+		// DeepEqual rather than ==: a configuration carries a hand-authored
+		// circle list, so it is no longer a comparable struct.
+		if !reflect.DeepEqual(first[i].Config, second[i].Config) {
 			t.Fatalf("stage %d config is not stable across expansions", i)
 		}
 	}
@@ -537,5 +540,99 @@ func TestScheduleExpandIgnoresAnAuthoredEffectiveSeed(t *testing.T) {
 		if stage.Config.EffectiveSeed != doc.Seed {
 			t.Fatalf("stage %d ran with seed %d, want the campaign seed %d", i, stage.Config.EffectiveSeed, doc.Seed)
 		}
+	}
+}
+
+// TestScheduleExpandKeepsAuthoredCirclesOnTheBaseStageOnly covers the guard
+// that makes initialCircles safe inside a campaign. Every stage is expanded
+// from the same base configuration, so without the explicit clear an extend
+// stage would carry eight authored circles while asking for twelve — which
+// fails validation — and a polish stage would carry an arrangement its parent
+// has already moved past.
+func TestScheduleExpandKeepsAuthoredCirclesOnTheBaseStageOnly(t *testing.T) {
+	source := strings.Replace(baseDocument, `"popSize": 30`, `"popSize": 30,
+    "initialCircles": [
+      {"x": 1, "y": 2, "r": 3, "color": "#010203"},
+      {"x": 4, "y": 5, "r": 6, "color": "#040506"},
+      {"x": 7, "y": 8, "r": 9, "color": "#070809"},
+      {"x": 10, "y": 11, "r": 12, "color": "#0a0b0c"},
+      {"x": 13, "y": 14, "r": 15, "color": "#0d0e0f"},
+      {"x": 16, "y": 17, "r": 18, "color": "#101112"},
+      {"x": 19, "y": 20, "r": 21, "color": "#131415"},
+      {"x": 22, "y": 23, "r": 24, "color": "#161718"}
+    ]`, 1)
+	source = strings.Replace(source, `"steps": []`,
+		`"steps": [{"type": "polish"}, {"type": "extend", "additionalCircles": 4}, {"type": "polish"}]`, 1)
+
+	doc, err := ParseSchedule([]byte(source))
+	if err != nil {
+		t.Fatalf("ParseSchedule() error = %v", err)
+	}
+	stages, err := doc.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	if len(stages) != 4 {
+		t.Fatalf("stage count = %d, want 4", len(stages))
+	}
+	if len(stages[0].Config.InitialCircles) != 8 {
+		t.Fatalf("base stage carries %d authored circles, want 8", len(stages[0].Config.InitialCircles))
+	}
+	for _, stage := range stages[1:] {
+		if len(stage.Config.InitialCircles) != 0 {
+			t.Fatalf("stage %d (%s) carries %d authored circles, want none",
+				stage.Index, stage.Kind, len(stage.Config.InitialCircles))
+		}
+	}
+	if stages[2].Circles != 12 {
+		t.Fatalf("extend stage circles = %d, want 12", stages[2].Circles)
+	}
+}
+
+// TestScheduleExpandCarriesABarrierOntoItsFirstStageOnly pins the two things a
+// barrier promises: it marks the stage the campaign stops before, and on a
+// repeated step it marks one stage rather than every repetition.
+func TestScheduleExpandCarriesABarrierOntoItsFirstStageOnly(t *testing.T) {
+	doc := documentWithSteps(t, `[
+		{"type": "polish"},
+		{"type": "extend", "additionalCircles": 4, "pauseBefore": true, "repeat": 3}
+	]`)
+	stages, err := doc.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	if len(stages) != 5 {
+		t.Fatalf("stage count = %d, want 5", len(stages))
+	}
+	barriers := []int{}
+	for _, stage := range stages {
+		if stage.PauseBefore {
+			barriers = append(barriers, stage.Index)
+		}
+	}
+	if len(barriers) != 1 || barriers[0] != 2 {
+		t.Fatalf("barriers at %v, want exactly stage 2", barriers)
+	}
+	// The barrier stops the campaign; it must not remove the stage or change
+	// what the plan grows to, or resuming would produce a different campaign.
+	if stages[4].Circles != 20 {
+		t.Fatalf("final circles = %d, want 20", stages[4].Circles)
+	}
+}
+
+// TestScheduleBarrierIsLegalOnEitherKind guards the distinction from `when`,
+// which is refused on extend. A barrier skips nothing, so the reason `when` is
+// refused there does not apply to it.
+func TestScheduleBarrierIsLegalOnEitherKind(t *testing.T) {
+	doc := documentWithSteps(t, `[
+		{"type": "polish", "pauseBefore": true},
+		{"type": "extend", "additionalCircles": 4, "pauseBefore": true}
+	]`)
+	stages, err := doc.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	if !stages[1].PauseBefore || !stages[2].PauseBefore {
+		t.Fatalf("barriers = %v/%v, want both", stages[1].PauseBefore, stages[2].PauseBefore)
 	}
 }

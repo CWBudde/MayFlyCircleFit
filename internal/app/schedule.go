@@ -120,6 +120,23 @@ type ScheduleStep struct {
 	// started once the stages before it have measured something. See
 	// ScheduleCondition.
 	When *ScheduleCondition `json:"when,omitempty"`
+
+	// PauseBefore turns this step into a barrier. The campaign runs everything
+	// before it and then pauses, leaving the step and everything after it
+	// planned but unstarted; `schedule resume` releases the barrier and carries
+	// on. It is how a document says "go this far for now" without the plan
+	// having to be edited down and edited back.
+	//
+	// It is deliberately not a `when` condition. A condition decides whether a
+	// stage runs at all and is refused on extend because skipping one would
+	// move every later stage's circle count; a barrier skips nothing, it only
+	// stops, so it is legal on either kind.
+	//
+	// On a repeated step the barrier belongs to the first repetition only.
+	// `repeat: 4` with a barrier means "stop before the first of the four", not
+	// "stop before each of them", which is what makes it readable as a single
+	// point in the plan.
+	PauseBefore bool `json:"pauseBefore,omitempty"`
 }
 
 // ScheduleStage is one realized stage: what the step became once repeats were
@@ -148,6 +165,12 @@ type ScheduleStage struct {
 	// what. A dry run prints it; the executor evaluates it against the recorded
 	// outcomes when the stage comes up.
 	When *ScheduleCondition `json:"when,omitempty"`
+
+	// PauseBefore makes this stage a barrier: the campaign runs up to it and
+	// pauses rather than starting it. The stage stays planned and the campaign
+	// stays resumable, which is the difference between a barrier and deleting
+	// the step. See ScheduleStep.PauseBefore.
+	PauseBefore bool `json:"pauseBefore,omitempty"`
 
 	Config JobConfig `json:"config"`
 }
@@ -432,10 +455,19 @@ func (s ScheduleStep) realize(config JobConfig, circles, index, stepIndex, repet
 		StepIndex:  stepIndex,
 		Repetition: repetition,
 		When:       s.When,
+		// A barrier is one point in the plan, so an unrolled repeat carries it
+		// on its first stage only.
+		PauseBefore: s.PauseBefore && repetition == 1,
 	}
 	next := circles
 	staged := config
 	staged.Circles = circles
+	// A continuation is seeded from its parent checkpoint, never from the
+	// document. Carrying the base's hand-authored arrangement forward would at
+	// best be ignored and at worst fail validation, because an extend stage
+	// raises the circle count while the spec list stays the length the base
+	// wrote.
+	staged.InitialCircles = nil
 
 	switch s.Type {
 	case ScheduleStepExtend:

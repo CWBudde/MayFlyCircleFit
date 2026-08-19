@@ -185,6 +185,15 @@ func (s *Server) driveSchedule(scheduleID string) scheduleDriverExit {
 		// yet. Once a stage has a record it has already been decided, and
 		// re-deciding it would let a restart argue with the campaign's own
 		// history.
+		// A barrier is checked before policy and before the stage is recorded,
+		// so a paused campaign leaves no half-decided stage behind: the plan is
+		// untouched and the next resume starts exactly here.
+		if existing == nil && plan[index].PauseBefore && index > record.ReleasedThroughStage {
+			s.settleSchedule(scheduleID, store.ScheduleStatePaused,
+				fmt.Sprintf("paused at the barrier before stage %d (%s, %d circles); resume to continue",
+					index, plan[index].Kind, plan[index].Circles))
+			return scheduleDriverStopped
+		}
 		if existing == nil {
 			verdict := app.EvaluateScheduleStage(plan, index, scheduleStageOutcomes(recorded))
 			if !verdict.Run {
@@ -661,8 +670,10 @@ func (s *Server) awaitJobTermination(jobID string) (*Job, bool) {
 	}
 }
 
-// settleSchedule records a campaign's terminal state, refusing to overwrite one
-// an operator already chose.
+// settleSchedule moves a running schedule to a state it stops in — completed,
+// failed, or paused at a barrier — and records why. It is a no-op on a schedule
+// that is no longer running, so an operator's own pause or cancel is never
+// overwritten by a verdict the driver reached at the same moment.
 func (s *Server) settleSchedule(scheduleID string, state store.ScheduleState, reason string) {
 	scheduleStore, err := s.scheduleStore()
 	if err != nil {

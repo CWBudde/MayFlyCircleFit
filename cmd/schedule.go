@@ -268,7 +268,14 @@ func printScheduleDetail(output io.Writer, detail scheduleDetailResponse, asOf t
 	fmt.Fprintf(output, "Stages: %d recorded of %d planned\n", len(detail.Stages), detail.TotalStages)
 	fmt.Fprintf(output, "Seed: %s\n", formatCampaignSeed(detailCampaignSeed(detail)))
 	if detail.Error != "" {
-		fmt.Fprintf(output, "Error: %s\n", detail.Error)
+		// The same field carries both, so the label follows the state: a paused
+		// campaign stopped where it was told to, and calling that an error
+		// would send a reader looking for a fault that is not there.
+		label := "Error"
+		if detail.State == "paused" {
+			label = "Paused"
+		}
+		fmt.Fprintf(output, "%s: %s\n", label, detail.Error)
 	}
 	if len(detail.Stages) == 0 {
 		fmt.Fprintln(output, "\nNo stage has been recorded yet.")

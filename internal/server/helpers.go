@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image"
 	_ "image/jpeg"
-	"math"
 	"os"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
@@ -40,21 +39,10 @@ func loadReferenceImage(path string) (*image.NRGBA, error) {
 }
 
 // computeDiffImage creates a false-color image from mean absolute RGB error.
+//
+// It forwards to fit.DiffImage, which is where the pixel maths lives now that
+// the CLI needs the same picture the server serves. The wrapper stays because
+// three call sites read better without the package qualifier.
 func computeDiffImage(ref, best *image.NRGBA, colormap fit.Colormap) *image.NRGBA {
-	bounds := ref.Bounds()
-	diff := image.NewNRGBA(bounds)
-
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			refPixel := ref.NRGBAAt(x, y)
-			bestPixel := best.NRGBAAt(x, y)
-			dr := math.Abs(float64(int(refPixel.R) - int(bestPixel.R)))
-			dg := math.Abs(float64(int(refPixel.G) - int(bestPixel.G)))
-			db := math.Abs(float64(int(refPixel.B) - int(bestPixel.B)))
-			absoluteError := (dr + dg + db) / 3
-			diff.Set(x, y, fit.MapErrorColor(absoluteError, 255, colormap))
-		}
-	}
-
-	return diff
+	return fit.DiffImage(ref, best, colormap)
 }
