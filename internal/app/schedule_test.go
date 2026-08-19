@@ -588,3 +588,51 @@ func TestScheduleExpandKeepsAuthoredCirclesOnTheBaseStageOnly(t *testing.T) {
 		t.Fatalf("extend stage circles = %d, want 12", stages[2].Circles)
 	}
 }
+
+// TestScheduleExpandCarriesABarrierOntoItsFirstStageOnly pins the two things a
+// barrier promises: it marks the stage the campaign stops before, and on a
+// repeated step it marks one stage rather than every repetition.
+func TestScheduleExpandCarriesABarrierOntoItsFirstStageOnly(t *testing.T) {
+	doc := documentWithSteps(t, `[
+		{"type": "polish"},
+		{"type": "extend", "additionalCircles": 4, "pauseBefore": true, "repeat": 3}
+	]`)
+	stages, err := doc.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	if len(stages) != 5 {
+		t.Fatalf("stage count = %d, want 5", len(stages))
+	}
+	barriers := []int{}
+	for _, stage := range stages {
+		if stage.PauseBefore {
+			barriers = append(barriers, stage.Index)
+		}
+	}
+	if len(barriers) != 1 || barriers[0] != 2 {
+		t.Fatalf("barriers at %v, want exactly stage 2", barriers)
+	}
+	// The barrier stops the campaign; it must not remove the stage or change
+	// what the plan grows to, or resuming would produce a different campaign.
+	if stages[4].Circles != 20 {
+		t.Fatalf("final circles = %d, want 20", stages[4].Circles)
+	}
+}
+
+// TestScheduleBarrierIsLegalOnEitherKind guards the distinction from `when`,
+// which is refused on extend. A barrier skips nothing, so the reason `when` is
+// refused there does not apply to it.
+func TestScheduleBarrierIsLegalOnEitherKind(t *testing.T) {
+	doc := documentWithSteps(t, `[
+		{"type": "polish", "pauseBefore": true},
+		{"type": "extend", "additionalCircles": 4, "pauseBefore": true}
+	]`)
+	stages, err := doc.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	if !stages[1].PauseBefore || !stages[2].PauseBefore {
+		t.Fatalf("barriers = %v/%v, want both", stages[1].PauseBefore, stages[2].PauseBefore)
+	}
+}

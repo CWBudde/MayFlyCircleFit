@@ -155,6 +155,55 @@ renderer a run uses and prints the cost, the PSNR, and the blank-canvas cost the
 arrangement improved on. Scoring the campaign file directly is the point: the
 number then describes the document that will actually run.
 
+## `pauseBefore`: a barrier
+
+`pauseBefore` on a step makes the stage it produces a barrier. The campaign runs
+everything before it and then pauses; the barred stage and everything after it
+stay planned but unstarted, and `schedule resume` releases it.
+
+```json
+{"type": "polish", "strategy": "replacement"},
+{"type": "extend", "additionalCircles": 4, "pauseBefore": true}
+```
+
+It is how a document says "go this far for now" without the plan having to be
+edited down and edited back — which matters because the edited-back version is a
+different document, and a campaign is only comparable to another campaign that
+planned the same stages.
+
+A dry run states it before the table, so how far a run will get is not something
+a reader has to infer from fourteen rows:
+
+```
+Barrier: runs stages 0-4, then pauses before stage 5 (extend, 12 circles).
+         Everything after it stays planned; `schedule resume` releases it.
+```
+
+Three properties are worth knowing:
+
+- **It is not a `when` condition.** A condition decides whether a stage runs at
+  all, and is refused on extend because skipping one would move every later
+  stage's circle count. A barrier skips nothing — it only stops — so it is legal
+  on either kind.
+- **Nothing is recorded for the barred stage.** The check runs before policy and
+  before the stage record is written, so a paused campaign leaves no
+  half-decided stage behind and the next resume starts exactly there.
+- **On a repeated step it marks the first repetition only.** `repeat: 4` with a
+  barrier means "stop before the first of the four", which is what makes it
+  readable as a single point in the plan.
+
+The pause is durable and pollable, which is what makes it a signal rather than
+just a stop. `schedule status` reports it, and the reason names the stage:
+
+```
+State: paused
+Paused: paused at the barrier before stage 5 (extend, 12 circles); resume to continue
+```
+
+Releasing happens as part of the resume: the schedule record carries
+`releasedThroughStage`, so a resumed campaign runs past the barrier instead of
+meeting it again and pausing forever.
+
 ## Two validation traps worth knowing
 
 **A field the defaults would replace is an error.** The parser refuses any
