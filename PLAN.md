@@ -1032,14 +1032,14 @@ customization workflow.
   - [x] Endpoint: `POST /api/v1/jobs/:id/pause`
   - [x] Checkpoint and suspend worker
   - [x] Update UI to show paused state
-- [ ] Add "Resume" button (for paused jobs)
+- [x] Add "Resume" button (for paused jobs)
   - [x] Endpoint: `POST /api/v1/jobs/:id/resume`
   - [x] Resume from checkpoint
   - [x] Update UI to show running state
-- [ ] Add "Cancel" button
-  - [ ] Endpoint: `POST /api/v1/jobs/:id/cancel`
-  - [ ] Gracefully stop worker
-  - [ ] Update UI to show cancelled state
+- [x] Add "Cancel" button
+  - [x] Endpoint: `POST /api/v1/jobs/:id/cancel`
+  - [x] Gracefully stop worker
+  - [x] Update UI to show cancelled state
 - [ ] Add "Delete" button
   - [ ] Endpoint: `DELETE /api/v1/jobs/:id`
   - [ ] Remove job and artifacts

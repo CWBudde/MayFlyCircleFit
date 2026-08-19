@@ -149,10 +149,21 @@ templ JobDetailPage(job JobDetail) {
 						<button id="pause-job" class="btn" style="margin-left: 0.5rem; background-color: var(--warning-color); color: var(--text-color);">
 							Pause job
 						</button>
+						<button id="cancel-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);">
+							Cancel job
+						</button>
 					}
 					if job.State == "paused" {
 						<button id="resume-job" class="btn btn-primary" style="margin-left: 0.5rem;">
 							Resume job
+						</button>
+						<button id="cancel-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);">
+							Cancel job
+						</button>
+					}
+					if job.State == "pending" {
+						<button id="cancel-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);">
+							Cancel job
 						</button>
 					}
 					if job.CanPolish {
@@ -617,11 +628,12 @@ templ JobDetailPage(job JobDetail) {
 				let sparklineTooltip = null;
 				let hoveredSample = null;
 
-				initializeParameterViewer();
-				initializeDownloadControls();
-				initializePauseControl();
-				initializeResumeControl();
-				initializePolishControl();
+									initializeParameterViewer();
+									initializeDownloadControls();
+									initializePauseControl();
+									initializeResumeControl();
+									initializeCancelControl();
+									initializePolishControl();
 
 				// Server-seeded quality history for the selectable chart.
 				function parseSampleTimestamp(value) {
@@ -1027,11 +1039,11 @@ templ JobDetailPage(job JobDetail) {
 					});
 				}
 
-				function initializeResumeControl() {
-					const button = document.getElementById("resume-job");
-					if (!button) return;
-					button.addEventListener("click", async function () {
-						button.disabled = true;
+			function initializeResumeControl() {
+				const button = document.getElementById("resume-job");
+				if (!button) return;
+				button.addEventListener("click", async function () {
+					button.disabled = true;
 						button.textContent = "Resuming…";
 						try {
 							const response = await fetch(
@@ -1047,9 +1059,32 @@ templ JobDetailPage(job JobDetail) {
 							window.alert(err.message || "Unable to resume job");
 							button.disabled = false;
 							button.textContent = "Resume job";
+					}
+				});
+			}
+
+			function initializeCancelControl() {
+				const button = document.getElementById("cancel-job");
+				if (!button) return;
+				button.addEventListener("click", async function () {
+					button.disabled = true;
+					button.textContent = "Cancelling...";
+					try {
+						const response = await fetch("/api/v1/jobs/" + jobId + "/cancel", {
+							method: "POST",
+						});
+						if (!response.ok) {
+							const payload = await response.json();
+							throw new Error(payload?.error?.message || "Unable to cancel job");
 						}
-					});
-				}
+						location.reload();
+					} catch (err) {
+						window.alert(err.message || "Unable to cancel job");
+						button.disabled = false;
+						button.textContent = "Cancel job";
+					}
+				});
+			}
 
 				function initializePolishControl() {
 					const button = document.getElementById("polish-job");
