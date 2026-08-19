@@ -88,3 +88,35 @@ func createTempRefImage(t *testing.T) string {
 	createSimpleTestImage(t, img)
 	return img
 }
+
+func TestRouting_SettingsPage(t *testing.T) {
+	server := NewServer(":0", nil)
+	shutdownTestServer(t, server)
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/settings", nil))
+	if got, want := recorder.Code, http.StatusOK; got != want {
+		t.Fatalf("GET /settings status = %d, want %d", got, want)
+	}
+	body := recorder.Body.String()
+	for _, want := range []string{
+		"settings-image-refresh",
+		"settings-default-view-mode",
+		"settings-default-colormap",
+		"settings-visible-metrics",
+		"settings-reset",
+		"mayflycirclefit.visibleMetrics",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("settings page missing %q, got %q", want, body)
+		}
+	}
+
+	assertPageMethods(t, server, "/settings")
+
+	notFound := httptest.NewRecorder()
+	server.Handler().ServeHTTP(notFound, httptest.NewRequest(http.MethodGet, "/settings/extra", nil))
+	if got, want := notFound.Code, http.StatusNotFound; got != want {
+		t.Fatalf("GET /settings/extra status = %d, want %d", got, want)
+	}
+}

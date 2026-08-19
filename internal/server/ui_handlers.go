@@ -119,6 +119,24 @@ func (s *Server) handleJobsPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleSettingsPage handles GET /settings
+func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/settings" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", http.MethodGet+", "+http.MethodHead)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := ui.SettingsPage().Render(r.Context(), w); err != nil {
+		http.Error(w, "Failed to render page", http.StatusInternalServerError)
+		return
+	}
+}
+
 // handleJobDetail handles GET /jobs/:id
 func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	// Extract job ID from path

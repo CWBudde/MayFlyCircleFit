@@ -24,23 +24,24 @@ func TestProjectTypeKeepsJSONWireFormat(t *testing.T) {
 	t.Run("job status response", func(t *testing.T) {
 		end := wireTime.Add(time.Minute)
 		response := jobStatusResponse{
-			ID:          "12345678-1234-4234-8234-123456789abc",
-			Project:     "christian",
-			State:       StateCompleted,
-			Config:      store.JobConfig{RefPath: "a.png", Mode: app.ModeJoint, Circles: 1, Iters: 2, PopSize: 30, Seed: 7},
-			BestCost:    1.5,
-			InitialCost: 9.5,
-			Iterations:  2,
-			Evaluations: 60,
-			Termination: "completed",
-			Elapsed:     60,
-			CPS:         1,
-			StartTime:   wireTime,
-			EndTime:     &end,
+			ID:           "12345678-1234-4234-8234-123456789abc",
+			Project:      "christian",
+			State:        StateCompleted,
+			Config:       store.JobConfig{RefPath: "a.png", Mode: app.ModeJoint, Circles: 1, Iters: 2, PopSize: 30, Seed: 7},
+			BestCost:     1.5,
+			BestRevision: 3,
+			InitialCost:  9.5,
+			Iterations:   2,
+			Evaluations:  60,
+			Termination:  "completed",
+			Elapsed:      60,
+			CPS:          1,
+			StartTime:    wireTime,
+			EndTime:      &end,
 		}
 		const want = `{"id":"12345678-1234-4234-8234-123456789abc","project":"christian",` +
 			`"state":"completed","config":{"refPath":"a.png","mode":"joint","circles":1,"iters":2,"popSize":30,"seed":7},` +
-			`"bestCost":1.5,"initialCost":9.5,"psnr":null,"iterations":2,"evaluations":60,` +
+			`"bestCost":1.5,"bestRevision":3,"initialCost":9.5,"psnr":null,"iterations":2,"evaluations":60,` +
 			`"termination":"completed","elapsed":60,"cps":1,` +
 			`"startTime":"2026-01-02T03:04:05Z","endTime":"2026-01-02T03:05:05Z"}`
 		assertJSON(t, response, want)

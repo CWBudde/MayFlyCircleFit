@@ -204,7 +204,7 @@ templ JobDetailPage(job JobDetail) {
 			<div class="card detail-summary" style={ fmt.Sprintf("margin-bottom: 1.5rem; border-left: 6px solid %s;", statusBorderColor(job.State)) }>
 				<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">Metrics</h2>
 				<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem;">
-				<div>
+				<div data-metric-card="cost">
 					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
 						Audited Best Cost
 					</div>
@@ -248,7 +248,7 @@ templ JobDetailPage(job JobDetail) {
 						</span> dB · pending full-image usefulness audit
 					</div>
 				</div>
-				<div>
+				<div data-metric-card="psnr">
 					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
 						Audited PSNR
 					</div>
@@ -268,7 +268,7 @@ templ JobDetailPage(job JobDetail) {
 					</div>
 				</div>
 				if job.SSIMEnabled {
-					<div>
+					<div data-metric-card="ssim">
 						<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
 							SSIM
 						</div>
@@ -306,7 +306,7 @@ templ JobDetailPage(job JobDetail) {
 					<div style="font-size: 1.5rem; font-weight: 600;" data-metric="evaluations" title={ fmt.Sprintf("%d objective evaluations", job.Evaluations) }>{ formatNumber(float64(job.Evaluations)) }</div>
 					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Objective function calls</div>
 				</div>
-				<div>
+				<div data-metric-card="cps">
 					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
 						Throughput
 					</div>
@@ -622,6 +622,7 @@ templ JobDetailPage(job JobDetail) {
 				const jobState = imageViewer.dataset.jobState;
 				const maxIters = Number.parseInt(imageViewer.dataset.maxIters, 10) || 0;
 				const circleCount = Number.parseInt({ fmt.Sprintf("%d", job.Circles) }, 10) || 0;
+				const visibleMetricStorageKey = "mayflycirclefit.visibleMetrics";
 				const initialCPS = Number.parseFloat(
 					document.querySelector('[data-metric="cps"]')?.dataset.rawCps || "0",
 				) || 0;
@@ -632,6 +633,7 @@ templ JobDetailPage(job JobDetail) {
 				let sparklineInteraction = null;
 				let sparklineTooltip = null;
 				let hoveredSample = null;
+				const metricVisibilityIds = ["cost", "psnr", "ssim", "cps"];
 
 									initializeParameterViewer();
 									initializeDownloadControls();
@@ -662,6 +664,12 @@ templ JobDetailPage(job JobDetail) {
 				}
 
 				let metricHistory = [];
+				applyMetricCardVisibility();
+				window.addEventListener("storage", function (event) {
+					if (event.key === visibleMetricStorageKey) {
+						applyMetricCardVisibility();
+					}
+				});
 				const historyData = document.getElementById("metric-history-data");
 				if (historyData) {
 					try {
@@ -798,6 +806,49 @@ templ JobDetailPage(job JobDetail) {
 					elements.forEach(function (el) {
 						el.textContent = value;
 					});
+				}
+
+				function applyMetricCardVisibility() {
+					const visibleMetrics = parseVisibleMetrics();
+					metricVisibilityIds.forEach(function (metricId) {
+						const isVisible = visibleMetrics.indexOf(metricId) >= 0;
+						document
+							.querySelectorAll('[data-metric-card="' + metricId + '"]')
+							.forEach(function (card) {
+								card.style.display = isVisible ? "" : "none";
+							});
+					});
+				}
+
+				function parseVisibleMetrics() {
+					const defaults = metricVisibilityIds;
+					const allowed = new Set(defaults);
+					let raw = null;
+					try {
+						raw = window.localStorage.getItem(visibleMetricStorageKey);
+					} catch (_error) {
+						raw = null;
+					}
+					try {
+						const parsed = raw ? JSON.parse(raw) : null;
+						if (!Array.isArray(parsed)) {
+							return defaults.slice();
+						}
+						const enabled = new Set();
+						parsed.forEach(function (metric) {
+							if (allowed.has(metric)) {
+								enabled.add(metric);
+							}
+						});
+						if (enabled.size === 0) {
+							return defaults.slice();
+						}
+						return defaults.filter(function (metric) {
+							return enabled.has(metric);
+						});
+					} catch (_error) {
+						return defaults.slice();
+					}
 				}
 
 				function updateCandidateMetrics(data) {
