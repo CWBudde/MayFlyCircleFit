@@ -1040,10 +1040,10 @@ customization workflow.
   - [x] Endpoint: `POST /api/v1/jobs/:id/cancel`
   - [x] Gracefully stop worker
   - [x] Update UI to show cancelled state
-- [ ] Add "Delete" button
-  - [ ] Endpoint: `DELETE /api/v1/jobs/:id`
-  - [ ] Remove job and artifacts
-  - [ ] Redirect to job list
+- [x] Add "Delete" button
+  - [x] Endpoint: `DELETE /api/v1/jobs/:id`
+  - [x] Remove job and artifacts
+  - [x] Redirect to job list
 - [ ] Add confirmation dialogs for destructive actions
 - [ ] Test all control actions end-to-end
 

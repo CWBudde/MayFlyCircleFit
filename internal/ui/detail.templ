@@ -166,6 +166,11 @@ templ JobDetailPage(job JobDetail) {
 							Cancel job
 						</button>
 					}
+					if job.State == "completed" || job.State == "failed" || job.State == "cancelled" {
+						<button id="delete-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);">
+							Delete job
+						</button>
+					}
 					if job.CanPolish {
 						<button id="polish-job" class="btn btn-primary" style="margin-left: 0.5rem;">
 							Polish weak circles
@@ -633,6 +638,7 @@ templ JobDetailPage(job JobDetail) {
 									initializePauseControl();
 									initializeResumeControl();
 									initializeCancelControl();
+									initializeDeleteControl();
 									initializePolishControl();
 
 				// Server-seeded quality history for the selectable chart.
@@ -1063,11 +1069,11 @@ templ JobDetailPage(job JobDetail) {
 				});
 			}
 
-			function initializeCancelControl() {
-				const button = document.getElementById("cancel-job");
-				if (!button) return;
-				button.addEventListener("click", async function () {
-					button.disabled = true;
+				function initializeCancelControl() {
+					const button = document.getElementById("cancel-job");
+					if (!button) return;
+					button.addEventListener("click", async function () {
+						button.disabled = true;
 					button.textContent = "Cancelling...";
 					try {
 						const response = await fetch("/api/v1/jobs/" + jobId + "/cancel", {
@@ -1082,6 +1088,29 @@ templ JobDetailPage(job JobDetail) {
 						window.alert(err.message || "Unable to cancel job");
 						button.disabled = false;
 						button.textContent = "Cancel job";
+					}
+				});
+			}
+
+			function initializeDeleteControl() {
+				const button = document.getElementById("delete-job");
+				if (!button) return;
+				button.addEventListener("click", async function () {
+					button.disabled = true;
+					button.textContent = "Deleting…";
+					try {
+						const response = await fetch("/api/v1/jobs/" + jobId, {
+							method: "DELETE",
+						});
+						if (!response.ok) {
+							const payload = await response.json();
+							throw new Error(payload?.error?.message || "Unable to delete job");
+						}
+						window.location.href = "/jobs";
+					} catch (err) {
+						window.alert(err.message || "Unable to delete job");
+						button.disabled = false;
+						button.textContent = "Delete job";
 					}
 				});
 			}
