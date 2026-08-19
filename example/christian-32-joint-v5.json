@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "name": "Christian_after — v5, all 32 circles fitted jointly",
+  "seed": 20260822,
+  "base": {
+    "refPath": "example/Christian_after.jpeg",
+    "mode": "batch",
+    "circles": 32,
+    "batchSize": 32,
+    "iters": 5000,
+    "popSize": 200,
+    "optimizerEpochs": 5,
+    "threads": 1,
+    "parallelEvaluation": true,
+    "evaluationWorkers": 12,
+    "seed": 20260822,
+    "disableConvergence": true,
+    "stopMinImprovement": 0.001,
+    "stopStagnationIters": 2000,
+    "stopMinIters": 1000,
+    "polishingEpochs": 2,
+    "polishingIters": 300,
+    "polishingStagnationIters": 250,
+    "polishingMinImprovement": 0.01
+  },
+  "steps": [
+    {"type": "polish", "strategy": "replacement",       "activeSetSize": 8,  "maxSweeps": 12, "epochs": 2, "iters": 300, "popSize": 50, "stagnationIters": 250, "minImprovement": 0.01},
+    {"type": "polish", "strategy": "residual-region",   "activeSetSize": 8,  "maxSweeps": 12, "epochs": 2, "iters": 300, "popSize": 50, "stagnationIters": 250, "minImprovement": 0.01},
+    {"type": "polish", "strategy": "hybrid-overlap",    "activeSetSize": 8,  "maxSweeps": 12, "epochs": 2, "iters": 300, "popSize": 50, "stagnationIters": 250, "minImprovement": 0.01},
+    {"type": "polish", "strategy": "contiguous-window", "activeSetSize": 8,  "maxSweeps": 12, "epochs": 2, "iters": 300, "popSize": 50, "stagnationIters": 250, "minImprovement": 0.01},
+    {"type": "polish", "strategy": "residual-region",   "activeSetSize": 12, "maxSweeps": 12, "epochs": 2, "iters": 300, "popSize": 50, "stagnationIters": 250, "minImprovement": 0.005},
+    {"type": "polish", "strategy": "hybrid-overlap",    "activeSetSize": 12, "maxSweeps": 12, "epochs": 2, "iters": 300, "popSize": 50, "stagnationIters": 250, "minImprovement": 0.005}
+  ]
+}

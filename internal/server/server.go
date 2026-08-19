@@ -162,6 +162,19 @@ func normalizeServerBackend(raw app.Backend) app.Backend {
 	}
 }
 
+// applyDefaultBackend fills in the server-wide default for a configuration that
+// names no backend and canonicalizes whatever remains. Every job entry point
+// runs through it, so a dashboard or schedule job honours `serve --backend` the
+// same way an API request does. A whitespace-only value counts as omission,
+// because NormalizeBackend trims before matching and would otherwise resolve it
+// to CPU behind the default's back.
+func (s *Server) applyDefaultBackend(config *JobConfig) {
+	if strings.TrimSpace(string(config.Backend)) == "" {
+		config.Backend = s.options.DefaultBackend
+	}
+	config.Backend = app.Backend(renderer.NormalizeBackend(string(config.Backend)))
+}
+
 // Start starts the HTTP server
 func (s *Server) Start() error {
 	if s.options.EnablePprof && !isLoopbackAddress(s.addr) {
@@ -592,10 +605,7 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_project", err.Error())
 		return
 	}
-	if request.Backend == "" {
-		request.Backend = s.options.DefaultBackend
-	}
-	request.Backend = app.Backend(renderer.NormalizeBackend(string(request.Backend)))
+	s.applyDefaultBackend(&request.JobConfig)
 	config, err := app.Normalize(request.JobConfig)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_config", err.Error())

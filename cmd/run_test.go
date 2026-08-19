@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"runtime"
-	"strings"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"

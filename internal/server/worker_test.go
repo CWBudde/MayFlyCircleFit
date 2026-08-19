@@ -2,8 +2,8 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
