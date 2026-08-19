@@ -471,7 +471,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create job configuration through the same normalization path as the API.
-	config, err := app.Normalize(JobConfig{
+	requestedConfig := JobConfig{
 		RefPath:                  refPath,
 		CanvasPath:               canvasPath,
 		Mode:                     app.Mode(mode),
@@ -499,7 +499,9 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		StopMinImprovement:       stopMinImprovement,
 		StopStagnationIters:      stopStagnationIters,
 		StopMinIters:             stopMinIters,
-	})
+	}
+	s.applyDefaultBackend(&requestedConfig)
+	config, err := app.Normalize(requestedConfig)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		ui.CreateJobPage(err.Error(), formProject).Render(r.Context(), w)

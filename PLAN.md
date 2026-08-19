@@ -789,11 +789,11 @@ Completed: joint, sequential, and batch optimization use same-backend OpenCL ses
 
 ### Task 11.8: Add GPU Backend Selection to CLI
 - [x] Update `run` command to accept `--backend cpu|<gpu>`
-- [ ] Update `serve` command to accept `--backend` flag
-- [ ] Add validation for GPU availability
-- [ ] Provide helpful error messages if GPU unavailable
-- [ ] Document backend selection in help text
-- [ ] Test backend switching
+- [x] Update `serve` command to accept `--backend` flag
+- [x] Add validation for backend selection
+- [x] Provide helpful error messages if backend unavailable
+- [x] Document backend selection in help text
+- [x] Test backend switching
 
 ### Task 11.9: Create GPU Performance Benchmarks
 - [ ] Benchmark GPU rendering for various K values (1, 10, 50, 100)
@@ -1008,24 +1008,24 @@ print contracts, errors, and active-job timestamps; `docs/html-reports.md`
 documents the endpoint, snapshot format, offline behavior, printing, and safe
 customization workflow.
 
-### Task 12.7: Improve Metrics Panel Visualization
-- [ ] Enhance sparkline chart for cost history
-  - [ ] Show X-axis (iterations) and Y-axis (cost) labels
-  - [ ] Add hover tooltips with exact values
-  - [ ] Show cost improvement rate (delta per iteration)
-- [ ] Add circles/sec (throughput) sparkline
-  - [ ] Track throughput over time
-  - [ ] Display average and current cps
-- [ ] Add progress bar for iteration count
-  - [ ] Visual indicator: completed / total iterations
-  - [ ] Percentage display
-- [ ] Add estimated time remaining (ETA)
-  - [ ] Calculate based on iteration rate
-  - [ ] Display in human-readable format (e.g., "2m 30s remaining")
-- [ ] Style metrics panel for clarity
-  - [ ] Use color coding for status (running=blue, completed=green, failed=red)
-  - [ ] Clear typography and spacing
-- [ ] Test with various optimization scenarios
+### Task 12.7: Improve Metrics Panel Visualization ✅
+- [x] Enhance sparkline chart for cost history
+  - [x] Show X-axis (iterations) and Y-axis (cost) labels
+  - [x] Add hover tooltips with exact values
+  - [x] Show cost improvement rate (delta per iteration)
+- [x] Add circles/sec (throughput) sparkline
+  - [x] Track throughput over time
+  - [x] Display average and current cps
+- [x] Add progress bar for iteration count
+  - [x] Visual indicator: completed / total iterations
+  - [x] Percentage display
+- [x] Add estimated time remaining (ETA)
+  - [x] Calculate based on iteration rate
+  - [x] Display in human-readable format (e.g., "2m 30s remaining")
+- [x] Style metrics panel for clarity
+  - [x] Use color coding for status (running=blue, completed=green, failed=red)
+  - [x] Clear typography and spacing
+- [x] Test with various optimization scenarios
 
 ### Task 12.8: Add Job Control Actions
 - [ ] Add "Pause" button (if feasible)

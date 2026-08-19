@@ -22,6 +22,7 @@ var (
 	serveCpuProfile string
 	serveMemProfile string
 	servePprof      bool
+	serveBackend    string
 	serveInputRoots []string
 	serveMaxJobs    int
 	serveQueueSize  int
@@ -39,6 +40,7 @@ Jobs run in the background and progress can be monitored via SSE or status endpo
 func init() {
 	serveCmd.Flags().StringVar(&serverAddr, "addr", "localhost", "Server bind address")
 	serveCmd.Flags().IntVar(&serverPort, "port", 8080, "Server port")
+	serveCmd.Flags().StringVar(&serveBackend, "backend", "cpu", "Renderer backend to use (cpu, opencl; aliases: gpu, cl)")
 	serveCmd.Flags().StringSliceVar(&serveInputRoots, "input-root", []string{"."}, "Allowed image input root (repeatable)")
 	serveCmd.Flags().IntVar(&serveMaxJobs, "max-jobs", 1, "Maximum concurrently running jobs")
 	serveCmd.Flags().IntVar(&serveQueueSize, "queue-size", 16, "Maximum queued jobs")
@@ -58,6 +60,10 @@ func runServer(cmd *cobra.Command, args []string) error {
 	}
 	if serveQueueSize < 1 || serveQueueSize > 100 {
 		return fmt.Errorf("queue-size must be between 1 and 100")
+	}
+	backend, err := parseBackendFlag(serveBackend)
+	if err != nil {
+		return fmt.Errorf("invalid backend: %w", err)
 	}
 	if servePprof && serverAddr != "localhost" && serverAddr != "127.0.0.1" && serverAddr != "::1" {
 		return fmt.Errorf("pprof requires a trusted loopback bind address")
@@ -109,6 +115,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		BuildMetadata:     server.BuildMetadata{Version: version, Commit: commit, BuildDate: buildDate},
 		MaxConcurrentJobs: serveMaxJobs,
 		QueueSize:         serveQueueSize,
+		DefaultBackend:    backend,
 		DataRoot:          serveDataRoot,
 	})
 

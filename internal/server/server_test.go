@@ -66,6 +66,59 @@ func TestServer_CreateJob(t *testing.T) {
 	}
 }
 
+func TestServer_CreateJob_BackendDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.png")
+	createSimpleTestImage(t, imgPath)
+
+	s := NewServerWithOptions(":8080", nil, ServerOptions{
+		InputRoots:     []string{tmpDir},
+		DefaultBackend: app.BackendOpenCL,
+	})
+	shutdownTestServer(t, s)
+
+	t.Run("uses server default backend when omitted", func(t *testing.T) {
+		body, _ := json.Marshal(JobConfig{RefPath: imgPath})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewReader(body))
+		w := httptest.NewRecorder()
+
+		s.handleCreateJob(w, req)
+
+		if w.Code != http.StatusCreated {
+			t.Fatalf("Expected status 201, got %d", w.Code)
+		}
+		var job Job
+		if err := json.NewDecoder(w.Body).Decode(&job); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+		if job.Config.Backend != app.BackendOpenCL {
+			t.Fatalf("job backend = %q, want %q", job.Config.Backend, app.BackendOpenCL)
+		}
+	})
+
+	t.Run("keeps explicit backend override", func(t *testing.T) {
+		body, _ := json.Marshal(JobConfig{
+			RefPath: imgPath,
+			Backend: app.BackendCPU,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewReader(body))
+		w := httptest.NewRecorder()
+
+		s.handleCreateJob(w, req)
+
+		if w.Code != http.StatusCreated {
+			t.Fatalf("Expected status 201, got %d", w.Code)
+		}
+		var job Job
+		if err := json.NewDecoder(w.Body).Decode(&job); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+		if job.Config.Backend != app.BackendCPU {
+			t.Fatalf("job backend = %q, want %q", job.Config.Backend, app.BackendCPU)
+		}
+	})
+}
+
 func TestServer_ListJobs(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
@@ -1427,4 +1480,98 @@ func TestServer_CreatePagePost_EarlyStopDefersToAppValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestServer_BackendDefaults_AllEntryPoints covers the job entry points that do
+// not go through handleCreateJob. Each one used to normalize an omitted backend
+// straight through app.Normalize, which filled the application-wide CPU default
+// before the server flag was ever consulted.
+func TestServer_BackendDefaults_AllEntryPoints(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.png")
+	createSimpleTestImage(t, imgPath)
+
+	s := NewServerWithOptions(":8080", nil, ServerOptions{
+		InputRoots:     []string{tmpDir},
+		DataRoot:       t.TempDir(),
+		DefaultBackend: app.BackendOpenCL,
+	})
+	shutdownTestServer(t, s)
+
+	t.Run("whitespace backend counts as omitted", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]any{"refPath": imgPath, "backend": "  "})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewReader(body))
+		w := httptest.NewRecorder()
+
+		s.handleCreateJob(w, req)
+
+		if w.Code != http.StatusCreated {
+			t.Fatalf("Expected status 201, got %d: %s", w.Code, w.Body.String())
+		}
+		var job Job
+		if err := json.NewDecoder(w.Body).Decode(&job); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+		if job.Config.Backend != app.BackendOpenCL {
+			t.Fatalf("job backend = %q, want %q", job.Config.Backend, app.BackendOpenCL)
+		}
+	})
+
+	t.Run("dashboard form inherits the server default", func(t *testing.T) {
+		form := url.Values{
+			"refPath": {imgPath},
+			"mode":    {string(app.ModeJoint)},
+			"circles": {"4"},
+			"iters":   {"2"},
+			"popSize": {"20"},
+			"seed":    {"1"},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/create", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+
+		s.handleCreatePagePost(w, req)
+
+		if w.Code != http.StatusSeeOther {
+			t.Fatalf("Expected status 303, got %d: %s", w.Code, w.Body.String())
+		}
+		jobID := strings.TrimPrefix(w.Header().Get("Location"), "/jobs/")
+		job, ok := s.jobManager.GetJob(jobID)
+		if !ok {
+			t.Fatalf("job %q not found", jobID)
+		}
+		if job.Config.Backend != app.BackendOpenCL {
+			t.Fatalf("dashboard job backend = %q, want %q", job.Config.Backend, app.BackendOpenCL)
+		}
+	})
+
+	t.Run("schedule stage inherits the server default", func(t *testing.T) {
+		stage := app.ScheduleStage{
+			Index:  0,
+			Kind:   app.ScheduleStageBase,
+			Config: JobConfig{RefPath: imgPath, Circles: 4, Iters: 2, PopSize: 20},
+		}
+		config, _, err := s.scheduleStageConfig(stage, []app.ScheduleStage{stage}, "", 0)
+		if err != nil {
+			t.Fatalf("scheduleStageConfig: %v", err)
+		}
+		if config.Backend != app.BackendOpenCL {
+			t.Fatalf("stage backend = %q, want %q", config.Backend, app.BackendOpenCL)
+		}
+	})
+
+	t.Run("schedule stage keeps an explicit backend", func(t *testing.T) {
+		stage := app.ScheduleStage{
+			Index:  0,
+			Kind:   app.ScheduleStageBase,
+			Config: JobConfig{RefPath: imgPath, Circles: 4, Iters: 2, PopSize: 20, Backend: app.BackendCPU},
+		}
+		config, _, err := s.scheduleStageConfig(stage, []app.ScheduleStage{stage}, "", 0)
+		if err != nil {
+			t.Fatalf("scheduleStageConfig: %v", err)
+		}
+		if config.Backend != app.BackendCPU {
+			t.Fatalf("stage backend = %q, want %q", config.Backend, app.BackendCPU)
+		}
+	})
 }

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -837,6 +838,36 @@ func TestProgressOptimizerMapsAndOffsetsEpochBoundary(t *testing.T) {
 	if !reflect.DeepEqual(boundary.Progress.BestParams, []float64{9, 4}) {
 		t.Fatalf("boundary params = %v, want complete mapped vector", boundary.Progress.BestParams)
 	}
+}
+
+func TestSafeJobError(t *testing.T) {
+	t.Run("staged optimization unsupported", func(t *testing.T) {
+		got := safeJobError(renderer.ErrStagedOptimizationUnsupported)
+		want := "selected backend does not support this optimization mode"
+		if got != want {
+			t.Fatalf("safeJobError() = %q, want %q", got, want)
+		}
+	})
+	t.Run("invalid optimization input", func(t *testing.T) {
+		got := safeJobError(renderer.ErrInvalidOptimizationInput)
+		want := "optimizer produced an invalid result"
+		if got != want {
+			t.Fatalf("safeJobError() = %q, want %q", got, want)
+		}
+	})
+	t.Run("backend unavailable", func(t *testing.T) {
+		got := safeJobError(fmt.Errorf("%w: no devices", renderer.ErrBackendUnavailable))
+		if !strings.Contains(got, "renderer backend unavailable") {
+			t.Fatalf("safeJobError() = %q, want backend unavailable message", got)
+		}
+	})
+	t.Run("generic", func(t *testing.T) {
+		got := safeJobError(errors.New("boom"))
+		want := "job execution failed"
+		if got != want {
+			t.Fatalf("safeJobError() = %q, want %q", got, want)
+		}
+	})
 }
 
 // TestEvaluationWidthReportsWhatRanNotWhatWasAsked is the regression test for

@@ -7,6 +7,7 @@ import (
 	"image"
 	"log/slog"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -745,6 +746,13 @@ func safeJobError(err error) string {
 	switch {
 	case errors.Is(err, renderer.ErrStagedOptimizationUnsupported):
 		return "selected backend does not support this optimization mode"
+	case errors.Is(err, renderer.ErrBackendUnavailable):
+		detail := err.Error()
+		prefix := renderer.ErrBackendUnavailable.Error() + ": "
+		if strings.HasPrefix(detail, prefix) {
+			detail = strings.TrimPrefix(detail, prefix)
+		}
+		return fmt.Sprintf("renderer backend unavailable: %v", detail)
 	case errors.Is(err, renderer.ErrInvalidOptimizationInput):
 		return "optimizer produced an invalid result"
 	default:

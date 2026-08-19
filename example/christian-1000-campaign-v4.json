@@ -1,0 +1,438 @@
+{
+  "schemaVersion": 1,
+  "name": "Christian_after — v4, early polish kept, late polish trimmed",
+  "seed": 20260821,
+  "base": {
+    "refPath": "example/Christian_after.jpeg",
+    "mode": "batch",
+    "circles": 1,
+    "iters": 1500,
+    "popSize": 30,
+    "batchSize": 1,
+    "polishingEpochs": 2,
+    "polishingIters": 400,
+    "polishingStagnationIters": 300,
+    "polishingMinImprovement": 0.05,
+    "threads": 1,
+    "parallelEvaluation": true,
+    "evaluationWorkers": 12,
+    "seed": 20260821,
+    "disableConvergence": true,
+    "stopMinImprovement": 0.002,
+    "stopStagnationIters": 250,
+    "stopMinIters": 200
+  },
+  "steps": [
+    {
+      "type": "extend",
+      "repeat": 15,
+      "additionalCircles": 1
+    },
+    {
+      "type": "polish",
+      "strategy": "hybrid-overlap",
+      "activeSetSize": 8,
+      "maxSweeps": 32,
+      "epochs": 2,
+      "iters": 400,
+      "popSize": 30,
+      "stagnationIters": 300,
+      "minImprovement": 0.05,
+      "when": {
+        "circles": [
+          16,
+          24,
+          32,
+          48,
+          64,
+          96,
+          128
+        ],
+        "minGain": 2.0,
+        "abortAfterBarren": 3
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 8,
+      "additionalCircles": 1
+    },
+    {
+      "type": "polish",
+      "strategy": "hybrid-overlap",
+      "activeSetSize": 8,
+      "maxSweeps": 32,
+      "epochs": 2,
+      "iters": 400,
+      "popSize": 30,
+      "stagnationIters": 300,
+      "minImprovement": 0.05,
+      "when": {
+        "circles": [
+          16,
+          24,
+          32,
+          48,
+          64,
+          96,
+          128
+        ],
+        "minGain": 2.0,
+        "abortAfterBarren": 3
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 8,
+      "additionalCircles": 1
+    },
+    {
+      "type": "polish",
+      "strategy": "hybrid-overlap",
+      "activeSetSize": 8,
+      "maxSweeps": 32,
+      "epochs": 2,
+      "iters": 400,
+      "popSize": 30,
+      "stagnationIters": 300,
+      "minImprovement": 0.05,
+      "when": {
+        "circles": [
+          16,
+          24,
+          32,
+          48,
+          64,
+          96,
+          128
+        ],
+        "minGain": 2.0,
+        "abortAfterBarren": 3
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 16,
+      "additionalCircles": 1
+    },
+    {
+      "type": "polish",
+      "strategy": "hybrid-overlap",
+      "activeSetSize": 8,
+      "maxSweeps": 32,
+      "epochs": 2,
+      "iters": 400,
+      "popSize": 30,
+      "stagnationIters": 300,
+      "minImprovement": 0.05,
+      "when": {
+        "circles": [
+          16,
+          24,
+          32,
+          48,
+          64,
+          96,
+          128
+        ],
+        "minGain": 2.0,
+        "abortAfterBarren": 3
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 16,
+      "additionalCircles": 1
+    },
+    {
+      "type": "polish",
+      "strategy": "hybrid-overlap",
+      "activeSetSize": 8,
+      "maxSweeps": 32,
+      "epochs": 2,
+      "iters": 400,
+      "popSize": 30,
+      "stagnationIters": 300,
+      "minImprovement": 0.05,
+      "when": {
+        "circles": [
+          16,
+          24,
+          32,
+          48,
+          64,
+          96,
+          128
+        ],
+        "minGain": 2.0,
+        "abortAfterBarren": 3
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 32,
+      "additionalCircles": 1
+    },
+    {
+      "type": "polish",
+      "strategy": "hybrid-overlap",
+      "activeSetSize": 8,
+      "maxSweeps": 32,
+      "epochs": 2,
+      "iters": 400,
+      "popSize": 30,
+      "stagnationIters": 300,
+      "minImprovement": 0.05,
+      "when": {
+        "circles": [
+          16,
+          24,
+          32,
+          48,
+          64,
+          96,
+          128
+        ],
+        "minGain": 2.0,
+        "abortAfterBarren": 3
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 32,
+      "additionalCircles": 1
+    },
+    {
+      "type": "polish",
+      "strategy": "hybrid-overlap",
+      "activeSetSize": 8,
+      "maxSweeps": 32,
+      "epochs": 2,
+      "iters": 400,
+      "popSize": 30,
+      "stagnationIters": 300,
+      "minImprovement": 0.05,
+      "when": {
+        "circles": [
+          16,
+          24,
+          32,
+          48,
+          64,
+          96,
+          128
+        ],
+        "minGain": 2.0,
+        "abortAfterBarren": 3
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 64,
+      "additionalCircles": 1
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 32,
+      "maxSweeps": 16,
+      "epochs": 2,
+      "iters": 500,
+      "popSize": 40,
+      "stagnationIters": 400,
+      "minImprovement": 0.01,
+      "when": {
+        "circles": [
+          192,
+          256,
+          384,
+          512
+        ],
+        "minGain": 0.5,
+        "abortAfterBarren": 3
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 64,
+      "additionalCircles": 1
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 32,
+      "maxSweeps": 16,
+      "epochs": 2,
+      "iters": 500,
+      "popSize": 40,
+      "stagnationIters": 400,
+      "minImprovement": 0.01,
+      "when": {
+        "circles": [
+          192,
+          256,
+          384,
+          512
+        ],
+        "minGain": 0.5,
+        "abortAfterBarren": 3
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 128,
+      "additionalCircles": 1
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 32,
+      "maxSweeps": 16,
+      "epochs": 2,
+      "iters": 500,
+      "popSize": 40,
+      "stagnationIters": 400,
+      "minImprovement": 0.01,
+      "when": {
+        "circles": [
+          192,
+          256,
+          384,
+          512
+        ],
+        "minGain": 0.5,
+        "abortAfterBarren": 3
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 128,
+      "additionalCircles": 1
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 32,
+      "maxSweeps": 16,
+      "epochs": 2,
+      "iters": 500,
+      "popSize": 40,
+      "stagnationIters": 400,
+      "minImprovement": 0.01,
+      "when": {
+        "circles": [
+          192,
+          256,
+          384,
+          512
+        ],
+        "minGain": 0.5,
+        "abortAfterBarren": 3
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 128,
+      "additionalCircles": 1
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 32,
+      "maxSweeps": 32,
+      "epochs": 2,
+      "iters": 400,
+      "popSize": 40,
+      "stagnationIters": 300,
+      "minImprovement": 0.001,
+      "when": {
+        "circles": [
+          640,
+          768,
+          896,
+          1000
+        ],
+        "minGain": 0.25,
+        "abortAfterBarren": 3
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 128,
+      "additionalCircles": 1
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 32,
+      "maxSweeps": 32,
+      "epochs": 2,
+      "iters": 400,
+      "popSize": 40,
+      "stagnationIters": 300,
+      "minImprovement": 0.001,
+      "when": {
+        "circles": [
+          640,
+          768,
+          896,
+          1000
+        ],
+        "minGain": 0.25,
+        "abortAfterBarren": 3
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 128,
+      "additionalCircles": 1
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 32,
+      "maxSweeps": 32,
+      "epochs": 2,
+      "iters": 400,
+      "popSize": 40,
+      "stagnationIters": 300,
+      "minImprovement": 0.001,
+      "when": {
+        "circles": [
+          640,
+          768,
+          896,
+          1000
+        ],
+        "minGain": 0.25,
+        "abortAfterBarren": 3
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 104,
+      "additionalCircles": 1
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 32,
+      "maxSweeps": 32,
+      "epochs": 2,
+      "iters": 400,
+      "popSize": 40,
+      "stagnationIters": 300,
+      "minImprovement": 0.001,
+      "when": {
+        "circles": [
+          640,
+          768,
+          896,
+          1000
+        ],
+        "minGain": 0.25,
+        "abortAfterBarren": 3
+      }
+    }
+  ]
+}
