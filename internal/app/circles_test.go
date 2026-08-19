@@ -98,6 +98,55 @@ func TestJobConfigValidateInitialCircles(t *testing.T) {
 	if err := wrongCount.Validate(); err == nil {
 		t.Fatal("Validate() accepted a spec list shorter than circles")
 	}
+
+	// A batch smaller than the circle count optimizes the vector in chunks, so
+	// it would seed the first chunk and drop the rest. Refused here, because at
+	// dispatch it surfaces as a failed run rather than a rejected request.
+	partialBatch := base()
+	partialBatch.BatchSize = 1
+	if err := partialBatch.Validate(); err == nil {
+		t.Fatal("Validate() accepted initialCircles with a batch smaller than circles")
+	}
+}
+
+// TestApplyDefaultsWidensTheBatchForAnAuthoredSeed pins the normalization half
+// of that rule: the stock batch size of five would otherwise queue a seeded
+// ten-circle run that the batch dispatch then refuses.
+func TestApplyDefaultsWidensTheBatchForAnAuthoredSeed(t *testing.T) {
+	config := DefaultConfig()
+	config.RefPath = "ref.png"
+	config.Mode = ModeBatch
+	config.Circles = 10
+	config.BatchSize = 0
+	config.Seed = 1
+	config.InitialCircles = make(CircleSpecs, 10)
+	for i := range config.InitialCircles {
+		config.InitialCircles[i] = CircleSpec{X: 1, Y: 1, R: 1, Color: "#010203"}
+	}
+	if err := config.ApplyDefaults(); err != nil {
+		t.Fatal(err)
+	}
+	if config.BatchSize != 10 {
+		t.Fatalf("batchSize = %d, want 10 so the seeded vector is one optimizer stage", config.BatchSize)
+	}
+	if err := config.Validate(); err != nil {
+		t.Fatalf("Validate() = %v, want nil", err)
+	}
+
+	// Without a seed the default is unchanged, so this normalization cannot
+	// quietly widen every batch run.
+	unseeded := DefaultConfig()
+	unseeded.RefPath = "ref.png"
+	unseeded.Mode = ModeBatch
+	unseeded.Circles = 10
+	unseeded.BatchSize = 0
+	unseeded.Seed = 1
+	if err := unseeded.ApplyDefaults(); err != nil {
+		t.Fatal(err)
+	}
+	if unseeded.BatchSize != 5 {
+		t.Fatalf("unseeded batchSize = %d, want the default of 5", unseeded.BatchSize)
+	}
 }
 
 // TestApplyDefaultsMakesInitialCirclesOpaque pins the one default the field

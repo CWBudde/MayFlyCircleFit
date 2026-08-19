@@ -59,7 +59,7 @@ type scoreResult struct {
 }
 
 func runScore(_ *cobra.Command, _ []string) error {
-	specs, err := loadCircleSpecs(scoreCirclesPath)
+	specs, canvasPath, err := loadCircleSpecs(scoreCirclesPath)
 	if err != nil {
 		return err
 	}
@@ -93,7 +93,13 @@ func runScore(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	rend := renderer.NewCPURenderer(ref, len(specs))
+	// The worker starts from the base stage's canvas when it names one, so
+	// scoring on white would report a cost for an arrangement the campaign will
+	// never run.
+	rend, err := scoreRenderer(ref, canvasPath, len(specs))
+	if err != nil {
+		return err
+	}
 	result := scoreResult{
 		Circles:   len(specs),
 		Cost:      rend.Cost(params),
@@ -153,24 +159,52 @@ func runScore(_ *cobra.Command, _ []string) error {
 // living in once it seeds a campaign. Scoring the campaign file directly is the
 // point -- it means the number reported here describes the document that will
 // actually run, not a copy of it that can drift.
-func loadCircleSpecs(path string) (app.CircleSpecs, error) {
+//
+// It reports the base stage's canvasPath alongside the circles, because a cost
+// only describes the document if it is measured against the same starting
+// canvas the document names. A bare array has no canvas and starts from white,
+// exactly as a run configured without one does.
+func loadCircleSpecs(path string) (app.CircleSpecs, string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read circles: %w", err)
+		return nil, "", fmt.Errorf("read circles: %w", err)
 	}
 	var specs app.CircleSpecs
 	if err := json.Unmarshal(data, &specs); err == nil {
-		return specs, nil
+		return specs, "", nil
 	}
 	var document struct {
 		Base struct {
 			InitialCircles app.CircleSpecs `json:"initialCircles"`
+			CanvasPath     string          `json:"canvasPath"`
 		} `json:"base"`
 	}
 	if err := json.Unmarshal(data, &document); err != nil {
-		return nil, fmt.Errorf("%s is neither a circle array nor a schedule document: %w", path, err)
+		return nil, "", fmt.Errorf("%s is neither a circle array nor a schedule document: %w", path, err)
 	}
-	return document.Base.InitialCircles, nil
+	return document.Base.InitialCircles, document.Base.CanvasPath, nil
+}
+
+// scoreRenderer builds the renderer the configuration describes: the custom
+// canvas when the document names one, white otherwise.
+//
+// The dimension mismatch is checked here rather than left to
+// NewCPURendererWithCanvas, which panics on it. A file the operator named is an
+// input, and an input gets an error.
+func scoreRenderer(ref *image.NRGBA, canvasPath string, circles int) (*renderer.CPURenderer, error) {
+	if canvasPath == "" {
+		return renderer.NewCPURenderer(ref, circles), nil
+	}
+	canvas, err := loadScoreReference(canvasPath)
+	if err != nil {
+		return nil, fmt.Errorf("canvas %s: %w", canvasPath, err)
+	}
+	refBounds, canvasBounds := ref.Bounds(), canvas.Bounds()
+	if refBounds.Dx() != canvasBounds.Dx() || refBounds.Dy() != canvasBounds.Dy() {
+		return nil, fmt.Errorf("canvas %s is %dx%d but the reference is %dx%d",
+			canvasPath, canvasBounds.Dx(), canvasBounds.Dy(), refBounds.Dx(), refBounds.Dy())
+	}
+	return renderer.NewCPURendererWithCanvas(ref, canvas, circles), nil
 }
 
 func loadScoreReference(path string) (*image.NRGBA, error) {

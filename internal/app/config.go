@@ -322,6 +322,13 @@ func (c *JobConfig) ApplyDefaults() error {
 		if c.Circles > 0 && c.BatchSize > c.Circles {
 			c.BatchSize = c.Circles
 		}
+		// An authored arrangement is a full vector, and only a full-size batch
+		// is one optimizer stage over the whole vector. Leaving the default at
+		// five would queue a seeded ten-circle run that the batch dispatch then
+		// refuses, so the default follows the seed rather than the constant.
+		if len(c.InitialCircles) > 0 && c.Circles > 0 {
+			c.BatchSize = c.Circles
+		}
 	}
 	if c.PolishingActiveSetSize == 0 {
 		c.PolishingActiveSetSize = defaults.PolishingActiveSetSize
@@ -535,6 +542,14 @@ func (c JobConfig) Validate() error {
 		}
 		if len(c.InitialCircles) != c.Circles {
 			return invalid("initialCircles", fmt.Sprintf("must supply exactly circles (%d) entries, got %d", c.Circles, len(c.InitialCircles)))
+		}
+		// The same argument as the mode restriction, one level down: a batch
+		// smaller than the circle count optimizes the vector in chunks, so it
+		// would seed the first chunk and discard the rest. Refused here rather
+		// than at dispatch, where it would surface as a failed run instead of a
+		// rejected configuration.
+		if c.BatchSize < c.Circles {
+			return invalid("initialCircles", fmt.Sprintf("requires batchSize to cover every circle (batchSize %d, circles %d)", c.BatchSize, c.Circles))
 		}
 		if err := c.InitialCircles.Validate(); err != nil {
 			return err

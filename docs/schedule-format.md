@@ -124,12 +124,16 @@ and defaults to 1. A centre may sit off-canvas — half a canvas dimension past
 each edge, the same bound the optimizer explores under — which is how a large
 circle contributes only its cap.
 
-Three rules keep the field honest:
+Four rules keep the field honest:
 
 - **Batch mode only, and exactly `circles` entries.** Batch is the mode whose
   optimizer receives the whole vector at once. A sequential or joint run builds
   its vector as it goes, so a full arrangement handed to one would be partly
   ignored — worse than refused, because the run would look seeded and not be.
+- **`batchSize` must cover every circle.** The same argument one level down: a
+  batch smaller than the circle count optimizes the vector in chunks and would
+  seed the first chunk only. Omit `batchSize` and it follows the seed instead of
+  the default of five; set it smaller and the configuration is refused.
 - **Out of bounds is refused, not clamped.** Clamping is right for a candidate
   the optimizer proposed; a hand-placed circle that silently moves is a run that
   no longer matches the document describing it.
@@ -151,9 +155,11 @@ mayflycirclefit score --ref example/Christian_after.jpeg \
 
 `score` takes either a bare JSON array of specifications or a schedule document,
 in which case it reads `base.initialCircles`. It renders with the same CPU
-renderer a run uses and prints the cost, the PSNR, and the blank-canvas cost the
-arrangement improved on. Scoring the campaign file directly is the point: the
-number then describes the document that will actually run.
+renderer a run uses — including the base stage's `canvasPath`, so the cost is
+measured against the canvas the campaign will actually start from — and prints
+the cost, the PSNR, and the blank-canvas cost the arrangement improved on.
+Scoring the campaign file directly is the point: the number then describes the
+document that will actually run.
 
 ## `pauseBefore`: a barrier
 
