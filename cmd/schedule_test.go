@@ -73,17 +73,13 @@ func scheduleDetailFixture() map[string]any {
 		},
 		"stages": []map[string]any{
 			{
-				"schemaVersion": 1, "scheduleId": testScheduleID, "index": 0, "kind": "base",
-				"stepIndex": -1, "repetition": 0, "circles": 8, "state": "completed",
+				"index": 0, "kind": "base", "circles": 8, "state": "completed",
 				"jobId": "11111111-1111-4111-8111-111111111111", "bestCost": 812.5,
-				"startedAt": started, "completedAt": completed, "updatedAt": completed,
-				"config": map[string]any{"refPath": "assets/ref.png", "mode": "batch", "circles": 8, "iters": 100, "popSize": 30, "seed": 42},
+				"elapsedNanos": completed.Sub(started).Nanoseconds(),
 			},
 			{
-				"schemaVersion": 1, "scheduleId": testScheduleID, "index": 1, "kind": "polish",
-				"stepIndex": 0, "repetition": 1, "circles": 8, "state": "skipped",
-				"reason": "polishing stopped paying", "updatedAt": completed,
-				"config": map[string]any{"refPath": "assets/ref.png", "mode": "batch", "circles": 8, "iters": 100, "popSize": 30, "seed": 42},
+				"index": 1, "kind": "polish", "circles": 8, "state": "skipped",
+				"reason": "polishing stopped paying",
 			},
 		},
 	}
@@ -203,11 +199,9 @@ func TestScheduleImportRendersTheChain(t *testing.T) {
 			"rootJobId": "11111111-1111-4111-8111-111111111111",
 			"stages": []map[string]any{
 				{"index": 0, "kind": "base", "jobId": "11111111-1111-4111-8111-111111111111",
-					"circles": 8, "bestCost": 812.5, "iterations": 100, "evaluations": 3000,
-					"termination": "completed", "timestamp": time.Now().UTC()},
-				{"index": 1, "kind": "extend", "jobId": leaf, "parentJobId": "11111111-1111-4111-8111-111111111111",
-					"circles": 16, "bestCost": 640.25, "iterations": 200, "evaluations": 6000,
-					"termination": "completed", "timestamp": time.Now().UTC()},
+					"circles": 8, "bestCost": 812.5, "iterations": 100},
+				{"index": 1, "kind": "extend", "jobId": leaf,
+					"circles": 16, "bestCost": 640.25, "iterations": 200},
 			},
 		})
 	})
@@ -228,8 +222,11 @@ func TestScheduleImportRendersTheChain(t *testing.T) {
 
 // TestScheduleSeedIsNeverReportedAsZero covers a campaign whose document
 // omitted the seed. Zero is the "resolve one for me" sentinel, so printing it
-// would name a seed that replays nothing; the resolved value is read back from
-// the stage that ran, and before that the output says so.
+// would name a seed that replays nothing, and the output says so instead.
+//
+// The seed is read from the campaign, not from a stage: a persisted schedule
+// has a resolved seed by construction, and every stage inherits that one seed,
+// so a per-stage copy would be the same number on every row of the listing.
 func TestScheduleSeedIsNeverReportedAsZero(t *testing.T) {
 	started := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 	detail := scheduleDetailResponse{}
@@ -247,19 +244,17 @@ func TestScheduleSeedIsNeverReportedAsZero(t *testing.T) {
 		t.Fatalf("the zero sentinel was printed as a seed:\n%s", unstarted.String())
 	}
 
-	detail.Stages = []store.ScheduleStageRecord{{
-		ScheduleID: testScheduleID,
-		Index:      0,
-		Kind:       app.ScheduleStageBase,
-		StepIndex:  -1,
-		Circles:    8,
-		State:      store.ScheduleStateCompleted,
-		Config:     store.JobConfig{RefPath: "assets/ref.png", EffectiveSeed: 987654321},
+	detail.CampaignSeed = 987654321
+	detail.Stages = []scheduleStageSummaryResponse{{
+		Index:   0,
+		Kind:    app.ScheduleStageBase,
+		Circles: 8,
+		State:   store.ScheduleStateCompleted,
 	}}
 	var running bytes.Buffer
 	printScheduleDetail(&running, detail, started)
 	if !strings.Contains(running.String(), "Seed: 987654321") {
-		t.Fatalf("running campaign output = %q, want the seed the stage recorded", running.String())
+		t.Fatalf("running campaign output = %q, want the campaign seed", running.String())
 	}
 }
 
@@ -439,21 +434,17 @@ func projectionDetailFixture(completedExtends int, extendElapsed []time.Duration
 	config := map[string]any{"refPath": "assets/ref.png", "mode": "batch", "circles": 8,
 		"batchSize": 8, "iters": 200, "popSize": 30, "seed": 42}
 	stages := []map[string]any{{
-		"schemaVersion": 1, "scheduleId": testScheduleID, "index": 0, "kind": "base",
-		"stepIndex": -1, "repetition": 0, "circles": 8, "state": "completed",
+		"index": 0, "kind": "base", "circles": 8, "state": "completed",
 		"jobId": "11111111-1111-4111-8111-111111111111", "bestCost": 812.5,
-		"startedAt": started, "completedAt": started.Add(time.Minute), "updatedAt": started,
-		"config": config,
+		"elapsedNanos": time.Minute.Nanoseconds(),
 	}}
 	at := started.Add(time.Minute)
 	for index := 1; index <= completedExtends; index++ {
 		elapsed := extendElapsed[index-1]
 		stages = append(stages, map[string]any{
-			"schemaVersion": 1, "scheduleId": testScheduleID, "index": index, "kind": "extend",
-			"stepIndex": 0, "repetition": index, "circles": 8 + 8*index, "additionalCircles": 8,
+			"index": index, "kind": "extend", "circles": 8 + 8*index,
 			"state": "completed", "jobId": "22222222-2222-4222-8222-222222222222",
-			"bestCost": 700.0, "startedAt": at, "completedAt": at.Add(elapsed), "updatedAt": at,
-			"config": config,
+			"bestCost": 700.0, "elapsedNanos": elapsed.Nanoseconds(),
 		})
 		at = at.Add(elapsed)
 	}

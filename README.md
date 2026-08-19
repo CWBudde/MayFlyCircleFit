@@ -155,7 +155,12 @@ curl -fsS http://localhost:8080/api/v1/schedules \
   }'
 
 # The stage table is the campaign's progress; there is no second state file.
+# The listing is a projection -- index, kind, state, circles, cost, elapsed and
+# job -- so it stays readable for a campaign of any allowed length.
 curl -fsS http://localhost:8080/api/v1/schedules/SCHEDULE_ID
+
+# The configuration a single stage ran with, which is what replays that stage.
+curl -fsS http://localhost:8080/api/v1/schedules/SCHEDULE_ID/stages/7
 
 curl -fsS -X POST http://localhost:8080/api/v1/schedules/SCHEDULE_ID/pause
 curl -fsS -X POST http://localhost:8080/api/v1/schedules/SCHEDULE_ID/resume

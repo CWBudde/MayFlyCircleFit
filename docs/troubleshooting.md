@@ -32,6 +32,7 @@ open, a `Suggestion:` line follows with the concrete next step.
 | `invalid log level "…": use debug, info, warn, or error` | `--log-level` got a value outside the accepted set. | Use one of the four listed levels. |
 | `unknown command "…"` / `unknown flag: --…` | Typo in the invocation. | `mayflycirclefit --help`, or `mayflycirclefit <command> --help`. |
 | `max-jobs must be between 1 and 16`, `queue-size must be between 1 and 100`, `invalid backend: …`, `invalid configuration: …` | A flag value is outside its accepted range or set. | Correct the flag; the message names the bound or the accepted values. |
+| `server response exceeds 1048576 bytes` | The CLI refuses to decode an unbounded response. The stage listing and the chain view are projections sized to stay under it for any campaign a document may expand to, so this now means a different endpoint, or a server older than the projection. | Compare versions with `mayflycirclefit version`; a campaign's per-stage configuration is read one stage at a time from `/api/v1/schedules/:id/stages/:index`. |
 | OpenCL device errors, or a GPU request falling back to the CPU | The `gpu` build tag, the OpenCL runtime, or a usable device is missing. | See [`gpu-backends.md`](gpu-backends.md) and [`support-matrix.md`](support-matrix.md). A CGO-disabled build has no GPU backend at all. |
 
 ## HTTP API errors

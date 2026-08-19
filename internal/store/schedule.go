@@ -301,6 +301,12 @@ type ScheduleStore interface {
 
 	// LoadScheduleStages returns the recorded stages in index order.
 	LoadScheduleStages(scheduleID string) ([]ScheduleStageRecord, error)
+
+	// LoadScheduleStage returns one recorded stage by index. It exists because
+	// a stage's configuration is what replaying that stage alone needs, and
+	// reading the whole campaign to get one stage's configuration is what makes
+	// a listing grow with the fit rather than with the reader's question.
+	LoadScheduleStage(scheduleID string, index int) (*ScheduleStageRecord, error)
 }
 
 func (fs *FSStore) schedulesDir() (string, error) {
@@ -536,6 +542,42 @@ func (fs *FSStore) LoadScheduleStages(scheduleID string) ([]ScheduleStageRecord,
 	}
 	sort.Slice(stages, func(i, j int) bool { return stages[i].Index < stages[j].Index })
 	return stages, nil
+}
+
+// LoadScheduleStage returns one recorded stage by index.
+//
+// A stage is one file, so this reads one file: the cost of asking for a stage
+// does not depend on how many stages the campaign has.
+func (fs *FSStore) LoadScheduleStage(scheduleID string, index int) (*ScheduleStageRecord, error) {
+	if index < 0 {
+		return nil, &ValidationError{Field: "index", Reason: "cannot be negative"}
+	}
+	dir, err := fs.existingScheduleDir(scheduleID)
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(dir, stagesDirName, stageFileName(index))
+	if err := ensureContained(fs.baseDir, path); err != nil {
+		return nil, err
+	}
+	data, err := readRegularFile(path)
+	if os.IsNotExist(err) {
+		return nil, &NotFoundError{JobID: scheduleID, Kind: "schedule stage"}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read schedule stage: %w", err)
+	}
+	var stage ScheduleStageRecord
+	if err := json.Unmarshal(data, &stage); err != nil {
+		return nil, fmt.Errorf("deserialize schedule stage: %w", err)
+	}
+	if err := stage.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid schedule stage %d: %w", index, err)
+	}
+	if stage.ScheduleID != scheduleID {
+		return nil, fmt.Errorf("stage schedule ID %q does not match %q", stage.ScheduleID, scheduleID)
+	}
+	return &stage, nil
 }
 
 // stageFileName keys a stage by its index, zero padded so the on-disk order and

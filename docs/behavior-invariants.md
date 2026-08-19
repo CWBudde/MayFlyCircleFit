@@ -362,11 +362,31 @@ model: it stores nothing, so it cannot drift from the stage records.
   through its own project store, so the campaign listing walks every registered
   project rather than the default one alone. Each store is discovered on its own
   because lineage never crosses a project boundary.
+- **The stage listing is a projection, and it is bounded by the reader.**
+  `GET /api/v1/schedules/:id` carries index, kind, state, circles, cost, elapsed,
+  job and reason per stage — what the table prints and what the finish estimate
+  reads — and not the stage's `JobConfig`. Carrying the configuration cost about
+  1.2 kB a stage and put the response past the CLI's `MaxCLIResponseBytes` at
+  roughly 865 of the 4096 stages a schedule may legally expand to, which made
+  most legal campaigns unreadable from a terminal. `GET /api/v1/chains/:jobID` is
+  the same shape for the same reason. Elapsed travels as nanoseconds rather than
+  as the two timestamps it comes from, so the estimate computed from the listing
+  is identical to the one computed from the records. Raising the cap is not the
+  fix: a body that grows without bound with stage count moves the wall rather
+  than removing it.
+- **A stage's configuration is retrievable one stage at a time.**
+  `GET /api/v1/schedules/:id/stages/:index` answers the whole stage record,
+  configuration included, because replaying a single stage is what that record is
+  for. The equivalent for an imported chain is the job itself,
+  `GET /api/v1/jobs/:id/status`.
 - **The campaign seed is reported or declared absent, never zero.** A document
   that omits `seed` leaves the record's `campaignSeed` at the resolve-me
   sentinel; the seed that actually ran is read back from the first stage record,
   and before any stage has run both the view and the CLI say the seed is
-  unresolved instead of printing the zero.
+  unresolved instead of printing the zero. The web view reads the fallback off
+  the stage records it already holds; the CLI reads the campaign's own seed,
+  because its listing carries no stage configuration and every stage inherits
+  that one seed anyway.
 - **Accepted polishing sweeps are not persisted.** The batch polisher reports
   the count to the log only, so the column reports it as unrecorded on every
   stage. Populating it needs a stage-record field, not a view change.

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,12 +39,76 @@ type scheduleSummary struct {
 	Error        string              `json:"error,omitempty"`
 }
 
-// scheduleDetail adds the stage records, which are the single source of truth
+// scheduleDetail adds the stage listing, which is the single source of truth
 // for how far the campaign has got.
+//
+// The listing is a projection, not the stage records. A stage record carries
+// the whole normalized JobConfig it ran with, so a full listing grows by about
+// 1.2 kB per stage and passes the CLI's 1 MiB response cap at roughly 865 of
+// the 4096 stages a schedule may legally expand to. The projection carries what
+// a reader asks a campaign — where each stage got to and how long it took — and
+// a stage's configuration is fetched one stage at a time from
+// /api/v1/schedules/:id/stages/:index, which is the granularity replaying a
+// single stage actually needs.
 type scheduleDetail struct {
 	scheduleSummary
-	Document app.ScheduleDocument        `json:"document"`
-	Stages   []store.ScheduleStageRecord `json:"stages"`
+	Document app.ScheduleDocument   `json:"document"`
+	Stages   []scheduleStageSummary `json:"stages"`
+}
+
+// scheduleStageSummary is one realized stage without its configuration.
+//
+// Every field here is either printed by the stage table or read by the finish
+// projection; nothing else is included, because everything else is what made
+// the listing unreadable. Elapsed is sent as nanoseconds rather than as the two
+// timestamps it is derived from: it is shorter, and it is exact, so a
+// projection computed from the summary equals the one computed from the
+// records it summarizes. A stage that has not measured a wall clock leaves it
+// unset, which is not the same as a stage that measured nothing.
+//
+// The seed is deliberately not here: every stage of a campaign inherits the one
+// campaign seed, which the summary above already carries, so a per-stage copy
+// would be the same number 4096 times.
+type scheduleStageSummary struct {
+	Index   int                   `json:"index"`
+	Kind    app.ScheduleStageKind `json:"kind"`
+	State   store.ScheduleState   `json:"state"`
+	Circles int                   `json:"circles"`
+
+	BestCost     float64 `json:"bestCost,omitempty"`
+	ElapsedNanos *int64  `json:"elapsedNanos,omitempty"`
+
+	JobID string `json:"jobId,omitempty"`
+
+	Error  string `json:"error,omitempty"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// summarizeScheduleStages projects the recorded stages for the listing.
+func summarizeScheduleStages(stages []store.ScheduleStageRecord) []scheduleStageSummary {
+	summaries := make([]scheduleStageSummary, 0, len(stages))
+	for i := range stages {
+		summaries = append(summaries, summarizeScheduleStage(&stages[i]))
+	}
+	return summaries
+}
+
+func summarizeScheduleStage(stage *store.ScheduleStageRecord) scheduleStageSummary {
+	summary := scheduleStageSummary{
+		Index:    stage.Index,
+		Kind:     stage.Kind,
+		State:    stage.State,
+		Circles:  stage.Circles,
+		BestCost: stage.BestCost,
+		JobID:    stage.JobID,
+		Error:    stage.Error,
+		Reason:   stage.Reason,
+	}
+	if stage.StartedAt != nil && stage.CompletedAt != nil {
+		elapsed := stage.CompletedAt.Sub(*stage.StartedAt).Nanoseconds()
+		summary.ElapsedNanos = &elapsed
+	}
+	return summary
 }
 
 func summarizeSchedule(record *store.ScheduleRecord) scheduleSummary {
@@ -96,6 +161,8 @@ func (s *Server) handleSchedulesWithID(w http.ResponseWriter, r *http.Request) {
 		s.handleGetSchedule(w, r, scheduleID)
 	case len(parts) == 2 && (parts[1] == "cancel" || parts[1] == "pause" || parts[1] == "resume"):
 		s.handleScheduleAction(w, r, scheduleID, parts[1])
+	case len(parts) == 3 && parts[1] == "stages" && parts[2] != "":
+		s.handleGetScheduleStage(w, r, scheduleID, parts[2])
 	default:
 		writeAPIError(w, http.StatusNotFound, "not_found", "resource not found")
 	}
@@ -203,15 +270,52 @@ func (s *Server) handleGetSchedule(w http.ResponseWriter, r *http.Request, sched
 		writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to load schedule stages")
 		return
 	}
-	if stages == nil {
-		stages = []store.ScheduleStageRecord{}
-	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(scheduleDetail{
 		scheduleSummary: summarizeSchedule(record),
 		Document:        record.Document,
-		Stages:          stages,
+		Stages:          summarizeScheduleStages(stages),
 	})
+}
+
+// handleGetScheduleStage handles GET /api/v1/schedules/:id/stages/:index and
+// answers with the whole stage record, configuration included.
+//
+// This is the endpoint that keeps the listing small: replaying one stage is the
+// reason the configuration is recorded, and that is a question about one stage.
+func (s *Server) handleGetScheduleStage(w http.ResponseWriter, r *http.Request, scheduleID, rawIndex string) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+	index, err := strconv.Atoi(rawIndex)
+	if err != nil || index < 0 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_stage_index", "stage index must be a non-negative integer")
+		return
+	}
+	scheduleStore, err := s.scheduleStore()
+	if err != nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "schedules_unavailable", err.Error())
+		return
+	}
+	// The schedule is loaded first so an unknown campaign answers as a missing
+	// schedule rather than as a missing stage.
+	if _, err := scheduleStore.LoadSchedule(scheduleID); err != nil {
+		writeScheduleLoadError(w, err)
+		return
+	}
+	stage, err := scheduleStore.LoadScheduleStage(scheduleID, index)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "not_found", "no stage recorded at that index")
+			return
+		}
+		writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to load the schedule stage")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(stage)
 }
 
 // handleScheduleAction handles the cancel, pause, and resume verbs. All three

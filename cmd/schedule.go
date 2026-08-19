@@ -128,21 +128,37 @@ type scheduleSummaryResponse struct {
 
 type scheduleDetailResponse struct {
 	scheduleSummaryResponse
-	Document app.ScheduleDocument        `json:"document"`
-	Stages   []store.ScheduleStageRecord `json:"stages"`
+	Document app.ScheduleDocument           `json:"document"`
+	Stages   []scheduleStageSummaryResponse `json:"stages"`
 }
 
+// scheduleStageSummaryResponse mirrors the server's stage projection. The
+// listing deliberately does not carry each stage's JobConfig: a campaign may
+// expand to 4096 stages, and the configuration alone put the response past the
+// CLI's response cap at roughly 865 of them. A stage's configuration is fetched
+// one stage at a time from /schedules/:id/stages/:index.
+type scheduleStageSummaryResponse struct {
+	Index        int                   `json:"index"`
+	Kind         app.ScheduleStageKind `json:"kind"`
+	State        store.ScheduleState   `json:"state"`
+	Circles      int                   `json:"circles"`
+	BestCost     float64               `json:"bestCost,omitempty"`
+	ElapsedNanos *int64                `json:"elapsedNanos,omitempty"`
+	JobID        string                `json:"jobId,omitempty"`
+	Error        string                `json:"error,omitempty"`
+	Reason       string                `json:"reason,omitempty"`
+}
+
+// chainStageResponse mirrors the server's chain stage projection, which carries
+// the table's columns and nothing else for the same reason the schedule listing
+// does: a chain is as long as the campaign that built it.
 type chainStageResponse struct {
-	Index       int       `json:"index"`
-	Kind        string    `json:"kind"`
-	JobID       string    `json:"jobId"`
-	ParentJobID string    `json:"parentJobId,omitempty"`
-	Circles     int       `json:"circles"`
-	BestCost    float64   `json:"bestCost"`
-	Iterations  int       `json:"iterations"`
-	Evaluations int64     `json:"evaluations"`
-	Termination string    `json:"termination,omitempty"`
-	Timestamp   time.Time `json:"timestamp"`
+	Index      int     `json:"index"`
+	Kind       string  `json:"kind"`
+	JobID      string  `json:"jobId"`
+	Circles    int     `json:"circles"`
+	BestCost   float64 `json:"bestCost"`
+	Iterations int     `json:"iterations"`
 }
 
 type chainDetailResponse struct {
@@ -244,21 +260,6 @@ func runScheduleStatus(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// detailCampaignSeed recovers the seed a campaign is actually running with. The
-// record only carries it when the document named one; otherwise the resolved
-// seed lives in the configuration of the first stage that ran.
-func detailCampaignSeed(detail scheduleDetailResponse) int64 {
-	if detail.CampaignSeed != 0 {
-		return detail.CampaignSeed
-	}
-	for _, stage := range detail.Stages {
-		if stage.Config.EffectiveSeed != 0 {
-			return stage.Config.EffectiveSeed
-		}
-	}
-	return 0
-}
-
 func printScheduleDetail(output io.Writer, detail scheduleDetailResponse, asOf time.Time) {
 	fmt.Fprintf(output, "Schedule: %s\n", detail.ScheduleID)
 	if detail.Name != "" {
@@ -266,7 +267,7 @@ func printScheduleDetail(output io.Writer, detail scheduleDetailResponse, asOf t
 	}
 	fmt.Fprintf(output, "State: %s\n", detail.State)
 	fmt.Fprintf(output, "Stages: %d recorded of %d planned\n", len(detail.Stages), detail.TotalStages)
-	fmt.Fprintf(output, "Seed: %s\n", formatCampaignSeed(detailCampaignSeed(detail)))
+	fmt.Fprintf(output, "Seed: %s\n", formatCampaignSeed(detail.CampaignSeed))
 	if detail.Error != "" {
 		// The same field carries both, so the label follows the state: a paused
 		// campaign stopped where it was told to, and calling that an error
@@ -367,14 +368,14 @@ func formatCLIPSNR(cost float64) string {
 	}
 }
 
-func formatStageElapsed(stage store.ScheduleStageRecord) string {
-	if stage.StartedAt == nil || stage.CompletedAt == nil {
+func formatStageElapsed(stage scheduleStageSummaryResponse) string {
+	if stage.ElapsedNanos == nil {
 		return "-"
 	}
-	return stage.CompletedAt.Sub(*stage.StartedAt).Round(time.Second).String()
+	return time.Duration(*stage.ElapsedNanos).Round(time.Second).String()
 }
 
-func stageNoteText(stage store.ScheduleStageRecord) string {
+func stageNoteText(stage scheduleStageSummaryResponse) string {
 	if stage.Error != "" {
 		return stage.Error
 	}

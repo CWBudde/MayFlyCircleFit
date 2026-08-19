@@ -159,6 +159,51 @@ func TestSaveScheduleStageIsIdempotentPerIndex(t *testing.T) {
 	}
 }
 
+// TestLoadScheduleStageReadsOneStage covers the single-stage read the schedule
+// listing leans on: the listing carries no configuration, so the configuration
+// a stage ran with has to be readable on its own.
+func TestLoadScheduleStageReadsOneStage(t *testing.T) {
+	fsStore, _ := newScheduleStore(t)
+	record := testScheduleRecord(t)
+	if err := fsStore.SaveSchedule(record); err != nil {
+		t.Fatalf("SaveSchedule() error = %v", err)
+	}
+	stages, err := record.Document.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	stage := NewScheduleStageRecord(testScheduleID, stages[1])
+	stage.JobID = testBaseJobID
+	stage.State = ScheduleStateCompleted
+	if err := fsStore.SaveScheduleStage(testScheduleID, stage); err != nil {
+		t.Fatalf("SaveScheduleStage() error = %v", err)
+	}
+
+	loaded, err := fsStore.LoadScheduleStage(testScheduleID, stage.Index)
+	if err != nil {
+		t.Fatalf("LoadScheduleStage() error = %v", err)
+	}
+	if loaded.Index != stage.Index || loaded.JobID != stage.JobID {
+		t.Fatalf("LoadScheduleStage() = (%d, %q), want (%d, %q)",
+			loaded.Index, loaded.JobID, stage.Index, stage.JobID)
+	}
+	if loaded.Config.Circles != stage.Config.Circles || loaded.Config.EffectiveSeed != stage.Config.EffectiveSeed {
+		t.Fatalf("LoadScheduleStage() config = %+v, want the recorded configuration", loaded.Config)
+	}
+
+	if _, err := fsStore.LoadScheduleStage(testScheduleID, stage.Index+1); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("LoadScheduleStage() for an unrecorded stage error = %v, want ErrNotFound", err)
+	}
+	if _, err := fsStore.LoadScheduleStage(testScheduleID, -1); err == nil {
+		t.Fatal("LoadScheduleStage() accepted a negative index")
+	}
+	// A well-formed identifier that names no schedule is a missing schedule,
+	// not a missing stage file inside one.
+	if _, err := fsStore.LoadScheduleStage(testStageJobID, stage.Index); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("LoadScheduleStage() for an unknown schedule error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestScheduleStoreNotFoundAndListing(t *testing.T) {
 	fsStore, _ := newScheduleStore(t)
 	if _, err := fsStore.LoadSchedule(testScheduleID); !errors.Is(err, ErrNotFound) {

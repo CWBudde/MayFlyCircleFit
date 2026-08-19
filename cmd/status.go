@@ -17,7 +17,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const maxCLIResponseBytes = 1 << 20
+// maxCLIResponseBytes is the shared limit; the server side of the contract is
+// app.MaxCLIResponseBytes, which every endpoint the CLI reads must stay under.
+const maxCLIResponseBytes = app.MaxCLIResponseBytes
 
 var (
 	serverURL = "http://localhost:8080"

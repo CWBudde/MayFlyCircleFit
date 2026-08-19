@@ -23,6 +23,12 @@ const (
 	MaxImageFileSize   = 64 << 20
 	MaxRequestBody     = 1 << 20
 	MaxProjectSlugLen  = 64
+
+	// MaxCLIResponseBytes bounds what the CLI will decode from a server
+	// response. It lives here rather than in cmd because the server is what has
+	// to stay under it: an endpoint whose body grows with a campaign's stage
+	// count is the reason a 1016-stage campaign could not be printed at all.
+	MaxCLIResponseBytes = 1 << 20
 )
 
 // The polishing budget defaults are a measurement, not an inheritance. Each is
