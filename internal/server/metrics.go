@@ -18,6 +18,17 @@ func qualitySample(iteration int, cost float64, ssim *float64, timestamp time.Ti
 	}
 }
 
+// throughputCPS reports circles evaluated per second for the work this job
+// stage actually performed. A continuation inherits its parent's evaluation
+// count but not its runtime, so the inherited total measured against the
+// stage-local clock would report a throughput the machine never reached.
+func throughputCPS(stageEvaluations, circles int, elapsed float64) float64 {
+	if elapsed <= 0 || stageEvaluations <= 0 || circles <= 0 {
+		return 0
+	}
+	return float64(stageEvaluations*circles) / elapsed
+}
+
 func serializablePSNR(mse float64) (*float64, bool) {
 	value := fit.PSNR(mse)
 	if math.IsInf(value, 1) {

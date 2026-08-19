@@ -41,3 +41,25 @@ func TestShouldSampleSSIM(t *testing.T) {
 		})
 	}
 }
+
+func TestThroughputCPS(t *testing.T) {
+	tests := []struct {
+		name             string
+		stageEvaluations int
+		circles          int
+		elapsed          float64
+		want             float64
+	}{
+		{name: "stage work", stageEvaluations: 100, circles: 8, elapsed: 2, want: 400},
+		{name: "no elapsed time", stageEvaluations: 100, circles: 8, elapsed: 0, want: 0},
+		{name: "inherited only", stageEvaluations: 0, circles: 8, elapsed: 2, want: 0},
+		{name: "no circles", stageEvaluations: 100, circles: 0, elapsed: 2, want: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := throughputCPS(test.stageEvaluations, test.circles, test.elapsed); got != test.want {
+				t.Fatalf("throughputCPS() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}

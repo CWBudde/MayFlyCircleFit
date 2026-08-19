@@ -1369,13 +1369,26 @@ templ JobDetailPage(job JobDetail) {
 						if (candidate < distance) { nearest = point; distance = candidate; }
 					});
 					renderSparklineHover(nearest);
-					if (sparklineTooltip && hoveredSample && sparklineInteraction) {
-						const pointX = sparklineInteraction.xPosition(hoveredSample.iteration);
-						const pointY = sparklineInteraction.yPosition(hoveredSample.value);
-						const left = pointX + 12;
-						const top = pointY - 28;
+					const container = document.getElementById("cost-sparkline-container");
+					if (sparklineTooltip && hoveredSample && sparklineInteraction && container) {
+						// xPosition/yPosition are viewBox units; the SVG is scaled to the
+						// card width and sits below the controls, so both the scale and the
+						// SVG's offset inside the container have to be applied before the
+						// tooltip can be placed in CSS pixels.
+						const containerRect = container.getBoundingClientRect();
+						const scaleX = sparklineInteraction.width === 0 ? 1 : rect.width / sparklineInteraction.width;
+						const scaleY = sparklineInteraction.height === 0 ? 1 : rect.height / sparklineInteraction.height;
+						const offsetX = rect.left - containerRect.left;
+						const offsetY = rect.top - containerRect.top;
+						const pointX = offsetX + sparklineInteraction.xPosition(hoveredSample.iteration) * scaleX;
+						const pointY = offsetY + sparklineInteraction.yPosition(hoveredSample.value) * scaleY;
+						const tooltipWidth = sparklineTooltip.offsetWidth;
+						const tooltipHeight = sparklineTooltip.offsetHeight;
+						const maxLeft = Math.max(8, containerRect.width - tooltipWidth - 8);
+						const left = Math.min(Math.max(8, pointX + 12), maxLeft);
+						const top = Math.min(Math.max(8, pointY - tooltipHeight - 8), Math.max(8, containerRect.height - tooltipHeight - 8));
 						sparklineTooltip.style.left = `${left}px`;
-						sparklineTooltip.style.top = `${Math.max(8, top)}px`;
+						sparklineTooltip.style.top = `${top}px`;
 					}
 				}
 
