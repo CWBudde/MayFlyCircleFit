@@ -175,10 +175,33 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	metricCost := job.BestCost
 	metricParams := append([]float64(nil), job.BestParams...)
 	if len(job.BestParams) == 0 {
-		metricParams = make([]float64, job.Config.Circles*7)
+		metricParams = make([]float64, job.Config.Circles*app.ParamsPerCircle)
 		initialCost = rend.Cost(metricParams)
 		metricCost = initialCost
-		_ = jm.UpdateJob(jobID, func(live *Job) { live.InitialCost = initialCost })
+		// A hand-authored arrangement seeds the run here, and only here: this is
+		// the branch for a job with no parent, so a continuation's inherited
+		// parameters can never be overwritten by a spec the schedule copied
+		// forward. initialCost stays the blank-canvas cost either way, because
+		// that is what every other run and every continuation measures its
+		// improvement against.
+		if len(job.Config.InitialCircles) > 0 {
+			seeded, seedErr := initialCircleParams(job.Config, ref)
+			if seedErr != nil {
+				markJobFailed(jm, jobID, seedErr)
+				return seedErr
+			}
+			metricParams = seeded
+			metricCost = rend.Cost(seeded)
+			job.BestParams = seeded
+			job.BestCost = metricCost
+			seededParams, seededCost := seeded, metricCost
+			_ = jm.UpdateJob(jobID, func(live *Job) {
+				live.InitialCost = initialCost
+				updateBestResult(live, seededParams, seededCost)
+			})
+		} else {
+			_ = jm.UpdateJob(jobID, func(live *Job) { live.InitialCost = initialCost })
+		}
 	}
 	var initialSSIM *float64
 	if job.Config.EnableSSIM {
@@ -195,6 +218,10 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		metricCleanup()
 	}
 	initialSample := qualitySample(baseIterations, metricCost, initialSSIM, start)
+	// No evaluation of this stage has run yet, so its throughput is zero even
+	// when the job inherited a parent's evaluation count.
+	initialSample.CPS = 0
+	initialSample.Evaluations = baseEvaluations
 	_ = jm.RecordMetrics(jobID, initialSample)
 
 	var traceWriter *store.TraceWriter
@@ -243,6 +270,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 			}
 		}
 		sample := qualitySample(iterations, progress.BestCost, sampledSSIM, now)
+		sample.Evaluations = evaluations
+		sample.CPS = throughputCPS(progress.Evaluations, job.Config.Circles, now.Sub(start).Seconds())
 		if traceWriter != nil {
 			_ = traceWriter.Write(traceEntry(sample))
 		}
@@ -257,11 +286,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 			if !ok {
 				return
 			}
-			elapsed := now.Sub(start).Seconds()
-			cps := 0.0
-			if elapsed > 0 {
-				cps = float64(evaluations*job.Config.Circles) / elapsed
-			}
+			cps := sample.CPS
 			_ = jm.RecordMetrics(jobID, sample)
 			candidatePSNR, candidatePSNRInfinite := serializableCandidatePSNR(candidateCost)
 			jm.broadcaster.Broadcast(ProgressEvent{
@@ -446,6 +471,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		finalSSIM = calculateSSIM(result.BestImage, ref, jobID)
 	}
 	finalSample := qualitySample(iterations, result.BestCost, finalSSIM, completedAt)
+	finalSample.Evaluations = evaluations
+	finalSample.CPS = throughputCPS(result.Evaluations, job.Config.Circles, time.Since(start).Seconds())
 	_ = jm.RecordMetrics(jobID, finalSample)
 	if len(circleData) > 0 {
 		if err := checkpointStore.SaveCircleData(jobID, circleData); err != nil {
@@ -479,11 +506,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		return err
 	}
 
-	elapsed := time.Since(start).Seconds()
-	cps := 0.0
-	if elapsed > 0 {
-		cps = float64(result.Evaluations*job.Config.Circles) / elapsed
-	}
+	cps := throughputCPS(result.Evaluations, job.Config.Circles, time.Since(start).Seconds())
 	bestCost, bestRevision, _, _ := jm.bestSnapshot(jobID)
 	jm.broadcaster.Broadcast(ProgressEvent{
 		JobID: jobID, State: StateCompleted, Iterations: iterations, Evaluations: evaluations,
@@ -647,6 +670,35 @@ func parallelEvaluationOption(config store.JobConfig, rend renderer.Renderer) op
 	}
 	return option
 }
+
+// initialCircleParams converts a hand-authored arrangement into the optimizer's
+// parameter vector, refusing any circle the canvas cannot hold.
+//
+// It refuses rather than clamps on purpose. Clamping is right for a candidate
+// the optimizer proposed -- it explores past the edges and is pulled back -- but
+// a hand-placed circle that silently moves is a run that no longer matches the
+// document describing it, and the cost it reports would be unexplainable.
+func initialCircleParams(config store.JobConfig, ref *image.NRGBA) ([]float64, error) {
+	params, err := config.InitialCircles.ToParams()
+	if err != nil {
+		return nil, err
+	}
+	bounds := fit.NewBounds(config.Circles, ref.Bounds().Dx(), ref.Bounds().Dy())
+	clamped := append([]float64(nil), params...)
+	bounds.ClampVector(clamped)
+	for i := range params {
+		if params[i] == clamped[i] {
+			continue
+		}
+		return nil, fmt.Errorf("initialCircles[%d].%s is outside the bounds this canvas allows",
+			i/app.ParamsPerCircle, initialCircleFields[i%app.ParamsPerCircle])
+	}
+	return params, nil
+}
+
+// initialCircleFields names the slots of one circle in the parameter vector so
+// a rejected value can say which one it was.
+var initialCircleFields = [app.ParamsPerCircle]string{"x", "y", "r", "color.r", "color.g", "color.b", "opacity"}
 
 func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (renderer.Renderer, func(), error) {
 	if config.CanvasPath != "" {

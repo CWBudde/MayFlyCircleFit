@@ -241,6 +241,18 @@ type JobConfig struct {
 	StopMinImprovement  float64 `json:"stopMinImprovement,omitempty"`
 	StopStagnationIters int     `json:"stopStagnationIters,omitempty"`
 	StopMinIters        int     `json:"stopMinIters,omitempty"`
+
+	// InitialCircles starts the run from a hand-authored arrangement instead of
+	// a random one. It is the only way to supply explicit circle parameters:
+	// every other warm start in the system comes from a checkpoint, and a
+	// checkpoint is written by a run, not by an operator.
+	//
+	// It applies to the run that owns it and to nothing downstream. A
+	// continuation -- a resume, an extend, a polish, or any scheduled stage
+	// after the base -- already carries its parent's parameters, and those win;
+	// see the seeding block in the server worker. Schedule expansion clears the
+	// field on every stage past the base for the same reason.
+	InitialCircles CircleSpecs `json:"initialCircles,omitempty"`
 }
 
 // EarlyStopEnabled reports whether optimizer-level early stopping is configured.
@@ -308,6 +320,13 @@ func (c *JobConfig) ApplyDefaults() error {
 	if c.BatchSize == 0 {
 		c.BatchSize = defaults.BatchSize
 		if c.Circles > 0 && c.BatchSize > c.Circles {
+			c.BatchSize = c.Circles
+		}
+		// An authored arrangement is a full vector, and only a full-size batch
+		// is one optimizer stage over the whole vector. Leaving the default at
+		// five would queue a seeded ten-circle run that the batch dispatch then
+		// refuses, so the default follows the seed rather than the constant.
+		if len(c.InitialCircles) > 0 && c.Circles > 0 {
 			c.BatchSize = c.Circles
 		}
 	}
@@ -378,6 +397,7 @@ func (c *JobConfig) ApplyDefaults() error {
 	if c.ConvergenceThreshold == 0 {
 		c.ConvergenceThreshold = defaults.ConvergenceThreshold
 	}
+	c.InitialCircles.ApplyDefaults()
 	if c.EffectiveSeed == 0 {
 		if c.Seed != 0 {
 			c.EffectiveSeed = c.Seed
@@ -511,6 +531,29 @@ func (c JobConfig) Validate() error {
 	}
 	if c.StopMinIters < 0 || c.StopMinIters > c.Iters {
 		return invalid("stopMinIters", fmt.Sprintf("must be between 0 and iters (%d)", c.Iters))
+	}
+	if len(c.InitialCircles) > 0 {
+		// Batch mode only, because that is the mode whose optimizer receives the
+		// whole vector at once. Sequential and joint runs build their vector as
+		// they go, so a full arrangement handed to them would be partly ignored
+		// -- worse than refused, because the run would look seeded and not be.
+		if c.Mode != ModeBatch {
+			return invalid("initialCircles", "requires batch mode")
+		}
+		if len(c.InitialCircles) != c.Circles {
+			return invalid("initialCircles", fmt.Sprintf("must supply exactly circles (%d) entries, got %d", c.Circles, len(c.InitialCircles)))
+		}
+		// The same argument as the mode restriction, one level down: a batch
+		// smaller than the circle count optimizes the vector in chunks, so it
+		// would seed the first chunk and discard the rest. Refused here rather
+		// than at dispatch, where it would surface as a failed run instead of a
+		// rejected configuration.
+		if c.BatchSize < c.Circles {
+			return invalid("initialCircles", fmt.Sprintf("requires batchSize to cover every circle (batchSize %d, circles %d)", c.BatchSize, c.Circles))
+		}
+		if err := c.InitialCircles.Validate(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

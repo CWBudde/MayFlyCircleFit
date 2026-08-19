@@ -193,3 +193,53 @@ The optimizer determines for each circle:
 - **Set seed for reproducibility**: Same seed = same results (for testing/debugging)
 - **Canvas continuation**: Use canvasPath to continue from previous optimization
 - **Monitor convergence**: Check if optimization stopped early due to convergence (logged in job status)
+
+## Handcrafted campaign: `christian-16-handcrafted-v6.json`
+
+The campaigns in this directory all target `Christian_after.jpeg` and all start
+from a random population. This one does not: its first eight circles were placed
+by hand, from looking at the image, and the campaign grows them to sixteen.
+
+The eight, painted back to front — a light gray backdrop, a navy shirt whose
+centre sits below the canvas so only its cap shows, a dark hair mass, the face
+over it, the beard, the brighter bald forehead, the neck wedge that punches
+through the shirt, and the cream V-neck collar:
+
+| # | Role | x | y | r | colour |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Background | 256 | 256 | 400 | `#c8cbd0` |
+| 2 | T-shirt | 256 | 660 | 300 | `#232650` |
+| 3 | Hair mass | 256 | 240 | 165 | `#4a3226` |
+| 4 | Face | 258 | 215 | 115 | `#eda587` |
+| 5 | Beard | 256 | 330 | 78 | `#a06a52` |
+| 6 | Forehead | 256 | 155 | 72 | `#f8b294` |
+| 7 | Neck / chin | 268 | 480 | 70 | `#b98a72` |
+| 8 | Collar | 352 | 445 | 40 | `#ece0d3` |
+
+Score them without running anything:
+
+```sh
+mayflycirclefit score --ref example/Christian_after.jpeg \
+    --circles example/christian-16-handcrafted-v6.json --out handcrafted.png
+```
+
+```
+circles:    8
+canvas:     512x512
+cost:       2417.8846
+psnr:       14.2964 dB
+blank cost: 15738.7879
+```
+
+The base stage runs `"iters": 1`, so it records that arrangement and its cost
+rather than searching — the campaign's first stage is the handcrafted result.
+Fourteen stages follow the usual shape: four polish sweeps over the eight, `+4`
+to twelve, three sweeps, `+4` to sixteen, four more sweeps.
+
+```sh
+mayflycirclefit schedule create --dry-run example/christian-16-handcrafted-v6.json
+mayflycirclefit schedule create example/christian-16-handcrafted-v6.json
+```
+
+The point of the experiment is the comparison: how much of the final cost is
+structure a human can supply in a minute, and how much is search.

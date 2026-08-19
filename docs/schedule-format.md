@@ -100,6 +100,116 @@ by a dry run marked `conditional:` with its condition spelled out, and decided
 against the recorded outcomes when it comes up. A skipped stage is recorded with
 the reason it was declined, so the records account for every planned stage.
 
+## Starting from a hand-placed arrangement
+
+`base.initialCircles` seeds the campaign from circles someone placed by hand
+instead of from a random population. It is the only way to supply explicit
+circle parameters: every other warm start in the system comes from a checkpoint,
+and a checkpoint is written by a run, not by an operator.
+
+```json
+"base": {
+  "mode": "batch",
+  "circles": 8,
+  "initialCircles": [
+    {"x": 256, "y": 256, "r": 400, "color": "#c8cbd0"},
+    {"x": 256, "y": 660, "r": 300, "color": "#232650", "opacity": 1}
+  ]
+}
+```
+
+Entries are painted back to front, exactly like the parameter vector they
+become: the first is the backdrop and the last is on top. `opacity` is optional
+and defaults to 1. A centre may sit off-canvas — half a canvas dimension past
+each edge, the same bound the optimizer explores under — which is how a large
+circle contributes only its cap.
+
+Four rules keep the field honest:
+
+- **Batch mode only, and exactly `circles` entries.** Batch is the mode whose
+  optimizer receives the whole vector at once. A sequential or joint run builds
+  its vector as it goes, so a full arrangement handed to one would be partly
+  ignored — worse than refused, because the run would look seeded and not be.
+- **`batchSize` must cover every circle.** The same argument one level down: a
+  batch smaller than the circle count optimizes the vector in chunks and would
+  seed the first chunk only. Omit `batchSize` and it follows the seed instead of
+  the default of five; set it smaller and the configuration is refused.
+- **Out of bounds is refused, not clamped.** Clamping is right for a candidate
+  the optimizer proposed; a hand-placed circle that silently moves is a run that
+  no longer matches the document describing it.
+- **The base stage only.** Expansion clears the field on every later stage, and
+  the worker prefers a parent's parameters over any spec that reached it anyway.
+  A continuation is seeded from its parent checkpoint, always.
+
+`initialCircles` changes where a run starts, not what it costs to run. The base
+stage still executes its configured budget; giving it `"iters": 1` makes it a
+recording step, so the campaign's first stage is the authored arrangement and
+its cost, and the polish steps that follow do the work.
+
+Score an arrangement before committing it to a campaign:
+
+```sh
+mayflycirclefit score --ref example/Christian_after.jpeg \
+    --circles example/christian-16-handcrafted-v6.json --out preview.png
+```
+
+`score` takes either a bare JSON array of specifications or a schedule document,
+in which case it reads `base.initialCircles`. It renders with the same CPU
+renderer a run uses — including the base stage's `canvasPath`, so the cost is
+measured against the canvas the campaign will actually start from — and prints
+the cost, the PSNR, and the blank-canvas cost the arrangement improved on.
+Scoring the campaign file directly is the point: the number then describes the
+document that will actually run.
+
+## `pauseBefore`: a barrier
+
+`pauseBefore` on a step makes the stage it produces a barrier. The campaign runs
+everything before it and then pauses; the barred stage and everything after it
+stay planned but unstarted, and `schedule resume` releases it.
+
+```json
+{"type": "polish", "strategy": "replacement"},
+{"type": "extend", "additionalCircles": 4, "pauseBefore": true}
+```
+
+It is how a document says "go this far for now" without the plan having to be
+edited down and edited back — which matters because the edited-back version is a
+different document, and a campaign is only comparable to another campaign that
+planned the same stages.
+
+A dry run states it before the table, so how far a run will get is not something
+a reader has to infer from fourteen rows:
+
+```
+Barrier: runs stages 0-4, then pauses before stage 5 (extend, 12 circles).
+         Everything after it stays planned; `schedule resume` releases it.
+```
+
+Three properties are worth knowing:
+
+- **It is not a `when` condition.** A condition decides whether a stage runs at
+  all, and is refused on extend because skipping one would move every later
+  stage's circle count. A barrier skips nothing — it only stops — so it is legal
+  on either kind.
+- **Nothing is recorded for the barred stage.** The check runs before policy and
+  before the stage record is written, so a paused campaign leaves no
+  half-decided stage behind and the next resume starts exactly there.
+- **On a repeated step it marks the first repetition only.** `repeat: 4` with a
+  barrier means "stop before the first of the four", which is what makes it
+  readable as a single point in the plan.
+
+The pause is durable and pollable, which is what makes it a signal rather than
+just a stop. `schedule status` reports it, and the reason names the stage:
+
+```
+State: paused
+Paused: paused at the barrier before stage 5 (extend, 12 circles); resume to continue
+```
+
+Releasing happens as part of the resume: the schedule record carries
+`releasedThroughStage`, so a resumed campaign runs past the barrier instead of
+meeting it again and pausing forever.
+
 ## Two validation traps worth knowing
 
 **A field the defaults would replace is an error.** The parser refuses any

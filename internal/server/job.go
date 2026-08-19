@@ -86,9 +86,11 @@ type Job struct {
 type MetricSample struct {
 	Iteration    int       `json:"iteration"`
 	Cost         float64   `json:"cost"`
+	Evaluations  int       `json:"evaluations"`
 	PSNR         *float64  `json:"psnr"`
 	PSNRInfinite bool      `json:"psnrInfinite,omitempty"`
 	SSIM         *float64  `json:"ssim,omitempty"`
+	CPS          float64   `json:"cps"`
 	Timestamp    time.Time `json:"timestamp"`
 }
 
@@ -166,6 +168,10 @@ func (jm *JobManager) CreateJobWithID(id string, project app.Project, config Job
 		return nil, &duplicateJobError{jobID: id, owner: app.NormalizeProject(existing.Project)}
 	}
 
+	// The caller keeps its own copy of the configuration, so the authored
+	// arrangement is cloned rather than aliased: a slice shared with a caller is
+	// live job state that can be written without the manager lock.
+	config.InitialCircles = cloneCircleSpecs(config.InitialCircles)
 	job := &Job{
 		ID:        id,
 		Project:   app.NormalizeProject(project),
@@ -531,6 +537,11 @@ func cloneJob(job *Job) *Job {
 	}
 
 	cloned := *job
+	// Config is copied by value, which leaves its one slice field shared. A
+	// reader mutating the circles it got from GetJob or ListJobs would otherwise
+	// be writing the live job, outside the lock and possibly while the worker is
+	// seeding from it.
+	cloned.Config.InitialCircles = cloneCircleSpecs(job.Config.InitialCircles)
 	cloned.BestParams = append([]float64(nil), job.BestParams...)
 	cloned.CandidateCost = cloneFloat(job.CandidateCost)
 	cloned.PSNR = cloneFloat(job.PSNR)
@@ -546,6 +557,15 @@ func cloneJob(job *Job) *Job {
 		cloned.EndTime = &endTime
 	}
 	return &cloned
+}
+
+// cloneCircleSpecs copies an authored arrangement, preserving nil so a job that
+// was never seeded keeps saying so in JSON.
+func cloneCircleSpecs(specs app.CircleSpecs) app.CircleSpecs {
+	if specs == nil {
+		return nil
+	}
+	return append(app.CircleSpecs(nil), specs...)
 }
 
 func cloneFloat(value *float64) *float64 {

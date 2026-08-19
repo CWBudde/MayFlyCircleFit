@@ -98,9 +98,18 @@ type ScheduleRecord struct {
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 
-	// Error records why a failed schedule stopped. It is free text for an
-	// operator, never a control signal.
+	// Error records why a schedule stopped short — a failure, or the barrier it
+	// paused at. It is free text for an operator, never a control signal.
 	Error string `json:"error,omitempty"`
+
+	// ReleasedThroughStage is the highest barrier an operator has already
+	// released with a resume. Without it a resumed campaign would meet the same
+	// `pauseBefore` stage, find no record for it, and pause again forever.
+	//
+	// Zero is the correct default rather than a sentinel: stage zero is the
+	// base, which no step can put a barrier on, so "released through nothing"
+	// and "released through stage zero" mean the same thing.
+	ReleasedThroughStage int `json:"releasedThroughStage,omitempty"`
 }
 
 // NewScheduleRecord seeds a pending record from an accepted document. The

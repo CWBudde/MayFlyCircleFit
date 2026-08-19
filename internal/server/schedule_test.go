@@ -865,3 +865,37 @@ func TestScheduleStageOutcomesMarkOnlyCompletedCostsAsMeasured(t *testing.T) {
 		}
 	}
 }
+
+// TestScheduleBarrierPausesBeforeTheStageAndResumeReleasesIt is the whole
+// contract of a barrier: the campaign stops where the document said, the
+// barred stage is not recorded at all (so nothing has to be undone), the reason
+// is durable enough to poll, and one resume carries it past — rather than
+// walking straight back into the same barrier.
+func TestScheduleBarrierPausesBeforeTheStageAndResumeReleasesIt(t *testing.T) {
+	fixture := newScheduleFixture(t, 2)
+	document := fmt.Sprintf(`{
+  "name": "barrier campaign",
+  "seed": 42,
+  "base": {"refPath": %q, "mode": "batch", "circles": 2, "batchSize": 1, "iters": 5, "popSize": 20},
+  "steps": [{"type": "extend", "additionalCircles": 1, "pauseBefore": true}]
+}`, fixture.imagePath)
+	scheduleID := fixture.createScheduleWithStages(t, document, 2)
+
+	fixture.waitForScheduleState(t, scheduleID, store.ScheduleStatePaused, 30*time.Second)
+	record := fixture.schedule(t, scheduleID)
+	if record.Error == "" {
+		t.Fatal("a barrier pause recorded no reason; there is nothing for an operator to poll")
+	}
+	// The barred stage must be untouched, not recorded and rolled back.
+	if stages := fixture.stages(t, scheduleID); len(stages) != 1 {
+		t.Fatalf("recorded %d stages at the barrier, want only the base", len(stages))
+	}
+
+	if recorder := fixture.post(t, "/api/v1/schedules/"+scheduleID+"/resume"); recorder.Code != http.StatusAccepted {
+		t.Fatalf("resume status = %d, body %s", recorder.Code, recorder.Body.String())
+	}
+	fixture.waitForScheduleState(t, scheduleID, store.ScheduleStateCompleted, 60*time.Second)
+	if stages := fixture.stages(t, scheduleID); len(stages) != 2 {
+		t.Fatalf("resumed campaign recorded %d stages, want 2", len(stages))
+	}
+}

@@ -1140,6 +1140,7 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 	}
 
 	config := source.config
+	config.InitialCircles = nil
 	config.PolishingEnabled = true
 	config.PolishingOnly = true
 	if request.Strategy != nil {
@@ -1248,6 +1249,13 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 	}
 
 	config := source.config
+	// A continuation is seeded from its parent checkpoint, never from the
+	// arrangement someone authored for the parent. Carrying the list forward
+	// would be ignored at best, and here it is worse than ignored: the exact
+	// count check would reject every extension of a seeded job, because the
+	// retained list still holds the parent's circle count. Schedule expansion
+	// clears the field for the same reason.
+	config.InitialCircles = nil
 	config.Circles += request.AdditionalCircles
 	config.BatchSize = min(request.AdditionalCircles, app.MaxBatchSize)
 	config.PolishingEnabled = false

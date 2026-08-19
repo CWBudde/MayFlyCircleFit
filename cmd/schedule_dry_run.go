@@ -71,8 +71,10 @@ func printSchedulePlan(output io.Writer, path string, document *app.ScheduleDocu
 		fmt.Fprintln(output, "Seed: automatic — resolved at submission, so this plan is not reproducible;")
 		fmt.Fprintln(output, "      set \"seed\" in the document to pin it.")
 	}
-	fmt.Fprintf(output, "Stages: %d (%d base, %d extend, %d polish; %d conditional)\n\n",
+	fmt.Fprintf(output, "Stages: %d (%d base, %d extend, %d polish; %d conditional)\n",
 		summary.Stages, summary.Base, summary.Extends, summary.Polishes, summary.Conditional)
+	printScheduleBarriers(output, plan)
+	fmt.Fprintln(output)
 
 	writer := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(writer, "#\tKIND\tCIRCLES\tITERATIONS\tPARAMETERS\tWHEN")
@@ -123,6 +125,22 @@ func stagePlanParameters(stage app.ScheduleStage) string {
 	}
 }
 
+// printScheduleBarriers says up front how far a campaign will actually get.
+// The stage table carries the same fact, but a reader scanning a fourteen-stage
+// plan should not have to find it there to learn that only five of them run.
+func printScheduleBarriers(output io.Writer, plan []app.ScheduleStage) {
+	for _, stage := range plan {
+		if !stage.PauseBefore {
+			continue
+		}
+		fmt.Fprintf(output,
+			"Barrier: runs stages 0-%d, then pauses before stage %d (%s, %d circles).\n",
+			stage.Index-1, stage.Index, stage.Kind, stage.Circles)
+		fmt.Fprintln(output, "         Everything after it stays planned; `schedule resume` releases it.")
+		return
+	}
+}
+
 // stagePlanCondition names a conditional stage as conditional.
 //
 // A dry run has no outcomes, so it cannot know whether a conditional stage will
@@ -130,10 +148,16 @@ func stagePlanParameters(stage app.ScheduleStage) string {
 // no evidence for. The stage is listed either way, marked, and the condition
 // printed in full.
 func stagePlanCondition(stage app.ScheduleStage) string {
-	if stage.When == nil {
-		return "always"
+	condition := "always"
+	if stage.When != nil {
+		condition = "conditional: " + stage.When.Describe()
 	}
-	return "conditional: " + stage.When.Describe()
+	// A barrier is the most consequential thing a plan can say about a stage —
+	// the campaign stops here — so it leads, and the condition follows it.
+	if stage.PauseBefore {
+		return "BARRIER: pauses here; " + condition
+	}
+	return condition
 }
 
 // printScheduleProjection reports a finish estimate for a running campaign,

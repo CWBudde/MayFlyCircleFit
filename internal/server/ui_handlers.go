@@ -148,8 +148,9 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	metricHistory := make([]ui.MetricSample, len(job.MetricHistory))
 	for i, sample := range job.MetricHistory {
 		metricHistory[i] = ui.MetricSample{
-			Iteration: sample.Iteration, Cost: sample.Cost, PSNR: cloneFloat(sample.PSNR),
-			PSNRInfinite: sample.PSNRInfinite, SSIM: cloneFloat(sample.SSIM),
+			Iteration: sample.Iteration, Evaluations: sample.Evaluations, Cost: sample.Cost, CPS: sample.CPS,
+			PSNR: cloneFloat(sample.PSNR), PSNRInfinite: sample.PSNRInfinite, SSIM: cloneFloat(sample.SSIM),
+			Timestamp: sample.Timestamp,
 		}
 	}
 	parameterCircles, err := decodeParameterCircles(job.BestParams)

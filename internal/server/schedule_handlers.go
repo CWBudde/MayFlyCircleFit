@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -245,6 +246,16 @@ func (s *Server) handleScheduleAction(w http.ResponseWriter, r *http.Request, sc
 	record.State = next
 	if next == store.ScheduleStateRunning {
 		record.Error = ""
+		// Releasing the barrier is part of the resume, not a later decision: a
+		// resume that left the marker alone would restart the driver straight
+		// into the same barrier and pause again, which reads as a broken
+		// resume rather than as a campaign holding its ground.
+		if released, err := releasedBarrierStage(scheduleStore, record); err == nil {
+			record.ReleasedThroughStage = max(record.ReleasedThroughStage, released)
+		} else {
+			slog.Warn("Unable to determine which stage a resume releases",
+				"schedule_id", scheduleID, "error", err)
+		}
 	}
 	if err := scheduleStore.SaveSchedule(record); err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to update the schedule")
@@ -267,6 +278,26 @@ func (s *Server) handleScheduleAction(w http.ResponseWriter, r *http.Request, sc
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(summarizeSchedule(record))
+}
+
+// releasedBarrierStage reports the stage a resume is about to start, which is
+// the barrier it releases. It re-derives the cursor the same way the driver
+// does — from the records alone — so the handler and the executor cannot
+// disagree about where a campaign stands.
+func releasedBarrierStage(scheduleStore store.ScheduleStore, record *store.ScheduleRecord) (int, error) {
+	plan, err := record.Document.Expand()
+	if err != nil {
+		return 0, fmt.Errorf("expand schedule: %w", err)
+	}
+	recorded, err := scheduleStore.LoadScheduleStages(record.ScheduleID)
+	if err != nil {
+		return 0, fmt.Errorf("load schedule stages: %w", err)
+	}
+	index, _, _ := nextScheduleStage(plan, recorded)
+	if index < 0 {
+		return 0, nil
+	}
+	return index, nil
 }
 
 // scheduleTransition reports the state an action moves a schedule to, or the
