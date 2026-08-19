@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "name": "Christian_after — v6, 8 handcrafted circles grown to 16",
+  "seed": 20260819,
+  "base": {
+    "refPath": "example/Christian_after.jpeg",
+    "mode": "batch",
+    "circles": 8,
+    "batchSize": 8,
+    "iters": 1,
+    "optimizerEpochs": 1,
+    "popSize": 20,
+    "threads": 1,
+    "parallelEvaluation": true,
+    "evaluationWorkers": 12,
+    "seed": 20260819,
+    "disableConvergence": true,
+    "polishingEpochs": 2,
+    "polishingIters": 400,
+    "polishingPopSize": 50,
+    "polishingStagnationIters": 300,
+    "polishingMinImprovement": 0.02,
+    "initialCircles": [
+      {"x": 256, "y": 256, "r": 400, "color": "#c8cbd0"},
+      {"x": 256, "y": 660, "r": 300, "color": "#232650"},
+      {"x": 256, "y": 240, "r": 165, "color": "#4a3226"},
+      {"x": 258, "y": 215, "r": 115, "color": "#eda587"},
+      {"x": 256, "y": 330, "r": 78,  "color": "#a06a52"},
+      {"x": 256, "y": 155, "r": 72,  "color": "#f8b294"},
+      {"x": 268, "y": 480, "r": 70,  "color": "#b98a72"},
+      {"x": 352, "y": 445, "r": 40,  "color": "#ece0d3"}
+    ]
+  },
+  "steps": [
+    {"type": "polish", "strategy": "replacement",       "activeSetSize": 4, "maxSweeps": 8,  "epochs": 2, "iters": 400, "popSize": 50, "stagnationIters": 300, "minImprovement": 0.02},
+    {"type": "polish", "strategy": "residual-region",   "activeSetSize": 4, "maxSweeps": 8,  "epochs": 2, "iters": 400, "popSize": 50, "stagnationIters": 300, "minImprovement": 0.02},
+    {"type": "polish", "strategy": "hybrid-overlap",    "activeSetSize": 4, "maxSweeps": 8,  "epochs": 2, "iters": 400, "popSize": 50, "stagnationIters": 300, "minImprovement": 0.02},
+    {"type": "polish", "strategy": "contiguous-window", "activeSetSize": 4, "maxSweeps": 8,  "epochs": 2, "iters": 400, "popSize": 50, "stagnationIters": 300, "minImprovement": 0.02},
+
+    {"type": "extend", "additionalCircles": 4, "batchSize": 4, "epochs": 3, "iters": 1500, "popSize": 100},
+
+    {"type": "polish", "strategy": "residual-region",   "activeSetSize": 6, "maxSweeps": 8,  "epochs": 2, "iters": 400, "popSize": 50, "stagnationIters": 300, "minImprovement": 0.01},
+    {"type": "polish", "strategy": "hybrid-overlap",    "activeSetSize": 6, "maxSweeps": 8,  "epochs": 2, "iters": 400, "popSize": 50, "stagnationIters": 300, "minImprovement": 0.01},
+    {"type": "polish", "strategy": "replacement",       "activeSetSize": 6, "maxSweeps": 8,  "epochs": 2, "iters": 400, "popSize": 50, "stagnationIters": 300, "minImprovement": 0.01},
+
+    {"type": "extend", "additionalCircles": 4, "batchSize": 4, "epochs": 3, "iters": 1500, "popSize": 100},
+
+    {"type": "polish", "strategy": "residual-region",   "activeSetSize": 8, "maxSweeps": 12, "epochs": 2, "iters": 400, "popSize": 50, "stagnationIters": 300, "minImprovement": 0.005},
+    {"type": "polish", "strategy": "hybrid-overlap",    "activeSetSize": 8, "maxSweeps": 12, "epochs": 2, "iters": 400, "popSize": 50, "stagnationIters": 300, "minImprovement": 0.005},
+    {"type": "polish", "strategy": "contiguous-window", "activeSetSize": 8, "maxSweeps": 12, "epochs": 2, "iters": 400, "popSize": 50, "stagnationIters": 300, "minImprovement": 0.005},
+    {"type": "polish", "strategy": "replacement",       "activeSetSize": 8, "maxSweeps": 12, "epochs": 2, "iters": 400, "popSize": 50, "stagnationIters": 300, "minImprovement": 0.005}
+  ]
+}

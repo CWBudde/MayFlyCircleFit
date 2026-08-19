@@ -436,6 +436,12 @@ func (s ScheduleStep) realize(config JobConfig, circles, index, stepIndex, repet
 	next := circles
 	staged := config
 	staged.Circles = circles
+	// A continuation is seeded from its parent checkpoint, never from the
+	// document. Carrying the base's hand-authored arrangement forward would at
+	// best be ignored and at worst fail validation, because an extend stage
+	// raises the circle count while the spec list stays the length the base
+	// wrote.
+	staged.InitialCircles = nil
 
 	switch s.Type {
 	case ScheduleStepExtend:

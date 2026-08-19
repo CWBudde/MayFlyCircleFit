@@ -100,6 +100,61 @@ by a dry run marked `conditional:` with its condition spelled out, and decided
 against the recorded outcomes when it comes up. A skipped stage is recorded with
 the reason it was declined, so the records account for every planned stage.
 
+## Starting from a hand-placed arrangement
+
+`base.initialCircles` seeds the campaign from circles someone placed by hand
+instead of from a random population. It is the only way to supply explicit
+circle parameters: every other warm start in the system comes from a checkpoint,
+and a checkpoint is written by a run, not by an operator.
+
+```json
+"base": {
+  "mode": "batch",
+  "circles": 8,
+  "initialCircles": [
+    {"x": 256, "y": 256, "r": 400, "color": "#c8cbd0"},
+    {"x": 256, "y": 660, "r": 300, "color": "#232650", "opacity": 1}
+  ]
+}
+```
+
+Entries are painted back to front, exactly like the parameter vector they
+become: the first is the backdrop and the last is on top. `opacity` is optional
+and defaults to 1. A centre may sit off-canvas — half a canvas dimension past
+each edge, the same bound the optimizer explores under — which is how a large
+circle contributes only its cap.
+
+Three rules keep the field honest:
+
+- **Batch mode only, and exactly `circles` entries.** Batch is the mode whose
+  optimizer receives the whole vector at once. A sequential or joint run builds
+  its vector as it goes, so a full arrangement handed to one would be partly
+  ignored — worse than refused, because the run would look seeded and not be.
+- **Out of bounds is refused, not clamped.** Clamping is right for a candidate
+  the optimizer proposed; a hand-placed circle that silently moves is a run that
+  no longer matches the document describing it.
+- **The base stage only.** Expansion clears the field on every later stage, and
+  the worker prefers a parent's parameters over any spec that reached it anyway.
+  A continuation is seeded from its parent checkpoint, always.
+
+`initialCircles` changes where a run starts, not what it costs to run. The base
+stage still executes its configured budget; giving it `"iters": 1` makes it a
+recording step, so the campaign's first stage is the authored arrangement and
+its cost, and the polish steps that follow do the work.
+
+Score an arrangement before committing it to a campaign:
+
+```sh
+mayflycirclefit score --ref example/Christian_after.jpeg \
+    --circles example/christian-16-handcrafted-v6.json --out preview.png
+```
+
+`score` takes either a bare JSON array of specifications or a schedule document,
+in which case it reads `base.initialCircles`. It renders with the same CPU
+renderer a run uses and prints the cost, the PSNR, and the blank-canvas cost the
+arrangement improved on. Scoring the campaign file directly is the point: the
+number then describes the document that will actually run.
+
 ## Two validation traps worth knowing
 
 **A field the defaults would replace is an error.** The parser refuses any
