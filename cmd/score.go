@@ -19,6 +19,7 @@ var (
 	scoreRefPath     string
 	scoreCirclesPath string
 	scoreOutPath     string
+	scoreDiffPath    string
 	scoreJSON        bool
 )
 
@@ -39,6 +40,7 @@ func init() {
 	scoreCmd.Flags().StringVar(&scoreRefPath, "ref", "", "Reference image path (required)")
 	scoreCmd.Flags().StringVar(&scoreCirclesPath, "circles", "", "Circle list or schedule document (required)")
 	scoreCmd.Flags().StringVar(&scoreOutPath, "out", "", "Write the rendered arrangement to this PNG")
+	scoreCmd.Flags().StringVar(&scoreDiffPath, "diff", "", "Write the false-color residual to this PNG")
 	scoreCmd.Flags().BoolVar(&scoreJSON, "json", false, "Print the result as JSON")
 	_ = scoreCmd.MarkFlagRequired("ref")
 	_ = scoreCmd.MarkFlagRequired("circles")
@@ -106,9 +108,20 @@ func runScore(_ *cobra.Command, _ []string) error {
 		result.PSNR = psnr
 	}
 
-	if scoreOutPath != "" {
-		if err := writeScorePNG(scoreOutPath, rend.Render(params)); err != nil {
-			return err
+	if scoreOutPath != "" || scoreDiffPath != "" {
+		rendered := rend.Render(params)
+		if scoreOutPath != "" {
+			if err := writeScorePNG(scoreOutPath, rendered); err != nil {
+				return err
+			}
+		}
+		// The residual is what makes the number actionable: it says where the
+		// arrangement is wrong, which is the question anyone placing a circle by
+		// hand is actually asking.
+		if scoreDiffPath != "" {
+			if err := writeScorePNG(scoreDiffPath, fit.DiffImage(ref, rendered, fit.ColormapTurbo)); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -128,6 +141,9 @@ func runScore(_ *cobra.Command, _ []string) error {
 	fmt.Printf("blank cost: %.4f\n", result.BlankCost)
 	if scoreOutPath != "" {
 		fmt.Printf("wrote:      %s\n", scoreOutPath)
+	}
+	if scoreDiffPath != "" {
+		fmt.Printf("residual:   %s\n", scoreDiffPath)
 	}
 	return nil
 }
