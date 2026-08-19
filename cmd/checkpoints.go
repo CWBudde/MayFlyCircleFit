@@ -120,7 +120,7 @@ func runListCheckpoints(cmd *cobra.Command, args []string) error {
 func runCleanCheckpoints(cmd *cobra.Command, args []string) error {
 	// Validate flags
 	if keepLast == 0 && olderThanDays == 0 {
-		return fmt.Errorf("must specify either --keep-last or --older-than")
+		return NewUsageError(fmt.Errorf("must specify either --keep-last or --older-than"))
 	}
 
 	// Create store

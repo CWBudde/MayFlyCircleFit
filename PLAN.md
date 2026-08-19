@@ -1112,20 +1112,21 @@ customization workflow.
   - [ ] Identify missing error checks
   - [ ] Ensure all errors are properly wrapped with context
   - [ ] Use consistent error wrapping (e.g., `fmt.Errorf("context: %w", err)`)
-- [ ] Improve server error responses
-  - [ ] Consistent JSON error format: `{"error": "message", "code": "ERROR_CODE"}`
-  - [ ] Appropriate HTTP status codes (400, 404, 500, etc.)
-  - [ ] Detailed error messages for debugging (in dev mode)
-  - [ ] Generic error messages for production
-- [ ] Add error handling to CLI commands
-  - [ ] Clear error messages for common failures
-  - [ ] Exit codes: 0=success, 1=error, 2=usage error
-  - [ ] Suggest fixes when possible (e.g., "image not found: check path")
+- [x] Improve server error responses
+  - [x] Consistent JSON error format: `{"error": {"code": "ERROR_CODE", "message": "message"}}`
+        on every `/api/v1` route
+  - [x] Appropriate HTTP status codes (400, 404, 500, etc.)
+  - [x] Detailed error messages for debugging (server log, keyed by job and path)
+  - [x] Generic error messages for production (no filesystem paths in responses)
+- [x] Add error handling to CLI commands
+  - [x] Clear error messages for common failures
+  - [x] Exit codes: 0=success, 1=error, 2=usage error (`cmd.UsageError`)
+  - [x] Suggest fixes when possible (e.g., "image not found: check path")
 - [ ] Test error scenarios systematically
-  - [ ] Invalid inputs, missing files, network errors
-  - [ ] Out of memory, disk full, permission denied
+  - [x] Invalid inputs, missing files, permission denied (unit level)
+  - [ ] Network errors, out of memory, disk full
   - [ ] GPU unavailable, optimizer failures
-- [ ] Document common errors and solutions
+- [x] Document common errors and solutions (`docs/troubleshooting.md`)
 
 ### Task 13.2: Input Validation and Sanitization
 - [ ] Validate all API inputs

@@ -243,6 +243,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/chains", s.handleChains)
 	mux.HandleFunc("/api/v1/chains/", s.handleChainsWithID)
 
+	// Catch-all for the API subtree. Without it an unrouted /api/v1 path falls
+	// through to the dashboard handler and answers with a plain-text 404, which
+	// would break the promise that every API failure parses as the JSON error
+	// envelope. The mux prefers the longest registered pattern, so the routes
+	// above still win.
+	mux.HandleFunc("/api/v1/", s.handleAPINotFound)
+
 	if s.options.EnablePprof {
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
 		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
@@ -656,7 +663,7 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/jobs/")
 	parts := strings.Split(path, "/")
 	if len(parts) == 0 || parts[0] == "" {
-		http.Error(w, "Job ID required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid_job_id", "job ID required")
 		return
 	}
 
@@ -919,7 +926,7 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 	}
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
-		http.Error(w, "Job not found", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		return
 	}
 
@@ -962,13 +969,13 @@ func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobI
 	}
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
-		http.Error(w, "Job not found", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		return
 	}
 
 	// Check if job has results
 	if len(job.BestParams) == 0 {
-		http.Error(w, "No results yet", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "no_results", "no results yet")
 		return
 	}
 	if snapshotNotModified(w, r, fmt.Sprintf(`"best-%d"`, job.BestRevision)) {
@@ -978,7 +985,8 @@ func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobI
 	// Load reference image to get dimensions
 	ref, err := loadReferenceImage(job.Config.RefPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load reference: %v", err), http.StatusInternalServerError)
+		slog.Error("Failed to load reference image", "job_id", jobID, "path", job.Config.RefPath, "error", err)
+		writeAPIError(w, http.StatusInternalServerError, "reference_load_failed", "failed to load reference image")
 		return
 	}
 
@@ -1016,13 +1024,13 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 	}
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
-		http.Error(w, "Job not found", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		return
 	}
 
 	// Check if job has results
 	if len(job.BestParams) == 0 {
-		http.Error(w, "No results yet", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "no_results", "no results yet")
 		return
 	}
 	if snapshotNotModified(w, r, fmt.Sprintf(`"diff-%s-%d"`, colormap, job.BestRevision)) {
@@ -1032,7 +1040,8 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 	// Load reference image
 	ref, err := loadReferenceImage(job.Config.RefPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load reference: %v", err), http.StatusInternalServerError)
+		slog.Error("Failed to load reference image", "job_id", jobID, "path", job.Config.RefPath, "error", err)
+		writeAPIError(w, http.StatusInternalServerError, "reference_load_failed", "failed to load reference image")
 		return
 	}
 
@@ -1117,6 +1126,13 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string) {
 	}
 }
 
+// handleAPINotFound answers any /api/v1 path that no route claims.
+func (s *Server) handleAPINotFound(w http.ResponseWriter, r *http.Request) {
+	// The requested path is deliberately not echoed back into the response.
+	slog.Debug("No API route for request", "method", r.Method, "path", r.URL.Path)
+	writeAPIError(w, http.StatusNotFound, "not_found", "no API endpoint at this path")
+}
+
 // handleGetRefImage handles GET /api/v1/jobs/:id/ref.png
 func (s *Server) handleGetRefImage(w http.ResponseWriter, r *http.Request, jobID string) {
 	if r.Method != http.MethodGet {
@@ -1126,14 +1142,15 @@ func (s *Server) handleGetRefImage(w http.ResponseWriter, r *http.Request, jobID
 	}
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
-		http.Error(w, "Job not found", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		return
 	}
 
 	// Load reference image
 	ref, err := loadReferenceImage(job.Config.RefPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load reference: %v", err), http.StatusInternalServerError)
+		slog.Error("Failed to load reference image", "job_id", jobID, "path", job.Config.RefPath, "error", err)
+		writeAPIError(w, http.StatusInternalServerError, "reference_load_failed", "failed to load reference image")
 		return
 	}
 
