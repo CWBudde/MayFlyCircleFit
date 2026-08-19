@@ -86,9 +86,11 @@ type Job struct {
 type MetricSample struct {
 	Iteration    int       `json:"iteration"`
 	Cost         float64   `json:"cost"`
+	Evaluations  int       `json:"evaluations"`
 	PSNR         *float64  `json:"psnr"`
 	PSNRInfinite bool      `json:"psnrInfinite,omitempty"`
 	SSIM         *float64  `json:"ssim,omitempty"`
+	CPS          float64   `json:"cps"`
 	Timestamp    time.Time `json:"timestamp"`
 }
 

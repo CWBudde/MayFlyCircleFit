@@ -168,8 +168,8 @@ func restoreJobTrace(job *Job, artifactStore store.ArtifactStore) error {
 	job.MetricHistory = make([]MetricSample, len(entries))
 	for i, entry := range entries {
 		job.MetricHistory[i] = MetricSample{
-			Iteration: entry.Iteration, Cost: entry.Cost, PSNR: cloneFloat(entry.PSNR),
-			PSNRInfinite: entry.PSNRInfinite, SSIM: cloneFloat(entry.SSIM), Timestamp: entry.Timestamp,
+			Iteration: entry.Iteration, Evaluations: entry.Evaluations, Cost: entry.Cost, PSNR: cloneFloat(entry.PSNR),
+			PSNRInfinite: entry.PSNRInfinite, SSIM: cloneFloat(entry.SSIM), CPS: entry.CPS, Timestamp: entry.Timestamp,
 		}
 		job.PSNR = cloneFloat(entry.PSNR)
 		job.PSNRInfinite = entry.PSNRInfinite

@@ -217,6 +217,10 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		metricCleanup()
 	}
 	initialSample := qualitySample(baseIterations, metricCost, initialSSIM, start)
+	// No evaluation of this stage has run yet, so its throughput is zero even
+	// when the job inherited a parent's evaluation count.
+	initialSample.CPS = 0
+	initialSample.Evaluations = baseEvaluations
 	_ = jm.RecordMetrics(jobID, initialSample)
 
 	var traceWriter *store.TraceWriter
@@ -265,6 +269,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 			}
 		}
 		sample := qualitySample(iterations, progress.BestCost, sampledSSIM, now)
+		sample.Evaluations = evaluations
+		sample.CPS = throughputCPS(progress.Evaluations, job.Config.Circles, now.Sub(start).Seconds())
 		if traceWriter != nil {
 			_ = traceWriter.Write(traceEntry(sample))
 		}
@@ -279,11 +285,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 			if !ok {
 				return
 			}
-			elapsed := now.Sub(start).Seconds()
-			cps := 0.0
-			if elapsed > 0 {
-				cps = float64(evaluations*job.Config.Circles) / elapsed
-			}
+			cps := sample.CPS
 			_ = jm.RecordMetrics(jobID, sample)
 			candidatePSNR, candidatePSNRInfinite := serializableCandidatePSNR(candidateCost)
 			jm.broadcaster.Broadcast(ProgressEvent{
@@ -468,6 +470,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		finalSSIM = calculateSSIM(result.BestImage, ref, jobID)
 	}
 	finalSample := qualitySample(iterations, result.BestCost, finalSSIM, completedAt)
+	finalSample.Evaluations = evaluations
+	finalSample.CPS = throughputCPS(result.Evaluations, job.Config.Circles, time.Since(start).Seconds())
 	_ = jm.RecordMetrics(jobID, finalSample)
 	if len(circleData) > 0 {
 		if err := checkpointStore.SaveCircleData(jobID, circleData); err != nil {
@@ -501,11 +505,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		return err
 	}
 
-	elapsed := time.Since(start).Seconds()
-	cps := 0.0
-	if elapsed > 0 {
-		cps = float64(result.Evaluations*job.Config.Circles) / elapsed
-	}
+	cps := throughputCPS(result.Evaluations, job.Config.Circles, time.Since(start).Seconds())
 	bestCost, bestRevision, _, _ := jm.bestSnapshot(jobID)
 	jm.broadcaster.Broadcast(ProgressEvent{
 		JobID: jobID, State: StateCompleted, Iterations: iterations, Evaluations: evaluations,
