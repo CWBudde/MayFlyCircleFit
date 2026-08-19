@@ -389,7 +389,11 @@ model: it stores nothing, so it cannot drift from the stage records.
   as the two timestamps it comes from, so the estimate computed from the listing
   is identical to the one computed from the records. Raising the cap is not the
   fix: a body that grows without bound with stage count moves the wall rather
-  than removing it.
+  than removing it. The document travels in full, because the projection needs
+  the plan it expands to, so it is bounded as well — `MaxScheduleDocumentBytes`
+  and `MaxScheduleNameLen` — and the two bounds together are what make the
+  response fit for every campaign the format allows, not merely for the ones
+  with short names.
 - **A stage's configuration is retrievable one stage at a time.**
   `GET /api/v1/schedules/:id/stages/:index` answers the whole stage record,
   configuration included, because replaying a single stage is what that record is

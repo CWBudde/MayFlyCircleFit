@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,6 +90,13 @@ func TestScheduleDetailStaysUnderTheCLIResponseCap(t *testing.T) {
 		t.Fatalf("NewScheduleRecord() error = %v", err)
 	}
 	record.State = store.ScheduleStateRunning
+	// The name is free text the response carries twice — once in the summary,
+	// once inside the document — so the worst legal case is measured, not the
+	// tidy one the fixture would otherwise have.
+	record.Document.Name = strings.Repeat("a", app.MaxScheduleNameLen)
+	if err := record.Document.Validate(); err != nil {
+		t.Fatalf("a name at the limit is not a valid document: %v", err)
+	}
 
 	detail := scheduleDetail{
 		scheduleSummary: summarizeSchedule(record),
@@ -109,6 +117,21 @@ func TestScheduleDetailStaysUnderTheCLIResponseCap(t *testing.T) {
 		t.Fatalf("schedule detail is %d bytes for %d stages, over the %d the CLI decodes",
 			len(body), len(stages), app.MaxCLIResponseBytes)
 	}
+	// The document travels in full, because the finish projection is computed
+	// from the plan it expands to, so the listing only stays under the cap while
+	// the document is bounded too. The measurement is redone with the document
+	// at its own limit, which is the case a fixture cannot show: this fixture's
+	// document is small, and a campaign is free to author a larger one.
+	encodedDocument, err := json.Marshal(record.Document)
+	if err != nil {
+		t.Fatalf("marshal document: %v", err)
+	}
+	worstCase := len(body) - len(encodedDocument) + app.MaxScheduleDocumentBytes
+	if worstCase > app.MaxCLIResponseBytes {
+		t.Fatalf("with a document at its %d byte limit the response is %d bytes, over the %d the CLI decodes",
+			app.MaxScheduleDocumentBytes, worstCase, app.MaxCLIResponseBytes)
+	}
+
 	// The control: the records this projects from do not fit, which is the
 	// defect the task reports. Without it the assertion above could pass for a
 	// campaign that was simply small.

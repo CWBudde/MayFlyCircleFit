@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -635,4 +636,58 @@ func TestScheduleBarrierIsLegalOnEitherKind(t *testing.T) {
 	if !stages[1].PauseBefore || !stages[2].PauseBefore {
 		t.Fatalf("barriers = %v/%v, want both", stages[1].PauseBefore, stages[2].PauseBefore)
 	}
+}
+
+// TestScheduleDocumentIsBounded covers what keeps a campaign inspectable: the
+// detail response carries the document in full, so an unbounded document is an
+// unbounded response however small the stage listing is. A 600 kB name was
+// accepted before this, and put `schedule status` back over the CLI's cap with
+// a handful of stages.
+func TestScheduleDocumentIsBounded(t *testing.T) {
+	base := `"base": {"refPath": "assets/ref.png", "mode": "batch", "circles": 8, "batchSize": 8, "iters": 200, "popSize": 30}`
+
+	t.Run("a name at the limit is accepted", func(t *testing.T) {
+		document := fmt.Sprintf(`{"seed": 42, "name": %q, %s}`, strings.Repeat("a", MaxScheduleNameLen), base)
+		if _, err := ParseSchedule([]byte(document)); err != nil {
+			t.Fatalf("ParseSchedule() error = %v", err)
+		}
+	})
+
+	t.Run("a longer name is refused", func(t *testing.T) {
+		document := fmt.Sprintf(`{"seed": 42, "name": %q, %s}`, strings.Repeat("a", MaxScheduleNameLen+1), base)
+		_, err := ParseSchedule([]byte(document))
+		if err == nil {
+			t.Fatal("ParseSchedule() accepted an unbounded name")
+		}
+		if !strings.Contains(err.Error(), "name") {
+			t.Fatalf("error = %v, want it to name the field", err)
+		}
+	})
+
+	t.Run("a document over the byte limit is refused", func(t *testing.T) {
+		// The padding is a legal value in a legal field, so the refusal is about
+		// the size of the document and not about anything malformed in it.
+		padding := strings.Repeat(" ", MaxScheduleDocumentBytes)
+		document := fmt.Sprintf(`{"seed": 42, %s%s}`, base, padding)
+		_, err := ParseSchedule([]byte(document))
+		if err == nil {
+			t.Fatal("ParseSchedule() accepted a document over the byte limit")
+		}
+		if !strings.Contains(err.Error(), "bytes") {
+			t.Fatalf("error = %v, want it to state the size", err)
+		}
+	})
+
+	// The bound is only worth having if it leaves room for the stage listing it
+	// shares the response with. A stage summary costs about 172 B, measured by
+	// server.TestScheduleDetailStaysUnderTheCLIResponseCap.
+	t.Run("the bound leaves room for a full stage listing", func(t *testing.T) {
+		const measuredBytesPerStage = 172
+		listing := MaxScheduleStages * measuredBytesPerStage
+		if MaxScheduleDocumentBytes+listing > MaxCLIResponseBytes {
+			t.Fatalf("a document at %d bytes plus %d stages at %d bytes is %d, over the %d the CLI decodes",
+				MaxScheduleDocumentBytes, MaxScheduleStages, measuredBytesPerStage,
+				MaxScheduleDocumentBytes+listing, MaxCLIResponseBytes)
+		}
+	})
 }

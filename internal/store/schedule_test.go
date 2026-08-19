@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -446,6 +447,60 @@ func TestScheduleStoreRefusesASymlinkedRecord(t *testing.T) {
 	if _, err := fsStore.LoadSchedule(testScheduleID); err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Fatalf("LoadSchedule() error = %v, want a refusal naming the symlink", err)
 	}
+}
+
+// TestScheduleStoreRefusesASymlinkedStagesDirectory covers both readers: the
+// containment check is lexical, so a stages directory swapped for a symlink
+// would redirect the read out of the store while the path still looks
+// contained. Reading one stage by index has to refuse it exactly as listing
+// them all does.
+func TestScheduleStoreRefusesASymlinkedStagesDirectory(t *testing.T) {
+	fsStore, dir := newScheduleStore(t)
+	record := testScheduleRecord(t)
+	if err := fsStore.SaveSchedule(record); err != nil {
+		t.Fatalf("SaveSchedule() error = %v", err)
+	}
+	stages, err := record.Document.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	stage := NewScheduleStageRecord(testScheduleID, stages[0])
+	stage.State = ScheduleStateCompleted
+	if err := fsStore.SaveScheduleStage(testScheduleID, stage); err != nil {
+		t.Fatalf("SaveScheduleStage() error = %v", err)
+	}
+
+	// The elsewhere directory holds a stage file that would load perfectly well,
+	// so the refusal is about where it is, not about what it contains.
+	outside := t.TempDir()
+	planted := *stage
+	if err := os.WriteFile(filepath.Join(outside, stageFileName(stage.Index)),
+		[]byte(mustEncodeStage(t, &planted)), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	stagesPath := filepath.Join(dir, schedulesDirName, testScheduleID, stagesDirName)
+	if err := os.RemoveAll(stagesPath); err != nil {
+		t.Fatalf("RemoveAll() error = %v", err)
+	}
+	if err := os.Symlink(outside, stagesPath); err != nil {
+		t.Skipf("symlinks are unavailable here: %v", err)
+	}
+
+	if _, err := fsStore.LoadScheduleStage(testScheduleID, stage.Index); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("LoadScheduleStage() error = %v, want a refusal naming the symlink", err)
+	}
+	if _, err := fsStore.LoadScheduleStages(testScheduleID); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("LoadScheduleStages() error = %v, want a refusal naming the symlink", err)
+	}
+}
+
+func mustEncodeStage(t *testing.T, stage *ScheduleStageRecord) string {
+	t.Helper()
+	data, err := json.Marshal(stage)
+	if err != nil {
+		t.Fatalf("marshal stage: %v", err)
+	}
+	return string(data)
 }
 
 // TestScheduleStoreSatisfiesTheInterface pins the contract 16.2's executor will

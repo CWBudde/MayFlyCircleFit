@@ -503,16 +503,12 @@ func (fs *FSStore) LoadScheduleStages(scheduleID string) ([]ScheduleStageRecord,
 	if err != nil {
 		return nil, err
 	}
-	stagesDir := filepath.Join(dir, stagesDirName)
-	info, err := os.Lstat(stagesDir)
+	stagesDir, err := existingStagesDir(dir)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("stat schedule stages directory: %w", err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return nil, fmt.Errorf("refusing non-directory or symlink stages path")
+		return nil, err
 	}
 	entries, err := os.ReadDir(stagesDir)
 	if err != nil {
@@ -556,7 +552,18 @@ func (fs *FSStore) LoadScheduleStage(scheduleID string, index int) (*ScheduleSta
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(dir, stagesDirName, stageFileName(index))
+	// The stages directory is checked before it is descended into, exactly as
+	// the listing checks it: ensureContained answers a lexical question, and a
+	// symlink swapped in for the directory would redirect the read out of the
+	// store while the path still looks contained.
+	stagesDir, err := existingStagesDir(dir)
+	if os.IsNotExist(err) {
+		return nil, &NotFoundError{JobID: scheduleID, Kind: "schedule stage"}
+	}
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(stagesDir, stageFileName(index))
 	if err := ensureContained(fs.baseDir, path); err != nil {
 		return nil, err
 	}
@@ -578,6 +585,29 @@ func (fs *FSStore) LoadScheduleStage(scheduleID string, index int) (*ScheduleSta
 		return nil, fmt.Errorf("stage schedule ID %q does not match %q", stage.ScheduleID, scheduleID)
 	}
 	return &stage, nil
+}
+
+// existingStagesDir resolves a schedule's stages directory and refuses one that
+// is not a real directory. Both readers go through it, so neither can be walked
+// into a symlink that points out of the store: a lexical containment check
+// cannot see that, because the path it is given still looks contained.
+//
+// A missing directory is reported as os.ErrNotExist and left to the caller: a
+// campaign with no stage yet is an empty listing, but a single stage that was
+// asked for by index is not there.
+func existingStagesDir(scheduleDir string) (string, error) {
+	stagesDir := filepath.Join(scheduleDir, stagesDirName)
+	info, err := os.Lstat(stagesDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", err
+		}
+		return "", fmt.Errorf("stat schedule stages directory: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return "", fmt.Errorf("refusing non-directory or symlink stages path")
+	}
+	return stagesDir, nil
 }
 
 // stageFileName keys a stage by its index, zero padded so the on-disk order and
