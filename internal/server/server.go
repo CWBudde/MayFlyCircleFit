@@ -1144,7 +1144,12 @@ func (s *Server) handleGetRefImage(w http.ResponseWriter, r *http.Request, jobID
 	}
 }
 
-// handleResumeJob handles POST /api/v1/jobs/:id/resume
+// handleResumeJob handles POST /api/v1/jobs/:id/resume. The route carries two
+// continuations that the job's own state tells apart. A paused job is one an
+// operator suspended, so it resumes in place, under its own ID, from the
+// snapshot the pause wrote. Any other job resumes the way it always has: its
+// checkpoint seeds a new job, which is the answer the `resume` CLI command and
+// the release lifecycle expect for a run that has already stopped.
 func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID string) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -1155,6 +1160,15 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 		writeContinuationError(w, failure)
 		return
 	}
+	if job, ok := s.jobManager.GetJob(jobID); ok && job.State == StatePaused {
+		s.resumePausedJob(w, jobID)
+		return
+	}
+	s.forkJobFromCheckpoint(w, jobID)
+}
+
+// resumePausedJob restarts a suspended job under its own identity.
+func (s *Server) resumePausedJob(w http.ResponseWriter, jobID string) {
 	checkpoint, err := s.requestResume(jobID)
 	if err != nil {
 		slog.Warn("Failed to resume job", "job_id", jobID, "error", err)
@@ -1200,6 +1214,92 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(response)
+}
+
+// forkJobFromCheckpoint seeds a new job from a stopped job's checkpoint. The
+// source job is left exactly as it is, so a cancelled run stays cancelled and
+// its artifacts stay addressable under the original ID.
+func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string) {
+	jobStore, err := s.storeForJob(jobID)
+	if err != nil {
+		slog.Error("Failed to resolve project store for resume", "job_id", jobID, "error", err)
+		writeAPIError(w, http.StatusInternalServerError, "project_unavailable", "the project store is unavailable")
+		return
+	}
+	checkpoint, err := jobStore.LoadCheckpoint(jobID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "not_found", "job or checkpoint not found")
+			return
+		}
+		slog.Error("Failed to load checkpoint for resume", "job_id", jobID, "error", err)
+		writeAPIError(w, http.StatusInternalServerError, "resume_failed", "unable to load checkpoint")
+		return
+	}
+	if err := checkpoint.Validate(); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", err.Error())
+		return
+	}
+
+	slog.Info("Resuming job from checkpoint",
+		"job_id", jobID,
+		"iteration", checkpoint.Iteration,
+		"best_cost", checkpoint.BestCost,
+	)
+
+	config, err := app.Normalize(checkpoint.Config)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint configuration is invalid")
+		return
+	}
+	if s.inputErr != nil {
+		writeAPIError(w, http.StatusInternalServerError, "server_config", "server input roots are unavailable")
+		return
+	}
+	config.RefPath, err = s.input.resolveImage(config.RefPath)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint reference is outside configured input roots")
+		return
+	}
+	if config.CanvasPath != "" {
+		config.CanvasPath, err = s.input.resolveImage(config.CanvasPath)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint canvas is outside configured input roots")
+			return
+		}
+	}
+	config.EffectiveSeed = checkpoint.EffectiveSeed
+	config.ResumeCount = checkpoint.ResumeCount + 1
+	newJob := s.jobManager.CreateJob(s.projectForJob(jobID), config)
+
+	if err := s.jobManager.UpdateJob(newJob.ID, func(j *Job) {
+		updateBestResult(j, checkpoint.BestParams, checkpoint.BestCost)
+		j.InitialCost = checkpoint.InitialCost
+		j.Iterations = checkpoint.Iteration
+		j.Evaluations = int(checkpoint.Evaluations)
+	}); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "resume_failed", "unable to seed the resumed job")
+		return
+	}
+
+	if err := s.enqueueJob(newJob.ID); err != nil {
+		_ = s.jobManager.FailJob(newJob.ID, "server job queue is full")
+		writeAPIError(w, http.StatusTooManyRequests, "queue_full", "server job queue is full")
+		return
+	}
+
+	response := map[string]interface{}{
+		"jobId":         newJob.ID,
+		"resumedFrom":   jobID,
+		"state":         string(newJob.State),
+		"previousCost":  checkpoint.BestCost,
+		"previousIters": checkpoint.Iteration,
+		"message":       "Job resumed successfully from checkpoint",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
 }
 

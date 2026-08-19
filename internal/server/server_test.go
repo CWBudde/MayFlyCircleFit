@@ -346,6 +346,112 @@ func TestServer_PauseJobRejections(t *testing.T) {
 	})
 }
 
+// TestServer_ResumeDispatchesOnJobState pins the two continuations the resume
+// route carries. A paused job resumes under its own ID; a stopped job is forked
+// into a new one, which is the contract the resume CLI command and the release
+// lifecycle depend on.
+func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.png")
+	createSimpleTestImage(t, imgPath)
+	persistence, err := createTestStore(filepath.Join(tmpDir, "checkpoints"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := NewServerWithOptions(":8080", persistence, ServerOptions{InputRoots: []string{tmpDir}})
+	shutdownTestServer(t, server)
+
+	config := JobConfig{RefPath: imgPath, Mode: "joint", Circles: 1, Iters: 10, PopSize: 30, Seed: 11}
+	params := []float64{1, 1, 1, 1, 0, 0, 1}
+
+	resume := func(jobID string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+jobID+"/resume", nil))
+		return recorder
+	}
+	decode := func(t *testing.T, recorder *httptest.ResponseRecorder) map[string]any {
+		t.Helper()
+		var payload map[string]any
+		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("decode response %q: %v", recorder.Body.String(), err)
+		}
+		return payload
+	}
+
+	t.Run("paused job resumes in place", func(t *testing.T) {
+		job := server.jobManager.CreateJob(app.DefaultProject, config)
+		if err := server.jobManager.StartJob(job.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := server.jobManager.UpdateProgress(job.ID, 5, 50, params, 600); err != nil {
+			t.Fatal(err)
+		}
+		pause := httptest.NewRecorder()
+		server.Handler().ServeHTTP(pause, httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+job.ID+"/pause", nil))
+		if pause.Code != http.StatusAccepted {
+			t.Fatalf("pause status = %d, body %s", pause.Code, pause.Body.String())
+		}
+		waitForJobState(t, server.jobManager, job.ID, StatePaused)
+
+		recorder := resume(job.ID)
+		if recorder.Code != http.StatusAccepted {
+			t.Fatalf("resume status = %d, body %s", recorder.Code, recorder.Body.String())
+		}
+		if got := decode(t, recorder)["jobId"]; got != job.ID {
+			t.Fatalf("jobId = %v, want the paused job %s", got, job.ID)
+		}
+	})
+
+	t.Run("cancelled job forks a new one", func(t *testing.T) {
+		job := server.jobManager.CreateJob(app.DefaultProject, config)
+		if err := server.jobManager.StartJob(job.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := server.jobManager.CancelJob(job.ID); err != nil {
+			t.Fatal(err)
+		}
+		checkpoint := store.NewCheckpoint(job.ID, params, 600, 1000, 8, job.Config)
+		checkpoint.Evaluations = 80
+		if err := persistence.SaveCheckpoint(job.ID, checkpoint); err != nil {
+			t.Fatal(err)
+		}
+
+		recorder := resume(job.ID)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("resume status = %d, body %s", recorder.Code, recorder.Body.String())
+		}
+		payload := decode(t, recorder)
+		if got := payload["resumedFrom"]; got != job.ID {
+			t.Fatalf("resumedFrom = %v, want %s", got, job.ID)
+		}
+		forked, _ := payload["jobId"].(string)
+		if forked == "" || forked == job.ID {
+			t.Fatalf("jobId = %q, want a new job identifier", forked)
+		}
+		if _, ok := server.jobManager.GetJob(forked); !ok {
+			t.Fatalf("forked job %s was not created", forked)
+		}
+		// The source run must survive its own continuation untouched.
+		if state := server.jobManager.getJobState(job.ID); state != StateCancelled {
+			t.Fatalf("source state = %q, want %q", state, StateCancelled)
+		}
+	})
+
+	t.Run("job without a checkpoint", func(t *testing.T) {
+		job := server.jobManager.CreateJob(app.DefaultProject, config)
+		if err := server.jobManager.StartJob(job.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := server.jobManager.CancelJob(job.ID); err != nil {
+			t.Fatal(err)
+		}
+		if got := resume(job.ID).Code; got != http.StatusNotFound {
+			t.Fatalf("resume status = %d, want %d", got, http.StatusNotFound)
+		}
+	})
+}
+
 // TestPausedJobCannotBeCompleted pins the guarantee the pause checkpoint rests
 // on: once the paused state is claimed, a worker that finishes afterwards may
 // not publish the job as completed over the snapshot the operator asked for.
