@@ -566,30 +566,30 @@ templ ImageViewer(data ImageViewerData) {
 			}
 		}
 
+		const heatmapColormapStorageKey = "mayflycirclefit.diffColormap";
+
 		function initializeHeatmapColormap() {
 			const select = document.getElementById("heatmap-colormap");
+			const colormapStorageKey = heatmapColormapStorageKey;
 			if (!select) {
 				return;
 			}
-			select.addEventListener("change", function () {
-				updateHeatmapLegend(select.value);
-				syncArtifactDownloadColormap();
-				const viewer = document.getElementById("image-viewer");
-				const revision = viewer ? Number.parseInt(viewer.dataset.bestRevision, 10) || 0 : 0;
-				const jobId = viewer ? viewer.dataset.jobId : "";
-				if (jobId) {
-					refreshImage(
-						"diff-image",
-						"diff-image-loading",
-						jobId,
-						"diff.png",
-						revision,
-						select.value,
-					);
+
+			const renderedColormap = normalizeColormap(select.value);
+			let preferredColormap = renderedColormap;
+			try {
+				const stored = window.localStorage.getItem(colormapStorageKey);
+				if (stored === "turbo" || stored === "magma") {
+					preferredColormap = stored;
 				}
+			} catch (err) {
+				// The selected colormap still applies for this page.
+			}
+			applyHeatmapColormap(preferredColormap, false, preferredColormap !== renderedColormap);
+
+			select.addEventListener("change", function () {
+				applyHeatmapColormap(normalizeColormap(select.value), true, true);
 			});
-			updateHeatmapLegend(select.value);
-			syncArtifactDownloadColormap();
 		}
 
 		function selectedHeatmapColormap() {
@@ -616,6 +616,42 @@ templ ImageViewer(data ImageViewerData) {
 					"/diff.png?colormap=" +
 					encodeURIComponent(selectedHeatmapColormap()) +
 					"&download=1";
+		}
+
+		function normalizeColormap(raw) {
+			return raw === "magma" ? "magma" : "turbo";
+		}
+
+		function applyHeatmapColormap(raw, persist, reloadImage) {
+			const select = document.getElementById("heatmap-colormap");
+			const viewer = document.getElementById("image-viewer");
+			const jobId = viewer ? viewer.dataset.jobId : "";
+			const revision = viewer ? Number.parseInt(viewer.dataset.bestRevision, 10) || 0 : 0;
+			const colormap = normalizeColormap(raw);
+
+			if (select) {
+				select.value = colormap;
+				updateHeatmapLegend(colormap);
+			}
+			syncArtifactDownloadColormap();
+			if (jobId && reloadImage) {
+				refreshImage(
+					"diff-image",
+					"diff-image-loading",
+					jobId,
+					"diff.png",
+					revision,
+					colormap,
+				);
+			}
+			if (!persist) {
+				return;
+			}
+			try {
+				window.localStorage.setItem(heatmapColormapStorageKey, colormap);
+			} catch (err) {
+				// The colormap selection still applies for the current page.
+			}
 		}
 
 		function initializeOverlayOpacity() {
@@ -719,6 +755,124 @@ templ ImageViewer(data ImageViewerData) {
 			newImg.src = imageURL;
 		}
 
+		function initializeImageRefreshPolling() {
+			const viewer = document.getElementById("image-viewer");
+			if (!viewer) {
+				return;
+			}
+			const jobId = viewer.dataset.jobId;
+			if (!jobId) {
+				return;
+			}
+			const jobState = viewer.dataset.jobState;
+			if (
+				jobState !== "running" &&
+				jobState !== "pending" &&
+				jobState !== "paused"
+			) {
+				return;
+			}
+			const intervalMs = readImageRefreshInterval();
+			if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+				return;
+			}
+
+			let lastRevision = Number.parseInt(viewer.dataset.bestRevision, 10) || 0;
+			let timer = null;
+			let inFlight = false;
+
+			function stopPolling() {
+				if (timer) {
+					window.clearInterval(timer);
+					timer = null;
+				}
+			}
+
+			// One request at a time: a slow network must not let ticks pile up into
+			// overlapping fetches that apply their updates out of order.
+			async function checkImageRevision() {
+				if (inFlight) {
+					return;
+				}
+				inFlight = true;
+				try {
+					const response = await fetch(
+						"/api/v1/jobs/" + encodeURIComponent(jobId) + "/status",
+						{ cache: "no-store" },
+					);
+					if (!response.ok) {
+						return;
+					}
+					const status = await response.json();
+					// Republish for the job detail page, which owns the metric panel.
+					document.dispatchEvent(
+						new CustomEvent("mayflycirclefit:job-status", { detail: status }),
+					);
+					const nextRevision = Number.parseInt(status.bestRevision, 10);
+					if (Number.isFinite(nextRevision) && nextRevision > lastRevision) {
+						lastRevision = nextRevision;
+						viewer.dataset.bestRevision = String(nextRevision);
+						const colormap = selectedHeatmapColormap();
+						refreshImage(
+							"best-image",
+							"best-image-loading",
+							jobId,
+							"best.png",
+							nextRevision,
+						);
+						refreshImage(
+							"overlay-best-image",
+							"overlay-best-image-loading",
+							jobId,
+							"best.png",
+							nextRevision,
+						);
+						refreshImage(
+							"diff-image",
+							"diff-image-loading",
+							jobId,
+							"diff.png",
+							nextRevision,
+							colormap,
+						);
+					}
+					if (
+						status.state === "completed" ||
+						status.state === "failed" ||
+						status.state === "cancelled"
+					) {
+						stopPolling();
+						viewer.dataset.jobState = status.state;
+						// The status badge, controls and completion artifacts are all
+						// server-rendered, so a terminal transition needs a reload rather
+						// than a data attribute update. Without the stream running, this
+						// is the only place that observes it.
+						window.location.reload();
+					}
+				} catch (_err) {
+					// Keep polling and let errors self-recover.
+				} finally {
+					inFlight = false;
+				}
+			}
+
+			timer = window.setInterval(checkImageRevision, intervalMs);
+			window.addEventListener("pagehide", stopPolling);
+			checkImageRevision();
+		}
+
+		function readImageRefreshInterval() {
+			const storageKey = "mayflycirclefit.imageRefreshInterval";
+			let stored = "0";
+			try {
+				stored = window.localStorage.getItem(storageKey);
+			} catch (_err) {
+				return 0;
+			}
+			const parsed = Number.parseInt(stored, 10);
+			return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+		}
+
 		function updateHeatmapLegend(colormap) {
 			const gradient = document.getElementById("heatmap-legend-gradient");
 			if (!gradient) {
@@ -740,6 +894,7 @@ templ ImageViewer(data ImageViewerData) {
 			initializeImageState("diff-image", "diff-image-loading", "diff-image-error");
 			initializeImageState("overlay-best-image", "overlay-best-image-loading", "overlay-best-image-error");
 			initializeHeatmapColormap();
+			initializeImageRefreshPolling();
 			initializeOverlayOpacity();
 		})();
 	</script>

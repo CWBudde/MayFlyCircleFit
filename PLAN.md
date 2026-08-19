@@ -1067,15 +1067,15 @@ customization workflow.
 - [ ] Test with various browser sizes and devices
 
 ### Task 12.10: Add User Preferences and Settings
-- [ ] Create settings page or modal
-  - [ ] Auto-refresh interval for images (default: SSE-driven)
-  - [ ] Default view mode (Reference, Best, Side-by-Side, Diff)
-  - [ ] Default colormap for difference visualization
-  - [ ] Metrics to display (cost, PSNR, SSIM, cps)
-- [ ] Persist preferences in browser localStorage
-- [ ] Apply preferences across all jobs
-- [ ] Add "Reset to Defaults" button
-- [ ] Test preference persistence and application
+- [x] Create settings page or modal
+  - [x] Auto-refresh interval for images (default: SSE-driven)
+  - [x] Default view mode (Reference, Best, Side-by-Side, Diff)
+  - [x] Default colormap for difference visualization
+  - [x] Metrics to display (cost, PSNR, SSIM, cps)
+- [x] Persist preferences in browser localStorage
+- [x] Apply preferences across all jobs
+- [x] Add "Reset to Defaults" button
+- [x] Test preference persistence and application
 
 **Deliverables:**
 - View mode toggles (Reference, Best, Side-by-Side, Difference)

@@ -204,7 +204,7 @@ templ JobDetailPage(job JobDetail) {
 			<div class="card detail-summary" style={ fmt.Sprintf("margin-bottom: 1.5rem; border-left: 6px solid %s;", statusBorderColor(job.State)) }>
 				<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">Metrics</h2>
 				<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem;">
-				<div>
+				<div data-metric-card="cost">
 					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
 						Audited Best Cost
 					</div>
@@ -248,7 +248,7 @@ templ JobDetailPage(job JobDetail) {
 						</span> dB · pending full-image usefulness audit
 					</div>
 				</div>
-				<div>
+				<div data-metric-card="psnr">
 					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
 						Audited PSNR
 					</div>
@@ -268,7 +268,7 @@ templ JobDetailPage(job JobDetail) {
 					</div>
 				</div>
 				if job.SSIMEnabled {
-					<div>
+					<div data-metric-card="ssim">
 						<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
 							SSIM
 						</div>
@@ -306,7 +306,7 @@ templ JobDetailPage(job JobDetail) {
 					<div style="font-size: 1.5rem; font-weight: 600;" data-metric="evaluations" title={ fmt.Sprintf("%d objective evaluations", job.Evaluations) }>{ formatNumber(float64(job.Evaluations)) }</div>
 					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Objective function calls</div>
 				</div>
-				<div>
+				<div data-metric-card="cps">
 					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
 						Throughput
 					</div>
@@ -622,6 +622,8 @@ templ JobDetailPage(job JobDetail) {
 				const jobState = imageViewer.dataset.jobState;
 				const maxIters = Number.parseInt(imageViewer.dataset.maxIters, 10) || 0;
 				const circleCount = Number.parseInt({ fmt.Sprintf("%d", job.Circles) }, 10) || 0;
+				const visibleMetricStorageKey = "mayflycirclefit.visibleMetrics";
+				const imageRefreshIntervalMs = readImageRefreshInterval();
 				const initialCPS = Number.parseFloat(
 					document.querySelector('[data-metric="cps"]')?.dataset.rawCps || "0",
 				) || 0;
@@ -632,6 +634,7 @@ templ JobDetailPage(job JobDetail) {
 				let sparklineInteraction = null;
 				let sparklineTooltip = null;
 				let hoveredSample = null;
+				const metricVisibilityIds = ["cost", "psnr", "ssim", "cps"];
 
 									initializeParameterViewer();
 									initializeDownloadControls();
@@ -662,6 +665,12 @@ templ JobDetailPage(job JobDetail) {
 				}
 
 				let metricHistory = [];
+				applyMetricCardVisibility();
+				window.addEventListener("storage", function (event) {
+					if (event.key === visibleMetricStorageKey) {
+						applyMetricCardVisibility();
+					}
+				});
 				const historyData = document.getElementById("metric-history-data");
 				if (historyData) {
 					try {
@@ -716,8 +725,43 @@ templ JobDetailPage(job JobDetail) {
 				});
 				if (sparklineVisible) updateSparkline();
 
+				// Applies one progress payload to the metric panel. The stream event and
+				// the status endpoint share these field names, so both update paths feed
+				// the same function.
+				function applyProgressMetrics(data) {
+					updateMetric("best-cost", data.bestCost.toFixed(4));
+					updateCandidateMetrics(data);
+					updateMetric("iterations", data.iterations);
+					updateMetric("evaluations", formatNumber(data.evaluations));
+					updateIterationProgress(data.iterations);
+					if (data.psnrInfinite) {
+						updateMetric("psnr", "∞");
+					} else if (typeof data.psnr === "number") {
+						updateMetric("psnr", data.psnr.toFixed(2));
+					}
+					if (typeof data.ssim === "number") {
+						updateMetric("ssim", data.ssim.toFixed(4));
+					}
+					addMetricSample(data);
+					refreshParameterViewer();
+				}
+
 				// Keep the stream live for pending and running jobs and after pausing.
-				if (jobState === "running" || jobState === "pending" || jobState === "paused") {
+				// An explicit refresh interval means the viewer polls the status endpoint
+				// instead; opening the stream as well would reload the page every five
+				// seconds through onerror in exactly the environments that interval was
+				// chosen for.
+				const jobIsActive =
+					jobState === "running" || jobState === "pending" || jobState === "paused";
+				if (jobIsActive && imageRefreshIntervalMs > 0) {
+					// The image viewer owns the polling loop and the image refreshes; it
+					// republishes each status payload so the metric panel stays current.
+					document.addEventListener("mayflycirclefit:job-status", function (event) {
+						if (event.detail) {
+							applyProgressMetrics(event.detail);
+						}
+					});
+				} else if (jobIsActive) {
 					const eventSource = new EventSource(
 						"/api/v1/jobs/" + jobId + "/stream",
 					);
@@ -728,22 +772,7 @@ templ JobDetailPage(job JobDetail) {
 							typeof data.bestRevision === "number" &&
 							data.bestRevision > lastRenderedBestRevision;
 
-						// Update metrics
-						updateMetric("best-cost", data.bestCost.toFixed(4));
-						updateCandidateMetrics(data);
-						updateMetric("iterations", data.iterations);
-						updateMetric("evaluations", formatNumber(data.evaluations));
-						updateIterationProgress(data.iterations);
-						if (data.psnrInfinite) {
-							updateMetric("psnr", "∞");
-						} else if (typeof data.psnr === "number") {
-							updateMetric("psnr", data.psnr.toFixed(2));
-						}
-						if (typeof data.ssim === "number") {
-							updateMetric("ssim", data.ssim.toFixed(4));
-						}
-						addMetricSample(data);
-						refreshParameterViewer();
+						applyProgressMetrics(data);
 
 						// If job completed, reload to update images
 						if (
@@ -798,6 +827,49 @@ templ JobDetailPage(job JobDetail) {
 					elements.forEach(function (el) {
 						el.textContent = value;
 					});
+				}
+
+				function applyMetricCardVisibility() {
+					const visibleMetrics = parseVisibleMetrics();
+					metricVisibilityIds.forEach(function (metricId) {
+						const isVisible = visibleMetrics.indexOf(metricId) >= 0;
+						document
+							.querySelectorAll('[data-metric-card="' + metricId + '"]')
+							.forEach(function (card) {
+								card.style.display = isVisible ? "" : "none";
+							});
+					});
+				}
+
+				function parseVisibleMetrics() {
+					const defaults = metricVisibilityIds;
+					const allowed = new Set(defaults);
+					let raw = null;
+					try {
+						raw = window.localStorage.getItem(visibleMetricStorageKey);
+					} catch (_error) {
+						raw = null;
+					}
+					try {
+						const parsed = raw ? JSON.parse(raw) : null;
+						if (!Array.isArray(parsed)) {
+							return defaults.slice();
+						}
+						const enabled = new Set();
+						parsed.forEach(function (metric) {
+							if (allowed.has(metric)) {
+								enabled.add(metric);
+							}
+						});
+						if (enabled.size === 0) {
+							return defaults.slice();
+						}
+						return defaults.filter(function (metric) {
+							return enabled.has(metric);
+						});
+					} catch (_error) {
+						return defaults.slice();
+					}
 				}
 
 				function updateCandidateMetrics(data) {

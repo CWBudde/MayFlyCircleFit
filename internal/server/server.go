@@ -220,6 +220,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.handleDashboardPage)
 	mux.HandleFunc("/jobs", s.handleJobsPage)
 	mux.HandleFunc("/jobs/", s.handleJobDetail)
+	mux.HandleFunc("/settings", s.handleSettingsPage)
 	mux.HandleFunc("/create", s.handleCreatePage)
 	mux.HandleFunc("/schedules", s.handleCampaignList)
 	mux.HandleFunc("/schedules/", s.handleCampaignDetail)
@@ -886,6 +887,7 @@ type jobStatusResponse struct {
 	State                 JobState    `json:"state"`
 	Config                JobConfig   `json:"config"`
 	BestCost              float64     `json:"bestCost"`
+	BestRevision          uint64      `json:"bestRevision"`
 	CandidateCost         *float64    `json:"candidateCost,omitempty"`
 	CandidatePSNR         *float64    `json:"candidatePsnr,omitempty"`
 	CandidatePSNRInfinite bool        `json:"candidatePsnrInfinite,omitempty"`
@@ -930,7 +932,8 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 	}
 	response := jobStatusResponse{
 		ID: job.ID, Project: app.NormalizeProject(job.Project), State: job.State, Config: job.Config,
-		BestCost: job.BestCost, CandidateCost: cloneFloat(job.CandidateCost), InitialCost: job.InitialCost,
+		BestCost: job.BestCost, BestRevision: job.BestRevision,
+		CandidateCost: cloneFloat(job.CandidateCost), InitialCost: job.InitialCost,
 		PSNR: psnr, PSNRInfinite: psnrInfinite, SSIM: cloneFloat(job.SSIM),
 		Iterations: job.Iterations, Evaluations: job.Evaluations,
 		EvaluationWidth: job.EvaluationWidth,
