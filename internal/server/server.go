@@ -1538,11 +1538,68 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 	})
 }
 
-// loggingMiddleware logs HTTP requests
+type responseStatusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *responseStatusWriter) WriteHeader(status int) {
+	if w.status != 0 {
+		return
+	}
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *responseStatusWriter) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(body)
+}
+
+func (w *responseStatusWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
+func (w *responseStatusWriter) statusCode() int {
+	if w.status == 0 {
+		return http.StatusOK
+	}
+	return w.status
+}
+
+type responseStatusFlusher struct {
+	*responseStatusWriter
+}
+
+func (w *responseStatusFlusher) Flush() {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	w.ResponseWriter.(http.Flusher).Flush()
+}
+
+// loggingMiddleware logs HTTP requests with a server-controlled correlation ID.
 func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		next.ServeHTTP(w, r)
-		slog.Debug("HTTP request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(start))
+		requestID := uuid.NewString()
+		w.Header().Set("X-Request-ID", requestID)
+
+		statusWriter := &responseStatusWriter{ResponseWriter: w}
+		var responseWriter http.ResponseWriter = statusWriter
+		if _, ok := w.(http.Flusher); ok {
+			responseWriter = &responseStatusFlusher{responseStatusWriter: statusWriter}
+		}
+
+		next.ServeHTTP(responseWriter, r)
+		slog.Debug("HTTP request",
+			"request_id", requestID,
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", statusWriter.statusCode(),
+			"duration", time.Since(start),
+		)
 	})
 }
