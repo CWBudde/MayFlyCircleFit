@@ -357,9 +357,9 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 
 	// Parse integer fields
 	circles, err := strconv.Atoi(circlesStr)
-	if err != nil || circles < 1 || circles > 1000 {
+	if err != nil || circles < 1 || circles > app.MaxCircles {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.CreateJobPage("Circles must be between 1 and 1000", formProject).Render(r.Context(), w)
+		ui.CreateJobPage(fmt.Sprintf("Circles must be between 1 and %d", app.MaxCircles), formProject).Render(r.Context(), w)
 		return
 	}
 

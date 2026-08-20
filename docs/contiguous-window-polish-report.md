@@ -226,7 +226,8 @@ are level has finished, and the next one will not surprise you. Three coverage
 passes exhausted a 1000-circle greedy fit.
 
 What remains after that is bounded by the placement itself, not by the polisher.
-`app.MaxCircles` is 1000, so the vector cannot grow, and no local repair reaches
+`app.MaxCircles` was 1000 when this was measured, so the vector could not grow,
+and no local repair reaches
 past where the greedy fit put things. The lesson for the *next* campaign is to
 polish while the canvas is small enough for the foundation to still move --
 value per hour measured across one campaign runs 2597 cost units/hour at 32

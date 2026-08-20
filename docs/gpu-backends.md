@@ -67,7 +67,7 @@ and released with its OpenCL runtime.
 
 | Storage | Device layout and size | Lifetime | Host/device traffic |
 |---------|------------------------|----------|---------------------|
-| Circle parameters | `float32[7*K]`, `28*K` bytes | Persistent | Host to device only when the parameter hash changes. The default 10-circle job writes 280 bytes; the accepted 1000-circle maximum writes 28,000 bytes. |
+| Circle parameters | `float32[7*K]`, `28*K` bytes | Persistent | Host to device only when the parameter hash changes. The default 10-circle job writes 280 bytes; the accepted 2000-circle maximum writes 56,000 bytes. |
 | Reference image | packed `uchar4[P]` NRGBA, `4*P` bytes | Persistent, read-only | Uploaded once during initialization. Non-zero image origins and padded host strides are normalized row by row before upload. |
 | Rendered image | packed `uchar4[P]` NRGBA, `4*P` bytes | Persistent | Remains device-resident after `Cost`; copied to the reusable host `image.NRGBA` only when `Render` requests a new parameter hash. |
 | Partial sums A/B | `float32[G]` each, `4*G` bytes each | Persistent | Device-only ping-pong storage for multi-pass reduction. |
