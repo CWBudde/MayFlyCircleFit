@@ -225,9 +225,9 @@ func printScheduleProjection(output io.Writer, detail scheduleDetailResponse, as
 	}
 }
 
-// stageTimings reduces the stage records to the wall clock the projection
-// reads. A stage without both timestamps measured nothing.
-func stageTimings(stages []store.ScheduleStageRecord) []app.ScheduleStageTiming {
+// stageTimings reduces the stage listing to the wall clock the projection
+// reads. A stage the listing gives no elapsed for measured nothing.
+func stageTimings(stages []scheduleStageSummaryResponse) []app.ScheduleStageTiming {
 	timings := make([]app.ScheduleStageTiming, 0, len(stages))
 	for _, stage := range stages {
 		timing := app.ScheduleStageTiming{
@@ -235,8 +235,8 @@ func stageTimings(stages []store.ScheduleStageRecord) []app.ScheduleStageTiming 
 			Kind:  stage.Kind,
 			State: scheduleOutcomeState(stage.State),
 		}
-		if stage.StartedAt != nil && stage.CompletedAt != nil {
-			timing.Elapsed = stage.CompletedAt.Sub(*stage.StartedAt)
+		if stage.ElapsedNanos != nil {
+			timing.Elapsed = time.Duration(*stage.ElapsedNanos)
 		}
 		timings = append(timings, timing)
 	}

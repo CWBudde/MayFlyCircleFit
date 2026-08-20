@@ -432,17 +432,19 @@ func summarizeCampaign(record *store.ScheduleRecord, stages []store.ScheduleStag
 // chainStageWire is the JSON form of an imported stage. It is a flat record
 // rather than the UI view model: the API describes what is on disk, and leaves
 // derived presentation to the caller.
+//
+// It is a projection for the same reason the schedule stage listing is: a chain
+// is as long as the campaign that built it, and a response that grows per stage
+// eventually stops being readable from the CLI. The lineage link, the
+// termination, the evaluation count and the timestamp are all recorded on the
+// job itself, so GET /api/v1/jobs/:id/status answers them one stage at a time.
 type chainStageWire struct {
-	Index       int       `json:"index"`
-	Kind        string    `json:"kind"`
-	JobID       string    `json:"jobId"`
-	ParentJobID string    `json:"parentJobId,omitempty"`
-	Circles     int       `json:"circles"`
-	BestCost    float64   `json:"bestCost"`
-	Iterations  int       `json:"iterations"`
-	Evaluations int64     `json:"evaluations"`
-	Termination string    `json:"termination,omitempty"`
-	Timestamp   time.Time `json:"timestamp"`
+	Index      int     `json:"index"`
+	Kind       string  `json:"kind"`
+	JobID      string  `json:"jobId"`
+	Circles    int     `json:"circles"`
+	BestCost   float64 `json:"bestCost"`
+	Iterations int     `json:"iterations"`
 }
 
 type chainSummaryWire struct {
@@ -466,22 +468,17 @@ func chainDetailFrom(leafJobID string, chain []*store.Checkpoint) chainDetailWir
 		detail.RootJobID = chain[0].JobID
 	}
 	for index, checkpoint := range chain {
-		parent, _ := checkpoint.ContinuedFrom()
 		circles := checkpoint.ActualCircles
 		if circles == 0 {
 			circles = checkpoint.RequestedCircles
 		}
 		detail.Stages = append(detail.Stages, chainStageWire{
-			Index:       index,
-			Kind:        chainStageKind(checkpoint),
-			JobID:       checkpoint.JobID,
-			ParentJobID: parent,
-			Circles:     circles,
-			BestCost:    checkpoint.BestCost,
-			Iterations:  checkpoint.Iterations,
-			Evaluations: checkpoint.Evaluations,
-			Termination: checkpoint.Termination,
-			Timestamp:   checkpoint.Timestamp,
+			Index:      index,
+			Kind:       chainStageKind(checkpoint),
+			JobID:      checkpoint.JobID,
+			Circles:    circles,
+			BestCost:   checkpoint.BestCost,
+			Iterations: checkpoint.Iterations,
 		})
 	}
 	return detail

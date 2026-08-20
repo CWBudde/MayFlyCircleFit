@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -708,16 +709,25 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateJob handles POST /api/v1/jobs
 func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
-	var request createJobRequest
 	r.Body = http.MaxBytesReader(w, r.Body, app.MaxRequestBody)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
+	// The body is kept, not just decoded: which keys the caller actually wrote
+	// is the only thing that separates an omitted field from an explicit zero,
+	// and app.NormalizeRequest needs it to refuse a value the defaults would
+	// otherwise swallow.
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
 			writeAPIError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body exceeds the size limit")
 			return
 		}
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "unable to read request body")
+		return
+	}
+	var request createJobRequest
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid JSON request body")
 		return
 	}
@@ -731,7 +741,7 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.applyDefaultBackend(&request.JobConfig)
-	config, err := app.Normalize(request.JobConfig)
+	config, err := app.NormalizeRequest(body, request.JobConfig)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_config", err.Error())
 		return

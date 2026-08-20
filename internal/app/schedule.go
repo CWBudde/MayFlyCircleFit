@@ -27,6 +27,26 @@ const (
 	// finishes in a weekend.
 	MaxScheduleStages = 4096
 
+	// MaxScheduleNameLen bounds the campaign label. The name is free text with
+	// no effect on execution, and it is echoed everywhere a campaign is listed
+	// — in every summary, in the stage table's header, and in the detail
+	// response twice over — so an unbounded one is a response size nobody
+	// authored on purpose.
+	MaxScheduleNameLen = 200
+
+	// MaxScheduleDocumentBytes bounds the document itself, which the detail
+	// response carries in full because the finish projection is computed from
+	// the plan it expands to.
+	//
+	// It is what keeps that response readable: the stage listing costs about
+	// 172 B per stage, so a campaign at MaxScheduleStages is roughly 706 kB, and
+	// the document has to fit in what is left of MaxCLIResponseBytes. This bound
+	// leaves around 200 kB of headroom while being some 500 B per step at
+	// MaxScheduleSteps — two orders of magnitude more than the worked example
+	// spends on one. A document that needs more is one written stanza by stanza
+	// where `repeat` says the same thing.
+	MaxScheduleDocumentBytes = 128 << 10
+
 	// MaxScheduleRepeat bounds a single generator step.
 	MaxScheduleRepeat = 1024
 )
@@ -200,6 +220,11 @@ var scheduleRefusedBaseFields = map[string]string{
 // wrote that ApplyDefaults would silently replace is an error naming the field
 // that works, rather than a value quietly dropped on the floor.
 func ParseSchedule(data []byte) (*ScheduleDocument, error) {
+	if len(data) > MaxScheduleDocumentBytes {
+		return nil, invalid("schedule", fmt.Sprintf(
+			"is %d bytes, over the %d a document may be; use repeat instead of writing a stanza per stage",
+			len(data), MaxScheduleDocumentBytes))
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var doc ScheduleDocument
@@ -275,6 +300,9 @@ func (d *ScheduleDocument) validate(presentBase map[string]json.RawMessage) erro
 func (d ScheduleDocument) Validate() error {
 	if d.SchemaVersion != 0 && d.SchemaVersion != ScheduleSchemaVersion {
 		return invalid("schemaVersion", fmt.Sprintf("must be %d", ScheduleSchemaVersion))
+	}
+	if len(d.Name) > MaxScheduleNameLen {
+		return invalid("name", fmt.Sprintf("must be at most %d characters", MaxScheduleNameLen))
 	}
 	if len(d.Steps) > MaxScheduleSteps {
 		return invalid("steps", fmt.Sprintf("must contain at most %d steps", MaxScheduleSteps))
@@ -538,6 +566,9 @@ func (s ScheduleStep) realize(config JobConfig, circles, index, stepIndex, repet
 // replace. The comparison is made against the caller's own document rather than
 // against a fixed list, so a future default cannot start swallowing a field
 // without this check noticing.
+//
+// An empty prefix names the field on its own, which is what a request body
+// carrying a configuration directly needs; a schedule passes "base".
 func validateNoDefaultOverrides(prefix string, present map[string]json.RawMessage, config JobConfig) error {
 	if len(present) == 0 {
 		return nil
@@ -567,9 +598,16 @@ func validateNoDefaultOverrides(prefix string, present map[string]json.RawMessag
 		if reflect.DeepEqual(before, after) {
 			continue
 		}
-		return invalid(prefix+"."+name, defaultOverrideReason(name))
+		return invalid(qualifiedField(prefix, name), defaultOverrideReason(name))
 	}
 	return nil
+}
+
+func qualifiedField(prefix, name string) string {
+	if prefix == "" {
+		return name
+	}
+	return prefix + "." + name
 }
 
 func defaultOverrideReason(name string) string {

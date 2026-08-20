@@ -204,6 +204,22 @@ bounded. pprof is off by default and `--enable-pprof` requires a loopback bind.
   prefix is a `404`, and no path under `/static/` can escape that boundary into
   the host filesystem. Other routes are unaffected: `/`, `/jobs`, and the API
   endpoints continue to be served by the mux.
+- **A written field is used as written; only an omitted one is defaulted.**
+  `POST /api/v1/jobs` reads the raw body to see which keys the caller actually
+  wrote, and refuses any of them that `ApplyDefaults` would replace — so
+  `"circles": 0` is `400 invalid_config` naming `circles`, rather than a
+  ten-circle run nobody asked for. It is the rule `ParseSchedule` already
+  applies to a document's base stage, for the reason Phase 16 records: a
+  silently dropped field costs hours before anyone notices. The corollary is
+  that a client must *omit* a field it has no opinion on. Marshalling a
+  zero-valued configuration struct writes explicit zeros and is a request for
+  them, because nothing on the wire distinguishes the two.
+- **A CLI flag is never omitted, so its value is never defaulted.** A flag
+  carries either its own default or what the operator typed, so `run` keeps the
+  typed value and validates it: `--circles 0` fails instead of fitting ten. The
+  flags whose zero means "decide for me" — `--batch-size`,
+  `--evaluation-workers`, `--seed`, `--stop-*` — are excluded and still resolve
+  through the defaults.
 - **Global stream is an observable server behavior.** `GET /api/v1/stream`
   emits one snapshot of all currently running jobs, then streams live progress for
   all jobs over one connection. A dropped connection closes that stream, and
@@ -362,11 +378,35 @@ model: it stores nothing, so it cannot drift from the stage records.
   through its own project store, so the campaign listing walks every registered
   project rather than the default one alone. Each store is discovered on its own
   because lineage never crosses a project boundary.
+- **The stage listing is a projection, and it is bounded by the reader.**
+  `GET /api/v1/schedules/:id` carries index, kind, state, circles, cost, elapsed,
+  job and reason per stage — what the table prints and what the finish estimate
+  reads — and not the stage's `JobConfig`. Carrying the configuration cost about
+  1.2 kB a stage and put the response past the CLI's `MaxCLIResponseBytes` at
+  roughly 865 of the 4096 stages a schedule may legally expand to, which made
+  most legal campaigns unreadable from a terminal. `GET /api/v1/chains/:jobID` is
+  the same shape for the same reason. Elapsed travels as nanoseconds rather than
+  as the two timestamps it comes from, so the estimate computed from the listing
+  is identical to the one computed from the records. Raising the cap is not the
+  fix: a body that grows without bound with stage count moves the wall rather
+  than removing it. The document travels in full, because the projection needs
+  the plan it expands to, so it is bounded as well — `MaxScheduleDocumentBytes`
+  and `MaxScheduleNameLen` — and the two bounds together are what make the
+  response fit for every campaign the format allows, not merely for the ones
+  with short names.
+- **A stage's configuration is retrievable one stage at a time.**
+  `GET /api/v1/schedules/:id/stages/:index` answers the whole stage record,
+  configuration included, because replaying a single stage is what that record is
+  for. The equivalent for an imported chain is the job itself,
+  `GET /api/v1/jobs/:id/status`.
 - **The campaign seed is reported or declared absent, never zero.** A document
   that omits `seed` leaves the record's `campaignSeed` at the resolve-me
   sentinel; the seed that actually ran is read back from the first stage record,
   and before any stage has run both the view and the CLI say the seed is
-  unresolved instead of printing the zero.
+  unresolved instead of printing the zero. The web view reads the fallback off
+  the stage records it already holds; the CLI reads the campaign's own seed,
+  because its listing carries no stage configuration and every stage inherits
+  that one seed anyway.
 - **Accepted polishing sweeps are not persisted.** The batch polisher reports
   the count to the log only, so the column reports it as unrecorded on every
   stage. Populating it needs a stage-record field, not a view change.

@@ -404,3 +404,66 @@ func TestEarlyStopEnabledAndValidCombinations(t *testing.T) {
 		})
 	}
 }
+
+// TestNormalizeRequestRefusesAWrittenDefault covers the difference a decoded
+// struct cannot see: a caller who omitted a field wants the default, and a
+// caller who wrote a zero wants zero. The first is filled, the second is an
+// error naming the field, because filling it would run something other than
+// what was asked for.
+func TestNormalizeRequestRefusesAWrittenDefault(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{
+			name: "omitted fields are defaulted",
+			body: `{"refPath": "assets/ref.png"}`,
+		},
+		{
+			name: "an unrelated envelope key is ignored",
+			body: `{"refPath": "assets/ref.png", "project": "default"}`,
+		},
+		{
+			name:    "a written zero is not an omission",
+			body:    `{"refPath": "assets/ref.png", "circles": 0}`,
+			wantErr: "circles",
+		},
+		{
+			name:    "a written zero is refused for every defaulted field",
+			body:    `{"refPath": "assets/ref.png", "iters": 0}`,
+			wantErr: "iters",
+		},
+		{
+			// The reason a value that survives the defaults stays accepted: it
+			// is the value the run uses, so nothing is being swallowed.
+			name: "a written value the defaults keep is accepted",
+			body: `{"refPath": "assets/ref.png", "circles": 32}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var config JobConfig
+			if err := json.Unmarshal([]byte(test.body), &config); err != nil {
+				t.Fatalf("unmarshal fixture: %v", err)
+			}
+			normalized, err := NormalizeRequest([]byte(test.body), config)
+			if test.wantErr != "" {
+				if err == nil {
+					t.Fatalf("NormalizeRequest() accepted %s, circles = %d", test.body, normalized.Circles)
+				}
+				if !strings.Contains(err.Error(), test.wantErr) {
+					t.Fatalf("error = %q, want it to name %q", err, test.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("NormalizeRequest() error = %v", err)
+			}
+			if normalized.Circles < 1 || normalized.Iters < 1 || normalized.PopSize < MinPopulation {
+				t.Fatalf("omitted fields were not defaulted: %+v", normalized)
+			}
+		})
+	}
+}

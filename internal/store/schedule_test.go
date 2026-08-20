@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -156,6 +157,51 @@ func TestSaveScheduleStageIsIdempotentPerIndex(t *testing.T) {
 	}
 	if reloaded[0].State != ScheduleStateCompleted || reloaded[0].BestCost != 161.99 {
 		t.Fatalf("stage rewrite lost the update: %+v", reloaded[0])
+	}
+}
+
+// TestLoadScheduleStageReadsOneStage covers the single-stage read the schedule
+// listing leans on: the listing carries no configuration, so the configuration
+// a stage ran with has to be readable on its own.
+func TestLoadScheduleStageReadsOneStage(t *testing.T) {
+	fsStore, _ := newScheduleStore(t)
+	record := testScheduleRecord(t)
+	if err := fsStore.SaveSchedule(record); err != nil {
+		t.Fatalf("SaveSchedule() error = %v", err)
+	}
+	stages, err := record.Document.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	stage := NewScheduleStageRecord(testScheduleID, stages[1])
+	stage.JobID = testBaseJobID
+	stage.State = ScheduleStateCompleted
+	if err := fsStore.SaveScheduleStage(testScheduleID, stage); err != nil {
+		t.Fatalf("SaveScheduleStage() error = %v", err)
+	}
+
+	loaded, err := fsStore.LoadScheduleStage(testScheduleID, stage.Index)
+	if err != nil {
+		t.Fatalf("LoadScheduleStage() error = %v", err)
+	}
+	if loaded.Index != stage.Index || loaded.JobID != stage.JobID {
+		t.Fatalf("LoadScheduleStage() = (%d, %q), want (%d, %q)",
+			loaded.Index, loaded.JobID, stage.Index, stage.JobID)
+	}
+	if loaded.Config.Circles != stage.Config.Circles || loaded.Config.EffectiveSeed != stage.Config.EffectiveSeed {
+		t.Fatalf("LoadScheduleStage() config = %+v, want the recorded configuration", loaded.Config)
+	}
+
+	if _, err := fsStore.LoadScheduleStage(testScheduleID, stage.Index+1); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("LoadScheduleStage() for an unrecorded stage error = %v, want ErrNotFound", err)
+	}
+	if _, err := fsStore.LoadScheduleStage(testScheduleID, -1); err == nil {
+		t.Fatal("LoadScheduleStage() accepted a negative index")
+	}
+	// A well-formed identifier that names no schedule is a missing schedule,
+	// not a missing stage file inside one.
+	if _, err := fsStore.LoadScheduleStage(testStageJobID, stage.Index); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("LoadScheduleStage() for an unknown schedule error = %v, want ErrNotFound", err)
 	}
 }
 
@@ -401,6 +447,60 @@ func TestScheduleStoreRefusesASymlinkedRecord(t *testing.T) {
 	if _, err := fsStore.LoadSchedule(testScheduleID); err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Fatalf("LoadSchedule() error = %v, want a refusal naming the symlink", err)
 	}
+}
+
+// TestScheduleStoreRefusesASymlinkedStagesDirectory covers both readers: the
+// containment check is lexical, so a stages directory swapped for a symlink
+// would redirect the read out of the store while the path still looks
+// contained. Reading one stage by index has to refuse it exactly as listing
+// them all does.
+func TestScheduleStoreRefusesASymlinkedStagesDirectory(t *testing.T) {
+	fsStore, dir := newScheduleStore(t)
+	record := testScheduleRecord(t)
+	if err := fsStore.SaveSchedule(record); err != nil {
+		t.Fatalf("SaveSchedule() error = %v", err)
+	}
+	stages, err := record.Document.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	stage := NewScheduleStageRecord(testScheduleID, stages[0])
+	stage.State = ScheduleStateCompleted
+	if err := fsStore.SaveScheduleStage(testScheduleID, stage); err != nil {
+		t.Fatalf("SaveScheduleStage() error = %v", err)
+	}
+
+	// The elsewhere directory holds a stage file that would load perfectly well,
+	// so the refusal is about where it is, not about what it contains.
+	outside := t.TempDir()
+	planted := *stage
+	if err := os.WriteFile(filepath.Join(outside, stageFileName(stage.Index)),
+		[]byte(mustEncodeStage(t, &planted)), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	stagesPath := filepath.Join(dir, schedulesDirName, testScheduleID, stagesDirName)
+	if err := os.RemoveAll(stagesPath); err != nil {
+		t.Fatalf("RemoveAll() error = %v", err)
+	}
+	if err := os.Symlink(outside, stagesPath); err != nil {
+		t.Skipf("symlinks are unavailable here: %v", err)
+	}
+
+	if _, err := fsStore.LoadScheduleStage(testScheduleID, stage.Index); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("LoadScheduleStage() error = %v, want a refusal naming the symlink", err)
+	}
+	if _, err := fsStore.LoadScheduleStages(testScheduleID); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("LoadScheduleStages() error = %v, want a refusal naming the symlink", err)
+	}
+}
+
+func mustEncodeStage(t *testing.T, stage *ScheduleStageRecord) string {
+	t.Helper()
+	data, err := json.Marshal(stage)
+	if err != nil {
+		t.Fatalf("marshal stage: %v", err)
+	}
+	return string(data)
 }
 
 // TestScheduleStoreSatisfiesTheInterface pins the contract 16.2's executor will

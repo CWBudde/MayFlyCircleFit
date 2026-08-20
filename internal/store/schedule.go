@@ -301,6 +301,12 @@ type ScheduleStore interface {
 
 	// LoadScheduleStages returns the recorded stages in index order.
 	LoadScheduleStages(scheduleID string) ([]ScheduleStageRecord, error)
+
+	// LoadScheduleStage returns one recorded stage by index. It exists because
+	// a stage's configuration is what replaying that stage alone needs, and
+	// reading the whole campaign to get one stage's configuration is what makes
+	// a listing grow with the fit rather than with the reader's question.
+	LoadScheduleStage(scheduleID string, index int) (*ScheduleStageRecord, error)
 }
 
 func (fs *FSStore) schedulesDir() (string, error) {
@@ -497,16 +503,12 @@ func (fs *FSStore) LoadScheduleStages(scheduleID string) ([]ScheduleStageRecord,
 	if err != nil {
 		return nil, err
 	}
-	stagesDir := filepath.Join(dir, stagesDirName)
-	info, err := os.Lstat(stagesDir)
+	stagesDir, err := existingStagesDir(dir)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("stat schedule stages directory: %w", err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return nil, fmt.Errorf("refusing non-directory or symlink stages path")
+		return nil, err
 	}
 	entries, err := os.ReadDir(stagesDir)
 	if err != nil {
@@ -536,6 +538,76 @@ func (fs *FSStore) LoadScheduleStages(scheduleID string) ([]ScheduleStageRecord,
 	}
 	sort.Slice(stages, func(i, j int) bool { return stages[i].Index < stages[j].Index })
 	return stages, nil
+}
+
+// LoadScheduleStage returns one recorded stage by index.
+//
+// A stage is one file, so this reads one file: the cost of asking for a stage
+// does not depend on how many stages the campaign has.
+func (fs *FSStore) LoadScheduleStage(scheduleID string, index int) (*ScheduleStageRecord, error) {
+	if index < 0 {
+		return nil, &ValidationError{Field: "index", Reason: "cannot be negative"}
+	}
+	dir, err := fs.existingScheduleDir(scheduleID)
+	if err != nil {
+		return nil, err
+	}
+	// The stages directory is checked before it is descended into, exactly as
+	// the listing checks it: ensureContained answers a lexical question, and a
+	// symlink swapped in for the directory would redirect the read out of the
+	// store while the path still looks contained.
+	stagesDir, err := existingStagesDir(dir)
+	if os.IsNotExist(err) {
+		return nil, &NotFoundError{JobID: scheduleID, Kind: "schedule stage"}
+	}
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(stagesDir, stageFileName(index))
+	if err := ensureContained(fs.baseDir, path); err != nil {
+		return nil, err
+	}
+	data, err := readRegularFile(path)
+	if os.IsNotExist(err) {
+		return nil, &NotFoundError{JobID: scheduleID, Kind: "schedule stage"}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read schedule stage: %w", err)
+	}
+	var stage ScheduleStageRecord
+	if err := json.Unmarshal(data, &stage); err != nil {
+		return nil, fmt.Errorf("deserialize schedule stage: %w", err)
+	}
+	if err := stage.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid schedule stage %d: %w", index, err)
+	}
+	if stage.ScheduleID != scheduleID {
+		return nil, fmt.Errorf("stage schedule ID %q does not match %q", stage.ScheduleID, scheduleID)
+	}
+	return &stage, nil
+}
+
+// existingStagesDir resolves a schedule's stages directory and refuses one that
+// is not a real directory. Both readers go through it, so neither can be walked
+// into a symlink that points out of the store: a lexical containment check
+// cannot see that, because the path it is given still looks contained.
+//
+// A missing directory is reported as os.ErrNotExist and left to the caller: a
+// campaign with no stage yet is an empty listing, but a single stage that was
+// asked for by index is not there.
+func existingStagesDir(scheduleDir string) (string, error) {
+	stagesDir := filepath.Join(scheduleDir, stagesDirName)
+	info, err := os.Lstat(stagesDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", err
+		}
+		return "", fmt.Errorf("stat schedule stages directory: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return "", fmt.Errorf("refusing non-directory or symlink stages path")
+	}
+	return stagesDir, nil
 }
 
 // stageFileName keys a stage by its index, zero padded so the on-disk order and

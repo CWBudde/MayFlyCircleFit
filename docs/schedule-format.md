@@ -31,7 +31,7 @@ describe a format the parser would refuse.
 | Field | Meaning |
 | --- | --- |
 | `schemaVersion` | `1`, or omitted for the current version. Any other value is refused rather than guessed at. |
-| `name` | A human label carried onto the stage table. No effect on execution. |
+| `name` | A human label carried onto the stage table, at most 200 characters. No effect on execution. |
 | `seed` | The campaign seed, inherited by every stage. Zero resolves one and records it per stage. |
 | `base` | The first run's configuration — the same `JobConfig` `POST /api/v1/jobs` takes. |
 | `steps` | The ordered continuations. Optional; a document with none is a single run. |
@@ -43,7 +43,13 @@ A document with steps must run its base in `"mode": "batch"`, because both
 continuation paths require a completed batch checkpoint.
 
 Limits: at most 256 authored steps, 1024 repetitions per step, and 4096 realized
-stages.
+stages. The document itself is at most 128 KiB, because `GET
+/api/v1/schedules/:id` carries it in full — the finish projection is computed
+from the plan it expands to — and it shares that response with a stage listing
+that reaches roughly 706 kB at 4096 stages. Both bounds together are what keeps
+`schedule status` able to print any campaign this format allows. A document that
+needs more than 128 KiB is one written stanza by stanza where `repeat` says the
+same thing in a line.
 
 ## Steps
 
