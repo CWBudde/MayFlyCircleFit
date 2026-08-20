@@ -764,19 +764,6 @@ templ ImageViewer(data ImageViewerData) {
 			if (!jobId) {
 				return;
 			}
-			const jobState = viewer.dataset.jobState;
-			if (
-				jobState !== "running" &&
-				jobState !== "pending" &&
-				jobState !== "paused"
-			) {
-				return;
-			}
-			const intervalMs = readImageRefreshInterval();
-			if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
-				return;
-			}
-
 			let lastRevision = Number.parseInt(viewer.dataset.bestRevision, 10) || 0;
 			let timer = null;
 			let inFlight = false;
@@ -790,6 +777,24 @@ templ ImageViewer(data ImageViewerData) {
 
 			// One request at a time: a slow network must not let ticks pile up into
 			// overlapping fetches that apply their updates out of order.
+			function applyImageStatus(status) {
+				if (!status) return;
+				const nextRevision = Number.parseInt(status.bestRevision, 10);
+				if (Number.isFinite(nextRevision) && nextRevision > lastRevision) {
+					lastRevision = nextRevision;
+					viewer.dataset.bestRevision = String(nextRevision);
+					const colormap = selectedHeatmapColormap();
+					refreshImage("best-image", "best-image-loading", jobId, "best.png", nextRevision);
+					refreshImage("overlay-best-image", "overlay-best-image-loading", jobId, "best.png", nextRevision);
+					refreshImage("diff-image", "diff-image-loading", jobId, "diff.png", nextRevision, colormap);
+				}
+				if (status.state) viewer.dataset.jobState = status.state;
+			}
+
+			document.addEventListener("mayflycirclefit:job-status", function (event) {
+				applyImageStatus(event.detail);
+			});
+
 			async function checkImageRevision() {
 				if (inFlight) {
 					return;
@@ -808,34 +813,7 @@ templ ImageViewer(data ImageViewerData) {
 					document.dispatchEvent(
 						new CustomEvent("mayflycirclefit:job-status", { detail: status }),
 					);
-					const nextRevision = Number.parseInt(status.bestRevision, 10);
-					if (Number.isFinite(nextRevision) && nextRevision > lastRevision) {
-						lastRevision = nextRevision;
-						viewer.dataset.bestRevision = String(nextRevision);
-						const colormap = selectedHeatmapColormap();
-						refreshImage(
-							"best-image",
-							"best-image-loading",
-							jobId,
-							"best.png",
-							nextRevision,
-						);
-						refreshImage(
-							"overlay-best-image",
-							"overlay-best-image-loading",
-							jobId,
-							"best.png",
-							nextRevision,
-						);
-						refreshImage(
-							"diff-image",
-							"diff-image-loading",
-							jobId,
-							"diff.png",
-							nextRevision,
-							colormap,
-						);
-					}
+					applyImageStatus(status);
 					if (
 						status.state === "completed" ||
 						status.state === "failed" ||
@@ -843,11 +821,6 @@ templ ImageViewer(data ImageViewerData) {
 					) {
 						stopPolling();
 						viewer.dataset.jobState = status.state;
-						// The status badge, controls and completion artifacts are all
-						// server-rendered, so a terminal transition needs a reload rather
-						// than a data attribute update. Without the stream running, this
-						// is the only place that observes it.
-						window.location.reload();
 					}
 				} catch (_err) {
 					// Keep polling and let errors self-recover.
@@ -856,9 +829,16 @@ templ ImageViewer(data ImageViewerData) {
 				}
 			}
 
-			timer = window.setInterval(checkImageRevision, intervalMs);
+			const jobState = viewer.dataset.jobState;
+			const intervalMs = readImageRefreshInterval();
+			if (
+				(jobState === "running" || jobState === "pending" || jobState === "paused") &&
+				Number.isFinite(intervalMs) && intervalMs > 0
+			) {
+				timer = window.setInterval(checkImageRevision, intervalMs);
+				checkImageRevision();
+			}
 			window.addEventListener("pagehide", stopPolling);
-			checkImageRevision();
 		}
 
 		function readImageRefreshInterval() {

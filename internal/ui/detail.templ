@@ -143,7 +143,21 @@ templ JobDetailPage(job JobDetail) {
 						{ job.ID[:8] }...
 					</h1>
 				</div>
-				<div style="text-align: right;">
+					<div
+						data-island="job-controls"
+						data-island-label="job controls"
+						data-job-id={ job.ID }
+						data-job-state={ job.State }
+						data-best-revision={ fmt.Sprintf("%d", job.BestRevision) }
+						data-max-iterations={ fmt.Sprintf("%d", job.MaxIters) }
+						data-iterations={ fmt.Sprintf("%d", job.Iterations) }
+						data-evaluations={ fmt.Sprintf("%d", job.Evaluations) }
+						data-best-cost={ fmt.Sprintf("%.12f", job.BestCost) }
+						data-initial-cost={ fmt.Sprintf("%.12f", job.InitialCost) }
+						data-cps={ fmt.Sprintf("%.12f", job.CPS) }
+						data-can-polish={ fmt.Sprintf("%t", job.CanPolish) }
+						style="text-align: right;"
+					>
 					@StateBadge(job.State)
 					if job.State == "running" {
 						<button id="pause-job" class="btn" style="margin-left: 0.5rem; background-color: var(--warning-color); color: var(--text-color);">
@@ -672,7 +686,7 @@ templ JobDetailPage(job JobDetail) {
 					}
 				});
 				const historyData = document.getElementById("metric-history-data");
-				if (historyData) {
+					if (historyData) {
 					try {
 						metricHistory = (JSON.parse(historyData.textContent) || []).map(normalizeHistorySample);
 						if (metricHistory.length > 0) {
@@ -683,6 +697,14 @@ templ JobDetailPage(job JobDetail) {
 					} catch (err) {
 						console.error("Unable to parse metric history:", err);
 					}
+					document.addEventListener("mayflycirclefit:job-metrics", function (event) {
+						if (!Array.isArray(event.detail)) return;
+						metricHistory = event.detail.map(normalizeHistorySample);
+						updateThroughputDisplay();
+						updateCostImprovementRate();
+						if (metricHistory.length > 0) updateEta(metricHistory[metricHistory.length - 1].iteration);
+						if (sparklineVisible) updateSparkline();
+					});
 				}
 
 				// History chart controls
@@ -746,79 +768,11 @@ templ JobDetailPage(job JobDetail) {
 					refreshParameterViewer();
 				}
 
-				// Keep the stream live for pending and running jobs and after pausing.
-				// An explicit refresh interval means the viewer polls the status endpoint
-				// instead; opening the stream as well would reload the page every five
-				// seconds through onerror in exactly the environments that interval was
-				// chosen for.
-				const jobIsActive =
-					jobState === "running" || jobState === "pending" || jobState === "paused";
-				if (jobIsActive && imageRefreshIntervalMs > 0) {
-					// The image viewer owns the polling loop and the image refreshes; it
-					// republishes each status payload so the metric panel stays current.
+					// The React job-controls island owns the ordered EventSource and
+					// republishes both live frames and authoritative reconnect snapshots.
 					document.addEventListener("mayflycirclefit:job-status", function (event) {
-						if (event.detail) {
-							applyProgressMetrics(event.detail);
-						}
+						if (event.detail) applyProgressMetrics(event.detail);
 					});
-				} else if (jobIsActive) {
-					const eventSource = new EventSource(
-						"/api/v1/jobs/" + jobId + "/stream",
-					);
-
-					eventSource.onmessage = function (event) {
-						const data = JSON.parse(event.data);
-						const bestChanged =
-							typeof data.bestRevision === "number" &&
-							data.bestRevision > lastRenderedBestRevision;
-
-						applyProgressMetrics(data);
-
-						// If job completed, reload to update images
-						if (
-							data.state === "completed" ||
-							data.state === "failed" ||
-							data.state === "cancelled"
-						) {
-							eventSource.close();
-							location.reload();
-						} else if (bestChanged) {
-							lastRenderedBestRevision = data.bestRevision;
-							// Refresh images with cache busting and loading states
-							refreshImage(
-								"best-image",
-								"best-image-loading",
-								jobId,
-								"best.png",
-								lastRenderedBestRevision,
-							);
-							refreshImage(
-								"overlay-best-image",
-								"overlay-best-image-loading",
-								jobId,
-								"best.png",
-								lastRenderedBestRevision,
-							);
-							refreshImage(
-								"diff-image",
-								"diff-image-loading",
-								jobId,
-								"diff.png",
-								lastRenderedBestRevision,
-								selectedHeatmapColormap(),
-							);
-						}
-					};
-
-					eventSource.onerror = function (err) {
-						console.error("SSE connection error:", err);
-						eventSource.close();
-						// Fallback to polling after 5 seconds
-						setTimeout(function () {
-							location.reload();
-						}, 5000);
-					};
-				}
 
 				function updateMetric(id, value) {
 					const elements = document.querySelectorAll(
@@ -1617,8 +1571,9 @@ templ JobDetailPage(job JobDetail) {
 					}
 				}
 			})();
-		</script>
-	}
+			</script>
+			@IslandBundle()
+		}
 }
 
 // JobNotFound displays a 404 page for jobs that don't exist

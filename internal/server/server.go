@@ -16,6 +16,7 @@ import (
 	"net/http/pprof"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,7 @@ import (
 // Server represents the HTTP server
 type Server struct {
 	jobManager *JobManager
+	uiEvents   *UIEventHub
 	store      store.Store
 	projects   *projectRegistry
 	addr       string
@@ -130,8 +132,10 @@ func NewServerWithOptions(addr string, checkpointStore store.Store, options Serv
 	options.DefaultBackend = normalizeServerBackend(options.DefaultBackend)
 	ctx, cancel := context.WithCancel(context.Background())
 	policy, policyErr := newInputPolicy(options.InputRoots)
+	jobManager := NewJobManager()
 	server := &Server{
-		jobManager: NewJobManager(),
+		jobManager: jobManager,
+		uiEvents:   jobManager.uiEvents,
 		store:      checkpointStore,
 		addr:       addr,
 		ctx:        ctx,
@@ -235,6 +239,7 @@ func (s *Server) Handler() http.Handler {
 	// Register API routes
 	mux.HandleFunc("/api/v1/jobs", s.handleJobs)
 	mux.HandleFunc("/api/v1/stream", s.handleAllJobStream)
+	mux.HandleFunc("/api/v1/events", s.handleUIEvents)
 	mux.HandleFunc("/api/v1/projects", s.handleProjects)
 	mux.HandleFunc("/api/v1/dashboard", s.handleDashboard)
 	mux.HandleFunc("/api/v1/jobs/", s.handleJobsWithID)
@@ -243,6 +248,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/schedules/", s.handleSchedulesWithID)
 	mux.HandleFunc("/api/v1/chains", s.handleChains)
 	mux.HandleFunc("/api/v1/chains/", s.handleChainsWithID)
+	mux.HandleFunc("/api/v1/campaigns", s.handleCampaignViewList)
+	mux.HandleFunc("/api/v1/campaigns/", s.handleCampaignViewDetail)
 
 	// Catch-all for the API subtree. Without it an unrouted /api/v1 path falls
 	// through to the dashboard handler and answers with a plain-text 404, which
@@ -394,6 +401,9 @@ func (s *Server) requestCancellation(jobID string) error {
 	if job.State == StatePending {
 		return s.jobManager.CancelJob(jobID)
 	}
+	if job.State == StatePaused {
+		return s.jobManager.CancelJob(jobID)
+	}
 	if job.State != StateRunning {
 		return fmt.Errorf("%w: job is %s", ErrInvalidTransition, job.State)
 	}
@@ -432,6 +442,9 @@ func (s *Server) requestPause(jobID string) error {
 			slog.Error("Unable to restore a job after a failed pause", "job_id", jobID, "error", resumeErr)
 		}
 		return err
+	}
+	if paused, ok := s.jobManager.GetJob(jobID); ok {
+		s.jobManager.broadcaster.Broadcast(jobProgressSnapshot(paused))
 	}
 
 	s.cancelMu.Lock()
@@ -688,6 +701,8 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 		s.handleGetRefImage(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "params.json" {
 		s.handleGetParameters(w, r, jobID)
+	} else if len(parts) == 2 && parts[1] == "metrics" {
+		s.handleGetJobMetrics(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "report.html" {
 		s.handleGetReport(w, r, jobID)
 	} else if len(parts) == 2 && parts[1] == "stream" {
@@ -834,6 +849,7 @@ func (s *Server) handlePauseJob(w http.ResponseWriter, r *http.Request, jobID st
 }
 
 func (s *Server) handleDeleteJob(w http.ResponseWriter, _ *http.Request, jobID string) {
+	deletedJob, _ := s.jobManager.GetJob(jobID)
 	// Resolve the owning store before the job leaves the manager: afterwards
 	// the project is unknown and the lookup could not find the real artifacts.
 	// An unresolvable project fails the request instead of half-deleting the
@@ -853,6 +869,13 @@ func (s *Server) handleDeleteJob(w http.ResponseWriter, _ *http.Request, jobID s
 		return
 	}
 	s.jobManager.broadcaster.CleanupJob(jobID)
+	if deletedJob != nil {
+		if deletedJob.ScheduleID != "" {
+			s.publishScheduleChanged(deletedJob.ScheduleID)
+		} else if deletedJob.ExtendedFrom != "" || deletedJob.PolishedFrom != "" {
+			s.publishChainsChanged()
+		}
+	}
 	if jobStore != nil {
 		if err := jobStore.DeleteCheckpoint(jobID); err != nil && !errors.Is(err, store.ErrNotFound) {
 			slog.Warn("Failed to delete persisted job", "job_id", jobID, "error", err)
@@ -914,6 +937,8 @@ type jobStatusResponse struct {
 	SSIM                  *float64    `json:"ssim,omitempty"`
 	Iterations            int         `json:"iterations"`
 	Evaluations           int         `json:"evaluations"`
+	MaxIterations         int         `json:"maxIterations,omitempty"`
+	Actions               *jobActions `json:"actions,omitempty"`
 	// EvaluationWidth is the concurrency the run measured from its renderer, and
 	// is omitted when the run was serial or the width is unknown. Config carries
 	// only the request, which differs whenever the backend declined it or the
@@ -925,6 +950,14 @@ type jobStatusResponse struct {
 	StartTime       time.Time  `json:"startTime"`
 	EndTime         *time.Time `json:"endTime,omitempty"`
 	Error           string     `json:"error,omitempty"`
+}
+
+type jobActions struct {
+	Pause  bool `json:"pause"`
+	Resume bool `json:"resume"`
+	Cancel bool `json:"cancel"`
+	Delete bool `json:"delete"`
+	Polish bool `json:"polish"`
 }
 
 // handleGetJobStatus handles GET /api/v1/jobs/:id/status
@@ -947,12 +980,15 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 	if len(job.BestParams) > 0 {
 		psnr, psnrInfinite = serializablePSNR(job.BestCost)
 	}
+	actions := s.jobActions(job)
 	response := jobStatusResponse{
 		ID: job.ID, Project: app.NormalizeProject(job.Project), State: job.State, Config: job.Config,
 		BestCost: job.BestCost, BestRevision: job.BestRevision,
 		CandidateCost: cloneFloat(job.CandidateCost), InitialCost: job.InitialCost,
 		PSNR: psnr, PSNRInfinite: psnrInfinite, SSIM: cloneFloat(job.SSIM),
 		Iterations: job.Iterations, Evaluations: job.Evaluations,
+		MaxIterations:   plannedOptimizerIterations(job.Config),
+		Actions:         &actions,
 		EvaluationWidth: job.EvaluationWidth,
 		Termination:     job.Termination, Elapsed: elapsed.Seconds(), CPS: cps,
 		StartTime: job.StartTime, EndTime: job.EndTime, Error: job.Error,
@@ -961,6 +997,60 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func (s *Server) jobActions(job *Job) jobActions {
+	if job == nil {
+		return jobActions{}
+	}
+	terminal := job.State == StateCompleted || job.State == StateFailed || job.State == StateCancelled
+	return jobActions{
+		Pause: job.State == StateRunning && job.ScheduleID == "" && s.store != nil &&
+			len(job.BestParams) == job.Config.Circles*7,
+		Resume: job.State == StatePaused && s.store != nil,
+		Cancel: job.State == StatePending || job.State == StateRunning || job.State == StatePaused,
+		Delete: terminal,
+		Polish: s.store != nil && job.State == StateCompleted && job.Config.Mode == app.ModeBatch &&
+			len(job.BestParams) == job.Config.Circles*7,
+	}
+}
+
+const (
+	defaultJobMetricsLimit = 1000
+	maxJobMetricsLimit     = 5000
+)
+
+// handleGetJobMetrics returns a bounded tail of the in-memory live history.
+// It exists separately from status so CLI status responses stay small.
+func (s *Server) handleGetJobMetrics(w http.ResponseWriter, r *http.Request, jobID string) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+	limit := defaultJobMetricsLimit
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > maxJobMetricsLimit {
+			writeAPIError(w, http.StatusBadRequest, "invalid_limit", fmt.Sprintf("limit must be between 1 and %d", maxJobMetricsLimit))
+			return
+		}
+		limit = parsed
+	}
+	job, ok := s.jobManager.GetJob(jobID)
+	if !ok {
+		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
+		return
+	}
+	history := job.MetricHistory
+	if len(history) > limit {
+		history = history[len(history)-limit:]
+	}
+	if history == nil {
+		history = []MetricSample{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(history)
 }
 
 func serializableCandidatePSNR(cost *float64) (*float64, bool) {

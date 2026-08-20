@@ -197,7 +197,7 @@ func (s *Server) driveSchedule(scheduleID string) scheduleDriverExit {
 		if existing == nil {
 			verdict := app.EvaluateScheduleStage(plan, index, scheduleStageOutcomes(recorded))
 			if !verdict.Run {
-				if err := recordSkippedStage(scheduleStore, record.ScheduleID, plan[index], verdict.Reason); err != nil {
+				if err := s.recordSkippedStage(scheduleStore, record.ScheduleID, plan[index], verdict.Reason); err != nil {
 					s.settleSchedule(scheduleID, store.ScheduleStateFailed, err.Error())
 					return scheduleDriverStopped
 				}
@@ -261,13 +261,14 @@ func scheduleStageOutcomes(recorded []store.ScheduleStageRecord) []app.ScheduleS
 // recordSkippedStage writes the declined stage before the campaign moves past
 // it, so the records — the only progress there is — account for every planned
 // stage rather than leaving a hole the next reader has to explain.
-func recordSkippedStage(scheduleStore store.ScheduleStore, scheduleID string, stage app.ScheduleStage, reason string) error {
+func (s *Server) recordSkippedStage(scheduleStore store.ScheduleStore, scheduleID string, stage app.ScheduleStage, reason string) error {
 	stageRecord := store.NewScheduleStageRecord(scheduleID, stage)
 	stageRecord.State = store.ScheduleStateSkipped
 	stageRecord.Reason = reason
 	if err := scheduleStore.SaveScheduleStage(scheduleID, stageRecord); err != nil {
 		return fmt.Errorf("record skipped stage %d: %w", stage.Index, err)
 	}
+	s.publishScheduleChanged(scheduleID)
 	return nil
 }
 
@@ -393,6 +394,7 @@ func (s *Server) runScheduleStage(
 	if err := scheduleStore.SaveScheduleStage(record.ScheduleID, stageRecord); err != nil {
 		return "", fmt.Errorf("record stage %d: %w", index, err)
 	}
+	s.publishScheduleChanged(record.ScheduleID)
 
 	if err := s.startScheduleStageJob(jobID, config, source, stage, record.ScheduleID, parentJobID); err != nil {
 		stageRecord.State = store.ScheduleStateFailed
@@ -401,6 +403,7 @@ func (s *Server) runScheduleStage(
 			slog.Error("Unable to record a stage that could not start",
 				"schedule_id", record.ScheduleID, "stage", index, "error", saveErr)
 		}
+		s.publishScheduleChanged(record.ScheduleID)
 		return store.ScheduleStateFailed, nil
 	}
 
@@ -438,6 +441,7 @@ func (s *Server) runScheduleStage(
 	if err := scheduleStore.SaveScheduleStage(record.ScheduleID, stageRecord); err != nil {
 		return "", fmt.Errorf("record stage %d outcome: %w", index, err)
 	}
+	s.publishScheduleChanged(record.ScheduleID)
 	slog.Info("Schedule stage settled", "schedule_id", record.ScheduleID, "stage", index,
 		"kind", string(stage.Kind), "job_id", jobID, "state", string(stageRecord.State), "best_cost", job.BestCost)
 	return stageRecord.State, nil
@@ -547,6 +551,10 @@ func (s *Server) startBaseStageJob(jobID string, config JobConfig, lineage func(
 	if err := s.jobManager.UpdateJob(job.ID, lineage); err != nil {
 		return continuationFailure(http.StatusInternalServerError, "job_error", "failed to initialize base stage job")
 	}
+	if initialized, ok := s.jobManager.GetJob(job.ID); ok {
+		s.jobManager.broadcaster.Broadcast(jobProgressSnapshot(initialized))
+		s.publishScheduleChanged(initialized.ScheduleID)
+	}
 	if err := s.enqueueJob(job.ID); err != nil {
 		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
 		return continuationFailure(http.StatusTooManyRequests, "queue_full", "server job queue is full")
@@ -611,6 +619,7 @@ func (s *Server) settleAdoptedStage(
 		// reason to throw away finished work.
 		return "", false, fmt.Errorf("record adopted stage %d: %w", index, err)
 	}
+	s.publishScheduleChanged(scheduleID)
 	slog.Info("Adopted a stage that had already completed", "schedule_id", scheduleID, "stage", index,
 		"job_id", existing.JobID, "best_cost", job.BestCost)
 	return store.ScheduleStateCompleted, true, nil
@@ -694,7 +703,20 @@ func (s *Server) settleSchedule(scheduleID string, state store.ScheduleState, re
 		slog.Error("Unable to record schedule outcome", "schedule_id", scheduleID, "state", string(state), "error", err)
 		return
 	}
+	s.publishScheduleChanged(scheduleID)
 	slog.Info("Schedule settled", "schedule_id", scheduleID, "state", string(state), "reason", reason)
+}
+
+func (s *Server) publishScheduleChanged(scheduleID string) {
+	if s.uiEvents != nil && scheduleID != "" {
+		s.uiEvents.PublishCampaignChanged("schedule", scheduleID)
+	}
+}
+
+func (s *Server) publishChainsChanged() {
+	if s.uiEvents != nil {
+		s.uiEvents.PublishCampaignChanged("chain", "")
+	}
 }
 
 // cancelScheduleStage cancels whichever stage of a schedule is in flight. It is

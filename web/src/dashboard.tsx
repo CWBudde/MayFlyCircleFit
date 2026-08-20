@@ -1,10 +1,14 @@
 import { Chart } from "chart.js";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import { CampaignCostChart } from "./CampaignCostChart";
-import { CampaignCostIsland } from "./CampaignCostIsland";
 import { useChartTheme, useLineChart } from "./charts";
 import type { Palette } from "./charts";
 import { mountIslands } from "./islands";
+import { JobListIsland } from "./JobList";
+import { CampaignDetailIsland, CampaignListIsland } from "./Campaigns";
+import { JobControlsIsland } from "./JobControls";
+import { fetchJSON, useLiveResource } from "./live";
+import type { UIEvent } from "./live";
 
 // DashboardResponse is the shape of both GET /api/v1/dashboard and the
 // server-rendered seed in `#dashboard-page`. The Go side keeps those two in
@@ -99,8 +103,6 @@ type ProgressEventPayload = {
 // grow without limit in a tab left open overnight. The endpoint caps its seed
 // at 100 samples; this is the client's own ceiling on what it keeps after that.
 const MAX_HISTORY_POINTS = 1000;
-
-const STREAM_RECONNECT_MS = 2000;
 
 // readDashboardSeed parses the payload the server rendered into the island
 // root. It has to run before React's first commit, because that commit clears
@@ -343,155 +345,12 @@ function JobSparkline({ history, palette }: { history: MetricSample[]; palette: 
 
 function DashboardIsland({ root }: { root: HTMLElement }) {
 	const palette = useChartTheme();
-	const [payload, setPayload] = useState<DashboardResponse | null>(() => readDashboardSeed(root));
-	const [streamConnected, setStreamConnected] = useState(false);
-	const [errorText, setErrorText] = useState<string | null>(null);
-	const streamRef = useRef<EventSource | null>(null);
-	const reconnectTimerRef = useRef<number | null>(null);
-	const mountedRef = useRef(false);
-	// Job ids the read model has already reported on, so a job seen only through
-	// the stream triggers exactly one refetch rather than one per event.
-	const seenJobsRef = useRef<Set<string>>(new Set());
-
-	const closeStream = useCallback(() => {
-		if (streamRef.current) {
-			streamRef.current.close();
-			streamRef.current = null;
-		}
-		if (reconnectTimerRef.current !== null) {
-			window.clearTimeout(reconnectTimerRef.current);
-			reconnectTimerRef.current = null;
-		}
-		setStreamConnected(false);
-	}, []);
-
-	const fetchDashboard = useCallback(async () => {
-		try {
-			const response = await fetch("/api/v1/dashboard", {
-				headers: { Accept: "application/json" },
-				cache: "no-store",
-			});
-			if (!response.ok) {
-				throw new Error(`dashboard refresh failed: ${response.status}`);
-			}
-			const next = normalizePayload((await response.json()) as DashboardResponse);
-			if (!mountedRef.current) {
-				return;
-			}
-			for (const job of next?.runningJobs ?? []) {
-				seenJobsRef.current.add(job.id);
-			}
-			setPayload(next);
-			setErrorText(null);
-		} catch (error) {
-			if (!mountedRef.current) {
-				return;
-			}
-			setErrorText(error instanceof Error ? error.message : "Dashboard refresh failed");
-		}
-	}, []);
-
-	// connectStream refetches before subscribing, on the first connection and on
-	// every reconnect alike: the stream reports progress, not the job table, so
-	// whatever happened while the connection was down is only visible in the
-	// read model.
-	const applyProgress = useCallback(
-		(progress: ProgressEventPayload) => {
-			setPayload((current) => (current ? mergeJobFromEvent(current, progress) : current));
-
-			if (isTerminal(progress.state)) {
-				// Only the read model knows the pending and completed counts and
-				// whether a campaign advanced with this job.
-				void fetchDashboard();
-				return;
-			}
-
-			// A job that started after the last fetch reaches the island through
-			// the stream alone, and a progress event carries none of the metadata
-			// its row needs: no project, no iteration budget, no initial cost. Ask
-			// the read model once, the first time the id is seen, rather than
-			// leaving the row without its project, progress bar, and gain for the
-			// whole run.
-			if (!seenJobsRef.current.has(progress.jobId)) {
-				seenJobsRef.current.add(progress.jobId);
-				void fetchDashboard();
-			}
-		},
-		[fetchDashboard],
-	);
-
-	// connectStream subscribes first and fetches second.
-	//
-	// The other order loses whatever happens in between: the global stream's
-	// opening snapshot lists only running jobs, so a job that reached a terminal
-	// state after the fetch returned and before the subscription existed would
-	// be in neither, and its row would sit there running until an unrelated
-	// reconnect. Subscribing first cannot miss that event, but it can deliver
-	// events the fetch is about to contradict, so frames that arrive while the
-	// fetch is in flight are queued and replayed on top of its result.
-	const connectStream = useCallback(async () => {
-		closeStream();
-		if (!mountedRef.current) {
-			return;
-		}
-
-		const source = new EventSource("/api/v1/stream");
-		streamRef.current = source;
-
-		let ready = false;
-		const queued: ProgressEventPayload[] = [];
-
-		source.onopen = () => setStreamConnected(true);
-		source.onmessage = (event) => {
-			let progress: ProgressEventPayload;
-			try {
-				progress = JSON.parse(event.data) as ProgressEventPayload;
-			} catch (error) {
-				console.error("Unable to parse dashboard stream event", error);
-				return;
-			}
-			if (!progress.jobId) {
-				return;
-			}
-			if (ready) {
-				applyProgress(progress);
-			} else {
-				queued.push(progress);
-			}
-		};
-
-		// EventSource retries on its own, but it would keep the stale connection
-		// and never refetch the read model, so the reconnect is driven here.
-		source.onerror = () => {
-			closeStream();
-			reconnectTimerRef.current = window.setTimeout(() => {
-				if (mountedRef.current) {
-					void connectStream();
-				}
-			}, STREAM_RECONNECT_MS);
-		};
-
-		await fetchDashboard();
-
-		// The connection may have failed or been replaced while the fetch was in
-		// flight; its queue belongs to a stream nobody is listening to any more.
-		if (!mountedRef.current || streamRef.current !== source) {
-			return;
-		}
-		ready = true;
-		for (const progress of queued) {
-			applyProgress(progress);
-		}
-	}, [applyProgress, closeStream, fetchDashboard]);
-
-	useEffect(() => {
-		mountedRef.current = true;
-		void connectStream();
-		return () => {
-			mountedRef.current = false;
-			closeStream();
-		};
-	}, [connectStream, closeStream]);
+	const initial = readDashboardSeed(root);
+	const { value: payload, connected: streamConnected, error: errorText } = useLiveResource({
+		initial,
+		load: async (signal) => normalizePayload(await fetchJSON<DashboardResponse>("/api/v1/dashboard", signal)),
+		reduce: reduceDashboardEvent,
+	});
 
 	const jobs = payload?.runningJobs ?? [];
 	const campaigns = payload?.campaigns ?? [];
@@ -630,6 +489,24 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 	);
 }
 
+function reduceDashboardEvent(
+	current: DashboardResponse | null,
+	event: UIEvent,
+): { value: DashboardResponse | null; refresh?: boolean } {
+	if (!current) return { value: current, refresh: true };
+	if (event.type === "campaign.changed" || event.type === "job.deleted") {
+		return { value: current, refresh: true };
+	}
+	if (event.type !== "job.upsert" || !event.progress) return { value: current };
+	const progress = event.progress as ProgressEventPayload;
+	const known = current.runningJobs.some((job) => job.id === progress.jobId);
+	if (progress.state !== "running") {
+		return { value: mergeJobFromEvent(current, progress), refresh: true };
+	}
+	if (!known) return { value: current, refresh: true };
+	return { value: mergeJobFromEvent(current, progress) };
+}
+
 function JobRow({ job, palette }: { job: RunningJob; palette: Palette }) {
 	const history = job.metricHistory ?? [];
 	const progress = clampProgress(job.iterations, job.maxIters);
@@ -737,5 +614,8 @@ function CampaignCard({ campaign, palette }: { campaign: CampaignSummary; palett
 
 mountIslands({
 	dashboard: DashboardIsland,
-	"campaign-cost": CampaignCostIsland,
+	"job-list": JobListIsland,
+	"campaign-list": CampaignListIsland,
+	"campaign-detail": CampaignDetailIsland,
+	"job-controls": JobControlsIsland,
 });

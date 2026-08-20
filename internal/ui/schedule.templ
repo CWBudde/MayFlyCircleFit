@@ -31,59 +31,59 @@ const (
 // A cost of zero and an unmeasured cost are different facts, and a campaign
 // view whose whole purpose is comparing runs must not blur them.
 type CampaignStage struct {
-	Index int
-	Kind  string
-	State string
+	Index int    `json:"index"`
+	Kind  string `json:"kind"`
+	State string `json:"state"`
 
-	Circles int
+	Circles int `json:"circles"`
 
-	BestCost    float64
-	HasBestCost bool
+	BestCost    float64 `json:"bestCost"`
+	HasBestCost bool    `json:"hasBestCost"`
 
 	// PSNR is derived from the cost by the caller. It is shown because a cost is
 	// hard to compare across reference images and a PSNR is not.
-	PSNR         float64
-	PSNRInfinite bool
-	HasPSNR      bool
+	PSNR         float64 `json:"psnr"`
+	PSNRInfinite bool    `json:"psnrInfinite"`
+	HasPSNR      bool    `json:"hasPsnr"`
 
-	Iterations  int
-	Evaluations int64
+	Iterations  int   `json:"iterations"`
+	Evaluations int64 `json:"evaluations"`
 
-	ElapsedSec    float64
-	HasElapsed    bool
-	ElapsedAbsent string
+	ElapsedSec    float64 `json:"elapsedSec"`
+	HasElapsed    bool    `json:"hasElapsed"`
+	ElapsedAbsent string  `json:"elapsedAbsent"`
 
 	// AcceptedSweeps is the accepted-sweep count for a polish stage. It is a
 	// pointer because the count is not persisted anywhere today, so every
 	// polish row leaves it nil and the column says so rather than showing a
 	// zero that would read as "no sweep helped".
-	AcceptedSweeps *int
+	AcceptedSweeps *int `json:"acceptedSweeps,omitempty"`
 
-	JobID       string
-	ParentJobID string
+	JobID       string `json:"jobId"`
+	ParentJobID string `json:"parentJobId"`
 
 	// Note carries the stage's own explanation — a policy reason for a skipped
 	// stage, or the error for a failed one.
-	Note string
+	Note string `json:"note"`
 }
 
 // Campaign is a whole chain presented as one run.
 type Campaign struct {
-	ID     string
-	Name   string
-	State  string
-	Source CampaignSource
+	ID     string         `json:"id"`
+	Name   string         `json:"name"`
+	State  string         `json:"state"`
+	Source CampaignSource `json:"source"`
 
-	CampaignSeed int64
-	HasSeed      bool
+	CampaignSeed int64 `json:"campaignSeed"`
+	HasSeed      bool  `json:"hasSeed"`
 
 	// PlannedStages is the stage count the plan calls for, which exceeds the
 	// recorded stages while a campaign is still running. An imported chain has
 	// no plan and leaves it zero.
-	PlannedStages int
+	PlannedStages int `json:"plannedStages"`
 
-	Stages []CampaignStage
-	Error  string
+	Stages []CampaignStage `json:"stages"`
+	Error  string          `json:"error"`
 }
 
 // CampaignSummary is a campaign in a listing. It is also the JSON the dashboard
@@ -124,6 +124,11 @@ type CampaignSeriesPoint struct {
 // back out of checkpoint lineage.
 templ CampaignListPage(schedules []CampaignSummary, chains []CampaignSummary, unavailable string) {
 	@Layout("Campaigns") {
+		<div data-island="campaign-list" data-island-label="campaign list">
+		@templ.JSONScript("campaign-list-page", struct {
+			Schedules []CampaignSummary `json:"schedules"`
+			Chains []CampaignSummary `json:"chains"`
+		}{schedules, chains})
 		<div style="margin-bottom: 2rem;">
 			<h1 style="font-size: 2rem; font-weight: 700;">Campaigns</h1>
 			<p style="color: var(--text-muted);">
@@ -164,6 +169,8 @@ templ CampaignListPage(schedules []CampaignSummary, chains []CampaignSummary, un
 				</div>
 			}
 		}
+		</div>
+		@IslandBundle()
 	}
 }
 
@@ -204,6 +211,8 @@ templ campaignCard(summary CampaignSummary, href string) {
 // circles plot that answers whether this schedule beat the last one.
 templ CampaignPage(campaign Campaign) {
 	@Layout(campaignTitle(campaign)) {
+		<div data-island="campaign-detail" data-island-label="campaign detail">
+		@templ.JSONScript("campaign-detail-page", campaign)
 		<div style="margin-bottom: 1.5rem;">
 			<div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
 				<h1 style="font-size: 1.75rem; font-weight: 700;">{ campaignTitle(campaign) }</h1>
@@ -300,8 +309,9 @@ templ CampaignPage(campaign Campaign) {
 				</p>
 			}
 		</div>
+		</div>
 		@IslandBundle()
-	}
+		}
 }
 
 // CampaignNotFound is the campaign counterpart of JobNotFound.

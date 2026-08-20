@@ -26,6 +26,9 @@ jobs:
   bundle:
     uses: ./.github/workflows/ci-bundle.yml
 
+  web:
+    uses: ./.github/workflows/ci-web.yml
+
   quality:
     uses: ./.github/workflows/ci-quality.yml
 
@@ -70,6 +73,7 @@ jobs:
     needs:
       - generation
       - bundle
+      - web
       - quality
       - staticcheck
       - test

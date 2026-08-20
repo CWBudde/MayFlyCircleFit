@@ -217,6 +217,7 @@ func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to persist the schedule")
 		return
 	}
+	s.publishScheduleChanged(record.ScheduleID)
 	if err := s.startScheduleDriver(record.ScheduleID); err != nil {
 		slog.Error("Failed to start schedule executor", "schedule_id", record.ScheduleID, "error", err)
 		writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to start the schedule")
@@ -365,6 +366,7 @@ func (s *Server) handleScheduleAction(w http.ResponseWriter, r *http.Request, sc
 		writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to update the schedule")
 		return
 	}
+	s.publishScheduleChanged(scheduleID)
 
 	switch action {
 	case "cancel":

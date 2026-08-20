@@ -123,13 +123,16 @@ type JobManager struct {
 	mu          sync.RWMutex
 	jobs        map[string]*Job
 	broadcaster *EventBroadcaster
+	uiEvents    *UIEventHub
 }
 
 // NewJobManager creates a new JobManager
 func NewJobManager() *JobManager {
+	uiEvents := NewUIEventHub()
 	return &JobManager{
 		jobs:        make(map[string]*Job),
-		broadcaster: NewEventBroadcaster(),
+		broadcaster: NewEventBroadcaster(uiEvents),
+		uiEvents:    uiEvents,
 	}
 }
 
@@ -164,8 +167,8 @@ func (jm *JobManager) CreateJobWithID(id string, project app.Project, config Job
 	}
 
 	jm.mu.Lock()
-	defer jm.mu.Unlock()
 	if existing, exists := jm.jobs[id]; exists {
+		jm.mu.Unlock()
 		return nil, &duplicateJobError{jobID: id, owner: app.NormalizeProject(existing.Project)}
 	}
 
@@ -182,7 +185,10 @@ func (jm *JobManager) CreateJobWithID(id string, project app.Project, config Job
 	}
 
 	jm.jobs[job.ID] = job
-	return cloneJob(job), nil
+	snapshot := cloneJob(job)
+	jm.mu.Unlock()
+	jm.broadcaster.Broadcast(jobProgressSnapshot(snapshot))
+	return snapshot, nil
 }
 
 // GetJob retrieves a job by ID
@@ -455,6 +461,7 @@ func (jm *JobManager) DeleteJob(id string) error {
 		return fmt.Errorf("%w: cannot delete %s job", ErrInvalidTransition, job.State)
 	}
 	delete(jm.jobs, id)
+	jm.uiEvents.PublishJobDeleted(id)
 	return nil
 }
 
@@ -478,26 +485,15 @@ func (jm *JobManager) transition(id string, next JobState, update func(*Job)) er
 		end := time.Now()
 		job.EndTime = &end
 	}
-	event := ProgressEvent{
-		JobID:         job.ID,
-		State:         job.State,
-		Iterations:    job.Iterations,
-		Evaluations:   job.Evaluations,
-		BestCost:      job.BestCost,
-		BestRevision:  job.BestRevision,
-		CandidateCost: cloneFloat(job.CandidateCost),
-		PSNR:          cloneFloat(job.PSNR),
-		PSNRInfinite:  job.PSNRInfinite,
-		SSIM:          cloneFloat(job.SSIM),
-		Timestamp:     time.Now(),
-	}
+	snapshot := cloneJob(job)
 	jm.mu.Unlock()
-
-	// Successful completion is published by the worker with its measured CPS.
-	// Failure and cancellation can originate outside the worker, so publish
-	// those transitions here to guarantee that live streams terminate.
-	if next == StateFailed || next == StateCancelled {
-		jm.broadcaster.Broadcast(event)
+	jm.broadcaster.Broadcast(jobProgressSnapshot(snapshot))
+	if next == StateCompleted || next == StateFailed || next == StateCancelled {
+		if snapshot.ScheduleID != "" {
+			jm.uiEvents.PublishCampaignChanged("schedule", snapshot.ScheduleID)
+		} else if snapshot.ExtendedFrom != "" || snapshot.PolishedFrom != "" {
+			jm.uiEvents.PublishCampaignChanged("chain", "")
+		}
 	}
 	return nil
 }
