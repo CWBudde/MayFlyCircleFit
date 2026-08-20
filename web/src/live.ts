@@ -146,10 +146,18 @@ export function useLiveResource<T>({ initial, load, reduce }: LiveResourceOption
 		try {
 			let next = (await loadRef.current(controller.signal)) as T;
 			let needsRefresh = false;
-			for (const event of queuedRef.current) {
-				const result = reduceRef.current(next, event);
-				next = result.value;
-				needsRefresh ||= result.refresh === true;
+			// Drain the queue instead of iterating it: the stream keeps appending
+			// while the fetch is in flight, so the replay must not race with those
+			// pushes. The loop ends only once nothing is left, and no event can
+			// arrive between that check and the reset of inFlightRef below.
+			while (queuedRef.current.length > 0) {
+				const replay = queuedRef.current;
+				queuedRef.current = [];
+				for (const event of replay) {
+					const result = reduceRef.current(next, event);
+					next = result.value;
+					needsRefresh ||= result.refresh === true;
+				}
 			}
 			if (!mountedRef.current || controller.signal.aborted) return;
 			commit(next);
@@ -180,17 +188,19 @@ export function useLiveResource<T>({ initial, load, reduce }: LiveResourceOption
 				case "gap":
 					void refresh();
 					break;
-				case "event":
+				case "event": {
 					if (inFlightRef.current) {
 						queuedRef.current.push(notice.event);
 						return;
 					}
-					setValue((current) => {
-						const result = reduceRef.current(current, notice.event);
-						valueRef.current = result.value;
-						if (result.refresh) void refresh();
-						return result.value;
-					});
+					// Reducers also run outside React during replay and some of them
+					// have effects, so one runs here instead of inside a state updater
+					// React is free to invoke more than once.
+					const result = reduceRef.current(valueRef.current, notice.event);
+					commit(result.value);
+					if (result.refresh) void refresh();
+					break;
+				}
 			}
 		});
 		const interval = window.setInterval(() => void refresh(), RECONCILE_INTERVAL_MS);
@@ -207,7 +217,7 @@ export function useLiveResource<T>({ initial, load, reduce }: LiveResourceOption
 			window.removeEventListener("focus", reconcileVisible);
 			unsubscribe();
 		};
-	}, [refresh]);
+	}, [commit, refresh]);
 
 	return { value, connected, error, refresh };
 }

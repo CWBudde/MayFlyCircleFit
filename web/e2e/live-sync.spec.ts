@@ -23,6 +23,11 @@ test("reconciles after a network outage without reloading", async ({
 	});
 	expect(response.status(), await response.text()).toBe(201);
 	const job = (await response.json()) as { id: string };
+	// Going offline does not by itself make the page fetch anything, and the
+	// reconciliation interval is far longer than the expect timeout. Ask for a
+	// refresh explicitly so the offline failure is observed deterministically
+	// rather than depending on the initial request still being in flight.
+	await page.evaluate(() => window.dispatchEvent(new Event("focus")));
 	await expect(page.getByText(/Failed to fetch/)).toBeVisible();
 
 	await context.setOffline(false);

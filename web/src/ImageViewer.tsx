@@ -19,7 +19,9 @@ function storedMode(): ViewMode {
 
 function storedNumber(key: string, fallback: number): number {
 	try {
-		const value = Number(window.localStorage.getItem(key));
+		const stored = window.localStorage.getItem(key);
+		if (stored === null) return fallback;
+		const value = Number(stored);
 		if (Number.isFinite(value)) return value;
 	} catch { /* storage is optional */ }
 	return fallback;

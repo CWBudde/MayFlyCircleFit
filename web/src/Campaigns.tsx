@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { CampaignCostChart } from "./CampaignCostChart";
 import { useChartTheme } from "./charts";
 import { fetchJSON, useLiveResource } from "./live";
@@ -27,6 +27,52 @@ function seed<T>(root: HTMLElement, id: string, fallback: T): T {
 	const script = root.querySelector<HTMLScriptElement>(`#${id}`);
 	if (!script) return fallback;
 	try { return JSON.parse(script.textContent || "null") as T; } catch { return fallback; }
+}
+
+// The formatters below mirror the templ fallback so mounting the island keeps
+// the server-rendered projection instead of shrinking it.
+function formatCost(stage: CampaignStage): string {
+	return stage.hasBestCost ? stage.bestCost.toFixed(3) : "—";
+}
+
+function formatPsnr(stage: CampaignStage): string {
+	if (stage.psnrInfinite) return "∞ dB";
+	return stage.hasPsnr ? `${stage.psnr.toFixed(2)} dB` : "—";
+}
+
+function formatElapsed(stage: CampaignStage): string {
+	if (!stage.hasElapsed) return "—";
+	const total = Math.round(stage.elapsedSec);
+	const hours = Math.floor(total / 3600);
+	const minutes = Math.floor((total % 3600) / 60);
+	const seconds = total % 60;
+	if (hours > 0) return `${hours}h${minutes}m${seconds}s`;
+	if (minutes > 0) return `${minutes}m${seconds}s`;
+	return `${seconds}s`;
+}
+
+function formatAcceptedSweeps(stage: CampaignStage): string {
+	return stage.acceptedSweeps === undefined || stage.acceptedSweeps === null ? "—" : `${stage.acceptedSweeps}`;
+}
+
+function acceptedSweepsTitle(stage: CampaignStage): string {
+	if (stage.acceptedSweeps !== undefined && stage.acceptedSweeps !== null) return "";
+	return stage.kind !== "polish"
+		? "Only a polish stage runs sweeps"
+		: "The polisher does not persist its accepted-sweep count";
+}
+
+function campaignTitle(campaign: Campaign): string {
+	if (campaign.name) return campaign.name;
+	const short = campaign.id.slice(0, 8);
+	return campaign.source === "chain" ? `Imported chain ${short}` : `Campaign ${short}`;
+}
+
+function campaignProvenance(campaign: Campaign): string {
+	const recorded = campaign.stages.length;
+	if (campaign.source === "chain") return `Reconstructed from checkpoint lineage · ${recorded} stages`;
+	const text = `Schedule · ${recorded} of ${campaign.plannedStages} stages recorded`;
+	return campaign.hasSeed ? `${text} · seed ${campaign.campaignSeed}` : text;
 }
 
 function campaignEvent<T>(current: T, event: UIEvent) {
@@ -89,12 +135,16 @@ export function CampaignDetailIsland({ root }: { root: HTMLElement }) {
 	const points = campaign.stages.map(({ index, kind, circles, bestCost, hasBestCost }) => ({ index, kind, circles, bestCost, hasBestCost }));
 	const latest = [...campaign.stages].reverse().find((stage) => stage.state === "completed" && stage.jobId);
 	return <div>
-		<div style={{ marginBottom: "1.5rem" }}><div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}><h1>{campaign.name || `Campaign ${campaign.id.slice(0, 8)}`}</h1><Badge state={campaign.state} /></div><code>{campaign.id}</code></div>
+		<div style={{ marginBottom: "1.5rem" }}><div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}><h1>{campaignTitle(campaign)}</h1><Badge state={campaign.state} /></div><code>{campaign.id}</code>
+			<div style={{ color: "var(--text-muted)", fontSize: "0.875rem", marginTop: "0.25rem" }}>{campaignProvenance(campaign)}</div></div>
 		{campaign.error ? <div className="card" style={{ color: "var(--error-text)" }}>{campaign.error}</div> : null}
 		<div className="card"><h2>Cost against circle count</h2><CampaignCostChart points={points} palette={palette} variant="full" /></div>
 		{latest ? <ImageViewer jobId={latest.jobId} revision={latest.iterations} /> : <div className="card">No completed stage has produced image artifacts yet.</div>}
-		<div className="card"><h2>Stages</h2><div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><th>#</th><th>Stage</th><th>State</th><th>Circles</th><th>Cost</th><th>PSNR</th><th>Job</th></tr></thead><tbody>
-			{campaign.stages.map((stage) => <tr key={stage.index} style={{ borderTop: "1px solid var(--border-color)" }}><td>{stage.index}</td><td>{stage.kind}</td><td><Badge state={stage.state} /></td><td>{stage.circles}</td><td>{stage.hasBestCost ? stage.bestCost.toFixed(3) : "—"}</td><td>{stage.psnrInfinite ? "∞" : stage.hasPsnr ? stage.psnr.toFixed(2) : "—"}</td><td>{stage.jobId ? <a href={`/jobs/${stage.jobId}`}>{stage.jobId.slice(0, 8)}</a> : "—"}</td></tr>)}
+		<div className="card"><h2>Stages</h2><div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><th>#</th><th>Stage</th><th>State</th><th>Circles</th><th>Cost</th><th>PSNR</th><th>Elapsed</th><th title="Accepted polishing sweeps">Accepted</th><th>Job</th></tr></thead><tbody>
+			{campaign.stages.map((stage) => <Fragment key={stage.index}>
+				<tr style={{ borderTop: "1px solid var(--border-color)" }}><td>{stage.index}</td><td>{stage.kind}</td><td><Badge state={stage.state} /></td><td>{stage.circles}</td><td>{formatCost(stage)}</td><td>{formatPsnr(stage)}</td><td title={stage.elapsedAbsent}>{formatElapsed(stage)}</td><td title={acceptedSweepsTitle(stage)}>{formatAcceptedSweeps(stage)}</td><td>{stage.jobId ? <a href={`/jobs/${stage.jobId}`}>{stage.jobId.slice(0, 8)}</a> : "—"}</td></tr>
+				{stage.note ? <tr><td colSpan={9} style={{ color: "var(--text-muted)", fontSize: "0.8125rem" }}>{stage.note}</td></tr> : null}
+			</Fragment>)}
 		</tbody></table></div></div>
 		<p style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>Live updates: {connected ? "connected" : "reconnecting"}{error ? ` · ${error}` : ""}</p>
 	</div>;

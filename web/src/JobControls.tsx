@@ -56,8 +56,11 @@ function reduceStatus(current: JobStatus, event: UIEvent) {
 	}
 	if (event.type !== "job.upsert" || event.jobId !== current.id || !event.progress) return { value: current };
 	const stateChanged = current.state !== event.progress.state;
+	// metricHistory is dropped: only a fresh metrics response may republish the
+	// series. Keeping the previous one would let the stale payload overwrite the
+	// live sample the progress listener has just appended.
 	return {
-		value: { ...current, ...event.progress, id: current.id },
+		value: { ...current, ...event.progress, id: current.id, metricHistory: undefined },
 		refresh: stateChanged,
 	};
 }

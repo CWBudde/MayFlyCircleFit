@@ -64,12 +64,6 @@ func (hub *UIEventHub) Unsubscribe(ch chan UIEvent) {
 	close(ch)
 }
 
-func (hub *UIEventHub) Sequence() uint64 {
-	hub.mu.Lock()
-	defer hub.mu.Unlock()
-	return hub.sequence
-}
-
 func (hub *UIEventHub) Publish(event UIEvent) UIEvent {
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
@@ -136,8 +130,12 @@ func (s *Server) handleUIEvents(w http.ResponseWriter, r *http.Request) {
 	events, subscription, sequence := s.uiEvents.Subscribe()
 	defer s.uiEvents.Unsubscribe(subscription)
 
+	// The heartbeat reports the last sequence written on this connection, not
+	// the hub's high-water mark: a sync carrying a sequence the client has not
+	// received yet would make it discard the real event as stale.
+	lastWritten := sequence
 	if err := writeUIEvent(w, UIEvent{
-		Sequence:  sequence,
+		Sequence:  lastWritten,
 		Type:      uiEventSync,
 		Timestamp: time.Now().UTC(),
 	}); err != nil {
@@ -158,10 +156,11 @@ func (s *Server) handleUIEvents(w http.ResponseWriter, r *http.Request) {
 			if err := writeUIEvent(w, event); err != nil {
 				return
 			}
+			lastWritten = event.Sequence
 			flusher.Flush()
 		case <-ticker.C:
 			if err := writeUIEvent(w, UIEvent{
-				Sequence:  s.uiEvents.Sequence(),
+				Sequence:  lastWritten,
 				Type:      uiEventSync,
 				Timestamp: time.Now().UTC(),
 			}); err != nil {
