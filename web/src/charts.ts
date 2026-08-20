@@ -136,8 +136,9 @@ export function applyAxisTheme(
 		}
 		scale.ticks = { ...scale.ticks, color: palette.textMuted, ...(name === "x" ? extra?.xTicks : {}) };
 		scale.grid = { ...scale.grid, color: palette.grid };
-		if (scale.title) {
-			scale.title = { ...scale.title, color: palette.textMuted };
+		const titledScale = scale as typeof scale & { title?: Record<string, unknown> };
+		if (titledScale.title) {
+			titledScale.title = { ...titledScale.title, color: palette.textMuted };
 		}
 	}
 }

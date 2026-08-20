@@ -225,6 +225,24 @@ bounded. pprof is off by default and `--enable-pprof` requires a loopback bind.
   all jobs over one connection. A dropped connection closes that stream, and
   unsubscribing the wildcard client is required to prevent event fan-out
   accumulation.
+- **The browser event stream invalidates; REST resources remain authoritative.**
+  `GET /api/v1/events` assigns one process-wide, monotonically increasing
+  sequence to `job.upsert`, `job.deleted`, and `campaign.changed` envelopes.
+  It is intentionally one-way SSE rather than a WebSocket: all browser commands
+  still use ordinary HTTP, while native `EventSource` owns reconnect behavior.
+  The stream does not replay history. On first connection, reconnect, a sequence
+  gap, focus/visibility return, and a 30-second safety interval, an island
+  refetches its canonical JSON resource. Events received during that fetch are
+  queued and replayed over the response, so a late response cannot erase newer
+  progress. A subscriber whose 64-event buffer fills is disconnected instead
+  of silently losing frames; reconnect reconciliation repairs its view.
+- **Templ output is the fallback and hydration seed, not a second live state
+  model.** Job, dashboard, and campaign islands replace their server-rendered
+  fallback after mount and then read `/api/v1/jobs`, job `/status` and
+  `/metrics`, `/api/v1/dashboard`, and `/api/v1/campaigns...`. The existing
+  `/api/v1/jobs/:id/stream` and `/api/v1/stream` payloads remain compatibility
+  surfaces and are not the browser's reconciliation protocol. A terminal state
+  or transient stream failure must not reload the page.
 
 These controls do not make the server multi-user or internet-ready. Do not add
 documentation suggesting otherwise.

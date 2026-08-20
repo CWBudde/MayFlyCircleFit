@@ -156,6 +156,14 @@ func (s *Server) startContinuation(jobID string, project app.Project, config Job
 	}); err != nil {
 		return nil, continuationFailure(http.StatusInternalServerError, "job_error", "failed to initialize continuation job")
 	}
+	if initialized, ok := s.jobManager.GetJob(job.ID); ok {
+		s.jobManager.broadcaster.Broadcast(jobProgressSnapshot(initialized))
+		if initialized.ScheduleID != "" {
+			s.publishScheduleChanged(initialized.ScheduleID)
+		} else if initialized.ExtendedFrom != "" || initialized.PolishedFrom != "" {
+			s.publishChainsChanged()
+		}
+	}
 	if err := s.enqueueJob(job.ID); err != nil {
 		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
 		return nil, continuationFailure(http.StatusTooManyRequests, "queue_full", "server job queue is full")

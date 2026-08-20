@@ -11,6 +11,7 @@ import (
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/mayflycirclefit/internal/ui"
 )
 
 // The 96-circle chain that PLAN.md named as the acceptance fixture no longer
@@ -425,6 +426,47 @@ func TestChainDiscoveryCoversEveryProject(t *testing.T) {
 	}
 	if !found[chainSecondJob] {
 		t.Error("a named project's chain is missing from the campaign listing")
+	}
+}
+
+func TestCampaignViewAPIUsesSourceNeutralReadModel(t *testing.T) {
+	root := t.TempDir()
+	persistence, err := store.NewFSStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imagePath := filepath.Join(root, "reference.png")
+	createSimpleTestImage(t, imagePath)
+	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{
+		DataRoot: root, InputRoots: rootList(root),
+	})
+	shutdownTestServer(t, server)
+	synthesizeChain(t, persistence, imagePath, defaultSynthesizedChain())
+
+	listResponse := httptest.NewRecorder()
+	server.Handler().ServeHTTP(listResponse, httptest.NewRequest(http.MethodGet, "/api/v1/campaigns", nil))
+	if listResponse.Code != http.StatusOK {
+		t.Fatalf("campaign list status = %d, body=%q", listResponse.Code, listResponse.Body.String())
+	}
+	var list campaignViewList
+	if err := json.NewDecoder(listResponse.Body).Decode(&list); err != nil {
+		t.Fatalf("decode campaign list: %v", err)
+	}
+	if len(list.Schedules) != 0 || len(list.Chains) != 1 || list.Chains[0].Source != "chain" {
+		t.Fatalf("campaign list = %+v", list)
+	}
+
+	detailResponse := httptest.NewRecorder()
+	server.Handler().ServeHTTP(detailResponse, httptest.NewRequest(http.MethodGet, "/api/v1/campaigns/chain/"+chainSecondJob, nil))
+	if detailResponse.Code != http.StatusOK {
+		t.Fatalf("campaign detail status = %d, body=%q", detailResponse.Code, detailResponse.Body.String())
+	}
+	var campaign ui.Campaign
+	if err := json.NewDecoder(detailResponse.Body).Decode(&campaign); err != nil {
+		t.Fatalf("decode campaign detail: %v", err)
+	}
+	if campaign.ID != chainSecondJob || campaign.Source != "chain" || len(campaign.Stages) != len(defaultSynthesizedChain()) {
+		t.Fatalf("campaign detail = %+v", campaign)
 	}
 }
 

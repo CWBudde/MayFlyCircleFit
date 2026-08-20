@@ -4,9 +4,19 @@
   "private": true,
   "description": "React islands for the MayFlyCircleFit dashboard. npm only fetches dependencies; bundling is done by esbuild, which is a Go tool (see go.mod).",
   "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc --noEmit --pretty false",
+    "test:e2e": "playwright test"
+  },
   "dependencies": {
     "chart.js": "^4.5.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/react": "19.1.12",
+    "@types/react-dom": "19.1.9",
+    "typescript": "5.9.2"
   }
 }

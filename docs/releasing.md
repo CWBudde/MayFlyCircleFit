@@ -8,7 +8,7 @@ dependency succeeds for the tagged commit. The gates themselves live in reusable
 
 Not every gate blocks publication. `release` lists the release-blocking caller
 jobs in its `needs:` block, currently `generation`, `quality`, `staticcheck`,
-`test`, `e2e`, `coverage`, `race`, `bundle`, `build`, `cross-build`,
+`test`, `e2e`, `coverage`, `race`, `bundle`, `web`, `build`, `cross-build`,
 `native-simd`, `gpu-compile`, and `vulnerability`. `benchmarks` runs on every
 commit but is deliberately not among them, because the timing comparison is
 report-only. A new gate is only release-blocking once it is added to that
@@ -19,7 +19,8 @@ report-only. A new gate is only release-blocking once it is added to that
 Because the gates are reusable workflows, each one reports as
 `<caller job>` / `<job name>` rather than `<job name>` alone: the bundle gate is
 `bundle / Committed island bundle is current`, the generation gate is
-`generation / Generated UI is current`, the vet gate is
+`generation / Generated UI is current`, the browser gate is
+`web / Live Web UI reconciles without reloads`, the vet gate is
 `quality / Format and vet`, and matrix gates expand per entry, such as
 `native-simd / Native SSD (Linux AMD64 / AVX2)`. Only `Publish release` keeps a
 bare name, because it still lives in `ci.yml`.
@@ -38,6 +39,7 @@ must use the prefixed form or it will wait forever on a check that never reports
 
    ```sh
    just check
+   just web-check
    go test -race -short ./...
    just test-e2e
    just release 0.2.0

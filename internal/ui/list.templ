@@ -7,22 +7,24 @@ import (
 
 // JobListItem represents a job in the list view
 type JobListItem struct {
-	ID          string
-	State       string
-	RefPath     string
-	Mode        string
-	Circles     int
-	Iterations  int
-	BestCost    float64
-	InitialCost float64
-	StartTime   time.Time
-	EndTime     *time.Time
-	Error       string
+	ID          string     `json:"id"`
+	State       string     `json:"state"`
+	RefPath     string     `json:"refPath"`
+	Mode        string     `json:"mode"`
+	Circles     int        `json:"circles"`
+	Iterations  int        `json:"iterations"`
+	BestCost    float64    `json:"bestCost"`
+	InitialCost float64    `json:"initialCost"`
+	StartTime   time.Time  `json:"startTime"`
+	EndTime     *time.Time `json:"endTime,omitempty"`
+	Error       string     `json:"error,omitempty"`
 }
 
 // JobList displays a list of all jobs
 templ JobList(jobs []JobListItem) {
 	@Layout("Jobs") {
+		<div data-island="job-list" data-island-label="job list">
+		@templ.JSONScript("job-list-page", jobs)
 		<div style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center;">
 			<h1 style="font-size: 2rem; font-weight: 700;">
 				Optimization Jobs
@@ -56,6 +58,8 @@ templ JobList(jobs []JobListItem) {
 				}
 			</div>
 		}
+		</div>
+		@IslandBundle()
 	}
 }
 

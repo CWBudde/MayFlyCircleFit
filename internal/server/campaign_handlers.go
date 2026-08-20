@@ -14,6 +14,11 @@ import (
 	"github.com/google/uuid"
 )
 
+type campaignViewList struct {
+	Schedules []ui.CampaignSummary `json:"schedules"`
+	Chains    []ui.CampaignSummary `json:"chains"`
+}
+
 // The campaign pages are the HTML side of the schedule surface. They render
 // exactly what /api/v1/schedules and /api/v1/chains return, so the browser and
 // the CLI cannot show different campaigns.
@@ -50,6 +55,88 @@ func (s *Server) handleCampaignList(w http.ResponseWriter, r *http.Request) {
 
 	chains := chainCampaignSummaries(s.discoverAllChains())
 	s.renderCampaignPage(w, r, ui.CampaignListPage(schedules, chains, ""))
+}
+
+// handleCampaignViewList is the browser read model for the campaign listing.
+// It intentionally matches the templ seed instead of making React reconstruct
+// richer cards from the CLI's compact schedule listing.
+func (s *Server) handleCampaignViewList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+	scheduleStore, err := s.scheduleStore()
+	if err != nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "campaigns_unavailable", err.Error())
+		return
+	}
+	records, err := scheduleStore.ListSchedules()
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "campaign_error", "failed to list schedules")
+		return
+	}
+	schedules := make([]ui.CampaignSummary, 0, len(records))
+	for i := range records {
+		stages, loadErr := scheduleStore.LoadScheduleStages(records[i].ScheduleID)
+		if loadErr != nil {
+			slog.Warn("Unable to load schedule stages for campaign API", "schedule_id", records[i].ScheduleID, "error", loadErr)
+		}
+		schedules = append(schedules, summarizeCampaign(&records[i], stages))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(campaignViewList{
+		Schedules: schedules,
+		Chains:    chainCampaignSummaries(s.discoverAllChains()),
+	})
+}
+
+// handleCampaignViewDetail returns the same source-neutral campaign projection
+// the HTML detail page embeds. Paths are /campaigns/schedule/:id and
+// /campaigns/chain/:id.
+func (s *Server) handleCampaignViewDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/campaigns/"), "/"), "/")
+	if len(parts) != 2 || !isCanonicalUUID(parts[1]) {
+		writeAPIError(w, http.StatusBadRequest, "invalid_campaign", "campaign source and canonical ID required")
+		return
+	}
+	var campaign ui.Campaign
+	switch parts[0] {
+	case "schedule":
+		scheduleStore, err := s.scheduleStore()
+		if err != nil {
+			writeAPIError(w, http.StatusServiceUnavailable, "campaigns_unavailable", err.Error())
+			return
+		}
+		record, err := scheduleStore.LoadSchedule(parts[1])
+		if err != nil {
+			writeScheduleLoadError(w, err)
+			return
+		}
+		stages, err := scheduleStore.LoadScheduleStages(parts[1])
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, "campaign_error", "failed to load campaign stages")
+			return
+		}
+		campaign = campaignFromSchedule(record, stages)
+	case "chain":
+		chain, err := s.loadChain(parts[1])
+		if err != nil {
+			writeAPIError(w, campaignLoadStatus(err), "campaign_error", chainErrorDetail(err))
+			return
+		}
+		campaign = campaignFromChain(parts[1], chain)
+	default:
+		writeAPIError(w, http.StatusBadRequest, "invalid_campaign", "campaign source must be schedule or chain")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(campaign)
 }
 
 // handleCampaignDetail handles GET /schedules/:id

@@ -36,15 +36,21 @@ type EventBroadcaster struct {
 	mu        sync.RWMutex
 	clients   map[string]map[chan ProgressEvent]bool // jobID -> set of client channels
 	lastEvent map[string]ProgressEvent               // jobID -> last event for ordering and diagnostics
+	uiEvents  *UIEventHub
 }
 
 const wildcardJobID = "*"
 
 // NewEventBroadcaster creates a new event broadcaster
-func NewEventBroadcaster() *EventBroadcaster {
+func NewEventBroadcaster(uiEvents ...*UIEventHub) *EventBroadcaster {
+	var hub *UIEventHub
+	if len(uiEvents) > 0 {
+		hub = uiEvents[0]
+	}
 	return &EventBroadcaster{
 		clients:   make(map[string]map[chan ProgressEvent]bool),
 		lastEvent: make(map[string]ProgressEvent),
+		uiEvents:  hub,
 	}
 }
 
@@ -94,12 +100,12 @@ func (eb *EventBroadcaster) UnsubscribeAll(ch chan ProgressEvent) {
 // Broadcast sends an event to all subscribed clients for a job
 func (eb *EventBroadcaster) Broadcast(event ProgressEvent) {
 	eb.mu.Lock()
-	defer eb.mu.Unlock()
 
 	// A progress callback can race with cancellation after updating the job but
 	// before publishing its event. Do not overwrite a terminal state with that
 	// stale running update.
 	if previous, ok := eb.lastEvent[event.JobID]; ok && previous.terminal() && !event.terminal() {
+		eb.mu.Unlock()
 		return
 	}
 
@@ -111,30 +117,35 @@ func (eb *EventBroadcaster) Broadcast(event ProgressEvent) {
 	jobClients := eb.clients[event.JobID]
 	wildcardClients := eb.clients[wildcardJobID]
 	subscriberCount := len(jobClients) + len(wildcardClients)
-	if subscriberCount == 0 {
-		return
-	}
+	if subscriberCount > 0 {
+		slog.Debug("Broadcasting event", "jobID", event.JobID, "clients", subscriberCount, "iterations", event.Iterations)
 
-	slog.Debug("Broadcasting event", "jobID", event.JobID, "clients", subscriberCount, "iterations", event.Iterations)
-
-	for ch := range jobClients {
-		select {
-		case ch <- event:
-			// Event sent successfully
-		default:
-			// Channel full, skip this client (prevents blocking)
-			slog.Warn("SSE channel full, skipping event", "jobID", event.JobID)
+		for ch := range jobClients {
+			select {
+			case ch <- event:
+				// Event sent successfully
+			default:
+				// Legacy streams retain their drop behavior for compatibility. The
+				// browser-facing UI hub below disconnects slow clients instead.
+				slog.Warn("SSE channel full, skipping event", "jobID", event.JobID)
+			}
+		}
+		for ch := range wildcardClients {
+			select {
+			case ch <- event:
+				// Event sent successfully
+			default:
+				slog.Warn("SSE channel full, skipping wildcard event", "jobID", event.JobID)
+			}
 		}
 	}
-	for ch := range wildcardClients {
-		select {
-		case ch <- event:
-			// Event sent successfully
-		default:
-			// Channel full, skip this client (prevents blocking)
-			slog.Warn("SSE channel full, skipping wildcard event", "jobID", event.JobID)
-		}
+	// Publish before releasing the broadcaster lock. lastEvent and the legacy
+	// fan-out above define the accepted order; unlocking first would let a later
+	// terminal frame reach the UI hub before this progress frame (or vice versa).
+	if eb.uiEvents != nil {
+		eb.uiEvents.PublishJob(event)
 	}
+	eb.mu.Unlock()
 }
 
 // CleanupJob removes all clients and cached events for a job
@@ -347,7 +358,7 @@ func (s *Server) handleAllJobStream(w http.ResponseWriter, r *http.Request) {
 
 // jobProgressSnapshot converts a live job into a SSE-compatible progress event.
 func jobProgressSnapshot(job *Job) ProgressEvent {
-	cps := circlesPerSecond(job, time.Since(job.StartTime))
+	cps := circlesPerSecond(job, jobElapsed(job))
 
 	event := ProgressEvent{
 		JobID:         job.ID,

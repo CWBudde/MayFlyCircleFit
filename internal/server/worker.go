@@ -510,13 +510,6 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		return err
 	}
 
-	cps := throughputCPS(result.Evaluations, job.Config.Circles, time.Since(start).Seconds())
-	bestCost, bestRevision, _, _ := jm.bestSnapshot(jobID)
-	jm.broadcaster.Broadcast(ProgressEvent{
-		JobID: jobID, State: StateCompleted, Iterations: iterations, Evaluations: evaluations,
-		BestCost: bestCost, BestRevision: bestRevision, PSNR: cloneFloat(finalSample.PSNR),
-		PSNRInfinite: finalSample.PSNRInfinite, SSIM: cloneFloat(finalSample.SSIM), CPS: cps, Timestamp: completedAt,
-	})
 	slog.Info("Job completed", "job_id", jobID, "iterations", iterations, "evaluations", evaluations, "best_cost", result.BestCost)
 	return persistenceErr
 }

@@ -95,6 +95,16 @@ templ-fmt:
 web-deps:
 	cd web && npm ci
 
+# Type-check the React islands without emitting a second build artifact
+web-typecheck:
+	cd web && npm run typecheck
+
+# Exercise stream disconnect/reconciliation behavior in a real browser
+web-test:
+	cd web && npm run test:e2e
+
+web-check: web-typecheck web-test
+
 # Bundle the React islands into the committed internal/ui/static output
 bundle:
 	bash scripts/bundle-web.sh
