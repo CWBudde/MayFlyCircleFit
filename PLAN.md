@@ -1128,31 +1128,31 @@ customization workflow.
   - [ ] GPU unavailable, optimizer failures
 - [x] Document common errors and solutions (`docs/troubleshooting.md`)
 
-### Task 13.2: Input Validation and Sanitization
-- [ ] Validate all API inputs
-  - [ ] refPath: check file exists and is valid image
-  - [ ] width, height: positive integers within limits
-  - [ ] circles: positive integer, reasonable limit (e.g., < 1000)
-  - [ ] iters, popSize: positive integers
-  - [ ] mode: must be "joint", "sequential", or "batch"
-  - [ ] seed: any integer (or random if not provided)
-- [ ] Validate CLI inputs
-  - [ ] Same validations as API
-  - [ ] Helpful error messages on validation failure
+### Task 13.2: Input Validation and Sanitization ✅
+- [x] Validate all API inputs
+  - [x] refPath: check file exists and is valid image
+  - [x] width, height: positive integers within limits
+  - [x] circles: positive integer, reasonable limit (e.g., < 1000)
+  - [x] iters, popSize: positive integers
+  - [x] mode: must be "joint", "sequential", or "batch"
+  - [x] seed: any integer (or random if not provided)
+- [x] Validate CLI inputs
+  - [x] Same validations as API
+  - [x] Helpful error messages on validation failure
 - [ ] Add rate limiting for API endpoints (optional)
   - [ ] Prevent abuse of job creation
   - [ ] Limit concurrent jobs per client
-- [ ] Sanitize file paths to prevent directory traversal
-- [ ] Write tests for all validation logic
+- [x] Sanitize file paths to prevent directory traversal
+- [x] Write tests for all validation logic
 
 ### Task 13.3: Logging and Observability Improvements
 - [ ] Audit logging across codebase
   - [ ] Ensure consistent use of slog
   - [ ] Add structured logging fields (jobID, duration, etc.)
   - [ ] Use appropriate log levels (debug, info, warn, error)
-- [ ] Add request logging middleware
-  - [ ] Log all API requests with method, path, status, duration
-  - [ ] Include request ID for tracing
+- [x] Add request logging middleware
+  - [x] Log all API requests with method, path, status, duration
+  - [x] Include request ID for tracing
 - [ ] Add performance logging
   - [ ] Log optimization progress (every N iterations)
   - [ ] Log slow operations (rendering, cost computation)

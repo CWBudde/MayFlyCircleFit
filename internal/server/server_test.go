@@ -21,7 +21,76 @@ import (
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/google/uuid"
 )
+
+func TestLoggingMiddleware(t *testing.T) {
+	t.Run("logs request identity and explicit status", func(t *testing.T) {
+		logs := captureLogs(t)
+		s := &Server{}
+		handler := s.loggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusTeapot)
+		}))
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/example", nil)
+
+		handler.ServeHTTP(recorder, request)
+
+		requestID := recorder.Header().Get("X-Request-ID")
+		if _, err := uuid.Parse(requestID); err != nil {
+			t.Fatalf("X-Request-ID = %q, want UUID: %v", requestID, err)
+		}
+		output := logs.String()
+		for _, field := range []string{
+			"msg=\"HTTP request\"",
+			"request_id=" + requestID,
+			"method=GET",
+			"path=/api/v1/example",
+			"status=418",
+			"duration=",
+		} {
+			if !strings.Contains(output, field) {
+				t.Errorf("request log %q does not contain %q", output, field)
+			}
+		}
+	})
+
+	t.Run("records implicit success status", func(t *testing.T) {
+		logs := captureLogs(t)
+		s := &Server{}
+		handler := s.loggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte("ok"))
+		}))
+
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+
+		if output := logs.String(); !strings.Contains(output, "status=200") {
+			t.Errorf("request log %q does not contain implicit status 200", output)
+		}
+	})
+
+	t.Run("preserves streaming support", func(t *testing.T) {
+		logs := captureLogs(t)
+		s := &Server{}
+		handler := s.loggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				t.Fatal("logging response writer does not preserve http.Flusher")
+			}
+			flusher.Flush()
+		}))
+		recorder := httptest.NewRecorder()
+
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/jobs/all/stream", nil))
+
+		if !recorder.Flushed {
+			t.Error("logging response writer did not forward Flush")
+		}
+		if output := logs.String(); !strings.Contains(output, "status=200") {
+			t.Errorf("request log %q does not contain flushed status 200", output)
+		}
+	})
+}
 
 func TestServer_CreateJob(t *testing.T) {
 	// Create test image
