@@ -1250,7 +1250,7 @@ func TestServer_CreatePagePost_ValidationErrors(t *testing.T) {
 				"popSize": "30",
 				"seed":    "0",
 			},
-			errMsg: "Circles must be between 1 and 1000",
+			errMsg: "Circles must be between 1 and 2000",
 		},
 		{
 			name: "invalid iters",

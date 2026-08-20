@@ -13,7 +13,15 @@ import (
 )
 
 const (
-	MaxCircles         = 1000
+	// MaxCircles was 1000 until a campaign ran into it with gains still
+	// accelerating: a one-circle-at-a-time greedy fit of a 512x512 reference
+	// reached 1000 circles at cost 96.199 (PSNR 28.299) while the marginal
+	// improvement over the previous milestone was still growing, so the cap
+	// was the binding constraint on quality rather than a point of diminishing
+	// return. It bounds request validation at the trusted-local boundary, so
+	// it is a memory and wall-clock guard, not a modelling statement: circle
+	// parameters cost 28*K bytes and per-circle fit time grows with K.
+	MaxCircles         = 2000
 	MaxIterations      = 10000
 	MinPopulation      = 20
 	MaxPopulation      = 200
