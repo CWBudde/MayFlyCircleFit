@@ -18,10 +18,12 @@ const (
 	// reached 1000 circles at cost 96.199 (PSNR 28.299) while the marginal
 	// improvement over the previous milestone was still growing, so the cap
 	// was the binding constraint on quality rather than a point of diminishing
-	// return. It bounds request validation at the trusted-local boundary, so
+	// return. Raised again to 3000 on the same evidence: 2000 circles reached
+	// 64.602 (PSNR 30.028) with the last hundred still returning 1.85 cost
+	// units, more than any polishing pass returns above 200 circles. It bounds request validation at the trusted-local boundary, so
 	// it is a memory and wall-clock guard, not a modelling statement: circle
 	// parameters cost 28*K bytes and per-circle fit time grows with K.
-	MaxCircles         = 2000
+	MaxCircles         = 3000
 	MaxIterations      = 10000
 	MinPopulation      = 20
 	MaxPopulation      = 200

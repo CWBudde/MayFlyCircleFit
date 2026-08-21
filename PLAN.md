@@ -1107,11 +1107,27 @@ customization workflow.
 
 **Goal:** Make this shippable to users.
 
-### Task 13.1: Comprehensive Error Handling
-- [ ] Audit all error paths in codebase
-  - [ ] Identify missing error checks
-  - [ ] Ensure all errors are properly wrapped with context
-  - [ ] Use consistent error wrapping (e.g., `fmt.Errorf("context: %w", err)`)
+### Task 13.1: Comprehensive Error Handling ✅
+- [x] Audit all error paths in codebase (errcheck over `./...`)
+  - [x] Identify missing error checks. The ones that mattered were dropped
+        errors on files being *written*, where a deferred close discards the
+        only report that the bytes never landed: the output PNG in `run` and
+        `resume` (now one `writePNG`/`encodePNG` helper that returns the close
+        error), and the CPU/memory profile writes in `run` and `serve`. Four
+        bare `json.NewEncoder(w).Encode` calls in `server.go` now log like
+        their neighbours, and the 22 templ renders in `ui_handlers.go` go
+        through `renderCreateJobError`, which logs instead of dropping.
+  - [x] Ensure all errors are properly wrapped with context
+  - [x] Use consistent error wrapping (e.g., `fmt.Errorf("context: %w", err)`).
+        The seven `fmt.Errorf("%w: … %v", sentinel, err)` sites in `pipeline.go`
+        and `renderer_opencl_gpu.go` flattened the cause into the message; they
+        now wrap both, so `errors.Is` reaches the underlying failure and not
+        just the sentinel.
+  - [x] The remaining errcheck hits are deliberate and left as they are:
+        `defer Close()` on nine read-only handles (nothing to lose), the y/N
+        `fmt.Scanln` (a read failure leaves the answer empty, which aborts),
+        and `MarkFlagRequired` (fails only on a flag that does not exist). The
+        last two carry a comment saying so.
 - [x] Improve server error responses
   - [x] Consistent JSON error format: `{"error": {"code": "ERROR_CODE", "message": "message"}}`
         on every `/api/v1` route
@@ -1122,11 +1138,35 @@ customization workflow.
   - [x] Clear error messages for common failures
   - [x] Exit codes: 0=success, 1=error, 2=usage error (`cmd.UsageError`)
   - [x] Suggest fixes when possible (e.g., "image not found: check path")
-- [ ] Test error scenarios systematically
+- [x] Test error scenarios systematically
   - [x] Invalid inputs, missing files, permission denied (unit level)
-  - [ ] Network errors, out of memory, disk full
-  - [ ] GPU unavailable, optimizer failures
-- [x] Document common errors and solutions (`docs/troubleshooting.md`)
+  - [x] Network errors (`cmd/network_errors_test.go`): a refused connection
+        reaches the entry point as a `*url.Error` wrapping `ECONNREFUSED`, a
+        body that ends early is not decoded as if complete, and a server that
+        never answers is abandoned at the deadline rather than hung on.
+  - [x] Disk full (`cmd/artifacts_test.go`): `/dev/full` gives a real `ENOSPC`,
+        which arrives as a `*os.PathError` the CLI can suggest against. On that
+        device the failure surfaces at the encode and the close succeeds, so the
+        close-only case — the actual regression, a truncated image reported as
+        success — is covered separately through an injected `io.WriteCloser`.
+  - [x] Out of memory (`internal/app/memory_guards_test.go`): a Go heap
+        exhaustion is a fatal runtime error and cannot be caught, recovered, or
+        asserted on, so there is no honest test of the condition itself. What is
+        tested is the bound that keeps a request from asking for the
+        allocation, including the overflow inputs that would defeat a
+        `width*height` formulation of the pixel check.
+  - [x] GPU unavailable (`internal/fit/renderer/backend_unavailable_test.go`):
+        the portable build fails with `ErrBackendUnavailable`, a safe cleanup,
+        and a reason naming the missing build tag. The device-level failures go
+        through the same normalisation but need a prepared OpenCL runner, so
+        CPU-only CI cannot reach them.
+  - [x] Optimizer failures (`internal/fit/renderer/failure_paths_test.go`):
+        joint, sequential, and batch each propagate a failure from the first and
+        a later stage rather than returning a partial fit, and a malformed
+        result keeps its specific complaint reachable through the wrap.
+- [x] Document common errors and solutions (`docs/troubleshooting.md`),
+      including a "Resource and environment failures" section for the
+      filesystem, network, memory, GPU, and optimizer cases above.
 
 ### Task 13.2: Input Validation and Sanitization ✅
 - [x] Validate all API inputs
@@ -2000,6 +2040,149 @@ a certain size. The same stall was observed live at 64 and again at 96 circles:
       dominated by which active set happened to cover the blockers, so the
       comparison is worth redoing now that the gate no longer decides it.
 
+### Task 15.7: Score Only the Pixels a Candidate Can Change (P1)
+
+Measured 2026-08-20 on the live 2 111-circle fit of `Christian_after.jpeg`
+(512x512), one `replacement` sweep at `activeSetSize` 100, `polishingEpochs` 2,
+`polishingIters` 400, `polishingPopSize` 60:
+
+- the sweep cost **599 s** and returned **0.000**, at **6.24 ms per candidate**
+  (96 000 candidates, counting the mayfly's male and female populations);
+- the 100 selected circles have a summed disc area of **326.6 px^2 — 0.125% of
+  the canvas** — yet every candidate clears and SSD-scores all 262 144 pixels;
+- the reported rate implies **~2 521 circle rasterizations per candidate**,
+  i.e. the whole vector is redrawn to move 100 circles.
+
+This is the same per-candidate cost Task 15.3 measured at 2 056 us on 512
+circles, now 6.24 ms on 2 111 — 3x for 4x the circles. That inverts 15.3's
+conclusion: the full-canvas clear and full-image SSD no longer dominate at this
+scale, rasterization does, because the baked prefix has collapsed to **10.7% of
+the vector** (earliest active draw index 226 of 2 111).
+
+Changing an active circle can only alter pixels inside that circle's disc, under
+its old or its candidate parameters. Everything else — including every later
+circle drawn over untouched ground — is bit-identical to the incumbent, so both
+the recomposite and the SSD can be restricted to that region and the remainder
+carried as a precomputed constant. Unlike 15.3's remaining bullet, this changes
+no selection and no result, only the work done to reach it.
+
+Two traps the measurement already exposes:
+
+- **A single union bounding box buys nothing.** Merit-based selection scatters
+  the active set across the canvas: the union bbox of those same 100 circles is
+  **71.4% of the canvas** against 0.125% of true disc area. The dirty region has
+  to be a per-circle rect list or a tile mask, not one rectangle.
+- **The region is per-candidate, not per-sweep.** `NewBounds` lets a radius grow
+  to `max(W, H)`, so a candidate may legitimately propose a 400 px circle where
+  the incumbent had a 1 px one. The affected set is the union of the old and new
+  discs, computed from the candidate's own parameters, with a full-canvas
+  fallback when that union exceeds a break-even fraction.
+
+- [ ] Add a dirty-region evaluator: baseline composite plus baseline SSD total,
+      per-candidate affected-pixel set from old-disc union new-disc, recomposite
+      and rescore only those pixels, and fold in the constant remainder.
+- [ ] Fall back to full-canvas evaluation when the affected fraction exceeds the
+      measured break-even point, so a large-radius candidate cannot be slower
+      than it is today.
+- [ ] Re-measure the sweep above and record per-candidate cost against affected
+      fraction in `docs/contiguous-window-polish-report.md`.
+- [ ] Re-check whether 15.3's prefix-aware selection is still worth its quality
+      risk once evaluation no longer scales with the prefix.
+
+**Acceptance Checks:**
+
+- [ ] A test asserts the dirty-region evaluator and the full-canvas evaluator
+      return the same cost for the same parameters, across active sets that are
+      scattered, clustered, canvas-edge-crossing, and radius-growing.
+- [ ] A benchmark reports per-candidate cost at 512 and 2 000+ circles for both
+      evaluators, including the affected fraction and the fallback rate.
+- [ ] The 599 s sweep above is re-run at equal budget and its wall clock
+      recorded; the cost it reaches is unchanged.
+
+### Task 15.8: A Short Batch Stage Must Not Strand the Run (P1) — correctness
+
+Hit on 2026-08-20 at 2 813 circles. An extend to 2 814 finished
+`termination: refill_limit` with `requestedCircles` 2 814 and `actualCircles`
+2 813: the batch pipeline pruned the appended circle as not earning its place,
+refilled, and exhausted `MaxExtraBatchStages` one circle short. The job is
+reported `completed` with a plausible `bestCost`, but every continuation from it
+fails `POST /api/v1/jobs/{id}/extend` with
+
+    400 {"error":{"code":"invalid_checkpoint",
+                  "message":"extension requires a complete batch checkpoint"}}
+
+so the job is a permanent dead end that looks healthy from the API. A chain
+driver retrying the same parent cannot make progress; recovery meant rolling
+back to the last complete ancestor and re-running with a different seed, which
+succeeded on the first attempt — so the condition was seed-specific, not a
+ceiling of the arrangement.
+
+Two defects, worth separating:
+
+- **The state is unreachable through the API.** `GET /jobs/{id}` reports the
+  requested circle count from `config.circles`; only the on-disk checkpoint
+  carries `actualCircles`. A caller cannot tell a complete job from a stranded
+  one without reading the store directly.
+- **A pruned refill is treated as success.** Finishing short is a legitimate
+  outcome of the pruning gate, but it should not be silently reported as a
+  completed extension of the requested size.
+
+- [ ] Surface the produced circle count on the job resource, so
+      `actualCircles < requestedCircles` is visible to any client.
+- [ ] Decide and document the contract for a short stage: either fail the job
+      with a typed error naming `refill_limit`, or accept it as a complete
+      checkpoint at its actual size so continuations remain legal. Silently
+      completing at a size that no continuation accepts is the one option to
+      rule out.
+- [ ] Consider reseeding inside the pipeline when a refill exhausts its stages,
+      since a fresh seed cleared this immediately.
+- [ ] Record the failure and its recovery in `docs/troubleshooting.md`, next to
+      the existing JSON API error envelope material.
+
+**Acceptance Checks:**
+
+- [ ] A test drives the pipeline into `refill_limit` and asserts the chosen
+      contract holds — either the typed failure, or an extend that succeeds from
+      the short checkpoint.
+- [ ] A test asserts the job resource distinguishes requested from produced
+      circles.
+
+### Task 15.9: Cut the Fixed Cost of a Single-Circle Extend (P2)
+
+Measured 2026-08-20 at 2 000 circles, one `+1` extend per point, `popSize` 30,
+`optimizerEpochs` 1:
+
+| `iters` | wall clock |
+|---|---|
+| 50 | 2.0 s |
+| 500 | 6.0 s |
+| 1 500 | 12.0 s |
+
+That is 0.0069 s per iteration plus **~1.66 s that does not depend on the
+optimizer budget at all** — 28% of a 6 s extend at the shipped `iters` 500.
+Growth campaigns run one circle per extend (Task 16.9), so this is paid once per
+circle: roughly 28 minutes across a 1 000-circle leg.
+
+The suspected contributors are per-extend rather than per-iteration: rebuilding
+the session and its baked prefix, revalidating the full parameter vector, and
+writing the checkpoint — which is a single JSON document that grew from 334 KB
+at 2 000 circles to 469 KB at 2 813, rewritten in full on every extend.
+
+- [ ] Profile one extend at 2 000+ circles and attribute the fixed 1.66 s across
+      session setup, validation, checkpoint serialization, and trace append.
+- [ ] Address whichever term dominates. If it is the checkpoint, consider
+      writing parameters in a binary form or appending only the delta, keeping
+      the JSON document as an export rather than the hot path.
+- [ ] Re-measure the table above and record the new intercept.
+
+**Acceptance Checks:**
+
+- [ ] A benchmark reports the fixed and per-iteration terms separately at 500,
+      2 000, and 3 000 circles, so the intercept's growth with circle count is
+      visible rather than inferred.
+- [ ] Checkpoint round-trip stays lossless: a resumed job reproduces the parent
+      cost exactly.
+
 ---
 
 ## Phase 16: Declarative Run Schedules
@@ -2392,6 +2575,51 @@ everything; the ordering is costing gain and buying nothing.
 - [ ] Determinism regression: same config, parent, and seed produce an identical
       cost across two runs.
 
+### Task 16.9: Let the Estimator Spend the Scarce Resource (P2)
+
+A campaign run to 3 000 circles on 2026-08-19/20 produced a growth recipe that
+the schedule format can express but the estimator gives no guidance on. All
+figures are from A/Bs branching from a common parent on
+`example/Christian_after.jpeg` (512x512), equal added circles per arm.
+
+- **Granularity.** `+1` per extend beat `+4` by **4.05 cost units** at identical
+  population and per-circle budget (202.114 vs 206.163 at 312 circles), and the
+  advantage compounded: the arm was 1.2% behind a reference campaign at 312
+  circles and 10.8% ahead at 1 000. `additionalCircles: 1` should be the
+  documented default for growth, with batching presented as a throughput
+  convenience that is not in fact faster per circle.
+- **Population is coupled to epochs.** At `optimizerEpochs` 1, raising `popSize`
+  30 to 100 moved cost by **0.026** for 2.2x the wall clock; at `epochs` 3 the
+  same change was worth **1.94**. A configuration raising one without the other
+  is paying full price for nothing.
+- **The objective flips with what is scarce.** While the circle budget is open,
+  gain per *hour* is the right objective and the cheapest converging settings
+  win — `iters` 500 with `epochs` 1 carried 300 to 2 000 circles. Against a
+  fixed circle ceiling, gain per *circle* is the objective: at 2 000 circles
+  over a 50-circle sample, `iters` 500 returned **1.84x the gain per circle** of
+  `iters` 50 (0.0207 vs 0.0113) while returning roughly half the gain per hour
+  (6.05 vs 11.3 units/hour).
+- **Sample size.** The same comparison over 12 circles ranked `iters` 1 500
+  below `iters` 500, and a single-circle probe showed `iters` 50 and 500 landing
+  on the same cost. Neither survived a 50-circle sample. Any estimator advice
+  derived from short probes needs a stated sample size.
+
+- [ ] Extend `schedule estimate` (Task 16.4) to report projected cost per circle
+      and per hour separately, so a campaign against a circle ceiling and one
+      against a time budget are not given the same answer.
+- [ ] Warn at validation when a document raises `popSize` above the default with
+      `optimizerEpochs` 1, naming the measurement.
+- [ ] Record the recipe and its evidence in `docs/schedule-format.md`, including
+      that `MaxCircles` was raised 1000 -> 3000 over this campaign because the
+      cap, not diminishing returns, was the binding constraint each time.
+
+**Acceptance Checks:**
+
+- [ ] The estimator's two projections are asserted against the measured campaign
+      figures at 1 000, 2 000, and 3 000 circles
+      (96.199 / 64.602 / 46.905, PSNR 28.299 / 30.028 / 31.419).
+- [ ] A validation test covers the population-without-epochs warning.
+
 ---
 
 ## Phase 17: Dashboard Start Page
@@ -2739,6 +2967,29 @@ shell cannot reach a loopback listener. What is unverified is the viewer's
 runtime behavior on the campaign page — the mode selector, the opacity slider,
 and the `1`–`5` shortcuts against a real stage's artifacts — not the markup.
 The five modes still have no `ImageViewer` render test; Task 17.9 owns it.
+
+### Task 17.10: Ordered Browser State Reconciliation ✅
+
+- [x] Keep templ as the no-JavaScript fallback and hydration seed; use one
+      shared React client for live state after mount.
+- [x] Add `/api/v1/events`, a process-ordered SSE invalidation stream for job
+      lifecycle/deletion and campaign changes. Slow subscribers disconnect and
+      reconcile instead of silently dropping frames.
+- [x] Keep REST authoritative: add bounded job metric history and source-neutral
+      campaign list/detail projections, and refetch on connect, gaps,
+      focus/visibility return, and a safety interval.
+- [x] Queue stream events during fetches and replay them over the response so a
+      late snapshot cannot roll the UI backward.
+- [x] Move the job list, job actions, campaign list/detail, and campaign image
+      viewer into stateful islands. Preserve the legacy job/global stream
+      contracts for non-browser clients.
+- [x] Add strict TypeScript and a real Chromium gate that creates a job during a
+      browser network outage, restores connectivity, and proves the list
+      reconciles without a new navigation.
+
+SSE remains the right transport here: updates are one-way and every command is
+already a normal HTTP mutation. A WebSocket would add a second command protocol
+without removing the need for authoritative reads after disconnects.
 
 ### Task 17.9: Tests, Docs, and Gates
 

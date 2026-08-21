@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image"
 	_ "image/jpeg"
-	"image/png"
 	"log/slog"
 	"math"
 	"os"
@@ -109,7 +108,9 @@ func init() {
 	runCmd.Flags().StringVar(&cpuProfile, "cpuprofile", "", "Write CPU profile to file")
 	runCmd.Flags().StringVar(&memProfile, "memprofile", "", "Write memory profile to file")
 
-	runCmd.MarkFlagRequired("ref")
+	// Only errors when the named flag does not exist, which is a wiring mistake
+	// this file would fail its own tests over, not a runtime condition.
+	_ = runCmd.MarkFlagRequired("ref")
 	rootCmd.AddCommand(runCmd)
 }
 
@@ -212,7 +213,14 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to create CPU profile: %w", err)
 		}
-		defer f.Close()
+		// LIFO: StopCPUProfile flushes the remaining samples before this
+		// close runs. The profile is a diagnostic, so a failed close is
+		// logged rather than promoted over the command's own result.
+		defer func() {
+			if err := f.Close(); err != nil {
+				slog.Error("Failed to close CPU profile", "output", cpuProfile, "error", err)
+			}
+		}()
 		if err := pprof.StartCPUProfile(f); err != nil {
 			return fmt.Errorf("failed to start CPU profile: %w", err)
 		}
@@ -395,14 +403,8 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	}
 
 	// Save output
-	outFile, err := os.Create(outPath)
-	if err != nil {
-		return fmt.Errorf("failed to create output: %w", err)
-	}
-	defer outFile.Close()
-
-	if err := png.Encode(outFile, output); err != nil {
-		return fmt.Errorf("failed to encode output: %w", err)
+	if err := writePNG(outPath, output); err != nil {
+		return fmt.Errorf("failed to write output: %w", err)
 	}
 
 	// Compute throughput (circles rendered per second) from the measured
@@ -460,10 +462,16 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to create memory profile: %w", err)
 		}
-		defer f.Close()
 		runtime.GC() // Run GC to get accurate heap stats
 		if err := pprof.WriteHeapProfile(f); err != nil {
+			_ = f.Close()
 			return fmt.Errorf("failed to write memory profile: %w", err)
+		}
+		// Closed explicitly, not deferred: a full filesystem reports the
+		// short write here, and a deferred close would discard it and let
+		// the command claim a profile it did not finish writing.
+		if err := f.Close(); err != nil {
+			return fmt.Errorf("failed to close memory profile: %w", err)
 		}
 		slog.Info("Memory profile written", "output", memProfile)
 	}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"image"
 	_ "image/jpeg"
-	"image/png"
 	"math"
 	"os"
 
@@ -235,8 +234,7 @@ func writeScorePNG(path string, img *image.NRGBA) error {
 	if err != nil {
 		return fmt.Errorf("create output: %w", err)
 	}
-	defer file.Close()
-	if err := png.Encode(file, img); err != nil {
+	if err := encodePNG(file, path, img); err != nil {
 		return fmt.Errorf("encode output: %w", err)
 	}
 	return nil

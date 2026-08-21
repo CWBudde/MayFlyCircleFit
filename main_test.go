@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
+	"net/url"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/cwbudde/mayflycirclefit/cmd"
@@ -59,6 +62,59 @@ func TestPrintCLIError(t *testing.T) {
 			want: []string{"Error: load reference: open /root/ref.png", `Suggestion: check file permissions for "/root/ref.png"`},
 		},
 		{
+			name: "full filesystem suggests freeing space and warns about truncation",
+			code: exitError,
+			err:  fmt.Errorf("failed to write output: %w", &os.PathError{Op: "write", Path: "out.png", Err: syscall.ENOSPC}),
+			want: []string{
+				"Error: failed to write output: write out.png",
+				`Suggestion: the filesystem holding "out.png" is full`,
+				"may be truncated",
+			},
+		},
+		{
+			name: "over quota is treated like a full filesystem",
+			code: exitError,
+			err:  &os.PathError{Op: "write", Path: "/data/checkpoint.json", Err: syscall.EDQUOT},
+			want: []string{`Suggestion: the filesystem holding "/data/checkpoint.json" is full or over quota`},
+		},
+		{
+			name: "read-only filesystem suggests a writable path",
+			code: exitError,
+			err:  &os.PathError{Op: "open", Path: "/mnt/ro/out.png", Err: syscall.EROFS},
+			want: []string{`Suggestion: the filesystem holding "/mnt/ro/out.png" is mounted read-only`},
+		},
+		{
+			name: "refused connection suggests starting the server",
+			code: exitError,
+			err: fmt.Errorf("connect to server: %w", &url.Error{
+				Op:  "Get",
+				URL: "http://localhost:8080/api/v1/jobs",
+				Err: &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED},
+			}),
+			want: []string{"Suggestion: no server is listening there", "mayflycirclefit serve"},
+		},
+		{
+			name: "timed out request stays neutral about where the deadline was hit",
+			code: exitError,
+			err: &url.Error{
+				Op:  "Get",
+				URL: "http://localhost:8080/api/v1/jobs",
+				Err: timeoutError{},
+			},
+			want:    []string{"Suggestion: the request timed out while contacting the server or reading its response"},
+			notWant: []string{"no server is listening"},
+		},
+		{
+			name: "other transport errors suggest checking reachability",
+			code: exitError,
+			err: &url.Error{
+				Op:  "Get",
+				URL: "http://nowhere.invalid/api/v1/jobs",
+				Err: errors.New("no such host"),
+			},
+			want: []string{"Suggestion: check that the server address is reachable"},
+		},
+		{
 			name:    "other path errors are reported exactly once",
 			code:    exitError,
 			err:     &os.PathError{Op: "read", Path: "out.png", Err: errors.New("input/output error")},
@@ -104,3 +160,11 @@ func TestPrintCLIErrorIgnoresNil(t *testing.T) {
 		t.Fatalf("printCLIError wrote %q for a nil error", out.String())
 	}
 }
+
+// timeoutError is a net.Error whose Timeout reports true, so the suggestion for
+// a timed-out request can be exercised without waiting for a real one.
+type timeoutError struct{}
+
+func (timeoutError) Error() string   { return "context deadline exceeded (Client.Timeout exceeded)" }
+func (timeoutError) Timeout() bool   { return true }
+func (timeoutError) Temporary() bool { return true }
