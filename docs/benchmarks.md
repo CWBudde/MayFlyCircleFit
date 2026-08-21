@@ -31,6 +31,14 @@ The suite covers three layers:
   strategies can be compared at equal wall clock rather than at equal sweeps.
   See [contiguous-window-polish-report.md](contiguous-window-polish-report.md);
   a cheaper sweep is not the same as a better run.
+- **Polishing throughput:** `BenchmarkPolishSweepProductionShape` separates
+  fixed sweep setup from per-candidate evaluation across pool widths;
+  `BenchmarkPolishSweepPoolSetup` measures the memory/setup term; and
+  `BenchmarkPolishSelectionByCircleCount`,
+  `BenchmarkPolishResidualRegionSelection`, and
+  `BenchmarkRegionInfluenceEnergies` isolate active-set selection. See
+  [polishing-throughput-report.md](polishing-throughput-report.md) for the
+  recorded scaling, break-even, and transient-memory tradeoffs.
 - **Polishing budget:** `BenchmarkPolishBudgetShape`,
   `BenchmarkPolishBudgetSweepFalloff`,
   `BenchmarkPolishBudgetShippedConfiguration`, and
@@ -141,6 +149,18 @@ Run the combined renderer and symmetry-selection benchmark with:
 go test -run '^$' -bench '^BenchmarkCPURendererCombinedOptimizations$' \
   -benchmem -benchtime=750ms -count=7 ./internal/fit/renderer
 ```
+
+Run the polishing pool and selection benchmarks with:
+
+```sh
+go test -run '^$' \
+  -bench '^(BenchmarkPolishSweepProductionShape|BenchmarkPolishSweepPoolSetup|BenchmarkPolishSelectionByCircleCount|BenchmarkPolishResidualRegionSelection|BenchmarkRegionInfluenceEnergies)$' \
+  -benchmem -benchtime=1x -count=3 -timeout=120m ./internal/fit/renderer
+```
+
+These cases are intentionally expensive. Use the per-candidate/per-circle
+metrics to compare revisions, and keep image size, circle count, pool width,
+`GOMAXPROCS`, and allocation totals with any published result.
 
 Save two runs made under the same machine, power, thermal, Go-version, and
 `GOMAXPROCS` conditions, then compare them with the pinned `benchstat` tool:

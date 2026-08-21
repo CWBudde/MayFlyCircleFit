@@ -153,11 +153,12 @@ behavior is production-ready.
   about four workers are *slower* than the default -- 0.61x at 512x512 with two
   workers. See [parallel-evaluation-report.md](parallel-evaluation-report.md).
   Do not assume the flag is a speedup without measuring the intended workload.
-- Backends that cannot hand out independent sessions -- OpenCL today -- cannot
-  serve parallel evaluation. A request is declined with a warning and the run
-  evaluates serially, rather than driving the optimizer's parallel path against
-  a one-slot pool: that would have cost the altered search trajectory for no
-  throughput at all.
+- Backends that do not advertise safe concurrent evaluation -- OpenCL today --
+  cannot serve parallel evaluation. OpenCL can create independent staged
+  sessions, but simultaneous device evaluation has not been validated. A
+  request is declined with a warning and the run evaluates serially, rather
+  than paying for an altered search trajectory without a validated throughput
+  gain.
 - Parallel evaluation is reproducible but not equivalent to a serial run of the
   same seed. Evaluation order does not leak into the result: MayFly advances its
   RNG only from serial phase code and breaks ties in a parallel batch by
@@ -167,12 +168,15 @@ behavior is production-ready.
   remaining members, while its parallel loop holds the global best fixed for the
   whole generation and merges afterwards. Compare `--parallel-evaluation` runs
   only against other runs with the same setting.
-- Transactional polishing (`--polishing`) always evaluates serially, even when
-  `--parallel-evaluation` is set. Its sweep evaluator merges into one shared
-  candidate vector and one shared session, which is what makes a sweep
-  transactional, and it has no session pool to lease from. Polishing now refuses
-  an optimizer configured for concurrent evaluation rather than relying on its
-  callers not to supply one.
+- Transactional polishing (`--polishing`) uses the configured parallel-
+  evaluation width on a backend that provides and advertises independent
+  concurrent sessions. Every slot owns its renderer and scratch vector; only
+  the final merged-candidate check and commit remain serial. A backend without
+  that capability is still allowed for a serial optimizer, but polishing
+  refuses a concurrent optimizer rather than sharing mutable state or silently
+  reducing its width. The measured speedup, pool memory cost, and break-even
+  point are in
+  [`polishing-throughput-report.md`](polishing-throughput-report.md).
 - Transactional polishing can still be a no-op that spends its whole optimizer
   budget, though no longer for the reason recorded here before. A sweep is
   committed only when it improves the cost and keeps every circle in its active
@@ -183,7 +187,7 @@ behavior is production-ready.
   budget. Check the accepted-sweep count in the polishing log record before
   concluding that a strategy or a sweep budget was at fault.
 - A polishing budget is not monotone in quality. Measured in
-  `docs/polishing-budget-report.md`, a larger population can reach a *worse*
+  [`polishing-budget-report.md`](polishing-budget-report.md), a larger population can reach a *worse*
   final cost than a smaller one at several times the wall clock, because
   acceptance is discrete: a sweep either clears the gate or contributes nothing,
   and a different search trajectory lands on a different side of it. Raise
@@ -253,4 +257,5 @@ behavior is production-ready.
   or an SBOM. The published SHA-256 manifest detects accidental or post-download
   corruption but is not a substitute for signature verification.
 
-Track remaining work in the active [Phase 14 plan](../PLAN.md#phase-14-production-readiness-remediation--blocking).
+Track remaining work in the active
+[Phase 14 release gate](../PLAN.md#phase-14-production-readiness-remediation--release-gate).

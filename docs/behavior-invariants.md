@@ -11,10 +11,11 @@ Rendering-side invariants live in
 
 - CPU supports joint, sequential, and batch modes, including a supplied base
   canvas.
-- OpenCL is experimental and supports joint mode only. It requires a `gpu` build
-  tag, CGO, OpenCL development headers, and a usable runtime and device.
-  Sequential and batch OpenCL requests must fail explicitly, never silently fall
-  back to a CPU staged renderer.
+- OpenCL is experimental and supports joint, sequential, and batch modes. It
+  requires a `gpu` build tag, CGO, OpenCL development headers, and a usable
+  runtime and device. Staged modes create same-backend sessions and replay the
+  retained prefix because OpenCL does not support an accumulated custom canvas;
+  they must never silently fall back to a CPU staged renderer.
 
 ## SIMD dispatch
 

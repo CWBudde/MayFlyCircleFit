@@ -12,251 +12,18 @@
 
 ---
 
-## Phase 1: Core Domain Model ✅ COMPLETE
-
-Implemented and tested the circle model, parameter encoding, bounds/clamping, and RGB MSE cost (6 tests).
-
----
-
-## Phase 2: CPU Renderer ✅ COMPLETE
-
-Implemented and tested the `Renderer` interface and bounding-box CPU renderer with Porter-Duff alpha compositing (2 tests).
-
----
-
-## Phase 3: Optimizer (Mayfly - Using External Library) ✅ COMPLETE
-
-Implemented and tested the optimizer interface and Mayfly adapter with Standard, DESMA, and OLCE variants (2 tests); the project is pinned to `github.com/cwbudde/mayfly v0.4.0`.
-
----
-
-## Phase 4: Pipelines (Joint, Sequential, Batch) ✅ COMPLETE
-
-Implemented and tested joint, sequential, and batch optimization pipelines plus `OptimizationResult` (3 tests).
-
----
-
-## Phase 5: CLI with Cobra (Log-only UX) ✅ COMPLETE
-
-Implemented the Cobra CLI foundation, single-shot `run` workflow, metrics, command stubs, and validation asset.
-
----
-
-## Phase 6: Background Server + Job Model + Live Progress ✅ COMPLETE
-
-**Goal:** A long-running HTTP server that executes optimizations in the background with real-time progress via SSE.
-
-Implemented the job manager, background execution, hardened HTTP foundation, REST/image endpoints, CLI integration, tests, and documentation. Task 6.5 records the originally deferred SSE work (later implemented in Phase 7).
-
-### Task 6.1: Job Management Core ✅
-
-Completed: thread-safe job state, storage, lifecycle methods, and tests.
-
-### Task 6.2: Background Worker ✅
-
-Completed: context-aware background execution, progress/state updates, error handling, and tests.
-
-### Task 6.3: HTTP Server Foundation ✅
-
-Completed: HTTP server construction, routes, middleware, graceful shutdown, and lifecycle tests.
-
-### Task 6.4: REST API Endpoints ✅
-
-Completed: validated job creation/list/status and best/difference image endpoints with integration coverage.
-
-### Task 6.5: Server-Sent Events (SSE) for Live Progress ✅
-
-Completed as an optional second alternative to polling: `GET
-/api/v1/jobs/:id/stream` sends an immediate job snapshot, throttled progress
-events (iteration, cost, and circles/second), heartbeats, and one terminal event
-before closing. The per-job broadcaster handles concurrent subscribers, slow
-clients, cancellation/failure, and disconnect cleanup. Integration and
-concurrency tests cover the stream lifecycle; clients that cannot use streaming
-HTTP can continue using the status endpoint.
-
-### Task 6.6: CLI Integration - Serve Command ✅
-
-Completed: `serve` flags, server startup, signal handling, graceful shutdown, logging, and manual verification.
-
-### Task 6.7: CLI Integration - Status Command ✅
-
-Completed: list/single-job status queries, output formatting, connection handling, and manual verification.
-
-### Task 6.8: Integration Testing ✅
-
-Completed: job-flow, concurrency, error, graceful-shutdown, and SSE lifecycle integration coverage.
-
-### Task 6.9: Documentation ✅
-
-Completed: server/API/lifecycle documentation and curl examples, including polling and SSE progress alternatives.
-
----
-
-## Phase 7: Frontend with templ (Reference vs Fittest) ✅ COMPLETE
-
-**Goal:** Pretty, minimal dashboard that shows the current best vs reference and a small metrics panel.
-
-### Task 7.1: Set up templ Infrastructure
-
-Completed: templ tooling, generation workflow, UI structure, ignore rules, and setup documentation.
-
-### Task 7.2: Create Base Layout Template
-
-Completed: base HTML layout, lightweight styling, metadata, navigation, asset serving, and tests.
-
-### Task 7.3: Implement Job List Page (`/`)
-
-Completed: routed job list with status, thumbnails, metrics, creation/detail links, and integration coverage.
-
-### Task 7.4: Implement Job Detail Page (`/jobs/:id`) ✅
-
-Completed: routed two-pane job detail with metrics, refresh/error states, and integration coverage.
-
-### Task 7.5: Integrate SSE for Live Updates ✅
-
-Completed: throttled SSE progress streaming, broadcaster/worker integration, disconnect handling, and tests.
-
-### Task 7.6: Implement Auto-Refreshing Images ✅
-
-Completed: SSE-driven cache-busted image refresh with loading/error states and slow-network testing.
-
-### Task 7.7: Add Optional Cost Sparkline Visualization ✅
-
-Completed: bounded, toggleable SSE cost-history sparkline with pattern tests.
-
-### Task 7.8: Create Job Creation Form UI ✅
-
-Completed: routed job-creation form, server validation, background start/redirect, inline errors, and integration tests.
-
-### Task 7.9: Test End-to-End UI Flow ✅
-
-- [x] Start server, verify job list loads
-- [x] Create job via form, verify redirect to detail page
-- [x] Confirm images display (reference, best, and diff)
-- [x] Verify SSE connection and live metrics updates
-- [x] Verify sparkline updates with cost data from SSE
-- [x] Test multiple concurrent jobs (created and tracked 5 jobs successfully)
-- [x] All server tests pass with context.Background() fix for job execution
-- [ ] Validate on different browsers (Chrome, Firefox, Safari) - Manual testing required
-- [ ] Test mobile responsiveness - Manual testing required
-
-### Task 7.10: Documentation and Polish ✅
-
-Completed: UI/templ/SSE architecture, conventions, troubleshooting, and project-status documentation.
-
-**Deliverables:**
-
-- Working web UI with job list and detail pages
-- Live progress updates via SSE
-- Auto-refreshing images
-- Cost sparkline visualization
-- Job creation form
-- Comprehensive test coverage
-
-**Acceptance Checks:**
-
-- [x] With `serve` running, visiting `/` shows job list
-- [x] Job detail page visually shows progress (images update, cost ticks)
-- [x] SSE updates work without page refresh
-- [x] Form creates jobs successfully
-- [x] UI works on modern browsers (Chrome, Firefox, Edge)
-- [x] Cost sparkline displays and updates in real-time
-- [x] All templ components render correctly
-- [x] Error handling works gracefully (job not found, validation errors)
-- [x] Images auto-refresh with loading states
-- [x] Comprehensive documentation covers all features
-- [ ] UI tested on Safari (deferred - requires macOS)
-- [ ] Mobile responsiveness validated (deferred - requires manual testing)
-
-**Phase 7 Status:** ✅ **COMPLETE** - All core functionality implemented and documented. Optional testing on Safari and mobile devices deferred to Phase 12 (UX polish).
-
----
-
-## Phase 8: Persistence & Checkpoints (Resume) ✅ COMPLETE
-
-Implemented and tested filesystem-backed atomic checkpoints, trace logging, CLI/server restart-from-best, graceful-shutdown saves, retention utilities, and end-to-end recovery. Detailed results and limitations are recorded in `docs/checkpoint-resume-test-results.md`; Phase 14 later corrected live checkpoint, trace, and resume semantics.
-
----
-
-## Phase 9: Performance Profiling & Fast Paths (CPU) ✅ COMPLETE
-
-**Goal:** Identify bottlenecks and implement safe, incremental speedups on CPU.
-
-### Task 9.1: Set Up Profiling Infrastructure ✅
-
-Completed: CLI/server CPU and memory profiling, pprof routes, helper scripts, documentation, and validation.
-
-### Task 9.2: Profile Baseline Performance ✅
-
-Completed: small-to-large workload profiles, hotspot analysis, baseline metrics, and `docs/baseline-performance-report.md`.
-
-### Task 9.3: Optimize Circle Rasterization - AABB Precomputation ✅
-
-Completed: AABB precomputation and early rejection with pixel-equivalence benchmarks; 1.42× speedup (41.7% faster).
-
-### Task 9.4: Optimize Memory Allocation in Renderer ✅
-
-Completed: reusable buffers and cached background reset; 1.065× speedup and 98.1% allocation reduction.
-
-### Task 9.5: Optimize Data Layout for Cache Efficiency ✅
-
-Completed: analysis retained AoS as optimal; SoA was projected to regress performance by 10–20%, so no code change was made.
-
-### Task 9.6: Optimize Inner Rendering Loops ✅
-
-Completed: strength reduction, common-subexpression reuse, and offset inlining; 1.395× speedup and 39.5% higher throughput. Cumulative Phase 9 speedup: 2.11×.
-
-### Task 9.7: Add Optional Multi-Threading for Rendering ✅
-
-Completed: the CPU renderer shards disjoint scanline bands across a configurable
-worker count, preserves circle compositing order within every band, defaults to
-`GOMAXPROCS`, and caps workers at `GOMAXPROCS` and image height. Local runs use
-`--threads`; API jobs use the optional `threads` field. Pixel-exact race tests,
-session propagation, scaling benchmarks, CPU profiles, and operational guidance
-are recorded in `docs/cpu-rendering-threads.md`. On the measured 12-logical-CPU
-host, 512×512/100-circle rendering improved 4.40×, while tiny workloads remained
-faster with `--threads 1`.
-
-### Task 9.8: Create Comprehensive Benchmarks ✅
-
-Completed: `internal/fit/bench_test.go` provides deterministic CPU rendering,
-standalone cost, and fixed-seed joint/sequential/batch pipeline benchmarks over
-representative workloads. `just benchmark` records statistically useful
-samples, `just benchmark-compare` compares saved runs with pinned `benchstat`,
-and report-only CI compares base/head results on the same runner without using
-noisy timing changes as a merge gate. Usage and interpretation are documented
-in `docs/benchmarks.md`.
-
-### Task 9.9: Measure and Document Performance Improvements ✅
-
-Completed: same-host deterministic benchmarks compare the pre-optimization,
-AABB/canvas-reuse, inner-loop, pre-threading, and multi-threading milestones.
-The CPU renderer improved 2.09-2.47× on one thread and 6.39× for the large
-12-thread case, while timed serial allocations fell to zero. Matched profiles,
-flame views, per-optimization findings, reproduction templates, and remaining
-bottlenecks are recorded in `docs/task-9.9-performance-report.md`; pprof is now
-pinned as a Go tool for reproducible analysis.
-
-### Task 9.10: Validate Correctness After Optimizations ✅
-
-Completed: pixel-exact baseline tests cover single- and multi-threaded CPU
-rendering, edge cases, varied workloads, custom canvases, and cost parity. They
-also found and fixed the sub-0.001 opacity rejection regression. Results and
-tradeoffs are documented in `docs/task-9.10-correctness-validation.md`.
-
-**Deliverables:**
-- Profiling infrastructure and scripts
-- Comprehensive benchmark suite
-- Optimized CPU renderer with measurable speedup
-- Performance report with before/after metrics
-- Documentation of optimization techniques
-
-**Acceptance Checks:**
-- [x] Profiling shows top offenders moved in right direction
-- [x] Benchmarks demonstrate improvement without changing outputs
-- [x] All existing tests still pass
-- [x] Memory allocations reduced significantly
-- [x] Rendering throughput increased by measurable amount
+## Completed foundation (Phases 1–9) ✅
+
+The original task-by-task history is compacted here; implementation details,
+measurements, and caveats live in the linked documentation and git history.
+
+| Phase | Completed outcome |
+| --- | --- |
+| 1–5 | Domain model, CPU renderer, Mayfly adapter, joint/sequential/batch pipelines, and Cobra CLI. |
+| 6 | Trusted-local background server, job lifecycle, REST/image endpoints, SSE progress, CLI integration, and lifecycle coverage. |
+| 7 | templ job list/detail/create UI, live metrics and images, sparkline, validation, and UI documentation. Browser/mobile validation continues in Task 12.9. |
+| 8 | Atomic filesystem checkpoints, traces, retention, and restart-from-best; corrected semantics are documented in `docs/checkpoint-resume-test-results.md`. |
+| 9 | Profiling/benchmark infrastructure, allocation-free CPU fast paths, scanline sharding, and correctness validation. See `docs/benchmarks.md`, `docs/task-9.9-performance-report.md`, and `docs/task-9.10-correctness-validation.md`. |
 
 ---
 
@@ -266,534 +33,54 @@ tradeoffs are documented in `docs/task-9.10-correctness-validation.md`.
 
 **Status:** Research complete, implementation in progress
 
-### Task 10.1: Research SIMD Approaches and Design ✅ COMPLETE
+### Completed Tasks 10.1–10.19 ✅
 
-Completed: selected Plan 9 assembly with runtime dispatch and scalar fallback; documented design, portability, build tags, alignment, and expected AVX2/NEON gains in `docs/simd-design.md`.
+- Tasks 10.1–10.10 established the scalar, AVX2, NEON, and SSE2 SSD kernels,
+  runtime tier dispatch, production cost integration, native/cross-build
+  coverage, and benchmark reports.
+- Tasks 10.11–10.15 replaced the original pixel loop with scanline/span
+  rendering, exact SIMD compositors, Q16.16 geometry with an exact range
+  fallback, and a measured opt-in symmetry prototype. The selected combined
+  path and tradeoffs are recorded in
+  `docs/task-10.15-combined-optimization-report.md`.
+- Task 10.16 shipped exact incremental dirty-span SSD for staged pipelines; its
+  arithmetic, crossover, and parity evidence are in
+  `docs/task-10.16-incremental-cost-report.md`.
+- Tasks 10.17–10.19 completed the AMD64 SSE2 tier and exact SSE2/AVX2
+  compositors. Population evaluation parallelism was subsequently implemented
+  and measured in `docs/parallel-evaluation-report.md`.
 
-### Task 10.2: Design SSD Kernel Interface ✅ COMPLETE
+### Task 10.20: Deferred CPU-Kernel Research (P3)
 
-Completed: `fastSSD`/`FastSSD` interfaces, runtime backend dispatch, scalar baseline, backend reporting, and a 27-test validation harness.
+These items were moved out of otherwise completed tasks. They are bounded
+research follow-ups, not blockers for the selected production CPU path.
 
-### Task 10.3: Implement Scalar Baseline SSD Kernel ✅ COMPLETE
-
-Completed: optimized pure-Go NRGBA SSD baseline with alpha exclusion, equivalence/edge tests, and benchmarks.
-
-### Task 10.4: Implement AVX2 SSD Kernel (x86-64) ✅ COMPLETE
-
-Completed with hand-written Plan 9 assembly and runtime AVX2 dispatch; the build
-has no C, cgo, or GoAT dependency. Exact scalar-equivalence tests cover SIMD
-boundaries, remainders, padded rows, alpha exclusion, and large accumulators.
-Measured throughput is 2.4–2.6 Gpixels/s, approximately 6× the scalar baseline;
-details are in `docs/task-10.4-avx2-report.md`. Obsolete C prototypes were
-removed; their research results remain documented and recoverable from history.
-
-### Task 10.5: Implement NEON SSD Kernel (ARM64) ✅ COMPLETE
-
-Completed with hand-written Plan 9 assembly and runtime ASIMD dispatch; the
-build has no C, cgo, or GoAT dependency. The kernel processes four NRGBA pixels
-per batch, ignores alpha, handles scalar remainders, and reduces into a 64-bit
-accumulator. Exact tests cover boundaries and totals exceeding 32 bits, and
-Linux, macOS, and Windows ARM64 builds cross-compile with `CGO_ENABLED=0`.
-Physical Apple Silicon and Linux ARM64 measurements remain explicitly tracked
-by Tasks 10.8–10.10; no unmeasured speedup is claimed. See
-`docs/task-10.5-neon-report.md`.
-
-### Task 10.6: Implement Runtime Feature Detection and Dispatch ✅ COMPLETE
-
-Completed: architecture-specific initialization uses `x/sys/cpu` to select
-AVX2, NEON, or scalar once at startup and logs the active backend. Dispatch
-tests cover feature/backend consistency and prove the amd64 scalar fallback in
-a fresh process with `GODEBUG=cpu.avx2=off`; a focused direct-versus-function-
-pointer benchmark measures dispatch overhead independently of kernel work. A
-five-run local sample measured about 0.18 ns mean overhead, below the 2 ns target.
-
-### Task 10.7: Integrate SIMD SSD into Cost Function ✅ COMPLETE
-
-Completed: CPU renderers use the runtime-dispatched `FastMSECost` by default
-while retaining `MSECost` as the scalar oracle and custom-cost opt-out. Exact
-integration tests cover both constructors and varied SIMD-boundary image sizes;
-corrected full-cost benchmarks compare distinct scalar and fast paths. On the
-local AVX2 host, direct cost evaluation improved by 9.1–18.3× and SSD accounted
-for 0.60% of flat samples in the profiled 512×512/K100 production workload, so
-rendering is again the bottleneck. Integration details and measurements are in
-`docs/task-10.7-simd-cost-integration.md`.
-
-### Task 10.8: Cross-Platform Testing and Build Validation ✅ COMPLETE
-
-Completed with a reproducible `just cross-build` gate covering all six planned
-targets under `CGO_ENABLED=0`. The validator asserts the exact Go/assembly file
-selection before building each CLI, including the generic scalar dispatcher on
-Linux/386. Native CI now executes the SSD suite and records scalar-versus-SIMD
-throughput on Linux AMD64, macOS ARM64, Windows AMD64, and Linux ARM64; each job
-requires AVX2 or NEON rather than accepting a silent scalar fallback. Local
-Linux/AMD64 validation measured a 6.1–6.5× AVX2 kernel speedup across 64–512
-pixel-square inputs. See `docs/task-10.8-cross-platform-validation.md`.
-
-### Task 10.9: Create SIMD Test Matrix ✅ COMPLETE
-
-Completed on native Linux/AMD64 and Apple M5 ARM64 hardware. Required-backend
-tests prove AVX2 and NEON selection, fresh-process feature overrides validate
-both scalar fallbacks, and exact scalar/SIMD comparisons cover batch boundaries,
-remainders, padded strides, concurrency, and large accumulators. Native CI runs
-both feature-enabled and `cpu.all=off` suites. See
-`docs/task-10.9-simd-test-matrix.md`.
-
-### Task 10.10: Performance Validation and Documentation ✅ COMPLETE
-
-Completed with a zero-allocation 64×64–1024×1024 benchmark matrix. Five-sample
-medians measured AVX2 at 6.0–6.3× through 512² before a 1024² cache-related drop,
-while Apple M5 NEON sustained about 6.9 Gpixels/s and 5.2× throughout. Hardware
-counter access was unavailable without weakening host security, so cache
-behavior is documented from working-set and throughput scaling. M5 profiling
-also yielded an exact opaque-canvas compositing fast path, reducing the full
-512²/K100 workload by 12.3%. See
-`docs/task-10.10-simd-performance-report.md`.
-
-### Task 10.11: Circle Rendering Optimization - **PARTIALLY COMPLETE**
-
-Completed scoped work: scanline rasterization was profiled, integrated, and
-pixel-equivalence tested, improving the full 256×256/50-circle pipeline by
-1.28×. A later profile-guided opaque-canvas fast path improved the M5
-512×512/K100 workload by another 1.14×. Further rendering work remains
-explicitly open in Tasks 10.12–10.15.
-
-### Task 10.12: SIMD Horizontal Span Compositing ✅ COMPLETE
-**Rationale**: Alpha compositing was 72.56% of flat samples in the post-Task
-10.10 M5 profile. Moving invariant work out of the pixel loop and selectively
-using SIMD can process spans more efficiently.
-
-**Approach:**
-- [x] Implement an exact Go scalar span kernel that hoists foreground and blend terms
-- [x] Implement an eight-pixel ARM64 NEON kernel in Go Plan 9 assembly
-- [x] Handle short spans and remainders with the scalar span kernel
-- [x] Gate NEON on ASIMD and a measured 256-pixel crossover threshold
-- [x] Preserve the general Porter-Duff path for translucent custom canvases
-- [x] Benchmark isolated compositing and the full one-thread renderer on Apple M5
-- [x] Validate exact boundaries, randomized pixels, feature-disabled fallback, and renderer parity
-
-**Technical Details:**
-```go
-if opaqueCanvas {
-    compositeOpaqueSpan(img.Pix, offset, pixels, r, g, b, alpha)
-} else {
-    // Preserve the general translucent-destination path.
-    compositePixel(img, x, y, r, g, b, alpha)
-}
-```
-
-**Measured Outcome:**
-- Horizontal span integration: 3.883 ms → 2.015 ms median on the final
-  controlled 512×512/K100 M5 render benchmark (1.93×, zero allocations).
-- Exact float64 NEON alone crosses the M5 scalar span only on long spans: about
-  1.02× at 64–256 pixels, while losing at 8–16 pixels. Production dispatch is
-  therefore deliberately conservative rather than applying SIMD everywhere.
-- Post-change profile: scalar span 65.01%, scanline traversal 26.47%, gated
-  NEON 1.95%. See `docs/task-10.12-neon-span-report.md`.
-
-### Task 10.13: Fixed-Point and Reduced-Precision Circle Geometry - **IN PROGRESS**
-**Rationale**: Scanline geometry still performs repeated `float64` conversions,
-squares, and comparisons while searching both span edges. Reduced-precision or
-fixed-point arithmetic may lower that cost, particularly on AMD64, but must be
-judged against whole-render performance and rasterization error rather than an
-assumed instruction-level speedup.
-
-**10.13a — Establish the geometry baseline and candidates:**
-- [x] Add deterministic geometry-only benchmarks for representative radii,
-  fractional centers, clipped circles, and row shards
-- [x] Compare the current `float64` oracle with scalar `float32` and signed
-  Q16.16 implementations
-- [ ] Evaluate signed Q24.8 (wider range) and Pascal-style Q8.24 (higher
-  fractional precision, requiring normalization for normal image sizes)
-- [x] Record full one-thread render results separately so compositing does not
-  hide geometry regressions
-
-**10.13b — Select a fixed-point contract:**
-- [x] Quantize `X`, `Y`, and `R` once per decoded circle; keep squared values in
-  `int64` (an `int32` Q value cannot safely hold its own square)
-- [ ] Prefer Q16.16 when its coordinate range is safe; evaluate Q24.8 as the
-  wider-range, lower-precision alternative and retain `float64` as an overflow
-  fallback for unusually wide or tall images
-- [x] Define rounding, signed-coordinate, clipping, and overflow behavior
-- [x] Measure changed coverage against the `float64` oracle with boundary-heavy
-  and randomized cases; require byte-identical compositing for unchanged spans
-
-**10.13c — Implement the winning scalar path:**
-- [x] Precompute `r²`, per-row `r²-dy²`, and fixed-point center terms
-- [x] Use eight-pixel monotonic skips plus addition/subtraction recurrences for
-  the scalar tail instead of repeated per-pixel squaring
-- [x] Integrate behind an internal geometry dispatcher with zero allocations
-- [x] Keep the general `float64` path as the correctness oracle and range fallback
-
-**10.13d — Investigate AMD64 SIMD/assembly:**
-- [x] Inspect compiler output for scalar `float32` and fixed-point candidates
-- [x] Prototype an AVX2 float32 span-edge search that checks eight candidate X values
-  per batch; account for mask extraction, short-span setup cost, and scalar tails
-- [x] Benchmark direct kernel calls and full rendering with `x/sys/cpu` feature
-  gating; retain Q16.16 for production because AVX2 float32 did not beat it
-- [x] Prototype exact AVX2 Q16.16 span edges and compare them with the scalar
-  monotonic skip; retain scalar Q16.16 because AVX2 widened products and mask
-  interleaving cost 1.4-2.9× more in direct R5-R256 span searches
-- [x] Apply the same one-test/eight-pixel monotonic skip to scalar `float32` and
-  `float64`; verify 100,000 randomized cases against the one-pixel searches
-- [ ] Assess the corresponding ARM64 NEON opportunity without making AMD64-only
-  layout choices that prevent a later implementation
-
-**10.13e — Validation and documentation:**
-- [ ] Test fractional/tangent boundaries, radii 1 and maximum radius, clipping on
-  every image edge, SIMD batch boundaries, randomized circles, and row sharding
-- [x] Run native AMD64 tests plus the existing six-target cross-build gate
-- [x] Publish initial precision and native AMD64 throughput results in
-  `docs/task-10.13-fixed-point-report.md`; complete cross-platform results and
-  backend selection before closing the task
-
-**Scaling invariant:** if coordinates use `Q = round(value * 2^F)`, squared
-distances all use scale `2^(2F)`:
-```go
-dxQ := (int64(x) << F) - xQ
-dyQ := (int64(y) << F) - yQ
-inside := dxQ*dxQ+dyQ*dyQ <= radiusQ*radiusQ
-```
-Mixing a Q-scaled squared term with a once-shifted value is dimensionally
-invalid. Q16.16 therefore uses `int32` coordinates and `int64` products, with a
-range check before conversion.
-
-**Success criteria:**
-- Geometry microbenchmarks improve by at least 10% on a supported native host
-- Full 512×512/K100 one-thread rendering does not regress and preferably improves
-  by at least 3% across repeated samples
-- The precision report quantifies every deviation from the `float64` coverage
-  oracle; exact mode and out-of-range inputs retain the oracle path
-
-**Initial AMD64 outcome (Ryzen 5 4600H):** Q16.16 with monotonic eight-pixel
-skips is 2.75× faster for R25 geometry, 5.02× for R100, and 4.51× for a
-clipped R256 circle. The controlled one-thread 512×512/K100 renderer improved
-from 9.13 ms to 7.98 ms median (1.14×, zero allocations). Q16.16 changed 15
-of 2,022,704 randomized intersecting row spans (0.00074%); alternate formats,
-adversarial boundaries, and cross-platform validation remain open.
-
-**AVX2 float32 follow-up:** the hand-written eight-lane kernel is exact relative
-to scalar float32 across 100,000 randomized span searches. It decisively beat
-the original one-pixel scalar search. After scalar float32 gained the same
-monotonic eight-pixel skip, AVX2 is competitive in direct calls through roughly
-R100 and loses by about 1.45× at R256; across whole-circle rows scalar is 9-24% faster.
-Production dispatch remains Q16.16; AVX2 float32 is retained as a runtime-gated
-benchmark/experimental backend.
-
-**Monotonic batching follow-up:** the eight-pixel shortcut is not specific to
-integers. Applying it to scalar `float32` and `float64` preserves exact results
-relative to their original one-pixel searches. A real AVX2 Q16.16 kernel was
-also implemented and proved exact across 100,000 randomized cases, but its two
-`VPMULDQ` streams and mask interleaving make it 1.4× slower at R5 and roughly
-2.5-2.9× slower at R25-R256 than scalar Q16.16. It therefore remains a tested
-prototype rather than the production dispatcher.
-
-Seven-sample full-render medians after all batching changes were 8.09 ms for
-exact `float64`, 8.67 ms for scalar `float32`, 7.76 ms for AVX2 `float32`, and
-7.66 ms for scalar Q16.16. Q16.16 therefore remains the production path, but
-the margin over the newly batched exact oracle is now about 6%, not the earlier
-14% measured against the one-pixel float64 search.
-
-### Task 10.14: Circle Symmetry Exploitation ✅ PROTOTYPE COMPLETE
-**Rationale:** Determine whether vertically paired rows can reduce Q16.16 span
-search and compositing overhead without changing fractional circle coverage or
-the renderer's row-sharded ownership model.
-
-**10.14a — Correct the symmetry contract:**
-- [x] Require `y1 + y2 == 2*centerY`; integer sampled rows therefore share a
-  span only when the Q16.16 Y center is an integer or half-integer
-- [x] Keep arbitrary fractional centers on the ordinary row loop instead of
-  rounding their geometry and changing coverage
-- [x] Treat clipped circles, negative/clipped centers, the single center row,
-  and worker-shard edges as first-class correctness cases
-
-**10.14b — Build the exact prototype:**
-- [x] Replace the initial skip-based experiment with a true two-ended loop,
-  which consumes one row pair per iteration and renders asymmetric shard edges
-  independently
-- [x] Reuse one Q16.16 span search for each eligible pair and add both rows to
-  incremental dirty-span tracking
-- [x] Add a paired opaque-span compositor: non-ARM64 scalar builds share blend
-  setup and loop control across both rows, while ARM64 retains its measured
-  NEON dispatch
-- [x] Preserve circle order and pair only rows inside the current worker shard,
-  retaining race-free disjoint row ownership
-
-**10.14c — Measure and select:**
-- [x] Verify byte parity with ordinary rendering on opaque and translucent
-  canvases, including mixed eligible/ineligible circles and 1/4 workers
-- [x] Verify exact incremental-cost parity and ordinary/staged session settings
-- [x] Benchmark fractional, 100%-eligible R5/R25/mixed-radius, and four-worker
-  512×512/K100 fixtures with zero single-worker steady-state allocations
-- [x] Keep symmetry opt-in: the AMD64 best case improved 5.7% for mixed large
-  radii and 16-17% for R5/R25 with one worker, but four workers showed no win,
-  and continuous optimizer centers are eligible only about 1 in 32,768 times
-
-See `docs/task-10.14-circle-symmetry-report.md` for the derivation, benchmark
-medians, and production decision.
-
-### Task 10.15: Combined CPU Optimization ✅ COMPLETE
-**Rationale:** Validate the optimized renderer as one production path instead
-of multiplying isolated speedup estimates. Task 10.12 span compositing, Task
-10.13 Q16.16 geometry, and the exact Task 10.16 incremental SSD path have
-different crossovers and architecture support. Task 10.14 symmetry must also
-preserve fractional-center coverage and row-shard ownership.
-
-**10.15a — Reconcile the component contracts:**
-- [x] Verify that opaque-span compositing and Q16.16 geometry compose without
-  allocations while translucent canvases and out-of-range geometry retain
-  their exact general fallbacks
-- [x] Correct the symmetry premise: sampled rows share a span only when the
-  Q16.16 Y center is an integer or half-integer; arbitrary fractional centers
-  cannot be rounded merely to enable mirroring
-- [x] Include staged incremental SSD in end-to-end assessment rather than
-  treating full-image cost as unchanged after Task 10.16
-
-**10.15b — Prototype and select the combined path:**
-- [x] Implement an exact paired-row Q16.16 prototype for eligible centers,
-  including clipped circles and dirty-span tracking
-- [x] Keep paired writes inside the current worker's row shard so rendering
-  remains race-free and circle compositing order remains unchanged
-- [x] Benchmark the old float64 pixel loop, span plus float64, production span
-  plus Q16.16, and the symmetry prototype on fractional and eligible centers
-- [x] Leave row symmetry disabled in production: the corrected paired
-  compositor wins on fully eligible one-worker fixtures, but ordinary optimizer
-  centers are almost never eligible and four-worker rendering showed no gain
-
-**10.15c — Combined validation and documentation:**
-- [x] Require byte equality between paired and unpaired Q16.16 rendering on
-  opaque/translucent canvases with integer, half-integer, fractional, clipped,
-  overlapping, single-threaded, and multi-threaded cases
-- [x] Require exact incremental-cost parity when symmetric rows contribute to
-  the dirty-region union and preserve settings across ordinary/staged sessions
-- [x] Confirm zero steady-state allocations, standard Go builds, runtime SIMD
-  fallbacks, and supported cross-build targets
-- [x] Publish measured native results and selection decisions in
-  `docs/task-10.15-combined-optimization-report.md`
-
-**Measured AMD64 outcome (Ryzen 5 4600H):** the production opaque-span plus
-Q16.16 renderer reduced the 512×512/K100 fractional-center median from 13.99
-ms to 7.38 ms (1.90×, zero allocations). The corrected symmetry prototype wins
-5.7-17% on deliberately 100%-eligible one-worker fixtures, but has no measured
-four-worker benefit and negligible eligibility for continuous centers, so it
-remains experimental. The current 256×256 sequential K1 incremental-cost path
-reduced the median from 68.88 µs to 59.20 µs (1.16×) on top of the combined
-renderer.
-
-### Task 10.16: Incremental Dirty-Region Cost Accumulation
-**Rationale**: `CPURenderer.Cost` currently renders a candidate and then runs
-SSD over the complete image. In sequential and small-batch optimization, the
-retained base canvas is already available and only the union of the candidate
-circle spans can change. Updating the base cost over that dirty region may
-avoid most of the full-image difference pass. This is distinct from Task 10.13,
-which optimizes only circle coverage geometry.
-
-**10.16a — Verify the legacy algorithm and establish baselines:**
-- [ ] Locate and inspect the original Pascal/Delphi implementation (deferred
-  until the source is available or the Go prototype is running); determine
-  whether its `ErrorWeightingLoop` used a cumulative, delta, bounding-box, or
-  span-based cost update rather than assuming equivalence from its name
-- [ ] Document the exact legacy arithmetic and any 16.16, 8.24, float32, MMX,
-  or SSE representations used for cost accumulation
-- [x] Benchmark and profile the current full-image `FastMSECost` separately for
-  joint, sequential single-circle, and representative batch evaluations
-- [x] Measure changed-pixel and dirty-span ratios by circle radius, clipping,
-  overlap, and batch size to bound the crossover search; select the final
-  threshold only after the dirty-span kernel can be benchmarked
-
-**10.16b — Design an exact incremental SSD contract:**
-- [x] Precompute the retained base canvas SSD in an exact `uint64` accumulator
-  and preserve the current NRGBA quantization and alpha-exclusion semantics
-- [x] Track the union of changed half-open spans per row so overlapping circles
-  and repeated writes never double-count a pixel
-- [x] Compute candidate cost as
-  `baseSSD + sumDirty(candidateError - baseError)`, using signed delta
-  accumulation without intermediate overflow
-- [x] Normalize to MSE only once after reduction; retain full-image evaluation
-  for custom cost functions and any unsupported or uneconomical case
-- [x] Define invalidation rules for retained-canvas changes, joint mode, custom
-  canvases, row sharding, and renderer/session reuse
-
-**10.16c — Implement and optimize the dirty-region path:**
-- [x] Add an allocation-free dirty-span collector shared with scanline
-  rendering, without coupling correctness to Q16.16 geometry
-- [x] Implement an exact portable scalar delta-SSD kernel for dirty spans
-- [x] Reuse or extend the AVX2 and NEON integer SSD kernels for discontiguous
-  spans; benchmark SIMD setup cost and keep scalar handling for short spans
-- [x] Integrate the optimized path into sequential and batch `FastMSECost`
-  sessions behind a measured crossover; leave `Render` behavior unchanged
-- [x] Assess whether calculating cost after each completed row shard improves
-  cache locality compared with a separate dirty-span pass
-
-**10.16d — Correctness and performance validation:**
-- [x] Require exact equality with a full `FastMSECost` replay across randomized
-  circles, tangent and clipped spans, overlapping circles, transparent colors,
-  opaque and translucent base canvases, and SIMD batch boundaries
-- [x] Cover single-thread and multi-thread row sharding plus AVX2/NEON-disabled
-  scalar fallbacks under race testing
-- [x] Benchmark end-to-end optimizer throughput and convergence for joint,
-  sequential, and batch modes; report results by dirty-area ratio
-- [x] Enable the incremental path in production only where repeated samples
-  beat the full-image SIMD SSD without changing candidate ordering or cost
-- [x] Publish the available arithmetic bounds, crossover policy, and
-  native/cross-platform results in a dedicated performance report; explicitly
-  defer the legacy comparison to 10.16a until its source becomes available
-
-**Success criteria:**
-- Exact cost parity with the existing full-image `FastMSECost` for every
-  production-supported case; no float32 or fixed-point approximation is
-  accepted unless separately benchmarked and explicitly opt-in
-- At least 10% end-to-end improvement in sequential single-circle evaluation
-  on a representative native workload, with no material regression after
-  crossover fallback in joint or large-batch evaluation
-- Zero steady-state allocations and safe scalar behavior on platforms without
-  AVX2 or NEON
-
-### Task 10.17: SSE2 SIMD Tier for AMD64 Hosts Without AVX2 🚧 IN PROGRESS
-**Rationale:** AMD64 dispatch was AVX2 or scalar, so a CPU without AVX2 lost the
-entire Phase 10 speedup rather than part of it. A profile of that configuration
-attributes about 80% of flat samples to three symbols — `fit.ssdScalar` 29.96%,
-`renderer.compositeOpaqueSpanScalar` 25.17%, and `fit.MSECost` 24.63% — with
-`renderer.fixedCircleQ16.span` at only 2.80%. Baseline SSE2 covers those three.
-
-**10.17a — One resolved tier, and the levers around it:**
-- [x] Resolve the instruction set once in `fit.Tier()` and have every dispatch
-  site install from it through `fit.RegisterTierConsumer`, replacing nine
-  independent `init` functions and four different representations of "which
-  backend am I on"
-- [x] Make AMD64 dispatch AVX2, then SSE2, then scalar, and keep a kernel free
-  to be narrower than the tier where it has no implementation - never wider,
-  asserted by `TestInstalledKernelsMatchTier` and `TestRendererKernelsMatchTier`
-- [x] Add `MAYFLY_SIMD_TIER` to pin any reachable tier, panicking on an
-  unreachable one, with `MAYFLY_DISABLE_SIMD=1` retained as its scalar alias;
-  `x/sys/cpu` marks sse2 required on AMD64, so `GODEBUG=cpu.all=off` cannot
-  reach the scalar kernel there
-- [x] Add `MAYFLY_REQUIRE_SIMD_TIER`, which asserts the detected tier without
-  setting one, honoured by both `internal/fit` and `internal/fit/renderer`
-- [x] Add `fit.SetForcedTier`, which re-runs every dispatch site so one test
-  process walks the whole ladder instead of re-execing per configuration
-- [x] Extend the cross-build source assertions to require the SSE2 sources on
-  AMD64 and reject them everywhere else
-
-**10.17b — Kernels:**
-- [x] Implement a four-pixel SSE2 SSD kernel with int32 `PMADDWD` accumulation,
-  an exact scalar tail, and an `ssdSSE2MaxWidth` of 11000 that routes wider rows
-  to scalar rather than widening per iteration
-- [x] Implement an SSE2 delta-SSD kernel for discontiguous dirty spans, with the
-  same int32 accumulator rather than the AVX2 kernel's per-iteration widening,
-  and a wrapper that splits long spans so there is no width cliff
-- [x] Measure whether the AVX2-calibrated staged-incremental crossover transfers
-  to SSE2, on a CPU that genuinely lacks AVX2, before gating
-  `stagedIncremental` on any vectorized delta kernel
-- [x] Make `deltaSSDSpan` a real ladder, so an AVX2 host uses the SSE2 kernel
-  for four-to-seven-pixel spans instead of dropping to scalar
-- [x] Add an exact float64 SSE2 span compositor, so a no-AVX2 host stops
-  compositing scalar in the largest single item of its profile. It returns less
-  than that framing implied: about 1.07x on the kernel and 1.06x end to end,
-  measured on a host that genuinely lacks AVX2
-- [x] Add the exact float64 AVX2 span compositor, the amd64 counterpart of the
-  NEON one, byte-identical to the scalar span and therefore on by default with
-  no flag. It shares the SSE2 kernel's constant layout
-- [x] Add an opt-in float32 SIMD span compositor with SSE2 and AVX2 kernels
-  behind `--fast-compositing`, kept after measuring it against the exact vector
-  compositor rather than against the scalar loop
-- [ ] Hoist the per-span constant block to once per circle. It is the whole
-  difference between the SSE2 kernel's 8-pixel crossover measured directly and
-  the 24-pixel cutoff the dispatcher has to use, and it would lower the AVX2
-  cutoff from 16 to around 4
-- [ ] Add opt-in concurrent population evaluation over a pool of independent
-  renderer sessions behind `--parallel-evaluation`
-- [x] Do not port SAD: `FastSAD` has no non-test callers and its AVX2 kernel
-  needs `VPMADDUBSW` (SSSE3) and `VPMULLD` (SSE4.1)
-- [x] Do not port the Q16.16 span: it needs `VPCMPGTQ` (64-bit signed compare),
-  it is 2.80% of the no-AVX2 profile, and the existing hardware-compare AVX2
-  kernel is already 1.6-3.0× slower than the scalar finite-difference span
-- [x] Do not add a float32 circle-span kernel: `circleSpanFloat32Selected` is
-  reachable only through `CPURenderer.forceFloat32Geometry`, which no
-  configuration path sets. An SSE2 kernel for it was written and then removed;
-  its test table was retargeted at the AVX2 kernel
-
-**10.17c — Validation and gates:**
-- [x] Require bit-exact parity with the scalar oracle across batch boundaries,
-  padded strides, non-zero start offsets, alpha-only differences, and a seeded
-  random sweep
-- [x] Compare every kernel the host can execute, directly and in one process,
-  rather than skipping unless the host already selected that backend
-- [x] Make the native CI gate assert the detected tier rather than one kernel's
-  backend string, and run `./internal/fit/renderer` under it on AMD64
-- [x] Publish measurements in `docs/task-10.17-sse2-report.md`, taken on the
-  no-AVX2 target rather than on an AVX2 host under GODEBUG
-
-**Measured results (no-AVX2 target, median of three):** SSE2 SSD is
-6.03×/6.02×/6.22×/5.72× scalar at 64² through 512² and 5.33× at 1024², with zero
-allocations. Delta-SSD gains 2.25× to 4.45× over 4-256 px spans. Against
-`origin/master` on the same machine, `BenchmarkFit` cost improved 5.85× at 256²
-and 6.12× at 512², and the sequential, batch, and joint pipelines improved
-1.24×, 1.20×, and 1.13×. The staged-incremental crossover curve matches the AVX2
-one in shape, with the SSE2 crossover at radius 96 against roughly 72.
-
-An earlier revision also recorded a full 32-circle batch at seed 4242 on that
-target falling from 300.81 s to 150.52 s at an identical final cost of 1032.75,
-flat at 150.33 s with 64 threads instead of 8. That predates the delta-SSD
-accumulator change and has not been repeated.
-
----
+- [ ] Compare signed Q24.8 and normalized Q8.24 geometry with Q16.16, including
+  coordinate range, adversarial boundaries, and full-render results.
+- [ ] Assess a corresponding ARM64 NEON span-edge implementation without
+  compromising the portable geometry layout.
+- [ ] Complete native cross-platform precision measurements for fractional and
+  tangent boundaries, radii 1 and maximum radius, clipping, batch boundaries,
+  randomized circles, and row sharding.
+- [ ] If the original Pascal/Delphi source becomes available, document its
+  exact cost arithmetic and numeric/SIMD representations; until then,
+  `docs/task-10.16-incremental-cost-report.md` remains the Go contract.
+- [ ] Hoist the exact compositor's per-span constant block to once per circle
+  and remeasure the SSE2/AVX2 crossover before changing production dispatch.
 
 ## Phase 11: GPU Backends (Research → Prototype)
 
 **Goal:** Add a pluggable GPU renderer/coster behind the existing `Renderer` interface.
 
-### Task 11.1: Research GPU Backend Options
-- [x] Create comparison document: `docs/gpu-backends.md` (baseline constraints, candidate analysis, matrix).
-- [x] Research OpenGL compute/fragment shader approach — viable for Windows/Linux; macOS limited to 4.1, use fragment path plus CPU reduction; Go bindings via `go-gl` + headless GLFW.
-- [x] Research OpenCL approach — best portability across NVIDIA/AMD/Intel, strong Go binding (`github.com/jgillich/go-opencl/cl`), compute-first API suits compositing+SSD, note Apple Silicon gap.
-- [x] Research WebGPU approach — modern but bindings immature and require bundling Dawn/WGPU; defer until primary backend stabilizes.
-- [x] Research Vulkan compute approach — powerful yet extremely boilerplate-heavy; not ideal for first iteration.
-- [x] Create comparison matrix: ease of binding, portability, debuggability, performance (see doc).
-- [x] Make recommendation with justification: pursue OpenCL as primary backend, prototype OpenGL fragment fallback for macOS.
-- [ ] Track outstanding risks: document macOS (Metal/WebGPU) gap, driver quirks encountered during prototype.
+### Completed Tasks 11.1–11.8 ✅
 
-### Task 11.2: Choose GPU Backend and Set Up Infrastructure
-- [x] Choose one backend based on research (OpenCL selected; fragment-shader OpenGL fallback deferred to Task 11.6).
-- [x] Install required GPU scaffolding (cgo-based OpenCL runtime under `internal/fit/gpu`, no external bindings required).
-- [x] Set up GPU context initialization code (context + queue bootstrap, device selection with GPU preference).
-- [x] Add build tags for GPU support (`//go:build gpu` mirrored by stub fallback).
-- [x] Add `--backend` flag to CLI (values: `cpu`, `opencl` for now) and surface backend choice in logs.
-- [x] Document GPU requirements and setup in README (experimental build instructions referencing doc).
-- [ ] Test GPU detection and initialization (pending hardware run + automated checks).
-
-### Task 11.3: Design GPU Renderer Architecture ✅
-
-Completed: pluggable OpenCL renderer architecture, compositing and reduction kernel designs, persistent reference storage, and documented device-memory layout and transfers.
-
-### Task 11.4: Implement GPU Circle Compositing Shader/Kernel
-- [x] Write shader/kernel for circle rendering
-  - [x] Input: circle parameters (X, Y, R, CR, CG, CB, Opacity)
-  - [x] Output: composited image on GPU
-  - [x] Use Porter-Duff alpha compositing
-- [x] Implement shader loading and compilation
-- [x] Add error handling for shader compilation failures
-- [x] Test with simple single-circle cases (unit test under `//go:build gpu`)
-- [ ] Verify visual correctness against CPU renderer (expand tests with golden images)
-
-### Task 11.5: Implement GPU Cost Computation ✅
-
-Completed: quantized per-pixel SSD in the render kernel, portable multi-pass on-device reduction to a four-byte scalar readback, and CPU/OpenCL tolerance-based parity coverage.
-
-### Task 11.6: Implement Memory Transfer Strategy ✅
-
-Completed: persistent reference/parameter/output buffers, hash-aware parameter uploads, four-byte cost readback, lazy cached image materialization, documented PoCL transfer profiling, and packed `uchar4` image buffers that cut pixel storage/readback by 75%; pinned staging remains unjustified without vendor-GPU evidence.
-
-### Task 11.7: Integrate GPU Renderer into Pipeline ✅
-
-Completed: joint, sequential, and batch optimization use same-backend OpenCL sessions without silent CPU degradation; GPU-tagged PoCL tests cover every mode, and an uncached end-to-end CPU/PoCL benchmark documents current pipeline performance and staged-session overhead. Real vendor-GPU characterization remains in Task 11.9.
-
-### Task 11.8: Add GPU Backend Selection to CLI
-- [x] Update `run` command to accept `--backend cpu|<gpu>`
-- [x] Update `serve` command to accept `--backend` flag
-- [x] Add validation for backend selection
-- [x] Provide helpful error messages if backend unavailable
-- [x] Document backend selection in help text
-- [x] Test backend switching
+OpenCL was selected and integrated behind the renderer/session abstraction with
+`gpu` build tags, device-side compositing and SSD reduction, persistent
+buffers, lazy image readback, typed backend selection, and joint/sequential/
+batch coverage. PoCL proved functional but slower than CPU in the measured
+staged workload; vendor-GPU performance, broader correctness, fallback policy,
+and documentation remain below. The former setup and visual-validation
+remainders were moved into Tasks 11.10 and 11.12.
 
 ### Task 11.9: Create GPU Performance Benchmarks
 - [ ] Benchmark GPU rendering for various K values (1, 10, 50, 100)
@@ -804,6 +91,8 @@ Completed: joint, sequential, and batch optimization use same-backend OpenCL ses
 - [ ] Document performance characteristics
 
 ### Task 11.10: Test GPU Correctness and Edge Cases
+- [ ] Test GPU detection and initialization on a prepared OpenCL runner.
+- [ ] Add golden-image visual comparisons against the CPU renderer.
 - [ ] Verify pixel-exact equivalence to CPU (within float tolerance)
 - [ ] Test with various circle counts and sizes
 - [ ] Test with overlapping circles
@@ -820,6 +109,7 @@ Completed: joint, sequential, and batch optimization use same-backend OpenCL ses
 - [ ] Document common GPU issues and solutions
 
 ### Task 11.12: Documentation and Examples
+- [ ] Document the macOS Metal/WebGPU gap and driver quirks found during vendor-GPU validation.
 - [ ] Update CLAUDE.md with GPU architecture
 - [ ] Document GPU requirements and setup
 - [ ] Add example commands using GPU backend
@@ -857,964 +147,122 @@ Measured baseline: the uncached 64x64, K=12 pipeline benchmark reports PoCL appr
   - [ ] Run the same benchmark on supported AMD, Intel, and NVIDIA OpenCL devices where available
   - [ ] Document crossover points and retain optimizations only when profiling demonstrates a benefit
 
-**Deliverables:**
-- GPU backend comparison document with recommendation
-- Working GPU renderer implementing `Renderer` interface
-- Circle compositing shader/kernel
-- Cost computation with GPU reduction
-- Performance benchmarks comparing GPU vs CPU
-- Comprehensive documentation
-
-**Acceptance Checks:**
-- [ ] Drop-in selectable with `--backend cpu|<gpu-name>`
-- [ ] Identical cost (within float tolerances) vs CPU
-- [ ] Performance improvement on supported GPUs
-- [ ] Graceful fallback if GPU unavailable
-- [ ] All optimization modes work with GPU backend
-- [ ] Documentation covers setup and usage
-
----
-
-## Historical Summary Through Phase 11
-
-This section records the roadmap state before Phases 12-14 were added. The final summary and current execution priority are at the end of this document.
-
-Phases 0-11 use bite-sized, testable tasks. Each task follows TDD principles:
-1. Write failing test
-2. Run test to verify failure
-3. Write minimal implementation
-4. Run test to verify pass
-5. Commit
-
-**Remaining Phases (12-13)** will follow the same structure:
-- **Phase 12**: UX polish and visualization
-- **Phase 13**: Documentation and packaging
+Phase 11 is complete only when Tasks 11.9–11.13 establish vendor-GPU
+performance and parity, deliberate fallback behavior, and accurate operational
+documentation. OpenCL remains experimental until then.
 
 ## Phase 12: UX & Visualization Polish
 
-**Goal:** Make it pleasant to use and reason about results.
-
-### Task 12.1: Implement View Mode Toggles ✅
-
-Completed: accessible Reference, Best, Side-by-Side, and Difference radio
-controls default to an equal two-pane comparison, persist the global preference
-in browser localStorage, and support keyboard shortcuts 1-4. Single-image views
-use the full responsive card width, reference metadata reports decoded dimensions
-and original file size, and SSE refreshes recover from initially unavailable
-Best or Difference images. The Difference view intentionally uses the existing
-false-color endpoint; selectable colormaps and its quantitative legend remain in
-Task 12.2.
-
-### Task 12.2: Implement Difference Heatmap Visualization ✅
-
-Completed: `internal/fit/colormap.go` maps normalized errors through Turbo or
-Magma, while `diff.png` now visualizes per-pixel mean absolute RGB error on a
-fixed 0-255 scale. The Difference view provides a live colormap selector and a
-matching labeled legend; the endpoint accepts `?colormap=turbo|magma` and
-rejects unsupported values. Unit, image-generation, endpoint, and rendered-UI
-tests cover the behavior, and `docs/difference-heatmaps.md` documents the scale,
-palette tradeoffs, API, and artifact default.
-
-### Task 12.3: Add Advanced Metrics (PSNR, Optional SSIM) ✅
-
-Completed: PSNR is derived from the optimizer's RGB MSE and reported by CLI,
-status API, SSE, trace history, and the detail page, with perfect matches encoded
-as `psnr: null` plus `psnrInfinite: true`. Optional SSIM uses an 11×11 Gaussian
-window over RGB, remains off by default, and is sampled initially, at most once
-per second following improvement, and finally. The UI provides live metric cards
-and bounded selectable Cost/PSNR/SSIM history, while `trace.jsonl` retains the
-full persistent history when tracing is enabled. Calculation, configuration,
-lifecycle, serialization, UI, and cadence tests cover the feature; formulas and
-interpretation are documented in `docs/advanced-quality-metrics.md`.
-
-### Task 12.4: Add Parameter Inspection Tooltip ✅
-- [x] Display current best parameters in UI
-  - [x] Show all K circles with their properties
-  - [x] Format: Circle N: (X, Y, R) RGB(r, g, b) α=opacity
-- [x] Add interactive parameter viewer
-  - [x] Expandable/collapsible list of circles
-  - [ ] Highlight individual circles on hover (optional)
-- [x] Add parameter export button
-  - [x] Download params.json with current best
-  - [x] Include metadata: jobID, cost, iterations, timestamp
-- [ ] Add parameter visualization (optional)
-  - [ ] Show circles sorted by size or opacity
-  - [x] Color-code by properties
-- [x] Test parameter display with various circle counts
-
-Completed: the job detail page now exposes the materialized current-best circles
-in a native expandable viewer using the requested coordinate, radius, 8-bit RGB,
-and opacity format. Color/opacity swatches aid inspection, and an open viewer
-refreshes from the live job snapshot without expanding SSE payloads. The new
-`params.json` endpoint downloads both the exact flat optimizer vector and a
-readable circle representation with job ID, cost, iterations, and UTC snapshot
-timestamp. Endpoint, conversion, live-view markup, empty state, and circle-count
-tests include one, many, and 1,000-circle cases.
-
-### Task 12.5: Add Download Buttons for Artifacts ✅
-- [x] Add "Download Best Image" button
-  - [x] Download current best.png
-  - [x] Filename: `job-<id>-best.png`
-- [x] Add "Download Parameters" button
-  - [x] Download params.json
-  - [x] Filename: `job-<id>-params.json`
-- [x] Add "Download Difference Image" button
-  - [x] Download diff.png with colormap
-  - [x] Filename: `job-<id>-diff.png`
-- [x] Add "Download Report" button
-  - [x] Generate HTML report with all artifacts
-  - [x] Include: reference, best, diff images, parameters, metrics, metadata
-  - [x] Self-contained HTML file (embedded images as base64)
-  - [x] Filename: `job-<id>-report.html`
-- [x] Cover browser-compatible downloads with response and UI tests
-- [x] Add loading states during report generation
-
-Completed: the detail page provides responsive controls for Best, Parameters,
-Difference, and Report downloads with deterministic job-specific filenames.
-PNG endpoints preserve inline image use while `?download=1` adds standards-based
-attachment headers, and the selected heatmap colormap is shared with Difference
-and Report exports. Report generation renders one immutable job snapshot into a
-self-contained HTML download with three base64 PNGs, metrics, metadata, and the
-full parameter table. An accessible asynchronous loading/error state keeps the
-page responsive. Endpoint tests validate MIME and attachment headers, embedded
-PNG integrity, report self-containment, error behavior, and browser-facing UI
-contracts.
-
-### Task 12.6: Generate HTML Report ✅
-- [x] Create report template in `internal/ui/report.templ`
-  - [x] Header with job metadata (ID, mode, circles, date)
-  - [x] Three-column layout: Reference, Best, Difference
-  - [x] Metrics table: Cost, PSNR, SSIM, iterations, time
-  - [x] Parameters table: All circles with properties
-  - [x] Footer with generation timestamp
-- [x] Implement report generation endpoint
-  - [x] `GET /api/v1/jobs/:id/report.html`
-  - [x] Embed images as base64 data URIs
-  - [x] Inline CSS for styling
-  - [x] No external dependencies
-- [x] Add print-friendly CSS styles
-  - [x] Page breaks between sections
-  - [x] High-contrast colors
-- [x] Test report rendering and downloading
-- [x] Document report format and customization
-
-Completed: report downloads capture an immutable job snapshot in a standalone
-HTML document with header metadata, a metrics table, three embedded PNGs, every
-circle parameter, and a timestamped footer. Inline responsive and print styles
-provide a three-column screen layout, high-contrast printed output, section page
-breaks, and an unbounded parameter table without external dependencies. Template
-and endpoint tests cover content, attachment headers, embedded PNG integrity,
-print contracts, errors, and active-job timestamps; `docs/html-reports.md`
-documents the endpoint, snapshot format, offline behavior, printing, and safe
-customization workflow.
-
-### Task 12.7: Improve Metrics Panel Visualization ✅
-- [x] Enhance sparkline chart for cost history
-  - [x] Show X-axis (iterations) and Y-axis (cost) labels
-  - [x] Add hover tooltips with exact values
-  - [x] Show cost improvement rate (delta per iteration)
-- [x] Add circles/sec (throughput) sparkline
-  - [x] Track throughput over time
-  - [x] Display average and current cps
-- [x] Add progress bar for iteration count
-  - [x] Visual indicator: completed / total iterations
-  - [x] Percentage display
-- [x] Add estimated time remaining (ETA)
-  - [x] Calculate based on iteration rate
-  - [x] Display in human-readable format (e.g., "2m 30s remaining")
-- [x] Style metrics panel for clarity
-  - [x] Use color coding for status (running=blue, completed=green, failed=red)
-  - [x] Clear typography and spacing
-- [x] Test with various optimization scenarios
-
-### Task 12.8: Add Job Control Actions
-- [x] Add "Pause" button (if feasible)
-  - [x] Endpoint: `POST /api/v1/jobs/:id/pause`
-  - [x] Checkpoint and suspend worker
-  - [x] Update UI to show paused state
-- [x] Add "Resume" button (for paused jobs)
-  - [x] Endpoint: `POST /api/v1/jobs/:id/resume`
-  - [x] Resume from checkpoint
-  - [x] Update UI to show running state
-- [x] Add "Cancel" button
-  - [x] Endpoint: `POST /api/v1/jobs/:id/cancel`
-  - [x] Gracefully stop worker
-  - [x] Update UI to show cancelled state
-- [x] Add "Delete" button
-  - [x] Endpoint: `DELETE /api/v1/jobs/:id`
-  - [x] Remove job and artifacts
-  - [x] Redirect to job list
-- [x] Add confirmation dialogs for destructive actions
-- [x] Test all control actions end-to-end
-
-### Task 12.9: Improve Responsive Design and Accessibility
-- [ ] Test UI on mobile devices (phone, tablet)
-  - [ ] Ensure images scale appropriately
-  - [ ] Stack side-by-side views vertically on small screens
-- [ ] Add responsive breakpoints for layout
-  - [ ] Desktop: side-by-side layout
-  - [ ] Tablet: stacked layout with full-width images
-  - [ ] Mobile: single-column layout
-- [ ] Improve accessibility (WCAG 2.1 AA compliance)
-  - [ ] Add alt text to all images
-  - [ ] Ensure sufficient color contrast
-  - [ ] Add ARIA labels to interactive elements
-  - [ ] Support keyboard navigation
-  - [ ] Test with screen reader
-- [ ] Add loading states and skeleton screens
-  - [ ] Show placeholders while images load
-  - [ ] Indicate when SSE is connecting
-- [ ] Test with various browser sizes and devices
-
-### Task 12.10: Add User Preferences and Settings
-- [x] Create settings page or modal
-  - [x] Auto-refresh interval for images (default: SSE-driven)
-  - [x] Default view mode (Reference, Best, Side-by-Side, Diff)
-  - [x] Default colormap for difference visualization
-  - [x] Metrics to display (cost, PSNR, SSIM, cps)
-- [x] Persist preferences in browser localStorage
-- [x] Apply preferences across all jobs
-- [x] Add "Reset to Defaults" button
-- [x] Test preference persistence and application
-
-**Deliverables:**
-- View mode toggles (Reference, Best, Side-by-Side, Difference)
-- False-color difference heatmap with colormap
-- Advanced metrics (PSNR, optional SSIM)
-- Parameter inspection and download
-- Artifact download buttons (images, params, report)
-- HTML report generation
-- Enhanced metrics panel with sparklines and ETA
-- Job control actions (pause, resume, cancel, delete)
-- Responsive design and accessibility improvements
-- User preferences and settings
-
-**Acceptance Checks:**
-- [ ] All view modes work correctly with live updates
-- [ ] Difference heatmap clearly shows error regions
-- [ ] PSNR and SSIM calculated and displayed correctly
-- [ ] Parameters can be inspected and downloaded
-- [ ] All download buttons work on various browsers
-- [ ] HTML report is self-contained and print-friendly
-- [ ] Metrics panel provides useful real-time information
-- [ ] Job control actions work reliably
-- [ ] UI works well on mobile and desktop
-- [ ] Accessibility requirements met
-
----
-
-## Phase 13: Robustness, Docs, Packaging
-
-**Goal:** Make this shippable to users.
-
-### Task 13.1: Comprehensive Error Handling ✅
-- [x] Audit all error paths in codebase (errcheck over `./...`)
-  - [x] Identify missing error checks. The ones that mattered were dropped
-        errors on files being *written*, where a deferred close discards the
-        only report that the bytes never landed: the output PNG in `run` and
-        `resume` (now one `writePNG`/`encodePNG` helper that returns the close
-        error), and the CPU/memory profile writes in `run` and `serve`. Four
-        bare `json.NewEncoder(w).Encode` calls in `server.go` now log like
-        their neighbours, and the 22 templ renders in `ui_handlers.go` go
-        through `renderCreateJobError`, which logs instead of dropping.
-  - [x] Ensure all errors are properly wrapped with context
-  - [x] Use consistent error wrapping (e.g., `fmt.Errorf("context: %w", err)`).
-        The seven `fmt.Errorf("%w: … %v", sentinel, err)` sites in `pipeline.go`
-        and `renderer_opencl_gpu.go` flattened the cause into the message; they
-        now wrap both, so `errors.Is` reaches the underlying failure and not
-        just the sentinel.
-  - [x] The remaining errcheck hits are deliberate and left as they are:
-        `defer Close()` on nine read-only handles (nothing to lose), the y/N
-        `fmt.Scanln` (a read failure leaves the answer empty, which aborts),
-        and `MarkFlagRequired` (fails only on a flag that does not exist). The
-        last two carry a comment saying so.
-- [x] Improve server error responses
-  - [x] Consistent JSON error format: `{"error": {"code": "ERROR_CODE", "message": "message"}}`
-        on every `/api/v1` route
-  - [x] Appropriate HTTP status codes (400, 404, 500, etc.)
-  - [x] Detailed error messages for debugging (server log, keyed by job and path)
-  - [x] Generic error messages for production (no filesystem paths in responses)
-- [x] Add error handling to CLI commands
-  - [x] Clear error messages for common failures
-  - [x] Exit codes: 0=success, 1=error, 2=usage error (`cmd.UsageError`)
-  - [x] Suggest fixes when possible (e.g., "image not found: check path")
-- [x] Test error scenarios systematically
-  - [x] Invalid inputs, missing files, permission denied (unit level)
-  - [x] Network errors (`cmd/network_errors_test.go`): a refused connection
-        reaches the entry point as a `*url.Error` wrapping `ECONNREFUSED`, a
-        body that ends early is not decoded as if complete, and a server that
-        never answers is abandoned at the deadline rather than hung on.
-  - [x] Disk full (`cmd/artifacts_test.go`): `/dev/full` gives a real `ENOSPC`,
-        which arrives as a `*os.PathError` the CLI can suggest against. On that
-        device the failure surfaces at the encode and the close succeeds, so the
-        close-only case — the actual regression, a truncated image reported as
-        success — is covered separately through an injected `io.WriteCloser`.
-  - [x] Out of memory (`internal/app/memory_guards_test.go`): a Go heap
-        exhaustion is a fatal runtime error and cannot be caught, recovered, or
-        asserted on, so there is no honest test of the condition itself. What is
-        tested is the bound that keeps a request from asking for the
-        allocation, including the overflow inputs that would defeat a
-        `width*height` formulation of the pixel check.
-  - [x] GPU unavailable (`internal/fit/renderer/backend_unavailable_test.go`):
-        the portable build fails with `ErrBackendUnavailable`, a safe cleanup,
-        and a reason naming the missing build tag. The device-level failures go
-        through the same normalisation but need a prepared OpenCL runner, so
-        CPU-only CI cannot reach them.
-  - [x] Optimizer failures (`internal/fit/renderer/failure_paths_test.go`):
-        joint, sequential, and batch each propagate a failure from the first and
-        a later stage rather than returning a partial fit, and a malformed
-        result keeps its specific complaint reachable through the wrap.
-- [x] Document common errors and solutions (`docs/troubleshooting.md`),
-      including a "Resource and environment failures" section for the
-      filesystem, network, memory, GPU, and optimizer cases above.
-
-### Task 13.2: Input Validation and Sanitization ✅
-- [x] Validate all API inputs
-  - [x] refPath: check file exists and is valid image
-  - [x] width, height: positive integers within limits
-  - [x] circles: positive integer, reasonable limit (e.g., < 1000)
-  - [x] iters, popSize: positive integers
-  - [x] mode: must be "joint", "sequential", or "batch"
-  - [x] seed: any integer (or random if not provided)
-- [x] Validate CLI inputs
-  - [x] Same validations as API
-  - [x] Helpful error messages on validation failure
-- [ ] Add rate limiting for API endpoints (optional)
-  - [ ] Prevent abuse of job creation
-  - [ ] Limit concurrent jobs per client
-- [x] Sanitize file paths to prevent directory traversal
-- [x] Write tests for all validation logic
-
-### Task 13.3: Logging and Observability Improvements
-- [ ] Audit logging across codebase
-  - [ ] Ensure consistent use of slog
-  - [ ] Add structured logging fields (jobID, duration, etc.)
-  - [ ] Use appropriate log levels (debug, info, warn, error)
-- [x] Add request logging middleware
-  - [x] Log all API requests with method, path, status, duration
-  - [x] Include request ID for tracing
-- [ ] Add performance logging
-  - [ ] Log optimization progress (every N iterations)
-  - [ ] Log slow operations (rendering, cost computation)
-- [ ] Add optional metrics export (Prometheus format)
-  - [ ] Endpoint: `GET /metrics`
-  - [ ] Metrics: job counts, durations, throughput
-  - [ ] Optional feature, disabled by default
-- [ ] Document logging configuration and best practices
-
-### Task 13.4: Create README.md
-- [ ] Write comprehensive README
-  - [ ] Project overview and features
-  - [ ] Quick start guide
-  - [ ] Installation instructions
-  - [ ] Usage examples with screenshots
-  - [ ] CLI command reference
-  - [ ] API endpoint reference
-  - [ ] Building from source
-  - [ ] Troubleshooting section
-  - [ ] License and contribution guidelines
-- [ ] Add badges (build status, Go version, license)
-- [ ] Include example images (before/after)
-- [ ] Link to detailed documentation
-
-### Task 13.5: Create Getting Started Guide
-- [ ] Write `docs/getting-started.md`
-  - [ ] Installation steps for common platforms
-  - [ ] First run: CLI mode (`mayflycirclefit run`)
-  - [ ] Starting the server (`mayflycirclefit serve`)
-  - [ ] Creating your first job via UI
-  - [ ] Creating your first job via API (curl examples)
-  - [ ] Viewing results and downloading artifacts
-  - [ ] Common CLI flags and configuration
-- [ ] Add example reference images in `assets/examples/`
-  - [ ] Simple geometric shapes (circle, square, triangle)
-  - [ ] Low-resolution photos (64x64, 128x128)
-  - [ ] Expected results for each example
-- [ ] Include walkthrough video or animated GIF (optional)
-
-### Task 13.6: Create Architecture Documentation
-- [ ] Write `docs/architecture.md`
-  - [ ] System overview diagram
-  - [ ] Component breakdown (fit, opt, server, ui, store)
-  - [ ] Renderer interface and implementations (CPU, GPU)
-  - [ ] Optimizer interface and implementations (Mayfly, DE)
-  - [ ] Pipeline strategies (joint, sequential, batch)
-  - [ ] Job lifecycle and state machine
-  - [ ] SSE streaming architecture
-  - [ ] Checkpoint and resume mechanism
-  - [ ] Performance optimization layers (CPU, SIMD, GPU)
-- [ ] Add sequence diagrams for key flows
-  - [ ] Job creation and execution
-  - [ ] Checkpoint and resume
-  - [ ] SSE live updates
-- [ ] Document design decisions and tradeoffs
-
-### Task 13.7: Create Performance Benchmarks Documentation
-- [ ] Write `docs/benchmarks.md`
-  - [ ] Hardware test configurations
-  - [ ] Benchmark methodology
-  - [ ] CPU renderer performance (various K, W, H)
-  - [ ] CPU + SIMD performance comparison
-  - [ ] GPU renderer performance comparison
-  - [ ] Memory usage and allocation metrics
-  - [ ] Throughput (circles/sec, images/sec)
-  - [ ] Known limitations and bottlenecks
-- [ ] Include performance comparison tables
-- [ ] Include flamegraph samples for key scenarios
-- [ ] Document when to use CPU vs GPU
-- [ ] Document scaling characteristics
-
-### Task 13.8: Document Known Limitations and Future Work
-- [ ] Create `docs/limitations.md`
-  - [ ] Current limitations (e.g., SIMD requires cgo)
-  - [ ] Platform-specific issues
-  - [ ] GPU driver requirements
-  - [ ] Memory constraints for large images
-  - [ ] Optimizer convergence characteristics
-- [ ] Create `docs/roadmap.md`
-  - [ ] Future enhancements (cost maps, adaptive pipelines)
-  - [ ] Potential optimizations (WebGPU, better SIMD)
-  - [ ] Feature requests and community feedback
-- [ ] Link to issue tracker for bugs and features
-
-### Task 13.9: Create Sample Reference Images and Examples
-- [ ] Curate example images in `assets/examples/`
-  - [ ] `simple-circle.png` - Single red circle
-  - [ ] `gradient.png` - Smooth gradient
-  - [ ] `geometric.png` - Multiple shapes
-  - [ ] `photo-small.png` - Low-res photograph
-- [ ] Document expected results for each example
-  - [ ] Recommended circle counts
-  - [ ] Expected cost values
-  - [ ] Convergence time estimates
-- [ ] Create shell script: `examples/run-examples.sh`
-  - [ ] Runs all examples with sensible defaults
-  - [ ] Outputs results to `examples/output/`
-- [ ] Add examples to CI to ensure they don't break
-
-### Task 13.10: Versioning and Changelog
-- [ ] Choose versioning scheme (Semantic Versioning 2.0)
-- [ ] Create `CHANGELOG.md`
-  - [ ] Document changes by version
-  - [ ] Format: [Added], [Changed], [Fixed], [Removed]
-  - [ ] Include links to issues/PRs
-- [ ] Add version flag to CLI: `--version`
-  - [ ] Display version, commit hash, build date
-- [ ] Tag releases in git (e.g., `v1.0.0`)
-- [ ] Document release process
-  - [ ] Steps for cutting a release
-  - [ ] Build and test procedure
-  - [ ] Release notes template
-
-### Task 13.11: License and Contributing Guidelines
-- [ ] Add `LICENSE` file (e.g., MIT, Apache 2.0)
-- [ ] Add `CONTRIBUTING.md`
-  - [ ] How to file issues
-  - [ ] How to submit pull requests
-  - [ ] Code style guidelines
-  - [ ] Testing requirements
-  - [ ] Review process
-- [ ] Add copyright headers to source files (if required by license)
-- [ ] Add code of conduct (optional but recommended)
-
-### Task 13.12: Build and Release Artifacts
-- [ ] Create build scripts for cross-compilation
-  - [ ] `make release` or `just release`
-  - [ ] Build for: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64
-  - [ ] Output binaries to `dist/` directory
-- [ ] Create release archives
-  - [ ] `.tar.gz` for Unix systems
-  - [ ] `.zip` for Windows
-  - [ ] Include binary, README, LICENSE, example images
-- [ ] Set up GitHub releases (or equivalent)
-  - [ ] Automated release creation from tags
-  - [ ] Upload build artifacts
-  - [ ] Include changelog in release notes
-- [ ] Document installation from release binaries
-
-### Task 13.13: CI/CD Pipeline
-- [ ] Set up continuous integration (GitHub Actions, GitLab CI, etc.)
-  - [ ] Run tests on every commit
-  - [ ] Run linters (golangci-lint)
-  - [ ] Test on multiple platforms (Linux, macOS, Windows)
-  - [ ] Test with and without cgo
-- [ ] Add code coverage reporting
-  - [ ] Upload to codecov.io or similar
-  - [ ] Add coverage badge to README
-- [ ] Add automated release builds
-  - [ ] Build release artifacts on tag push
-  - [ ] Create GitHub release automatically
-- [ ] Add benchmark tracking (optional)
-  - [ ] Run benchmarks on every commit
-  - [ ] Track performance regressions
-
-### Task 13.14: End-to-End Acceptance Testing
-- [ ] Verify complete user journeys
-  - [ ] New user: install → run first example → see results
-  - [ ] Server mode: start server → create job via UI → view progress → download results
-  - [ ] API mode: create job via curl → poll status → fetch images
-  - [ ] Resume: start job → kill server → restart → resume
-- [ ] Test on fresh installations
-  - [ ] Clean VM or container
-  - [ ] Follow README instructions exactly
-  - [ ] Document any missing steps
-- [ ] Test with real-world images
-  - [ ] Various sizes and formats
-  - [ ] Edge cases (very small, very large, monochrome)
-- [ ] Verify all documentation is accurate and up-to-date
-
-**Deliverables:**
-- Comprehensive error handling and validation
-- Complete documentation suite (README, getting-started, architecture, benchmarks)
-- Sample images and examples
-- Versioning and changelog
-- License and contributing guidelines
-- Release build artifacts
-- CI/CD pipeline
-- End-to-end acceptance testing
-
-**Acceptance Checks:**
-- [ ] All error paths handled gracefully with clear messages
-- [ ] Documentation is complete, accurate, and helpful
-- [ ] New user can install and run examples without issues
-- [ ] Release artifacts build successfully on all platforms
-- [ ] CI pipeline passes all checks
-- [ ] License and contributing guidelines in place
-- [ ] Project is ready for public release
-
----
-
-## Phase 14: Production-Readiness Remediation 🚨 BLOCKING
-
-**Goal:** Correct the defects identified by the 2026-08-09 codebase audit before adding more product features or declaring the project shippable.
-
-**Priority policy:**
-
-- **P0:** Security, data races, incorrect output, broken builds, or nonfunctional lifecycle guarantees. These block release and should be completed first.
-- **P1:** Reliability, persistence, portability, test coverage, and API consistency required for sustained use.
-- **P2:** Performance, maintainability, documentation, and UX improvements that should follow the corrected architecture.
-- Existing unchecked Phase 12/13 feature work should pause when it depends on behavior being redesigned here.
-
-### Audit Baseline ✅
-
-Completed local baseline verification: vet, short/race tests, deterministic generated sources, portable cross-build dispatch, benchmark-only performance assertions, lifecycle/progress/checkpoint behavior, and renderer edge-case coverage. Final release-candidate verification remains tracked below.
-
-### Task 14.1: Restore Reproducible Builds and Tooling (P0) ✅
-
-Completed: deterministic pinned templ generation, clean-clone build/test/lint, effective stale-generation/format checks, source formatting, artifact cleanup, and Go 1.24 alignment; all acceptance checks passed.
-
-### Task 14.2: Establish a Trusted Server Security Model (P0)
-
-- [x] Decide and document whether server mode is:
-  - [x] Strictly trusted-local-only, with defensive browser-origin protections, or
-  - [ ] Network-capable, with authentication and authorization.
-- [x] Remove wildcard CORS and default to same-origin for the trusted-local model.
-- [x] Add CSRF/origin validation for browser-triggered state-changing requests.
-- [x] Restrict `refPath` and `canvasPath` to configured, canonicalized input roots.
-- [x] Reject symlink/path escapes after resolving the final path.
-- [x] Disable pprof endpoints by default; expose them only behind an explicit profiling flag and trusted bind address.
-- [x] Add HTTP server hardening:
-  - [x] `ReadHeaderTimeout`
-  - [x] `ReadTimeout` or per-handler body deadlines
-  - [x] Keep server `WriteTimeout` disabled for long-lived SSE while bounding headers, reads, bodies, admission, and non-streaming work elsewhere.
-  - [x] `IdleTimeout`
-  - [x] `MaxHeaderBytes`
-- [x] Limit JSON/form body size before parsing.
-- [x] Validate decoded image dimensions and maximum pixel count before large allocations/work.
-- [x] Add job admission controls: bounded queue, maximum concurrent jobs, and configurable resource limits.
-- [x] Add a safe production error format that does not reveal filesystem paths or internal details.
-
-**Acceptance Checks:**
-
-- [x] An untrusted browser origin cannot create jobs, read local images, or access profiling data.
-- [x] Files outside configured input roots cannot be read, including through symlinks or traversal sequences.
-- [x] Oversized bodies, images, and job requests are rejected before expensive work begins.
-- [x] Security tests cover CORS/origin behavior, path containment, pprof defaults, and resource limits.
-
-### Task 14.3: Centralize Configuration and Validation (P0)
-
-- [x] Move application configuration types into a dependency-free domain/application package and keep compatibility aliases at persistence boundaries.
-- [x] Define typed `Mode`, `Backend`, job state, and optimizer variant values instead of unchecked strings.
-- [x] Implement one normalization/default/validation path shared by CLI, API, UI, and checkpoint loading.
-- [x] Enforce explicit limits for:
-  - [x] Circles
-  - [x] Iterations
-  - [x] Population size
-  - [x] Batch size
-  - [x] Convergence patience and threshold
-  - [x] Checkpoint/trace intervals
-  - [x] Image dimensions and decoded pixel count
-- [x] Replace ambiguous optional booleans with explicit enable/disable flags.
-- [x] Correct seed semantics:
-  - [x] Implement `seed=0` as random and report the generated effective seed, or
-  - [ ] Document that zero is deterministic.
-- [x] Validate canvas dimensions rather than silently cropping or padding.
-- [x] Add checkpoint schema versioning and migration/rejection rules.
-
-**Acceptance Checks:**
-
-- [x] The same input receives the same defaults and validation result through CLI, API, UI, and resume.
-- [x] Invalid values return typed errors rather than panics, silent coercion, or delayed worker failure.
-- [x] Table-driven tests cover boundaries and omitted-versus-explicit configuration values.
-
-### Task 14.4: Fix Job-State and SSE Concurrency (P0) ✅
-
-Completed: immutable job snapshots, typed transitions, synchronized broadcaster lifecycle/cleanup, and concurrent handler/worker/SSE coverage; race and stress acceptance checks passed.
-
-### Task 14.5: Redesign Optimizer Execution for Progress, Errors, and Cancellation (P0) ✅
-
-Completed: context-aware optimizer results, bounded cancellation, unified progress snapshots, error propagation, supervised/joined workers, shared lifecycle handling, and shutdown reporting; all acceptance checks passed.
-
-### Task 14.6: Correct Renderer and Pipeline Semantics (P0)
-
-- [x] Preserve the selected renderer backend and starting canvas through joint, sequential, and batch modes.
-- [x] Introduce a renderer/session factory capable of creating larger-stage renderers without silently falling back to CPU or white background.
-- [x] Render final CLI and server output using the same base canvas/backend semantics used for cost evaluation.
-- [x] Change batch optimization to accept `totalCircles` and use `min(batchSize, remaining)` for the final batch.
-- [x] Populate `OptimizationResult.Iterations` and evaluation statistics for every mode.
-- [x] Preserve the best historical parameter vector; reject or roll back a sequential/batch stage that worsens cost.
-- [x] Validate parameter-vector length before rendering instead of panicking.
-- [x] Define image-origin and stride requirements:
-  - [x] Support independent origins/strides correctly, or
-  - [ ] Normalize inputs once and assert the normalized representation.
-- [x] Handle empty images and zero-circle cases without division by zero or incorrect zero costs.
-
-**Acceptance Checks:**
-
-- [x] Custom-canvas cost and renderer output describe the same rendered image; CLI/server artifact paths consume that renderer result.
-- [x] Sequential and batch modes honor CPU/OpenCL selection or return an explicit unsupported-mode error.
-- [x] Requests for 1, 4, 6, and 7 batch-mode circles return exactly that many circles.
-- [x] Tests cover custom canvases, mismatched dimensions, non-zero origins, padded strides, short parameter vectors, and zero-size inputs.
-
-### Task 14.7: Repair Snapshots, Checkpoints, Traces, and Resume (P0/P1)
-
-- [x] Preserve `CostAfter` and `Timestamp` for every circle instead of rebuilding previous entries with zero metadata.
-- [x] Save circle metadata incrementally and carry previous metadata forward explicitly.
-- [x] Make checkpoint creation consume an immutable live optimizer snapshot.
-- [x] Ensure fresh jobs can create meaningful periodic checkpoints before completion.
-- [x] Save a final checkpoint on successful completion when checkpointing is enabled/documented.
-- [x] Make early-converged sequential and partial-batch checkpoints valid by recording actual and requested circle counts separately.
-- [x] Define resume semantics honestly:
-  - [ ] Persist and restore optimizer population/internal state, or
-  - [x] Seed a new population around the previous best with a new deterministic continuation seed, and
-  - [x] Describe the operation as `restart-from-best` and document its limitations.
-- [x] Do not share a mutable `CPURenderer` between active optimization and checkpoint artifact rendering.
-- [x] Make trace finalization ordered and flushed/closed on completion, cancellation, failure, and shutdown.
-
-**Acceptance Checks:**
-
-- [x] Every `circles.json` entry contains its own non-zero timestamp and correct post-circle cost.
-- [x] A long job produces observable, valid intermediate checkpoints and trace entries.
-- [x] Resume tests explicitly validate deterministic restart-from-best semantics and retention of a better saved candidate.
-- [x] Checkpoint artifact generation cannot race with objective evaluation.
-
-### Task 14.8: Make Persistence Safe and Cohesive (P1) ✅
-
-Completed: store-owned artifacts, canonical UUID/path containment, concurrent durable atomic writes, checkpoint validation, restrictive permissions, retention/deletion behavior, and fault-path coverage; documented fault-filesystem exclusions remain.
-
-### Task 14.9: Restore Portability and Integrate Performance Work (P1/P2)
-
-- [x] Split SIMD wrappers by architecture/build tag so unsupported symbols are never referenced.
-- [x] Provide a real portable scalar fallback for non-AMD64 targets.
-- [x] Accurately label ARM64 as scalar fallback; a native NEON kernel remains future work.
-- [x] Give AMD64 hosts without AVX2 a real SIMD path instead of scalar execution, and add an environment opt-out that can still force the complete scalar fallback (see Task 10.17).
-- [x] Configure CI to cross-build at minimum (execution still requires a passing workflow run):
-  - [x] linux/amd64
-  - [x] linux/arm64
-  - [x] darwin/amd64
-  - [x] darwin/arm64
-  - [x] windows/amd64
-- [x] Enable `FastMSECost` in production after parity coverage against the reference cost.
-- [x] Replace absolute wall-clock unit-test thresholds with benchmarks or relative regression checks on controlled runners.
-- [x] Reuse accumulated canvases in sequential/batch mode to avoid repeatedly rendering all prior circles.
-- [x] Reuse per-stage parameter buffers and capacity-backed result slices to reduce stage-evaluation allocations.
-- [x] Perform OpenCL error reduction on-device and avoid reading the full output image for every cost evaluation.
-- [x] Benchmark full sequential and batch optimization pipelines with allocation reporting, not only isolated kernels.
-
-**Acceptance Checks:**
-
-- [ ] All supported target builds compile in CI.
-- [x] Scalar and SIMD/GPU cost implementations match the reference across boundary widths, strides, and alpha values.
-- [x] Performance measurements are benchmarks, not hardware-dependent pass/fail unit thresholds.
-- [x] Benchmark reports include allocation counts and end-to-end improvement, with final-replay/callback-isolation regression coverage.
-
-### Task 14.10: Harden CLI and API Contracts (P1) ✅
-
-Completed: typed DTOs, bounded cancellable clients, escaped IDs, validated logs, strict standardized routing/errors, actual work metrics, cancellation/deletion endpoints, and contract tests; all acceptance checks passed.
-
-### Task 14.11: Build a Release-Gating Test and CI Matrix (P1)
-
-- [x] Add CI jobs for:
-  - [x] Clean-checkout generation and build
-  - [x] `go vet ./...`
-  - [x] Pinned `staticcheck`
-  - [x] `go test -short ./...`
-  - [x] `go test -race -short ./...`
-  - [x] Cross-compilation matrix
-  - [x] GPU-tag compile check where OpenCL headers are available
-  - [x] Coverage reporting with a justified 50% aggregate floor and uploaded profile
-  - [x] `govulncheck` with a pinned tool version
-  - [x] Generated-file and formatting consistency
-- [x] Add targeted regression tests for the audited P0 defects in this phase.
-- [x] Separate fast/long tests with `-short`, performance with `-bench`, and GPU compilation/runtime tests with the `gpu` build tag and explicit CI commands.
-- [x] Audit enqueueing tests and ensure background workers are joined through `t.Cleanup`/explicit shutdown.
-- [x] Add multi-job lifecycle stress tests and same-job store concurrency tests.
-- [x] Add an opt-in clean end-to-end test and dedicated CI job: build → serve → create → observe SSE progress → checkpoint → cancel/restart → resume → fetch artifacts (`just test-e2e`).
-- [x] Gate the repository's automated SemVer-tag release job on every required CI job and publish verified portable archives draft-first.
-
-**Acceptance Checks:**
-
-- [ ] All required CI checks pass from a clean clone on two consecutive runs.
-- [x] Every addressed audit finding has regression coverage or a documented hardware/fault-environment limitation.
-- [ ] No release can be produced while race, vulnerability, generation, cross-build, or core end-to-end checks fail.
-
-### Task 14.12: Correct Documentation and Release Claims (P1/P2)
-
-- [x] Rewrite README quick start for a clean clone (final verbatim acceptance run remains below).
-- [x] Document all current CLI commands and remove “coming in later phases.”
-- [x] Remove nonexistent packages such as `internal/pkg` from architecture documentation.
-- [x] Document the server trust model, bind behavior, input roots, authentication/origin policy, and pprof controls.
-- [x] Document exact checkpoint/restart-from-best semantics and limitations.
-- [x] Correct claims about canvas continuation, live progress, periodic/final checkpoints, random seeds, SIMD, NEON, and GPU support.
-- [x] Distinguish implemented, experimental, configured CI gates, and production-ready features.
-- [ ] Update historical phase completion notes when their acceptance checks have genuinely been revalidated.
-- [x] Add `LICENSE`, `CONTRIBUTING.md`, changelog, support matrix, and known-limitations documentation before public release.
-
-**Acceptance Checks:**
-
-- [ ] A new user can follow the README on a clean machine and complete a small CLI and server job.
-- [x] Every documented feature has corresponding coverage or is clearly marked experimental/limited.
-- [x] No document describes checkpoint/restart-from-best or server mode as production-ready while Phase 14 remains open.
-
-### Phase 14 Execution Order
-
-Implement in dependency-aware waves:
-
-1. **Build foundation:** 14.1, then establish the CI skeleton from 14.11.
-2. **Safety boundary:** 14.2, 14.3, and 14.4.
-3. **Execution model:** 14.5, followed by 14.6.
-4. **Durability:** 14.7 and 14.8.
-5. **Compatibility and efficiency:** 14.9 and 14.10.
-6. **Release gate:** finish 14.11 and 14.12, then rerun every Phase 14 acceptance check.
-
-### Phase 14 Definition of Done
-
-- [x] All locally actionable P0 implementation tasks and acceptance checks are complete.
-- [x] `just build`, `just lint`, and `just test` pass from a clean local clone; the final integrated race suite also passes.
-- [x] Supported cross-builds and the GPU-tag compile check pass locally; the remote CI run remains a release gate.
-- [x] No known data races, path escapes, cross-origin image disclosures, or unbounded job admission paths remain.
-- [x] Canvas, backend, batch count, snapshot metadata, progress, checkpoint, cancellation, and restart-from-best semantics are correct and tested.
-- [x] Documentation matches observable behavior.
-- [x] A fresh end-to-end release-candidate run passes without manual workspace preparation.
-
----
+### Completed Tasks 12.1–12.8 and 12.10 ✅
+
+The UI now has five comparison modes, Turbo/Magma difference heatmaps, live
+Cost/PSNR/optional-SSIM metrics, parameter inspection/export, downloadable
+images and self-contained reports, richer progress visualization, pause/resume/
+cancel/delete actions, and persistent user preferences. See
+`docs/advanced-quality-metrics.md`, `docs/difference-heatmaps.md`, and
+`docs/html-reports.md`. Optional circle-hover and parameter-sorting ideas were
+not carried forward as roadmap commitments.
+
+### Task 12.9: Responsive Design, Accessibility, and Browser Validation (P2)
+
+This task also owns the Safari/mobile checks deferred from Phase 7.
+
+- [ ] Validate phone, tablet, and desktop layouts; add or correct breakpoints so
+  images and comparison modes stack cleanly.
+- [ ] Audit WCAG 2.1 AA essentials: alt text, contrast, labels, focus order,
+  keyboard navigation, and a screen-reader pass.
+- [ ] Add missing loading/skeleton and SSE-connecting states.
+- [ ] Exercise supported browser sizes and engines, including Safari on macOS.
+- [ ] Revalidate all live view modes, downloads, reports, metrics, controls, and
+  preferences during the browser pass.
+
+## Phase 13: Robustness, Docs, and Packaging
+
+### Completed or Superseded Work ✅
+
+Error handling, typed validation, safe paths, request logging, the README,
+benchmark and limitation documentation, SemVer metadata, changelog, license,
+contribution guide, cross-build/release automation, and CI gates are
+implemented. Production hardening and final end-to-end release acceptance moved
+to Phase 14, which is authoritative where this historical phase overlapped it.
+Per-client rate limiting is not carried forward for the documented
+trusted-local server; bounded admission and resource limits are the active
+contract.
+
+### Task 13.15: Remaining Documentation, Examples, and Observability (P3)
+
+- [ ] Audit structured logging fields/levels and document logging
+  configuration; add measured slow-operation/progress logging where useful.
+- [ ] Decide whether a disabled-by-default Prometheus endpoint is warranted
+  before adding a new public surface.
+- [ ] Add a focused `docs/getting-started.md` covering CLI, server, UI, API,
+  artifacts, and common configuration from a clean installation.
+- [x] Add `docs/architecture.md` with current package boundaries, lifecycle,
+  persistence, SSE, schedule, frontend-island, CPU/SIMD, and experimental GPU
+  flows.
+- [ ] Curate small redistributable examples with documented settings and
+  expected qualitative results; add a deterministic example script and an
+  appropriate CI smoke test.
+- [ ] Decide whether a separate public roadmap/issue-tracker page adds value
+  beyond this plan and `docs/known-limitations.md`.
+
+Badges, promotional screenshots, a walkthrough video, source-file copyright
+headers, and a code of conduct remain optional publication work rather than
+active engineering tasks.
+
+## Phase 14: Production-Readiness Remediation 🚨 RELEASE GATE
+
+The 2026-08-09 audit remediation is implemented: reproducible tooling,
+trusted-local browser and filesystem boundaries, canonical typed configuration,
+race-safe lifecycle/SSE state, cancellable optimizer execution, corrected
+renderer and staged-pipeline semantics, durable snapshots/checkpoints/traces,
+safe store ownership, portable SIMD dispatch, typed CLI/API contracts, and
+release-gating workflows. Regression coverage and documentation accompany each
+area. Historical local and CI observations remain evidence for their recorded
+revisions only.
+
+### Task 14.13: Final Release Verification (P0)
+
+These checks were moved from Tasks 14.9, 14.11, and 14.12 so the completed
+remediation tasks no longer look partially open.
+
+- [ ] Observe every required CI gate, including all supported cross-builds,
+  generation, race, vulnerability, GPU compile, and core end-to-end checks,
+  passing from a clean clone on two consecutive runs of the release candidate.
+- [ ] Verify repository/release controls prevent producing or publishing a
+  release while any required gate fails; document any administrator-enforced
+  setting that cannot be expressed in workflow files.
+- [ ] On a clean user machine, follow the README verbatim and complete a small
+  CLI job and a server/UI job without workspace preparation.
+- [ ] After those checks pass, remove the production-readiness caveat at the top
+  of this document and mark Phase 14 complete.
 
 ## Phase 15: Polishing Throughput
 
-Active-set polishing is the only optimizer path in the codebase that is still
-single-threaded, and it is now the dominant cost of a long incremental run.
+The initial production profile found serial polishing and active-set selection
+dominating long incremental runs. Tasks 15.1 and 15.2 removed those two
+bottlenecks; the remaining work targets selection quality, evaluation width,
+dirty-region scoring, short-stage correctness, and fixed per-extend cost.
+Measurements must continue to state host, workload, budget, and allocations.
 
-**Measured 2026-08-16** on the Xeon Gold 5520+ (64 vCPU, `GOMAXPROCS=48`),
-polishing a 32-circle fit of `Christian_after.jpeg` at 512x512 with
-`residual-region`, `activeSetSize 8`, `iters 800`, `epochs 2`, `popSize 200`:
+### Task 15.1: Give Polishing a Session Pool (P1) ✅
 
-| | Extend stage (+8 circles) | Polish sweep |
-| --- | ---: | ---: |
-| Wall clock | 135 s | ~480 s |
-| Process CPU | ~2000% | **223%** |
-| Concurrency | 48 evaluations | 1 |
+Completed: polishing now leases independent renderer sessions per concurrent
+evaluation while keeping sweep acceptance transactional and deterministic for a
+fixed width. Race/parity coverage and width benchmarks are recorded in the
+code and plan history; on the measured 12-thread host, width 8 improved the
+production-shaped 256/512-circle sweep estimate by about 4.1–4.3×. See
+`docs/polishing-throughput-report.md`.
 
-The machine is 95% idle for the whole polish. On the earlier 32→512 chain the
-same imbalance cost 5 h 30 m of a 6 h 55 m run to remove 83 cost units, while
-66 minutes of extends removed 710.
+### Task 15.2: Make Active-Set Selection Cheap (P1) ✅
 
-Two separate causes, and they compound:
-
-1. `PolishCircleBatchContext` refuses any optimizer configured for concurrent
-   evaluation (`internal/fit/renderer/batch_polish.go:125`), so
-   `polishBatchResult` (`internal/server/worker.go:490`) builds a serial Mayfly.
-   The refusal is correct as written — the sweep evaluator merges every candidate
-   into one shared parameter vector and evaluates it on one shared session, which
-   is what makes a sweep transactional — but the fix is a session pool, not a
-   permanent serial path. The refusal comment already says so.
-2. The baked prefix is `min(activeCircles)` circles
-   (`batch_polish.go:218`, `pipeline.go:757`), and `residual-region` always drags
-   in a low-index circle because `replacementCount = max(1, activeSetSize/5)`
-   selects the globally weakest one. Observed active sets on the run above were
-   `[2,3,6,7,8,10,14,16]` and `[3,4,6,7,8,26,29,31]`, so the prefix was 2 and 3 of
-   32 circles and each candidate rasterized ~30. Measured again on the live
-   512x512 vector, `min(activeCircles)` under `residual-region` is 7 of 256
-   circles and 11 of 512, so the bake covers 3-4% of the vector and each
-   candidate still rasterizes essentially all of it.
-
-   The prefix collapse is real, but the cost it recovers is not what this
-   preamble originally claimed. Per-candidate cost does **not** grow linearly
-   with the vector: measured at 512x512 on the production-shape benchmark it is
-   1 881 us at 256 circles against 2 056 us at 512, only +9% for twice the
-   circles. It is dominated by the full-canvas clear and the full-image SSD
-   pass, not by circle rasterization, so a larger baked prefix buys much less
-   than the rasterization count suggests. That is a cost argument against
-   Task 15.3, not for it.
-
-### Task 15.1: Give Polishing a Session Pool (P1)
-
-- [x] Lease a per-evaluation slot in the sweep evaluator instead of sharing one
-      `candidateFull` vector and one session. `evaluationSlot{session, combined}`
-      and `evaluationPool` in `internal/fit/renderer/evaluation_pool.go` already
-      have exactly this shape for the staged pipelines; reuse them rather than
-      adding a second pooling mechanism.
-- [x] Give each slot its own baked-suffix session so the per-sweep bake is not
-      serialized behind the pool (`bakedSuffixSession`, `pipeline.go:757`).
-- [x] Replace the blanket refusal at `batch_polish.go:125` with a check that the
-      pool width matches the optimizer's evaluation width, keeping the refusal for
-      the pool-less case so the failure stays loud rather than silent.
-- [x] Keep the sweep transactional: acceptance still evaluates the merged
-      candidate on the full session and still gates on
-      `allCirclesUseful(audit, minBatchMSEContribution)`.
-- [x] Plumb `evaluationWorkers` through `polishBatchResult` so polishing honors
-      the same width as the main optimizer, and log the width alongside
-      `accepted_sweeps` (`worker.go:605`).
-- [x] Document the reproducibility consequence next to `ParallelEvaluation`
-      (`internal/app/config.go:168`): parallel polishing applies one global best
-      per generation, so a seed reproduces with the setting held fixed but not
-      across the two settings — the same caveat the extend path already carries.
-
-**Acceptance Checks:**
-
-- [x] A parity test asserts that pooled polishing with width 1 produces
-      byte-identical parameters, cost, and accepted-sweep count to the current
-      serial path for a fixed seed.
-      `TestPolishCircleBatchPoolWidthParity` covers all four strategies against
-      goldens captured by running the same fixtures on the pre-pool evaluator at
-      `b0185a0`; the capture reproduced the two original `hybrid-overlap`
-      goldens byte-for-byte, so the table is not self-referential. Widths 2, 4
-      and 8 must then reproduce width 1 exactly, including the rendered image.
-- [x] A race test (`go test -race`) covers a multi-sweep polish at width > 1.
-      `TestPolishCircleBatchPoolServesConcurrentEvaluations` drives all four
-      strategies, with a small baked prefix and with an empty one.
-- [x] A benchmark reports sweep wall clock and allocations at widths 1, 8, and 48
-      on the same fixture, with the machine and circle count stated.
-
-**Measured 2026-08-16/17** on an AMD Ryzen 5 4600H, 12 threads,
-`GOMAXPROCS=12`, at 512x512 with `residual-region`, `activeSetSize 8`, renderer
-threads pinned to 1, `-benchtime 1x -count 5`. Sweeps were run at 4 000 and
-16 000 candidates, `t = fixed + n * perCandidate` was fitted through the two
-points, and the fit was extrapolated to the 690 000-candidate sweep a
-production run performs:
-
-| Circles | width 8 | width 12 | width 48 |
-| ---: | ---: | ---: | ---: |
-| 256 | **4.09x** | 3.04x | 3.92x |
-| 512 | **4.33x** | 3.60x | 3.65x |
-
-Minima instead of medians give the same picture. Three things this does and
-does not show:
-
-- The earlier 2.1x reported at 128x128 with 1 920 candidates per sweep
-  understated the win, because a sweep that short is dominated by the pool
-  setup and by the serial active-set selection rather than by evaluation
-  throughput.
-- Width 48 cannot run 48-wide on a 12-thread box. It allocates 48 slots and 48
-  canvases and overlaps at most 12 evaluations, so no width-48 number here is
-  evidence about 48-wide behavior.
-- Width 12 is reproducibly slower than width 8, at both circle counts, on both
-  revisions, and in both medians and minima. Running as many evaluation
-  goroutines as hardware threads leaves nothing for the runtime and saturates
-  memory bandwidth. See Task 15.5.
-
-Memory at 512x512, 512 circles, 16 000 candidates: width 1 = 37.9 MB /
-16 686 allocs, width 8 = 80.5 MB, width 12 = 101.8 MB, width 48 = 293.8 MB /
-17 656 allocs. A slot holds ~5.3 MB at 512x512. Pool setup costs 15-130 ms and
-saves ~1.5 us per candidate, so break-even is ~13 candidates at width 8 and ~90
-at width 48 against 690 000 in production: it is never a net loss for a real
-sweep. `274715b` roughly halved setup time and memory at width 48.
-
-### Task 15.2: Make Active-Set Selection Cheap (P1)
-
-Reprioritised from P2 after the Task 15.1 benchmark. `residual-region` selection
-is the dominant per-sweep fixed cost — 1.47 s at 256 circles and 4.14 s at 512,
-measured on the same Ryzen 5 4600H run — it is entirely serial, and the session
-pool does not parallelize any of it. For scale, pool setup is 1-3% of it. Once
-15.1 has widened evaluation, selection is the largest remaining per-sweep cost,
-which makes this task more valuable than 15.1 was.
-
-- [x] Parallelize the leave-one-out renders in `AuditCircleBatch`
-      (`internal/fit/renderer/batch_audit.go:37`) and the region-influence loop in
-      `selectResidualRegionActiveSet` (`batch_polish.go:614`). Both are N
-      independent full renders per sweep and both are serial today: ~65 renders
-      per sweep at 32 circles, ~1025 at 512.
-      `planAudit` opens one single-threaded session and stepper per rendering
-      thread and hands out runs of the draw order from a shared queue;
-      `regionInfluenceEnergies` stripes the circles across the same kind of
-      sessions. Both go through `concurrentSessions`, which keeps OpenCL on the
-      serial path through the marker the evaluation pool already uses.
-- [x] Render only `selection.Region` in the influence loop.
-      `imageDifferenceEnergy` reads nothing outside it, but `base.Render(without)`
-      paints the whole canvas — on the 4x4 grid (`residualPolishGridSize = 4`)
-      that is 16x more pixels than are examined.
-      Done, and narrowed further: compositing writes only inside a circle's own
-      raster, so removing a circle cannot change a pixel outside it. The
-      comparison shrinks to `region ∩ circleRasterBounds`, only those rows are
-      composited (`compositeParamsRows`), and a circle whose box misses the
-      region is skipped without rendering at all.
-- [x] Skip the selection audit after a rejected sweep. A rejected sweep leaves
-      `bestParams` untouched, so the next sweep recomputes an identical audit.
-      Shipped with the acceptance-gate rework as `incumbentAuditCache`, which
-      also adopts the audit the gate took on a committed candidate.
-
-**Acceptance Checks:**
-
-- [x] Selection returns the same active set, replacement set, and region as the
-      serial implementation for a fixed seed and fixture.
-      `TestSelectPolishingActiveSetMatchesSerial` compares the complete
-      `polishingActiveSet` at one thread against `GOMAXPROCS` for all four
-      strategies, from identical visit state.
-      `TestRegionInfluenceEnergiesMatchFullRenders` compares the row-band
-      energies against the full renders they replace over four regions, and
-      `TestAuditCircleBatchChunkedMatchesSerial` compares the chunked audit
-      against the serial one.
-- [x] A benchmark shows selection cost per sweep against circle count at 32, 128,
-      and 512 circles, before and after.
-
-**Measured 2026-08-17** on the same AMD Ryzen 5 4600H, 12 threads,
-`GOMAXPROCS=12`, at 512x512 with `residual-region` and `activeSetSize 8`,
-`-benchtime 2x -count 3`, medians. `BenchmarkPolishResidualRegionSelection`
-pins one rendering thread, so its two columns isolate the region-render change;
-`BenchmarkPolishSelectionByCircleCount` adds the full-width column. One
-`residual-region` selection:
-
-| Circles | before, 1 thread | after, 1 thread | after, 12 threads |
-| ---: | ---: | ---: | ---: |
-| 32 | — | 0.11 s | 0.08 s |
-| 128 | — | 0.43 s | 0.12 s |
-| 256 | 1.62 s | 0.95 s | — |
-| 512 | 4.24 s | 2.30 s | 0.47 s |
-
-Three things this shows and one it costs:
-
-- The region restriction alone is 1.84x at 512 circles and 1.71x at 256.
-  Measured on the influence loop by itself (`BenchmarkRegionInfluenceEnergies`,
-  one thread) it is far larger — 1.86 s against 0.029 s at 512 circles, 0.151 s
-  against 0.003 s at 128 — but after it the loop is no longer what selection
-  spends its time on.
-- What remains is the audit, which is why the chunked walk is worth another
-  4.9x at 512 circles and 3.6x at 128. End to end that is 9.0x at 512.
-- At 32 circles there is little to win: `minAuditChunkCircles *
-  auditChunksPerWorker` admits only two workers, and the region loop was already
-  a small share of a tenth-of-a-second selection.
-- Peak allocation per selection rises from 21 MB to 119 MB at 512 circles and
-  512x512, because 12 audit sessions and steppers hold ~6 MB each and the
-  influence loop's 12 sessions and scratch canvases hold ~3 MB each. It is
-  transient — everything is released when selection returns — and it buys a
-  4.2 s serial selection back as 0.47 s.
-
-The audit is now the whole cost, and it is still one full-canvas render, two
-full-canvas `changedPixelCount` scans, and one full-image SSD per circle. The
-same argument that shrank the influence loop applies to it — a circle changes
-only its own raster, so `CostWithout` is `MSE` corrected over that raster — but
-it needs exact integer SSD to stay bit-identical to `fit.FastMSECost`, which
-would move every audit value in the last ulp and break the polishing goldens.
-Left for a task of its own rather than smuggled in here.
+Completed: leave-one-out audits and residual-region influence work are
+parallelized over isolated sessions, influence rendering is clipped to the
+region/circle intersection, and incumbent audits are reused after rejection.
+Selection remains equivalent to the serial implementation; the measured
+512-circle residual-region selection fell from 4.24 s to 0.47 s on the stated
+12-thread host, with the transient-memory tradeoff documented in
+`docs/polishing-throughput-report.md`.
 
 ### Task 15.3: Stop Destroying the Baked Prefix (P2)
 
@@ -1847,75 +295,11 @@ suggests. Keep this at P2 and behind a measured quality comparison.
 
 ### Task 15.4: Right-Size the Polishing Defaults (P2) ✅
 
-- [x] Re-derive `PolishingIters`, `PolishingEpochs`, and the population used for
-      polishing against the active set's actual dimensionality. The defaults reuse
-      the job's `popSize` (`worker.go:490`), so a run tuned for a 512-circle
-      vector polishes a 56-dimensional active set with 200 members.
-      Re-derived in `docs/polishing-budget-report.md`: `PolishingIters`
-      1000 → 200, `PolishingMaxSweeps` 3 → 8, `PolishingStagnationIters`
-      500 → 100 (half its epoch, as before), `PolishingEpochs` kept at 2 because
-      two epochs of 200 beat one of 400 at equal wall clock and four are worse
-      than two at twice the cost.
-- [x] Give polishing its own population knob rather than inheriting `popSize`,
-      and expose it on `polishJobRequest` (`internal/server/server.go:996`).
-      `PolishingPopSize` / `--polishing-pop` / `polishingPopSize`, defaulting to
-      30 and resolving to that rather than to `PopSize`, which is the one place
-      polishing departs from the `EvaluationWorkers` compatibility rule. The
-      `/polish` request's `popSize` and a schedule polish step's `popSize` both
-      address it, which is what those overrides already claimed to mean.
-- [x] Record the measured sweep-by-sweep drop-off in the report. Observed on the
-      run above: sweep 1 removed 85.5 cost units, sweep 2 removed 16.8 — a 5x
-      falloff in one step, against a default `PolishingMaxSweeps` of 3 and a
-      ceiling of 32.
-      Re-measured under the current gate, and the falloff does not hold:
-      `residual-region` removed 25.2, 24.9, 23.9, **55.0**, 17.9, 7.7, 4.0, 7.6
-      over eight sweeps — its largest single gain is sweep 4 — and `replacement`
-      removed 10.0 in sweep 1, nothing in sweeps 2–4, then 7.2 in sweep 5. The
-      original 5x figure was measured under the superseded absolute gate
-      (Task 15.6), where most sweeps were vetoed whatever they found. Three
-      sweeps captured 44% of what eight remove, which is why the default moved
-      to 8 rather than down.
-
-**Acceptance Checks:**
-
-- [x] Defaults are justified by a measurement in a committed report, not by
-      inheritance from the batch configuration.
-      `docs/polishing-budget-report.md`, and every default is a named constant in
-      `internal/app/config.go` so the CLI flag and the configuration cannot
-      drift; `cmd.TestRunPolishingPopulationFlagMatchesConfigDefault` and
-      `app.TestNormalizeAppliesCanonicalDefaults` pin that.
-
-**Measured 2026-08-17/18** on an AMD Ryzen 5 4600H, 12 threads,
-`GOMAXPROCS=12`, on the 64-circle vector a real `OptimizeBatch` produces at
-128x128 (starting cost 625.2), `activeSetSize` 5, seed 4242, one render thread,
-`-benchtime 1x`. Whole configurations, each carrying the stagnation rule it
-ships with, medians of three except the six-minute inherited-population row
-(median of two):
-
-| Configuration | Strategy | Wall clock | Accepted | Removed |
-| --- | --- | ---: | ---: | ---: |
-| Previous defaults: pop 30, 1000 × 2, 3 sweeps | `replacement` | 36.7 s | 3 / 3 | 8.1% |
-| Previous defaults | `residual-region` | 72.5 s | 3 / 3 | 9.0% |
-| Inherited population: pop 200, 1000 × 2, 3 sweeps | `residual-region` | 373.9 s | 3 / 3 | 11.5% |
-| Current defaults: pop 30, 200 × 2, 8 sweeps | `replacement` | **27.1 s** | 4 / 8 | **11.1%** |
-| Current defaults | `residual-region` | **40.3 s** | 7 / 8 | **23.2%** |
-
-The current defaults remove 2.6x the error of the previous ones in 56% of the
-wall clock on `residual-region`, and 1.4x in 74% of it on `replacement`. The
-inherited population buys 1.28x the error for 5.2x the time, which is the whole
-case for the knob. Two further findings are in the report and are worth knowing
-before tuning anything here: quality is **not monotone** in the budget — on
-`replacement`, population 200 reached a worse cost than population 50, because
-acceptance is discrete — and at 512x512 with 256 circles a fixed 200-iteration
-sweep landed an accepted sweep at population 20 and at no larger population,
-while costing 11.8x more wall clock at population 200.
-
-Consequences recorded elsewhere: a polish stage now authorizes 3 200 optimizer
-iterations rather than 6 000, so the documented 512-circle campaign's planned
-figure drops from 48 800 to 32 000 (`docs/schedule-format.md`,
-`app.TestReferenceCampaignPlanMatchesTheHandComputation`), and a checkpoint
-written before `polishingPopSize` existed resumes at the polishing default
-rather than at its own `popSize`.
+Completed: polishing has its own population setting and measured defaults
+(`pop=30`, 200 iterations × 2 epochs, up to 8 sweeps, stagnation 100).
+`docs/polishing-budget-report.md` records the sweep behavior and equal-host
+comparison; schedule estimates and backward-compatible normalization use the
+same canonical constants.
 
 ### Task 15.5: Derive the Evaluation Width from a Measurement (P2)
 
@@ -1955,90 +339,15 @@ memory bandwidth.
 - [ ] An explicitly configured `EvaluationWorkers` is still honored up to the
       `GOMAXPROCS` clamp, with a test covering it.
 
-### Task 15.6: Stop the Acceptance Gate Vetoing Every Sweep (P1) — correctness, not throughput
+### Task 15.6: Stop the Acceptance Gate Vetoing Every Sweep (P1) ✅
 
-This task sits in Phase 15 because it is where polishing lives, but it is a
-correctness bug, not a throughput one. Tasks 15.1–15.4 make polishing spend its
-budget faster; this one is about polishing having been unable to keep any of the
-work that budget bought.
-
-**Measured 2026-08-17** on an AMD Ryzen 5 4600H (12 logical cores,
-`GOMAXPROCS=12`), against the real stalled checkpoint of job `c2029645`
-(64 circles, 448 params, cost 572.3572196960449) polished against
-`Christian_after.jpeg` at 512x512 with the job's own configuration:
-`residual-region`, `activeSetSize 8`, `maxSweeps 12`, `polishingIters 400`,
-`polishingEpochs 2`, `popSize 50`, seed 920002, early stop 0.001/300,
-evaluation width 12.
-
-| | Sweeps | Accepted | Final cost | Cost removed | Wall clock |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Before (`31fc02e`, `allCirclesUseful`) | 12 | **0** | 572.357220 | **0.000000** | 9m10s |
-| After (`sweepKeepsCirclesUseful`) | 12 | **12** | 527.720599 | **44.636621** | 8m50s |
-
-The same budget, the same seed, the same wall clock; the difference is entirely
-whether the optimizer's output was allowed to be kept.
-
-The cause: acceptance required `allCirclesUseful` over the **entire** candidate,
-which also required a sweep to repair circles outside its active set — circles
-it copies through byte for byte and has no agency over. `AuditCircleBatch` on
-that checkpoint reports three such circles:
-
-```
-circle 20  contribution  -0.405724  pixels 2302
-circle 25  contribution  -0.072455  pixels 1541
-circle 37  contribution  -0.176453  pixels   18
-threshold 0.01 -> 3 of 64 circles block acceptance
-```
-
-`residual-region` reseeds `replacementCount = max(1, activeSetSize/5)` = 1
-circle per sweep, so it is structurally incapable of clearing three blockers at
-once and the gate vetoed forever. Occluded circles with negative contribution
-are the normal steady state of an incremental run — `PruneCircleBatch` runs per
-stage against that stage's canvas, later stages composite on top, and nothing
-re-audits the assembled vector — so this made polishing a guaranteed no-op past
-a certain size. The same stall was observed live at 64 and again at 96 circles:
-12 of 12 sweeps rejected, net cost gain 0.00, ~8 minutes per stage.
-
-- [x] Replace the absolute predicate with the non-regression rule
-      `sweepKeepsCirclesUseful` (`internal/fit/renderer/batch_polish.go`): every
-      circle **in the active set** must be useful after the sweep, and outside it
-      the set of non-useful circles may not grow. Containment is checked per
-      circle, so the count cannot grow either.
-- [x] Deliberately do **not** require an inherited non-useful circle's
-      contribution to improve. Those values drift by fractions as neighbours
-      move; demanding monotone improvement on circles the sweep does not control
-      would restore the stall.
-- [x] Cache the incumbent's audit (`incumbentAuditCache`) across sweeps, and on
-      a committing sweep adopt the audit the gate already computed for that
-      candidate instead of invalidating. Both active-set selection and the gate
-      need it, and `AuditCircleBatch` is one full render per omitted circle. This also
-      satisfies task 15.2's third bullet — a rejected sweep no longer recomputes
-      an identical selection audit — for `replacement`, `hybrid-overlap`, and
-      `residual-region`.
-- [x] Log the acceptance decision of every sweep at `INFO`: `cost`,
-      `usefulness-gate` with the one-based `blocking_circles`,
-      `invalid-candidate`, or an accepted record carrying `cost_removed`. A
-      stalled run must be diagnosable from the server log alone.
-- [x] Mark the superseded gate description in
-      `docs/contiguous-window-polish-report.md`; its accepted-sweep columns were
-      measured under the old rule and are not a prediction of current behavior.
-
-**Acceptance Checks:**
-
-- [x] `TestPolishCircleBatchCommitsImprovementBesideAnUntouchedHarmfulCircle`
-      asserts a strictly cost-improving sweep commits beside a pre-existing
-      harmful circle. It fails on `31fc02e`.
-- [x] `TestPolishCircleBatchRejectsImprovementThatKillsAnUntouchedCircle`
-      asserts the other half: a sweep may inherit a dead circle but may not
-      create one, including outside the active set -- the killed circle is not
-      in the active set the sweep optimizes.
-- [x] `TestSweepKeepsCirclesUsefulIsANonRegressionRule` is table-driven over the
-      gate and additionally asserts that, on any incumbent carrying no blockers,
-      the new rule agrees with the old absolute predicate exactly.
-- [ ] Re-measure `BenchmarkPolishStrategyQualityAfterBatchFit` and refresh
-      `docs/contiguous-window-polish-report.md`. Its strategy ranking was
-      dominated by which active set happened to cover the blockers, so the
-      comparison is worth redoing now that the gate no longer decides it.
+Completed: sweep acceptance now requires every active circle to remain useful
+without increasing the inherited set of non-useful circles, instead of
+requiring a sweep to repair untouched circles. Incumbent audits are cached,
+decisions are logged, and regression tests cover both legitimate acceptance and
+newly killed circles. On the recorded 64-circle stalled checkpoint, the same
+budget changed from 0/12 accepted and no gain to 12/12 accepted and 44.64 cost
+removed. The post-fix strategy comparison moved to Task 15.10.
 
 ### Task 15.7: Score Only the Pixels a Candidate Can Change (P1)
 
@@ -2183,331 +492,28 @@ at 2 000 circles to 469 KB at 2 813, rewritten in full on every extend.
 - [ ] Checkpoint round-trip stays lossless: a resumed job reproduces the parent
       cost exactly.
 
----
+### Task 15.10: Refresh Post-Fix Polishing Evidence (P2)
+
+- [ ] Re-measure `BenchmarkPolishStrategyQualityAfterBatchFit` after the Task
+  15.6 gate correction and refresh `docs/contiguous-window-polish-report.md`;
+  the old ranking was partly determined by which active set happened to cover
+  inherited blocker circles.
 
 ## Phase 16: Declarative Run Schedules
 
-### Why
+Schedules replace one-off external orchestration with a persisted,
+server-owned campaign: validate and estimate a declarative document, execute
+base/extend/polish stages in order, survive restarts, and inspect the resulting
+chain through the API, CLI, and UI. The format and cost-comparison rules are
+authoritative in `docs/schedule-format.md`.
 
-Growing a fit incrementally is the project's most valuable workflow and the one
-it supports least. There is no way to express "start at 8 circles, append 8 at a
-time to 512, polish at these milestones, and stop polishing once it stops
-paying." `extend` and `polish` are HTTP-only (`internal/server/server.go:1149`
-and `:996`), each call mints a *new* job id, and `extendedFrom`/`polishedFrom`
-come back in the response but are **not persisted anywhere**. A multi-hour
-incremental run is therefore a chain of unrelated job records that only an
-external script knows how to read.
+### Completed Tasks 16.1–16.7 ✅
 
-Both incremental runs to date were driven by throwaway Python on the compute
-box. That is where the real requirements come from, because it is where the
-failures happened:
-
-- **The lineage lived outside the system.** The orchestrator kept its own
-  append-only ledger purely because the server does not record which job
-  extended which. Nothing in the UI, the store, or the API can reconstruct the
-  chain.
-- **Bookkeeping drifted from reality.** The first run's `continue.state` pointed
-  at a 160-circle job while its own log showed the chain had reached 512 — four
-  hours and 352 circles of divergence, with no error anywhere.
-- **A crash between "server accepted the stage" and "orchestrator recorded it"
-  forks the chain.** The second run hit exactly this: a `KeyError` left an
-  orphaned 16-circle extend job running with nothing tracking it. Recovery meant
-  hand-adopting it back into the ledger.
-- **Every policy decision was hardcoded in the script.** Polish milestones, the
-  minimum gain worth continuing for, and the give-up-after-N-barren-stages rule
-  are all schedule policy, and all of them were Python constants that required
-  killing and restarting the orchestrator to change.
-- **Silent field drops cost hours.** `convergenceEnabled: false` is `omitempty`
-  and re-enabled by `ApplyDefaults` (`internal/app/config.go:323`); the real
-  lever is `disableConvergence`. A schedule document must reject or warn on
-  anything it did not actually apply.
-
-The goal of this phase is that the whole campaign is stated once, up front,
-and then runs unattended as a single observable entity.
-
-### Task 16.1: Model a Schedule as a First-Class Entity (P1)
-
-- [x] Define a schedule document: a reference image, a base stage, and an
-      ordered list of steps, where each step is `extend` or `polish` with its own
-      parameter overrides. Support a generator form (`repeat: 63` with
-      `additionalCircles: 8`) so a 64-stage campaign is not 64 stanzas.
-- [x] Persist the schedule and its realized stage lineage in `internal/store`,
-      keyed independently of the job records, so the chain survives a server
-      restart and can be read back without an external ledger.
-- [x] Record `extendedFrom`/`polishedFrom` on the job checkpoint itself, so a
-      chain is reconstructible from the job tree alone even for jobs created
-      outside a schedule.
-- [x] Validate the document strictly: unknown fields rejected, and any field
-      that `ApplyDefaults` would override reported as an error rather than
-      silently dropped.
-
-**Acceptance Checks:**
-
-- [x] A schedule round-trips through the store and reloads with its lineage
-      intact after a server restart.
-- [x] A document setting `convergenceEnabled: false` is rejected with a message
-      naming `disableConvergence` as the effective field.
-
-### Task 16.2: Run Schedules Server-Side (P1)
-
-- [x] Execute the schedule inside the server's job lifecycle
-      (`internal/server`), not from a client. The run must survive the client
-      disconnecting, and must respect `--max-jobs` so a schedule cannot
-      oversubscribe the host.
-- [x] Make the executor crash-safe at the stage boundary: on startup, adopt any
-      in-flight stage belonging to a schedule rather than starting a second one.
-      This is the orphan-fork failure described above and it must be impossible
-      by construction, not by convention.
-- [x] One source of truth for progress. Do not add a second state file that can
-      drift from the stage records.
-- [x] Cancel, pause, and resume operate on the schedule as a whole, and cancelling
-      a schedule cancels its in-flight stage.
-
-**Acceptance Checks:**
-
-- [x] Killing the server mid-stage and restarting it resumes the same schedule
-      without duplicating or skipping a stage — asserted by a test, not by
-      inspection.
-      (`TestScheduleResumesTheSameStageAfterRestart`,
-      `TestScheduleAdoptsAStageWhoseJobNeverStarted`)
-- [x] A schedule and a manually created job cannot exceed `--max-jobs` together.
-      (`TestScheduleAndManualJobShareTheJobLimit`)
-
-### Task 16.3: Express Stage Policy Declaratively (P2)
-
-- [x] Support conditional steps: run a polish only at listed circle counts, and
-      stop scheduling polishes after N consecutive stages gained less than a
-      threshold. Both were hardcoded Python constants; both are policy.
-- [x] Support per-step budget overrides (`iters`, `epochs`, `popSize`,
-      `activeSetSize`, `maxSweeps`) so polish budget can differ from extend
-      budget without a second document. (Delivered by Task 16.1.)
-- [x] Seed handling is explicit: one campaign seed, inherited by every stage, and
-      recorded per stage so a single stage can be replayed. (Delivered by Task
-      16.1.)
-
-**Acceptance Checks:**
-
-- [x] A schedule expressing the second run's policy — base 8, `+8` to 512, polish
-      at 32/64/96/128/192/256, abort polishing after two stages under 1.0 cost
-      units — is representable without custom code, and a table-driven test
-      asserts the exact stage sequence it produces.
-
-### Task 16.4: Estimate Before Committing Hours (P2)
-
-- [x] `--dry-run` prints the full realized stage list with per-stage parameters
-      and the total optimizer iteration count, without touching the store. It is
-      a flag on `schedule create`, so the document argument and the local
-      validation are the same ones the real submission uses. Expansion needs no
-      runtime state, so the dry run opens no socket at all: no schedule
-      directory, no stage file, no job, asserted against a real store root with
-      a positive control that a saved schedule does change it. A document that
-      omits its seed is reported as automatic rather than as seed zero, because
-      the seed is drawn afresh at submission. Conditional stages are listed and
-      marked `conditional:` with their condition spelled out, never silently
-      included or excluded — a dry run has no outcomes and cannot decide them.
-      The iteration figure is the nominal planned count, split into
-      unconditional and conditional; it is neither a prediction nor a ceiling,
-      since bounded residual-refill batch stages are excluded and may add work.
-- [x] After the first few stages complete, report a projected finish time derived
-      from observed stage wall clock. Extend stages are roughly flat in circle
-      count because the frozen prefix is baked once
-      (`internal/fit/renderer/pipeline.go`), so a projection is meaningful —
-      but it must come from measurement, never from an a-priori model.
-      `app.ProjectScheduleFinish` is a pure function of (plan, timings, asOf)
-      that projects each stage kind from its own completed stages and never
-      blends them; a kind with fewer than two samples reports insufficient data
-      instead of extrapolating, and no finish time is printed until every
-      remaining kind is measured. A polish estimate is labelled a lower bound,
-      because selection cost climbs with the circle count. `schedule status`
-      renders it, and only a running campaign gets a finish timestamp: a
-      completed, failed, or cancelled one gets no projection, and a paused one
-      gets its remaining workload without a time, because the projection anchors
-      at the current clock.
-
-**Acceptance Checks:**
-
-- [x] `--dry-run` on the 512-circle campaign lists all stages and reports a
-      total iteration count matching a hand computation. 70 stages and 48,800
-      iterations: 200 for the base (1 batch × 1 epoch × 200 iters), 12,600 for
-      the 63 extends (each 1 × 1 × 200, since only the appended circles are
-      optimized), and 36,000 for the 6 polishes (each 3 sweeps × 2 epochs ×
-      1,000 iters). The arithmetic is written out in
-      `app.TestReferenceCampaignPlanMatchesTheHandComputation`, and
-      `cmd.TestScheduleDryRunListsTheReferenceCampaign` checks the command
-      prints the same figure over the whole stage list.
-
-### Task 16.5: Surface the Campaign in the UI and CLI (P2)
-
-- [x] A schedule view showing the stage table — circles, cost, PSNR, elapsed,
-      accepted sweeps for polish stages — as one run rather than N unrelated
-      jobs. `/schedules` lists campaigns and `/schedules/:id` shows one. Circles,
-      cost, elapsed, state, and the policy reason for a skipped stage come from
-      the stage records; PSNR is derived from the stage cost. The accepted-sweep
-      column could **not** be populated: `renderer.BatchPolishResult.AcceptedSweeps`
-      is only logged, never persisted, so the column reports it as unrecorded
-      rather than showing a zero. Populating it needs a stage-record field.
-- [x] Plot cost against circle count across the whole chain, which is the one
-      view that actually answers "is this schedule better than the last one."
-      Inline SVG built server-side, with no charting library and no external
-      asset, because the UI is served locally.
-- [x] A `schedule` CLI command mirroring the HTTP surface, following the existing
-      short-imperative-verb convention (`run`, `resume`, `status`):
-      `create`, `list`, `status`, `cancel`, `pause`, `resume`, `import`.
-
-**Acceptance Checks:**
-
-- [x] ~~The 96-circle chain already on disk can be imported and rendered as a
-      single campaign view.~~ **Amended: that chain no longer exists.** It lived
-      only on the remote compute box whose directory was deleted on 2026-08-17,
-      and the data is unrecoverable, so this check cannot be run as written and
-      was not run. The import path it was protecting is implemented and tested
-      instead: `/chains/:jobID` and `GET /api/v1/chains/:jobID` walk the
-      `extendedFrom`/`polishedFrom` lineage back to the root of a chain, and
-      `TestImportedChainRendersAsOneCampaign` in `internal/server` renders a
-      **synthesized** four-stage chain — base, extend, polish, extend — as one
-      ordered campaign view. The fixture is labelled as synthesized in the test.
-
-### Task 16.6: Retire the External Orchestrator (P2)
-
-- [x] ~~Reproduce a short campaign (base 8, three `+8` extends, one polish)
-      through the schedule feature and through the Python orchestrator, and
-      confirm the cost sequence matches.~~ **Amended: the Python orchestrator no
-      longer exists.** `chain.py` and `chain8.py` lived only under
-      `~/mayflycirclefit/` on the remote compute box whose directory was deleted
-      on 2026-08-17; they are unrecoverable and were not run. What that check
-      protected is preserved by comparing the executor against the endpoint
-      sequence the orchestrator wrapped, which it was never more than a client
-      for: `TestScheduleReproducesTheHandDrivenCampaign` in `internal/server`
-      runs base 8, `+8`, `+8`, `+8`, polish through the schedule feature and the
-      same five stages by hand through `POST /api/v1/jobs`, `/extend` ×3 and
-      `/polish`, and compares the two cost sequences. This is a narrower test
-      than the original, because the endpoints are all the two paths share and
-      the executor is the only variable. The comparison is **exact equality, no
-      tolerance**: the campaign fixes the seed at 4242, pins `threads: 1`, and
-      leaves `parallelEvaluation` and `fastCompositing` off, so both paths are
-      reproducible. Observed on this revision, identical across both paths:
-      `1517.790771484375 → 1228.1692708333333 → 902.0322265625 →
-      576.1515299479166 → 553.9036458333334`. The test runs in the ordinary
-      suite (about 1.4 s for all ten stages) rather than behind `-short`; its
-      reference is a 64×64 analytic gradient, because the existing 50×50 fixture
-      is fitted so completely by eight circles that later extends have nothing
-      to place and the batch pruner leaves an incomplete checkpoint `/extend`
-      rightly refuses.
-- [x] Document the schedule format in `docs/`, with the 512-circle campaign as
-      the worked example, and note the run-to-run comparability caveats
-      (compositor version, SIMD tier, `fastCompositing`).
-      [`docs/schedule-format.md`](docs/schedule-format.md). The caveats are
-      stated at the strength the measurements support rather than uniformly:
-      `fastCompositing` genuinely breaks comparability (±1 per channel over
-      2,074,320 measured channel writes, which flips accept/reject decisions),
-      while a SIMD tier swap does **not** move a cost within one architecture,
-      because every shipped kernel on the default path is byte-identical to its
-      scalar oracle — a property parity tests pin rather than one the format
-      guarantees. Two caveats the original bullet did not name are recorded
-      because they do bite: amd64 and arm64 round the blend differently (MUL+ADD
-      against a contracted FMA), and compositor-version parity says nothing
-      about a change to cost accumulation itself. The document also records that
-      `convergenceEnabled: false` is silently re-enabled by `ApplyDefaults` and
-      that `disableConvergence` is the effective lever, and that the historical
-      512-circle figure of cost 161.99 is a documented number, not a checkable
-      artifact — the parameter vectors were destroyed with the compute box.
-
-**Acceptance Checks:**
-
-- [x] The worked example in the docs is a file the test suite actually parses,
-      so the documented format cannot drift from the implemented one.
-      [`docs/examples/512-circle-campaign.json`](docs/examples/512-circle-campaign.json)
-      is read by three tests in two packages:
-      `app.TestDocumentedExamplePlansTheReferenceCampaign` parses it through
-      `app.ParseSchedule` and pins the 70 stages and 48,800 iterations the
-      document quotes; `app.TestDocumentedExampleIsTheCampaignTheTestsAlreadyPin`
-      ties it to the in-package `referenceCampaignSteps` so neither can be
-      edited without the other; and `cmd.TestScheduleDryRunListsTheReferenceCampaign`
-      now reads the same file instead of an inline copy, so the Task 16.4
-      acceptance check and the documented example are literally the same bytes.
-
-### Task 16.7: Make a Large Campaign Readable from the CLI (P2)
-
-`schedule status` cannot display a campaign the schedule format explicitly
-allows. The command errors and prints its usage instead of the stage table:
-
-```
-$ mayflycirclefit schedule status d8755b85-e689-490a-acf3-d576922822f9
-Error: query schedule "d8755b85-...": server response exceeds 1048576 bytes
-```
-
-**Measured 2026-08-18** against a completed 1016-stage campaign (1 base, 999
-`+1` extends, 16 polishes) on the Ryzen 5 4600H box:
-
-| Endpoint | Body | Stages | Per stage | Cap reached at |
-| --- | ---: | ---: | ---: | ---: |
-| `GET /api/v1/schedules/:id` | 1,230,905 B | 1016 | ~1,211 B | ~865 stages |
-| `GET /api/v1/chains/:jobID` | 295,767 B | 1013 | ~292 B | ~3,590 stages |
-
-The cap is `maxCLIResponseBytes = 1 << 20` (`cmd/status.go:20`), applied by the
-shared `io.LimitReader` in the CLI response reader (`cmd/status.go:291`). It is
-not the defect — an unbounded decode of a response that grows with stage count
-is worth refusing — but it is reached far inside the documented budget.
-`MaxScheduleStages` is 4096, so roughly **79% of the stage counts a schedule may
-legally expand to cannot be inspected from the terminal**, and `schedule import`
-hits the same wall at ~3,590 of the same 4096. Both limits are reachable: the
-campaign above spends one stage per circle, which is the shape
-`MaxScheduleStages` was sized for ("one stage per circle plus a polish between
-every pair", `internal/app/schedule.go:25`).
-
-The size is dominated by data the table never prints. A stage record carries its
-whole normalized `JobConfig`; the chain view carries none, which is the entire
-difference between 1,211 and 292 bytes per stage. The CLI table needs index,
-kind, state, circles, cost, elapsed, job ID and reason — and the projection
-needs only per-kind elapsed on top of that.
-
-Affected commands are every caller of the shared reader: all ten call sites in
-`cmd/schedule.go`, plus `cmd/status.go` and `cmd/resume.go`. The web view is
-**unaffected** — `/schedules/:id` renders server-side and does not cross the
-CLI boundary — so this is a terminal-only blindness, which is worse than it
-sounds for a campaign designed to run unattended overnight on a headless box.
-
-- [x] Give the stage listing a summary projection that omits per-stage
-      `JobConfig`, and have `schedule status` read that. Raising the cap alone is
-      refused as a fix: the response still grows without bound with stage count,
-      so it moves the wall rather than removing it. `GET /api/v1/schedules/:id`
-      now carries index, kind, state, circles, cost, elapsed, job and reason per
-      stage — 172 B against 921 B for the record — and elapsed travels as
-      nanoseconds rather than as the two timestamps, so it is both shorter and
-      exact.
-- [x] Keep a stage's full configuration retrievable on its own, since replaying
-      one stage in isolation is what the recorded config is for:
-      `GET /api/v1/schedules/:id/stages/:index`, backed by a single-file
-      `ScheduleStore.LoadScheduleStage`, so asking for one stage costs one read.
-- [x] Apply the same treatment to `GET /api/v1/chains/:jobID`, which is on the
-      same curve with a longer fuse. It drops the parent job, evaluations,
-      termination and timestamp — all of them on the job itself, at
-      `GET /api/v1/jobs/:id/status` — for 134 B a stage against 292 B.
-- [x] Keep the projection identical to what it computes today; the estimate is
-      derived from stage elapsed times and must not change because its input got
-      smaller.
-
-**Acceptance Checks:**
-
-- [x] `schedule status` prints the stage table and projection for a campaign at
-      `MaxScheduleStages`, with the response measured under
-      `maxCLIResponseBytes` — a regression test that synthesizes 4096 stage
-      records, so the assertion is the byte count and not a live run.
-      `cmd.TestScheduleStatusPrintsACampaignAtTheStageLimit` drives the command
-      over a 4096-stage listing (676,836 B of the 1,048,576 the CLI decodes) and
-      `server.TestScheduleDetailStaysUnderTheCLIResponseCap` measures the
-      handler's own body (705,940 B) against the full records (3,772,936 B) as
-      its control.
-- [x] `schedule import` renders a 4096-stage chain under the same cap:
-      `cmd.TestScheduleImportPrintsAChainAtTheStageLimit` (550,093 B) and
-      `server.TestChainDetailStaysUnderTheCLIResponseCap` (550,030 B).
-- [x] The projection printed from the summary equals the projection printed from
-      full stage records for the same fixture, asserted field by field —
-      `cmd.TestProjectionIsUnchangedByTheSummaryProjection`, which reads the
-      listing from a real server over a real store and compares it against the
-      stage records on disk.
-
----
+Implemented: versioned schedule models and validation; durable server-side
+execution and recovery; declarative stage policy; dry-run estimation; campaign
+API/UI/CLI surfaces; migration away from the external Python orchestrator; and
+bounded projections/pagination so campaigns up to `MaxScheduleStages` remain
+readable without exceeding the CLI response cap.
 
 ### Task 16.8: Let a Coverage Pass Start Where the Value Is (P2)
 
@@ -2624,468 +630,55 @@ figures are from A/Bs branching from a common parent on
 
 ## Phase 17: Dashboard Start Page
 
-**Goal:** Turn `/` from a flat job list into a dashboard: campaigns at a glance
-with running ones marked and charted, every running job with a live chart,
-throughput and host stats, and the best result of a campaign shown with the same
-image viewer the job detail page already has.
+### Completed Tasks 17.1–17.10 ✅
 
-**Why now:** `GET /` renders `ui.JobList` while `ui.Index()` in
-`internal/ui/index.templ` is unreferenced dead code. There is no overview:
-campaigns live only at `/schedules`, running jobs have no aggregate view, and
-the host's actual execution characteristics are never surfaced anywhere —
-`fit.Tier()`, `fit.ActiveSSDKernel()`, `fit.ActiveSADKernel()` and
-`gpu.EnumeratePlatforms()` have zero non-test callers outside `internal/fit`,
-and `cmd/version.go` prints only a version string. A user cannot currently tell
-from the UI whether a run is on AVX2, NEON, scalar, or OpenCL.
+Implemented: a reproducible esbuild/TypeScript/React-island pipeline with a
+committed embedded bundle; host facts, dashboard read models, global progress
+and ordered invalidation SSE; the new dashboard and `/jobs` routes; live
+campaign/job charts; a shared five-mode image viewer; authoritative REST
+reconciliation across disconnects; and server/UI/unit/race/Chromium coverage.
+templ remains the complete no-JavaScript fallback, and React progressively
+hydrates it. The observable trust-boundary and release-gate changes are
+documented in `docs/behavior-invariants.md` and `docs/releasing.md`.
 
-**Decisions taken up front** (recorded so a later reader does not re-litigate
-them):
+### Task 17.11: Browser, Bundle, and Documentation Sign-Off (P1)
 
-| Decision | Choice |
-| --- | --- |
-| Frontend | templ shell plus a **React island**, Chart.js for charts |
-| Bundler | **esbuild as a `go tool`**; npm only fetches dependencies |
-| Live updates | **Global SSE stream** (new wildcard subscription) |
-| Campaign overview | Active campaigns first, then N most recently updated |
-| Routing | `/` is the dashboard, `/jobs` is the job list, `ui.Index()` deleted |
-| Island scope | The dashboard **and** the campaign cost plot |
-| Campaign image | Full viewer on the campaign page, newest stage with a checkpoint |
+The open acceptance items from Task 17.9 live here so its implemented test and
+documentation work can remain compact.
 
-This phase is the first JavaScript build step in a Go-only repository. Four
-risks are named here because each one has a specific mitigation baked into the
-tasks below, and because a later reader will otherwise assume they were missed:
-
-1. **npm enters a Go-only CI.** Phase 14 has a clean-clone gate and `npm ci`
-   needs network access. The mitigation is structural rather than procedural:
-   the bundle is **committed and `go:embed`-ed**, exactly like
-   `internal/ui/*_templ.go`, so `go build ./...` never needs npm or node. Only
-   the new drift gate does.
-2. **Chart.js draws to a canvas and cannot read `var(--primary-color)`.**
-   Palette tokens must be resolved with `getComputedStyle` and re-applied when
-   the theme changes. The layout supports three theme states — an explicit
-   `data-theme` attribute in either direction, plus an unset default that
-   follows `prefers-color-scheme` — and all three must be handled.
-3. **Porting the campaign plot to React means the campaign page needs
-   JavaScript for its main chart.** The mitigation is progressive enhancement:
-   `buildCampaignPlot`'s server-rendered SVG stays as the pre-hydration render
-   and React replaces it after mount, so the page still works with JavaScript
-   disabled and `internal/ui/schedule_test.go` keeps passing unchanged.
-4. **`Server.discoverAllChains()` scans every project's checkpoints from
-   disk.** That is acceptable for `/schedules`, which is visited deliberately,
-   but not for a start page that reloads often. The dashboard endpoint must cap
-   the result set and cache the scan.
-
-### Task 17.1: Frontend Build Pipeline (esbuild as a Go tool)
-
-Everything else depends on this. Land it alone and prove it with a trivial
-island before any dashboard code is written.
-
-- [x] `web/package.json` and `package-lock.json` carrying **dependencies only**:
-      `react`, `react-dom`, `chart.js`. `react-chartjs-2` was not taken: the
-      wrapper's own lifecycle rules cost more than driving Chart.js from a
-      `useEffect`, and Task 17.6 needs imperative `chart.update()` calls for the
-      theme hook regardless. Resolved versions: react and react-dom 19.2.8,
-      chart.js 4.5.1, five packages in total.
-- [x] `go get -tool github.com/evanw/esbuild/cmd/esbuild` (v0.28.2), adding it
-      to the `tool` block in `go.mod` alongside `templ`, `pprof`, and
-      `benchstat`. The bundling step is Go, not node; npm is only a dependency
-      fetcher. The invocation lives in `scripts/bundle-web.sh` so the `just`
-      recipe and the CI gate cannot drift apart.
-- [x] `web/src/` holds the TSX sources — `dashboard.tsx` (entry),
-      `islands.tsx` (the `data-island` mount convention), and `Placeholder.tsx`
-      (the trivial island; Task 17.6 replaced it with the real dashboard island
-      and deleted it). `web/tsconfig.json` exists for editor support only;
-      esbuild strips types and does not typecheck.
-- [x] The bundle is **committed** to `internal/ui/static/dashboard.js`
-      (194,350 bytes, minified ESM, `--target=es2020`). Two consecutive runs of
-      `scripts/bundle-web.sh` produced byte-identical output
-      (sha256 `0431460a…491f`), which is what makes the drift gate meaningful
-      rather than flaky. `--legal-comments=eof` keeps each dependency's
-      `@license` banner in the bundle, and `THIRD-PARTY-NOTICES.md` — shipped in
-      every release archive — carries the full texts those banners point at,
-      because the bundle is redistributed inside the binary.
-- [x] New `internal/ui/static.go` embedding the whole `static` directory and
-      exposing `ui.StaticHandler() http.Handler`, `ui.StaticPrefix`, and
-      `ui.BundleURL()`. Assets are served with an explicit content type plus
-      `nosniff`, an ETag, and `Cache-Control: public, max-age=31536000,
-      immutable` **only** when the request's `?v=` matches the content hash —
-      an unversioned or stale URL gets `no-cache`, because it may have come
-      from a cached page that predates the current bundle. `BundleURL()` is what
-      the `ui.IslandBundle()` component renders, so a rebuilt bundle is a new
-      URL. The script tag is deliberately **not** in the shared layout: only a
-      page that renders a `data-island` element should pay for the bundle.
-- [x] New `mux.Handle(ui.StaticPrefix, ui.StaticHandler())` route in
-      `internal/server/server.go`. The handler serves only names that are
-      actually embedded: no directory listing, no nested path, and nothing that
-      reaches the filesystem, so the new surface on the trusted-local boundary
-      cannot be walked. `internal/server/static_test.go` pins that an unknown
-      asset is a 404 rather than the catch-all `/` handler's HTML.
-- [x] `justfile` gains `web-deps`, `bundle`, and `bundle-check`, the latter
-      mirroring `templ-check`; `just check` now depends on `bundle-check`.
-- [x] New `.github/workflows/ci-bundle.yml`, reporting as
-      `bundle / Committed island bundle is current`. It is the only workflow
-      that installs node. `ci.yml` is edited only to add the `bundle:` job and
-      to list it in `release`'s `needs:`.
-
-**Done when:** a placeholder island renders inside a templ page, `just check`
-fails if the committed bundle is stale, and `go build ./...` succeeds on a
-machine with no node installed.
-
-**Observed on this revision:** `just bundle-check` fails both ways it is meant
-to — with the bundle untracked ("Bundled assets are untracked") and with a TSX
-source edited but the bundle not rebuilt (`git diff --exit-code` on
-`internal/ui/static/*`) — and passes with the tree consistent. `go vet ./...`,
-`go test -short ./...`, `go test -race -short ./internal/ui/ ./internal/server/`,
-and `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...` all pass, and
-regenerating templ output changes nothing. `go build ./...` was also run on a
-`PATH` holding only `$(go env GOROOT)/bin` and a directory containing `sh`, with
-both `node` and `npm` confirmed absent from it, and succeeded — the no-node
-property is a measurement, not an assumption.
-
-The browser half of "renders inside a templ page" was **not** observed: headless
-Firefox is the only browser on this machine and it hangs before producing a
-screenshot, so nothing here drove `createRoot` against a real DOM. What was
-observed instead is that the same TSX compiles and renders through the same
-esbuild pipeline — `renderToStaticMarkup(<Placeholder root={…}/>)` executed under
-node emits `<span data-island-mounted="true">pipeline mounted</span>` — and that
-the shipped minified bundle contains the mount code
-(`document.querySelectorAll(\`[data-island="${t}"]\`)` followed by
-`createRoot(n).render(...)`). The gap left is the DOM query and mount themselves.
-Task 17.5 is the first task to render a `data-island` element into a real page;
-closing this gap belongs there, and the placeholder island stays in the bundle
-until it does.
-
-### Task 17.2: Host Facts Endpoint (`GET /api/v1/system`)
-
-The first time the process says out loud what it is actually running on.
-
-- [x] New handler in `internal/server` returning `runtime.GOOS`,
-      `runtime.GOARCH`, `runtime.GOMAXPROCS(0)`, and `runtime.Version()`.
-- [x] SIMD: `fit.Tier()` (the process-wide resolved tier),
-      `fit.ActiveSSDKernel()`, and `fit.ActiveSADKernel()`.
-- [x] Compositing: `renderer.CompositingBackend()` and
-      `renderer.FastCompositingBackend()`. Report both — a `fastCompositing`
-      flag without its kernel name hides the case where the fast path is a pure
-      pessimisation.
-- [x] Backends: `renderer.SupportedBackends()`.
-- [x] GPU via `gpu.EnumeratePlatforms()`, reporting **three distinct states**:
-      built with `-tags gpu` and devices found, built with no devices
-      (`gpu.ErrNoDevices`), and not built (`gpu.ErrNotBuilt`). Reporting a
-      non-GPU build as "unavailable" would be a lie about the binary.
-- [x] Version, commit, and build date passed into the server from `cmd` rather
-      than imported, keeping dependency direction toward the lower-level
-      packages.
-- [x] Optional but preferred: `mayflycirclefit version --verbose` prints the
-      same struct, so the CLI and the UI cannot disagree about the host.
-
-Status: Completed and shipped in PR on feature branch.
-
-### Task 17.3: Global SSE Stream
-
-`EventBroadcaster` is keyed by job ID today, so a dashboard watching several
-jobs would need one `EventSource` per job.
-
-- [x] `SubscribeAll() chan ProgressEvent` and `UnsubscribeAll(ch)` on
-      `EventBroadcaster`.
-- [x] `Broadcast` fans out to per-job **and** wildcard subscribers, preserving
-      the existing non-blocking-send-and-drop semantics.
-- [x] `CleanupJob` must not leak wildcard channels.
-- [x] New `GET /api/v1/stream` handler modelled on `handleJobStream`: an
-      immediate snapshot of every running job, then live events, reusing
-      `writeSSEEvent` and the existing 500 ms worker throttle.
-- [x] Race-tested fan-out: `go test -race -short ./internal/server/...`.
-
-### Task 17.4: Dashboard Read Model (`GET /api/v1/dashboard`)
-
-The initial state the island renders from, and what it refetches on reconnect.
-Reuse rather than reimplement: `Server.discoverAllChains()`,
-`chainCampaignSummaries`, `summarizeCampaign`, `ScheduleStore.ListSchedules`,
-`ScheduleStore.LoadScheduleStages`, `JobManager.GetRunningJobs()`, and
-`JobManager.ListJobs()` already produce everything needed.
-
-- [x] `ui.CampaignSummary` gains a compact stage series — `Index`, `Kind`,
-      `Circles`, `BestCost`, `HasBestCost` per stage — to feed the per-card mini
-      chart, and `LeafJobID`, the newest stage carrying a checkpoint, for the
-      thumbnail.
-- [x] Ordering: running and pending campaigns first, then the N most recently
-      updated by `UpdatedAt`. N is capped and the chain scan is cached (risk 4).
-- [x] Running-job rows carry `Iterations`, `MaxIters` (from
-      `plannedOptimizerIterations`), `BestCost`, `InitialCost`, `CPS`,
-      `EvaluationWidth`, `ElapsedSec`, and a **bounded** slice of
-      `MetricHistory` to seed each sparkline.
-- [x] Aggregate tiles: running, pending, and completed counts; summed CPS across
-      running jobs; and the Task 17.2 host block.
-
-### Task 17.5: Routing and the templ Shell
-
-- [x] `/` routes to a new `handleDashboard`; the job-list rendering currently
-      inside `handleIndex` moves to a new `/jobs` route. `/jobs` and `/jobs/`
-      are distinct `http.ServeMux` patterns and both must be registered.
-- [x] Delete `internal/ui/index.templ` and `index_templ.go` — `ui.Index()` is
-      dead code with no caller.
-- [x] Navigation becomes Dashboard / Jobs / Campaigns / Create Job / GitHub.
-- [x] New `internal/ui/dashboard.templ` **server-renders the complete
-      dashboard** — stat tiles, campaign cards, running-job rows — reusing
-      `.card`, the `.badge-*` classes, `StateBadge`, and the CSS custom
-      properties already defined in `layout.templ`. The React island hydrates in
-      place and adds charts and live updates on top. The page must be readable
-      with JavaScript disabled.
-
-### Task 17.6: React Island — Charts and Live Updates
-
-- [x] `web/src/dashboard.tsx` mounts on the server-rendered root.
-- [x] Per-campaign mini Chart.js line chart of best cost against circle count,
-      with points styled by stage kind to match `campaignPointFill`: base uses
-      `--success-color`, extend `--primary-color`, polish `--warning-color`.
-- [x] Per-running-job cost sparkline, seeded from `MetricHistory` and grown from
-      the stream.
-- [x] `EventSource("/api/v1/stream")` updates costs, iterations, progress bars,
-      and CPS in place; a reconnect refetches `/api/v1/dashboard`.
-- [x] A `useChartTheme()` hook resolves palette tokens through
-      `getComputedStyle(document.documentElement)` and re-resolves on both a
-      `MutationObserver` watching `data-theme` and a `prefers-color-scheme`
-      `matchMedia` listener, then calls `chart.update()` (risk 2).
-- [x] Stat tiles show total circles per second, the running job count, and an
-      architecture badge such as `amd64 · avx2 · cpu` from the host block. The
-      third component is the render backend, which is what the GPU probe
-      reports; `compositingBackend` names a SIMD kernel and is already covered
-      by the second component.
-- [x] The page seeds the island through `templ.JSONScript("dashboard-page",
-      page)`, so `ui.DashboardPageData` and the endpoint's `dashboardResponse`
-      have to deserialize into the same shape — the island parses the seed
-      before mount and `/api/v1/dashboard` after it. `ui.HostFacts` therefore
-      nests its GPU block the way the endpoint does, and
-      `TestDashboardPageSeedMatchesEndpointShape` compares the two payloads
-      field by field so a tag renamed on one side alone fails there rather than
-      at the island's first refetch.
-- [x] A progress event carries a job's own counters and nothing else, so
-      merging one updates the running count and the CPS total but leaves the
-      pending and completed counts as the read model last reported them: the
-      island holds the running jobs, not the whole job table, and cannot count
-      the others. A terminal event drops the job and triggers a refetch, which
-      is what makes those counts and any campaign advance correct again.
-- [x] Each chart is created once and updated in place. Rebuilding a Chart.js
-      instance whenever its data changed would mean a canvas reallocation per
-      stream frame, which is exactly the cost the imperative `chart.update()`
-      path exists to avoid.
-
-### Task 17.7: Port the Campaign Cost Plot
-
-- [x] `web/src/CampaignCostChart.tsx` reproduces what `buildCampaignPlot` draws:
-      axes labelled Circles and Best cost, per-point tooltips reading
-      `stage %d (%s): %d circles, cost %.3f`, the base/extend/polish legend, and
-      the rule that stages without `HasBestCost` are **skipped, never plotted at
-      zero** — a running stage has no result yet, and drawing it as a perfect
-      fit would invert the meaning of the chart.
-- [x] `CampaignCostPlot` and `buildCampaignPlot` are **kept** as the
-      server-rendered pre-hydration SVG (risk 3). React swaps into the same
-      container after mount: `CampaignPage` wraps the SVG in a
-      `data-island="campaign-cost"` element, seeds it with
-      `templ.JSONScript("campaign-cost-series", campaignStageSeries(…))`, and
-      loads `@IslandBundle()`. `campaignStageSeries` projects the stage table
-      onto `ui.CampaignSeriesPoint`, which is what the dashboard endpoint
-      already serves, so both sides of the port read one shape.
-- [x] The same component serves the dashboard's mini charts at a smaller size,
-      as a `variant` prop rather than a second component: `mini` is 130px with
-      four x ticks, `full` is 340px with six and the SVG's framed box. The
-      server-side plot is fixed at 960×340 by package constants, which is
-      precisely why the small variant goes to React rather than to a second set
-      of constants.
-- [x] `web/src/charts.ts` holds what both islands need — the Chart.js
-      registration, the `Palette` type, `useChartTheme`, `useLineChart`, and
-      `applyAxisTheme`. Task 17.6 left them in `dashboard.tsx`, and a campaign
-      island importing that entry point would have pulled the whole dashboard
-      island in behind them.
-
-**Deviation:** the bullet above originally expected
-`internal/ui/schedule_test.go` to pass untouched, and it does not.
-`TestCampaignPlotIsSelfContained` forbade the substring `<script` anywhere in
-the campaign markup, which the JSON seed and the module tag both trip. The
-constraint it was written for — nothing loads off a network the host may not
-have — is intact, so the test now asserts that instead: no `http://`,
-`https://`, or CDN reference, and every `src` under `ui.StaticPrefix`. Nothing
-else in the file changed, and `buildCampaignPlot`'s geometry tests are
-untouched.
-
-**Observed on this revision:** `go tool templ generate` is idempotent and two
-consecutive `scripts/bundle-web.sh` runs are byte-identical
-(sha256 `6cb03807…c2ce`, 371,679 bytes — the campaign island costs the bundle
-1,882 bytes over Task 17.6's). `go test -short ./...`, `go vet ./...`,
-`go test -race -short ./internal/ui/ ./internal/server/`, `go build ./...`, and
-`CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...` all pass, and
-`gofmt -s -l .` is empty. Three new tests cover the port:
-`TestCampaignPlotHydratesInPlace` (the mount point wraps the seed and the SVG,
-in that order, and the page loads the bundle),
-`TestCampaignStageSeriesSkipsUnmeasuredStages` (an unmeasured or non-finite
-stage is seeded as `hasBestCost: false` with a zeroed cost, and the series
-marshals), and the reworked `TestCampaignPlotIsSelfContained`.
-`renderToStaticMarkup` under node emits the expected markup for all three
-component states — `full` at 340px in the framed box, `mini` at 130px bare,
-and the empty case as the same "No stage has recorded a cost yet." sentence the
-SVG shows.
-
-The browser half is **not** observed, for the same reason Task 17.1 recorded:
-headless Firefox is the only browser here and it hangs, and this shell cannot
-reach a loopback listener at all, so no request was made against a running
-`serve`. What is unverified is the mount itself — that `createRoot` replaces the
-SVG with the canvas — not the markup either side of it.
-
-### Task 17.8: Shared Image Viewer and the Campaign Best Image
-
-The viewer already exists on the job detail page — reference, best,
-side-by-side (default), difference, and overlay with an opacity slider and
-`1`–`5` keyboard shortcuts. Extract it; do not rewrite it.
-
-- [x] New `ui.ImageViewer(ImageViewerData)` in `internal/ui/image_viewer.templ`,
-      parameterised by job ID, image URLs, cache-busting revision, and default
-      mode.
-- [x] `detail.templ` consumes the extracted component. Its output must stay
-      equivalent; `internal/ui/detail_test.go` is the guard.
-- [x] `ui.CampaignPage` gains the viewer, pointed at the newest stage carrying a
-      checkpoint and served by the existing
-      `/api/v1/jobs/:id/{ref,best,diff}.png` endpoints. Default mode is
-      side-by-side.
-- [x] A campaign with no completed stage renders a placeholder, not a broken
-      image.
-- [x] Dashboard campaign cards get a plain `best.png` thumbnail that links
-      through — not the full viewer, which would put several difference and
-      overlay layers on one page.
-
-**Observed on this revision:** `go tool templ generate` is idempotent, two
-consecutive `scripts/bundle-web.sh` runs are byte-identical (sha256
-`15d3132c…7428`, 372,752 bytes — the thumbnail costs the bundle 1,073 bytes
-over Task 17.7's), and `gofmt -s -l .` is empty. `go test -short ./...`,
-`go vet ./...`, `go test -race -short ./internal/ui/ ./internal/server/`,
-`go build ./...`, and `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...`
-all pass. `internal/ui/detail_test.go` passes untouched, which is the
-equivalence guard the task asked for: the extraction moved the viewer's markup
-and script into `ImageViewer` without changing what the job detail page emits.
-
-The browser half is **not** observed, for the reason Tasks 17.1 and 17.7
-recorded: headless Firefox is the only browser here and it hangs, and this
-shell cannot reach a loopback listener. What is unverified is the viewer's
-runtime behavior on the campaign page — the mode selector, the opacity slider,
-and the `1`–`5` shortcuts against a real stage's artifacts — not the markup.
-The five modes still have no `ImageViewer` render test; Task 17.9 owns it.
-
-### Task 17.10: Ordered Browser State Reconciliation ✅
-
-- [x] Keep templ as the no-JavaScript fallback and hydration seed; use one
-      shared React client for live state after mount.
-- [x] Add `/api/v1/events`, a process-ordered SSE invalidation stream for job
-      lifecycle/deletion and campaign changes. Slow subscribers disconnect and
-      reconcile instead of silently dropping frames.
-- [x] Keep REST authoritative: add bounded job metric history and source-neutral
-      campaign list/detail projections, and refetch on connect, gaps,
-      focus/visibility return, and a safety interval.
-- [x] Queue stream events during fetches and replay them over the response so a
-      late snapshot cannot roll the UI backward.
-- [x] Move the job list, job actions, campaign list/detail, and campaign image
-      viewer into stateful islands. Preserve the legacy job/global stream
-      contracts for non-browser clients.
-- [x] Add strict TypeScript and a real Chromium gate that creates a job during a
-      browser network outage, restores connectivity, and proves the list
-      reconciles without a new navigation.
-
-SSE remains the right transport here: updates are one-way and every command is
-already a normal HTTP mutation. A WebSocket would add a second command protocol
-without removing the need for authoritative reads after disconnects.
-
-### Task 17.9: Tests, Docs, and Gates
-
-- [x] `internal/ui`: dashboard render tests following the `schedule_test.go`
-      fixture-and-substring pattern, and an `ImageViewer` test asserting all
-      five modes.
-- [x] `internal/server`: handler tests for `/api/v1/system`,
-      `/api/v1/dashboard`, `/api/v1/stream` (including wildcard unsubscribe
-      under `-race`), `/jobs`, and `/static/`.
-- [x] `AGENTS.md`: Toolchain gains esbuild, npm, and the committed bundle;
-      Architecture gains `web/`; Commands gains `just bundle`.
-- [x] `docs/behavior-invariants.md`: `/static/` is a new surface on the
-      trusted-local boundary, and the global SSE stream is new observable
-      behavior.
-- [x] `docs/releasing.md`: the new `bundle` gate and its prefixed reporting
-      name.
-- [ ] `README.md`: the new routes are documented; the screenshot is still
-      outstanding because headless Firefox could not composite a frame on this
-      host and no Chromium is installed.
-- [x] Coverage does not dip; fresh `go test -short -cover` results, measured
-      2026-08-19 against `master`: `internal/ui` 56.5% -> 57.3%,
-      `internal/server` 75.2% -> 75.4%. Whole-tree run: `cmd` 54.5%,
-      `internal/app` 93.3%, `internal/fit` 89.0%,
-      `internal/fit/renderer` 89.1%, `internal/opt` 85.4%,
-      `internal/store` 75.8%.
-
-**Deliverables:**
-
-- A dashboard at `/` showing campaigns, running jobs, throughput, and host
-  execution facts
-- A first React island with a reproducible, committed, `go:embed`-ed bundle
-  built by a Go tool
-- `GET /api/v1/system`, `GET /api/v1/dashboard`, and `GET /api/v1/stream`
-- A shared image viewer used by both the job detail page and the campaign page
-
-**Acceptance Checks:**
-
-- [ ] `just check` passes, including the new bundle drift gate, and fails when
-      the committed bundle is stale. The Go half was observed here
-      (`gofmt -s -l .` clean, `go vet ./...`, `go test -short ./...`,
-      `go test -race -short ./internal/server/... ./internal/ui/...`,
-      `go build ./...`); the bundle drift half needs a runner with `npm`.
-- [x] `go build ./...` succeeds with no node installed
-- [ ] `/` shows stat tiles, campaign cards, and running jobs; the architecture
-      badge matches `MAYFLY_SIMD_TIER` when that variable forces a tier
-- [ ] Starting a campaign moves its card to the top, marked running, with a
-      ticking chart
-- [ ] Charts stay legible in all three theme states: auto, forced light, and
-      forced dark
-- [ ] The campaign page image viewer offers all five modes, the opacity slider,
-      and the `1`–`5` shortcuts
-- [ ] With JavaScript disabled, the dashboard and the campaign cost plot still
-      render
-- [ ] Killing the server mid-view leads the SSE client to reconnect and refetch
-
----
+- [ ] Capture and add the README dashboard screenshot on a working browser
+  runner.
+- [ ] Observe `just check` with npm available, including the bundle drift gate,
+  and prove it rejects a stale committed bundle.
+- [ ] Verify the dashboard shows correct stat tiles, ordered campaign cards,
+  running jobs, and an architecture badge matching a forced
+  `MAYFLY_SIMD_TIER`.
+- [ ] Start a campaign and observe its card move to running with a ticking chart.
+- [ ] Check chart legibility in auto, forced-light, and forced-dark themes.
+- [ ] Exercise all five campaign image modes, overlay opacity, and shortcuts
+  `1`–`5`.
+- [ ] With JavaScript disabled, verify the dashboard and campaign cost plot
+  remain complete and readable.
+- [ ] Kill and restart the server while viewing the dashboard; verify the client
+  reconnects, refetches, and converges without a navigation.
 
 ## Summary and Next Steps
 
-This plan covers **Phases 0-14** in complete detail with bite-sized, testable tasks. Each task follows TDD principles:
-1. Write failing test
-2. Run test to verify failure
-3. Write minimal implementation
-4. Run test to verify pass
-5. Commit
+Completed implementation history is intentionally summarized above; detailed
+design decisions, measurements, and observable contracts belong in `docs/`,
+tests, and git history. A completed marker records implementation for its
+historical revision, not a fresh release-gate result.
 
-**Implementation Strategy:**
-- Execute Phase 14 before continuing feature work in Phases 12-13
-- Follow the dependency-aware Phase 14 execution order rather than task number alone
-- Complete and verify each remediation wave before starting dependent work
-- Use the active task tracker to record progress within each wave
-- Update PLAN.md with completion status as you go
-- Commit frequently with descriptive messages
-- Document learnings and decisions in CLAUDE.md
+Current open work, in priority order:
 
-**Current Status:** Historical feature phases reached Phase 11-era implementation, and the main Phase 14 remediation waves now pass the local generation, build, test, race, static-analysis, 56.1% aggregate coverage, vulnerability, portability, GPU-compile, PoCL runtime, clean-clone recipe, metadata-free export, and release-lifecycle end-to-end gates. Automated SemVer releases are now dependency-gated in the repository workflow, but **Phase 14 remains active: remote CI must pass twice, repository-admin controls must prevent manual release bypass, and real-GPU vendor/performance validation is still required before promoting the experimental OpenCL backend.**
+1. **Release gate (P0):** Task 14.13.
+2. **Correctness and throughput (P1):** Tasks 15.7 and 15.8, followed by the
+   remaining Phase 15 measurement and optimization tasks.
+3. **Dashboard sign-off (P1):** Task 17.11.
+4. **Schedule quality (P2):** Tasks 16.8 and 16.9.
+5. **UX and supporting documentation (P2/P3):** Tasks 12.9 and 13.15.
+6. **Experimental backends/research:** Tasks 11.9–11.13 and 10.20.
 
-**Phase 16** has all six tasks implemented and locally checked, but its work is
-**not merged**: the six branches form a stacked chain (`feat/schedule-model` →
-`feat/schedule-executor` → `feat/schedule-policy` → `feat/schedule-ui` →
-`feat/schedule-dry-run` → `docs/schedule-format`) with every pull request still
-open and based on its predecessor rather than on master. Two acceptance checks
-could not be run as written and are amended in place rather than ticked: the
-96-circle chain of Task 16.5 and the Python orchestrator of Task 16.6 both lived
-only on the compute box whose directory was deleted on 2026-08-17. Each is
-replaced by a test over what the check was protecting, and each replacement is
-labelled as such. **Task 16.7 was found by using the feature**: a 1016-stage
-campaign run on 2026-08-18 could not be displayed by `schedule status`, because
-the response exceeded the CLI's 1 MiB cap at roughly 865 stages of the 4096 a
-schedule may expand to. It is now closed — the stage listing and the chain view
-are projections of what their tables print, a stage's configuration is fetched
-one stage at a time, and a campaign at `MaxScheduleStages` prints in 677 kB.
-
-**Phase 17** is planned but not started. It is the first phase to introduce a
-JavaScript build step into a Go-only repository, so Task 17.1 is deliberately
-landed and verified on its own — with a placeholder island — before any
-dashboard code depends on it. The committed, `go:embed`-ed bundle is what keeps
-`go build ./...` free of node and npm; if that property is ever lost, the
-clean-clone gate of Phase 14 is what will notice.
+Do not mark a check complete from its presence in code or CI configuration
+alone. Record the exact command or observed CI result for the revision, and
+include host/workload/allocation conditions with performance claims.

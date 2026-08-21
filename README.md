@@ -276,10 +276,12 @@ internal/opt/           Mayfly adapter and lifecycle contract
 internal/server/        Trusted-local HTTP server, jobs, and SSE
 internal/store/         Checkpoints, traces, and artifacts
 internal/ui/            templ source and committed generated Go
+web/                    TypeScript/React islands and browser tests
 assets/                 Small example input
 docs/                   Support, limitations, and design notes
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md), the
-[release process](docs/releasing.md), and [PLAN.md](PLAN.md) for contribution
-checks, current changes, publishing, and remediation status.
+See the [architecture guide](docs/architecture.md),
+[CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md), the
+[release process](docs/releasing.md), and [PLAN.md](PLAN.md) for system
+boundaries, contribution checks, current work, and publishing status.

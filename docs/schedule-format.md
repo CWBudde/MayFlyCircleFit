@@ -378,4 +378,6 @@ they could be. Treat them as history, and cite them as such.
   compositors whose choice the caveats above turn on.
 - [`task-10.18-exact-compositor.md`](task-10.18-exact-compositor.md) — the
   measured ±1-per-channel bound and why the flag breaks reproducibility.
-- `PLAN.md` Phase 16 — why schedules exist and what each task delivered.
+- [`architecture.md`](architecture.md) — how schedules, ordinary jobs,
+  persistence, and campaign read models fit together.
+- `PLAN.md` Phase 16 — current schedule follow-up work.
