@@ -92,6 +92,13 @@ func TestConcurrentSaveSameJobIsAtomic(t *testing.T) {
 	if checkpoint.BestCost < 0 || checkpoint.BestCost >= writers {
 		t.Fatalf("final checkpoint is not one of the complete writes: %v", checkpoint.BestCost)
 	}
+	infos, err := fs.ListCheckpoints()
+	if err != nil {
+		t.Fatalf("list final checkpoint: %v", err)
+	}
+	if len(infos) != 1 || infos[0].BestCost != checkpoint.BestCost || infos[0].Iteration != checkpoint.Iterations {
+		t.Fatalf("checkpoint summary %+v does not describe final checkpoint cost=%v iterations=%v", infos, checkpoint.BestCost, checkpoint.Iterations)
+	}
 	jobDir, err := fs.existingJobDir(jobID)
 	if err != nil {
 		t.Fatal(err)

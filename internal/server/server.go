@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"net/http/pprof"
 	"net/url"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -54,9 +56,9 @@ type Server struct {
 	scheduleDrivers map[string]struct{}
 	scheduleWG      sync.WaitGroup
 
-	dashboardMu           sync.Mutex
-	dashboardChainScan    []discoveredChain
-	dashboardChainScanned time.Time
+	chainCacheMu    sync.Mutex
+	chainCache      []discoveredChain
+	chainCacheValid bool
 }
 
 // ServerOptions configures the trusted-local HTTP boundary.
@@ -149,6 +151,7 @@ func NewServerWithOptions(addr string, checkpointStore store.Store, options Serv
 
 		scheduleDrivers: make(map[string]struct{}),
 	}
+	jobManager.onJobSetChanged = server.invalidateChainCache
 	server.projects = newProjectRegistry(options.DataRoot, checkpointStore)
 	server.restorePersistedJobs()
 	// Schedules are adopted after the jobs, because adopting an interrupted
@@ -443,6 +446,7 @@ func (s *Server) requestPause(jobID string) error {
 		}
 		return err
 	}
+	s.invalidateChainCache()
 	if paused, ok := s.jobManager.GetJob(jobID); ok {
 		s.jobManager.broadcaster.Broadcast(jobProgressSnapshot(paused))
 	}
@@ -869,16 +873,19 @@ func (s *Server) handleDeleteJob(w http.ResponseWriter, _ *http.Request, jobID s
 		return
 	}
 	s.jobManager.broadcaster.CleanupJob(jobID)
-	if deletedJob != nil {
-		if deletedJob.ScheduleID != "" {
-			s.publishScheduleChanged(deletedJob.ScheduleID)
-		} else if deletedJob.ExtendedFrom != "" || deletedJob.PolishedFrom != "" {
-			s.publishChainsChanged()
-		}
-	}
 	if jobStore != nil {
 		if err := jobStore.DeleteCheckpoint(jobID); err != nil && !errors.Is(err, store.ErrNotFound) {
 			slog.Warn("Failed to delete persisted job", "job_id", jobID, "error", err)
+		}
+	}
+	// Publish campaign invalidation after the filesystem operation. Publishing
+	// before it lets an eager browser rebuild and cache the chain while the
+	// deleted checkpoint is still visible, with no later event to correct it.
+	if deletedJob != nil {
+		if deletedJob.ScheduleID != "" {
+			s.publishScheduleChanged(deletedJob.ScheduleID)
+		} else {
+			s.publishChainsChanged()
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -886,11 +893,10 @@ func (s *Server) handleDeleteJob(w http.ResponseWriter, _ *http.Request, jobID s
 
 // handleListJobs handles GET /api/v1/jobs
 func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
-	jobs := s.jobManager.ListJobs()
+	jobs := s.jobManager.ListJobSummaries()
 
 	// An absent or "all" filter keeps the pre-project contract of listing every
-	// job, which cmd/status.go relies on. Filtering is read-only and never
-	// creates a project.
+	// job. Filtering is read-only and never creates a project.
 	// Boundary: the `?project=` query parameter is untrusted input. It becomes
 	// an app.Project here, immediately before ValidateProjectSlug.
 	if filter := app.Project(strings.TrimSpace(r.URL.Query().Get("project"))); filter != "" && filter != "all" {
@@ -898,13 +904,108 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, http.StatusBadRequest, "invalid_project", err.Error())
 			return
 		}
-		jobs = filterJobsByProject(jobs, filter)
+		jobs = filterJobSummariesByProject(jobs, filter)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(jobs); err != nil {
+	query := r.URL.Query()
+	if !query.Has("limit") && !query.Has("cursor") {
+		// Preserve the original array response for clients that have not opted in
+		// to pagination. The browser and bundled CLI always request bounded pages.
+		if err := json.NewEncoder(w).Encode(jobs); err != nil {
+			slog.Error("Failed to encode job list response", "error", err)
+		}
+		return
+	}
+
+	limit := defaultJobListLimit
+	if raw := strings.TrimSpace(query.Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > maxJobListLimit {
+			writeAPIError(w, http.StatusBadRequest, "invalid_limit", fmt.Sprintf("limit must be between 1 and %d", maxJobListLimit))
+			return
+		}
+		limit = parsed
+	}
+	page, err := paginateJobSummaries(jobs, strings.TrimSpace(query.Get("cursor")), limit)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_cursor", "cursor is invalid")
+		return
+	}
+	if err := json.NewEncoder(w).Encode(page); err != nil {
 		slog.Error("Failed to encode job list response", "error", err)
 	}
+}
+
+const (
+	defaultJobListLimit = 100
+	maxJobListLimit     = 500
+)
+
+type jobListPage struct {
+	Jobs       []JobSummary `json:"jobs"`
+	NextCursor string       `json:"nextCursor,omitempty"`
+	Total      int          `json:"total"`
+}
+
+type jobListCursor struct {
+	StartTime time.Time `json:"startTime"`
+	ID        string    `json:"id"`
+}
+
+func paginateJobSummaries(jobs []JobSummary, rawCursor string, limit int) (jobListPage, error) {
+	start := 0
+	if rawCursor != "" {
+		cursor, err := decodeJobListCursor(rawCursor)
+		if err != nil {
+			return jobListPage{}, err
+		}
+		start = sort.Search(len(jobs), func(i int) bool {
+			return jobs[i].StartTime.Before(cursor.StartTime) ||
+				(jobs[i].StartTime.Equal(cursor.StartTime) && jobs[i].ID > cursor.ID)
+		})
+	}
+	end := min(start+limit, len(jobs))
+	page := jobListPage{Jobs: jobs[start:end], Total: len(jobs)}
+	if end < len(jobs) && end > start {
+		page.NextCursor = encodeJobListCursor(jobs[end-1])
+	}
+	return page, nil
+}
+
+func encodeJobListCursor(job JobSummary) string {
+	payload, _ := json.Marshal(jobListCursor{StartTime: job.StartTime, ID: job.ID})
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func decodeJobListCursor(raw string) (jobListCursor, error) {
+	if len(raw) > 512 {
+		return jobListCursor{}, errors.New("job list cursor is too long")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return jobListCursor{}, err
+	}
+	var cursor jobListCursor
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&cursor); err != nil {
+		return jobListCursor{}, err
+	}
+	if cursor.StartTime.IsZero() || cursor.ID == "" || decoder.Decode(&struct{}{}) != io.EOF {
+		return jobListCursor{}, errors.New("invalid job list cursor")
+	}
+	return cursor, nil
+}
+
+func filterJobSummariesByProject(jobs []JobSummary, slug app.Project) []JobSummary {
+	filtered := make([]JobSummary, 0, len(jobs))
+	for _, job := range jobs {
+		if app.NormalizeProject(job.Project) == slug {
+			filtered = append(filtered, job)
+		}
+	}
+	return filtered
 }
 
 // filterJobsByProject keeps jobs belonging to slug, treating an empty project

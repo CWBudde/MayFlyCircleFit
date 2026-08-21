@@ -98,7 +98,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Server listening on http://%s\n", addr)
 	fmt.Println("API endpoints:")
 	fmt.Println("  POST   /api/v1/jobs          - Create new job")
-	fmt.Println("  GET    /api/v1/jobs          - List all jobs")
+	fmt.Println("  GET    /api/v1/jobs          - List jobs (use ?limit=N for cursor pages)")
 	fmt.Println("  GET    /api/v1/system        - Process capabilities")
 	fmt.Println("  GET    /api/v1/stream        - Live progress for all jobs")
 	fmt.Println("  GET    /api/v1/jobs/:id      - Get job status")

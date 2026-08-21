@@ -1,9 +1,12 @@
 package store
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -80,11 +83,71 @@ func TestSaveCheckpoint(t *testing.T) {
 	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
 		t.Fatalf("Checkpoint file was not created at %s", expectedPath)
 	}
+	infoPath := filepath.Join(tempDir, "jobs", jobID, string(ArtifactCheckpointInfo))
+	infoData, err := os.ReadFile(infoPath)
+	if err != nil {
+		t.Fatalf("Checkpoint summary was not created: %v", err)
+	}
+	if strings.Contains(string(infoData), "bestParams") {
+		t.Fatal("Checkpoint summary contains the parameter vector")
+	}
 
 	// Verify no temp file remains
 	tempPath := expectedPath + ".tmp"
 	if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
 		t.Errorf("Temp file should not exist after save: %s", tempPath)
+	}
+}
+
+func TestListCheckpointsProjectsLegacyCheckpointWithoutSidecar(t *testing.T) {
+	fs, tempDir := setupTestStore(t)
+	jobID := testJobID(1)
+	checkpoint := createTestCheckpoint(jobID)
+	checkpoint.BestParams = append(checkpoint.BestParams, checkpoint.BestParams...)
+	checkpoint.Config.Circles = 2
+	checkpoint.ActualCircles = 0
+	checkpoint.RequestedCircles = 0
+	if err := fs.SaveCheckpoint(jobID, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(tempDir, "jobs", jobID, string(ArtifactCheckpointInfo))); err != nil {
+		t.Fatal(err)
+	}
+
+	infos, err := fs.ListCheckpoints()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(infos) != 1 || infos[0].ActualCircles != 2 || infos[0].Circles != 2 {
+		t.Fatalf("projected checkpoint info = %+v", infos)
+	}
+	data, err := os.ReadFile(filepath.Join(tempDir, "jobs", jobID, string(ArtifactCheckpointInfo)))
+	if err != nil {
+		t.Fatalf("legacy summary was not backfilled: %v", err)
+	}
+	if strings.Contains(string(data), "bestParams") {
+		t.Fatal("backfilled summary contains the parameter vector")
+	}
+}
+
+func TestListCheckpointsFallsBackFromCorruptSidecar(t *testing.T) {
+	fs, tempDir := setupTestStore(t)
+	jobID := testJobID(1)
+	checkpoint := createTestCheckpoint(jobID)
+	if err := fs.SaveCheckpoint(jobID, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	infoPath := filepath.Join(tempDir, "jobs", jobID, string(ArtifactCheckpointInfo))
+	if err := os.WriteFile(infoPath, []byte("not json"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	infos, err := fs.ListCheckpoints()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(infos) != 1 || infos[0].JobID != jobID || infos[0].BestCost != checkpoint.BestCost {
+		t.Fatalf("fallback checkpoint info = %+v", infos)
 	}
 }
 
@@ -405,4 +468,37 @@ func isErrorType(err error, target interface{}) bool {
 	// Simple type check for NotFoundError
 	_, ok := err.(*NotFoundError)
 	return ok
+}
+
+// TestSaveCheckpointBytesMatchMarshalJSON pins the equivalence SaveCheckpoint
+// relies on when it encodes the wire struct directly to avoid a second
+// normalize and BestParams copy: the file must stay byte-for-byte what
+// Checkpoint.MarshalJSON would have produced, indentation included.
+func TestSaveCheckpointBytesMatchMarshalJSON(t *testing.T) {
+	store, _ := setupTestStore(t)
+	jobID := testJobID(1)
+	checkpoint := createTestCheckpoint(jobID)
+
+	if err := store.SaveCheckpoint(jobID, checkpoint); err != nil {
+		t.Fatalf("SaveCheckpoint failed: %v", err)
+	}
+	path, err := store.ArtifactPath(jobID, ArtifactCheckpoint)
+	if err != nil {
+		t.Fatalf("ArtifactPath failed: %v", err)
+	}
+	written, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read checkpoint: %v", err)
+	}
+
+	var viaMarshaler bytes.Buffer
+	encoder := json.NewEncoder(&viaMarshaler)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(checkpoint.normalized()); err != nil {
+		t.Fatalf("encode via MarshalJSON: %v", err)
+	}
+	if string(written) != viaMarshaler.String() {
+		t.Errorf("saved checkpoint bytes differ from MarshalJSON output\n got: %s\nwant: %s",
+			written, viaMarshaler.String())
+	}
 }

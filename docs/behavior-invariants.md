@@ -234,8 +234,21 @@ bounded. pprof is off by default and `--enable-pprof` requires a loopback bind.
   gap, focus/visibility return, and a 30-second safety interval, an island
   refetches its canonical JSON resource. Events received during that fetch are
   queued and replayed over the response, so a late response cannot erase newer
-  progress. A subscriber whose 64-event buffer fills is disconnected instead
-  of silently losing frames; reconnect reconciliation repairs its view.
+  progress. Repeated invalidations are coalesced to at most one authoritative
+  fetch per second; they are not allowed to build an unbounded chain of fetches
+  behind a busy campaign. A subscriber whose 64-event buffer fills is
+  disconnected instead of silently losing frames; reconnect reconciliation
+  repairs its view.
+- **Collection endpoints project jobs instead of cloning optimizer state.**
+  `GET /api/v1/jobs`, `/jobs`, and the project counts copy the lifecycle and
+  compact configuration fields they report (`refPath`, `mode`, and `circles`),
+  but never `BestParams` or `MetricHistory`. Per-job status, metrics, images,
+  and continuation endpoints remain the detail surfaces. Supplying `limit`
+  opts `GET /api/v1/jobs` into a bounded `{jobs, nextCursor, total}` response;
+  cursors are opaque and retain the descending start-time/ID order. The jobs
+  page renders only the first 100 records and automatically appends cursor
+  pages near the viewport. The no-query array response remains a compatibility
+  surface, while the bundled CLI consumes bounded pages.
 - **Templ output is the fallback and hydration seed, not a second live state
   model.** Job, dashboard, and campaign islands replace their server-rendered
   fallback after mount and then read `/api/v1/jobs`, job `/status` and
@@ -396,6 +409,14 @@ model: it stores nothing, so it cannot drift from the stage records.
   through its own project store, so the campaign listing walks every registered
   project rather than the default one alone. Each store is discovered on its own
   because lineage never crosses a project boundary.
+- **Chain listings read a persisted metadata index, not parameter vectors.** A
+  checkpoint save writes `checkpoint-info.json` beside the authoritative
+  `checkpoint.json`. Listings use that compact projection; checkpoints from an
+  older build are decoded into a metadata-only type that validates but never
+  retains `bestParams`, then receive a sidecar for later scans. The merged
+  cross-project chain discovery is shared by the dashboard, campaign, and
+  chain-list endpoints and is invalidated by job creation, terminal
+  transitions, and deletion instead of expiring on a timer.
 - **The stage listing is a projection, and it is bounded by the reader.**
   `GET /api/v1/schedules/:id` carries index, kind, state, circles, cost, elapsed,
   job and reason per stage — what the table prints and what the finish estimate

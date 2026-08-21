@@ -201,8 +201,9 @@ func TestServer_ListJobs(t *testing.T) {
 	s := NewServer(":8080", nil)
 
 	// Create two jobs
-	s.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: imgPath})
-	s.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: imgPath})
+	config := JobConfig{RefPath: imgPath, Mode: app.ModeJoint, Circles: 1, Iters: 1, PopSize: app.MinPopulation}
+	s.jobManager.CreateJob(app.DefaultProject, config)
+	s.jobManager.CreateJob(app.DefaultProject, config)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil)
 	w := httptest.NewRecorder()
@@ -212,14 +213,86 @@ func TestServer_ListJobs(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
+	if strings.Contains(w.Body.String(), `"bestParams"`) {
+		t.Fatal("job list serialized optimizer parameters")
+	}
 
-	var jobs []*Job
+	var jobs []JobSummary
 	if err := json.NewDecoder(w.Body).Decode(&jobs); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
 	if len(jobs) != 2 {
 		t.Errorf("Expected 2 jobs, got %d", len(jobs))
+	}
+	if jobs[0].Config.RefPath != imgPath || jobs[0].Config.Mode != app.ModeJoint || jobs[0].Config.Circles != 1 {
+		t.Fatalf("job summary config = %+v", jobs[0].Config)
+	}
+
+	first := httptest.NewRecorder()
+	s.handleListJobs(first, httptest.NewRequest(http.MethodGet, "/api/v1/jobs?limit=1", nil))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first page status = %d, want 200", first.Code)
+	}
+	var firstPage jobListPage
+	if err := json.NewDecoder(first.Body).Decode(&firstPage); err != nil {
+		t.Fatalf("decode first page: %v", err)
+	}
+	if len(firstPage.Jobs) != 1 || firstPage.Total != 2 || firstPage.NextCursor == "" {
+		t.Fatalf("first page = %+v, want one of two jobs and a cursor", firstPage)
+	}
+
+	second := httptest.NewRecorder()
+	secondURL := "/api/v1/jobs?limit=1&cursor=" + url.QueryEscape(firstPage.NextCursor)
+	s.handleListJobs(second, httptest.NewRequest(http.MethodGet, secondURL, nil))
+	var secondPage jobListPage
+	if err := json.NewDecoder(second.Body).Decode(&secondPage); err != nil {
+		t.Fatalf("decode second page: %v", err)
+	}
+	if len(secondPage.Jobs) != 1 || secondPage.Total != 2 || secondPage.NextCursor != "" {
+		t.Fatalf("second page = %+v, want final job", secondPage)
+	}
+	if secondPage.Jobs[0].ID == firstPage.Jobs[0].ID {
+		t.Fatal("cursor page repeated the first job")
+	}
+
+	for _, target := range []string{"/api/v1/jobs?limit=0", "/api/v1/jobs?cursor=not-a-cursor"} {
+		response := httptest.NewRecorder()
+		s.handleListJobs(response, httptest.NewRequest(http.MethodGet, target, nil))
+		if response.Code != http.StatusBadRequest {
+			t.Errorf("%s status = %d, want 400", target, response.Code)
+		}
+	}
+}
+
+func TestJobsPageBoundsHydrationSeed(t *testing.T) {
+	server := NewServer(":8080", nil)
+	for range defaultJobListLimit + 1 {
+		server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: "reference.png", Mode: app.ModeJoint, Circles: 1})
+	}
+
+	response := httptest.NewRecorder()
+	server.handleJobsPage(response, httptest.NewRequest(http.MethodGet, "/jobs", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("jobs page status = %d, want 200", response.Code)
+	}
+	body := response.Body.String()
+	const marker = `id="job-list-page"`
+	start := strings.Index(body, marker)
+	if start < 0 {
+		t.Fatal("jobs page has no hydration seed")
+	}
+	start += strings.Index(body[start:], ">") + 1
+	end := strings.Index(body[start:], "</script>")
+	if end < 0 {
+		t.Fatal("jobs page hydration seed is unterminated")
+	}
+	var seed jobListPage
+	if err := json.Unmarshal([]byte(body[start:start+end]), &seed); err != nil {
+		t.Fatalf("decode jobs page seed: %v", err)
+	}
+	if len(seed.Jobs) != defaultJobListLimit || seed.Total != defaultJobListLimit+1 || seed.NextCursor == "" {
+		t.Fatalf("jobs page seed has %d/%d jobs and cursor %q", len(seed.Jobs), seed.Total, seed.NextCursor)
 	}
 }
 

@@ -20,11 +20,18 @@ type JobListItem struct {
 	Error       string     `json:"error,omitempty"`
 }
 
-// JobList displays a list of all jobs
-templ JobList(jobs []JobListItem) {
+// JobListPage is the bounded hydration seed for the infinitely scrolling list.
+type JobListPage struct {
+	Jobs       []JobListItem `json:"jobs"`
+	NextCursor string        `json:"nextCursor,omitempty"`
+	Total      int           `json:"total"`
+}
+
+// JobList displays the first page of jobs; the island appends later pages.
+templ JobList(page JobListPage) {
 	@Layout("Jobs") {
 		<div data-island="job-list" data-island-label="job list">
-		@templ.JSONScript("job-list-page", jobs)
+		@templ.JSONScript("job-list-page", page)
 		<div style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center;">
 			<h1 style="font-size: 2rem; font-weight: 700;">
 				Optimization Jobs
@@ -34,7 +41,7 @@ templ JobList(jobs []JobListItem) {
 			</a>
 		</div>
 
-		if len(jobs) == 0 {
+		if len(page.Jobs) == 0 {
 			<div class="card" style="text-align: center; padding: 3rem;">
 				<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 1rem; color: var(--text-muted);">
 					<circle cx="12" cy="12" r="10"></circle>
@@ -53,7 +60,7 @@ templ JobList(jobs []JobListItem) {
 			</div>
 		} else {
 			<div style="display: grid; gap: 1rem;">
-				for _, job := range jobs {
+				for _, job := range page.Jobs {
 					@JobCard(job)
 				}
 			</div>

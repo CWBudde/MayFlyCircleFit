@@ -35,6 +35,7 @@ type Store interface {
 	// DeleteCheckpoint removes the checkpoint and all associated artifacts
 	// for the given job. This includes:
 	//   - checkpoint.json
+	//   - checkpoint-info.json
 	//   - best.png
 	//   - diff.png
 	//   - trace.jsonl

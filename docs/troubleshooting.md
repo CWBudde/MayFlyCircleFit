@@ -132,6 +132,20 @@ at validation, on the CLI and at the API alike. If you are hitting the limit
 rather than the bound, the levers are the reference resolution, `--circles`, and
 `--pop-size`, in that order of effect.
 
+For a long-lived server, also set Go's soft heap limit below the memory the host
+can spare. For example, on a machine where the server may use at most 8 GiB:
+
+```sh
+GOMEMLIMIT=8GiB ./mayflycirclefit serve --data-root ./data
+```
+
+`GOMEMLIMIT` makes the runtime collect more aggressively as the heap approaches
+the limit. It is a backstop rather than a hard RSS cap: mapped files, stacks,
+native/OpenCL allocations, and short-lived overshoot still need headroom.
+Checkpoint and job collection endpoints are metadata projections, so opening a
+dashboard does not deserialize or clone historical parameter vectors and trace
+histories.
+
 ### GPU unavailable
 
 A backend that cannot start reports `renderer backend unavailable` with the

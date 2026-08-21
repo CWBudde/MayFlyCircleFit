@@ -91,12 +91,17 @@ func (s *Server) handleJobsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	// Get all jobs from job manager
-	jobs := s.jobManager.ListJobs()
+	// Bound both the fallback HTML and its hydration seed. Later pages are
+	// fetched by the island as its sentinel approaches the viewport.
+	page, err := paginateJobSummaries(s.jobManager.ListJobSummaries(), "", defaultJobListLimit)
+	if err != nil {
+		http.Error(w, "Failed to paginate jobs", http.StatusInternalServerError)
+		return
+	}
 
 	// Convert to UI job list items
-	jobItems := make([]ui.JobListItem, len(jobs))
-	for i, job := range jobs {
+	jobItems := make([]ui.JobListItem, len(page.Jobs))
+	for i, job := range page.Jobs {
 		jobItems[i] = ui.JobListItem{
 			ID:          job.ID,
 			State:       string(job.State),
@@ -113,7 +118,8 @@ func (s *Server) handleJobsPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Render the job list page using templ
-	if err := ui.JobList(jobItems).Render(r.Context(), w); err != nil {
+	seed := ui.JobListPage{Jobs: jobItems, NextCursor: page.NextCursor, Total: page.Total}
+	if err := ui.JobList(seed).Render(r.Context(), w); err != nil {
 		http.Error(w, "Failed to render page", http.StatusInternalServerError)
 		return
 	}

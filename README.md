@@ -87,7 +87,7 @@ Server mode is designed for a trusted local machine. It has no authentication
 or TLS and must not be exposed directly to an untrusted network.
 
 ```sh
-./mayflycirclefit serve \
+GOMEMLIMIT=8GiB ./mayflycirclefit serve \
   --addr localhost \
   --port 8080 \
   --input-root ./assets \
@@ -98,7 +98,9 @@ The default bind address is `localhost`. Browser requests with a foreign
 `Origin` are rejected, and reference/canvas paths are canonicalized beneath one
 of the repeatable `--input-root` directories. Job concurrency and queue length
 are bounded by `--max-jobs` and `--queue-size`. Profiling routes are disabled by
-default; `--enable-pprof` is accepted only with a loopback bind address.
+default; `--enable-pprof` is accepted only with a loopback bind address. Size
+the optional `GOMEMLIMIT` below the memory the host can spare; it is a soft Go
+heap backstop, not a hard RSS cap.
 
 A minimal API job can be submitted from the checkout directory with:
 
@@ -119,6 +121,11 @@ zero-valued configuration struct is not a valid partial request.
 Progress can be observed either by polling the status resource or by keeping an
 SSE connection open. SSE is an optional second transport; polling remains
 available for clients that cannot maintain streaming HTTP connections.
+
+The jobs page loads 100 compact summaries at a time as you scroll. API clients
+can opt into the same bounded cursor response with
+`GET /api/v1/jobs?limit=100`; follow its opaque `nextCursor` until it is absent.
+Requests without `limit` retain the legacy JSON-array response for compatibility.
 
 ```sh
 # Polling

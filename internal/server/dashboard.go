@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
-	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/ui"
@@ -13,7 +12,6 @@ import (
 
 const (
 	dashboardCampaignLimit      = 12
-	dashboardChainScanTTL       = 2 * time.Second
 	dashboardMetricHistoryLimit = 100
 )
 
@@ -190,18 +188,5 @@ func isDashboardActiveCampaignState(state string) bool {
 }
 
 func (s *Server) dashboardChains() []discoveredChain {
-	s.dashboardMu.Lock()
-	defer s.dashboardMu.Unlock()
-
-	if !s.dashboardChainScanned.IsZero() && time.Since(s.dashboardChainScanned) < dashboardChainScanTTL {
-		cached := make([]discoveredChain, len(s.dashboardChainScan))
-		copy(cached, s.dashboardChainScan)
-		return cached
-	}
-
-	chains := s.discoverAllChains()
-	s.dashboardChainScan = make([]discoveredChain, len(chains))
-	copy(s.dashboardChainScan, chains)
-	s.dashboardChainScanned = time.Now()
-	return chains
+	return s.cachedAllChains()
 }

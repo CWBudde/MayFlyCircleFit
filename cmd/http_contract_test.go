@@ -48,6 +48,17 @@ func validJobResponse(t *testing.T, id string) jobResponse {
 	}
 }
 
+func TestJobResponseAcceptsCompactCollectionConfig(t *testing.T) {
+	response := validJobResponse(t, "job-1")
+	response.Config = &app.JobConfig{RefPath: "assets/reference.png", Mode: app.ModeBatch, Circles: 8}
+	if err := response.validate(false); err != nil {
+		t.Fatalf("compact collection response rejected: %v", err)
+	}
+	if err := response.validate(true); err == nil {
+		t.Fatal("compact config was accepted for the detailed status response")
+	}
+}
+
 func testCommand(ctx context.Context, output io.Writer) *cobra.Command {
 	command := &cobra.Command{}
 	command.SetContext(ctx)
@@ -146,6 +157,42 @@ func TestListJobsEmptyAndValidResponses(t *testing.T) {
 				t.Errorf("output %q does not contain %q", output.String(), testCase.wantOutput)
 			}
 		})
+	}
+}
+
+func TestListJobsReadsBoundedPages(t *testing.T) {
+	first := validJobResponse(t, "job-1")
+	second := validJobResponse(t, "job-2")
+	total := 2
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		if got := request.URL.Query().Get("limit"); got != "100" {
+			t.Errorf("limit = %q, want 100", got)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		if request.URL.Query().Get("cursor") == "" {
+			_ = json.NewEncoder(writer).Encode(jobListPageResponse{Jobs: []jobResponse{first}, NextCursor: "page-2", Total: &total})
+			return
+		}
+		if got := request.URL.Query().Get("cursor"); got != "page-2" {
+			t.Errorf("cursor = %q, want page-2", got)
+		}
+		_ = json.NewEncoder(writer).Encode(jobListPageResponse{Jobs: []jobResponse{second}, Total: &total})
+	}))
+	defer server.Close()
+
+	var output bytes.Buffer
+	if err := listJobs(context.Background(), &output, server.URL); err != nil {
+		t.Fatalf("listJobs: %v", err)
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d, want 2", requests)
+	}
+	for _, want := range []string{"Found 2 job(s)", "Job ID: job-1", "Job ID: job-2"} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("output %q does not contain %q", output.String(), want)
+		}
 	}
 }
 

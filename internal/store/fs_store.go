@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 )
 
 // Artifact identifies a store-owned job artifact. The closed set prevents
@@ -17,11 +22,12 @@ import (
 type Artifact string
 
 const (
-	ArtifactCheckpoint Artifact = "checkpoint.json"
-	ArtifactBest       Artifact = "best.png"
-	ArtifactDiff       Artifact = "diff.png"
-	ArtifactTrace      Artifact = "trace.jsonl"
-	ArtifactCircles    Artifact = "circles.json"
+	ArtifactCheckpoint     Artifact = "checkpoint.json"
+	ArtifactCheckpointInfo Artifact = "checkpoint-info.json"
+	ArtifactBest           Artifact = "best.png"
+	ArtifactDiff           Artifact = "diff.png"
+	ArtifactTrace          Artifact = "trace.jsonl"
+	ArtifactCircles        Artifact = "circles.json"
 )
 
 // FSStore implements Store using a private filesystem tree rooted at baseDir.
@@ -31,6 +37,10 @@ type FSStore struct {
 	baseDir string
 	jobsDir string
 	atomic  atomicFileOperations
+	// Checkpoint and checkpoint-info are one logical commit. A small fixed set
+	// of locks keeps same-job writes and listings consistent without serializing
+	// checkpoint writes for every active job.
+	checkpointLocks [64]sync.RWMutex
 }
 
 // atomicFileOperations keeps the two failure-prone boundaries of the atomic
@@ -108,7 +118,7 @@ func (fs *FSStore) existingJobDir(jobID string) (string, error) {
 
 func validateArtifact(artifact Artifact) error {
 	switch artifact {
-	case ArtifactCheckpoint, ArtifactBest, ArtifactDiff, ArtifactTrace, ArtifactCircles:
+	case ArtifactCheckpoint, ArtifactCheckpointInfo, ArtifactBest, ArtifactDiff, ArtifactTrace, ArtifactCircles:
 		return nil
 	default:
 		return fmt.Errorf("unsupported artifact %q", artifact)
@@ -161,12 +171,39 @@ func (fs *FSStore) SaveCheckpoint(jobID string, checkpoint *Checkpoint) error {
 	if err != nil {
 		return err
 	}
+	infoPath, err := fs.ArtifactPath(jobID, ArtifactCheckpointInfo)
+	if err != nil {
+		return err
+	}
+	lock := fs.checkpointLock(jobID)
+	lock.Lock()
+	defer lock.Unlock()
+	// An old summary must never describe a newly committed checkpoint. If the
+	// primary write fails, listings safely fall back to projecting the preserved
+	// checkpoint; if the process dies after the rename, the sidecar is absent.
+	if err := os.Remove(infoPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove stale checkpoint summary: %w", err)
+	}
 	if err := fs.atomicWrite(path, func(writer io.Writer) error {
 		encoder := json.NewEncoder(writer)
 		encoder.SetIndent("", "  ")
-		return encoder.Encode(normalized)
+		// Encode the wire struct rather than the Checkpoint: the latter would
+		// run Checkpoint.MarshalJSON, which normalizes again and copies
+		// BestParams a second time on a path that runs once per stage. The
+		// bytes are identical because normalized() is idempotent.
+		return encoder.Encode(checkpointWireFrom(normalized))
 	}); err != nil {
 		return fmt.Errorf("save checkpoint: %w", err)
+	}
+	// The sidecar is a performance index, not the durable result. A failure to
+	// write it leaves no stale copy and ListCheckpoints can still project the
+	// primary checkpoint without materializing BestParams.
+	if err := fs.atomicWrite(infoPath, func(writer io.Writer) error {
+		return json.NewEncoder(writer).Encode(normalized.ToInfo())
+	}); err != nil {
+		_ = os.Remove(infoPath)
+		slog.Warn("Failed to save checkpoint summary; listings will use the checkpoint projection",
+			"jobID", jobID, "error", err)
 	}
 	slog.Debug("Checkpoint saved", "jobID", jobID, "path", path)
 	return nil
@@ -174,6 +211,13 @@ func (fs *FSStore) SaveCheckpoint(jobID string, checkpoint *Checkpoint) error {
 
 // LoadCheckpoint retrieves and validates a checkpoint for the given job.
 func (fs *FSStore) LoadCheckpoint(jobID string) (*Checkpoint, error) {
+	lock := fs.checkpointLock(jobID)
+	lock.RLock()
+	defer lock.RUnlock()
+	return fs.loadCheckpoint(jobID)
+}
+
+func (fs *FSStore) loadCheckpoint(jobID string) (*Checkpoint, error) {
 	if _, err := fs.existingJobDir(jobID); err != nil {
 		return nil, err
 	}
@@ -216,7 +260,10 @@ func (fs *FSStore) ListCheckpoints() ([]CheckpointInfo, error) {
 		if !entry.IsDir() || validateJobID(entry.Name()) != nil {
 			continue
 		}
-		checkpoint, err := fs.LoadCheckpoint(entry.Name())
+		lock := fs.checkpointLock(entry.Name())
+		lock.RLock()
+		info, err := fs.loadCheckpointInfo(entry.Name())
+		lock.RUnlock()
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
 				continue
@@ -224,13 +271,238 @@ func (fs *FSStore) ListCheckpoints() ([]CheckpointInfo, error) {
 			slog.Warn("Failed to load checkpoint for listing", "jobID", entry.Name(), "error", err)
 			continue
 		}
-		infos = append(infos, checkpoint.ToInfo())
+		infos = append(infos, info)
 	}
 	return infos, nil
 }
 
+func (fs *FSStore) checkpointLock(jobID string) *sync.RWMutex {
+	const (
+		offset = uint32(2166136261)
+		prime  = uint32(16777619)
+	)
+	hash := offset
+	for i := 0; i < len(jobID); i++ {
+		hash ^= uint32(jobID[i])
+		hash *= prime
+	}
+	return &fs.checkpointLocks[hash%uint32(len(fs.checkpointLocks))]
+}
+
+func (fs *FSStore) loadCheckpointInfo(jobID string) (CheckpointInfo, error) {
+	if _, err := fs.existingJobDir(jobID); err != nil {
+		return CheckpointInfo{}, err
+	}
+	checkpointPath, err := fs.ArtifactPath(jobID, ArtifactCheckpoint)
+	if err != nil {
+		return CheckpointInfo{}, err
+	}
+	checkpointStat, err := os.Stat(checkpointPath)
+	if os.IsNotExist(err) {
+		return CheckpointInfo{}, &NotFoundError{JobID: jobID}
+	}
+	if err != nil {
+		return CheckpointInfo{}, fmt.Errorf("stat checkpoint: %w", err)
+	}
+
+	infoPath, infoPathErr := fs.ArtifactPath(jobID, ArtifactCheckpointInfo)
+	if infoPathErr == nil {
+		if infoStat, statErr := os.Stat(infoPath); statErr == nil && !infoStat.ModTime().Before(checkpointStat.ModTime()) {
+			data, readErr := os.ReadFile(infoPath)
+			if readErr == nil {
+				var info CheckpointInfo
+				if decodeErr := json.Unmarshal(data, &info); decodeErr == nil && validateCheckpointInfo(info, jobID) == nil {
+					return info, nil
+				}
+			}
+		}
+	}
+
+	info, err := projectCheckpointInfo(checkpointPath, jobID)
+	if err != nil {
+		return CheckpointInfo{}, err
+	}
+	// Backfill checkpoints written before the summary existed. The caller holds
+	// this job's read lock, so a checkpoint save cannot replace the primary
+	// between projection and sidecar commit.
+	if infoPathErr == nil {
+		if err := fs.atomicWrite(infoPath, func(writer io.Writer) error {
+			return json.NewEncoder(writer).Encode(info)
+		}); err != nil {
+			slog.Debug("Unable to backfill checkpoint summary", "jobID", jobID, "error", err)
+		}
+	}
+	return info, nil
+}
+
+// checkpointInfoProjection deliberately has no []float64 field. The decoder
+// still validates the JSON document, but skips bestParams instead of allocating
+// the potentially tens-of-thousands-element vector merely to build a row.
+type checkpointInfoProjection struct {
+	SchemaVersion    int                        `json:"schemaVersion"`
+	JobID            string                     `json:"jobId"`
+	BestParams       parameterCount             `json:"bestParams"`
+	BestCost         float64                    `json:"bestCost"`
+	InitialCost      float64                    `json:"initialCost"`
+	RequestedCircles int                        `json:"requestedCircles"`
+	ActualCircles    int                        `json:"actualCircles"`
+	EffectiveSeed    int64                      `json:"effectiveSeed"`
+	ResumeCount      int                        `json:"resumeCount"`
+	Iterations       int                        `json:"iterations"`
+	Evaluations      int64                      `json:"evaluations"`
+	Termination      string                     `json:"termination"`
+	Iteration        int                        `json:"iteration"`
+	Timestamp        time.Time                  `json:"timestamp"`
+	ExtendedFrom     string                     `json:"extendedFrom"`
+	PolishedFrom     string                     `json:"polishedFrom"`
+	ScheduleID       string                     `json:"scheduleId"`
+	StageIndex       *int                       `json:"stageIndex"`
+	Config           checkpointConfigProjection `json:"config"`
+}
+
+type checkpointConfigProjection struct {
+	RefPath       string   `json:"refPath"`
+	Mode          app.Mode `json:"mode"`
+	Circles       int      `json:"circles"`
+	Iters         int      `json:"iters"`
+	PopSize       int      `json:"popSize"`
+	Seed          int64    `json:"seed"`
+	EffectiveSeed int64    `json:"effectiveSeed"`
+	ResumeCount   int      `json:"resumeCount"`
+}
+
+func (config checkpointConfigProjection) jobConfig() JobConfig {
+	return JobConfig{
+		RefPath: config.RefPath, Mode: config.Mode, Circles: config.Circles,
+		Iters: config.Iters, PopSize: config.PopSize, Seed: config.Seed,
+		EffectiveSeed: config.EffectiveSeed, ResumeCount: config.ResumeCount,
+	}
+}
+
+func projectCheckpointInfo(path, jobID string) (CheckpointInfo, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return CheckpointInfo{}, err
+	}
+	defer file.Close()
+
+	var projection checkpointInfoProjection
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&projection); err != nil {
+		return CheckpointInfo{}, fmt.Errorf("deserialize checkpoint summary: %w", err)
+	}
+	// Reject a second JSON value while allowing trailing whitespace.
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return CheckpointInfo{}, fmt.Errorf("deserialize checkpoint summary: trailing JSON value")
+		}
+		return CheckpointInfo{}, fmt.Errorf("deserialize checkpoint summary: %w", err)
+	}
+	return projection.toInfo(jobID)
+}
+
+// parameterCount validates and counts the JSON array without retaining its
+// float values. The decoder hands this method a view into its input buffer, so
+// even a legacy checkpoint without a sidecar never materializes BestParams.
+type parameterCount int
+
+func (count *parameterCount) UnmarshalJSON(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	opening, ok := token.(json.Delim)
+	if !ok || opening != '[' {
+		return fmt.Errorf("bestParams must be an array")
+	}
+	n := 0
+	for decoder.More() {
+		var value float64
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		n++
+	}
+	if _, err := decoder.Token(); err != nil {
+		return err
+	}
+	*count = parameterCount(n)
+	return nil
+}
+
+func (p checkpointInfoProjection) toInfo(jobID string) (CheckpointInfo, error) {
+	config := p.Config.jobConfig()
+	originalSchema := p.SchemaVersion
+	if originalSchema < 0 || originalSchema > CheckpointSchemaVersion || (originalSchema != 0 && originalSchema != 1 && originalSchema != CheckpointSchemaVersion) {
+		return CheckpointInfo{}, fmt.Errorf("unsupported checkpoint schema version %d", originalSchema)
+	}
+	if p.Iterations == 0 && p.Iteration != 0 {
+		p.Iterations = p.Iteration
+	}
+	if p.RequestedCircles == 0 {
+		p.RequestedCircles = config.Circles
+	}
+	if p.ActualCircles == 0 && int(p.BestParams)%7 == 0 {
+		p.ActualCircles = int(p.BestParams) / 7
+	}
+	if p.EffectiveSeed == 0 {
+		p.EffectiveSeed = effectiveSeed(config)
+	}
+	if p.ResumeCount == 0 {
+		p.ResumeCount = config.ResumeCount
+	}
+	if p.Termination == "" {
+		if originalSchema == 0 || originalSchema == 1 {
+			p.Termination = TerminationLegacy
+		} else {
+			p.Termination = TerminationUnknown
+		}
+	}
+	if (originalSchema == 0 || originalSchema == 1) && p.Evaluations == 0 && p.Iterations > 0 && config.PopSize > 0 {
+		p.Evaluations = int64(p.Iterations) * int64(config.PopSize)
+	}
+	info := CheckpointInfo{
+		SchemaVersion: CheckpointSchemaVersion, JobID: p.JobID, BestCost: p.BestCost,
+		Iteration: p.Iterations, Evaluations: p.Evaluations, RequestedCircles: p.RequestedCircles,
+		ActualCircles: p.ActualCircles, EffectiveSeed: p.EffectiveSeed, ResumeCount: p.ResumeCount,
+		Termination: p.Termination, Timestamp: p.Timestamp, ExtendedFrom: p.ExtendedFrom,
+		PolishedFrom: p.PolishedFrom, ScheduleID: p.ScheduleID, Mode: config.Mode,
+		Circles: config.Circles, RefPath: config.RefPath,
+	}
+	if err := validateCheckpointInfo(info, jobID); err != nil {
+		return CheckpointInfo{}, err
+	}
+	if int(p.BestParams) == 0 || int(p.BestParams)%7 != 0 || int(p.BestParams) != p.ActualCircles*7 || p.InitialCost < 0 || config.Iters <= 0 || config.PopSize <= 0 || p.RequestedCircles != config.Circles || p.ActualCircles > p.RequestedCircles {
+		return CheckpointInfo{}, fmt.Errorf("invalid checkpoint metadata")
+	}
+	lineage := Checkpoint{JobID: p.JobID, ExtendedFrom: p.ExtendedFrom, PolishedFrom: p.PolishedFrom, ScheduleID: p.ScheduleID, StageIndex: p.StageIndex}
+	if err := lineage.validateLineage(); err != nil {
+		return CheckpointInfo{}, err
+	}
+	return info, nil
+}
+
+func validateCheckpointInfo(info CheckpointInfo, jobID string) error {
+	if info.JobID != jobID || validateJobID(info.JobID) != nil || info.SchemaVersion != CheckpointSchemaVersion {
+		return fmt.Errorf("checkpoint summary does not match job %q", jobID)
+	}
+	if info.BestCost < 0 || info.Iteration < 0 || info.Evaluations < 0 || info.ResumeCount < 0 || info.Timestamp.IsZero() {
+		return fmt.Errorf("invalid checkpoint summary progress")
+	}
+	if info.RefPath == "" || info.Mode == "" || info.Circles <= 0 || info.RequestedCircles != info.Circles || info.ActualCircles < 1 || info.ActualCircles > info.RequestedCircles {
+		return fmt.Errorf("invalid checkpoint summary configuration")
+	}
+	lineage := Checkpoint{JobID: info.JobID, ExtendedFrom: info.ExtendedFrom, PolishedFrom: info.PolishedFrom, ScheduleID: info.ScheduleID}
+	return lineage.validateLineage()
+}
+
 // DeleteCheckpoint removes the checkpoint and all associated artifacts.
 func (fs *FSStore) DeleteCheckpoint(jobID string) error {
+	lock := fs.checkpointLock(jobID)
+	lock.Lock()
+	defer lock.Unlock()
 	jobDir, err := fs.existingJobDir(jobID)
 	if err != nil {
 		return err

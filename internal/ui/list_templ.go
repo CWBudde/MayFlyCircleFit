@@ -28,8 +28,15 @@ type JobListItem struct {
 	Error       string     `json:"error,omitempty"`
 }
 
-// JobList displays a list of all jobs
-func JobList(jobs []JobListItem) templ.Component {
+// JobListPage is the bounded hydration seed for the infinitely scrolling list.
+type JobListPage struct {
+	Jobs       []JobListItem `json:"jobs"`
+	NextCursor string        `json:"nextCursor,omitempty"`
+	Total      int           `json:"total"`
+}
+
+// JobList displays the first page of jobs; the island appends later pages.
+func JobList(page JobListPage) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -66,7 +73,7 @@ func JobList(jobs []JobListItem) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templ.JSONScript("job-list-page", jobs).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = templ.JSONScript("job-list-page", page).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -74,7 +81,7 @@ func JobList(jobs []JobListItem) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if len(jobs) == 0 {
+			if len(page.Jobs) == 0 {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"card\" style=\"text-align: center; padding: 3rem;\"><svg width=\"64\" height=\"64\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" style=\"margin: 0 auto 1rem; color: var(--text-muted);\"><circle cx=\"12\" cy=\"12\" r=\"10\"></circle> <line x1=\"12\" y1=\"8\" x2=\"12\" y2=\"12\"></line> <line x1=\"12\" y1=\"16\" x2=\"12.01\" y2=\"16\"></line></svg><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem;\">No jobs yet</h2><p style=\"color: var(--text-muted); margin-bottom: 1.5rem;\">Create your first optimization job to get started.</p><a href=\"/create\" class=\"btn btn-primary\">Create Job</a></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -84,7 +91,7 @@ func JobList(jobs []JobListItem) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				for _, job := range jobs {
+				for _, job := range page.Jobs {
 					templ_7745c5c3_Err = JobCard(job).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
@@ -142,7 +149,7 @@ func JobCard(job JobListItem) templ.Component {
 		var templ_7745c5c3_Var4 templ.SafeURL
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/jobs/%s", job.ID)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 68, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 75, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -155,7 +162,7 @@ func JobCard(job JobListItem) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(job.ID[:8])
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 77, Col: 18}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 84, Col: 18}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -176,7 +183,7 @@ func JobCard(job JobListItem) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(job.Mode)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 83, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 90, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -189,7 +196,7 @@ func JobCard(job JobListItem) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", job.Circles))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 86, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 93, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -202,7 +209,7 @@ func JobCard(job JobListItem) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", job.Iterations))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 89, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 96, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -220,7 +227,7 @@ func JobCard(job JobListItem) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2f", job.BestCost))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 99, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 106, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -238,7 +245,7 @@ func JobCard(job JobListItem) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%% improvement", (1-job.BestCost/job.InitialCost)*100))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 103, Col: 80}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 110, Col: 80}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -257,7 +264,7 @@ func JobCard(job JobListItem) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(job.RefPath)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 112, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 119, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -270,7 +277,7 @@ func JobCard(job JobListItem) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(formatTime(job.StartTime))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 115, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 122, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -288,7 +295,7 @@ func JobCard(job JobListItem) templ.Component {
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(job.Error)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 121, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 128, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -368,7 +375,7 @@ func StateBadge(state string) templ.Component {
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(state)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 147, Col: 11}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 154, Col: 11}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 			if templ_7745c5c3_Err != nil {

@@ -95,6 +95,37 @@ type MetricSample struct {
 	Timestamp    time.Time `json:"timestamp"`
 }
 
+// JobSummary is the detached projection used by collection endpoints. A job
+// list needs lifecycle and configuration fields, not the parameter vector or
+// metric history; copying those per request makes listing O(total optimizer
+// history) in both allocations and retained heap.
+type JobSummary struct {
+	ID              string           `json:"id"`
+	Project         app.Project      `json:"project"`
+	State           JobState         `json:"state"`
+	Config          JobSummaryConfig `json:"config"`
+	BestCost        float64          `json:"bestCost"`
+	InitialCost     float64          `json:"initialCost"`
+	Iterations      int              `json:"iterations"`
+	Evaluations     int              `json:"evaluations"`
+	EvaluationWidth int              `json:"evaluationWidth,omitempty"`
+	CandidateCost   *float64         `json:"candidateCost,omitempty"`
+	ExtendedFrom    string           `json:"extendedFrom,omitempty"`
+	PolishedFrom    string           `json:"polishedFrom,omitempty"`
+	ScheduleID      string           `json:"scheduleId,omitempty"`
+	StageIndex      *int             `json:"stageIndex,omitempty"`
+	Termination     string           `json:"termination,omitempty"`
+	StartTime       time.Time        `json:"startTime"`
+	EndTime         *time.Time       `json:"endTime,omitempty"`
+	Error           string           `json:"error,omitempty"`
+}
+
+type JobSummaryConfig struct {
+	RefPath string   `json:"refPath"`
+	Mode    app.Mode `json:"mode"`
+	Circles int      `json:"circles"`
+}
+
 var ErrInvalidTransition = errors.New("invalid job state transition")
 
 // errDuplicateJobID reports that restoreJob was handed an ID the manager
@@ -124,6 +155,9 @@ type JobManager struct {
 	jobs        map[string]*Job
 	broadcaster *EventBroadcaster
 	uiEvents    *UIEventHub
+	// onJobSetChanged invalidates read models derived from persisted jobs. It is
+	// installed once by Server before jobs are restored or workers start.
+	onJobSetChanged func()
 }
 
 // NewJobManager creates a new JobManager
@@ -187,6 +221,9 @@ func (jm *JobManager) CreateJobWithID(id string, project app.Project, config Job
 	jm.jobs[job.ID] = job
 	snapshot := cloneJob(job)
 	jm.mu.Unlock()
+	if jm.onJobSetChanged != nil {
+		jm.onJobSetChanged()
+	}
 	jm.broadcaster.Broadcast(jobProgressSnapshot(snapshot))
 	return snapshot, nil
 }
@@ -213,6 +250,46 @@ func (jm *JobManager) ListJobs() []*Job {
 		jobs = append(jobs, cloneJob(job))
 	}
 	sort.Slice(jobs, func(i, j int) bool {
+		if jobs[i].StartTime.Equal(jobs[j].StartTime) {
+			return jobs[i].ID < jobs[j].ID
+		}
+		return jobs[i].StartTime.After(jobs[j].StartTime)
+	})
+	return jobs
+}
+
+// ListJobSummaries returns the list-page/API projection without cloning
+// BestParams or MetricHistory.
+func (jm *JobManager) ListJobSummaries() []JobSummary {
+	jm.mu.RLock()
+	defer jm.mu.RUnlock()
+
+	jobs := make([]JobSummary, 0, len(jm.jobs))
+	for _, job := range jm.jobs {
+		summary := JobSummary{
+			ID: job.ID, Project: app.NormalizeProject(job.Project), State: job.State,
+			Config:   JobSummaryConfig{RefPath: job.Config.RefPath, Mode: job.Config.Mode, Circles: job.Config.Circles},
+			BestCost: job.BestCost, InitialCost: job.InitialCost,
+			Iterations: job.Iterations, Evaluations: job.Evaluations,
+			EvaluationWidth: job.EvaluationWidth, ExtendedFrom: job.ExtendedFrom,
+			PolishedFrom: job.PolishedFrom, ScheduleID: job.ScheduleID,
+			Termination: job.Termination, StartTime: job.StartTime, Error: job.Error,
+		}
+		summary.CandidateCost = cloneFloat(job.CandidateCost)
+		if job.StageIndex != nil {
+			index := *job.StageIndex
+			summary.StageIndex = &index
+		}
+		if job.EndTime != nil {
+			end := *job.EndTime
+			summary.EndTime = &end
+		}
+		jobs = append(jobs, summary)
+	}
+	sort.Slice(jobs, func(i, j int) bool {
+		if jobs[i].StartTime.Equal(jobs[j].StartTime) {
+			return jobs[i].ID < jobs[j].ID
+		}
 		return jobs[i].StartTime.After(jobs[j].StartTime)
 	})
 	return jobs
@@ -231,11 +308,15 @@ func (jm *JobManager) restoreJob(job *Job) error {
 	}
 
 	jm.mu.Lock()
-	defer jm.mu.Unlock()
 	if existing, exists := jm.jobs[job.ID]; exists {
+		jm.mu.Unlock()
 		return &duplicateJobError{jobID: job.ID, owner: app.NormalizeProject(existing.Project)}
 	}
 	jm.jobs[job.ID] = cloneJob(job)
+	jm.mu.Unlock()
+	if jm.onJobSetChanged != nil {
+		jm.onJobSetChanged()
+	}
 	return nil
 }
 
@@ -452,15 +533,20 @@ func (jm *JobManager) ResumeJob(id string) error {
 // DeleteJob removes a terminal job. Active jobs must be cancelled first.
 func (jm *JobManager) DeleteJob(id string) error {
 	jm.mu.Lock()
-	defer jm.mu.Unlock()
 	job, ok := jm.jobs[id]
 	if !ok {
+		jm.mu.Unlock()
 		return fmt.Errorf("job not found: %s", id)
 	}
 	if job.State == StatePending || job.State == StateRunning {
+		jm.mu.Unlock()
 		return fmt.Errorf("%w: cannot delete %s job", ErrInvalidTransition, job.State)
 	}
 	delete(jm.jobs, id)
+	jm.mu.Unlock()
+	if jm.onJobSetChanged != nil {
+		jm.onJobSetChanged()
+	}
 	jm.uiEvents.PublishJobDeleted(id)
 	return nil
 }
@@ -487,6 +573,9 @@ func (jm *JobManager) transition(id string, next JobState, update func(*Job)) er
 	}
 	snapshot := cloneJob(job)
 	jm.mu.Unlock()
+	if (next == StateCompleted || next == StateFailed || next == StateCancelled) && jm.onJobSetChanged != nil {
+		jm.onJobSetChanged()
+	}
 	jm.broadcaster.Broadcast(jobProgressSnapshot(snapshot))
 	if next == StateCompleted || next == StateFailed || next == StateCancelled {
 		if snapshot.ScheduleID != "" {
