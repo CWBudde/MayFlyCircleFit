@@ -117,7 +117,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	counts := make(map[app.Project]int)
-	for _, job := range s.jobManager.ListJobs() {
+	for _, job := range s.jobManager.ListJobSummaries() {
 		counts[app.NormalizeProject(job.Project)]++
 	}
 

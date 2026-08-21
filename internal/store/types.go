@@ -220,7 +220,7 @@ func NewCheckpoint(jobID string, bestParams []float64, bestCost, initialCost flo
 
 // ToInfo converts a full Checkpoint to CheckpointInfo (metadata only).
 func (c *Checkpoint) ToInfo() CheckpointInfo {
-	normalized := c.normalized()
+	normalized := c.normalizedMetadata()
 	return CheckpointInfo{
 		SchemaVersion:    normalized.SchemaVersion,
 		JobID:            normalized.JobID,
@@ -457,6 +457,19 @@ func checkpointWireFrom(c Checkpoint) checkpointWire {
 }
 
 func (c Checkpoint) normalized() Checkpoint {
+	c = c.normalizedMetadata()
+	c.BestParams = append([]float64(nil), c.BestParams...)
+	if c.StageIndex != nil {
+		index := *c.StageIndex
+		c.StageIndex = &index
+	}
+	return c
+}
+
+// normalizedMetadata applies schema migration without copying the parameter
+// vector. Metadata-only readers must not pay O(circles) merely to report a
+// checkpoint in a listing.
+func (c Checkpoint) normalizedMetadata() Checkpoint {
 	if c.SchemaVersion == 0 || c.SchemaVersion == 1 {
 		c.SchemaVersion = CheckpointSchemaVersion
 	}
@@ -481,11 +494,6 @@ func (c Checkpoint) normalized() Checkpoint {
 	}
 	c.Config.EffectiveSeed = c.EffectiveSeed
 	c.Config.ResumeCount = c.ResumeCount
-	c.BestParams = append([]float64(nil), c.BestParams...)
-	if c.StageIndex != nil {
-		index := *c.StageIndex
-		c.StageIndex = &index
-	}
 	return c
 }
 

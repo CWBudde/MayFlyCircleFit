@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,6 +35,25 @@ type synthesizedStage struct {
 	polished bool
 	circles  int
 	cost     float64
+}
+
+type checkpointListCountingStore struct {
+	store.Store
+	mu    sync.Mutex
+	lists int
+}
+
+func (counting *checkpointListCountingStore) ListCheckpoints() ([]store.CheckpointInfo, error) {
+	counting.mu.Lock()
+	counting.lists++
+	counting.mu.Unlock()
+	return counting.Store.ListCheckpoints()
+}
+
+func (counting *checkpointListCountingStore) listCount() int {
+	counting.mu.Lock()
+	defer counting.mu.Unlock()
+	return counting.lists
 }
 
 // synthesizeChain writes a chain of checkpoints whose only connection is the
@@ -426,6 +446,47 @@ func TestChainDiscoveryCoversEveryProject(t *testing.T) {
 	}
 	if !found[chainSecondJob] {
 		t.Error("a named project's chain is missing from the campaign listing")
+	}
+}
+
+func TestChainListingsShareInvalidationBasedDiscoveryCache(t *testing.T) {
+	root := t.TempDir()
+	fsStore, err := store.NewFSStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	synthesizeChain(t, fsStore, "reference.png", []synthesizedStage{{jobID: chainBaseJob, circles: 8, cost: 10}})
+	counting := &checkpointListCountingStore{Store: fsStore}
+	server := NewServer("localhost:0", counting)
+	baseline := counting.listCount() // restore performs its own listing
+
+	for _, path := range []string{"/api/v1/dashboard", "/api/v1/chains", "/api/v1/dashboard"} {
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("GET %s status = %d, body=%q", path, response.Code, response.Body.String())
+		}
+	}
+	if got := counting.listCount(); got != baseline+1 {
+		t.Fatalf("shared listings performed %d checkpoint scans after baseline %d, want one", got, baseline)
+	}
+
+	job := server.jobManager.CreateJob(app.DefaultProject, store.JobConfig{
+		RefPath: "reference.png", Mode: app.ModeBatch, Circles: 1, Iters: 1, PopSize: 1,
+	})
+	server.cachedAllChains()
+	if got := counting.listCount(); got != baseline+2 {
+		t.Fatalf("job creation did not invalidate chain cache: scans=%d", got)
+	}
+	if err := server.jobManager.StartJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.jobManager.CompleteJob(job.ID, 1, 1, make([]float64, 7), 1, 2, "completed"); err != nil {
+		t.Fatal(err)
+	}
+	server.cachedAllChains()
+	if got := counting.listCount(); got != baseline+3 {
+		t.Fatalf("job completion did not invalidate chain cache: scans=%d", got)
 	}
 }
 

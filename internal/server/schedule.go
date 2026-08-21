@@ -714,6 +714,7 @@ func (s *Server) publishScheduleChanged(scheduleID string) {
 }
 
 func (s *Server) publishChainsChanged() {
+	s.invalidateChainCache()
 	if s.uiEvents != nil {
 		s.uiEvents.PublishCampaignChanged("chain", "")
 	}

@@ -36,6 +36,7 @@ type ConnectionNotice =
 type Listener = (notice: ConnectionNotice) => void;
 
 const RECONCILE_INTERVAL_MS = 30_000;
+const MIN_REFRESH_INTERVAL_MS = 1_000;
 
 // LiveEventBus owns one EventSource for every island mounted by the bundle.
 // EventSource already implements reconnect/backoff; onopen tells resources to
@@ -105,7 +106,7 @@ export type ReduceResult<T> = { value: T; refresh?: boolean };
 
 type LiveResourceOptions<T> = {
 	initial: T;
-	load: (signal: AbortSignal) => Promise<T>;
+	load: (signal: AbortSignal, current: T) => Promise<T>;
 	reduce: (current: T, event: UIEvent) => ReduceResult<T>;
 };
 
@@ -120,6 +121,8 @@ export function useLiveResource<T>({ initial, load, reduce }: LiveResourceOption
 	const mountedRef = useRef(false);
 	const inFlightRef = useRef(false);
 	const pendingRef = useRef(false);
+	const lastRefreshStartedRef = useRef(0);
+	const refreshTimerRef = useRef<number | null>(null);
 	const queuedRef = useRef<UIEvent[]>([]);
 	const controllerRef = useRef<AbortController | null>(null);
 	const loadRef = useRef(load);
@@ -138,13 +141,26 @@ export function useLiveResource<T>({ initial, load, reduce }: LiveResourceOption
 			pendingRef.current = true;
 			return;
 		}
+		const delay = lastRefreshStartedRef.current + MIN_REFRESH_INTERVAL_MS - Date.now();
+		if (delay > 0) {
+			pendingRef.current = true;
+			if (refreshTimerRef.current === null) {
+				refreshTimerRef.current = window.setTimeout(() => {
+					refreshTimerRef.current = null;
+					pendingRef.current = false;
+					if (mountedRef.current) void refresh();
+				}, delay);
+			}
+			return;
+		}
 		inFlightRef.current = true;
+		lastRefreshStartedRef.current = Date.now();
 		pendingRef.current = false;
 		queuedRef.current = [];
 		const controller = new AbortController();
 		controllerRef.current = controller;
 		try {
-			let next = (await loadRef.current(controller.signal)) as T;
+			let next = (await loadRef.current(controller.signal, valueRef.current)) as T;
 			let needsRefresh = false;
 			// Drain the queue instead of iterating it: the stream keeps appending
 			// while the fetch is in flight, so the replay must not race with those
@@ -212,6 +228,7 @@ export function useLiveResource<T>({ initial, load, reduce }: LiveResourceOption
 		return () => {
 			mountedRef.current = false;
 			controllerRef.current?.abort();
+			if (refreshTimerRef.current !== null) window.clearTimeout(refreshTimerRef.current);
 			window.clearInterval(interval);
 			document.removeEventListener("visibilitychange", reconcileVisible);
 			window.removeEventListener("focus", reconcileVisible);
@@ -219,7 +236,11 @@ export function useLiveResource<T>({ initial, load, reduce }: LiveResourceOption
 		};
 	}, [commit, refresh]);
 
-	return { value, connected, error, refresh };
+	const update = useCallback((updater: (current: T) => T) => {
+		commit(updater(valueRef.current));
+	}, [commit]);
+
+	return { value, connected, error, refresh, update };
 }
 
 export async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T> {

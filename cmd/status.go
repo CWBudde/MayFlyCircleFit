@@ -63,6 +63,12 @@ type jobResponse struct {
 	Error           string     `json:"error,omitempty"`
 }
 
+type jobListPageResponse struct {
+	Jobs       []jobResponse `json:"jobs"`
+	NextCursor string        `json:"nextCursor,omitempty"`
+	Total      *int          `json:"total"`
+}
+
 type apiErrorResponse struct {
 	Error struct {
 		Code    string `json:"code"`
@@ -100,30 +106,115 @@ func runStatus(cmd *cobra.Command, args []string) error {
 }
 
 func listJobs(ctx context.Context, output io.Writer, endpoint string) error {
-	body, err := requestCLI(ctx, http.MethodGet, endpoint)
+	pageEndpoint, err := jobListPageEndpoint(endpoint, "")
+	if err != nil {
+		return fmt.Errorf("query jobs: %w", err)
+	}
+	body, err := requestCLI(ctx, http.MethodGet, pageEndpoint)
 	if err != nil {
 		return fmt.Errorf("query jobs: %w", err)
 	}
 
-	var jobs []jobResponse
-	if err := decodeCLIResponse(body, &jobs); err != nil {
-		return fmt.Errorf("decode jobs response: %w", err)
-	}
-	if jobs == nil {
-		return errors.New("invalid jobs response: expected a JSON array")
-	}
-	for i := range jobs {
-		if err := jobs[i].validate(false); err != nil {
-			return fmt.Errorf("invalid jobs response at index %d: %w", i, err)
+	// Servers predating pagination return a bare array even when the query
+	// parameters are present. Keep accepting that response during upgrades.
+	if bytes.HasPrefix(bytes.TrimSpace(body), []byte("[")) {
+		var jobs []jobResponse
+		if err := decodeCLIResponse(body, &jobs); err != nil {
+			return fmt.Errorf("decode jobs response: %w", err)
 		}
+		if jobs == nil {
+			return errors.New("invalid jobs response: expected a JSON array")
+		}
+		if err := validateJobListPage(jobs, 0); err != nil {
+			return err
+		}
+		if len(jobs) == 0 {
+			fmt.Fprintln(output, "No jobs found")
+			return nil
+		}
+		fmt.Fprintf(output, "Found %d job(s):\n\n", len(jobs))
+		writeJobList(output, jobs)
+		return nil
 	}
 
-	if len(jobs) == 0 {
+	var page jobListPageResponse
+	if err := decodeCLIResponse(body, &page); err != nil {
+		return fmt.Errorf("decode jobs response: %w", err)
+	}
+	if page.Jobs == nil || page.Total == nil || *page.Total < len(page.Jobs) || *page.Total < 0 {
+		return errors.New("invalid jobs response: expected a paginated job collection")
+	}
+	if err := validateJobListPage(page.Jobs, 0); err != nil {
+		return err
+	}
+	if *page.Total == 0 {
 		fmt.Fprintln(output, "No jobs found")
 		return nil
 	}
 
-	fmt.Fprintf(output, "Found %d job(s):\n\n", len(jobs))
+	fmt.Fprintf(output, "Found %d job(s):\n\n", *page.Total)
+	writeJobList(output, page.Jobs)
+	seenCursors := make(map[string]struct{})
+	seenJobs := len(page.Jobs)
+	for page.NextCursor != "" {
+		if len(page.Jobs) == 0 {
+			return errors.New("invalid jobs response: empty page has a continuation cursor")
+		}
+		if _, exists := seenCursors[page.NextCursor]; exists {
+			return errors.New("invalid jobs response: repeated continuation cursor")
+		}
+		seenCursors[page.NextCursor] = struct{}{}
+		pageEndpoint, err = jobListPageEndpoint(endpoint, page.NextCursor)
+		if err != nil {
+			return fmt.Errorf("query jobs: %w", err)
+		}
+		body, err = requestCLI(ctx, http.MethodGet, pageEndpoint)
+		if err != nil {
+			return fmt.Errorf("query jobs: %w", err)
+		}
+		page = jobListPageResponse{}
+		if err := decodeCLIResponse(body, &page); err != nil {
+			return fmt.Errorf("decode jobs response: %w", err)
+		}
+		if page.Jobs == nil || page.Total == nil || *page.Total < len(page.Jobs) || *page.Total < 0 {
+			return errors.New("invalid jobs response: expected a paginated job collection")
+		}
+		if err := validateJobListPage(page.Jobs, seenJobs); err != nil {
+			return err
+		}
+		writeJobList(output, page.Jobs)
+		seenJobs += len(page.Jobs)
+	}
+
+	return nil
+}
+
+func jobListPageEndpoint(endpoint, cursor string) (string, error) {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("parse server URL: %w", err)
+	}
+	query := parsed.Query()
+	query.Set("limit", "100")
+	if cursor == "" {
+		query.Del("cursor")
+	} else {
+		query.Set("cursor", cursor)
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
+
+func validateJobListPage(jobs []jobResponse, offset int) error {
+	for i := range jobs {
+		if err := jobs[i].validate(false); err != nil {
+			return fmt.Errorf("invalid jobs response at index %d: %w", offset+i, err)
+		}
+	}
+	return nil
+}
+
+func writeJobList(output io.Writer, jobs []jobResponse) {
 	for _, job := range jobs {
 		fmt.Fprintf(output, "Job ID: %s\n", job.ID)
 		fmt.Fprintf(output, "  State: %s\n", job.State)
@@ -134,8 +225,6 @@ func listJobs(ctx context.Context, output io.Writer, endpoint string) error {
 		}
 		fmt.Fprintln(output)
 	}
-
-	return nil
 }
 
 func getJobStatus(ctx context.Context, output io.Writer, endpoint, jobID string) error {
@@ -220,8 +309,22 @@ func (job jobResponse) validate(statusResponse bool) error {
 	if job.Config == nil {
 		return errors.New("config is required")
 	}
-	if err := job.Config.Validate(); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
+	if statusResponse {
+		if err := job.Config.Validate(); err != nil {
+			return fmt.Errorf("invalid config: %w", err)
+		}
+	} else {
+		if strings.TrimSpace(job.Config.RefPath) == "" {
+			return errors.New("config.refPath is required")
+		}
+		switch job.Config.Mode {
+		case app.ModeJoint, app.ModeSequential, app.ModeBatch:
+		default:
+			return fmt.Errorf("invalid config mode %q", job.Config.Mode)
+		}
+		if job.Config.Circles < 1 || job.Config.Circles > app.MaxCircles {
+			return fmt.Errorf("config.circles must be between 1 and %d", app.MaxCircles)
+		}
 	}
 	if job.Iterations == nil || *job.Iterations < 0 {
 		return errors.New("iterations must be present and non-negative")

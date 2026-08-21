@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchJSON, useLiveResource } from "./live";
 import type { UIEvent } from "./live";
 
@@ -18,7 +18,7 @@ type JobListItem = {
 type RawJob = {
 	id: string;
 	state: string;
-	config: { ref: string; refPath?: string; mode: string; circles: number };
+	config: { ref?: string; refPath?: string; mode: string; circles: number };
 	iterations: number;
 	bestCost: number;
 	initialCost: number;
@@ -26,14 +26,31 @@ type RawJob = {
 	error?: string;
 };
 
-function readSeed(root: HTMLElement): JobListItem[] {
+type RawJobPage = {
+	jobs: RawJob[];
+	nextCursor?: string;
+	total: number;
+};
+
+type JobPage = {
+	jobs: JobListItem[];
+	nextCursor?: string;
+	total: number;
+};
+
+const JOB_PAGE_SIZE = 100;
+
+function readSeed(root: HTMLElement): JobPage {
 	const script = root.querySelector<HTMLScriptElement>("#job-list-page");
-	if (!script) return [];
+	if (!script) return { jobs: [], total: 0 };
 	try {
-		const value = JSON.parse(script.textContent || "[]") as JobListItem[];
-		return Array.isArray(value) ? value : [];
+		const value = JSON.parse(script.textContent || "{}") as JobPage | JobListItem[];
+		if (Array.isArray(value)) return { jobs: value, total: value.length };
+		return Array.isArray(value.jobs) && Number.isSafeInteger(value.total)
+			? value
+			: { jobs: [], total: 0 };
 	} catch {
-		return [];
+		return { jobs: [], total: 0 };
 	}
 }
 
@@ -52,20 +69,103 @@ function fromRaw(job: RawJob): JobListItem {
 	};
 }
 
-function reduceJobs(current: JobListItem[], event: UIEvent) {
-	if (event.type === "job.upsert" || event.type === "job.deleted") {
-		return { value: current, refresh: true };
+function fromRawPage(page: RawJobPage): JobPage {
+	return { jobs: page.jobs.map(fromRaw), nextCursor: page.nextCursor, total: page.total };
+}
+
+function mergeFirstPage(current: JobPage, fresh: JobPage): JobPage {
+	const firstIDs = new Set(fresh.jobs.map((job) => job.id));
+	const jobs = [...fresh.jobs, ...current.jobs.filter((job) => !firstIDs.has(job.id))];
+	return {
+		jobs,
+		total: fresh.total,
+		nextCursor: jobs.length >= fresh.total ? undefined : current.nextCursor ?? fresh.nextCursor,
+	};
+}
+
+function reduceJobs(current: JobPage, event: UIEvent) {
+	if (event.type === "job.deleted" && event.jobId) {
+		const jobs = current.jobs.filter((job) => job.id !== event.jobId);
+		return { value: { ...current, jobs, total: Math.max(0, current.total - (jobs.length < current.jobs.length ? 1 : 0)) } };
+	}
+	if (event.type === "job.upsert" && event.jobId && event.progress) {
+		const index = current.jobs.findIndex((job) => job.id === event.jobId);
+		if (index < 0) {
+			// A newly-created job belongs at the head. Terminal events for older,
+			// unloaded jobs do not need to disturb the user's scroll position.
+			return { value: current, refresh: event.progress.state === "pending" };
+		}
+		const jobs = [...current.jobs];
+		jobs[index] = {
+			...jobs[index],
+			state: event.progress.state,
+			iterations: event.progress.iterations,
+			bestCost: event.progress.bestCost,
+		};
+		return { value: { ...current, jobs } };
 	}
 	return { value: current };
 }
 
 export function JobListIsland({ root }: { root: HTMLElement }) {
 	const initial = useMemo(() => readSeed(root), [root]);
-	const { value: jobs, connected, error } = useLiveResource({
+	const { value, connected, error, update } = useLiveResource({
 		initial,
-		load: async (signal) => (await fetchJSON<RawJob[]>("/api/v1/jobs", signal)).map(fromRaw),
+		load: async (signal, current) => mergeFirstPage(
+			current,
+			fromRawPage(await fetchJSON<RawJobPage>(`/api/v1/jobs?limit=${JOB_PAGE_SIZE}`, signal)),
+		),
 		reduce: reduceJobs,
 	});
+	const [loadingMore, setLoadingMore] = useState(false);
+	const [pageError, setPageError] = useState<string | null>(null);
+	const sentinelRef = useRef<HTMLDivElement | null>(null);
+	const pageControllerRef = useRef<AbortController | null>(null);
+
+	const loadMore = useCallback(async () => {
+		const cursor = value.nextCursor;
+		if (!cursor || pageControllerRef.current) return;
+		setLoadingMore(true);
+		setPageError(null);
+		const controller = new AbortController();
+		pageControllerRef.current = controller;
+		try {
+			const next = fromRawPage(await fetchJSON<RawJobPage>(
+				`/api/v1/jobs?limit=${JOB_PAGE_SIZE}&cursor=${encodeURIComponent(cursor)}`,
+				controller.signal,
+			));
+			update((current) => {
+				if (current.nextCursor !== cursor) return current;
+				const seen = new Set(current.jobs.map((job) => job.id));
+				return {
+					jobs: [...current.jobs, ...next.jobs.filter((job) => !seen.has(job.id))],
+					nextCursor: next.nextCursor,
+					total: next.total,
+				};
+			});
+		} catch (reason) {
+			if (!controller.signal.aborted) {
+				setPageError(reason instanceof Error ? reason.message : "Unable to load more jobs");
+			}
+		} finally {
+			if (pageControllerRef.current === controller) pageControllerRef.current = null;
+			if (!controller.signal.aborted) setLoadingMore(false);
+		}
+	}, [update, value.nextCursor]);
+
+	useEffect(() => {
+		const sentinel = sentinelRef.current;
+		if (!sentinel || !value.nextCursor || loadingMore) return;
+		const observer = new IntersectionObserver((entries) => {
+			if (entries.some((entry) => entry.isIntersecting)) void loadMore();
+		}, { rootMargin: "500px 0px" });
+		observer.observe(sentinel);
+		return () => observer.disconnect();
+	}, [loadMore, loadingMore, value.nextCursor]);
+
+	useEffect(() => () => pageControllerRef.current?.abort(), []);
+
+	const jobs = value.jobs;
 	return (
 		<div>
 			<div style={{ marginBottom: "2rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -83,8 +183,18 @@ export function JobListIsland({ root }: { root: HTMLElement }) {
 					{jobs.map((job) => <JobCard key={job.id} job={job} />)}
 				</div>
 			)}
+			<div ref={sentinelRef} style={{ textAlign: "center", padding: value.nextCursor ? "1.5rem" : "0.5rem" }}>
+				{value.nextCursor ? (
+					<button className="btn" type="button" onClick={() => void loadMore()} disabled={loadingMore}>
+						{loadingMore ? "Loading more jobs…" : "Load more jobs"}
+					</button>
+				) : jobs.length > 0 ? (
+					<span style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>All {value.total} jobs loaded</span>
+				) : null}
+				{pageError ? <div style={{ color: "var(--error-text)", marginTop: "0.5rem" }}>{pageError}</div> : null}
+			</div>
 			<p style={{ color: "var(--text-muted)", fontSize: "0.875rem", marginTop: "1rem" }}>
-				Live updates: {connected ? "connected" : "reconnecting"}{error ? ` · ${error}` : ""}
+				Showing {jobs.length} of {value.total} · Live updates: {connected ? "connected" : "reconnecting"}{error ? ` · ${error}` : ""}
 			</p>
 		</div>
 	);

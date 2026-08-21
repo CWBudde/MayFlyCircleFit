@@ -53,7 +53,7 @@ func (s *Server) handleCampaignList(w http.ResponseWriter, r *http.Request) {
 		schedules = append(schedules, summarizeCampaign(&records[i], stages))
 	}
 
-	chains := chainCampaignSummaries(s.discoverAllChains())
+	chains := chainCampaignSummaries(s.cachedAllChains())
 	s.renderCampaignPage(w, r, ui.CampaignListPage(schedules, chains, ""))
 }
 
@@ -87,7 +87,7 @@ func (s *Server) handleCampaignViewList(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(campaignViewList{
 		Schedules: schedules,
-		Chains:    chainCampaignSummaries(s.discoverAllChains()),
+		Chains:    chainCampaignSummaries(s.cachedAllChains()),
 	})
 }
 
@@ -206,7 +206,7 @@ func (s *Server) handleChains(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(chainSummaryWires(s.discoverAllChains()))
+	_ = json.NewEncoder(w).Encode(chainSummaryWires(s.cachedAllChains()))
 }
 
 // discoverAllChains lists every hand-driven chain the server can reconstruct,
@@ -235,6 +235,29 @@ func (s *Server) discoverAllChains() []discoveredChain {
 	}
 	sortDiscoveredChains(chains)
 	return chains
+}
+
+// cachedAllChains is the shared campaign-list read model. Discovery is O(the
+// entire checkpoint history), so every listing endpoint shares one result and
+// job lifecycle changes invalidate it explicitly instead of expiring it while
+// a browser is polling.
+func (s *Server) cachedAllChains() []discoveredChain {
+	s.chainCacheMu.Lock()
+	defer s.chainCacheMu.Unlock()
+	if !s.chainCacheValid {
+		s.chainCache = s.discoverAllChains()
+		s.chainCacheValid = true
+	}
+	result := make([]discoveredChain, len(s.chainCache))
+	copy(result, s.chainCache)
+	return result
+}
+
+func (s *Server) invalidateChainCache() {
+	s.chainCacheMu.Lock()
+	s.chainCache = nil
+	s.chainCacheValid = false
+	s.chainCacheMu.Unlock()
 }
 
 // chainProjects names the projects to scan. The registry already holds the

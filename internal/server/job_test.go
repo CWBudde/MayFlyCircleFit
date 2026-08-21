@@ -263,6 +263,32 @@ func TestJobManager_ListJobs(t *testing.T) {
 	}
 }
 
+func TestJobManagerListSummariesDoesNotCarryOptimizerHistory(t *testing.T) {
+	jm := NewJobManager()
+	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
+	end := time.Now()
+	candidate := 5.0
+	if err := jm.UpdateJob(job.ID, func(live *Job) {
+		live.BestParams = make([]float64, 21_000)
+		live.MetricHistory = make([]MetricSample, 10_000)
+		live.CandidateCost = &candidate
+		live.EndTime = &end
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	summaries := jm.ListJobSummaries()
+	if len(summaries) != 1 || summaries[0].ID != job.ID {
+		t.Fatalf("summaries = %+v", summaries)
+	}
+	*summaries[0].CandidateCost = 99
+	*summaries[0].EndTime = time.Time{}
+	unchanged, _ := jm.GetJob(job.ID)
+	if *unchanged.CandidateCost != candidate || unchanged.EndTime.IsZero() {
+		t.Fatal("job summary aliases live job state")
+	}
+}
+
 func TestJobManager_UpdateJob(t *testing.T) {
 	jm := NewJobManager()
 
