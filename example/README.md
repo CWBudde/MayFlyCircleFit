@@ -196,9 +196,9 @@ The optimizer determines for each circle:
 
 ## Handcrafted campaign: `christian-16-handcrafted-v6.json`
 
-The campaigns in this directory all target `Christian_after.jpeg` and all start
-from a random population. This one does not: its first eight circles were placed
-by hand, from looking at the image, and the campaign grows them to sixteen.
+The `Christian_after.jpeg` campaigns above all start from a random population.
+This one does not: its first eight circles were placed by hand, from looking at
+the image, and the campaign grows them to sixteen.
 
 The eight, painted back to front — a light gray backdrop, a navy shirt whose
 centre sits below the canvas so only its cap shows, a dark hair mass, the face
@@ -285,8 +285,8 @@ the exercise.
 | 9 | Abdomen | 205 | 325 | 14 | `#6f6044` | 0.8 |
 | 10 | Thorax and head | 330 | 308 | 16 | `#776c50` | 0.85 |
 
-Circles 5 and 6 have centres below the canvas so only their caps show — the rock
-and the water are edges, not discs.
+Circle 5 is clipped at the lower edge and circle 6 has its centre below the
+canvas so only its cap shows — the rock and the water are edges, not discs.
 
 ```sh
 mayflycirclefit score --ref example/MayFly-512.png \
@@ -352,8 +352,8 @@ mayflycirclefit schedule create example/mayfly-3000-campaign.json
 
 ### Why the base stage searches
 
-The base runs a real 600-iteration batch over the ten hand-placed circles rather
-than `"iters": 1`. That is forced, not preferred: the optimizer-level stop
+The base runs a real batch over the ten hand-placed circles — 2 epochs of 600
+iterations, so 1200 nominal optimizer iterations — rather than `"iters": 1`. That is forced, not preferred: the optimizer-level stop
 fields live on the base `JobConfig` and are validated against the base's own
 `iters`, so a record-only base cannot carry `stopStagnationIters: 250` — and
 those fields cannot be overridden per step, so the whole 2990-stage campaign
