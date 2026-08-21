@@ -26,7 +26,7 @@ func (a openCLAdapter) newSession(circleCount int) (Renderer, func(), error) {
 		// Sessions initialise their own device state, so they fail the same ways
 		// construction does. Normalise here too, or a staged or parallel stage
 		// would report a device failure that errors.Is cannot recognise.
-		return nil, cleanup, fmt.Errorf("%w: %v", ErrBackendUnavailable, err)
+		return nil, cleanup, fmt.Errorf("%w: %w", ErrBackendUnavailable, err)
 	}
 	return openCLAdapter{session}, cleanup, nil
 }
@@ -39,7 +39,7 @@ func NewOpenCLRenderer(reference *image.NRGBA, k int) (Renderer, func(), error) 
 
 	r, cleanup, err := opencl.New(reference, k, newFallback)
 	if err != nil {
-		return nil, cleanup, fmt.Errorf("%w: %v", ErrBackendUnavailable, err)
+		return nil, cleanup, fmt.Errorf("%w: %w", ErrBackendUnavailable, err)
 	}
 	return openCLAdapter{r}, cleanup, nil
 }

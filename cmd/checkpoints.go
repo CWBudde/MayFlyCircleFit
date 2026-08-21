@@ -166,7 +166,10 @@ func runCleanCheckpoints(cmd *cobra.Command, args []string) error {
 	if !forceClean {
 		fmt.Print("\nProceed with deletion? [y/N]: ")
 		var response string
-		fmt.Scanln(&response)
+		// A read failure — a closed or non-interactive stdin — leaves response
+		// empty, which falls through to the abort below. Ignoring the error is
+		// the fail-safe branch here: the only way to delete is to type y.
+		_, _ = fmt.Scanln(&response)
 		if response != "y" && response != "Y" {
 			fmt.Println("Aborted.")
 			return nil

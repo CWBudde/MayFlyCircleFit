@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"image"
 	_ "image/jpeg"
-	"image/png"
 	"io"
 	"log/slog"
 	"net/http"
@@ -379,11 +378,5 @@ func newResumeJointProblem(rend renderer.Renderer, circles int) resumeJointProbl
 
 // Helper to save image
 func saveImage(img image.Image, path string) error {
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	return png.Encode(file, img)
+	return writePNG(path, img)
 }

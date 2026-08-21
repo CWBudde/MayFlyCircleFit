@@ -1107,11 +1107,27 @@ customization workflow.
 
 **Goal:** Make this shippable to users.
 
-### Task 13.1: Comprehensive Error Handling
-- [ ] Audit all error paths in codebase
-  - [ ] Identify missing error checks
-  - [ ] Ensure all errors are properly wrapped with context
-  - [ ] Use consistent error wrapping (e.g., `fmt.Errorf("context: %w", err)`)
+### Task 13.1: Comprehensive Error Handling ✅
+- [x] Audit all error paths in codebase (errcheck over `./...`)
+  - [x] Identify missing error checks. The ones that mattered were dropped
+        errors on files being *written*, where a deferred close discards the
+        only report that the bytes never landed: the output PNG in `run` and
+        `resume` (now one `writePNG`/`encodePNG` helper that returns the close
+        error), and the CPU/memory profile writes in `run` and `serve`. Four
+        bare `json.NewEncoder(w).Encode` calls in `server.go` now log like
+        their neighbours, and the 22 templ renders in `ui_handlers.go` go
+        through `renderCreateJobError`, which logs instead of dropping.
+  - [x] Ensure all errors are properly wrapped with context
+  - [x] Use consistent error wrapping (e.g., `fmt.Errorf("context: %w", err)`).
+        The seven `fmt.Errorf("%w: … %v", sentinel, err)` sites in `pipeline.go`
+        and `renderer_opencl_gpu.go` flattened the cause into the message; they
+        now wrap both, so `errors.Is` reaches the underlying failure and not
+        just the sentinel.
+  - [x] The remaining errcheck hits are deliberate and left as they are:
+        `defer Close()` on nine read-only handles (nothing to lose), the y/N
+        `fmt.Scanln` (a read failure leaves the answer empty, which aborts),
+        and `MarkFlagRequired` (fails only on a flag that does not exist). The
+        last two carry a comment saying so.
 - [x] Improve server error responses
   - [x] Consistent JSON error format: `{"error": {"code": "ERROR_CODE", "message": "message"}}`
         on every `/api/v1` route
@@ -1122,11 +1138,35 @@ customization workflow.
   - [x] Clear error messages for common failures
   - [x] Exit codes: 0=success, 1=error, 2=usage error (`cmd.UsageError`)
   - [x] Suggest fixes when possible (e.g., "image not found: check path")
-- [ ] Test error scenarios systematically
+- [x] Test error scenarios systematically
   - [x] Invalid inputs, missing files, permission denied (unit level)
-  - [ ] Network errors, out of memory, disk full
-  - [ ] GPU unavailable, optimizer failures
-- [x] Document common errors and solutions (`docs/troubleshooting.md`)
+  - [x] Network errors (`cmd/network_errors_test.go`): a refused connection
+        reaches the entry point as a `*url.Error` wrapping `ECONNREFUSED`, a
+        body that ends early is not decoded as if complete, and a server that
+        never answers is abandoned at the deadline rather than hung on.
+  - [x] Disk full (`cmd/artifacts_test.go`): `/dev/full` gives a real `ENOSPC`,
+        which arrives as a `*os.PathError` the CLI can suggest against. On that
+        device the failure surfaces at the encode and the close succeeds, so the
+        close-only case — the actual regression, a truncated image reported as
+        success — is covered separately through an injected `io.WriteCloser`.
+  - [x] Out of memory (`internal/app/memory_guards_test.go`): a Go heap
+        exhaustion is a fatal runtime error and cannot be caught, recovered, or
+        asserted on, so there is no honest test of the condition itself. What is
+        tested is the bound that keeps a request from asking for the
+        allocation, including the overflow inputs that would defeat a
+        `width*height` formulation of the pixel check.
+  - [x] GPU unavailable (`internal/fit/renderer/backend_unavailable_test.go`):
+        the portable build fails with `ErrBackendUnavailable`, a safe cleanup,
+        and a reason naming the missing build tag. The device-level failures go
+        through the same normalisation but need a prepared OpenCL runner, so
+        CPU-only CI cannot reach them.
+  - [x] Optimizer failures (`internal/fit/renderer/failure_paths_test.go`):
+        joint, sequential, and batch each propagate a failure from the first and
+        a later stage rather than returning a partial fit, and a malformed
+        result keeps its specific complaint reachable through the wrap.
+- [x] Document common errors and solutions (`docs/troubleshooting.md`),
+      including a "Resource and environment failures" section for the
+      filesystem, network, memory, GPU, and optimizer cases above.
 
 ### Task 13.2: Input Validation and Sanitization ✅
 - [x] Validate all API inputs

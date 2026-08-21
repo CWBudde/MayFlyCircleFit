@@ -902,7 +902,9 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(jobs)
+	if err := json.NewEncoder(w).Encode(jobs); err != nil {
+		slog.Error("Failed to encode job list response", "error", err)
+	}
 }
 
 // filterJobsByProject keeps jobs belonging to slug, treating an empty project
@@ -996,7 +998,9 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 	response.CandidatePSNR, response.CandidatePSNRInfinite = serializableCandidatePSNR(job.CandidateCost)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		slog.Error("Failed to encode job status response", "error", err)
+	}
 }
 
 func (s *Server) jobActions(job *Job) jobActions {
@@ -1334,7 +1338,9 @@ func (s *Server) resumePausedJob(w http.ResponseWriter, jobID string) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		slog.Error("Failed to encode resume-job response", "error", err)
+	}
 }
 
 // forkJobFromCheckpoint seeds a new job from a stopped job's checkpoint. The
@@ -1420,7 +1426,9 @@ func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		slog.Error("Failed to encode fork-job response", "error", err)
+	}
 }
 
 // handlePolishJob creates a continuation that runs only transactional

@@ -183,7 +183,7 @@ func OptimizeJointContext(ctx context.Context, base Renderer, optimizer opt.Opti
 			stagesStoppedEarly = 1
 		}
 		if err := validateParamLength(outcome.Params, dim); err != nil {
-			return nil, fmt.Errorf("%w: optimizer result: %v", ErrInvalidOptimizationInput, err)
+			return nil, fmt.Errorf("%w: optimizer result: %w", ErrInvalidOptimizationInput, err)
 		}
 		candidateCost := evaluate(outcome.Params)
 		if parameterBounds.ValidVector(outcome.Params) && candidateCost <= bestCost {
@@ -314,7 +314,7 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 		}
 		if err := validateParamLength(candidateCircle, paramsPerCircle); err != nil {
 			cleanup()
-			return nil, fmt.Errorf("%w: optimizer result for circle %d: %v", ErrInvalidOptimizationInput, circleNum, err)
+			return nil, fmt.Errorf("%w: optimizer result for circle %d: %w", ErrInvalidOptimizationInput, circleNum, err)
 		}
 
 		candidateCost := evaluate(candidateCircle)
@@ -499,7 +499,7 @@ func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 		seedParams, err := SeedParamsFromResidual(currentCanvas, base.Reference(), stageCircles, ResidualSeedOptions{})
 		if err != nil {
 			cleanup()
-			return nil, fmt.Errorf("%w: seed batch %d: %v", ErrInvalidOptimizationInput, stages+1, err)
+			return nil, fmt.Errorf("%w: seed batch %d: %w", ErrInvalidOptimizationInput, stages+1, err)
 		}
 		seedCost := evaluate(seedParams)
 		progressPrefix := append([]float64(nil), bestParams...)
@@ -526,7 +526,7 @@ func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 		}
 		if err := validateParamLength(candidateBatch, dim); err != nil {
 			cleanup()
-			return nil, fmt.Errorf("%w: optimizer result for batch %d: %v", ErrInvalidOptimizationInput, stages, err)
+			return nil, fmt.Errorf("%w: optimizer result for batch %d: %w", ErrInvalidOptimizationInput, stages, err)
 		}
 
 		retainedBatch := []float64(nil)
@@ -836,7 +836,7 @@ func finishStagedResult(base Renderer, params []float64, bestCost, initialCost f
 
 func finishResult(session Renderer, params []float64, bestCost, initialCost float64, evaluations, stages, optimizedCircles int) (*OptimizationResult, error) {
 	if err := validateParamLength(params, session.Dim()); err != nil {
-		return nil, fmt.Errorf("%w: final result: %v", ErrInvalidOptimizationInput, err)
+		return nil, fmt.Errorf("%w: final result: %w", ErrInvalidOptimizationInput, err)
 	}
 	return &OptimizationResult{
 		BestParams:       append([]float64(nil), params...),
