@@ -70,6 +70,16 @@ Rendering-side invariants live in
 - Acceptance stays serial: a sweep is committed only after the merged candidate
   is re-evaluated on the full session and `sweepKeepsCirclesUseful` clears it.
   Pooling applies to candidate evaluation only.
+- CPU polishing candidates are scored over the exact union of every active
+  circle's incumbent and proposed raster. The incumbent image and its integer
+  RGB SSD provide the constant remainder; affected pixels are restored from
+  the baked-prefix canvas, suffix circles are recomposited only where they
+  intersect the union, and signed delta SSD preserves `FastMSECost` exactly.
+  The evaluator falls back to a full render above the measured 5% affected-pixel
+  threshold, and an obviously canvas-sized disc is rejected by a conservative
+  preflight before its span mask is built. This is CPU-only; unsupported or
+  custom-cost sessions retain full evaluation. Acceptance still re-evaluates
+  the complete vector independently of this optimization.
 - `--fast-compositing` is opt-in and defaults off, because it changes the
   result of a fixed seed. It is accurate to +/-1 per channel, not byte-identical
   to the default compositor. Compare runs only against runs with the same

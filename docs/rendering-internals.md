@@ -119,6 +119,16 @@ Related documents:
 - CPU renderers use `FastMSECost` after parity coverage against `MSECost`.
   Independent image origins and strides, empty images, and dimension-mismatch
   behavior all have dedicated correctness handling and tests.
+- Active-set polishing adds a second exact delta-SSD use. One immutable
+  incumbent image/SSD pair is shared by the sweep's CPU sessions. Each session
+  tracks the old/new active-disc union as normalized horizontal spans, restores
+  those spans from its baked-prefix background, clips suffix compositing to the
+  span set, and reduces only the candidate/incumbent/reference triples in those
+  spans. This is not the staged incremental path: its baseline is a complete
+  incumbent rather than the session's initial canvas, and it must include both
+  old and proposed geometry. Above 5% affected pixels it uses the ordinary full
+  renderer, based on the crossover recorded in
+  `contiguous-window-polish-report.md`.
 
 ## Profile-guided work
 

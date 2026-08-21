@@ -5,11 +5,15 @@ take precedence if this document goes stale.
 
 ## Read before broad changes
 
+- [`docs/architecture.md`](docs/architecture.md) — package ownership and the
+  CLI, server, renderer, persistence, schedule, and web-UI data flows.
 - [`docs/behavior-invariants.md`](docs/behavior-invariants.md) — observable
   behavior that must stay explicit (backends, SIMD dispatch, parallel
   evaluation, polishing, determinism, early stopping, server trust boundary).
 - [`docs/rendering-internals.md`](docs/rendering-internals.md) — SIMD SSD
   kernels, dispatch, and CPU span compositing.
+- [`docs/polishing-throughput-report.md`](docs/polishing-throughput-report.md)
+  — polishing session-pool and active-set performance tradeoffs.
 - [`docs/schedule-format.md`](docs/schedule-format.md) — the schedule document
   format, its worked example, and when two campaigns' costs are comparable.
 - [`docs/support-matrix.md`](docs/support-matrix.md),

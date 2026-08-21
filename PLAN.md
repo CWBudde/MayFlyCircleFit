@@ -387,23 +387,23 @@ Two traps the measurement already exposes:
   discs, computed from the candidate's own parameters, with a full-canvas
   fallback when that union exceeds a break-even fraction.
 
-- [ ] Add a dirty-region evaluator: baseline composite plus baseline SSD total,
+- [x] Add a dirty-region evaluator: baseline composite plus baseline SSD total,
       per-candidate affected-pixel set from old-disc union new-disc, recomposite
       and rescore only those pixels, and fold in the constant remainder.
-- [ ] Fall back to full-canvas evaluation when the affected fraction exceeds the
+- [x] Fall back to full-canvas evaluation when the affected fraction exceeds the
       measured break-even point, so a large-radius candidate cannot be slower
       than it is today.
 - [ ] Re-measure the sweep above and record per-candidate cost against affected
       fraction in `docs/contiguous-window-polish-report.md`.
-- [ ] Re-check whether 15.3's prefix-aware selection is still worth its quality
+- [x] Re-check whether 15.3's prefix-aware selection is still worth its quality
       risk once evaluation no longer scales with the prefix.
 
 **Acceptance Checks:**
 
-- [ ] A test asserts the dirty-region evaluator and the full-canvas evaluator
+- [x] A test asserts the dirty-region evaluator and the full-canvas evaluator
       return the same cost for the same parameters, across active sets that are
       scattered, clustered, canvas-edge-crossing, and radius-growing.
-- [ ] A benchmark reports per-candidate cost at 512 and 2 000+ circles for both
+- [x] A benchmark reports per-candidate cost at 512 and 2 000+ circles for both
       evaluators, including the affected fraction and the fallback rate.
 - [ ] The 599 s sweep above is re-run at equal budget and its wall clock
       recorded; the cost it reaches is unchanged.
@@ -662,6 +662,53 @@ documentation work can remain compact.
 - [ ] Kill and restart the server while viewing the dashboard; verify the client
   reconnects, refetches, and converges without a navigation.
 
+### Task 17.12: Bound the Restore-Path Resident Set (P2)
+
+Task 17.11's restart check passes, but the restart itself is the expensive part.
+`restorePersistedJobs` (`internal/server/restore.go`) loads every job on disk
+into memory and keeps it there for the process lifetime: `LoadCheckpoint` per
+job pulls in the full `BestParams` vector, and `restoreJobTrace` rebuilds
+`MetricHistory` from every line of every `trace.jsonl`. The collection endpoints
+no longer do this per request — the `checkpoint-info.json` sidecar added in #50
+projects a listing without touching parameters — but the restore path was not
+part of that change.
+
+Measured 2026-08-21 on the 3 000-circle demo campaign's data root (4 358 jobs,
+900 MB of checkpoints, 697 MB of traces):
+
+| | value |
+|---|---|
+| Startup to `Restored persisted jobs` | ~135 s (incl. one-off sidecar backfill) |
+| Resident baseline, idle | 1.34 GB |
+| Resident after 10 min of a running polish stage | 1.50 GB |
+| `GET /` | 5.3 s |
+
+The baseline is proportional to all history, not to what is being served, and
+the campaign adds ~2 900 more jobs at rising circle counts. The preceding OOM
+kill was caused by per-request re-parsing and is fixed; this is the floor that
+remains under it.
+
+- [ ] Restore from the `CheckpointInfo` sidecar and load `BestParams` lazily on
+      the paths that actually need a parameter vector (resume, extend, render,
+      artifact download).
+- [ ] Stop holding full `MetricHistory` for terminal jobs. The chart endpoints
+      can read the trace on demand or a downsampled summary can be persisted
+      beside the checkpoint; only running jobs need the live series in memory.
+- [ ] Serve `GET /` and `/api/v1/dashboard` from a cached sidecar index
+      invalidated by checkpoint writes, rather than re-walking the job tree.
+
+**Acceptance Checks:**
+
+- [ ] Resident set after restore is reported for 500, 2 000, and 4 000 persisted
+      jobs and is sub-linear in job count; record the host and the data root's
+      checkpoint and trace byte totals with the numbers.
+- [ ] `GET /` and `/api/v1/dashboard` latency is reported at the same three
+      sizes and does not grow with total job count.
+- [ ] A restored job still resumes, extends, and renders identically — a resumed
+      job reproduces the parent cost exactly, as in Task 15.9.
+- [ ] Job detail, campaign charts, and the trace download return the same series
+      as before for a terminal job whose history is no longer resident.
+
 ## Summary and Next Steps
 
 Completed implementation history is intentionally summarized above; detailed
@@ -675,9 +722,10 @@ Current open work, in priority order:
 2. **Correctness and throughput (P1):** Tasks 15.7 and 15.8, followed by the
    remaining Phase 15 measurement and optimization tasks.
 3. **Dashboard sign-off (P1):** Task 17.11.
-4. **Schedule quality (P2):** Tasks 16.8 and 16.9.
-5. **UX and supporting documentation (P2/P3):** Tasks 12.9 and 13.15.
-6. **Experimental backends/research:** Tasks 11.9–11.13 and 10.20.
+4. **Server memory (P2):** Task 17.12.
+5. **Schedule quality (P2):** Tasks 16.8 and 16.9.
+6. **UX and supporting documentation (P2/P3):** Tasks 12.9 and 13.15.
+7. **Experimental backends/research:** Tasks 11.9–11.13 and 10.20.
 
 Do not mark a check complete from its presence in code or CI configuration
 alone. Record the exact command or observed CI result for the revision, and

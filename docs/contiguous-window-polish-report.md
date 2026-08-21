@@ -279,6 +279,70 @@ Because `visitCounts` is rebuilt per `PolishCircleBatchContext` call
 968 and re-walks the cheap end before reaching the valuable one. See PLAN Task
 16.8.
 
+## Dirty-region candidate scoring
+
+**Measured 2026-08-21** on the same Ryzen 5 4600H host, Linux 7.0.0,
+Go 1.26.0, `GOMAXPROCS=12`, AVX2, and one render thread per evaluation. These
+measurements cover the Task 15.7 evaluator, which applies to every CPU
+polishing strategy; they are recorded here because dirty scoring removes the
+render-cost premise that originally motivated `contiguous-window`.
+
+Each sweep now renders its incumbent once and retains its exact integer RGB
+SSD. For a candidate, the evaluator builds a scanline-span union of every
+active circle's incumbent and candidate raster. It restores those pixels from
+the baked-prefix canvas, recomposites only suffix-circle intersections with
+the union, and adds the exact signed SSD delta to the incumbent total. Pixels
+outside the union are carried as the constant remainder. The session keeps the
+previous union so the next evaluation restores only pixels the previous
+candidate touched, rather than copying the complete incumbent canvas.
+
+The fallback threshold is 5% affected pixels. The forced-dirty crossover
+benchmark put the observed boundary between 7.90% and 15.76% on both sizes. At
+2,111 circles, dirty/full cost was 1.337/3.228 ms at 2.10%, 2.834/3.311 ms at
+7.90%, and 3.676/3.355 ms at 15.76%. At 512 circles, it was 0.698/1.728 ms,
+1.765/1.800 ms, and 2.874/2.141 ms at the same fractions. Five percent leaves
+margin below the narrow 7.90% win rather than treating one timing sample as the
+crossover itself. A summed-disc-area preflight also
+routes an obviously canvas-sized proposal directly to the full evaluator,
+without first walking its scanlines.
+
+`BenchmarkPolishCandidateCost`, 500 ms per case, three samples, reports the
+affected fraction and fallback rate alongside allocations. Medians:
+
+| Circles | Evaluator | Affected | Fallback | Time/candidate | Allocations |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 512 | dirty region | 0.1720% | 0% | 0.259 ms | 0 |
+| 512 | full canvas | 100% | n/a | 1.248 ms | 0 |
+| 2,111 | dirty region | 0.1728% | 0% | **0.814 ms** | 0 |
+| 2,111 | full canvas | 100% | n/a | 2.523 ms | 0 |
+| 512 | large-radius fallback | 97.88% | 100% | 3.097 ms | 0 |
+| 512 | same large candidate, direct full | 100% | n/a | 2.884 ms | 0 |
+| 2,111 | large-radius fallback | 98.01% | 100% | 2.143 ms | 0 |
+| 2,111 | same large candidate, direct full | 100% | n/a | 3.805 ms | 0 |
+
+The production-shaped 2,111-circle case is 3.1x faster per candidate. The
+large-radius cases are within run-to-run timing noise of direct full renders;
+the dispatch does not turn a legal large proposal into a dirty-region worst
+case. Setup storage is retained by the session, so the timed loops perform zero
+allocations per evaluation.
+
+The original 599 s live sweep cannot be re-run from this checkout: the
+2,111-circle checkpoint named in Task 15.7 is no longer present under
+`data/jobs` (the live campaign has advanced), and the checkpoint was not
+committed as a fixture. Consequently this report does **not** claim a new
+equal-budget wall clock or re-assert its 0.000 result. Exact cost parity is
+pinned instead across scattered, clustered, edge-clipped, and radius-growing
+active sets, including consecutive candidates and the full-canvas fallback.
+Preserving the missing checkpoint, or another immutable production fixture, is
+required before closing that final acceptance check.
+
+Dirty scoring also changes the Task 15.3 tradeoff. Prefix-aware active-set
+selection would still shorten the suffix traversal, and baked prefixes remain
+useful for the fallback, but ordinary dirty evaluations no longer rasterize
+the complete suffix or score the complete canvas. The remaining gain is not
+large enough here to justify changing which circles the optimizer can improve;
+keep selection quality-driven unless a new end-to-end profile shows otherwise.
+
 ## Recommendation
 
 - The default three sweeps are not enough for `contiguous-window` to be worth
@@ -321,6 +385,8 @@ the benchmarks before drawing a conclusion about a different workload.
 go test -run '^$' -bench BenchmarkPolishCircleBatchStrategy -benchtime 5x -count 3 ./internal/fit/renderer/
 go test -run '^$' -bench 'BenchmarkPolishStrategyQuality$' -benchtime 1x -count 3 -timeout 60m ./internal/fit/renderer/
 go test -run '^$' -bench BenchmarkPolishStrategyQualityAfterBatchFit -benchtime 1x -count 3 -timeout 60m ./internal/fit/renderer/
+go test -run '^$' -bench '^BenchmarkPolishCandidateCost$' -benchmem -benchtime 500ms -count 3 ./internal/fit/renderer/
+go test -run '^$' -bench '^BenchmarkPolishDirtyCrossover$' -benchmem -benchtime 150ms -count 1 ./internal/fit/renderer/
 ```
 
 The quality benchmarks report `final_cost`, `reduction_pct`, and

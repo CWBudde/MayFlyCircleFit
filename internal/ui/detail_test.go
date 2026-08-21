@@ -21,6 +21,7 @@ func TestJobDetailPageViewModes(t *testing.T) {
 		SSIM:        &ssim,
 		SSIMEnabled: true,
 		Iterations:  25, MaxIters: 100, Evaluations: 12_345,
+		Circles:       64,
 		BestCost:      12.5,
 		BestRevision:  7,
 		Parameters:    []CircleParameter{{Number: 1}},
@@ -36,6 +37,8 @@ func TestJobDetailPageViewModes(t *testing.T) {
 	for _, marker := range []string{
 		`data-view-mode="side-by-side"`,
 		`data-best-revision="7"`,
+		`data-circle-count="64"`,
+		`const circleCount = Number.parseInt(imageViewer.dataset.circleCount, 10) || 0;`,
 		`name="view-mode" value="reference" aria-keyshortcuts="1"`,
 		`name="view-mode" value="best" aria-keyshortcuts="2"`,
 		`name="view-mode" value="side-by-side" aria-keyshortcuts="3" checked`,
@@ -93,6 +96,9 @@ func TestJobDetailPageViewModes(t *testing.T) {
 		if !strings.Contains(body, marker) {
 			t.Errorf("rendered detail page missing %q", marker)
 		}
+	}
+	if strings.Contains(body, `{ fmt.Sprintf`) {
+		t.Fatal("rendered detail page contains an unexpanded Go expression in JavaScript")
 	}
 }
 

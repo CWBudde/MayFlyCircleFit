@@ -244,13 +244,13 @@ func PolishCircleBatchContext(
 		// are rebuilt per sweep rather than reused.
 		suffixOffset := 0
 		primarySession := fullSession
-		newSlotSession := func() (Renderer, func(), error) {
+		rawSlotSession := func() (Renderer, func(), error) {
 			return newStagedSession(base, circleCount)
 		}
 		if baked, ok := bakePrefixCanvas(base, bestParams, prefixCircles, circleCount); ok {
 			suffixOffset = prefixCircles * paramsPerCircle
 			suffixCircles := circleCount - prefixCircles
-			newSlotSession = func() (Renderer, func(), error) {
+			rawSlotSession = func() (Renderer, func(), error) {
 				session, cleanup, created := sessionOverBakedCanvas(base, baked, suffixCircles)
 				if !created {
 					return nil, nil, ErrStagedOptimizationUnsupported
@@ -267,13 +267,48 @@ func PolishCircleBatchContext(
 			// fails to create a single slot, and the width check below refuses the
 			// run before any evaluation.
 			if optimizerWorkers < 2 {
-				session, cleanup, err := newSlotSession()
+				session, cleanup, err := rawSlotSession()
 				if err != nil {
 					return nil, err
 				}
 				sweepCleanups = append(sweepCleanups, cleanup)
 				primarySession = session
 			}
+		}
+		// The incumbent image and its exact SSD are constant for every candidate
+		// in this sweep. CPU sessions use them to rebuild and rescore only the
+		// old/new active-disc union; other backends retain their normal full-cost
+		// path.
+		var baselineImage *image.NRGBA
+		var baselineSSD uint64
+		if _, cpu := base.(*CPURenderer); cpu {
+			baselineImage = cloneNRGBA(fullSession.Render(bestParams))
+			if exact, ok := fit.ExactSSD(baselineImage, base.Reference()); ok {
+				baselineSSD = exact
+			} else {
+				baselineImage = nil
+			}
+		}
+		localActiveCircles := make([]int, len(activeCircles))
+		for i, circle := range activeCircles {
+			localActiveCircles[i] = circle - suffixOffset/paramsPerCircle
+		}
+		configureSession := func(session Renderer) Renderer {
+			return newPolishDirtySession(
+				session,
+				baselineImage,
+				baselineSSD,
+				bestParams[suffixOffset:],
+				localActiveCircles,
+			)
+		}
+		primarySession = configureSession(primarySession)
+		newSlotSession := func() (Renderer, func(), error) {
+			session, cleanup, err := rawSlotSession()
+			if err != nil {
+				return nil, cleanup, err
+			}
+			return configureSession(session), cleanup, nil
 		}
 		// A single-slot pool leases the sweep's own session and its own
 		// candidateFull, so width one stays exactly the historical serial path.

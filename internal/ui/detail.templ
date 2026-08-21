@@ -568,6 +568,7 @@ templ JobDetailPage(job JobDetail) {
 			DiffImageURL:      fmt.Sprintf("/api/v1/jobs/%s/diff.png", job.ID),
 			JobState:          job.State,
 			MaxIterations:     job.MaxIters,
+			CircleCount:       job.Circles,
 			ReferenceWidth:    job.RefWidth,
 			ReferenceHeight:   job.RefHeight,
 			ReferenceSize:     job.RefSize,
@@ -635,7 +636,7 @@ templ JobDetailPage(job JobDetail) {
 				const jobId = imageViewer.dataset.jobId;
 				const jobState = imageViewer.dataset.jobState;
 				const maxIters = Number.parseInt(imageViewer.dataset.maxIters, 10) || 0;
-				const circleCount = Number.parseInt({ fmt.Sprintf("%d", job.Circles) }, 10) || 0;
+				const circleCount = Number.parseInt(imageViewer.dataset.circleCount, 10) || 0;
 				const visibleMetricStorageKey = "mayflycirclefit.visibleMetrics";
 				const imageRefreshIntervalMs = readImageRefreshInterval();
 				const initialCPS = Number.parseFloat(

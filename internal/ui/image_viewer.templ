@@ -30,6 +30,7 @@ type ImageViewerData struct {
 	// Job metadata for output strings and placeholders.
 	JobState        string
 	MaxIterations   int
+	CircleCount     int
 	ReferenceWidth  int
 	ReferenceHeight int
 	ReferenceSize   int64
@@ -50,7 +51,7 @@ func imageViewerSrc(path string, revision uint64) string {
 }
 
 templ ImageViewer(data ImageViewerData) {
-	<div id="image-viewer" class={ imageViewerClasses(data) } data-view-mode={ imageViewerMode(data.DefaultMode) } data-job-id={ data.JobID } data-job-state={ data.JobState } data-max-iters={ fmt.Sprintf("%d", data.MaxIterations) } data-best-revision={ fmt.Sprintf("%d", data.BestRevision) }>
+	<div id="image-viewer" class={ imageViewerClasses(data) } data-view-mode={ imageViewerMode(data.DefaultMode) } data-job-id={ data.JobID } data-job-state={ data.JobState } data-max-iters={ fmt.Sprintf("%d", data.MaxIterations) } data-circle-count={ fmt.Sprintf("%d", data.CircleCount) } data-best-revision={ fmt.Sprintf("%d", data.BestRevision) }>
 		<style>
 			.view-mode-selector {
 				display: flex;
