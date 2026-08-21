@@ -1,0 +1,201 @@
+{
+  "schemaVersion": 1,
+  "name": "MayFly \u2014 10 handcrafted circles grown to 3000",
+  "seed": 20260821,
+  "base": {
+    "refPath": "example/MayFly-512.png",
+    "mode": "batch",
+    "circles": 10,
+    "batchSize": 10,
+    "iters": 600,
+    "optimizerEpochs": 2,
+    "popSize": 50,
+    "threads": 1,
+    "parallelEvaluation": true,
+    "evaluationWorkers": 12,
+    "seed": 20260821,
+    "disableConvergence": true,
+    "stopMinImprovement": 0.002,
+    "stopStagnationIters": 250,
+    "stopMinIters": 200,
+    "initialCircles": [
+      {
+        "x": 256,
+        "y": 256,
+        "r": 400,
+        "color": "#474128"
+      },
+      {
+        "x": 256,
+        "y": 20,
+        "r": 210,
+        "color": "#302c0e",
+        "opacity": 0.75
+      },
+      {
+        "x": 400,
+        "y": 110,
+        "r": 42,
+        "color": "#d2b182",
+        "opacity": 0.95
+      },
+      {
+        "x": 399,
+        "y": 152,
+        "r": 26,
+        "color": "#8a7a52",
+        "opacity": 0.5
+      },
+      {
+        "x": 237,
+        "y": 470,
+        "r": 130,
+        "color": "#383523"
+      },
+      {
+        "x": 256,
+        "y": 640,
+        "r": 190,
+        "color": "#4b4830"
+      },
+      {
+        "x": 245,
+        "y": 165,
+        "r": 70,
+        "color": "#7d9085",
+        "opacity": 0.85
+      },
+      {
+        "x": 275,
+        "y": 275,
+        "r": 60,
+        "color": "#a8b99e",
+        "opacity": 0.8
+      },
+      {
+        "x": 205,
+        "y": 325,
+        "r": 14,
+        "color": "#6f6044",
+        "opacity": 0.8
+      },
+      {
+        "x": 330,
+        "y": 308,
+        "r": 16,
+        "color": "#776c50",
+        "opacity": 0.85
+      }
+    ]
+  },
+  "steps": [
+    {
+      "type": "extend",
+      "repeat": 22,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 1000,
+      "popSize": 50
+    },
+    {
+      "type": "polish",
+      "strategy": "hybrid-overlap",
+      "activeSetSize": 8,
+      "maxSweeps": 8,
+      "epochs": 2,
+      "iters": 400,
+      "popSize": 50,
+      "stagnationIters": 300,
+      "minImprovement": 0.05,
+      "when": {
+        "circles": [
+          32
+        ],
+        "minGain": 2.0,
+        "abortAfterBarren": 2
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 32,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 1000,
+      "popSize": 50
+    },
+    {
+      "type": "polish",
+      "strategy": "hybrid-overlap",
+      "activeSetSize": 8,
+      "maxSweeps": 12,
+      "epochs": 2,
+      "iters": 400,
+      "popSize": 50,
+      "stagnationIters": 300,
+      "minImprovement": 0.05,
+      "when": {
+        "circles": [
+          64
+        ],
+        "minGain": 2.0,
+        "abortAfterBarren": 2
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 64,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 1000,
+      "popSize": 50
+    },
+    {
+      "type": "polish",
+      "strategy": "hybrid-overlap",
+      "activeSetSize": 16,
+      "maxSweeps": 12,
+      "epochs": 2,
+      "iters": 400,
+      "popSize": 50,
+      "stagnationIters": 300,
+      "minImprovement": 0.05,
+      "when": {
+        "circles": [
+          128
+        ],
+        "minGain": 2.0,
+        "abortAfterBarren": 2
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 1000,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 1,
+      "iters": 500,
+      "popSize": 30
+    },
+    {
+      "type": "extend",
+      "repeat": 872,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 1,
+      "iters": 500,
+      "popSize": 30
+    },
+    {
+      "type": "extend",
+      "repeat": 1000,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 900,
+      "popSize": 60
+    }
+  ]
+}
