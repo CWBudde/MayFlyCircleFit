@@ -73,9 +73,38 @@ function fromRawPage(page: RawJobPage): JobPage {
 	return { jobs: page.jobs.map(fromRaw), nextCursor: page.nextCursor, total: page.total };
 }
 
+// compareJobOrder mirrors the server's listing order (ListJobSummaries in
+// internal/server/job.go): start time descending, ties broken by ID ascending.
+// Timestamps are compared as instants rather than as strings because Go omits
+// trailing zeros from the fractional second, so two encodings of one instant
+// can differ textually; the string comparison only breaks sub-millisecond ties
+// that Date.parse cannot see.
+function compareJobOrder(a: JobListItem, b: JobListItem): number {
+	const left = Date.parse(a.startTime);
+	const right = Date.parse(b.startTime);
+	if (left !== right) return right - left;
+	if (a.startTime !== b.startTime) return a.startTime < b.startTime ? 1 : -1;
+	return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+// mergeFirstPage folds an authoritative first page into the pages already
+// loaded. The refresh re-reads only the newest JOB_PAGE_SIZE jobs, so it can
+// confirm or deny existence inside that window and says nothing beyond it. A
+// retained row that falls inside the window but is missing from `fresh` has
+// been deleted and must go, otherwise a `job.deleted` event lost to an SSE
+// disconnect or sequence gap would keep it on screen for the life of the page
+// and the list could outgrow `fresh.total`. Rows past the window are kept
+// untouched, because dropping them would reset the reader's scroll on every
+// reconciliation.
 function mergeFirstPage(current: JobPage, fresh: JobPage): JobPage {
+	// Without a next cursor the fresh page is the whole list, so the window
+	// covers everything and nothing survives from the previous pages.
+	const boundary = fresh.nextCursor ? fresh.jobs[fresh.jobs.length - 1] : undefined;
 	const firstIDs = new Set(fresh.jobs.map((job) => job.id));
-	const jobs = [...fresh.jobs, ...current.jobs.filter((job) => !firstIDs.has(job.id))];
+	const retained = boundary
+		? current.jobs.filter((job) => !firstIDs.has(job.id) && compareJobOrder(job, boundary) > 0)
+		: [];
+	const jobs = [...fresh.jobs, ...retained];
 	return {
 		jobs,
 		total: fresh.total,

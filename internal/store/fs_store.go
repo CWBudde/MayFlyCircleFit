@@ -187,7 +187,11 @@ func (fs *FSStore) SaveCheckpoint(jobID string, checkpoint *Checkpoint) error {
 	if err := fs.atomicWrite(path, func(writer io.Writer) error {
 		encoder := json.NewEncoder(writer)
 		encoder.SetIndent("", "  ")
-		return encoder.Encode(normalized)
+		// Encode the wire struct rather than the Checkpoint: the latter would
+		// run Checkpoint.MarshalJSON, which normalizes again and copies
+		// BestParams a second time on a path that runs once per stage. The
+		// bytes are identical because normalized() is idempotent.
+		return encoder.Encode(checkpointWireFrom(normalized))
 	}); err != nil {
 		return fmt.Errorf("save checkpoint: %w", err)
 	}

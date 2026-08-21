@@ -1,6 +1,8 @@
 package store
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -466,4 +468,37 @@ func isErrorType(err error, target interface{}) bool {
 	// Simple type check for NotFoundError
 	_, ok := err.(*NotFoundError)
 	return ok
+}
+
+// TestSaveCheckpointBytesMatchMarshalJSON pins the equivalence SaveCheckpoint
+// relies on when it encodes the wire struct directly to avoid a second
+// normalize and BestParams copy: the file must stay byte-for-byte what
+// Checkpoint.MarshalJSON would have produced, indentation included.
+func TestSaveCheckpointBytesMatchMarshalJSON(t *testing.T) {
+	store, _ := setupTestStore(t)
+	jobID := testJobID(1)
+	checkpoint := createTestCheckpoint(jobID)
+
+	if err := store.SaveCheckpoint(jobID, checkpoint); err != nil {
+		t.Fatalf("SaveCheckpoint failed: %v", err)
+	}
+	path, err := store.ArtifactPath(jobID, ArtifactCheckpoint)
+	if err != nil {
+		t.Fatalf("ArtifactPath failed: %v", err)
+	}
+	written, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read checkpoint: %v", err)
+	}
+
+	var viaMarshaler bytes.Buffer
+	encoder := json.NewEncoder(&viaMarshaler)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(checkpoint.normalized()); err != nil {
+		t.Fatalf("encode via MarshalJSON: %v", err)
+	}
+	if string(written) != viaMarshaler.String() {
+		t.Errorf("saved checkpoint bytes differ from MarshalJSON output\n got: %s\nwant: %s",
+			written, viaMarshaler.String())
+	}
 }
