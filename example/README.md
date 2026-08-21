@@ -243,3 +243,119 @@ mayflycirclefit schedule create example/christian-16-handcrafted-v6.json
 
 The point of the experiment is the comparison: how much of the final cost is
 structure a human can supply in a minute, and how much is search.
+
+## Demo campaign: `mayfly-3000-campaign.json`
+
+The reference campaign for this project. It takes ten hand-placed circles to
+3000 on `MayFly-512.png` — a macro photograph of a mayfly on a wet rock — and is
+the worked example for growing a fit to the `MaxCircles` ceiling.
+
+### The image
+
+`MayFly.png` is the 1024x1024 original. The campaign targets `MayFly-512.png`,
+a Lanczos downsample, so its costs are directly comparable to the
+`Christian_after.jpeg` campaigns above and a circle costs the same to fit.
+Measured on the Ryzen 5 4600H box, the same extend recipe costs 5.74 s/circle at
+512x512 and 13 s/circle at 1024x1024, for a picture that is not four times more
+interesting.
+
+The subject is a harder target than a portrait in one specific way: the
+antennae, cerci, and legs are one to three pixels wide. No circle can represent
+a line, so that detail stays in the residual permanently. What circles *can*
+take is the out-of-focus background, the bokeh disc, the wing, and the rock —
+which is what the ten seed circles are for.
+
+### The ten circles
+
+Placed by hand from looking at the image, painted back to front. Each value was
+checked against `score` and kept only where it helped; five of seven later
+"improvements" made the cost worse and were dropped, which is the useful part of
+the exercise.
+
+| # | Role | x | y | r | colour | opacity |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Background | 256 | 256 | 400 | `#474128` | 1 |
+| 2 | Dark upper band | 256 | 20 | 210 | `#302c0e` | 0.75 |
+| 3 | Bokeh disc | 400 | 110 | 42 | `#d2b182` | 0.95 |
+| 4 | Bokeh halo | 399 | 152 | 26 | `#8a7a52` | 0.5 |
+| 5 | Rock | 237 | 470 | 130 | `#383523` | 1 |
+| 6 | Foreground water | 256 | 640 | 190 | `#4b4830` | 1 |
+| 7 | Wing, upper | 245 | 165 | 70 | `#7d9085` | 0.85 |
+| 8 | Wing, lower | 275 | 275 | 60 | `#a8b99e` | 0.8 |
+| 9 | Abdomen | 205 | 325 | 14 | `#6f6044` | 0.8 |
+| 10 | Thorax and head | 330 | 308 | 16 | `#776c50` | 0.85 |
+
+Circles 5 and 6 have centres below the canvas so only their caps show — the rock
+and the water are edges, not discs.
+
+```sh
+mayflycirclefit score --ref example/MayFly-512.png \
+    --circles example/mayfly-3000-campaign.json --out example/MayFly-seed.png
+```
+
+```
+circles:    10
+canvas:     512x512
+cost:       1187.1344
+psnr:       17.3858 dB
+blank cost: 38732.1225
+```
+
+Ten circles remove **96.9%** of the blank cost. The comparison with
+`christian-16-handcrafted-v6.json` is the interesting one: eight hand-placed
+circles removed 84.6% of a portrait's blank cost, ten remove 96.9% here. The
+difference is not skill, it is subject — most of this frame is a smooth
+defocused background, and a circle is a very good model of a smooth defocused
+background.
+
+### The budget tiers
+
+The campaign spends three different per-circle budgets, and the boundaries are
+where they are because of measurements, not taste:
+
+| Tier | Circles | epochs | iters | popSize | s/circle | Why |
+| --- | --- | --- | --- | --- | --- | --- |
+| A | 10 → 128 | 2 | 1000 | 50 | 17.7 | The foundation is worth buying; it is only 118 circles. |
+| B | 128 → 2000 | 1 | 500 | 30 | 5.7 → 8.2 | Search effort saturates here — at 733 circles a 6x wall-clock range moved cost by 0.36 units. Cheapest wins. |
+| C | 2000 → 3000 | 2 | 900 | 60 | ~32 | Levers pay again past 2000: over a 50-circle sample, `iters` 500 gained 1.0348 against `iters` 50's 0.5635. |
+
+`popSize` and `epochs` move together in every tier. Raising population without
+epochs to exploit it bought 0.03 cost units for 2.2x the wall clock when it was
+measured directly.
+
+Tier C is the one extrapolation in the document. That levers matter again past
+2000 is measured; that *this particular* 3.4x budget is the right amount is not.
+It is also the expensive tier — dropping it to tier B settings saves roughly
+7 hours and is a one-line change.
+
+### Polishing
+
+Three polish stages, at 32, 64 and 128 circles, each behind a `when` guard.
+Polishing only pays while the canvas is small enough for the foundation to still
+move: the same stage returns ~2597 cost units per hour at 32 circles, 113 at
+128, and 1.26 at 1000. Every stage is sized so `activeSetSize * maxSweeps >=
+circles`, because efficiency tracks coverage.
+
+`minGain: 2.0` with `abortAfterBarren: 2` switches polishing off for the rest of
+the campaign once it stops earning, so the schedule does not need to know in
+advance which of the three is the last useful one.
+
+### Cost
+
+2994 stages. Roughly **13 hours** on 12 cores: 0.6 h for tier A, 3.5 h for
+tier B, 8.9 h for tier C, and about 12 minutes of polishing.
+
+```sh
+mayflycirclefit schedule create --dry-run example/mayfly-3000-campaign.json
+mayflycirclefit schedule create example/mayfly-3000-campaign.json
+```
+
+### Why the base stage searches
+
+The base runs a real 600-iteration batch over the ten hand-placed circles rather
+than `"iters": 1`. That is forced, not preferred: the optimizer-level stop
+fields live on the base `JobConfig` and are validated against the base's own
+`iters`, so a record-only base cannot carry `stopStagnationIters: 250` — and
+those fields cannot be overridden per step, so the whole 2990-stage campaign
+would then run without early stopping, at roughly twice the wall clock. Scoring
+the untouched arrangement is what `score` is for, and its number is above.
