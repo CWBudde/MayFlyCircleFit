@@ -108,14 +108,17 @@ connection means nothing is listening:
 Error: connect to server: Get "http://localhost:8080/api/v1/jobs": dial tcp
 127.0.0.1:8080: connect: connection refused
 Suggestion: no server is listening there; start one with `mayflycirclefit
-serve`, or point --server at the right address.
+serve`, or point the server flag (--server for `status`, --server-url for
+`resume`) at the right address.
 ```
 
 The client gives up on its own after 10 seconds rather than hanging, and reports
-a timeout distinctly from a refusal — a timeout means the server accepted the
-connection but did not answer, so it is running and blocked, not absent. A body
-that ends early (a server that died mid-response) is reported as a read failure
-and never decoded as if it were complete.
+a timeout distinctly from a refusal. The timeout covers the whole request, from
+name resolution and dialling through reading the response, so it does not by
+itself say that a server accepted the connection — check both that the address
+is right and that the server is running and not blocked on a long request. A
+body that ends early (a server that died mid-response) is reported as a read
+failure and never decoded as if it were complete.
 
 ### Out of memory
 

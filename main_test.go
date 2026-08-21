@@ -94,14 +94,14 @@ func TestPrintCLIError(t *testing.T) {
 			want: []string{"Suggestion: no server is listening there", "mayflycirclefit serve"},
 		},
 		{
-			name: "timed out request says the server did not answer",
+			name: "timed out request stays neutral about where the deadline was hit",
 			code: exitError,
 			err: &url.Error{
 				Op:  "Get",
 				URL: "http://localhost:8080/api/v1/jobs",
 				Err: timeoutError{},
 			},
-			want:    []string{"Suggestion: the server did not answer in time"},
+			want:    []string{"Suggestion: the request timed out while contacting the server or reading its response"},
 			notWant: []string{"no server is listening"},
 		},
 		{

@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"math"
+	"math/bits"
 	"testing"
 )
 
@@ -16,19 +17,25 @@ import (
 
 // TestImageDimensionGuardSurvivesOverflow is the guard against the arithmetic
 // that would defeat it. A width*height product is the natural way to write this
-// check and the wrong one: on a 64-bit int the product of two large dimensions
-// wraps to a small or negative number and passes, which is exactly the input an
-// attacker would pick. The implementation divides instead, so these must be
-// rejected.
+// check and the wrong one: the product of two large dimensions wraps to a small
+// or negative number and passes, which is exactly the input an attacker would
+// pick. The implementation divides instead, so these must be rejected.
+//
+// The dimensions are derived from math.MaxInt rather than written as 64-bit
+// literals so the cases stay representable — and stay overflowing — on the
+// 32-bit targets in the cross-build matrix.
 func TestImageDimensionGuardSurvivesOverflow(t *testing.T) {
+	// halfWidthMax has half the bits of an int, so its square wraps: on a
+	// 64-bit int that is 1<<32, on a 32-bit int 1<<16.
+	halfWidthMax := 1 << (bits.UintSize / 2)
 	overflowing := []struct {
 		name          string
 		width, height int
 	}{
-		{name: "product wraps to zero", width: 1 << 32, height: 1 << 32},
-		{name: "product wraps negative", width: math.MaxInt32, height: math.MaxInt32},
-		{name: "max int square", width: math.MaxInt64, height: math.MaxInt64},
-		{name: "one huge side", width: math.MaxInt64, height: 1},
+		{name: "product wraps to zero", width: halfWidthMax, height: halfWidthMax},
+		{name: "product of two halves of the range wraps", width: math.MaxInt / 2, height: math.MaxInt / 2},
+		{name: "max int square", width: math.MaxInt, height: math.MaxInt},
+		{name: "one huge side", width: math.MaxInt, height: 1},
 	}
 	for _, test := range overflowing {
 		t.Run(test.name, func(t *testing.T) {

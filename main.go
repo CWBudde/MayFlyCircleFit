@@ -96,7 +96,10 @@ func suggestFilesystemFix(err error) string {
 
 // suggestNetworkFix covers the client commands that talk to a running server.
 // A refused connection is the common case and means the server is not up,
-// which is not something the transport error says.
+// which is not something the transport error says. A timeout says less than it
+// looks like it does: url.Error.Timeout reports a deadline hit anywhere from
+// DNS through the response body, so the remedy names both the address and the
+// server rather than asserting that a server accepted the connection.
 func suggestNetworkFix(err error) string {
 	var urlError *url.Error
 	if !errors.As(err, &urlError) {
@@ -104,9 +107,9 @@ func suggestNetworkFix(err error) string {
 	}
 	switch {
 	case errors.Is(err, syscall.ECONNREFUSED):
-		return "no server is listening there; start one with `mayflycirclefit serve`, or point --server at the right address."
+		return "no server is listening there; start one with `mayflycirclefit serve`, or point the server flag (--server for `status`, --server-url for `resume`) at the right address."
 	case urlError.Timeout():
-		return "the server did not answer in time; check that it is still running and not blocked on a long request."
+		return "the request timed out while contacting the server or reading its response; check that the address is right and that the server is running and not blocked on a long request."
 	default:
 		return "check that the server address is reachable and that `mayflycirclefit serve` is running."
 	}
