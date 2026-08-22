@@ -324,31 +324,31 @@ func JobDetailPage(job JobDetail) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if job.State == "running" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<button id=\"pause-job\" class=\"btn\" style=\"margin-left: 0.5rem; background-color: var(--warning-color); color: var(--text-color);\">Pause job</button> <button id=\"cancel-job\" class=\"btn btn-primary\" style=\"margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);\">Cancel job</button> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<button id=\"pause-job\" class=\"btn\" style=\"margin-left: 0.5rem; background-color: var(--warning-color); color: var(--text-color);\" disabled aria-disabled=\"true\" title=\"Job actions need the interactive controls to load; reload the page if they stay inactive.\">Pause job</button> <button id=\"cancel-job\" class=\"btn btn-primary\" style=\"margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);\" disabled aria-disabled=\"true\" title=\"Job actions need the interactive controls to load; reload the page if they stay inactive.\">Cancel job</button> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 			if job.State == "paused" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<button id=\"resume-job\" class=\"btn btn-primary\" style=\"margin-left: 0.5rem;\">Resume job</button> <button id=\"cancel-job\" class=\"btn btn-primary\" style=\"margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);\">Cancel job</button> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<button id=\"resume-job\" class=\"btn btn-primary\" style=\"margin-left: 0.5rem;\" disabled aria-disabled=\"true\" title=\"Job actions need the interactive controls to load; reload the page if they stay inactive.\">Resume job</button> <button id=\"cancel-job\" class=\"btn btn-primary\" style=\"margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);\" disabled aria-disabled=\"true\" title=\"Job actions need the interactive controls to load; reload the page if they stay inactive.\">Cancel job</button> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 			if job.State == "pending" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<button id=\"cancel-job\" class=\"btn btn-primary\" style=\"margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);\">Cancel job</button> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<button id=\"cancel-job\" class=\"btn btn-primary\" style=\"margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);\" disabled aria-disabled=\"true\" title=\"Job actions need the interactive controls to load; reload the page if they stay inactive.\">Cancel job</button> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 			if job.State == "completed" || job.State == "failed" || job.State == "cancelled" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<button id=\"delete-job\" class=\"btn btn-primary\" style=\"margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);\">Delete job</button> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<button id=\"delete-job\" class=\"btn btn-primary\" style=\"margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);\" disabled aria-disabled=\"true\" title=\"Job actions need the interactive controls to load; reload the page if they stay inactive.\">Delete job</button> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 			if job.CanPolish {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<button id=\"polish-job\" class=\"btn btn-primary\" style=\"margin-left: 0.5rem;\">Polish weak circles</button> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<button id=\"polish-job\" class=\"btn btn-primary\" style=\"margin-left: 0.5rem;\" disabled aria-disabled=\"true\" title=\"Job actions need the interactive controls to load; reload the page if they stay inactive.\">Polish weak circles</button> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

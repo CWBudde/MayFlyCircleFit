@@ -159,6 +159,44 @@ func TestJobDetailPageShowsPolishingSchedule(t *testing.T) {
 	}
 }
 
+// TestJobDetailFallbackMutationsAreDisabled pins the honesty of the fallback.
+// The job-controls island replaces these buttons with working ones on mount, so
+// the server-rendered copies are what a reader sees only when the bundle fails
+// to load or JavaScript is off. They mutate a job over the JSON API and have
+// never worked without script, so they must not look clickable. Refresh is
+// deliberately excluded: its inline handler works whenever script runs at all.
+func TestJobDetailFallbackMutationsAreDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		state  string
+		button string
+	}{
+		{"running", "pause-job"},
+		{"running", "cancel-job"},
+		{"paused", "resume-job"},
+		{"completed", "delete-job"},
+	} {
+		t.Run(tc.button+"/"+tc.state, func(t *testing.T) {
+			job := JobDetail{
+				ID: "12345678-1234-1234-1234-123456789abc", State: tc.state,
+				StartTime: time.Now(),
+			}
+			var output bytes.Buffer
+			if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+				t.Fatal(err)
+			}
+			body := output.String()
+			start := strings.Index(body, `id="`+tc.button+`"`)
+			if start < 0 {
+				t.Fatalf("state %q renders no %s button", tc.state, tc.button)
+			}
+			tag := body[start : start+strings.Index(body[start:], ">")]
+			if !strings.Contains(tag, `aria-disabled="true"`) || !strings.Contains(tag, "disabled ") {
+				t.Errorf("%s is offered as clickable without the bundle: <button %s>", tc.button, tag)
+			}
+		})
+	}
+}
+
 func TestJobDetailPageMetadataUnavailable(t *testing.T) {
 	job := JobDetail{
 		ID:        "12345678-1234-1234-1234-123456789abc",

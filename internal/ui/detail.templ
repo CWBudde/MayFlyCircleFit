@@ -160,33 +160,33 @@ templ JobDetailPage(job JobDetail) {
 					>
 					@StateBadge(job.State)
 					if job.State == "running" {
-						<button id="pause-job" class="btn" style="margin-left: 0.5rem; background-color: var(--warning-color); color: var(--text-color);">
+						<button id="pause-job" class="btn" style="margin-left: 0.5rem; background-color: var(--warning-color); color: var(--text-color);" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
 							Pause job
 						</button>
-						<button id="cancel-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);">
+						<button id="cancel-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
 							Cancel job
 						</button>
 					}
 					if job.State == "paused" {
-						<button id="resume-job" class="btn btn-primary" style="margin-left: 0.5rem;">
+						<button id="resume-job" class="btn btn-primary" style="margin-left: 0.5rem;" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
 							Resume job
 						</button>
-						<button id="cancel-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);">
+						<button id="cancel-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
 							Cancel job
 						</button>
 					}
 					if job.State == "pending" {
-						<button id="cancel-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);">
+						<button id="cancel-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
 							Cancel job
 						</button>
 					}
 					if job.State == "completed" || job.State == "failed" || job.State == "cancelled" {
-						<button id="delete-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);">
+						<button id="delete-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
 							Delete job
 						</button>
 					}
 					if job.CanPolish {
-						<button id="polish-job" class="btn btn-primary" style="margin-left: 0.5rem;">
+						<button id="polish-job" class="btn btn-primary" style="margin-left: 0.5rem;" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
 							Polish weak circles
 						</button>
 					}
