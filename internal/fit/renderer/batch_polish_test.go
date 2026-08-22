@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
 )
 
@@ -535,9 +536,9 @@ func TestPolishCircleBatchBakedPrefixMatchesFullVector(t *testing.T) {
 	}
 }
 
-func TestSelectContiguousWindowCirclesPrefersLatestUnvisitedWindow(t *testing.T) {
+func TestSelectContiguousWindowCirclesPrefersLatestUnvisitedWindowForPartialBudget(t *testing.T) {
 	visits := make(map[int]int)
-	active := selectContiguousWindowCircles(10, 3, visits)
+	active := selectContiguousWindowCircles(10, 3, visits, false)
 	if !reflect.DeepEqual(active, []int{7, 8, 9}) {
 		t.Fatalf("first window = %v, want the last three draw slots", active)
 	}
@@ -546,7 +547,7 @@ func TestSelectContiguousWindowCirclesPrefersLatestUnvisitedWindow(t *testing.T)
 	for _, circle := range active {
 		visits[circle]++
 	}
-	if next := selectContiguousWindowCircles(10, 3, visits); !reflect.DeepEqual(next, []int{4, 5, 6}) {
+	if next := selectContiguousWindowCircles(10, 3, visits, false); !reflect.DeepEqual(next, []int{4, 5, 6}) {
 		t.Fatalf("second window = %v, want the next unvisited run below it", next)
 	}
 }
@@ -558,7 +559,7 @@ func TestSelectContiguousWindowCirclesCoversEveryCircle(t *testing.T) {
 	// ceil(10/3) sweeps is the point at which every draw slot must have been
 	// offered to the optimizer at least once.
 	for sweep := 0; sweep < (circleCount+activeSetSize-1)/activeSetSize; sweep++ {
-		active := selectContiguousWindowCircles(circleCount, activeSetSize, visits)
+		active := selectContiguousWindowCircles(circleCount, activeSetSize, visits, false)
 		for i, circle := range active {
 			if i > 0 && circle != active[i-1]+1 {
 				t.Fatalf("sweep %d selected non-contiguous window %v", sweep, active)
@@ -575,10 +576,132 @@ func TestSelectContiguousWindowCirclesCoversEveryCircle(t *testing.T) {
 }
 
 func TestSelectContiguousWindowCirclesClampsOversizedActiveSet(t *testing.T) {
-	active := selectContiguousWindowCircles(3, 5, make(map[int]int))
+	active := selectContiguousWindowCircles(3, 5, make(map[int]int), true)
 	if !reflect.DeepEqual(active, []int{0, 1, 2}) {
 		t.Fatalf("oversized active set = %v, want every circle", active)
 	}
+}
+
+func TestPlanContiguousWindowsFullCoverageStartsEarlyWithoutCostRegression(t *testing.T) {
+	const circleCount, activeSetSize, maxSweeps = 1000, 32, 32
+	activeSets, visits, err := PlanContiguousWindows(circleCount, activeSetSize, maxSweeps, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(activeSets[0], integerRange(0, activeSetSize)) {
+		t.Fatalf("first full-coverage window = %v, want slots 0-%d", activeSets[0], activeSetSize-1)
+	}
+	rasterizations := 0
+	for sweep, active := range activeSets {
+		if len(active) != activeSetSize {
+			t.Fatalf("sweep %d active set size = %d, want %d", sweep, len(active), activeSetSize)
+		}
+		for i := 1; i < len(active); i++ {
+			if active[i] != active[i-1]+1 {
+				t.Fatalf("sweep %d selected non-contiguous window %v", sweep, active)
+			}
+		}
+		rasterizations += circleCount - active[0]
+	}
+	for circle, count := range visits {
+		if count == 0 {
+			t.Fatalf("circle %d was never covered", circle)
+		}
+	}
+	if rasterizations != 16_152 {
+		t.Fatalf("rasterizations per candidate = %d, want 16152 (latest-first baseline 16872)", rasterizations)
+	}
+}
+
+func TestPlanContiguousWindowsDefaultPartialBudgetStaysLatestFirst(t *testing.T) {
+	const circleCount, activeSetSize = 1000, 32
+	activeSets, _, err := PlanContiguousWindows(circleCount, activeSetSize, app.DefaultPolishingMaxSweeps, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rasterizations := 0
+	for sweep, active := range activeSets {
+		wantStart := circleCount - (sweep+1)*activeSetSize
+		if active[0] != wantStart {
+			t.Fatalf("sweep %d starts at %d, want current latest-first start %d", sweep, active[0], wantStart)
+		}
+		rasterizations += circleCount - active[0]
+	}
+	wantRasterizations := activeSetSize * app.DefaultPolishingMaxSweeps * (app.DefaultPolishingMaxSweeps + 1) / 2
+	if rasterizations != wantRasterizations {
+		t.Fatalf("partial-budget rasterizations = %d, want current cost %d", rasterizations, wantRasterizations)
+	}
+}
+
+func TestPlanContiguousWindowsContinuationStartsOnParentUnvisitedSlots(t *testing.T) {
+	parentSets, parentVisits, err := PlanContiguousWindows(10, 3, 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childSets, _, err := PlanContiguousWindows(10, 3, 1, parentVisits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentCovered := make(map[int]bool)
+	for _, active := range parentSets {
+		for _, circle := range active {
+			parentCovered[circle] = true
+		}
+	}
+	for _, circle := range childSets[0] {
+		if parentCovered[circle] {
+			t.Fatalf("child active set %v revisits parent sets %v", childSets[0], parentSets)
+		}
+	}
+}
+
+func TestPolishCircleBatchContiguousWindowUsesInitialVisitCounts(t *testing.T) {
+	const width, height, circleCount = 20, 16, 3
+	ref := solidImage(width, height, color.NRGBA{R: 200, G: 40, B: 90, A: 255})
+	params := deterministicParams(circleCount, width, height, 1608)
+	initialVisits := []int{0, 0, 1}
+	var selected []int
+	_, err := PolishCircleBatchContext(
+		context.Background(),
+		NewCPURenderer(ref, circleCount),
+		&fixedPolishOptimizer{params: params},
+		params,
+		BatchPolishOptions{
+			ActiveSetSize:      1,
+			MaxSweeps:          1,
+			Strategy:           BatchPolishContiguousWindow,
+			InitialVisitCounts: initialVisits,
+			OnSweep: func(progress BatchPolishProgress) error {
+				selected = append([]int(nil), progress.ActiveSet...)
+				return nil
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(selected, []int{2}) {
+		t.Fatalf("selected active set = %v, want the latest unvisited draw slot 2", selected)
+	}
+	if !reflect.DeepEqual(initialVisits, []int{0, 0, 1}) {
+		t.Fatalf("initial visit counts were mutated: %v", initialVisits)
+	}
+}
+
+func TestPlanContiguousWindowsRejectsInvalidVisitCounts(t *testing.T) {
+	for _, initial := range [][]int{{0, 0}, {0, -1, 0}} {
+		if _, _, err := PlanContiguousWindows(3, 1, 1, initial); !errors.Is(err, ErrInvalidOptimizationInput) {
+			t.Fatalf("PlanContiguousWindows(initial %v) error = %v, want invalid input", initial, err)
+		}
+	}
+}
+
+func integerRange(start, count int) []int {
+	values := make([]int, count)
+	for i := range values {
+		values[i] = start + i
+	}
+	return values
 }
 
 func TestPolishCircleBatchContiguousWindowBakesPrefixAndMatchesFullVector(t *testing.T) {
@@ -618,10 +741,10 @@ func TestPolishCircleBatchContiguousWindowBakesPrefixAndMatchesFullVector(t *tes
 	if !reflect.DeepEqual(bakedSets, fullSets) {
 		t.Fatalf("active sets = %v, want %v", bakedSets, fullSets)
 	}
-	// Active sets are one-based. The first sweep must sit at the end of the draw
-	// order, which is the whole point of the strategy.
-	if !reflect.DeepEqual(bakedSets[0], []int{circleCount - 1, circleCount}) {
-		t.Fatalf("first active set = %v, want the last two draw slots", bakedSets[0])
+	// Active sets are one-based. Three two-circle sweeps cover this five-circle
+	// vector, so the value-first traversal starts at the beginning.
+	if !reflect.DeepEqual(bakedSets[0], []int{1, 2}) {
+		t.Fatalf("first active set = %v, want the first two draw slots", bakedSets[0])
 	}
 	for _, set := range bakedSets {
 		for i := 1; i < len(set); i++ {
@@ -1272,6 +1395,11 @@ type polishSerialResult struct {
 // this table -- widths two, four, and eight are compared to the live width-one
 // run below -- so a stale golden cannot mask a pool regression.
 //
+// Task 16.8 also re-captured the two contiguous-window cases from the live
+// width-one run. Their budgets cover the fixture vectors, so their deterministic
+// traversal intentionally changed from latest-first to earliest-first; the
+// wider pool widths remain compared against that live serial result below.
+//
 // Every strategy is covered because they reach the pooled `evaluate` closure by
 // different routes: `replacement` and `hybrid-overlap` seed once through
 // SeedParamsFromResidual, `residual-region` additionally builds and evaluates a
@@ -1521,10 +1649,9 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 		{
 			// `contiguous-window` is the only strategy that guarantees a contiguous
 			// active set, so it is the one whose baked prefix is large and whose
-			// suffix session therefore carries most of the work. It also runs on
-			// the blocker-carrying parity vector, so sweep 1's window [4 5] commits
-			// a strict improvement the old absolute gate vetoed; sweeps 2 and 3
-			// still lose on cost.
+			// suffix session therefore carries most of the work. Its full-coverage
+			// budget uses the value-first order [1 2], [3 4], [4 5]; the final
+			// window commits a strict improvement while the first two are rejected.
 			name:      "inherited-blocker-sweeps-contiguous-window",
 			reference: solidImage(20, 16, color.NRGBA{R: 200, G: 40, B: 90, A: 255}),
 			params:    polishParityParams(),
@@ -1538,9 +1665,9 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 			},
 			serial: polishSerialResult{
 				costs: []float64{
+					5639.8125, 16916.385416666668, 21602.385416666668, 21916.28125, 22048.005208333332,
+					5639.8125, 5545.21875, 5430.99375, 5353.877083333334, 5378.975,
 					5639.8125, 5413.929166666667, 5370.835416666667, 5337.932291666667, 5323.808333333333,
-					5323.808333333333, 6239.621875, 6397.716666666666, 6253.272916666667, 6324.140625,
-					5323.808333333333, 17376.132291666665, 22637.715625, 22951.715625, 23083.490625,
 				},
 				params: []float64{
 					10, 8, 9, 0.7450980392156863, 0.17647058823529413, 0.3333333333333333, 1,
@@ -1569,17 +1696,17 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 			},
 			serial: polishSerialResult{
 				costs: []float64{
-					44018.72222222222, 43329.38888888889, 42727.48611111111, 42208.375,
-					42208.375, 41128.72222222222, 40241.166666666664, 39548.430555555555,
-					39548.430555555555, 37669.333333333336, 36312.59722222222, 35323.208333333336,
-					35323.208333333336, 35209.208333333336, 35100.541666666664, 34997.208333333336,
+					44018.72222222222, 42125.625, 40754.88888888889, 39749.5,
+					39749.5, 38675.375, 37794.61111111111, 37107.208333333336,
+					37107.208333333336, 36427.208333333336, 35832.541666666664, 35323.208333333336,
+					35323.208333333336, 35170.22222222222, 35008.333333333336, 34891.055555555555,
 				},
 				params: []float64{
-					2, 3, 2, 0.1568627450980392, 0.1568627450980392, 0.1568627450980392, 0.9,
+					2, 3, 2, 0.0392156862745098, 0.0392156862745098, 0.0392156862745098, 0.9,
 					6, 3, 2, 0.11764705882352941, 0.11764705882352941, 0.11764705882352941, 0.8,
-					10, 3, 2, 0.022058823529411766, 0.022058823529411766, 0.022058823529411766, 0.7,
+					10, 3, 2, 0.08823529411764706, 0.08823529411764706, 0.08823529411764706, 0.7,
 				},
-				cost:        34997.208333333336,
+				cost:        34891.055555555555,
 				accepted:    4,
 				sweeps:      4,
 				evaluations: 25,

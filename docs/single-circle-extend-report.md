@@ -44,12 +44,14 @@ allocations to none per pixel.
 ## Component attribution
 
 **Host:** AMD Ryzen 5 4600H, 12 logical CPUs, Linux 7.0.0-29-generic,
-Go 1.26.0, `GOMAXPROCS=12`, AVX2.  
+Go 1.26.0, `GOMAXPROCS=12`, AVX2.
+
 **Portable workload:** deterministic 512x512 reference and parameter vector,
 population 30 and one render thread. Component sub-benchmarks use one suffix
 session to isolate each term; the Mayfly table below uses the production
 evaluation width of 12. Circle radii use a production-shaped mixture with many
-small circles and a long large-radius tail.  
+small circles and a long large-radius tail.
+
 **Method:** `-benchtime=1x -count=3`; medians. Absolute times were noisy because
 an independently started server process was running a 12-worker polishing
 campaign on the same host. The component hierarchy and allocation counts are

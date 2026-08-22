@@ -169,7 +169,7 @@ func TestSelectPolishingActiveSetMatchesSerial(t *testing.T) {
 		base := selectionParityRenderer(reference, threads)
 		selection, err := selectPolishingActiveSet(
 			base, &incumbentAuditCache{session: base},
-			params, 8, strategy, visitedCopy, visitsCopy,
+			params, 8, strategy, visitedCopy, visitsCopy, false,
 		)
 		if err != nil {
 			t.Fatalf("selectPolishingActiveSet(%s, threads %d) error = %v", strategy, threads, err)

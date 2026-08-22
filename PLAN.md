@@ -523,7 +523,7 @@ base/extend/polish stages in order, survive restarts, and inspect the resulting
 chain through the API, CLI, and UI. The format and cost-comparison rules are
 authoritative in `docs/schedule-format.md`.
 
-### Completed Tasks 16.1–16.7 ✅
+### Completed Tasks 16.1–16.8 ✅
 
 Implemented: versioned schedule models and validation; durable server-side
 execution and recovery; declarative stage policy; dry-run estimation; campaign
@@ -572,29 +572,29 @@ Same 32 windows, opposite order, and the current one is 4.5% *more* expensive.
 There is no render-cost argument for the current ordering once the budget covers
 everything; the ordering is costing gain and buying nothing.
 
-- [ ] Order the traversal by where the budget is worth spending rather than by
+- [x] Order the traversal by where the budget is worth spending rather than by
       window start. Deciding between "earliest-first when the sweep budget
       covers the vector, latest-first otherwise" and a residual- or
       contribution-weighted window choice is part of the task; the partial-budget
       case must keep its current cheapness.
-- [ ] Carry visit counts across a polish continuation so a chained pass does not
+- [x] Carry visit counts across a polish continuation so a chained pass does not
       re-walk ground its parent already covered. The counts are per-call today;
       the parent's coverage is derivable from the chain, and `polishedFrom`
       already records the link.
-- [ ] Leave the selector deterministic. Identical config, parent, and seed must
+- [x] Leave the selector deterministic. Identical config, parent, and seed must
       still reproduce bit-for-bit — the property that makes a fresh seed the
       only thing distinguishing one pass from the next.
 
 **Acceptance Checks:**
 
-- [ ] A unit test asserts the traversal covers every draw slot for
+- [x] A unit test asserts the traversal covers every draw slot for
       `circleCount` 1000, `activeSetSize` 32, 32 sweeps, and that summed
       rasterizations per candidate do not regress against latest-first.
-- [ ] A test pins the partial-budget case: at the shipped default sweep count,
+- [x] A test pins the partial-budget case: at the shipped default sweep count,
       the chosen windows are no more expensive than they are today.
-- [ ] A chained continuation starts on slots its parent did not cover, asserted
+- [x] A chained continuation starts on slots its parent did not cover, asserted
       on the selected active sets rather than on cost.
-- [ ] Determinism regression: same config, parent, and seed produce an identical
+- [x] Determinism regression: same config, parent, and seed produce an identical
       cost across two runs.
 
 ### Task 16.9: Let the Estimator Spend the Scarce Resource (P2)
@@ -739,7 +739,7 @@ Current open work, in priority order:
    remaining Phase 15 measurement and optimization tasks.
 3. **Dashboard sign-off (P1):** Task 17.11.
 4. **Server memory (P2):** Task 17.12.
-5. **Schedule quality (P2):** Tasks 16.8 and 16.9.
+5. **Schedule quality (P2):** Task 16.9.
 6. **UX and supporting documentation (P2/P3):** Tasks 12.9 and 13.15.
 7. **Experimental backends/research:** Tasks 11.9–11.13 and 10.20.
 

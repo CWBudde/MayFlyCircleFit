@@ -93,18 +93,22 @@ Rendering-side invariants live in
   image-space merit and routinely include circle one, which bakes nothing and
   rasterizes the whole vector for every candidate. `contiguous-window` selects a
   consecutive run instead, keeping that cost near `activeSetSize` on the first
-  sweep. Do not change a selector to scatter its active set without accounting
-  for that cost.
-- `contiguous-window` is cheaper per sweep but not better per second, and it is
-  not the default. Measured in
-  [`contiguous-window-polish-report.md`](contiguous-window-polish-report.md):
-  the 2.1×/5.3× render-cost figures describe the first sweep of a coverage cycle
-  with the optimizer stubbed out and fall to 1.44× over a full cycle, and at
-  equal wall clock the strategy reached a worse cost than `hybrid-overlap` in
-  every configuration measured. It only offers the last
-  `maxSweeps * activeSetSize` draw slots to the optimizer, so it needs a sweep
-  budget of at least `ceil(circles / activeSetSize)` to have seen every circle
-  once. Do not describe it as an end-to-end speedup.
+  sweep of a partial pass. Do not change a selector to scatter its active set
+  without accounting for that cost.
+- `contiguous-window` is budget-aware and is not the default strategy. A budget
+  below `ceil(circles / activeSetSize)` retains latest-first traversal so the
+  partial pass stays as cheap as before. A budget that can cover the vector
+  breaks equal-visit ties earliest-first, where a greedy fit leaves its early,
+  large circles, and costs no more over the complete cycle. Consecutive
+  `polishedFrom` stages of the same size and strategy inherit selection visits
+  by replaying their checkpoint configurations; selected slots count even when
+  a sweep is rejected. The selector remains seedless and deterministic.
+  Measurements in
+  [`contiguous-window-polish-report.md`](contiguous-window-polish-report.md)
+  show why the synthetic jittered vector favors merit selection while the real
+  1000-circle greedy fit favors positional coverage. Do not describe either
+  result as unconditional or the isolated render-cost figures as an end-to-end
+  speedup.
 - Polishing has its own population, `polishingPopSize`, and does not inherit
   `popSize`. The two size different problems: `popSize` is chosen for the whole
   vector, while a sweep optimizes one active set — seven parameters per circle,

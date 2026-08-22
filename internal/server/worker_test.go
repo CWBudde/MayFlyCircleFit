@@ -631,6 +631,178 @@ func TestRunJobPolishingOnlyContinuesCompleteBatch(t *testing.T) {
 	}
 }
 
+func TestInheritedContiguousWindowVisitCountsReplaysPolishLineage(t *testing.T) {
+	tmpDir := t.TempDir()
+	persistence, err := store.NewFSStore(filepath.Join(tmpDir, "data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseConfig, err := app.Normalize(JobConfig{
+		RefPath: "ref.png", Mode: app.ModeBatch, Circles: 10, BatchSize: 10,
+		Iters: 2, OptimizerEpochs: 1, PopSize: 20, Seed: 42,
+		PolishingEnabled: true, PolishingOnly: true,
+		PolishingStrategy: app.PolishingContiguousWindow, PolishingActiveSetSize: 3,
+		PolishingMaxSweeps: 2, PolishingEpochs: 1, PolishingIters: 2,
+		PolishingPopSize: 20, PolishingStagnationIters: 1, DisableConvergence: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := make([]float64, baseConfig.Circles*app.ParamsPerCircle)
+	rootID := "00000000-0000-4000-8000-000000000170"
+	parentID := "00000000-0000-4000-8000-000000000171"
+	saveParent := func(jobID, polishedFrom string, config JobConfig) {
+		t.Helper()
+		checkpoint := store.NewCheckpoint(jobID, params, 100, 200, 10, config)
+		checkpoint.Evaluations = 100
+		checkpoint.Termination = "completed"
+		checkpoint.PolishedFrom = polishedFrom
+		if err := persistence.SaveCheckpoint(jobID, checkpoint); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saveParent(rootID, "", baseConfig)
+	parentConfig := baseConfig
+	parentConfig.PolishingMaxSweeps = 1
+	saveParent(parentID, rootID, parentConfig)
+
+	job := &Job{
+		ID:           "00000000-0000-4000-8000-000000000172",
+		Config:       parentConfig,
+		BestParams:   params,
+		PolishedFrom: parentID,
+	}
+	got, err := inheritedContiguousWindowVisitCounts(persistence, job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, want, err := renderer.PlanContiguousWindows(10, 3, 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, want, err = renderer.PlanContiguousWindows(10, 3, 1, want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("inherited visits = %v, want replayed lineage %v", got, want)
+	}
+}
+
+func TestInheritedContiguousWindowVisitCountsRejectsBrokenLineage(t *testing.T) {
+	persistence, err := store.NewFSStore(filepath.Join(t.TempDir(), "data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := app.Normalize(JobConfig{
+		RefPath: "ref.png", Mode: app.ModeBatch, Circles: 2, BatchSize: 2,
+		Iters: 2, PopSize: 20, Seed: 42, PolishingEnabled: true, PolishingOnly: true,
+		PolishingStrategy: app.PolishingContiguousWindow, PolishingActiveSetSize: 1,
+		PolishingMaxSweeps: 1, PolishingEpochs: 1, PolishingIters: 2,
+		PolishingPopSize: 20, PolishingStagnationIters: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := &Job{
+		ID:           "00000000-0000-4000-8000-000000000173",
+		Config:       config,
+		BestParams:   make([]float64, 2*app.ParamsPerCircle),
+		PolishedFrom: "00000000-0000-4000-8000-000000000174",
+	}
+	if _, err := inheritedContiguousWindowVisitCounts(persistence, job); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("missing parent error = %v, want store.ErrNotFound", err)
+	}
+
+	firstID := "00000000-0000-4000-8000-000000000176"
+	secondID := "00000000-0000-4000-8000-000000000177"
+	save := func(jobID, polishedFrom string, checkpointConfig JobConfig) {
+		t.Helper()
+		checkpoint := store.NewCheckpoint(jobID, job.BestParams, 100, 200, 10, checkpointConfig)
+		checkpoint.Termination = "completed"
+		checkpoint.PolishedFrom = polishedFrom
+		if err := persistence.SaveCheckpoint(jobID, checkpoint); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save(firstID, secondID, config)
+	save(secondID, firstID, config)
+	job.PolishedFrom = firstID
+	if _, err := inheritedContiguousWindowVisitCounts(persistence, job); err == nil || !strings.Contains(err.Error(), "cyclic") {
+		t.Fatalf("cyclic lineage error = %v, want an explicit cycle error", err)
+	}
+
+	incompatibleID := "00000000-0000-4000-8000-000000000178"
+	incompatible := config
+	incompatible.PolishingStrategy = app.PolishingResidualRegion
+	save(incompatibleID, "00000000-0000-4000-8000-000000000179", incompatible)
+	job.PolishedFrom = incompatibleID
+	visits, err := inheritedContiguousWindowVisitCounts(persistence, job)
+	if err != nil {
+		t.Fatalf("incompatible strategy should end coverage history: %v", err)
+	}
+	if visits != nil {
+		t.Fatalf("incompatible strategy visits = %v, want a fresh history", visits)
+	}
+}
+
+func TestRunJobContiguousWindowContinuationIsDeterministicForSameParentAndSeed(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.png")
+	createTestImage(t, imgPath)
+	persistence, err := store.NewFSStore(filepath.Join(tmpDir, "data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := app.Normalize(JobConfig{
+		RefPath: imgPath, Mode: app.ModeBatch, Backend: app.BackendCPU,
+		Circles: 2, BatchSize: 2, Iters: 2, OptimizerEpochs: 1, PopSize: 20,
+		Threads: 1, Seed: 42, EffectiveSeed: 42, DisableConvergence: true,
+		PolishingEnabled: true, PolishingOnly: true,
+		PolishingStrategy: app.PolishingContiguousWindow, PolishingActiveSetSize: 1,
+		PolishingMaxSweeps: 1, PolishingEpochs: 1, PolishingIters: 3,
+		PolishingPopSize: 20, PolishingStagnationIters: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := []float64{
+		15, 15, 10, 1, 0, 0, 1,
+		35, 35, 8, 0, 0, 1, 1,
+	}
+	parentID := "00000000-0000-4000-8000-000000000175"
+	parent := store.NewCheckpoint(parentID, params, 1000, 2000, 10, config)
+	parent.Termination = "completed"
+	if err := persistence.SaveCheckpoint(parentID, parent); err != nil {
+		t.Fatal(err)
+	}
+
+	jm := NewJobManager()
+	run := func() *Job {
+		t.Helper()
+		job := jm.CreateJob(app.DefaultProject, config)
+		if err := jm.UpdateJob(job.ID, func(live *Job) {
+			updateBestResult(live, params, parent.BestCost)
+			live.InitialCost = parent.InitialCost
+			live.Iterations = parent.Iterations
+			live.Evaluations = int(parent.Evaluations)
+			live.PolishedFrom = parentID
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := runJob(context.Background(), jm, persistence, job.ID); err != nil {
+			t.Fatal(err)
+		}
+		completed, _ := jm.GetJob(job.ID)
+		return completed
+	}
+	first, second := run(), run()
+	if first.BestCost != second.BestCost || !reflect.DeepEqual(first.BestParams, second.BestParams) {
+		t.Fatalf("same parent/config/seed diverged: first cost=%v params=%v second cost=%v params=%v",
+			first.BestCost, first.BestParams, second.BestCost, second.BestParams)
+	}
+}
+
 func TestRunJobResumesSingleStageBatch(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")

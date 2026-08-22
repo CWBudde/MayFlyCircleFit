@@ -53,7 +53,8 @@ var polishStrategies = []BatchPolishStrategy{
 //
 // The reference is rendered from a known circle vector and the starting vector
 // is that truth jittered by 2%, so the error is genuinely recoverable. Sweep
-// budgets are the shipped default of 3, the ceil(circles/activeSetSize) budget
+// budgets are the historical three-sweep default, the
+// ceil(circles/activeSetSize) budget
 // at which contiguous-window has offered every draw slot to the optimizer once,
 // and a longer budget that costs contiguous-window roughly what 13 sweeps cost
 // the merit-based strategies.

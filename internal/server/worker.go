@@ -542,6 +542,10 @@ func polishBatchResult(
 	observer opt.Observer,
 	baseIterations, baseEvaluations int,
 ) (*renderer.OptimizationResult, error) {
+	initialVisitCounts, err := inheritedContiguousWindowVisitCounts(checkpointStore, job)
+	if err != nil {
+		return nil, fmt.Errorf("restore polishing coverage: %w", err)
+	}
 	seed := job.Config.EffectiveSeed
 	if seed == 0 {
 		seed = job.Config.Seed
@@ -602,9 +606,10 @@ func polishBatchResult(
 	}
 
 	polish, err := renderer.PolishCircleBatchContext(ctx, rend, polisher, batch.BestParams, renderer.BatchPolishOptions{
-		ActiveSetSize: job.Config.PolishingActiveSetSize,
-		MaxSweeps:     job.Config.PolishingMaxSweeps,
-		Strategy:      renderer.BatchPolishStrategy(job.Config.PolishingStrategy),
+		ActiveSetSize:      job.Config.PolishingActiveSetSize,
+		MaxSweeps:          job.Config.PolishingMaxSweeps,
+		Strategy:           renderer.BatchPolishStrategy(job.Config.PolishingStrategy),
+		InitialVisitCounts: initialVisitCounts,
 		Observer: func(progress opt.Progress) {
 			progress.Iterations += mainIterations
 			progress.Evaluations += mainEvaluations
@@ -672,6 +677,77 @@ func polishBatchResult(
 		"best_cost", polish.BestCost,
 	)
 	return batch, nil
+}
+
+// inheritedContiguousWindowVisitCounts reconstructs the selection history a
+// polishing continuation inherits without adding derived state to checkpoints.
+// Only PolishedFrom links are followed: an extension changes the vector and a
+// merit-based strategy does not leave enough information to replay its active
+// sets. The checkpoints are replayed oldest first through the renderer's own
+// planner so selection and reconstruction cannot disagree.
+func inheritedContiguousWindowVisitCounts(checkpointStore store.Store, job *Job) ([]int, error) {
+	if checkpointStore == nil || job == nil || job.PolishedFrom == "" ||
+		job.Config.PolishingStrategy != app.PolishingContiguousWindow {
+		return nil, nil
+	}
+	circleCount := len(job.BestParams) / app.ParamsPerCircle
+	if circleCount == 0 {
+		circleCount = job.Config.Circles
+	}
+
+	seen := map[string]struct{}{job.ID: {}}
+	lineage := make([]*store.Checkpoint, 0, 4)
+	for parentID := job.PolishedFrom; parentID != ""; {
+		if _, repeated := seen[parentID]; repeated {
+			return nil, fmt.Errorf("checkpoint polishing lineage is cyclic at %q", parentID)
+		}
+		seen[parentID] = struct{}{}
+		if len(lineage) >= maxChainLength {
+			return nil, fmt.Errorf("checkpoint polishing lineage exceeds %d stages", maxChainLength)
+		}
+		checkpoint, err := checkpointStore.LoadCheckpoint(parentID)
+		if err != nil {
+			return nil, fmt.Errorf("load parent checkpoint %q: %w", parentID, err)
+		}
+		config, err := app.Normalize(checkpoint.Config)
+		if err != nil {
+			return nil, fmt.Errorf("normalize parent checkpoint %q: %w", parentID, err)
+		}
+		if checkpoint.ActualCircles != circleCount ||
+			checkpoint.ActualCircles != checkpoint.RequestedCircles ||
+			!config.PolishingEnabled ||
+			config.PolishingStrategy != app.PolishingContiguousWindow ||
+			!completedCheckpointTermination(checkpoint.Termination) {
+			break
+		}
+		lineage = append(lineage, checkpoint)
+		parentID = checkpoint.PolishedFrom
+	}
+
+	var visits []int
+	for i := len(lineage) - 1; i >= 0; i-- {
+		config, _ := app.Normalize(lineage[i].Config)
+		_, nextVisits, err := renderer.PlanContiguousWindows(
+			circleCount,
+			config.PolishingActiveSetSize,
+			config.PolishingMaxSweeps,
+			visits,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("replay parent checkpoint %q: %w", lineage[i].JobID, err)
+		}
+		visits = nextVisits
+	}
+	return visits, nil
+}
+
+func completedCheckpointTermination(termination string) bool {
+	switch termination {
+	case "completed", "target_cost", "stagnation", "stage_convergence", "refill_limit":
+		return true
+	default:
+		return false
+	}
 }
 
 // parallelEvaluationOption derives the optimizer option from what the renderer

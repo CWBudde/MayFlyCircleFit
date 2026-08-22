@@ -20,9 +20,12 @@ type BatchPolishOptions struct {
 	ActiveSetSize int
 	MaxSweeps     int
 	Strategy      BatchPolishStrategy
-	Observer      opt.Observer
-	OnEpoch       func(BatchPolishEpoch) error
-	OnSweep       func(BatchPolishProgress) error
+	// InitialVisitCounts carries zero-based draw-slot selection counts from
+	// compatible completed polishing calls. The slice is copied, never mutated.
+	InitialVisitCounts []int
+	Observer           opt.Observer
+	OnEpoch            func(BatchPolishEpoch) error
+	OnSweep            func(BatchPolishProgress) error
 }
 
 // BatchPolishStrategy selects how a polishing active set and its population
@@ -40,7 +43,9 @@ const (
 	// circles that influence each region while residual-seeding weak draw slots.
 	BatchPolishResidualRegion BatchPolishStrategy = "residual-region"
 	// BatchPolishContiguousWindow polishes a contiguous run of circles in draw
-	// order, sliding the window toward the front of the vector across sweeps.
+	// order. Full-coverage budgets start at the front of the vector, where a
+	// greedy fit leaves the most value; partial budgets retain the cheaper
+	// latest-first traversal.
 	//
 	// The other strategies pick circles by image-space merit, which scatters the
 	// active set through the draw order. Because only the circles before the
@@ -149,6 +154,10 @@ func PolishCircleBatchContext(
 	if options.MaxSweeps < 0 {
 		return nil, fmt.Errorf("%w: maximum polishing sweeps cannot be negative", ErrInvalidOptimizationInput)
 	}
+	visitCounts, err := polishingVisitCounts(circleCount, options.InitialVisitCounts)
+	if err != nil {
+		return nil, err
+	}
 	if options.Strategy == "" {
 		options.Strategy = BatchPolishWeakestReplacement
 	}
@@ -184,7 +193,7 @@ func PolishCircleBatchContext(
 	}
 
 	visitedRegions := make(map[int]bool)
-	visitCounts := make(map[int]int, circleCount)
+	preferEarlierContiguousWindows := contiguousWindowBudgetCoversVector(circleCount, options.ActiveSetSize, options.MaxSweeps)
 	incumbentAudit := &incumbentAuditCache{session: fullSession}
 	// Each sweep opens its own baked-prefix sessions and its own evaluation pool.
 	// Draining the previous sweep's cleanups at the top of the next one, and
@@ -212,6 +221,7 @@ func PolishCircleBatchContext(
 			options.Strategy,
 			visitedRegions,
 			visitCounts,
+			preferEarlierContiguousWindows,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("select polishing active set: %w", err)
@@ -608,6 +618,7 @@ func selectPolishingActiveSet(
 	strategy BatchPolishStrategy,
 	visitedRegions map[int]bool,
 	visitCounts map[int]int,
+	preferEarlierContiguousWindows bool,
 ) (polishingActiveSet, error) {
 	if strategy == BatchPolishWeakestReplacement {
 		audit, err := incumbentAudit.get(params)
@@ -644,7 +655,7 @@ func selectPolishingActiveSet(
 	}
 	if strategy == BatchPolishContiguousWindow {
 		circleCount := len(params) / paramsPerCircle
-		active := selectContiguousWindowCircles(circleCount, activeSetSize, visitCounts)
+		active := selectContiguousWindowCircles(circleCount, activeSetSize, visitCounts, preferEarlierContiguousWindows)
 		return polishingActiveSet{Circles: active, RetainedParams: removeActiveCircleParams(params, active)}, nil
 	}
 
@@ -656,28 +667,84 @@ func selectPolishingActiveSet(
 	return polishingActiveSet{Circles: active, RetainedParams: removeActiveCircleParams(params, active)}, nil
 }
 
+// PlanContiguousWindows returns the deterministic active sets and resulting
+// visit counts for a contiguous-window polishing call. It is shared with the
+// server's continuation reconstruction so persisted lineage cannot drift from
+// the renderer's selector. Active sets contain zero-based draw slots.
+func PlanContiguousWindows(circleCount, activeSetSize, maxSweeps int, initialVisitCounts []int) ([][]int, []int, error) {
+	if circleCount < 1 {
+		return nil, nil, fmt.Errorf("%w: circle count must be positive", ErrInvalidOptimizationInput)
+	}
+	if activeSetSize < 1 || activeSetSize > circleCount {
+		return nil, nil, fmt.Errorf("%w: active set size must be in [1, %d]", ErrInvalidOptimizationInput, circleCount)
+	}
+	if maxSweeps < 0 {
+		return nil, nil, fmt.Errorf("%w: maximum polishing sweeps cannot be negative", ErrInvalidOptimizationInput)
+	}
+	visits, err := polishingVisitCounts(circleCount, initialVisitCounts)
+	if err != nil {
+		return nil, nil, err
+	}
+	preferEarlier := contiguousWindowBudgetCoversVector(circleCount, activeSetSize, maxSweeps)
+	activeSets := make([][]int, 0, maxSweeps)
+	for range maxSweeps {
+		active := selectContiguousWindowCircles(circleCount, activeSetSize, visits, preferEarlier)
+		activeSets = append(activeSets, active)
+		for _, circle := range active {
+			visits[circle]++
+		}
+	}
+	resultingVisits := make([]int, circleCount)
+	for circle, count := range visits {
+		resultingVisits[circle] = count
+	}
+	return activeSets, resultingVisits, nil
+}
+
+func polishingVisitCounts(circleCount int, initial []int) (map[int]int, error) {
+	visits := make(map[int]int, circleCount)
+	if initial == nil {
+		return visits, nil
+	}
+	if len(initial) != circleCount {
+		return nil, fmt.Errorf("%w: initial polishing visit counts contain %d circles, want %d", ErrInvalidOptimizationInput, len(initial), circleCount)
+	}
+	for circle, count := range initial {
+		if count < 0 {
+			return nil, fmt.Errorf("%w: initial polishing visit count for circle %d cannot be negative", ErrInvalidOptimizationInput, circle+1)
+		}
+		if count > 0 {
+			visits[circle] = count
+		}
+	}
+	return visits, nil
+}
+
+func contiguousWindowBudgetCoversVector(circleCount, activeSetSize, maxSweeps int) bool {
+	return maxSweeps >= (circleCount+activeSetSize-1)/activeSetSize
+}
+
 // selectContiguousWindowCircles returns activeSetSize consecutive draw slots,
-// preferring the window whose circles have been polished least and, among
-// equally unvisited windows, the one that starts latest.
+// preferring the window whose circles have been polished least. Ties go to the
+// earliest start when the caller's budget covers the vector and to the latest
+// start for a partial budget.
 //
-// Preferring the latest start is what makes the strategy cheap. The caller
+// Preferring the latest start keeps a partial pass cheap. The caller
 // bakes circles before the first active slot into a reusable canvas, so a
 // window starting at s costs circleCount-s circle rasterizations per candidate;
 // the last window costs exactly activeSetSize, the same as extending a batch.
-// Visit counts then slide the window toward the front on later sweeps, which
-// covers every circle in ceil(circleCount/activeSetSize) sweeps and makes the
-// per-sweep cost rise predictably instead of being maximal from the start.
+// When the configured budget covers every draw slot, early fitted circles are
+// more valuable and earliest-first is also no more expensive across the whole
+// cycle. Visit counts keep either traversal from repeating a window while a
+// less-visited one remains and carry that coverage across continuations.
 //
 // That coverage has to be paid for in sweeps, and the sweep budget is bounded:
 // app.MaxPolishingSweeps is 32, so a vector with more than 32*activeSetSize
-// circles cannot be covered at all, and the shipped default of three sweeps
-// only ever offers the last 3*activeSetSize slots to the optimizer. The
+// circles cannot be covered at all, and a fresh pass at the shipped default of
+// eight sweeps only offers the last 8*activeSetSize slots to the optimizer. The
 // strategy is therefore cheaper per sweep but not better per second; see
 // docs/contiguous-window-polish-report.md for the measurement.
-//
-// The scan runs from the latest start downward and keeps a strictly better
-// total, so ties resolve to the latest window without a separate tie-break.
-func selectContiguousWindowCircles(circleCount, activeSetSize int, visitCounts map[int]int) []int {
+func selectContiguousWindowCircles(circleCount, activeSetSize int, visitCounts map[int]int, preferEarlier bool) []int {
 	if activeSetSize >= circleCount {
 		active := make([]int, circleCount)
 		for i := range active {
@@ -687,13 +754,20 @@ func selectContiguousWindowCircles(circleCount, activeSetSize int, visitCounts m
 	}
 
 	bestStart, bestVisits := 0, math.MaxInt
-	for start := circleCount - activeSetSize; start >= 0; start-- {
+	first, last, step := circleCount-activeSetSize, 0, -1
+	if preferEarlier {
+		first, last, step = 0, circleCount-activeSetSize, 1
+	}
+	for start := first; ; start += step {
 		visits := 0
 		for circle := start; circle < start+activeSetSize; circle++ {
 			visits += visitCounts[circle]
 		}
 		if visits < bestVisits {
 			bestStart, bestVisits = start, visits
+		}
+		if start == last {
+			break
 		}
 	}
 

@@ -176,7 +176,9 @@ const (
 	// PolishingContiguousWindow polishes a consecutive run of draw slots so the
 	// circles before the window can be baked into a reusable canvas. The other
 	// strategies select by image-space merit and routinely include circle one,
-	// which bakes nothing and rasterizes the whole image for that candidate.
+	// which bakes nothing and rasterizes the whole image for that candidate. A
+	// full-coverage budget starts with the earliest draw slots, while a partial
+	// budget keeps the cheaper latest-first traversal.
 	PolishingContiguousWindow PolishingStrategy = "contiguous-window"
 )
 

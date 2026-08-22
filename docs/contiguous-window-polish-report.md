@@ -12,7 +12,7 @@ This note measures the thing a user actually chooses a strategy for -- how much
 error a polishing run removes per second of wall clock -- and the answer is
 narrower than the render-cost measurement suggests. The strategy is genuinely
 cheaper per sweep. On these workloads it is not cheaper per unit of error
-removed, and at the shipped default sweep budget it removed no error at all.
+removed, and at the then-shipped three-sweep budget it removed no error at all.
 
 > **Scope correction, 2026-08-18.** That conclusion holds for the benchmarks
 > here and does not generalize. On a real 1000-circle greedy fit,
@@ -33,10 +33,13 @@ candidate rasterizes the whole vector. `replacement`, `hybrid-overlap`, and
 `residual-region` select by image-space merit, which scatters the active set
 through the draw order and routinely reaches circle one.
 
-`contiguous-window` selects `activeSetSize` consecutive slots, starting as late
-as the visit counts allow. The first sweep therefore costs about
+`contiguous-window` selects `activeSetSize` consecutive slots. A partial budget
+starts as late as the visit counts allow, so its first sweep costs about
 `activeSetSize` circle rasterizations per candidate instead of `circles`, and
-later sweeps slide the window toward the front, costing `circles - windowStart`.
+later sweeps slide toward the front. A budget large enough to cover the vector
+starts at the earliest equally visited window instead, where a greedy fit has
+the most value. Compatible `polishedFrom` continuations reconstruct and inherit
+their ancestors' visit counts from checkpoint lineage.
 
 ## Render cost, isolated
 
@@ -64,7 +67,7 @@ that truth jittered by 2%, so all of the error is recoverable. Every strategy
 gets the identical optimizer budget and the identical starting vector. Medians
 of three; the polishing result itself is deterministic, only the timing varies.
 
-### 3 sweeps, the shipped `--polishing-max-sweeps` default
+### 3 sweeps, the default when this measurement was taken
 
 | Strategy | Wall clock | Accepted sweeps | Final cost | Error removed |
 | --- | ---: | ---: | ---: | ---: |
@@ -156,7 +159,7 @@ is best on the synthetic vector and a no-op on the fitted one, while
 `residual-region` is the only strategy that repairs the fitted vector.
 
 `contiguous-window` is the worst-placed strategy for this gate by construction:
-it does not target weak circles at all, and at the default three sweeps it only
+it does not target weak circles at all, and at the then-default three sweeps it only
 ever offers the last `3 * activeSetSize` draw slots to the optimizer. With 256
 circles and the default `activeSetSize` of 5, that is 15 of 256 slots, all at
 the end of the draw order.
@@ -263,7 +266,7 @@ slots covered, 24 of them twice. Summed rasterizations per candidate across the
 
 | Traversal | Rasterizations/candidate | Coverage |
 | --- | ---: | ---: |
-| latest-first (current) | 16,872 | 1000/1000 |
+| latest-first (before Task 16.8) | 16,872 | 1000/1000 |
 | earliest-first | **16,152** | 1000/1000 |
 
 **Over a full coverage cycle, latest-first is not the cheaper traversal** -- it
@@ -274,10 +277,17 @@ prefix and the run stops before the window slides forward.
 
 The measured cost of that ordering is the Q1/Q2 columns above: the first half
 of each pass returned 0.398 and 0.298 against second halves of 2.348 and 1.947.
-Because `visitCounts` is rebuilt per `PolishCircleBatchContext` call
-(`internal/fit/renderer/batch_polish.go:187`), every new job restarts at slot
-968 and re-walks the cheap end before reaching the valuable one. See PLAN Task
-16.8.
+Before Task 16.8, `visitCounts` was rebuilt per
+`PolishCircleBatchContext` call, so every new job restarted at slot 968 and
+re-walked the cheap end before reaching the valuable one.
+
+> **Resolved 2026-08-22 (Task 16.8).** A configured budget of at least
+> `ceil(circleCount / activeSetSize)` now breaks equal-visit ties earliest-first;
+> smaller budgets retain the old latest-first order. Consecutive compatible
+> polish continuations replay `polishedFrom` checkpoint configurations to carry
+> visit counts across calls. The 1000/32/32 traversal therefore covers all
+> slots at 16,152 rasterizations per candidate, while the shipped eight-sweep
+> partial budget keeps its previous window sequence and cost.
 
 ## Dirty-region candidate scoring
 
@@ -345,8 +355,8 @@ keep selection quality-driven unless a new end-to-end profile shows otherwise.
 
 ## Recommendation
 
-- The default three sweeps are not enough for `contiguous-window` to be worth
-  selecting. Raise `--polishing-max-sweeps` to at least
+- The current default eight sweeps are not enough for `contiguous-window` on
+  large vectors. Raise `--polishing-max-sweeps` to at least
   `ceil(circles / activeSetSize)`, the point at which the window has covered
   every slot, or leave the strategy alone. `app.MaxPolishingSweeps` caps the
   budget at 32, so full coverage is unreachable above `32 * activeSetSize`
