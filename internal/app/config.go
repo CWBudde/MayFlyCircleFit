@@ -23,10 +23,24 @@ const (
 	// units, more than any polishing pass returns above 200 circles. It bounds request validation at the trusted-local boundary, so
 	// it is a memory and wall-clock guard, not a modelling statement: circle
 	// parameters cost 28*K bytes and per-circle fit time grows with K.
-	MaxCircles         = 3000
-	MaxIterations      = 10000
-	MinPopulation      = 20
-	MaxPopulation      = 200
+	MaxCircles    = 3000
+	MaxIterations = 10000
+	MinPopulation = 20
+	// MaxPopulation was 200 until a campaign wanted to spend a very large
+	// population on a very small parameter vector. The two are not the same
+	// question: 200 was measured as the point of diminishing return for
+	// *polishing* an active set (docs/polishing-budget-report.md), where a
+	// sweep optimizes ~35 parameters and population 200 cost 5.2x the wall
+	// clock of 30 for 1.28x the error removed. A batch base stage fitting 8
+	// circles jointly is a 56-parameter global search with no warm start, and
+	// nothing here had ever measured whether a population an order of
+	// magnitude larger buys a better basin there. Raised to 4096 so that
+	// experiment is expressible. Like MaxCircles it bounds request validation
+	// at the trusted-local boundary, so it is a memory and wall-clock guard,
+	// not a modelling statement: a population costs popSize concurrent
+	// candidate vectors and each evaluation renders the whole canvas, so
+	// per-iteration time grows linearly with it.
+	MaxPopulation      = 4096
 	MaxOptimizerEpochs = 32
 	MaxBatchSize       = 100
 	MaxPolishingSweeps = 32

@@ -1418,7 +1418,7 @@ func TestServer_CreatePagePost_ValidationErrors(t *testing.T) {
 				"popSize": "1",
 				"seed":    "0",
 			},
-			errMsg: "Population size must be between 2 and 200",
+			errMsg: fmt.Sprintf("Population size must be between 2 and %d", app.MaxPopulation),
 		},
 	}
 
