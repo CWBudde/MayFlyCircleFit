@@ -105,10 +105,16 @@ with the step list compared for equality.
 | mean | **910.82** | ~36m | 983.13 | ~1m |
 | spread | **46.74** | | 230.29 | |
 
-The large population wins on the mean by about 7% and, more convincingly, cuts
-the seed-to-seed spread by a factor of five. That is exactly what more sampling
-of a 56-dimensional space should buy: a better and far more consistent basin.
-It costs roughly 35x the wall clock to buy it.
+Head to head the two are level at two seeds each. The 7.4% mean advantage comes
+entirely from variance: the large population never produced a bad seed, while
+pop 64 produced a 1004.06 and a 1127.73. The *ceiling* did not move — the single
+best base result in the table is pop 64's 897.44, found in 54 seconds, on the
+same seed where pop 4096 spent 38 minutes to reach 927.36.
+
+So a larger population raises the floor rather than the ceiling, at roughly 35x
+the wall clock. That is consistent with the two mechanisms below: more initial
+samples improve the worst case, while neither the exploration lifetime nor the
+recombination count improves with population, so the best case is unchanged.
 
 **The 256-circle half of the control is still running.** Whether that base
 advantage survives the climb is the actual question, and Finding 1 predicts it
@@ -131,19 +137,30 @@ iterations. Exploration therefore has a lifetime measured in iterations, and
 `popSize` does not extend it. A larger population searches a wider net during
 the same brief window; it cannot hold the window open.
 
-**Recombination does not scale with the population.** `internal/opt`'s adapter
-sets `config.NPop` and `config.NPopF` from `popSize` but never sets `config.NC`,
-the number of crossover offspring produced per iteration, which stays at its
-default of 20. At the library's default population of 20 that is one offspring
-per individual; at `popSize` 4096 it is 20 offspring for 4096 individuals. The
-genetic component of the algorithm is diluted by a factor of 200, leaving a
-larger swarm doing proportionally more velocity-following and no more mixing.
-`NM` does scale, at 5% of `NPop`.
+**Recombination is indifferent to the population size.** `internal/opt`'s
+adapter sets `config.NPop` and `config.NPopF` from `popSize` but never sets
+`config.NC`, which stays at its default of 20. `NC` is not a rate — it is an
+absolute count, and the mating loop spends it on a fixed elite slice
+(`mayfly.go:891`):
 
-That is the substantive difference from a classical GA, where recombination
-count scales with the population and a larger population sustains diversity
-across generations indefinitely. Here it does not, so GA intuition about
-population size should not be transferred without testing.
+```go
+for k := range config.NC / 2 {
+    p1 := males[k]      // both arrays are sorted by cost
+    p2 := females[k]
+```
+
+Ten pairs, always the ten best. At the library's default population of 20 that
+recombines the whole top half; at `popSize` 4096 it recombines the same ten
+pairs and leaves 4086 individuals doing nothing but velocity-following toward
+`gbest`. Raising `popSize` therefore buys a better initial sample and more
+mutants (`NM` does scale, at 5% of `NPop`) — but not one additional crossover.
+
+That is the substantive break with classical GA intuition, where offspring count
+scales with the population so a larger population sustains more recombination
+and more diversity indefinitely. Here the genetic operator is pinned to the
+elite regardless of population, so at large `popSize` the algorithm degenerates
+toward pure PSO — whose signature failure on multimodal landscapes is premature
+convergence.
 
 If the control confirms that the base advantage does not survive, the levers
 worth trying next are, in rough order of expected value:
