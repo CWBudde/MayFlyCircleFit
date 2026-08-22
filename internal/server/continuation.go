@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 )
 
@@ -33,9 +34,10 @@ var (
 )
 
 // continuationSource is the validated starting point every continuation shares:
-// a completed batch checkpoint, plus the configuration derived from it with the
-// resume count advanced, the effective seed carried forward, and every path
-// resolved against the input policy.
+// a complete batch checkpoint, or a refill-limited one rebased to its actual
+// size, plus the configuration derived from it with the resume count advanced,
+// the effective seed carried forward, and every path resolved against the input
+// policy.
 //
 // It exists so the schedule executor continues a stage through exactly the code
 // the extend and polish endpoints use. A second, parallel implementation of
@@ -93,9 +95,21 @@ func (s *Server) continuationSourceFor(jobID string, kind continuationKind) (*co
 		return nil, continuationFailure(http.StatusBadRequest, "invalid_checkpoint", "completed checkpoint is invalid")
 	}
 	config, err := app.Normalize(checkpoint.Config)
-	if err != nil || config.Mode != app.ModeBatch || len(checkpoint.BestParams) != config.Circles*7 {
+	if err != nil || config.Mode != app.ModeBatch {
 		return nil, continuationFailure(http.StatusBadRequest, "invalid_checkpoint", kind.requirement)
 	}
+	actualCircles := checkpoint.ActualCircles
+	complete := actualCircles == config.Circles
+	continuableShortStage := checkpoint.Termination == string(renderer.TerminationRefillLimit) && actualCircles < config.Circles
+	if len(checkpoint.BestParams) != actualCircles*app.ParamsPerCircle || (!complete && !continuableShortStage) {
+		return nil, continuationFailure(http.StatusBadRequest, "invalid_checkpoint", kind.requirement)
+	}
+	// A refill-limited stage is a valid checkpoint of the arrangement it did
+	// materialize. Continuations therefore inherit that actual size; otherwise
+	// another +N request would retain the gap and strand the chain again.
+	config.Circles = actualCircles
+	config.BatchSize = min(config.BatchSize, actualCircles)
+	config.PolishingActiveSetSize = min(config.PolishingActiveSetSize, actualCircles)
 	evaluations := int(checkpoint.Evaluations)
 	if int64(evaluations) != checkpoint.Evaluations {
 		return nil, continuationFailure(http.StatusBadRequest, "invalid_checkpoint", "checkpoint evaluation count is out of range")

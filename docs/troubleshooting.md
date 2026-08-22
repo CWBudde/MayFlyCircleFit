@@ -74,6 +74,37 @@ an omitted field is defaulted.
 | 501 | `sse_not_supported` | The response writer cannot stream. This means a proxy or middleware in front of the server buffers responses; connect to the server directly. |
 | 503 | `checkpoints_unavailable`, `schedules_unavailable`, `project_unavailable` | The feature needs the persistence root the server was started without. Start `serve` with a writable `--data-root`. |
 
+### A batch ends at `refill_limit`
+
+Batch pruning can reject an appended circle that does not change a pixel or
+remove enough error to earn its slot. After three extra refill stages the job
+finishes with `termination: "refill_limit"`. This is a usable result, but it may
+contain fewer circles than requested. Read the explicit counts from the job
+resource instead of inferring production from the configuration:
+
+```json
+{
+  "termination": "refill_limit",
+  "requestedCircles": 2814,
+  "actualCircles": 2813,
+  "config": {"circles": 2814}
+}
+```
+
+The checkpoint is complete at `actualCircles` and may be extended or polished.
+`POST /api/v1/jobs/{id}/extend` treats that actual count as its starting point;
+`{"additionalCircles": 1}` in the example above targets 2814 again, not 2815.
+This means a chain driver can continue from the short job or retry the last
+addition with another explicit seed. Older servers rejected such a continuation
+as `400 invalid_checkpoint`; recovery there requires using the last complete
+ancestor, then retrying the extension, preferably with a different seed.
+
+The pipeline does not silently change seeds during refill. Its optimizer
+contract has no stage-local reseed operation, and repurposing the persisted
+resume counter would change established fixed-seed trajectories. Now that the
+short checkpoint is both visible and continuable, a caller can choose whether
+to retain the seed or deliberately retry with a new one.
+
 ## Resource and environment failures
 
 These are the failures that come from the machine rather than from the request.

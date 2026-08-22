@@ -1029,6 +1029,8 @@ type jobStatusResponse struct {
 	Project               app.Project `json:"project"`
 	State                 JobState    `json:"state"`
 	Config                JobConfig   `json:"config"`
+	RequestedCircles      int         `json:"requestedCircles"`
+	ActualCircles         int         `json:"actualCircles"`
 	BestCost              float64     `json:"bestCost"`
 	BestRevision          uint64      `json:"bestRevision"`
 	CandidateCost         *float64    `json:"candidateCost,omitempty"`
@@ -1086,6 +1088,7 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 	actions := s.jobActions(job)
 	response := jobStatusResponse{
 		ID: job.ID, Project: app.NormalizeProject(job.Project), State: job.State, Config: job.Config,
+		RequestedCircles: job.RequestedCircles, ActualCircles: job.ActualCircles,
 		BestCost: job.BestCost, BestRevision: job.BestRevision,
 		CandidateCost: cloneFloat(job.CandidateCost), InitialCost: job.InitialCost,
 		PSNR: psnr, PSNRInfinite: psnrInfinite, SSIM: cloneFloat(job.SSIM),

@@ -180,6 +180,14 @@ Rendering-side invariants live in
   to jobs, checkpoints, `status`, and `checkpoints list`. The checkpoint
   `termination` field is free-form, so new reasons need no schema bump, and
   readers reject a version above 2.
+- A batch that exhausts its bounded refill attempts reports `refill_limit` and
+  remains a completed, continuable result at the number of circles it actually
+  materialized. Job status and list resources expose both `requestedCircles`
+  and `actualCircles`; `config.circles` remains the original target. Extending a
+  short result rebases the inherited configuration to `actualCircles`, so an
+  extension by N targets `actualCircles + N` instead of preserving the old gap.
+  Only `refill_limit` authorizes this short-checkpoint contract; any other batch
+  checkpoint whose parameter count does not match its configuration is invalid.
 - The configured `variant` is honored at every optimizer construction site.
 - MayFly's `optimization_started` and `iteration_completed` events are demoted
   to debug, so `--log-level=debug` emits one record per optimizer iteration.

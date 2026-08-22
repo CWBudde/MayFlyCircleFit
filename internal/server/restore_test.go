@@ -67,7 +67,8 @@ func TestJobFromCheckpointTreatsRefillLimitAsCompleted(t *testing.T) {
 	})
 	checkpoint.Termination = "refill_limit"
 	job := jobFromCheckpoint(checkpoint, app.DefaultProject)
-	if job.State != StateCompleted || job.Termination != "refill_limit" {
+	if job.State != StateCompleted || job.Termination != "refill_limit" ||
+		job.RequestedCircles != 1 || job.ActualCircles != 1 {
 		t.Fatalf("restored refill-limited job = %#v", job)
 	}
 }

@@ -408,7 +408,14 @@ Two traps the measurement already exposes:
 - [ ] The 599 s sweep above is re-run at equal budget and its wall clock
       recorded; the cost it reaches is unchanged.
 
-### Task 15.8: A Short Batch Stage Must Not Strand the Run (P1) — correctness
+### Task 15.8: A Short Batch Stage Must Not Strand the Run (P1) ✅
+
+Completed: `refill_limit` remains a successful batch outcome at its produced
+size. Job resources report requested and actual counts explicitly, and extend
+or polish continuations rebase a short checkpoint to its actual size. A `+N`
+extend therefore targets the produced count plus N. The pipeline keeps its seed
+stable; callers may deliberately retry with another seed without losing the
+usable short checkpoint.
 
 Hit on 2026-08-20 at 2 813 circles. An extend to 2 814 finished
 `termination: refill_limit` with `requestedCircles` 2 814 and `actualCircles`
@@ -436,24 +443,24 @@ Two defects, worth separating:
   outcome of the pruning gate, but it should not be silently reported as a
   completed extension of the requested size.
 
-- [ ] Surface the produced circle count on the job resource, so
+- [x] Surface the produced circle count on the job resource, so
       `actualCircles < requestedCircles` is visible to any client.
-- [ ] Decide and document the contract for a short stage: either fail the job
+- [x] Decide and document the contract for a short stage: either fail the job
       with a typed error naming `refill_limit`, or accept it as a complete
       checkpoint at its actual size so continuations remain legal. Silently
       completing at a size that no continuation accepts is the one option to
       rule out.
-- [ ] Consider reseeding inside the pipeline when a refill exhausts its stages,
+- [x] Consider reseeding inside the pipeline when a refill exhausts its stages,
       since a fresh seed cleared this immediately.
-- [ ] Record the failure and its recovery in `docs/troubleshooting.md`, next to
+- [x] Record the failure and its recovery in `docs/troubleshooting.md`, next to
       the existing JSON API error envelope material.
 
 **Acceptance Checks:**
 
-- [ ] A test drives the pipeline into `refill_limit` and asserts the chosen
+- [x] A test drives the pipeline into `refill_limit` and asserts the chosen
       contract holds — either the typed failure, or an extend that succeeds from
       the short checkpoint.
-- [ ] A test asserts the job resource distinguishes requested from produced
+- [x] A test asserts the job resource distinguishes requested from produced
       circles.
 
 ### Task 15.9: Cut the Fixed Cost of a Single-Circle Extend (P2)

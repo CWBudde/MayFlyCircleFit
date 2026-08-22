@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
+	"github.com/cwbudde/mayflycirclefit/internal/opt"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 	"github.com/google/uuid"
 )
@@ -1629,6 +1631,174 @@ func TestExtendEndpointCreatesOrderedBatchContinuation(t *testing.T) {
 	}
 	if continuation.Iterations != 8000 || continuation.Evaluations != 900000 || !reflect.DeepEqual(continuation.BestParams, params) {
 		t.Fatalf("extension continuation state = %+v", continuation)
+	}
+}
+
+// ineffectiveBatchOptimizer always returns a minimum-opacity black circle.
+// Over an already-perfect black prefix that circle changes no final pixel, so
+// the batch pruner removes it on every bounded refill attempt.
+type ineffectiveBatchOptimizer struct{}
+
+func (ineffectiveBatchOptimizer) Run(eval func([]float64) float64, _, _ []float64, dim int) ([]float64, float64) {
+	params := make([]float64, dim)
+	return params, eval(params)
+}
+
+func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "black.png")
+	ref := image.NewNRGBA(image.Rect(0, 0, 8, 8))
+	for i := 3; i < len(ref.Pix); i += 4 {
+		ref.Pix[i] = 255
+	}
+	file, err := os.Create(imgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(file, ref); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	const requestedCircles = 2
+	prefix := []float64{3.5, 3.5, 8, 0, 0, 0, 1}
+	result, err := renderer.OptimizeBatchAppendContext(
+		context.Background(),
+		renderer.NewCPURenderer(ref, requestedCircles),
+		ineffectiveBatchOptimizer{},
+		prefix,
+		requestedCircles,
+		1,
+		renderer.DisabledConvergenceConfig(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Termination != renderer.TerminationRefillLimit || result.OptimizedCircles != 1 {
+		t.Fatalf("pipeline result = termination %q, circles %d; want refill_limit with one circle",
+			result.Termination, result.OptimizedCircles)
+	}
+
+	fsStore, err := store.NewFSStore(filepath.Join(tmpDir, "data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithOptions(":0", fsStore, ServerOptions{InputRoots: []string{tmpDir}})
+	shutdownTestServer(t, server)
+	config, err := app.Normalize(JobConfig{
+		RefPath: imgPath, Mode: app.ModeBatch, Circles: requestedCircles, BatchSize: 1,
+		Iters: 1, OptimizerEpochs: 1, PopSize: app.MinPopulation, Threads: 1, Seed: 42,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := server.jobManager.CreateJob(app.DefaultProject, config)
+	if err := server.jobManager.StartJob(source.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.jobManager.CompleteJob(source.ID, result.Iterations, result.Evaluations,
+		result.BestParams, result.BestCost, result.InitialCost, string(result.Termination)); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := store.NewCheckpoint(source.ID, result.BestParams, result.BestCost, result.InitialCost, result.Iterations, config)
+	checkpoint.Evaluations = int64(result.Evaluations)
+	checkpoint.Termination = string(result.Termination)
+	if err := fsStore.SaveCheckpoint(source.ID, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	// Keep the accepted continuation pending so its inherited size is stable to
+	// inspect without racing the worker.
+	server.cancel()
+
+	status := httptest.NewRecorder()
+	server.Handler().ServeHTTP(status, httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+source.ID, nil))
+	if status.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", status.Code, status.Body.String())
+	}
+	var resource jobStatusResponse
+	if err := json.NewDecoder(status.Body).Decode(&resource); err != nil {
+		t.Fatal(err)
+	}
+	if resource.RequestedCircles != requestedCircles || resource.ActualCircles != 1 {
+		t.Fatalf("job resource circles = requested %d actual %d, want %d and 1",
+			resource.RequestedCircles, resource.ActualCircles, requestedCircles)
+	}
+	list := httptest.NewRecorder()
+	server.Handler().ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil))
+	if list.Code != http.StatusOK {
+		t.Fatalf("list = %d body=%s", list.Code, list.Body.String())
+	}
+	var summaries []JobSummary
+	if err := json.NewDecoder(list.Body).Decode(&summaries); err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 || summaries[0].RequestedCircles != requestedCircles || summaries[0].ActualCircles != 1 {
+		t.Fatalf("job list circle counts = %+v, want requested %d actual 1", summaries, requestedCircles)
+	}
+
+	polish := httptest.NewRecorder()
+	server.Handler().ServeHTTP(polish, httptest.NewRequest(http.MethodPost,
+		"/api/v1/jobs/"+source.ID+"/polish", strings.NewReader(`{}`)))
+	if polish.Code != http.StatusCreated {
+		t.Fatalf("polish status = %d body=%s", polish.Code, polish.Body.String())
+	}
+	var polishPayload struct {
+		JobID string `json:"jobId"`
+	}
+	if err := json.NewDecoder(polish.Body).Decode(&polishPayload); err != nil {
+		t.Fatal(err)
+	}
+	polishingContinuation, ok := server.jobManager.GetJob(polishPayload.JobID)
+	if !ok {
+		t.Fatal("polishing continuation job not found")
+	}
+	if polishingContinuation.Config.Circles != 1 || polishingContinuation.Config.BatchSize != 1 ||
+		polishingContinuation.Config.PolishingActiveSetSize != 1 || polishingContinuation.ActualCircles != 1 {
+		t.Fatalf("polishing continuation did not rebase count-dependent settings: %+v", polishingContinuation)
+	}
+
+	extend := httptest.NewRecorder()
+	server.Handler().ServeHTTP(extend, httptest.NewRequest(http.MethodPost,
+		"/api/v1/jobs/"+source.ID+"/extend", strings.NewReader(`{"additionalCircles":1}`)))
+	if extend.Code != http.StatusCreated {
+		t.Fatalf("extend status = %d body=%s", extend.Code, extend.Body.String())
+	}
+	var payload struct {
+		JobID           string `json:"jobId"`
+		PreviousCircles int    `json:"previousCircles"`
+		TargetCircles   int    `json:"targetCircles"`
+	}
+	if err := json.NewDecoder(extend.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.PreviousCircles != 1 || payload.TargetCircles != requestedCircles {
+		t.Fatalf("extension sizes = previous %d target %d, want 1 and %d",
+			payload.PreviousCircles, payload.TargetCircles, requestedCircles)
+	}
+	continuation, ok := server.jobManager.GetJob(payload.JobID)
+	if !ok {
+		t.Fatal("continuation job not found")
+	}
+	if continuation.Config.Circles != requestedCircles || continuation.RequestedCircles != requestedCircles ||
+		continuation.ActualCircles != 1 || !reflect.DeepEqual(continuation.BestParams, prefix) {
+		t.Fatalf("continuation did not inherit the actual checkpoint: %+v", continuation)
+	}
+
+	// A short parameter vector is not accepted merely because the job says it
+	// completed. refill_limit is the typed outcome that makes its actual size a
+	// valid continuation boundary.
+	checkpoint.Termination = string(opt.TerminationCompleted)
+	if err := fsStore.SaveCheckpoint(source.ID, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	invalid := httptest.NewRecorder()
+	server.Handler().ServeHTTP(invalid, httptest.NewRequest(http.MethodPost,
+		"/api/v1/jobs/"+source.ID+"/extend", strings.NewReader(`{"additionalCircles":1}`)))
+	if invalid.Code != http.StatusBadRequest || !strings.Contains(invalid.Body.String(), `"code":"invalid_checkpoint"`) {
+		t.Fatalf("ordinary short checkpoint response = %d body=%s", invalid.Code, invalid.Body.String())
 	}
 }
 

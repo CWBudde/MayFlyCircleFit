@@ -30,17 +30,23 @@ type JobConfig = store.JobConfig
 
 // Job represents an optimization job
 type Job struct {
-	ID            string      `json:"id"`
-	Project       app.Project `json:"project"`
-	State         JobState    `json:"state"`
-	Config        JobConfig   `json:"config"`
-	BestParams    []float64   `json:"bestParams,omitempty"`
-	BestCost      float64     `json:"bestCost"`
-	BestRevision  uint64      `json:"-"`
-	CandidateCost *float64    `json:"candidateCost,omitempty"`
-	InitialCost   float64     `json:"initialCost"`
-	Iterations    int         `json:"iterations"`
-	Evaluations   int         `json:"evaluations"`
+	ID      string      `json:"id"`
+	Project app.Project `json:"project"`
+	State   JobState    `json:"state"`
+	Config  JobConfig   `json:"config"`
+	// RequestedCircles is the target captured in Config.Circles, while
+	// ActualCircles is the number currently materialized in BestParams. They are
+	// explicit on the resource because a refill-limited batch may legitimately
+	// finish short of its target.
+	RequestedCircles int       `json:"requestedCircles"`
+	ActualCircles    int       `json:"actualCircles"`
+	BestParams       []float64 `json:"bestParams,omitempty"`
+	BestCost         float64   `json:"bestCost"`
+	BestRevision     uint64    `json:"-"`
+	CandidateCost    *float64  `json:"candidateCost,omitempty"`
+	InitialCost      float64   `json:"initialCost"`
+	Iterations       int       `json:"iterations"`
+	Evaluations      int       `json:"evaluations"`
 	// EvaluationWidth is how many cost evaluations this job's renderer actually
 	// ran concurrently, recorded when the renderer was built. It is deliberately
 	// not Config.EvaluationWorkers, which is only what was requested: a backend
@@ -100,24 +106,26 @@ type MetricSample struct {
 // metric history; copying those per request makes listing O(total optimizer
 // history) in both allocations and retained heap.
 type JobSummary struct {
-	ID              string           `json:"id"`
-	Project         app.Project      `json:"project"`
-	State           JobState         `json:"state"`
-	Config          JobSummaryConfig `json:"config"`
-	BestCost        float64          `json:"bestCost"`
-	InitialCost     float64          `json:"initialCost"`
-	Iterations      int              `json:"iterations"`
-	Evaluations     int              `json:"evaluations"`
-	EvaluationWidth int              `json:"evaluationWidth,omitempty"`
-	CandidateCost   *float64         `json:"candidateCost,omitempty"`
-	ExtendedFrom    string           `json:"extendedFrom,omitempty"`
-	PolishedFrom    string           `json:"polishedFrom,omitempty"`
-	ScheduleID      string           `json:"scheduleId,omitempty"`
-	StageIndex      *int             `json:"stageIndex,omitempty"`
-	Termination     string           `json:"termination,omitempty"`
-	StartTime       time.Time        `json:"startTime"`
-	EndTime         *time.Time       `json:"endTime,omitempty"`
-	Error           string           `json:"error,omitempty"`
+	ID               string           `json:"id"`
+	Project          app.Project      `json:"project"`
+	State            JobState         `json:"state"`
+	Config           JobSummaryConfig `json:"config"`
+	RequestedCircles int              `json:"requestedCircles"`
+	ActualCircles    int              `json:"actualCircles"`
+	BestCost         float64          `json:"bestCost"`
+	InitialCost      float64          `json:"initialCost"`
+	Iterations       int              `json:"iterations"`
+	Evaluations      int              `json:"evaluations"`
+	EvaluationWidth  int              `json:"evaluationWidth,omitempty"`
+	CandidateCost    *float64         `json:"candidateCost,omitempty"`
+	ExtendedFrom     string           `json:"extendedFrom,omitempty"`
+	PolishedFrom     string           `json:"polishedFrom,omitempty"`
+	ScheduleID       string           `json:"scheduleId,omitempty"`
+	StageIndex       *int             `json:"stageIndex,omitempty"`
+	Termination      string           `json:"termination,omitempty"`
+	StartTime        time.Time        `json:"startTime"`
+	EndTime          *time.Time       `json:"endTime,omitempty"`
+	Error            string           `json:"error,omitempty"`
 }
 
 type JobSummaryConfig struct {
@@ -211,11 +219,12 @@ func (jm *JobManager) CreateJobWithID(id string, project app.Project, config Job
 	// live job state that can be written without the manager lock.
 	config.InitialCircles = cloneCircleSpecs(config.InitialCircles)
 	job := &Job{
-		ID:        id,
-		Project:   app.NormalizeProject(project),
-		State:     StatePending,
-		Config:    config,
-		StartTime: time.Now(),
+		ID:               id,
+		Project:          app.NormalizeProject(project),
+		State:            StatePending,
+		Config:           config,
+		RequestedCircles: config.Circles,
+		StartTime:        time.Now(),
 	}
 
 	jm.jobs[job.ID] = job
@@ -268,7 +277,8 @@ func (jm *JobManager) ListJobSummaries() []JobSummary {
 	for _, job := range jm.jobs {
 		summary := JobSummary{
 			ID: job.ID, Project: app.NormalizeProject(job.Project), State: job.State,
-			Config:   JobSummaryConfig{RefPath: job.Config.RefPath, Mode: job.Config.Mode, Circles: job.Config.Circles},
+			Config:           JobSummaryConfig{RefPath: job.Config.RefPath, Mode: job.Config.Mode, Circles: job.Config.Circles},
+			RequestedCircles: job.RequestedCircles, ActualCircles: job.ActualCircles,
 			BestCost: job.BestCost, InitialCost: job.InitialCost,
 			Iterations: job.Iterations, Evaluations: job.Evaluations,
 			EvaluationWidth: job.EvaluationWidth, ExtendedFrom: job.ExtendedFrom,
@@ -399,6 +409,7 @@ func updateBestResult(job *Job, bestParams []float64, bestCost float64) bool {
 		return false
 	}
 	job.BestParams = append([]float64(nil), bestParams...)
+	job.ActualCircles = len(bestParams) / app.ParamsPerCircle
 	job.BestCost = bestCost
 	job.BestRevision++
 	return true
