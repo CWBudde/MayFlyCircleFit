@@ -158,7 +158,7 @@ func createParityTestImage(t *testing.T, path string) string {
 }
 
 // handDrivenCampaign is the orchestrator's job, done by hand: create, extend,
-// extend, polish, reading the cost off each job as it settles.
+// polish, reading the cost off each job as it settles.
 func handDrivenCampaign(t *testing.T, fixture *scheduleFixture) []float64 {
 	t.Helper()
 
@@ -267,6 +267,7 @@ func postJob(t *testing.T, fixture *scheduleFixture, path, body string) string {
 		ID    string `json:"id"`
 		JobID string `json:"jobId"`
 	}
+
 	err := json.Unmarshal(recorder.Body.Bytes(), &response)
 	if err != nil {
 		t.Fatalf("decode POST %s response: %v", path, err)
@@ -309,6 +310,7 @@ func awaitParityJob(t *testing.T, fixture *scheduleFixture, jobID string) float6
 			BestCost float64  `json:"bestCost"`
 			Error    string   `json:"error"`
 		}
+
 		err := json.Unmarshal(recorder.Body.Bytes(), &job)
 		if err != nil {
 			t.Fatalf("decode job %s: %v", jobID, err)

@@ -145,6 +145,7 @@ func (s *Server) handleUIEvents(w http.ResponseWriter, r *http.Request) {
 	// the hub's high-water mark: a sync carrying a sequence the client has not
 	// received yet would make it discard the real event as stale.
 	lastWritten := sequence
+
 	err := writeUIEvent(w, UIEvent{
 		Sequence:  lastWritten,
 		Type:      uiEventSync,

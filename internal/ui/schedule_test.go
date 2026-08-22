@@ -50,6 +50,7 @@ func renderCampaign(t *testing.T, campaign Campaign) string {
 	t.Helper()
 
 	var output bytes.Buffer
+
 	err := CampaignPage(campaign).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render campaign: %v", err)

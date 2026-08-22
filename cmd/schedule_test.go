@@ -98,6 +98,7 @@ func TestScheduleStatusRendersTheStageTable(t *testing.T) {
 	})
 
 	var output bytes.Buffer
+
 	err := runScheduleStatus(testCommand(context.Background(), &output), []string{testScheduleID})
 	if err != nil {
 		t.Fatalf("runScheduleStatus() error = %v", err)
@@ -135,13 +136,15 @@ func TestScheduleCreateValidatesBeforePosting(t *testing.T) {
  "steps": [{"type": "extend", "additionalCircles": 8}]}`
 
 	path := filepath.Join(t.TempDir(), "campaign.json")
+
 	err := os.WriteFile(path, []byte(document), 0o600)
 	if err != nil {
 		t.Fatalf("write document: %v", err)
 	}
 
 	var output bytes.Buffer
-	err := runScheduleCreate(testCommand(context.Background(), &output), []string{path})
+
+	err = runScheduleCreate(testCommand(context.Background(), &output), []string{path})
 	if err != nil {
 		t.Fatalf("runScheduleCreate() error = %v", err)
 	}
@@ -202,6 +205,7 @@ func TestScheduleActionsPostToTheirVerb(t *testing.T) {
 			})
 
 			var output bytes.Buffer
+
 			err := runScheduleAction(context.Background(), &output, testScheduleID, action)
 			if err != nil {
 				t.Fatalf("runScheduleAction(%s) error = %v", action, err)
@@ -235,6 +239,7 @@ func TestScheduleImportRendersTheChain(t *testing.T) {
 	})
 
 	var output bytes.Buffer
+
 	err := runScheduleImport(testCommand(context.Background(), &output), []string{leaf})
 	if err != nil {
 		t.Fatalf("runScheduleImport() error = %v", err)
@@ -299,6 +304,7 @@ func TestScheduleListReportsAnEmptyServer(t *testing.T) {
 	})
 
 	var output bytes.Buffer
+
 	err := runScheduleList(testCommand(context.Background(), &output), nil)
 	if err != nil {
 		t.Fatalf("runScheduleList() error = %v", err)
@@ -337,6 +343,7 @@ func writeScheduleDocument(t *testing.T, document string) string {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "campaign.json")
+
 	err := os.WriteFile(path, []byte(document), 0o600)
 	if err != nil {
 		t.Fatalf("write document: %v", err)
@@ -355,6 +362,7 @@ func dryRun(t *testing.T, path string) string {
 	t.Cleanup(func() { scheduleDryRun = previous })
 
 	var output bytes.Buffer
+
 	err := runScheduleCreate(testCommand(context.Background(), &output), []string{path})
 	if err != nil {
 		t.Fatalf("runScheduleCreate(--dry-run) error = %v", err)

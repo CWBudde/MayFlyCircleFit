@@ -104,6 +104,7 @@ func renderImageViewer(t *testing.T, data ImageViewerData) string {
 	t.Helper()
 
 	var output bytes.Buffer
+
 	err := ImageViewer(data).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render image viewer: %v", err)

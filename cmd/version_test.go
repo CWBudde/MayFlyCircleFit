@@ -71,7 +71,8 @@ func TestVersionCommandVerboseOutput(t *testing.T) {
 	}
 
 	var facts server.HostFacts
-	err := json.Unmarshal(output.Bytes(), &facts)
+
+	err = json.Unmarshal(output.Bytes(), &facts)
 	if err != nil {
 		t.Fatalf("decode verbose payload: %v", err)
 	}

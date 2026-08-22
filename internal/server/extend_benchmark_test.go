@@ -318,6 +318,7 @@ func BenchmarkSingleCircleExtendWall(b *testing.B) {
 				manager := NewJobManager()
 
 				job := manager.CreateJob(app.DefaultProject, config)
+
 				err := manager.UpdateJob(job.ID, func(live *Job) {
 					updateBestResult(live, params, prefixCost)
 					live.InitialCost = prefixCost + 1
@@ -327,7 +328,7 @@ func BenchmarkSingleCircleExtendWall(b *testing.B) {
 					b.Fatal(err)
 				}
 
-				err := runJob(context.Background(), manager, fsStore, job.ID)
+				err = runJob(context.Background(), manager, fsStore, job.ID)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -418,6 +419,7 @@ func BenchmarkSingleCircleExtendProductionCheckpoint(b *testing.B) {
 				manager := NewJobManager()
 
 				job := manager.CreateJob(app.DefaultProject, config)
+
 				err := manager.UpdateJob(job.ID, func(live *Job) {
 					updateBestResult(live, checkpoint.BestParams, checkpoint.BestCost)
 					live.InitialCost = checkpoint.InitialCost
@@ -429,7 +431,7 @@ func BenchmarkSingleCircleExtendProductionCheckpoint(b *testing.B) {
 					b.Fatal(err)
 				}
 
-				err := runJob(context.Background(), manager, fsStore, job.ID)
+				err = runJob(context.Background(), manager, fsStore, job.ID)
 				if err != nil {
 					b.Fatal(err)
 				}

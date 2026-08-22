@@ -123,6 +123,7 @@ func listJobs(ctx context.Context, output io.Writer, endpoint string) error {
 	// parameters are present. Keep accepting that response during upgrades.
 	if bytes.HasPrefix(bytes.TrimSpace(body), []byte("[")) {
 		var jobs []jobResponse
+
 		err := decodeCLIResponse(body, &jobs)
 		if err != nil {
 			return fmt.Errorf("decode jobs response: %w", err)
@@ -132,7 +133,7 @@ func listJobs(ctx context.Context, output io.Writer, endpoint string) error {
 			return errors.New("invalid jobs response: expected a JSON array")
 		}
 
-		err := validateJobListPage(jobs, 0)
+		err = validateJobListPage(jobs, 0)
 		if err != nil {
 			return err
 		}
@@ -194,6 +195,7 @@ func listJobs(ctx context.Context, output io.Writer, endpoint string) error {
 		}
 
 		page = jobListPageResponse{}
+
 		err := decodeCLIResponse(body, &page)
 		if err != nil {
 			return fmt.Errorf("decode jobs response: %w", err)
@@ -203,7 +205,7 @@ func listJobs(ctx context.Context, output io.Writer, endpoint string) error {
 			return errors.New("invalid jobs response: expected a paginated job collection")
 		}
 
-		err := validateJobListPage(page.Jobs, seenJobs)
+		err = validateJobListPage(page.Jobs, seenJobs)
 		if err != nil {
 			return err
 		}
@@ -475,7 +477,7 @@ func decodeCLIResponse(body []byte, destination any) error {
 		return err
 	}
 
-	err := decoder.Decode(&struct{}{})
+	err = decoder.Decode(&struct{}{})
 	if err != io.EOF {
 		if err == nil {
 			return errors.New("response contains more than one JSON value")
@@ -489,6 +491,7 @@ func decodeCLIResponse(body []byte, destination any) error {
 
 func parseCLIAPIError(statusCode int, status string, body []byte) error {
 	var response apiErrorResponse
+
 	err := json.Unmarshal(body, &response)
 	if err == nil && response.Error.Message != "" {
 		return &cliAPIError{
@@ -502,7 +505,8 @@ func parseCLIAPIError(statusCode int, status string, body []byte) error {
 	var legacy struct {
 		Error string `json:"error"`
 	}
-	err := json.Unmarshal(body, &legacy)
+
+	err = json.Unmarshal(body, &legacy)
 	if err == nil && legacy.Error != "" {
 		return &cliAPIError{StatusCode: statusCode, Status: status, Message: legacy.Error}
 	}

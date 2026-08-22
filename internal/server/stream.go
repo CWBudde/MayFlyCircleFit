@@ -356,6 +356,7 @@ func (s *Server) handleAllJobStream(w http.ResponseWriter, r *http.Request) {
 		snapshot := jobProgressSnapshot(job)
 
 		iterationFloor[snapshot.JobID] = snapshot.Iterations
+
 		err := writeSSEEvent(w, snapshot)
 		if err != nil {
 			slog.Error("Failed to write initial SSE event", "error", err)

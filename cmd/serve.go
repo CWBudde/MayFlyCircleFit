@@ -94,6 +94,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		if err := pprof.StartCPUProfile(f); err != nil {
 			return fmt.Errorf("failed to start CPU profile: %w", err)
 		}
+
 		defer pprof.StopCPUProfile()
 
 		slog.Info("CPU profiling enabled", "output", serveCpuProfile)

@@ -59,6 +59,7 @@ func TestScoreReadsABareCircleArrayAndASchedule(t *testing.T) {
 	writeScoreFixture(t, refPath)
 
 	arrayPath := filepath.Join(dir, "circles.json")
+
 	err := os.WriteFile(arrayPath, []byte(
 		`[{"x": 16, "y": 16, "r": 4, "color": "#ff0000"}]`), 0o600)
 	if err != nil {
@@ -66,7 +67,8 @@ func TestScoreReadsABareCircleArrayAndASchedule(t *testing.T) {
 	}
 
 	documentPath := filepath.Join(dir, "campaign.json")
-	err := os.WriteFile(documentPath, []byte(
+
+	err = os.WriteFile(documentPath, []byte(
 		`{"base": {"initialCircles": [{"x": 16, "y": 16, "r": 4, "color": "#ff0000"}]}}`), 0o600)
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +92,7 @@ func TestScoreReadsABareCircleArrayAndASchedule(t *testing.T) {
 	outPath := filepath.Join(dir, "preview.png")
 	withScoreFlags(t, refPath, documentPath, outPath)
 
-	err := runScore(nil, nil)
+	err = runScore(nil, nil)
 	if err != nil {
 		t.Fatalf("runScore() error = %v", err)
 	}
@@ -106,6 +108,7 @@ func TestScoreRefusesACircleOutsideTheCanvas(t *testing.T) {
 	writeScoreFixture(t, refPath)
 
 	circlesPath := filepath.Join(dir, "circles.json")
+
 	err := os.WriteFile(circlesPath, []byte(
 		`[{"x": 9000, "y": 16, "r": 4, "color": "#ff0000"}]`), 0o600)
 	if err != nil {
@@ -114,7 +117,7 @@ func TestScoreRefusesACircleOutsideTheCanvas(t *testing.T) {
 
 	withScoreFlags(t, refPath, circlesPath, "")
 
-	err := runScore(nil, nil)
+	err = runScore(nil, nil)
 	if err == nil {
 		t.Fatal("runScore() accepted a circle outside the canvas")
 	}
@@ -126,6 +129,7 @@ func TestScoreRejectsAnUnparseableColour(t *testing.T) {
 	writeScoreFixture(t, refPath)
 
 	circlesPath := filepath.Join(dir, "circles.json")
+
 	err := os.WriteFile(circlesPath, []byte(
 		`[{"x": 16, "y": 16, "r": 4, "color": "red"}]`), 0o600)
 	if err != nil {
@@ -134,7 +138,7 @@ func TestScoreRejectsAnUnparseableColour(t *testing.T) {
 
 	withScoreFlags(t, refPath, circlesPath, "")
 
-	err := runScore(nil, nil)
+	err = runScore(nil, nil)
 	if err == nil {
 		t.Fatal("runScore() accepted a colour that is not hex")
 	}

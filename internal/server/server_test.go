@@ -127,6 +127,7 @@ func TestServer_CreateJob(t *testing.T) {
 	}
 
 	var job Job
+
 	err := json.NewDecoder(w.Body).Decode(&job)
 	if err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
@@ -169,6 +170,7 @@ func TestServer_CreateJob_BackendDefaults(t *testing.T) {
 		}
 
 		var job Job
+
 		err := json.NewDecoder(w.Body).Decode(&job)
 		if err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
@@ -194,6 +196,7 @@ func TestServer_CreateJob_BackendDefaults(t *testing.T) {
 		}
 
 		var job Job
+
 		err := json.NewDecoder(w.Body).Decode(&job)
 		if err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
@@ -231,6 +234,7 @@ func TestServer_ListJobs(t *testing.T) {
 	}
 
 	var jobs []JobSummary
+
 	err := json.NewDecoder(w.Body).Decode(&jobs)
 	if err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
@@ -252,7 +256,8 @@ func TestServer_ListJobs(t *testing.T) {
 	}
 
 	var firstPage jobListPage
-	err := json.NewDecoder(first.Body).Decode(&firstPage)
+
+	err = json.NewDecoder(first.Body).Decode(&firstPage)
 	if err != nil {
 		t.Fatalf("decode first page: %v", err)
 	}
@@ -266,7 +271,8 @@ func TestServer_ListJobs(t *testing.T) {
 	s.handleListJobs(second, httptest.NewRequest(http.MethodGet, secondURL, nil))
 
 	var secondPage jobListPage
-	err := json.NewDecoder(second.Body).Decode(&secondPage)
+
+	err = json.NewDecoder(second.Body).Decode(&secondPage)
 	if err != nil {
 		t.Fatalf("decode second page: %v", err)
 	}
@@ -318,6 +324,7 @@ func TestJobsPageBoundsHydrationSeed(t *testing.T) {
 	}
 
 	var seed jobListPage
+
 	err := json.Unmarshal([]byte(body[start:start+end]), &seed)
 	if err != nil {
 		t.Fatalf("decode jobs page seed: %v", err)
@@ -347,6 +354,7 @@ func TestServer_GetJobStatus(t *testing.T) {
 	}
 
 	var response map[string]any
+
 	err := json.NewDecoder(w.Body).Decode(&response)
 	if err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
@@ -501,6 +509,7 @@ func TestServer_PauseJobRejections(t *testing.T) {
 
 	t.Run("running job without progress", func(t *testing.T) {
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
+
 		err := server.jobManager.StartJob(job.ID)
 		if err != nil {
 			t.Fatal(err)
@@ -517,17 +526,18 @@ func TestServer_PauseJobRejections(t *testing.T) {
 
 	t.Run("schedule stage", func(t *testing.T) {
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
+
 		err := server.jobManager.StartJob(job.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		err := server.jobManager.UpdateProgress(job.ID, 1, 1, []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7}, 125)
+		err = server.jobManager.UpdateProgress(job.ID, 1, 1, []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7}, 125)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		err := server.jobManager.UpdateJob(job.ID, func(j *Job) { j.ScheduleID = "schedule-1" })
+		err = server.jobManager.UpdateJob(job.ID, func(j *Job) { j.ScheduleID = "schedule-1" })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -578,6 +588,7 @@ func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
 		t.Helper()
 
 		var payload map[string]any
+
 		err := json.Unmarshal(recorder.Body.Bytes(), &payload)
 		if err != nil {
 			t.Fatalf("decode response %q: %v", recorder.Body.String(), err)
@@ -588,12 +599,13 @@ func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
 
 	t.Run("paused job resumes in place", func(t *testing.T) {
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
+
 		err := server.jobManager.StartJob(job.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		err := server.jobManager.UpdateProgress(job.ID, 5, 50, params, 600)
+		err = server.jobManager.UpdateProgress(job.ID, 5, 50, params, 600)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -619,12 +631,13 @@ func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
 
 	t.Run("cancelled job forks a new one", func(t *testing.T) {
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
+
 		err := server.jobManager.StartJob(job.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		err := server.jobManager.CancelJob(job.ID)
+		err = server.jobManager.CancelJob(job.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -632,7 +645,8 @@ func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
 		checkpoint := store.NewCheckpoint(job.ID, params, 600, 1000, 8, job.Config)
 
 		checkpoint.Evaluations = 80
-		err := persistence.SaveCheckpoint(job.ID, checkpoint)
+
+		err = persistence.SaveCheckpoint(job.ID, checkpoint)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -663,12 +677,13 @@ func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
 
 	t.Run("job without a checkpoint", func(t *testing.T) {
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
+
 		err := server.jobManager.StartJob(job.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		err := server.jobManager.CancelJob(job.ID)
+		err = server.jobManager.CancelJob(job.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -716,18 +731,20 @@ func TestServerJobStatusRepresentsInfinitePSNRAndOptionalSSIM(t *testing.T) {
 	server := NewServer(":8080", nil)
 
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png", EnableSSIM: true})
+
 	err := server.jobManager.StartJob(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := server.jobManager.UpdateProgress(job.ID, 1, 1, []float64{1}, 0)
+	err = server.jobManager.UpdateProgress(job.ID, 1, 1, []float64{1}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	ssim := 1.0
-	err := server.jobManager.RecordMetrics(job.ID, qualitySample(1, 0, &ssim, time.Now()))
+
+	err = server.jobManager.RecordMetrics(job.ID, qualitySample(1, 0, &ssim, time.Now()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -741,7 +758,8 @@ func TestServerJobStatusRepresentsInfinitePSNRAndOptionalSSIM(t *testing.T) {
 	}
 
 	var response jobStatusResponse
-	err := json.NewDecoder(recorder.Body).Decode(&response)
+
+	err = json.NewDecoder(recorder.Body).Decode(&response)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -759,17 +777,18 @@ func TestServerJobStatusExposesProvisionalCandidateSeparately(t *testing.T) {
 	server := NewServer(":8080", nil)
 
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
+
 	err := server.jobManager.StartJob(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := server.jobManager.UpdateProgress(job.ID, 1, 10, []float64{1}, 100)
+	err = server.jobManager.UpdateProgress(job.ID, 1, 10, []float64{1}, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := server.jobManager.UpdateCandidateProgress(job.ID, 2, 20, 95.25)
+	err = server.jobManager.UpdateCandidateProgress(job.ID, 2, 20, 95.25)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -782,7 +801,8 @@ func TestServerJobStatusExposesProvisionalCandidateSeparately(t *testing.T) {
 	}
 
 	var response jobStatusResponse
-	err := json.NewDecoder(recorder.Body).Decode(&response)
+
+	err = json.NewDecoder(recorder.Body).Decode(&response)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1083,13 +1103,15 @@ func TestServer_GetDiffImageColormap(t *testing.T) {
 	server := NewServer(":8080", nil)
 
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: path, Circles: 1, Threads: 1})
+
 	err := server.jobManager.StartJob(job.ID)
 	if err != nil {
 		t.Fatalf("start job: %v", err)
 	}
 
 	params := []float64{25, 25, 10, 1, 0, 0, 1}
-	err := server.jobManager.UpdateProgress(job.ID, 1, 1, params, 1)
+
+	err = server.jobManager.UpdateProgress(job.ID, 1, 1, params, 1)
 	if err != nil {
 		t.Fatalf("update job: %v", err)
 	}
@@ -1187,12 +1209,12 @@ func TestServer_JobDetailPage_Integration(t *testing.T) {
 		t.Fatalf("Failed to start job: %v", err)
 	}
 
-	err := s.jobManager.UpdateProgress(job.ID, 3, 3, make([]float64, 14), 1000)
+	err = s.jobManager.UpdateProgress(job.ID, 3, 3, make([]float64, 14), 1000)
 	if err != nil {
 		t.Fatalf("Failed to update job progress: %v", err)
 	}
 
-	err := s.jobManager.UpdateJob(job.ID, func(stored *Job) {
+	err = s.jobManager.UpdateJob(job.ID, func(stored *Job) {
 		stored.InitialCost = 2000
 	})
 	if err != nil {
@@ -1254,18 +1276,20 @@ func TestServer_JobStream_SSE(t *testing.T) {
 		PopSize: 20,
 		Seed:    42,
 	})
+
 	err := s.jobManager.StartJob(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := s.jobManager.CompleteJob(job.ID, 7, 20, make([]float64, 14), 12.5, 100, "completed")
+	err = s.jobManager.CompleteJob(job.ID, 7, 20, make([]float64, 14), 12.5, 100, "completed")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	ssim := 0.75
-	err := s.jobManager.RecordMetrics(job.ID, qualitySample(7, 12.5, &ssim, time.Now()))
+
+	err = s.jobManager.RecordMetrics(job.ID, qualitySample(7, 12.5, &ssim, time.Now()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1810,6 +1834,7 @@ func TestExtendEndpointCreatesOrderedBatchContinuation(t *testing.T) {
 		JobID         string `json:"jobId"`
 		TargetCircles int    `json:"targetCircles"`
 	}
+
 	err := json.NewDecoder(response.Body).Decode(&payload)
 	if err != nil {
 		t.Fatal(err)
@@ -2059,6 +2084,7 @@ func TestExtendEndpointPolishIsOptIn(t *testing.T) {
 			var payload struct {
 				JobID string `json:"jobId"`
 			}
+
 			err := json.NewDecoder(response.Body).Decode(&payload)
 			if err != nil {
 				t.Fatal(err)
@@ -2370,6 +2396,7 @@ func TestServer_BackendDefaults_AllEntryPoints(t *testing.T) {
 		}
 
 		var job Job
+
 		err := json.NewDecoder(w.Body).Decode(&job)
 		if err != nil {
 			t.Fatalf("Failed to decode response: %v", err)

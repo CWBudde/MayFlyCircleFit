@@ -138,6 +138,7 @@ func TestStaticHandlerRejectsAnythingNotEmbedded(t *testing.T) {
 
 func TestIslandBundleLoadsTheVersionedBundle(t *testing.T) {
 	var output bytes.Buffer
+
 	err := IslandBundle().Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render island bundle: %v", err)
@@ -160,6 +161,7 @@ func TestIslandBundleLoadsTheVersionedBundle(t *testing.T) {
 // island for it to mount into.
 func TestLayoutDoesNotLoadTheIslandBundle(t *testing.T) {
 	var output bytes.Buffer
+
 	err := Layout("Bundle test").Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render layout: %v", err)
@@ -209,6 +211,7 @@ func TestBundleSourceMapIsEmbeddedAndComplete(t *testing.T) {
 		SourcesContent []string `json:"sourcesContent"`
 		Mappings       string   `json:"mappings"`
 	}
+
 	err := json.Unmarshal(asset.content, &sourceMap)
 	if err != nil {
 		t.Fatalf("embedded source map is not valid JSON: %v", err)
@@ -303,6 +306,7 @@ func TestBundleLinksItsSourceMap(t *testing.T) {
 // megabytes of sources on load.
 func TestIslandBundleDoesNotLinkTheSourceMap(t *testing.T) {
 	var output bytes.Buffer
+
 	err := IslandBundle().Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render island bundle: %v", err)

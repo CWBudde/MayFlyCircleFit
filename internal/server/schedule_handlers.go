@@ -211,6 +211,7 @@ func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 	// in. The path itself stays as authored: it is resolved again when each
 	// stage runs, so a schedule does not bake in this process's view of disk.
 	probe := document.Base
+
 	failure := s.resolveConfigPaths(&probe, "schedule")
 	if failure != nil {
 		writeContinuationError(w, failure)

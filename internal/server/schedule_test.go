@@ -106,6 +106,7 @@ func (f *scheduleFixture) createScheduleWithStages(t *testing.T, document string
 	}
 
 	var response scheduleSummary
+
 	err := json.Unmarshal(recorder.Body.Bytes(), &response)
 	if err != nil {
 		t.Fatalf("decode create response: %v", err)
@@ -808,6 +809,7 @@ func TestScheduleEndpointsFollowTheJobConventions(t *testing.T) {
 		}
 
 		var detail scheduleDetail
+
 		err := json.Unmarshal(recorder.Body.Bytes(), &detail)
 		if err != nil {
 			t.Fatalf("decode detail: %v", err)
@@ -829,7 +831,8 @@ func TestScheduleEndpointsFollowTheJobConventions(t *testing.T) {
 		}
 
 		var listed []scheduleSummary
-		err := json.Unmarshal(recorder.Body.Bytes(), &listed)
+
+		err = json.Unmarshal(recorder.Body.Bytes(), &listed)
 		if err != nil {
 			t.Fatalf("decode listing: %v", err)
 		}

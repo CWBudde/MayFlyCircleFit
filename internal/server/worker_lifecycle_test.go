@@ -32,6 +32,7 @@ func TestServerSupervisesCancellationAndBoundedQueue(t *testing.T) {
 	second := server.jobManager.CreateJob(app.DefaultProject, config)
 
 	third := server.jobManager.CreateJob(app.DefaultProject, config)
+
 	err := server.enqueueJob(first.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -39,19 +40,19 @@ func TestServerSupervisesCancellationAndBoundedQueue(t *testing.T) {
 
 	waitForJobState(t, server.jobManager, first.ID, StateRunning)
 
-	err := server.enqueueJob(second.ID)
+	err = server.enqueueJob(second.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := server.enqueueJob(third.ID)
+	err = server.enqueueJob(third.ID)
 	if !errors.Is(err, ErrJobQueueFull) {
 		t.Fatalf("third enqueue error = %v, want ErrJobQueueFull", err)
 	}
 
 	started := time.Now()
 
-	err := server.requestCancellation(first.ID)
+	err = server.requestCancellation(first.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,12 +70,13 @@ func TestCancelledJobCanBeDeleted(t *testing.T) {
 	server := NewServer(":0", nil)
 
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: "unused.png"})
+
 	err := server.requestCancellation(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := server.jobManager.DeleteJob(job.ID)
+	err = server.jobManager.DeleteJob(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

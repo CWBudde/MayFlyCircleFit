@@ -265,8 +265,8 @@ func TestScanlineCircleRenderingMatchesOriginal(t *testing.T) {
 			maxDiff := 0
 			diffCount := 0
 
-			for y := 0; y < tc.h; y++ {
-				for x := 0; x < tc.w; x++ {
+			for y := range tc.h {
+				for x := range tc.w {
 					idx := y*original.Stride + x*4
 					for c := range 4 {
 						diff := int(original.Pix[idx+c]) - int(scanline.Pix[idx+c])
@@ -320,7 +320,7 @@ func BenchmarkCPURenderer_Render(b *testing.B) {
 
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_ = renderer.Render(params)
 			}
 		})
@@ -350,7 +350,7 @@ func BenchmarkCPURendererThreadScaling(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 
-				for i := 0; i < b.N; i++ {
+				for range b.N {
 					_ = renderer.Render(params)
 				}
 			})
@@ -380,7 +380,7 @@ func BenchmarkCPURenderer_Cost(b *testing.B) {
 
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_ = renderer.Cost(params)
 			}
 		})
@@ -400,7 +400,7 @@ func BenchmarkCompositePixel(b *testing.B) {
 
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		// Composite red semi-transparent pixel at (128, 128)
 		compositePixel(img, 128, 128, 1.0, 0.0, 0.0, 0.5)
 	}
@@ -418,7 +418,7 @@ func BenchmarkCompositePixelOpaque(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		compositePixel(img, 128, 128, 1.0, 0.0, 0.0, 0.5)
 	}
 }
@@ -546,7 +546,7 @@ func BenchmarkRenderCircle(b *testing.B) {
 					b.ReportAllocs()
 					b.ResetTimer()
 
-					for i := 0; i < b.N; i++ {
+					for range b.N {
 						strategy.render(renderer, img, tc.c)
 					}
 				})

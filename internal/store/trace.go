@@ -114,7 +114,7 @@ func (tw *TraceWriter) Flush() error {
 		return fmt.Errorf("flush trace writer: %w", err)
 	}
 
-	err := tw.file.Sync()
+	err = tw.file.Sync()
 	if err != nil {
 		return fmt.Errorf("sync trace file: %w", err)
 	}
@@ -131,19 +131,20 @@ func (tw *TraceWriter) Close() error {
 	}
 
 	tw.closed = true
+
 	err := tw.writer.Flush()
 	if err != nil {
 		_ = tw.file.Close()
 		return fmt.Errorf("flush trace on close: %w", err)
 	}
 
-	err := tw.file.Sync()
+	err = tw.file.Sync()
 	if err != nil {
 		_ = tw.file.Close()
 		return fmt.Errorf("sync trace on close: %w", err)
 	}
 
-	err := tw.file.Close()
+	err = tw.file.Close()
 	if err != nil {
 		return fmt.Errorf("close trace file: %w", err)
 	}
@@ -205,6 +206,7 @@ func (tr *TraceReader) Read() (*TraceEntry, error) {
 	}
 
 	var entry TraceEntry
+
 	err := json.Unmarshal(tr.scanner.Bytes(), &entry)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal trace entry: %w", err)

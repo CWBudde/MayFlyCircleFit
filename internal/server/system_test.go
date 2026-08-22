@@ -117,6 +117,7 @@ func TestHandleSystem(t *testing.T) {
 	}
 
 	var facts HostFacts
+
 	err := json.NewDecoder(resp.Body).Decode(&facts)
 	if err != nil {
 		t.Fatalf("decode system facts: %v", err)
@@ -174,6 +175,7 @@ func TestRoutingSystemEndpoint(t *testing.T) {
 	}
 
 	var payload map[string]any
+
 	err := json.NewDecoder(rec.Body).Decode(&payload)
 	if err != nil {
 		t.Fatalf("decode /api/v1/system body: %v", err)

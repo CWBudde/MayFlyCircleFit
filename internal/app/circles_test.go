@@ -98,7 +98,8 @@ func TestJobConfigValidateInitialCircles(t *testing.T) {
 	wrongMode := base()
 
 	wrongMode.Mode = ModeJoint
-	err := wrongMode.Validate()
+
+	err = wrongMode.Validate()
 	if err == nil {
 		t.Fatal("Validate() accepted initialCircles outside batch mode")
 	}
@@ -107,7 +108,8 @@ func TestJobConfigValidateInitialCircles(t *testing.T) {
 	wrongCount.Circles = 3
 
 	wrongCount.PolishingActiveSetSize = 3
-	err := wrongCount.Validate()
+
+	err = wrongCount.Validate()
 	if err == nil {
 		t.Fatal("Validate() accepted a spec list shorter than circles")
 	}
@@ -118,7 +120,8 @@ func TestJobConfigValidateInitialCircles(t *testing.T) {
 	partialBatch := base()
 
 	partialBatch.BatchSize = 1
-	err := partialBatch.Validate()
+
+	err = partialBatch.Validate()
 	if err == nil {
 		t.Fatal("Validate() accepted initialCircles with a batch smaller than circles")
 	}
@@ -149,7 +152,7 @@ func TestApplyDefaultsWidensTheBatchForAnAuthoredSeed(t *testing.T) {
 		t.Fatalf("batchSize = %d, want 10 so the seeded vector is one optimizer stage", config.BatchSize)
 	}
 
-	err := config.Validate()
+	err = config.Validate()
 	if err != nil {
 		t.Fatalf("Validate() = %v, want nil", err)
 	}
@@ -163,7 +166,8 @@ func TestApplyDefaultsWidensTheBatchForAnAuthoredSeed(t *testing.T) {
 	unseeded.BatchSize = 0
 
 	unseeded.Seed = 1
-	err := unseeded.ApplyDefaults()
+
+	err = unseeded.ApplyDefaults()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +185,7 @@ func TestApplyDefaultsMakesInitialCirclesOpaque(t *testing.T) {
 	config.Seed = 1
 
 	config.InitialCircles = CircleSpecs{{X: 1, Y: 2, R: 3, Color: "#010203"}}
+
 	err := config.ApplyDefaults()
 	if err != nil {
 		t.Fatal(err)

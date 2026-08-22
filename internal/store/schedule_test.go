@@ -503,24 +503,27 @@ func TestScheduleStoreRefusesASymlinkedRecord(t *testing.T) {
 	fsStore, dir := newScheduleStore(t)
 
 	record := testScheduleRecord(t)
+
 	err := fsStore.SaveSchedule(record)
 	if err != nil {
 		t.Fatalf("SaveSchedule() error = %v", err)
 	}
 
 	outside := filepath.Join(t.TempDir(), "elsewhere.json")
-	err := os.WriteFile(outside, []byte(`{"scheduleId": "`+testScheduleID+`"}`), 0o600)
+
+	err = os.WriteFile(outside, []byte(`{"scheduleId": "`+testScheduleID+`"}`), 0o600)
 	if err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
 	path := filepath.Join(dir, schedulesDirName, testScheduleID, "schedule.json")
-	err := os.Remove(path)
+
+	err = os.Remove(path)
 	if err != nil {
 		t.Fatalf("Remove() error = %v", err)
 	}
 
-	err := os.Symlink(outside, path)
+	err = os.Symlink(outside, path)
 	if err != nil {
 		t.Skipf("symlinks are unavailable here: %v", err)
 	}

@@ -126,6 +126,7 @@ func TestServerConcurrentJobLifecycleStress(t *testing.T) {
 				}
 
 				var status jobStatusResponse
+
 				err := json.NewDecoder(response.Body).Decode(&status)
 				if err != nil {
 					statusErrors <- fmt.Errorf("decode job %s status: %w", jobID, err)
@@ -360,6 +361,7 @@ func streamHasProgressEvent(t *testing.T, stream, jobID string) bool {
 		}
 
 		var event ProgressEvent
+
 		err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event)
 		if err != nil {
 			t.Fatalf("decode SSE event for %s: %v", jobID, err)

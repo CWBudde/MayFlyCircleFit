@@ -82,7 +82,8 @@ func (fs *FSStore) jobPath(jobID string) (string, error) {
 	}
 
 	path := filepath.Join(fs.jobsDir, jobID)
-	err := ensureContained(fs.baseDir, path)
+
+	err = ensureContained(fs.baseDir, path)
 	if err != nil {
 		return "", err
 	}
@@ -364,6 +365,7 @@ func (fs *FSStore) loadCheckpointInfo(jobID string) (CheckpointInfo, error) {
 			data, readErr := os.ReadFile(infoPath)
 			if readErr == nil {
 				var info CheckpointInfo
+
 				decodeErr := json.Unmarshal(data, &info)
 				if decodeErr == nil && validateCheckpointInfo(info, jobID) == nil {
 					return info, nil
@@ -483,6 +485,7 @@ func (count *parameterCount) UnmarshalJSON(data []byte) error {
 
 	for decoder.More() {
 		var value float64
+
 		err := decoder.Decode(&value)
 		if err != nil {
 			return err
@@ -548,6 +551,7 @@ func (p checkpointInfoProjection) toInfo(jobID string) (CheckpointInfo, error) {
 		PolishedFrom: p.PolishedFrom, ScheduleID: p.ScheduleID, Mode: config.Mode,
 		Circles: config.Circles, RefPath: config.RefPath,
 	}
+
 	err := validateCheckpointInfo(info, jobID)
 	if err != nil {
 		return CheckpointInfo{}, err
@@ -558,7 +562,8 @@ func (p checkpointInfoProjection) toInfo(jobID string) (CheckpointInfo, error) {
 	}
 
 	lineage := Checkpoint{JobID: p.JobID, ExtendedFrom: p.ExtendedFrom, PolishedFrom: p.PolishedFrom, ScheduleID: p.ScheduleID, StageIndex: p.StageIndex}
-	err := lineage.validateLineage()
+
+	err = lineage.validateLineage()
 	if err != nil {
 		return CheckpointInfo{}, err
 	}

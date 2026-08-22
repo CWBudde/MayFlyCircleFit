@@ -164,12 +164,13 @@ func TestServerReportSnapshotFailures(t *testing.T) {
 			server := NewServer(":8080", nil)
 
 			job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: refPath, Mode: "joint", Circles: 1})
+
 			err := server.jobManager.StartJob(job.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			err := server.jobManager.UpdateProgress(job.ID, 1, 1, test.params, 12.5)
+			err = server.jobManager.UpdateProgress(job.ID, 1, 1, test.params, 12.5)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -197,20 +198,23 @@ func downloadTestJob(t *testing.T, enableSSIM bool) (*Server, string) {
 	server := NewServer(":8080", nil)
 
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: imagePath, Mode: "joint", Circles: 1, EnableSSIM: enableSSIM})
+
 	err := server.jobManager.StartJob(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	params := []float64{25, 25, 10, 1, 0.5, 0, 0.75}
-	err := server.jobManager.UpdateProgress(job.ID, 17, 23, params, 12.5)
+
+	err = server.jobManager.UpdateProgress(job.ID, 17, 23, params, 12.5)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if enableSSIM {
 		ssim := 0.8765
-		err := server.jobManager.RecordMetrics(job.ID, qualitySample(17, 12.5, &ssim, time.Now()))
+
+		err = server.jobManager.RecordMetrics(job.ID, qualitySample(17, 12.5, &ssim, time.Now()))
 		if err != nil {
 			t.Fatal(err)
 		}

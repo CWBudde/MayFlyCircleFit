@@ -253,6 +253,7 @@ func (c *Checkpoint) Validate() error {
 	}
 
 	normalized := c.normalized()
+
 	err := validateJobID(normalized.JobID)
 	if err != nil {
 		return &ValidationError{Field: "JobID", Reason: err.Error()}
@@ -326,7 +327,7 @@ func (c *Checkpoint) Validate() error {
 		return &ValidationError{Field: "ActualCircles", Reason: "must be positive and no greater than RequestedCircles"}
 	}
 
-	err := normalized.validateLineage()
+	err = normalized.validateLineage()
 	if err != nil {
 		return err
 	}
@@ -396,6 +397,7 @@ func (c Checkpoint) MarshalJSON() ([]byte, error) {
 // schemaVersion is either missing or explicitly 1.
 func (c *Checkpoint) UnmarshalJSON(data []byte) error {
 	var wire checkpointWire
+
 	err := json.Unmarshal(data, &wire)
 	if err != nil {
 		return err

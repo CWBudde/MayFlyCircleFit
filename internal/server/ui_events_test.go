@@ -74,17 +74,18 @@ func TestJobLifecyclePublishesUIEventsInOrder(t *testing.T) {
 	defer manager.uiEvents.Unsubscribe(subscription)
 
 	job := manager.CreateJob("", JobConfig{})
+
 	err := manager.StartJob(job.ID)
 	if err != nil {
 		t.Fatalf("start job: %v", err)
 	}
 
-	err := manager.MarkJobCompleted(job.ID)
+	err = manager.MarkJobCompleted(job.ID)
 	if err != nil {
 		t.Fatalf("complete job: %v", err)
 	}
 
-	err := manager.DeleteJob(job.ID)
+	err = manager.DeleteJob(job.ID)
 	if err != nil {
 		t.Fatalf("delete job: %v", err)
 	}
@@ -176,6 +177,7 @@ func TestJobMetricsEndpointReturnsBoundedTail(t *testing.T) {
 	}
 
 	var samples []MetricSample
+
 	err := json.NewDecoder(response.Body).Decode(&samples)
 	if err != nil {
 		t.Fatalf("decode metrics: %v", err)
@@ -234,6 +236,7 @@ func decodeUIEvents(t *testing.T, body string) []UIEvent {
 		}
 
 		var event UIEvent
+
 		err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event)
 		if err != nil {
 			t.Fatalf("decode UI event: %v", err)

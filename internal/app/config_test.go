@@ -266,6 +266,7 @@ func TestValidateAcceptsAnOmittedPolishingPopulation(t *testing.T) {
 	legacy.RefPath = "reference.png"
 
 	legacy.PolishingPopSize = 0
+
 	err := legacy.Validate()
 	if err != nil {
 		t.Fatalf("Validate() rejected an omitted polishingPopSize: %v", err)
@@ -273,7 +274,8 @@ func TestValidateAcceptsAnOmittedPolishingPopulation(t *testing.T) {
 
 	// The bounds still apply to a value that was actually written.
 	legacy.PolishingPopSize = MinPopulation - 1
-	err := legacy.Validate()
+
+	err = legacy.Validate()
 	if err == nil {
 		t.Fatalf("Validate() accepted polishingPopSize %d", MinPopulation-1)
 	}

@@ -54,6 +54,7 @@ func TestContinuationJobsRecordTheirParent(t *testing.T) {
 			var payload struct {
 				JobID string `json:"jobId"`
 			}
+
 			err := json.NewDecoder(response.Body).Decode(&payload)
 			if err != nil {
 				t.Fatal(err)

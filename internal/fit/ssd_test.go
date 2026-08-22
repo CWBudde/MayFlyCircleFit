@@ -526,7 +526,7 @@ func BenchmarkFastSSD_Scalar(b *testing.B) {
 
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 	}
 
@@ -544,7 +544,7 @@ func BenchmarkFastSSD_Active(b *testing.B) {
 
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		fastSSD(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 	}
 
@@ -559,7 +559,7 @@ func BenchmarkFastSSD_HighLevel(b *testing.B) {
 
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		FastSSD(img1, img2)
 	}
 
@@ -588,7 +588,7 @@ func BenchmarkFastSSD_Comparison(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				ssdBenchmarkSink = fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height)
 			}
 
@@ -602,7 +602,7 @@ func BenchmarkFastSSD_Comparison(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				ssdBenchmarkSink = fastSSD_SSE2(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height)
 			}
 
@@ -615,7 +615,7 @@ func BenchmarkFastSSD_Comparison(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				ssdBenchmarkSink = fastSSD(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height)
 			}
 

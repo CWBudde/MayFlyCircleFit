@@ -104,6 +104,7 @@ func TestProjectTypeKeepsJSONWireFormat(t *testing.T) {
 		// The reverse direction: a client's bytes must still decode into the
 		// typed field without any custom unmarshaller.
 		var job Job
+
 		err := json.Unmarshal([]byte(`{"id":"x","project":"christian"}`), &job)
 		if err != nil {
 			t.Fatal(err)
@@ -116,6 +117,7 @@ func TestProjectTypeKeepsJSONWireFormat(t *testing.T) {
 
 	t.Run("create request unmarshals a plain string project", func(t *testing.T) {
 		var request createJobRequest
+
 		err := json.Unmarshal([]byte(`{"project":"christian","refPath":"a.png"}`), &request)
 		if err != nil {
 			t.Fatal(err)

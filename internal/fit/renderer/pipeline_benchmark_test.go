@@ -19,7 +19,7 @@ func (o pipelineBenchmarkOptimizer) Run(eval func([]float64) float64, lower, upp
 	bestCost := math.Inf(1)
 	var best []float64
 
-	for i := 0; i < o.evaluations; i++ {
+	for i := range o.evaluations {
 		params := incrementalValidationCandidate(lower, upper, i)
 		for offset := 0; offset < len(params); offset += paramsPerCircle {
 			params[offset+2] = max(lower[offset+2], upper[offset+2]*o.radiusScale)

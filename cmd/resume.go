@@ -224,6 +224,7 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 			}
 		}
 	}
+
 	defer cleanup()
 
 	seed := checkpoint.EffectiveSeed

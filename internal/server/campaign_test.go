@@ -153,6 +153,7 @@ func TestChainAPIReturnsTheWholeLineage(t *testing.T) {
 	}
 
 	var detail chainDetailWire
+
 	err := json.Unmarshal(recorder.Body.Bytes(), &detail)
 	if err != nil {
 		t.Fatalf("decode chain: %v", err)

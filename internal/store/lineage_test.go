@@ -105,6 +105,7 @@ func TestCheckpointWithoutLineageStillLoads(t *testing.T) {
 		}`
 
 		var checkpoint Checkpoint
+
 		err := json.Unmarshal([]byte(payload), &checkpoint)
 		if err != nil {
 			t.Fatalf("Unmarshal(%s) error = %v", version, err)
@@ -118,7 +119,7 @@ func TestCheckpointWithoutLineageStillLoads(t *testing.T) {
 			t.Fatal("ContinuedFrom() reported a parent for a legacy checkpoint")
 		}
 
-		err := checkpoint.Validate()
+		err = checkpoint.Validate()
 		if err != nil {
 			t.Fatalf("Validate() error = %v", err)
 		}

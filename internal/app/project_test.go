@@ -58,7 +58,8 @@ func TestValidateProjectSlug(t *testing.T) {
 	}
 
 	long := atLimit + "a"
-	err := ValidateProjectSlug(long)
+
+	err = ValidateProjectSlug(long)
 	if err == nil {
 		t.Errorf("ValidateProjectSlug(%d chars) = nil, want error", len(long))
 	}

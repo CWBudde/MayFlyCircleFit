@@ -747,6 +747,7 @@ func Normalize(config JobConfig) (JobConfig, error) {
 // no configuration field — a request envelope's own fields, say — are ignored.
 func NormalizeRequest(body []byte, config JobConfig) (JobConfig, error) {
 	var present map[string]json.RawMessage
+
 	err := json.Unmarshal(body, &present)
 	if err != nil {
 		return JobConfig{}, invalid("request", "must be a JSON object")

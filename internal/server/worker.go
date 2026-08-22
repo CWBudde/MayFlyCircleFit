@@ -105,7 +105,8 @@ func (o *progressOptimizer) RunContext(ctx context.Context, problem opt.Problem,
 
 			boundary.Progress.Evaluations += baseEvaluations
 			if options.EpochObserver != nil {
-				if err := options.EpochObserver(boundary); err != nil {
+				err := options.EpochObserver(boundary)
+				if err != nil {
 					return err
 				}
 			}
@@ -167,7 +168,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	// asked for. This is the only point where the backend's decision and the
 	// GOMAXPROCS clamp have both been applied.
 	if width := renderer.EvaluationWidth(rend); width > 1 {
-		if err := jm.UpdateJob(jobID, func(j *Job) { j.EvaluationWidth = width }); err != nil {
+		err := jm.UpdateJob(jobID, func(j *Job) { j.EvaluationWidth = width })
+		if err != nil {
 			return err
 		}
 	}
@@ -263,7 +265,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 
 	if traceWriter != nil {
 		defer func() {
-			if closeErr := traceWriter.Close(); closeErr != nil {
+			closeErr := traceWriter.Close()
+			if closeErr != nil {
 				slog.Warn("Failed to close trace", "job_id", jobID, "error", closeErr)
 			}
 		}()
@@ -288,7 +291,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		iterations := baseIterations + progress.Iterations
 
 		evaluations := baseEvaluations + progress.Evaluations
-		if err := jm.UpdateProgress(jobID, iterations, evaluations, progress.BestParams, progress.BestCost); err != nil {
+		err := jm.UpdateProgress(jobID, iterations, evaluations, progress.BestParams, progress.BestCost)
+		if err != nil {
 			return
 		}
 
@@ -314,7 +318,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		}
 
 		if !now.Before(nextCheckpoint) && checkpointStore != nil && !nextCheckpoint.IsZero() {
-			if err := saveCheckpoint(jm, checkpointStore, rend, jobID); err != nil {
+			err := saveCheckpoint(jm, checkpointStore, rend, jobID)
+			if err != nil {
 				slog.Warn("Failed to save periodic checkpoint", "job_id", jobID, "error", err)
 			}
 
@@ -345,12 +350,14 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		iterations := baseIterations + boundary.Progress.Iterations
 
 		evaluations := baseEvaluations + boundary.Progress.Evaluations
-		if err := jm.UpdateProgress(jobID, iterations, evaluations, boundary.Progress.BestParams, boundary.Progress.BestCost); err != nil {
+		err := jm.UpdateProgress(jobID, iterations, evaluations, boundary.Progress.BestParams, boundary.Progress.BestCost)
+		if err != nil {
 			return err
 		}
 
 		if checkpointStore != nil {
-			if err := saveCheckpoint(jm, checkpointStore, rend, jobID); err != nil {
+			err := saveCheckpoint(jm, checkpointStore, rend, jobID)
+			if err != nil {
 				return fmt.Errorf("persist optimizer epoch %d: %w", boundary.Epoch, err)
 			}
 		}
@@ -555,7 +562,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 
 	_ = jm.RecordMetrics(jobID, finalSample)
 	if len(circleData) > 0 {
-		if err := checkpointStore.SaveCircleData(jobID, circleData); err != nil {
+		err := checkpointStore.SaveCircleData(jobID, circleData)
+		if err != nil {
 			slog.Warn("Failed to save circle metadata", "job_id", jobID, "error", err)
 		}
 	}
@@ -567,7 +575,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	var persistenceErr error
 
 	if checkpointStore != nil {
-		if err := saveCheckpointWithImage(jm, checkpointStore, rend, jobID, result.BestImage); err != nil {
+		err := saveCheckpointWithImage(jm, checkpointStore, rend, jobID, result.BestImage)
+		if err != nil {
 			persistenceErr = fmt.Errorf("persist final result: %w", err)
 			_ = jm.UpdateJob(jobID, func(live *Job) {
 				live.Error = "failed to persist final result"
@@ -645,7 +654,8 @@ func polishBatchResult(
 	}
 
 	if checkpointStore != nil {
-		if err := saveCheckpoint(jm, checkpointStore, rend, job.ID); err != nil {
+		err := saveCheckpoint(jm, checkpointStore, rend, job.ID)
+		if err != nil {
 			return nil, fmt.Errorf("persist pre-polishing result: %w", err)
 		}
 	}
@@ -657,7 +667,7 @@ func polishBatchResult(
 		iterations += baseIterations + mainIterations
 		evaluations += baseEvaluations + mainEvaluations
 
-		if err := jm.UpdateJob(job.ID, func(live *Job) {
+		err := jm.UpdateJob(job.ID, func(live *Job) {
 			live.Iterations = iterations
 			live.Evaluations = evaluations
 			updateBestResult(live, params, cost)
@@ -665,7 +675,8 @@ func polishBatchResult(
 			if clearCandidate {
 				live.CandidateCost = nil
 			}
-		}); err != nil {
+		})
+		if err != nil {
 			return err
 		}
 
@@ -685,12 +696,13 @@ func polishBatchResult(
 			progress.Iterations += mainIterations
 
 			progress.Evaluations += mainEvaluations
-			if err := jm.UpdateCandidateProgress(
+			err := jm.UpdateCandidateProgress(
 				job.ID,
 				baseIterations+progress.Iterations,
 				baseEvaluations+progress.Evaluations,
 				progress.BestCost,
-			); err != nil {
+			)
+			if err != nil {
 				return
 			}
 			// Polishing is transactional. Publish counters continuously, but do
@@ -948,7 +960,8 @@ func safeJobError(err error) string {
 }
 
 func markJobCancelled(jm *JobManager, jobID string) {
-	if err := jm.CancelJob(jobID); err != nil && !errors.Is(err, ErrInvalidTransition) {
+	err := jm.CancelJob(jobID)
+	if err != nil && !errors.Is(err, ErrInvalidTransition) {
 		slog.Warn("Failed to mark job cancelled", "job_id", jobID, "error", err)
 	}
 }
@@ -1021,11 +1034,13 @@ func saveCheckpointWithImage(jm *JobManager, checkpointStore store.Store, rend r
 	}
 
 	var persistenceErrors []error
-	if err := checkpointStore.SaveCheckpoint(jobID, checkpoint); err != nil {
+	err := checkpointStore.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		persistenceErrors = append(persistenceErrors, fmt.Errorf("save checkpoint: %w", err))
 	}
 
-	if err := saveCheckpointArtifacts(checkpointStore, rend, job.Config, jobID, job.BestParams, bestImage); err != nil {
+	err := saveCheckpointArtifacts(checkpointStore, rend, job.Config, jobID, job.BestParams, bestImage)
+	if err != nil {
 		persistenceErrors = append(persistenceErrors, err)
 	}
 
@@ -1063,14 +1078,16 @@ func saveCheckpointArtifacts(checkpointStore store.Store, rend renderer.Renderer
 	go func() {
 		defer writes.Done()
 
-		if err := artifacts.SavePNGArtifact(jobID, store.ArtifactBest, best); err != nil {
+		err := artifacts.SavePNGArtifact(jobID, store.ArtifactBest, best)
+		if err != nil {
 			artifactErrors[0] = fmt.Errorf("save best artifact: %w", err)
 		}
 	}()
 	go func() {
 		defer writes.Done()
 
-		if err := artifacts.SavePNGArtifact(jobID, store.ArtifactDiff, diff); err != nil {
+		err := artifacts.SavePNGArtifact(jobID, store.ArtifactDiff, diff)
+		if err != nil {
 			artifactErrors[1] = fmt.Errorf("save diff artifact: %w", err)
 		}
 	}()

@@ -98,6 +98,7 @@ func evaluationCostsFor(t *testing.T, workers int, run func(base *CPURenderer, o
 	// The optimizer's concurrency is fixed so both pool widths see exactly the
 	// same candidates in the same order; only the pool width varies.
 	optimizer := &concurrentOptimizer{workers: 4, batches: 4}
+
 	err := run(base, optimizer)
 	if err != nil {
 		t.Fatalf("optimization error = %v", err)

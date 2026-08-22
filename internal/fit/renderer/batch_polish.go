@@ -908,7 +908,7 @@ func selectHybridOverlapCircles(params []float64, audit BatchAudit, activeSetSiz
 	for len(selected) < activeSetSize {
 		bestCircle, bestOverlap, bestVisits := -1, -1, math.MaxInt
 
-		for candidate := 0; candidate < vector.K; candidate++ {
+		for candidate := range vector.K {
 			if selected[candidate] {
 				continue
 			}
@@ -998,7 +998,7 @@ func removeActiveCircleParams(params []float64, activeCircles []int) []float64 {
 	}
 
 	retained := make([]float64, 0, len(params)-len(activeCircles)*paramsPerCircle)
-	for circle := 0; circle < len(params)/paramsPerCircle; circle++ {
+	for circle := range len(params) / paramsPerCircle {
 		if !active[circle] {
 			retained = append(retained, params[circle*paramsPerCircle:(circle+1)*paramsPerCircle]...)
 		}

@@ -27,6 +27,7 @@ func TestJobReportPageRendersSelfContainedContent(t *testing.T) {
 	}
 
 	var output bytes.Buffer
+
 	err := JobReportPage(report).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render report: %v", err)
@@ -65,6 +66,7 @@ func TestJobReportPageOmitsMissingEndTime(t *testing.T) {
 	}
 
 	var output bytes.Buffer
+
 	err := JobReportPage(report).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatal(err)

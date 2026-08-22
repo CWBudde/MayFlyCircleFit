@@ -264,6 +264,7 @@ func presentBaseFields(data []byte) (map[string]json.RawMessage, error) {
 	var raw struct {
 		Base map[string]json.RawMessage `json:"base"`
 	}
+
 	err := json.Unmarshal(data, &raw)
 	if err != nil {
 		return nil, fmt.Errorf("decode schedule base: %w", err)
@@ -370,6 +371,7 @@ func (d *ScheduleDocument) ResolveSeed() error {
 		base.Seed = 0
 
 		base.EffectiveSeed = 0
+
 		err := base.ApplyDefaults()
 		if err != nil {
 			return err
@@ -487,6 +489,7 @@ func (d ScheduleDocument) Expand() ([]ScheduleStage, error) {
 	config.Seed = d.Seed
 
 	config.EffectiveSeed = d.Seed
+
 	err := config.ApplyDefaults()
 	if err != nil {
 		return nil, err
@@ -644,6 +647,7 @@ func validateNoDefaultOverrides(prefix string, present map[string]json.RawMessag
 	}
 
 	defaulted := config
+
 	err := defaulted.ApplyDefaults()
 	if err != nil {
 		return err

@@ -234,6 +234,7 @@ func jobControlsDataAttrs(t *testing.T, job ui.JobDetail) map[string]string {
 	t.Helper()
 
 	var rendered bytes.Buffer
+
 	err := ui.JobDetailPage(job).Render(context.Background(), &rendered)
 	if err != nil {
 		t.Fatalf("render job detail page: %v", err)

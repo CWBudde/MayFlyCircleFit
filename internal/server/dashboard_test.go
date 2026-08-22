@@ -44,7 +44,8 @@ func TestRoutingDashboardEndpoint(t *testing.T) {
 	}
 
 	var payload dashboardResponse
-	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+	err := json.NewDecoder(rec.Body).Decode(&payload)
+	if err != nil {
 		t.Fatalf("decode /api/v1/dashboard body: %v", err)
 	}
 
@@ -65,6 +66,7 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 
 	for i := range dashboardCampaignLimit + 4 {
 		state := store.ScheduleStateCompleted
+
 		switch i {
 		case dashboardCampaignLimit + 3:
 			state = store.ScheduleStateRunning
@@ -301,7 +303,7 @@ func TestDashboardRunningJobFromBoundsMetricHistory(t *testing.T) {
 	job := fixture.server.jobManager.CreateJob(app.DefaultProject, app.JobConfig{
 		RefPath: fixture.imagePath, Mode: app.ModeBatch, Circles: 8, Iters: 100, PopSize: 30, Seed: 42,
 	})
-	if err := fixture.server.jobManager.UpdateJob(job.ID, func(job *Job) {
+	err := fixture.server.jobManager.UpdateJob(job.ID, func(job *Job) {
 		job.State = StateRunning
 		job.StartTime = time.Now().Add(-time.Second)
 		job.Evaluations = 10
@@ -315,7 +317,8 @@ func TestDashboardRunningJobFromBoundsMetricHistory(t *testing.T) {
 				Timestamp: time.Now().Add(time.Duration(i) * time.Millisecond),
 			})
 		}
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("seed running job: %v", err)
 	}
 
@@ -368,7 +371,8 @@ func TestDashboardCountsAndRowsComeFromOneSnapshot(t *testing.T) {
 			continue
 		}
 
-		if err := manager.StartJob(job.ID); err != nil {
+		err := manager.StartJob(job.ID)
+		if err != nil {
 			t.Fatalf("start job: %v", err)
 		}
 	}
@@ -418,11 +422,13 @@ func TestStartJobRecordsInheritedEvaluations(t *testing.T) {
 	job := manager.CreateJob(app.DefaultProject, app.JobConfig{
 		Mode: app.ModeBatch, Circles: 8, Iters: 100, PopSize: 30, Seed: 42,
 	})
-	if err := manager.UpdateJob(job.ID, func(live *Job) { live.Evaluations = 5000 }); err != nil {
+	err := manager.UpdateJob(job.ID, func(live *Job) { live.Evaluations = 5000 })
+	if err != nil {
 		t.Fatalf("seed inherited evaluations: %v", err)
 	}
 
-	if err := manager.StartJob(job.ID); err != nil {
+	err := manager.StartJob(job.ID)
+	if err != nil {
 		t.Fatalf("start job: %v", err)
 	}
 

@@ -383,7 +383,7 @@ func BenchmarkSAD_Scalar(b *testing.B) {
 
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		fastSAD_Scalar(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 	}
 
@@ -401,7 +401,7 @@ func BenchmarkSAD_Active(b *testing.B) {
 
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		fastSAD(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 	}
 
@@ -417,7 +417,7 @@ func BenchmarkSAD_HighLevel(b *testing.B) {
 
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		FastSAD(img1, img2)
 	}
 
@@ -434,7 +434,7 @@ func BenchmarkSADvsSSD(b *testing.B) {
 	b.Run("SAD_scalar", func(b *testing.B) {
 		b.ResetTimer()
 
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			fastSAD_Scalar(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 		}
 
@@ -447,7 +447,7 @@ func BenchmarkSADvsSSD(b *testing.B) {
 		b.Logf("Backend: %s", ActiveSADKernel())
 		b.ResetTimer()
 
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			fastSAD(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 		}
 
@@ -459,7 +459,7 @@ func BenchmarkSADvsSSD(b *testing.B) {
 	b.Run("SSD_scalar", func(b *testing.B) {
 		b.ResetTimer()
 
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 		}
 
@@ -472,7 +472,7 @@ func BenchmarkSADvsSSD(b *testing.B) {
 		b.Logf("Backend: %s", ActiveSSDKernel())
 		b.ResetTimer()
 
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			fastSSD(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 		}
 

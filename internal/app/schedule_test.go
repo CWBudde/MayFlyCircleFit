@@ -531,6 +531,7 @@ func TestScheduleCampaignSeedResolvesWhenOmitted(t *testing.T) {
 // never sees: reconstructed in code, or read back from the store.
 func TestScheduleDocumentValidateWithoutTheParser(t *testing.T) {
 	valid := *documentWithSteps(t, `[{"type": "extend", "additionalCircles": 8}]`)
+
 	err := valid.Validate()
 	if err != nil {
 		t.Fatalf("Validate() error = %v, want nil", err)

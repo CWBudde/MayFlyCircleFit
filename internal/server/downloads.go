@@ -44,6 +44,7 @@ func requestedColormap(r *http.Request) (fit.Colormap, error) {
 
 func pngDataURI(img image.Image) (string, error) {
 	var encoded bytes.Buffer
+
 	err := png.Encode(&encoded, img)
 	if err != nil {
 		return "", fmt.Errorf("encode PNG: %w", err)

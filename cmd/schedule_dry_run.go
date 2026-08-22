@@ -41,6 +41,7 @@ func scheduleDocumentNamesSeed(data []byte) bool {
 			Seed *int64 `json:"seed"`
 		} `json:"base"`
 	}
+
 	err := json.Unmarshal(data, &named)
 	if err != nil {
 		// An undecodable document never reaches here; treating it as unnamed

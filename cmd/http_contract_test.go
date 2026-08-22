@@ -24,6 +24,7 @@ func validJobResponse(t *testing.T, id string) jobResponse {
 	config.RefPath = "assets/reference.png"
 
 	config.Seed = 42
+
 	err := config.ApplyDefaults()
 	if err != nil {
 		t.Fatalf("apply config defaults: %v", err)
@@ -55,12 +56,13 @@ func TestJobResponseAcceptsCompactCollectionConfig(t *testing.T) {
 	response := validJobResponse(t, "job-1")
 
 	response.Config = &app.JobConfig{RefPath: "assets/reference.png", Mode: app.ModeBatch, Circles: 8}
+
 	err := response.validate(false)
 	if err != nil {
 		t.Fatalf("compact collection response rejected: %v", err)
 	}
 
-	err := response.validate(true)
+	err = response.validate(true)
 	if err == nil {
 		t.Fatal("compact config was accepted for the detailed status response")
 	}
@@ -97,6 +99,7 @@ func TestRunStatusEscapesJobIDAndUsesTypedResponse(t *testing.T) {
 	t.Cleanup(func() { serverURL = previousURL })
 
 	var output bytes.Buffer
+
 	err := runStatus(testCommand(context.Background(), &output), []string{jobID})
 	if err != nil {
 		t.Fatalf("runStatus: %v", err)
@@ -138,6 +141,7 @@ func TestListJobsRejectsMalformedOrSkewedResponses(t *testing.T) {
 			defer server.Close()
 
 			var output bytes.Buffer
+
 			err := listJobs(context.Background(), &output, server.URL)
 			if err == nil {
 				t.Fatalf("listJobs accepted malformed response %s", testCase.body)
@@ -167,6 +171,7 @@ func TestListJobsEmptyAndValidResponses(t *testing.T) {
 			defer server.Close()
 
 			var output bytes.Buffer
+
 			err := listJobs(context.Background(), &output, server.URL)
 			if err != nil {
 				t.Fatalf("listJobs: %v", err)
@@ -208,6 +213,7 @@ func TestListJobsReadsBoundedPages(t *testing.T) {
 	defer server.Close()
 
 	var output bytes.Buffer
+
 	err := listJobs(context.Background(), &output, server.URL)
 	if err != nil {
 		t.Fatalf("listJobs: %v", err)
@@ -335,6 +341,7 @@ func TestRunResumeServerEscapesIDAndValidatesResponse(t *testing.T) {
 	t.Cleanup(func() { resumeServerURL = previousURL })
 
 	var output bytes.Buffer
+
 	err := runResumeServer(context.Background(), &output, jobID)
 	if err != nil {
 		t.Fatalf("runResumeServer: %v", err)
@@ -439,6 +446,7 @@ func TestGetJobStatusPrintsTermination(t *testing.T) {
 			defer server.Close()
 
 			var output bytes.Buffer
+
 			err := getJobStatus(context.Background(), &output, server.URL, "job-1")
 			if err != nil {
 				t.Fatalf("getJobStatus: %v", err)

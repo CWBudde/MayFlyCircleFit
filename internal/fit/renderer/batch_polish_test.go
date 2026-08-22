@@ -1187,7 +1187,7 @@ func BenchmarkPolishCircleBatchStrategy(b *testing.B) {
 				cpu.SetThreads(1)
 				b.ReportAllocs()
 
-				for i := 0; i < b.N; i++ {
+				for range b.N {
 					_, err := PolishCircleBatchContext(context.Background(), cpu, &recordingPolishOptimizer{steps: 200}, params, BatchPolishOptions{
 						ActiveSetSize: 3,
 						MaxSweeps:     1,
@@ -1254,7 +1254,7 @@ func BenchmarkPolishCircleBatch(b *testing.B) {
 
 				b.ReportAllocs()
 
-				for i := 0; i < b.N; i++ {
+				for range b.N {
 					_, err := PolishCircleBatchContext(context.Background(), base, &recordingPolishOptimizer{steps: 200}, params, BatchPolishOptions{
 						ActiveSetSize: 3,
 						MaxSweeps:     1,

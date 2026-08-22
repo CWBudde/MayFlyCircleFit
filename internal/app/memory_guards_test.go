@@ -61,17 +61,17 @@ func TestImageDimensionGuardIsExactAtItsBound(t *testing.T) {
 		t.Fatalf("ValidateImageDimensions at exactly the limit = %v, want it accepted", err)
 	}
 
-	err := ValidateImageDimensions(MaxImagePixels+1, 1)
+	err = ValidateImageDimensions(MaxImagePixels+1, 1)
 	if err == nil {
 		t.Fatal("ValidateImageDimensions one pixel over the limit = nil, want a rejection")
 	}
 	// 4096*4096 is exactly the limit; 4097*4096 is 16,781,312 and over it.
-	err := ValidateImageDimensions(4096, 4096)
+	err = ValidateImageDimensions(4096, 4096)
 	if err != nil {
 		t.Fatalf("ValidateImageDimensions(4096, 4096) = %v, want the exact limit accepted", err)
 	}
 
-	err := ValidateImageDimensions(4097, 4096)
+	err = ValidateImageDimensions(4097, 4096)
 	if err == nil {
 		t.Fatal("ValidateImageDimensions(4097, 4096) = nil, want a rejection just over the limit")
 	}
@@ -86,13 +86,15 @@ func TestCircleCountGuardBoundsTheParameterVector(t *testing.T) {
 	config.RefPath = "assets/reference.png"
 
 	config.Circles = MaxCircles + 1
+
 	err := config.Validate()
 	if err == nil {
 		t.Fatalf("Validate() accepted %d circles, want a rejection above the %d limit", config.Circles, MaxCircles)
 	}
 
 	config.Circles = MaxCircles
-	err := config.Validate()
+
+	err = config.Validate()
 	if err != nil {
 		t.Fatalf("Validate() at exactly %d circles = %v, want it accepted", MaxCircles, err)
 	}

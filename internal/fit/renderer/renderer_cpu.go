@@ -193,7 +193,7 @@ func (r *CPURenderer) render(params []float64, dirty *dirtySpanSet) *image.NRGBA
 	var workers sync.WaitGroup
 	workers.Add(r.threads - 1)
 
-	for worker := 0; worker < r.threads-1; worker++ {
+	for worker := range r.threads - 1 {
 		minY := worker * r.height / r.threads
 		maxY := (worker + 1) * r.height / r.threads
 
@@ -247,7 +247,7 @@ func (r *CPURenderer) compositeParams(img *image.NRGBA, params []float64, count 
 	var workers sync.WaitGroup
 	workers.Add(r.threads - 1)
 
-	for worker := 0; worker < r.threads-1; worker++ {
+	for worker := range r.threads - 1 {
 		minY := worker * r.height / r.threads
 		maxY := (worker + 1) * r.height / r.threads
 
@@ -673,19 +673,13 @@ func (r *CPURenderer) renderCircleScanlineRowsTracked(
 	}
 
 	// Clamp to image bounds
-	minY := max(int(minYf), 0)
-
-	if minY < rowStart {
-		minY = rowStart
-	}
+	minY := max(max(int(minYf), 0), rowStart)
 
 	maxY := min(
 		// +1 for ceiling
-		int(maxYf+1), r.height)
+		min(
 
-	if maxY > rowEnd {
-		maxY = rowEnd
-	}
+			int(maxYf+1), r.height), rowEnd)
 
 	r2 := c.R * c.R
 	var fixedGeometry fixedCircleQ16

@@ -76,6 +76,7 @@ func TestRouting_JobsListAndJobDetailRoutes(t *testing.T) {
 	imgPath := createTempRefImage(t)
 
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: imgPath, Mode: "batch", Circles: 1, Iters: 1, PopSize: 2, Seed: 42})
+
 	err := server.enqueueJob(job.ID)
 	if err != nil {
 		t.Fatalf("enqueue job %s: %v", job.ID, err)

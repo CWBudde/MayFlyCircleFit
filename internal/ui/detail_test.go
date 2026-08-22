@@ -29,6 +29,7 @@ func TestJobDetailPageViewModes(t *testing.T) {
 	}
 
 	var output bytes.Buffer
+
 	err := JobDetailPage(job).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render job detail: %v", err)
@@ -113,6 +114,7 @@ func TestJobDetailPageDistinguishesCandidateFromAuditedBest(t *testing.T) {
 	}
 
 	var output bytes.Buffer
+
 	err := JobDetailPage(job).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatal(err)
@@ -135,6 +137,7 @@ func TestJobDetailPageOmitsSSIMControlsWhenDisabled(t *testing.T) {
 	}
 
 	var output bytes.Buffer
+
 	err := JobDetailPage(job).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatal(err)
@@ -159,6 +162,7 @@ func TestJobDetailPageShowsPolishingSchedule(t *testing.T) {
 	}
 
 	var output bytes.Buffer
+
 	err := JobDetailPage(job).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatal(err)
@@ -195,6 +199,7 @@ func TestJobDetailFallbackMutationsAreDisabled(t *testing.T) {
 			}
 
 			var output bytes.Buffer
+
 			err := JobDetailPage(job).Render(context.Background(), &output)
 			if err != nil {
 				t.Fatal(err)
@@ -223,6 +228,7 @@ func TestJobDetailPageMetadataUnavailable(t *testing.T) {
 	}
 
 	var output bytes.Buffer
+
 	err := JobDetailPage(job).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render job detail: %v", err)
@@ -259,6 +265,7 @@ func TestJobDetailPageParameterViewerCircleCounts(t *testing.T) {
 			}
 
 			var output bytes.Buffer
+
 			err := JobDetailPage(job).Render(context.Background(), &output)
 			if err != nil {
 				t.Fatal(err)

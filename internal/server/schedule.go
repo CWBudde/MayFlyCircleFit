@@ -296,6 +296,7 @@ func (s *Server) recordSkippedStage(scheduleStore store.ScheduleStore, scheduleI
 	stageRecord.State = store.ScheduleStateSkipped
 
 	stageRecord.Reason = reason
+
 	err := scheduleStore.SaveScheduleStage(scheduleID, stageRecord)
 	if err != nil {
 		return fmt.Errorf("record skipped stage %d: %w", stage.Index, err)
@@ -444,6 +445,7 @@ func (s *Server) runScheduleStage(
 		stageRecord.State = store.ScheduleStateFailed
 
 		stageRecord.Error = err.Error()
+
 		saveErr := scheduleStore.SaveScheduleStage(record.ScheduleID, stageRecord)
 		if saveErr != nil {
 			slog.Error("Unable to record a stage that could not start",
@@ -686,6 +688,7 @@ func (s *Server) settleAdoptedStage(
 	}
 
 	settled.CompletedAt = &completedAt
+
 	err := scheduleStore.SaveScheduleStage(scheduleID, &settled)
 	if err != nil {
 		// Reporting the failure keeps the completed checkpoint: the alternative

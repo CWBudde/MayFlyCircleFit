@@ -59,6 +59,7 @@ func TestSaveCheckpointRequiresMatchingJobID(t *testing.T) {
 	jobID := testJobID(1)
 
 	checkpoint := createTestCheckpoint(testJobID(2))
+
 	err := fs.SaveCheckpoint(jobID, checkpoint)
 	if err == nil {
 		t.Fatal("SaveCheckpoint accepted a mismatched checkpoint JobID")
@@ -358,6 +359,7 @@ func TestCheckpointMigratesMissingVersionV1(t *testing.T) {
 	}`, testJobID(1), time.Now().UTC().Format(time.RFC3339Nano))
 
 	var migrated Checkpoint
+
 	err := json.Unmarshal([]byte(legacy), &migrated)
 	if err != nil {
 		t.Fatal(err)
@@ -371,7 +373,7 @@ func TestCheckpointMigratesMissingVersionV1(t *testing.T) {
 		t.Fatalf("legacy metadata was not derived: %#v", migrated)
 	}
 
-	err := migrated.Validate()
+	err = migrated.Validate()
 	if err != nil {
 		t.Fatalf("migrated checkpoint is invalid: %v", err)
 	}
@@ -381,6 +383,7 @@ func TestCheckpointRejectsFutureSchema(t *testing.T) {
 	data := fmt.Sprintf(`{"schemaVersion":%d,"jobId":%q}`, CheckpointSchemaVersion+1, testJobID(1))
 
 	var checkpoint Checkpoint
+
 	err := json.Unmarshal([]byte(data), &checkpoint)
 	if err == nil {
 		t.Fatal("future checkpoint schema was accepted")

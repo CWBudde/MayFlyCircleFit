@@ -162,6 +162,7 @@ func TestRunJobRefusesAnArrangementTheCanvasCannotHold(t *testing.T) {
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, config)
+
 	err := runJob(context.Background(), jm, nil, job.ID)
 	if err == nil {
 		t.Fatal("runJob accepted a circle outside the canvas bounds")

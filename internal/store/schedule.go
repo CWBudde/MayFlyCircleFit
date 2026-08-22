@@ -162,7 +162,7 @@ func (r *ScheduleRecord) Validate() error {
 	// accept an embedded schema version or a step type this build does not
 	// understand, which is exactly what a record written by a newer binary looks
 	// like.
-	err := r.Document.Validate()
+	err = r.Document.Validate()
 	if err != nil {
 		return &ValidationError{Field: "Document", Reason: err.Error()}
 	}
@@ -276,7 +276,7 @@ func (s *ScheduleStageRecord) Validate() error {
 	// The stage config is what a single stage is replayed from, so it is checked
 	// like any other persisted configuration, and it must describe this stage:
 	// a config for a different circle count cannot reproduce the run.
-	err := s.Config.Validate()
+	err = s.Config.Validate()
 	if err != nil {
 		return &ValidationError{Field: "Config", Reason: err.Error()}
 	}
@@ -338,6 +338,7 @@ type ScheduleStore interface {
 
 func (fs *FSStore) schedulesDir() (string, error) {
 	dir := filepath.Join(fs.baseDir, schedulesDirName)
+
 	err := ensureSecureDir(fs.baseDir, dir)
 	if err != nil {
 		return "", fmt.Errorf("create schedules directory: %w", err)

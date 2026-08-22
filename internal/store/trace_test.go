@@ -404,6 +404,7 @@ func TestTraceWriter_ConcurrentWrites(t *testing.T) {
 				Cost:      float64(iter),
 				Timestamp: time.Now(),
 			}
+
 			err := writer.Write(entry)
 			if err != nil {
 				t.Errorf("Concurrent write failed: %v", err)

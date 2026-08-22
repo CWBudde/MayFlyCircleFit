@@ -95,7 +95,7 @@ func NewBounds(k, width, height int) *Bounds {
 	lower := make([]float64, k*paramsPerCircle)
 	upper := make([]float64, k*paramsPerCircle)
 
-	for i := 0; i < k; i++ {
+	for i := range k {
 		offset := i * paramsPerCircle
 		// Centers may lie up to half the canvas width/height beyond an edge.
 		lower[offset+0] = -xOffset
@@ -226,7 +226,7 @@ func (b *Bounds) ClampVector(data []float64) {
 	circleCount := min(len(data)/paramsPerCircle, b.K)
 
 	vector := ParamVector{Data: data, K: circleCount, Width: b.Width, Height: b.Height}
-	for i := 0; i < circleCount; i++ {
+	for i := range circleCount {
 		vector.EncodeCircle(i, b.ClampCircle(vector.DecodeCircle(i)))
 	}
 }
@@ -243,20 +243,4 @@ func (b *Bounds) ClampIndependentVector(data []float64) {
 
 func clamp(val, lo, hi float64) float64 {
 	return math.Max(lo, math.Min(hi, val))
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-
-	return b
 }

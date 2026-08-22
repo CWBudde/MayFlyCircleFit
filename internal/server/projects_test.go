@@ -179,6 +179,7 @@ func TestListJobsProjectFilterAndValidation(t *testing.T) {
 		}
 
 		var jobs []*Job
+
 		err := json.NewDecoder(recorder.Body).Decode(&jobs)
 		if err != nil {
 			t.Fatalf("%q decode: %v", tc.query, err)
@@ -576,6 +577,7 @@ func TestJobStatusResponseCarriesProject(t *testing.T) {
 					ID      string `json:"id"`
 					Project string `json:"project"`
 				}
+
 				err := json.Unmarshal(recorder.Body.Bytes(), &decoded)
 				if err != nil {
 					t.Fatalf("%s: %v", path, err)
@@ -724,6 +726,7 @@ func TestProjectsEndpointOrderingIsStable(t *testing.T) {
 		}
 
 		var decoded []projectResponse
+
 		err := json.Unmarshal(recorder.Body.Bytes(), &decoded)
 		if err != nil {
 			t.Fatal(err)

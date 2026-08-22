@@ -60,6 +60,7 @@ func TestDashboardPageRenders(t *testing.T) {
 	}
 
 	var output bytes.Buffer
+
 	err := DashboardPage(page).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render dashboard page: %v", err)
@@ -96,6 +97,7 @@ func TestDashboardPageSeedsTheIsland(t *testing.T) {
 	}
 
 	var output bytes.Buffer
+
 	err := DashboardPage(page).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render dashboard page: %v", err)
@@ -119,6 +121,7 @@ func TestDashboardPageSeedsTheIsland(t *testing.T) {
 			} `json:"gpu"`
 		} `json:"hostFacts"`
 	}
+
 	err = json.Unmarshal([]byte(seed), &decoded)
 	if err != nil {
 		t.Fatalf("decode dashboard seed: %v", err)
@@ -221,6 +224,7 @@ func renderDashboardPage(t *testing.T, page DashboardPageData) string {
 	t.Helper()
 
 	var output bytes.Buffer
+
 	err := DashboardPage(page).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render dashboard page: %v", err)

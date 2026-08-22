@@ -188,7 +188,7 @@ func BenchmarkCPURendererOpaqueSpan(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_ = renderer.Render(params)
 			}
 		})
@@ -202,7 +202,7 @@ func benchmarkCompositeOpaqueSpan(b *testing.B, pixels int, composite func([]byt
 	b.SetBytes(int64(pixels * 4))
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		composite(pix, 0, pixels, 0.13, 0.57, 0.91, 0.37)
 	}
 }

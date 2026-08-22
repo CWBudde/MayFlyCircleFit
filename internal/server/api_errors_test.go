@@ -95,6 +95,7 @@ func TestAPIErrorsUseTheJSONEnvelope(t *testing.T) {
 			}
 
 			var decoded apiErrorResponse
+
 			err := json.Unmarshal(response.Body.Bytes(), &decoded)
 			if err != nil {
 				t.Fatalf("body %q is not the JSON error envelope: %v", response.Body.String(), err)
@@ -130,6 +131,7 @@ func TestAPIErrorsHideInternalDetail(t *testing.T) {
 	}
 
 	var decoded apiErrorResponse
+
 	err := json.Unmarshal(response.Body.Bytes(), &decoded)
 	if err != nil {
 		t.Fatalf("body %q is not the JSON error envelope: %v", response.Body.String(), err)

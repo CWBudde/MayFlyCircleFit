@@ -290,6 +290,7 @@ func TestJobStreamPublishesTerminalTransitionsAndCloses(t *testing.T) {
 			server := NewServer(":8080", nil)
 
 			job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{})
+
 			err := server.jobManager.UpdateJob(job.ID, func(current *Job) { current.Evaluations = 42 })
 			if err != nil {
 				t.Fatal(err)
@@ -306,7 +307,7 @@ func TestJobStreamPublishesTerminalTransitionsAndCloses(t *testing.T) {
 
 			waitForSubscriber(t, server.jobManager.broadcaster, job.ID)
 
-			err := test.transition(server.jobManager, job.ID)
+			err = test.transition(server.jobManager, job.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -346,12 +347,13 @@ func TestAllJobStream_SnapshotAndUpdates(t *testing.T) {
 	first := server.jobManager.CreateJob(app.DefaultProject, JobConfig{})
 
 	second := server.jobManager.CreateJob(app.DefaultProject, JobConfig{})
+
 	err := server.jobManager.StartJob(first.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := server.jobManager.StartJob(second.ID)
+	err = server.jobManager.StartJob(second.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,6 +420,7 @@ func TestAllJobStreamRoute(t *testing.T) {
 		PopSize: 30,
 		Seed:    42,
 	})
+
 	err := server.jobManager.UpdateJob(job.ID, func(current *Job) {
 		current.State = StateRunning
 		current.StartTime = time.Now().Add(-time.Second)
@@ -488,12 +491,13 @@ func TestAllJobStreamDropsEventsOlderThanTheSnapshot(t *testing.T) {
 	server := NewServer(":8080", nil)
 
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{})
+
 	err := server.jobManager.StartJob(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := server.jobManager.UpdateProgress(job.ID, 20, 20, nil, 1)
+	err = server.jobManager.UpdateProgress(job.ID, 20, 20, nil, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -543,12 +547,13 @@ func TestAllJobStreamKeepsTerminalEventsInTheSnapshotGap(t *testing.T) {
 	server := NewServer(":8080", nil)
 
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{})
+
 	err := server.jobManager.StartJob(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := server.jobManager.UpdateProgress(job.ID, 20, 20, nil, 1)
+	err = server.jobManager.UpdateProgress(job.ID, 20, 20, nil, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -661,6 +666,7 @@ func decodeSSEEvents(t *testing.T, body string) []ProgressEvent {
 		}
 
 		var event ProgressEvent
+
 		err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event)
 		if err != nil {
 			t.Fatalf("decode SSE event: %v", err)

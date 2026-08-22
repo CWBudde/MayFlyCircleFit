@@ -310,6 +310,7 @@ func startServer(t *testing.T, client *http.Client, binaryPath, inputRoot, dataR
 		command.Stdout = logs
 
 		command.Stderr = logs
+
 		err := command.Start()
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("attempt %d start: %v", attempt, err))
@@ -536,6 +537,7 @@ func waitForProgress(t *testing.T, client *http.Client, baseURL, jobID string, a
 		}
 
 		var event progressEvent
+
 		err := json.Unmarshal(bytes.TrimSpace([]byte(strings.TrimPrefix(line, "data:"))), &event)
 		if err != nil {
 			t.Fatalf("decode SSE event: %v; line: %s", err, line)
@@ -571,6 +573,7 @@ func waitForCheckpoint(t *testing.T, path string) checkpointFile {
 		payload, err := os.ReadFile(path)
 		if err == nil {
 			var checkpoint checkpointFile
+
 			err := json.Unmarshal(payload, &checkpoint)
 			if err != nil {
 				t.Fatalf("decode checkpoint %s: %v", path, err)

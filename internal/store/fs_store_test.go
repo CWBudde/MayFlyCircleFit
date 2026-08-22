@@ -296,6 +296,7 @@ func TestListCheckpoints_Multiple(t *testing.T) {
 	jobs := []string{testJobID(1), testJobID(2), testJobID(3)}
 	for _, jobID := range jobs {
 		checkpoint := createTestCheckpoint(jobID)
+
 		err := store.SaveCheckpoint(jobID, checkpoint)
 		if err != nil {
 			t.Fatalf("Failed to save checkpoint %s: %v", jobID, err)
@@ -464,6 +465,7 @@ func TestConcurrentSave(t *testing.T) {
 			jobID := testJobID(idx + 1)
 
 			checkpoint := createTestCheckpoint(jobID)
+
 			err := store.SaveCheckpoint(jobID, checkpoint)
 			if err != nil {
 				t.Errorf("Concurrent save failed for job %s: %v", jobID, err)

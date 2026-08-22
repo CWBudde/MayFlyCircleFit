@@ -96,6 +96,7 @@ func TestCreateJobRejectsInvalidPayloads(t *testing.T) {
 	createSimpleTestImage(t, outsideImage)
 
 	nonImage := filepath.Join(tmpDir, "notes.txt")
+
 	err := os.WriteFile(nonImage, []byte("not image"), 0o644)
 	if err != nil {
 		t.Fatal(err)

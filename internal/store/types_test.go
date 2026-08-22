@@ -604,12 +604,13 @@ func TestOldCheckpointLoadsWithoutEarlyStopFields(t *testing.T) {
 			}`
 
 			var checkpoint Checkpoint
+
 			err := json.Unmarshal([]byte(raw), &checkpoint)
 			if err != nil {
 				t.Fatalf("Unmarshal() error = %v", err)
 			}
 
-			err := checkpoint.Validate()
+			err = checkpoint.Validate()
 			if err != nil {
 				t.Fatalf("Validate() error = %v", err)
 			}

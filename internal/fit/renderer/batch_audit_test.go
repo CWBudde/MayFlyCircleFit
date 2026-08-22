@@ -180,7 +180,7 @@ func BenchmarkAuditCircleBatch(b *testing.B) {
 
 			b.ReportAllocs()
 
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				if _, err := AuditCircleBatch(r, params); err != nil {
 					b.Fatal(err)
 				}
@@ -191,7 +191,7 @@ func BenchmarkAuditCircleBatch(b *testing.B) {
 
 			b.ReportAllocs()
 
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				if _, err := AuditCircleBatch(r, params); err != nil {
 					b.Fatal(err)
 				}

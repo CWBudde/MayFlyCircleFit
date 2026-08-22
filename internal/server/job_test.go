@@ -14,17 +14,18 @@ func TestJobManagerBestRevisionAdvancesOnlyForStrictImprovements(t *testing.T) {
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
+
 	err := jm.StartJob(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := jm.UpdateProgress(job.ID, 1, 10, []float64{1}, 3)
+	err = jm.UpdateProgress(job.ID, 1, 10, []float64{1}, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := jm.UpdateProgress(job.ID, 2, 20, []float64{2}, 3)
+	err = jm.UpdateProgress(job.ID, 2, 20, []float64{2}, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +35,7 @@ func TestJobManagerBestRevisionAdvancesOnlyForStrictImprovements(t *testing.T) {
 		t.Fatalf("equal-cost update changed best result: revision %d params %v", unchanged.BestRevision, unchanged.BestParams)
 	}
 
-	err := jm.UpdateProgress(job.ID, 3, 30, []float64{3}, 2)
+	err = jm.UpdateProgress(job.ID, 3, 30, []float64{3}, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,17 +50,18 @@ func TestJobManagerCandidateProgressIsProvisional(t *testing.T) {
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
+
 	err := jm.StartJob(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := jm.UpdateProgress(job.ID, 10, 100, []float64{1, 2}, 100)
+	err = jm.UpdateProgress(job.ID, 10, 100, []float64{1, 2}, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := jm.UpdateCandidateProgress(job.ID, 11, 110, 95.25)
+	err = jm.UpdateCandidateProgress(job.ID, 11, 110, 95.25)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +79,7 @@ func TestJobManagerCandidateProgressIsProvisional(t *testing.T) {
 		t.Fatalf("candidate counters = %d/%d, want 11/110", progress.Iterations, progress.Evaluations)
 	}
 
-	err := jm.ClearCandidateProgress(job.ID)
+	err = jm.ClearCandidateProgress(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,12 +94,13 @@ func TestJobManagerCandidateProgressKeepsBestCandidateAndClearsAtTerminalState(t
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
+
 	err := jm.StartJob(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := jm.UpdateProgress(job.ID, 1, 10, []float64{1}, 100)
+	err = jm.UpdateProgress(job.ID, 1, 10, []float64{1}, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +117,7 @@ func TestJobManagerCandidateProgressKeepsBestCandidateAndClearsAtTerminalState(t
 		t.Fatalf("candidate cost = %v, want best provisional cost 97", progress.CandidateCost)
 	}
 
-	err := jm.CancelJob(job.ID)
+	err = jm.CancelJob(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,27 +159,28 @@ func TestJobManagerLegalTransitions(t *testing.T) {
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
+
 	err := jm.StartJob(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := jm.UpdateProgress(job.ID, 1, 20, []float64{1, 2}, 4)
+	err = jm.UpdateProgress(job.ID, 1, 20, []float64{1, 2}, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := jm.CompleteJob(job.ID, 2, 40, []float64{2, 3}, 3, 10, "completed")
+	err = jm.CompleteJob(job.ID, 2, 40, []float64{2, 3}, 3, 10, "completed")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := jm.CancelJob(job.ID)
+	err = jm.CancelJob(job.ID)
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("terminal transition error = %v", err)
 	}
 
-	err := jm.DeleteJob(job.ID)
+	err = jm.DeleteJob(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,17 +194,18 @@ func TestJobManagerRejectsRegressingProgress(t *testing.T) {
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
+
 	err := jm.StartJob(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := jm.UpdateProgress(job.ID, 2, 40, []float64{1}, 3)
+	err = jm.UpdateProgress(job.ID, 2, 40, []float64{1}, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := jm.UpdateProgress(job.ID, 1, 20, []float64{2}, 2)
+	err = jm.UpdateProgress(job.ID, 1, 20, []float64{2}, 2)
 	if err == nil {
 		t.Fatal("regressing progress was accepted")
 	}

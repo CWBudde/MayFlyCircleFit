@@ -689,7 +689,7 @@ func TestRunJobPolishingOnlyContinuesCompleteBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := runJob(context.Background(), jm, nil, job.ID)
+	err = runJob(context.Background(), jm, nil, job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -735,6 +735,7 @@ func TestInheritedContiguousWindowVisitCountsReplaysPolishLineage(t *testing.T) 
 		checkpoint.Termination = "completed"
 
 		checkpoint.PolishedFrom = polishedFrom
+
 		err := persistence.SaveCheckpoint(jobID, checkpoint)
 		if err != nil {
 			t.Fatal(err)
@@ -808,6 +809,7 @@ func TestInheritedContiguousWindowVisitCountsRejectsBrokenLineage(t *testing.T) 
 		checkpoint.Termination = "completed"
 
 		checkpoint.PolishedFrom = polishedFrom
+
 		err := persistence.SaveCheckpoint(jobID, checkpoint)
 		if err != nil {
 			t.Fatal(err)
@@ -877,6 +879,7 @@ func TestRunJobContiguousWindowContinuationIsDeterministicForSameParentAndSeed(t
 		t.Helper()
 
 		job := jm.CreateJob(app.DefaultProject, config)
+
 		err := jm.UpdateJob(job.ID, func(live *Job) {
 			updateBestResult(live, params, parent.BestCost)
 			live.InitialCost = parent.InitialCost
@@ -888,7 +891,7 @@ func TestRunJobContiguousWindowContinuationIsDeterministicForSameParentAndSeed(t
 			t.Fatal(err)
 		}
 
-		err := runJob(context.Background(), jm, persistence, job.ID)
+		err = runJob(context.Background(), jm, persistence, job.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -928,7 +931,7 @@ func TestRunJobResumesSingleStageBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := runJob(context.Background(), jm, nil, job.ID)
+	err = runJob(context.Background(), jm, nil, job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -966,7 +969,7 @@ func TestRunJobAppendsBatchSuffix(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := runJob(context.Background(), jm, nil, job.ID)
+	err = runJob(context.Background(), jm, nil, job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 )
 
@@ -190,16 +191,16 @@ func barrenStreak(outcomes []ScheduleStageOutcome, kind ScheduleStageKind, befor
 
 	streak := 0
 
-	for i := len(completed) - 1; i >= 0; i-- {
-		if completed[i].Kind != kind {
+	for i, c := range slices.Backward(completed) {
+		if c.Kind != kind {
 			continue
 		}
 
-		if i == 0 || !completed[i].CostMeasured || !completed[i-1].CostMeasured {
+		if i == 0 || !c.CostMeasured || !completed[i-1].CostMeasured {
 			break
 		}
 
-		if completed[i-1].BestCost-completed[i].BestCost >= minGain {
+		if completed[i-1].BestCost-c.BestCost >= minGain {
 			break
 		}
 
@@ -210,11 +211,5 @@ func barrenStreak(outcomes []ScheduleStageOutcome, kind ScheduleStageKind, befor
 }
 
 func containsInt(values []int, want int) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(values, want)
 }

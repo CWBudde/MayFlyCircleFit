@@ -33,6 +33,7 @@ func sizeTestStages(t *testing.T, count int) []store.ScheduleStageRecord {
 	config.RefPath = "assets/reference.png"
 
 	config.Seed = 42
+
 	err := config.ApplyDefaults()
 	if err != nil {
 		t.Fatalf("apply config defaults: %v", err)
