@@ -211,6 +211,10 @@ Rendering-side invariants live in
   match the checkpoint, and a missing or mismatched artifact falls back to the
   parameter replay. Checkpoint JSON remains the durable parameter source.
 - The configured `variant` is honored at every optimizer construction site.
+  All seven MayFly variants the adapter can build (`standard`, `desma`, `olce`,
+  `eobbma`, `gsasma`, `mpma`, `aoblmoa`) are accepted by `JobConfig`
+  validation, and `internal/opt` owns the contract test that keeps the two sets
+  from drifting apart.
 - MayFly's `optimization_started` and `iteration_completed` events are demoted
   to debug, so `--log-level=debug` emits one record per optimizer iteration.
   Info level stays at one record per optimizer run.

@@ -71,7 +71,7 @@ func init() {
 	runCmd.Flags().StringVar(&outPath, "out", "out.png", "Output image path")
 	runCmd.Flags().StringVar(&mode, "mode", "joint", "Optimization mode: joint, sequential, batch")
 	runCmd.Flags().StringVar(&backendName, "backend", "cpu", "Renderer backend to use (cpu, opencl; aliases: gpu, cl)")
-	runCmd.Flags().StringVar(&variantName, "variant", "standard", "MayFly algorithm variant: standard, desma, olce")
+	runCmd.Flags().StringVar(&variantName, "variant", "standard", "MayFly algorithm variant: standard, desma, olce, eobbma, gsasma, mpma, aoblmoa")
 	runCmd.Flags().IntVar(&circles, "circles", 10, "Number of circles")
 	runCmd.Flags().IntVar(&iters, "iters", 100, "Max iterations")
 	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")

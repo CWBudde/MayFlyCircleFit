@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -209,7 +211,30 @@ const (
 	VariantStandard Variant = "standard"
 	VariantDESMA    Variant = "desma"
 	VariantOLCE     Variant = "olce"
+	VariantEOBBMA   Variant = "eobbma"
+	VariantGSASMA   Variant = "gsasma"
+	VariantMPMA     Variant = "mpma"
+	VariantAOBLMOA  Variant = "aoblmoa"
 )
+
+// variants lists every Mayfly variant a configuration may select, in the order
+// they are reported to the caller. It must stay in step with the variant set
+// internal/opt can construct; internal/opt owns a contract test that fails if
+// the two drift apart, because app is dependency-free and cannot import it.
+var variants = []Variant{
+	VariantStandard,
+	VariantDESMA,
+	VariantOLCE,
+	VariantEOBBMA,
+	VariantGSASMA,
+	VariantMPMA,
+	VariantAOBLMOA,
+}
+
+// SupportedVariants returns the Mayfly variants a JobConfig may select.
+func SupportedVariants() []Variant {
+	return slices.Clone(variants)
+}
 
 // PolishingStrategy selects how active circles and restart populations are
 // chosen during transactional batch polishing.
@@ -550,10 +575,13 @@ func (c JobConfig) Validate() error {
 		return invalid("backend", "must be cpu or opencl")
 	}
 
-	switch c.Variant {
-	case VariantStandard, VariantDESMA, VariantOLCE:
-	default:
-		return invalid("variant", "is unsupported")
+	if !slices.Contains(variants, c.Variant) {
+		names := make([]string, len(variants))
+		for i, variant := range variants {
+			names[i] = string(variant)
+		}
+
+		return invalid("variant", fmt.Sprintf("must be one of %s", strings.Join(names, ", ")))
 	}
 
 	if c.Circles < 1 || c.Circles > MaxCircles {
