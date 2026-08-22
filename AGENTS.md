@@ -15,9 +15,13 @@ take precedence if this document goes stale.
 - [`docs/polishing-throughput-report.md`](docs/polishing-throughput-report.md)
   — polishing session-pool and active-set performance tradeoffs.
 - [`docs/seed-variance-and-population-report.md`](docs/seed-variance-and-population-report.md)
-  — why base-stage quality does not predict the fit built on it, what the
-  population knob does and does not buy, and the two mayfly mechanisms
-  (per-iteration exploration damping, unscaled `NC`) that govern both.
+  — why base-stage quality does not predict the fit built on it, and what the
+  population knob does and does not buy. Its population conclusions were
+  measured under MayFly v0.4.0 and are **historical**: they describe an
+  unscaled `NC`, which v0.5.0 removes. Under the pinned v0.5.0, raising
+  `popSize` does buy quality, monotonically to about 1024. The seed-variance
+  half of the report still holds. Do not size a new campaign's population from
+  the v0.4.0 figures.
 - [`docs/schedule-format.md`](docs/schedule-format.md) — the schedule document
   format, its worked example, and when two campaigns' costs are comparable.
 - [`docs/support-matrix.md`](docs/support-matrix.md),

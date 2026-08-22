@@ -1,5 +1,17 @@
 # Seed variance and the population question
 
+> **The population half of this report is historical.** Everything below was
+> measured under MayFly v0.4.0, whose `NC` — the number of crossover offspring
+> — was fixed at an absolute 20 no matter how large `NPop` was. Raising
+> `popSize` therefore bought more evaluations per iteration but no additional
+> recombination, which is why the answer here is "a large population buys
+> nothing". The pinned MayFly v0.5.0 scales `NC` with the population and that
+> answer no longer holds; see *After the fix* at the end. **Do not size a new
+> campaign's population from the figures below.**
+>
+> The seed-variance half — that base-stage quality does not predict the fit
+> built on it — was not a function of `NC` and still stands.
+
 Four seeds of the same pow2 campaign, run to a barrier at 256 circles, plus a
 control that changes exactly one field. The question the run was meant to settle
 was whether a very large population on the base stage buys anything. It did not
@@ -197,3 +209,35 @@ expands to 3007 stages and 6,359,040 nominal iterations, with the barrier
 reported before the stage table. The per-seed documents differ from the
 committed one only in `seed`, `name` and `refPath`; the control additionally
 sets `base.popSize` to 64.
+
+## After the fix — MayFly v0.5.0
+
+The negative result above was a property of the library, not of the mayfly
+algorithm. v0.5.0 derives the crossover offspring count from the population
+instead of pinning it at 20, which is the behavior the algorithm's description
+always implied.
+
+Re-measured with a 24-run A/B: 8 circles, 256 iters, 1 epoch, batch mode, three
+seeds (1, 2, 3) per cell, mean final cost. Both binaries were built from
+separate checkouts and each was verified with `go version -m` to link the
+version it claims, because an earlier attempt at this comparison built both
+arms from the same worktree and produced identical numbers.
+
+| `popSize` | v0.4.0 | v0.5.0 |
+| --- | --- | --- |
+| 64 | 1174.97 | 1151.85 |
+| 256 | 1118.29 | 1044.16 |
+| 1024 | 1049.15 | **898.15** |
+| 4096 | 1109.33 | 1031.58 |
+
+Two things changed. Population now helps **monotonically up to 1024**, which it
+never did under v0.4.0, and the v0.4.0 column's own non-monotonicity — 4096
+scoring worse than 1024 — turns out to be present under both versions. 1024 is
+the working sweet spot; 4096 is past it and pays for evaluations it cannot
+convert into search.
+
+This also retires the earlier suspicion that the algorithm variants (DESMA,
+OLCE, EOBBMA, GSASMA, MPMA, AOBLMOA) were a dead end. Every variant is derived
+from `NewDefaultConfig` and so inherited the same fixed `NC`, which means the
+variant comparison that showed no differences was not a fair test of the
+variants. It has not yet been re-run.
