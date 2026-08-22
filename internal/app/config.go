@@ -40,14 +40,38 @@ const (
 	// not a modelling statement: a population costs popSize concurrent
 	// candidate vectors and each evaluation renders the whole canvas, so
 	// per-iteration time grows linearly with it.
-	MaxPopulation      = 4096
-	MaxOptimizerEpochs = 32
-	MaxBatchSize       = 100
-	MaxPolishingSweeps = 32
-	MaxImagePixels     = 16_777_216
-	MaxImageFileSize   = 64 << 20
-	MaxRequestBody     = 1 << 20
-	MaxProjectSlugLen  = 64
+	MaxPopulation = 4096
+	// MaxPopulationDimensions bounds popSize multiplied by the dimensionality
+	// of the vector the optimizer actually searches, because MaxPopulation
+	// alone stopped being a memory guard once it was raised. The adapter sizes
+	// both NPop and NPopF from popSize, and every member carries a position, a
+	// velocity and a personal best, so the cost of a run grows with the product
+	// of the two numbers rather than with either alone. A joint 3000-circle run
+	// searches 21,000 dimensions; at popSize 4096 its positions alone would be
+	// about 1.3 GiB before anything else the run needs.
+	//
+	// The dimensionality is the optimizer's, not the canvas's: a joint run
+	// searches every circle at once, a batch run only its batch, and a
+	// sequential run a single circle. That is why the large population is
+	// affordable for the small batch vectors it was raised for and refused for
+	// the shapes where it is not.
+	//
+	// The value is chosen so that no configuration valid under the previous
+	// MaxPopulation of 200 becomes invalid: the largest such product is a joint
+	// 3000-circle run at popSize 200, or 4,200,000.
+	MaxPopulationDimensions = 8_388_608
+	// ParametersPerCircle mirrors internal/fit's paramsPerCircle: x, y, r, three
+	// colour channels and opacity. It is duplicated rather than imported because
+	// dependencies flow from fit toward app and must not be reversed;
+	// TestParametersPerCircleMatchesTheRenderer pins the two together.
+	ParametersPerCircle = 7
+	MaxOptimizerEpochs  = 32
+	MaxBatchSize        = 100
+	MaxPolishingSweeps  = 32
+	MaxImagePixels      = 16_777_216
+	MaxImageFileSize    = 64 << 20
+	MaxRequestBody      = 1 << 20
+	MaxProjectSlugLen   = 64
 
 	// MaxCLIResponseBytes bounds what the CLI will decode from a server
 	// response. It lives here rather than in cmd because the server is what has
@@ -327,6 +351,36 @@ func DefaultConfig() JobConfig {
 
 // ApplyDefaults fills omitted values and resolves seed zero to an effective
 // random seed. Explicit disable flags distinguish false from an omitted bool.
+// optimizerDimensions reports the length of the vector a single optimizer run
+// searches, which is what a population is actually multiplied by.
+//
+// It is not the whole canvas: only a joint run optimizes every circle at once.
+// A batch run searches one batch, and a sequential run one circle, which is why
+// a population that would be ruinous for a large joint vector is affordable
+// for them.
+//
+// The result is never zero, so a caller validating a configuration whose
+// defaults have not been applied cannot divide by it.
+func (c *JobConfig) optimizerDimensions() int {
+	circles := c.Circles
+
+	switch c.Mode {
+	case ModeSequential:
+		circles = 1
+	case ModeBatch:
+		if c.BatchSize > 0 && c.BatchSize < circles {
+			circles = c.BatchSize
+		}
+	case ModeJoint:
+	}
+
+	if circles < 1 {
+		circles = 1
+	}
+
+	return circles * ParametersPerCircle
+}
+
 func (c *JobConfig) ApplyDefaults() error {
 	defaults := DefaultConfig()
 	if c.Mode == "" {
@@ -473,6 +527,15 @@ func (c JobConfig) Validate() error {
 	}
 	if c.PopSize < MinPopulation || c.PopSize > MaxPopulation {
 		return invalid("popSize", fmt.Sprintf("must be between %d and %d", MinPopulation, MaxPopulation))
+	}
+
+	if dimensions := c.optimizerDimensions(); c.PopSize*dimensions > MaxPopulationDimensions {
+		return invalid("popSize", fmt.Sprintf(
+			"of %d searches %d dimensions in %s mode, and %d exceeds the limit of %d; "+
+				"lower popSize to at most %d for this shape",
+			c.PopSize, dimensions, c.Mode, c.PopSize*dimensions, MaxPopulationDimensions,
+			MaxPopulationDimensions/dimensions,
+		))
 	}
 	if c.OptimizerEpochs < 1 || c.OptimizerEpochs > MaxOptimizerEpochs {
 		return invalid("optimizerEpochs", fmt.Sprintf("must be between 1 and %d", MaxOptimizerEpochs))

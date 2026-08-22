@@ -388,8 +388,10 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	popSize, err := strconv.Atoi(popSizeStr)
-	if err != nil || popSize < 2 || popSize > app.MaxPopulation {
-		renderCreateJobError(w, r, fmt.Sprintf("Population size must be between 2 and %d", app.MaxPopulation), formProject)
+	if err != nil || popSize < app.MinPopulation || popSize > app.MaxPopulation {
+		renderCreateJobError(w, r, fmt.Sprintf(
+			"Population size must be between %d and %d", app.MinPopulation, app.MaxPopulation,
+		), formProject)
 		return
 	}
 

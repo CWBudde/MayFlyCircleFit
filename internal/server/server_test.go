@@ -1415,10 +1415,12 @@ func TestServer_CreatePagePost_ValidationErrors(t *testing.T) {
 				"mode":    "joint",
 				"circles": "10",
 				"iters":   "100",
-				"popSize": "1",
+				"popSize": "19",
 				"seed":    "0",
 			},
-			errMsg: fmt.Sprintf("Population size must be between 2 and %d", app.MaxPopulation),
+			errMsg: fmt.Sprintf(
+				"Population size must be between %d and %d", app.MinPopulation, app.MaxPopulation,
+			),
 		},
 	}
 
