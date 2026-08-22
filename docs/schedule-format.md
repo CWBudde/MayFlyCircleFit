@@ -324,6 +324,19 @@ comparable after the fact; treat it as its own baseline.
   v0.5.0. Every campaign in this repository ran at a raised population, so the
   boundary is real rather than theoretical. Pin `config.NC = 20` inside the
   adapter to reproduce a v0.4.0 run exactly.
+
+  **v0.5.1 draws the boundary again, and more sharply.** It restores blend
+  crossover, so the coefficient comes from `U(-0.4, 1.4)` instead of `U(0, 1)`
+  and offspring may fall outside the interval their parents span. That changes
+  the trajectory of *every* run at *every* population — there is no unaffected
+  configuration the way `NPop = 20` was unaffected by the v0.5.0 change — and
+  it cannot be pinned back from the adapter without setting a deliberately
+  degenerate `CrossoverGamma`. The same release changed the OLCE, EOBBMA,
+  GSASMA and AOBLMOA variants and moved the `AquilaWeight` default from 0.5 to
+  1.0. **A cost recorded under v0.5.0 or earlier is not comparable to one
+  recorded under v0.5.1.** Every campaign in `data/` predates the bump; resume
+  one and it silently continues under a different optimizer. Re-baseline
+  instead.
 - **`fastCompositing` — the one that genuinely breaks comparability.** The
   float32 compositor is accurate to ±1 per channel, measured over 2,074,320
   channel writes. A changed channel changes the SSD, which changes an

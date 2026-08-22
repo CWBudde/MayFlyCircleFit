@@ -174,7 +174,7 @@ Rendering-side invariants live in
 
 ## Determinism, resume, and termination
 
-- Resume is restart-from-best: the MayFly v0.5.0 population is seeded with the
+- Resume is restart-from-best: the MayFly v0.5.1 population is seeded with the
   saved best and deterministic nearby variations. It is not an exact restoration
   of optimizer internals. Server restart-from-best for sequential and batch jobs
   is not supported.
