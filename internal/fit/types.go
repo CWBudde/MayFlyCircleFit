@@ -189,7 +189,7 @@ func (b *Bounds) ValidVector(data []float64) bool {
 	}
 
 	vector := ParamVector{Data: data, K: b.K, Width: b.Width, Height: b.Height}
-	for i := 0; i < b.K; i++ {
+	for i := range b.K {
 		if b.ValidateCircle(vector.DecodeCircle(i)) != nil {
 			return false
 		}
