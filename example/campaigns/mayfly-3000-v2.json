@@ -1,0 +1,645 @@
+{
+  "schemaVersion": 1,
+  "name": "MayFly 3000 v2 \u2014 repair the guess, then cover every draw slot",
+  "seed": 20260822,
+  "base": {
+    "refPath": "example/MayFly-512.png",
+    "mode": "batch",
+    "circles": 10,
+    "batchSize": 10,
+    "iters": 800,
+    "popSize": 48,
+    "optimizerEpochs": 2,
+    "threads": 1,
+    "parallelEvaluation": true,
+    "evaluationWorkers": 48,
+    "disableConvergence": true,
+    "stopMinImprovement": 0.002,
+    "stopStagnationIters": 250,
+    "stopMinIters": 200,
+    "initialCircles": [
+      {
+        "x": 256,
+        "y": 256,
+        "r": 400,
+        "color": "#474128",
+        "opacity": 1
+      },
+      {
+        "x": 256,
+        "y": 20,
+        "r": 210,
+        "color": "#302c0e",
+        "opacity": 0.75
+      },
+      {
+        "x": 400,
+        "y": 110,
+        "r": 42,
+        "color": "#d2b182",
+        "opacity": 0.95
+      },
+      {
+        "x": 399,
+        "y": 152,
+        "r": 26,
+        "color": "#8a7a52",
+        "opacity": 0.5
+      },
+      {
+        "x": 237,
+        "y": 470,
+        "r": 130,
+        "color": "#383523",
+        "opacity": 1
+      },
+      {
+        "x": 256,
+        "y": 640,
+        "r": 190,
+        "color": "#4b4830",
+        "opacity": 1
+      },
+      {
+        "x": 245,
+        "y": 165,
+        "r": 70,
+        "color": "#7d9085",
+        "opacity": 0.85
+      },
+      {
+        "x": 275,
+        "y": 275,
+        "r": 60,
+        "color": "#a8b99e",
+        "opacity": 0.8
+      },
+      {
+        "x": 205,
+        "y": 325,
+        "r": 14,
+        "color": "#6f6044",
+        "opacity": 0.8
+      },
+      {
+        "x": 330,
+        "y": 308,
+        "r": 16,
+        "color": "#776c50",
+        "opacity": 0.85
+      }
+    ]
+  },
+  "steps": [
+    {
+      "type": "polish",
+      "strategy": "replacement",
+      "activeSetSize": 10,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "residual-region",
+      "activeSetSize": 10,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "replacement",
+      "activeSetSize": 10,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "residual-region",
+      "activeSetSize": 10,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48
+    },
+    {
+      "type": "extend",
+      "repeat": 6,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "residual-region",
+      "activeSetSize": 16,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48
+    },
+    {
+      "type": "extend",
+      "repeat": 8,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "residual-region",
+      "activeSetSize": 24,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48
+    },
+    {
+      "type": "extend",
+      "repeat": 8,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "residual-region",
+      "activeSetSize": 32,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48
+    },
+    {
+      "type": "extend",
+      "repeat": 16,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "residual-region",
+      "activeSetSize": 48,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48
+    },
+    {
+      "type": "extend",
+      "repeat": 16,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "residual-region",
+      "activeSetSize": 64,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48
+    },
+    {
+      "type": "extend",
+      "repeat": 32,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "residual-region",
+      "activeSetSize": 96,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48
+    },
+    {
+      "type": "extend",
+      "repeat": 32,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48
+    },
+    {
+      "type": "extend",
+      "repeat": 64,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 64,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 128,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 128,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 256,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 256,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 256,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 256,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 256,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 256,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 256,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 256,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 256,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 184,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 800,
+      "popSize": 48
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 100,
+      "maxSweeps": 32,
+      "stagnationIters": 100,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 200,
+      "popSize": 48,
+      "when": {
+        "minGain": 0.15,
+        "abortAfterBarren": 4
+      }
+    }
+  ]
+}

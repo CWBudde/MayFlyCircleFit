@@ -137,6 +137,40 @@ func TestCPURendererParallelRenderStable(t *testing.T) {
 	}
 }
 
+func TestCPURendererStagedSessionsShareOnlyImmutableBackground(t *testing.T) {
+	reference := randomNRGBA(32, 24, 15_901)
+	retained := randomNRGBA(32, 24, 15_902)
+	base := NewCPURenderer(reference, 2)
+	firstRenderer, firstCleanup, err := base.newSessionWithCanvas(retained, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer firstCleanup()
+	secondRenderer, secondCleanup, err := base.newSessionWithCanvas(retained, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondCleanup()
+	first := firstRenderer.(*CPURenderer)
+	second := secondRenderer.(*CPURenderer)
+
+	if &first.initialBg[0] != &retained.Pix[0] || &second.initialBg[0] != &retained.Pix[0] {
+		t.Fatal("staged sessions copied the immutable retained background")
+	}
+	if &first.canvas.Pix[0] == &second.canvas.Pix[0] || &first.canvas.Pix[0] == &retained.Pix[0] {
+		t.Fatal("staged sessions share a mutable render canvas")
+	}
+	retainedBefore := append([]byte(nil), retained.Pix...)
+	params := []float64{16, 12, 6, 1, 0, 0, 0.5}
+	first.Render(params)
+	if !bytes.Equal(retained.Pix, retainedBefore) {
+		t.Fatal("rendering a staged session mutated the retained background")
+	}
+	if got := second.Render(params); bytes.Equal(got.Pix, retained.Pix) {
+		t.Fatal("second staged session did not render independently over the shared background")
+	}
+}
+
 func TestCPURendererSessionsPreserveThreads(t *testing.T) {
 	ref := randomNRGBA(32, 32, 42)
 	base := NewCPURenderer(ref, 4)

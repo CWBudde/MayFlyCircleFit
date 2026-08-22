@@ -325,6 +325,10 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	convergence := buildConvergenceConfig(job.Config)
 	var result *renderer.OptimizationResult
 	var circleData []store.CircleData
+	var retainedPrefixCanvas *image.NRGBA
+	if job.Config.Mode == app.ModeBatch && len(job.BestParams) > 0 && len(job.BestParams) < job.Config.Circles*app.ParamsPerCircle {
+		retainedPrefixCanvas = loadRetainedPrefixCanvas(checkpointStore, job, ref)
+	}
 	var callback renderer.CircleCallback
 	if job.Config.SaveSnapshots && checkpointStore != nil {
 		callback = func(circleNum int, params []float64, cost float64, img image.Image) {
@@ -383,15 +387,29 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 					baseEvaluations,
 				)
 			} else if len(job.BestParams) < job.Config.Circles*7 && len(job.BestParams)%7 == 0 {
-				result, err = renderer.OptimizeBatchAppendContext(
-					ctx,
-					rend,
-					wrapped,
-					job.BestParams,
-					job.Config.Circles,
-					job.Config.BatchSize,
-					convergence,
-				)
+				if retainedPrefixCanvas != nil {
+					result, err = renderer.OptimizeBatchAppendFromCanvasContext(
+						ctx,
+						rend,
+						wrapped,
+						job.BestParams,
+						retainedPrefixCanvas,
+						job.BestCost,
+						job.Config.Circles,
+						job.Config.BatchSize,
+						convergence,
+					)
+				} else {
+					result, err = renderer.OptimizeBatchAppendContext(
+						ctx,
+						rend,
+						wrapped,
+						job.BestParams,
+						job.Config.Circles,
+						job.Config.BatchSize,
+						convergence,
+					)
+				}
 				if err == nil && job.Config.PolishingEnabled && result.OptimizedCircles == job.Config.Circles {
 					result, err = polishBatchResult(
 						ctx,
@@ -489,7 +507,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	}
 	var persistenceErr error
 	if checkpointStore != nil {
-		if err := saveCheckpoint(jm, checkpointStore, rend, jobID); err != nil {
+		if err := saveCheckpointWithImage(jm, checkpointStore, rend, jobID, result.BestImage); err != nil {
 			persistenceErr = fmt.Errorf("persist final result: %w", err)
 			_ = jm.UpdateJob(jobID, func(live *Job) {
 				live.Error = "failed to persist final result"
@@ -759,7 +777,49 @@ func markJobCancelled(jm *JobManager, jobID string) {
 	}
 }
 
+// loadRetainedPrefixCanvas reuses the completed parent's exact best artifact
+// for a batch append. The cost check is deliberately exact: if an artifact is
+// missing, stale, or was produced with different pixels, falling back to a
+// parameter replay is slower but preserves the checkpoint's semantics.
+func loadRetainedPrefixCanvas(checkpointStore store.Store, job *Job, ref *image.NRGBA) *image.NRGBA {
+	if checkpointStore == nil || job == nil || job.ExtendedFrom == "" {
+		return nil
+	}
+	artifacts, ok := checkpointStore.(store.ArtifactStore)
+	if !ok {
+		return nil
+	}
+	path, err := artifacts.ArtifactPath(job.ExtendedFrom, store.ArtifactBest)
+	if err != nil {
+		slog.Debug("Could not resolve retained prefix artifact; replaying parameters", "job_id", job.ID, "parent_job_id", job.ExtendedFrom, "error", err)
+		return nil
+	}
+	canvas, err := loadReferenceImage(path)
+	if err != nil {
+		slog.Debug("Could not load retained prefix artifact; replaying parameters", "job_id", job.ID, "parent_job_id", job.ExtendedFrom, "error", err)
+		return nil
+	}
+	if canvas.Bounds().Dx() != ref.Bounds().Dx() || canvas.Bounds().Dy() != ref.Bounds().Dy() {
+		slog.Warn("Retained prefix artifact dimensions do not match; replaying parameters", "job_id", job.ID, "parent_job_id", job.ExtendedFrom)
+		return nil
+	}
+	if artifactCost := fit.FastMSECost(canvas, ref); artifactCost != job.BestCost {
+		slog.Warn("Retained prefix artifact cost does not match checkpoint; replaying parameters",
+			"job_id", job.ID,
+			"parent_job_id", job.ExtendedFrom,
+			"artifact_cost", artifactCost,
+			"checkpoint_cost", job.BestCost,
+		)
+		return nil
+	}
+	return canvas
+}
+
 func saveCheckpoint(jm *JobManager, checkpointStore store.Store, rend renderer.Renderer, jobID string) error {
+	return saveCheckpointWithImage(jm, checkpointStore, rend, jobID, nil)
+}
+
+func saveCheckpointWithImage(jm *JobManager, checkpointStore store.Store, rend renderer.Renderer, jobID string, bestImage *image.NRGBA) error {
 	job, exists := jm.GetJob(jobID)
 	if !exists {
 		return fmt.Errorf("job not found: %s", jobID)
@@ -777,30 +837,46 @@ func saveCheckpoint(jm *JobManager, checkpointStore store.Store, rend renderer.R
 	if err := checkpointStore.SaveCheckpoint(jobID, checkpoint); err != nil {
 		persistenceErrors = append(persistenceErrors, fmt.Errorf("save checkpoint: %w", err))
 	}
-	if err := saveCheckpointArtifacts(checkpointStore, rend, job.Config, jobID, job.BestParams); err != nil {
+	if err := saveCheckpointArtifacts(checkpointStore, rend, job.Config, jobID, job.BestParams, bestImage); err != nil {
 		persistenceErrors = append(persistenceErrors, err)
 	}
 	return errors.Join(persistenceErrors...)
 }
 
-func saveCheckpointArtifacts(checkpointStore store.Store, rend renderer.Renderer, config store.JobConfig, jobID string, bestParams []float64) error {
+func saveCheckpointArtifacts(checkpointStore store.Store, rend renderer.Renderer, config store.JobConfig, jobID string, bestParams []float64, bestImage *image.NRGBA) error {
 	artifacts, ok := checkpointStore.(store.ArtifactStore)
 	if !ok {
 		return nil
 	}
 	ref := rend.Reference()
-	snapshotRenderer, cleanup, err := rendererForJob(config, ref, len(bestParams)/7)
-	if err != nil {
-		return fmt.Errorf("create artifact renderer: %w", err)
+	best := bestImage
+	if best == nil {
+		snapshotRenderer, cleanup, err := rendererForJob(config, ref, len(bestParams)/7)
+		if err != nil {
+			return fmt.Errorf("create artifact renderer: %w", err)
+		}
+		defer cleanup()
+		best = snapshotRenderer.Render(bestParams)
 	}
-	defer cleanup()
-	best := snapshotRenderer.Render(bestParams)
-	var artifactErrors []error
-	if err := artifacts.SavePNGArtifact(jobID, store.ArtifactBest, best); err != nil {
-		artifactErrors = append(artifactErrors, fmt.Errorf("save best artifact: %w", err))
+	if best.Bounds().Dx() != ref.Bounds().Dx() || best.Bounds().Dy() != ref.Bounds().Dy() {
+		return fmt.Errorf("best artifact dimensions do not match reference")
 	}
-	if err := artifacts.SavePNGArtifact(jobID, store.ArtifactDiff, computeDiffImage(ref, best, fit.ColormapTurbo)); err != nil {
-		artifactErrors = append(artifactErrors, fmt.Errorf("save diff artifact: %w", err))
-	}
-	return errors.Join(artifactErrors...)
+	diff := computeDiffImage(ref, best, fit.ColormapTurbo)
+	var artifactErrors [2]error
+	var writes sync.WaitGroup
+	writes.Add(2)
+	go func() {
+		defer writes.Done()
+		if err := artifacts.SavePNGArtifact(jobID, store.ArtifactBest, best); err != nil {
+			artifactErrors[0] = fmt.Errorf("save best artifact: %w", err)
+		}
+	}()
+	go func() {
+		defer writes.Done()
+		if err := artifacts.SavePNGArtifact(jobID, store.ArtifactDiff, diff); err != nil {
+			artifactErrors[1] = fmt.Errorf("save diff artifact: %w", err)
+		}
+	}()
+	writes.Wait()
+	return errors.Join(artifactErrors[:]...)
 }

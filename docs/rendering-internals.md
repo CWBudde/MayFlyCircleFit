@@ -119,6 +119,12 @@ Related documents:
 - CPU renderers use `FastMSECost` after parity coverage against `MSECost`.
   Independent image origins and strides, empty images, and dimension-mismatch
   behavior all have dedicated correctness handling and tests.
+- Appended CPU batches may start from a verified, already-rendered prefix.
+  Every evaluation slot owns its mutable canvas and dirty-span state, but the
+  slots share the retained pixels as an immutable reset background. The staged
+  accumulator also supplies the final result image, avoiding another complete
+  vector replay. See
+  [`single-circle-extend-report.md`](single-circle-extend-report.md).
 - Active-set polishing adds a second exact delta-SSD use. One immutable
   incumbent image/SSD pair is shared by the sweep's CPU sessions. Each session
   tracks the old/new active-disc union as normalized horizontal spans, restores

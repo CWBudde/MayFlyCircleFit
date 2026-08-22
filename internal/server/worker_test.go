@@ -13,10 +13,12 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/mayflycirclefit/internal/fit"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
@@ -164,6 +166,79 @@ func TestRunJobPersistsExactFinalResultWithoutPeriodicCheckpointing(t *testing.T
 	}
 }
 
+func TestLoadRetainedPrefixCanvasVerifiesArtifactCost(t *testing.T) {
+	fsStore, err := store.NewFSStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentID := "00000000-0000-4000-8000-000000000163"
+	ref := image.NewNRGBA(image.Rect(0, 0, 4, 4))
+	canvas := image.NewNRGBA(ref.Bounds())
+	for y := range 4 {
+		for x := range 4 {
+			canvas.SetNRGBA(x, y, color.NRGBA{R: uint8(x * 40), G: uint8(y * 50), B: uint8((x + y) * 30), A: 255})
+		}
+	}
+	if err := fsStore.SavePNGArtifact(parentID, store.ArtifactBest, canvas); err != nil {
+		t.Fatal(err)
+	}
+	job := &Job{
+		ID:           "00000000-0000-4000-8000-000000000164",
+		ExtendedFrom: parentID,
+		BestCost:     fit.FastMSECost(canvas, ref),
+	}
+	loaded := loadRetainedPrefixCanvas(fsStore, job, ref)
+	if loaded == nil || !reflect.DeepEqual(loaded.Pix, canvas.Pix) {
+		t.Fatal("matching retained prefix artifact was not loaded exactly")
+	}
+
+	job.BestCost++
+	if loaded := loadRetainedPrefixCanvas(fsStore, job, ref); loaded != nil {
+		t.Fatal("cost-mismatched retained prefix artifact was accepted")
+	}
+}
+
+type artifactRenderProbe struct {
+	reference *image.NRGBA
+	renders   int
+}
+
+func (p *artifactRenderProbe) Render([]float64) *image.NRGBA {
+	p.renders++
+	return image.NewNRGBA(p.reference.Bounds())
+}
+
+func (p *artifactRenderProbe) Cost([]float64) float64 { return 0 }
+func (p *artifactRenderProbe) Dim() int               { return 7 }
+func (p *artifactRenderProbe) Bounds() ([]float64, []float64) {
+	return make([]float64, 7), make([]float64, 7)
+}
+func (p *artifactRenderProbe) Reference() *image.NRGBA { return p.reference }
+
+func TestSaveCheckpointArtifactsReusesFinalImage(t *testing.T) {
+	fsStore, err := store.NewFSStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := image.NewNRGBA(image.Rect(0, 0, 4, 4))
+	best := image.NewNRGBA(ref.Bounds())
+	probe := &artifactRenderProbe{reference: ref}
+	jobID := "00000000-0000-4000-8000-000000000165"
+	if err := saveCheckpointArtifacts(
+		fsStore,
+		probe,
+		JobConfig{Backend: app.BackendCPU, Threads: 1},
+		jobID,
+		[]float64{2, 2, 1, 0, 0, 0, 1},
+		best,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if probe.renders != 0 {
+		t.Fatalf("artifact persistence replayed final parameters %d times", probe.renders)
+	}
+}
+
 // observingWorkerStore reports what the job manager said about a job at the
 // instant its final checkpoint was written.
 type observingWorkerStore struct {
@@ -248,6 +323,7 @@ type faultingWorkerStore struct {
 	*store.FSStore
 	checkpointErr error
 	artifactErrs  map[store.Artifact]error
+	artifactMu    sync.Mutex
 	artifactCalls []store.Artifact
 }
 
@@ -259,7 +335,9 @@ func (s *faultingWorkerStore) SaveCheckpoint(jobID string, checkpoint *store.Che
 }
 
 func (s *faultingWorkerStore) SavePNGArtifact(jobID string, artifact store.Artifact, img image.Image) error {
+	s.artifactMu.Lock()
 	s.artifactCalls = append(s.artifactCalls, artifact)
+	s.artifactMu.Unlock()
 	if err := s.artifactErrs[artifact]; err != nil {
 		return err
 	}
@@ -318,9 +396,15 @@ func TestRunJobReportsFinalPersistenceFailuresAndAttemptsBothArtifacts(t *testin
 			if completed.State != StateCompleted || completed.Error != "failed to persist final result" {
 				t.Fatalf("completed job did not expose persistence failure: state=%s error=%q", completed.State, completed.Error)
 			}
-			wantCalls := []store.Artifact{store.ArtifactBest, store.ArtifactDiff}
-			if !reflect.DeepEqual(persistence.artifactCalls, wantCalls) {
-				t.Fatalf("artifact calls = %v, want %v", persistence.artifactCalls, wantCalls)
+			persistence.artifactMu.Lock()
+			calls := append([]store.Artifact(nil), persistence.artifactCalls...)
+			persistence.artifactMu.Unlock()
+			counts := make(map[store.Artifact]int, len(calls))
+			for _, artifact := range calls {
+				counts[artifact]++
+			}
+			if counts[store.ArtifactBest] != 1 || counts[store.ArtifactDiff] != 1 || len(calls) != 2 {
+				t.Fatalf("artifact calls = %v, want best.png and diff.png once each", calls)
 			}
 		})
 	}

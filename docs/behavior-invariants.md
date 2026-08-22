@@ -188,6 +188,11 @@ Rendering-side invariants live in
   extension by N targets `actualCircles + N` instead of preserving the old gap.
   Only `refill_limit` authorizes this short-checkpoint contract; any other batch
   checkpoint whose parameter count does not match its configuration is invalid.
+- A CPU batch extension may restore its immutable prefix from the completed
+  parent's `best.png` instead of replaying every inherited circle. The artifact
+  is only an optimization: its decoded dimensions and exact `FastMSECost` must
+  match the checkpoint, and a missing or mismatched artifact falls back to the
+  parameter replay. Checkpoint JSON remains the durable parameter source.
 - The configured `variant` is honored at every optimizer construction site.
 - MayFly's `optimization_started` and `iteration_completed` events are demoted
   to debug, so `--log-level=debug` emits one record per optimizer iteration.

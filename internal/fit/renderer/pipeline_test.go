@@ -1,6 +1,7 @@
 package renderer
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"image"
@@ -236,6 +237,68 @@ func TestOptimizeBatchAppendPreservesPrefixOrder(t *testing.T) {
 	}
 	if replayCost := fit.FastMSECost(result.BestImage, ref); replayCost != result.BestCost {
 		t.Fatalf("final replay cost = %v, retained incremental cost = %v", replayCost, result.BestCost)
+	}
+}
+
+func TestOptimizeBatchAppendFromCanvasMatchesPrefixReplay(t *testing.T) {
+	ref := solidImage(5, 5, color.NRGBA{A: 255})
+	prefix := []float64{2, 2, 2, 1, 0, 0, 0.5}
+	prefixRenderer := NewCPURenderer(ref, 1)
+	prefixCost := prefixRenderer.Cost(prefix)
+	prefixCanvas := cloneNRGBA(prefixRenderer.Render(prefix))
+
+	replayed, err := OptimizeBatchAppendContext(
+		context.Background(), NewCPURenderer(ref, 2), opaqueBlackOptimizer(),
+		prefix, 2, 1, DisabledConvergenceConfig(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cached, err := OptimizeBatchAppendFromCanvasContext(
+		context.Background(), NewCPURenderer(ref, 2), opaqueBlackOptimizer(),
+		prefix, prefixCanvas, prefixCost, 2, 1, DisabledConvergenceConfig(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cached.InitialCost != prefixCost || cached.BestCost != replayed.BestCost {
+		t.Fatalf("cached costs = initial %v best %v, replayed = initial %v best %v",
+			cached.InitialCost, cached.BestCost, replayed.InitialCost, replayed.BestCost)
+	}
+	if !bytes.Equal(cached.BestImage.Pix, replayed.BestImage.Pix) {
+		t.Fatal("cached-prefix append image differs from parameter replay")
+	}
+	if len(cached.BestParams) != len(replayed.BestParams) {
+		t.Fatalf("cached params = %d, replayed params = %d", len(cached.BestParams), len(replayed.BestParams))
+	}
+	for i := range cached.BestParams {
+		if cached.BestParams[i] != replayed.BestParams[i] {
+			t.Fatalf("cached parameter %d = %v, replayed = %v", i, cached.BestParams[i], replayed.BestParams[i])
+		}
+	}
+}
+
+func TestOptimizeBatchAppendFromCanvasRejectsInvalidRetainedState(t *testing.T) {
+	ref := solidImage(5, 5, color.NRGBA{A: 255})
+	prefix := []float64{2, 2, 2, 1, 0, 0, 0.5}
+	for _, testCase := range []struct {
+		name   string
+		canvas *image.NRGBA
+		cost   float64
+	}{
+		{name: "nil canvas", cost: 1},
+		{name: "wrong dimensions", canvas: solidImage(4, 5, color.NRGBA{A: 255}), cost: 1},
+		{name: "non-finite cost", canvas: solidImage(5, 5, color.NRGBA{A: 255}), cost: math.Inf(1)},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := OptimizeBatchAppendFromCanvasContext(
+				context.Background(), NewCPURenderer(ref, 2), opaqueBlackOptimizer(),
+				prefix, testCase.canvas, testCase.cost, 2, 1, DisabledConvergenceConfig(),
+			)
+			if !errors.Is(err, ErrInvalidOptimizationInput) {
+				t.Fatalf("error = %v, want ErrInvalidOptimizationInput", err)
+			}
+		})
 	}
 }
 

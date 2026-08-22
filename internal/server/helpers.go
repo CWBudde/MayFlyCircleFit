@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"image"
+	"image/draw"
 	_ "image/jpeg"
 	"os"
 
@@ -29,11 +30,7 @@ func loadReferenceImage(path string) (*image.NRGBA, error) {
 		return nil, err
 	}
 	ref := image.NewNRGBA(bounds)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			ref.Set(x, y, img.At(x, y))
-		}
-	}
+	draw.Draw(ref, bounds, img, bounds.Min, draw.Src)
 
 	return ref, nil
 }

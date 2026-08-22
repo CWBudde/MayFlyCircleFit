@@ -103,6 +103,19 @@ func NewCPURenderer(reference *image.NRGBA, k int) *CPURenderer {
 // to an existing partial solution).
 // The canvas parameter is copied, so the original image is not modified.
 func NewCPURendererWithCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int) *CPURenderer {
+	return newCPURendererWithCanvas(reference, canvas, k, false)
+}
+
+// newCPURendererWithSharedCanvas is the session-only form of
+// NewCPURendererWithCanvas. A staged accumulator owns an immutable canvas for
+// the complete lifetime of every session created over it, so their reset
+// background may share those pixels. Each session still owns its mutable render
+// buffer. This removes one full-canvas allocation and copy per evaluation slot.
+func newCPURendererWithSharedCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int) *CPURenderer {
+	return newCPURendererWithCanvas(reference, canvas, k, true)
+}
+
+func newCPURendererWithCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int, shareInitial bool) *CPURenderer {
 	if k < 0 {
 		k = 0
 	}
@@ -120,9 +133,10 @@ func NewCPURendererWithCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int
 	draw.Draw(canvasCopy, canvasCopy.Bounds(), canvas, canvas.Bounds().Min, draw.Src)
 
 	// Store initial canvas state for reset between renders
-	pixelCount := width * height * 4 // 4 bytes per pixel (RGBA)
-	initialBg := make([]byte, pixelCount)
-	copy(initialBg, canvasCopy.Pix)
+	initialBg := canvas.Pix
+	if !shareInitial || canvas.Bounds().Min != (image.Point{}) || canvas.Stride != width*4 || len(canvas.Pix) != width*height*4 {
+		initialBg = append([]byte(nil), canvasCopy.Pix...)
+	}
 	initialSSD, initialSSDValid := exactInitialCanvasSSD(initialBg, width, height, reference)
 
 	return &CPURenderer{
@@ -332,7 +346,7 @@ func (r *CPURenderer) newSessionWithCanvas(canvas *image.NRGBA, circleCount int)
 		return nil, noopCleanup, fmt.Errorf("canvas dimensions must match reference image")
 	}
 
-	session := NewCPURendererWithCanvas(r.reference, canvas, circleCount)
+	session := newCPURendererWithSharedCanvas(r.reference, canvas, circleCount)
 	session.costFunc = r.costFunc
 	session.fastCostSelected = r.fastCostSelected
 	session.incrementalCostMode = r.incrementalCostMode

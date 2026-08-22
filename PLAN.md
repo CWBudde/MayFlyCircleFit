@@ -463,7 +463,7 @@ Two defects, worth separating:
 - [x] A test asserts the job resource distinguishes requested from produced
       circles.
 
-### Task 15.9: Cut the Fixed Cost of a Single-Circle Extend (P2)
+### Task 15.9: Cut the Fixed Cost of a Single-Circle Extend (P2) ✅
 
 Measured 2026-08-20 at 2 000 circles, one `+1` extend per point, `popSize` 30,
 `optimizerEpochs` 1:
@@ -484,19 +484,28 @@ the session and its baked prefix, revalidating the full parameter vector, and
 writing the checkpoint — which is a single JSON document that grew from 334 KB
 at 2 000 circles to 469 KB at 2 813, rewritten in full on every extend.
 
-- [ ] Profile one extend at 2 000+ circles and attribute the fixed 1.66 s across
+- [x] Profile one extend at 2 000+ circles and attribute the fixed 1.66 s across
       session setup, validation, checkpoint serialization, and trace append.
-- [ ] Address whichever term dominates. If it is the checkpoint, consider
+- [x] Address whichever term dominates. If it is the checkpoint, consider
       writing parameters in a binary form or appending only the delta, keeping
       the JSON document as an export rather than the hot path.
-- [ ] Re-measure the table above and record the new intercept.
+- [x] Re-measure the table above and record the new intercept.
+
+Implemented: CPU extensions reuse a cost-verified parent `best.png` as their
+retained canvas, suffix-pool sessions share its immutable background, and the
+pipeline/final checkpoint reuse the accumulated result image. Full-vector
+validation, trace sync, and JSON checkpoint persistence were measured but were
+not the dominant term, so the lossless JSON format remains authoritative. The
+component profile, allocation counts, end-to-end table, intercept, competing-
+load caveat, and reproduction commands are in
+[`docs/single-circle-extend-report.md`](docs/single-circle-extend-report.md).
 
 **Acceptance Checks:**
 
-- [ ] A benchmark reports the fixed and per-iteration terms separately at 500,
+- [x] A benchmark reports the fixed and per-iteration terms separately at 500,
       2 000, and 3 000 circles, so the intercept's growth with circle count is
       visible rather than inferred.
-- [ ] Checkpoint round-trip stays lossless: a resumed job reproduces the parent
+- [x] Checkpoint round-trip stays lossless: a resumed job reproduces the parent
       cost exactly.
 
 ### Task 15.10: Refresh Post-Fix Polishing Evidence (P2)

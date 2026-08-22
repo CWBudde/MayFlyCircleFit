@@ -347,7 +347,7 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 		}
 	}
 
-	result, err := finishStagedResult(base, bestParams, bestCost, initialCost, evaluations, stages)
+	result, err := finishStagedResult(base, accumulator, bestParams, bestCost, initialCost, evaluations, stages)
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +373,7 @@ func OptimizeBatch(base Renderer, optimizer opt.Optimizer, totalCircles, batchSi
 // OptimizeBatchContext is OptimizeBatch with cooperative cancellation when
 // the optimizer implements opt.LifecycleOptimizer.
 func OptimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Optimizer, totalCircles, batchSize int, convergenceConfig ConvergenceConfig) (*OptimizationResult, error) {
-	return optimizeBatchContext(ctx, base, optimizer, nil, totalCircles, batchSize, convergenceConfig)
+	return optimizeBatchContext(ctx, base, optimizer, nil, nil, totalCircles, batchSize, convergenceConfig)
 }
 
 // OptimizeBatchAppendContext preserves an already-rendered prefix and appends
@@ -381,10 +381,37 @@ func OptimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 // receives the remaining suffix dimensions, while progress and the final
 // result contain the complete parameter vector.
 func OptimizeBatchAppendContext(ctx context.Context, base Renderer, optimizer opt.Optimizer, prefixParams []float64, totalCircles, batchSize int, convergenceConfig ConvergenceConfig) (*OptimizationResult, error) {
-	return optimizeBatchContext(ctx, base, optimizer, prefixParams, totalCircles, batchSize, convergenceConfig)
+	return optimizeBatchContext(ctx, base, optimizer, prefixParams, nil, totalCircles, batchSize, convergenceConfig)
 }
 
-func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Optimizer, prefixParams []float64, totalCircles, batchSize int, convergenceConfig ConvergenceConfig) (*OptimizationResult, error) {
+// OptimizeBatchAppendFromCanvasContext is OptimizeBatchAppendContext with an
+// already-rendered prefix. A completed server checkpoint stores that exact
+// image as best.png, so a one-circle extension can restore the retained canvas
+// without replaying thousands of immutable circles. The supplied cost must be
+// the cost of prefixCanvas against base.Reference(); callers that cannot prove
+// that relationship should use OptimizeBatchAppendContext.
+func OptimizeBatchAppendFromCanvasContext(
+	ctx context.Context,
+	base Renderer,
+	optimizer opt.Optimizer,
+	prefixParams []float64,
+	prefixCanvas *image.NRGBA,
+	prefixCost float64,
+	totalCircles, batchSize int,
+	convergenceConfig ConvergenceConfig,
+) (*OptimizationResult, error) {
+	return optimizeBatchContext(ctx, base, optimizer, prefixParams, &retainedBatchPrefix{
+		canvas: prefixCanvas,
+		cost:   prefixCost,
+	}, totalCircles, batchSize, convergenceConfig)
+}
+
+type retainedBatchPrefix struct {
+	canvas *image.NRGBA
+	cost   float64
+}
+
+func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Optimizer, prefixParams []float64, retained *retainedBatchPrefix, totalCircles, batchSize int, convergenceConfig ConvergenceConfig) (*OptimizationResult, error) {
 	if err := validatePipelineInputs(base, optimizer, totalCircles); err != nil {
 		return nil, err
 	}
@@ -415,7 +442,24 @@ func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	var initialCost float64
 	var err error
 	accumulator := newStagedAccumulator(base)
-	if prefixCircles == 0 {
+	if retained != nil {
+		if prefixCircles == 0 {
+			return nil, fmt.Errorf("%w: retained prefix requires at least one circle", ErrInvalidOptimizationInput)
+		}
+		if accumulator == nil {
+			return nil, fmt.Errorf("%w: %T cannot start from a retained prefix canvas", ErrStagedOptimizationUnsupported, base)
+		}
+		if retained.canvas == nil ||
+			retained.canvas.Bounds().Dx() != base.Reference().Bounds().Dx() ||
+			retained.canvas.Bounds().Dy() != base.Reference().Bounds().Dy() {
+			return nil, fmt.Errorf("%w: retained prefix canvas dimensions do not match the reference", ErrInvalidOptimizationInput)
+		}
+		if math.IsNaN(retained.cost) || math.IsInf(retained.cost, 0) || retained.cost < 0 {
+			return nil, fmt.Errorf("%w: retained prefix cost is invalid", ErrInvalidOptimizationInput)
+		}
+		initialCost = retained.cost
+		accumulator.retain(retained.canvas)
+	} else if prefixCircles == 0 {
 		initialCost, err = baseCanvasCost(base, &evaluations)
 	} else {
 		var prefixSession Renderer
@@ -433,8 +477,8 @@ func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	if err != nil {
 		return nil, err
 	}
-	if math.IsNaN(initialCost) {
-		return nil, fmt.Errorf("%w: prefix cost is NaN", ErrInvalidOptimizationInput)
+	if math.IsNaN(initialCost) || math.IsInf(initialCost, 0) {
+		return nil, fmt.Errorf("%w: prefix cost is not finite", ErrInvalidOptimizationInput)
 	}
 	bestCost := initialCost
 	bestParams := make([]float64, len(prefixParams), totalCircles*paramsPerCircle)
@@ -590,7 +634,7 @@ func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 		termination = TerminationRefillLimit
 	}
 
-	result, err := finishStagedResult(base, bestParams, bestCost, initialCost, evaluations, stages)
+	result, err := finishStagedResult(base, accumulator, bestParams, bestCost, initialCost, evaluations, stages)
 	if err != nil {
 		return nil, err
 	}
@@ -825,7 +869,24 @@ func baseCanvasCost(base Renderer, evaluations *int) (float64, error) {
 	return cost, nil
 }
 
-func finishStagedResult(base Renderer, params []float64, bestCost, initialCost float64, evaluations, stages int) (*OptimizationResult, error) {
+func finishStagedResult(base Renderer, accumulator *stagedAccumulator, params []float64, bestCost, initialCost float64, evaluations, stages int) (*OptimizationResult, error) {
+	if accumulator != nil {
+		if accumulator.canvas == nil ||
+			accumulator.canvas.Bounds().Dx() != base.Reference().Bounds().Dx() ||
+			accumulator.canvas.Bounds().Dy() != base.Reference().Bounds().Dy() {
+			return nil, fmt.Errorf("%w: retained final canvas dimensions do not match the reference", ErrInvalidOptimizationInput)
+		}
+		return &OptimizationResult{
+			BestParams:       append([]float64(nil), params...),
+			BestCost:         bestCost,
+			InitialCost:      initialCost,
+			Evaluations:      evaluations,
+			Stages:           stages,
+			OptimizedCircles: len(params) / paramsPerCircle,
+			BestImage:        cloneNRGBA(accumulator.canvas),
+			Termination:      opt.TerminationCompleted,
+		}, nil
+	}
 	session, cleanup, err := newStagedSession(base, len(params)/paramsPerCircle)
 	if err != nil {
 		return nil, err

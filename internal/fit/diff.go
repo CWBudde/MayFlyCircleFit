@@ -23,7 +23,7 @@ func DiffImage(reference, candidate *image.NRGBA, colormap Colormap) *image.NRGB
 			red := math.Abs(float64(int(referencePixel.R) - int(candidatePixel.R)))
 			green := math.Abs(float64(int(referencePixel.G) - int(candidatePixel.G)))
 			blue := math.Abs(float64(int(referencePixel.B) - int(candidatePixel.B)))
-			diff.Set(x, y, MapErrorColor((red+green+blue)/3, 255, colormap))
+			diff.SetNRGBA(x, y, MapErrorColor((red+green+blue)/3, 255, colormap))
 		}
 	}
 

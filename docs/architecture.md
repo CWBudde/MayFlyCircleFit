@@ -167,6 +167,11 @@ population/internal state is not serialized; a new deterministic continuation
 population is seeded around the saved best. Sequential and batch server jobs
 cannot be resumed as exact in-progress staged pipelines.
 
+A completed CPU batch extension can reuse the parent's verified `best.png` as
+its immutable retained canvas. This is a hot-path cache, not independent state:
+the checkpoint still owns the parameters and cost, and any absent or mismatched
+image falls back to rendering those parameters.
+
 ## Schedules and campaigns
 
 A schedule is a persisted plan executed by the server, not a second optimizer.
