@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 )
 
 // An SSE response never completes on its own, and http.Server.Shutdown waits
@@ -14,9 +16,38 @@ import (
 // time a dashboard happened to be connected, which reads exactly like a server
 // ignoring SIGTERM.
 func TestShutdownDoesNotWaitForOpenEventStreams(t *testing.T) {
-	for _, path := range []string{"/api/v1/stream", "/api/v1/events"} {
-		t.Run(path, func(t *testing.T) {
+	// One case per stream the fix touches. The per-job endpoint needs a
+	// registered job before it will answer with anything but 404, so the path
+	// is built against the server rather than written as a constant.
+	tests := []struct {
+		name string
+		path func(*Server) string
+	}{
+		{
+			name: "all jobs",
+			path: func(*Server) string { return "/api/v1/stream" },
+		},
+		{
+			name: "ui events",
+			path: func(*Server) string { return "/api/v1/events" },
+		},
+		{
+			name: "single job",
+			path: func(server *Server) string {
+				job := server.jobManager.CreateJob(app.DefaultProject, app.JobConfig{
+					RefPath: "reference.png", Mode: app.ModeBatch,
+					Circles: 8, Iters: 100, PopSize: 30, Seed: 42,
+				})
+
+				return "/api/v1/jobs/" + job.ID + "/stream"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			server := NewServer(":0", nil)
+			path := tt.path(server)
 
 			// The drain being tested belongs to the http.Server that owns the
 			// connection, and Server.Shutdown skips it entirely when s.server
