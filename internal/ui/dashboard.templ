@@ -21,16 +21,18 @@ type DashboardPageData struct {
 // sparkline, so converting the samples would be work thrown away on every page
 // load; the island seeds its sparklines from the endpoint's history instead.
 type DashboardRunningJob struct {
-	ID              string  `json:"id"`
-	Project         string  `json:"project"`
-	State           string  `json:"state"`
-	Iterations      int     `json:"iterations"`
-	MaxIters        int     `json:"maxIters"`
-	BestCost        float64 `json:"bestCost"`
-	InitialCost     float64 `json:"initialCost"`
-	CPS             float64 `json:"cps"`
-	EvaluationWidth int     `json:"evaluationWidth,omitempty"`
-	ElapsedSec      float64 `json:"elapsedSec"`
+	ID               string  `json:"id"`
+	Project          string  `json:"project"`
+	State            string  `json:"state"`
+	Iterations       int     `json:"iterations"`
+	MaxIters         int     `json:"maxIters"`
+	Circles          int     `json:"circles"`
+	RequestedCircles int     `json:"requestedCircles"`
+	BestCost         float64 `json:"bestCost"`
+	InitialCost      float64 `json:"initialCost"`
+	CPS              float64 `json:"cps"`
+	EvaluationWidth  int     `json:"evaluationWidth,omitempty"`
+	ElapsedSec       float64 `json:"elapsedSec"`
 }
 
 // DashboardAggregates matches the dashboard endpoint’s aggregate block.
@@ -77,7 +79,6 @@ templ DashboardPage(page DashboardPageData) {
 					Monitor jobs, campaigns, and host state from one view.
 				</p>
 			</div>
-
 			<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
 				<div class="card">
 					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem;">Jobs</h2>
@@ -103,7 +104,6 @@ templ DashboardPage(page DashboardPageData) {
 					</div>
 				</div>
 			</div>
-
 			<div class="card" style="margin-bottom: 1.5rem;">
 				<div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
 					<h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">Running jobs</h2>
@@ -118,6 +118,7 @@ templ DashboardPage(page DashboardPageData) {
 								<tr style="text-align: left; border-bottom: 1px solid var(--border-color);">
 									<th style="padding: 0.5rem 0.5rem 0.5rem 0;">Job</th>
 									<th style="padding: 0.5rem;">State</th>
+									<th style="padding: 0.5rem; text-align: right;">Circles</th>
 									<th style="padding: 0.5rem; text-align: right;">Iter</th>
 									<th style="padding: 0.5rem; text-align: right;">Best cost</th>
 									<th style="padding: 0.5rem; text-align: right;">Gain</th>
@@ -136,6 +137,7 @@ templ DashboardPage(page DashboardPageData) {
 										<td style="padding: 0.75rem 0.5rem;">
 											@StateBadge(job.State)
 										</td>
+										<td style="padding: 0.75rem 0.5rem; text-align: right;">{ formatJobCircles(job.Circles, job.RequestedCircles) }</td>
 										<td style="padding: 0.75rem 0.5rem; text-align: right;">{ fmt.Sprintf("%d", job.Iterations) }</td>
 										<td style="padding: 0.75rem 0.5rem; text-align: right;">{ fmt.Sprintf("%.4f", job.BestCost) }</td>
 										<td style="padding: 0.75rem 0.5rem; text-align: right; color: var(--success-color);">{ formatJobImprovement(job.InitialCost, job.BestCost) }</td>
@@ -148,7 +150,6 @@ templ DashboardPage(page DashboardPageData) {
 				}
 				<a href="/api/v1/stream" style="display:inline-block; margin-top: 0.75rem; color: var(--primary-color);">Stream updates</a>
 			</div>
-
 			<div class="card" style="margin-bottom: 1.5rem;">
 				<div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
 					<h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">Campaigns</h2>
@@ -219,4 +220,15 @@ func formatJobImprovement(initialCost, bestCost float64) string {
 		return "—"
 	}
 	return fmt.Sprintf("↓ %.1f%%", (1-bestCost/initialCost)*100)
+}
+
+// formatJobCircles prints the circles a running job currently carries. A job
+// that has not reached its target yet — a refill or a growing ladder stage —
+// prints the requested count alongside, so the row says how far the geometry
+// still has to grow. Mirrored by formatJobCircles in web/src/dashboard.tsx.
+func formatJobCircles(actual, requested int) string {
+	if requested > 0 && requested != actual {
+		return fmt.Sprintf("%d / %d", actual, requested)
+	}
+	return fmt.Sprintf("%d", actual)
 }
