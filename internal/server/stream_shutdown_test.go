@@ -34,6 +34,7 @@ func TestShutdownDoesNotWaitForOpenEventStreams(t *testing.T) {
 			server.server = httpServer
 
 			go func() { _ = httpServer.Serve(listener) }()
+
 			defer func() { _ = httpServer.Close() }()
 
 			request, err := http.NewRequest(http.MethodGet, "http://"+listener.Addr().String()+path, nil)

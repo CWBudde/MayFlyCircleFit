@@ -43,15 +43,19 @@ func TestImageViewerSupportsAllModes(t *testing.T) {
 			if !strings.Contains(body, `data-view-mode="`+view.mode+`"`) {
 				t.Fatalf("missing default mode marker for %s", view.mode)
 			}
+
 			if !strings.Contains(body, view.shortcuts) {
 				t.Fatalf("missing shortcut for mode %s", view.mode)
 			}
+
 			if !strings.Contains(body, `id="`+view.inputID+`"`) {
 				t.Fatalf("missing radio input for %s", view.mode)
 			}
+
 			if !strings.Contains(body, `value="`+view.mode+`"`) {
 				t.Fatalf("missing mode value for %s", view.mode)
 			}
+
 			switch view.mode {
 			case "reference", "best", "difference", "overlay":
 				if !strings.Contains(body, `data-view-panel="`+view.mode+`"`) {
@@ -62,6 +66,7 @@ func TestImageViewerSupportsAllModes(t *testing.T) {
 					t.Fatal("side-by-side mode did not expose reference and best panels")
 				}
 			}
+
 			if view.heading != "" && !strings.Contains(body, view.heading) {
 				t.Fatalf("missing heading for %s", view.mode)
 			}
@@ -70,10 +75,12 @@ func TestImageViewerSupportsAllModes(t *testing.T) {
 			if inputStart < 0 {
 				t.Fatalf("could not find %s input", view.inputID)
 			}
+
 			inputEnd := strings.Index(body[inputStart:], ">")
 			if inputEnd < 0 {
 				t.Fatal("radio input was truncated")
 			}
+
 			inputTag := body[inputStart : inputStart+inputEnd+2]
 			if !strings.Contains(inputTag, "checked") {
 				t.Fatalf("expected checked marker for %s, got %q", view.mode, inputTag)
@@ -95,10 +102,13 @@ func TestImageViewerSupportsAllModes(t *testing.T) {
 
 func renderImageViewer(t *testing.T, data ImageViewerData) string {
 	t.Helper()
+
 	var output bytes.Buffer
-	if err := ImageViewer(data).Render(context.Background(), &output); err != nil {
+	err := ImageViewer(data).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render image viewer: %v", err)
 	}
+
 	return output.String()
 }
 

@@ -46,6 +46,7 @@ func decodeParameterCircles(params []float64) ([]parameterCircle, error) {
 			Red: params[offset+3], Green: params[offset+4], Blue: params[offset+5], Opacity: params[offset+6],
 		}
 	}
+
 	return circles, nil
 }
 
@@ -54,6 +55,7 @@ func newParameterExport(job *Job, timestamp time.Time) (parameterExport, error) 
 	if err != nil {
 		return parameterExport{}, err
 	}
+
 	return parameterExport{
 		JobID: job.ID, Cost: job.BestCost, Iterations: job.Iterations,
 		Timestamp: timestamp.UTC(), Params: append([]float64(nil), job.BestParams...), Circles: circles,
@@ -65,13 +67,16 @@ func (s *Server) handleGetParameters(w http.ResponseWriter, r *http.Request, job
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
+
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
 		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		return
 	}
+
 	if len(job.BestParams) == 0 {
 		writeAPIError(w, http.StatusNotFound, "no_results", "no parameters available yet")
 		return
@@ -81,6 +86,7 @@ func (s *Server) handleGetParameters(w http.ResponseWriter, r *http.Request, job
 	if err != nil {
 		slog.Error("Failed to export job parameters", "job_id", jobID, "error", err)
 		writeAPIError(w, http.StatusInternalServerError, "invalid_parameters", "stored parameters are invalid")
+
 		return
 	}
 
@@ -89,6 +95,7 @@ func (s *Server) handleGetParameters(w http.ResponseWriter, r *http.Request, job
 	w.Header().Set("Cache-Control", "no-store")
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
+
 	if err := encoder.Encode(export); err != nil {
 		slog.Error("Failed to encode parameter export", "job_id", jobID, "error", err)
 	}

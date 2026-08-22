@@ -7,6 +7,7 @@ import (
 	"image"
 	"log/slog"
 	"math"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -65,17 +66,19 @@ func (o *progressOptimizer) ParallelEvaluationWorkers() int {
 func (o *progressOptimizer) RunContext(ctx context.Context, problem opt.Problem, options opt.RunOptions) (opt.Result, error) {
 	lifecycle, ok := o.base.(opt.LifecycleOptimizer)
 	if !ok {
-		return opt.Result{}, fmt.Errorf("optimizer does not support lifecycle execution")
+		return opt.Result{}, errors.New("optimizer does not support lifecycle execution")
 	}
 
 	o.mu.Lock()
 	baseIterations, baseEvaluations := o.iterations, o.evaluations
+
 	initial := options.Initial
 	if o.initial != nil && len(o.initial.Params) == problem.Dim {
 		initial = o.initial
 		o.initial = nil
 	}
 	o.mu.Unlock()
+
 	resumeCount := options.ResumeCount
 	if o.resumeCount > 0 {
 		resumeCount = o.resumeCount
@@ -87,25 +90,30 @@ func (o *progressOptimizer) RunContext(ctx context.Context, problem opt.Problem,
 		ResumeCount:    resumeCount,
 		Observer: func(progress opt.Progress) {
 			progress.Iterations += baseIterations
+
 			progress.Evaluations += baseEvaluations
 			if options.Observer != nil {
 				options.Observer(progress)
 			}
+
 			if o.observer != nil {
 				o.observer(progress)
 			}
 		},
 		EpochObserver: func(boundary opt.EpochBoundary) error {
 			boundary.Progress.Iterations += baseIterations
+
 			boundary.Progress.Evaluations += baseEvaluations
 			if options.EpochObserver != nil {
 				if err := options.EpochObserver(boundary); err != nil {
 					return err
 				}
 			}
+
 			if o.epochObserver != nil {
 				return o.epochObserver(boundary)
 			}
+
 			return nil
 		},
 	})
@@ -114,6 +122,7 @@ func (o *progressOptimizer) RunContext(ctx context.Context, problem opt.Problem,
 	o.iterations = baseIterations + result.Iterations
 	o.evaluations = baseEvaluations + result.Evaluations
 	o.mu.Unlock()
+
 	return result, err
 }
 
@@ -124,13 +133,16 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	if !exists {
 		return fmt.Errorf("job not found: %s", jobID)
 	}
+
 	if err := jm.StartJob(jobID); err != nil {
 		return err
 	}
+
 	if err := ctx.Err(); err != nil {
 		if state := jm.getJobState(jobID); state != StatePaused {
 			markJobCancelled(jm, jobID)
 		}
+
 		return err
 	}
 
@@ -139,6 +151,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		markJobFailed(jm, jobID, err)
 		return err
 	}
+
 	if err := app.ValidateImageDimensions(ref.Bounds().Dx(), ref.Bounds().Dy()); err != nil {
 		markJobFailed(jm, jobID, err)
 		return err
@@ -163,6 +176,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	if seed == 0 {
 		seed = job.Config.Seed
 	}
+
 	optimizer, err := opt.NewMayflyVariant(string(job.Config.Variant), job.Config.Iters, job.Config.PopSize, seed,
 		opt.WithLogger(slog.Default()), opt.WithEarlyStop(buildEarlyStop(job.Config)),
 		parallelEvaluationOption(job.Config, rend))
@@ -170,11 +184,13 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		markJobFailed(jm, jobID, err)
 		return err
 	}
+
 	optimizer = opt.WithEpochs(optimizer, job.Config.OptimizerEpochs)
 	start := time.Now()
 	baseIterations, baseEvaluations := job.Iterations, job.Evaluations
 	initialCost := job.InitialCost
 	metricCost := job.BestCost
+
 	metricParams := append([]float64(nil), job.BestParams...)
 	if len(job.BestParams) == 0 {
 		metricParams = make([]float64, job.Config.Circles*app.ParamsPerCircle)
@@ -192,6 +208,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 				markJobFailed(jm, jobID, seedErr)
 				return seedErr
 			}
+
 			metricParams = seeded
 			metricCost = rend.Cost(seeded)
 			job.BestParams = seeded
@@ -206,8 +223,10 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		}
 	}
 	var initialSSIM *float64
+
 	if job.Config.EnableSSIM {
 		metricRenderer := rend
+
 		metricCleanup := func() {}
 		if len(metricParams) != rend.Dim() {
 			metricRenderer, metricCleanup, err = rendererForJob(job.Config, ref, len(metricParams)/7)
@@ -216,9 +235,12 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 				return err
 			}
 		}
+
 		initialSSIM = calculateSSIM(metricRenderer.Render(metricParams), ref, jobID)
+
 		metricCleanup()
 	}
+
 	initialSample := qualitySample(baseIterations, metricCost, initialSSIM, start)
 	// No evaluation of this stage has run yet, so its throughput is zero even
 	// when the job inherited a parent's evaluation count.
@@ -227,67 +249,84 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	_ = jm.RecordMetrics(jobID, initialSample)
 
 	var traceWriter *store.TraceWriter
+
 	if job.Config.EnableTrace {
 		if artifacts, ok := checkpointStore.(store.ArtifactStore); ok {
 			traceWriter, err = artifacts.NewTraceWriter(jobID, false)
 			if err != nil {
 				slog.Warn("Failed to open trace", "job_id", jobID, "error", err)
+
 				traceWriter = nil
 			}
 		}
 	}
+
 	if traceWriter != nil {
 		defer func() {
 			if closeErr := traceWriter.Close(); closeErr != nil {
 				slog.Warn("Failed to close trace", "job_id", jobID, "error", closeErr)
 			}
 		}()
+
 		_ = traceWriter.Write(traceEntry(initialSample))
 	}
 
 	nextBroadcast := start
 	lastSSIMAt := start
+
 	lastSSIMCost := metricCost
 	if job.Config.EnableSSIM && initialSSIM == nil {
 		lastSSIMCost = math.Inf(1)
 	}
+
 	nextCheckpoint := time.Time{}
 	if job.Config.CheckpointInterval > 0 {
 		nextCheckpoint = start.Add(time.Duration(job.Config.CheckpointInterval) * time.Second)
 	}
+
 	observer := func(progress opt.Progress) {
 		iterations := baseIterations + progress.Iterations
+
 		evaluations := baseEvaluations + progress.Evaluations
 		if err := jm.UpdateProgress(jobID, iterations, evaluations, progress.BestParams, progress.BestCost); err != nil {
 			return
 		}
+
 		now := time.Now()
 		shouldBroadcast := !now.Before(nextBroadcast)
+
 		var sampledSSIM *float64
 		if shouldBroadcast && job.Config.EnableSSIM && shouldSampleSSIM(now, lastSSIMAt, progress.BestCost, lastSSIMCost) {
 			sampledSSIM = calculateSSIM(rend.Render(progress.BestParams), ref, jobID)
 			lastSSIMAt = now
+
 			if sampledSSIM != nil {
 				lastSSIMCost = progress.BestCost
 			}
 		}
+
 		sample := qualitySample(iterations, progress.BestCost, sampledSSIM, now)
 		sample.Evaluations = evaluations
+
 		sample.CPS = throughputCPS(progress.Evaluations, job.Config.Circles, now.Sub(start).Seconds())
 		if traceWriter != nil {
 			_ = traceWriter.Write(traceEntry(sample))
 		}
+
 		if !now.Before(nextCheckpoint) && checkpointStore != nil && !nextCheckpoint.IsZero() {
 			if err := saveCheckpoint(jm, checkpointStore, rend, jobID); err != nil {
 				slog.Warn("Failed to save periodic checkpoint", "job_id", jobID, "error", err)
 			}
+
 			nextCheckpoint = now.Add(time.Duration(job.Config.CheckpointInterval) * time.Second)
 		}
+
 		if shouldBroadcast {
 			bestCost, bestRevision, candidateCost, ok := jm.bestSnapshot(jobID)
 			if !ok {
 				return
 			}
+
 			cps := sample.CPS
 			_ = jm.RecordMetrics(jobID, sample)
 			candidatePSNR, candidatePSNRInfinite := serializableCandidatePSNR(candidateCost)
@@ -304,17 +343,21 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	wrapped := &progressOptimizer{base: optimizer, observer: observer, resumeCount: job.Config.ResumeCount}
 	wrapped.epochObserver = func(boundary opt.EpochBoundary) error {
 		iterations := baseIterations + boundary.Progress.Iterations
+
 		evaluations := baseEvaluations + boundary.Progress.Evaluations
 		if err := jm.UpdateProgress(jobID, iterations, evaluations, boundary.Progress.BestParams, boundary.Progress.BestCost); err != nil {
 			return err
 		}
+
 		if checkpointStore != nil {
 			if err := saveCheckpoint(jm, checkpointStore, rend, jobID); err != nil {
 				return fmt.Errorf("persist optimizer epoch %d: %w", boundary.Epoch, err)
 			}
 		}
+
 		return nil
 	}
+
 	if len(job.BestParams) == job.Config.Circles*7 {
 		initialParams := append([]float64(nil), job.BestParams...)
 		parameterBounds := fit.NewBounds(job.Config.Circles, ref.Bounds().Dx(), ref.Bounds().Dy())
@@ -325,30 +368,36 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	convergence := buildConvergenceConfig(job.Config)
 	var result *renderer.OptimizationResult
 	var circleData []store.CircleData
+
 	var retainedPrefixCanvas *image.NRGBA
 	if job.Config.Mode == app.ModeBatch && len(job.BestParams) > 0 && len(job.BestParams) < job.Config.Circles*app.ParamsPerCircle {
 		retainedPrefixCanvas = loadRetainedPrefixCanvas(checkpointStore, job, ref)
 	}
+
 	var callback renderer.CircleCallback
 	if job.Config.SaveSnapshots && checkpointStore != nil {
 		callback = func(circleNum int, params []float64, cost float64, img image.Image) {
 			if err := checkpointStore.SaveCircleSnapshot(jobID, circleNum, img); err != nil {
 				slog.Warn("Failed to save circle snapshot", "job_id", jobID, "circle", circleNum, "error", err)
 			}
+
 			current, err := store.ParamVectorToCircles(params)
 			if err != nil {
 				return
 			}
+
 			for i := range current {
 				if i < len(circleData) {
 					current[i].CostAfter = circleData[i].CostAfter
 					current[i].Timestamp = circleData[i].Timestamp
 				}
 			}
+
 			if circleNum > 0 && circleNum <= len(current) {
 				current[circleNum-1].CostAfter = cost
 				current[circleNum-1].Timestamp = time.Now()
 			}
+
 			circleData = current
 		}
 	}
@@ -358,7 +407,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		result, err = renderer.OptimizeJointContext(ctx, rend, wrapped, job.Config.Circles, convergence)
 	case app.ModeSequential:
 		if len(job.BestParams) > 0 {
-			err = fmt.Errorf("sequential resume is not supported")
+			err = errors.New("sequential resume is not supported")
 		} else {
 			result, err = renderer.OptimizeSequentialContext(ctx, rend, wrapped, job.Config.Circles, convergence, callback)
 		}
@@ -410,6 +459,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 						convergence,
 					)
 				}
+
 				if err == nil && job.Config.PolishingEnabled && result.OptimizedCircles == job.Config.Circles {
 					result, err = polishBatchResult(
 						ctx,
@@ -442,7 +492,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 					)
 				}
 			} else {
-				err = fmt.Errorf("batch resume is not supported")
+				err = errors.New("batch resume is not supported")
 			}
 		} else {
 			result, err = renderer.OptimizeBatchContext(ctx, rend, wrapped, job.Config.Circles, job.Config.BatchSize, convergence)
@@ -461,16 +511,20 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 			}
 		}
 	default:
-		err = fmt.Errorf("unknown mode")
+		err = errors.New("unknown mode")
 	}
+
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			if state := jm.getJobState(jobID); state != StatePaused {
 				markJobCancelled(jm, jobID)
 			}
+
 			return err
 		}
+
 		markJobFailed(jm, jobID, err)
+
 		return err
 	}
 
@@ -487,25 +541,31 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	if err := jm.RecordFinalResult(jobID, iterations, evaluations, result.BestParams, result.BestCost, initialCost, string(result.Termination)); err != nil {
 		return err
 	}
+
 	completedAt := time.Now()
+
 	var finalSSIM *float64
 	if job.Config.EnableSSIM && result.BestImage != nil {
 		finalSSIM = calculateSSIM(result.BestImage, ref, jobID)
 	}
+
 	finalSample := qualitySample(iterations, result.BestCost, finalSSIM, completedAt)
 	finalSample.Evaluations = evaluations
 	finalSample.CPS = throughputCPS(result.Evaluations, job.Config.Circles, time.Since(start).Seconds())
+
 	_ = jm.RecordMetrics(jobID, finalSample)
 	if len(circleData) > 0 {
 		if err := checkpointStore.SaveCircleData(jobID, circleData); err != nil {
 			slog.Warn("Failed to save circle metadata", "job_id", jobID, "error", err)
 		}
 	}
+
 	if traceWriter != nil {
 		_ = traceWriter.Write(traceEntry(finalSample))
 		_ = traceWriter.Flush()
 	}
 	var persistenceErr error
+
 	if checkpointStore != nil {
 		if err := saveCheckpointWithImage(jm, checkpointStore, rend, jobID, result.BestImage); err != nil {
 			persistenceErr = fmt.Errorf("persist final result: %w", err)
@@ -525,10 +585,12 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 			slog.Info("Job settled before its final result was published", "job_id", jobID, "error", err)
 			return persistenceErr
 		}
+
 		return err
 	}
 
 	slog.Info("Job completed", "job_id", jobID, "iterations", iterations, "evaluations", evaluations, "best_cost", result.BestCost)
+
 	return persistenceErr
 }
 
@@ -546,6 +608,7 @@ func polishBatchResult(
 	if err != nil {
 		return nil, fmt.Errorf("restore polishing coverage: %w", err)
 	}
+
 	seed := job.Config.EffectiveSeed
 	if seed == 0 {
 		seed = job.Config.Seed
@@ -564,10 +627,12 @@ func polishBatchResult(
 	if err != nil {
 		return nil, fmt.Errorf("create polishing optimizer: %w", err)
 	}
+
 	polisher = opt.WithEpochs(polisher, job.Config.PolishingEpochs)
 	polishingWidth := opt.ParallelEvaluationWidth(polisher)
 
 	mainIterations := batch.Iterations
+
 	mainEvaluations := batch.Evaluations
 	if err := jm.UpdateProgress(
 		job.ID,
@@ -578,30 +643,36 @@ func polishBatchResult(
 	); err != nil {
 		return nil, fmt.Errorf("record pre-polishing result: %w", err)
 	}
+
 	if checkpointStore != nil {
 		if err := saveCheckpoint(jm, checkpointStore, rend, job.ID); err != nil {
 			return nil, fmt.Errorf("persist pre-polishing result: %w", err)
 		}
 	}
+
 	committedParams := append([]float64(nil), batch.BestParams...)
 	committedCost := batch.BestCost
 
 	persistPolishingBoundary := func(params []float64, cost float64, iterations, evaluations int, clearCandidate bool) error {
 		iterations += baseIterations + mainIterations
 		evaluations += baseEvaluations + mainEvaluations
+
 		if err := jm.UpdateJob(job.ID, func(live *Job) {
 			live.Iterations = iterations
 			live.Evaluations = evaluations
 			updateBestResult(live, params, cost)
+
 			if clearCandidate {
 				live.CandidateCost = nil
 			}
 		}); err != nil {
 			return err
 		}
+
 		if checkpointStore != nil {
 			return saveCheckpoint(jm, checkpointStore, rend, job.ID)
 		}
+
 		return nil
 	}
 
@@ -612,6 +683,7 @@ func polishBatchResult(
 		InitialVisitCounts: initialVisitCounts,
 		Observer: func(progress opt.Progress) {
 			progress.Iterations += mainIterations
+
 			progress.Evaluations += mainEvaluations
 			if err := jm.UpdateCandidateProgress(
 				job.ID,
@@ -649,6 +721,7 @@ func polishBatchResult(
 				"active_circles", progress.ActiveSet,
 				"best_cost", progress.BestCost,
 			)
+
 			return persistPolishingBoundary(
 				progress.BestParams,
 				progress.BestCost,
@@ -676,6 +749,7 @@ func polishBatchResult(
 		"population", job.Config.PolishingPopSize,
 		"best_cost", polish.BestCost,
 	)
+
 	return batch, nil
 }
 
@@ -690,6 +764,7 @@ func inheritedContiguousWindowVisitCounts(checkpointStore store.Store, job *Job)
 		job.Config.PolishingStrategy != app.PolishingContiguousWindow {
 		return nil, nil
 	}
+
 	circleCount := len(job.BestParams) / app.ParamsPerCircle
 	if circleCount == 0 {
 		circleCount = job.Config.Circles
@@ -697,22 +772,28 @@ func inheritedContiguousWindowVisitCounts(checkpointStore store.Store, job *Job)
 
 	seen := map[string]struct{}{job.ID: {}}
 	lineage := make([]*store.Checkpoint, 0, 4)
+
 	for parentID := job.PolishedFrom; parentID != ""; {
 		if _, repeated := seen[parentID]; repeated {
 			return nil, fmt.Errorf("checkpoint polishing lineage is cyclic at %q", parentID)
 		}
+
 		seen[parentID] = struct{}{}
+
 		if len(lineage) >= maxChainLength {
 			return nil, fmt.Errorf("checkpoint polishing lineage exceeds %d stages", maxChainLength)
 		}
+
 		checkpoint, err := checkpointStore.LoadCheckpoint(parentID)
 		if err != nil {
 			return nil, fmt.Errorf("load parent checkpoint %q: %w", parentID, err)
 		}
+
 		config, err := app.Normalize(checkpoint.Config)
 		if err != nil {
 			return nil, fmt.Errorf("normalize parent checkpoint %q: %w", parentID, err)
 		}
+
 		if checkpoint.ActualCircles != circleCount ||
 			checkpoint.ActualCircles != checkpoint.RequestedCircles ||
 			!config.PolishingEnabled ||
@@ -720,13 +801,16 @@ func inheritedContiguousWindowVisitCounts(checkpointStore store.Store, job *Job)
 			!completedCheckpointTermination(checkpoint.Termination) {
 			break
 		}
+
 		lineage = append(lineage, checkpoint)
 		parentID = checkpoint.PolishedFrom
 	}
 
 	var visits []int
-	for i := len(lineage) - 1; i >= 0; i-- {
-		config, _ := app.Normalize(lineage[i].Config)
+
+	for _, l := range slices.Backward(lineage) {
+		config, _ := app.Normalize(l.Config)
+
 		_, nextVisits, err := renderer.PlanContiguousWindows(
 			circleCount,
 			config.PolishingActiveSetSize,
@@ -734,10 +818,12 @@ func inheritedContiguousWindowVisitCounts(checkpointStore store.Store, job *Job)
 			visits,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("replay parent checkpoint %q: %w", lineage[i].JobID, err)
+			return nil, fmt.Errorf("replay parent checkpoint %q: %w", l.JobID, err)
 		}
+
 		visits = nextVisits
 	}
+
 	return visits, nil
 }
 
@@ -759,6 +845,7 @@ func parallelEvaluationOption(config store.JobConfig, rend renderer.Renderer) op
 		slog.Warn("Parallel evaluation requested but unavailable; evaluating serially",
 			"backend", config.Backend, "evaluationWorkers", config.EvaluationWorkers)
 	}
+
 	return option
 }
 
@@ -774,16 +861,21 @@ func initialCircleParams(config store.JobConfig, ref *image.NRGBA) ([]float64, e
 	if err != nil {
 		return nil, err
 	}
+
 	bounds := fit.NewBounds(config.Circles, ref.Bounds().Dx(), ref.Bounds().Dy())
+
 	clamped := append([]float64(nil), params...)
 	bounds.ClampVector(clamped)
+
 	for i := range params {
 		if params[i] == clamped[i] {
 			continue
 		}
+
 		return nil, fmt.Errorf("initialCircles[%d].%s is outside the bounds this canvas allows",
 			i/app.ParamsPerCircle, initialCircleFields[i%app.ParamsPerCircle])
 	}
+
 	return params, nil
 }
 
@@ -794,28 +886,36 @@ var initialCircleFields = [app.ParamsPerCircle]string{"x", "y", "r", "color.r", 
 func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (renderer.Renderer, func(), error) {
 	if config.CanvasPath != "" {
 		if config.Backend != "" && config.Backend != app.BackendCPU {
-			return nil, func() {}, fmt.Errorf("custom canvas requires CPU backend")
+			return nil, func() {}, errors.New("custom canvas requires CPU backend")
 		}
+
 		canvas, err := loadReferenceImage(config.CanvasPath)
 		if err != nil {
 			return nil, func() {}, fmt.Errorf("load canvas: %w", err)
 		}
+
 		if canvas.Bounds().Dx() != ref.Bounds().Dx() || canvas.Bounds().Dy() != ref.Bounds().Dy() {
-			return nil, func() {}, fmt.Errorf("canvas dimensions do not match reference")
+			return nil, func() {}, errors.New("canvas dimensions do not match reference")
 		}
+
 		cpu := renderer.NewCPURendererWithCanvas(ref, canvas, circleCount)
 		configureJobCPURenderer(cpu, config)
+
 		return cpu, func() {}, nil
 	}
+
 	backend := config.Backend
 	if backend == "" {
 		backend = app.BackendCPU
 	}
+
 	if backend == app.BackendCPU {
 		cpu := renderer.NewCPURenderer(ref, circleCount)
 		configureJobCPURenderer(cpu, config)
+
 		return cpu, func() {}, nil
 	}
+
 	return renderer.NewRendererForBackend(string(backend), ref, circleCount)
 }
 
@@ -861,24 +961,29 @@ func loadRetainedPrefixCanvas(checkpointStore store.Store, job *Job, ref *image.
 	if checkpointStore == nil || job == nil || job.ExtendedFrom == "" {
 		return nil
 	}
+
 	artifacts, ok := checkpointStore.(store.ArtifactStore)
 	if !ok {
 		return nil
 	}
+
 	path, err := artifacts.ArtifactPath(job.ExtendedFrom, store.ArtifactBest)
 	if err != nil {
 		slog.Debug("Could not resolve retained prefix artifact; replaying parameters", "job_id", job.ID, "parent_job_id", job.ExtendedFrom, "error", err)
 		return nil
 	}
+
 	canvas, err := loadReferenceImage(path)
 	if err != nil {
 		slog.Debug("Could not load retained prefix artifact; replaying parameters", "job_id", job.ID, "parent_job_id", job.ExtendedFrom, "error", err)
 		return nil
 	}
+
 	if canvas.Bounds().Dx() != ref.Bounds().Dx() || canvas.Bounds().Dy() != ref.Bounds().Dy() {
 		slog.Warn("Retained prefix artifact dimensions do not match; replaying parameters", "job_id", job.ID, "parent_job_id", job.ExtendedFrom)
 		return nil
 	}
+
 	if artifactCost := fit.FastMSECost(canvas, ref); artifactCost != job.BestCost {
 		slog.Warn("Retained prefix artifact cost does not match checkpoint; replaying parameters",
 			"job_id", job.ID,
@@ -886,8 +991,10 @@ func loadRetainedPrefixCanvas(checkpointStore store.Store, job *Job, ref *image.
 			"artifact_cost", artifactCost,
 			"checkpoint_cost", job.BestCost,
 		)
+
 		return nil
 	}
+
 	return canvas
 }
 
@@ -900,22 +1007,28 @@ func saveCheckpointWithImage(jm *JobManager, checkpointStore store.Store, rend r
 	if !exists {
 		return fmt.Errorf("job not found: %s", jobID)
 	}
+
 	if len(job.BestParams) == 0 || math.IsInf(job.BestCost, 0) || math.IsNaN(job.BestCost) {
 		return nil
 	}
+
 	checkpoint := store.NewCheckpoint(jobID, job.BestParams, job.BestCost, job.InitialCost, job.Iterations, job.Config)
 	checkpoint.Evaluations = int64(job.Evaluations)
 	applyJobLineage(checkpoint, job)
+
 	if job.Termination != "" {
 		checkpoint.Termination = job.Termination
 	}
+
 	var persistenceErrors []error
 	if err := checkpointStore.SaveCheckpoint(jobID, checkpoint); err != nil {
 		persistenceErrors = append(persistenceErrors, fmt.Errorf("save checkpoint: %w", err))
 	}
+
 	if err := saveCheckpointArtifacts(checkpointStore, rend, job.Config, jobID, job.BestParams, bestImage); err != nil {
 		persistenceErrors = append(persistenceErrors, err)
 	}
+
 	return errors.Join(persistenceErrors...)
 }
 
@@ -924,7 +1037,9 @@ func saveCheckpointArtifacts(checkpointStore store.Store, rend renderer.Renderer
 	if !ok {
 		return nil
 	}
+
 	ref := rend.Reference()
+
 	best := bestImage
 	if best == nil {
 		snapshotRenderer, cleanup, err := rendererForJob(config, ref, len(bestParams)/7)
@@ -932,27 +1047,35 @@ func saveCheckpointArtifacts(checkpointStore store.Store, rend renderer.Renderer
 			return fmt.Errorf("create artifact renderer: %w", err)
 		}
 		defer cleanup()
+
 		best = snapshotRenderer.Render(bestParams)
 	}
+
 	if best.Bounds().Dx() != ref.Bounds().Dx() || best.Bounds().Dy() != ref.Bounds().Dy() {
-		return fmt.Errorf("best artifact dimensions do not match reference")
+		return errors.New("best artifact dimensions do not match reference")
 	}
+
 	diff := computeDiffImage(ref, best, fit.ColormapTurbo)
 	var artifactErrors [2]error
 	var writes sync.WaitGroup
+
 	writes.Add(2)
 	go func() {
 		defer writes.Done()
+
 		if err := artifacts.SavePNGArtifact(jobID, store.ArtifactBest, best); err != nil {
 			artifactErrors[0] = fmt.Errorf("save best artifact: %w", err)
 		}
 	}()
 	go func() {
 		defer writes.Done()
+
 		if err := artifacts.SavePNGArtifact(jobID, store.ArtifactDiff, diff); err != nil {
 			artifactErrors[1] = fmt.Errorf("save diff artifact: %w", err)
 		}
 	}()
+
 	writes.Wait()
+
 	return errors.Join(artifactErrors[:]...)
 }

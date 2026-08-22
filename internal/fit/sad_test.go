@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sys/cpu"
 )
 
-// TestSAD_IdenticalImages verifies SAD returns 0 for identical images
+// TestSAD_IdenticalImages verifies SAD returns 0 for identical images.
 func TestSAD_IdenticalImages(t *testing.T) {
 	sizes := []struct {
 		width, height int
@@ -36,7 +36,7 @@ func TestSAD_IdenticalImages(t *testing.T) {
 	}
 }
 
-// TestSAD_ScalarEquivalence verifies AVX2 matches scalar implementation
+// TestSAD_ScalarEquivalence verifies AVX2 matches scalar implementation.
 func TestSAD_ScalarEquivalence(t *testing.T) {
 	sizes := []struct {
 		width, height int
@@ -67,7 +67,7 @@ func TestSAD_ScalarEquivalence(t *testing.T) {
 	}
 }
 
-// TestSAD_KnownValues tests SAD with manually computed expected values
+// TestSAD_KnownValues tests SAD with manually computed expected values.
 func TestSAD_KnownValues(t *testing.T) {
 	// Create two 2x2 images with known pixel values
 	img1 := image.NewNRGBA(image.Rect(0, 0, 2, 2))
@@ -80,8 +80,8 @@ func TestSAD_KnownValues(t *testing.T) {
 	c1 := color.NRGBA{R: 100, G: 150, B: 200, A: 255}
 	c2 := color.NRGBA{R: 110, G: 160, B: 210, A: 255}
 
-	for y := 0; y < 2; y++ {
-		for x := 0; x < 2; x++ {
+	for y := range 2 {
+		for x := range 2 {
 			img1.SetNRGBA(x, y, c1)
 			img2.SetNRGBA(x, y, c2)
 		}
@@ -102,14 +102,14 @@ func TestSAD_KnownValues(t *testing.T) {
 	}
 }
 
-// TestSAD_AlphaIgnored verifies alpha channel is ignored
+// TestSAD_AlphaIgnored verifies alpha channel is ignored.
 func TestSAD_AlphaIgnored(t *testing.T) {
 	img1 := image.NewNRGBA(image.Rect(0, 0, 4, 4))
 	img2 := image.NewNRGBA(image.Rect(0, 0, 4, 4))
 
 	// Fill with same RGB but different alpha
-	for y := 0; y < 4; y++ {
-		for x := 0; x < 4; x++ {
+	for y := range 4 {
+		for x := range 4 {
 			img1.SetNRGBA(x, y, color.NRGBA{R: 100, G: 150, B: 200, A: 255})
 			img2.SetNRGBA(x, y, color.NRGBA{R: 100, G: 150, B: 200, A: 0}) // Different alpha
 		}
@@ -126,7 +126,7 @@ func TestSAD_AlphaIgnored(t *testing.T) {
 // ---------------------- SIMD-Specific Tests ----------------------
 
 // TestSAD_AVX2_BatchBoundaries tests AVX2 batch processing with various widths
-// AVX2 processes 8 pixels per batch, so we test exact multiples and remainders
+// AVX2 processes 8 pixels per batch, so we test exact multiples and remainders.
 func TestSAD_AVX2_BatchBoundaries(t *testing.T) {
 	if ActiveSADKernel() != TierAVX2 {
 		t.Skipf("Skipping AVX2 batch boundary test: active backend is %s, not AVX2", ActiveSADKernel())
@@ -160,7 +160,7 @@ func TestSAD_AVX2_BatchBoundaries(t *testing.T) {
 }
 
 // TestSAD_NEON_BatchBoundaries tests NEON batch processing with various widths
-// NEON processes 4 pixels per batch (128-bit registers), so we test multiples of 4
+// NEON processes 4 pixels per batch (128-bit registers), so we test multiples of 4.
 func TestSAD_NEON_BatchBoundaries(t *testing.T) {
 	if ActiveSADKernel() != TierNEON {
 		t.Skipf("Skipping NEON batch boundary test: active backend is %s, not NEON", ActiveSADKernel())
@@ -195,7 +195,7 @@ func TestSAD_NEON_BatchBoundaries(t *testing.T) {
 
 // ---------------------- Concurrency Tests ----------------------
 
-// TestSAD_ConcurrentAccess tests thread-safety of SAD computation
+// TestSAD_ConcurrentAccess tests thread-safety of SAD computation.
 func TestSAD_ConcurrentAccess(t *testing.T) {
 	img1 := randomNRGBA(256, 256, 333)
 	img2 := randomNRGBA(256, 256, 444)
@@ -207,12 +207,13 @@ func TestSAD_ConcurrentAccess(t *testing.T) {
 	results := make([][]float64, goroutines)
 	var wg sync.WaitGroup
 
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
+
 			results[idx] = make([]float64, iterations)
-			for i := 0; i < iterations; i++ {
+			for i := range iterations {
 				results[idx][i] = FastSAD(img1, img2)
 			}
 		}(g)
@@ -222,8 +223,9 @@ func TestSAD_ConcurrentAccess(t *testing.T) {
 
 	// All results should be identical (no race conditions or shared state issues)
 	expected := results[0][0]
-	for g := 0; g < goroutines; g++ {
-		for i := 0; i < iterations; i++ {
+
+	for g := range goroutines {
+		for i := range iterations {
 			if results[g][i] != expected {
 				t.Errorf("Concurrent call mismatch: goroutine %d, iter %d: got %f, want %f",
 					g, i, results[g][i], expected)
@@ -236,7 +238,7 @@ func TestSAD_ConcurrentAccess(t *testing.T) {
 
 // ---------------------- Large Image Tests ----------------------
 
-// TestSAD_LargeImages stress tests with very large images
+// TestSAD_LargeImages stress tests with very large images.
 func TestSAD_LargeImages(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping large image test in short mode")
@@ -281,7 +283,7 @@ func TestSAD_LargeImages(t *testing.T) {
 
 // ---------------------- Padded Stride Tests ----------------------
 
-// TestSAD_PaddedStride tests handling of non-standard stride (padded images)
+// TestSAD_PaddedStride tests handling of non-standard stride (padded images).
 func TestSAD_PaddedStride(t *testing.T) {
 	width, height := 63, 32 // Non-multiple of 8 (tests remainder handling)
 
@@ -295,8 +297,9 @@ func TestSAD_PaddedStride(t *testing.T) {
 
 	// Fill with test pattern
 	rng := rand.New(rand.NewSource(888))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+
+	for y := range height {
+		for x := range width {
 			i := y*stride + x*4
 			pix1[i+0] = uint8(rng.Intn(256))
 			pix1[i+1] = uint8(rng.Intn(256))
@@ -327,7 +330,7 @@ func TestSAD_PaddedStride(t *testing.T) {
 
 // ---------------------- Backend Selection Tests ----------------------
 
-// TestSAD_BackendSelection validates that the correct backend was selected based on CPU features
+// TestSAD_BackendSelection validates that the correct backend was selected based on CPU features.
 func TestSAD_BackendSelection(t *testing.T) {
 	t.Logf("Active SAD backend: %s", ActiveSADKernel())
 
@@ -373,12 +376,13 @@ func TestSAD_BackendSelection(t *testing.T) {
 	t.Logf("Backend selection validated: %s", ActiveSADKernel())
 }
 
-// BenchmarkSAD_Scalar benchmarks scalar SAD implementation
+// BenchmarkSAD_Scalar benchmarks scalar SAD implementation.
 func BenchmarkSAD_Scalar(b *testing.B) {
 	img1 := randomNRGBA(256, 256, 100)
 	img2 := randomNRGBA(256, 256, 200)
 
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		fastSAD_Scalar(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 	}
@@ -388,7 +392,7 @@ func BenchmarkSAD_Scalar(b *testing.B) {
 	b.ReportMetric(mpixels, "Mpixels/sec")
 }
 
-// BenchmarkSAD_Active benchmarks active backend (AVX2 or scalar)
+// BenchmarkSAD_Active benchmarks active backend (AVX2 or scalar).
 func BenchmarkSAD_Active(b *testing.B) {
 	img1 := randomNRGBA(256, 256, 100)
 	img2 := randomNRGBA(256, 256, 200)
@@ -396,6 +400,7 @@ func BenchmarkSAD_Active(b *testing.B) {
 	b.Logf("Active backend: %s", ActiveSADKernel())
 
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		fastSAD(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 	}
@@ -405,12 +410,13 @@ func BenchmarkSAD_Active(b *testing.B) {
 	b.ReportMetric(mpixels, "Mpixels/sec")
 }
 
-// BenchmarkSAD_HighLevel benchmarks high-level FastSAD wrapper
+// BenchmarkSAD_HighLevel benchmarks high-level FastSAD wrapper.
 func BenchmarkSAD_HighLevel(b *testing.B) {
 	img1 := randomNRGBA(256, 256, 100)
 	img2 := randomNRGBA(256, 256, 200)
 
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		FastSAD(img1, img2)
 	}
@@ -420,16 +426,18 @@ func BenchmarkSAD_HighLevel(b *testing.B) {
 	b.ReportMetric(mpixels, "Mpixels/sec")
 }
 
-// BenchmarkSADvsSSD compares SAD and SSD implementations
+// BenchmarkSADvsSSD compares SAD and SSD implementations.
 func BenchmarkSADvsSSD(b *testing.B) {
 	img1 := randomNRGBA(256, 256, 100)
 	img2 := randomNRGBA(256, 256, 200)
 
 	b.Run("SAD_scalar", func(b *testing.B) {
 		b.ResetTimer()
+
 		for i := 0; i < b.N; i++ {
 			fastSAD_Scalar(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 		}
+
 		elapsed := b.Elapsed().Seconds()
 		mpixels := float64(b.N*256*256) / 1e6 / elapsed
 		b.ReportMetric(mpixels, "Mpixels/sec")
@@ -438,9 +446,11 @@ func BenchmarkSADvsSSD(b *testing.B) {
 	b.Run("SAD_active", func(b *testing.B) {
 		b.Logf("Backend: %s", ActiveSADKernel())
 		b.ResetTimer()
+
 		for i := 0; i < b.N; i++ {
 			fastSAD(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 		}
+
 		elapsed := b.Elapsed().Seconds()
 		mpixels := float64(b.N*256*256) / 1e6 / elapsed
 		b.ReportMetric(mpixels, "Mpixels/sec")
@@ -448,9 +458,11 @@ func BenchmarkSADvsSSD(b *testing.B) {
 
 	b.Run("SSD_scalar", func(b *testing.B) {
 		b.ResetTimer()
+
 		for i := 0; i < b.N; i++ {
 			fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 		}
+
 		elapsed := b.Elapsed().Seconds()
 		mpixels := float64(b.N*256*256) / 1e6 / elapsed
 		b.ReportMetric(mpixels, "Mpixels/sec")
@@ -459,9 +471,11 @@ func BenchmarkSADvsSSD(b *testing.B) {
 	b.Run("SSD_active", func(b *testing.B) {
 		b.Logf("Backend: %s", ActiveSSDKernel())
 		b.ResetTimer()
+
 		for i := 0; i < b.N; i++ {
 			fastSSD(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 		}
+
 		elapsed := b.Elapsed().Seconds()
 		mpixels := float64(b.N*256*256) / 1e6 / elapsed
 		b.ReportMetric(mpixels, "Mpixels/sec")

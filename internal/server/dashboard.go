@@ -49,13 +49,16 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
 
 	response := s.dashboardPayload()
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
 		slog.Error("Failed to encode dashboard response", "error", err)
 	}
 }
@@ -75,6 +78,7 @@ func (s *Server) dashboardPagePayload() dashboardResponse {
 
 func (s *Server) buildDashboardPayload(includeHistory bool) dashboardResponse {
 	runningJobs, aggregates := s.dashboardRows(includeHistory)
+
 	return dashboardResponse{
 		Campaigns:   s.dashboardCampaigns(),
 		RunningJobs: runningJobs,
@@ -89,6 +93,7 @@ func (s *Server) buildDashboardPayload(includeHistory bool) dashboardResponse {
 // as an error: the rest of the dashboard is still worth serving.
 func (s *Server) dashboardCampaigns() []ui.CampaignSummary {
 	summaries := make([]ui.CampaignSummary, 0)
+
 	scheduleStore, err := s.scheduleStore()
 	if err != nil {
 		slog.Warn("Unable to open the schedule store for the dashboard", "error", err)
@@ -101,15 +106,18 @@ func (s *Server) dashboardCampaigns() []ui.CampaignSummary {
 				slog.Warn("Unable to load schedule stages for the dashboard",
 					"schedule_id", records[i].ScheduleID, "error", loadErr)
 			}
+
 			summaries = append(summaries, summarizeCampaign(&records[i], stages))
 		}
 	}
 
 	summaries = append(summaries, chainCampaignSummaries(s.dashboardChains())...)
 	sortDashboardCampaigns(summaries)
+
 	if len(summaries) > dashboardCampaignLimit {
 		summaries = summaries[:dashboardCampaignLimit]
 	}
+
 	return summaries
 }
 
@@ -127,6 +135,7 @@ func (s *Server) dashboardRows(includeHistory bool) ([]dashboardRunningJob, dash
 		aggregates.CPS += row.CPS
 		runningRows = append(runningRows, row)
 	}
+
 	return runningRows, aggregates
 }
 
@@ -135,11 +144,13 @@ func dashboardRunningJobFrom(job *Job, includeHistory bool) dashboardRunningJob 
 	// long-running job's history is refetched whole on every dashboard load.
 	// A caller that draws no sparkline pays for none of it.
 	var history []ui.MetricSample
+
 	if includeHistory {
 		samples := job.MetricHistory
 		if len(samples) > dashboardMetricHistoryLimit {
 			samples = samples[len(samples)-dashboardMetricHistoryLimit:]
 		}
+
 		history = make([]ui.MetricSample, 0, len(samples))
 		for _, sample := range samples {
 			history = append(history, ui.MetricSample{
@@ -156,6 +167,7 @@ func dashboardRunningJobFrom(job *Job, includeHistory bool) dashboardRunningJob 
 	}
 
 	elapsed := jobElapsed(job)
+
 	return dashboardRunningJob{
 		ID:               job.ID,
 		Project:          app.NormalizeProject(job.Project),
@@ -176,13 +188,16 @@ func dashboardRunningJobFrom(job *Job, includeHistory bool) dashboardRunningJob 
 func sortDashboardCampaigns(campaigns []ui.CampaignSummary) {
 	sort.Slice(campaigns, func(i, j int) bool {
 		iActive := isDashboardActiveCampaignState(campaigns[i].State)
+
 		jActive := isDashboardActiveCampaignState(campaigns[j].State)
 		if iActive != jActive {
 			return iActive
 		}
+
 		if !campaigns[i].UpdatedAt.Equal(campaigns[j].UpdatedAt) {
 			return campaigns[i].UpdatedAt.After(campaigns[j].UpdatedAt)
 		}
+
 		return campaigns[i].ID < campaigns[j].ID
 	})
 }

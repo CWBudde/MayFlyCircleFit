@@ -62,13 +62,17 @@ func runScore(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+
 	if len(specs) == 0 {
 		return fmt.Errorf("%s contains no circles", scoreCirclesPath)
 	}
+
 	specs.ApplyDefaults()
+
 	if err := specs.Validate(); err != nil {
 		return err
 	}
+
 	params, err := specs.ToParams()
 	if err != nil {
 		return err
@@ -78,14 +82,17 @@ func runScore(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+
 	width, height := ref.Bounds().Dx(), ref.Bounds().Dy()
 
 	// The same refusal the worker applies, for the same reason: a circle the
 	// canvas cannot hold would be silently pulled inside and the printed cost
 	// would describe an arrangement nobody wrote.
 	bounds := fit.NewBounds(len(specs), width, height)
+
 	clamped := append([]float64(nil), params...)
 	bounds.ClampVector(clamped)
+
 	for i := range params {
 		if params[i] != clamped[i] {
 			return fmt.Errorf("circle %d is outside the bounds a %dx%d canvas allows", i/app.ParamsPerCircle, width, height)
@@ -99,6 +106,7 @@ func runScore(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+
 	result := scoreResult{
 		Circles:   len(specs),
 		Cost:      rend.Cost(params),
@@ -106,6 +114,7 @@ func runScore(_ *cobra.Command, _ []string) error {
 		Width:     width,
 		Height:    height,
 	}
+
 	psnr := fit.PSNR(result.Cost)
 	if math.IsInf(psnr, 1) {
 		result.PSNRInfinite = true
@@ -116,7 +125,8 @@ func runScore(_ *cobra.Command, _ []string) error {
 	if scoreOutPath != "" || scoreDiffPath != "" {
 		rendered := rend.Render(params)
 		if scoreOutPath != "" {
-			if err := writeScorePNG(scoreOutPath, rendered); err != nil {
+			err := writeScorePNG(scoreOutPath, rendered)
+			if err != nil {
 				return err
 			}
 		}
@@ -124,7 +134,8 @@ func runScore(_ *cobra.Command, _ []string) error {
 		// arrangement is wrong, which is the question anyone placing a circle by
 		// hand is actually asking.
 		if scoreDiffPath != "" {
-			if err := writeScorePNG(scoreDiffPath, fit.DiffImage(ref, rendered, fit.ColormapTurbo)); err != nil {
+			err := writeScorePNG(scoreDiffPath, fit.DiffImage(ref, rendered, fit.ColormapTurbo))
+			if err != nil {
 				return err
 			}
 		}
@@ -133,23 +144,30 @@ func runScore(_ *cobra.Command, _ []string) error {
 	if scoreJSON {
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
+
 		return encoder.Encode(result)
 	}
+
 	fmt.Printf("circles:    %d\n", result.Circles)
 	fmt.Printf("canvas:     %dx%d\n", result.Width, result.Height)
 	fmt.Printf("cost:       %.4f\n", result.Cost)
+
 	if result.PSNRInfinite {
 		fmt.Printf("psnr:       inf dB\n")
 	} else {
 		fmt.Printf("psnr:       %.4f dB\n", result.PSNR)
 	}
+
 	fmt.Printf("blank cost: %.4f\n", result.BlankCost)
+
 	if scoreOutPath != "" {
 		fmt.Printf("wrote:      %s\n", scoreOutPath)
 	}
+
 	if scoreDiffPath != "" {
 		fmt.Printf("residual:   %s\n", scoreDiffPath)
 	}
+
 	return nil
 }
 
@@ -168,10 +186,12 @@ func loadCircleSpecs(path string) (app.CircleSpecs, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("read circles: %w", err)
 	}
+
 	var specs app.CircleSpecs
 	if err := json.Unmarshal(data, &specs); err == nil {
 		return specs, "", nil
 	}
+
 	var document struct {
 		Base struct {
 			InitialCircles app.CircleSpecs `json:"initialCircles"`
@@ -181,6 +201,7 @@ func loadCircleSpecs(path string) (app.CircleSpecs, string, error) {
 	if err := json.Unmarshal(data, &document); err != nil {
 		return nil, "", fmt.Errorf("%s is neither a circle array nor a schedule document: %w", path, err)
 	}
+
 	return document.Base.InitialCircles, document.Base.CanvasPath, nil
 }
 
@@ -194,15 +215,18 @@ func scoreRenderer(ref *image.NRGBA, canvasPath string, circles int) (*renderer.
 	if canvasPath == "" {
 		return renderer.NewCPURenderer(ref, circles), nil
 	}
+
 	canvas, err := loadScoreReference(canvasPath)
 	if err != nil {
 		return nil, fmt.Errorf("canvas %s: %w", canvasPath, err)
 	}
+
 	refBounds, canvasBounds := ref.Bounds(), canvas.Bounds()
 	if refBounds.Dx() != canvasBounds.Dx() || refBounds.Dy() != canvasBounds.Dy() {
 		return nil, fmt.Errorf("canvas %s is %dx%d but the reference is %dx%d",
 			canvasPath, canvasBounds.Dx(), canvasBounds.Dy(), refBounds.Dx(), refBounds.Dy())
 	}
+
 	return renderer.NewCPURendererWithCanvas(ref, canvas, circles), nil
 }
 
@@ -212,20 +236,24 @@ func loadScoreReference(path string) (*image.NRGBA, error) {
 		return nil, fmt.Errorf("open reference: %w", err)
 	}
 	defer file.Close()
+
 	decoded, _, err := image.Decode(file)
 	if err != nil {
 		return nil, fmt.Errorf("decode reference: %w", err)
 	}
+
 	bounds := decoded.Bounds()
 	if err := app.ValidateImageDimensions(bounds.Dx(), bounds.Dy()); err != nil {
 		return nil, err
 	}
+
 	ref := image.NewNRGBA(bounds)
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			ref.Set(x, y, decoded.At(x, y))
 		}
 	}
+
 	return ref, nil
 }
 
@@ -234,8 +262,10 @@ func writeScorePNG(path string, img *image.NRGBA) error {
 	if err != nil {
 		return fmt.Errorf("create output: %w", err)
 	}
+
 	if err := encodePNG(file, path, img); err != nil {
 		return fmt.Errorf("encode output: %w", err)
 	}
+
 	return nil
 }

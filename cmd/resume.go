@@ -61,10 +61,11 @@ func runResume(cmd *cobra.Command, args []string) error {
 	if resumeLocalMode {
 		return runResumeLocal(cmd.Context(), jobID)
 	}
+
 	return runResumeServer(cmd.Context(), cmd.OutOrStdout(), jobID)
 }
 
-// runResumeServer sends a resume request to the server
+// runResumeServer sends a resume request to the server.
 func runResumeServer(ctx context.Context, output io.Writer, jobID string) error {
 	endpoint := fmt.Sprintf("%s/api/v1/jobs/%s/resume", strings.TrimRight(resumeServerURL, "/"), url.PathEscape(jobID))
 
@@ -76,6 +77,7 @@ func runResumeServer(ctx context.Context, output io.Writer, jobID string) error 
 		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
 			return fmt.Errorf("checkpoint not found for job %q: %w", jobID, err)
 		}
+
 		return fmt.Errorf("resume job %q: %w", jobID, err)
 	}
 
@@ -90,29 +92,34 @@ func runResumeServer(ctx context.Context, output io.Writer, jobID string) error 
 	if err := decodeCLIResponse(body, &result); err != nil {
 		return fmt.Errorf("decode resume response: %w", err)
 	}
+
 	if strings.TrimSpace(result.JobID) == "" || result.ResumedFrom != jobID {
-		return fmt.Errorf("invalid resume response: mismatched or missing job identifiers")
+		return errors.New("invalid resume response: mismatched or missing job identifiers")
 	}
+
 	if result.State != "pending" && result.State != "running" {
 		return fmt.Errorf("invalid resume response: unexpected state %q", result.State)
 	}
+
 	if result.PreviousCost == nil || result.PreviousIters == nil ||
 		!finiteNonnegative(*result.PreviousCost) || *result.PreviousIters < 0 {
-		return fmt.Errorf("invalid resume response: invalid checkpoint progress")
+		return errors.New("invalid resume response: invalid checkpoint progress")
 	}
 
 	fmt.Fprintln(output, "✓ Job resumed successfully")
 	fmt.Fprintf(output, "  Job ID: %s\n", result.JobID)
 	fmt.Fprintf(output, "  State: %s\n", result.State)
+
 	if result.Message != "" {
 		fmt.Fprintf(output, "  Message: %s\n", result.Message)
 	}
+
 	fmt.Fprintf(output, "\nUse 'mayflycirclefit status %s' to monitor progress\n", result.JobID)
 
 	return nil
 }
 
-// runResumeLocal loads checkpoint and runs optimization locally
+// runResumeLocal loads checkpoint and runs optimization locally.
 func runResumeLocal(ctx context.Context, jobID string) error {
 	slog.Info("Resuming job locally", "job_id", jobID)
 
@@ -163,6 +170,7 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 
 	// Convert to NRGBA
 	bounds := img.Bounds()
+
 	ref := image.NewNRGBA(bounds)
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
@@ -172,25 +180,30 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 
 	var rend renderer.Renderer
 	cleanup := func() {}
+
 	if checkpoint.Config.CanvasPath != "" {
 		canvasFile, err := os.Open(checkpoint.Config.CanvasPath)
 		if err != nil {
 			return fmt.Errorf("failed to open canvas: %w", err)
 		}
 		defer canvasFile.Close()
+
 		canvasImage, _, err := image.Decode(canvasFile)
 		if err != nil {
 			return fmt.Errorf("failed to decode canvas: %w", err)
 		}
+
 		if canvasImage.Bounds().Dx() != bounds.Dx() || canvasImage.Bounds().Dy() != bounds.Dy() {
-			return fmt.Errorf("canvas dimensions do not match reference")
+			return errors.New("canvas dimensions do not match reference")
 		}
+
 		canvas := image.NewNRGBA(bounds)
 		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 			for x := bounds.Min.X; x < bounds.Max.X; x++ {
 				canvas.Set(x, y, canvasImage.At(x, y))
 			}
 		}
+
 		cpu := renderer.NewCPURendererWithCanvas(ref, canvas, checkpoint.Config.Circles)
 		configureCPURendererForResume(cpu, checkpoint.Config)
 		rend = cpu
@@ -199,6 +212,7 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 		if backend == "" {
 			backend = "cpu"
 		}
+
 		if backend == "cpu" {
 			cpu := renderer.NewCPURenderer(ref, checkpoint.Config.Circles)
 			configureCPURendererForResume(cpu, checkpoint.Config)
@@ -216,20 +230,24 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	if seed == 0 {
 		seed = checkpoint.Config.Seed
 	}
+
 	optimizer, err := opt.NewMayflyVariant(string(checkpoint.Config.Variant), checkpoint.Config.Iters, checkpoint.Config.PopSize, seed,
 		opt.WithLogger(slog.Default()), opt.WithEarlyStop(earlyStopFromConfig(checkpoint.Config)),
 		parallelEvaluationOption(checkpoint.Config, rend))
 	if err != nil {
 		return fmt.Errorf("create optimizer: %w", err)
 	}
+
 	optimizer = opt.WithEpochs(optimizer, max(checkpoint.Config.OptimizerEpochs, 1))
+
 	lifecycle, ok := optimizer.(opt.LifecycleOptimizer)
 	if !ok {
-		return fmt.Errorf("optimizer does not support lifecycle resume")
+		return errors.New("optimizer does not support lifecycle resume")
 	}
 
 	// Resume optimization
 	fmt.Printf("Resuming optimization...\n")
+
 	start := time.Now()
 
 	var optimization opt.Result
@@ -238,9 +256,11 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	case "joint":
 		joint := newResumeJointProblem(rend, checkpoint.Config.Circles)
 		defer joint.close()
+
 		resumeParams := append([]float64(nil), checkpoint.BestParams...)
 		joint.bounds.ClampVector(resumeParams)
 		resumeCost := rend.Cost(resumeParams)
+
 		optimization, err = lifecycle.RunContext(ctx, joint.problem, opt.RunOptions{
 			Initial:     &opt.Candidate{Params: resumeParams, Cost: resumeCost},
 			ResumeCount: checkpoint.ResumeCount + 1,
@@ -261,10 +281,12 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	fmt.Printf("\n✓ Optimization completed in %s\n", elapsed)
 	fmt.Printf("  Previous cost: %f\n", checkpoint.BestCost)
 	fmt.Printf("  New cost: %f\n", bestCost)
+
 	improvement := 0.0
 	if checkpoint.BestCost > 0 {
 		improvement = (checkpoint.BestCost - bestCost) / checkpoint.BestCost * 100
 	}
+
 	if improvement > 0 {
 		fmt.Printf("  Improvement: %.2f%%\n", improvement)
 	} else if improvement < 0 {
@@ -279,13 +301,14 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	fmt.Printf("  Throughput: %.0f circles/sec\n", cps)
 
 	// Create output directory
-	if err := os.MkdirAll(resumeOutputDir, 0755); err != nil {
+	if err := os.MkdirAll(resumeOutputDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	// Render and save best image
 	bestImg := rend.Render(bestParams)
-	bestPath := filepath.Join(resumeOutputDir, fmt.Sprintf("%s_resumed.png", jobID))
+
+	bestPath := filepath.Join(resumeOutputDir, jobID+"_resumed.png")
 	if err := saveImage(bestImg, bestPath); err != nil {
 		return fmt.Errorf("failed to save output image: %w", err)
 	}
@@ -359,6 +382,7 @@ func newResumeJointProblem(rend renderer.Renderer, circles int) resumeJointProbl
 	}
 
 	lower, upper := rend.Bounds()
+
 	return resumeJointProblem{
 		problem: opt.Problem{
 			Eval: func(params []float64) float64 {
@@ -376,7 +400,7 @@ func newResumeJointProblem(rend renderer.Renderer, circles int) resumeJointProbl
 	}
 }
 
-// Helper to save image
+// Helper to save image.
 func saveImage(img image.Image, path string) error {
 	return writePNG(path, img)
 }

@@ -12,12 +12,14 @@ import (
 // restarts do not make completed work disappear from the UI and API.
 func (s *Server) restorePersistedJobs() {
 	restored := 0
+
 	for _, slug := range s.projectSlugsForRestore() {
 		projectStore, err := s.storeForSlug(slug)
 		if err != nil {
 			slog.Error("Unable to resolve project store for restore", "project", string(slug), "error", err)
 			continue
 		}
+
 		restored += s.restoreProjectJobs(slug, projectStore)
 	}
 
@@ -44,6 +46,7 @@ func (s *Server) restoreProjectJobs(slug app.Project, projectStore store.Store) 
 	if projectStore == nil {
 		return 0
 	}
+
 	checkpoints, err := projectStore.ListCheckpoints()
 	if err != nil {
 		slog.Warn("Unable to list persisted jobs", "project", string(slug), "error", err)
@@ -51,6 +54,7 @@ func (s *Server) restoreProjectJobs(slug app.Project, projectStore store.Store) 
 	}
 
 	restored := 0
+
 	for _, info := range checkpoints {
 		checkpoint, err := projectStore.LoadCheckpoint(info.JobID)
 		if err != nil {
@@ -60,10 +64,12 @@ func (s *Server) restoreProjectJobs(slug app.Project, projectStore store.Store) 
 
 		job := jobFromCheckpoint(checkpoint, slug)
 		if artifactStore, ok := projectStore.(store.ArtifactStore); ok {
-			if err := restoreJobTrace(job, artifactStore); err != nil && !errors.Is(err, store.ErrNotFound) {
+			err := restoreJobTrace(job, artifactStore)
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
 				slog.Warn("Unable to restore persisted job history", "project", string(slug), "job_id", info.JobID, "error", err)
 			}
 		}
+
 		if err := s.jobManager.restoreJob(job); err != nil {
 			// A duplicate ID is not an ordinary skip: the same job UUID exists
 			// under two projects on disk, so this project's copy is dropped from
@@ -72,27 +78,35 @@ func (s *Server) restoreProjectJobs(slug app.Project, projectStore store.Store) 
 			// with no way to tell which directory to look at.
 			if errors.Is(err, errDuplicateJobID) {
 				owner := app.Project("unknown")
+
 				var duplicate *duplicateJobError
 				if errors.As(err, &duplicate) {
 					owner = duplicate.owner
 				}
+
 				slog.Error("Cross-project job ID collision; this project's copy is not registered",
 					"job_id", info.JobID,
 					"owning_project", string(owner),
 					"skipped_project", string(slug),
 					"detail", "the same job ID exists under both projects; the alphabetically-first project wins and the skipped copy's artifacts remain on disk")
+
 				continue
 			}
+
 			slog.Warn("Unable to register persisted job", "project", string(slug), "job_id", info.JobID, "error", err)
+
 			continue
 		}
+
 		restored++
 	}
+
 	return restored
 }
 
 func jobFromCheckpoint(checkpoint *store.Checkpoint, project app.Project) *Job {
 	state := StateCancelled
+
 	switch checkpoint.Termination {
 	case "completed", "target_cost", "stagnation", "stage_convergence", "refill_limit":
 		state = StateCompleted
@@ -104,10 +118,12 @@ func jobFromCheckpoint(checkpoint *store.Checkpoint, project app.Project) *Job {
 
 	end := checkpoint.Timestamp
 	var stageIndex *int
+
 	if checkpoint.StageIndex != nil {
 		index := *checkpoint.StageIndex
 		stageIndex = &index
 	}
+
 	return &Job{
 		ID:               checkpoint.JobID,
 		ExtendedFrom:     checkpoint.ExtendedFrom,
@@ -138,9 +154,11 @@ func applyJobLineage(checkpoint *store.Checkpoint, job *Job) {
 	if checkpoint == nil || job == nil {
 		return
 	}
+
 	checkpoint.ExtendedFrom = job.ExtendedFrom
 	checkpoint.PolishedFrom = job.PolishedFrom
 	checkpoint.ScheduleID = job.ScheduleID
+
 	checkpoint.StageIndex = nil
 	if job.ScheduleID != "" && job.StageIndex != nil {
 		index := *job.StageIndex
@@ -154,7 +172,8 @@ func restoreJobTrace(job *Job, artifactStore store.ArtifactStore) error {
 		return err
 	}
 	defer func() {
-		if err := reader.Close(); err != nil {
+		err := reader.Close()
+		if err != nil {
 			slog.Warn("Unable to close restored job history", "job_id", job.ID, "error", err)
 		}
 	}()
@@ -163,6 +182,7 @@ func restoreJobTrace(job *Job, artifactStore store.ArtifactStore) error {
 	if err != nil {
 		return err
 	}
+
 	if len(entries) == 0 {
 		return nil
 	}
@@ -174,16 +194,20 @@ func restoreJobTrace(job *Job, artifactStore store.ArtifactStore) error {
 			PSNRInfinite: entry.PSNRInfinite, SSIM: cloneFloat(entry.SSIM), CPS: entry.CPS, Timestamp: entry.Timestamp,
 		}
 		job.PSNR = cloneFloat(entry.PSNR)
+
 		job.PSNRInfinite = entry.PSNRInfinite
 		if entry.SSIM != nil {
 			job.SSIM = cloneFloat(entry.SSIM)
 		}
 	}
+
 	if !entries[0].Timestamp.IsZero() {
 		job.StartTime = entries[0].Timestamp
 	}
+
 	if last := entries[len(entries)-1].Timestamp; !last.IsZero() {
 		job.EndTime = &last
 	}
+
 	return nil
 }

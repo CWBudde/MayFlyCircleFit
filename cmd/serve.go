@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -58,17 +59,20 @@ func runServer(cmd *cobra.Command, args []string) error {
 	// Flag values the user typed are invocation errors, so they exit with
 	// status 2 rather than the status reserved for work that failed.
 	if serveMaxJobs < 1 || serveMaxJobs > 16 {
-		return NewUsageError(fmt.Errorf("max-jobs must be between 1 and 16"))
+		return NewUsageError(errors.New("max-jobs must be between 1 and 16"))
 	}
+
 	if serveQueueSize < 1 || serveQueueSize > 100 {
-		return NewUsageError(fmt.Errorf("queue-size must be between 1 and 100"))
+		return NewUsageError(errors.New("queue-size must be between 1 and 100"))
 	}
+
 	backend, err := parseBackendFlag(serveBackend)
 	if err != nil {
 		return NewUsageError(fmt.Errorf("invalid backend: %w", err))
 	}
+
 	if servePprof && serverAddr != "localhost" && serverAddr != "127.0.0.1" && serverAddr != "::1" {
-		return NewUsageError(fmt.Errorf("pprof requires a trusted loopback bind address"))
+		return NewUsageError(errors.New("pprof requires a trusted loopback bind address"))
 	}
 
 	// Start CPU profiling if requested
@@ -81,14 +85,17 @@ func runServer(cmd *cobra.Command, args []string) error {
 		// close runs. The profile is a diagnostic, so a failed close is
 		// logged rather than promoted over the command's own result.
 		defer func() {
-			if err := f.Close(); err != nil {
+			err := f.Close()
+			if err != nil {
 				slog.Error("Failed to close CPU profile", "output", serveCpuProfile, "error", err)
 			}
 		}()
+
 		if err := pprof.StartCPUProfile(f); err != nil {
 			return fmt.Errorf("failed to start CPU profile: %w", err)
 		}
 		defer pprof.StopCPUProfile()
+
 		slog.Info("CPU profiling enabled", "output", serveCpuProfile)
 	}
 
@@ -105,10 +112,12 @@ func runServer(cmd *cobra.Command, args []string) error {
 	fmt.Println("  GET    /api/v1/jobs/:id/best.png  - Get current best image")
 	fmt.Println("  GET    /api/v1/jobs/:id/diff.png  - Get difference image")
 	fmt.Println("  POST   /api/v1/jobs/:id/extend    - Append circles from a completed checkpoint")
+
 	if servePprof {
 		fmt.Println("\nProfiling endpoints enabled for this trusted-local server:")
 		fmt.Printf("  GET    http://%s/debug/pprof/        - pprof index\n", addr)
 	}
+
 	fmt.Println("\nPress Ctrl+C to shutdown")
 
 	// Create checkpoint store
@@ -152,7 +161,8 @@ func runServer(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		if err := srv.Shutdown(ctx); err != nil {
+		err := srv.Shutdown(ctx)
+		if err != nil {
 			return fmt.Errorf("shutdown error: %w", err)
 		}
 
@@ -162,7 +172,9 @@ func runServer(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return fmt.Errorf("failed to create memory profile: %w", err)
 			}
+
 			runtime.GC() // Run GC to get accurate heap stats
+
 			if err := pprof.WriteHeapProfile(f); err != nil {
 				_ = f.Close()
 				return fmt.Errorf("failed to write memory profile: %w", err)
@@ -173,6 +185,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 			if err := f.Close(); err != nil {
 				return fmt.Errorf("failed to close memory profile: %w", err)
 			}
+
 			slog.Info("Memory profile written", "output", serveMemProfile)
 		}
 

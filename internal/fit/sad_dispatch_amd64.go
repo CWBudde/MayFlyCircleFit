@@ -19,6 +19,7 @@ func installSADKernel(tier SIMDTier) {
 		activeSADKernel = TierScalar
 		fastSAD = fastSAD_Scalar
 	}
+
 	slog.Debug("SAD kernel installed", "tier", tier, "kernel", activeSADKernel)
 }
 
@@ -28,5 +29,6 @@ func fastSAD_AVX2(a, b []uint8, stride, width, height int) float64 {
 	if len(a) == 0 || len(b) == 0 {
 		return 0
 	}
+
 	return sadAVX2(&a[0], &b[0], stride, width, height)
 }

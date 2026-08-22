@@ -39,6 +39,7 @@ type synthesizedStage struct {
 
 type checkpointListCountingStore struct {
 	store.Store
+
 	mu    sync.Mutex
 	lists int
 }
@@ -47,12 +48,14 @@ func (counting *checkpointListCountingStore) ListCheckpoints() ([]store.Checkpoi
 	counting.mu.Lock()
 	counting.lists++
 	counting.mu.Unlock()
+
 	return counting.Store.ListCheckpoints()
 }
 
 func (counting *checkpointListCountingStore) listCount() int {
 	counting.mu.Lock()
 	defer counting.mu.Unlock()
+
 	return counting.lists
 }
 
@@ -61,7 +64,9 @@ func (counting *checkpointListCountingStore) listCount() int {
 // driven by hand through the extend and polish endpoints.
 func synthesizeChain(t *testing.T, persistence store.Store, imagePath string, stages []synthesizedStage) {
 	t.Helper()
+
 	timestamp := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+
 	for i, stage := range stages {
 		config := store.JobConfig{
 			RefPath: imagePath,
@@ -75,6 +80,7 @@ func synthesizeChain(t *testing.T, persistence store.Store, imagePath string, st
 		checkpoint.ActualCircles = stage.circles
 		checkpoint.Termination = "completed"
 		checkpoint.Timestamp = timestamp.Add(time.Duration(i) * time.Hour)
+
 		if stage.parent != "" {
 			if stage.polished {
 				checkpoint.PolishedFrom = stage.parent
@@ -82,7 +88,9 @@ func synthesizeChain(t *testing.T, persistence store.Store, imagePath string, st
 				checkpoint.ExtendedFrom = stage.parent
 			}
 		}
-		if err := persistence.SaveCheckpoint(stage.jobID, checkpoint); err != nil {
+
+		err := persistence.SaveCheckpoint(stage.jobID, checkpoint)
+		if err != nil {
 			t.Fatalf("save checkpoint %s: %v", stage.jobID, err)
 		}
 	}
@@ -107,9 +115,11 @@ func TestImportedChainRendersAsOneCampaign(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	fixture.server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/chains/"+chainSecondJob, nil))
+
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("chain page status = %d, body %s", recorder.Code, recorder.Body.String())
 	}
+
 	body := recorder.Body.String()
 	for _, marker := range []string{
 		"Imported chain",
@@ -137,21 +147,28 @@ func TestChainAPIReturnsTheWholeLineage(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	fixture.server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/chains/"+chainSecondJob, nil))
+
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("chain API status = %d, body %s", recorder.Code, recorder.Body.String())
 	}
+
 	var detail chainDetailWire
-	if err := json.Unmarshal(recorder.Body.Bytes(), &detail); err != nil {
+	err := json.Unmarshal(recorder.Body.Bytes(), &detail)
+	if err != nil {
 		t.Fatalf("decode chain: %v", err)
 	}
+
 	if detail.RootJobID != chainBaseJob || detail.LeafJobID != chainSecondJob {
 		t.Fatalf("chain endpoints = %q..%q, want %q..%q", detail.RootJobID, detail.LeafJobID, chainBaseJob, chainSecondJob)
 	}
+
 	wantKinds := []string{"base", "extend", "polish", "extend"}
 	wantCircles := []int{8, 16, 16, 24}
+
 	if len(detail.Stages) != len(wantKinds) {
 		t.Fatalf("chain stages = %d, want %d", len(detail.Stages), len(wantKinds))
 	}
+
 	for i, stage := range detail.Stages {
 		if stage.Kind != wantKinds[i] || stage.Circles != wantCircles[i] {
 			t.Errorf("stage %d = (%s, %d circles), want (%s, %d circles)", i, stage.Kind, stage.Circles, wantKinds[i], wantCircles[i])
@@ -161,6 +178,7 @@ func TestChainAPIReturnsTheWholeLineage(t *testing.T) {
 
 func TestChainAPIRejectsUnknownAndMalformedJobs(t *testing.T) {
 	fixture := newScheduleFixture(t, 1)
+
 	tests := []struct {
 		name string
 		path string
@@ -173,6 +191,7 @@ func TestChainAPIRejectsUnknownAndMalformedJobs(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			fixture.server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, test.path, nil))
+
 			if recorder.Code != test.want {
 				t.Fatalf("status = %d, want %d", recorder.Code, test.want)
 			}
@@ -191,10 +210,12 @@ func TestChainDiscoveryIgnoresSingleJobsAndSchedules(t *testing.T) {
 		{JobID: chainOrphanJob, ActualCircles: 4, BestCost: 900, Timestamp: timestamp},
 		{JobID: chainPolishJob, PolishedFrom: chainExtendJob, ScheduleID: chainScheduleID, ActualCircles: 16, BestCost: 600, Timestamp: timestamp.Add(2 * time.Hour)},
 	}
+
 	chains := discoverChains(infos)
 	if len(chains) != 1 {
 		t.Fatalf("discovered %d chains, want 1: %+v", len(chains), chains)
 	}
+
 	chain := chains[0]
 	if chain.LeafJobID != chainExtendJob || chain.RootJobID != chainBaseJob || chain.Stages != 2 {
 		t.Fatalf("chain = %+v, want the two-stage base..extend chain", chain)
@@ -211,6 +232,7 @@ func TestChainDiscoveryStopsOnACycle(t *testing.T) {
 	if chains := discoverChains(infos); len(chains) != 0 {
 		t.Fatalf("discovered %d chains from a cycle, want 0", len(chains))
 	}
+
 	fixture := newScheduleFixture(t, 1)
 	synthesizeChain(t, fixture.server.store, fixture.imagePath, []synthesizedStage{
 		{jobID: chainBaseJob, circles: 8, cost: 812.5},
@@ -218,19 +240,24 @@ func TestChainDiscoveryStopsOnACycle(t *testing.T) {
 	// A checkpoint that names itself is refused by validation, so the cycle a
 	// walk can actually meet is a two-node one written by hand.
 	persistence := fixture.server.store
+
 	checkpoint, err := persistence.LoadCheckpoint(chainBaseJob)
 	if err != nil {
 		t.Fatalf("load checkpoint: %v", err)
 	}
+
 	checkpoint.ExtendedFrom = chainExtendJob
 	if err := persistence.SaveCheckpoint(chainBaseJob, checkpoint); err != nil {
 		t.Fatalf("save checkpoint: %v", err)
 	}
+
 	checkpoint.JobID = chainExtendJob
+
 	checkpoint.ExtendedFrom = chainBaseJob
 	if err := persistence.SaveCheckpoint(chainExtendJob, checkpoint); err != nil {
 		t.Fatalf("save checkpoint: %v", err)
 	}
+
 	if _, err := chainCheckpoints(persistence, chainExtendJob); err == nil {
 		t.Fatal("chainCheckpoints() accepted a cyclic lineage")
 	}
@@ -267,37 +294,47 @@ func TestCampaignViewOfAScheduleShowsEveryStageState(t *testing.T) {
 			Circles: 16, JobID: chainExtendJob, ParentJobID: chainBaseJob, StartedAt: &started,
 		},
 	}
+
 	campaign := campaignFromSchedule(record, stages)
 	if campaign.Name != "synthesized campaign" || !campaign.HasSeed {
 		t.Fatalf("campaign header = %+v, want the document name and seed", campaign)
 	}
+
 	if len(campaign.Stages) != 3 {
 		t.Fatalf("campaign stages = %d, want 3", len(campaign.Stages))
 	}
+
 	base := campaign.Stages[0]
 	if !base.HasBestCost || base.BestCost != 812.5 {
 		t.Errorf("base cost = (%v, %f), want the recorded 812.5", base.HasBestCost, base.BestCost)
 	}
+
 	if !base.HasPSNR {
 		t.Error("base stage has no PSNR, but a cost is all PSNR needs")
 	}
+
 	if !base.HasElapsed || base.ElapsedSec != 90 {
 		t.Errorf("base elapsed = (%v, %f), want 90s", base.HasElapsed, base.ElapsedSec)
 	}
+
 	if base.AcceptedSweeps != nil {
 		t.Error("base stage claims an accepted-sweep count, which nothing persists")
 	}
+
 	skipped := campaign.Stages[1]
 	if skipped.State != string(store.ScheduleStateSkipped) || skipped.Note == "" {
 		t.Errorf("skipped stage = %+v, want the policy reason carried through", skipped)
 	}
+
 	if skipped.HasBestCost {
 		t.Error("skipped stage reports a cost, but it never ran")
 	}
+
 	running := campaign.Stages[2]
 	if running.HasBestCost || running.HasElapsed {
 		t.Errorf("running stage = %+v, want no cost and no elapsed until it finishes", running)
 	}
+
 	if running.ElapsedAbsent == "" {
 		t.Error("running stage does not say why its elapsed column is empty")
 	}
@@ -309,9 +346,11 @@ func TestCampaignListPageShowsSchedulesAndChains(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	fixture.server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/schedules", nil))
+
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("campaign list status = %d", recorder.Code)
 	}
+
 	body := recorder.Body.String()
 	for _, marker := range []string{
 		"Imported chains",
@@ -338,6 +377,7 @@ func TestChainStageStateMatchesRestore(t *testing.T) {
 	for _, termination := range terminations {
 		t.Run("termination="+termination, func(t *testing.T) {
 			checkpoint := &store.Checkpoint{JobID: chainBaseJob, Termination: termination}
+
 			want := string(jobFromCheckpoint(checkpoint, app.DefaultProject).State)
 			if got := chainStageState(termination); got != want {
 				t.Fatalf("chainStageState(%q) = %q, want %q", termination, got, want)
@@ -350,6 +390,7 @@ func TestChainStageStateMatchesRestore(t *testing.T) {
 // campaign detail page telling the same story about how a chain ended.
 func TestChainListingReportsTheLeafTermination(t *testing.T) {
 	timestamp := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+
 	tests := []struct {
 		termination string
 		want        string
@@ -369,10 +410,12 @@ func TestChainListingReportsTheLeafTermination(t *testing.T) {
 					ActualCircles: 16, Timestamp: timestamp.Add(time.Hour),
 				},
 			}
+
 			summaries := chainCampaignSummaries(discoverChains(infos))
 			if len(summaries) != 1 {
 				t.Fatalf("summarized %d chains, want 1", len(summaries))
 			}
+
 			if summaries[0].State != test.want {
 				t.Fatalf("summary state = %q, want %q", summaries[0].State, test.want)
 			}
@@ -395,11 +438,13 @@ func TestCampaignSeedFallsBackToARecordedStage(t *testing.T) {
 	if campaign := campaignFromSchedule(record, nil); campaign.HasSeed {
 		t.Fatalf("an unstarted campaign must not claim a seed, got %d", campaign.CampaignSeed)
 	}
+
 	stages := []store.ScheduleStageRecord{{
 		Index: 0, Kind: app.ScheduleStageBase, State: store.ScheduleStateCompleted,
 		Circles: 8, JobID: chainBaseJob,
 		Config: store.JobConfig{RefPath: "assets/ref.png", EffectiveSeed: 987654321},
 	}}
+
 	campaign := campaignFromSchedule(record, stages)
 	if !campaign.HasSeed || campaign.CampaignSeed != 987654321 {
 		t.Fatalf("campaign seed = %d (has=%v), want the seed the stage recorded",
@@ -413,12 +458,15 @@ func TestCampaignSeedFallsBackToARecordedStage(t *testing.T) {
 // to look in the same places.
 func TestChainDiscoveryCoversEveryProject(t *testing.T) {
 	root := t.TempDir()
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	imagePath := filepath.Join(root, "reference.png")
 	createSimpleTestImage(t, imagePath)
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{
 		DataRoot:   root,
 		InputRoots: rootList(root),
@@ -428,6 +476,7 @@ func TestChainDiscoveryCoversEveryProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
+
 	synthesizeChain(t, persistence, imagePath, []synthesizedStage{
 		{jobID: chainBaseJob, circles: 8, cost: 812.5},
 		{jobID: chainExtendJob, parent: chainBaseJob, circles: 16, cost: 640.25},
@@ -441,9 +490,11 @@ func TestChainDiscoveryCoversEveryProject(t *testing.T) {
 	for _, chain := range server.discoverAllChains() {
 		found[chain.LeafJobID] = true
 	}
+
 	if !found[chainExtendJob] {
 		t.Error("the default project's chain is missing from the campaign listing")
 	}
+
 	if !found[chainSecondJob] {
 		t.Error("a named project's chain is missing from the campaign listing")
 	}
@@ -451,10 +502,12 @@ func TestChainDiscoveryCoversEveryProject(t *testing.T) {
 
 func TestChainListingsShareInvalidationBasedDiscoveryCache(t *testing.T) {
 	root := t.TempDir()
+
 	fsStore, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	synthesizeChain(t, fsStore, "reference.png", []synthesizedStage{{jobID: chainBaseJob, circles: 8, cost: 10}})
 	counting := &checkpointListCountingStore{Store: fsStore}
 	server := NewServer("localhost:0", counting)
@@ -463,10 +516,12 @@ func TestChainListingsShareInvalidationBasedDiscoveryCache(t *testing.T) {
 	for _, path := range []string{"/api/v1/dashboard", "/api/v1/chains", "/api/v1/dashboard"} {
 		response := httptest.NewRecorder()
 		server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+
 		if response.Code != http.StatusOK {
 			t.Fatalf("GET %s status = %d, body=%q", path, response.Code, response.Body.String())
 		}
 	}
+
 	if got := counting.listCount(); got != baseline+1 {
 		t.Fatalf("shared listings performed %d checkpoint scans after baseline %d, want one", got, baseline)
 	}
@@ -475,16 +530,21 @@ func TestChainListingsShareInvalidationBasedDiscoveryCache(t *testing.T) {
 		RefPath: "reference.png", Mode: app.ModeBatch, Circles: 1, Iters: 1, PopSize: 1,
 	})
 	server.cachedAllChains()
+
 	if got := counting.listCount(); got != baseline+2 {
 		t.Fatalf("job creation did not invalidate chain cache: scans=%d", got)
 	}
+
 	if err := server.jobManager.StartJob(job.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := server.jobManager.CompleteJob(job.ID, 1, 1, make([]float64, 7), 1, 2, "completed"); err != nil {
 		t.Fatal(err)
 	}
+
 	server.cachedAllChains()
+
 	if got := counting.listCount(); got != baseline+3 {
 		t.Fatalf("job completion did not invalidate chain cache: scans=%d", got)
 	}
@@ -492,12 +552,15 @@ func TestChainListingsShareInvalidationBasedDiscoveryCache(t *testing.T) {
 
 func TestCampaignViewAPIUsesSourceNeutralReadModel(t *testing.T) {
 	root := t.TempDir()
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	imagePath := filepath.Join(root, "reference.png")
 	createSimpleTestImage(t, imagePath)
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{
 		DataRoot: root, InputRoots: rootList(root),
 	})
@@ -506,26 +569,32 @@ func TestCampaignViewAPIUsesSourceNeutralReadModel(t *testing.T) {
 
 	listResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(listResponse, httptest.NewRequest(http.MethodGet, "/api/v1/campaigns", nil))
+
 	if listResponse.Code != http.StatusOK {
 		t.Fatalf("campaign list status = %d, body=%q", listResponse.Code, listResponse.Body.String())
 	}
+
 	var list campaignViewList
 	if err := json.NewDecoder(listResponse.Body).Decode(&list); err != nil {
 		t.Fatalf("decode campaign list: %v", err)
 	}
+
 	if len(list.Schedules) != 0 || len(list.Chains) != 1 || list.Chains[0].Source != "chain" {
 		t.Fatalf("campaign list = %+v", list)
 	}
 
 	detailResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(detailResponse, httptest.NewRequest(http.MethodGet, "/api/v1/campaigns/chain/"+chainSecondJob, nil))
+
 	if detailResponse.Code != http.StatusOK {
 		t.Fatalf("campaign detail status = %d, body=%q", detailResponse.Code, detailResponse.Body.String())
 	}
+
 	var campaign ui.Campaign
 	if err := json.NewDecoder(detailResponse.Body).Decode(&campaign); err != nil {
 		t.Fatalf("decode campaign detail: %v", err)
 	}
+
 	if campaign.ID != chainSecondJob || campaign.Source != "chain" || len(campaign.Stages) != len(defaultSynthesizedChain()) {
 		t.Fatalf("campaign detail = %+v", campaign)
 	}
@@ -538,7 +607,9 @@ func inOrder(text string, markers ...string) bool {
 		if index < 0 {
 			return false
 		}
+
 		cursor += index + len(marker)
 	}
+
 	return true
 }

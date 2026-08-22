@@ -118,7 +118,7 @@ type LifecycleOptimizer interface {
 	RunContext(context.Context, Problem, RunOptions) (Result, error)
 }
 
-// Optimizer defines an optimization algorithm interface
+// Optimizer defines an optimization algorithm interface.
 type Optimizer interface {
 	// Run executes the optimization
 	// eval: objective function to minimize

@@ -27,9 +27,11 @@ func TestJobReportPageRendersSelfContainedContent(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	if err := JobReportPage(report).Render(context.Background(), &output); err != nil {
+	err := JobReportPage(report).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render report: %v", err)
 	}
+
 	body := output.String()
 	for _, marker := range []string{
 		"<!doctype html>", "MayFlyCircleFit Report", report.ID, "assets/reference.png",
@@ -45,9 +47,11 @@ func TestJobReportPageRendersSelfContainedContent(t *testing.T) {
 			t.Errorf("rendered report missing %q", marker)
 		}
 	}
+
 	if strings.Contains(body, `<script`) || strings.Contains(body, `<link`) {
 		t.Error("rendered report contains a script or external stylesheet")
 	}
+
 	if got := strings.Count(body, `<time datetime="2026-08-14T01:02:04Z">`); got != 2 {
 		t.Errorf("generation timestamp count = %d, want header and footer", got)
 	}
@@ -59,10 +63,13 @@ func TestJobReportPageOmitsMissingEndTime(t *testing.T) {
 		ReferenceDataURI: "data:image/png;base64,AA==", BestDataURI: "data:image/png;base64,AA==",
 		DifferenceDataURI: "data:image/png;base64,AA==",
 	}
+
 	var output bytes.Buffer
-	if err := JobReportPage(report).Render(context.Background(), &output); err != nil {
+	err := JobReportPage(report).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	if strings.Contains(output.String(), `<div class="label">Ended</div>`) {
 		t.Error("report rendered an end time for an active job")
 	}
@@ -71,6 +78,7 @@ func TestJobReportPageOmitsMissingEndTime(t *testing.T) {
 func TestJobReportComponentsHonorCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
+
 	components := []struct {
 		name      string
 		component templ.Component
@@ -82,7 +90,8 @@ func TestJobReportComponentsHonorCancelledContext(t *testing.T) {
 	}
 	for _, test := range components {
 		t.Run(test.name, func(t *testing.T) {
-			if err := test.component.Render(ctx, &bytes.Buffer{}); !errors.Is(err, context.Canceled) {
+			err := test.component.Render(ctx, &bytes.Buffer{})
+			if !errors.Is(err, context.Canceled) {
 				t.Fatalf("render error = %v, want context cancellation", err)
 			}
 		})

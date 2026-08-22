@@ -14,10 +14,12 @@ import (
 func TestIncrementalCostBoundaryParity(t *testing.T) {
 	const width, height = 41, 37
 	reference := randomNRGBA(width, height, 10_016)
+
 	opaque := randomNRGBA(width, height, 10_017)
 	for offset := 3; offset < len(opaque.Pix); offset += 4 {
 		opaque.Pix[offset] = 255
 	}
+
 	translucent := randomNRGBA(width, height, 10_018)
 	transparent := image.NewNRGBA(image.Rect(0, 0, width, height))
 
@@ -77,16 +79,19 @@ func TestIncrementalCostPreservesCandidateOrdering(t *testing.T) {
 		t.Run(fmtInt(circles)+"_circles", func(t *testing.T) {
 			full := NewCPURendererWithCanvas(reference, canvas, circles)
 			automatic := NewCPURendererWithCanvas(reference, canvas, circles)
+
 			full.SetThreads(1)
 			automatic.SetThreads(1)
 			automatic.incrementalCostMode = incrementalCostAuto
 
 			fullCosts := make([]float64, 96)
 			automaticCosts := make([]float64, len(fullCosts))
+
 			lower, upper := full.Bounds()
 			for candidate := range fullCosts {
 				params := incrementalValidationCandidate(lower, upper, candidate)
 				fullCosts[candidate] = full.Cost(params)
+
 				automaticCosts[candidate] = automatic.Cost(params)
 				if automaticCosts[candidate] != fullCosts[candidate] {
 					t.Fatalf("candidate %d: automatic cost %.17g, full cost %.17g", candidate, automaticCosts[candidate], fullCosts[candidate])
@@ -94,6 +99,7 @@ func TestIncrementalCostPreservesCandidateOrdering(t *testing.T) {
 			}
 
 			fullOrder := rankedCostIndices(fullCosts)
+
 			automaticOrder := rankedCostIndices(automaticCosts)
 			if !slices.Equal(automaticOrder, fullOrder) {
 				t.Fatalf("candidate ordering changed:\nautomatic %v\nfull      %v", automaticOrder, fullOrder)
@@ -135,10 +141,12 @@ func TestIncrementalPipelineOutcomesMatchFullImage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			got, err := test.run(incremental, incrementalValidationOptimizer{evaluations: 12})
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			assertOptimizationResultsEqual(t, got, want)
 		})
 	}
@@ -172,14 +180,17 @@ func TestIncrementalMayflyOutcomesMatchFullImage(t *testing.T) {
 			incremental.stagedIncremental = true
 
 			seed := int64(10_160 + index)
+
 			want, err := test.run(full, opt.NewMayfly(2, 10, seed))
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			got, err := test.run(incremental, opt.NewMayfly(2, 10, seed))
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			assertOptimizationResultsEqual(t, got, want)
 		})
 	}
@@ -204,11 +215,14 @@ func TestIncrementalCostSteadyStateAllocations(t *testing.T) {
 
 func assertIncrementalCostParity(t *testing.T, reference, canvas *image.NRGBA, params []float64, threads int) {
 	t.Helper()
+
 	circles := len(params) / paramsPerCircle
 	full := NewCPURendererWithCanvas(reference, canvas, circles)
 	incremental := NewCPURendererWithCanvas(reference, canvas, circles)
+
 	full.SetThreads(threads)
 	incremental.SetThreads(threads)
+
 	incremental.incrementalCostMode = incrementalCostForce
 	if got, want := incremental.Cost(params), full.Cost(params); got != want {
 		t.Fatalf("incremental cost = %.17g, full cost = %.17g", got, want)
@@ -220,6 +234,7 @@ func rankedCostIndices(costs []float64) []int {
 	for i := range indices {
 		indices[i] = i
 	}
+
 	slices.SortStableFunc(indices, func(a, b int) int {
 		switch {
 		case costs[a] < costs[b]:
@@ -230,6 +245,7 @@ func rankedCostIndices(costs []float64) []int {
 			return 0
 		}
 	})
+
 	return indices
 }
 
@@ -240,20 +256,25 @@ type incrementalValidationOptimizer struct {
 func (o incrementalValidationOptimizer) Run(eval func([]float64) float64, lower, upper []float64, _ int) ([]float64, float64) {
 	bestCost := math.Inf(1)
 	var best []float64
+
 	for candidate := range o.evaluations {
 		params := incrementalValidationCandidate(lower, upper, candidate)
+
 		cost := eval(params)
 		if cost < bestCost {
 			bestCost = cost
+
 			best = append(best[:0], params...)
 		}
 	}
+
 	return best, bestCost
 }
 
 func incrementalValidationCandidate(lower, upper []float64, candidate int) []float64 {
 	params := make([]float64, len(lower))
 	radiusFractions := [...]float64{0.04, 0.08, 0.12, 0.18, 0.26, 0.34}
+
 	for offset := 0; offset < len(params); offset += paramsPerCircle {
 		circle := offset / paramsPerCircle
 		xFraction := float64(1+(candidate*7+circle*3)%17) / 18
@@ -267,20 +288,24 @@ func incrementalValidationCandidate(lower, upper []float64, candidate int) []flo
 		params[offset+5] = float64((candidate*7+circle*2)%11) / 10
 		params[offset+6] = float64((candidate+circle)%5) / 4
 	}
+
 	return params
 }
 
 func assertOptimizationResultsEqual(t *testing.T, got, want *OptimizationResult) {
 	t.Helper()
+
 	if got.BestCost != want.BestCost || got.InitialCost != want.InitialCost ||
 		got.Iterations != want.Iterations || got.Evaluations != want.Evaluations ||
 		got.Stages != want.Stages || got.OptimizedCircles != want.OptimizedCircles ||
 		got.Termination != want.Termination || got.StagesStoppedEarly != want.StagesStoppedEarly {
 		t.Fatalf("optimization metadata changed:\nincremental %+v\nfull        %+v", got, want)
 	}
+
 	if !slices.Equal(got.BestParams, want.BestParams) {
 		t.Fatal("best candidate parameters changed")
 	}
+
 	if !bytes.Equal(got.BestImage.Pix, want.BestImage.Pix) {
 		t.Fatal("best rendered image changed")
 	}
@@ -291,11 +316,13 @@ func fmtInt(value int) string {
 		return "0"
 	}
 	var digits [20]byte
+
 	i := len(digits)
 	for value > 0 {
 		i--
 		digits[i] = byte('0' + value%10)
 		value /= 10
 	}
+
 	return string(digits[i:])
 }

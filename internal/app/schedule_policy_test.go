@@ -1,7 +1,7 @@
 package app
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -35,6 +35,7 @@ const referenceCampaignSteps = `[
 func realizeSchedule(plan []ScheduleStage, cost float64, gain func(ScheduleStage) float64) ([]ScheduleStage, []bool) {
 	outcomes := make([]ScheduleStageOutcome, 0, len(plan))
 	run := make([]ScheduleStage, 0, len(plan))
+
 	ran := make([]bool, len(plan))
 	for index, stage := range plan {
 		verdict := EvaluateScheduleStage(plan, index, outcomes)
@@ -42,8 +43,10 @@ func realizeSchedule(plan []ScheduleStage, cost float64, gain func(ScheduleStage
 			outcomes = append(outcomes, ScheduleStageOutcome{
 				Index: index, Kind: stage.Kind, State: ScheduleOutcomeSkipped,
 			})
+
 			continue
 		}
+
 		cost -= gain(stage)
 		outcomes = append(outcomes, ScheduleStageOutcome{
 			Index: index, Kind: stage.Kind, State: ScheduleOutcomeCompleted,
@@ -52,25 +55,29 @@ func realizeSchedule(plan []ScheduleStage, cost float64, gain func(ScheduleStage
 		run = append(run, stage)
 		ran[index] = true
 	}
+
 	return run, ran
 }
 
 // polishPoints lists the circle counts at which a polish actually ran.
 func polishPoints(stages []ScheduleStage) []int {
 	points := []int{}
+
 	for _, stage := range stages {
 		if stage.Kind == ScheduleStagePolish {
 			points = append(points, stage.Circles)
 		}
 	}
+
 	return points
 }
 
 func formatInts(values []int) string {
 	parts := make([]string, len(values))
 	for i, value := range values {
-		parts[i] = fmt.Sprint(value)
+		parts[i] = strconv.Itoa(value)
 	}
+
 	return strings.Join(parts, ",")
 }
 
@@ -80,6 +87,7 @@ func formatInts(values []int) string {
 // stated exactly.
 func TestReferenceCampaignPolicyRealizesTheExactStageSequence(t *testing.T) {
 	doc := documentWithSteps(t, referenceCampaignSteps)
+
 	plan, err := doc.Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
@@ -132,8 +140,10 @@ func TestReferenceCampaignPolicyRealizesTheExactStageSequence(t *testing.T) {
 					// be large enough that a polish is judged against it.
 					return 10
 				}
+
 				gain := testCase.polishGain[polishes]
 				polishes++
+
 				return gain
 			})
 
@@ -147,11 +157,13 @@ func TestReferenceCampaignPolicyRealizesTheExactStageSequence(t *testing.T) {
 			if len(realized) != wantStages {
 				t.Fatalf("realized %d stages, want %d", len(realized), wantStages)
 			}
+
 			for index, stage := range plan {
 				if stage.Kind != ScheduleStagePolish && !ran[index] {
 					t.Fatalf("stage %d (%s at %d circles) was skipped", index, stage.Kind, stage.Circles)
 				}
 			}
+
 			if last := realized[len(realized)-1]; last.Circles != 512 || last.Kind != ScheduleStageExtend {
 				t.Fatalf("final stage = %s at %d circles, want extend at 512", last.Kind, last.Circles)
 			}
@@ -168,10 +180,12 @@ func TestScheduleCirclesConditionGatesAStage(t *testing.T) {
     {"type": "extend", "additionalCircles": 8},
     {"type": "polish", "when": {"circles": [16]}}
   ]`)
+
 	plan, err := doc.Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	realized, _ := realizeSchedule(plan, 100, func(ScheduleStage) float64 { return 1 })
 
 	// Planned: base 8, +8, +8, polish at 24, +8, polish at 32. Only the listed
@@ -179,6 +193,7 @@ func TestScheduleCirclesConditionGatesAStage(t *testing.T) {
 	if points := polishPoints(realized); len(points) != 0 {
 		t.Fatalf("polishes ran at %v, want none", points)
 	}
+
 	if len(realized) != 4 {
 		t.Fatalf("realized %d stages, want 4", len(realized))
 	}
@@ -187,6 +202,7 @@ func TestScheduleCirclesConditionGatesAStage(t *testing.T) {
 	if verdict.Run {
 		t.Fatalf("stage 3 verdict = run, want skipped")
 	}
+
 	if !strings.Contains(verdict.Reason, "24") {
 		t.Fatalf("skip reason %q does not name the stage's circle count", verdict.Reason)
 	}
@@ -328,6 +344,7 @@ func TestEvaluateScheduleStageIsPureOverTheOutcomes(t *testing.T) {
 			if verdict.Run != testCase.wantRun {
 				t.Fatalf("Run = %v (%q), want %v", verdict.Run, verdict.Reason, testCase.wantRun)
 			}
+
 			if !verdict.Run && verdict.Reason == "" {
 				t.Fatalf("a declined stage must say why")
 			}
@@ -389,10 +406,12 @@ func TestParseScheduleRejectsMalformedConditions(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			source := strings.Replace(baseDocument, `"steps": []`, `"steps": `+test.steps, 1)
+
 			_, err := ParseSchedule([]byte(source))
 			if err == nil {
 				t.Fatalf("ParseSchedule() accepted %s", test.steps)
 			}
+
 			if !strings.Contains(err.Error(), test.wantErr) {
 				t.Fatalf("error %q does not mention %q", err, test.wantErr)
 			}

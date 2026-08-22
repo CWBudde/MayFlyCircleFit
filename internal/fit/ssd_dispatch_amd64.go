@@ -23,6 +23,7 @@ func installSSDKernel(tier SIMDTier) {
 		activeSSDKernel = TierScalar
 		fastSSD = fastSSD_Scalar
 	}
+
 	slog.Debug("SSD kernel installed", "tier", tier, "kernel", activeSSDKernel)
 }
 
@@ -32,6 +33,7 @@ func fastSSD_AVX2(a, b []uint8, stride, width, height int) float64 {
 	if len(a) == 0 || len(b) == 0 {
 		return 0
 	}
+
 	return ssdAVX2(&a[0], &b[0], stride, width, height)
 }
 
@@ -46,8 +48,10 @@ func fastSSD_SSE2(a, b []uint8, stride, width, height int) float64 {
 	if len(a) == 0 || len(b) == 0 {
 		return 0
 	}
+
 	if width > ssdSSE2MaxWidth {
 		return fastSSD_Scalar(a, b, stride, width, height)
 	}
+
 	return ssdSSE2(&a[0], &b[0], stride, width, height)
 }

@@ -1,7 +1,7 @@
 package fit
 
 import (
-	"fmt"
+	"errors"
 	"image"
 	"math"
 )
@@ -20,9 +20,11 @@ func PSNR(mse float64) float64 {
 	if math.IsNaN(mse) || math.IsInf(mse, 0) || mse < 0 {
 		return math.NaN()
 	}
+
 	if mse == 0 {
 		return math.Inf(1)
 	}
+
 	return 20 * math.Log10(255/math.Sqrt(mse))
 }
 
@@ -32,14 +34,16 @@ func PSNR(mse float64) float64 {
 // deliberately ignored, matching MSECost and FastMSECost.
 func SSIM(current, reference *image.NRGBA) (float64, error) {
 	if current == nil || reference == nil {
-		return 0, fmt.Errorf("SSIM requires two images")
+		return 0, errors.New("SSIM requires two images")
 	}
+
 	width, height := current.Bounds().Dx(), current.Bounds().Dy()
 	if width == 0 || height == 0 {
-		return 0, fmt.Errorf("SSIM requires non-empty images")
+		return 0, errors.New("SSIM requires non-empty images")
 	}
+
 	if width != reference.Bounds().Dx() || height != reference.Bounds().Dy() {
-		return 0, fmt.Errorf("SSIM image dimensions do not match")
+		return 0, errors.New("SSIM image dimensions do not match")
 	}
 
 	weights := gaussianWeights()
@@ -49,28 +53,34 @@ func SSIM(current, reference *image.NRGBA) (float64, error) {
 	)
 
 	var total float64
-	for channel := 0; channel < 3; channel++ {
+
+	for channel := range 3 {
 		ring := make([][]float64, ssimWindowSize)
 		for i := range ring {
 			ring[i] = make([]float64, width*ssimStats)
 		}
+
 		ringWrite := 0
 		rowsBuffered := 0
 
 		for paddedY := -ssimWindowRadius; paddedY < height+ssimWindowRadius; paddedY++ {
 			horizontalSSIMRow(ring[ringWrite], current, reference, reflectIndex(paddedY, height), channel, weights)
+
 			ringWrite = (ringWrite + 1) % ssimWindowSize
 			if rowsBuffered < ssimWindowSize {
 				rowsBuffered++
 			}
+
 			if rowsBuffered < ssimWindowSize {
 				continue
 			}
 
-			for x := 0; x < width; x++ {
+			for x := range width {
 				var blurred [ssimStats]float64
+
 				for tap, weight := range weights {
 					row := ring[(ringWrite+tap)%ssimWindowSize]
+
 					base := x * ssimStats
 					for stat := range ssimStats {
 						blurred[stat] += weight * row[base+stat]
@@ -91,29 +101,35 @@ func SSIM(current, reference *image.NRGBA) (float64, error) {
 	}
 
 	value := total / float64(width*height*3)
+
 	return math.Min(1, math.Max(-1, value)), nil
 }
 
 func gaussianWeights() [ssimWindowSize]float64 {
 	var weights [ssimWindowSize]float64
 	var sum float64
+
 	for i := range weights {
 		x := float64(i - ssimWindowRadius)
 		weights[i] = math.Exp(-(x * x) / (2 * ssimSigma * ssimSigma))
 		sum += weights[i]
 	}
+
 	for i := range weights {
 		weights[i] /= sum
 	}
+
 	return weights
 }
 
 func horizontalSSIMRow(dst []float64, current, reference *image.NRGBA, y, channel int, weights [ssimWindowSize]float64) {
 	currentY := current.Bounds().Min.Y + y
 	referenceY := reference.Bounds().Min.Y + y
+
 	width := current.Bounds().Dx()
-	for x := 0; x < width; x++ {
+	for x := range width {
 		var values [ssimStats]float64
+
 		for tap, weight := range weights {
 			sampleX := reflectIndex(x+tap-ssimWindowRadius, width)
 			currentOffset := current.PixOffset(current.Bounds().Min.X+sampleX, currentY)
@@ -126,6 +142,7 @@ func horizontalSSIMRow(dst []float64, current, reference *image.NRGBA, y, channe
 			values[3] += weight * b * b
 			values[4] += weight * a * b
 		}
+
 		copy(dst[x*ssimStats:(x+1)*ssimStats], values[:])
 	}
 }
@@ -136,13 +153,17 @@ func reflectIndex(index, size int) int {
 	if size <= 1 {
 		return 0
 	}
+
 	period := 2*size - 2
+
 	index %= period
 	if index < 0 {
 		index += period
 	}
+
 	if index >= size {
 		index = period - index
 	}
+
 	return index
 }

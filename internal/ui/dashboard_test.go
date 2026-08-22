@@ -11,18 +11,19 @@ import (
 
 func TestDashboardPageRenders(t *testing.T) {
 	page := DashboardPageData{
-		Campaigns: []CampaignSummary{{
-			ID:             "11111111-1111-1111-1111-111111111111",
-			Name:           "Test campaign",
-			State:          "running",
-			Source:         CampaignFromSchedule,
-			RecordedStages: 2,
-			PlannedStages:  3,
-			Circles:        128,
-			BestCost:       12.5,
-			HasBestCost:    true,
-			UpdatedAt:      time.Date(2026, 8, 13, 12, 34, 56, 0, time.UTC),
-		},
+		Campaigns: []CampaignSummary{
+			{
+				ID:             "11111111-1111-1111-1111-111111111111",
+				Name:           "Test campaign",
+				State:          "running",
+				Source:         CampaignFromSchedule,
+				RecordedStages: 2,
+				PlannedStages:  3,
+				Circles:        128,
+				BestCost:       12.5,
+				HasBestCost:    true,
+				UpdatedAt:      time.Date(2026, 8, 13, 12, 34, 56, 0, time.UTC),
+			},
 			{
 				ID:      "22222222-2222-2222-2222-222222222222",
 				Source:  CampaignFromChain,
@@ -59,9 +60,11 @@ func TestDashboardPageRenders(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	if err := DashboardPage(page).Render(context.Background(), &output); err != nil {
+	err := DashboardPage(page).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render dashboard page: %v", err)
 	}
+
 	body := output.String()
 	for _, marker := range []string{
 		`Dashboard`,
@@ -93,11 +96,13 @@ func TestDashboardPageSeedsTheIsland(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	if err := DashboardPage(page).Render(context.Background(), &output); err != nil {
+	err := DashboardPage(page).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render dashboard page: %v", err)
 	}
 
 	seed := extractDashboardSeed(t, output.String())
+
 	var decoded struct {
 		RunningJobs []struct {
 			ID  string  `json:"id"`
@@ -114,16 +119,19 @@ func TestDashboardPageSeedsTheIsland(t *testing.T) {
 			} `json:"gpu"`
 		} `json:"hostFacts"`
 	}
-	if err := json.Unmarshal([]byte(seed), &decoded); err != nil {
+	err = json.Unmarshal([]byte(seed), &decoded)
+	if err != nil {
 		t.Fatalf("decode dashboard seed: %v", err)
 	}
 
 	if len(decoded.RunningJobs) != 1 || decoded.RunningJobs[0].ID != "job-1" || decoded.RunningJobs[0].CPS != 1.5 {
 		t.Errorf("seed running jobs = %+v, want one job-1 row at 1.5 cps", decoded.RunningJobs)
 	}
+
 	if decoded.Aggregates.Running != 1 || decoded.Aggregates.CPS != 1.5 {
 		t.Errorf("seed aggregates = %+v, want running 1 at 1.5 cps", decoded.Aggregates)
 	}
+
 	if decoded.HostFacts.GOARCH != "amd64" || decoded.HostFacts.GPU.State != "available" {
 		t.Errorf("seed host facts = %+v, want amd64 with an available GPU", decoded.HostFacts)
 	}
@@ -132,26 +140,32 @@ func TestDashboardPageSeedsTheIsland(t *testing.T) {
 func extractDashboardSeed(t *testing.T, body string) string {
 	t.Helper()
 	const open = `id="dashboard-page"`
+
 	start := strings.Index(body, open)
 	if start < 0 {
 		t.Fatal("rendered dashboard page has no seed script")
 	}
+
 	start = strings.Index(body[start:], ">")
 	if start < 0 {
 		t.Fatal("dashboard seed script tag is unterminated")
 	}
+
 	rest := body[strings.Index(body, open)+start+1:]
-	end := strings.Index(rest, "</script>")
-	if end < 0 {
+
+	before, _, ok := strings.Cut(rest, "</script>")
+	if !ok {
 		t.Fatal("dashboard seed script is unterminated")
 	}
-	return rest[:end]
+
+	return before
 }
 
 func TestDashboardCampaignURL(t *testing.T) {
 	if got, want := dashboardCampaignURL(CampaignSummary{Source: CampaignFromChain, ID: "abc"}), "/chains/abc"; got != want {
 		t.Fatalf("dashboardCampaignURL() = %q, want %q", got, want)
 	}
+
 	if got, want := dashboardCampaignURL(CampaignSummary{Source: CampaignFromSchedule, ID: "def"}), "/schedules/def"; got != want {
 		t.Fatalf("dashboardCampaignURL() = %q, want %q", got, want)
 	}
@@ -205,15 +219,19 @@ func dashboardPageFixture() DashboardPageData {
 
 func renderDashboardPage(t *testing.T, page DashboardPageData) string {
 	t.Helper()
+
 	var output bytes.Buffer
-	if err := DashboardPage(page).Render(context.Background(), &output); err != nil {
+	err := DashboardPage(page).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render dashboard page: %v", err)
 	}
+
 	return output.String()
 }
 
 func TestDashboardPageRendersCampaignCardsWithLinksAndActions(t *testing.T) {
 	body := renderDashboardPage(t, dashboardPageFixture())
+
 	markers := []string{
 		"/chains/11111111-1111-1111-1111-111111111111",
 		"/schedules/22222222-2222-2222-2222-222222222222",

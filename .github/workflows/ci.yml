@@ -35,6 +35,9 @@ jobs:
   staticcheck:
     uses: ./.github/workflows/ci-staticcheck.yml
 
+  lint:
+    uses: ./.github/workflows/ci-lint.yml
+
   test:
     uses: ./.github/workflows/ci-test.yml
 
@@ -69,7 +72,9 @@ jobs:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
     # benchmarks is deliberately absent: the timing comparison is report-only
-    # and must never gate a release.
+    # and must never gate a release. lint is absent for now because
+    # golangci-lint only reports pull-request-new issues while the `default =
+    # all` backlog is being worked down; see ci-lint.yml.
     needs:
       - generation
       - bundle

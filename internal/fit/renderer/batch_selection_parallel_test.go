@@ -3,6 +3,7 @@ package renderer
 import (
 	"image"
 	"image/color"
+	"maps"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -21,6 +22,7 @@ const (
 
 func selectionParityFixture(t testing.TB) (*image.NRGBA, []float64) {
 	t.Helper()
+
 	reference := solidImage(selectionParityWidth, selectionParityHeight, color.NRGBA{R: 60, G: 120, B: 180, A: 255})
 	for y := range selectionParityHeight {
 		for x := range selectionParityWidth {
@@ -32,12 +34,14 @@ func selectionParityFixture(t testing.TB) (*image.NRGBA, []float64) {
 			})
 		}
 	}
+
 	return reference, productionPolishParams(selectionParityCircles, selectionParityWidth, selectionParityHeight)
 }
 
 func selectionParityRenderer(reference *image.NRGBA, threads int) *CPURenderer {
 	cpu := NewCPURenderer(reference, selectionParityCircles)
 	cpu.SetThreads(threads)
+
 	return cpu
 }
 
@@ -47,6 +51,7 @@ func selectionParityRenderer(reference *image.NRGBA, threads int) *CPURenderer {
 // the serial walk accumulated.
 func TestAuditCircleBatchChunkedMatchesSerial(t *testing.T) {
 	reference, params := selectionParityFixture(t)
+
 	workers := runtime.GOMAXPROCS(0)
 	if workers < 2 {
 		t.Skip("chunked audit needs more than one rendering thread")
@@ -56,17 +61,21 @@ func TestAuditCircleBatchChunkedMatchesSerial(t *testing.T) {
 	if err != nil {
 		t.Fatalf("serial AuditCircleBatch() error = %v", err)
 	}
+
 	parallelRenderer := selectionParityRenderer(reference, workers)
 	plan, release := planAudit(parallelRenderer, params, selectionParityCircles)
 	release()
+
 	if len(plan.steppers) < 2 || len(plan.chunks) < len(plan.steppers) {
 		t.Fatalf("planAudit() gave %d steppers and %d chunks at GOMAXPROCS=%d, want a queue wider than one worker",
 			len(plan.steppers), len(plan.chunks), workers)
 	}
+
 	chunked, err := AuditCircleBatch(parallelRenderer, params)
 	if err != nil {
 		t.Fatalf("chunked AuditCircleBatch() error = %v", err)
 	}
+
 	if !reflect.DeepEqual(chunked, serial) {
 		t.Fatalf("chunked audit = %+v, want serial audit %+v", chunked, serial)
 	}
@@ -82,13 +91,16 @@ func TestAuditChunksCoverDrawOrder(t *testing.T) {
 			if len(chunks) == 0 {
 				t.Fatalf("circles %d count %d produced no chunks", circleCount, count)
 			}
+
 			previousEnd := 0
 			for _, chunk := range chunks {
 				if chunk.start != previousEnd || chunk.end <= chunk.start || chunk.end > circleCount {
 					t.Fatalf("circles %d count %d chunk %+v does not continue from %d", circleCount, count, chunk, previousEnd)
 				}
+
 				previousEnd = chunk.end
 			}
+
 			if previousEnd != circleCount {
 				t.Fatalf("circles %d count %d covered %d slots, want %d", circleCount, count, previousEnd, circleCount)
 			}
@@ -109,10 +121,12 @@ type fullRenderRenderer struct {
 // intersected with that raster leaves every energy unchanged.
 func TestRegionInfluenceEnergiesMatchFullRenders(t *testing.T) {
 	reference, params := selectionParityFixture(t)
+
 	candidates := make([]int, selectionParityCircles)
 	for i := range candidates {
 		candidates[i] = i
 	}
+
 	regions := []image.Rectangle{
 		image.Rect(0, 0, 24, 24),
 		image.Rect(24, 24, 48, 48),
@@ -128,6 +142,7 @@ func TestRegionInfluenceEnergiesMatchFullRenders(t *testing.T) {
 				full := selectionParityRenderer(reference, threads)
 				fullImage := cloneNRGBA(banded.Render(params))
 				want := regionInfluenceEnergies(fullRenderRenderer{Renderer: full}, params, fullImage, region, candidates)
+
 				got := regionInfluenceEnergies(banded, params, fullImage, region, candidates)
 				if !reflect.DeepEqual(got, want) {
 					t.Fatalf("row-band energies = %v, want full-render energies %v", got, want)
@@ -142,10 +157,12 @@ func TestRegionInfluenceEnergiesMatchFullRenders(t *testing.T) {
 // region however wide the selection ran.
 func TestSelectPolishingActiveSetMatchesSerial(t *testing.T) {
 	reference, params := selectionParityFixture(t)
+
 	workers := runtime.GOMAXPROCS(0)
 	if workers < 2 {
 		t.Skip("parallel selection needs more than one rendering thread")
 	}
+
 	strategies := []BatchPolishStrategy{
 		BatchPolishWeakestReplacement,
 		BatchPolishHybridOverlap,
@@ -158,15 +175,17 @@ func TestSelectPolishingActiveSetMatchesSerial(t *testing.T) {
 	visits := map[int]int{3: 1, 9: 2, 17: 1}
 	selectWith := func(threads int, strategy BatchPolishStrategy) polishingActiveSet {
 		t.Helper()
+
 		visitedCopy := make(map[int]bool, len(visited))
 		for region := range visited {
 			visitedCopy[region] = true
 		}
+
 		visitsCopy := make(map[int]int, len(visits))
-		for circle, count := range visits {
-			visitsCopy[circle] = count
-		}
+		maps.Copy(visitsCopy, visits)
+
 		base := selectionParityRenderer(reference, threads)
+
 		selection, err := selectPolishingActiveSet(
 			base, &incumbentAuditCache{session: base},
 			params, 8, strategy, visitedCopy, visitsCopy, false,
@@ -174,12 +193,14 @@ func TestSelectPolishingActiveSetMatchesSerial(t *testing.T) {
 		if err != nil {
 			t.Fatalf("selectPolishingActiveSet(%s, threads %d) error = %v", strategy, threads, err)
 		}
+
 		return selection
 	}
 
 	for _, strategy := range strategies {
 		t.Run(string(strategy), func(t *testing.T) {
 			serial := selectWith(1, strategy)
+
 			parallel := selectWith(workers, strategy)
 			if !reflect.DeepEqual(parallel, serial) {
 				t.Fatalf("selection at %d threads = %+v, want serial selection %+v", workers, parallel, serial)
@@ -198,7 +219,9 @@ func TestSelectPolishingActiveSetMatchesSerial(t *testing.T) {
 // out.
 func BenchmarkPolishSelectionByCircleCount(b *testing.B) {
 	reference := solidImage(polishBenchmarkWidth, polishBenchmarkHeight, color.NRGBA{R: 60, G: 120, B: 180, A: 255})
+
 	b.Logf("GOMAXPROCS=%d", runtime.GOMAXPROCS(0))
+
 	for _, circleCount := range []int{32, 128, 512} {
 		params := productionPolishParams(circleCount, polishBenchmarkWidth, polishBenchmarkHeight)
 		for _, threads := range []int{1, runtime.GOMAXPROCS(0)} {
@@ -207,11 +230,13 @@ func BenchmarkPolishSelectionByCircleCount(b *testing.B) {
 				cpu := NewCPURenderer(reference, circleCount)
 				cpu.SetThreads(threads)
 				b.ReportAllocs()
+
 				for range b.N {
 					if _, err := selectResidualRegionActiveSet(cpu, &incumbentAuditCache{session: cpu}, params, polishBenchmarkActiveSetSize, nil); err != nil {
 						b.Fatal(err)
 					}
 				}
+
 				b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*circleCount), "ns/circle")
 			})
 		}
@@ -224,28 +249,36 @@ func BenchmarkPolishSelectionByCircleCount(b *testing.B) {
 func BenchmarkRegionInfluenceEnergies(b *testing.B) {
 	reference := solidImage(polishBenchmarkWidth, polishBenchmarkHeight, color.NRGBA{R: 60, G: 120, B: 180, A: 255})
 	region := gridRegion(reference.Bounds(), 1, 1, residualPolishGridSize, residualPolishGridSize)
+
 	for _, circleCount := range []int{32, 128, 512} {
 		params := productionPolishParams(circleCount, polishBenchmarkWidth, polishBenchmarkHeight)
+
 		candidates := make([]int, circleCount)
 		for i := range candidates {
 			candidates[i] = i
 		}
+
 		cpu := NewCPURenderer(reference, circleCount)
 		cpu.SetThreads(1)
+
 		fullImage := cloneNRGBA(cpu.Render(params))
 		for _, banded := range []bool{false, true} {
 			base := Renderer(cpu)
+
 			name := "circles-" + strconv.Itoa(circleCount) + "/full-render"
 			if banded {
 				name = "circles-" + strconv.Itoa(circleCount) + "/row-band"
 			} else {
 				base = fullRenderRenderer{Renderer: cpu}
 			}
+
 			b.Run(name, func(b *testing.B) {
 				b.ReportAllocs()
+
 				for range b.N {
 					regionInfluenceEnergies(base, params, fullImage, region, candidates)
 				}
+
 				b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*circleCount), "ns/circle")
 			})
 		}

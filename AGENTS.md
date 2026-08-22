@@ -73,6 +73,13 @@ bundle`.
 `just check` covers generation drift, tests, vet, formatting, and the ordinary
 build.
 
+`golangci-lint` is configured in `.golangci.toml` (`default = all` minus a small
+disable list, mirroring `MeKo/ewws-render`). `just golangci` reports, `just fix`
+applies every automatic fix, and `just golangci-install` installs the pinned
+version. The CI gate (`.github/workflows/ci-lint.yml`) reports only issues a
+pull request introduces while the existing backlog is worked down, so it is not
+yet in the release job's `needs:` list.
+
 ## Style
 
 Idiomatic Go: gofmt tabs, exported identifiers in PascalCase, unexported helpers

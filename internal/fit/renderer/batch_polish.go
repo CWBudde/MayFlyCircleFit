@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"log/slog"
@@ -117,6 +118,7 @@ func PolishCircleBatchContext(
 	if base == nil {
 		return nil, fmt.Errorf("%w: renderer is nil", ErrInvalidOptimizationInput)
 	}
+
 	if optimizer == nil {
 		return nil, fmt.Errorf("%w: optimizer is nil", ErrInvalidOptimizationInput)
 	}
@@ -137,6 +139,7 @@ func PolishCircleBatchContext(
 	optimizerWorkers := opt.ParallelEvaluationWidth(optimizer)
 	if optimizerWorkers > 1 {
 		_, poolable := base.(rendererSessionFactory)
+
 		_, concurrent := base.(parallelEvaluationRenderer)
 		if !poolable || !concurrent {
 			return nil, fmt.Errorf(
@@ -144,44 +147,54 @@ func PolishCircleBatchContext(
 				ErrInvalidOptimizationInput, base, optimizerWorkers)
 		}
 	}
+
 	if len(initialParams) == 0 || len(initialParams)%paramsPerCircle != 0 {
 		return nil, fmt.Errorf("%w: polishing parameters must contain complete circles", ErrInvalidOptimizationInput)
 	}
+
 	circleCount := len(initialParams) / paramsPerCircle
 	if options.ActiveSetSize < 1 || options.ActiveSetSize > circleCount {
 		return nil, fmt.Errorf("%w: active set size must be in [1, %d]", ErrInvalidOptimizationInput, circleCount)
 	}
+
 	if options.MaxSweeps < 0 {
 		return nil, fmt.Errorf("%w: maximum polishing sweeps cannot be negative", ErrInvalidOptimizationInput)
 	}
+
 	visitCounts, err := polishingVisitCounts(circleCount, options.InitialVisitCounts)
 	if err != nil {
 		return nil, err
 	}
+
 	if options.Strategy == "" {
 		options.Strategy = BatchPolishWeakestReplacement
 	}
+
 	if options.Strategy != BatchPolishWeakestReplacement &&
 		options.Strategy != BatchPolishHybridOverlap &&
 		options.Strategy != BatchPolishResidualRegion &&
 		options.Strategy != BatchPolishContiguousWindow {
 		return nil, fmt.Errorf("%w: unsupported polishing strategy %q", ErrInvalidOptimizationInput, options.Strategy)
 	}
+
 	fullSession, cleanup, err := sessionForJoint(base, circleCount)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
+
 	if _, _, err := exactBounds(fullSession, len(initialParams)); err != nil {
 		return nil, err
 	}
 
 	bestParams := append([]float64(nil), initialParams...)
 	evaluations := 1
+
 	bestCost := fullSession.Cost(bestParams)
 	if math.IsNaN(bestCost) || math.IsInf(bestCost, 0) {
 		return nil, fmt.Errorf("%w: evaluated polishing cost must be finite", ErrInvalidOptimizationInput)
 	}
+
 	result := &BatchPolishResult{
 		BestParams: append([]float64(nil), bestParams...),
 		BestCost:   bestCost,
@@ -189,6 +202,7 @@ func PolishCircleBatchContext(
 	if options.MaxSweeps == 0 {
 		result.Evaluations = evaluations
 		result.BestImage = cloneNRGBA(fullSession.Render(bestParams))
+
 		return result, nil
 	}
 
@@ -200,15 +214,19 @@ func PolishCircleBatchContext(
 	// whatever is left on return, runs every cleanup exactly once and keeps no
 	// more than one sweep's sessions alive, however the loop exits.
 	var sweepCleanups []func()
+
 	releaseSweep := func() {
 		for _, sweepCleanup := range sweepCleanups {
 			sweepCleanup()
 		}
+
 		sweepCleanups = nil
 	}
 	defer releaseSweep()
+
 	for sweep := 1; sweep <= options.MaxSweeps; sweep++ {
 		releaseSweep()
+
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -226,6 +244,7 @@ func PolishCircleBatchContext(
 		if err != nil {
 			return nil, fmt.Errorf("select polishing active set: %w", err)
 		}
+
 		activeCircles := selection.Circles
 		if options.Strategy == BatchPolishResidualRegion {
 			visitedRegions[selection.RegionIndex] = true
@@ -238,6 +257,7 @@ func PolishCircleBatchContext(
 		}
 
 		bounds := fit.NewBounds(options.ActiveSetSize, base.Reference().Bounds().Dx(), base.Reference().Bounds().Dy())
+
 		candidateFull := append([]float64(nil), bestParams...)
 		// Circles before the first active slot are fixed and drawn first, so they
 		// can be baked into a canvas once per sweep instead of being rasterized
@@ -257,6 +277,7 @@ func PolishCircleBatchContext(
 		rawSlotSession := func() (Renderer, func(), error) {
 			return newStagedSession(base, circleCount)
 		}
+
 		if baked, ok := bakePrefixCanvas(base, bestParams, prefixCircles, circleCount); ok {
 			suffixOffset = prefixCircles * paramsPerCircle
 			suffixCircles := circleCount - prefixCircles
@@ -265,6 +286,7 @@ func PolishCircleBatchContext(
 				if !created {
 					return nil, nil, ErrStagedOptimizationUnsupported
 				}
+
 				return session, cleanup, nil
 			}
 			// A pool wider than one slot leases only sessions it created itself and
@@ -281,6 +303,7 @@ func PolishCircleBatchContext(
 				if err != nil {
 					return nil, err
 				}
+
 				sweepCleanups = append(sweepCleanups, cleanup)
 				primarySession = session
 			}
@@ -291,6 +314,7 @@ func PolishCircleBatchContext(
 		// path.
 		var baselineImage *image.NRGBA
 		var baselineSSD uint64
+
 		if _, cpu := base.(*CPURenderer); cpu {
 			baselineImage = cloneNRGBA(fullSession.Render(bestParams))
 			if exact, ok := fit.ExactSSD(baselineImage, base.Reference()); ok {
@@ -299,10 +323,12 @@ func PolishCircleBatchContext(
 				baselineImage = nil
 			}
 		}
+
 		localActiveCircles := make([]int, len(activeCircles))
 		for i, circle := range activeCircles {
 			localActiveCircles[i] = circle - suffixOffset/paramsPerCircle
 		}
+
 		configureSession := func(session Renderer) Renderer {
 			return newPolishDirtySession(
 				session,
@@ -318,6 +344,7 @@ func PolishCircleBatchContext(
 			if err != nil {
 				return nil, cleanup, err
 			}
+
 			return configureSession(session), cleanup, nil
 		}
 		// A single-slot pool leases the sweep's own session and its own
@@ -338,25 +365,32 @@ func PolishCircleBatchContext(
 		evaluate := func(activeParams []float64) float64 {
 			slot := pool.acquire()
 			defer pool.release(slot)
+
 			bounds.ClampIndependentVector(activeParams)
 			mergeActiveCircleParams(slot.combined, activeCircles, activeParams)
+
 			return slot.session.Cost(slot.combined[suffixOffset:])
 		}
 		incumbentParams := extractActiveCircleParams(bestParams, activeCircles)
 		initial := opt.Candidate{Params: incumbentParams, Cost: bestCost}
 		var additionalSeeds []opt.Candidate
+
 		switch options.Strategy {
 		case BatchPolishWeakestReplacement, BatchPolishHybridOverlap, BatchPolishContiguousWindow:
 			retainedSession, retainedCleanup, sessionErr := newStagedSession(base, circleCount-options.ActiveSetSize)
 			if sessionErr != nil {
 				return nil, sessionErr
 			}
+
 			residualCanvas := cloneNRGBA(retainedSession.Render(selection.RetainedParams))
+
 			retainedCleanup()
+
 			seedParams, seedErr := SeedParamsFromResidual(residualCanvas, base.Reference(), options.ActiveSetSize, ResidualSeedOptions{})
 			if seedErr != nil {
 				return nil, fmt.Errorf("seed polishing sweep %d: %w", sweep, seedErr)
 			}
+
 			seedCost := evaluate(seedParams)
 			if options.Strategy == BatchPolishWeakestReplacement {
 				initial = opt.Candidate{Params: seedParams, Cost: seedCost}
@@ -365,12 +399,14 @@ func PolishCircleBatchContext(
 			}
 		case BatchPolishResidualRegion:
 			seedCanvas := renderWithoutCircles(fullSession, bestParams, selection.ReplacementCircles)
+
 			seedParams, seedErr := SeedParamsFromResidual(seedCanvas, base.Reference(), len(selection.ReplacementCircles), ResidualSeedOptions{
 				Region: selection.Region,
 			})
 			if seedErr != nil {
 				return nil, fmt.Errorf("seed residual region sweep %d: %w", sweep, seedErr)
 			}
+
 			alternative := append([]float64(nil), incumbentParams...)
 			mergeReplacementSeedParams(alternative, activeCircles, selection.ReplacementCircles, seedParams)
 			additionalSeeds = []opt.Candidate{{Params: alternative, Cost: evaluate(alternative)}}
@@ -393,6 +429,7 @@ func PolishCircleBatchContext(
 				MaxVelocity:    0.02,
 			},
 		}
+
 		if observer != nil {
 			snapshot := append([]float64(nil), bestParams...)
 			runOptions.Observer = func(progress opt.Progress) {
@@ -406,11 +443,13 @@ func PolishCircleBatchContext(
 				})
 			}
 		}
+
 		if options.OnEpoch != nil {
 			snapshot := append([]float64(nil), bestParams...)
 			runOptions.EpochObserver = func(boundary opt.EpochBoundary) error {
 				fullParams := append([]float64(nil), snapshot...)
 				mergeActiveCircleParams(fullParams, activeCircles, boundary.Progress.BestParams)
+
 				return options.OnEpoch(BatchPolishEpoch{
 					Sweep:       sweep,
 					Epoch:       boundary.Epoch,
@@ -435,9 +474,11 @@ func PolishCircleBatchContext(
 			runOptions,
 		)
 		evaluations += pool.count()
+
 		if err != nil {
 			return nil, err
 		}
+
 		result.Iterations += outcome.Iterations
 		result.Sweeps++
 
@@ -452,12 +493,15 @@ func PolishCircleBatchContext(
 			if auditErr != nil {
 				return false, nil, BatchAudit{}, fmt.Errorf("audit polishing sweep %d: %w", sweep, auditErr)
 			}
+
 			incumbent, auditErr := incumbentAudit.get(bestParams)
 			if auditErr != nil {
 				return false, nil, BatchAudit{}, fmt.Errorf("audit polishing incumbent before sweep %d: %w", sweep, auditErr)
 			}
+
 			commit, blockers := sweepKeepsCirclesUseful(
 				incumbent, candidateAudit, activeCircles, minBatchMSEContribution)
+
 			return commit, blockers, candidateAudit, nil
 		}
 
@@ -465,6 +509,7 @@ func PolishCircleBatchContext(
 		// run is diagnosable from the server log alone: the sweep either lost on
 		// cost, named the circles the usefulness gate refused, or committed.
 		accepted := false
+
 		if len(outcome.Params) != options.ActiveSetSize*paramsPerCircle || !bounds.ValidVector(outcome.Params) {
 			slog.Info("Rejected polishing sweep",
 				"sweep", sweep,
@@ -478,12 +523,14 @@ func PolishCircleBatchContext(
 			evaluations++
 			commit, blockers := false, []int(nil)
 			var candidateAudit BatchAudit
+
 			if candidateCost < bestCost {
 				var gateErr error
 				if commit, blockers, candidateAudit, gateErr = admitSweep(candidate); gateErr != nil {
 					return nil, gateErr
 				}
 			}
+
 			switch {
 			case candidateCost >= bestCost:
 				slog.Info("Rejected polishing sweep",
@@ -510,12 +557,14 @@ func PolishCircleBatchContext(
 					"cost_removed", bestCost-candidateCost,
 					"active_circles", oneBasedCircleIndices(activeCircles),
 				)
+
 				bestParams = candidate
 				bestCost = candidateCost
 				// The incumbent changed, but the gate has just audited exactly this
 				// vector, so hand that audit over instead of discarding it and paying
 				// for another full render per circle on the next sweep.
 				incumbentAudit.adopt(candidateAudit)
+
 				result.AcceptedSweeps++
 				accepted = true
 			}
@@ -524,6 +573,7 @@ func PolishCircleBatchContext(
 		result.BestParams = append(result.BestParams[:0], bestParams...)
 		result.BestCost = bestCost
 		result.Evaluations = evaluations
+
 		progress := BatchPolishProgress{
 			Sweep:       sweep,
 			Accepted:    accepted,
@@ -535,16 +585,19 @@ func PolishCircleBatchContext(
 			Evaluations: evaluations,
 		}
 		if options.OnSweep != nil {
-			if err := options.OnSweep(progress); err != nil {
+			err := options.OnSweep(progress)
+			if err != nil {
 				return nil, fmt.Errorf("persist polishing sweep %d: %w", sweep, err)
 			}
 		}
+
 		for _, circle := range activeCircles {
 			visitCounts[circle]++
 		}
 	}
 
 	result.BestImage = cloneNRGBA(fullSession.Render(bestParams))
+
 	return result, nil
 }
 
@@ -561,6 +614,7 @@ func oneBasedCircleIndices(circles []int) []int {
 	for i, circle := range circles {
 		indices[i] = circle + 1
 	}
+
 	return indices
 }
 
@@ -569,6 +623,7 @@ func extractActiveCircleParams(fullParams []float64, activeCircles []int) []floa
 	for index, circle := range activeCircles {
 		copy(active[index*paramsPerCircle:(index+1)*paramsPerCircle], fullParams[circle*paramsPerCircle:(circle+1)*paramsPerCircle])
 	}
+
 	return active
 }
 
@@ -594,11 +649,14 @@ func (c *incumbentAuditCache) get(params []float64) (BatchAudit, error) {
 	if c.valid {
 		return c.audit, nil
 	}
+
 	audit, err := AuditCircleBatch(c.session, params)
 	if err != nil {
 		return BatchAudit{}, err
 	}
+
 	c.audit, c.valid = audit, true
+
 	return audit, nil
 }
 
@@ -625,37 +683,49 @@ func selectPolishingActiveSet(
 		if err != nil {
 			return polishingActiveSet{}, err
 		}
+
 		weakest := append([]CircleAudit(nil), audit.Circles...)
 		slices.SortFunc(weakest, func(left, right CircleAudit) int {
 			leftVisits := visitCounts[left.OriginalCircle-1]
+
 			rightVisits := visitCounts[right.OriginalCircle-1]
 			if leftVisits != rightVisits {
 				return leftVisits - rightVisits
 			}
+
 			if weakerAuditCircle(left, right) {
 				return -1
 			}
+
 			if weakerAuditCircle(right, left) {
 				return 1
 			}
+
 			return 0
 		})
+
 		if len(weakest) < activeSetSize {
 			return polishingActiveSet{}, fmt.Errorf("%w: selected %d polishing circles, want %d", ErrInvalidOptimizationInput, len(weakest), activeSetSize)
 		}
+
 		active := make([]int, activeSetSize)
 		for i, circle := range weakest[:activeSetSize] {
 			active[i] = circle.OriginalCircle - 1
 		}
+
 		slices.Sort(active)
+
 		return polishingActiveSet{Circles: active, RetainedParams: removeActiveCircleParams(params, active)}, nil
 	}
+
 	if strategy == BatchPolishResidualRegion {
 		return selectResidualRegionActiveSet(base, incumbentAudit, params, activeSetSize, visitedRegions)
 	}
+
 	if strategy == BatchPolishContiguousWindow {
 		circleCount := len(params) / paramsPerCircle
 		active := selectContiguousWindowCircles(circleCount, activeSetSize, visitCounts, preferEarlierContiguousWindows)
+
 		return polishingActiveSet{Circles: active, RetainedParams: removeActiveCircleParams(params, active)}, nil
 	}
 
@@ -663,7 +733,9 @@ func selectPolishingActiveSet(
 	if err != nil {
 		return polishingActiveSet{}, err
 	}
+
 	active := selectHybridOverlapCircles(params, audit, activeSetSize, base.Reference().Bounds().Dx(), base.Reference().Bounds().Dy(), visitCounts)
+
 	return polishingActiveSet{Circles: active, RetainedParams: removeActiveCircleParams(params, active)}, nil
 }
 
@@ -675,29 +747,37 @@ func PlanContiguousWindows(circleCount, activeSetSize, maxSweeps int, initialVis
 	if circleCount < 1 {
 		return nil, nil, fmt.Errorf("%w: circle count must be positive", ErrInvalidOptimizationInput)
 	}
+
 	if activeSetSize < 1 || activeSetSize > circleCount {
 		return nil, nil, fmt.Errorf("%w: active set size must be in [1, %d]", ErrInvalidOptimizationInput, circleCount)
 	}
+
 	if maxSweeps < 0 {
 		return nil, nil, fmt.Errorf("%w: maximum polishing sweeps cannot be negative", ErrInvalidOptimizationInput)
 	}
+
 	visits, err := polishingVisitCounts(circleCount, initialVisitCounts)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	preferEarlier := contiguousWindowBudgetCoversVector(circleCount, activeSetSize, maxSweeps)
+
 	activeSets := make([][]int, 0, maxSweeps)
 	for range maxSweeps {
 		active := selectContiguousWindowCircles(circleCount, activeSetSize, visits, preferEarlier)
+
 		activeSets = append(activeSets, active)
 		for _, circle := range active {
 			visits[circle]++
 		}
 	}
+
 	resultingVisits := make([]int, circleCount)
 	for circle, count := range visits {
 		resultingVisits[circle] = count
 	}
+
 	return activeSets, resultingVisits, nil
 }
 
@@ -706,17 +786,21 @@ func polishingVisitCounts(circleCount int, initial []int) (map[int]int, error) {
 	if initial == nil {
 		return visits, nil
 	}
+
 	if len(initial) != circleCount {
 		return nil, fmt.Errorf("%w: initial polishing visit counts contain %d circles, want %d", ErrInvalidOptimizationInput, len(initial), circleCount)
 	}
+
 	for circle, count := range initial {
 		if count < 0 {
 			return nil, fmt.Errorf("%w: initial polishing visit count for circle %d cannot be negative", ErrInvalidOptimizationInput, circle+1)
 		}
+
 		if count > 0 {
 			visits[circle] = count
 		}
 	}
+
 	return visits, nil
 }
 
@@ -750,22 +834,27 @@ func selectContiguousWindowCircles(circleCount, activeSetSize int, visitCounts m
 		for i := range active {
 			active[i] = i
 		}
+
 		return active
 	}
 
 	bestStart, bestVisits := 0, math.MaxInt
+
 	first, last, step := circleCount-activeSetSize, 0, -1
 	if preferEarlier {
 		first, last, step = 0, circleCount-activeSetSize, 1
 	}
+
 	for start := first; ; start += step {
 		visits := 0
 		for circle := start; circle < start+activeSetSize; circle++ {
 			visits += visitCounts[circle]
 		}
+
 		if visits < bestVisits {
 			bestStart, bestVisits = start, visits
 		}
+
 		if start == last {
 			break
 		}
@@ -775,6 +864,7 @@ func selectContiguousWindowCircles(circleCount, activeSetSize int, visitCounts m
 	for i := range active {
 		active[i] = bestStart + i
 	}
+
 	return active
 }
 
@@ -783,56 +873,71 @@ func selectHybridOverlapCircles(params []float64, audit BatchAudit, activeSetSiz
 	copy(weakest, audit.Circles)
 	slices.SortFunc(weakest, func(left, right CircleAudit) int {
 		leftVisits := visitCounts[left.OriginalCircle-1]
+
 		rightVisits := visitCounts[right.OriginalCircle-1]
 		if leftVisits != rightVisits {
 			return leftVisits - rightVisits
 		}
+
 		if left.MSEContribution < right.MSEContribution {
 			return -1
 		}
+
 		if left.MSEContribution > right.MSEContribution {
 			return 1
 		}
+
 		if left.FinalChangedPixels != right.FinalChangedPixels {
 			return left.FinalChangedPixels - right.FinalChangedPixels
 		}
+
 		return left.OriginalCircle - right.OriginalCircle
 	})
 
 	anchorCount := min((activeSetSize+1)/2, len(weakest))
 	selected := make(map[int]bool, activeSetSize)
+
 	anchors := make([]int, 0, anchorCount)
 	for _, circle := range weakest[:anchorCount] {
 		index := circle.OriginalCircle - 1
 		selected[index] = true
 		anchors = append(anchors, index)
 	}
+
 	vector := fit.ParamVector{Data: params, K: len(params) / paramsPerCircle, Width: width, Height: height}
 	for len(selected) < activeSetSize {
 		bestCircle, bestOverlap, bestVisits := -1, -1, math.MaxInt
+
 		for candidate := 0; candidate < vector.K; candidate++ {
 			if selected[candidate] {
 				continue
 			}
+
 			overlap := 0
 			for _, anchor := range anchors {
 				overlap += circleRasterOverlap(vector.DecodeCircle(candidate), vector.DecodeCircle(anchor), width, height)
 			}
+
 			visits := visitCounts[candidate]
 			if visits < bestVisits || visits == bestVisits && (overlap > bestOverlap || overlap == bestOverlap && weakerAuditCircle(audit.Circles[candidate], audit.Circles[bestCircle])) {
 				bestCircle, bestOverlap, bestVisits = candidate, overlap, visits
 			}
 		}
+
 		if bestCircle < 0 {
 			break
 		}
+
 		selected[bestCircle] = true
 	}
+
 	active := make([]int, 0, len(selected))
 	for circle := range selected {
 		active = append(active, circle)
 	}
+
 	slices.Sort(active)
+
 	return active
 }
 
@@ -840,24 +945,30 @@ func weakerAuditCircle(left, right CircleAudit) bool {
 	if right.Circle == 0 {
 		return true
 	}
+
 	if left.MSEContribution != right.MSEContribution {
 		return left.MSEContribution < right.MSEContribution
 	}
+
 	if left.FinalChangedPixels != right.FinalChangedPixels {
 		return left.FinalChangedPixels < right.FinalChangedPixels
 	}
+
 	return left.OriginalCircle < right.OriginalCircle
 }
 
 func circleRasterOverlap(left, right fit.Circle, width, height int) int {
 	overlap := 0
-	for y := 0; y < height; y++ {
+
+	for y := range height {
 		leftStart, leftEnd, leftOK := circleRasterSpan(left, y, width)
+
 		rightStart, rightEnd, rightOK := circleRasterSpan(right, y, width)
 		if leftOK && rightOK {
 			overlap += max(0, min(leftEnd, rightEnd)-max(leftStart, rightStart))
 		}
 	}
+
 	return overlap
 }
 
@@ -865,14 +976,18 @@ func circleRasterSpan(circle fit.Circle, y, width int) (int, int, bool) {
 	if fixed, ok := newFixedCircleQ16(circle); ok {
 		return fixed.span(y, width)
 	}
+
 	dy := float64(y) - circle.Y
+
 	remaining := circle.R*circle.R - dy*dy
 	if remaining < 0 {
 		return 0, 0, false
 	}
+
 	start, end := circleSpanFloat64(circle.X, remaining, width)
 	start = max(0, start)
 	end = min(width, end)
+
 	return start, end, end > start
 }
 
@@ -881,12 +996,14 @@ func removeActiveCircleParams(params []float64, activeCircles []int) []float64 {
 	for _, circle := range activeCircles {
 		active[circle] = true
 	}
+
 	retained := make([]float64, 0, len(params)-len(activeCircles)*paramsPerCircle)
 	for circle := 0; circle < len(params)/paramsPerCircle; circle++ {
 		if !active[circle] {
 			retained = append(retained, params[circle*paramsPerCircle:(circle+1)*paramsPerCircle]...)
 		}
 	}
+
 	return retained
 }
 
@@ -898,28 +1015,35 @@ func selectResidualRegionActiveSet(
 	visitedRegions map[int]bool,
 ) (polishingActiveSet, error) {
 	fullImage := cloneNRGBA(base.Render(params))
+
 	region, regionIndex, err := highestResidualRegion(fullImage, base.Reference(), visitedRegions)
 	if err != nil {
 		return polishingActiveSet{}, err
 	}
+
 	audit, err := incumbentAudit.get(params)
 	if err != nil {
 		return polishingActiveSet{}, err
 	}
 
 	replacementCount := max(1, activeSetSize/5)
+
 	weakest := append([]CircleAudit(nil), audit.Circles...)
 	slices.SortFunc(weakest, func(left, right CircleAudit) int {
 		if weakerAuditCircle(left, right) {
 			return -1
 		}
+
 		if weakerAuditCircle(right, left) {
 			return 1
 		}
+
 		return 0
 	})
+
 	replacements := make([]int, 0, replacementCount)
 	selected := make(map[int]bool, activeSetSize)
+
 	for _, circle := range weakest[:replacementCount] {
 		index := circle.OriginalCircle - 1
 		replacements = append(replacements, index)
@@ -937,29 +1061,37 @@ func selectResidualRegionActiveSet(
 		energy uint64
 	}
 	energies := regionInfluenceEnergies(base, params, fullImage, region, candidates)
+
 	influences := make([]regionInfluence, len(candidates))
 	for index, circle := range candidates {
 		influences[index] = regionInfluence{circle: circle, energy: energies[index]}
 	}
+
 	slices.SortFunc(influences, func(left, right regionInfluence) int {
 		if left.energy > right.energy {
 			return -1
 		}
+
 		if left.energy < right.energy {
 			return 1
 		}
+
 		if weakerAuditCircle(audit.Circles[left.circle], audit.Circles[right.circle]) {
 			return -1
 		}
+
 		if weakerAuditCircle(audit.Circles[right.circle], audit.Circles[left.circle]) {
 			return 1
 		}
+
 		return 0
 	})
+
 	for _, influence := range influences {
 		if len(selected) == activeSetSize {
 			break
 		}
+
 		selected[influence.circle] = true
 	}
 
@@ -967,8 +1099,10 @@ func selectResidualRegionActiveSet(
 	for circle := range selected {
 		active = append(active, circle)
 	}
+
 	slices.Sort(active)
 	slices.Sort(replacements)
+
 	return polishingActiveSet{
 		Circles:            active,
 		RetainedParams:     removeActiveCircleParams(params, active),
@@ -1013,16 +1147,19 @@ func regionInfluenceEnergies(
 	energies := make([]uint64, len(candidates))
 	circleCount := len(params) / paramsPerCircle
 	compositor, banded := base.(rowBandCompositor)
+
 	var initial *image.NRGBA
 	if banded {
 		initial = compositor.initialCanvas()
 	}
+
 	if initial == nil {
 		for index, circle := range candidates {
 			without := append([]float64(nil), params...)
 			without[circle*paramsPerCircle+6] = 0
 			energies[index] = imageDifferenceEnergy(fullImage, base.Render(without), region)
 		}
+
 		return energies
 	}
 
@@ -1031,12 +1168,15 @@ func regionInfluenceEnergies(
 	vector := fit.ParamVector{Data: params, K: circleCount, Width: bounds.Dx(), Height: bounds.Dy()}
 	measure := func(banded rowBandCompositor, scratch *image.NRGBA, without []float64, index int) {
 		circle := candidates[index]
+
 		compare := region.Intersect(circleRasterBounds(vector.DecodeCircle(circle)))
 		if compare.Empty() {
 			return
 		}
+
 		copy(without, params)
 		without[circle*paramsPerCircle+6] = 0
+
 		copyRowBand(scratch, initial, compare.Min.Y, compare.Max.Y)
 		banded.compositeParamsRows(scratch, without, circleCount, compare.Min.Y, compare.Max.Y)
 		energies[index] = imageDifferenceEnergy(fullImage, scratch, compare)
@@ -1045,13 +1185,17 @@ func regionInfluenceEnergies(
 	// Each worker owns its scratch canvas, its scratch vector, and its own
 	// session, so the circles are independent measurements from here on.
 	compositors := []rowBandCompositor{compositor}
+
 	sessions, release := concurrentSessions(base, circleCount, min(renderWorkers(base), len(candidates)))
 	defer release()
+
 	if pooled := rowBandCompositors(sessions); len(pooled) > 1 {
 		compositors = pooled
 	}
+
 	walk := func(worker int) {
 		scratch := image.NewNRGBA(bounds)
+
 		without := make([]float64, len(params))
 		for index := worker; index < len(candidates); index += len(compositors) {
 			measure(compositors[worker], scratch, without, index)
@@ -1059,14 +1203,18 @@ func regionInfluenceEnergies(
 	}
 	var workers sync.WaitGroup
 	workers.Add(len(compositors) - 1)
+
 	for worker := 1; worker < len(compositors); worker++ {
 		go func() {
 			defer workers.Done()
+
 			walk(worker)
 		}()
 	}
+
 	walk(0)
 	workers.Wait()
+
 	return energies
 }
 
@@ -1081,8 +1229,10 @@ func rowBandCompositors(sessions []Renderer) []rowBandCompositor {
 		if !ok {
 			return nil
 		}
+
 		compositors = append(compositors, compositor)
 	}
+
 	return compositors
 }
 
@@ -1094,6 +1244,7 @@ func circleRasterBounds(circle fit.Circle) image.Rectangle {
 	if circle.Opacity == 0 {
 		return image.Rectangle{}
 	}
+
 	return image.Rect(
 		int(math.Floor(circle.X-circle.R))-1,
 		int(math.Floor(circle.Y-circle.R))-1,
@@ -1109,7 +1260,9 @@ func copyRowBand(dst, src *image.NRGBA, minY, maxY int) {
 	if dst.Stride != src.Stride || !dst.Bounds().Eq(src.Bounds()) {
 		return
 	}
+
 	minY = max(minY, dst.Bounds().Min.Y)
+
 	maxY = min(maxY, dst.Bounds().Max.Y)
 	for y := minY; y < maxY; y++ {
 		row := dst.PixOffset(dst.Bounds().Min.X, y)
@@ -1119,33 +1272,41 @@ func copyRowBand(dst, src *image.NRGBA, minY, maxY int) {
 
 func highestResidualRegion(canvas, reference *image.NRGBA, visited map[int]bool) (image.Rectangle, int, error) {
 	if canvas == nil || reference == nil || !canvas.Bounds().Eq(reference.Bounds()) || canvas.Bounds().Empty() {
-		return image.Rectangle{}, -1, fmt.Errorf("canvas and reference must have matching non-empty bounds")
+		return image.Rectangle{}, -1, errors.New("canvas and reference must have matching non-empty bounds")
 	}
+
 	columns := min(residualPolishGridSize, canvas.Bounds().Dx())
 	rows := min(residualPolishGridSize, canvas.Bounds().Dy())
+
 	selectRegion := func(skipVisited bool) (image.Rectangle, int, bool) {
 		bestIndex := -1
 		var bestRegion image.Rectangle
 		var bestEnergy uint64
+
 		for row := range rows {
 			for column := range columns {
 				index := row*columns + column
 				if skipVisited && visited[index] {
 					continue
 				}
+
 				region := gridRegion(canvas.Bounds(), column, row, columns, rows)
+
 				energy := imageDifferenceEnergy(canvas, reference, region)
 				if bestIndex < 0 || energy > bestEnergy {
 					bestIndex, bestRegion, bestEnergy = index, region, energy
 				}
 			}
 		}
+
 		return bestRegion, bestIndex, bestIndex >= 0
 	}
 	if region, index, ok := selectRegion(true); ok {
 		return region, index, nil
 	}
+
 	region, index, _ := selectRegion(false)
+
 	return region, index, nil
 }
 
@@ -1154,15 +1315,18 @@ func gridRegion(bounds image.Rectangle, column, row, columns, rows int) image.Re
 	x1 := bounds.Min.X + (column+1)*bounds.Dx()/columns
 	y0 := bounds.Min.Y + row*bounds.Dy()/rows
 	y1 := bounds.Min.Y + (row+1)*bounds.Dy()/rows
+
 	return image.Rect(x0, y0, x1, y1)
 }
 
 func imageDifferenceEnergy(left, right *image.NRGBA, region image.Rectangle) uint64 {
 	region = region.Intersect(left.Bounds()).Intersect(right.Bounds())
 	var energy uint64
+
 	for y := region.Min.Y; y < region.Max.Y; y++ {
 		for x := region.Min.X; x < region.Max.X; x++ {
 			leftOffset := left.PixOffset(x, y)
+
 			rightOffset := right.PixOffset(x, y)
 			for channel := range 3 {
 				delta := int(left.Pix[leftOffset+channel]) - int(right.Pix[rightOffset+channel])
@@ -1170,6 +1334,7 @@ func imageDifferenceEnergy(left, right *image.NRGBA, region image.Rectangle) uin
 			}
 		}
 	}
+
 	return energy
 }
 
@@ -1178,6 +1343,7 @@ func renderWithoutCircles(base Renderer, params []float64, circles []int) *image
 	for _, circle := range circles {
 		without[circle*paramsPerCircle+6] = 0
 	}
+
 	return cloneNRGBA(base.Render(without))
 }
 
@@ -1187,6 +1353,7 @@ func mergeReplacementSeedParams(activeParams []float64, activeCircles, replaceme
 		if active < 0 {
 			continue
 		}
+
 		copy(
 			activeParams[active*paramsPerCircle:(active+1)*paramsPerCircle],
 			seedParams[replacement*paramsPerCircle:(replacement+1)*paramsPerCircle],
@@ -1244,6 +1411,7 @@ func sweepKeepsCirclesUseful(incumbent, candidate BatchAudit, activeCircles []in
 		active[circle] = true
 	}
 	var blockers []int
+
 	for index, circle := range candidate.Circles {
 		if circleUseful(circle, minContribution) {
 			continue
@@ -1254,7 +1422,9 @@ func sweepKeepsCirclesUseful(incumbent, candidate BatchAudit, activeCircles []in
 			!circleUseful(incumbent.Circles[index], minContribution) {
 			continue
 		}
+
 		blockers = append(blockers, index+1)
 	}
+
 	return len(blockers) == 0, blockers
 }

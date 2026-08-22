@@ -12,10 +12,12 @@ func TestCircleSpecsToParams(t *testing.T) {
 		{X: 10, Y: 20, R: 5, Color: "ffffff", Opacity: 0.5},
 	}
 	specs.ApplyDefaults()
+
 	params, err := specs.ToParams()
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	want := []float64{
 		256, 660, 300, 35.0 / 255, 38.0 / 255, 80.0 / 255, 1,
 		10, 20, 5, 1, 1, 1, 0.5,
@@ -23,6 +25,7 @@ func TestCircleSpecsToParams(t *testing.T) {
 	if len(params) != len(want) {
 		t.Fatalf("params length = %d, want %d", len(params), len(want))
 	}
+
 	for i := range want {
 		if math.Abs(params[i]-want[i]) > 1e-12 {
 			t.Fatalf("params[%d] = %v, want %v", i, params[i], want[i])
@@ -32,6 +35,7 @@ func TestCircleSpecsToParams(t *testing.T) {
 
 func TestCircleSpecsValidate(t *testing.T) {
 	valid := CircleSpec{X: 1, Y: 2, R: 3, Color: "#010203", Opacity: 1}
+
 	cases := []struct {
 		name  string
 		spec  CircleSpec
@@ -52,11 +56,14 @@ func TestCircleSpecsValidate(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Validate() = %v, want nil", err)
 				}
+
 				return
 			}
+
 			if err == nil {
 				t.Fatalf("Validate() = nil, want an error naming %s", testCase.field)
 			}
+
 			var fieldErr *ValidationError
 			if !errors.As(err, &fieldErr) || fieldErr.Field != testCase.field {
 				t.Fatalf("Validate() = %v, want an error naming %s", err, testCase.field)
@@ -79,23 +86,29 @@ func TestJobConfigValidateInitialCircles(t *testing.T) {
 			{X: 1, Y: 2, R: 3, Color: "#010203", Opacity: 1},
 			{X: 4, Y: 5, R: 6, Color: "#040506", Opacity: 1},
 		}
+
 		return config
 	}
 
-	if err := base().Validate(); err != nil {
+	err := base().Validate()
+	if err != nil {
 		t.Fatalf("Validate() = %v, want nil", err)
 	}
 
 	wrongMode := base()
+
 	wrongMode.Mode = ModeJoint
-	if err := wrongMode.Validate(); err == nil {
+	err := wrongMode.Validate()
+	if err == nil {
 		t.Fatal("Validate() accepted initialCircles outside batch mode")
 	}
 
 	wrongCount := base()
 	wrongCount.Circles = 3
+
 	wrongCount.PolishingActiveSetSize = 3
-	if err := wrongCount.Validate(); err == nil {
+	err := wrongCount.Validate()
+	if err == nil {
 		t.Fatal("Validate() accepted a spec list shorter than circles")
 	}
 
@@ -103,8 +116,10 @@ func TestJobConfigValidateInitialCircles(t *testing.T) {
 	// it would seed the first chunk and drop the rest. Refused here, because at
 	// dispatch it surfaces as a failed run rather than a rejected request.
 	partialBatch := base()
+
 	partialBatch.BatchSize = 1
-	if err := partialBatch.Validate(); err == nil {
+	err := partialBatch.Validate()
+	if err == nil {
 		t.Fatal("Validate() accepted initialCircles with a batch smaller than circles")
 	}
 }
@@ -119,17 +134,23 @@ func TestApplyDefaultsWidensTheBatchForAnAuthoredSeed(t *testing.T) {
 	config.Circles = 10
 	config.BatchSize = 0
 	config.Seed = 1
+
 	config.InitialCircles = make(CircleSpecs, 10)
 	for i := range config.InitialCircles {
 		config.InitialCircles[i] = CircleSpec{X: 1, Y: 1, R: 1, Color: "#010203"}
 	}
-	if err := config.ApplyDefaults(); err != nil {
+
+	err := config.ApplyDefaults()
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	if config.BatchSize != 10 {
 		t.Fatalf("batchSize = %d, want 10 so the seeded vector is one optimizer stage", config.BatchSize)
 	}
-	if err := config.Validate(); err != nil {
+
+	err := config.Validate()
+	if err != nil {
 		t.Fatalf("Validate() = %v, want nil", err)
 	}
 
@@ -140,10 +161,13 @@ func TestApplyDefaultsWidensTheBatchForAnAuthoredSeed(t *testing.T) {
 	unseeded.Mode = ModeBatch
 	unseeded.Circles = 10
 	unseeded.BatchSize = 0
+
 	unseeded.Seed = 1
-	if err := unseeded.ApplyDefaults(); err != nil {
+	err := unseeded.ApplyDefaults()
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	if unseeded.BatchSize != 5 {
 		t.Fatalf("unseeded batchSize = %d, want the default of 5", unseeded.BatchSize)
 	}
@@ -155,10 +179,13 @@ func TestApplyDefaultsMakesInitialCirclesOpaque(t *testing.T) {
 	config := DefaultConfig()
 	config.RefPath = "ref.png"
 	config.Seed = 1
+
 	config.InitialCircles = CircleSpecs{{X: 1, Y: 2, R: 3, Color: "#010203"}}
-	if err := config.ApplyDefaults(); err != nil {
+	err := config.ApplyDefaults()
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	if config.InitialCircles[0].Opacity != 1 {
 		t.Fatalf("opacity = %v, want 1", config.InitialCircles[0].Opacity)
 	}

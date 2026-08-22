@@ -3,6 +3,7 @@ package store
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -37,22 +38,27 @@ func (fs *FSStore) NewTraceWriter(jobID string, appendMode bool) (*TraceWriter, 
 	if _, err := fs.ensureJobDir(jobID); err != nil {
 		return nil, err
 	}
+
 	path, err := fs.ArtifactPath(jobID, ArtifactTrace)
 	if err != nil {
 		return nil, err
 	}
+
 	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
 	if appendMode {
 		flags = os.O_CREATE | os.O_WRONLY | os.O_APPEND
 	}
+
 	file, err := os.OpenFile(path, flags, artifactMode)
 	if err != nil {
 		return nil, fmt.Errorf("open trace file: %w", err)
 	}
+
 	if err := file.Chmod(artifactMode); err != nil {
 		_ = file.Close()
 		return nil, fmt.Errorf("secure trace file permissions: %w", err)
 	}
+
 	return &TraceWriter{
 		file:   file,
 		writer: bufio.NewWriterSize(file, 64*1024),
@@ -67,61 +73,81 @@ func NewTraceWriter(baseDir, jobID string, appendMode bool) (*TraceWriter, error
 	if err != nil {
 		return nil, err
 	}
+
 	return fs.NewTraceWriter(jobID, appendMode)
 }
 
 func (tw *TraceWriter) Write(entry TraceEntry) error {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
+
 	if tw.closed {
-		return fmt.Errorf("trace writer is closed")
+		return errors.New("trace writer is closed")
 	}
+
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return fmt.Errorf("marshal trace entry: %w", err)
 	}
+
 	if _, err := tw.writer.Write(data); err != nil {
 		return fmt.Errorf("write trace entry: %w", err)
 	}
+
 	if err := tw.writer.WriteByte('\n'); err != nil {
 		return fmt.Errorf("write trace newline: %w", err)
 	}
+
 	return nil
 }
 
 func (tw *TraceWriter) Flush() error {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
+
 	if tw.closed {
-		return fmt.Errorf("trace writer is closed")
+		return errors.New("trace writer is closed")
 	}
-	if err := tw.writer.Flush(); err != nil {
+
+	err := tw.writer.Flush()
+	if err != nil {
 		return fmt.Errorf("flush trace writer: %w", err)
 	}
-	if err := tw.file.Sync(); err != nil {
+
+	err := tw.file.Sync()
+	if err != nil {
 		return fmt.Errorf("sync trace file: %w", err)
 	}
+
 	return nil
 }
 
 func (tw *TraceWriter) Close() error {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
+
 	if tw.closed {
 		return nil
 	}
+
 	tw.closed = true
-	if err := tw.writer.Flush(); err != nil {
+	err := tw.writer.Flush()
+	if err != nil {
 		_ = tw.file.Close()
 		return fmt.Errorf("flush trace on close: %w", err)
 	}
-	if err := tw.file.Sync(); err != nil {
+
+	err := tw.file.Sync()
+	if err != nil {
 		_ = tw.file.Close()
 		return fmt.Errorf("sync trace on close: %w", err)
 	}
-	if err := tw.file.Close(); err != nil {
+
+	err := tw.file.Close()
+	if err != nil {
 		return fmt.Errorf("close trace file: %w", err)
 	}
+
 	return nil
 }
 
@@ -137,19 +163,24 @@ func (fs *FSStore) NewTraceReader(jobID string) (*TraceReader, error) {
 	if _, err := fs.existingJobDir(jobID); err != nil {
 		return nil, err
 	}
+
 	path, err := fs.ArtifactPath(jobID, ArtifactTrace)
 	if err != nil {
 		return nil, err
 	}
+
 	file, err := os.Open(path)
 	if os.IsNotExist(err) {
 		return nil, &NotFoundError{JobID: jobID}
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("open trace file: %w", err)
 	}
+
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+
 	return &TraceReader{file: file, scanner: scanner}, nil
 }
 
@@ -159,41 +190,52 @@ func NewTraceReader(baseDir, jobID string) (*TraceReader, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return fs.NewTraceReader(jobID)
 }
 
 func (tr *TraceReader) Read() (*TraceEntry, error) {
 	if !tr.scanner.Scan() {
-		if err := tr.scanner.Err(); err != nil {
+		err := tr.scanner.Err()
+		if err != nil {
 			return nil, fmt.Errorf("scan trace line: %w", err)
 		}
+
 		return nil, io.EOF
 	}
+
 	var entry TraceEntry
-	if err := json.Unmarshal(tr.scanner.Bytes(), &entry); err != nil {
+	err := json.Unmarshal(tr.scanner.Bytes(), &entry)
+	if err != nil {
 		return nil, fmt.Errorf("unmarshal trace entry: %w", err)
 	}
+
 	return &entry, nil
 }
 
 func (tr *TraceReader) ReadAll() ([]TraceEntry, error) {
 	var entries []TraceEntry
+
 	for {
 		entry, err := tr.Read()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return entries, nil
 		}
+
 		if err != nil {
 			return nil, err
 		}
+
 		entries = append(entries, *entry)
 	}
 }
 
 func (tr *TraceReader) Close() error {
-	if err := tr.file.Close(); err != nil {
+	err := tr.file.Close()
+	if err != nil {
 		return fmt.Errorf("close trace file: %w", err)
 	}
+
 	return nil
 }
 
@@ -201,13 +243,16 @@ func (fs *FSStore) DeleteTrace(jobID string) error {
 	if err := validateJobID(jobID); err != nil {
 		return fmt.Errorf("invalid jobID: %w", err)
 	}
+
 	path, err := fs.ArtifactPath(jobID, ArtifactTrace)
 	if err != nil {
 		return err
 	}
+
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("delete trace file: %w", err)
 	}
+
 	return nil
 }
 
@@ -217,5 +262,6 @@ func DeleteTrace(baseDir, jobID string) error {
 	if err != nil {
 		return err
 	}
+
 	return fs.DeleteTrace(jobID)
 }

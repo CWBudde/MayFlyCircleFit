@@ -19,6 +19,7 @@ func NewUsageError(err error) error {
 	if err == nil {
 		return nil
 	}
+
 	return &UsageError{err: err}
 }
 
@@ -26,6 +27,7 @@ func (e *UsageError) Error() string {
 	if e == nil || e.err == nil {
 		return "usage error"
 	}
+
 	return e.err.Error()
 }
 
@@ -33,6 +35,7 @@ func (e *UsageError) Unwrap() error {
 	if e == nil {
 		return nil
 	}
+
 	return e.err
 }
 
@@ -68,11 +71,13 @@ func classifyExecuteError(err error) error {
 	if err == nil || IsUsageError(err) {
 		return err
 	}
+
 	message := strings.ToLower(err.Error())
 	for _, prefix := range cobraUsagePrefixes {
 		if strings.HasPrefix(message, prefix) {
 			return NewUsageError(err)
 		}
 	}
+
 	return err
 }

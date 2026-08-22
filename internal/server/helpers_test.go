@@ -20,6 +20,7 @@ func TestComputeDiffImageUsesNormalizedAbsoluteRGBError(t *testing.T) {
 	best.SetNRGBA(2, 0, color.NRGBA{A: 255})
 
 	diff := computeDiffImage(ref, best, fit.ColormapTurbo)
+
 	tests := []struct {
 		x           int
 		error       float64
@@ -33,6 +34,7 @@ func TestComputeDiffImageUsesNormalizedAbsoluteRGBError(t *testing.T) {
 	}
 	for _, test := range tests {
 		got := diff.NRGBAAt(test.x, 0)
+
 		want := fit.MapErrorColor(test.error, test.maxError, test.colormap)
 		if got != want {
 			t.Errorf("%s pixel = %#v, want %#v", test.description, got, want)
@@ -46,6 +48,7 @@ func TestComputeDiffImageSupportsMagma(t *testing.T) {
 	ref.SetNRGBA(0, 0, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 
 	got := computeDiffImage(ref, best, fit.ColormapMagma).NRGBAAt(0, 0)
+
 	want := fit.MapErrorColor(255, 255, fit.ColormapMagma)
 	if got != want {
 		t.Errorf("Magma maximum-error pixel = %#v, want %#v", got, want)

@@ -20,9 +20,11 @@ func evaluationWorkers(base Renderer) int {
 	if !ok {
 		return 1
 	}
+
 	if workers := renderer.ParallelEvaluationWorkers(); workers > 1 {
 		return workers
 	}
+
 	return 1
 }
 
@@ -53,10 +55,12 @@ func ParallelEvaluationOption(base Renderer, enabled bool) (opt.MayflyOption, bo
 	if !enabled {
 		return noop, false
 	}
+
 	width := evaluationWorkers(base)
 	if width < 2 {
 		return noop, false
 	}
+
 	return opt.WithParallelEvaluation(width), true
 }
 
@@ -75,6 +79,7 @@ func renderWorkers(base Renderer) int {
 	if !ok {
 		return 1
 	}
+
 	return max(1, threaded.Threads())
 }
 
@@ -97,6 +102,7 @@ func concurrentSessions(base Renderer, circleCount, workers int) ([]Renderer, fu
 	if workers < 2 {
 		return nil, noopCleanup
 	}
+
 	factory, poolable := base.(rendererSessionFactory)
 	if _, concurrent := base.(parallelEvaluationRenderer); !poolable || !concurrent {
 		return nil, noopCleanup
@@ -107,6 +113,7 @@ func concurrentSessions(base Renderer, circleCount, workers int) ([]Renderer, fu
 			cleanup()
 		}
 	}
+
 	sessions := make([]Renderer, 0, workers)
 	for range workers {
 		session, cleanup, err := factory.newSession(circleCount)
@@ -114,12 +121,16 @@ func concurrentSessions(base Renderer, circleCount, workers int) ([]Renderer, fu
 			release()
 			return nil, noopCleanup
 		}
+
 		cleanups = append(cleanups, cleanup)
+
 		if cpu, ok := session.(*CPURenderer); ok {
 			cpu.SetThreads(1)
 		}
+
 		sessions = append(sessions, session)
 	}
+
 	return sessions, release
 }
 
@@ -162,15 +173,18 @@ func newEvaluationPool(
 ) *evaluationPool {
 	pool := &evaluationPool{}
 	var slots []*evaluationSlot
+
 	if workers > 1 && newSession != nil {
 		for range workers {
 			session, cleanup, err := newSession()
 			if err != nil || session == nil {
 				break
 			}
+
 			if cpu, ok := session.(*CPURenderer); ok {
 				cpu.SetThreads(1)
 			}
+
 			pool.cleanups = append(pool.cleanups, cleanup)
 			slots = append(slots, &evaluationSlot{
 				session:  session,
@@ -178,14 +192,18 @@ func newEvaluationPool(
 			})
 		}
 	}
+
 	if len(slots) == 0 {
 		pool.close()
+
 		slots = []*evaluationSlot{{session: primary, combined: combined}}
 	}
+
 	pool.free = make(chan *evaluationSlot, len(slots))
 	for _, slot := range slots {
 		pool.free <- slot
 	}
+
 	return pool
 }
 
@@ -219,6 +237,7 @@ func (p *evaluationPool) close() {
 			cleanup()
 		}
 	}
+
 	p.cleanups = nil
 }
 
@@ -246,8 +265,10 @@ func NewConcurrentEvaluator(base Renderer, circleCount int) *ConcurrentEvaluator
 		if !ok {
 			return nil, nil, ErrStagedOptimizationUnsupported
 		}
+
 		return factory.newSession(circleCount)
 	})
+
 	return &ConcurrentEvaluator{pool: pool}
 }
 
@@ -255,6 +276,7 @@ func NewConcurrentEvaluator(base Renderer, circleCount int) *ConcurrentEvaluator
 func (e *ConcurrentEvaluator) Cost(params []float64) float64 {
 	slot := e.pool.acquire()
 	defer e.pool.release(slot)
+
 	return slot.session.Cost(params)
 }
 

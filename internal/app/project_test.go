@@ -13,7 +13,8 @@ func TestValidateProjectSlug(t *testing.T) {
 		"2026-08-16",
 	}
 	for _, slug := range valid {
-		if err := ValidateProjectSlug(slug); err != nil {
+		err := ValidateProjectSlug(slug)
+		if err != nil {
 			t.Errorf("ValidateProjectSlug(%q) = %v, want nil", slug, err)
 		}
 	}
@@ -39,7 +40,8 @@ func TestValidateProjectSlug(t *testing.T) {
 		"café",      // non-ASCII
 	}
 	for _, slug := range invalidSlugs {
-		if err := ValidateProjectSlug(slug); err == nil {
+		err := ValidateProjectSlug(slug)
+		if err == nil {
 			t.Errorf("ValidateProjectSlug(%q) = nil, want error", slug)
 		}
 	}
@@ -49,12 +51,15 @@ func TestValidateProjectSlug(t *testing.T) {
 	for range MaxProjectSlugLen {
 		atLimit += "a"
 	}
-	if err := ValidateProjectSlug(atLimit); err != nil {
+
+	err := ValidateProjectSlug(atLimit)
+	if err != nil {
 		t.Errorf("ValidateProjectSlug(%d chars) = %v, want nil", len(atLimit), err)
 	}
 
 	long := atLimit + "a"
-	if err := ValidateProjectSlug(long); err == nil {
+	err := ValidateProjectSlug(long)
+	if err == nil {
 		t.Errorf("ValidateProjectSlug(%d chars) = nil, want error", len(long))
 	}
 }

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -31,7 +32,8 @@ func TestTraceWriter_WriteAndRead(t *testing.T) {
 	}
 
 	for _, entry := range entries {
-		if err := writer.Write(entry); err != nil {
+		err := writer.Write(entry)
+		if err != nil {
 			t.Fatalf("Failed to write entry: %v", err)
 		}
 	}
@@ -69,18 +71,23 @@ func TestTraceWriter_WriteAndRead(t *testing.T) {
 		if entry.Iteration != entries[i].Iteration {
 			t.Errorf("Entry %d: expected iteration %d, got %d", i, entries[i].Iteration, entry.Iteration)
 		}
+
 		if entry.Cost != entries[i].Cost {
 			t.Errorf("Entry %d: expected cost %f, got %f", i, entries[i].Cost, entry.Cost)
 		}
+
 		if len(entry.Params) != len(entries[i].Params) {
 			t.Errorf("Entry %d: expected %d params, got %d", i, len(entries[i].Params), len(entry.Params))
 		}
+
 		if entry.PSNRInfinite != entries[i].PSNRInfinite || (entry.PSNR == nil) != (entries[i].PSNR == nil) || (entry.SSIM == nil) != (entries[i].SSIM == nil) {
 			t.Errorf("Entry %d metric availability mismatch: got %+v want %+v", i, entry, entries[i])
 		}
+
 		if entry.PSNR != nil && *entry.PSNR != *entries[i].PSNR {
 			t.Errorf("Entry %d PSNR = %v, want %v", i, *entry.PSNR, *entries[i].PSNR)
 		}
+
 		if entry.SSIM != nil && *entry.SSIM != *entries[i].SSIM {
 			t.Errorf("Entry %d SSIM = %v, want %v", i, *entry.SSIM, *entries[i].SSIM)
 		}
@@ -100,6 +107,7 @@ func TestTraceWriter_Append(t *testing.T) {
 	if err := writer.Write(TraceEntry{Iteration: 0, Cost: 1.0, Timestamp: time.Now()}); err != nil {
 		t.Fatalf("Failed to write entry: %v", err)
 	}
+
 	if err := writer.Close(); err != nil {
 		t.Fatalf("Failed to close writer: %v", err)
 	}
@@ -113,6 +121,7 @@ func TestTraceWriter_Append(t *testing.T) {
 	if err := writer.Write(TraceEntry{Iteration: 10, Cost: 0.8, Timestamp: time.Now()}); err != nil {
 		t.Fatalf("Failed to write entry: %v", err)
 	}
+
 	if err := writer.Close(); err != nil {
 		t.Fatalf("Failed to close writer: %v", err)
 	}
@@ -133,9 +142,11 @@ func TestTraceWriter_Append(t *testing.T) {
 	if len(entries) != 2 {
 		t.Fatalf("Expected 2 entries, got %d", len(entries))
 	}
+
 	if entries[0].Iteration != 0 {
 		t.Errorf("First entry: expected iteration 0, got %d", entries[0].Iteration)
 	}
+
 	if entries[1].Iteration != 10 {
 		t.Errorf("Second entry: expected iteration 10, got %d", entries[1].Iteration)
 	}
@@ -163,10 +174,12 @@ func TestTraceWriter_Flush(t *testing.T) {
 
 	// Data should be on disk now (even without closing)
 	tracePath := filepath.Join(tmpDir, "jobs", jobID, "trace.jsonl")
+
 	data, err := os.ReadFile(tracePath)
 	if err != nil {
 		t.Fatalf("Failed to read trace file: %v", err)
 	}
+
 	if len(data) == 0 {
 		t.Error("Trace file is empty after flush")
 	}
@@ -182,11 +195,13 @@ func TestTraceReader_ReadIteratively(t *testing.T) {
 		t.Fatalf("Failed to create trace writer: %v", err)
 	}
 
-	for i := 0; i < 5; i++ {
-		if err := writer.Write(TraceEntry{Iteration: i * 10, Cost: 1.0 - float64(i)*0.1, Timestamp: time.Now()}); err != nil {
+	for i := range 5 {
+		err := writer.Write(TraceEntry{Iteration: i * 10, Cost: 1.0 - float64(i)*0.1, Timestamp: time.Now()})
+		if err != nil {
 			t.Fatalf("Failed to write entry: %v", err)
 		}
 	}
+
 	writer.Close()
 
 	// Read iteratively
@@ -197,11 +212,13 @@ func TestTraceReader_ReadIteratively(t *testing.T) {
 	defer reader.Close()
 
 	count := 0
+
 	for {
 		entry, err := reader.Read()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
+
 		if err != nil {
 			t.Fatalf("Failed to read entry: %v", err)
 		}
@@ -259,6 +276,7 @@ func TestTraceWriter_WithParams(t *testing.T) {
 	if err := writer.Write(entry); err != nil {
 		t.Fatalf("Failed to write entry with params: %v", err)
 	}
+
 	writer.Close()
 
 	// Read back
@@ -304,6 +322,7 @@ func TestTraceWriter_EmptyParams(t *testing.T) {
 	if err := writer.Write(entry); err != nil {
 		t.Fatalf("Failed to write entry: %v", err)
 	}
+
 	writer.Close()
 
 	// Read back
@@ -333,6 +352,7 @@ func TestDeleteTrace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create trace writer: %v", err)
 	}
+
 	writer.Write(TraceEntry{Iteration: 0, Cost: 1.0, Timestamp: time.Now()})
 	writer.Close()
 
@@ -358,7 +378,8 @@ func TestDeleteTrace_NotFound(t *testing.T) {
 	jobID := testJobID(99)
 
 	// Should not error when deleting nonexistent trace
-	if err := DeleteTrace(tmpDir, jobID); err != nil {
+	err := DeleteTrace(tmpDir, jobID)
+	if err != nil {
 		t.Errorf("DeleteTrace should not error for nonexistent file, got: %v", err)
 	}
 }
@@ -375,22 +396,25 @@ func TestTraceWriter_ConcurrentWrites(t *testing.T) {
 
 	// Write from multiple goroutines
 	done := make(chan bool)
-	for i := 0; i < 10; i++ {
+
+	for i := range 10 {
 		go func(iter int) {
 			entry := TraceEntry{
 				Iteration: iter,
 				Cost:      float64(iter),
 				Timestamp: time.Now(),
 			}
-			if err := writer.Write(entry); err != nil {
+			err := writer.Write(entry)
+			if err != nil {
 				t.Errorf("Concurrent write failed: %v", err)
 			}
+
 			done <- true
 		}(i)
 	}
 
 	// Wait for all writes
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 
@@ -413,11 +437,14 @@ func TestTraceWriter_ConcurrentWrites(t *testing.T) {
 	}
 }
 
-// Helper function to check if error is NotFoundError
+// Helper function to check if error is NotFoundError.
 func isNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
-	_, ok := err.(*NotFoundError)
+
+	notFoundError := &NotFoundError{}
+	ok := errors.As(err, &notFoundError)
+
 	return ok
 }

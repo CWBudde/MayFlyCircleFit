@@ -138,10 +138,13 @@ func BenchmarkPolishBudgetSweepFalloff(b *testing.B) {
 			startCost := costRenderer.Cost(fitted)
 
 			removedPerSweep := make([]float64, sweeps)
+
 			b.ReportAllocs()
 			b.ResetTimer()
+
 			for range b.N {
 				previous := startCost
+
 				result, err := polishAtBudget(reference, fitted, fittedCircles,
 					polishQualityActiveSetSize, strategy,
 					polishBudget{
@@ -154,14 +157,18 @@ func BenchmarkPolishBudgetSweepFalloff(b *testing.B) {
 						if progress.Sweep >= 1 && progress.Sweep <= sweeps {
 							removedPerSweep[progress.Sweep-1] += previous - progress.BestCost
 						}
+
 						previous = progress.BestCost
+
 						return nil
 					})
 				if err != nil {
 					b.Fatalf("PolishCircleBatchContext(%s) error = %v", strategy, err)
 				}
+
 				polishStrategyBenchmarkSink += result.BestCost
 			}
+
 			for sweep, removed := range removedPerSweep {
 				b.ReportMetric(removed/float64(b.N), fmt.Sprintf("sweep%d_removed", sweep+1))
 			}
@@ -250,6 +257,7 @@ func polishBudgetAxes() []polishBudget {
 			sweeps:     polishBudgetSweeps,
 		})
 	}
+
 	for _, iters := range []int{50, 100, 400, 800} {
 		budgets = append(budgets, polishBudget{
 			population: polishBudgetDefaultPop,
@@ -258,6 +266,7 @@ func polishBudgetAxes() []polishBudget {
 			sweeps:     polishBudgetSweeps,
 		})
 	}
+
 	for _, epochs := range []int{2, 4} {
 		budgets = append(budgets, polishBudget{
 			population: polishBudgetDefaultPop,
@@ -266,6 +275,7 @@ func polishBudgetAxes() []polishBudget {
 			sweeps:     polishBudgetSweeps,
 		})
 	}
+
 	return budgets
 }
 
@@ -298,18 +308,22 @@ func runPolishBudgetBenchmark(
 
 	var costSum float64
 	var acceptedSum, evaluationSum int
+
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for range b.N {
 		result, err := polishAtBudget(reference, initial, circleCount, activeSetSize, strategy, budget, threads, nil, options...)
 		if err != nil {
 			b.Fatalf("PolishCircleBatchContext(%s, %s) error = %v", strategy, budget.name(), err)
 		}
+
 		costSum += result.BestCost
 		acceptedSum += result.AcceptedSweeps
 		evaluationSum += result.Evaluations
 		polishStrategyBenchmarkSink += result.BestCost
 	}
+
 	b.StopTimer()
 
 	finalCost := costSum / float64(b.N)
@@ -338,13 +352,16 @@ func polishAtBudget(
 ) (*BatchPolishResult, error) {
 	base := NewCPURenderer(reference, circleCount)
 	base.SetThreads(threads)
+
 	optimizer, err := opt.NewMayflyVariant("standard", budget.iters, budget.population, polishBudgetSeed, options...)
 	if err != nil {
 		return nil, err
 	}
+
 	if budget.epochs > 1 {
 		optimizer = opt.WithEpochs(optimizer, budget.epochs)
 	}
+
 	return PolishCircleBatchContext(context.Background(), base, optimizer,
 		append([]float64(nil), initial...), BatchPolishOptions{
 			ActiveSetSize: activeSetSize,
@@ -364,11 +381,14 @@ func fittedPolishVector(b *testing.B, reference *image.NRGBA, circleCount, batch
 	if err != nil {
 		b.Fatalf("NewMayflyVariant() error = %v", err)
 	}
+
 	fitRenderer := NewCPURenderer(reference, circleCount)
 	fitRenderer.SetThreads(1)
+
 	fitted, err := OptimizeBatch(fitRenderer, fitOptimizer, circleCount, batchSize, DisabledConvergenceConfig())
 	if err != nil {
 		b.Fatalf("OptimizeBatch() error = %v", err)
 	}
+
 	return fitted.BestParams, len(fitted.BestParams) / paramsPerCircle
 }

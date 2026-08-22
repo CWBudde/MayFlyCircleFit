@@ -15,16 +15,19 @@ import (
 
 func testImage() *image.NRGBA {
 	img := image.NewNRGBA(image.Rect(0, 0, 8, 8))
+
 	for y := range 8 {
 		for x := range 8 {
 			img.SetNRGBA(x, y, color.NRGBA{R: uint8(x * 32), G: uint8(y * 32), B: 128, A: 255})
 		}
 	}
+
 	return img
 }
 
 func TestWritePNGRoundTrips(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "out.png")
+
 	want := testImage()
 	if err := writePNG(path, want); err != nil {
 		t.Fatalf("writePNG() error = %v, want nil", err)
@@ -35,10 +38,12 @@ func TestWritePNGRoundTrips(t *testing.T) {
 		t.Fatalf("open written file: %v", err)
 	}
 	defer file.Close()
+
 	got, err := png.Decode(file)
 	if err != nil {
 		t.Fatalf("decode written file: %v", err)
 	}
+
 	if got.Bounds() != want.Bounds() {
 		t.Fatalf("bounds = %v, want %v", got.Bounds(), want.Bounds())
 	}
@@ -58,6 +63,7 @@ func TestWritePNGReportsAFullFilesystem(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("/dev/full is a Linux device")
 	}
+
 	if _, err := os.Stat("/dev/full"); err != nil {
 		t.Skipf("/dev/full unavailable: %v", err)
 	}
@@ -66,9 +72,11 @@ func TestWritePNGReportsAFullFilesystem(t *testing.T) {
 	if err == nil {
 		t.Fatal("writePNG(/dev/full) = nil, want an error: a full filesystem must not be reported as success")
 	}
+
 	if !errors.Is(err, syscall.ENOSPC) {
 		t.Fatalf("writePNG(/dev/full) error = %v, want it to wrap ENOSPC so the CLI can suggest freeing space", err)
 	}
+
 	var pathError *os.PathError
 	if !errors.As(err, &pathError) {
 		t.Fatalf("writePNG(/dev/full) error = %v, want a *os.PathError naming the path", err)
@@ -77,10 +85,12 @@ func TestWritePNGReportsAFullFilesystem(t *testing.T) {
 
 func TestWritePNGReportsAnUncreatablePath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "missing-dir", "out.png")
+
 	err := writePNG(path, testImage())
 	if err == nil {
 		t.Fatal("writePNG() = nil, want an error for a path whose directory does not exist")
 	}
+
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("writePNG() error = %v, want it to wrap os.ErrNotExist", err)
 	}
@@ -114,12 +124,15 @@ func TestEncodePNGReportsACloseFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("encodePNG() = nil, want the close failure: a truncated image must not be reported as success")
 	}
+
 	if !errors.Is(err, syscall.ENOSPC) {
 		t.Fatalf("encodePNG() error = %v, want it to wrap the close error", err)
 	}
+
 	if !strings.Contains(err.Error(), "out.png") {
 		t.Fatalf("encodePNG() error = %v, want it to name the path", err)
 	}
+
 	if destination.written == 0 {
 		t.Fatal("encodePNG() wrote nothing, so the close error was not reached through a successful encode")
 	}
@@ -135,6 +148,7 @@ func TestEncodePNGKeepsTheFirstErrorAndStillCloses(t *testing.T) {
 	if !errors.Is(err, encodeErr) {
 		t.Fatalf("encodePNG() error = %v, want the encode failure to survive the close failure", err)
 	}
+
 	if !destination.closed {
 		t.Fatal("encodePNG() did not close the destination on the encode path, leaking the handle")
 	}

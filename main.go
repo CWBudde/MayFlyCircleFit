@@ -21,10 +21,12 @@ const (
 
 func main() {
 	err := cmd.Execute()
+
 	code := exitCode(err)
 	if code != exitOK {
 		printCLIError(os.Stderr, code, err)
 	}
+
 	os.Exit(code)
 }
 
@@ -46,13 +48,16 @@ func printCLIError(writer io.Writer, exitCode int, err error) {
 	if err == nil {
 		return
 	}
+
 	if exitCode == exitUsage {
 		fmt.Fprintf(writer, "Usage error: %v\n", err)
 		fmt.Fprintf(writer, "Tip: run `mayflycirclefit --help` to see available commands.\n")
+
 		return
 	}
 
 	fmt.Fprintf(writer, "Error: %v\n", err)
+
 	if suggestion := suggestFix(err); suggestion != "" {
 		fmt.Fprintf(writer, "Suggestion: %s\n", suggestion)
 	}
@@ -68,6 +73,7 @@ func suggestFix(err error) string {
 	if suggestion := suggestFilesystemFix(err); suggestion != "" {
 		return suggestion
 	}
+
 	return suggestNetworkFix(err)
 }
 
@@ -80,6 +86,7 @@ func suggestFilesystemFix(err error) string {
 	if !errors.As(err, &pathError) {
 		return ""
 	}
+
 	switch {
 	case errors.Is(pathError.Err, os.ErrNotExist):
 		return fmt.Sprintf("check that %q exists and is readable.", pathError.Path)
@@ -105,6 +112,7 @@ func suggestNetworkFix(err error) string {
 	if !errors.As(err, &urlError) {
 		return ""
 	}
+
 	switch {
 	case errors.Is(err, syscall.ECONNREFUSED):
 		return "no server is listening there; start one with `mayflycirclefit serve`, or point the server flag (--server for `status`, --server-url for `resume`) at the right address."

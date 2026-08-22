@@ -2,7 +2,6 @@ package server
 
 import (
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -75,6 +74,7 @@ func (s *Server) continuationSourceFor(jobID string, kind continuationKind) (*co
 	if !ok {
 		return nil, continuationFailure(http.StatusNotFound, "not_found", "job not found")
 	}
+
 	if source.State != StateCompleted {
 		return nil, continuationFailure(http.StatusConflict, "invalid_state", kind.stateReason)
 	}
@@ -84,22 +84,28 @@ func (s *Server) continuationSourceFor(jobID string, kind continuationKind) (*co
 		slog.Error("Failed to resolve project store for continuation", "job_id", jobID, "error", err)
 		return nil, continuationFailure(http.StatusInternalServerError, "project_unavailable", "the project store is unavailable")
 	}
+
 	checkpoint, err := jobStore.LoadCheckpoint(jobID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, continuationFailure(http.StatusNotFound, "not_found", "completed checkpoint not found")
 		}
+
 		return nil, continuationFailure(http.StatusInternalServerError, "checkpoint_error", "failed to load completed checkpoint")
 	}
+
 	if err := checkpoint.Validate(); err != nil {
 		return nil, continuationFailure(http.StatusBadRequest, "invalid_checkpoint", "completed checkpoint is invalid")
 	}
+
 	config, err := app.Normalize(checkpoint.Config)
 	if err != nil || config.Mode != app.ModeBatch {
 		return nil, continuationFailure(http.StatusBadRequest, "invalid_checkpoint", kind.requirement)
 	}
+
 	actualCircles := checkpoint.ActualCircles
 	complete := actualCircles == config.Circles
+
 	continuableShortStage := checkpoint.Termination == string(renderer.TerminationRefillLimit) && actualCircles < config.Circles
 	if len(checkpoint.BestParams) != actualCircles*app.ParamsPerCircle || (!complete && !continuableShortStage) {
 		return nil, continuationFailure(http.StatusBadRequest, "invalid_checkpoint", kind.requirement)
@@ -110,13 +116,17 @@ func (s *Server) continuationSourceFor(jobID string, kind continuationKind) (*co
 	config.Circles = actualCircles
 	config.BatchSize = min(config.BatchSize, actualCircles)
 	config.PolishingActiveSetSize = min(config.PolishingActiveSetSize, actualCircles)
+
 	evaluations := int(checkpoint.Evaluations)
 	if int64(evaluations) != checkpoint.Evaluations {
 		return nil, continuationFailure(http.StatusBadRequest, "invalid_checkpoint", "checkpoint evaluation count is out of range")
 	}
-	if failure := s.resolveConfigPaths(&config, "checkpoint"); failure != nil {
+
+	failure := s.resolveConfigPaths(&config, "checkpoint")
+	if failure != nil {
 		return nil, failure
 	}
+
 	config.EffectiveSeed = checkpoint.EffectiveSeed
 	config.ResumeCount = checkpoint.ResumeCount + 1
 
@@ -129,20 +139,26 @@ func (s *Server) resolveConfigPaths(config *app.JobConfig, origin string) *conti
 	if s.inputErr != nil {
 		return continuationFailure(http.StatusInternalServerError, "server_config", "server input roots are unavailable")
 	}
+
 	code := "invalid_" + origin
+
 	resolved, err := s.input.resolveImage(config.RefPath)
 	if err != nil {
 		return continuationFailure(http.StatusBadRequest, code, origin+" reference is outside configured input roots")
 	}
+
 	config.RefPath = resolved
 	if config.CanvasPath == "" {
 		return nil
 	}
+
 	resolved, err = s.input.resolveImage(config.CanvasPath)
 	if err != nil {
 		return continuationFailure(http.StatusBadRequest, code, origin+" canvas is outside configured input roots")
 	}
+
 	config.CanvasPath = resolved
+
 	return nil
 }
 
@@ -159,10 +175,12 @@ func (s *Server) startContinuation(jobID string, project app.Project, config Job
 		slog.Error("Failed to create continuation job", "job_id", jobID, "error", err)
 		return nil, continuationFailure(http.StatusInternalServerError, "job_error", "failed to initialize continuation job")
 	}
+
 	if err := s.jobManager.UpdateJob(job.ID, func(live *Job) {
 		updateBestResult(live, src.checkpoint.BestParams, src.checkpoint.BestCost)
 		live.InitialCost = src.checkpoint.InitialCost
 		live.Iterations = src.checkpoint.Iteration
+
 		live.Evaluations = src.evaluations
 		if lineage != nil {
 			lineage(live)
@@ -170,18 +188,22 @@ func (s *Server) startContinuation(jobID string, project app.Project, config Job
 	}); err != nil {
 		return nil, continuationFailure(http.StatusInternalServerError, "job_error", "failed to initialize continuation job")
 	}
+
 	if initialized, ok := s.jobManager.GetJob(job.ID); ok {
 		s.jobManager.broadcaster.Broadcast(jobProgressSnapshot(initialized))
+
 		if initialized.ScheduleID != "" {
 			s.publishScheduleChanged(initialized.ScheduleID)
 		} else if initialized.ExtendedFrom != "" || initialized.PolishedFrom != "" {
 			s.publishChainsChanged()
 		}
 	}
+
 	if err := s.enqueueJob(job.ID); err != nil {
 		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
 		return nil, continuationFailure(http.StatusTooManyRequests, "queue_full", "server job queue is full")
 	}
+
 	return job, nil
 }
 
@@ -197,6 +219,7 @@ func (s *Server) requireCheckpointStore() *continuationError {
 	if s.store == nil {
 		return continuationFailure(http.StatusServiceUnavailable, "checkpoint_unavailable", "checkpoint feature not enabled")
 	}
+
 	return nil
 }
 
@@ -205,11 +228,13 @@ func (s *Server) requireCheckpointStore() *continuationError {
 // cannot hold schedules.
 func (s *Server) scheduleStore() (store.ScheduleStore, error) {
 	if s.store == nil {
-		return nil, fmt.Errorf("checkpoint feature not enabled")
+		return nil, errors.New("checkpoint feature not enabled")
 	}
+
 	scheduleStore, ok := s.store.(store.ScheduleStore)
 	if !ok {
-		return nil, fmt.Errorf("the configured store does not persist schedules")
+		return nil, errors.New("the configured store does not persist schedules")
 	}
+
 	return scheduleStore, nil
 }

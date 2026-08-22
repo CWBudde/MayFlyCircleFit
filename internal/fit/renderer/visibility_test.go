@@ -31,6 +31,7 @@ func TestAnalyzeCircleVisibilityCountsChangedCanvasPixels(t *testing.T) {
 		{X: 9, Y: 6, R: 1, Opacity: 1e-12},
 	}
 	params := make([]float64, len(circles)*paramsPerCircle)
+
 	vector := fit.ParamVector{Data: params, K: len(circles), Width: width, Height: height}
 	for i, circle := range circles {
 		vector.EncodeCircle(i, circle)
@@ -40,6 +41,7 @@ func TestAnalyzeCircleVisibilityCountsChangedCanvasPixels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AnalyzeCircleVisibility() error = %v", err)
 	}
+
 	want := []CircleVisibility{
 		{Circle: 1, ChangedPixels: 5, Valid: true},
 		{Circle: 2, ChangedPixels: 0, Valid: true},
@@ -53,13 +55,16 @@ func TestAnalyzeCircleVisibilityCountsChangedCanvasPixels(t *testing.T) {
 	if len(got) != len(want) {
 		t.Fatalf("visibility count = %d, want %d", len(got), len(want))
 	}
+
 	for i := range want {
 		if got[i].Circle != want[i].Circle || got[i].ChangedPixels != want[i].ChangedPixels || got[i].Valid != want[i].Valid {
 			t.Errorf("circle %d visibility = %#v, want %#v", i+1, got[i], want[i])
 		}
+
 		if got[i].Valid && got[i].ValidationError != "" {
 			t.Errorf("valid circle %d has validation error %q", i+1, got[i].ValidationError)
 		}
+
 		if !got[i].Valid && got[i].ValidationError == "" {
 			t.Errorf("invalid circle %d has no validation error", i+1)
 		}
@@ -71,6 +76,7 @@ func TestAnalyzeCircleVisibilityAcceptsOutsideCenterThatReachesCanvas(t *testing
 	reference := image.NewNRGBA(image.Rect(0, 0, width, height))
 	renderer := NewCPURenderer(reference, 1)
 	renderer.SetThreads(1)
+
 	params := []float64{
 		-width / 2, -height / 2, 12, 0, 0, 0, 1,
 	}
@@ -79,6 +85,7 @@ func TestAnalyzeCircleVisibilityAcceptsOutsideCenterThatReachesCanvas(t *testing
 	if err != nil {
 		t.Fatalf("AnalyzeCircleVisibility() error = %v", err)
 	}
+
 	if len(got) != 1 || !got[0].Valid || got[0].ChangedPixels == 0 {
 		t.Fatalf("visibility = %#v, want a valid circle changing the canvas", got)
 	}
@@ -91,6 +98,7 @@ func TestAnalyzeCircleVisibilityRejectsInvalidInput(t *testing.T) {
 
 	reference := image.NewNRGBA(image.Rect(0, 0, 2, 2))
 	reference.SetNRGBA(0, 0, color.NRGBA{A: 255})
+
 	renderer := NewCPURenderer(reference, 1)
 	if _, err := AnalyzeCircleVisibility(renderer, make([]float64, paramsPerCircle-1)); err == nil {
 		t.Fatal("AnalyzeCircleVisibility(short params) error = nil")

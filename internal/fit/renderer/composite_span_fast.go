@@ -23,6 +23,7 @@ package renderer
 // fastSpanConstants returns the per-lane addend and multiplier described above.
 func fastSpanConstants(r, g, b, alpha float64) (addR, addG, addB, mul float32) {
 	bgBlend := float32(1 - alpha)
+
 	return float32(r*alpha)*255 + 0.5,
 		float32(g*alpha)*255 + 0.5,
 		float32(b*alpha)*255 + 0.5,

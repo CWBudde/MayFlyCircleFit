@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
@@ -24,8 +25,9 @@ type CircleVisibility struct {
 // render per circle.
 func AnalyzeCircleVisibility(r Renderer, params []float64) ([]CircleVisibility, error) {
 	if r == nil {
-		return nil, fmt.Errorf("renderer cannot be nil")
+		return nil, errors.New("renderer cannot be nil")
 	}
+
 	if len(params) != r.Dim() || len(params)%paramsPerCircle != 0 {
 		return nil, fmt.Errorf("parameter count %d does not match renderer dimension %d", len(params), r.Dim())
 	}
@@ -37,6 +39,7 @@ func AnalyzeCircleVisibility(r Renderer, params []float64) ([]CircleVisibility, 
 		Data: params, K: circleCount,
 		Width: referenceBounds.Dx(), Height: referenceBounds.Dy(),
 	}
+
 	working := append([]float64(nil), params...)
 	for offset := 0; offset < len(working); offset += paramsPerCircle {
 		working[offset+6] = 0
@@ -44,13 +47,15 @@ func AnalyzeCircleVisibility(r Renderer, params []float64) ([]CircleVisibility, 
 
 	base := r.Render(working)
 	previous := append([]byte(nil), base.Pix...)
+
 	visibility := make([]CircleVisibility, circleCount)
-	for circle := 0; circle < circleCount; circle++ {
+	for circle := range circleCount {
 		offset := circle * paramsPerCircle
 		working[offset+6] = params[offset+6]
 		rendered := r.Render(working)
 
 		changed := 0
+
 		bounds := rendered.Bounds()
 		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 			for x := bounds.Min.X; x < bounds.Max.X; x++ {
@@ -68,6 +73,7 @@ func AnalyzeCircleVisibility(r Renderer, params []float64) ([]CircleVisibility, 
 			Valid:           validationErr == nil,
 			ValidationError: errorString(validationErr),
 		}
+
 		copy(previous, rendered.Pix)
 	}
 
@@ -78,5 +84,6 @@ func errorString(err error) string {
 	if err == nil {
 		return ""
 	}
+
 	return err.Error()
 }

@@ -4,7 +4,7 @@ import "image"
 
 const paramsPerCircle = 7
 
-// Renderer renders circles to an image and computes cost
+// Renderer renders circles to an image and computes cost.
 type Renderer interface {
 	// Render creates an image from parameter vector
 	Render(params []float64) *image.NRGBA
@@ -22,5 +22,5 @@ type Renderer interface {
 	Reference() *image.NRGBA
 }
 
-// noopCleanup is a no-op cleanup function used when no cleanup is needed
+// noopCleanup is a no-op cleanup function used when no cleanup is needed.
 var noopCleanup = func() {}

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -87,6 +88,7 @@ func runListCheckpoints(cmd *cobra.Command, args []string) error {
 		// Get checkpoint directory size
 		jobDir := filepath.Join(checkpointDataDir, "jobs", info.JobID)
 		size, err := getDirSize(jobDir)
+
 		sizeStr := "unknown"
 		if err == nil {
 			sizeStr = formatBytes(size)
@@ -114,13 +116,14 @@ func runListCheckpoints(cmd *cobra.Command, args []string) error {
 	w.Flush()
 
 	fmt.Fprintf(output, "\nTotal checkpoints: %d\n", len(infos))
+
 	return nil
 }
 
 func runCleanCheckpoints(cmd *cobra.Command, args []string) error {
 	// Validate flags
 	if keepLast == 0 && olderThanDays == 0 {
-		return NewUsageError(fmt.Errorf("must specify either --keep-last or --older-than"))
+		return NewUsageError(errors.New("must specify either --keep-last or --older-than"))
 	}
 
 	// Create store
@@ -150,11 +153,13 @@ func runCleanCheckpoints(cmd *cobra.Command, args []string) error {
 
 	// Show what will be deleted
 	fmt.Printf("Found %d checkpoint(s) to delete:\n", len(toDelete))
+
 	for _, info := range toDelete {
 		displayID := info.JobID
 		if len(displayID) > 12 {
 			displayID = displayID[:12] + "..."
 		}
+
 		fmt.Printf("  - %s (iteration %d, %s)\n",
 			displayID,
 			info.Iteration,
@@ -179,22 +184,26 @@ func runCleanCheckpoints(cmd *cobra.Command, args []string) error {
 	// Delete checkpoints
 	deleted := 0
 	failed := 0
+
 	for _, info := range toDelete {
 		err := checkpointStore.DeleteCheckpoint(info.JobID)
 		if err != nil {
 			slog.Error("Failed to delete checkpoint", "job_id", info.JobID, "error", err)
+
 			failed++
 		} else {
 			slog.Info("Deleted checkpoint", "job_id", info.JobID)
+
 			deleted++
 		}
 	}
 
 	fmt.Printf("\nDeleted %d checkpoint(s), %d failed.\n", deleted, failed)
+
 	return nil
 }
 
-// selectCheckpointsForDeletion determines which checkpoints should be deleted based on retention policy
+// selectCheckpointsForDeletion determines which checkpoints should be deleted based on retention policy.
 func selectCheckpointsForDeletion(infos []store.CheckpointInfo, keepLast int, olderThanDays int) []store.CheckpointInfo {
 	var toDelete []store.CheckpointInfo
 
@@ -232,15 +241,17 @@ func selectCheckpointsForDeletion(infos []store.CheckpointInfo, keepLast int, ol
 
 			// Delete oldest checkpoints beyond keepLast
 			numToDelete := len(sorted) - keepLast
-			for i := 0; i < numToDelete; i++ {
+			for i := range numToDelete {
 				// Check if not already in toDelete list
 				found := false
+
 				for _, existing := range toDelete {
 					if existing.JobID == sorted[i].JobID {
 						found = true
 						break
 					}
 				}
+
 				if !found {
 					toDelete = append(toDelete, sorted[i])
 				}
@@ -251,31 +262,36 @@ func selectCheckpointsForDeletion(infos []store.CheckpointInfo, keepLast int, ol
 	return toDelete
 }
 
-// getDirSize calculates the total size of a directory
+// getDirSize calculates the total size of a directory.
 func getDirSize(path string) (int64, error) {
 	var size int64
 	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
+
 		if !info.IsDir() {
 			size += info.Size()
 		}
+
 		return nil
 	})
+
 	return size, err
 }
 
-// formatBytes formats bytes as human-readable string
+// formatBytes formats bytes as human-readable string.
 func formatBytes(bytes int64) string {
 	const unit = 1024
 	if bytes < unit {
 		return fmt.Sprintf("%d B", bytes)
 	}
+
 	div, exp := int64(unit), 0
 	for n := bytes / unit; n >= unit; n /= unit {
 		div *= unit
 		exp++
 	}
+
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }

@@ -52,6 +52,7 @@ type scheduleSummary struct {
 // single stage actually needs.
 type scheduleDetail struct {
 	scheduleSummary
+
 	Document app.ScheduleDocument   `json:"document"`
 	Stages   []scheduleStageSummary `json:"stages"`
 }
@@ -90,6 +91,7 @@ func summarizeScheduleStages(stages []store.ScheduleStageRecord) []scheduleStage
 	for i := range stages {
 		summaries = append(summaries, summarizeScheduleStage(&stages[i]))
 	}
+
 	return summaries
 }
 
@@ -108,6 +110,7 @@ func summarizeScheduleStage(stage *store.ScheduleStageRecord) scheduleStageSumma
 		elapsed := stage.CompletedAt.Sub(*stage.StartedAt).Nanoseconds()
 		summary.ElapsedNanos = &elapsed
 	}
+
 	return summary
 }
 
@@ -116,6 +119,7 @@ func summarizeSchedule(record *store.ScheduleRecord) scheduleSummary {
 	if plan, err := record.Document.Expand(); err == nil {
 		total = len(plan)
 	}
+
 	return scheduleSummary{
 		ScheduleID:   record.ScheduleID,
 		Name:         record.Document.Name,
@@ -128,7 +132,7 @@ func summarizeSchedule(record *store.ScheduleRecord) scheduleSummary {
 	}
 }
 
-// handleSchedules handles /api/v1/schedules
+// handleSchedules handles /api/v1/schedules.
 func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
@@ -141,15 +145,18 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleSchedulesWithID handles /api/v1/schedules/:id/*
+// handleSchedulesWithID handles /api/v1/schedules/:id/*.
 func (s *Server) handleSchedulesWithID(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/schedules/")
+
 	parts := strings.Split(path, "/")
 	if len(parts) == 0 || parts[0] == "" {
 		writeAPIError(w, http.StatusBadRequest, "invalid_schedule_id", "schedule ID required")
 		return
 	}
+
 	scheduleID := parts[0]
+
 	parsed, err := uuid.Parse(scheduleID)
 	if err != nil || parsed == uuid.Nil || parsed.String() != scheduleID {
 		writeAPIError(w, http.StatusBadRequest, "invalid_schedule_id", "schedule ID must be a canonical UUID")
@@ -179,7 +186,9 @@ func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusServiceUnavailable, "schedules_unavailable", err.Error())
 		return
 	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, app.MaxRequestBody)
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
@@ -187,9 +196,12 @@ func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body exceeds the size limit")
 			return
 		}
+
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "unable to read request body")
+
 		return
 	}
+
 	document, err := app.ParseSchedule(body)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_schedule", err.Error())
@@ -199,7 +211,8 @@ func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 	// in. The path itself stays as authored: it is resolved again when each
 	// stage runs, so a schedule does not bake in this process's view of disk.
 	probe := document.Base
-	if failure := s.resolveConfigPaths(&probe, "schedule"); failure != nil {
+	failure := s.resolveConfigPaths(&probe, "schedule")
+	if failure != nil {
 		writeContinuationError(w, failure)
 		return
 	}
@@ -211,16 +224,21 @@ func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_schedule", err.Error())
 		return
 	}
+
 	record.State = store.ScheduleStateRunning
 	if err := scheduleStore.SaveSchedule(record); err != nil {
 		slog.Error("Failed to persist schedule", "error", err)
 		writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to persist the schedule")
+
 		return
 	}
+
 	s.publishScheduleChanged(record.ScheduleID)
+
 	if err := s.startScheduleDriver(record.ScheduleID); err != nil {
 		slog.Error("Failed to start schedule executor", "schedule_id", record.ScheduleID, "error", err)
 		writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to start the schedule")
+
 		return
 	}
 
@@ -229,48 +247,56 @@ func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(summarizeSchedule(record))
 }
 
-// handleListSchedules handles GET /api/v1/schedules
+// handleListSchedules handles GET /api/v1/schedules.
 func (s *Server) handleListSchedules(w http.ResponseWriter, _ *http.Request) {
 	scheduleStore, err := s.scheduleStore()
 	if err != nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "schedules_unavailable", err.Error())
 		return
 	}
+
 	records, err := scheduleStore.ListSchedules()
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to list schedules")
 		return
 	}
+
 	summaries := make([]scheduleSummary, 0, len(records))
 	for i := range records {
 		summaries = append(summaries, summarizeSchedule(&records[i]))
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(summaries)
 }
 
-// handleGetSchedule handles GET /api/v1/schedules/:id
+// handleGetSchedule handles GET /api/v1/schedules/:id.
 func (s *Server) handleGetSchedule(w http.ResponseWriter, r *http.Request, scheduleID string) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
+
 	scheduleStore, err := s.scheduleStore()
 	if err != nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "schedules_unavailable", err.Error())
 		return
 	}
+
 	record, err := scheduleStore.LoadSchedule(scheduleID)
 	if err != nil {
 		writeScheduleLoadError(w, err)
 		return
 	}
+
 	stages, err := scheduleStore.LoadScheduleStages(scheduleID)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to load schedule stages")
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(scheduleDetail{
 		scheduleSummary: summarizeSchedule(record),
@@ -288,13 +314,16 @@ func (s *Server) handleGetScheduleStage(w http.ResponseWriter, r *http.Request, 
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
+
 	index, err := strconv.Atoi(rawIndex)
 	if err != nil || index < 0 {
 		writeAPIError(w, http.StatusBadRequest, "invalid_stage_index", "stage index must be a non-negative integer")
 		return
 	}
+
 	scheduleStore, err := s.scheduleStore()
 	if err != nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "schedules_unavailable", err.Error())
@@ -306,15 +335,19 @@ func (s *Server) handleGetScheduleStage(w http.ResponseWriter, r *http.Request, 
 		writeScheduleLoadError(w, err)
 		return
 	}
+
 	stage, err := scheduleStore.LoadScheduleStage(scheduleID, index)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeAPIError(w, http.StatusNotFound, "not_found", "no stage recorded at that index")
 			return
 		}
+
 		writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to load the schedule stage")
+
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(stage)
 }
@@ -330,13 +363,16 @@ func (s *Server) handleScheduleAction(w http.ResponseWriter, r *http.Request, sc
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
+
 	scheduleStore, err := s.scheduleStore()
 	if err != nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "schedules_unavailable", err.Error())
 		return
 	}
+
 	record, err := scheduleStore.LoadSchedule(scheduleID)
 	if err != nil {
 		writeScheduleLoadError(w, err)
@@ -348,6 +384,7 @@ func (s *Server) handleScheduleAction(w http.ResponseWriter, r *http.Request, sc
 		writeContinuationError(w, failure)
 		return
 	}
+
 	record.State = next
 	if next == store.ScheduleStateRunning {
 		record.Error = ""
@@ -362,10 +399,12 @@ func (s *Server) handleScheduleAction(w http.ResponseWriter, r *http.Request, sc
 				"schedule_id", scheduleID, "error", err)
 		}
 	}
+
 	if err := scheduleStore.SaveSchedule(record); err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to update the schedule")
 		return
 	}
+
 	s.publishScheduleChanged(scheduleID)
 
 	switch action {
@@ -375,7 +414,8 @@ func (s *Server) handleScheduleAction(w http.ResponseWriter, r *http.Request, sc
 		// than a running one whose stage was killed behind its back.
 		s.cancelScheduleStage(scheduleID)
 	case "resume":
-		if err := s.startScheduleDriver(scheduleID); err != nil && !errors.Is(err, errScheduleDriverRunning) {
+		err := s.startScheduleDriver(scheduleID)
+		if err != nil && !errors.Is(err, errScheduleDriverRunning) {
 			writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to start the schedule")
 			return
 		}
@@ -395,14 +435,17 @@ func releasedBarrierStage(scheduleStore store.ScheduleStore, record *store.Sched
 	if err != nil {
 		return 0, fmt.Errorf("expand schedule: %w", err)
 	}
+
 	recorded, err := scheduleStore.LoadScheduleStages(record.ScheduleID)
 	if err != nil {
 		return 0, fmt.Errorf("load schedule stages: %w", err)
 	}
+
 	index, _, _ := nextScheduleStage(plan, recorded)
 	if index < 0 {
 		return 0, nil
 	}
+
 	return index, nil
 }
 
@@ -415,19 +458,23 @@ func scheduleTransition(current store.ScheduleState, action string) (store.Sched
 		case store.ScheduleStatePending, store.ScheduleStateRunning, store.ScheduleStatePaused:
 			return store.ScheduleStateCancelled, nil
 		}
+
 		return "", continuationFailure(http.StatusConflict, "invalid_state", "schedule is "+string(current))
 	case "pause":
 		if current == store.ScheduleStateRunning {
 			return store.ScheduleStatePaused, nil
 		}
+
 		return "", continuationFailure(http.StatusConflict, "invalid_state", "only a running schedule can be paused")
 	case "resume":
 		switch current {
 		case store.ScheduleStatePaused, store.ScheduleStatePending:
 			return store.ScheduleStateRunning, nil
 		}
+
 		return "", continuationFailure(http.StatusConflict, "invalid_state", "only a paused schedule can be resumed")
 	}
+
 	return "", continuationFailure(http.StatusNotFound, "not_found", "resource not found")
 }
 
@@ -436,5 +483,6 @@ func writeScheduleLoadError(w http.ResponseWriter, err error) {
 		writeAPIError(w, http.StatusNotFound, "not_found", "schedule not found")
 		return
 	}
+
 	writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to load the schedule")
 }

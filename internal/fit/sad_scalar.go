@@ -5,7 +5,7 @@ package fit
 
 const (
 	// CScale from Delphi: 1.5378700499807766243752402921953E-6
-	// This normalizes the weighted cost to a reasonable range
+	// This normalizes the weighted cost to a reasonable range.
 	sadScale = 1.5378700499807766243752402921953e-6
 )
 
@@ -25,10 +25,10 @@ const (
 func fastSAD_Scalar(a, b []uint8, stride, width, height int) float64 {
 	var totalCost float64
 
-	for y := 0; y < height; y++ {
+	for y := range height {
 		rowStart := y * stride
 
-		for x := 0; x < width; x++ {
+		for x := range width {
 			i := rowStart + x*4
 
 			// Compute absolute differences for RGB channels (ignore alpha)

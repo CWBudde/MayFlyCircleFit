@@ -11,7 +11,7 @@ import (
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
 )
 
-// loadReferenceImage loads and converts an image to NRGBA
+// loadReferenceImage loads and converts an image to NRGBA.
 func loadReferenceImage(path string) (*image.NRGBA, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -29,6 +29,7 @@ func loadReferenceImage(path string) (*image.NRGBA, error) {
 	if err := app.ValidateImageDimensions(bounds.Dx(), bounds.Dy()); err != nil {
 		return nil, err
 	}
+
 	ref := image.NewNRGBA(bounds)
 	draw.Draw(ref, bounds, img, bounds.Min, draw.Src)
 

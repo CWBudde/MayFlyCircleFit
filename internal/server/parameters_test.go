@@ -39,9 +39,11 @@ func TestDecodeParameterCircles(t *testing.T) {
 			if err != nil {
 				t.Fatalf("decodeParameterCircles() error = %v", err)
 			}
+
 			if len(circles) != test.count {
 				t.Fatalf("circle count = %d, want %d", len(circles), test.count)
 			}
+
 			if got := circles[test.count-1]; got.Number != test.count || got.Opacity != 0.4 {
 				t.Fatalf("last circle = %+v", got)
 			}
@@ -57,10 +59,12 @@ func TestDecodeParameterCirclesRejectsPartialCircle(t *testing.T) {
 
 func TestServerGetParameters(t *testing.T) {
 	server := NewServer(":8080", nil)
+
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{Circles: 2})
 	if err := server.jobManager.StartJob(job.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	params := []float64{
 		10.25, 20.5, 3.75, 1, 0.5, 0, 0.8,
 		30, 40, 8, 0.1, 0.2, 0.3, 0.4,
@@ -72,19 +76,24 @@ func TestServerGetParameters(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+job.ID+"/params.json", nil)
 	recorder := httptest.NewRecorder()
 	before := time.Now().UTC()
+
 	server.Handler().ServeHTTP(recorder, request)
+
 	after := time.Now().UTC()
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", recorder.Code, recorder.Body.String())
 	}
+
 	if got := recorder.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
 		t.Errorf("Content-Type = %q", got)
 	}
+
 	mediaType, disposition, err := mime.ParseMediaType(recorder.Header().Get("Content-Disposition"))
 	if err != nil || mediaType != "attachment" || disposition["filename"] != artifactFilename(job.ID, "params.json") {
 		t.Errorf("Content-Disposition = %q, error = %v", recorder.Header().Get("Content-Disposition"), err)
 	}
+
 	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
 		t.Errorf("Cache-Control = %q", got)
 	}
@@ -93,18 +102,23 @@ func TestServerGetParameters(t *testing.T) {
 	if err := json.NewDecoder(recorder.Body).Decode(&exported); err != nil {
 		t.Fatal(err)
 	}
+
 	if exported.JobID != job.ID || exported.Cost != 12.5 || exported.Iterations != 17 {
 		t.Errorf("metadata = %+v", exported)
 	}
+
 	if exported.Timestamp.Before(before) || exported.Timestamp.After(after) {
 		t.Errorf("timestamp = %s, want between %s and %s", exported.Timestamp, before, after)
 	}
+
 	if !reflect.DeepEqual(exported.Params, params) {
 		t.Errorf("params = %v, want %v", exported.Params, params)
 	}
+
 	if len(exported.Circles) != 2 {
 		t.Fatalf("circle count = %d, want 2", len(exported.Circles))
 	}
+
 	first := exported.Circles[0]
 	if first.Number != 1 || first.X != 10.25 || first.Radius != 3.75 || first.Green != 0.5 || first.Opacity != 0.8 {
 		t.Errorf("first circle = %+v", first)
@@ -130,6 +144,7 @@ func TestServerGetParametersErrors(t *testing.T) {
 			request := httptest.NewRequest(test.method, "/api/v1/jobs/"+test.jobID+"/params.json", nil)
 			recorder := httptest.NewRecorder()
 			server.Handler().ServeHTTP(recorder, request)
+
 			if recorder.Code != test.want {
 				t.Fatalf("status = %d, want %d: %s", recorder.Code, test.want, recorder.Body.String())
 			}

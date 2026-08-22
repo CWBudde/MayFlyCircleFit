@@ -56,6 +56,7 @@ func ParseSIMDTier(name string) (SIMDTier, bool) {
 			return tier, true
 		}
 	}
+
 	return TierScalar, false
 }
 
@@ -88,9 +89,11 @@ func Tier() SIMDTier {
 	if forced := forcedTier.Load(); forced != nil {
 		return *forced
 	}
+
 	if resolved := resolvedTier.Load(); resolved != nil {
 		return *resolved
 	}
+
 	return resolveTierSlow()
 }
 
@@ -105,6 +108,7 @@ func resolveTierSlow() SIMDTier {
 
 	tier := tierFromEnvironment()
 	resolvedTier.Store(&tier)
+
 	return tier
 }
 
@@ -119,9 +123,11 @@ func tierFromEnvironment() SIMDTier {
 		if !valid {
 			panic(fmt.Sprintf("%s=%q is not a tier name (want avx2, sse2, neon, or scalar)", simdTierEnv, requested))
 		}
+
 		if !tierSupported(tier) {
 			panic(fmt.Sprintf("%s=%q is not reachable on this build (supported: %s)", simdTierEnv, requested, supportedTierNames()))
 		}
+
 		return tier
 	}
 
@@ -142,6 +148,7 @@ func SetForcedTier(tier SIMDTier) {
 	if !tierSupported(tier) {
 		panic(fmt.Sprintf("tier %s is not reachable on this build (supported: %s)", tier, supportedTierNames()))
 	}
+
 	forcedTier.Store(&tier)
 	notifyTierConsumers(tier)
 }
@@ -160,6 +167,7 @@ func ResetTierDetection() {
 // tier.
 func RegisterTierConsumer(install func(SIMDTier)) {
 	tierMu.Lock()
+
 	tierConsumers = append(tierConsumers, install)
 	tierMu.Unlock()
 
@@ -179,14 +187,18 @@ func notifyTierConsumers(tier SIMDTier) {
 
 func supportedTierNames() string {
 	names := ""
+
 	for _, tier := range []SIMDTier{TierScalar, TierSSE2, TierAVX2, TierNEON} {
 		if !tierSupported(tier) {
 			continue
 		}
+
 		if names != "" {
 			names += ", "
 		}
+
 		names += tier.String()
 	}
+
 	return names
 }

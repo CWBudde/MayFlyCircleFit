@@ -88,9 +88,11 @@ func (e *cliAPIError) Error() string {
 	if e.Code != "" {
 		detail = fmt.Sprintf("%s: %s", e.Code, detail)
 	}
+
 	if detail == "" {
-		return fmt.Sprintf("server returned %s", e.Status)
+		return "server returned " + e.Status
 	}
+
 	return fmt.Sprintf("server returned %s: %s", e.Status, detail)
 }
 
@@ -102,6 +104,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	jobID := args[0]
 	endpoint := fmt.Sprintf("%s/api/v1/jobs/%s/status", baseURL, url.PathEscape(jobID))
+
 	return getJobStatus(cmd.Context(), cmd.OutOrStdout(), endpoint, jobID)
 }
 
@@ -110,6 +113,7 @@ func listJobs(ctx context.Context, output io.Writer, endpoint string) error {
 	if err != nil {
 		return fmt.Errorf("query jobs: %w", err)
 	}
+
 	body, err := requestCLI(ctx, http.MethodGet, pageEndpoint)
 	if err != nil {
 		return fmt.Errorf("query jobs: %w", err)
@@ -119,21 +123,28 @@ func listJobs(ctx context.Context, output io.Writer, endpoint string) error {
 	// parameters are present. Keep accepting that response during upgrades.
 	if bytes.HasPrefix(bytes.TrimSpace(body), []byte("[")) {
 		var jobs []jobResponse
-		if err := decodeCLIResponse(body, &jobs); err != nil {
+		err := decodeCLIResponse(body, &jobs)
+		if err != nil {
 			return fmt.Errorf("decode jobs response: %w", err)
 		}
+
 		if jobs == nil {
 			return errors.New("invalid jobs response: expected a JSON array")
 		}
-		if err := validateJobListPage(jobs, 0); err != nil {
+
+		err := validateJobListPage(jobs, 0)
+		if err != nil {
 			return err
 		}
+
 		if len(jobs) == 0 {
 			fmt.Fprintln(output, "No jobs found")
 			return nil
 		}
+
 		fmt.Fprintf(output, "Found %d job(s):\n\n", len(jobs))
 		writeJobList(output, jobs)
+
 		return nil
 	}
 
@@ -141,12 +152,15 @@ func listJobs(ctx context.Context, output io.Writer, endpoint string) error {
 	if err := decodeCLIResponse(body, &page); err != nil {
 		return fmt.Errorf("decode jobs response: %w", err)
 	}
+
 	if page.Jobs == nil || page.Total == nil || *page.Total < len(page.Jobs) || *page.Total < 0 {
 		return errors.New("invalid jobs response: expected a paginated job collection")
 	}
+
 	if err := validateJobListPage(page.Jobs, 0); err != nil {
 		return err
 	}
+
 	if *page.Total == 0 {
 		fmt.Fprintln(output, "No jobs found")
 		return nil
@@ -154,34 +168,46 @@ func listJobs(ctx context.Context, output io.Writer, endpoint string) error {
 
 	fmt.Fprintf(output, "Found %d job(s):\n\n", *page.Total)
 	writeJobList(output, page.Jobs)
+
 	seenCursors := make(map[string]struct{})
+
 	seenJobs := len(page.Jobs)
 	for page.NextCursor != "" {
 		if len(page.Jobs) == 0 {
 			return errors.New("invalid jobs response: empty page has a continuation cursor")
 		}
+
 		if _, exists := seenCursors[page.NextCursor]; exists {
 			return errors.New("invalid jobs response: repeated continuation cursor")
 		}
+
 		seenCursors[page.NextCursor] = struct{}{}
+
 		pageEndpoint, err = jobListPageEndpoint(endpoint, page.NextCursor)
 		if err != nil {
 			return fmt.Errorf("query jobs: %w", err)
 		}
+
 		body, err = requestCLI(ctx, http.MethodGet, pageEndpoint)
 		if err != nil {
 			return fmt.Errorf("query jobs: %w", err)
 		}
+
 		page = jobListPageResponse{}
-		if err := decodeCLIResponse(body, &page); err != nil {
+		err := decodeCLIResponse(body, &page)
+		if err != nil {
 			return fmt.Errorf("decode jobs response: %w", err)
 		}
+
 		if page.Jobs == nil || page.Total == nil || *page.Total < len(page.Jobs) || *page.Total < 0 {
 			return errors.New("invalid jobs response: expected a paginated job collection")
 		}
-		if err := validateJobListPage(page.Jobs, seenJobs); err != nil {
+
+		err := validateJobListPage(page.Jobs, seenJobs)
+		if err != nil {
 			return err
 		}
+
 		writeJobList(output, page.Jobs)
 		seenJobs += len(page.Jobs)
 	}
@@ -194,23 +220,29 @@ func jobListPageEndpoint(endpoint, cursor string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parse server URL: %w", err)
 	}
+
 	query := parsed.Query()
 	query.Set("limit", "100")
+
 	if cursor == "" {
 		query.Del("cursor")
 	} else {
 		query.Set("cursor", cursor)
 	}
+
 	parsed.RawQuery = query.Encode()
+
 	return parsed.String(), nil
 }
 
 func validateJobListPage(jobs []jobResponse, offset int) error {
 	for i := range jobs {
-		if err := jobs[i].validate(false); err != nil {
+		err := jobs[i].validate(false)
+		if err != nil {
 			return fmt.Errorf("invalid jobs response at index %d: %w", offset+i, err)
 		}
 	}
+
 	return nil
 }
 
@@ -220,9 +252,11 @@ func writeJobList(output io.Writer, jobs []jobResponse) {
 		fmt.Fprintf(output, "  State: %s\n", job.State)
 		fmt.Fprintf(output, "  Circles: %d\n", job.Config.Circles)
 		fmt.Fprintf(output, "  Mode: %s\n", job.Config.Mode)
+
 		if *job.BestCost > 0 {
 			fmt.Fprintf(output, "  Cost: %.2f -> %.2f\n", *job.InitialCost, *job.BestCost)
 		}
+
 		fmt.Fprintln(output)
 	}
 }
@@ -234,6 +268,7 @@ func getJobStatus(ctx context.Context, output io.Writer, endpoint, jobID string)
 		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
 			return fmt.Errorf("job not found %q: %w", jobID, err)
 		}
+
 		return fmt.Errorf("query job %q: %w", jobID, err)
 	}
 
@@ -241,9 +276,11 @@ func getJobStatus(ctx context.Context, output io.Writer, endpoint, jobID string)
 	if err := decodeCLIResponse(body, &status); err != nil {
 		return fmt.Errorf("decode status response: %w", err)
 	}
+
 	if err := status.validate(true); err != nil {
 		return fmt.Errorf("invalid status response: %w", err)
 	}
+
 	if status.ID != jobID {
 		return fmt.Errorf("invalid status response: job ID %q does not match requested ID %q", status.ID, jobID)
 	}
@@ -266,14 +303,18 @@ func getJobStatus(ctx context.Context, output io.Writer, endpoint, jobID string)
 	if status.EvaluationWidth != nil && *status.EvaluationWidth > 1 {
 		fmt.Fprintf(output, "  Parallel evaluation: %d workers\n", *status.EvaluationWidth)
 	}
+
 	fmt.Fprintln(output)
 
 	fmt.Fprintln(output, "Progress:")
+
 	if *status.InitialCost > 0 {
 		fmt.Fprintf(output, "  Initial Cost: %.2f\n", *status.InitialCost)
 	}
+
 	if *status.BestCost > 0 {
 		fmt.Fprintf(output, "  Best Cost: %.2f\n", *status.BestCost)
+
 		if *status.InitialCost > 0 {
 			improvement := *status.InitialCost - *status.BestCost
 			improvementPct := improvement / *status.InitialCost * 100
@@ -283,9 +324,11 @@ func getJobStatus(ctx context.Context, output io.Writer, endpoint, jobID string)
 
 	elapsed := time.Duration(*status.Elapsed * float64(time.Second))
 	fmt.Fprintf(output, "  Elapsed: %s\n", elapsed.Round(time.Millisecond))
+
 	if *status.CPS > 0 {
 		fmt.Fprintf(output, "  Throughput: %.0f circles/sec\n", *status.CPS)
 	}
+
 	if status.Termination != "" {
 		fmt.Fprintf(output, "  Termination: %s\n", status.Termination)
 	}
@@ -301,55 +344,69 @@ func (job jobResponse) validate(statusResponse bool) error {
 	if strings.TrimSpace(job.ID) == "" {
 		return errors.New("id is required")
 	}
+
 	switch job.State {
 	case "pending", "running", "completed", "failed", "cancelled":
 	default:
 		return fmt.Errorf("unknown state %q", job.State)
 	}
+
 	if job.Config == nil {
 		return errors.New("config is required")
 	}
+
 	if statusResponse {
-		if err := job.Config.Validate(); err != nil {
+		err := job.Config.Validate()
+		if err != nil {
 			return fmt.Errorf("invalid config: %w", err)
 		}
 	} else {
 		if strings.TrimSpace(job.Config.RefPath) == "" {
 			return errors.New("config.refPath is required")
 		}
+
 		switch job.Config.Mode {
 		case app.ModeJoint, app.ModeSequential, app.ModeBatch:
 		default:
 			return fmt.Errorf("invalid config mode %q", job.Config.Mode)
 		}
+
 		if job.Config.Circles < 1 || job.Config.Circles > app.MaxCircles {
 			return fmt.Errorf("config.circles must be between 1 and %d", app.MaxCircles)
 		}
 	}
+
 	if job.Iterations == nil || *job.Iterations < 0 {
 		return errors.New("iterations must be present and non-negative")
 	}
+
 	if job.Evaluations == nil || *job.Evaluations < 0 {
 		return errors.New("evaluations must be present and non-negative")
 	}
+
 	if job.InitialCost == nil || job.BestCost == nil {
 		return errors.New("costs are required")
 	}
+
 	if !finiteNonnegative(*job.InitialCost) || !finiteNonnegative(*job.BestCost) {
 		return errors.New("costs must be finite and non-negative")
 	}
+
 	if job.StartTime == nil || job.StartTime.IsZero() {
 		return errors.New("startTime is required")
 	}
+
 	if statusResponse {
 		maxSeconds := float64(math.MaxInt64) / float64(time.Second)
 		if job.Elapsed == nil || !finiteNonnegative(*job.Elapsed) || *job.Elapsed > maxSeconds {
 			return errors.New("elapsed must be a representable, finite, non-negative duration")
 		}
+
 		if job.CPS == nil || !finiteNonnegative(*job.CPS) {
 			return errors.New("cps must be finite and non-negative")
 		}
 	}
+
 	return nil
 }
 
@@ -368,10 +425,12 @@ func requestCLIBody(ctx context.Context, method, endpoint string, payload []byte
 	if payload != nil {
 		requestBody = bytes.NewReader(payload)
 	}
+
 	request, err := http.NewRequestWithContext(ctx, method, endpoint, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
+
 	if method == http.MethodPost {
 		request.Header.Set("Content-Type", "application/json")
 	}
@@ -386,9 +445,11 @@ func requestCLIBody(ctx context.Context, method, endpoint string, payload []byte
 	if err != nil {
 		return nil, err
 	}
+
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return nil, parseCLIAPIError(response.StatusCode, response.Status, body)
 	}
+
 	return body, nil
 }
 
@@ -397,30 +458,39 @@ func readBoundedResponse(reader io.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read server response: %w", err)
 	}
+
 	if len(body) > maxCLIResponseBytes {
 		return nil, fmt.Errorf("server response exceeds %d bytes", maxCLIResponseBytes)
 	}
+
 	return body, nil
 }
 
 func decodeCLIResponse(body []byte, destination any) error {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(destination); err != nil {
+
+	err := decoder.Decode(destination)
+	if err != nil {
 		return err
 	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+
+	err := decoder.Decode(&struct{}{})
+	if err != io.EOF {
 		if err == nil {
 			return errors.New("response contains more than one JSON value")
 		}
+
 		return fmt.Errorf("decode trailing response data: %w", err)
 	}
+
 	return nil
 }
 
 func parseCLIAPIError(statusCode int, status string, body []byte) error {
 	var response apiErrorResponse
-	if err := json.Unmarshal(body, &response); err == nil && response.Error.Message != "" {
+	err := json.Unmarshal(body, &response)
+	if err == nil && response.Error.Message != "" {
 		return &cliAPIError{
 			StatusCode: statusCode,
 			Status:     status,
@@ -432,7 +502,8 @@ func parseCLIAPIError(statusCode int, status string, body []byte) error {
 	var legacy struct {
 		Error string `json:"error"`
 	}
-	if err := json.Unmarshal(body, &legacy); err == nil && legacy.Error != "" {
+	err := json.Unmarshal(body, &legacy)
+	if err == nil && legacy.Error != "" {
 		return &cliAPIError{StatusCode: statusCode, Status: status, Message: legacy.Error}
 	}
 

@@ -11,6 +11,7 @@ import (
 
 func synthesizedCampaign() Campaign {
 	accepted := 3
+
 	return Campaign{
 		ID:            "66666666-6666-4666-8666-666666666666",
 		Name:          "synthesized campaign",
@@ -20,27 +21,40 @@ func synthesizedCampaign() Campaign {
 		HasSeed:       true,
 		PlannedStages: 5,
 		Stages: []CampaignStage{
-			{Index: 0, Kind: "base", State: "completed", Circles: 8, BestCost: 812.5, HasBestCost: true,
-				PSNR: 19.03, HasPSNR: true, ElapsedSec: 90, HasElapsed: true, JobID: "11111111-1111-4111-8111-111111111111"},
-			{Index: 1, Kind: "extend", State: "completed", Circles: 16, BestCost: 640.25, HasBestCost: true,
-				PSNR: 20.07, HasPSNR: true, ElapsedSec: 240, HasElapsed: true, JobID: "22222222-2222-4222-8222-222222222222"},
-			{Index: 2, Kind: "polish", State: "completed", Circles: 16, BestCost: 631.75, HasBestCost: true,
+			{
+				Index: 0, Kind: "base", State: "completed", Circles: 8, BestCost: 812.5, HasBestCost: true,
+				PSNR: 19.03, HasPSNR: true, ElapsedSec: 90, HasElapsed: true, JobID: "11111111-1111-4111-8111-111111111111",
+			},
+			{
+				Index: 1, Kind: "extend", State: "completed", Circles: 16, BestCost: 640.25, HasBestCost: true,
+				PSNR: 20.07, HasPSNR: true, ElapsedSec: 240, HasElapsed: true, JobID: "22222222-2222-4222-8222-222222222222",
+			},
+			{
+				Index: 2, Kind: "polish", State: "completed", Circles: 16, BestCost: 631.75, HasBestCost: true,
 				PSNR: 20.13, HasPSNR: true, ElapsedSec: 60, HasElapsed: true, AcceptedSweeps: &accepted,
-				JobID: "33333333-3333-4333-8333-333333333333"},
-			{Index: 3, Kind: "polish", State: "skipped", Circles: 16,
-				Note: "polishing stopped paying after two barren stages"},
-			{Index: 4, Kind: "extend", State: "running", Circles: 24,
-				ElapsedAbsent: "The stage has not finished", JobID: "44444444-4444-4444-8444-444444444444"},
+				JobID: "33333333-3333-4333-8333-333333333333",
+			},
+			{
+				Index: 3, Kind: "polish", State: "skipped", Circles: 16,
+				Note: "polishing stopped paying after two barren stages",
+			},
+			{
+				Index: 4, Kind: "extend", State: "running", Circles: 24,
+				ElapsedAbsent: "The stage has not finished", JobID: "44444444-4444-4444-8444-444444444444",
+			},
 		},
 	}
 }
 
 func renderCampaign(t *testing.T, campaign Campaign) string {
 	t.Helper()
+
 	var output bytes.Buffer
-	if err := CampaignPage(campaign).Render(context.Background(), &output); err != nil {
+	err := CampaignPage(campaign).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render campaign: %v", err)
 	}
+
 	return output.String()
 }
 
@@ -67,9 +81,11 @@ func TestCampaignPageShowsTheStageTable(t *testing.T) {
 	if strings.Count(body, "0.000") > 0 {
 		t.Error("campaign page renders an unmeasured cost as zero")
 	}
+
 	if !strings.Contains(body, "The stage has not finished") {
 		t.Error("campaign page does not say why a running stage has no elapsed time")
 	}
+
 	if !strings.Contains(body, "The polisher does not persist its accepted-sweep count") {
 		t.Error("campaign page does not explain the empty accepted-sweep column")
 	}
@@ -93,6 +109,7 @@ func TestCampaignPlotIsSelfContained(t *testing.T) {
 			t.Errorf("campaign plot pulls in %q, but the UI is served with no external assets", forbidden)
 		}
 	}
+
 	for _, source := range scriptSources(bodyWithoutLayout(body)) {
 		if !strings.HasPrefix(source, StaticPrefix) {
 			t.Errorf("campaign page loads %q, which is not an embedded asset under %s", source, StaticPrefix)
@@ -109,13 +126,16 @@ func TestCampaignPlotIsSelfContained(t *testing.T) {
 // of the page.
 func TestCampaignPageMountsOneIsland(t *testing.T) {
 	body := renderCampaign(t, synthesizedCampaign())
+
 	island := bodyWithoutLayout(body)
 	if got := strings.Count(island, "data-island="); got != 1 {
 		t.Errorf("campaign page renders %d island mount points, want exactly 1", got)
 	}
+
 	if !strings.Contains(island, "<svg") {
 		t.Error("campaign page renders no server-side cost plot, so the page is blank without the bundle")
 	}
+
 	if !strings.Contains(body, BundleURL()) {
 		t.Error("campaign page renders an island but never loads the bundle that mounts it")
 	}
@@ -125,20 +145,24 @@ func TestCampaignPageMountsOneIsland(t *testing.T) {
 // without one is inline — the JSON seed — and loads nothing.
 func scriptSources(markup string) []string {
 	var sources []string
+
 	for _, fragment := range strings.Split(markup, "<script")[1:] {
 		tag, _, ok := strings.Cut(fragment, ">")
 		if !ok {
 			continue
 		}
+
 		_, after, ok := strings.Cut(tag, `src="`)
 		if !ok {
 			continue
 		}
+
 		source, _, ok := strings.Cut(after, `"`)
 		if ok {
 			sources = append(sources, source)
 		}
 	}
+
 	return sources
 }
 
@@ -146,10 +170,12 @@ func scriptSources(markup string) []string {
 // campaign markup rather than about the navigation the layout already owns.
 func bodyWithoutLayout(body string) string {
 	start := strings.Index(body, "<main>")
+
 	end := strings.Index(body, "</main>")
 	if start < 0 || end < 0 {
 		return body
 	}
+
 	return body[start:end]
 }
 
@@ -161,9 +187,11 @@ func TestCampaignPlotPlacesEveryMeasuredStage(t *testing.T) {
 	if plot.Empty {
 		t.Fatal("plot is empty for a campaign with three measured stages")
 	}
+
 	if len(plot.Points) != 3 {
 		t.Fatalf("plot has %d points, want the three stages that recorded a cost", len(plot.Points))
 	}
+
 	if !plot.Points[2].Polish {
 		t.Error("the polish stage is not drawn with the polish marker")
 	}
@@ -176,9 +204,11 @@ func TestCampaignPlotPlacesEveryMeasuredStage(t *testing.T) {
 	if parseCoord(t, plot.Points[0].CX) >= parseCoord(t, plot.Points[1].CX) {
 		t.Error("the plot does not order the stages by circle count")
 	}
+
 	if plot.Points[1].CX != plot.Points[2].CX {
 		t.Error("the polish stage moved along the circle axis, but it appends no circles")
 	}
+
 	if strings.Count(plot.Polyline, ",") != 3 {
 		t.Errorf("polyline = %q, want one coordinate pair per measured stage", plot.Polyline)
 	}
@@ -207,6 +237,7 @@ func TestCampaignPlotSurvivesDegenerateInput(t *testing.T) {
 			if plot.Empty {
 				t.Fatal("plot is empty for a campaign that measured a cost")
 			}
+
 			for _, point := range plot.Points {
 				if math.IsNaN(parseCoord(t, point.CX)) || math.IsNaN(parseCoord(t, point.CY)) {
 					t.Fatalf("point %+v has a non-finite coordinate", point)
@@ -232,6 +263,7 @@ func TestCampaignPageWithoutStages(t *testing.T) {
 	if !strings.Contains(body, "No stage has been recorded yet.") {
 		t.Error("an empty campaign does not say so")
 	}
+
 	if !strings.Contains(body, "No stage has recorded a cost yet.") {
 		t.Error("an empty campaign still claims to have a plot")
 	}
@@ -239,10 +271,12 @@ func TestCampaignPageWithoutStages(t *testing.T) {
 
 func parseCoord(t *testing.T, value string) float64 {
 	t.Helper()
+
 	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil {
 		t.Fatalf("coordinate %q is not a plain number: %v", value, err)
 	}
+
 	return parsed
 }
 
@@ -262,11 +296,13 @@ func TestCampaignPageShowsTheLatestCompletedStageImages(t *testing.T) {
 	if !strings.Contains(body, "/api/v1/jobs/"+polishJob+"/best.png") {
 		t.Errorf("viewer is not pointed at the latest completed stage %s", polishJob)
 	}
+
 	for _, unfinished := range []string{"44444444-4444-4444-8444-444444444444"} {
 		if strings.Contains(body, "/api/v1/jobs/"+unfinished+"/best.png") {
 			t.Errorf("viewer is pointed at stage job %s, which has produced no artifacts", unfinished)
 		}
 	}
+
 	if !strings.Contains(body, `data-view-mode="side-by-side"`) {
 		t.Error("campaign viewer does not open on the side-by-side comparison")
 	}
@@ -287,6 +323,7 @@ func TestCampaignPageWithoutCompletedStagesSaysSo(t *testing.T) {
 	if strings.Contains(body, `class="card image-viewer`) {
 		t.Error("campaign page renders an image viewer before any stage has finished")
 	}
+
 	if !strings.Contains(body, "No completed stage has produced image artifacts yet.") {
 		t.Error("campaign page does not explain why it shows no images")
 	}

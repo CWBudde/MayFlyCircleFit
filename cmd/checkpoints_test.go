@@ -31,10 +31,12 @@ func TestSelectCheckpointsForDeletion_ByAge(t *testing.T) {
 	// Verify correct checkpoints selected
 	found10 := false
 	found30 := false
+
 	for _, info := range toDelete {
 		if info.JobID == "job1" {
 			found10 = true
 		}
+
 		if info.JobID == "job4" {
 			found30 = true
 		}
@@ -64,10 +66,12 @@ func TestSelectCheckpointsForDeletion_ByCount(t *testing.T) {
 	// Should delete oldest two (job4 and job1)
 	found30 := false
 	found10 := false
+
 	for _, info := range toDelete {
 		if info.JobID == "job4" {
 			found30 = true
 		}
+
 		if info.JobID == "job1" {
 			found10 = true
 		}
@@ -105,8 +109,9 @@ func TestGetDirSize(t *testing.T) {
 
 	// Create a file
 	testFile := filepath.Join(tmpDir, "test.txt")
+
 	content := []byte("Hello, World!")
-	if err := os.WriteFile(testFile, content, 0644); err != nil {
+	if err := os.WriteFile(testFile, content, 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -149,15 +154,18 @@ func TestCheckpointsListCommand_NoCheckpoints(t *testing.T) {
 
 	// Set data dir
 	originalDataDir := checkpointDataDir
+
 	checkpointDataDir = tmpDir
 	defer func() { checkpointDataDir = originalDataDir }()
 
 	// Run list command
 	var output bytes.Buffer
+
 	err := runListCheckpoints(testCommand(context.Background(), &output), nil)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
+
 	if !strings.Contains(output.String(), "No checkpoints found.") {
 		t.Errorf("unexpected output:\n%s", output.String())
 	}
@@ -192,11 +200,13 @@ func TestCheckpointsListCommand_WithCheckpoints(t *testing.T) {
 
 	// Set data dir
 	originalDataDir := checkpointDataDir
+
 	checkpointDataDir = tmpDir
 	defer func() { checkpointDataDir = originalDataDir }()
 
 	// Run list command
 	var output bytes.Buffer
+
 	err = runListCheckpoints(testCommand(context.Background(), &output), nil)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -211,12 +221,14 @@ func TestCheckpointsCleanCommand_NoFlags(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	originalDataDir := checkpointDataDir
+
 	checkpointDataDir = tmpDir
 	defer func() { checkpointDataDir = originalDataDir }()
 
 	// Reset flags, restoring them so the values do not leak into later tests.
 	originalKeepLast, originalOlderThan := keepLast, olderThanDays
 	defer func() { keepLast, olderThanDays = originalKeepLast, originalOlderThan }()
+
 	keepLast = 0
 	olderThanDays = 0
 
@@ -255,6 +267,7 @@ func TestCheckpointsCleanCommand_WithForce(t *testing.T) {
 	}
 
 	originalDataDir := checkpointDataDir
+
 	checkpointDataDir = tmpDir
 	defer func() { checkpointDataDir = originalDataDir }()
 
@@ -265,6 +278,7 @@ func TestCheckpointsCleanCommand_WithForce(t *testing.T) {
 	defer func() {
 		keepLast, olderThanDays, forceClean = originalKeepLast, originalOlderThan, originalForce
 	}()
+
 	keepLast = 0
 	olderThanDays = 7
 	forceClean = true

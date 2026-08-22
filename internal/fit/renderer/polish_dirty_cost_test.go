@@ -74,23 +74,28 @@ func TestPolishDirtySessionMatchesFullCanvas(t *testing.T) {
 			full := NewCPURenderer(reference, circleCount)
 			full.SetThreads(1)
 			baseline := cloneNRGBA(full.Render(old))
+
 			baselineSSD, ok := fit.ExactSSD(baseline, reference)
 			if !ok {
 				t.Fatal("baseline SSD is not exact")
 			}
+
 			dirtyCPU := NewCPURenderer(reference, circleCount)
 			dirtyCPU.SetThreads(1)
 			dirty := newPolishDirtySession(dirtyCPU, baseline, baselineSSD, old, test.active).(*polishDirtySession)
 
 			wantCost := full.Cost(candidate)
 			wantImage := cloneNRGBA(full.Render(candidate))
+
 			gotCost := dirty.Cost(candidate)
 			if gotCost != wantCost {
 				t.Fatalf("dirty cost = %.17g, full cost = %.17g", gotCost, wantCost)
 			}
+
 			if dirty.canvas.Rect != wantImage.Rect || dirty.canvas.Stride != wantImage.Stride || !bytes.Equal(dirty.canvas.Pix, wantImage.Pix) {
 				t.Fatal("dirty recomposite differs from full render")
 			}
+
 			if dirty.fallbacks != 0 {
 				t.Fatalf("dirty evaluator fell back %d times", dirty.fallbacks)
 			}
@@ -99,6 +104,7 @@ func TestPolishDirtySessionMatchesFullCanvas(t *testing.T) {
 			// region before a different old/new union is composited.
 			second := append([]float64(nil), old...)
 			circle := test.active[len(test.active)-1]
+
 			second[circle*paramsPerCircle+3] = 1 - second[circle*paramsPerCircle+3]
 			if got, want := dirty.Cost(second), full.Cost(second); got != want {
 				t.Fatalf("second dirty cost = %.17g, full cost = %.17g", got, want)
@@ -116,14 +122,17 @@ func TestPolishDirtySessionFallsBackForLargeAffectedRegion(t *testing.T) {
 
 	full := NewCPURenderer(reference, circleCount)
 	baseline := cloneNRGBA(full.Render(incumbent))
+
 	baselineSSD, ok := fit.ExactSSD(baseline, reference)
 	if !ok {
 		t.Fatal("baseline SSD is not exact")
 	}
+
 	dirty := newPolishDirtySession(NewCPURenderer(reference, circleCount), baseline, baselineSSD, incumbent, []int{4}).(*polishDirtySession)
 	if got, want := dirty.Cost(candidate), full.Cost(candidate); got != want {
 		t.Fatalf("fallback cost = %.17g, full cost = %.17g", got, want)
 	}
+
 	if dirty.fallbacks != 1 || dirty.fallbackRate() != 1 {
 		t.Fatalf("fallbacks = %d, rate = %.3f, want 1 and 1", dirty.fallbacks, dirty.fallbackRate())
 	}
@@ -136,6 +145,7 @@ func BenchmarkPolishCandidateCost(b *testing.B) {
 			reference := randomNRGBA(width, height, int64(15_720+circleCount))
 			incumbent := tinyPolishParams(circleCount, width, height, int64(15_730+circleCount))
 			active := scatteredActiveCircles(circleCount, activeCount)
+
 			candidate := append([]float64(nil), incumbent...)
 			for i, circle := range active {
 				candidate[circle*paramsPerCircle] += float64(i%3-1) * 0.5
@@ -144,6 +154,7 @@ func BenchmarkPolishCandidateCost(b *testing.B) {
 			baselineRenderer := NewCPURenderer(reference, circleCount)
 			baselineRenderer.SetThreads(1)
 			baseline := cloneNRGBA(baselineRenderer.Render(incumbent))
+
 			baselineSSD, ok := fit.ExactSSD(baseline, reference)
 			if !ok {
 				b.Fatal("baseline SSD is not exact")
@@ -154,11 +165,14 @@ func BenchmarkPolishCandidateCost(b *testing.B) {
 				cpu.SetThreads(1)
 				dirty := newPolishDirtySession(cpu, baseline, baselineSSD, incumbent, active).(*polishDirtySession)
 				affected := polishAffectedFraction(dirty, candidate)
+
 				b.ReportAllocs()
 				b.ResetTimer()
+
 				for range b.N {
 					polishCandidateCostSink = dirty.Cost(candidate)
 				}
+
 				b.StopTimer()
 				b.ReportMetric(100*affected, "affected-%")
 				b.ReportMetric(100*dirty.fallbackRate(), "fallback-%")
@@ -169,6 +183,7 @@ func BenchmarkPolishCandidateCost(b *testing.B) {
 				full.SetThreads(1)
 				b.ReportAllocs()
 				b.ResetTimer()
+
 				for range b.N {
 					polishCandidateCostSink = full.Cost(candidate)
 				}
@@ -181,11 +196,14 @@ func BenchmarkPolishCandidateCost(b *testing.B) {
 				cpu.SetThreads(1)
 				dirty := newPolishDirtySession(cpu, baseline, baselineSSD, incumbent, active).(*polishDirtySession)
 				affected := polishAffectedFraction(dirty, large)
+
 				b.ReportAllocs()
 				b.ResetTimer()
+
 				for range b.N {
 					polishCandidateCostSink = dirty.Cost(large)
 				}
+
 				b.StopTimer()
 				b.ReportMetric(100*affected, "affected-%")
 				b.ReportMetric(100*dirty.fallbackRate(), "fallback-%")
@@ -198,6 +216,7 @@ func BenchmarkPolishCandidateCost(b *testing.B) {
 				full.SetThreads(1)
 				b.ReportAllocs()
 				b.ResetTimer()
+
 				for range b.N {
 					polishCandidateCostSink = full.Cost(large)
 				}
@@ -217,7 +236,9 @@ func BenchmarkPolishDirtyCrossover(b *testing.B) {
 				reference := randomNRGBA(width, height, int64(15_740+circleCount)+int64(radius))
 				incumbent := tinyPolishParams(circleCount, width, height, int64(15_750+circleCount))
 				active := scatteredActiveCircles(circleCount, activeCount)
+
 				candidate := append([]float64(nil), incumbent...)
+
 				for i, circle := range active {
 					x := 8 + float64((i*47)%(width-16))
 					y := 8 + float64((i*83)%(height-16))
@@ -229,10 +250,12 @@ func BenchmarkPolishDirtyCrossover(b *testing.B) {
 				full := NewCPURenderer(reference, circleCount)
 				full.SetThreads(1)
 				baseline := cloneNRGBA(full.Render(incumbent))
+
 				baselineSSD, ok := fit.ExactSSD(baseline, reference)
 				if !ok {
 					b.Fatal("baseline SSD is not exact")
 				}
+
 				cpu := NewCPURenderer(reference, circleCount)
 				cpu.SetThreads(1)
 				dirty := newPolishDirtySession(cpu, baseline, baselineSSD, incumbent, active).(*polishDirtySession)
@@ -243,15 +266,18 @@ func BenchmarkPolishDirtyCrossover(b *testing.B) {
 				b.Run("dirty-forced", func(b *testing.B) {
 					b.ReportAllocs()
 					b.ResetTimer()
+
 					for range b.N {
 						polishCandidateCostSink = dirty.Cost(candidate)
 					}
+
 					b.StopTimer()
 					b.ReportMetric(100*affected, "affected-%")
 				})
 				b.Run("full", func(b *testing.B) {
 					b.ReportAllocs()
 					b.ResetTimer()
+
 					for range b.N {
 						polishCandidateCostSink = full.Cost(candidate)
 					}
@@ -263,6 +289,7 @@ func BenchmarkPolishDirtyCrossover(b *testing.B) {
 
 func tinyPolishParams(circleCount, width, height int, seed int64) []float64 {
 	rng := rand.New(rand.NewSource(seed))
+
 	circles := make([]fit.Circle, circleCount)
 	for i := range circles {
 		circles[i] = fit.Circle{
@@ -275,15 +302,18 @@ func tinyPolishParams(circleCount, width, height int, seed int64) []float64 {
 			Opacity: 0.25 + rng.Float64()*0.75,
 		}
 	}
+
 	return encodeCircles(circles)
 }
 
 func scatteredActiveCircles(circleCount, activeCount int) []int {
 	active := make([]int, activeCount)
+
 	start := circleCount / 10
 	for i := range active {
 		active[i] = start + i*(circleCount-start-1)/max(1, activeCount-1)
 	}
+
 	return active
 }
 
@@ -298,12 +328,15 @@ func polishAffectedFraction(session *polishDirtySession, params []float64) float
 	dirty := dirtySpanSet{}
 	dirty.reset(session.height, max(1, 2*len(session.activeCircles)))
 	incumbent := fit.ParamVector{Data: session.incumbent, K: session.k, Width: session.width, Height: session.height}
+
 	candidate := fit.ParamVector{Data: params, K: session.k, Width: session.width, Height: session.height}
 	for _, circle := range session.activeCircles {
 		session.collectCircleSpans(incumbent.DecodeCircle(circle), &dirty)
 		session.collectCircleSpans(candidate.DecodeCircle(circle), &dirty)
 	}
+
 	pixels, _ := dirty.metrics()
+
 	return float64(pixels) / float64(session.width*session.height)
 }
 

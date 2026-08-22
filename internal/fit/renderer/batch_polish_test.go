@@ -34,6 +34,7 @@ func (o *incumbentPolishOptimizer) Run(func([]float64) float64, []float64, []flo
 func (o *incumbentPolishOptimizer) RunContext(_ context.Context, problem opt.Problem, options opt.RunOptions) (opt.Result, error) {
 	o.options = append(o.options, options)
 	params := append([]float64(nil), options.Initial.Params...)
+
 	return opt.Result{BestParams: params, BestCost: problem.Eval(params), Iterations: 1, Evaluations: 1}, nil
 }
 
@@ -46,10 +47,12 @@ func (o *fixedPolishOptimizer) RunContext(_ context.Context, problem opt.Problem
 	o.calls++
 	o.options = append(o.options, options)
 	params := append([]float64(nil), o.params...)
+
 	cost := problem.Eval(params)
 	if options.Observer != nil {
 		options.Observer(opt.Progress{Iterations: 3, Evaluations: 7, BestParams: params, BestCost: cost})
 	}
+
 	return opt.Result{
 		BestParams:  params,
 		BestCost:    cost,
@@ -69,6 +72,7 @@ func TestPolishCircleBatchCommitsStrictImprovement(t *testing.T) {
 
 	var observed opt.Progress
 	var boundary BatchPolishProgress
+
 	result, err := PolishCircleBatchContext(context.Background(), base, optimizer, initial, BatchPolishOptions{
 		ActiveSetSize: 1,
 		MaxSweeps:     2,
@@ -78,18 +82,23 @@ func TestPolishCircleBatchCommitsStrictImprovement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if result.AcceptedSweeps != 1 || result.Sweeps != 2 || optimizer.calls != 2 {
 		t.Fatalf("accepted/sweeps/calls = %d/%d/%d, want 1/2/2", result.AcceptedSweeps, result.Sweeps, optimizer.calls)
 	}
+
 	if result.BestCost != 0 || !reflect.DeepEqual(result.BestParams, replacement) {
 		t.Fatalf("best result = cost %v params %v, want zero-cost replacement %v", result.BestCost, result.BestParams, replacement)
 	}
+
 	if observed.Iterations != 6 || len(observed.BestParams) != len(initial) {
 		t.Fatalf("observer progress = %+v, want cumulative iterations and complete params", observed)
 	}
+
 	if boundary.Accepted || boundary.Sweep != 2 || !reflect.DeepEqual(boundary.BestParams, replacement) {
 		t.Fatalf("rejected boundary did not preserve committed solution: %+v", boundary)
 	}
+
 	if got := result.BestImage.NRGBAAt(2, 2); got != black {
 		t.Fatalf("best image center = %#v, want %#v", got, black)
 	}
@@ -110,12 +119,15 @@ func TestPolishCircleBatchRollsBackRejectedSweepExactly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if result.Sweeps != 3 || result.AcceptedSweeps != 0 {
 		t.Fatalf("sweeps/accepted = %d/%d, want 3/0", result.Sweeps, result.AcceptedSweeps)
 	}
+
 	if result.BestCost != initialCost || !reflect.DeepEqual(result.BestParams, initial) {
 		t.Fatalf("rejected sweep changed result: cost %v params %v", result.BestCost, result.BestParams)
 	}
+
 	if got, want := result.BestImage.NRGBAAt(2, 2), base.Render(initial).NRGBAAt(2, 2); got != want {
 		t.Fatalf("rollback image center = %#v, want %#v", got, want)
 	}
@@ -124,6 +136,7 @@ func TestPolishCircleBatchRollsBackRejectedSweepExactly(t *testing.T) {
 func TestPolishCircleBatchRejectedSweepsRotateAcrossCircleGroups(t *testing.T) {
 	ref := solidImage(12, 4, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	base := NewCPURenderer(ref, 3)
+
 	initial := append(circleParams(1, 1, 1, color.NRGBA{R: 32, A: 255}, 0.2), circleParams(5, 1, 1, color.NRGBA{R: 64, A: 255}, 0.3)...)
 	initial = append(initial, circleParams(9, 1, 1, color.NRGBA{R: 96, A: 255}, 0.4)...)
 	optimizer := &incumbentPolishOptimizer{}
@@ -136,13 +149,16 @@ func TestPolishCircleBatchRejectedSweepsRotateAcrossCircleGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if result.Sweeps != 3 || result.AcceptedSweeps != 0 || len(optimizer.options) != 3 {
 		t.Fatalf("rotating rejected sweeps = %d/%d options=%d, want 3/0/3", result.Sweeps, result.AcceptedSweeps, len(optimizer.options))
 	}
+
 	seenX := make(map[float64]bool)
 	for _, options := range optimizer.options {
 		seenX[options.Initial.Params[0]] = true
 	}
+
 	if len(seenX) != 3 {
 		t.Fatalf("rejected active groups used x coordinates %v, want all three circles", seenX)
 	}
@@ -168,14 +184,17 @@ func TestPolishCircleBatchMapsEpochBoundariesToCompleteVector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(boundaries) != 2 {
 		t.Fatalf("epoch boundaries = %d, want 2", len(boundaries))
 	}
+
 	for epoch, boundary := range boundaries {
 		if boundary.Epoch != epoch+1 || len(boundary.BestParams) != len(initial) {
 			t.Fatalf("boundary %d = %+v, want complete parameter vector", epoch+1, boundary)
 		}
 	}
+
 	if boundaries[1].Iterations != 6 || boundaries[1].Evaluations <= boundaries[0].Evaluations {
 		t.Fatalf("epoch work is not cumulative: %+v", boundaries)
 	}
@@ -188,6 +207,7 @@ func TestMergeActiveCircleParamsPreservesOriginalDrawSlots(t *testing.T) {
 			full[circle*paramsPerCircle+parameter] = float64(circle*10 + parameter)
 		}
 	}
+
 	before := append([]float64(nil), full...)
 	active := append(circleParams(1, 1, 1, color.NRGBA{R: 10, A: 255}, 0.5), circleParams(2, 2, 2, color.NRGBA{B: 20, A: 255}, 0.75)...)
 
@@ -197,6 +217,7 @@ func TestMergeActiveCircleParamsPreservesOriginalDrawSlots(t *testing.T) {
 		!reflect.DeepEqual(full[2*paramsPerCircle:3*paramsPerCircle], before[2*paramsPerCircle:3*paramsPerCircle]) {
 		t.Fatal("inactive circle draw slots changed")
 	}
+
 	if !reflect.DeepEqual(full[paramsPerCircle:2*paramsPerCircle], active[:paramsPerCircle]) ||
 		!reflect.DeepEqual(full[3*paramsPerCircle:], active[paramsPerCircle:]) {
 		t.Fatal("active circles were not restored to their original draw slots")
@@ -217,10 +238,12 @@ func TestSelectHybridOverlapCirclesCombinesWeakAnchorsAndPartners(t *testing.T) 
 	}}
 
 	got := selectHybridOverlapCircles(params, audit, 4, 20, 20, nil)
+
 	want := []int{0, 1, 2, 3}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("hybrid active set = %v, want weak anchors plus overlap partners %v", got, want)
 	}
+
 	retained := removeActiveCircleParams(params, got)
 	if !reflect.DeepEqual(retained, params[4*paramsPerCircle:]) {
 		t.Fatal("hybrid removal did not preserve the retained draw order")
@@ -230,6 +253,7 @@ func TestSelectHybridOverlapCirclesCombinesWeakAnchorsAndPartners(t *testing.T) 
 func TestSelectHybridOverlapCirclesRotatesAwayFromVisitedGroup(t *testing.T) {
 	params := make([]float64, 6*paramsPerCircle)
 	audit := BatchAudit{Circles: make([]CircleAudit, 6)}
+
 	for circle := range 6 {
 		copy(params[circle*paramsPerCircle:], circleParams(float64(circle*3), 1, 1, color.NRGBA{A: 255}, 1))
 		audit.Circles[circle] = CircleAudit{
@@ -260,16 +284,20 @@ func TestPolishCircleBatchHybridSeedsIncumbentAndResidualAlternative(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if result.AcceptedSweeps != 0 || len(optimizer.options) != 1 {
 		t.Fatalf("hybrid result/options = %+v/%d", result, len(optimizer.options))
 	}
+
 	options := optimizer.options[0]
 	if options.Initial == nil || !reflect.DeepEqual(options.Initial.Params, initial) {
 		t.Fatalf("hybrid incumbent seed = %+v, want current active parameters", options.Initial)
 	}
+
 	if len(options.AdditionalSeeds) != 1 || reflect.DeepEqual(options.AdditionalSeeds[0].Params, initial) {
 		t.Fatalf("hybrid residual alternatives = %+v, want distinct seed", options.AdditionalSeeds)
 	}
+
 	if options.Continuation == nil || options.Continuation.LocalFraction != 1 ||
 		options.Continuation.Sigma != 0.02 || options.Continuation.CoordinateRate != 0.2 ||
 		options.Continuation.MaxVelocity != 0.02 {
@@ -287,13 +315,16 @@ func TestHighestResidualRegionSkipsVisitedTiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if firstIndex != 0 || first != image.Rect(0, 0, 2, 2) {
 		t.Fatalf("first residual region = %v index %d, want top-left tile", first, firstIndex)
 	}
+
 	second, secondIndex, err := highestResidualRegion(canvas, reference, map[int]bool{firstIndex: true})
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if secondIndex != 15 || second != image.Rect(6, 6, 8, 8) {
 		t.Fatalf("second residual region = %v index %d, want bottom-right tile", second, secondIndex)
 	}
@@ -304,23 +335,28 @@ func TestSelectResidualRegionActiveSetCombinesWeakSlotAndInfluencer(t *testing.T
 	black := color.NRGBA{A: 255}
 	canvasRef := solidImage(8, 8, white)
 	canvasRenderer := NewCPURenderer(canvasRef, 3)
+
 	params := append(circleParams(7, 7, 1, black, 0.1), circleParams(1, 1, 3, black, 0.5)...)
 	params = append(params, circleParams(6, 6, 3, black, 0.8)...)
 	reference := cloneNRGBA(canvasRenderer.Render(params))
-	for y := 0; y < 2; y++ {
-		for x := 0; x < 2; x++ {
+
+	for y := range 2 {
+		for x := range 2 {
 			reference.SetNRGBA(x, y, black)
 		}
 	}
+
 	base := NewCPURenderer(reference, 3)
 
 	selection, err := selectResidualRegionActiveSet(base, &incumbentAuditCache{session: base}, params, 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if selection.RegionIndex != 0 || !reflect.DeepEqual(selection.ReplacementCircles, []int{0}) {
 		t.Fatalf("regional replacement selection = %+v, want weak circle 1 in top-left region", selection)
 	}
+
 	if !reflect.DeepEqual(selection.Circles, []int{0, 1}) {
 		t.Fatalf("regional active circles = %v, want weak slot and top-left influencer [0 1]", selection.Circles)
 	}
@@ -341,6 +377,7 @@ func TestPolishCircleBatchResidualRegionContinuesAfterRejectedTile(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if result.Sweeps != 2 || result.AcceptedSweeps != 0 || optimizer.calls != 2 {
 		t.Fatalf("regional sweeps/accepted/calls = %d/%d/%d, want 2/0/2", result.Sweeps, result.AcceptedSweeps, optimizer.calls)
 	}
@@ -350,6 +387,7 @@ func TestPolishCircleBatchValidatesOptions(t *testing.T) {
 	ref := solidImage(3, 3, color.NRGBA{A: 255})
 	base := NewCPURenderer(ref, 1)
 	params := circleParams(1, 1, 1, color.NRGBA{A: 255}, 1)
+
 	tests := []BatchPolishOptions{
 		{ActiveSetSize: 0, MaxSweeps: 1},
 		{ActiveSetSize: 2, MaxSweeps: 1},
@@ -370,6 +408,7 @@ func TestPolishCircleBatchValidatesOptions(t *testing.T) {
 type stagedOnlyRenderer struct {
 	Renderer
 	rendererSessionFactory
+
 	compositor inPlaceCompositor
 }
 
@@ -402,20 +441,25 @@ func (o *recordingPolishOptimizer) RunContext(_ context.Context, problem opt.Pro
 	if steps == 0 {
 		steps = 4
 	}
+
 	best := append([]float64(nil), options.Initial.Params...)
 	bestCost := problem.Eval(best)
+
 	o.costs = append(o.costs, bestCost)
 	for step := 1; step <= steps; step++ {
 		candidate := append([]float64(nil), options.Initial.Params...)
 		for i := range candidate {
 			candidate[i] += float64(step) * 0.75 * float64(i%3-1)
 		}
+
 		cost := problem.Eval(candidate)
+
 		o.costs = append(o.costs, cost)
 		if cost < bestCost {
 			best, bestCost = candidate, cost
 		}
 	}
+
 	return opt.Result{
 		BestParams:  best,
 		BestCost:    bestCost,
@@ -440,6 +484,7 @@ func TestBakedSuffixSessionMatchesFullVector(t *testing.T) {
 			} else {
 				base = NewCPURenderer(ref, circleCount)
 			}
+
 			wantImage := cloneNRGBA(base.Render(params))
 			wantCost := base.Cost(params)
 
@@ -447,14 +492,18 @@ func TestBakedSuffixSessionMatchesFullVector(t *testing.T) {
 			if !ok {
 				t.Fatalf("bakedSuffixSession(prefix %d) not applied", prefixCircles)
 			}
+
 			gotCost := suffix.Cost(params[prefixCircles*paramsPerCircle:])
+
 			gotImage := suffix.Render(params[prefixCircles*paramsPerCircle:])
 			if gotCost != wantCost {
 				t.Errorf("custom canvas %v prefix %d: cost = %v, want %v", custom, prefixCircles, gotCost, wantCost)
 			}
+
 			if !bytes.Equal(gotImage.Pix, wantImage.Pix) {
 				t.Errorf("custom canvas %v prefix %d: baked image differs from full render", custom, prefixCircles)
 			}
+
 			cleanup()
 		}
 	}
@@ -469,9 +518,11 @@ func TestBakedSuffixSessionSkipsUnsupportedInput(t *testing.T) {
 	if _, _, ok := bakedSuffixSession(base, params, 0, circleCount); ok {
 		t.Error("bakedSuffixSession(prefix 0) applied, want fallback")
 	}
+
 	if _, _, ok := bakedSuffixSession(base, params, circleCount, circleCount); ok {
 		t.Error("bakedSuffixSession(full prefix) applied, want fallback")
 	}
+
 	hidden := newStagedOnlyRenderer(base)
 	if _, _, ok := bakedSuffixSession(hidden, params, 1, circleCount); ok {
 		t.Error("bakedSuffixSession(unsupported backend) applied, want fallback")
@@ -486,14 +537,18 @@ func TestPolishCircleBatchBakedPrefixMatchesFullVector(t *testing.T) {
 
 	run := func(bake bool) (*BatchPolishResult, []float64, [][]int) {
 		t.Helper()
+
 		cpu := NewCPURenderer(ref, circleCount)
 		cpu.SetThreads(1)
+
 		var base Renderer = cpu
 		if !bake {
 			base = newStagedOnlyRenderer(cpu)
 		}
+
 		optimizer := &recordingPolishOptimizer{}
 		var activeSets [][]int
+
 		result, err := PolishCircleBatchContext(context.Background(), base, optimizer, params, BatchPolishOptions{
 			ActiveSetSize: 2,
 			MaxSweeps:     3,
@@ -506,6 +561,7 @@ func TestPolishCircleBatchBakedPrefixMatchesFullVector(t *testing.T) {
 		if err != nil {
 			t.Fatalf("PolishCircleBatchContext(bake %v) error = %v", bake, err)
 		}
+
 		return result, optimizer.costs, activeSets
 	}
 
@@ -524,13 +580,16 @@ func TestPolishCircleBatchBakedPrefixMatchesFullVector(t *testing.T) {
 	if !slices.ContainsFunc(bakedSets, func(set []int) bool { return slices.Min(set) == 1 }) {
 		t.Fatalf("active sets %v never exercised the unbaked path", bakedSets)
 	}
+
 	if !reflect.DeepEqual(bakedCosts, fullCosts) {
 		t.Fatalf("evaluated costs = %v, want %v", bakedCosts, fullCosts)
 	}
+
 	if baked.BestCost != full.BestCost || !reflect.DeepEqual(baked.BestParams, full.BestParams) {
 		t.Fatalf("baked result = cost %v params %v, want cost %v params %v",
 			baked.BestCost, baked.BestParams, full.BestCost, full.BestParams)
 	}
+
 	if !bytes.Equal(baked.BestImage.Pix, full.BestImage.Pix) {
 		t.Fatal("baked polishing image differs from full-vector polishing image")
 	}
@@ -538,6 +597,7 @@ func TestPolishCircleBatchBakedPrefixMatchesFullVector(t *testing.T) {
 
 func TestSelectContiguousWindowCirclesPrefersLatestUnvisitedWindowForPartialBudget(t *testing.T) {
 	visits := make(map[int]int)
+
 	active := selectContiguousWindowCircles(10, 3, visits, false)
 	if !reflect.DeepEqual(active, []int{7, 8, 9}) {
 		t.Fatalf("first window = %v, want the last three draw slots", active)
@@ -547,6 +607,7 @@ func TestSelectContiguousWindowCirclesPrefersLatestUnvisitedWindowForPartialBudg
 	for _, circle := range active {
 		visits[circle]++
 	}
+
 	if next := selectContiguousWindowCircles(10, 3, visits, false); !reflect.DeepEqual(next, []int{4, 5, 6}) {
 		t.Fatalf("second window = %v, want the next unvisited run below it", next)
 	}
@@ -558,16 +619,18 @@ func TestSelectContiguousWindowCirclesCoversEveryCircle(t *testing.T) {
 	seen := make(map[int]bool, circleCount)
 	// ceil(10/3) sweeps is the point at which every draw slot must have been
 	// offered to the optimizer at least once.
-	for sweep := 0; sweep < (circleCount+activeSetSize-1)/activeSetSize; sweep++ {
+	for sweep := range (circleCount + activeSetSize - 1) / activeSetSize {
 		active := selectContiguousWindowCircles(circleCount, activeSetSize, visits, false)
 		for i, circle := range active {
 			if i > 0 && circle != active[i-1]+1 {
 				t.Fatalf("sweep %d selected non-contiguous window %v", sweep, active)
 			}
+
 			seen[circle] = true
 			visits[circle]++
 		}
 	}
+
 	for circle := range circleCount {
 		if !seen[circle] {
 			t.Fatalf("circle %d was never polished, seen = %v", circle, seen)
@@ -584,30 +647,38 @@ func TestSelectContiguousWindowCirclesClampsOversizedActiveSet(t *testing.T) {
 
 func TestPlanContiguousWindowsFullCoverageStartsEarlyWithoutCostRegression(t *testing.T) {
 	const circleCount, activeSetSize, maxSweeps = 1000, 32, 32
+
 	activeSets, visits, err := PlanContiguousWindows(circleCount, activeSetSize, maxSweeps, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !reflect.DeepEqual(activeSets[0], integerRange(0, activeSetSize)) {
 		t.Fatalf("first full-coverage window = %v, want slots 0-%d", activeSets[0], activeSetSize-1)
 	}
+
 	rasterizations := 0
+
 	for sweep, active := range activeSets {
 		if len(active) != activeSetSize {
 			t.Fatalf("sweep %d active set size = %d, want %d", sweep, len(active), activeSetSize)
 		}
+
 		for i := 1; i < len(active); i++ {
 			if active[i] != active[i-1]+1 {
 				t.Fatalf("sweep %d selected non-contiguous window %v", sweep, active)
 			}
 		}
+
 		rasterizations += circleCount - active[0]
 	}
+
 	for circle, count := range visits {
 		if count == 0 {
 			t.Fatalf("circle %d was never covered", circle)
 		}
 	}
+
 	if rasterizations != 16_152 {
 		t.Fatalf("rasterizations per candidate = %d, want 16152 (latest-first baseline 16872)", rasterizations)
 	}
@@ -615,18 +686,23 @@ func TestPlanContiguousWindowsFullCoverageStartsEarlyWithoutCostRegression(t *te
 
 func TestPlanContiguousWindowsDefaultPartialBudgetStaysLatestFirst(t *testing.T) {
 	const circleCount, activeSetSize = 1000, 32
+
 	activeSets, _, err := PlanContiguousWindows(circleCount, activeSetSize, app.DefaultPolishingMaxSweeps, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	rasterizations := 0
+
 	for sweep, active := range activeSets {
 		wantStart := circleCount - (sweep+1)*activeSetSize
 		if active[0] != wantStart {
 			t.Fatalf("sweep %d starts at %d, want current latest-first start %d", sweep, active[0], wantStart)
 		}
+
 		rasterizations += circleCount - active[0]
 	}
+
 	wantRasterizations := activeSetSize * app.DefaultPolishingMaxSweeps * (app.DefaultPolishingMaxSweeps + 1) / 2
 	if rasterizations != wantRasterizations {
 		t.Fatalf("partial-budget rasterizations = %d, want current cost %d", rasterizations, wantRasterizations)
@@ -638,16 +714,20 @@ func TestPlanContiguousWindowsContinuationStartsOnParentUnvisitedSlots(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	childSets, _, err := PlanContiguousWindows(10, 3, 1, parentVisits)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	parentCovered := make(map[int]bool)
+
 	for _, active := range parentSets {
 		for _, circle := range active {
 			parentCovered[circle] = true
 		}
 	}
+
 	for _, circle := range childSets[0] {
 		if parentCovered[circle] {
 			t.Fatalf("child active set %v revisits parent sets %v", childSets[0], parentSets)
@@ -661,6 +741,7 @@ func TestPolishCircleBatchContiguousWindowUsesInitialVisitCounts(t *testing.T) {
 	params := deterministicParams(circleCount, width, height, 1608)
 	initialVisits := []int{0, 0, 1}
 	var selected []int
+
 	_, err := PolishCircleBatchContext(
 		context.Background(),
 		NewCPURenderer(ref, circleCount),
@@ -680,9 +761,11 @@ func TestPolishCircleBatchContiguousWindowUsesInitialVisitCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !reflect.DeepEqual(selected, []int{2}) {
 		t.Fatalf("selected active set = %v, want the latest unvisited draw slot 2", selected)
 	}
+
 	if !reflect.DeepEqual(initialVisits, []int{0, 0, 1}) {
 		t.Fatalf("initial visit counts were mutated: %v", initialVisits)
 	}
@@ -701,6 +784,7 @@ func integerRange(start, count int) []int {
 	for i := range values {
 		values[i] = start + i
 	}
+
 	return values
 }
 
@@ -712,14 +796,18 @@ func TestPolishCircleBatchContiguousWindowBakesPrefixAndMatchesFullVector(t *tes
 
 	run := func(bake bool) (*BatchPolishResult, []float64, [][]int) {
 		t.Helper()
+
 		cpu := NewCPURenderer(ref, circleCount)
 		cpu.SetThreads(1)
+
 		var base Renderer = cpu
 		if !bake {
 			base = newStagedOnlyRenderer(cpu)
 		}
+
 		optimizer := &recordingPolishOptimizer{}
 		var activeSets [][]int
+
 		result, err := PolishCircleBatchContext(context.Background(), base, optimizer, params, BatchPolishOptions{
 			ActiveSetSize: 2,
 			MaxSweeps:     3,
@@ -732,6 +820,7 @@ func TestPolishCircleBatchContiguousWindowBakesPrefixAndMatchesFullVector(t *tes
 		if err != nil {
 			t.Fatalf("PolishCircleBatchContext(bake %v) error = %v", bake, err)
 		}
+
 		return result, optimizer.costs, activeSets
 	}
 
@@ -746,6 +835,7 @@ func TestPolishCircleBatchContiguousWindowBakesPrefixAndMatchesFullVector(t *tes
 	if !reflect.DeepEqual(bakedSets[0], []int{1, 2}) {
 		t.Fatalf("first active set = %v, want the first two draw slots", bakedSets[0])
 	}
+
 	for _, set := range bakedSets {
 		for i := 1; i < len(set); i++ {
 			if set[i] != set[i-1]+1 {
@@ -758,6 +848,7 @@ func TestPolishCircleBatchContiguousWindowBakesPrefixAndMatchesFullVector(t *tes
 	if !slices.ContainsFunc(bakedSets, func(set []int) bool { return slices.Min(set) > 1 }) {
 		t.Fatalf("active sets %v never left a bakeable prefix", bakedSets)
 	}
+
 	if !slices.ContainsFunc(bakedSets, func(set []int) bool { return slices.Min(set) == 1 }) {
 		t.Fatalf("active sets %v never exercised the unbaked path", bakedSets)
 	}
@@ -766,10 +857,12 @@ func TestPolishCircleBatchContiguousWindowBakesPrefixAndMatchesFullVector(t *tes
 	if !reflect.DeepEqual(bakedCosts, fullCosts) {
 		t.Fatalf("evaluated costs = %v, want %v", bakedCosts, fullCosts)
 	}
+
 	if baked.BestCost != full.BestCost || !reflect.DeepEqual(baked.BestParams, full.BestParams) {
 		t.Fatalf("baked result = cost %v params %v, want cost %v params %v",
 			baked.BestCost, baked.BestParams, full.BestCost, full.BestParams)
 	}
+
 	if !bytes.Equal(baked.BestImage.Pix, full.BestImage.Pix) {
 		t.Fatal("baked and unbaked polishing produced different images")
 	}
@@ -804,15 +897,19 @@ func TestPolishCircleBatchCommitsImprovementBesideAnUntouchedHarmfulCircle(t *te
 	repaired := circleParams(6, 6, 2, color.NRGBA{R: 200, G: 200, B: 200, A: 255}, 1)
 
 	initialCost := base.Cost(initial)
+
 	improved := append(append([]float64(nil), harmful...), repaired...)
+
 	improvedCost := base.Cost(improved)
 	if improvedCost >= initialCost {
 		t.Fatalf("test setup is vacuous: repaired cost %v is not below %v", improvedCost, initialCost)
 	}
+
 	audit, err := AuditCircleBatch(base, improved)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if audit.Circles[0].MSEContribution > minBatchMSEContribution {
 		t.Fatalf("test setup is vacuous: circle one contributes %v, want it to be harmful",
 			audit.Circles[0].MSEContribution)
@@ -828,10 +925,12 @@ func TestPolishCircleBatchCommitsImprovementBesideAnUntouchedHarmfulCircle(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if result.AcceptedSweeps != 1 || result.Sweeps != 1 {
 		t.Fatalf("accepted/sweeps = %d/%d, want 1/1: a strict improvement was vetoed by an untouched harmful circle",
 			result.AcceptedSweeps, result.Sweeps)
 	}
+
 	if result.BestCost != improvedCost || !reflect.DeepEqual(result.BestParams, improved) {
 		t.Fatalf("committed sweep = cost %v params %v, want %v and the improved vector",
 			result.BestCost, result.BestParams, improvedCost)
@@ -862,22 +961,27 @@ func TestPolishCircleBatchRejectsImprovementThatKillsAnUntouchedCircle(t *testin
 
 	improved := append(append([]float64(nil), initial[:paramsPerCircle]...), grown...)
 	initialCost := base.Cost(initial)
+
 	improvedCost := base.Cost(improved)
 	if improvedCost >= initialCost {
 		t.Fatalf("test setup is vacuous: grown cost %v is not below %v", improvedCost, initialCost)
 	}
+
 	incumbentAudit, err := AuditCircleBatch(base, initial)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !circleUseful(incumbentAudit.Circles[0], minBatchMSEContribution) {
 		t.Fatalf("test setup is vacuous: circle one is already not useful in the incumbent: %+v",
 			incumbentAudit.Circles[0])
 	}
+
 	candidateAudit, err := AuditCircleBatch(base, improved)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if circleUseful(candidateAudit.Circles[0], minBatchMSEContribution) {
 		t.Fatalf("test setup is vacuous: circle one survives the sweep: %+v", candidateAudit.Circles[0])
 	}
@@ -893,10 +997,12 @@ func TestPolishCircleBatchRejectsImprovementThatKillsAnUntouchedCircle(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if result.AcceptedSweeps != 0 || result.Sweeps != 1 {
 		t.Fatalf("accepted/sweeps = %d/%d, want 0/1: the sweep killed an untouched circle outside the active set",
 			result.AcceptedSweeps, result.Sweeps)
 	}
+
 	if result.BestCost != initialCost || !reflect.DeepEqual(result.BestParams, initial) {
 		t.Fatalf("rejected sweep changed the result: cost %v params %v, want %v and the initial vector",
 			result.BestCost, result.BestParams, initialCost)
@@ -914,10 +1020,12 @@ func TestIncumbentAuditCacheAdoptsTheCommittedCandidateAudit(t *testing.T) {
 	committed := auditOf(usefulAuditCircle(0), harmfulAuditCircle(1))
 
 	cache.adopt(committed)
+
 	got, err := cache.get(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !reflect.DeepEqual(got.Circles, committed.Circles) {
 		t.Fatalf("cached audit = %+v, want the adopted candidate audit %+v", got.Circles, committed.Circles)
 	}
@@ -934,6 +1042,7 @@ func allCirclesUsefulReference(audit BatchAudit, minContribution float64) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -950,6 +1059,7 @@ func usefulAuditCircle(index int) CircleAudit {
 func harmfulAuditCircle(index int) CircleAudit {
 	circle := usefulAuditCircle(index)
 	circle.MSEContribution = -0.4
+
 	return circle
 }
 
@@ -1058,6 +1168,7 @@ func polishParityParams() []float64 {
 	params = append(params, circleParams(15, 5, 3, color.NRGBA{R: 120, G: 30, B: 60, A: 255}, 0.6)...)
 	params = append(params, circleParams(6, 12, 3, color.NRGBA{R: 80, G: 200, B: 120, A: 255}, 0.4)...)
 	params = append(params, circleParams(16, 12, 2, color.NRGBA{R: 30, G: 90, B: 220, A: 255}, 0.3)...)
+
 	return params
 }
 
@@ -1068,12 +1179,14 @@ func BenchmarkPolishCircleBatchStrategy(b *testing.B) {
 	const width, height = 128, 128
 	for _, circleCount := range []int{64, 256} {
 		ref := solidImage(width, height, color.NRGBA{R: 60, G: 120, B: 180, A: 255})
+
 		params := benchmarkPolishParams(circleCount, width, height)
 		for _, strategy := range []BatchPolishStrategy{BatchPolishHybridOverlap, BatchPolishContiguousWindow} {
 			b.Run(string(strategy)+"-"+strconv.Itoa(circleCount), func(b *testing.B) {
 				cpu := NewCPURenderer(ref, circleCount)
 				cpu.SetThreads(1)
 				b.ReportAllocs()
+
 				for i := 0; i < b.N; i++ {
 					_, err := PolishCircleBatchContext(context.Background(), cpu, &recordingPolishOptimizer{steps: 200}, params, BatchPolishOptions{
 						ActiveSetSize: 3,
@@ -1091,7 +1204,7 @@ func BenchmarkPolishCircleBatchStrategy(b *testing.B) {
 
 func benchmarkPolishParams(circleCount, width, height int) []float64 {
 	params := make([]float64, 0, circleCount*paramsPerCircle)
-	for i := 0; i < circleCount; i++ {
+	for i := range circleCount {
 		params = append(params, circleParams(
 			float64((i*37)%width)+0.5,
 			float64((i*53)%height)+0.5,
@@ -1100,6 +1213,7 @@ func benchmarkPolishParams(circleCount, width, height int) []float64 {
 			0.4+float64(i%4)/10,
 		)...)
 	}
+
 	return params
 }
 
@@ -1107,8 +1221,9 @@ func BenchmarkPolishCircleBatch(b *testing.B) {
 	const width, height = 128, 128
 	for _, circleCount := range []int{64, 256} {
 		ref := solidImage(width, height, color.NRGBA{R: 60, G: 120, B: 180, A: 255})
+
 		params := make([]float64, 0, circleCount*paramsPerCircle)
-		for i := 0; i < circleCount; i++ {
+		for i := range circleCount {
 			params = append(params, circleParams(
 				float64((i*37)%width)+0.5,
 				float64((i*53)%height)+0.5,
@@ -1121,9 +1236,11 @@ func BenchmarkPolishCircleBatch(b *testing.B) {
 		newBase := func(bake bool) Renderer {
 			cpu := NewCPURenderer(ref, circleCount)
 			cpu.SetThreads(1)
+
 			if bake {
 				return cpu
 			}
+
 			return newStagedOnlyRenderer(cpu)
 		}
 		for _, bake := range []bool{true, false} {
@@ -1131,9 +1248,12 @@ func BenchmarkPolishCircleBatch(b *testing.B) {
 			if !bake {
 				name = "full-vector-"
 			}
+
 			b.Run(name+strconv.Itoa(circleCount), func(b *testing.B) {
 				base := newBase(bake)
+
 				b.ReportAllocs()
+
 				for i := 0; i < b.N; i++ {
 					_, err := PolishCircleBatchContext(context.Background(), base, &recordingPolishOptimizer{steps: 200}, params, BatchPolishOptions{
 						ActiveSetSize: 3,
@@ -1165,6 +1285,7 @@ func circleParams(x, y, radius float64, c color.NRGBA, opacity float64) []float6
 // MayflyAdapter configured with opt.WithParallelEvaluation does.
 type parallelPolishOptimizer struct {
 	fixedPolishOptimizer
+
 	workers int
 }
 
@@ -1198,9 +1319,11 @@ func TestPolishCircleBatchRejectsParallelOptimizerWithoutSessionPool(t *testing.
 	if err == nil {
 		t.Fatal("polishing accepted a concurrent optimizer over a renderer that cannot pool sessions")
 	}
+
 	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("error = %v, want ErrInvalidOptimizationInput", err)
 	}
+
 	if optimizer.calls != 0 {
 		t.Fatalf("optimizer ran %d times, want 0; the guard must refuse before evaluating", optimizer.calls)
 	}
@@ -1209,6 +1332,7 @@ func TestPolishCircleBatchRejectsParallelOptimizerWithoutSessionPool(t *testing.
 	// same pool-less renderer. The strategy is residual-region because it is the
 	// one that never asks the backend for a staged session at all.
 	serial := &parallelPolishOptimizer{workers: 1}
+
 	serial.params = circleParams(2, 2, 5, color.NRGBA{A: 255}, 1)
 	if _, err := PolishCircleBatchContext(context.Background(), base, serial, initial, BatchPolishOptions{
 		ActiveSetSize: 1,
@@ -1225,6 +1349,7 @@ func TestPolishCircleBatchRejectsParallelOptimizerWithoutSessionPool(t *testing.
 	// validated for.
 	unadvertised := newStagedOnlyRenderer(NewCPURenderer(ref, 1))
 	silent := &parallelPolishOptimizer{workers: 4}
+
 	_, err = PolishCircleBatchContext(context.Background(), unadvertised, silent, initial, BatchPolishOptions{
 		ActiveSetSize: 1,
 		MaxSweeps:     1,
@@ -1232,12 +1357,14 @@ func TestPolishCircleBatchRejectsParallelOptimizerWithoutSessionPool(t *testing.
 	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("error = %v, want ErrInvalidOptimizationInput for a backend without a parallel marker", err)
 	}
+
 	if silent.calls != 0 {
 		t.Fatalf("optimizer ran %d times, want 0; the guard must refuse before evaluating", silent.calls)
 	}
 
 	// So must a concurrent optimizer over a renderer that can pool sessions.
 	pooled := &parallelPolishOptimizer{workers: 4}
+
 	pooled.params = circleParams(2, 2, 5, color.NRGBA{A: 255}, 1)
 	if _, err := PolishCircleBatchContext(context.Background(), NewCPURenderer(ref, 1), pooled, initial, BatchPolishOptions{
 		ActiveSetSize: 1,
@@ -1260,6 +1387,7 @@ type sessionCounts struct {
 // per pooled worker.
 type sessionCountingRenderer struct {
 	*CPURenderer
+
 	counts *sessionCounts
 }
 
@@ -1287,10 +1415,13 @@ func TestPolishCircleBatchBakesThePrefixOncePerSweep(t *testing.T) {
 
 	run := func(workers int) (int, int) {
 		t.Helper()
+
 		cpu := NewCPURenderer(ref, circleCount)
 		cpu.SetThreads(1)
+
 		counts := &sessionCounts{}
 		base := sessionCountingRenderer{CPURenderer: cpu, counts: counts}
+
 		optimizer := &widthPolishOptimizer{workers: workers}
 		if _, err := PolishCircleBatchContext(context.Background(), base, optimizer, params, BatchPolishOptions{
 			ActiveSetSize: 2,
@@ -1303,6 +1434,7 @@ func TestPolishCircleBatchBakesThePrefixOncePerSweep(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("PolishCircleBatchContext(width %d) error = %v", workers, err)
 		}
+
 		return int(counts.sessions.Load()), int(counts.canvasSessions.Load())
 	}
 
@@ -1310,11 +1442,13 @@ func TestPolishCircleBatchBakesThePrefixOncePerSweep(t *testing.T) {
 	if serialBaked != sweeps {
 		t.Fatalf("serial run started %d sessions from a baked canvas, want one per sweep (%d)", serialBaked, sweeps)
 	}
+
 	pooledRendered, pooledBaked := run(4)
 	if pooledRendered != serialRendered {
 		t.Errorf("width 4 rendered %d sessions, want the serial run's %d: the fixed prefix must be baked once per sweep, not once per worker",
 			pooledRendered, serialRendered)
 	}
+
 	if pooledBaked <= serialBaked {
 		t.Errorf("width 4 started %d sessions from the baked canvas, want more than the serial run's %d: every slot needs its own canvas",
 			pooledBaked, serialBaked)
@@ -1326,6 +1460,7 @@ func TestPolishCircleBatchBakesThePrefixOncePerSweep(t *testing.T) {
 // widths is the pool's doing and not the optimizer's.
 type widthPolishOptimizer struct {
 	recordingPolishOptimizer
+
 	workers int
 }
 
@@ -1719,32 +1854,41 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 			circleCount := len(testCase.params) / paramsPerCircle
 			run := func(workers int) (*BatchPolishResult, []float64) {
 				t.Helper()
+
 				cpu := NewCPURenderer(testCase.reference, circleCount)
 				cpu.SetThreads(1)
+
 				optimizer := testCase.newOptimizer(workers)
+
 				result, err := PolishCircleBatchContext(
 					context.Background(), cpu, optimizer, testCase.params, testCase.options)
 				if err != nil {
 					t.Fatalf("PolishCircleBatchContext(width %d) error = %v", workers, err)
 				}
+
 				return result, optimizer.evaluatedCosts()
 			}
 
 			serial, serialCosts := run(1)
+
 			want := testCase.serial
 			if !reflect.DeepEqual(serialCosts, want.costs) {
 				t.Errorf("width 1 evaluated costs = %v, want the serial run's %v", serialCosts, want.costs)
 			}
+
 			if !reflect.DeepEqual(serial.BestParams, want.params) {
 				t.Errorf("width 1 best params = %v, want the serial run's %v", serial.BestParams, want.params)
 			}
+
 			if serial.BestCost != want.cost {
 				t.Errorf("width 1 best cost = %v, want the serial run's %v", serial.BestCost, want.cost)
 			}
+
 			if serial.AcceptedSweeps != want.accepted || serial.Sweeps != want.sweeps {
 				t.Errorf("width 1 accepted/sweeps = %d/%d, want the serial run's %d/%d",
 					serial.AcceptedSweeps, serial.Sweeps, want.accepted, want.sweeps)
 			}
+
 			if serial.Evaluations != want.evaluations {
 				t.Errorf("width 1 evaluations = %d, want the serial run's %d", serial.Evaluations, want.evaluations)
 			}
@@ -1754,19 +1898,24 @@ func TestPolishCircleBatchPoolWidthParity(t *testing.T) {
 				if !reflect.DeepEqual(pooledCosts, serialCosts) {
 					t.Errorf("width %d evaluated costs = %v, want %v", workers, pooledCosts, serialCosts)
 				}
+
 				if !reflect.DeepEqual(pooled.BestParams, serial.BestParams) {
 					t.Errorf("width %d best params = %v, want %v", workers, pooled.BestParams, serial.BestParams)
 				}
+
 				if pooled.BestCost != serial.BestCost {
 					t.Errorf("width %d best cost = %v, want %v", workers, pooled.BestCost, serial.BestCost)
 				}
+
 				if pooled.AcceptedSweeps != serial.AcceptedSweeps || pooled.Sweeps != serial.Sweeps {
 					t.Errorf("width %d accepted/sweeps = %d/%d, want %d/%d",
 						workers, pooled.AcceptedSweeps, pooled.Sweeps, serial.AcceptedSweeps, serial.Sweeps)
 				}
+
 				if pooled.Evaluations != serial.Evaluations {
 					t.Errorf("width %d evaluations = %d, want %d", workers, pooled.Evaluations, serial.Evaluations)
 				}
+
 				if !bytes.Equal(pooled.BestImage.Pix, serial.BestImage.Pix) {
 					t.Errorf("width %d best image differs from the serial image", workers)
 				}
@@ -1797,22 +1946,28 @@ func (o *concurrentPolishOptimizer) RunContext(_ context.Context, problem opt.Pr
 	if candidates == 0 {
 		candidates = 4 * o.workers
 	}
+
 	best := append([]float64(nil), options.Initial.Params...)
 	bestCost := problem.Eval(best)
 
 	var mu sync.Mutex
+
 	var wg sync.WaitGroup
 	for worker := range o.workers {
 		wg.Add(1)
 		go func(worker int) {
 			defer wg.Done()
+
 			for step := worker; step < candidates; step += o.workers {
 				candidate := append([]float64(nil), options.Initial.Params...)
 				for i := range candidate {
 					candidate[i] += float64(step+1) * 0.5 * float64(i%3-1)
 				}
+
 				cost := problem.Eval(candidate)
+
 				mu.Lock()
+
 				o.costs = append(o.costs, cost)
 				if cost < bestCost {
 					best, bestCost = candidate, cost
@@ -1821,7 +1976,9 @@ func (o *concurrentPolishOptimizer) RunContext(_ context.Context, problem opt.Pr
 			}
 		}(worker)
 	}
+
 	wg.Wait()
+
 	return opt.Result{
 		BestParams:  best,
 		BestCost:    bestCost,
@@ -1867,6 +2024,7 @@ func TestPolishCircleBatchPoolServesConcurrentEvaluations(t *testing.T) {
 
 				optimizer := &concurrentPolishOptimizer{workers: 4, candidates: 32}
 				sweeps := 0
+
 				result, err := PolishCircleBatchContext(context.Background(), cpu, optimizer, params, BatchPolishOptions{
 					ActiveSetSize: activeSetSize,
 					MaxSweeps:     3,
@@ -1876,9 +2034,11 @@ func TestPolishCircleBatchPoolServesConcurrentEvaluations(t *testing.T) {
 				if err != nil {
 					t.Fatalf("PolishCircleBatchContext error = %v", err)
 				}
+
 				if sweeps != 3 || result.Sweeps != 3 {
 					t.Fatalf("sweeps = %d/%d, want 3/3", sweeps, result.Sweeps)
 				}
+
 				if len(optimizer.costs) < optimizer.candidates {
 					t.Fatalf("optimizer recorded %d costs, want at least %d", len(optimizer.costs), optimizer.candidates)
 				}
@@ -1887,9 +2047,11 @@ func TestPolishCircleBatchPoolServesConcurrentEvaluations(t *testing.T) {
 				if result.BestCost > initialCost {
 					t.Fatalf("best cost = %v, want no worse than the initial %v", result.BestCost, initialCost)
 				}
+
 				if got := cpu.Cost(result.BestParams); got != result.BestCost {
 					t.Fatalf("committed cost = %v, want the full-session cost %v", result.BestCost, got)
 				}
+
 				if result.Evaluations < len(optimizer.costs) {
 					t.Fatalf("evaluations = %d, want at least the %d the optimizer made", result.Evaluations, len(optimizer.costs))
 				}
@@ -1915,11 +2077,13 @@ func BenchmarkPolishCircleBatchEvaluationWidth(b *testing.B) {
 	const circleCount = 256
 	ref := solidImage(width, height, color.NRGBA{R: 60, G: 120, B: 180, A: 255})
 	params := benchmarkPolishParams(circleCount, width, height)
+
 	for _, workers := range []int{1, 8, 48} {
 		b.Run("width-"+strconv.Itoa(workers), func(b *testing.B) {
 			cpu := NewCPURenderer(ref, circleCount)
 			cpu.SetThreads(1)
 			b.ReportAllocs()
+
 			for range b.N {
 				_, err := PolishCircleBatchContext(context.Background(), cpu,
 					&concurrentPolishOptimizer{workers: workers, candidates: 1920}, params, BatchPolishOptions{
@@ -1956,6 +2120,7 @@ func (o *improvingPolishOptimizer) Run(func([]float64) float64, []float64, []flo
 func (o *improvingPolishOptimizer) RunContext(_ context.Context, problem opt.Problem, options opt.RunOptions) (opt.Result, error) {
 	best := append([]float64(nil), options.Initial.Params...)
 	bestCost := problem.Eval(best)
+
 	o.costs = append(o.costs, bestCost)
 	for step := 1; step <= 3; step++ {
 		candidate := append([]float64(nil), options.Initial.Params...)
@@ -1964,12 +2129,15 @@ func (o *improvingPolishOptimizer) RunContext(_ context.Context, problem opt.Pro
 				candidate[circle*paramsPerCircle+channel] *= 1 - 0.25*float64(step)
 			}
 		}
+
 		cost := problem.Eval(candidate)
+
 		o.costs = append(o.costs, cost)
 		if cost < bestCost {
 			best, bestCost = candidate, cost
 		}
 	}
+
 	return opt.Result{
 		BestParams:  best,
 		BestCost:    bestCost,
@@ -1987,5 +2155,6 @@ func polishAcceptingParams() []float64 {
 	params := circleParams(2, 3, 2, color.NRGBA{R: 160, G: 160, B: 160, A: 255}, 0.9)
 	params = append(params, circleParams(6, 3, 2, color.NRGBA{R: 120, G: 120, B: 120, A: 255}, 0.8)...)
 	params = append(params, circleParams(10, 3, 2, color.NRGBA{R: 90, G: 90, B: 90, A: 255}, 0.7)...)
+
 	return params
 }

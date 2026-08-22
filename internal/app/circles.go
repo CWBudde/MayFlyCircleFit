@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -57,16 +58,20 @@ func (s CircleSpecs) Validate() error {
 				return invalid(field(name), "must be finite")
 			}
 		}
+
 		if spec.R < 1 {
 			return invalid(field("r"), "must be at least 1")
 		}
+
 		if _, _, _, err := parseHexColor(spec.Color); err != nil {
 			return invalid(field("color"), err.Error())
 		}
+
 		if math.IsNaN(spec.Opacity) || spec.Opacity <= 0 || spec.Opacity > 1 {
 			return invalid(field("opacity"), "must be greater than 0 and no greater than 1")
 		}
 	}
+
 	return nil
 }
 
@@ -80,12 +85,15 @@ func (s CircleSpecs) ToParams() ([]float64, error) {
 		if err != nil {
 			return nil, invalid(fmt.Sprintf("initialCircles[%d].color", i), err.Error())
 		}
+
 		opacity := spec.Opacity
 		if opacity == 0 {
 			opacity = 1
 		}
+
 		params = append(params, spec.X, spec.Y, spec.R, red, green, blue, opacity)
 	}
+
 	return params, nil
 }
 
@@ -94,15 +102,18 @@ func (s CircleSpecs) ToParams() ([]float64, error) {
 func parseHexColor(value string) (red, green, blue float64, err error) {
 	digits := strings.TrimPrefix(strings.TrimSpace(value), "#")
 	if len(digits) != 6 {
-		return 0, 0, 0, fmt.Errorf("must be a six digit hex colour such as #4a3226")
+		return 0, 0, 0, errors.New("must be a six digit hex colour such as #4a3226")
 	}
+
 	channels := [3]float64{}
 	for i := range channels {
 		parsed, parseErr := strconv.ParseUint(digits[i*2:i*2+2], 16, 8)
 		if parseErr != nil {
-			return 0, 0, 0, fmt.Errorf("must be a six digit hex colour such as #4a3226")
+			return 0, 0, 0, errors.New("must be a six digit hex colour such as #4a3226")
 		}
+
 		channels[i] = float64(parsed) / 255
 	}
+
 	return channels[0], channels[1], channels[2], nil
 }

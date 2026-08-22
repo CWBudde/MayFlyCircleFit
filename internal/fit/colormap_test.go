@@ -57,9 +57,11 @@ func TestMagmaEndpointsAndInterpolation(t *testing.T) {
 	if got, want := MapNormalizedColor(0, ColormapMagma), magmaStops[0]; got != want {
 		t.Errorf("magma(0) = %#v, want %#v", got, want)
 	}
+
 	if got, want := MapNormalizedColor(1, ColormapMagma), magmaStops[len(magmaStops)-1]; got != want {
 		t.Errorf("magma(1) = %#v, want %#v", got, want)
 	}
+
 	middle := MapNormalizedColor(0.5, ColormapMagma)
 	if middle == magmaStops[0] || middle == magmaStops[len(magmaStops)-1] || middle.A != 255 {
 		t.Errorf("magma(0.5) = %#v, want an opaque intermediate color", middle)

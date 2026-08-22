@@ -41,14 +41,17 @@ func scheduleDocumentNamesSeed(data []byte) bool {
 			Seed *int64 `json:"seed"`
 		} `json:"base"`
 	}
-	if err := json.Unmarshal(data, &named); err != nil {
+	err := json.Unmarshal(data, &named)
+	if err != nil {
 		// An undecodable document never reaches here; treating it as unnamed
 		// keeps the failure to the parse error rather than a wrong seed line.
 		return false
 	}
+
 	if named.Seed != nil && *named.Seed != 0 {
 		return true
 	}
+
 	return named.Base != nil && named.Base.Seed != nil && *named.Base.Seed != 0
 }
 
@@ -59,18 +62,22 @@ func printSchedulePlan(output io.Writer, path string, document *app.ScheduleDocu
 	if err != nil {
 		return fmt.Errorf("expand schedule %q: %w", path, err)
 	}
+
 	summary := app.SummarizeSchedulePlan(plan)
 
 	fmt.Fprintf(output, "Dry run of %s — nothing was submitted and no schedule was created.\n", path)
+
 	if document.Name != "" {
 		fmt.Fprintf(output, "Name: %s\n", document.Name)
 	}
+
 	if seedNamed {
 		fmt.Fprintf(output, "Seed: %d\n", document.Seed)
 	} else {
 		fmt.Fprintln(output, "Seed: automatic — resolved at submission, so this plan is not reproducible;")
 		fmt.Fprintln(output, "      set \"seed\" in the document to pin it.")
 	}
+
 	fmt.Fprintf(output, "Stages: %d (%d base, %d extend, %d polish; %d conditional)\n",
 		summary.Stages, summary.Base, summary.Extends, summary.Polishes, summary.Conditional)
 	printScheduleBarriers(output, plan)
@@ -78,11 +85,13 @@ func printSchedulePlan(output io.Writer, path string, document *app.ScheduleDocu
 
 	writer := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(writer, "#\tKIND\tCIRCLES\tITERATIONS\tPARAMETERS\tWHEN")
+
 	for _, stage := range plan {
 		fmt.Fprintf(writer, "%d\t%s\t%d\t%d\t%s\t%s\n",
 			stage.Index, stage.Kind, stage.Circles, stage.PlannedIterations(),
 			stagePlanParameters(stage), stagePlanCondition(stage))
 	}
+
 	if err := writer.Flush(); err != nil {
 		return err
 	}
@@ -97,6 +106,7 @@ func printSchedulePlan(output io.Writer, path string, document *app.ScheduleDocu
 		renderer.MaxExtraBatchStages)
 	fmt.Fprintln(output, "stages beyond its plan and spend more. Those refills are excluded here")
 	fmt.Fprintln(output, "because most stages never run them.")
+
 	return nil
 }
 
@@ -104,6 +114,7 @@ func pluralStages(count int) string {
 	if count == 1 {
 		return "stage"
 	}
+
 	return "stages"
 }
 
@@ -133,10 +144,12 @@ func printScheduleBarriers(output io.Writer, plan []app.ScheduleStage) {
 		if !stage.PauseBefore {
 			continue
 		}
+
 		fmt.Fprintf(output,
 			"Barrier: runs stages 0-%d, then pauses before stage %d (%s, %d circles).\n",
 			stage.Index-1, stage.Index, stage.Kind, stage.Circles)
 		fmt.Fprintln(output, "         Everything after it stays planned; `schedule resume` releases it.")
+
 		return
 	}
 }
@@ -157,6 +170,7 @@ func stagePlanCondition(stage app.ScheduleStage) string {
 	if stage.PauseBefore {
 		return "BARRIER: pauses here; " + condition
 	}
+
 	return condition
 }
 
@@ -182,6 +196,7 @@ func printScheduleProjection(output io.Writer, detail scheduleDetailResponse, as
 		// the stage table's problem to report; a projection simply has no plan.
 		return
 	}
+
 	projection := app.ProjectScheduleFinish(plan, stageTimings(detail.Stages), asOf)
 	if projection.RemainingStages == 0 {
 		fmt.Fprintln(output, "\nNo projection: every planned stage has completed or been skipped.")
@@ -191,34 +206,42 @@ func printScheduleProjection(output io.Writer, detail scheduleDetailResponse, as
 	fmt.Fprintln(output, "\nProjection (from measured stage wall clock only):")
 	writer := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(writer, "KIND\tMEASURED\tPER STAGE\tREMAINING\tESTIMATE\tNOTE")
+
 	for _, kind := range projection.Kinds {
 		perStage, estimate := "-", "-"
 		if kind.Projected() {
 			perStage = kind.PerStage.Round(time.Second).String()
 			estimate = kind.Remaining.Round(time.Second).String()
 		}
+
 		fmt.Fprintf(writer, "%s\t%d\t%s\t%d\t%s\t%s\n",
 			kind.Kind, kind.Samples, perStage, kind.RemainingStages, estimate, kind.Note)
 	}
+
 	_ = writer.Flush()
 
 	if !projection.Complete {
 		fmt.Fprintln(output, "No finish time: not every remaining stage kind has been measured yet.")
 		return
 	}
+
 	if store.ScheduleState(detail.State) != store.ScheduleStateRunning {
 		// A campaign that is not advancing has a remaining workload but no
 		// finish time: that would require knowing when it starts again.
 		fmt.Fprintf(output, "Remaining once the campaign runs again: %s (no finish time while it is %s)\n",
 			projection.Remaining.Round(time.Second), detail.State)
+
 		if projection.Firm != projection.Remaining {
 			fmt.Fprintf(output, "Earliest if every conditional stage is skipped: %s\n",
 				projection.Firm.Round(time.Second))
 		}
+
 		return
 	}
+
 	fmt.Fprintf(output, "Remaining: %s, finishing around %s\n",
 		projection.Remaining.Round(time.Second), projection.FinishBy.Format(time.RFC3339))
+
 	if projection.Firm != projection.Remaining {
 		fmt.Fprintf(output, "Earliest if every conditional stage is skipped: %s (%s)\n",
 			projection.Firm.Round(time.Second), projection.EarliestFinish.Format(time.RFC3339))
@@ -238,8 +261,10 @@ func stageTimings(stages []scheduleStageSummaryResponse) []app.ScheduleStageTimi
 		if stage.ElapsedNanos != nil {
 			timing.Elapsed = time.Duration(*stage.ElapsedNanos)
 		}
+
 		timings = append(timings, timing)
 	}
+
 	return timings
 }
 

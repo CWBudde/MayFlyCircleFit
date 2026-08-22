@@ -3,7 +3,6 @@ package fit_test
 import (
 	"image"
 	"image/color"
-	"io"
 	"log/slog"
 	"math/rand"
 	"testing"
@@ -47,10 +46,12 @@ func benchmarkRendering(b *testing.B) {
 			reference := benchmarkImage(workload.width, workload.height, 42)
 			cpu := renderer.NewCPURenderer(reference, workload.circles)
 			cpu.SetThreads(1)
+
 			params := benchmarkParams(workload.circles, workload.width, workload.height, 99)
 
 			b.ReportAllocs()
 			b.ResetTimer()
+
 			for range b.N {
 				benchmarkImageSink = cpu.Render(params)
 			}
@@ -77,12 +78,14 @@ func benchmarkCostComputation(b *testing.B) {
 
 	for _, workload := range workloads {
 		current := benchmarkImage(workload.width, workload.height, 42)
+
 		reference := benchmarkImage(workload.width, workload.height, 99)
 		for _, cost := range costs {
 			b.Run(workload.name+"/"+cost.name, func(b *testing.B) {
 				b.SetBytes(int64(workload.width * workload.height * 8))
 				b.ReportAllocs()
 				b.ResetTimer()
+
 				for range b.N {
 					benchmarkCostSink = cost.cost(current, reference)
 				}
@@ -97,7 +100,9 @@ func benchmarkOptimizationPipelines(b *testing.B) {
 	b.Run("Joint/K8", func(b *testing.B) {
 		base := renderer.NewCPURenderer(reference, 8)
 		base.SetThreads(1)
+
 		optimizer := opt.NewMayfly(2, 20, 20250812)
+
 		b.ReportAllocs()
 		b.ResetTimer()
 
@@ -106,6 +111,7 @@ func benchmarkOptimizationPipelines(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
+
 			benchmarkResultSink = result
 		}
 	})
@@ -113,7 +119,9 @@ func benchmarkOptimizationPipelines(b *testing.B) {
 	b.Run("Sequential/K4", func(b *testing.B) {
 		base := renderer.NewCPURenderer(reference, 4)
 		base.SetThreads(1)
+
 		optimizer := opt.NewMayfly(1, 20, 20250812)
+
 		b.ReportAllocs()
 		b.ResetTimer()
 
@@ -122,6 +130,7 @@ func benchmarkOptimizationPipelines(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
+
 			benchmarkResultSink = result
 		}
 	})
@@ -129,7 +138,9 @@ func benchmarkOptimizationPipelines(b *testing.B) {
 	b.Run("Batch/K6/B2", func(b *testing.B) {
 		base := renderer.NewCPURenderer(reference, 6)
 		base.SetThreads(1)
+
 		optimizer := opt.NewMayfly(1, 20, 20250812)
+
 		b.ReportAllocs()
 		b.ResetTimer()
 
@@ -138,6 +149,7 @@ func benchmarkOptimizationPipelines(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
+
 			benchmarkResultSink = result
 		}
 	})
@@ -145,9 +157,10 @@ func benchmarkOptimizationPipelines(b *testing.B) {
 
 func benchmarkImage(width, height int, seed int64) *image.NRGBA {
 	rng := rand.New(rand.NewSource(seed))
+
 	img := image.NewNRGBA(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for y := range height {
+		for x := range width {
 			img.SetNRGBA(x, y, color.NRGBA{
 				R: uint8((x*3 + rng.Intn(64)) % 256),
 				G: uint8((y*5 + rng.Intn(64)) % 256),
@@ -156,6 +169,7 @@ func benchmarkImage(width, height int, seed int64) *image.NRGBA {
 			})
 		}
 	}
+
 	return img
 }
 
@@ -163,7 +177,8 @@ func benchmarkParams(circles, width, height int, seed int64) []float64 {
 	rng := rand.New(rand.NewSource(seed))
 	params := make([]float64, circles*benchmarkParamsPerCircle)
 	maxRadius := max(1, min(width, height)/4)
-	for circle := 0; circle < circles; circle++ {
+
+	for circle := range circles {
 		offset := circle * benchmarkParamsPerCircle
 		params[offset] = rng.Float64() * float64(width)
 		params[offset+1] = rng.Float64() * float64(height)
@@ -173,12 +188,15 @@ func benchmarkParams(circles, width, height int, seed int64) []float64 {
 		params[offset+5] = rng.Float64()
 		params[offset+6] = 0.25 + rng.Float64()*0.75
 	}
+
 	return params
 }
 
 func silenceBenchmarkLogs(b *testing.B) {
 	b.Helper()
+
 	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	slog.SetDefault(slog.New(slog.DiscardHandler))
 	b.Cleanup(func() { slog.SetDefault(previous) })
 }

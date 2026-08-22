@@ -26,6 +26,7 @@ func campaignFromSchedule(record *store.ScheduleRecord, stages []store.ScheduleS
 	if plan, err := record.Document.Expand(); err == nil {
 		planned = len(plan)
 	}
+
 	seed, hasSeed := campaignSeed(record, stages)
 	campaign := ui.Campaign{
 		ID:            record.ScheduleID,
@@ -37,10 +38,12 @@ func campaignFromSchedule(record *store.ScheduleRecord, stages []store.ScheduleS
 		PlannedStages: planned,
 		Error:         record.Error,
 	}
+
 	campaign.Stages = make([]ui.CampaignStage, 0, len(stages))
 	for i := range stages {
 		campaign.Stages = append(campaign.Stages, campaignStageFromRecord(&stages[i]))
 	}
+
 	return campaign
 }
 
@@ -56,11 +59,13 @@ func campaignSeed(record *store.ScheduleRecord, stages []store.ScheduleStageReco
 	if record.CampaignSeed != 0 {
 		return record.CampaignSeed, true
 	}
+
 	for i := range stages {
 		if seed := stages[i].Config.EffectiveSeed; seed != 0 {
 			return seed, true
 		}
 	}
+
 	return 0, false
 }
 
@@ -83,6 +88,7 @@ func campaignStageFromRecord(record *store.ScheduleStageRecord) ui.CampaignStage
 	}
 	if record.State == store.ScheduleStateCompleted {
 		stage.BestCost = record.BestCost
+
 		stage.HasBestCost = true
 		if psnr, infinite := serializablePSNR(record.BestCost); infinite {
 			stage.PSNRInfinite = true
@@ -90,6 +96,7 @@ func campaignStageFromRecord(record *store.ScheduleStageRecord) ui.CampaignStage
 			stage.PSNR, stage.HasPSNR = *psnr, true
 		}
 	}
+
 	if record.StartedAt != nil && record.CompletedAt != nil {
 		stage.ElapsedSec = record.CompletedAt.Sub(*record.StartedAt).Seconds()
 		stage.HasElapsed = true
@@ -98,6 +105,7 @@ func campaignStageFromRecord(record *store.ScheduleStageRecord) ui.CampaignStage
 	} else {
 		stage.ElapsedAbsent = "The stage has not finished"
 	}
+
 	return stage
 }
 
@@ -105,6 +113,7 @@ func stageNote(record *store.ScheduleStageRecord) string {
 	if record.Error != "" {
 		return record.Error
 	}
+
 	return record.Reason
 }
 
@@ -116,23 +125,30 @@ func stageNote(record *store.ScheduleStageRecord) string {
 func chainCheckpoints(checkpoints store.Store, leafJobID string) ([]*store.Checkpoint, error) {
 	seen := make(map[string]struct{})
 	chain := make([]*store.Checkpoint, 0, 8)
+
 	for jobID := leafJobID; jobID != ""; {
 		if _, repeated := seen[jobID]; repeated {
 			return nil, fmt.Errorf("checkpoint lineage for %q is cyclic at %q", leafJobID, jobID)
 		}
+
 		seen[jobID] = struct{}{}
+
 		if len(chain) >= maxChainLength {
 			return nil, fmt.Errorf("checkpoint lineage for %q exceeds %d stages", leafJobID, maxChainLength)
 		}
+
 		checkpoint, err := checkpoints.LoadCheckpoint(jobID)
 		if err != nil {
 			return nil, err
 		}
+
 		chain = append(chain, checkpoint)
+
 		parent, ok := checkpoint.ContinuedFrom()
 		if !ok {
 			break
 		}
+
 		jobID = parent
 	}
 	// The walk runs leaf first because that is the only direction the lineage
@@ -140,6 +156,7 @@ func chainCheckpoints(checkpoints store.Store, leafJobID string) ([]*store.Check
 	for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
 		chain[i], chain[j] = chain[j], chain[i]
 	}
+
 	return chain, nil
 }
 
@@ -150,9 +167,11 @@ func campaignFromChain(leafJobID string, chain []*store.Checkpoint) ui.Campaign 
 		State:  chainState(chain),
 		Source: ui.CampaignFromChain,
 	}
+
 	campaign.Stages = make([]ui.CampaignStage, 0, len(chain))
 	for index, checkpoint := range chain {
 		parent, _ := checkpoint.ContinuedFrom()
+
 		stage := ui.CampaignStage{
 			Index:       index,
 			Kind:        chainStageKind(checkpoint),
@@ -173,13 +192,16 @@ func campaignFromChain(leafJobID string, chain []*store.Checkpoint) ui.Campaign 
 		if stage.Circles == 0 {
 			stage.Circles = checkpoint.RequestedCircles
 		}
+
 		if psnr, infinite := serializablePSNR(checkpoint.BestCost); infinite {
 			stage.PSNRInfinite = true
 		} else if psnr != nil {
 			stage.PSNR, stage.HasPSNR = *psnr, true
 		}
+
 		campaign.Stages = append(campaign.Stages, stage)
 	}
+
 	return campaign
 }
 
@@ -229,6 +251,7 @@ func chainState(chain []*store.Checkpoint) string {
 	if len(chain) == 0 {
 		return "pending"
 	}
+
 	return chainStageState(chain[len(chain)-1].Termination)
 }
 
@@ -259,16 +282,20 @@ type discoveredChain struct {
 func discoverChains(infos []store.CheckpointInfo) []discoveredChain {
 	byID := make(map[string]store.CheckpointInfo, len(infos))
 	parents := make(map[string]string, len(infos))
+
 	continued := make(map[string]struct{}, len(infos))
 	for _, info := range infos {
 		if info.ScheduleID != "" {
 			continue
 		}
+
 		byID[info.JobID] = info
+
 		parent := info.ExtendedFrom
 		if parent == "" {
 			parent = info.PolishedFrom
 		}
+
 		if parent != "" {
 			parents[info.JobID] = parent
 			continued[parent] = struct{}{}
@@ -276,11 +303,14 @@ func discoverChains(infos []store.CheckpointInfo) []discoveredChain {
 	}
 
 	chains := make([]discoveredChain, 0)
+
 	for jobID, info := range byID {
 		if _, hasChild := continued[jobID]; hasChild {
 			continue
 		}
+
 		stages, root := chainRunOrder(jobID, byID, parents)
+
 		length := len(stages)
 		if length < 2 {
 			continue
@@ -289,6 +319,7 @@ func discoverChains(infos []store.CheckpointInfo) []discoveredChain {
 		// checkpoint may have no timestamp of its own; fall back to the newest
 		// one the lineage recorded.
 		updatedAt := info.Timestamp
+
 		series := make([]ui.CampaignSeriesPoint, 0, len(stages))
 		for index, stage := range stages {
 			series = append(series, ui.CampaignSeriesPoint{
@@ -302,6 +333,7 @@ func discoverChains(infos []store.CheckpointInfo) []discoveredChain {
 				updatedAt = stage.Timestamp
 			}
 		}
+
 		chains = append(chains, discoveredChain{
 			LeafJobID:   jobID,
 			RootJobID:   root,
@@ -313,7 +345,9 @@ func discoverChains(infos []store.CheckpointInfo) []discoveredChain {
 			Termination: info.Termination,
 		})
 	}
+
 	sortDiscoveredChains(chains)
+
 	return chains
 }
 
@@ -325,6 +359,7 @@ func sortDiscoveredChains(chains []discoveredChain) {
 		if !chains[i].UpdatedAt.Equal(chains[j].UpdatedAt) {
 			return chains[i].UpdatedAt.After(chains[j].UpdatedAt)
 		}
+
 		return chains[i].LeafJobID < chains[j].LeafJobID
 	})
 }
@@ -347,6 +382,7 @@ func chainCampaignSummaries(chains []discoveredChain) []ui.CampaignSummary {
 			UpdatedAt:      chain.UpdatedAt,
 		})
 	}
+
 	return summaries
 }
 
@@ -354,6 +390,7 @@ func shortJobID(jobID string) string {
 	if len(jobID) <= 8 {
 		return jobID
 	}
+
 	return jobID[:8]
 }
 
@@ -362,20 +399,25 @@ func shortJobID(jobID string) string {
 func chainRunOrder(leafJobID string, byID map[string]store.CheckpointInfo, parents map[string]string) ([]store.CheckpointInfo, string) {
 	seen := make(map[string]struct{})
 	current, root := leafJobID, leafJobID
+
 	stages := make([]store.CheckpointInfo, 0, maxChainLength)
 	for current != "" && len(stages) < maxChainLength {
 		if _, repeated := seen[current]; repeated {
 			break
 		}
+
 		seen[current] = struct{}{}
 		if _, known := byID[current]; !known {
 			break
 		}
+
 		stages = append(stages, byID[current])
 		root = current
 		current = parents[current]
 	}
+
 	slices.Reverse(stages)
+
 	return stages, root
 }
 
@@ -383,6 +425,7 @@ func chainCircles(info store.CheckpointInfo) int {
 	if info.ActualCircles > 0 {
 		return info.ActualCircles
 	}
+
 	return info.RequestedCircles
 }
 
@@ -392,6 +435,7 @@ func summarizeCampaign(record *store.ScheduleRecord, stages []store.ScheduleStag
 	if plan, err := record.Document.Expand(); err == nil {
 		planned = len(plan)
 	}
+
 	summary := ui.CampaignSummary{
 		ID:             record.ScheduleID,
 		Name:           record.Document.Name,
@@ -417,15 +461,19 @@ func summarizeCampaign(record *store.ScheduleRecord, stages []store.ScheduleStag
 		if stages[i].State != store.ScheduleStateCompleted {
 			continue
 		}
+
 		summary.BestCost, summary.HasBestCost = stages[i].BestCost, true
+
 		summary.Circles = stages[i].Circles
 		if stages[i].JobID != "" {
 			summary.LeafJobID = stages[i].JobID
 		}
 	}
+
 	if summary.Circles == 0 && len(stages) > 0 {
 		summary.Circles = stages[len(stages)-1].Circles
 	}
+
 	return summary
 }
 
@@ -467,11 +515,13 @@ func chainDetailFrom(leafJobID string, chain []*store.Checkpoint) chainDetailWir
 	if len(chain) > 0 {
 		detail.RootJobID = chain[0].JobID
 	}
+
 	for index, checkpoint := range chain {
 		circles := checkpoint.ActualCircles
 		if circles == 0 {
 			circles = checkpoint.RequestedCircles
 		}
+
 		detail.Stages = append(detail.Stages, chainStageWire{
 			Index:      index,
 			Kind:       chainStageKind(checkpoint),
@@ -481,6 +531,7 @@ func chainDetailFrom(leafJobID string, chain []*store.Checkpoint) chainDetailWir
 			Iterations: checkpoint.Iterations,
 		})
 	}
+
 	return detail
 }
 
@@ -496,5 +547,6 @@ func chainSummaryWires(chains []discoveredChain) []chainSummaryWire {
 			UpdatedAt: chain.UpdatedAt,
 		})
 	}
+
 	return wires
 }

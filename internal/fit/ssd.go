@@ -54,16 +54,19 @@ const (
 func ExactSSD(current, reference *image.NRGBA) (uint64, bool) {
 	bounds := current.Bounds()
 	width := bounds.Dx()
+
 	height := bounds.Dy()
 	if width <= 0 || height <= 0 || width != reference.Bounds().Dx() || height != reference.Bounds().Dy() {
 		return 0, false
 	}
 
 	unsignedWidth := uint64(width)
+
 	unsignedHeight := uint64(height)
 	if unsignedWidth > ^uint64(0)/unsignedHeight {
 		return 0, false
 	}
+
 	pixelCount := unsignedWidth * unsignedHeight
 	if pixelCount > maxExactFloat64Integer/maxRGBSquaredDifference {
 		return 0, false
@@ -72,8 +75,10 @@ func ExactSSD(current, reference *image.NRGBA) (uint64, bool) {
 	if current.Stride != reference.Stride {
 		return ssdIndependentStridesExact(current, reference, width, height), true
 	}
+
 	sum := fastSSD(current.Pix, reference.Pix, current.Stride, width, height)
 	exact := uint64(sum)
+
 	return exact, sum == float64(exact)
 }
 
@@ -95,6 +100,7 @@ func FastSSD(current, reference *image.NRGBA) float64 {
 	if width != reference.Bounds().Dx() || height != reference.Bounds().Dy() {
 		return math.Inf(1)
 	}
+
 	if width == 0 || height == 0 {
 		return math.Inf(1)
 	}
@@ -112,9 +118,11 @@ func FastSSD(current, reference *image.NRGBA) float64 {
 
 func ssdIndependentStrides(current, reference *image.NRGBA, width, height int) float64 {
 	var sum float64
+
 	for y := range height {
 		for x := range width {
 			currentOffset := y*current.Stride + x*4
+
 			referenceOffset := y*reference.Stride + x*4
 			for channel := range 3 {
 				difference := float64(current.Pix[currentOffset+channel]) - float64(reference.Pix[referenceOffset+channel])
@@ -122,14 +130,17 @@ func ssdIndependentStrides(current, reference *image.NRGBA, width, height int) f
 			}
 		}
 	}
+
 	return sum
 }
 
 func ssdIndependentStridesExact(current, reference *image.NRGBA, width, height int) uint64 {
 	var sum uint64
+
 	for y := range height {
 		for x := range width {
 			currentOffset := y*current.Stride + x*4
+
 			referenceOffset := y*reference.Stride + x*4
 			for channel := range 3 {
 				difference := int64(current.Pix[currentOffset+channel]) - int64(reference.Pix[referenceOffset+channel])
@@ -137,6 +148,7 @@ func ssdIndependentStridesExact(current, reference *image.NRGBA, width, height i
 			}
 		}
 	}
+
 	return sum
 }
 
@@ -197,5 +209,6 @@ func FastMSECost(current, reference *image.NRGBA) float64 {
 func BenchmarkSSDBackend(iterations int, width, height int, durationNs int64) float64 {
 	totalPixels := float64(iterations) * float64(width) * float64(height)
 	seconds := float64(durationNs) / 1e9
+
 	return (totalPixels / 1e6) / seconds // Megapixels per second
 }

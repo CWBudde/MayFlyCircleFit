@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strconv"
 	"testing"
 
-	"golang.org/x/sys/cpu"
-
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"golang.org/x/sys/cpu"
 )
 
 // exactSpanFixture builds a span with two guard pixels on each side, so a
@@ -21,9 +21,11 @@ func exactSpanFixture(pixels int, source *rand.Rand) []byte {
 	for i := range pix {
 		pix[i] = byte(source.Intn(256))
 	}
+
 	for i := 3; i < len(pix); i += 4 {
 		pix[i] = 255
 	}
+
 	return pix
 }
 
@@ -44,6 +46,7 @@ func hostExactSpanKernels() []exactSpanKernel {
 	if cpu.X86.HasAVX2 {
 		kernels = append(kernels, exactSpanKernel{"avx2", compositeSpanExactAVX2})
 	}
+
 	return kernels
 }
 
@@ -145,6 +148,7 @@ func TestCompositeSpanExactKernelsAgree(t *testing.T) {
 		for _, kernel := range kernels[1:] {
 			other := append([]byte(nil), reference...)
 			kernel.fn(&other[8], pixels/2, &constants[0])
+
 			if !bytes.Equal(first, other) {
 				t.Fatalf("round %d (%d px): %s and %s disagree", round, pixels, kernels[0].name, kernel.name)
 			}
@@ -160,10 +164,12 @@ func TestCompositeSpanExactPreservesArbitraryAlpha(t *testing.T) {
 	for _, kernel := range hostExactSpanKernels() {
 		t.Run(kernel.name, func(t *testing.T) {
 			const pixels = 256
+
 			pix := make([]byte, pixels*4)
 			for i := range pix {
 				pix[i] = byte(i)
 			}
+
 			alphaBefore := make([]byte, 0, pixels)
 			for i := 3; i < len(pix); i += 4 {
 				alphaBefore = append(alphaBefore, pix[i])
@@ -241,6 +247,7 @@ func TestCompositeSpanExactFusionContract(t *testing.T) {
 			"backend appears to contract multiply-add, which changes the scalar " +
 			"span's rounding and breaks byte parity with compositeSpanExactAVX2")
 	}
+
 	t.Logf("multiply-add is not contracted: %d of the sampled inputs differ from math.FMA", distinguishing)
 }
 
@@ -248,8 +255,9 @@ func TestCompositeSpanExactFusionContract(t *testing.T) {
 // than the kernel, including the sub-cutoff spans and the odd-pixel tail.
 func TestCompositeOpaqueSpanDispatchMatchesScalar(t *testing.T) {
 	source := rand.New(rand.NewSource(99))
+
 	for _, pixels := range []int{1, 2, 3, 5, 7, 15, 16, 17, 33, 129, 1023} {
-		t.Run(fmt.Sprintf("%d", pixels), func(t *testing.T) {
+		t.Run(strconv.Itoa(pixels), func(t *testing.T) {
 			got := exactSpanFixture(pixels, source)
 			want := append([]byte(nil), got...)
 
@@ -267,16 +275,20 @@ func TestCompositeOpaqueSpanDispatchMatchesScalar(t *testing.T) {
 // which has its own cutoff branch and its own tail handling.
 func TestCompositeOpaqueSpanPairDispatchMatchesScalar(t *testing.T) {
 	source := rand.New(rand.NewSource(1234))
+
 	for _, pixels := range []int{1, 2, 15, 16, 17, 65} {
-		t.Run(fmt.Sprintf("%d", pixels), func(t *testing.T) {
+		t.Run(strconv.Itoa(pixels), func(t *testing.T) {
 			stride := (pixels + 8) * 4
+
 			got := make([]byte, stride*2)
 			for i := range got {
 				got[i] = byte(source.Intn(256))
 			}
+
 			for i := 3; i < len(got); i += 4 {
 				got[i] = 255
 			}
+
 			want := append([]byte(nil), got...)
 
 			compositeOpaqueSpanPair(got, 8, stride+8, pixels, 0.2, 0.6, 0.9, 0.37)
@@ -307,16 +319,19 @@ func TestCompositeSpanFollowsForcedTier(t *testing.T) {
 	}
 
 	source := rand.New(rand.NewSource(7))
+
 	for _, tc := range cases {
 		t.Run(tc.tier.String(), func(t *testing.T) {
 			if !tc.reachable {
 				t.Skipf("host CPU cannot execute the %s kernel", tc.tier)
 			}
+
 			fit.SetForcedTier(tc.tier)
 
 			if compositeSpanKernel != tc.tier {
 				t.Fatalf("composite span kernel = %s after forcing %s", compositeSpanKernel, tc.tier)
 			}
+
 			if compositeSpanMinPixels != tc.wantMin {
 				t.Fatalf("cutoff = %d after forcing %s, want %d", compositeSpanMinPixels, tc.tier, tc.wantMin)
 			}
@@ -328,6 +343,7 @@ func TestCompositeSpanFollowsForcedTier(t *testing.T) {
 				want := append([]byte(nil), got...)
 				compositeOpaqueSpan(got, 8, pixels, 0.13, 0.57, 0.91, 0.37)
 				compositeOpaqueSpanScalar(want, 8, pixels, 0.13, 0.57, 0.91, 0.37)
+
 				if !bytes.Equal(got, want) {
 					t.Fatalf("%s dispatch differs from the scalar compositor at %d pixels", tc.tier, pixels)
 				}
@@ -376,7 +392,9 @@ func TestCompositeOpaqueSpanDoesNotAllocate(t *testing.T) {
 			if !tc.reachable {
 				t.Skipf("host CPU cannot execute the %s tier", tc.tier)
 			}
+
 			fit.SetForcedTier(tc.tier)
+
 			if compositeSpanKernel != tc.tier {
 				t.Fatalf("composite span kernel = %s after forcing %s, want %s",
 					compositeSpanKernel, tc.tier, tc.tier)
@@ -403,6 +421,7 @@ func BenchmarkCompositeSpanExactCutoff(b *testing.B) {
 		b.Run(fmt.Sprintf("scalar/%d", pixels), func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(pixels * 4))
+
 			for range b.N {
 				compositeOpaqueSpanScalar(pix, 8, pixels, 0.13, 0.57, 0.91, 0.37)
 			}
@@ -410,17 +429,21 @@ func BenchmarkCompositeSpanExactCutoff(b *testing.B) {
 		b.Run(fmt.Sprintf("sse2/%d", pixels), func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(pixels * 4))
+
 			for range b.N {
 				constants := exactSpanConstants(0.13, 0.57, 0.91, 0.37)
 				compositeSpanExactSSE2(&pix[8], pixels/2, &constants[0])
 			}
 		})
+
 		if !cpu.X86.HasAVX2 {
 			continue
 		}
+
 		b.Run(fmt.Sprintf("avx2/%d", pixels), func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(pixels * 4))
+
 			for range b.N {
 				constants := exactSpanConstants(0.13, 0.57, 0.91, 0.37)
 				compositeSpanExactAVX2(&pix[8], pixels/2, &constants[0])
@@ -437,13 +460,16 @@ func BenchmarkCompositeSpanExactDirect(b *testing.B) {
 
 		b.Run(fmt.Sprintf("scalar/%d", pixels), func(b *testing.B) {
 			b.SetBytes(int64(pixels * 4))
+
 			for range b.N {
 				compositeOpaqueSpanScalar(pix, 8, pixels, 0.13, 0.57, 0.91, 0.37)
 			}
 		})
+
 		for _, kernel := range hostExactSpanKernels() {
 			b.Run(fmt.Sprintf("%s/%d", kernel.name, pixels), func(b *testing.B) {
 				b.SetBytes(int64(pixels * 4))
+
 				for range b.N {
 					kernel.fn(&pix[8], pixels/2, &constants[0])
 				}

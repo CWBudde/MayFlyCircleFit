@@ -157,17 +157,21 @@ func setRunValidationDefaults(referencePath string) {
 
 func createSimpleRunImage(t *testing.T, path string) {
 	t.Helper()
+
 	img := image.NewNRGBA(image.Rect(0, 0, 8, 8))
-	for y := 0; y < 8; y++ {
-		for x := 0; x < 8; x++ {
+
+	for y := range 8 {
+		for x := range 8 {
 			img.SetNRGBA(x, y, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 		}
 	}
+
 	f, err := os.Create(path)
 	if err != nil {
 		t.Fatalf("create image file: %v", err)
 	}
 	defer f.Close()
+
 	if err := png.Encode(f, img); err != nil {
 		t.Fatalf("encode test image: %v", err)
 	}
@@ -179,6 +183,7 @@ func TestRunOptimizationRejectsInvalidInputs(t *testing.T) {
 	createSimpleRunImage(t, validRefPath)
 
 	restore := captureRunCommandState()
+
 	t.Cleanup(func() { restoreRunCommandState(restore) })
 
 	tests := []struct {
@@ -238,13 +243,16 @@ func TestRunOptimizationRejectsInvalidInputs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			setRunValidationDefaults(validRefPath)
 			tt.mutate()
+
 			err := runOptimization(nil, nil)
 			if err == nil {
 				t.Fatalf("runOptimization() = nil")
 			}
+
 			if !IsUsageError(err) {
 				t.Fatalf("runOptimization() = %v, want usage error", err)
 			}
+
 			if !strings.Contains(err.Error(), tt.wantErrMsg) {
 				t.Fatalf("error = %q, want substring %q", err, tt.wantErrMsg)
 			}

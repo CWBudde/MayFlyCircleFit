@@ -38,6 +38,7 @@ func TestDirtySpanCoverageMetrics(t *testing.T) {
 		for i := range circles {
 			circles[i] = c
 		}
+
 		return circles
 	}
 
@@ -55,6 +56,7 @@ func TestDirtySpanCoverageMetrics(t *testing.T) {
 	}
 
 	rng := rand.New(rand.NewSource(1016))
+
 	batchPool := make([]fit.Circle, 32)
 	for i := range batchPool {
 		batchPool[i] = circle(16+rng.Float64()*224, 16+rng.Float64()*224, 16)
@@ -90,10 +92,12 @@ func TestDirtySpanCoverageMetrics(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.category+"/"+test.name, func(t *testing.T) {
 			metrics := measureDirtyCoverage(test.circles, width, height)
+
 			changedPixels := renderChangedPixels(test.circles, width, height)
 			if changedPixels != metrics.dirtyPixels {
 				t.Fatalf("changed pixels = %d, dirty-span union = %d", changedPixels, metrics.dirtyPixels)
 			}
+
 			if metrics.mergedSpans > metrics.rawSpans {
 				t.Fatalf("merged spans = %d exceeds raw spans = %d", metrics.mergedSpans, metrics.rawSpans)
 			}
@@ -117,6 +121,7 @@ func TestDirtySpanCoverageMetrics(t *testing.T) {
 func measureDirtyCoverage(circles []fit.Circle, width, height int) dirtyCoverageMetrics {
 	rows := make([][]dirtyTestSpan, height)
 	metrics := dirtyCoverageMetrics{}
+
 	for _, c := range circles {
 		if c.Opacity == 0 {
 			continue
@@ -126,22 +131,28 @@ func measureDirtyCoverage(circles []fit.Circle, width, height int) dirtyCoverage
 		maxY := min(height, int(c.Y+c.R+1))
 		fixed, useFixed := newFixedCircleQ16(c)
 		radiusSquared := c.R * c.R
+
 		for y := minY; y < maxY; y++ {
 			var xStart, xEnd int
+
 			if useFixed {
 				var intersects bool
+
 				xStart, xEnd, intersects = fixed.span(y, width)
 				if !intersects {
 					continue
 				}
 			} else {
 				dy := float64(y) - c.Y
+
 				remaining := radiusSquared - dy*dy
 				if remaining < 0 {
 					continue
 				}
+
 				xStart, xEnd = circleSpanFloat64(c.X, remaining, width)
 				xStart = max(0, xStart)
+
 				xEnd = min(width, xEnd)
 				if xEnd <= xStart {
 					continue
@@ -157,11 +168,14 @@ func measureDirtyCoverage(circles []fit.Circle, width, height int) dirtyCoverage
 		if len(spans) == 0 {
 			continue
 		}
+
 		metrics.dirtyRows++
+
 		sort.Slice(spans, func(i, j int) bool {
 			if spans[i].start == spans[j].start {
 				return spans[i].end < spans[j].end
 			}
+
 			return spans[i].start < spans[j].start
 		})
 
@@ -171,13 +185,16 @@ func measureDirtyCoverage(circles []fit.Circle, width, height int) dirtyCoverage
 				merged.end = max(merged.end, span.end)
 				continue
 			}
+
 			metrics.dirtyPixels += merged.end - merged.start
 			metrics.mergedSpans++
 			merged = span
 		}
+
 		metrics.dirtyPixels += merged.end - merged.start
 		metrics.mergedSpans++
 	}
+
 	return metrics
 }
 
@@ -189,22 +206,27 @@ func renderChangedPixels(circles []fit.Circle, width, height int) int {
 		base.Pix[offset+2] = 255
 		base.Pix[offset+3] = 255
 	}
+
 	reference := image.NewNRGBA(base.Bounds())
 	renderer := NewCPURendererWithCanvas(reference, base, len(circles))
 	renderer.SetThreads(1)
 
 	params := make([]float64, len(circles)*paramsPerCircle)
+
 	vector := fit.ParamVector{Data: params, K: len(circles), Width: width, Height: height}
 	for i, c := range circles {
 		vector.EncodeCircle(i, c)
 	}
+
 	rendered := renderer.Render(params)
 
 	changed := 0
+
 	for offset := 0; offset < len(base.Pix); offset += 4 {
 		if !bytes.Equal(base.Pix[offset:offset+4], rendered.Pix[offset:offset+4]) {
 			changed++
 		}
 	}
+
 	return changed
 }

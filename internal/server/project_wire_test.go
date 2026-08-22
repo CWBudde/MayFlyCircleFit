@@ -74,21 +74,26 @@ func TestProjectTypeKeepsJSONWireFormat(t *testing.T) {
 
 	t.Run("projects endpoint", func(t *testing.T) {
 		root := t.TempDir()
+
 		persistence, err := store.NewFSStore(root)
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
 		if _, err := server.ensureProject("christian"); err != nil {
 			t.Fatal(err)
 		}
+
 		server.jobManager.CreateJob("christian", store.JobConfig{RefPath: "b.png"})
 
 		recorder := httptest.NewRecorder()
 		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil))
+
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", recorder.Code)
 		}
+
 		const want = `[{"slug":"christian","jobCount":1},{"slug":"default","default":true,"jobCount":0}]`
 		if got := strings.TrimSpace(recorder.Body.String()); got != want {
 			t.Fatalf("projects body:\n got %s\nwant %s", got, want)
@@ -99,9 +104,11 @@ func TestProjectTypeKeepsJSONWireFormat(t *testing.T) {
 		// The reverse direction: a client's bytes must still decode into the
 		// typed field without any custom unmarshaller.
 		var job Job
-		if err := json.Unmarshal([]byte(`{"id":"x","project":"christian"}`), &job); err != nil {
+		err := json.Unmarshal([]byte(`{"id":"x","project":"christian"}`), &job)
+		if err != nil {
 			t.Fatal(err)
 		}
+
 		if job.Project != app.Project("christian") {
 			t.Fatalf("decoded project = %q, want %q", job.Project, "christian")
 		}
@@ -109,9 +116,11 @@ func TestProjectTypeKeepsJSONWireFormat(t *testing.T) {
 
 	t.Run("create request unmarshals a plain string project", func(t *testing.T) {
 		var request createJobRequest
-		if err := json.Unmarshal([]byte(`{"project":"christian","refPath":"a.png"}`), &request); err != nil {
+		err := json.Unmarshal([]byte(`{"project":"christian","refPath":"a.png"}`), &request)
+		if err != nil {
 			t.Fatal(err)
 		}
+
 		if request.Project != "christian" {
 			t.Fatalf("decoded project = %q, want %q", request.Project, "christian")
 		}
@@ -120,10 +129,12 @@ func TestProjectTypeKeepsJSONWireFormat(t *testing.T) {
 
 func assertJSON(t *testing.T, value any, want string) {
 	t.Helper()
+
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if string(encoded) != want {
 		t.Fatalf("JSON wire format changed:\n got %s\nwant %s", encoded, want)
 	}

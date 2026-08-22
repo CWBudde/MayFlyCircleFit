@@ -30,6 +30,7 @@ func TestFixedCircleQ16SymmetricRowSum(t *testing.T) {
 			if !ok {
 				t.Fatal("test circle unexpectedly outside Q16.16 range")
 			}
+
 			got, gotOK := geometry.symmetricRowSum()
 			if got != test.want || gotOK != test.ok {
 				t.Fatalf("symmetricRowSum() = (%d, %v), want (%d, %v)", got, gotOK, test.want, test.ok)
@@ -67,17 +68,21 @@ func TestCPURendererSymmetricRowsMatchUnpairedRendering(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/threads=%d", canvas.name, threads), func(t *testing.T) {
 				paired := newCombinedTestRenderer(reference, canvas.image, len(circles))
 				unpaired := newCombinedTestRenderer(reference, canvas.image, len(circles))
+
 				paired.SetThreads(threads)
 				unpaired.SetThreads(threads)
+
 				paired.enableRowSymmetry = true
 
 				got := append([]byte(nil), paired.Render(params).Pix...)
+
 				want := unpaired.Render(params).Pix
 				if !bytes.Equal(got, want) {
 					t.Fatal("paired rendering differs from the previous row-by-row path")
 				}
 
 				paired.incrementalCostMode = incrementalCostForce
+
 				unpaired.incrementalCostMode = incrementalCostDisabled
 				if gotCost, wantCost := paired.Cost(params), unpaired.Cost(params); gotCost != wantCost {
 					t.Fatalf("paired incremental cost = %.17g, full unpaired cost = %.17g", gotCost, wantCost)
@@ -104,6 +109,7 @@ func TestCPURendererSymmetricRowsMatchEveryShard(t *testing.T) {
 
 	paired := &CPURenderer{width: width, height: height, opaqueCanvas: true, enableRowSymmetry: true}
 	unpaired := &CPURenderer{width: width, height: height, opaqueCanvas: true}
+
 	base := image.NewNRGBA(image.Rect(0, 0, width, height))
 	for i := range base.Pix {
 		base.Pix[i] = 255
@@ -114,8 +120,10 @@ func TestCPURendererSymmetricRowsMatchEveryShard(t *testing.T) {
 			for rowEnd := rowStart; rowEnd <= height; rowEnd++ {
 				got := &image.NRGBA{Pix: append([]byte(nil), base.Pix...), Stride: base.Stride, Rect: base.Rect}
 				want := &image.NRGBA{Pix: append([]byte(nil), base.Pix...), Stride: base.Stride, Rect: base.Rect}
+
 				paired.renderCircleScanlineRows(got, circle, rowStart, rowEnd)
 				unpaired.renderCircleScanlineRows(want, circle, rowStart, rowEnd)
+
 				if !bytes.Equal(got.Pix, want.Pix) {
 					t.Fatalf("Y=%g shard [%d,%d) differs from ordinary rendering", circle.Y, rowStart, rowEnd)
 				}
@@ -134,6 +142,7 @@ func TestCPURendererCombinedSettingsPropagateToSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cleanup()
+
 	if !session.(*CPURenderer).enableRowSymmetry {
 		t.Fatal("ordinary session did not preserve row-symmetry setting")
 	}
@@ -143,6 +152,7 @@ func TestCPURendererCombinedSettingsPropagateToSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer stagedCleanup()
+
 	if !staged.(*CPURenderer).enableRowSymmetry {
 		t.Fatal("staged session did not preserve row-symmetry setting")
 	}
@@ -182,20 +192,26 @@ func BenchmarkCPURendererCombinedOptimizations(b *testing.B) {
 		} {
 			b.Run(fixture.name+"/"+variant.name, func(b *testing.B) {
 				renderer := NewCPURenderer(reference, circles)
+
 				threads := fixture.threads
 				if threads == 0 {
 					threads = 1
 				}
+
 				renderer.SetThreads(threads)
 				renderer.forceFloatGeometry = variant.forceFloat
 				renderer.opaqueCanvas = variant.opaqueSpan
 				renderer.enableRowSymmetry = variant.enableSymmetry
+
 				b.ReportAllocs()
 				b.ResetTimer()
+
 				for range b.N {
 					renderer.Render(params)
 				}
+
 				b.ReportMetric(float64(renderer.Threads()), "threads")
+
 				if fixture.symmetric {
 					b.ReportMetric(100, "%symmetric")
 				} else {
@@ -210,6 +226,7 @@ func newCombinedTestRenderer(reference, canvas *image.NRGBA, circles int) *CPURe
 	if canvas == nil {
 		return NewCPURenderer(reference, circles)
 	}
+
 	return NewCPURendererWithCanvas(reference, canvas, circles)
 }
 
@@ -222,9 +239,11 @@ func combinedBenchmarkParams(circles, width, height int, symmetric bool, radius 
 		} else {
 			params[offset+1] = float64((circle*37)%height) + 0.12345
 		}
+
 		if radius != 0 {
 			params[offset+2] = radius
 		}
 	}
+
 	return params
 }

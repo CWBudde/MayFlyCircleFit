@@ -47,6 +47,24 @@ test-coverage: templ
 	go test -v -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
+# golangci-lint version kept in step with .github/workflows/ci-lint.yml
+GOLANGCI_VERSION := "v2.13.1"
+
+# Run golangci-lint over the whole tree
+golangci:
+	@command -v golangci-lint >/dev/null || (echo "golangci-lint not found; run: just golangci-install" && exit 1)
+	golangci-lint run --config ./.golangci.toml --timeout 5m
+
+# Apply every fix golangci-lint and its formatters can apply automatically
+fix:
+	@command -v golangci-lint >/dev/null || (echo "golangci-lint not found; run: just golangci-install" && exit 1)
+	golangci-lint fmt --config ./.golangci.toml
+	golangci-lint run --config ./.golangci.toml --timeout 5m --fix
+
+# Install the pinned golangci-lint into $GOBIN
+golangci-install:
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{GOLANGCI_VERSION}}
+
 # Run linters
 lint: templ-check
 	go vet ./...

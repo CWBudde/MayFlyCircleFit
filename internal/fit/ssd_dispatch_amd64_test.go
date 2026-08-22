@@ -34,11 +34,13 @@ func TestSSDKernelPerForcedTier(t *testing.T) {
 	for _, tier := range tiers {
 		t.Run(tier.String(), func(t *testing.T) {
 			SetForcedTier(tier)
+
 			defer ResetTierDetection()
 
 			if got := ActiveSSDKernel(); got != tier {
 				t.Fatalf("forced tier %s installed the %s kernel", tier, got)
 			}
+
 			if got, want := fastSSD(a, b, 4, 1, 1), fastSSD_Scalar(a, b, 4, 1, 1); got != want {
 				t.Fatalf("%s SSD = %v, scalar = %v", tier, got, want)
 			}
@@ -50,8 +52,10 @@ func TestSSDKernelPerForcedTier(t *testing.T) {
 // which is what makes the forcing above safe for the rest of the suite.
 func TestSSDForcedTierRestored(t *testing.T) {
 	before := ActiveSSDKernel()
+
 	SetForcedTier(TierScalar)
 	ResetTierDetection()
+
 	if after := ActiveSSDKernel(); after != before {
 		t.Fatalf("kernel after reset = %s, want %s", after, before)
 	}
@@ -68,12 +72,15 @@ func TestSSDDetectedTierWithoutAVX2(t *testing.T) {
 		if cpu.X86.HasAVX2 {
 			t.Fatal("cpu.X86.HasAVX2 is true with GODEBUG=cpu.avx2=off")
 		}
+
 		if Tier() != TierSSE2 {
 			t.Fatalf("detected tier = %s, want sse2", Tier())
 		}
+
 		if ActiveSSDKernel() != TierSSE2 {
 			t.Fatalf("SSD kernel = %s, want sse2", ActiveSSDKernel())
 		}
+
 		return
 	}
 
@@ -93,12 +100,15 @@ func TestSSDTierEnvForcesScalar(t *testing.T) {
 		if Tier() != TierScalar {
 			t.Fatalf("detected tier = %s, want scalar", Tier())
 		}
+
 		if ActiveSSDKernel() != TierScalar {
 			t.Fatalf("SSD kernel = %s, want scalar", ActiveSSDKernel())
 		}
+
 		if ActiveSADKernel() != TierScalar {
 			t.Fatalf("SAD kernel = %s, want scalar", ActiveSADKernel())
 		}
+
 		return
 	}
 
@@ -114,10 +124,12 @@ func TestSSDDisableEnvIsTierScalarAlias(t *testing.T) {
 		if Tier() != TierScalar {
 			t.Fatalf("detected tier = %s, want scalar", Tier())
 		}
+
 		return
 	}
 
 	cmd := exec.Command(os.Args[0], "-test.run=^TestSSDDisableEnvIsTierScalarAlias$")
+
 	cmd.Env = append(tierSubprocessEnv(os.Environ()), simdDisableEnv+"=1", ssdForcedTierHelper+"=2")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("subprocess failed: %v\n%s", err, output)
@@ -135,11 +147,14 @@ func TestSIMDTierEnvRejectsUnknownValue(t *testing.T) {
 	}
 
 	cmd := exec.Command(os.Args[0], "-test.run=^TestSIMDTierEnvRejectsUnknownValue$")
+
 	cmd.Env = append(tierSubprocessEnv(os.Environ()), simdTierEnv+"=nonsense", ssdForcedTierHelper+"=3")
+
 	output, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("subprocess succeeded with %s=nonsense\n%s", simdTierEnv, output)
 	}
+
 	if !strings.Contains(string(output), "is not a tier name") {
 		t.Fatalf("subprocess failed without the expected diagnostic:\n%s", output)
 	}
@@ -151,17 +166,21 @@ func runTierSubprocess(t *testing.T, pattern, helper string, extra map[string]st
 	t.Helper()
 
 	env := tierSubprocessEnv(os.Environ())
+
 	for key, value := range extra {
 		if key == "GODEBUG" {
 			if existing := os.Getenv("GODEBUG"); existing != "" {
 				value = existing + "," + value
 			}
 		}
+
 		env = append(env, key+"="+value)
 	}
+
 	env = append(env, helper+"=1")
 
 	cmd := exec.Command(os.Args[0], "-test.run="+pattern)
+
 	cmd.Env = env
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("subprocess failed: %v\n%s", err, output)
@@ -179,16 +198,19 @@ func tierSubprocessEnv(environ []string) []string {
 	env := make([]string, 0, len(environ)+2)
 	for _, entry := range environ {
 		skip := false
+
 		for _, prefix := range stripped {
 			if strings.HasPrefix(entry, prefix) {
 				skip = true
 				break
 			}
 		}
+
 		if !skip {
 			env = append(env, entry)
 		}
 	}
+
 	return env
 }
 
@@ -222,6 +244,7 @@ func TestFastSSD_SSE2MaxWidthDispatchBoundary(t *testing.T) {
 			if want := fastSSD_Scalar(a.Pix, b.Pix, a.Stride, width, height); got != want {
 				t.Fatalf("width %d: SSE2 SSD = %.0f, scalar = %.0f", width, got, want)
 			}
+
 			if exact := float64(width) * float64(height) * 3 * 255 * 255; got != exact {
 				t.Fatalf("width %d: SSE2 SSD = %.0f, exact = %.0f", width, got, exact)
 			}

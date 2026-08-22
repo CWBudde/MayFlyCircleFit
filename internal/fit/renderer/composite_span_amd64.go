@@ -60,6 +60,7 @@ const (
 // against arbitrary alpha bytes instead of resting on the canvas being opaque.
 func exactSpanConstants(r, g, b, alpha float64) [20]float64 {
 	bgBlend := 1 - alpha
+
 	return [20]float64{
 		inv255, inv255, inv255, 1,
 		bgBlend, bgBlend, bgBlend, 1,
@@ -78,6 +79,7 @@ func compositeSpanExact(pix *byte, pairs int, constants *float64) {
 		compositeSpanExactAVX2(pix, pairs, constants)
 		return
 	}
+
 	compositeSpanExactSSE2(pix, pairs, constants)
 }
 
@@ -90,12 +92,14 @@ func compositeOpaqueSpan(pix []byte, offset, pixels int, r, g, b, alpha float64)
 	if compositeSpanKernel != fit.TierScalar && pixels >= compositeSpanMinPixels {
 		vectorPixels = pixels &^ 1
 	}
+
 	if vectorPixels != 0 {
 		constants := exactSpanConstants(r, g, b, alpha)
 		compositeSpanExact(&pix[offset], vectorPixels/2, &constants[0])
 		offset += vectorPixels * 4
 		pixels -= vectorPixels
 	}
+
 	compositeOpaqueSpanScalar(pix, offset, pixels, r, g, b, alpha)
 }
 
@@ -114,6 +118,7 @@ func compositeOpaqueSpanPair(pix []byte, firstOffset, secondOffset, pixels int, 
 	vectorPixels := pixels &^ 1
 	compositeSpanExact(&pix[firstOffset], vectorPixels/2, &constants[0])
 	compositeSpanExact(&pix[secondOffset], vectorPixels/2, &constants[0])
+
 	if vectorPixels < pixels {
 		tail := (pixels - vectorPixels)
 		compositeOpaqueSpanPairScalar(pix,

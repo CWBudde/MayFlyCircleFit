@@ -42,6 +42,7 @@ func TestBatchedFloatSpansMatchOnePixelSearch(t *testing.T) {
 		remaining64 := radius64 * radius64 * rng.Float64()
 
 		wantStart, wantEnd := circleSpanFloat64OnePixel(center64, remaining64, width)
+
 		gotStart, gotEnd := circleSpanFloat64(center64, remaining64, width)
 		if gotStart != wantStart || gotEnd != wantEnd {
 			t.Fatalf("float64 case %d = [%d,%d), want [%d,%d)", i, gotStart, gotEnd, wantStart, wantEnd)
@@ -50,6 +51,7 @@ func TestBatchedFloatSpansMatchOnePixelSearch(t *testing.T) {
 		center32 := float32(center64)
 		remaining32 := float32(remaining64)
 		wantStart, wantEnd = circleSpanFloat32OnePixel(center32, remaining32, width)
+
 		gotStart, gotEnd = circleSpanFloat32(center32, remaining32, width)
 		if gotStart != wantStart || gotEnd != wantEnd {
 			t.Fatalf("float32 case %d = [%d,%d), want [%d,%d)", i, gotStart, gotEnd, wantStart, wantEnd)
@@ -72,23 +74,30 @@ func TestFixedCircleQ16CoverageError(t *testing.T) {
 			Y: rng.Float64() * height,
 			R: 1 + rng.Float64()*256,
 		}
+
 		fixed, ok := newFixedCircleQ16(c)
 		if !ok {
 			t.Fatalf("ordinary circle unexpectedly outside Q16.16 range: %+v", c)
 		}
+
 		radiusSquared := c.R * c.R
-		for y := 0; y < height; y++ {
+		for y := range height {
 			dy := float64(y) - c.Y
+
 			remaining := radiusSquared - dy*dy
 			if remaining < 0 {
 				continue
 			}
+
 			wantStart, wantEnd := circleSpanFloat64(c.X, remaining, width)
+
 			gotStart, gotEnd, intersects := fixed.span(y, width)
 			if !intersects {
 				gotStart, gotEnd = 0, 0
 			}
+
 			totalRows++
+
 			if gotStart != wantStart || gotEnd != wantEnd {
 				changedRows++
 			}
@@ -100,6 +109,7 @@ func TestFixedCircleQ16CoverageError(t *testing.T) {
 	if changedRows > totalRows/100_000+1 {
 		t.Fatalf("Q16.16 changed %d of %d intersecting rows; want at most 0.001%%", changedRows, totalRows)
 	}
+
 	t.Logf("Q16.16 changed %d of %d intersecting rows", changedRows, totalRows)
 }
 
@@ -121,20 +131,26 @@ func TestCircleSpanFloat32CoverageError(t *testing.T) {
 		radius32 := float32(radius64)
 		radiusSquared64 := radius64 * radius64
 		radiusSquared32 := radius32 * radius32
-		for y := 0; y < height; y++ {
+
+		for y := range height {
 			dy64 := float64(y) - centerY64
+
 			remaining64 := radiusSquared64 - dy64*dy64
 			if remaining64 < 0 {
 				continue
 			}
+
 			wantStart, wantEnd := circleSpanFloat64(centerX64, remaining64, width)
 			dy32 := float32(y) - centerY32
 			remaining32 := radiusSquared32 - dy32*dy32
+
 			gotStart, gotEnd := 0, 0
 			if remaining32 >= 0 {
 				gotStart, gotEnd = circleSpanFloat32Selected(centerX32, remaining32, width)
 			}
+
 			totalRows++
+
 			if gotStart != wantStart || gotEnd != wantEnd {
 				changedRows++
 			}
@@ -144,6 +160,7 @@ func TestCircleSpanFloat32CoverageError(t *testing.T) {
 	if changedRows > totalRows/100_000+1 {
 		t.Fatalf("float32 changed %d of %d intersecting rows; want at most 0.001%%", changedRows, totalRows)
 	}
+
 	t.Logf("float32/%s changed %d of %d intersecting rows", circleSpanFloat32Kernel, changedRows, totalRows)
 }
 
@@ -169,15 +186,18 @@ func TestFixedCircleQ16ExactRepresentableBoundaries(t *testing.T) {
 			if !ok {
 				t.Fatal("representable test circle rejected")
 			}
+
 			radiusSquared := test.c.R * test.c.R
 			for y := test.rowStart; y < test.rowEnd; y++ {
 				dy := float64(y) - test.c.Y
 				remaining := radiusSquared - dy*dy
+
 				wantStart, wantEnd, wantIntersects := 0, 0, remaining >= 0
 				if wantIntersects {
 					wantStart, wantEnd = circleSpanFloat64(test.c.X, remaining, test.width)
 					wantIntersects = wantEnd > wantStart
 				}
+
 				gotStart, gotEnd, gotIntersects := fixed.span(y, test.width)
 				if gotStart != wantStart || gotEnd != wantEnd || gotIntersects != wantIntersects {
 					t.Fatalf("row %d span = [%d,%d),%v; float64 = [%d,%d),%v", y, gotStart, gotEnd, gotIntersects, wantStart, wantEnd, wantIntersects)
@@ -195,6 +215,7 @@ func TestCPURendererQ16FallbackMatchesFloat64(t *testing.T) {
 
 	fallback := NewCPURenderer(reference, 1)
 	fallback.SetThreads(1)
+
 	oracle := NewCPURenderer(reference, 1)
 	oracle.SetThreads(1)
 	oracle.forceFloatGeometry = true
@@ -222,12 +243,15 @@ func BenchmarkCircleSpanGeometry(b *testing.B) {
 		if !ok {
 			b.Fatal("benchmark circle outside Q16.16 range")
 		}
+
 		minY := max(0, int(test.c.Y-test.c.R))
+
 		maxY := min(389, int(test.c.Y+test.c.R+1))
 		if test.rowEnd > test.rowStart {
 			minY = max(minY, test.rowStart)
 			maxY = min(maxY, test.rowEnd)
 		}
+
 		radiusSquared64 := test.c.R * test.c.R
 		center32 := float32(test.c.X)
 		y32 := float32(test.c.Y)
@@ -235,10 +259,13 @@ func BenchmarkCircleSpanGeometry(b *testing.B) {
 
 		b.Run(test.name+"/float64", func(b *testing.B) {
 			widthSum := 0
+
 			b.ReportAllocs()
+
 			for range b.N {
 				for y := minY; y < maxY; y++ {
 					dy := float64(y) - test.c.Y
+
 					remaining := radiusSquared64 - dy*dy
 					if remaining >= 0 {
 						xStart, xEnd := circleSpanFloat64(test.c.X, remaining, 513)
@@ -246,15 +273,19 @@ func BenchmarkCircleSpanGeometry(b *testing.B) {
 					}
 				}
 			}
+
 			geometryBenchmarkSink = widthSum
 		})
 
 		b.Run(test.name+"/float32", func(b *testing.B) {
 			widthSum := 0
+
 			b.ReportAllocs()
+
 			for range b.N {
 				for y := minY; y < maxY; y++ {
 					dy := float32(y) - y32
+
 					remaining := radiusSquared32 - dy*dy
 					if remaining >= 0 {
 						xStart, xEnd := circleSpanFloat32(center32, remaining, 513)
@@ -262,15 +293,19 @@ func BenchmarkCircleSpanGeometry(b *testing.B) {
 					}
 				}
 			}
+
 			geometryBenchmarkSink = widthSum
 		})
 
 		b.Run(test.name+"/float32_selected_"+circleSpanFloat32Kernel.String(), func(b *testing.B) {
 			widthSum := 0
+
 			b.ReportAllocs()
+
 			for range b.N {
 				for y := minY; y < maxY; y++ {
 					dy := float32(y) - y32
+
 					remaining := radiusSquared32 - dy*dy
 					if remaining >= 0 {
 						xStart, xEnd := circleSpanFloat32Selected(center32, remaining, 513)
@@ -278,12 +313,15 @@ func BenchmarkCircleSpanGeometry(b *testing.B) {
 					}
 				}
 			}
+
 			geometryBenchmarkSink = widthSum
 		})
 
 		b.Run(test.name+"/q16.16", func(b *testing.B) {
 			widthSum := 0
+
 			b.ReportAllocs()
+
 			for range b.N {
 				for y := minY; y < maxY; y++ {
 					xStart, xEnd, intersects := fixed.span(y, 513)
@@ -292,12 +330,15 @@ func BenchmarkCircleSpanGeometry(b *testing.B) {
 					}
 				}
 			}
+
 			geometryBenchmarkSink = widthSum
 		})
 
 		b.Run(test.name+"/q16.16_avx2", func(b *testing.B) {
 			widthSum := 0
+
 			b.ReportAllocs()
+
 			for range b.N {
 				for y := minY; y < maxY; y++ {
 					xStart, xEnd, intersects := fixed.spanAVX2(y, 513)
@@ -306,6 +347,7 @@ func BenchmarkCircleSpanGeometry(b *testing.B) {
 					}
 				}
 			}
+
 			geometryBenchmarkSink = widthSum
 		})
 	}
@@ -334,15 +376,19 @@ func BenchmarkCPURendererGeometry(b *testing.B) {
 		b.Run(test.name, func(b *testing.B) {
 			if test.float32Span != nil {
 				selected := circleSpanFloat32Selected
+
 				circleSpanFloat32Selected = test.float32Span
 				defer func() { circleSpanFloat32Selected = selected }()
 			}
+
 			renderer := NewCPURenderer(reference, circles)
 			renderer.SetThreads(1)
 			renderer.forceFloatGeometry = test.forceFloat
 			renderer.forceFloat32Geometry = test.forceFloat32
+
 			b.ReportAllocs()
 			b.ResetTimer()
+
 			for range b.N {
 				renderer.Render(params)
 			}

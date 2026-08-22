@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"sync"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
@@ -45,7 +45,9 @@ func newProjectRegistry(dataRoot string, defaultStore store.Store) *projectRegis
 	if defaultStore != nil {
 		registry.stores[app.DefaultProject] = defaultStore
 	}
+
 	registry.discover()
+
 	return registry
 }
 
@@ -55,7 +57,9 @@ func (r *projectRegistry) discover() {
 	if r.dataRoot == "" {
 		return
 	}
+
 	container := filepath.Join(r.dataRoot, projectsDirName)
+
 	entries, err := os.ReadDir(container)
 	if err != nil {
 		// A missing container is the ordinary pre-project layout, not a fault.
@@ -63,8 +67,10 @@ func (r *projectRegistry) discover() {
 			slog.Error("Unable to read the projects container; no project is visible",
 				"directory", container, "error", err)
 		}
+
 		return
 	}
+
 	for _, entry := range entries {
 		// Boundary: a directory name read off disk is untrusted input. It becomes
 		// an app.Project only here, immediately before ValidateProjectSlug.
@@ -73,13 +79,18 @@ func (r *projectRegistry) discover() {
 			// Stray files never were projects, so this is informational only.
 			slog.Debug("Ignoring non-directory entry in the projects container",
 				"directory", container, "entry", string(slug))
+
 			continue
 		}
-		if err := app.ValidateProjectSlug(slug); err != nil {
+
+		err := app.ValidateProjectSlug(slug)
+		if err != nil {
 			slog.Warn("Ignoring project directory with an unusable name; its jobs stay hidden",
 				"directory", filepath.Join(container, string(slug)), "error", err)
+
 			continue
 		}
+
 		if slug == app.DefaultProject {
 			// The default project is always the legacy `<data-root>/jobs` tree,
 			// so this directory can only be a stray one. Adopting it would give
@@ -87,13 +98,16 @@ func (r *projectRegistry) discover() {
 			// built with an injected store; refusing it keeps the alias single.
 			slog.Warn("Ignoring the reserved default project directory; the default project is the legacy jobs tree",
 				"directory", filepath.Join(container, string(slug)))
+
 			continue
 		}
+
 		if _, err := r.GetOrCreate(slug); err != nil {
 			// The directory is a valid project that failed to open. Its jobs
 			// disappear from the API and UI, so this is a fault, not a skip.
 			slog.Error("Unable to adopt project directory; its jobs stay hidden",
 				"directory", filepath.Join(container, string(slug)), "error", err)
+
 			continue
 		}
 	}
@@ -108,10 +122,12 @@ func (r *projectRegistry) makeProjectDir(slug app.Project) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("create projects directory: %w", err)
 	}
+
 	dir, err := store.EnsureSecureSubdir(container, string(slug))
 	if err != nil {
 		return "", fmt.Errorf("create project directory: %w", err)
 	}
+
 	return dir, nil
 }
 
@@ -119,7 +135,9 @@ func (r *projectRegistry) makeProjectDir(slug app.Project) (string, error) {
 func (r *projectRegistry) Get(slug app.Project) (store.Store, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
 	s, ok := r.stores[slug]
+
 	return s, ok
 }
 
@@ -128,30 +146,38 @@ func (r *projectRegistry) GetOrCreate(slug app.Project) (store.Store, error) {
 	if err := app.ValidateProjectSlug(slug); err != nil {
 		return nil, err
 	}
+
 	r.mu.RLock()
 	existing, ok := r.stores[slug]
 	r.mu.RUnlock()
+
 	if ok {
 		return existing, nil
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	if existing, ok := r.stores[slug]; ok {
 		return existing, nil
 	}
+
 	if r.dataRoot == "" {
 		return nil, fmt.Errorf("project %q is unknown and no data root is configured", slug)
 	}
+
 	dir, err := r.makeProjectDir(slug)
 	if err != nil {
 		return nil, err
 	}
+
 	created, err := store.NewFSStore(dir)
 	if err != nil {
 		return nil, fmt.Errorf("create project %q: %w", slug, err)
 	}
+
 	r.stores[slug] = created
+
 	return created, nil
 }
 
@@ -159,10 +185,13 @@ func (r *projectRegistry) GetOrCreate(slug app.Project) (store.Store, error) {
 func (r *projectRegistry) Slugs() []app.Project {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
 	slugs := make([]app.Project, 0, len(r.stores))
 	for slug := range r.stores {
 		slugs = append(slugs, slug)
 	}
-	sort.Slice(slugs, func(i, j int) bool { return slugs[i] < slugs[j] })
+
+	slices.Sort(slugs)
+
 	return slugs
 }

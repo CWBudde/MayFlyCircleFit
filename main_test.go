@@ -133,12 +133,14 @@ func TestPrintCLIError(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var out bytes.Buffer
 			printCLIError(&out, test.code, test.err)
+
 			got := out.String()
 			for _, want := range test.want {
 				if !strings.Contains(got, want) {
 					t.Errorf("output %q does not contain %q", got, want)
 				}
 			}
+
 			for _, notWant := range test.notWant {
 				if strings.Contains(got, notWant) {
 					t.Errorf("output %q unexpectedly contains %q", got, notWant)
@@ -156,6 +158,7 @@ func TestPrintCLIError(t *testing.T) {
 func TestPrintCLIErrorIgnoresNil(t *testing.T) {
 	var out bytes.Buffer
 	printCLIError(&out, exitOK, nil)
+
 	if out.Len() != 0 {
 		t.Fatalf("printCLIError wrote %q for a nil error", out.String())
 	}

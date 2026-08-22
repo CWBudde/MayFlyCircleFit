@@ -26,16 +26,19 @@ import (
 // checked against its translation instead of against its own name.
 func assertSeedSubset(t *testing.T, what string, seedKeys, endpointKeys map[string]any, rename map[string]string) {
 	t.Helper()
+
 	for path, want := range seedKeys {
 		lookup := path
 		if translated, ok := rename[path]; ok {
 			lookup = translated
 		}
+
 		got, ok := endpointKeys[lookup]
 		if !ok {
 			t.Errorf("the %s seed carries %q but the endpoint has no %q", what, path, lookup)
 			continue
 		}
+
 		if got != want {
 			t.Errorf("%s: %q = %v in the endpoint payload, want %v as in the page seed at %q", what, lookup, got, want, path)
 		}
@@ -46,6 +49,7 @@ func assertSeedSubset(t *testing.T, what string, seedKeys, endpointKeys map[stri
 // seed that omits them cannot pin.
 func assertEndpointHas(t *testing.T, what string, endpointKeys map[string]any, paths ...string) {
 	t.Helper()
+
 	for _, path := range paths {
 		if _, ok := endpointKeys[path]; !ok {
 			t.Errorf("the %s endpoint payload has no %q, which the island reads", what, path)
@@ -165,6 +169,7 @@ func TestCampaignListSeedMatchesEndpointShape(t *testing.T) {
 // campaignDetailFixture is the campaign both sides of the detail contract carry.
 func campaignDetailFixture() ui.Campaign {
 	sweeps := 4
+
 	return ui.Campaign{
 		ID:     "55555555-5555-5555-5555-555555555555",
 		Name:   "ladder",
@@ -227,27 +232,34 @@ func TestCampaignDetailSeedMatchesEndpointShape(t *testing.T) {
 // attributes of the job-controls island root, keyed by attribute name.
 func jobControlsDataAttrs(t *testing.T, job ui.JobDetail) map[string]string {
 	t.Helper()
+
 	var rendered bytes.Buffer
-	if err := ui.JobDetailPage(job).Render(context.Background(), &rendered); err != nil {
+	err := ui.JobDetailPage(job).Render(context.Background(), &rendered)
+	if err != nil {
 		t.Fatalf("render job detail page: %v", err)
 	}
+
 	body := rendered.String()
+
 	start := strings.Index(body, `data-island="job-controls"`)
 	if start < 0 {
 		t.Fatalf("the job detail page has no job-controls island root")
 	}
 	// Walk back to the opening angle bracket, then forward to the tag's end.
 	open := strings.LastIndex(body[:start], "<")
+
 	end := strings.Index(body[start:], ">")
 	if open < 0 || end < 0 {
 		t.Fatalf("the job-controls island root is not a well-formed tag")
 	}
+
 	tag := body[open : start+end]
 
 	attrs := make(map[string]string)
 	for _, match := range regexp.MustCompile(`data-([a-z0-9-]+)="([^"]*)"`).FindAllStringSubmatch(tag, -1) {
 		attrs[match[1]] = match[2]
 	}
+
 	return attrs
 }
 
@@ -319,10 +331,12 @@ func TestJobDetailDataSeedMatchesStatusEndpoint(t *testing.T) {
 			if !ok {
 				t.Fatalf("the job detail page no longer seeds data-%s, which the island reads", testCase.attr)
 			}
+
 			value, ok := endpointKeys[testCase.path]
 			if !ok {
 				t.Fatalf("the status payload has no %q, which the island refetches for data-%s", testCase.path, testCase.attr)
 			}
+
 			switch testCase.kind {
 			case asString:
 				if value != raw {
@@ -333,10 +347,12 @@ func TestJobDetailDataSeedMatchesStatusEndpoint(t *testing.T) {
 				if err != nil {
 					t.Fatalf("data-%s = %q is not a number: %v", testCase.attr, raw, err)
 				}
+
 				number, ok := value.(float64)
 				if !ok {
 					t.Fatalf("%q is %T in the status payload, want a number as in data-%s", testCase.path, value, testCase.attr)
 				}
+
 				if number != parsed {
 					t.Errorf("%q = %v in the status payload, want %v as in data-%s", testCase.path, number, parsed, testCase.attr)
 				}
@@ -345,6 +361,7 @@ func TestJobDetailDataSeedMatchesStatusEndpoint(t *testing.T) {
 				if err != nil {
 					t.Fatalf("data-%s = %q is not a boolean: %v", testCase.attr, raw, err)
 				}
+
 				if value != parsed {
 					t.Errorf("%q = %v in the status payload, want %v as in data-%s", testCase.path, value, parsed, testCase.attr)
 				}

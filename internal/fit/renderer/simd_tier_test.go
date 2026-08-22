@@ -19,10 +19,12 @@ func TestRequiredSIMDTier(t *testing.T) {
 	if required == "" {
 		t.Skipf("%s is not set", requiredTierEnv)
 	}
+
 	want, ok := fit.ParseSIMDTier(required)
 	if !ok {
 		t.Fatalf("%s=%q is not a tier name", requiredTierEnv, required)
 	}
+
 	if got := fit.Tier(); got != want {
 		t.Fatalf("detected tier = %s, required %s", got, want)
 	}
@@ -59,6 +61,7 @@ func TestRendererKernelsMatchTier(t *testing.T) {
 	tier := fit.Tier()
 	for _, kernel := range rendererKernels() {
 		t.Logf("tier %s: %s kernel %s", tier, kernel.name, kernel.tier)
+
 		if kernel.tier != tier && kernel.tier != fit.TierScalar {
 			t.Errorf("%s kernel = %s, which is neither the tier (%s) nor scalar", kernel.name, kernel.tier, tier)
 		}
@@ -71,6 +74,7 @@ func TestRendererKernelsMatchTier(t *testing.T) {
 // regression the old copy-paste dispatch made undetectable.
 func TestRendererKernelsFollowForcedTier(t *testing.T) {
 	fit.SetForcedTier(fit.TierScalar)
+
 	defer fit.ResetTierDetection()
 
 	for _, kernel := range rendererKernels() {

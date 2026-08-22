@@ -22,5 +22,6 @@ func hostSSDKernels() []ssdKernel {
 	if cpu.X86.HasAVX2 {
 		kernels = append(kernels, ssdKernel{tier: TierAVX2, fn: fastSSD_AVX2})
 	}
+
 	return kernels
 }

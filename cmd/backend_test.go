@@ -13,6 +13,7 @@ func TestParseBackendFlag(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseBackendFlag() error = %v", err)
 		}
+
 		if backend != app.BackendOpenCL {
 			t.Fatalf("backend = %q, want %q", backend, app.BackendOpenCL)
 		}
@@ -23,6 +24,7 @@ func TestParseBackendFlag(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parseBackendFlag(%q) error = %v", raw, err)
 			}
+
 			if backend != app.BackendOpenCL {
 				t.Fatalf("parseBackendFlag(%q) = %q, want %q", raw, backend, app.BackendOpenCL)
 			}
@@ -33,6 +35,7 @@ func TestParseBackendFlag(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseBackendFlag() error = %v", err)
 		}
+
 		if backend != app.BackendCPU {
 			t.Fatalf("backend = %q, want %q", backend, app.BackendCPU)
 		}
@@ -42,6 +45,7 @@ func TestParseBackendFlag(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseBackendFlag() error = %v", err)
 		}
+
 		if backend != app.BackendCPU {
 			t.Fatalf("backend = %q, want %q", backend, app.BackendCPU)
 		}
@@ -51,6 +55,7 @@ func TestParseBackendFlag(t *testing.T) {
 		if err == nil {
 			t.Fatalf("parseBackendFlag() = %q, want error", backend)
 		}
+
 		if !strings.Contains(err.Error(), "cpu, opencl") {
 			t.Fatalf("error = %q, want backend message", err)
 		}

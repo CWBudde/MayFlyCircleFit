@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"io"
 	"log/slog"
 	"math/rand/v2"
 	"os"
@@ -45,7 +44,9 @@ func BenchmarkSingleCircleExtendTerms(b *testing.B) {
 
 			b.Run("fixed/validation", func(b *testing.B) {
 				bounds := fit.NewBounds(circleCount, extendBenchmarkWidth, extendBenchmarkHeight)
+
 				b.ResetTimer()
+
 				for b.Loop() {
 					if !bounds.ValidVector(params) {
 						b.Fatal("benchmark parameter vector is invalid")
@@ -57,9 +58,11 @@ func BenchmarkSingleCircleExtendTerms(b *testing.B) {
 				for b.Loop() {
 					cpu := renderer.NewCPURenderer(reference, circleCount)
 					cpu.SetThreads(1)
+
 					if cost := cpu.Cost(params); cost < 0 {
 						b.Fatal("negative cost")
 					}
+
 					if image := cpu.Render(params); image == nil {
 						b.Fatal("nil prefix image")
 					}
@@ -70,6 +73,7 @@ func BenchmarkSingleCircleExtendTerms(b *testing.B) {
 				for b.Loop() {
 					cpu := renderer.NewCPURenderer(reference, circleCount+1)
 					cpu.SetThreads(1)
+
 					result, err := renderer.OptimizeBatchAppendFromCanvasContext(
 						context.Background(), cpu, fixedExtendOptimizer{candidate: extendBenchmarkTruthCandidate()}, params,
 						prefixCanvas, prefixCost, circleCount+1, 1, renderer.DisabledConvergenceConfig(),
@@ -77,6 +81,7 @@ func BenchmarkSingleCircleExtendTerms(b *testing.B) {
 					if err != nil {
 						b.Fatal(err)
 					}
+
 					if result.BestImage == nil {
 						b.Fatal("append returned no final image")
 					}
@@ -88,20 +93,25 @@ func BenchmarkSingleCircleExtendTerms(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
+
 				jobID := "00000000-0000-4000-8000-000000000158"
 				if err := fsStore.SavePNGArtifact(jobID, store.ArtifactBest, prefixCanvas); err != nil {
 					b.Fatal(err)
 				}
+
 				path, err := fsStore.ArtifactPath(jobID, store.ArtifactBest)
 				if err != nil {
 					b.Fatal(err)
 				}
+
 				b.ResetTimer()
+
 				for b.Loop() {
 					loaded, err := loadReferenceImage(path)
 					if err != nil {
 						b.Fatal(err)
 					}
+
 					if cost := fit.FastMSECost(loaded, reference); cost != prefixCost {
 						b.Fatalf("loaded prefix cost = %v, want %v", cost, prefixCost)
 					}
@@ -113,12 +123,16 @@ func BenchmarkSingleCircleExtendTerms(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
+
 				jobID := "00000000-0000-4000-8000-000000000159"
 				checkpoint := store.NewCheckpoint(jobID, params, 1, 2, 500, config)
 				checkpoint.Evaluations = 15_000
+
 				b.ResetTimer()
+
 				for b.Loop() {
-					if err := fsStore.SaveCheckpoint(jobID, checkpoint); err != nil {
+					err := fsStore.SaveCheckpoint(jobID, checkpoint)
+					if err != nil {
 						b.Fatal(err)
 					}
 				}
@@ -129,19 +143,24 @@ func BenchmarkSingleCircleExtendTerms(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
+
 				jobID := "00000000-0000-4000-8000-000000000160"
 				entry := store.TraceEntry{Iteration: 1, Cost: 1, Timestamp: time.Unix(1, 0)}
+
 				for b.Loop() {
 					writer, err := fsStore.NewTraceWriter(jobID, false)
 					if err != nil {
 						b.Fatal(err)
 					}
+
 					if err := writer.Write(entry); err != nil {
 						b.Fatal(err)
 					}
+
 					if err := writer.Write(entry); err != nil {
 						b.Fatal(err)
 					}
+
 					if err := writer.Close(); err != nil {
 						b.Fatal(err)
 					}
@@ -153,12 +172,15 @@ func BenchmarkSingleCircleExtendTerms(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
+
 				jobID := "00000000-0000-4000-8000-000000000161"
 				cpu := renderer.NewCPURenderer(reference, circleCount)
 				cpu.SetThreads(1)
 				b.ResetTimer()
+
 				for b.Loop() {
-					if err := saveCheckpointArtifacts(fsStore, cpu, config, jobID, params, prefixCanvas); err != nil {
+					err := saveCheckpointArtifacts(fsStore, cpu, config, jobID, params, prefixCanvas)
+					if err != nil {
 						b.Fatal(err)
 					}
 				}
@@ -170,8 +192,11 @@ func BenchmarkSingleCircleExtendTerms(b *testing.B) {
 				canvas := cloneBenchmarkImage(prefix.Render(params))
 				suffix := renderer.NewCPURendererWithCanvas(reference, canvas, 1)
 				suffix.SetThreads(1)
+
 				candidates := extendBenchmarkCandidates(extendBenchmarkPopulation)
+
 				b.ResetTimer()
+
 				for b.Loop() {
 					for _, candidate := range candidates {
 						if cost := suffix.Cost(candidate); cost < 0 {
@@ -183,26 +208,32 @@ func BenchmarkSingleCircleExtendTerms(b *testing.B) {
 
 			b.Run("iteration/mayfly-pop30", func(b *testing.B) {
 				const measuredIterations = 50
-				logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+				logger := slog.New(slog.DiscardHandler)
 				var fixedElapsed, optimizedElapsed time.Duration
+
 				for b.Loop() {
 					fixedBase := renderer.NewCPURenderer(reference, circleCount+1)
 					renderer.ConfigureCPUParallelism(fixedBase, 1, 12, true)
+
 					started := time.Now()
+
 					if _, err := renderer.OptimizeBatchAppendFromCanvasContext(
 						context.Background(), fixedBase, fixedExtendOptimizer{candidate: extendBenchmarkTruthCandidate()},
 						params, prefixCanvas, prefixCost, circleCount+1, 1, renderer.DisabledConvergenceConfig(),
 					); err != nil {
 						b.Fatal(err)
 					}
+
 					fixedElapsed += time.Since(started)
 
 					optimizedBase := renderer.NewCPURenderer(reference, circleCount+1)
 					renderer.ConfigureCPUParallelism(optimizedBase, 1, 12, true)
+
 					parallel, enabled := renderer.ParallelEvaluationOption(optimizedBase, true)
 					if !enabled {
 						b.Fatal("parallel evaluation unavailable")
 					}
+
 					optimizer, err := opt.NewMayflyVariant(
 						string(app.VariantStandard), measuredIterations, extendBenchmarkPopulation, 15_900,
 						opt.WithLogger(logger), parallel,
@@ -210,7 +241,9 @@ func BenchmarkSingleCircleExtendTerms(b *testing.B) {
 					if err != nil {
 						b.Fatal(err)
 					}
+
 					started = time.Now()
+
 					result, err := renderer.OptimizeBatchAppendFromCanvasContext(
 						context.Background(), optimizedBase, optimizer,
 						params, prefixCanvas, prefixCost, circleCount+1, 1, renderer.DisabledConvergenceConfig(),
@@ -218,13 +251,13 @@ func BenchmarkSingleCircleExtendTerms(b *testing.B) {
 					if err != nil {
 						b.Fatal(err)
 					}
+
 					optimizedElapsed += time.Since(started)
 					extendBenchmarkCostSink += result.BestCost
 				}
-				netIteration := optimizedElapsed - fixedElapsed
-				if netIteration < 0 {
-					netIteration = 0
-				}
+
+				netIteration := max(optimizedElapsed-fixedElapsed, 0)
+
 				b.ReportMetric(float64(fixedElapsed.Nanoseconds())/float64(b.N), "fixed-ns/op")
 				b.ReportMetric(
 					float64(netIteration.Nanoseconds())/float64(b.N*measuredIterations),
@@ -255,14 +288,18 @@ func BenchmarkSingleCircleExtendWall(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
+
 			parentID := "00000000-0000-4000-8000-000000000166"
 			referenceID := "00000000-0000-4000-8000-000000000167"
+
 			if err := fsStore.SavePNGArtifact(parentID, store.ArtifactBest, prefixCanvas); err != nil {
 				b.Fatal(err)
 			}
+
 			if err := fsStore.SavePNGArtifact(referenceID, store.ArtifactBest, reference); err != nil {
 				b.Fatal(err)
 			}
+
 			referencePath, err := fsStore.ArtifactPath(referenceID, store.ArtifactBest)
 			if err != nil {
 				b.Fatal(err)
@@ -274,24 +311,32 @@ func BenchmarkSingleCircleExtendWall(b *testing.B) {
 			config.EnableTrace = true
 			config.ParallelEvaluation = true
 			config.EvaluationWorkers = 12
+
 			b.ResetTimer()
+
 			for b.Loop() {
 				manager := NewJobManager()
+
 				job := manager.CreateJob(app.DefaultProject, config)
-				if err := manager.UpdateJob(job.ID, func(live *Job) {
+				err := manager.UpdateJob(job.ID, func(live *Job) {
 					updateBestResult(live, params, prefixCost)
 					live.InitialCost = prefixCost + 1
 					live.ExtendedFrom = parentID
-				}); err != nil {
+				})
+				if err != nil {
 					b.Fatal(err)
 				}
-				if err := runJob(context.Background(), manager, fsStore, job.ID); err != nil {
+
+				err := runJob(context.Background(), manager, fsStore, job.ID)
+				if err != nil {
 					b.Fatal(err)
 				}
+
 				completed, ok := manager.GetJob(job.ID)
 				if !ok {
 					b.Fatal("completed extension job is missing")
 				}
+
 				if completed.State != StateCompleted || completed.ActualCircles != circleCount+1 {
 					b.Fatalf("extension result = state %v circles %d", completed.State, completed.ActualCircles)
 				}
@@ -313,25 +358,31 @@ func BenchmarkSingleCircleExtendProductionCheckpoint(b *testing.B) {
 	if checkpointPath == "" {
 		b.Skip("set MAYFLY_EXTEND_CHECKPOINT to a production checkpoint.json")
 	}
+
 	data, err := os.ReadFile(checkpointPath)
 	if err != nil {
 		b.Fatal(err)
 	}
+
 	var checkpoint store.Checkpoint
 	if err := json.Unmarshal(data, &checkpoint); err != nil {
 		b.Fatal(err)
 	}
+
 	if err := checkpoint.Validate(); err != nil {
 		b.Fatal(err)
 	}
+
 	reference, err := loadReferenceImage(checkpoint.Config.RefPath)
 	if err != nil {
 		b.Fatal(err)
 	}
+
 	prefixCanvas, err := loadReferenceImage(filepath.Join(filepath.Dir(checkpointPath), string(store.ArtifactBest)))
 	if err != nil {
 		b.Fatal(err)
 	}
+
 	if cost := fit.FastMSECost(prefixCanvas, reference); cost != checkpoint.BestCost {
 		b.Fatalf("production best artifact cost = %v, checkpoint = %v", cost, checkpoint.BestCost)
 	}
@@ -342,9 +393,11 @@ func BenchmarkSingleCircleExtendProductionCheckpoint(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
+
 			if err := fsStore.SavePNGArtifact(checkpoint.JobID, store.ArtifactBest, prefixCanvas); err != nil {
 				b.Fatal(err)
 			}
+
 			config := checkpoint.Config
 			config.Circles = checkpoint.ActualCircles + 1
 			config.BatchSize = 1
@@ -358,22 +411,29 @@ func BenchmarkSingleCircleExtendProductionCheckpoint(b *testing.B) {
 			config.StopMinIters = 0
 			config.EnableTrace = true
 			config.CheckpointInterval = 0
+
 			b.ResetTimer()
+
 			for b.Loop() {
 				manager := NewJobManager()
+
 				job := manager.CreateJob(app.DefaultProject, config)
-				if err := manager.UpdateJob(job.ID, func(live *Job) {
+				err := manager.UpdateJob(job.ID, func(live *Job) {
 					updateBestResult(live, checkpoint.BestParams, checkpoint.BestCost)
 					live.InitialCost = checkpoint.InitialCost
 					live.Iterations = checkpoint.Iterations
 					live.Evaluations = int(checkpoint.Evaluations)
 					live.ExtendedFrom = checkpoint.JobID
-				}); err != nil {
+				})
+				if err != nil {
 					b.Fatal(err)
 				}
-				if err := runJob(context.Background(), manager, fsStore, job.ID); err != nil {
+
+				err := runJob(context.Background(), manager, fsStore, job.ID)
+				if err != nil {
 					b.Fatal(err)
 				}
+
 				completed, ok := manager.GetJob(job.ID)
 				if !ok || completed.State != StateCompleted {
 					b.Fatal("production extension did not complete")
@@ -398,17 +458,22 @@ func TestCheckpointRoundTripPreservesContinuationCost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	jobID := "00000000-0000-4000-8000-000000000162"
+
 	checkpoint := store.NewCheckpoint(jobID, params, parentCost, parentCost+1, 500, extendBenchmarkConfig(circleCount))
 	if err := fsStore.SaveCheckpoint(jobID, checkpoint); err != nil {
 		t.Fatal(err)
 	}
+
 	loaded, err := fsStore.LoadCheckpoint(jobID)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	resumed := renderer.NewCPURenderer(reference, loaded.ActualCircles)
 	resumed.SetThreads(1)
+
 	if got := resumed.Cost(loaded.BestParams); got != parentCost {
 		t.Fatalf("resumed parent cost = %.17g, want exact %.17g", got, parentCost)
 	}
@@ -444,6 +509,7 @@ func extendBenchmarkConfig(circleCount int) app.JobConfig {
 	config.EffectiveSeed = 15_900
 	config.DisableConvergence = true
 	config.ConvergenceEnabled = false
+
 	return config
 }
 
@@ -459,18 +525,22 @@ func extendBenchmarkReference(prefix []float64) *image.NRGBA {
 			})
 		}
 	}
+
 	params := append(append([]float64(nil), prefix...), extendBenchmarkTruthCandidate()...)
 	target := renderer.NewCPURenderer(img, len(params)/app.ParamsPerCircle)
 	target.SetThreads(1)
+
 	return cloneBenchmarkImage(target.Render(params))
 }
 
 func extendBenchmarkParams(circleCount int) []float64 {
 	rng := rand.New(rand.NewPCG(15_900, uint64(circleCount)))
 	params := make([]float64, circleCount*app.ParamsPerCircle)
+
 	vector := fit.ParamVector{Data: params, K: circleCount, Width: extendBenchmarkWidth, Height: extendBenchmarkHeight}
 	for i := range circleCount {
 		var radius float64
+
 		switch bucket := rng.Float64(); {
 		case bucket < 0.7:
 			radius = 1 + rng.Float64()*3
@@ -479,6 +549,7 @@ func extendBenchmarkParams(circleCount int) []float64 {
 		default:
 			radius = 64 + rng.Float64()*320
 		}
+
 		vector.EncodeCircle(i, fit.Circle{
 			X:       rng.Float64() * (extendBenchmarkWidth - 1),
 			Y:       rng.Float64() * (extendBenchmarkHeight - 1),
@@ -489,6 +560,7 @@ func extendBenchmarkParams(circleCount int) []float64 {
 			Opacity: fit.MinCircleOpacity + rng.Float64()*0.35,
 		})
 	}
+
 	return params
 }
 
@@ -505,6 +577,7 @@ func extendBenchmarkCandidates(count int) [][]float64 {
 			0.5,
 		}
 	}
+
 	return candidates
 }
 
@@ -515,6 +588,7 @@ func extendBenchmarkTruthCandidate() []float64 {
 func cloneBenchmarkImage(src *image.NRGBA) *image.NRGBA {
 	dst := image.NewNRGBA(src.Bounds())
 	copy(dst.Pix, src.Pix)
+
 	return dst
 }
 

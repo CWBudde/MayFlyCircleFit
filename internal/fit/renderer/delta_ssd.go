@@ -5,6 +5,7 @@ package renderer
 // intentionally ignored, matching fit.FastMSECost.
 func deltaSSDSpanScalar(candidate, base, reference []byte, pixels int) int64 {
 	var delta int64
+
 	end := pixels * 4
 	for offset := 0; offset < end; offset += 4 {
 		candidateR := int64(candidate[offset+0]) - int64(reference[offset+0])
@@ -16,5 +17,6 @@ func deltaSSDSpanScalar(candidate, base, reference []byte, pixels int) int64 {
 		delta += candidateR*candidateR + candidateG*candidateG + candidateB*candidateB
 		delta -= baseR*baseR + baseG*baseG + baseB*baseB
 	}
+
 	return delta
 }
