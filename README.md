@@ -232,8 +232,8 @@ to each stage, so they can shorten stages without ending the run. `status` and
 `checkpoints list` report why a run stopped: `completed`, `cancelled`,
 `target_cost`, `stagnation`, or `stage_convergence`.
 
-Use `--variant` to select the MayFly algorithm variant (`standard`, `desma`, or
-`olce`).
+Use `--variant` to select the MayFly algorithm variant: `standard`, `desma`,
+`olce`, `eobbma`, `gsasma`, `mpma`, or `aoblmoa`.
 
 ## Checkpoints and restart-from-best
 

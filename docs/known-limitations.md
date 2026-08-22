@@ -205,9 +205,9 @@ behavior is production-ready.
   opposition-based learning on the global best has no parallel branch upstream.
   For the AOBLMOA variant, enabling parallel evaluation also changes the
   reported evaluation total, because MayFly's serial path estimates that count
-  while its parallel path reports the exact one. Neither variant is reachable
-  through `JobConfig`, which validates only `standard`, `desma`, and `olce`, so
-  this affects direct `internal/opt` callers only.
+  while its parallel path reports the exact one. Both variants are selectable
+  through `JobConfig`, so this affects any caller, not only direct
+  `internal/opt` ones.
 - MayFly's constraint handling and convergence-curve CSV/JSON export are unused.
   The problem is box-bounded, and trace ownership belongs to the store package.
 
