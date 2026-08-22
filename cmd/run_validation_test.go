@@ -230,7 +230,7 @@ func TestRunOptimizationRejectsInvalidInputs(t *testing.T) {
 			// The message names the flag's configuration field, as every other
 			// case here does: the API error contract spells fields with their
 			// JSON names, and internal/server asserts the same "popSize".
-			wantErrMsg: "popSize must be between 20 and 200",
+			wantErrMsg: "popSize must be between 20 and",
 		},
 	}
 

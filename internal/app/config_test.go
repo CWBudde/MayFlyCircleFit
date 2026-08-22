@@ -467,3 +467,69 @@ func TestNormalizeRequestRefusesAWrittenDefault(t *testing.T) {
 		})
 	}
 }
+
+// A population is only affordable in proportion to the vector it searches. The
+// adapter sizes both NPop and NPopF from popSize and every member carries a
+// position, a velocity and a personal best, so the cost grows with the product
+// rather than with either number alone.
+func TestPopulationIsBoundedByOptimizerDimensionality(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    Mode
+		circles int
+		batch   int
+		popSize int
+		wantErr bool
+	}{
+		{"the small batch vector the cap was raised for", ModeBatch, 8, 8, 4096, false},
+		{"a batch run is bounded by its batch, not its canvas", ModeBatch, 3000, 100, 4096, false},
+		{"a sequential run searches one circle", ModeSequential, 3000, 1, 4096, false},
+		{"a large joint vector refuses the largest population", ModeJoint, 3000, 1, 4096, true},
+		{"a large joint vector still allows a sane population", ModeJoint, 3000, 1, 200, false},
+		{"a mid-sized joint vector is bounded proportionally", ModeJoint, 1000, 1, 2048, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := DefaultConfig()
+			config.RefPath = "reference.png"
+			config.EffectiveSeed = 1
+			config.Mode = tt.mode
+			config.Circles = tt.circles
+			config.BatchSize = tt.batch
+			config.PopSize = tt.popSize
+
+			err := config.Validate()
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+
+				return
+			}
+
+			if err == nil {
+				t.Fatal("expected the configuration to be refused")
+			}
+
+			// The refusal has to come from the population limit rather than
+			// from some other field this case happens to trip.
+			if !strings.Contains(err.Error(), "popSize") {
+				t.Fatalf("error = %v, want it to name popSize", err)
+			}
+		})
+	}
+}
+
+// The limit is a guard against the newly raised ceiling, not a narrowing of
+// what was already accepted: the largest product reachable under the previous
+// MaxPopulation of 200 must still validate.
+func TestTheDimensionLimitAcceptsEveryPreviouslyValidPopulation(t *testing.T) {
+	if got := MaxCircles * ParametersPerCircle * 200; got > MaxPopulationDimensions {
+		t.Fatalf(
+			"the largest pre-existing product is %d, which exceeds the limit of %d; "+
+				"raising the limit is required or configurations that used to work would break",
+			got, MaxPopulationDimensions,
+		)
+	}
+}
