@@ -225,7 +225,7 @@ func formatJobImprovement(initialCost, bestCost float64) string {
 // formatJobCircles prints the circles a running job currently carries. A job
 // that has not reached its target yet — a refill or a growing ladder stage —
 // prints the requested count alongside, so the row says how far the geometry
-// still has to grow. Mirrored by formatJobCircles in web/src/dashboard.tsx.
+// still has to grow. Mirrored by formatJobCircles in web/src/format.ts.
 func formatJobCircles(actual, requested int) string {
 	if requested > 0 && requested != actual {
 		return fmt.Sprintf("%d / %d", actual, requested)
