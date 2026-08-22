@@ -14,6 +14,10 @@ take precedence if this document goes stale.
   kernels, dispatch, and CPU span compositing.
 - [`docs/polishing-throughput-report.md`](docs/polishing-throughput-report.md)
   — polishing session-pool and active-set performance tradeoffs.
+- [`docs/seed-variance-and-population-report.md`](docs/seed-variance-and-population-report.md)
+  — why base-stage quality does not predict the fit built on it, what the
+  population knob does and does not buy, and the two mayfly mechanisms
+  (per-iteration exploration damping, unscaled `NC`) that govern both.
 - [`docs/schedule-format.md`](docs/schedule-format.md) — the schedule document
   format, its worked example, and when two campaigns' costs are comparable.
 - [`docs/support-matrix.md`](docs/support-matrix.md),

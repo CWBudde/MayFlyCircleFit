@@ -1,0 +1,182 @@
+# Seed variance and the population question
+
+Four seeds of the same pow2 campaign, run to a barrier at 256 circles, plus a
+control that changes exactly one field. The question the run was meant to settle
+was whether a very large population on the base stage buys anything. It did not
+settle that, but it settled something more useful: **the quality of the base
+arrangement does not predict the quality of the fit built on top of it.**
+
+That is the second time this project has learned the same lesson. The first was
+`example/campaigns/seed-audit-10.json`, where a hand-placed 10-circle
+arrangement (cost 1187.13, PSNR 17.39) was beaten by an ordinary cold run with
+*eight* circles. This report is the same finding with a controlled experiment
+behind it.
+
+## What was run
+
+`example/campaigns/mayfly-3000-v2.json` at seeds 20260822, 20260823, 20260824
+and 20260825, against `example/MayFly-512.png` (512x512, blank-canvas cost
+38732.12). Base: 8 circles, batch, `batchSize` 8, `popSize` 4096, 2 x 1024
+iterations. Extends append one circle at a time; polish sits at every pow2 rung.
+A `pauseBefore` barrier stops each arm at 256 circles.
+
+Conditions, because a cost is only comparable to a cost from the same renderer:
+CPU backend, default exact compositor (`fastCompositing` off), one server with
+`--max-jobs 4`, 16 evaluation workers per job, 64-core x86-64 host. All eight
+campaigns in this report ran on that one host with one binary.
+
+## Cost by rung, pop 4096
+
+| circles | 20260822 | 20260823 | 20260824 | 20260825 | spread |
+| --- | --- | --- | --- | --- | --- |
+| 8 (base) | **880.62** | 925.88 | 927.36 | 909.40 | 5.3% |
+| 8 (polished) | 880.62 | 925.87 | 927.26 | 909.40 | 5.3% |
+| 16 | 714.73 | **671.62** | 792.83 | 673.03 | 18.0% |
+| 32 | 531.12 | 510.32 | **489.24** | 497.70 | 8.6% |
+| 64 | 446.28 | 430.17 | 414.66 | **414.39** | 7.7% |
+| 128 | 354.86 | 343.86 | **340.12** | 342.09 | 4.3% |
+| 256 | 273.46 | *pending* | 262.78 | **255.13** | 7.2% |
+
+The 256-circle spread is over the three arms that had finished; across those same
+three arms the 128 rung spreads 4.3%, so the divergence genuinely widens at the
+end rather than being an artifact of the missing arm.
+
+## Finding 1: the ranking inverts, then freezes
+
+Seed 20260822 has the best base by a clear margin — 880.62 against a
+second-best 909.40 — and is **last at every rung from 32 circles onward**. Seed
+20260824 has the worst base and finishes second. The order settles by 32 circles
+and never changes again.
+
+This is not two arms trading places within noise. It is a stable reordering that
+survives seven rungs and roughly 250 stages. Four seeds cannot establish an
+anti-correlation and this report does not claim one; what it does establish is
+that base quality carries no *positive* information about the outcome, which is
+enough to undermine the reason for spending on the base at all.
+
+The mechanism is the greedy schedule rather than the optimizer. An extend
+freezes every existing circle and optimizes only what it appends, so the
+arrangement reached at rung *k* is a commitment. Polishing is the only stage
+that revisits earlier circles, and its active set is capped at
+`MaxBatchSize` = 100 — at 256 circles a sweep can reach at most 64 of them.
+Divergence that appears by 32 circles has no mechanism available to close it.
+
+## Finding 2: polishing an 8-circle base is dead weight
+
+The two polish steps that follow the base moved cost by 0.005, 0.012, 0.096 and
+0.002 across the four arms, for 8 to 10 minutes of wall clock each.
+
+Read the right way round, this is a *positive* result for the large population:
+`popSize` 4096 converged the 56-parameter vector so completely that a
+replacement sweep and a residual-region sweep could find nothing left. The
+subproblem was solved exactly. It simply turned out that solving it exactly did
+not matter, which is Finding 1.
+
+Either way the two steps should come out of the document. They cost about 40
+minutes of host time across four arms and returned a tenth of a cost unit.
+
+## Finding 3: where the wall clock actually goes
+
+| stage kind | count to the barrier | typical cost |
+| --- | --- | --- |
+| base | 1 | 30m03s - 44m34s |
+| polish | 7 | 3m34s - 17m10s |
+| extend | 248 | 2 - 3 s |
+
+All 248 extends together take about ten minutes. The campaign is base plus
+polish; the climb is free. An earlier estimate in this project's working notes
+put the extends at roughly a minute each and projected 8-9 hours per arm — the
+arms reached the barrier in 1h42m to 1h49m. Budget campaigns by polish count,
+not by circle count.
+
+## The control: pop 64 on an otherwise identical document
+
+The experiment above cannot answer whether 4096 was worth it, because it has no
+low-population arm to compare against. The control is the same document with
+`base.popSize` changed to 64 and nothing else touched — verified field by field,
+with the step list compared for equality.
+
+| seed | pop 4096 | time | pop 64 | time |
+| --- | --- | --- | --- | --- |
+| 20260822 | **880.62** | 32m33s | 1004.06 | 1m13s |
+| 20260823 | 925.88 | 44m34s | **903.30** | 52s |
+| 20260824 | 927.36 | 38m08s | **897.44** | 54s |
+| 20260825 | **909.40** | 30m03s | 1127.73 | 1m11s |
+| mean | **910.82** | ~36m | 983.13 | ~1m |
+| spread | **46.74** | | 230.29 | |
+
+The large population wins on the mean by about 7% and, more convincingly, cuts
+the seed-to-seed spread by a factor of five. That is exactly what more sampling
+of a 56-dimensional space should buy: a better and far more consistent basin.
+It costs roughly 35x the wall clock to buy it.
+
+**The 256-circle half of the control is still running.** Whether that base
+advantage survives the climb is the actual question, and Finding 1 predicts it
+will not. Until those numbers land, no conclusion about population is stated
+here.
+
+## Why a bigger population may not behave the way GA intuition expects
+
+Two mechanisms in the pinned `mayfly v0.4.0` are worth knowing before designing
+the next experiment. Both are read from the library's defaults, not measured
+here.
+
+**Exploration is damped per iteration, not per individual.** `NewDefaultConfig`
+sets `Dance: 5.0` with `DanceDamp: 0.8`, and `FL: 1.0` with `FLDamp: 0.99`. The
+nuptial-dance term is the stochastic component that lets the best male leave its
+current basin, and it is multiplied by 0.8 on every iteration: after 30
+iterations it retains 0.8^30, about 0.1% of its initial magnitude. The female
+random-walk term decays more slowly but is also negligible within a few hundred
+iterations. Exploration therefore has a lifetime measured in iterations, and
+`popSize` does not extend it. A larger population searches a wider net during
+the same brief window; it cannot hold the window open.
+
+**Recombination does not scale with the population.** `internal/opt`'s adapter
+sets `config.NPop` and `config.NPopF` from `popSize` but never sets `config.NC`,
+the number of crossover offspring produced per iteration, which stays at its
+default of 20. At the library's default population of 20 that is one offspring
+per individual; at `popSize` 4096 it is 20 offspring for 4096 individuals. The
+genetic component of the algorithm is diluted by a factor of 200, leaving a
+larger swarm doing proportionally more velocity-following and no more mixing.
+`NM` does scale, at 5% of `NPop`.
+
+That is the substantive difference from a classical GA, where recombination
+count scales with the population and a larger population sustains diversity
+across generations indefinitely. Here it does not, so GA intuition about
+population size should not be transferred without testing.
+
+If the control confirms that the base advantage does not survive, the levers
+worth trying next are, in rough order of expected value:
+
+- **`optimizerEpochs`.** An epoch restarts the optimizer from the best result
+  with fresh diversity, which resets the damping schedule. It is the only
+  diversity mechanism this codebase currently exposes, and the campaign uses 2.
+  `popSize` 512 with 16 epochs costs about what `popSize` 4096 with 2 epochs
+  costs and reopens the exploration window 16 times instead of twice.
+- **`variant`.** Every non-default variant in the pinned library is a published
+  attempt to fix premature convergence: DESMA (dynamic elite strategy,
+  multimodal), OLCE-MA (orthogonal learning and chaotic exploitation, aimed at
+  highly multimodal problems), EOBBMA (elite opposition-based bare bones, aimed
+  at deceptive landscapes). Fitting circles to a photograph under a frozen
+  prefix is multimodal and arguably deceptive. Every run in this project so far
+  has used `standard`, which was never a decision.
+- **Less greedy extends.** `additionalCircles` above 1 co-optimizes several
+  circles instead of committing them one at a time, which attacks Finding 1 at
+  its source.
+
+Two gaps are worth recording. `internal/app` accepts only `standard`, `desma`
+and `olce`, while `internal/opt` supports four more (`eobbma`, `gsasma`, `mpma`,
+`aoblmoa`) that no configuration can currently reach. And `NC` and the damping
+coefficients are not exposed at all, so the mechanisms most likely to govern
+this problem cannot be configured from a campaign document.
+
+## Reproducing
+
+```sh
+mayflycirclefit schedule create --dry-run example/campaigns/mayfly-3000-v2.json
+```
+
+expands to 3007 stages and 6,359,040 nominal iterations, with the barrier
+reported before the stage table. The per-seed documents differ from the
+committed one only in `seed`, `name` and `refPath`; the control additionally
+sets `base.popSize` to 64.
