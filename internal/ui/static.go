@@ -51,21 +51,26 @@ var staticAssets = loadStaticAssets()
 
 func loadStaticAssets() map[string]staticAsset {
 	assets := make(map[string]staticAsset)
+
 	entries, err := fs.ReadDir(staticFS, "static")
 	if err != nil {
 		// The directory is embedded, so a failure here is a build-time
 		// mistake rather than a runtime condition worth reporting.
 		panic("ui: reading embedded static assets: " + err.Error())
 	}
+
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
+
 		name := entry.Name()
+
 		content, err := staticFS.ReadFile(path.Join("static", name))
 		if err != nil {
 			panic("ui: reading embedded static asset " + name + ": " + err.Error())
 		}
+
 		sum := sha256.Sum256(content)
 		version := hex.EncodeToString(sum[:])[:16]
 		assets[name] = staticAsset{
@@ -75,6 +80,7 @@ func loadStaticAssets() map[string]staticAsset {
 			version:     version,
 		}
 	}
+
 	return assets
 }
 
@@ -102,6 +108,7 @@ func BundleURL() string {
 	if !ok {
 		return StaticPrefix + bundleName
 	}
+
 	return StaticPrefix + bundleName + "?v=" + asset.version
 }
 
@@ -114,10 +121,12 @@ func StaticHandler() http.Handler {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+
 			return
 		}
 
 		name := strings.TrimPrefix(r.URL.Path, StaticPrefix)
+
 		asset, ok := staticAssets[name]
 		if !ok || name == "" || strings.Contains(name, "/") {
 			http.NotFound(w, r)
@@ -127,6 +136,7 @@ func StaticHandler() http.Handler {
 		w.Header().Set("Content-Type", asset.contentType)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("ETag", asset.etag)
+
 		if r.URL.Query().Get("v") == asset.version {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else {

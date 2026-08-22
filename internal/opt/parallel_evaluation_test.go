@@ -13,10 +13,12 @@ import (
 // trajectory difference between the serial and parallel optimizer loops.
 func rippledSphere(params []float64) float64 {
 	sum := 0.0
+
 	for i, value := range params {
 		offset := value - float64(i)*0.3
 		sum += offset * offset * math.Abs(math.Sin(value))
 	}
+
 	return sum
 }
 
@@ -29,28 +31,34 @@ func runRippledSphereVariant(t *testing.T, variant string, workers int) Result {
 	t.Helper()
 	const dim = 8
 	lower := make([]float64, dim)
+
 	upper := make([]float64, dim)
 	for i := range lower {
 		lower[i], upper[i] = -5, 5
 	}
+
 	var options []MayflyOption
 	if workers > 1 {
 		options = append(options, WithParallelEvaluation(workers))
 	}
+
 	optimizer, err := NewMayflyVariant(variant, 25, 20, 4242, options...)
 	if err != nil {
 		t.Fatalf("NewMayflyVariant() error = %v", err)
 	}
+
 	lifecycle, ok := optimizer.(LifecycleOptimizer)
 	if !ok {
 		t.Fatal("adapter does not implement LifecycleOptimizer")
 	}
+
 	result, err := lifecycle.RunContext(context.Background(), Problem{
 		Eval: rippledSphere, Lower: lower, Upper: upper, Dim: dim,
 	}, RunOptions{})
 	if err != nil {
 		t.Fatalf("RunContext() error = %v", err)
 	}
+
 	return result
 }
 
@@ -69,6 +77,7 @@ func TestParallelEvaluationIsReproducible(t *testing.T) {
 		t.Fatalf("repeated parallel run differs: %.17g %v vs %.17g %v",
 			first.BestCost, first.BestParams, again.BestCost, again.BestParams)
 	}
+
 	if wider.BestCost != first.BestCost || !slices.Equal(wider.BestParams, first.BestParams) {
 		t.Fatalf("worker count changed the result: 4 workers %.17g, 7 workers %.17g",
 			first.BestCost, wider.BestCost)
@@ -92,6 +101,7 @@ func TestParallelEvaluationDiffersFromSerial(t *testing.T) {
 	if serial.BestCost != repeated.BestCost || !slices.Equal(serial.BestParams, repeated.BestParams) {
 		t.Fatalf("serial run is not reproducible: %.17g vs %.17g", serial.BestCost, repeated.BestCost)
 	}
+
 	if serial.BestCost == parallel.BestCost && slices.Equal(serial.BestParams, parallel.BestParams) {
 		t.Fatal("parallel and serial results now match; the documented caveat in " +
 			"docs/known-limitations.md and WithParallelEvaluation is stale and should be removed")
@@ -105,6 +115,7 @@ func TestParallelEvaluationDiffersFromSerial(t *testing.T) {
 func TestParallelEvaluationCallsObjectiveConcurrently(t *testing.T) {
 	const dim = 4
 	lower := make([]float64, dim)
+
 	upper := make([]float64, dim)
 	for i := range lower {
 		lower[i], upper[i] = -1, 1
@@ -113,6 +124,7 @@ func TestParallelEvaluationCallsObjectiveConcurrently(t *testing.T) {
 	var inFlight, peak atomic.Int64
 	eval := func(params []float64) float64 {
 		current := inFlight.Add(1)
+
 		for {
 			observed := peak.Load()
 			if current <= observed || peak.CompareAndSwap(observed, current) {
@@ -124,7 +136,9 @@ func TestParallelEvaluationCallsObjectiveConcurrently(t *testing.T) {
 		for range 2000 {
 			sum += rippledSphere(params)
 		}
+
 		inFlight.Add(-1)
+
 		return sum
 	}
 
@@ -132,12 +146,14 @@ func TestParallelEvaluationCallsObjectiveConcurrently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMayflyVariant() error = %v", err)
 	}
+
 	lifecycle := optimizer.(LifecycleOptimizer)
 	if _, err := lifecycle.RunContext(context.Background(), Problem{
 		Eval: eval, Lower: lower, Upper: upper, Dim: dim,
 	}, RunOptions{}); err != nil {
 		t.Fatalf("RunContext() error = %v", err)
 	}
+
 	if peak.Load() < 2 {
 		t.Fatalf("peak concurrent evaluations = %d, want at least 2", peak.Load())
 	}
@@ -149,6 +165,7 @@ func TestParallelEvaluationCallsObjectiveConcurrently(t *testing.T) {
 func TestSerialEvaluationStaysSingleThreaded(t *testing.T) {
 	const dim = 4
 	lower := make([]float64, dim)
+
 	upper := make([]float64, dim)
 	for i := range lower {
 		lower[i], upper[i] = -1, 1
@@ -157,13 +174,16 @@ func TestSerialEvaluationStaysSingleThreaded(t *testing.T) {
 	var inFlight, peak atomic.Int64
 	eval := func(params []float64) float64 {
 		current := inFlight.Add(1)
+
 		for {
 			observed := peak.Load()
 			if current <= observed || peak.CompareAndSwap(observed, current) {
 				break
 			}
 		}
+
 		defer inFlight.Add(-1)
+
 		return rippledSphere(params)
 	}
 
@@ -171,12 +191,14 @@ func TestSerialEvaluationStaysSingleThreaded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMayflyVariant() error = %v", err)
 	}
+
 	lifecycle := optimizer.(LifecycleOptimizer)
 	if _, err := lifecycle.RunContext(context.Background(), Problem{
 		Eval: eval, Lower: lower, Upper: upper, Dim: dim,
 	}, RunOptions{}); err != nil {
 		t.Fatalf("RunContext() error = %v", err)
 	}
+
 	if peak.Load() != 1 {
 		t.Fatalf("peak concurrent evaluations = %d, want 1 without WithParallelEvaluation", peak.Load())
 	}
@@ -197,6 +219,7 @@ func TestParallelEvaluationIsReproducibleAcrossVariants(t *testing.T) {
 			if first.BestCost != again.BestCost || !slices.Equal(first.BestParams, again.BestParams) {
 				t.Fatalf("repeated parallel run differs: %.17g vs %.17g", first.BestCost, again.BestCost)
 			}
+
 			if wider.BestCost != first.BestCost || !slices.Equal(wider.BestParams, first.BestParams) {
 				t.Fatalf("worker count changed the result: 4 workers %.17g, 7 workers %.17g",
 					first.BestCost, wider.BestCost)
@@ -216,6 +239,7 @@ func TestParallelEvaluationWidthSeesThroughWrappers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if got := ParallelEvaluationWidth(serial); got != 1 {
 		t.Fatalf("ParallelEvaluationWidth() = %d, want 1 for a serial optimizer", got)
 	}
@@ -224,9 +248,11 @@ func TestParallelEvaluationWidthSeesThroughWrappers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if got := ParallelEvaluationWidth(parallel); got != 4 {
 		t.Fatalf("ParallelEvaluationWidth() = %d, want 4", got)
 	}
+
 	if got := ParallelEvaluationWidth(WithEpochs(parallel, 3)); got != 4 {
 		t.Fatalf("ParallelEvaluationWidth() through WithEpochs = %d, want 4", got)
 	}

@@ -27,6 +27,7 @@ func gradientReference(width, height int) *image.NRGBA {
 			})
 		}
 	}
+
 	return img
 }
 
@@ -42,8 +43,10 @@ type concurrentOptimizer struct {
 
 func (o *concurrentOptimizer) Run(eval func([]float64) float64, lower, upper []float64, dim int) ([]float64, float64) {
 	rng := rand.New(rand.NewSource(7))
+
 	best := append([]float64(nil), lower...)
 	bestCost := eval(best)
+
 	for range o.batches {
 		candidates := make([][]float64, o.workers)
 		for i := range candidates {
@@ -51,18 +54,24 @@ func (o *concurrentOptimizer) Run(eval func([]float64) float64, lower, upper []f
 			for j := range candidate {
 				candidate[j] = lower[j] + rng.Float64()*(upper[j]-lower[j])
 			}
+
 			candidates[i] = candidate
 		}
+
 		costs := make([]float64, o.workers)
 		var group sync.WaitGroup
 		group.Add(o.workers)
+
 		for i := range candidates {
 			go func() {
 				defer group.Done()
+
 				costs[i] = eval(candidates[i])
 			}()
 		}
+
 		group.Wait()
+
 		o.costs = append(o.costs, costs...)
 		for i, cost := range costs {
 			if cost < bestCost {
@@ -71,7 +80,9 @@ func (o *concurrentOptimizer) Run(eval func([]float64) float64, lower, upper []f
 			}
 		}
 	}
+
 	o.dim = dim
+
 	return best, bestCost
 }
 
@@ -79,6 +90,7 @@ func (o *concurrentOptimizer) Run(eval func([]float64) float64, lower, upper []f
 // given pool width and returns every cost the objective produced.
 func evaluationCostsFor(t *testing.T, workers int, run func(base *CPURenderer, optimizer opt.Optimizer) error) []float64 {
 	t.Helper()
+
 	ref := gradientReference(24, 18)
 	base := NewCPURenderer(ref, 3)
 	base.SetThreads(2)
@@ -86,9 +98,12 @@ func evaluationCostsFor(t *testing.T, workers int, run func(base *CPURenderer, o
 	// The optimizer's concurrency is fixed so both pool widths see exactly the
 	// same candidates in the same order; only the pool width varies.
 	optimizer := &concurrentOptimizer{workers: 4, batches: 4}
-	if err := run(base, optimizer); err != nil {
+
+	err := run(base, optimizer)
+	if err != nil {
 		t.Fatalf("optimization error = %v", err)
 	}
+
 	return optimizer.costs
 }
 
@@ -114,10 +129,12 @@ func TestParallelEvaluationIsPixelExact(t *testing.T) {
 	for name, run := range modes {
 		t.Run(name, func(t *testing.T) {
 			serial := evaluationCostsFor(t, 1, run)
+
 			parallel := evaluationCostsFor(t, 4, run)
 			if len(serial) == 0 {
 				t.Fatal("no evaluations recorded")
 			}
+
 			if !slices.Equal(serial, parallel) {
 				t.Fatalf("parallel costs differ from serial costs\nserial:   %v\nparallel: %v", serial, parallel)
 			}
@@ -131,25 +148,32 @@ func TestEvaluationPoolReportsEveryEvaluation(t *testing.T) {
 	ref := gradientReference(16, 16)
 	base := NewCPURenderer(ref, 2)
 	base.SetParallelEvaluationWorkers(4)
+
 	pool := newEvaluationPool(base, nil, evaluationWorkers(base), func() (Renderer, func(), error) {
 		return base.newSession(2)
 	})
 	defer pool.close()
+
 	if pool.width() != 4 {
 		t.Fatalf("pool width = %d, want 4", pool.width())
 	}
 	const evaluations = 200
 	var group sync.WaitGroup
 	group.Add(evaluations)
+
 	for range evaluations {
 		go func() {
 			defer group.Done()
+
 			slot := pool.acquire()
 			defer pool.release(slot)
+
 			slot.session.Cost(transparentParams(2))
 		}()
 	}
+
 	group.Wait()
+
 	if pool.count() != evaluations {
 		t.Fatalf("pool count = %d, want %d", pool.count(), evaluations)
 	}
@@ -159,17 +183,21 @@ func TestEvaluationPoolReportsEveryEvaluation(t *testing.T) {
 // sessions working instead of failing the run.
 func TestEvaluationPoolFallsBackToPrimary(t *testing.T) {
 	base := NewCPURenderer(gradientReference(8, 8), 1)
+
 	pool := newEvaluationPool(base, nil, 8, func() (Renderer, func(), error) {
 		return nil, nil, ErrStagedOptimizationUnsupported
 	})
 	defer pool.close()
+
 	if pool.width() != 1 {
 		t.Fatalf("pool width = %d, want 1", pool.width())
 	}
+
 	slot := pool.acquire()
 	if slot.session != Renderer(base) {
 		t.Fatal("fallback slot does not use the primary session")
 	}
+
 	pool.release(slot)
 }
 
@@ -180,21 +208,26 @@ func TestPooledSessionsRenderSingleThreaded(t *testing.T) {
 	base := NewCPURenderer(gradientReference(64, 64), 2)
 	base.SetThreads(4)
 	base.SetParallelEvaluationWorkers(3)
+
 	pool := newEvaluationPool(base, nil, evaluationWorkers(base), func() (Renderer, func(), error) {
 		return base.newSession(2)
 	})
 	defer pool.close()
+
 	for range pool.width() {
 		slot := pool.acquire()
 		defer pool.release(slot)
+
 		cpu, ok := slot.session.(*CPURenderer)
 		if !ok {
 			t.Fatalf("pooled session type = %T, want *CPURenderer", slot.session)
 		}
+
 		if cpu.Threads() != 1 {
 			t.Fatalf("pooled session threads = %d, want 1", cpu.Threads())
 		}
 	}
+
 	if base.Threads() != 4 {
 		t.Fatalf("base renderer threads = %d, want the caller's 4", base.Threads())
 	}
@@ -209,10 +242,12 @@ func TestPooledSessionsRenderSingleThreaded(t *testing.T) {
 func TestParallelEvaluationWorkersCapped(t *testing.T) {
 	base := NewCPURenderer(gradientReference(16, 12), 2)
 	base.SetParallelEvaluationWorkers(10000)
+
 	maxWorkers := runtime.GOMAXPROCS(0)
 	if got := base.ParallelEvaluationWorkers(); got > maxWorkers {
 		t.Fatalf("ParallelEvaluationWorkers() = %d, want at most GOMAXPROCS %d", got, maxWorkers)
 	}
+
 	if got := base.ParallelEvaluationWorkers(); got != maxWorkers {
 		t.Fatalf("ParallelEvaluationWorkers() = %d, want the GOMAXPROCS cap %d", got, maxWorkers)
 	}
@@ -226,8 +261,10 @@ func TestParallelEvaluationWorkersIgnoresImageHeight(t *testing.T) {
 	if runtime.GOMAXPROCS(0) < 3 {
 		t.Skip("needs at least three processors to distinguish the caps")
 	}
+
 	base := NewCPURenderer(gradientReference(8, 2), 2)
 	base.SetParallelEvaluationWorkers(3)
+
 	if got := base.ParallelEvaluationWorkers(); got != 3 {
 		t.Fatalf("ParallelEvaluationWorkers() = %d, want 3 despite the two-row image", got)
 	}
@@ -262,18 +299,22 @@ func TestParallelEvaluationOptionRequiresIndependentSessions(t *testing.T) {
 	if got := EvaluationWidth(sessionless); got != 1 {
 		t.Fatalf("EvaluationWidth() = %d, want 1 for a renderer without sessions", got)
 	}
+
 	if _, enabled := ParallelEvaluationOption(sessionless, true); enabled {
 		t.Fatal("parallel evaluation was enabled for a renderer that cannot serve it")
 	}
 
 	capable := NewCPURenderer(gradientReference(8, 8), 2)
 	capable.SetParallelEvaluationWorkers(4)
+
 	if runtime.GOMAXPROCS(0) < 2 {
 		t.Skip("needs at least two processors to enable parallel evaluation")
 	}
+
 	if _, enabled := ParallelEvaluationOption(capable, true); !enabled {
 		t.Fatal("parallel evaluation was declined for a renderer that can serve it")
 	}
+
 	if _, enabled := ParallelEvaluationOption(capable, false); enabled {
 		t.Fatal("parallel evaluation was enabled without being requested")
 	}
@@ -287,10 +328,13 @@ func TestParallelEvaluationOptionRequiresIndependentSessions(t *testing.T) {
 func TestEvaluationWorkersZeroMeansGOMAXPROCS(t *testing.T) {
 	base := NewCPURenderer(gradientReference(16, 12), 2)
 	base.SetParallelEvaluationWorkers(0)
+
 	if got, want := base.ParallelEvaluationWorkers(), runtime.GOMAXPROCS(0); got != want {
 		t.Fatalf("ParallelEvaluationWorkers() = %d, want GOMAXPROCS %d", got, want)
 	}
+
 	base.SetThreads(0)
+
 	if got, want := base.Threads(), effectiveThreadCount(0, 12); got != want {
 		t.Fatalf("Threads() = %d, want %d", got, want)
 	}
@@ -302,14 +346,17 @@ func TestEvaluationWorkersZeroMeansGOMAXPROCS(t *testing.T) {
 func TestConfigureCPUParallelismLeavesEvaluationWidthOptIn(t *testing.T) {
 	base := NewCPURenderer(gradientReference(16, 12), 2)
 	ConfigureCPUParallelism(base, 2, 4, false)
+
 	if got := base.ParallelEvaluationWorkers(); got != 1 {
 		t.Fatalf("ParallelEvaluationWorkers() = %d, want 1 without the opt-in", got)
 	}
+
 	if got := base.Threads(); got != 2 {
 		t.Fatalf("Threads() = %d, want 2", got)
 	}
 
 	ConfigureCPUParallelism(base, 2, 4, true)
+
 	if got := base.ParallelEvaluationWorkers(); got != min(4, runtime.GOMAXPROCS(0)) {
 		t.Fatalf("ParallelEvaluationWorkers() = %d, want the requested 4", got)
 	}

@@ -145,6 +145,7 @@ func NormalizeProject(slug Project) Project {
 	if slug == "" {
 		return DefaultProject
 	}
+
 	return slug
 }
 
@@ -155,25 +156,32 @@ func ValidateProjectSlug(slug Project) error {
 	if slug == "" {
 		return invalid("project", "is required")
 	}
+
 	if len(slug) > MaxProjectSlugLen {
 		return invalid("project", fmt.Sprintf("must be at most %d characters", MaxProjectSlugLen))
 	}
-	for i := 0; i < len(slug); i++ {
+
+	for i := range len(slug) {
 		c := slug[i]
 		isLower := c >= 'a' && c <= 'z'
+
 		isDigit := c >= '0' && c <= '9'
 		if !isLower && !isDigit && c != '-' {
 			return invalid("project", "must contain only lowercase letters, digits, and dashes")
 		}
 	}
+
 	first := slug[0]
+
 	last := slug[len(slug)-1]
 	if first == '-' || last == '-' {
 		return invalid("project", "must start and end with a letter or digit")
 	}
+
 	if reservedProjectSlugs[slug] {
 		return invalid("project", fmt.Sprintf("%q is reserved", slug))
 	}
+
 	return nil
 }
 
@@ -386,24 +394,31 @@ func (c *JobConfig) ApplyDefaults() error {
 	if c.Mode == "" {
 		c.Mode = defaults.Mode
 	}
+
 	if c.Backend == "" {
 		c.Backend = defaults.Backend
 	}
+
 	if c.Variant == "" {
 		c.Variant = defaults.Variant
 	}
+
 	if c.Circles == 0 {
 		c.Circles = defaults.Circles
 	}
+
 	if c.Iters == 0 {
 		c.Iters = defaults.Iters
 	}
+
 	if c.PopSize == 0 {
 		c.PopSize = defaults.PopSize
 	}
+
 	if c.OptimizerEpochs == 0 {
 		c.OptimizerEpochs = defaults.OptimizerEpochs
 	}
+
 	if c.BatchSize == 0 {
 		c.BatchSize = defaults.BatchSize
 		if c.Circles > 0 && c.BatchSize > c.Circles {
@@ -417,21 +432,26 @@ func (c *JobConfig) ApplyDefaults() error {
 			c.BatchSize = c.Circles
 		}
 	}
+
 	if c.PolishingActiveSetSize == 0 {
 		c.PolishingActiveSetSize = defaults.PolishingActiveSetSize
 		if c.Circles > 0 && c.PolishingActiveSetSize > c.Circles {
 			c.PolishingActiveSetSize = c.Circles
 		}
 	}
+
 	if c.PolishingStrategy == "" {
 		c.PolishingStrategy = defaults.PolishingStrategy
 	}
+
 	if c.PolishingMaxSweeps == 0 {
 		c.PolishingMaxSweeps = defaults.PolishingMaxSweeps
 	}
+
 	if c.PolishingEpochs == 0 {
 		c.PolishingEpochs = defaults.PolishingEpochs
 	}
+
 	if c.PolishingIters == 0 {
 		c.PolishingIters = defaults.PolishingIters
 	}
@@ -451,12 +471,15 @@ func (c *JobConfig) ApplyDefaults() error {
 	if c.PolishingPopSize == 0 {
 		c.PolishingPopSize = defaults.PolishingPopSize
 	}
+
 	if c.PolishingStagnationIters == 0 {
 		c.PolishingStagnationIters = defaults.PolishingStagnationIters
 	}
+
 	if c.PolishingMinImprovement == 0 {
 		c.PolishingMinImprovement = defaults.PolishingMinImprovement
 	}
+
 	if c.Threads == 0 {
 		c.Threads = defaults.Threads
 	}
@@ -466,25 +489,33 @@ func (c *JobConfig) ApplyDefaults() error {
 	if c.EvaluationWorkers == 0 {
 		c.EvaluationWorkers = c.Threads
 	}
+
 	if !c.EnableTrace && !c.DisableTrace {
 		c.EnableTrace = defaults.EnableTrace
 	}
+
 	if c.DisableTrace {
 		c.EnableTrace = false
 	}
+
 	if !c.ConvergenceEnabled && !c.DisableConvergence {
 		c.ConvergenceEnabled = defaults.ConvergenceEnabled
 	}
+
 	if c.DisableConvergence {
 		c.ConvergenceEnabled = false
 	}
+
 	if c.ConvergencePatience == 0 {
 		c.ConvergencePatience = defaults.ConvergencePatience
 	}
+
 	if c.ConvergenceThreshold == 0 {
 		c.ConvergenceThreshold = defaults.ConvergenceThreshold
 	}
+
 	c.InitialCircles.ApplyDefaults()
+
 	if c.EffectiveSeed == 0 {
 		if c.Seed != 0 {
 			c.EffectiveSeed = c.Seed
@@ -493,9 +524,11 @@ func (c *JobConfig) ApplyDefaults() error {
 			if err != nil {
 				return fmt.Errorf("resolve random seed: %w", err)
 			}
+
 			c.EffectiveSeed = seed
 		}
 	}
+
 	return nil
 }
 
@@ -504,27 +537,33 @@ func (c JobConfig) Validate() error {
 	if c.RefPath == "" {
 		return invalid("refPath", "is required")
 	}
+
 	switch c.Mode {
 	case ModeJoint, ModeSequential, ModeBatch:
 	default:
 		return invalid("mode", "must be joint, sequential, or batch")
 	}
+
 	switch c.Backend {
 	case BackendCPU, BackendOpenCL:
 	default:
 		return invalid("backend", "must be cpu or opencl")
 	}
+
 	switch c.Variant {
 	case VariantStandard, VariantDESMA, VariantOLCE:
 	default:
 		return invalid("variant", "is unsupported")
 	}
+
 	if c.Circles < 1 || c.Circles > MaxCircles {
 		return invalid("circles", fmt.Sprintf("must be between 1 and %d", MaxCircles))
 	}
+
 	if c.Iters < 1 || c.Iters > MaxIterations {
 		return invalid("iters", fmt.Sprintf("must be between 1 and %d", MaxIterations))
 	}
+
 	if c.PopSize < MinPopulation || c.PopSize > MaxPopulation {
 		return invalid("popSize", fmt.Sprintf("must be between %d and %d", MinPopulation, MaxPopulation))
 	}
@@ -537,32 +576,41 @@ func (c JobConfig) Validate() error {
 			MaxPopulationDimensions/dimensions,
 		))
 	}
+
 	if c.OptimizerEpochs < 1 || c.OptimizerEpochs > MaxOptimizerEpochs {
 		return invalid("optimizerEpochs", fmt.Sprintf("must be between 1 and %d", MaxOptimizerEpochs))
 	}
+
 	if c.BatchSize < 1 || c.BatchSize > MaxBatchSize || c.Mode == ModeBatch && c.BatchSize > c.Circles {
 		return invalid("batchSize", "must be positive, within the limit, and no larger than circles")
 	}
+
 	if c.PolishingEnabled && c.Mode != ModeBatch {
 		return invalid("polishingEnabled", "requires batch mode")
 	}
+
 	if c.PolishingOnly && !c.PolishingEnabled {
 		return invalid("polishingOnly", "requires polishing to be enabled")
 	}
+
 	switch c.PolishingStrategy {
 	case PolishingReplacement, PolishingHybridOverlap, PolishingResidualRegion, PolishingContiguousWindow:
 	default:
 		return invalid("polishingStrategy", "must be replacement, hybrid-overlap, residual-region, or contiguous-window")
 	}
+
 	if c.PolishingActiveSetSize < 1 || c.PolishingActiveSetSize > MaxBatchSize || c.PolishingActiveSetSize > c.Circles {
 		return invalid("polishingActiveSetSize", "must be positive, within the limit, and no larger than circles")
 	}
+
 	if c.PolishingMaxSweeps < 1 || c.PolishingMaxSweeps > MaxPolishingSweeps {
 		return invalid("polishingMaxSweeps", fmt.Sprintf("must be between 1 and %d", MaxPolishingSweeps))
 	}
+
 	if c.PolishingEpochs < 1 || c.PolishingEpochs > MaxOptimizerEpochs {
 		return invalid("polishingEpochs", fmt.Sprintf("must be between 1 and %d", MaxOptimizerEpochs))
 	}
+
 	if c.PolishingIters < 1 || c.PolishingIters > MaxIterations {
 		return invalid("polishingIters", fmt.Sprintf("must be between 1 and %d", MaxIterations))
 	}
@@ -579,12 +627,15 @@ func (c JobConfig) Validate() error {
 	if c.PolishingPopSize != 0 && (c.PolishingPopSize < MinPopulation || c.PolishingPopSize > MaxPopulation) {
 		return invalid("polishingPopSize", fmt.Sprintf("must be between %d and %d", MinPopulation, MaxPopulation))
 	}
+
 	if c.PolishingStagnationIters < 1 || c.PolishingStagnationIters > c.PolishingIters {
 		return invalid("polishingStagnationIters", "must be positive and no larger than polishingIters")
 	}
+
 	if math.IsNaN(c.PolishingMinImprovement) || math.IsInf(c.PolishingMinImprovement, 0) || c.PolishingMinImprovement <= 0 {
 		return invalid("polishingMinImprovement", "must be finite and positive")
 	}
+
 	if c.Threads < 1 {
 		return invalid("threads", "must be positive")
 	}
@@ -594,24 +645,31 @@ func (c JobConfig) Validate() error {
 	if c.EvaluationWorkers < 0 {
 		return invalid("evaluationWorkers", "cannot be negative")
 	}
+
 	if c.CheckpointInterval < 0 {
 		return invalid("checkpointInterval", "cannot be negative")
 	}
+
 	if c.TraceInterval < 0 {
 		return invalid("traceInterval", "cannot be negative")
 	}
+
 	if c.ConvergencePatience < 1 || c.ConvergencePatience > 100 {
 		return invalid("convergencePatience", "must be between 1 and 100")
 	}
+
 	if math.IsNaN(c.ConvergenceThreshold) || math.IsInf(c.ConvergenceThreshold, 0) || c.ConvergenceThreshold < 0 || c.ConvergenceThreshold > 1 {
 		return invalid("convergenceThreshold", "must be finite and between 0 and 1")
 	}
+
 	if c.ResumeCount < 0 {
 		return invalid("resumeCount", "cannot be negative")
 	}
+
 	if math.IsNaN(c.StopTargetCost) || math.IsInf(c.StopTargetCost, 0) || c.StopTargetCost < 0 {
 		return invalid("stopTargetCost", "must be finite and non-negative")
 	}
+
 	if math.IsNaN(c.StopMinImprovement) || math.IsInf(c.StopMinImprovement, 0) || c.StopMinImprovement < 0 {
 		return invalid("stopMinImprovement", "must be finite and non-negative")
 	}
@@ -625,9 +683,11 @@ func (c JobConfig) Validate() error {
 	if c.StopStagnationIters < 0 || c.StopStagnationIters > c.Iters {
 		return invalid("stopStagnationIters", fmt.Sprintf("must be between 0 and iters (%d)", c.Iters))
 	}
+
 	if c.StopMinIters < 0 || c.StopMinIters > c.Iters {
 		return invalid("stopMinIters", fmt.Sprintf("must be between 0 and iters (%d)", c.Iters))
 	}
+
 	if len(c.InitialCircles) > 0 {
 		// Batch mode only, because that is the mode whose optimizer receives the
 		// whole vector at once. Sequential and joint runs build their vector as
@@ -636,6 +696,7 @@ func (c JobConfig) Validate() error {
 		if c.Mode != ModeBatch {
 			return invalid("initialCircles", "requires batch mode")
 		}
+
 		if len(c.InitialCircles) != c.Circles {
 			return invalid("initialCircles", fmt.Sprintf("must supply exactly circles (%d) entries, got %d", c.Circles, len(c.InitialCircles)))
 		}
@@ -647,21 +708,28 @@ func (c JobConfig) Validate() error {
 		if c.BatchSize < c.Circles {
 			return invalid("initialCircles", fmt.Sprintf("requires batchSize to cover every circle (batchSize %d, circles %d)", c.BatchSize, c.Circles))
 		}
-		if err := c.InitialCircles.Validate(); err != nil {
+
+		err := c.InitialCircles.Validate()
+		if err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
 // Normalize applies defaults and validates a configuration in one operation.
 func Normalize(config JobConfig) (JobConfig, error) {
-	if err := config.ApplyDefaults(); err != nil {
+	err := config.ApplyDefaults()
+	if err != nil {
 		return JobConfig{}, err
 	}
-	if err := config.Validate(); err != nil {
+
+	err = config.Validate()
+	if err != nil {
 		return JobConfig{}, err
 	}
+
 	return config, nil
 }
 
@@ -679,12 +747,17 @@ func Normalize(config JobConfig) (JobConfig, error) {
 // no configuration field — a request envelope's own fields, say — are ignored.
 func NormalizeRequest(body []byte, config JobConfig) (JobConfig, error) {
 	var present map[string]json.RawMessage
-	if err := json.Unmarshal(body, &present); err != nil {
+
+	err := json.Unmarshal(body, &present)
+	if err != nil {
 		return JobConfig{}, invalid("request", "must be a JSON object")
 	}
-	if err := validateNoDefaultOverrides("", present, config); err != nil {
+
+	err = validateNoDefaultOverrides("", present, config)
+	if err != nil {
 		return JobConfig{}, err
 	}
+
 	return Normalize(config)
 }
 
@@ -694,9 +767,11 @@ func ValidateImageDimensions(width, height int) error {
 	if width <= 0 || height <= 0 {
 		return invalid("image", "dimensions must be positive")
 	}
+
 	if width > MaxImagePixels/height {
 		return invalid("image", fmt.Sprintf("exceeds the %d pixel limit", MaxImagePixels))
 	}
+
 	return nil
 }
 
@@ -718,12 +793,15 @@ func randomSeed() (int64, error) {
 	if _, err := cryptorand.Read(data[:]); err != nil {
 		return 0, err
 	}
+
 	seed := int64(binary.LittleEndian.Uint64(data[:]) & math.MaxInt64)
 	if seed == 0 {
 		seed = time.Now().UnixNano()
 	}
+
 	if seed == 0 {
 		return 0, errors.New("random source produced a zero seed")
 	}
+
 	return seed, nil
 }

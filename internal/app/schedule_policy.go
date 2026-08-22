@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 )
 
@@ -48,28 +49,36 @@ func (c *ScheduleCondition) validate(field func(string) string) error {
 	if c == nil {
 		return nil
 	}
+
 	if len(c.Circles) > MaxScheduleConditionCircles {
 		return invalid(field("when.circles"), fmt.Sprintf("must list at most %d circle counts", MaxScheduleConditionCircles))
 	}
+
 	seen := make(map[int]bool, len(c.Circles))
 	for _, circles := range c.Circles {
 		if circles < 1 || circles > MaxCircles {
 			return invalid(field("when.circles"), fmt.Sprintf("must hold counts between 1 and %d", MaxCircles))
 		}
+
 		if seen[circles] {
 			return invalid(field("when.circles"), fmt.Sprintf("lists %d twice", circles))
 		}
+
 		seen[circles] = true
 	}
+
 	if (c.MinGain == nil) != (c.AbortAfterBarren == nil) {
 		return invalid(field("when.minGain"), "and when.abortAfterBarren must be given together; neither means anything alone")
 	}
+
 	if c.MinGain != nil && *c.MinGain < 0 {
 		return invalid(field("when.minGain"), "cannot be negative")
 	}
+
 	if c.AbortAfterBarren != nil && (*c.AbortAfterBarren < 1 || *c.AbortAfterBarren > MaxScheduleStages) {
 		return invalid(field("when.abortAfterBarren"), fmt.Sprintf("must be between 1 and %d", MaxScheduleStages))
 	}
+
 	return nil
 }
 
@@ -133,16 +142,20 @@ func EvaluateScheduleStage(plan []ScheduleStage, index int, outcomes []ScheduleS
 	if index < 0 || index >= len(plan) {
 		return ScheduleStageVerdict{Run: true}
 	}
+
 	stage := plan[index]
+
 	when := stage.When
 	if when == nil {
 		return ScheduleStageVerdict{Run: true}
 	}
+
 	if len(when.Circles) > 0 && !containsInt(when.Circles, stage.Circles) {
 		return ScheduleStageVerdict{Reason: fmt.Sprintf(
 			"%s is scheduled only at %v circles, and this stage sits at %d",
 			stage.Kind, when.Circles, stage.Circles)}
 	}
+
 	if when.AbortAfterBarren != nil && when.MinGain != nil {
 		limit := *when.AbortAfterBarren
 		if streak := barrenStreak(outcomes, stage.Kind, index, *when.MinGain); streak >= limit {
@@ -151,6 +164,7 @@ func EvaluateScheduleStage(plan []ScheduleStage, index int, outcomes []ScheduleS
 				streak, stage.Kind, *when.MinGain)}
 		}
 	}
+
 	return ScheduleStageVerdict{Run: true}
 }
 
@@ -172,29 +186,30 @@ func barrenStreak(outcomes []ScheduleStageOutcome, kind ScheduleStageKind, befor
 			completed = append(completed, outcome)
 		}
 	}
+
 	sort.Slice(completed, func(i, j int) bool { return completed[i].Index < completed[j].Index })
 
 	streak := 0
-	for i := len(completed) - 1; i >= 0; i-- {
-		if completed[i].Kind != kind {
+
+	for i, c := range slices.Backward(completed) {
+		if c.Kind != kind {
 			continue
 		}
-		if i == 0 || !completed[i].CostMeasured || !completed[i-1].CostMeasured {
+
+		if i == 0 || !c.CostMeasured || !completed[i-1].CostMeasured {
 			break
 		}
-		if completed[i-1].BestCost-completed[i].BestCost >= minGain {
+
+		if completed[i-1].BestCost-c.BestCost >= minGain {
 			break
 		}
+
 		streak++
 	}
+
 	return streak
 }
 
 func containsInt(values []int, want int) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, want)
 }

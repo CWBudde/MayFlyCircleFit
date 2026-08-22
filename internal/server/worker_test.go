@@ -26,6 +26,7 @@ import (
 
 func TestRendererForJobConfiguresThreads(t *testing.T) {
 	ref := image.NewNRGBA(image.Rect(0, 0, 32, 32))
+
 	rend, cleanup, err := rendererForJob(JobConfig{Backend: "cpu", Threads: 1}, ref, 2)
 	if err != nil {
 		t.Fatal(err)
@@ -36,6 +37,7 @@ func TestRendererForJobConfiguresThreads(t *testing.T) {
 	if !ok {
 		t.Fatalf("renderer type = %T, want *renderer.CPURenderer", rend)
 	}
+
 	if cpu.Threads() != 1 {
 		t.Fatalf("renderer threads = %d, want 1", cpu.Threads())
 	}
@@ -60,8 +62,8 @@ func TestRunJob_Success(t *testing.T) {
 	job := jm.CreateJob(app.DefaultProject, config)
 
 	ctx := context.Background()
-	err := runJob(ctx, jm, nil, job.ID)
 
+	err := runJob(ctx, jm, nil, job.ID)
 	if err != nil {
 		t.Errorf("runJob should succeed: %v", err)
 	}
@@ -87,11 +89,14 @@ func TestRunJobRecordsPSNRAndOptionalSSIM(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createTestImage(t, imgPath)
+
 	persistence, err := store.NewFSStore(filepath.Join(tmpDir, "artifacts"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	jm := NewJobManager()
+
 	job := jm.CreateJob(app.DefaultProject, JobConfig{
 		RefPath: imgPath, Mode: "joint", Circles: 2, Iters: 5, PopSize: 20, Seed: 42,
 		EnableTrace: true, EnableSSIM: true,
@@ -104,6 +109,7 @@ func TestRunJobRecordsPSNRAndOptionalSSIM(t *testing.T) {
 	if completed.PSNR == nil || completed.PSNRInfinite || completed.SSIM == nil {
 		t.Fatalf("completed metrics unavailable: PSNR=%v infinite=%v SSIM=%v", completed.PSNR, completed.PSNRInfinite, completed.SSIM)
 	}
+
 	if len(completed.MetricHistory) < 2 || completed.MetricHistory[len(completed.MetricHistory)-1].SSIM == nil {
 		t.Fatalf("metric history missing initial/final samples: %+v", completed.MetricHistory)
 	}
@@ -113,13 +119,16 @@ func TestRunJobRecordsPSNRAndOptionalSSIM(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reader.Close()
+
 	entries, err := reader.ReadAll()
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(entries) < 2 || entries[0].PSNR == nil || entries[0].SSIM == nil {
 		t.Fatalf("initial trace metrics unavailable: %+v", entries)
 	}
+
 	last := entries[len(entries)-1]
 	if last.PSNR == nil || last.SSIM == nil {
 		t.Fatalf("final trace metrics unavailable: %+v", last)
@@ -130,10 +139,12 @@ func TestRunJobPersistsExactFinalResultWithoutPeriodicCheckpointing(t *testing.T
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createTestImage(t, imgPath)
+
 	persistence, err := store.NewFSStore(filepath.Join(tmpDir, "artifacts"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	jm := NewJobManager()
 	job := jm.CreateJob(app.DefaultProject, JobConfig{
 		RefPath: imgPath, Mode: "joint", Circles: 2, Iters: 5, PopSize: 20, Seed: 42,
@@ -143,11 +154,14 @@ func TestRunJobPersistsExactFinalResultWithoutPeriodicCheckpointing(t *testing.T
 	if err := runJob(context.Background(), jm, persistence, job.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	completed, _ := jm.GetJob(job.ID)
+
 	checkpoint, err := persistence.LoadCheckpoint(job.ID)
 	if err != nil {
 		t.Fatalf("load final checkpoint: %v", err)
 	}
+
 	if checkpoint.BestCost != completed.BestCost ||
 		checkpoint.Iterations != completed.Iterations ||
 		checkpoint.Evaluations != int64(completed.Evaluations) ||
@@ -155,11 +169,13 @@ func TestRunJobPersistsExactFinalResultWithoutPeriodicCheckpointing(t *testing.T
 		!reflect.DeepEqual(checkpoint.BestParams, completed.BestParams) {
 		t.Fatalf("checkpoint does not match completed job:\ncheckpoint=%+v\njob=%+v", checkpoint, completed)
 	}
+
 	for _, artifact := range []store.Artifact{store.ArtifactBest, store.ArtifactDiff} {
 		path, err := persistence.ArtifactPath(job.ID, artifact)
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if _, err := os.Stat(path); err != nil {
 			t.Errorf("stat final artifact %s: %v", artifact, err)
 		}
@@ -171,22 +187,27 @@ func TestLoadRetainedPrefixCanvasVerifiesArtifactCost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	parentID := "00000000-0000-4000-8000-000000000163"
 	ref := image.NewNRGBA(image.Rect(0, 0, 4, 4))
 	canvas := image.NewNRGBA(ref.Bounds())
+
 	for y := range 4 {
 		for x := range 4 {
 			canvas.SetNRGBA(x, y, color.NRGBA{R: uint8(x * 40), G: uint8(y * 50), B: uint8((x + y) * 30), A: 255})
 		}
 	}
+
 	if err := fsStore.SavePNGArtifact(parentID, store.ArtifactBest, canvas); err != nil {
 		t.Fatal(err)
 	}
+
 	job := &Job{
 		ID:           "00000000-0000-4000-8000-000000000164",
 		ExtendedFrom: parentID,
 		BestCost:     fit.FastMSECost(canvas, ref),
 	}
+
 	loaded := loadRetainedPrefixCanvas(fsStore, job, ref)
 	if loaded == nil || !reflect.DeepEqual(loaded.Pix, canvas.Pix) {
 		t.Fatal("matching retained prefix artifact was not loaded exactly")
@@ -220,9 +241,11 @@ func TestSaveCheckpointArtifactsReusesFinalImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	ref := image.NewNRGBA(image.Rect(0, 0, 4, 4))
 	best := image.NewNRGBA(ref.Bounds())
 	probe := &artifactRenderProbe{reference: ref}
+
 	jobID := "00000000-0000-4000-8000-000000000165"
 	if err := saveCheckpointArtifacts(
 		fsStore,
@@ -234,6 +257,7 @@ func TestSaveCheckpointArtifactsReusesFinalImage(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
+
 	if probe.renders != 0 {
 		t.Fatalf("artifact persistence replayed final parameters %d times", probe.renders)
 	}
@@ -243,6 +267,7 @@ func TestSaveCheckpointArtifactsReusesFinalImage(t *testing.T) {
 // instant its final checkpoint was written.
 type observingWorkerStore struct {
 	*store.FSStore
+
 	jm            *JobManager
 	stateAtSave   JobState
 	sawCheckpoint bool
@@ -253,6 +278,7 @@ func (s *observingWorkerStore) SaveCheckpoint(jobID string, checkpoint *store.Ch
 		s.stateAtSave = job.State
 		s.sawCheckpoint = true
 	}
+
 	return s.FSStore.SaveCheckpoint(jobID, checkpoint)
 }
 
@@ -266,10 +292,12 @@ func TestRunJobPublishesCompletionOnlyAfterTheCheckpointIsDurable(t *testing.T) 
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createTestImage(t, imgPath)
+
 	fsStore, err := store.NewFSStore(filepath.Join(tmpDir, "artifacts"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	jm := NewJobManager()
 	persistence := &observingWorkerStore{FSStore: fsStore, jm: jm}
 	job := jm.CreateJob(app.DefaultProject, JobConfig{
@@ -279,19 +307,24 @@ func TestRunJobPublishesCompletionOnlyAfterTheCheckpointIsDurable(t *testing.T) 
 	if err := runJob(context.Background(), jm, persistence, job.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	if !persistence.sawCheckpoint {
 		t.Fatal("the job never wrote a final checkpoint")
 	}
+
 	if persistence.stateAtSave == StateCompleted {
 		t.Fatal("the job was already completed while its checkpoint was still being written")
 	}
+
 	if persistence.stateAtSave != StateRunning {
 		t.Fatalf("job state during the final checkpoint = %q, want running", persistence.stateAtSave)
 	}
+
 	settled, _ := jm.GetJob(job.ID)
 	if settled.State != StateCompleted {
 		t.Fatalf("job state after runJob = %q, want completed", settled.State)
 	}
+
 	if _, err := persistence.LoadCheckpoint(job.ID); err != nil {
 		t.Fatalf("a completed job has no checkpoint to continue from: %v", err)
 	}
@@ -299,20 +332,25 @@ func TestRunJobPublishesCompletionOnlyAfterTheCheckpointIsDurable(t *testing.T) 
 
 func TestRunJobRefusesToRecordAFinalResultForASettledJob(t *testing.T) {
 	jm := NewJobManager()
+
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "ref.png", Mode: "batch", Circles: 1})
 	if err := jm.StartJob(job.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := jm.CancelJob(job.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	err := jm.RecordFinalResult(job.ID, 1, 1, []float64{1, 2, 3, 4, 5, 6, 7}, 1, 2, "completed")
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("RecordFinalResult on a cancelled job = %v, want ErrInvalidTransition", err)
 	}
+
 	if err := jm.MarkJobCompleted(job.ID); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("MarkJobCompleted on a cancelled job = %v, want ErrInvalidTransition", err)
 	}
+
 	settled, _ := jm.GetJob(job.ID)
 	if settled.State != StateCancelled {
 		t.Fatalf("job state = %q, want cancelled", settled.State)
@@ -321,6 +359,7 @@ func TestRunJobRefusesToRecordAFinalResultForASettledJob(t *testing.T) {
 
 type faultingWorkerStore struct {
 	*store.FSStore
+
 	checkpointErr error
 	artifactErrs  map[store.Artifact]error
 	artifactMu    sync.Mutex
@@ -331,6 +370,7 @@ func (s *faultingWorkerStore) SaveCheckpoint(jobID string, checkpoint *store.Che
 	if s.checkpointErr != nil {
 		return s.checkpointErr
 	}
+
 	return s.FSStore.SaveCheckpoint(jobID, checkpoint)
 }
 
@@ -338,9 +378,12 @@ func (s *faultingWorkerStore) SavePNGArtifact(jobID string, artifact store.Artif
 	s.artifactMu.Lock()
 	s.artifactCalls = append(s.artifactCalls, artifact)
 	s.artifactMu.Unlock()
-	if err := s.artifactErrs[artifact]; err != nil {
+
+	err := s.artifactErrs[artifact]
+	if err != nil {
 		return err
 	}
+
 	return s.FSStore.SavePNGArtifact(jobID, artifact, img)
 }
 
@@ -371,10 +414,12 @@ func TestRunJobReportsFinalPersistenceFailuresAndAttemptsBothArtifacts(t *testin
 			tmpDir := t.TempDir()
 			imgPath := filepath.Join(tmpDir, "test.png")
 			createTestImage(t, imgPath)
+
 			fsStore, err := store.NewFSStore(filepath.Join(tmpDir, "artifacts"))
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			persistence := &faultingWorkerStore{
 				FSStore: fsStore, checkpointErr: test.checkpointErr, artifactErrs: test.artifactErrs,
 			}
@@ -387,22 +432,27 @@ func TestRunJobReportsFinalPersistenceFailuresAndAttemptsBothArtifacts(t *testin
 			if runErr == nil {
 				t.Fatal("runJob returned nil after final persistence failure")
 			}
+
 			for _, want := range test.wantErrors {
 				if !strings.Contains(runErr.Error(), want) {
 					t.Errorf("runJob error %q does not contain %q", runErr, want)
 				}
 			}
+
 			completed, _ := jm.GetJob(job.ID)
 			if completed.State != StateCompleted || completed.Error != "failed to persist final result" {
 				t.Fatalf("completed job did not expose persistence failure: state=%s error=%q", completed.State, completed.Error)
 			}
+
 			persistence.artifactMu.Lock()
 			calls := append([]store.Artifact(nil), persistence.artifactCalls...)
 			persistence.artifactMu.Unlock()
+
 			counts := make(map[store.Artifact]int, len(calls))
 			for _, artifact := range calls {
 				counts[artifact]++
 			}
+
 			if counts[store.ArtifactBest] != 1 || counts[store.ArtifactDiff] != 1 || len(calls) != 2 {
 				t.Fatalf("artifact calls = %v, want best.png and diff.png once each", calls)
 			}
@@ -414,6 +464,7 @@ func TestRunJobExecutesConfiguredBatchPolishing(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createTestImage(t, imgPath)
+
 	jm := NewJobManager()
 	job := jm.CreateJob(app.DefaultProject, JobConfig{
 		RefPath:                  imgPath,
@@ -439,16 +490,20 @@ func TestRunJobExecutesConfiguredBatchPolishing(t *testing.T) {
 		DisableConvergence:       true,
 	})
 
-	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
+	err := runJob(context.Background(), jm, nil, job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	completed, ok := jm.GetJob(job.ID)
 	if !ok {
 		t.Fatal("completed job not found")
 	}
+
 	if completed.State != StateCompleted || len(completed.BestParams) != 7 {
 		t.Fatalf("completed polished job = state %s params %d", completed.State, len(completed.BestParams))
 	}
+
 	if completed.Iterations <= job.Config.Iters {
 		t.Fatalf("iterations = %d, want work from initial stage plus polishing", completed.Iterations)
 	}
@@ -463,6 +518,7 @@ func TestRunJobPolishesAtTheConfiguredEvaluationWidth(t *testing.T) {
 	if runtime.GOMAXPROCS(0) < 2 {
 		t.Skip("needs at least two processors to enable parallel evaluation")
 	}
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createTestImage(t, imgPath)
@@ -494,13 +550,16 @@ func TestRunJobPolishesAtTheConfiguredEvaluationWidth(t *testing.T) {
 		DisableConvergence:       true,
 	})
 
-	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
+	err := runJob(context.Background(), jm, nil, job.ID)
+	if err != nil {
 		t.Fatalf("parallel polishing job failed: %v", err)
 	}
+
 	completed, ok := jm.GetJob(job.ID)
 	if !ok {
 		t.Fatal("completed job not found")
 	}
+
 	if completed.State != StateCompleted || len(completed.BestParams) != 14 {
 		t.Fatalf("completed polished job = state %s params %d, error %q",
 			completed.State, len(completed.BestParams), completed.Error)
@@ -548,9 +607,11 @@ func TestRunJobPolishesAtItsOwnPopulation(t *testing.T) {
 		DisableConvergence:       true,
 	})
 
-	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
+	err := runJob(context.Background(), jm, nil, job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	if population := polishingPopulationFromLogs(t, logs.String()); population != 20 {
 		t.Fatalf("polishing population = %d, want the configured 20 rather than the job's 200", population)
 	}
@@ -576,21 +637,27 @@ func polishingWidthFromLogs(t *testing.T, logs string) int {
 // record.
 func polishingRecordField(t *testing.T, logs, key string) int {
 	t.Helper()
+
 	for line := range strings.SplitSeq(logs, "\n") {
 		if !strings.Contains(line, "Batch polishing complete") {
 			continue
 		}
+
 		_, rest, ok := strings.Cut(line, key)
 		if !ok {
 			t.Fatalf("polishing completion record has no %s: %s", key, line)
 		}
+
 		value, err := strconv.Atoi(strings.Fields(rest)[0])
 		if err != nil {
 			t.Fatalf("%s is not a number in %q: %v", key, line, err)
 		}
+
 		return value
 	}
+
 	t.Fatalf("no polishing completion record in logs: %s", logs)
+
 	return 0
 }
 
@@ -598,6 +665,7 @@ func TestRunJobPolishingOnlyContinuesCompleteBatch(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createTestImage(t, imgPath)
+
 	jm := NewJobManager()
 	config := JobConfig{
 		RefPath: imgPath, Mode: app.ModeBatch, Backend: app.BackendCPU, Variant: app.VariantStandard,
@@ -609,23 +677,28 @@ func TestRunJobPolishingOnlyContinuesCompleteBatch(t *testing.T) {
 	}
 	job := jm.CreateJob(app.DefaultProject, config)
 	params := []float64{25, 25, 10, 1, 0, 0, 1}
-	if err := jm.UpdateJob(job.ID, func(live *Job) {
+
+	err := jm.UpdateJob(job.ID, func(live *Job) {
 		live.BestParams = append([]float64(nil), params...)
 		live.BestCost = 1000
 		live.InitialCost = 2000
 		live.Iterations = 8000
 		live.Evaluations = 900000
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
+	err = runJob(context.Background(), jm, nil, job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	completed, _ := jm.GetJob(job.ID)
 	if completed.State != StateCompleted || len(completed.BestParams) != 7 {
 		t.Fatalf("polishing continuation = state %s params %d", completed.State, len(completed.BestParams))
 	}
+
 	if completed.Iterations <= 8000 || completed.Evaluations <= 900000 {
 		t.Fatalf("continuation work = %d/%d, want counters beyond checkpoint", completed.Iterations, completed.Evaluations)
 	}
@@ -633,10 +706,12 @@ func TestRunJobPolishingOnlyContinuesCompleteBatch(t *testing.T) {
 
 func TestInheritedContiguousWindowVisitCountsReplaysPolishLineage(t *testing.T) {
 	tmpDir := t.TempDir()
+
 	persistence, err := store.NewFSStore(filepath.Join(tmpDir, "data"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	baseConfig, err := app.Normalize(JobConfig{
 		RefPath: "ref.png", Mode: app.ModeBatch, Circles: 10, BatchSize: 10,
 		Iters: 2, OptimizerEpochs: 1, PopSize: 20, Seed: 42,
@@ -648,16 +723,21 @@ func TestInheritedContiguousWindowVisitCountsReplaysPolishLineage(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	params := make([]float64, baseConfig.Circles*app.ParamsPerCircle)
 	rootID := "00000000-0000-4000-8000-000000000170"
 	parentID := "00000000-0000-4000-8000-000000000171"
 	saveParent := func(jobID, polishedFrom string, config JobConfig) {
 		t.Helper()
+
 		checkpoint := store.NewCheckpoint(jobID, params, 100, 200, 10, config)
 		checkpoint.Evaluations = 100
 		checkpoint.Termination = "completed"
+
 		checkpoint.PolishedFrom = polishedFrom
-		if err := persistence.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+		err := persistence.SaveCheckpoint(jobID, checkpoint)
+		if err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -672,18 +752,22 @@ func TestInheritedContiguousWindowVisitCountsReplaysPolishLineage(t *testing.T) 
 		BestParams:   params,
 		PolishedFrom: parentID,
 	}
+
 	got, err := inheritedContiguousWindowVisitCounts(persistence, job)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	_, want, err := renderer.PlanContiguousWindows(10, 3, 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	_, want, err = renderer.PlanContiguousWindows(10, 3, 1, want)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("inherited visits = %v, want replayed lineage %v", got, want)
 	}
@@ -694,6 +778,7 @@ func TestInheritedContiguousWindowVisitCountsRejectsBrokenLineage(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	config, err := app.Normalize(JobConfig{
 		RefPath: "ref.png", Mode: app.ModeBatch, Circles: 2, BatchSize: 2,
 		Iters: 2, PopSize: 20, Seed: 42, PolishingEnabled: true, PolishingOnly: true,
@@ -704,6 +789,7 @@ func TestInheritedContiguousWindowVisitCountsRejectsBrokenLineage(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	job := &Job{
 		ID:           "00000000-0000-4000-8000-000000000173",
 		Config:       config,
@@ -718,15 +804,20 @@ func TestInheritedContiguousWindowVisitCountsRejectsBrokenLineage(t *testing.T) 
 	secondID := "00000000-0000-4000-8000-000000000177"
 	save := func(jobID, polishedFrom string, checkpointConfig JobConfig) {
 		t.Helper()
+
 		checkpoint := store.NewCheckpoint(jobID, job.BestParams, 100, 200, 10, checkpointConfig)
 		checkpoint.Termination = "completed"
+
 		checkpoint.PolishedFrom = polishedFrom
-		if err := persistence.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+		err := persistence.SaveCheckpoint(jobID, checkpoint)
+		if err != nil {
 			t.Fatal(err)
 		}
 	}
 	save(firstID, secondID, config)
 	save(secondID, firstID, config)
+
 	job.PolishedFrom = firstID
 	if _, err := inheritedContiguousWindowVisitCounts(persistence, job); err == nil || !strings.Contains(err.Error(), "cyclic") {
 		t.Fatalf("cyclic lineage error = %v, want an explicit cycle error", err)
@@ -737,10 +828,12 @@ func TestInheritedContiguousWindowVisitCountsRejectsBrokenLineage(t *testing.T) 
 	incompatible.PolishingStrategy = app.PolishingResidualRegion
 	save(incompatibleID, "00000000-0000-4000-8000-000000000179", incompatible)
 	job.PolishedFrom = incompatibleID
+
 	visits, err := inheritedContiguousWindowVisitCounts(persistence, job)
 	if err != nil {
 		t.Fatalf("incompatible strategy should end coverage history: %v", err)
 	}
+
 	if visits != nil {
 		t.Fatalf("incompatible strategy visits = %v, want a fresh history", visits)
 	}
@@ -750,10 +843,12 @@ func TestRunJobContiguousWindowContinuationIsDeterministicForSameParentAndSeed(t
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createTestImage(t, imgPath)
+
 	persistence, err := store.NewFSStore(filepath.Join(tmpDir, "data"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	config, err := app.Normalize(JobConfig{
 		RefPath: imgPath, Mode: app.ModeBatch, Backend: app.BackendCPU,
 		Circles: 2, BatchSize: 2, Iters: 2, OptimizerEpochs: 1, PopSize: 20,
@@ -766,12 +861,14 @@ func TestRunJobContiguousWindowContinuationIsDeterministicForSameParentAndSeed(t
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	params := []float64{
 		15, 15, 10, 1, 0, 0, 1,
 		35, 35, 8, 0, 0, 1, 1,
 	}
 	parentID := "00000000-0000-4000-8000-000000000175"
 	parent := store.NewCheckpoint(parentID, params, 1000, 2000, 10, config)
+
 	parent.Termination = "completed"
 	if err := persistence.SaveCheckpoint(parentID, parent); err != nil {
 		t.Fatal(err)
@@ -780,22 +877,30 @@ func TestRunJobContiguousWindowContinuationIsDeterministicForSameParentAndSeed(t
 	jm := NewJobManager()
 	run := func() *Job {
 		t.Helper()
+
 		job := jm.CreateJob(app.DefaultProject, config)
-		if err := jm.UpdateJob(job.ID, func(live *Job) {
+
+		err := jm.UpdateJob(job.ID, func(live *Job) {
 			updateBestResult(live, params, parent.BestCost)
 			live.InitialCost = parent.InitialCost
 			live.Iterations = parent.Iterations
 			live.Evaluations = int(parent.Evaluations)
 			live.PolishedFrom = parentID
-		}); err != nil {
+		})
+		if err != nil {
 			t.Fatal(err)
 		}
-		if err := runJob(context.Background(), jm, persistence, job.ID); err != nil {
+
+		err = runJob(context.Background(), jm, persistence, job.ID)
+		if err != nil {
 			t.Fatal(err)
 		}
+
 		completed, _ := jm.GetJob(job.ID)
+
 		return completed
 	}
+
 	first, second := run(), run()
 	if first.BestCost != second.BestCost || !reflect.DeepEqual(first.BestParams, second.BestParams) {
 		t.Fatalf("same parent/config/seed diverged: first cost=%v params=%v second cost=%v params=%v",
@@ -807,6 +912,7 @@ func TestRunJobResumesSingleStageBatch(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createTestImage(t, imgPath)
+
 	jm := NewJobManager()
 	job := jm.CreateJob(app.DefaultProject, JobConfig{
 		RefPath: imgPath, Mode: app.ModeBatch, Backend: app.BackendCPU, Variant: app.VariantStandard,
@@ -814,22 +920,27 @@ func TestRunJobResumesSingleStageBatch(t *testing.T) {
 		Seed: 42, EffectiveSeed: 42, ResumeCount: 1, DisableConvergence: true,
 	})
 	params := []float64{25, 25, 10, 1, 0, 0, 1}
-	if err := jm.UpdateJob(job.ID, func(live *Job) {
+
+	err := jm.UpdateJob(job.ID, func(live *Job) {
 		updateBestResult(live, params, 1000)
 		live.InitialCost = 2000
 		live.Iterations = 10
 		live.Evaluations = 100
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
+	err = runJob(context.Background(), jm, nil, job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	completed, _ := jm.GetJob(job.ID)
 	if completed.State != StateCompleted || len(completed.BestParams) != 7 {
 		t.Fatalf("resumed batch = state %s params %d", completed.State, len(completed.BestParams))
 	}
+
 	if completed.Iterations <= 10 || completed.Evaluations <= 100 {
 		t.Fatalf("resumed work = %d/%d, want counters beyond checkpoint", completed.Iterations, completed.Evaluations)
 	}
@@ -839,6 +950,7 @@ func TestRunJobAppendsBatchSuffix(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createTestImage(t, imgPath)
+
 	jm := NewJobManager()
 	job := jm.CreateJob(app.DefaultProject, JobConfig{
 		RefPath: imgPath, Mode: app.ModeBatch, Backend: app.BackendCPU, Variant: app.VariantStandard,
@@ -846,25 +958,31 @@ func TestRunJobAppendsBatchSuffix(t *testing.T) {
 		Seed: 42, EffectiveSeed: 42, ResumeCount: 1, DisableConvergence: true,
 	})
 	prefix := []float64{25, 25, 10, 1, 0, 0, 1}
-	if err := jm.UpdateJob(job.ID, func(live *Job) {
+
+	err := jm.UpdateJob(job.ID, func(live *Job) {
 		updateBestResult(live, prefix, 1e9)
 		live.InitialCost = 2000
 		live.Iterations = 10
 		live.Evaluations = 100
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
+	err = runJob(context.Background(), jm, nil, job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	completed, _ := jm.GetJob(job.ID)
 	if completed.State != StateCompleted || len(completed.BestParams) != 14 {
 		t.Fatalf("extended batch = state %s params %d", completed.State, len(completed.BestParams))
 	}
+
 	if !reflect.DeepEqual(completed.BestParams[:len(prefix)], prefix) {
 		t.Fatalf("prefix changed during append: got %v want %v", completed.BestParams[:len(prefix)], prefix)
 	}
+
 	if completed.Iterations <= 10 || completed.Evaluations <= 100 {
 		t.Fatalf("extension work = %d/%d, want counters beyond checkpoint", completed.Iterations, completed.Evaluations)
 	}
@@ -884,8 +1002,8 @@ func TestRunJob_InvalidImage(t *testing.T) {
 	job := jm.CreateJob(app.DefaultProject, config)
 
 	ctx := context.Background()
-	err := runJob(ctx, jm, nil, job.ID)
 
+	err := runJob(ctx, jm, nil, job.ID)
 	if err == nil {
 		t.Error("runJob should fail with invalid image path")
 	}
@@ -932,7 +1050,6 @@ func TestRunJob_Cancellation(t *testing.T) {
 
 	// Wait for completion
 	err := <-done
-
 	if err == nil {
 		t.Error("runJob should return error when cancelled")
 	}
@@ -944,15 +1061,15 @@ func TestRunJob_Cancellation(t *testing.T) {
 	}
 }
 
-// Helper function to create a simple test image
+// Helper function to create a simple test image.
 func createTestImage(t *testing.T, path string) {
 	img := image.NewNRGBA(image.Rect(0, 0, 50, 50))
 	white := color.NRGBA{255, 255, 255, 255}
 	red := color.NRGBA{255, 0, 0, 255}
 
 	// Fill with white
-	for y := 0; y < 50; y++ {
-		for x := 0; x < 50; x++ {
+	for y := range 50 {
+		for x := range 50 {
 			img.Set(x, y, white)
 		}
 	}
@@ -1009,9 +1126,12 @@ func (epochCallbackOptimizer) RunContext(_ context.Context, _ opt.Problem, optio
 	if options.ProgressMapper != nil {
 		progress = options.ProgressMapper(progress)
 	}
-	if err := options.EpochObserver(opt.EpochBoundary{Epoch: 1, Progress: progress, Termination: opt.TerminationCompleted}); err != nil {
+
+	err := options.EpochObserver(opt.EpochBoundary{Epoch: 1, Progress: progress, Termination: opt.TerminationCompleted})
+	if err != nil {
 		return opt.Result{}, err
 	}
+
 	return opt.Result{BestParams: []float64{4}, BestCost: 5, Iterations: 2, Evaluations: 3, Termination: opt.TerminationCompleted}, nil
 }
 
@@ -1038,6 +1158,7 @@ func TestProgressOptimizerPreservesTermination(t *testing.T) {
 	for _, reason := range reasons {
 		t.Run(string(reason), func(t *testing.T) {
 			wrapped := &progressOptimizer{base: terminationOptimizer{reason: reason}}
+
 			result, err := wrapped.RunContext(context.Background(), opt.Problem{
 				Eval:  func([]float64) float64 { return 1 },
 				Lower: []float64{0},
@@ -1047,6 +1168,7 @@ func TestProgressOptimizerPreservesTermination(t *testing.T) {
 			if err != nil {
 				t.Fatalf("RunContext() error = %v", err)
 			}
+
 			if result.Termination != reason {
 				t.Fatalf("Termination = %q, want %q", result.Termination, reason)
 			}
@@ -1057,12 +1179,14 @@ func TestProgressOptimizerPreservesTermination(t *testing.T) {
 func TestProgressOptimizerForwardsPipelineInitialSeed(t *testing.T) {
 	base := &optionsCaptureOptimizer{}
 	wrapped := &progressOptimizer{base: base}
+
 	initial := &opt.Candidate{Params: []float64{0.75}, Cost: 2}
 	if _, err := wrapped.RunContext(context.Background(), opt.Problem{
 		Eval: func([]float64) float64 { return 1 }, Lower: []float64{0}, Upper: []float64{1}, Dim: 1,
 	}, opt.RunOptions{Initial: initial, ResumeCount: 3}); err != nil {
 		t.Fatal(err)
 	}
+
 	if base.options.Initial != initial || base.options.ResumeCount != 3 {
 		t.Fatalf("forwarded options = %+v, want initial seed and resume count 3", base.options)
 	}
@@ -1079,6 +1203,7 @@ func TestProgressOptimizerMapsAndOffsetsEpochBoundary(t *testing.T) {
 		iterations:  10,
 		evaluations: 20,
 	}
+
 	_, err := wrapped.RunContext(context.Background(), opt.Problem{
 		Eval: func([]float64) float64 { return 1 }, Lower: []float64{0}, Upper: []float64{1}, Dim: 1,
 	}, opt.RunOptions{ProgressMapper: func(progress opt.Progress) opt.Progress {
@@ -1088,9 +1213,11 @@ func TestProgressOptimizerMapsAndOffsetsEpochBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if boundary.Progress.Iterations != 12 || boundary.Progress.Evaluations != 23 {
 		t.Fatalf("boundary work = %+v, want offsets 12/23", boundary.Progress)
 	}
+
 	if !reflect.DeepEqual(boundary.Progress.BestParams, []float64{9, 4}) {
 		t.Fatalf("boundary params = %v, want complete mapped vector", boundary.Progress.BestParams)
 	}
@@ -1099,6 +1226,7 @@ func TestProgressOptimizerMapsAndOffsetsEpochBoundary(t *testing.T) {
 func TestSafeJobError(t *testing.T) {
 	t.Run("staged optimization unsupported", func(t *testing.T) {
 		got := safeJobError(renderer.ErrStagedOptimizationUnsupported)
+
 		want := "selected backend does not support this optimization mode"
 		if got != want {
 			t.Fatalf("safeJobError() = %q, want %q", got, want)
@@ -1106,6 +1234,7 @@ func TestSafeJobError(t *testing.T) {
 	})
 	t.Run("invalid optimization input", func(t *testing.T) {
 		got := safeJobError(renderer.ErrInvalidOptimizationInput)
+
 		want := "optimizer produced an invalid result"
 		if got != want {
 			t.Fatalf("safeJobError() = %q, want %q", got, want)
@@ -1119,6 +1248,7 @@ func TestSafeJobError(t *testing.T) {
 	})
 	t.Run("generic", func(t *testing.T) {
 		got := safeJobError(errors.New("boom"))
+
 		want := "job execution failed"
 		if got != want {
 			t.Fatalf("safeJobError() = %q, want %q", got, want)
@@ -1151,6 +1281,7 @@ func TestEvaluationWidthReportsWhatRanNotWhatWasAsked(t *testing.T) {
 	if width != runtime.GOMAXPROCS(0) {
 		t.Fatalf("effective width = %d, want the GOMAXPROCS clamp %d", width, runtime.GOMAXPROCS(0))
 	}
+
 	if width >= oversized {
 		t.Fatalf("effective width %d still reflects the unclamped request %d", width, oversized)
 	}
@@ -1162,6 +1293,7 @@ func TestEvaluationWidthReportsWhatRanNotWhatWasAsked(t *testing.T) {
 // were a deliberate setting.
 func TestEvaluationWidthIsZeroWithoutParallelEvaluation(t *testing.T) {
 	ref := image.NewNRGBA(image.Rect(0, 0, 32, 32))
+
 	rend, cleanup, err := rendererForJob(JobConfig{
 		Backend:           "cpu",
 		Threads:           2,

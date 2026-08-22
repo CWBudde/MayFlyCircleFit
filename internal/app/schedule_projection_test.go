@@ -7,7 +7,7 @@ import (
 )
 
 // projectionPlan is a small campaign with both kinds and one conditional
-// polish: base, extend, extend, polish (conditional), extend.
+// polish: base, extend, polish (conditional), extend.
 const projectionSteps = `[
     {"type": "extend", "repeat": 2, "additionalCircles": 8},
     {"type": "polish", "when": {"circles": [24], "minGain": 1.0, "abortAfterBarren": 2}},
@@ -16,13 +16,16 @@ const projectionSteps = `[
 
 func projectionPlan(t *testing.T) []ScheduleStage {
 	t.Helper()
+
 	plan, err := documentWithSteps(t, projectionSteps).Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	if len(plan) != 5 {
 		t.Fatalf("planned stages = %d, want 5", len(plan))
 	}
+
 	return plan
 }
 
@@ -76,18 +79,23 @@ func TestProjectScheduleFinishRefusesToGuess(t *testing.T) {
 			if projection.Complete {
 				t.Fatalf("projection claimed a finish time from %d timings", len(testCase.timings))
 			}
+
 			if !projection.FinishBy.IsZero() || projection.Remaining != 0 {
 				t.Fatalf("an incomplete projection still reported %v by %v", projection.Remaining, projection.FinishBy)
 			}
+
 			for _, kind := range projection.Kinds {
 				if kind.Kind != testCase.wantNoteFor {
 					continue
 				}
+
 				if !strings.Contains(kind.Note, "insufficient data") {
 					t.Fatalf("%s note = %q, want it to report insufficient data", kind.Kind, kind.Note)
 				}
+
 				return
 			}
+
 			t.Fatalf("no entry for %s in the projection", testCase.wantNoteFor)
 		})
 	}
@@ -110,6 +118,7 @@ func TestProjectScheduleFinishDerivesEachKindSeparately(t *testing.T) {
 		completed(2, ScheduleStageExtend, 3*time.Minute),
 		completed(99, ScheduleStagePolish, time.Hour),
 	}
+
 	projection := ProjectScheduleFinish(plan, timings, asOf)
 	if projection.Complete {
 		t.Fatal("the polish kind has no in-plan samples, yet the projection was complete")
@@ -133,6 +142,7 @@ func TestProjectScheduleFinishDerivesEachKindSeparately(t *testing.T) {
 	if projection.Remaining != want {
 		t.Fatalf("remaining = %v, want %v", projection.Remaining, want)
 	}
+
 	if projection.FinishBy != asOf.Add(want) {
 		t.Fatalf("finish = %v, want %v", projection.FinishBy, asOf.Add(want))
 	}
@@ -176,9 +186,11 @@ func TestProjectScheduleFinishSeparatesConditionalWork(t *testing.T) {
 	if want := 7 * time.Minute; projection.Remaining != want {
 		t.Fatalf("remaining = %v, want %v", projection.Remaining, want)
 	}
+
 	if want := 2 * time.Minute; projection.Firm != want {
 		t.Fatalf("firm remaining = %v, want %v with the conditional polish removed", projection.Firm, want)
 	}
+
 	if projection.EarliestFinish != asOf.Add(2*time.Minute) {
 		t.Fatalf("earliest finish = %v, want %v", projection.EarliestFinish, asOf.Add(2*time.Minute))
 	}

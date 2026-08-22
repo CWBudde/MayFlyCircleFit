@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -123,6 +124,7 @@ func parallelEvaluationOption(config app.JobConfig, rend renderer.Renderer) opt.
 		slog.Warn("Parallel evaluation requested but unavailable; evaluating serially",
 			"backend", config.Backend, "evaluationWorkers", config.EvaluationWorkers)
 	}
+
 	return option
 }
 
@@ -145,6 +147,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return NewUsageError(fmt.Errorf("invalid backend: %w", err))
 	}
+
 	config, err := app.Normalize(app.JobConfig{
 		RefPath:                  refPath,
 		CanvasPath:               canvasPath,
@@ -202,6 +205,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	config.PolishingPopSize = polishingPopSize
 	config.PolishingStagnationIters = polishingStagnationIters
 	config.Threads = threads
+
 	config.ConvergencePatience = patience
 	if err := config.Validate(); err != nil {
 		return NewUsageError(fmt.Errorf("invalid configuration: %w", err))
@@ -217,14 +221,18 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		// close runs. The profile is a diagnostic, so a failed close is
 		// logged rather than promoted over the command's own result.
 		defer func() {
-			if err := f.Close(); err != nil {
+			err := f.Close()
+			if err != nil {
 				slog.Error("Failed to close CPU profile", "output", cpuProfile, "error", err)
 			}
 		}()
+
 		if err := pprof.StartCPUProfile(f); err != nil {
 			return fmt.Errorf("failed to start CPU profile: %w", err)
 		}
+
 		defer pprof.StopCPUProfile()
+
 		slog.Info("CPU profiling enabled", "output", cpuProfile)
 	}
 
@@ -247,6 +255,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	if err := app.ValidateImageDimensions(bounds.Dx(), bounds.Dy()); err != nil {
 		return err
 	}
+
 	ref := image.NewNRGBA(bounds)
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
@@ -258,6 +267,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 
 	// Load canvas image if specified
 	var canvas *image.NRGBA
+
 	if canvasPath != "" {
 		slog.Info("Loading canvas", "path", canvasPath)
 
@@ -271,6 +281,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to decode canvas: %w", err)
 		}
+
 		if canvasImg.Bounds().Dx() != bounds.Dx() || canvasImg.Bounds().Dy() != bounds.Dy() {
 			return fmt.Errorf("canvas dimensions %dx%d do not match reference %dx%d", canvasImg.Bounds().Dx(), canvasImg.Bounds().Dy(), bounds.Dx(), bounds.Dy())
 		}
@@ -297,15 +308,17 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		} else {
 			rend = renderer.NewCPURenderer(ref, config.Circles)
 		}
+
 		cpuRenderer := rend.(*renderer.CPURenderer)
 		renderer.ConfigureCPUParallelism(cpuRenderer, config.Threads, config.EvaluationWorkers, config.ParallelEvaluation)
 		renderer.ConfigureCPUCompositing(cpuRenderer, config.FastCompositing)
 		renderer.LogCPURendererConfiguration(cpuRenderer)
+
 		cleanup = func() {} // No cleanup needed for CPU renderer
 	} else {
 		// Other backends don't support canvas yet
 		if canvas != nil {
-			return NewUsageError(fmt.Errorf("canvas loading only supported with CPU backend"))
+			return NewUsageError(errors.New("canvas loading only supported with CPU backend"))
 		}
 		// The compositing and parallelism knobs are CPU-renderer settings. A
 		// non-CPU backend ignores them, which is fine, but silently ignoring a
@@ -315,11 +328,13 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 				"backend", config.Backend)
 		}
 		var err error
+
 		rend, cleanup, err = renderer.NewRendererForBackend(string(config.Backend), ref, config.Circles)
 		if err != nil {
 			return fmt.Errorf("failed to create renderer: %w", err)
 		}
 	}
+
 	defer cleanup()
 
 	// Create optimizer
@@ -329,6 +344,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("create optimizer: %w", err)
 	}
+
 	optimizer = opt.WithEpochs(optimizer, config.OptimizerEpochs)
 
 	// Create convergence config
@@ -355,6 +371,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		result, err = renderer.OptimizeBatch(rend, optimizer, config.Circles, config.BatchSize, convergenceConfig)
 		if err == nil && config.PolishingEnabled && result.OptimizedCircles == config.Circles {
 			var polishOptimizer opt.Optimizer
+
 			polishOptimizer, err = opt.NewMayflyVariant(string(app.VariantStandard), config.PolishingIters, config.PolishingPopSize, config.EffectiveSeed,
 				opt.WithLogger(slog.Default()),
 				opt.WithEarlyStop(opt.Stop{
@@ -365,6 +382,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 			if err == nil {
 				polishOptimizer = opt.WithEpochs(polishOptimizer, config.PolishingEpochs)
 				var polished *renderer.BatchPolishResult
+
 				polished, err = renderer.PolishCircleBatchContext(cmd.Context(), rend, polishOptimizer, result.BestParams, renderer.BatchPolishOptions{
 					ActiveSetSize: config.PolishingActiveSetSize,
 					MaxSweeps:     config.PolishingMaxSweeps,
@@ -388,6 +406,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	default:
 		return fmt.Errorf("unknown mode: %s", config.Mode)
 	}
+
 	if err != nil {
 		return fmt.Errorf("optimization failed: %w", err)
 	}
@@ -397,9 +416,10 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	// BestImage is rendered by the same backend session and base canvas used by
 	// the objective, so the saved output cannot diverge from the reported cost.
 	actualCircles := len(result.BestParams) / 7
+
 	output := result.BestImage
 	if output == nil {
-		return fmt.Errorf("optimizer returned no final image")
+		return errors.New("optimizer returned no final image")
 	}
 
 	// Save output
@@ -414,11 +434,13 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	cps := float64(totalCircles) / elapsed.Seconds()
 	psnr := fit.PSNR(result.BestCost)
 	var ssim *float64
+
 	if config.EnableSSIM {
 		value, err := fit.SSIM(output, ref)
 		if err != nil {
 			return fmt.Errorf("calculate final SSIM: %w", err)
 		}
+
 		ssim = &value
 	}
 
@@ -438,12 +460,14 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	if ssim != nil {
 		logAttrs = append(logAttrs, "ssim", *ssim)
 	}
+
 	slog.Info("Optimization complete", logAttrs...)
 
 	qualitySummary := fmt.Sprintf(", PSNR %.2f dB", psnr)
 	if math.IsInf(psnr, 1) {
 		qualitySummary = ", PSNR ∞ dB"
 	}
+
 	if ssim != nil {
 		qualitySummary += fmt.Sprintf(", SSIM %.4f", *ssim)
 	}
@@ -462,7 +486,9 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to create memory profile: %w", err)
 		}
+
 		runtime.GC() // Run GC to get accurate heap stats
+
 		if err := pprof.WriteHeapProfile(f); err != nil {
 			_ = f.Close()
 			return fmt.Errorf("failed to write memory profile: %w", err)
@@ -473,6 +499,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		if err := f.Close(); err != nil {
 			return fmt.Errorf("failed to close memory profile: %w", err)
 		}
+
 		slog.Info("Memory profile written", "output", memProfile)
 	}
 

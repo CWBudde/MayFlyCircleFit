@@ -14,6 +14,7 @@ func TestRunThreadsFlagDefaultsToGOMAXPROCS(t *testing.T) {
 	if flag == nil {
 		t.Fatal("run command has no --threads flag")
 	}
+
 	if want := strconv.Itoa(runtime.GOMAXPROCS(0)); flag.DefValue != want {
 		t.Fatalf("--threads default = %q, want %q", flag.DefValue, want)
 	}
@@ -38,6 +39,7 @@ func TestRunEarlyStopFlagsDefaultToDisabled(t *testing.T) {
 			if flag == nil {
 				t.Fatalf("run command has no --%s flag", name)
 			}
+
 			if flag.DefValue != want {
 				t.Fatalf("--%s default = %q, want %q", name, flag.DefValue, want)
 			}
@@ -50,6 +52,7 @@ func TestRunVariantFlagDefaultsToStandard(t *testing.T) {
 	if flag == nil {
 		t.Fatal("run command has no --variant flag")
 	}
+
 	if flag.DefValue != "standard" {
 		t.Fatalf("--variant default = %q, want %q", flag.DefValue, "standard")
 	}
@@ -60,9 +63,11 @@ func TestRunBackendFlagDefaultsToCPU(t *testing.T) {
 	if flag == nil {
 		t.Fatal("run command has no --backend flag")
 	}
+
 	if flag.DefValue != "cpu" {
 		t.Fatalf("--backend default = %q, want cpu", flag.DefValue)
 	}
+
 	if !strings.Contains(flag.Usage, "gpu") {
 		t.Fatalf("--backend usage = %q, want alias help", flag.Usage)
 	}
@@ -73,6 +78,7 @@ func TestRunSSIMFlagDefaultsToDisabled(t *testing.T) {
 	if flag == nil {
 		t.Fatal("run command has no --enable-ssim flag")
 	}
+
 	if flag.DefValue != "false" {
 		t.Fatalf("--enable-ssim default = %q, want false", flag.DefValue)
 	}
@@ -114,9 +120,11 @@ func TestRunPolishingPopulationFlagMatchesConfigDefault(t *testing.T) {
 	if flag == nil {
 		t.Fatal("--polishing-pop is not registered")
 	}
+
 	if want := strconv.Itoa(app.DefaultConfig().PolishingPopSize); flag.DefValue != want {
 		t.Errorf("--polishing-pop default = %q, want %q", flag.DefValue, want)
 	}
+
 	if app.DefaultConfig().PolishingPopSize == app.DefaultConfig().PopSize {
 		return
 	}

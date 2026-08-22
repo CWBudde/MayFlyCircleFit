@@ -5,10 +5,10 @@ import (
 	"math"
 )
 
-// CostFunc computes the error between current and reference images
+// CostFunc computes the error between current and reference images.
 type CostFunc func(current, reference *image.NRGBA) float64
 
-// MSECost computes Mean Squared Error over sRGB channels
+// MSECost computes Mean Squared Error over sRGB channels.
 func MSECost(current, reference *image.NRGBA) float64 {
 	bounds := current.Bounds()
 	width := bounds.Dx()
@@ -19,13 +19,14 @@ func MSECost(current, reference *image.NRGBA) float64 {
 	}
 
 	var sum float64
+
 	numPixels := width * height
 	if numPixels == 0 {
 		return math.Inf(1)
 	}
 
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for y := range height {
+		for x := range width {
 			currentOffset := y*current.Stride + x*4
 			referenceOffset := y*reference.Stride + x*4
 

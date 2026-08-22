@@ -9,7 +9,7 @@ import (
 
 // ---------------------- Scalar Variant Equivalence Tests ----------------------
 
-// TestScalarVariants_Equivalence ensures all scalar variants produce identical results
+// TestScalarVariants_Equivalence ensures all scalar variants produce identical results.
 func TestScalarVariants_Equivalence(t *testing.T) {
 	sizes := []struct {
 		width, height int
@@ -54,7 +54,7 @@ func TestScalarVariants_Equivalence(t *testing.T) {
 	}
 }
 
-// TestScalarVariants_EdgeCases tests scalar variants with edge case dimensions
+// TestScalarVariants_EdgeCases tests scalar variants with edge case dimensions.
 func TestScalarVariants_EdgeCases(t *testing.T) {
 	edgeCases := []struct {
 		name          string
@@ -89,7 +89,7 @@ func TestScalarVariants_EdgeCases(t *testing.T) {
 
 // ---------------------- Scalar Implementation Selection Tests ----------------------
 
-// TestSetScalarImplementation tests that variant selection works correctly
+// TestSetScalarImplementation tests that variant selection works correctly.
 func TestSetScalarImplementation(t *testing.T) {
 	// Save original implementation
 	originalImpl := GetScalarImplementation()
@@ -126,7 +126,7 @@ func TestSetScalarImplementation(t *testing.T) {
 	}
 }
 
-// TestScalarImplementation_String tests string representation
+// TestScalarImplementation_String tests string representation.
 func TestScalarImplementation_String(t *testing.T) {
 	tests := []struct {
 		impl     scalarImplementation
@@ -147,7 +147,7 @@ func TestScalarImplementation_String(t *testing.T) {
 
 // ---------------------- Performance Benchmarks ----------------------
 
-// BenchmarkScalarNaive benchmarks the naive reference implementation
+// BenchmarkScalarNaive benchmarks the naive reference implementation.
 func BenchmarkScalarNaive(b *testing.B) {
 	SetScalarImplementation(scalarNaive)
 	defer SetScalarImplementation(scalarUnrolled4)
@@ -156,7 +156,8 @@ func BenchmarkScalarNaive(b *testing.B) {
 	img2 := randomNRGBA(256, 256, 2)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for range b.N {
 		ssdScalarNaive(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 	}
 
@@ -164,13 +165,14 @@ func BenchmarkScalarNaive(b *testing.B) {
 	b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
 }
 
-// BenchmarkScalarUnrolled4 benchmarks the 4-way unrolled implementation (default)
+// BenchmarkScalarUnrolled4 benchmarks the 4-way unrolled implementation (default).
 func BenchmarkScalarUnrolled4(b *testing.B) {
 	img1 := randomNRGBA(256, 256, 1)
 	img2 := randomNRGBA(256, 256, 2)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for range b.N {
 		ssdScalar(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 	}
 
@@ -178,13 +180,14 @@ func BenchmarkScalarUnrolled4(b *testing.B) {
 	b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
 }
 
-// BenchmarkScalarUnrolled8 benchmarks the 8-way unrolled implementation
+// BenchmarkScalarUnrolled8 benchmarks the 8-way unrolled implementation.
 func BenchmarkScalarUnrolled8(b *testing.B) {
 	img1 := randomNRGBA(256, 256, 1)
 	img2 := randomNRGBA(256, 256, 2)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for range b.N {
 		ssdScalarUnrolled8(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 	}
 
@@ -192,7 +195,7 @@ func BenchmarkScalarUnrolled8(b *testing.B) {
 	b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
 }
 
-// BenchmarkScalarVariants_Comparison compares all scalar variants side-by-side
+// BenchmarkScalarVariants_Comparison compares all scalar variants side-by-side.
 func BenchmarkScalarVariants_Comparison(b *testing.B) {
 	sizes := []struct {
 		name          string
@@ -221,9 +224,11 @@ func BenchmarkScalarVariants_Comparison(b *testing.B) {
 			name := fmt.Sprintf("%s_%s", sz.name, variant.name)
 			b.Run(name, func(b *testing.B) {
 				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
+
+				for range b.N {
 					variant.fn(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height)
 				}
+
 				mpixelsPerSec := BenchmarkSSDBackend(b.N, sz.width, sz.height, b.Elapsed().Nanoseconds())
 				b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
 			})
@@ -231,7 +236,7 @@ func BenchmarkScalarVariants_Comparison(b *testing.B) {
 	}
 }
 
-// BenchmarkScalarVsMSECost compares scalar SSD against original MSECost
+// BenchmarkScalarVsMSECost compares scalar SSD against original MSECost.
 func BenchmarkScalarVsMSECost(b *testing.B) {
 	sizes := []struct {
 		name          string
@@ -248,18 +253,22 @@ func BenchmarkScalarVsMSECost(b *testing.B) {
 
 		b.Run(sz.name+"_MSECost", func(b *testing.B) {
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+
+			for range b.N {
 				MSECost(img1, img2)
 			}
+
 			mpixelsPerSec := BenchmarkSSDBackend(b.N, sz.width, sz.height, b.Elapsed().Nanoseconds())
 			b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
 		})
 
 		b.Run(sz.name+"_scalarUnrolled4", func(b *testing.B) {
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+
+			for range b.N {
 				ssdScalar(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height)
 			}
+
 			mpixelsPerSec := BenchmarkSSDBackend(b.N, sz.width, sz.height, b.Elapsed().Nanoseconds())
 			b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
 		})
@@ -268,7 +277,7 @@ func BenchmarkScalarVsMSECost(b *testing.B) {
 
 // ---------------------- Correctness Tests for Unrolled Code ----------------------
 
-// TestScalarUnrolling_RemainderHandling tests that remainder pixels are processed correctly
+// TestScalarUnrolling_RemainderHandling tests that remainder pixels are processed correctly.
 func TestScalarUnrolling_RemainderHandling(t *testing.T) {
 	// Test widths that leave different remainders after unrolling
 	widths := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33}
@@ -295,7 +304,7 @@ func TestScalarUnrolling_RemainderHandling(t *testing.T) {
 	}
 }
 
-// TestScalarUnrolling_ExactMultiples tests unrolling with exact multiples of unroll factor
+// TestScalarUnrolling_ExactMultiples tests unrolling with exact multiples of unroll factor.
 func TestScalarUnrolling_ExactMultiples(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -324,7 +333,7 @@ func TestScalarUnrolling_ExactMultiples(t *testing.T) {
 	}
 }
 
-// TestScalarInt32_NoOverflow tests that int32 arithmetic doesn't overflow
+// TestScalarInt32_NoOverflow tests that int32 arithmetic doesn't overflow.
 func TestScalarInt32_NoOverflow(t *testing.T) {
 	// Create worst-case scenario: maximum differences (255 - 0 = 255)
 	// Squared: 255^2 = 65,025
@@ -332,7 +341,6 @@ func TestScalarInt32_NoOverflow(t *testing.T) {
 	// Unroll4 accumulates 4 pixels: 4 × 195,075 = 780,300
 	// Unroll8 accumulates 8 pixels: 8 × 195,075 = 1,560,600
 	// Both fit in int32 max: 2,147,483,647
-
 	white := solidColorNRGBA(100, 100, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	black := solidColorNRGBA(100, 100, color.NRGBA{R: 0, G: 0, B: 0, A: 255})
 

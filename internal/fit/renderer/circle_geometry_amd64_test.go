@@ -18,6 +18,7 @@ func TestCircleSpanFloat32AVX2MatchesScalar(t *testing.T) {
 
 	for _, test := range circleSpanFloat32Cases {
 		wantStart, wantEnd := circleSpanFloat32(test.center, test.remaining, test.width)
+
 		gotStart, gotEnd := circleSpanFloat32AVX2(test.center, test.remaining, test.width)
 		if gotStart != wantStart || gotEnd != wantEnd {
 			t.Fatalf("%s: circleSpanFloat32AVX2(%v, %v, %d) = [%d,%d), want [%d,%d)",
@@ -32,6 +33,7 @@ func TestCircleSpanFloat32AVX2MatchesScalar(t *testing.T) {
 		radius := rng.Float32() * float32(width)
 		remaining := radius * radius * rng.Float32()
 		wantStart, wantEnd := circleSpanFloat32(center, remaining, width)
+
 		gotStart, gotEnd := circleSpanFloat32AVX2(center, remaining, width)
 		if gotStart != wantStart || gotEnd != wantEnd {
 			t.Fatalf("random circleSpanFloat32AVX2(%v, %v, %d) = [%d,%d), want [%d,%d)",
@@ -86,12 +88,14 @@ func TestCircleSpanFloat32KernelMatchesTier(t *testing.T) {
 	if fit.Tier() == fit.TierAVX2 {
 		want = fit.TierAVX2
 	}
+
 	if circleSpanFloat32Kernel != want {
 		t.Fatalf("float32 geometry kernel = %s, want %s at tier %s", circleSpanFloat32Kernel, want, fit.Tier())
 	}
 
 	for _, test := range circleSpanFloat32Cases {
 		wantStart, wantEnd := circleSpanFloat32(test.center, test.remaining, test.width)
+
 		gotStart, gotEnd := circleSpanFloat32Selected(test.center, test.remaining, test.width)
 		if gotStart != wantStart || gotEnd != wantEnd {
 			t.Fatalf("%s: selected span = [%d,%d), want [%d,%d)",
@@ -105,13 +109,16 @@ func TestCircleSpanFloat32KernelMatchesTier(t *testing.T) {
 // own decision at init.
 func TestCircleSpanFloat32KernelFollowsForcedTier(t *testing.T) {
 	fit.SetForcedTier(fit.TierScalar)
+
 	defer fit.ResetTierDetection()
 
 	if circleSpanFloat32Kernel != fit.TierScalar {
 		t.Fatalf("float32 geometry kernel = %s after forcing scalar", circleSpanFloat32Kernel)
 	}
+
 	for _, test := range circleSpanFloat32Cases {
 		wantStart, wantEnd := circleSpanFloat32(test.center, test.remaining, test.width)
+
 		gotStart, gotEnd := circleSpanFloat32Selected(test.center, test.remaining, test.width)
 		if gotStart != wantStart || gotEnd != wantEnd {
 			t.Fatalf("%s: forced-scalar span = [%d,%d), want [%d,%d)",
@@ -133,13 +140,16 @@ func TestFixedCircleQ16AVX2MatchesScalar(t *testing.T) {
 			Y: rng.Float64() * 1024,
 			R: 0.25 + rng.Float64()*512,
 		}
+
 		fixed, ok := newFixedCircleQ16(c)
 		if !ok {
 			t.Fatalf("ordinary circle outside Q16.16 range: %+v", c)
 		}
+
 		y := rng.Intn(2048) - 512
 
 		wantStart, wantEnd, wantIntersects := fixed.span(y, width)
+
 		gotStart, gotEnd, gotIntersects := fixed.spanAVX2(y, width)
 		if gotStart != wantStart || gotEnd != wantEnd || gotIntersects != wantIntersects {
 			t.Fatalf("case %d: spanAVX2(y=%d, width=%d, circle=%+v) = [%d,%d), %v; want [%d,%d), %v",
@@ -152,6 +162,7 @@ func BenchmarkCircleSpanFloat32AVX2Direct(b *testing.B) {
 	if !cpu.X86.HasAVX2 {
 		b.Skip("AVX2 unavailable")
 	}
+
 	for _, radius := range []float32{5.25, 25.25, 100.25, 256.25} {
 		remaining := radius * radius
 		b.Run("scalar_R"+benchmarkFloatName(radius), func(b *testing.B) {
@@ -173,11 +184,13 @@ func BenchmarkCircleSpanQ16AVX2Direct(b *testing.B) {
 	if !cpu.X86.HasAVX2 {
 		b.Skip("AVX2 unavailable")
 	}
+
 	for _, radius := range []float64{5.25, 25.25, 100.25, 256.25} {
 		fixed, ok := newFixedCircleQ16(fit.Circle{X: 256.125, Y: 0, R: radius})
 		if !ok {
 			b.Fatal("benchmark circle outside Q16.16 range")
 		}
+
 		name := benchmarkFloatName(float32(radius))
 		b.Run("scalar_R"+name, func(b *testing.B) {
 			for range b.N {

@@ -57,6 +57,7 @@ func TestPlannedIterationsCountsTheStageBudget(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Expand() error = %v", err)
 			}
+
 			last := plan[len(plan)-1]
 			if got := last.PlannedIterations(); got != testCase.want {
 				t.Fatalf("PlannedIterations() = %d, want %d", got, testCase.want)
@@ -73,12 +74,14 @@ func TestConditionDescribeStatesBothClauses(t *testing.T) {
 		t.Fatalf("Expand() error = %v", err)
 	}
 	var described string
+
 	for _, stage := range plan {
 		if stage.When != nil {
 			described = stage.When.Describe()
 			break
 		}
 	}
+
 	for _, want := range []string{
 		"only at 32/64/96/128/192/256 circles",
 		"abandoned after 2 consecutive stages gaining less than 1",
@@ -87,6 +90,7 @@ func TestConditionDescribeStatesBothClauses(t *testing.T) {
 			t.Errorf("Describe() = %q, want it to contain %q", described, want)
 		}
 	}
+
 	var unconditional *ScheduleCondition
 	if got := unconditional.Describe(); got != "" {
 		t.Errorf("a nil condition described itself as %q", got)
@@ -126,6 +130,7 @@ func TestReferenceCampaignPlanMatchesTheHandComputation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	summary := SummarizeSchedulePlan(plan)
 
 	const (

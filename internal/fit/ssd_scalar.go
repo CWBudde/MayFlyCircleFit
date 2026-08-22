@@ -43,12 +43,12 @@ package fit
 //   - width:  Image width in pixels
 //   - height: Image height in pixels
 //
-// Returns: Sum of squared differences over RGB channels (alpha ignored)
+// Returns: Sum of squared differences over RGB channels (alpha ignored).
 func ssdScalar(a, b []uint8, stride, width, height int) float64 {
 	var sum float64
 
 	// Process rows sequentially (good cache locality)
-	for y := 0; y < height; y++ {
+	for y := range height {
 		rowStart := y * stride
 
 		// Main loop: process 4 pixels at a time (unrolled)
@@ -116,8 +116,8 @@ func ssdScalar(a, b []uint8, stride, width, height int) float64 {
 func ssdScalarNaive(a, b []uint8, stride, width, height int) float64 {
 	var sum float64
 
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for y := range height {
+		for x := range width {
 			i := y*stride + x*4
 
 			// Extract RGB (ignore alpha at i+3)
@@ -157,7 +157,7 @@ func ssdScalarNaive(a, b []uint8, stride, width, height int) float64 {
 func ssdScalarUnrolled8(a, b []uint8, stride, width, height int) float64 {
 	var sum float64
 
-	for y := 0; y < height; y++ {
+	for y := range height {
 		rowStart := y * stride
 		x := 0
 		pixelsPerRow := width
@@ -229,7 +229,7 @@ func ssdScalarUnrolled8(a, b []uint8, stride, width, height int) float64 {
 
 // ---------------------- Scalar Implementation Selection ----------------------
 
-// scalarImplementation indicates which scalar variant is active
+// scalarImplementation indicates which scalar variant is active.
 type scalarImplementation int
 
 const (

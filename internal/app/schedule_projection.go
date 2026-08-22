@@ -117,8 +117,10 @@ func ProjectScheduleFinish(plan []ScheduleStage, timings []ScheduleStageTiming, 
 		if entry, ok := observed[kind]; ok {
 			return entry
 		}
+
 		entry := &ScheduleKindProjection{Kind: kind}
 		observed[kind] = entry
+
 		return entry
 	}
 
@@ -127,12 +129,14 @@ func ProjectScheduleFinish(plan []ScheduleStage, timings []ScheduleStageTiming, 
 		if timing.Index < 0 || timing.Index >= len(plan) {
 			continue
 		}
+
 		states[timing.Index] = timing.State
 		// Only a completed stage measured anything. A skipped one took no time
 		// and a failed one stopped early, so neither says what a stage costs.
 		if timing.State != ScheduleOutcomeCompleted || timing.Elapsed <= 0 {
 			continue
 		}
+
 		entry := kindOf(timing.Kind)
 		entry.Samples++
 		entry.Observed += timing.Elapsed
@@ -144,6 +148,7 @@ func ProjectScheduleFinish(plan []ScheduleStage, timings []ScheduleStageTiming, 
 		case ScheduleOutcomeCompleted, ScheduleOutcomeSkipped:
 			continue
 		}
+
 		entry.RemainingStages++
 		if stage.When != nil {
 			entry.ConditionalStages++
@@ -151,15 +156,19 @@ func ProjectScheduleFinish(plan []ScheduleStage, timings []ScheduleStageTiming, 
 	}
 
 	projection := ScheduleProjection{AsOf: asOf, Complete: true}
+
 	for _, kind := range []ScheduleStageKind{ScheduleStageBase, ScheduleStageExtend, ScheduleStagePolish} {
 		entry, ok := observed[kind]
 		if !ok {
 			continue
 		}
+
 		finishKindProjection(entry)
+
 		if entry.RemainingStages > 0 && !entry.Projected() {
 			projection.Complete = false
 		}
+
 		projection.RemainingStages += entry.RemainingStages
 		projection.Kinds = append(projection.Kinds, *entry)
 	}
@@ -167,12 +176,15 @@ func ProjectScheduleFinish(plan []ScheduleStage, timings []ScheduleStageTiming, 
 	if !projection.Complete {
 		return projection
 	}
+
 	for _, entry := range projection.Kinds {
 		projection.Remaining += entry.Remaining
 		projection.Firm += entry.Remaining - entry.ConditionalRemaining
 	}
+
 	projection.FinishBy = asOf.Add(projection.Remaining)
 	projection.EarliestFinish = asOf.Add(projection.Firm)
+
 	return projection
 }
 
@@ -182,14 +194,18 @@ func finishKindProjection(entry *ScheduleKindProjection) {
 	if entry.RemainingStages == 0 {
 		return
 	}
+
 	if entry.Samples < MinProjectionSamples {
 		entry.Note = fmt.Sprintf(
 			"insufficient data: %d completed %s stage(s), %d needed before %s stages are projected",
 			entry.Samples, entry.Kind, MinProjectionSamples, entry.Kind)
+
 		return
 	}
+
 	entry.PerStage = entry.Observed / time.Duration(entry.Samples)
 	entry.Remaining = entry.PerStage * time.Duration(entry.RemainingStages)
+
 	entry.ConditionalRemaining = entry.PerStage * time.Duration(entry.ConditionalStages)
 	if entry.Kind == ScheduleStagePolish {
 		entry.Note = "a polish stage costs more as the canvas grows, so this is a lower bound"

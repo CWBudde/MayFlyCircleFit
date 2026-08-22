@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// JobState represents the current state of a job
+// JobState represents the current state of a job.
 type JobState string
 
 const (
@@ -25,10 +25,10 @@ const (
 	StateCancelled JobState = "cancelled"
 )
 
-// JobConfig is an alias to avoid duplication with store.JobConfig
+// JobConfig is an alias to avoid duplication with store.JobConfig.
 type JobConfig = store.JobConfig
 
-// Job represents an optimization job
+// Job represents an optimization job.
 type Job struct {
 	ID      string      `json:"id"`
 	Project app.Project `json:"project"`
@@ -157,7 +157,7 @@ func (e *duplicateJobError) Error() string {
 
 func (e *duplicateJobError) Unwrap() error { return errDuplicateJobID }
 
-// JobManager manages the lifecycle of jobs
+// JobManager manages the lifecycle of jobs.
 type JobManager struct {
 	mu          sync.RWMutex
 	jobs        map[string]*Job
@@ -168,9 +168,10 @@ type JobManager struct {
 	onJobSetChanged func()
 }
 
-// NewJobManager creates a new JobManager
+// NewJobManager creates a new JobManager.
 func NewJobManager() *JobManager {
 	uiEvents := NewUIEventHub()
+
 	return &JobManager{
 		jobs:        make(map[string]*Job),
 		broadcaster: NewEventBroadcaster(uiEvents),
@@ -190,6 +191,7 @@ func (jm *JobManager) CreateJob(project app.Project, config JobConfig) *Job {
 		// contract, so the impossible branch keeps the original behavior.
 		panic(err)
 	}
+
 	return job
 }
 
@@ -205,7 +207,7 @@ func (jm *JobManager) CreateJobWithID(id string, project app.Project, config Job
 	if id == "" {
 		id = uuid.New().String()
 	} else if parsed, err := uuid.Parse(id); err != nil || parsed == uuid.Nil || parsed.String() != id {
-		return nil, fmt.Errorf("job ID must be a canonical non-zero UUID")
+		return nil, errors.New("job ID must be a canonical non-zero UUID")
 	}
 
 	jm.mu.Lock()
@@ -230,14 +232,17 @@ func (jm *JobManager) CreateJobWithID(id string, project app.Project, config Job
 	jm.jobs[job.ID] = job
 	snapshot := cloneJob(job)
 	jm.mu.Unlock()
+
 	if jm.onJobSetChanged != nil {
 		jm.onJobSetChanged()
 	}
+
 	jm.broadcaster.Broadcast(jobProgressSnapshot(snapshot))
+
 	return snapshot, nil
 }
 
-// GetJob retrieves a job by ID
+// GetJob retrieves a job by ID.
 func (jm *JobManager) GetJob(id string) (*Job, bool) {
 	jm.mu.RLock()
 	defer jm.mu.RUnlock()
@@ -246,10 +251,11 @@ func (jm *JobManager) GetJob(id string) (*Job, bool) {
 	if !exists {
 		return nil, false
 	}
+
 	return cloneJob(job), true
 }
 
-// ListJobs returns all jobs
+// ListJobs returns all jobs.
 func (jm *JobManager) ListJobs() []*Job {
 	jm.mu.RLock()
 	defer jm.mu.RUnlock()
@@ -258,12 +264,15 @@ func (jm *JobManager) ListJobs() []*Job {
 	for _, job := range jm.jobs {
 		jobs = append(jobs, cloneJob(job))
 	}
+
 	sort.Slice(jobs, func(i, j int) bool {
 		if jobs[i].StartTime.Equal(jobs[j].StartTime) {
 			return jobs[i].ID < jobs[j].ID
 		}
+
 		return jobs[i].StartTime.After(jobs[j].StartTime)
 	})
+
 	return jobs
 }
 
@@ -285,36 +294,44 @@ func (jm *JobManager) ListJobSummaries() []JobSummary {
 			PolishedFrom: job.PolishedFrom, ScheduleID: job.ScheduleID,
 			Termination: job.Termination, StartTime: job.StartTime, Error: job.Error,
 		}
+
 		summary.CandidateCost = cloneFloat(job.CandidateCost)
 		if job.StageIndex != nil {
 			index := *job.StageIndex
 			summary.StageIndex = &index
 		}
+
 		if job.EndTime != nil {
 			end := *job.EndTime
 			summary.EndTime = &end
 		}
+
 		jobs = append(jobs, summary)
 	}
+
 	sort.Slice(jobs, func(i, j int) bool {
 		if jobs[i].StartTime.Equal(jobs[j].StartTime) {
 			return jobs[i].ID < jobs[j].ID
 		}
+
 		return jobs[i].StartTime.After(jobs[j].StartTime)
 	})
+
 	return jobs
 }
 
 // restoreJob adds a terminal job reconstructed from persisted state.
 func (jm *JobManager) restoreJob(job *Job) error {
 	if job == nil || job.ID == "" {
-		return fmt.Errorf("invalid restored job")
+		return errors.New("invalid restored job")
 	}
+
 	if job.State != StateCompleted && job.State != StateFailed && job.State != StateCancelled {
 		return fmt.Errorf("cannot restore non-terminal job state %q", job.State)
 	}
+
 	if job.StartTime.IsZero() || job.EndTime == nil {
-		return fmt.Errorf("restored job is missing lifecycle timestamps")
+		return errors.New("restored job is missing lifecycle timestamps")
 	}
 
 	jm.mu.Lock()
@@ -322,15 +339,18 @@ func (jm *JobManager) restoreJob(job *Job) error {
 		jm.mu.Unlock()
 		return &duplicateJobError{jobID: job.ID, owner: app.NormalizeProject(existing.Project)}
 	}
+
 	jm.jobs[job.ID] = cloneJob(job)
 	jm.mu.Unlock()
+
 	if jm.onJobSetChanged != nil {
 		jm.onJobSetChanged()
 	}
+
 	return nil
 }
 
-// UpdateJob atomically updates a job using the provided function
+// UpdateJob atomically updates a job using the provided function.
 func (jm *JobManager) UpdateJob(id string, updateFn func(*Job)) error {
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
@@ -341,6 +361,7 @@ func (jm *JobManager) UpdateJob(id string, updateFn func(*Job)) error {
 	}
 
 	updateFn(job)
+
 	return nil
 }
 
@@ -356,19 +377,24 @@ func (jm *JobManager) StartJob(id string) error {
 func (jm *JobManager) UpdateProgress(id string, iterations, evaluations int, bestParams []float64, bestCost float64) error {
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
+
 	job, ok := jm.jobs[id]
 	if !ok {
 		return fmt.Errorf("job not found: %s", id)
 	}
+
 	if job.State != StateRunning {
 		return fmt.Errorf("%w: cannot update %s job", ErrInvalidTransition, job.State)
 	}
+
 	if iterations < job.Iterations || evaluations < job.Evaluations || math.IsNaN(bestCost) {
-		return fmt.Errorf("invalid progress snapshot")
+		return errors.New("invalid progress snapshot")
 	}
+
 	job.Iterations = iterations
 	job.Evaluations = evaluations
 	updateBestResult(job, bestParams, bestCost)
+
 	return nil
 }
 
@@ -378,21 +404,27 @@ func (jm *JobManager) UpdateProgress(id string, iterations, evaluations int, bes
 func (jm *JobManager) UpdateCandidateProgress(id string, iterations, evaluations int, candidateCost float64) error {
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
+
 	job, ok := jm.jobs[id]
 	if !ok {
 		return fmt.Errorf("job not found: %s", id)
 	}
+
 	if job.State != StateRunning {
 		return fmt.Errorf("%w: cannot update %s job", ErrInvalidTransition, job.State)
 	}
+
 	if iterations < job.Iterations || evaluations < job.Evaluations || math.IsNaN(candidateCost) || math.IsInf(candidateCost, 0) {
-		return fmt.Errorf("invalid candidate progress snapshot")
+		return errors.New("invalid candidate progress snapshot")
 	}
+
 	job.Iterations = iterations
+
 	job.Evaluations = evaluations
 	if candidateCost < job.BestCost && (job.CandidateCost == nil || candidateCost < *job.CandidateCost) {
 		job.CandidateCost = cloneFloat(&candidateCost)
 	}
+
 	return nil
 }
 
@@ -408,10 +440,12 @@ func updateBestResult(job *Job, bestParams []float64, bestCost float64) bool {
 	if len(bestParams) == 0 || (len(job.BestParams) > 0 && bestCost >= job.BestCost) {
 		return false
 	}
+
 	job.BestParams = append([]float64(nil), bestParams...)
 	job.ActualCircles = len(bestParams) / app.ParamsPerCircle
 	job.BestCost = bestCost
 	job.BestRevision++
+
 	return true
 }
 
@@ -420,20 +454,24 @@ func updateBestResult(job *Job, bestParams []float64, bestCost float64) bool {
 func (jm *JobManager) getJobState(id string) JobState {
 	jm.mu.RLock()
 	defer jm.mu.RUnlock()
+
 	job, ok := jm.jobs[id]
 	if !ok {
 		return ""
 	}
+
 	return job.State
 }
 
 func (jm *JobManager) bestSnapshot(id string) (float64, uint64, *float64, bool) {
 	jm.mu.RLock()
 	defer jm.mu.RUnlock()
+
 	job, ok := jm.jobs[id]
 	if !ok {
 		return 0, 0, nil, false
 	}
+
 	return job.BestCost, job.BestRevision, cloneFloat(job.CandidateCost), true
 }
 
@@ -442,18 +480,23 @@ func (jm *JobManager) bestSnapshot(id string) (float64, uint64, *float64, bool) 
 func (jm *JobManager) RecordMetrics(id string, sample MetricSample) error {
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
+
 	job, ok := jm.jobs[id]
 	if !ok {
 		return fmt.Errorf("job not found: %s", id)
 	}
+
 	sample.PSNR = cloneFloat(sample.PSNR)
 	sample.SSIM = cloneFloat(sample.SSIM)
 	job.PSNR = cloneFloat(sample.PSNR)
+
 	job.PSNRInfinite = sample.PSNRInfinite
 	if sample.SSIM != nil {
 		job.SSIM = cloneFloat(sample.SSIM)
 	}
+
 	job.MetricHistory = append(job.MetricHistory, sample)
+
 	return nil
 }
 
@@ -472,14 +515,17 @@ func (jm *JobManager) RecordFinalResult(id string, iterations, evaluations int, 
 	if !exists {
 		return fmt.Errorf("job not found: %s", id)
 	}
+
 	if job.State != StateRunning {
 		return fmt.Errorf("%w: cannot record a final result for a %s job", ErrInvalidTransition, job.State)
 	}
+
 	job.Iterations = iterations
 	job.Evaluations = evaluations
 	updateBestResult(job, bestParams, bestCost)
 	job.InitialCost = initialCost
 	job.Termination = termination
+
 	return nil
 }
 
@@ -525,14 +571,18 @@ func (jm *JobManager) PauseJob(id string) error {
 func (jm *JobManager) claimPause(id string) (*Job, error) {
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
+
 	job, ok := jm.jobs[id]
 	if !ok {
 		return nil, store.ErrNotFound
 	}
+
 	if job.State != StateRunning {
 		return nil, fmt.Errorf("%w: job is %s", ErrInvalidTransition, job.State)
 	}
+
 	job.State = StatePaused
+
 	return cloneJob(job), nil
 }
 
@@ -544,50 +594,64 @@ func (jm *JobManager) ResumeJob(id string) error {
 // DeleteJob removes a terminal job. Active jobs must be cancelled first.
 func (jm *JobManager) DeleteJob(id string) error {
 	jm.mu.Lock()
+
 	job, ok := jm.jobs[id]
 	if !ok {
 		jm.mu.Unlock()
 		return fmt.Errorf("job not found: %s", id)
 	}
+
 	if job.State == StatePending || job.State == StateRunning {
 		jm.mu.Unlock()
 		return fmt.Errorf("%w: cannot delete %s job", ErrInvalidTransition, job.State)
 	}
+
 	delete(jm.jobs, id)
 	jm.mu.Unlock()
+
 	if jm.onJobSetChanged != nil {
 		jm.onJobSetChanged()
 	}
+
 	jm.uiEvents.PublishJobDeleted(id)
+
 	return nil
 }
 
 func (jm *JobManager) transition(id string, next JobState, update func(*Job)) error {
 	jm.mu.Lock()
+
 	job, ok := jm.jobs[id]
 	if !ok {
 		jm.mu.Unlock()
 		return fmt.Errorf("job not found: %s", id)
 	}
+
 	if !canTransition(job.State, next) {
 		jm.mu.Unlock()
 		return fmt.Errorf("%w: %s to %s", ErrInvalidTransition, job.State, next)
 	}
+
 	if update != nil {
 		update(job)
 	}
+
 	job.State = next
 	if next == StateCompleted || next == StateFailed || next == StateCancelled {
 		job.CandidateCost = nil
 		end := time.Now()
 		job.EndTime = &end
 	}
+
 	snapshot := cloneJob(job)
 	jm.mu.Unlock()
+
 	if (next == StateCompleted || next == StateFailed || next == StateCancelled) && jm.onJobSetChanged != nil {
 		jm.onJobSetChanged()
 	}
+
 	jm.broadcaster.Broadcast(jobProgressSnapshot(snapshot))
+
 	if next == StateCompleted || next == StateFailed || next == StateCancelled {
 		if snapshot.ScheduleID != "" {
 			jm.uiEvents.PublishCampaignChanged("schedule", snapshot.ScheduleID)
@@ -595,6 +659,7 @@ func (jm *JobManager) transition(id string, next JobState, update func(*Job)) er
 			jm.uiEvents.PublishCampaignChanged("chain", "")
 		}
 	}
+
 	return nil
 }
 
@@ -618,17 +683,19 @@ func canTransition(current, next JobState) bool {
 	}
 }
 
-// GetRunningJobs returns all jobs currently in the running state
+// GetRunningJobs returns all jobs currently in the running state.
 func (jm *JobManager) GetRunningJobs() []*Job {
 	jm.mu.RLock()
 	defer jm.mu.RUnlock()
 
 	runningJobs := make([]*Job, 0)
+
 	for _, job := range jm.jobs {
 		if job.State == StateRunning {
 			runningJobs = append(runningJobs, cloneJob(job))
 		}
 	}
+
 	return runningJobs
 }
 
@@ -638,6 +705,7 @@ func jobElapsed(job *Job) time.Duration {
 	if job.EndTime != nil {
 		return job.EndTime.Sub(job.StartTime)
 	}
+
 	return time.Since(job.StartTime)
 }
 
@@ -649,8 +717,10 @@ func circlesPerSecond(job *Job, elapsed time.Duration) float64 {
 	if elapsed <= 0 {
 		return 0
 	}
+
 	evaluations := max(0, job.Evaluations-job.InheritedEvaluations)
 	totalCircles := evaluations * max(1, len(job.BestParams)/7)
+
 	return float64(totalCircles) / elapsed.Seconds()
 }
 
@@ -667,12 +737,14 @@ func (jm *JobManager) StateCountsWithRunning() (map[JobState]int, []*Job) {
 
 	counts := make(map[JobState]int, len(jm.jobs))
 	running := make([]*Job, 0)
+
 	for _, job := range jm.jobs {
 		counts[job.State]++
 		if job.State == StateRunning {
 			running = append(running, cloneJob(job))
 		}
 	}
+
 	return counts, running
 }
 
@@ -693,16 +765,19 @@ func cloneJob(job *Job) *Job {
 	cloned.CandidateCost = cloneFloat(job.CandidateCost)
 	cloned.PSNR = cloneFloat(job.PSNR)
 	cloned.SSIM = cloneFloat(job.SSIM)
+
 	cloned.MetricHistory = make([]MetricSample, len(job.MetricHistory))
 	for i, sample := range job.MetricHistory {
 		cloned.MetricHistory[i] = sample
 		cloned.MetricHistory[i].PSNR = cloneFloat(sample.PSNR)
 		cloned.MetricHistory[i].SSIM = cloneFloat(sample.SSIM)
 	}
+
 	if job.EndTime != nil {
 		endTime := *job.EndTime
 		cloned.EndTime = &endTime
 	}
+
 	return &cloned
 }
 
@@ -712,6 +787,7 @@ func cloneCircleSpecs(specs app.CircleSpecs) app.CircleSpecs {
 	if specs == nil {
 		return nil
 	}
+
 	return append(app.CircleSpecs(nil), specs...)
 }
 
@@ -719,6 +795,8 @@ func cloneFloat(value *float64) *float64 {
 	if value == nil {
 		return nil
 	}
+
 	cloned := *value
+
 	return &cloned
 }

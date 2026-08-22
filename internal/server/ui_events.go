@@ -49,17 +49,21 @@ func NewUIEventHub() *UIEventHub {
 func (hub *UIEventHub) Subscribe() (<-chan UIEvent, chan UIEvent, uint64) {
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
+
 	ch := make(chan UIEvent, uiEventSubscriberBuffer)
 	hub.clients[ch] = struct{}{}
+
 	return ch, ch, hub.sequence
 }
 
 func (hub *UIEventHub) Unsubscribe(ch chan UIEvent) {
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
+
 	if _, ok := hub.clients[ch]; !ok {
 		return
 	}
+
 	delete(hub.clients, ch)
 	close(ch)
 }
@@ -67,11 +71,14 @@ func (hub *UIEventHub) Unsubscribe(ch chan UIEvent) {
 func (hub *UIEventHub) Publish(event UIEvent) UIEvent {
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
+
 	hub.sequence++
+
 	event.Sequence = hub.sequence
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now().UTC()
 	}
+
 	for ch := range hub.clients {
 		select {
 		case ch <- event:
@@ -83,11 +90,13 @@ func (hub *UIEventHub) Publish(event UIEvent) UIEvent {
 			slog.Warn("UI event subscriber fell behind; forcing resynchronization")
 		}
 	}
+
 	return event
 }
 
 func (hub *UIEventHub) PublishJob(progress ProgressEvent) UIEvent {
 	copy := progress
+
 	return hub.Publish(UIEvent{
 		Type:      uiEventJobUpsert,
 		JobID:     progress.JobID,
@@ -114,8 +123,10 @@ func (s *Server) handleUIEvents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
+
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeAPIError(w, http.StatusNotImplemented, "sse_not_supported", "server-sent events are not supported")
@@ -134,38 +145,51 @@ func (s *Server) handleUIEvents(w http.ResponseWriter, r *http.Request) {
 	// the hub's high-water mark: a sync carrying a sequence the client has not
 	// received yet would make it discard the real event as stale.
 	lastWritten := sequence
-	if err := writeUIEvent(w, UIEvent{
+
+	err := writeUIEvent(w, UIEvent{
 		Sequence:  lastWritten,
 		Type:      uiEventSync,
 		Timestamp: time.Now().UTC(),
-	}); err != nil {
+	})
+	if err != nil {
 		return
 	}
+
 	flusher.Flush()
+
+	ctx, releaseStream := s.streamContext(r)
+	defer releaseStream()
 
 	ticker := time.NewTicker(uiEventSyncInterval)
 	defer ticker.Stop()
+
 	for {
 		select {
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			return
 		case event, ok := <-events:
 			if !ok {
 				return
 			}
-			if err := writeUIEvent(w, event); err != nil {
+
+			err := writeUIEvent(w, event)
+			if err != nil {
 				return
 			}
+
 			lastWritten = event.Sequence
+
 			flusher.Flush()
 		case <-ticker.C:
-			if err := writeUIEvent(w, UIEvent{
+			err := writeUIEvent(w, UIEvent{
 				Sequence:  lastWritten,
 				Type:      uiEventSync,
 				Timestamp: time.Now().UTC(),
-			}); err != nil {
+			})
+			if err != nil {
 				return
 			}
+
 			flusher.Flush()
 		}
 	}
@@ -176,8 +200,10 @@ func writeUIEvent(w http.ResponseWriter, event UIEvent) error {
 	if err != nil {
 		return fmt.Errorf("marshal UI event: %w", err)
 	}
+
 	if _, err := fmt.Fprintf(w, "id: %s\ndata: %s\n\n", strconv.FormatUint(event.Sequence, 10), data); err != nil {
 		return fmt.Errorf("write UI event: %w", err)
 	}
+
 	return nil
 }

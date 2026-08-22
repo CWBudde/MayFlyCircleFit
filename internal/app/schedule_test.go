@@ -27,11 +27,14 @@ const baseDocument = `{
 
 func documentWithSteps(t *testing.T, steps string) *ScheduleDocument {
 	t.Helper()
+
 	source := strings.Replace(baseDocument, `"steps": []`, `"steps": `+steps, 1)
+
 	doc, err := ParseSchedule([]byte(source))
 	if err != nil {
 		t.Fatalf("ParseSchedule() error = %v", err)
 	}
+
 	return doc
 }
 
@@ -63,6 +66,7 @@ func TestParseScheduleRejectsUnknownFields(t *testing.T) {
 			if err == nil {
 				t.Fatalf("ParseSchedule() error = nil, want rejection of %q", test.field)
 			}
+
 			if !strings.Contains(err.Error(), test.field) {
 				t.Fatalf("ParseSchedule() error = %v, want it to name %q", err, test.field)
 			}
@@ -75,6 +79,7 @@ func TestParseScheduleRejectsUnknownFields(t *testing.T) {
 // actually works, never a silent drop.
 func TestParseScheduleRejectsSilentlyOverriddenFields(t *testing.T) {
 	const anchor = `"refPath": "assets/ref.png",`
+
 	tests := []struct {
 		name      string
 		old       string
@@ -122,23 +127,29 @@ func TestParseScheduleRejectsSilentlyOverriddenFields(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			source := strings.Replace(baseDocument, test.old, test.new, 1)
+
 			_, err := ParseSchedule([]byte(source))
 			if !test.wantError {
 				if err != nil {
 					t.Fatalf("ParseSchedule() error = %v, want nil", err)
 				}
+
 				return
 			}
+
 			if err == nil {
 				t.Fatalf("ParseSchedule() error = nil, want rejection of %s", test.field)
 			}
+
 			var validation *ValidationError
 			if !errors.As(err, &validation) {
 				t.Fatalf("ParseSchedule() error = %T, want *ValidationError", err)
 			}
+
 			if validation.Field != test.field {
 				t.Fatalf("ValidationError.Field = %q, want %q", validation.Field, test.field)
 			}
+
 			if test.mentions != "" && !strings.Contains(validation.Reason, test.mentions) {
 				t.Fatalf("ValidationError.Reason = %q, want it to name %q", validation.Reason, test.mentions)
 			}
@@ -214,6 +225,7 @@ func TestParseScheduleValidation(t *testing.T) {
 			if err == nil {
 				t.Fatalf("ParseSchedule() error = nil, want an error mentioning %q", test.wantErr)
 			}
+
 			if !strings.Contains(err.Error(), test.wantErr) {
 				t.Fatalf("ParseSchedule() error = %v, want it to mention %q", err, test.wantErr)
 			}
@@ -231,6 +243,7 @@ func TestScheduleExpandRepeatsGeneratorSteps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	want := []struct {
 		kind    ScheduleStageKind
 		circles int
@@ -244,34 +257,43 @@ func TestScheduleExpandRepeatsGeneratorSteps(t *testing.T) {
 	if len(stages) != len(want) {
 		t.Fatalf("Expand() produced %d stages, want %d", len(stages), len(want))
 	}
+
 	for i, expected := range want {
 		stage := stages[i]
 		if stage.Index != i {
 			t.Fatalf("stage %d has Index %d", i, stage.Index)
 		}
+
 		if stage.Kind != expected.kind {
 			t.Fatalf("stage %d Kind = %q, want %q", i, stage.Kind, expected.kind)
 		}
+
 		if stage.Circles != expected.circles {
 			t.Fatalf("stage %d Circles = %d, want %d", i, stage.Circles, expected.circles)
 		}
+
 		if stage.Config.Circles != expected.circles {
 			t.Fatalf("stage %d Config.Circles = %d, want %d", i, stage.Config.Circles, expected.circles)
 		}
+
 		if stage.Config.EffectiveSeed != 4242 {
 			t.Fatalf("stage %d EffectiveSeed = %d, want the campaign seed 4242", i, stage.Config.EffectiveSeed)
 		}
 	}
+
 	polish := stages[len(stages)-1]
 	if !polish.Config.PolishingEnabled || !polish.Config.PolishingOnly {
 		t.Fatalf("polish stage config = %+v, want polishing enabled and polishing-only", polish.Config)
 	}
+
 	if polish.Config.PolishingMaxSweeps != 4 || polish.Config.PolishingActiveSetSize != 8 {
 		t.Fatalf("polish overrides not applied: %+v", polish.Config)
 	}
+
 	if stages[1].Config.PolishingEnabled {
 		t.Fatalf("extend stage must not enable polishing: %+v", stages[1].Config)
 	}
+
 	if stages[1].Config.BatchSize != 8 {
 		t.Fatalf("extend stage BatchSize = %d, want the appended-circle count 8", stages[1].Config.BatchSize)
 	}
@@ -300,30 +322,37 @@ func TestScheduleExpandRealizesTheReferenceCampaign(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	extends, polishes := 0, 0
 	var polishCircles []int
+
 	for _, stage := range stages {
 		switch stage.Kind {
 		case ScheduleStageExtend:
 			extends++
 		case ScheduleStagePolish:
 			polishes++
+
 			polishCircles = append(polishCircles, stage.Circles)
 		case ScheduleStageBase:
 		}
 	}
+
 	if extends != 63 {
 		t.Fatalf("extend stages = %d, want 63", extends)
 	}
+
 	if polishes != 6 {
 		t.Fatalf("polish stages = %d, want 6", polishes)
 	}
+
 	wantPolishAt := []int{32, 64, 96, 128, 192, 256}
 	for i, circles := range wantPolishAt {
 		if polishCircles[i] != circles {
 			t.Fatalf("polish %d ran at %d circles, want %d", i, polishCircles[i], circles)
 		}
 	}
+
 	last := stages[len(stages)-1]
 	if last.Circles != 512 {
 		t.Fatalf("final stage circles = %d, want 512", last.Circles)
@@ -361,6 +390,7 @@ func TestParseScheduleRejectsMalformedInput(t *testing.T) {
 			if err == nil {
 				t.Fatalf("ParseSchedule() error = nil, want one mentioning %q", test.wantErr)
 			}
+
 			if !strings.Contains(err.Error(), test.wantErr) {
 				t.Fatalf("ParseSchedule() error = %v, want it to mention %q", err, test.wantErr)
 			}
@@ -374,14 +404,17 @@ func TestParseScheduleRejectsMalformedInput(t *testing.T) {
 func TestScheduleBaseCarriesThePolishingPopulation(t *testing.T) {
 	source := strings.Replace(baseDocument, `"popSize": 30`, `"popSize": 30,
     "polishingPopSize": 50`, 1)
+
 	doc, err := ParseSchedule([]byte(source))
 	if err != nil {
 		t.Fatalf("ParseSchedule() error = %v", err)
 	}
+
 	stages, err := doc.Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	if got := stages[0].Config.PolishingPopSize; got != 50 {
 		t.Fatalf("base polishingPopSize = %d, want 50", got)
 	}
@@ -394,14 +427,17 @@ func TestScheduleStepBudgetOverrides(t *testing.T) {
     {"type": "extend", "additionalCircles": 8, "batchSize": 4, "epochs": 3, "iters": 500, "popSize": 40},
     {"type": "polish", "strategy": "contiguous-window", "epochs": 2, "iters": 900, "stagnationIters": 100, "minImprovement": 0.5, "popSize": 60}
   ]`)
+
 	stages, err := doc.Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	extend := stages[1].Config
 	if extend.BatchSize != 4 || extend.OptimizerEpochs != 3 || extend.Iters != 500 || extend.PopSize != 40 {
 		t.Fatalf("extend overrides = %+v", extend)
 	}
+
 	polish := stages[2].Config
 	if polish.PolishingStrategy != PolishingContiguousWindow || polish.PolishingEpochs != 2 || polish.PolishingIters != 900 ||
 		polish.PolishingStagnationIters != 100 || polish.PolishingMinImprovement != 0.5 || polish.PolishingPopSize != 60 {
@@ -434,17 +470,21 @@ func TestScheduleStepRepetitions(t *testing.T) {
 
 func TestScheduleExpandIsDeterministicForAFixedSeed(t *testing.T) {
 	doc := documentWithSteps(t, `[{"type": "extend", "repeat": 2, "additionalCircles": 8}]`)
+
 	first, err := doc.Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	second, err := doc.Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	if len(first) != len(second) {
 		t.Fatalf("stage counts differ: %d and %d", len(first), len(second))
 	}
+
 	for i := range first {
 		// DeepEqual rather than ==: a configuration carries a hand-authored
 		// circle list, so it is no longer a comparable struct.
@@ -456,14 +496,17 @@ func TestScheduleExpandIsDeterministicForAFixedSeed(t *testing.T) {
 
 func TestScheduleCampaignSeedResolvesWhenOmitted(t *testing.T) {
 	source := strings.Replace(baseDocument, `"seed": 4242,`, "", 1)
+
 	doc, err := ParseSchedule([]byte(source))
 	if err != nil {
 		t.Fatalf("ParseSchedule() error = %v", err)
 	}
+
 	stages, err := doc.Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	if stages[0].Config.EffectiveSeed == 0 {
 		t.Fatal("Expand() left the effective seed unresolved")
 	}
@@ -473,10 +516,12 @@ func TestScheduleCampaignSeedResolvesWhenOmitted(t *testing.T) {
 	if doc.Seed != stages[0].Config.EffectiveSeed {
 		t.Fatalf("document seed = %d, want the resolved stage seed %d", doc.Seed, stages[0].Config.EffectiveSeed)
 	}
+
 	again, err := doc.Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	if again[0].Config.EffectiveSeed != stages[0].Config.EffectiveSeed {
 		t.Fatalf("second expansion used seed %d, want %d", again[0].Config.EffectiveSeed, stages[0].Config.EffectiveSeed)
 	}
@@ -486,7 +531,9 @@ func TestScheduleCampaignSeedResolvesWhenOmitted(t *testing.T) {
 // never sees: reconstructed in code, or read back from the store.
 func TestScheduleDocumentValidateWithoutTheParser(t *testing.T) {
 	valid := *documentWithSteps(t, `[{"type": "extend", "additionalCircles": 8}]`)
-	if err := valid.Validate(); err != nil {
+
+	err := valid.Validate()
+	if err != nil {
 		t.Fatalf("Validate() error = %v, want nil", err)
 	}
 
@@ -516,10 +563,12 @@ func TestScheduleDocumentValidateWithoutTheParser(t *testing.T) {
 			document := valid
 			document.Steps = append([]ScheduleStep(nil), valid.Steps...)
 			test.mutate(&document)
+
 			err := document.Validate()
 			if err == nil {
 				t.Fatalf("Validate() error = nil, want one mentioning %q", test.wantErr)
 			}
+
 			if !strings.Contains(err.Error(), test.wantErr) {
 				t.Fatalf("Validate() error = %v, want it to mention %q", err, test.wantErr)
 			}
@@ -533,10 +582,12 @@ func TestScheduleDocumentValidateWithoutTheParser(t *testing.T) {
 func TestScheduleExpandIgnoresAnAuthoredEffectiveSeed(t *testing.T) {
 	doc := *documentWithSteps(t, `[{"type": "extend", "additionalCircles": 8}]`)
 	doc.Base.EffectiveSeed = 7
+
 	stages, err := doc.Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	for i, stage := range stages {
 		if stage.Config.EffectiveSeed != doc.Seed {
 			t.Fatalf("stage %d ran with seed %d, want the campaign seed %d", i, stage.Config.EffectiveSeed, doc.Seed)
@@ -569,22 +620,27 @@ func TestScheduleExpandKeepsAuthoredCirclesOnTheBaseStageOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseSchedule() error = %v", err)
 	}
+
 	stages, err := doc.Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	if len(stages) != 4 {
 		t.Fatalf("stage count = %d, want 4", len(stages))
 	}
+
 	if len(stages[0].Config.InitialCircles) != 8 {
 		t.Fatalf("base stage carries %d authored circles, want 8", len(stages[0].Config.InitialCircles))
 	}
+
 	for _, stage := range stages[1:] {
 		if len(stage.Config.InitialCircles) != 0 {
 			t.Fatalf("stage %d (%s) carries %d authored circles, want none",
 				stage.Index, stage.Kind, len(stage.Config.InitialCircles))
 		}
 	}
+
 	if stages[2].Circles != 12 {
 		t.Fatalf("extend stage circles = %d, want 12", stages[2].Circles)
 	}
@@ -598,19 +654,24 @@ func TestScheduleExpandCarriesABarrierOntoItsFirstStageOnly(t *testing.T) {
 		{"type": "polish"},
 		{"type": "extend", "additionalCircles": 4, "pauseBefore": true, "repeat": 3}
 	]`)
+
 	stages, err := doc.Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	if len(stages) != 5 {
 		t.Fatalf("stage count = %d, want 5", len(stages))
 	}
+
 	barriers := []int{}
+
 	for _, stage := range stages {
 		if stage.PauseBefore {
 			barriers = append(barriers, stage.Index)
 		}
 	}
+
 	if len(barriers) != 1 || barriers[0] != 2 {
 		t.Fatalf("barriers at %v, want exactly stage 2", barriers)
 	}
@@ -629,10 +690,12 @@ func TestScheduleBarrierIsLegalOnEitherKind(t *testing.T) {
 		{"type": "polish", "pauseBefore": true},
 		{"type": "extend", "additionalCircles": 4, "pauseBefore": true}
 	]`)
+
 	stages, err := doc.Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	if !stages[1].PauseBefore || !stages[2].PauseBefore {
 		t.Fatalf("barriers = %v/%v, want both", stages[1].PauseBefore, stages[2].PauseBefore)
 	}
@@ -655,10 +718,12 @@ func TestScheduleDocumentIsBounded(t *testing.T) {
 
 	t.Run("a longer name is refused", func(t *testing.T) {
 		document := fmt.Sprintf(`{"seed": 42, "name": %q, %s}`, strings.Repeat("a", MaxScheduleNameLen+1), base)
+
 		_, err := ParseSchedule([]byte(document))
 		if err == nil {
 			t.Fatal("ParseSchedule() accepted an unbounded name")
 		}
+
 		if !strings.Contains(err.Error(), "name") {
 			t.Fatalf("error = %v, want it to name the field", err)
 		}
@@ -669,10 +734,12 @@ func TestScheduleDocumentIsBounded(t *testing.T) {
 		// the size of the document and not about anything malformed in it.
 		padding := strings.Repeat(" ", MaxScheduleDocumentBytes)
 		document := fmt.Sprintf(`{"seed": 42, %s%s}`, base, padding)
+
 		_, err := ParseSchedule([]byte(document))
 		if err == nil {
 			t.Fatal("ParseSchedule() accepted a document over the byte limit")
 		}
+
 		if !strings.Contains(err.Error(), "bytes") {
 			t.Fatalf("error = %v, want it to state the size", err)
 		}
@@ -683,6 +750,7 @@ func TestScheduleDocumentIsBounded(t *testing.T) {
 	// server.TestScheduleDetailStaysUnderTheCLIResponseCap.
 	t.Run("the bound leaves room for a full stage listing", func(t *testing.T) {
 		const measuredBytesPerStage = 172
+
 		listing := MaxScheduleStages * measuredBytesPerStage
 		if MaxScheduleDocumentBytes+listing > MaxCLIResponseBytes {
 			t.Fatalf("a document at %d bytes plus %d stages at %d bytes is %d, over the %d the CLI decodes",

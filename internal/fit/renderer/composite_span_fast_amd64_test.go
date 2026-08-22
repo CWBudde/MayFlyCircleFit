@@ -7,9 +7,8 @@ import (
 	"math/rand/v2"
 	"testing"
 
-	"golang.org/x/sys/cpu"
-
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"golang.org/x/sys/cpu"
 )
 
 // TestFastCompositeKernelMatchesTier pins the kernel the fast compositor
@@ -33,6 +32,7 @@ func TestFastCompositeKernelMatchesTier(t *testing.T) {
 	compositeOpaqueSpanFast(got, 4, pixels, r, g, b, alpha)
 
 	addR, addG, addB, mul := fastSpanConstants(r, g, b, alpha)
+
 	switch fastCompositeKernel {
 	case fit.TierAVX2:
 		addend := [8]float32{addR, addG, addB, 0, addR, addG, addB, 0}
@@ -61,7 +61,7 @@ func TestCompositeSpanFastAVX2DirectMatchesScalarOracle(t *testing.T) {
 	}
 
 	rng := rand.New(rand.NewPCG(0xa1e2, 0x61767832))
-	for iteration := 0; iteration < 128; iteration++ {
+	for iteration := range 128 {
 		pixels := 8 * (1 + rng.IntN(40))
 		want := fastSpanFixture(pixels, uint64(iteration))
 		got := bytes.Clone(want)
@@ -128,7 +128,7 @@ func TestCompositeSpanFastSSE2DirectRandomMatchesScalarOracle(t *testing.T) {
 	rng := rand.New(rand.NewPCG(0x5e2, 0x73736532))
 	const pixels = 256
 
-	for iteration := 0; iteration < 128; iteration++ {
+	for iteration := range 128 {
 		want := fastSpanFixture(pixels, uint64(iteration))
 		got := bytes.Clone(want)
 

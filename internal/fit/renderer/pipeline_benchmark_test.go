@@ -3,7 +3,6 @@ package renderer
 import (
 	"image"
 	"image/color"
-	"io"
 	"log/slog"
 	"math"
 	"testing"
@@ -19,24 +18,28 @@ type pipelineBenchmarkOptimizer struct {
 func (o pipelineBenchmarkOptimizer) Run(eval func([]float64) float64, lower, upper []float64, _ int) ([]float64, float64) {
 	bestCost := math.Inf(1)
 	var best []float64
-	for i := 0; i < o.evaluations; i++ {
+
+	for i := range o.evaluations {
 		params := incrementalValidationCandidate(lower, upper, i)
 		for offset := 0; offset < len(params); offset += paramsPerCircle {
 			params[offset+2] = max(lower[offset+2], upper[offset+2]*o.radiusScale)
 		}
+
 		cost := eval(params)
 		if cost < bestCost {
 			bestCost = cost
+
 			best = append(best[:0], params...)
 		}
 	}
+
 	return best, bestCost
 }
 
 func benchmarkPipelineReference(width, height int) *image.NRGBA {
 	ref := image.NewNRGBA(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for y := range height {
+		for x := range width {
 			ref.SetNRGBA(x, y, color.NRGBA{
 				R: uint8(x * 255 / width),
 				G: uint8(y * 255 / height),
@@ -45,13 +48,16 @@ func benchmarkPipelineReference(width, height int) *image.NRGBA {
 			})
 		}
 	}
+
 	return ref
 }
 
 func silencePipelineBenchmarkLogs(b *testing.B) {
 	b.Helper()
+
 	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	slog.SetDefault(slog.New(slog.DiscardHandler))
 	b.Cleanup(func() { slog.SetDefault(previous) })
 }
 
@@ -60,10 +66,13 @@ func silencePipelineBenchmarkLogs(b *testing.B) {
 // final replay. ReportAllocs makes parameter-vector regressions visible.
 func BenchmarkOptimizeSequentialPipeline(b *testing.B) {
 	silencePipelineBenchmarkLogs(b)
+
 	ref := benchmarkPipelineReference(64, 64)
+
 	for _, radius := range []float64{0.08, 0.15, 0.25} {
 		optimizer := pipelineBenchmarkOptimizer{evaluations: 8, radiusScale: radius}
 		dirtyPercent := benchmarkPipelineDirtyPercent(ref, 1, optimizer)
+
 		b.Run(radiusName(radius), func(b *testing.B) {
 			for _, test := range []struct {
 				name        string
@@ -75,15 +84,19 @@ func BenchmarkOptimizeSequentialPipeline(b *testing.B) {
 				b.Run(test.name, func(b *testing.B) {
 					base := NewCPURenderer(ref, 12)
 					base.stagedIncremental = test.incremental
+
 					b.ReportAllocs()
 					b.ResetTimer()
+
 					for range b.N {
 						result, err := OptimizeSequential(base, optimizer, 12, DisabledConvergenceConfig(), nil)
 						if err != nil {
 							b.Fatal(err)
 						}
+
 						b.ReportMetric(float64(result.Evaluations), "evaluations/pipeline")
 					}
+
 					b.ReportMetric(dirtyPercent, "%dirty")
 				})
 			}
@@ -96,10 +109,13 @@ func BenchmarkOptimizeSequentialPipeline(b *testing.B) {
 // accumulated parameter and image construction.
 func BenchmarkOptimizeBatchPipeline(b *testing.B) {
 	silencePipelineBenchmarkLogs(b)
+
 	ref := benchmarkPipelineReference(64, 64)
+
 	for _, radius := range []float64{0.04, 0.08, 0.15} {
 		optimizer := pipelineBenchmarkOptimizer{evaluations: 8, radiusScale: radius}
 		dirtyPercent := benchmarkPipelineDirtyPercent(ref, 5, optimizer)
+
 		b.Run(radiusName(radius), func(b *testing.B) {
 			for _, test := range []struct {
 				name        string
@@ -111,15 +127,19 @@ func BenchmarkOptimizeBatchPipeline(b *testing.B) {
 				b.Run(test.name, func(b *testing.B) {
 					base := NewCPURenderer(ref, 18)
 					base.stagedIncremental = test.incremental
+
 					b.ReportAllocs()
 					b.ResetTimer()
+
 					for range b.N {
 						result, err := OptimizeBatch(base, optimizer, 18, 5, DisabledConvergenceConfig())
 						if err != nil {
 							b.Fatal(err)
 						}
+
 						b.ReportMetric(float64(result.Evaluations), "evaluations/pipeline")
 					}
+
 					b.ReportMetric(dirtyPercent, "%dirty")
 				})
 			}
@@ -131,10 +151,13 @@ func BenchmarkOptimizeBatchPipeline(b *testing.B) {
 // remain eligible for production incremental dispatch.
 func BenchmarkOptimizeBatchPipeline256(b *testing.B) {
 	silencePipelineBenchmarkLogs(b)
+
 	ref := benchmarkPipelineReference(256, 256)
+
 	for _, radius := range []float64{0.02, 0.04, 0.08} {
 		optimizer := pipelineBenchmarkOptimizer{evaluations: 8, radiusScale: radius}
 		dirtyPercent := benchmarkPipelineDirtyPercent(ref, 5, optimizer)
+
 		b.Run(radiusName(radius), func(b *testing.B) {
 			for _, test := range []struct {
 				name        string
@@ -147,15 +170,19 @@ func BenchmarkOptimizeBatchPipeline256(b *testing.B) {
 					base := NewCPURenderer(ref, 18)
 					base.SetThreads(1)
 					base.stagedIncremental = test.incremental
+
 					b.ReportAllocs()
 					b.ResetTimer()
+
 					for range b.N {
 						result, err := OptimizeBatch(base, optimizer, 18, 5, DisabledConvergenceConfig())
 						if err != nil {
 							b.Fatal(err)
 						}
+
 						b.ReportMetric(float64(result.Evaluations), "evaluations/pipeline")
 					}
+
 					b.ReportMetric(dirtyPercent, "%dirty")
 				})
 			}
@@ -168,9 +195,11 @@ func BenchmarkOptimizeBatchPipeline256(b *testing.B) {
 // is enabled on the base renderer.
 func BenchmarkOptimizeJointPipeline(b *testing.B) {
 	silencePipelineBenchmarkLogs(b)
+
 	ref := benchmarkPipelineReference(64, 64)
 	optimizer := pipelineBenchmarkOptimizer{evaluations: 8, radiusScale: 0.15}
 	dirtyPercent := benchmarkPipelineDirtyPercent(ref, 12, optimizer)
+
 	for _, test := range []struct {
 		name        string
 		incremental bool
@@ -181,15 +210,19 @@ func BenchmarkOptimizeJointPipeline(b *testing.B) {
 		b.Run(test.name, func(b *testing.B) {
 			base := NewCPURenderer(ref, 12)
 			base.stagedIncremental = test.incremental
+
 			b.ReportAllocs()
 			b.ResetTimer()
+
 			for range b.N {
 				result, err := OptimizeJoint(base, optimizer, 12, DisabledConvergenceConfig())
 				if err != nil {
 					b.Fatal(err)
 				}
+
 				b.ReportMetric(float64(result.Evaluations), "evaluations/pipeline")
 			}
+
 			b.ReportMetric(dirtyPercent, "%dirty")
 		})
 	}
@@ -230,14 +263,18 @@ func BenchmarkMayflyIncrementalPipelines(b *testing.B) {
 					base := NewCPURenderer(ref, totalCircles)
 					base.SetThreads(1)
 					base.stagedIncremental = policy.incremental
+
 					b.ReportAllocs()
 					b.ResetTimer()
+
 					for iteration := range b.N {
 						optimizer := opt.NewMayfly(2, 10, int64(10_160+iteration))
+
 						result, err := test.run(base, optimizer)
 						if err != nil {
 							b.Fatal(err)
 						}
+
 						b.ReportMetric(float64(result.Evaluations), "evaluations/pipeline")
 					}
 				})
@@ -255,14 +292,17 @@ func benchmarkPipelineDirtyPercent(reference *image.NRGBA, circles int, optimize
 	renderer.SetThreads(1)
 	lower, upper := renderer.Bounds()
 	totalDirty := 0
+
 	for candidate := range optimizer.evaluations {
 		params := incrementalValidationCandidate(lower, upper, candidate)
 		for offset := 0; offset < len(params); offset += paramsPerCircle {
 			params[offset+2] = max(lower[offset+2], upper[offset+2]*optimizer.radiusScale)
 		}
+
 		renderer.render(params, &renderer.dirtySpans)
 		dirtyPixels, _ := renderer.dirtySpans.metrics()
 		totalDirty += dirtyPixels
 	}
+
 	return 100 * float64(totalDirty) / float64(optimizer.evaluations*reference.Bounds().Dx()*reference.Bounds().Dy())
 }

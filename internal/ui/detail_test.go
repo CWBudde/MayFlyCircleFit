@@ -29,9 +29,12 @@ func TestJobDetailPageViewModes(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+
+	err := JobDetailPage(job).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render job detail: %v", err)
 	}
+
 	body := output.String()
 
 	for _, marker := range []string{
@@ -97,6 +100,7 @@ func TestJobDetailPageViewModes(t *testing.T) {
 			t.Errorf("rendered detail page missing %q", marker)
 		}
 	}
+
 	if strings.Contains(body, `{ fmt.Sprintf`) {
 		t.Fatal("rendered detail page contains an unexpanded Go expression in JavaScript")
 	}
@@ -108,10 +112,14 @@ func TestJobDetailPageDistinguishesCandidateFromAuditedBest(t *testing.T) {
 		ID: "12345678-1234-1234-1234-123456789abc", State: "running", StartTime: time.Now(),
 		BestCost: 100, CandidateCost: &candidate,
 	}
+
 	var output bytes.Buffer
-	if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+
+	err := JobDetailPage(job).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	body := output.String()
 	for _, marker := range []string{
 		"Audited Best Cost", "In-flight Candidate", "95.2500", "4.7500 (4.75%) provisional gain",
@@ -127,14 +135,19 @@ func TestJobDetailPageOmitsSSIMControlsWhenDisabled(t *testing.T) {
 	job := JobDetail{
 		ID: "12345678-1234-1234-1234-123456789abc", State: "pending", StartTime: time.Now(),
 	}
+
 	var output bytes.Buffer
-	if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+
+	err := JobDetailPage(job).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	body := output.String()
 	if strings.Contains(body, `<option value="ssim">`) {
 		t.Fatal("disabled SSIM was offered as a history series")
 	}
+
 	if !strings.Contains(body, `id="metric-history-empty" style="display: block;`) {
 		t.Fatal("empty history state was not visible")
 	}
@@ -147,10 +160,14 @@ func TestJobDetailPageShowsPolishingSchedule(t *testing.T) {
 		PolishingEpochs: 2, PolishingIters: 1000, PolishingStagnationIters: 500,
 		PolishingMinImprovement: 0.001, CanPolish: true,
 	}
+
 	var output bytes.Buffer
-	if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+
+	err := JobDetailPage(job).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	body := output.String()
 	for _, marker := range []string{"Active-set Polishing", "Enabled · up to 3 sweeps of 5 circles", "2 × 1000 iterations", "progress threshold 0.001", "Polish weak circles", `data-can-polish="true"`} {
 		if !strings.Contains(body, marker) {
@@ -180,15 +197,21 @@ func TestJobDetailFallbackMutationsAreDisabled(t *testing.T) {
 				ID: "12345678-1234-1234-1234-123456789abc", State: tc.state,
 				StartTime: time.Now(),
 			}
+
 			var output bytes.Buffer
-			if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+
+			err := JobDetailPage(job).Render(context.Background(), &output)
+			if err != nil {
 				t.Fatal(err)
 			}
+
 			body := output.String()
+
 			start := strings.Index(body, `id="`+tc.button+`"`)
 			if start < 0 {
 				t.Fatalf("state %q renders no %s button", tc.state, tc.button)
 			}
+
 			tag := body[start : start+strings.Index(body[start:], ">")]
 			if !strings.Contains(tag, `aria-disabled="true"`) || !strings.Contains(tag, "disabled ") {
 				t.Errorf("%s is offered as clickable without the bundle: <button %s>", tc.button, tag)
@@ -205,9 +228,12 @@ func TestJobDetailPageMetadataUnavailable(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+
+	err := JobDetailPage(job).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render job detail: %v", err)
 	}
+
 	if !strings.Contains(output.String(), "Metadata unavailable") {
 		t.Error("rendered detail page should report unavailable reference metadata")
 	}
@@ -237,10 +263,14 @@ func TestJobDetailPageParameterViewerCircleCounts(t *testing.T) {
 				ID: "12345678-1234-1234-1234-123456789abc", State: "completed",
 				StartTime: time.Now(), Circles: 64, Parameters: test.parameters,
 			}
+
 			var output bytes.Buffer
-			if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+
+			err := JobDetailPage(job).Render(context.Background(), &output)
+			if err != nil {
 				t.Fatal(err)
 			}
+
 			body := output.String()
 			for _, marker := range []string{
 				`id="parameter-viewer"`, `id="parameter-list"`, `id="parameter-data"`,
@@ -253,21 +283,27 @@ func TestJobDetailPageParameterViewerCircleCounts(t *testing.T) {
 					t.Errorf("rendered detail page missing %q", marker)
 				}
 			}
+
 			if got := strings.Count(body, `<li title="Circle `); got != len(test.parameters) {
 				t.Errorf("rendered circle rows = %d, want %d", got, len(test.parameters))
 			}
+
 			if test.wantText != "" && !strings.Contains(body, test.wantText) {
 				t.Errorf("rendered detail page missing %q", test.wantText)
 			}
+
 			exportStart := strings.Index(body, `id="parameter-export"`)
 			if exportStart < 0 {
 				t.Fatal("rendered detail page missing parameter export control")
 			}
+
 			exportEnd := strings.Index(body[exportStart:], ">")
 			if exportEnd < 0 {
 				t.Fatal("parameter export control has no closing bracket")
 			}
+
 			exportTag := body[exportStart : exportStart+exportEnd]
+
 			wantDisabled := len(test.parameters) == 0
 			if gotDisabled := strings.Contains(exportTag, `aria-disabled="true"`); gotDisabled != wantDisabled {
 				t.Errorf("export disabled = %v, want %v", gotDisabled, wantDisabled)
@@ -297,6 +333,7 @@ func makeCircleParameters(count int) []CircleParameter {
 			Red: 0.1, Green: 0.2, Blue: 0.3, Opacity: 0.4,
 		}
 	}
+
 	return parameters
 }
 

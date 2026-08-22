@@ -36,6 +36,7 @@ func MapErrorColor(value, maxError float64, colormap Colormap) color.NRGBA {
 	if maxError > 0 && !math.IsNaN(maxError) {
 		normalized = value / maxError
 	}
+
 	return MapNormalizedColor(normalized, colormap)
 }
 
@@ -46,6 +47,7 @@ func MapNormalizedColor(value float64, colormap Colormap) color.NRGBA {
 	if colormap == ColormapMagma {
 		return interpolateMagma(value)
 	}
+
 	return turboColor(value)
 }
 
@@ -54,6 +56,7 @@ func turboColor(value float64) color.NRGBA {
 	r := 34.61 + value*(1172.33+value*(-10793.56+value*(33300.12+value*(-38394.49+value*14825.05))))
 	g := 23.31 + value*(557.33+value*(1225.33+value*(-3574.96+value*(1073.77+value*707.56))))
 	b := 27.20 + value*(3211.10+value*(-15327.97+value*(27814.00+value*(-22569.18+value*6838.66))))
+
 	return color.NRGBA{R: byteChannel(r), G: byteChannel(g), B: byteChannel(b), A: 255}
 }
 
@@ -73,13 +76,16 @@ var magmaStops = [...]color.NRGBA{
 
 func interpolateMagma(value float64) color.NRGBA {
 	position := value * float64(len(magmaStops)-1)
+
 	index := int(position)
 	if index >= len(magmaStops)-1 {
 		return magmaStops[len(magmaStops)-1]
 	}
+
 	fraction := position - float64(index)
 	left := magmaStops[index]
 	right := magmaStops[index+1]
+
 	return color.NRGBA{
 		R: interpolateChannel(left.R, right.R, fraction),
 		G: interpolateChannel(left.G, right.G, fraction),
@@ -100,8 +106,10 @@ func clampUnit(value float64) float64 {
 	if math.IsNaN(value) || value <= 0 {
 		return 0
 	}
+
 	if value >= 1 {
 		return 1
 	}
+
 	return value
 }

@@ -24,9 +24,11 @@ func TestPSNR(t *testing.T) {
 			}
 		})
 	}
+
 	if got := PSNR(0); !math.IsInf(got, 1) {
 		t.Fatalf("PSNR(0) = %v, want +Inf", got)
 	}
+
 	for _, invalid := range []float64{-1, math.NaN(), math.Inf(1)} {
 		if got := PSNR(invalid); !math.IsNaN(got) {
 			t.Errorf("PSNR(%v) = %v, want NaN", invalid, got)
@@ -37,6 +39,7 @@ func TestPSNR(t *testing.T) {
 func TestSSIMIdenticalAndAlphaIgnored(t *testing.T) {
 	left := patternedNRGBA(image.Rect(3, 5, 20, 18))
 	right := image.NewNRGBA(image.Rect(30, 40, 47, 53))
+
 	for y := range left.Bounds().Dy() {
 		for x := range left.Bounds().Dx() {
 			pixel := left.NRGBAAt(left.Bounds().Min.X+x, left.Bounds().Min.Y+y)
@@ -44,6 +47,7 @@ func TestSSIMIdenticalAndAlphaIgnored(t *testing.T) {
 			right.SetNRGBA(right.Bounds().Min.X+x, right.Bounds().Min.Y+y, pixel)
 		}
 	}
+
 	if got, err := SSIM(left, right); err != nil || math.Abs(got-1) > 1e-12 {
 		t.Fatalf("SSIM identical RGB = (%v, %v), want (1, nil)", got, err)
 	}
@@ -51,6 +55,7 @@ func TestSSIMIdenticalAndAlphaIgnored(t *testing.T) {
 
 func TestSSIMStructuralDifferenceIsSymmetricAndBounded(t *testing.T) {
 	left := patternedNRGBA(image.Rect(0, 0, 24, 19))
+
 	right := image.NewNRGBA(left.Bounds())
 	for y := range left.Bounds().Dy() {
 		for x := range left.Bounds().Dx() {
@@ -58,17 +63,21 @@ func TestSSIMStructuralDifferenceIsSymmetricAndBounded(t *testing.T) {
 			right.SetNRGBA(x, y, color.NRGBA{R: 255 - pixel.B, G: pixel.R / 2, B: 255 - pixel.G, A: 255})
 		}
 	}
+
 	forward, err := SSIM(left, right)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	reverse, err := SSIM(right, left)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if forward < -1 || forward > 1 || forward >= 0.95 {
 		t.Fatalf("SSIM structural difference = %v, want a bounded value below 0.95", forward)
 	}
+
 	if math.Abs(forward-reverse) > 1e-12 {
 		t.Fatalf("SSIM is not symmetric: forward=%v reverse=%v", forward, reverse)
 	}
@@ -76,17 +85,21 @@ func TestSSIMStructuralDifferenceIsSymmetricAndBounded(t *testing.T) {
 
 func TestSSIMConstantImagesMatchesAnalyticalLuminanceTerm(t *testing.T) {
 	black := image.NewNRGBA(image.Rect(0, 0, 13, 9))
+
 	gray := image.NewNRGBA(black.Bounds())
 	for y := range gray.Bounds().Dy() {
 		for x := range gray.Bounds().Dx() {
 			gray.SetNRGBA(x, y, color.NRGBA{R: 100, G: 100, B: 100, A: 255})
 		}
 	}
+
 	got, err := SSIM(black, gray)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	c1 := (0.01 * 255) * (0.01 * 255)
+
 	want := c1 / (100*100 + c1)
 	if math.Abs(got-want) > 1e-12 {
 		t.Fatalf("constant-image SSIM = %.15f, want %.15f", got, want)
@@ -96,13 +109,16 @@ func TestSSIMConstantImagesMatchesAnalyticalLuminanceTerm(t *testing.T) {
 func TestSSIMSupportsSmallImagesAndRejectsInvalidInput(t *testing.T) {
 	one := image.NewNRGBA(image.Rect(4, 7, 5, 8))
 	two := image.NewNRGBA(image.Rect(10, 12, 11, 13))
+
 	one.SetNRGBA(4, 7, color.NRGBA{R: 20, G: 40, B: 60, A: 10})
 	two.SetNRGBA(10, 12, color.NRGBA{R: 20, G: 40, B: 60, A: 250})
+
 	if got, err := SSIM(one, two); err != nil || math.Abs(got-1) > 1e-12 {
 		t.Fatalf("one-pixel SSIM = (%v, %v), want (1, nil)", got, err)
 	}
 
 	empty := image.NewNRGBA(image.Rect(0, 0, 0, 0))
+
 	mismatch := image.NewNRGBA(image.Rect(0, 0, 2, 1))
 	for name, images := range map[string][2]*image.NRGBA{
 		"nil":      {nil, two},
@@ -129,5 +145,6 @@ func patternedNRGBA(bounds image.Rectangle) *image.NRGBA {
 			})
 		}
 	}
+
 	return img
 }

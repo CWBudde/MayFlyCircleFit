@@ -80,6 +80,7 @@ func TestAPIErrorsUseTheJSONEnvelope(t *testing.T) {
 	}
 
 	server := NewServer(":0", nil)
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			response := httptest.NewRecorder()
@@ -88,17 +89,22 @@ func TestAPIErrorsUseTheJSONEnvelope(t *testing.T) {
 			if response.Code != test.wantStatus {
 				t.Fatalf("status = %d, want %d (body %q)", response.Code, test.wantStatus, response.Body.String())
 			}
+
 			if contentType := response.Header().Get("Content-Type"); contentType != "application/json" {
 				t.Errorf("Content-Type = %q, want application/json", contentType)
 			}
 
 			var decoded apiErrorResponse
-			if err := json.Unmarshal(response.Body.Bytes(), &decoded); err != nil {
+
+			err := json.Unmarshal(response.Body.Bytes(), &decoded)
+			if err != nil {
 				t.Fatalf("body %q is not the JSON error envelope: %v", response.Body.String(), err)
 			}
+
 			if decoded.Error.Code != test.wantCode {
 				t.Errorf("error code = %q, want %q", decoded.Error.Code, test.wantCode)
 			}
+
 			if decoded.Error.Message == "" {
 				t.Errorf("error message is empty in %q", response.Body.String())
 			}
@@ -123,13 +129,18 @@ func TestAPIErrorsHideInternalDetail(t *testing.T) {
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d (body %q)", response.Code, http.StatusInternalServerError, response.Body.String())
 	}
+
 	var decoded apiErrorResponse
-	if err := json.Unmarshal(response.Body.Bytes(), &decoded); err != nil {
+
+	err := json.Unmarshal(response.Body.Bytes(), &decoded)
+	if err != nil {
 		t.Fatalf("body %q is not the JSON error envelope: %v", response.Body.String(), err)
 	}
+
 	if decoded.Error.Code != "reference_load_failed" {
 		t.Errorf("error code = %q, want reference_load_failed", decoded.Error.Code)
 	}
+
 	if body := response.Body.String(); strings.Contains(body, "secret-reference.png") {
 		t.Errorf("error body %q leaks the reference path", body)
 	}

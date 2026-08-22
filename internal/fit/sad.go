@@ -36,7 +36,7 @@ var activeSADKernel SIMDTier
 // ActiveSADKernel reports which kernel SAD dispatch installed.
 func ActiveSADKernel() SIMDTier { return activeSADKernel }
 
-// fastSAD is the function pointer for runtime-dispatched SAD computation
+// fastSAD is the function pointer for runtime-dispatched SAD computation.
 var fastSAD func(a, b []uint8, stride, width, height int) float64
 
 // FastSAD computes perceptually-weighted error using SAD + quadratic weighting.
@@ -49,7 +49,7 @@ var fastSAD func(a, b []uint8, stride, width, height int) float64
 // The quadratic weighting emphasizes larger differences, which are more
 // perceptually significant.
 //
-// Returns: Total weighted cost (not normalized)
+// Returns: Total weighted cost (not normalized).
 func FastSAD(current, reference *image.NRGBA) float64 {
 	bounds := current.Bounds()
 	width := bounds.Dx()
@@ -58,32 +58,40 @@ func FastSAD(current, reference *image.NRGBA) float64 {
 	if width != reference.Bounds().Dx() || height != reference.Bounds().Dy() {
 		return math.Inf(1)
 	}
+
 	if width == 0 || height == 0 {
 		return math.Inf(1)
 	}
+
 	if current.Stride == reference.Stride {
 		return fastSAD(current.Pix, reference.Pix, current.Stride, width, height)
 	}
+
 	return sadIndependentStrides(current, reference, width, height)
 }
 
 func sadIndependentStrides(current, reference *image.NRGBA, width, height int) float64 {
 	var total float64
+
 	for y := range height {
 		for x := range width {
 			currentOffset := y*current.Stride + x*4
 			referenceOffset := y*reference.Stride + x*4
 			value := 0
+
 			for channel := range 3 {
 				difference := int(current.Pix[currentOffset+channel]) - int(reference.Pix[referenceOffset+channel])
 				if difference < 0 {
 					difference = -difference
 				}
+
 				value += difference
 			}
+
 			total += float64(value * (255 + 9*value))
 		}
 	}
+
 	return total * sadScale
 }
 

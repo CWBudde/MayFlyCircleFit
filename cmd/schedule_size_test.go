@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -51,14 +52,17 @@ const stageLimitCampaignDocument = `{
 // pending so the projection has something to project.
 func stageLimitDetail(t *testing.T) scheduleDetailResponse {
 	t.Helper()
+
 	document, err := app.ParseSchedule([]byte(stageLimitCampaignDocument))
 	if err != nil {
 		t.Fatalf("ParseSchedule() error = %v", err)
 	}
+
 	plan, err := document.Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	if len(plan) != app.MaxScheduleStages {
 		t.Fatalf("the fixture expands to %d stages, want %d", len(plan), app.MaxScheduleStages)
 	}
@@ -74,6 +78,7 @@ func stageLimitDetail(t *testing.T) scheduleDetailResponse {
 
 	for _, stage := range plan {
 		elapsed := (97 * time.Second).Nanoseconds()
+
 		summary := scheduleStageSummaryResponse{
 			Index:        stage.Index,
 			Kind:         stage.Kind,
@@ -89,8 +94,10 @@ func stageLimitDetail(t *testing.T) scheduleDetailResponse {
 				State: store.ScheduleStatePending, Circles: stage.Circles,
 			}
 		}
+
 		detail.Stages = append(detail.Stages, summary)
 	}
+
 	return detail
 }
 
@@ -99,12 +106,15 @@ func stageLimitDetail(t *testing.T) scheduleDetailResponse {
 // MaxScheduleStages, and the response the command read is measured.
 func TestScheduleStatusPrintsACampaignAtTheStageLimit(t *testing.T) {
 	detail := stageLimitDetail(t)
+
 	payload, err := json.Marshal(detail)
 	if err != nil {
 		t.Fatalf("marshal detail: %v", err)
 	}
+
 	t.Logf("%d stages in %d bytes (%d per stage), cap %d",
 		len(detail.Stages), len(payload), len(payload)/len(detail.Stages), maxCLIResponseBytes)
+
 	if len(payload) > maxCLIResponseBytes {
 		t.Fatalf("the listing is %d bytes, over the %d the CLI decodes", len(payload), maxCLIResponseBytes)
 	}
@@ -112,13 +122,16 @@ func TestScheduleStatusPrintsACampaignAtTheStageLimit(t *testing.T) {
 	_, stub := newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
 		_, _ = writer.Write(payload)
 	})
+
 	var output bytes.Buffer
 	if err := runScheduleStatus(testCommand(context.Background(), &output), []string{testScheduleID}); err != nil {
 		t.Fatalf("runScheduleStatus() error = %v", err)
 	}
+
 	if path := <-stub.paths; path != "/api/v1/schedules/"+testScheduleID {
 		t.Fatalf("requested %q, want the schedule detail path", path)
 	}
+
 	body := output.String()
 	for _, marker := range []string{
 		fmt.Sprintf("Stages: %d recorded of %d planned", app.MaxScheduleStages, app.MaxScheduleStages),
@@ -134,7 +147,8 @@ func TestScheduleStatusPrintsACampaignAtTheStageLimit(t *testing.T) {
 	if !hasRow(body, "0", "base", "completed") {
 		t.Errorf("schedule status printed no row for the base stage:\n%s", lastLines(body, 12))
 	}
-	if !hasRow(body, fmt.Sprint(app.MaxScheduleStages-1), "polish", "pending") {
+
+	if !hasRow(body, strconv.Itoa(app.MaxScheduleStages-1), "polish", "pending") {
 		t.Errorf("schedule status printed no row for the last stage:\n%s", lastLines(body, 12))
 	}
 }
@@ -151,6 +165,7 @@ func TestScheduleImportPrintsAChainAtTheStageLimit(t *testing.T) {
 		if index == 0 {
 			kind = "base"
 		}
+
 		detail.Stages = append(detail.Stages, chainStageResponse{
 			Index:      index,
 			Kind:       kind,
@@ -160,12 +175,15 @@ func TestScheduleImportPrintsAChainAtTheStageLimit(t *testing.T) {
 			Iterations: 200,
 		})
 	}
+
 	payload, err := json.Marshal(detail)
 	if err != nil {
 		t.Fatalf("marshal chain: %v", err)
 	}
+
 	t.Logf("%d stages in %d bytes (%d per stage), cap %d",
 		len(detail.Stages), len(payload), len(payload)/len(detail.Stages), maxCLIResponseBytes)
+
 	if len(payload) > maxCLIResponseBytes {
 		t.Fatalf("the chain is %d bytes, over the %d the CLI decodes", len(payload), maxCLIResponseBytes)
 	}
@@ -173,18 +191,22 @@ func TestScheduleImportPrintsAChainAtTheStageLimit(t *testing.T) {
 	_, _ = newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
 		_, _ = writer.Write(payload)
 	})
+
 	var output bytes.Buffer
 	if err := runScheduleImport(testCommand(context.Background(), &output), []string{detail.LeafJobID}); err != nil {
 		t.Fatalf("runScheduleImport() error = %v", err)
 	}
+
 	body := output.String()
 	if !strings.Contains(body, fmt.Sprintf("Stages: %d", app.MaxScheduleStages)) {
 		t.Errorf("schedule import did not report the stage count:\n%s", lastLines(body, 12))
 	}
+
 	if !hasRow(body, "0", "base") {
 		t.Errorf("schedule import printed no row for the base stage:\n%s", lastLines(body, 12))
 	}
-	if !hasRow(body, fmt.Sprint(app.MaxScheduleStages-1), "extend") {
+
+	if !hasRow(body, strconv.Itoa(app.MaxScheduleStages-1), "extend") {
 		t.Errorf("schedule import printed no row for the last stage:\n%s", lastLines(body, 12))
 	}
 }
@@ -197,14 +219,17 @@ func TestScheduleImportPrintsAChainAtTheStageLimit(t *testing.T) {
 // records on disk, field by field.
 func TestProjectionIsUnchangedByTheSummaryProjection(t *testing.T) {
 	root := t.TempDir()
+
 	persistence, err := store.NewFSStore(filepath.Join(root, "artifacts"))
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}
+
 	document, err := app.ParseSchedule([]byte(projectionCampaignDocument))
 	if err != nil {
 		t.Fatalf("ParseSchedule() error = %v", err)
 	}
+
 	record, err := store.NewScheduleRecord(testScheduleID, *document)
 	if err != nil {
 		t.Fatalf("NewScheduleRecord() error = %v", err)
@@ -215,24 +240,32 @@ func TestProjectionIsUnchangedByTheSummaryProjection(t *testing.T) {
 	if err := persistence.SaveSchedule(record); err != nil {
 		t.Fatalf("SaveSchedule() error = %v", err)
 	}
+
 	plan, err := record.Document.Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
 	}
+
 	records := recordedStages(t, persistence, plan)
 
 	srv := server.NewServerWithOptions(":0", persistence, server.ServerOptions{DataRoot: root})
+
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := srv.Shutdown(ctx); err != nil {
+
+		err := srv.Shutdown(ctx)
+		if err != nil {
 			t.Errorf("shutdown: %v", err)
 		}
 	})
+
 	httpServer := httptest.NewServer(srv.Handler())
 	t.Cleanup(httpServer.Close)
+
 	previous := scheduleServerURL
 	scheduleServerURL = httpServer.URL
+
 	t.Cleanup(func() { scheduleServerURL = previous })
 
 	// The command itself first: it has to decode what this server sends, and it
@@ -241,6 +274,7 @@ func TestProjectionIsUnchangedByTheSummaryProjection(t *testing.T) {
 	if err := runScheduleStatus(testCommand(context.Background(), &output), []string{testScheduleID}); err != nil {
 		t.Fatalf("runScheduleStatus() error = %v", err)
 	}
+
 	if !strings.Contains(output.String(), "Remaining once the campaign runs again") {
 		t.Fatalf("status output has no projection:\n%s", output.String())
 	}
@@ -250,6 +284,7 @@ func TestProjectionIsUnchangedByTheSummaryProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read the schedule: %v", err)
 	}
+
 	var detail scheduleDetailResponse
 	if err := decodeCLIResponse(body, &detail); err != nil {
 		t.Fatalf("decode the schedule: %v", err)
@@ -267,10 +302,12 @@ func TestProjectionIsUnchangedByTheSummaryProjection(t *testing.T) {
 		!fromSummaries.EarliestFinish.Equal(fromRecords.EarliestFinish) {
 		t.Fatalf("projection from the listing = %+v, from the records = %+v", fromSummaries, fromRecords)
 	}
+
 	if len(fromSummaries.Kinds) != len(fromRecords.Kinds) {
 		t.Fatalf("projected %d kinds from the listing, %d from the records",
 			len(fromSummaries.Kinds), len(fromRecords.Kinds))
 	}
+
 	for i, kind := range fromSummaries.Kinds {
 		if kind != fromRecords.Kinds[i] {
 			t.Errorf("kind %d from the listing = %+v, from the records = %+v",
@@ -301,12 +338,14 @@ const projectionCampaignDocument = `{
 // clear MinProjectionSamples and one stage is still to come.
 func recordedStages(t *testing.T, persistence store.ScheduleStore, plan []app.ScheduleStage) []store.ScheduleStageRecord {
 	t.Helper()
+
 	elapsed := map[app.ScheduleStageKind]time.Duration{
 		app.ScheduleStageBase:   3 * time.Minute,
 		app.ScheduleStageExtend: 2 * time.Minute,
 		app.ScheduleStagePolish: 7 * time.Minute,
 	}
 	at := time.Date(2026, 8, 18, 9, 0, 0, 0, time.UTC)
+
 	recorded := make([]store.ScheduleStageRecord, 0, len(plan))
 	for _, stage := range plan[:len(plan)-1] {
 		record := store.NewScheduleStageRecord(testScheduleID, stage)
@@ -316,11 +355,15 @@ func recordedStages(t *testing.T, persistence store.ScheduleStore, plan []app.Sc
 		started, completed := at, at.Add(elapsed[stage.Kind])
 		record.StartedAt, record.CompletedAt = &started, &completed
 		at = completed
-		if err := persistence.SaveScheduleStage(testScheduleID, record); err != nil {
+
+		err := persistence.SaveScheduleStage(testScheduleID, record)
+		if err != nil {
 			t.Fatalf("SaveScheduleStage(%d) error = %v", stage.Index, err)
 		}
+
 		recorded = append(recorded, *record)
 	}
+
 	return recorded
 }
 
@@ -338,8 +381,10 @@ func timingsFromRecords(stages []store.ScheduleStageRecord) []app.ScheduleStageT
 		if stage.StartedAt != nil && stage.CompletedAt != nil {
 			timing.Elapsed = stage.CompletedAt.Sub(*stage.StartedAt)
 		}
+
 		timings = append(timings, timing)
 	}
+
 	return timings
 }
 
@@ -347,22 +392,26 @@ func timingsFromRecords(stages []store.ScheduleStageRecord) []app.ScheduleStageT
 // are tabwriter output, so the padding between columns depends on how wide the
 // widest cell in the campaign is; the columns themselves do not.
 func hasRow(body string, columns ...string) bool {
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < len(columns) {
 			continue
 		}
+
 		match := true
+
 		for i, column := range columns {
 			if fields[i] != column {
 				match = false
 				break
 			}
 		}
+
 		if match {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -372,5 +421,6 @@ func lastLines(body string, count int) string {
 	if len(lines) <= count {
 		return body
 	}
+
 	return "...\n" + strings.Join(lines[len(lines)-count:], "\n")
 }

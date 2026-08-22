@@ -14,21 +14,25 @@ import (
 	"github.com/cwbudde/mayflycirclefit/internal/ui"
 )
 
-// handleDashboardPage handles GET /
+// handleDashboardPage handles GET /.
 func (s *Server) handleDashboardPage(w http.ResponseWriter, r *http.Request) {
 	// Only handle exact root path
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
+
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", http.MethodGet+", "+http.MethodHead)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+
 		return
 	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	payload := s.dashboardPagePayload()
+
 	jobs := make([]ui.DashboardRunningJob, 0, len(payload.RunningJobs))
 	for _, runningJob := range payload.RunningJobs {
 		jobs = append(jobs, ui.DashboardRunningJob{
@@ -46,7 +50,8 @@ func (s *Server) handleDashboardPage(w http.ResponseWriter, r *http.Request) {
 			ElapsedSec:       runningJob.ElapsedSec,
 		})
 	}
-	if err := ui.DashboardPage(ui.DashboardPageData{
+
+	err := ui.DashboardPage(ui.DashboardPageData{
 		Campaigns:   payload.Campaigns,
 		RunningJobs: jobs,
 		Aggregates: ui.DashboardAggregates{
@@ -73,24 +78,28 @@ func (s *Server) handleDashboardPage(w http.ResponseWriter, r *http.Request) {
 				Error: payload.HostFacts.GPU.Error,
 			},
 		},
-	}).Render(r.Context(), w); err != nil {
+	}).Render(r.Context(), w)
+	if err != nil {
 		http.Error(w, "Failed to render page", http.StatusInternalServerError)
 		return
 	}
 }
 
-// handleJobsPage handles GET /jobs
+// handleJobsPage handles GET /jobs.
 func (s *Server) handleJobsPage(w http.ResponseWriter, r *http.Request) {
 	// Only handle exact jobs path
 	if r.URL.Path != "/jobs" {
 		http.NotFound(w, r)
 		return
 	}
+
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", http.MethodGet+", "+http.MethodHead)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+
 		return
 	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	// Bound both the fallback HTML and its hydration seed. Later pages are
@@ -127,25 +136,30 @@ func (s *Server) handleJobsPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleSettingsPage handles GET /settings
+// handleSettingsPage handles GET /settings.
 func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/settings" {
 		http.NotFound(w, r)
 		return
 	}
+
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", http.MethodGet+", "+http.MethodHead)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+
 		return
 	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := ui.SettingsPage().Render(r.Context(), w); err != nil {
+
+	err := ui.SettingsPage().Render(r.Context(), w)
+	if err != nil {
 		http.Error(w, "Failed to render page", http.StatusInternalServerError)
 		return
 	}
 }
 
-// handleJobDetail handles GET /jobs/:id
+// handleJobDetail handles GET /jobs/:id.
 func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	// Extract job ID from path
 	jobID := r.URL.Path[len("/jobs/"):]
@@ -154,9 +168,12 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := ui.JobNotFound(jobID).Render(r.Context(), w); err != nil {
+
+		err := ui.JobNotFound(jobID).Render(r.Context(), w)
+		if err != nil {
 			http.Error(w, "Failed to render page", http.StatusInternalServerError)
 		}
+
 		return
 	}
 
@@ -166,11 +183,14 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	cps := circlesPerSecond(job, elapsed)
 
 	refWidth, refHeight, refSize, _ := referenceImageMetadata(job.Config.RefPath)
+
 	psnr, psnrInfinite := cloneFloat(job.PSNR), job.PSNRInfinite
 	if len(job.BestParams) > 0 {
 		psnr, psnrInfinite = serializablePSNR(job.BestCost)
 	}
+
 	candidatePSNR, candidatePSNRInfinite := serializableCandidatePSNR(job.CandidateCost)
+
 	metricHistory := make([]ui.MetricSample, len(job.MetricHistory))
 	for i, sample := range job.MetricHistory {
 		metricHistory[i] = ui.MetricSample{
@@ -179,10 +199,12 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 			Timestamp: sample.Timestamp,
 		}
 	}
+
 	parameterCircles, err := decodeParameterCircles(job.BestParams)
 	if err != nil {
 		slog.Warn("Unable to display invalid job parameters", "job_id", job.ID, "error", err)
 	}
+
 	parameters := make([]ui.CircleParameter, len(parameterCircles))
 	for i, circle := range parameterCircles {
 		parameters[i] = ui.CircleParameter{
@@ -190,6 +212,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 			Red: circle.Red, Green: circle.Green, Blue: circle.Blue, Opacity: circle.Opacity,
 		}
 	}
+
 	maxIterations := plannedOptimizerIterations(job.Config)
 
 	// Convert to UI job detail
@@ -252,6 +275,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 func plannedOptimizerIterations(config JobConfig) int {
 	perStage := config.Iters * max(config.OptimizerEpochs, 1)
 	stages := 1
+
 	switch config.Mode {
 	case app.ModeSequential:
 		stages = config.Circles
@@ -259,10 +283,12 @@ func plannedOptimizerIterations(config JobConfig) int {
 		batchSize := max(config.BatchSize, 1)
 		stages = (config.Circles+batchSize-1)/batchSize + renderer.MaxExtraBatchStages
 	}
+
 	total := stages * perStage
 	if config.PolishingEnabled {
 		total += config.PolishingMaxSweeps * config.PolishingEpochs * config.PolishingIters
 	}
+
 	return total
 }
 
@@ -277,25 +303,28 @@ func referenceImageMetadata(path string) (width, height int, size int64, err err
 	if err != nil {
 		return 0, 0, 0, err
 	}
+
 	config, _, err := image.DecodeConfig(file)
 	if err != nil {
 		return 0, 0, 0, err
 	}
+
 	return config.Width, config.Height, info.Size(), nil
 }
 
-// handleCreatePage handles GET /create and POST /create
+// handleCreatePage handles GET /create and POST /create.
 func (s *Server) handleCreatePage(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
 		s.handleCreatePageGet(w, r)
-	} else if r.Method == http.MethodPost {
+	case http.MethodPost:
 		s.handleCreatePagePost(w, r)
-	} else {
+	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-// handleCreatePageGet renders the job creation form
+// handleCreatePageGet renders the job creation form.
 func (s *Server) handleCreatePageGet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -304,7 +333,8 @@ func (s *Server) handleCreatePageGet(w http.ResponseWriter, r *http.Request) {
 	requestedProject := strings.TrimSpace(r.URL.Query().Get("project"))
 
 	// Render the create job page with no error message
-	if err := ui.CreateJobPage("", requestedProject).Render(r.Context(), w); err != nil {
+	err := ui.CreateJobPage("", requestedProject).Render(r.Context(), w)
+	if err != nil {
 		http.Error(w, "Failed to render page", http.StatusInternalServerError)
 		return
 	}
@@ -321,12 +351,14 @@ func (s *Server) handleCreatePageGet(w http.ResponseWriter, r *http.Request) {
 // no second response to send. What is left to do is record it.
 func renderCreateJobError(w http.ResponseWriter, r *http.Request, message, project string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := ui.CreateJobPage(message, project).Render(r.Context(), w); err != nil {
+
+	err := ui.CreateJobPage(message, project).Render(r.Context(), w)
+	if err != nil {
 		slog.Error("Failed to render the job creation form", "error", err, "path", r.URL.Path)
 	}
 }
 
-// handleCreatePagePost processes the job creation form submission
+// handleCreatePagePost processes the job creation form submission.
 func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	// Parse form data
 	r.Body = http.MaxBytesReader(w, r.Body, app.MaxRequestBody)
@@ -394,6 +426,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		renderCreateJobError(w, r, fmt.Sprintf(
 			"Population size must be between %d and %d", app.MinPopulation, app.MaxPopulation,
 		), formProject)
+
 		return
 	}
 
@@ -420,31 +453,37 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		renderCreateError(w, r, formProject, err)
 		return
 	}
+
 	polishingMaxSweeps, err := formIntOrDefault(polishingMaxSweepsStr, 0, "Polishing max sweeps")
 	if err != nil {
 		renderCreateError(w, r, formProject, err)
 		return
 	}
+
 	polishingEpochs, err := formIntOrDefault(polishingEpochsStr, 0, "Polishing epochs")
 	if err != nil {
 		renderCreateError(w, r, formProject, err)
 		return
 	}
+
 	polishingIters, err := formIntOrDefault(polishingItersStr, 0, "Polishing iterations")
 	if err != nil {
 		renderCreateError(w, r, formProject, err)
 		return
 	}
+
 	polishingPopSize, err := formIntOrDefault(polishingPopSizeStr, 0, "Polishing population size")
 	if err != nil {
 		renderCreateError(w, r, formProject, err)
 		return
 	}
+
 	polishingStagnationIters, err := formIntOrDefault(polishingStagnationItersStr, 0, "Polishing stagnation iterations")
 	if err != nil {
 		renderCreateError(w, r, formProject, err)
 		return
 	}
+
 	polishingMinImprovement, err := formFloatOrDefault(polishingMinImprovementStr, 0, "Polishing minimum improvement")
 	if err != nil {
 		renderCreateError(w, r, formProject, err)
@@ -458,7 +497,8 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	}
 	// Parse convergence fields (with defaults)
 	convergenceEnabled := convergenceEnabledStr == "on" // checkbox is "on" when checked, empty otherwise
-	convergencePatience := 3                            // default
+
+	convergencePatience := 3 // default
 	if convergencePatienceStr != "" {
 		convergencePatience, err = strconv.Atoi(convergencePatienceStr)
 		if err != nil || convergencePatience < 1 || convergencePatience > 100 {
@@ -483,16 +523,19 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		renderCreateJobError(w, r, err.Error(), formProject)
 		return
 	}
+
 	stopMinImprovement, err := optionalFormFloat(r, "stopMinImprovement")
 	if err != nil {
 		renderCreateJobError(w, r, err.Error(), formProject)
 		return
 	}
+
 	stopStagnationIters, err := optionalFormInt(r, "stopStagnationIters")
 	if err != nil {
 		renderCreateJobError(w, r, err.Error(), formProject)
 		return
 	}
+
 	stopMinIters, err := optionalFormInt(r, "stopMinIters")
 	if err != nil {
 		renderCreateJobError(w, r, err.Error(), formProject)
@@ -530,20 +573,24 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		StopMinIters:             stopMinIters,
 	}
 	s.applyDefaultBackend(&requestedConfig)
+
 	config, err := app.Normalize(requestedConfig)
 	if err != nil {
 		renderCreateJobError(w, r, err.Error(), formProject)
 		return
 	}
+
 	if s.inputErr != nil {
 		renderCreateJobError(w, r, "Server input roots are unavailable", formProject)
 		return
 	}
+
 	config.RefPath, err = s.input.resolveImage(config.RefPath)
 	if err != nil {
 		renderCreateJobError(w, r, err.Error(), formProject)
 		return
 	}
+
 	if config.CanvasPath != "" {
 		config.CanvasPath, err = s.input.resolveImage(config.CanvasPath)
 		if err != nil {
@@ -555,10 +602,12 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	// The form carries the project as a plain field; an absent one is the
 	// default project, which is the legacy jobs directory.
 	requested, err := s.resolveRequestedProject(r.FormValue("project"), r)
+
 	project := requested
 	if err == nil {
 		project, err = s.ensureProject(requested)
 	}
+
 	if err != nil {
 		// A store fault is logged server-side and shown generically; only the
 		// charset-constrained validation message is echoed to the browser.
@@ -572,7 +621,9 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	// The server owns every job context, including jobs created through the UI.
 	if err := s.enqueueJob(job.ID); err != nil {
 		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
+
 		renderCreateJobError(w, r, "Server job queue is full", formProject)
+
 		return
 	}
 
@@ -590,10 +641,12 @@ func formIntOrDefault(raw string, defaultValue int, label string) (int, error) {
 	if raw == "" {
 		return defaultValue, nil
 	}
+
 	value, err := strconv.Atoi(raw)
 	if err != nil {
 		return 0, fmt.Errorf("%s must be a whole number", label)
 	}
+
 	return value, nil
 }
 
@@ -601,10 +654,12 @@ func formFloatOrDefault(raw string, defaultValue float64, label string) (float64
 	if raw == "" {
 		return defaultValue, nil
 	}
+
 	value, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
 		return 0, fmt.Errorf("%s must be a number", label)
 	}
+
 	return value, nil
 }
 
@@ -616,10 +671,12 @@ func optionalFormFloat(r *http.Request, field string) (float64, error) {
 	if raw == "" {
 		return 0, nil
 	}
+
 	value, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
 		return 0, fmt.Errorf("%s must be a number", field)
 	}
+
 	return value, nil
 }
 
@@ -630,9 +687,11 @@ func optionalFormInt(r *http.Request, field string) (int, error) {
 	if raw == "" {
 		return 0, nil
 	}
+
 	value, err := strconv.Atoi(raw)
 	if err != nil {
 		return 0, fmt.Errorf("%s must be a whole number", field)
 	}
+
 	return value, nil
 }

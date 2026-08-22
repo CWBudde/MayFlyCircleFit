@@ -22,7 +22,9 @@ func (h *captureHandler) Enabled(_ context.Context, level slog.Level) bool {
 func (h *captureHandler) Handle(_ context.Context, record slog.Record) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
 	h.records = append(h.records, record.Clone())
+
 	return nil
 }
 
@@ -36,16 +38,20 @@ func (h *captureHandler) countEvent(event string) (total int, byLevel map[slog.L
 	defer h.mu.Unlock()
 
 	byLevel = map[slog.Level]int{}
+
 	for _, record := range h.records {
 		record.Attrs(func(attr slog.Attr) bool {
 			if attr.Key == "event" && attr.Value.String() == event {
 				total++
 				byLevel[record.Level]++
+
 				return false
 			}
+
 			return true
 		})
 	}
+
 	return total, byLevel
 }
 
@@ -53,6 +59,7 @@ func runLoggedOptimization(t *testing.T, handler *captureHandler, maxIters int) 
 	t.Helper()
 
 	optimizer := NewMayfly(maxIters, 20, 42, WithLogger(slog.New(handler)))
+
 	_, err := optimizer.(LifecycleOptimizer).RunContext(context.Background(), Problem{
 		Eval: sphere, Lower: []float64{-10, -10}, Upper: []float64{10, 10}, Dim: 2,
 	}, RunOptions{})
@@ -71,6 +78,7 @@ func TestMayflyLoggerDemotesHighFrequencyEvents(t *testing.T) {
 	if total, _ := handler.countEvent(eventIterationCompleted); total != 0 {
 		t.Fatalf("iteration_completed records at info = %d, want 0", total)
 	}
+
 	if total, _ := handler.countEvent(eventOptimizationStarted); total != 0 {
 		t.Fatalf("optimization_started records at info = %d, want 0", total)
 	}
@@ -79,6 +87,7 @@ func TestMayflyLoggerDemotesHighFrequencyEvents(t *testing.T) {
 	if total != 1 {
 		t.Fatalf("optimization_completed records = %d, want 1", total)
 	}
+
 	if byLevel[slog.LevelInfo] != 1 {
 		t.Fatalf("optimization_completed at info = %d, want 1", byLevel[slog.LevelInfo])
 	}
@@ -95,9 +104,11 @@ func TestMayflyLoggerEmitsIterationDetailAtDebug(t *testing.T) {
 	if total != iterations {
 		t.Fatalf("iteration_completed records = %d, want %d", total, iterations)
 	}
+
 	if byLevel[slog.LevelDebug] != iterations {
 		t.Fatalf("iteration_completed at debug = %d, want %d", byLevel[slog.LevelDebug], iterations)
 	}
+
 	if started, startedByLevel := handler.countEvent(eventOptimizationStarted); started != 1 || startedByLevel[slog.LevelDebug] != 1 {
 		t.Fatalf("optimization_started at debug = %d/%d, want 1/1", startedByLevel[slog.LevelDebug], started)
 	}
@@ -109,6 +120,7 @@ func TestMayflyLoggerNilIsSafe(t *testing.T) {
 	if optimizer.logger != nil {
 		t.Fatal("WithLogger(nil) stored a logger")
 	}
+
 	if _, err := optimizer.RunContext(context.Background(), Problem{
 		Eval: sphere, Lower: []float64{-1, -1}, Upper: []float64{1, 1}, Dim: 2,
 	}, RunOptions{}); err != nil {

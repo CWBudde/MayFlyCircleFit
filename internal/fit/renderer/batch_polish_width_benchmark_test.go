@@ -32,6 +32,7 @@ var polishBenchmarkPoolWidths = []int{1, 8, 12, 48}
 // over, so the radii are scaled by the same factor as the image.
 func productionPolishParams(circleCount, width, height int) []float64 {
 	scale := float64(width) / 128
+
 	params := make([]float64, 0, circleCount*paramsPerCircle)
 	for i := range circleCount {
 		params = append(params, circleParams(
@@ -42,6 +43,7 @@ func productionPolishParams(circleCount, width, height int) []float64 {
 			0.4+float64(i%4)/10,
 		)...)
 	}
+
 	return params
 }
 
@@ -65,9 +67,12 @@ func productionPolishParams(circleCount, width, height int) []float64 {
 // canvases, not that much overlap.
 func BenchmarkPolishSweepProductionShape(b *testing.B) {
 	ref := solidImage(polishBenchmarkWidth, polishBenchmarkHeight, color.NRGBA{R: 60, G: 120, B: 180, A: 255})
+
 	b.Logf("GOMAXPROCS=%d, so any pool wider than that is reported for the record only", runtime.GOMAXPROCS(0))
+
 	for _, circleCount := range []int{256, 512} {
 		params := productionPolishParams(circleCount, polishBenchmarkWidth, polishBenchmarkHeight)
+
 		for _, candidates := range []int{1000, 4000, 16000} {
 			for _, workers := range polishBenchmarkPoolWidths {
 				name := "circles-" + strconv.Itoa(circleCount) +
@@ -77,6 +82,7 @@ func BenchmarkPolishSweepProductionShape(b *testing.B) {
 					cpu := NewCPURenderer(ref, circleCount)
 					cpu.SetThreads(1)
 					b.ReportAllocs()
+
 					for range b.N {
 						_, err := PolishCircleBatchContext(context.Background(), cpu,
 							&concurrentPolishOptimizer{workers: workers, candidates: candidates},
@@ -89,6 +95,7 @@ func BenchmarkPolishSweepProductionShape(b *testing.B) {
 							b.Fatal(err)
 						}
 					}
+
 					b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*candidates), "ns/candidate")
 				})
 			}
@@ -114,32 +121,39 @@ func BenchmarkPolishSweepPoolSetup(b *testing.B) {
 	for _, circleCount := range []int{256, 512} {
 		params := productionPolishParams(circleCount, polishBenchmarkWidth, polishBenchmarkHeight)
 		const prefixCircles = 11
+
 		for _, workers := range []int{1, 8, 48} {
 			b.Run("circles-"+strconv.Itoa(circleCount)+"/width-"+strconv.Itoa(workers), func(b *testing.B) {
 				cpu := NewCPURenderer(ref, circleCount)
 				cpu.SetThreads(1)
+
 				primary, primaryCleanup, ok := bakedSuffixSession(cpu, params, prefixCircles, circleCount)
 				if !ok {
 					b.Fatal("baked suffix session not applied")
 				}
 				defer primaryCleanup()
+
 				b.ReportAllocs()
 				b.ResetTimer()
+
 				for range b.N {
 					baked, baking := bakePrefixCanvas(cpu, params, prefixCircles, circleCount)
 					if !baking {
 						b.Fatal("prefix canvas not baked")
 					}
+
 					pool := newEvaluationPool(primary, params, workers, func() (Renderer, func(), error) {
 						session, cleanup, created := sessionOverBakedCanvas(cpu, baked, circleCount-prefixCircles)
 						if !created {
 							return nil, nil, ErrStagedOptimizationUnsupported
 						}
+
 						return session, cleanup, nil
 					})
 					if pool.width() != workers {
 						b.Fatalf("pool width = %d, want %d", pool.width(), workers)
 					}
+
 					pool.close()
 				}
 			})
@@ -163,6 +177,7 @@ func BenchmarkPolishResidualRegionSelection(b *testing.B) {
 			cpu := NewCPURenderer(ref, circleCount)
 			cpu.SetThreads(1)
 			b.ReportAllocs()
+
 			for range b.N {
 				audit := &incumbentAuditCache{session: cpu}
 				if _, err := selectResidualRegionActiveSet(cpu, audit, params, polishBenchmarkActiveSetSize, nil); err != nil {

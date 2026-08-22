@@ -30,7 +30,7 @@ var supportedVariants = map[string]struct{}{
 	"aoblmoa":       {},
 }
 
-// MayflyAdapter wraps the external Mayfly library to conform to our Optimizer interface
+// MayflyAdapter wraps the external Mayfly library to conform to our Optimizer interface.
 type MayflyAdapter struct {
 	maxIters int
 	popSize  int
@@ -112,6 +112,7 @@ func (m *MayflyAdapter) ParallelEvaluationWorkers() int {
 	if m.parallelWorkers < 1 {
 		return 1
 	}
+
 	return m.parallelWorkers
 }
 
@@ -129,9 +130,11 @@ func ParallelEvaluationWidth(optimizer Optimizer) int {
 	if !ok {
 		return 1
 	}
+
 	if workers := reporter.ParallelEvaluationWorkers(); workers > 1 {
 		return workers
 	}
+
 	return 1
 }
 
@@ -142,25 +145,27 @@ func newAdapter(variant string, maxIters, popSize int, seed int64, options ...Ma
 		seed:     seed,
 		variant:  variant,
 	}
+
 	for _, option := range options {
 		if option != nil {
 			option(adapter)
 		}
 	}
+
 	return adapter
 }
 
-// NewMayfly creates a new Mayfly optimizer adapter
+// NewMayfly creates a new Mayfly optimizer adapter.
 func NewMayfly(maxIters, popSize int, seed int64, options ...MayflyOption) Optimizer {
 	return newAdapter(variantStandard, maxIters, popSize, seed, options...)
 }
 
-// NewMayflyDESMA creates a Mayfly optimizer using the DESMA variant
+// NewMayflyDESMA creates a Mayfly optimizer using the DESMA variant.
 func NewMayflyDESMA(maxIters, popSize int, seed int64, options ...MayflyOption) Optimizer {
 	return newAdapter("desma", maxIters, popSize, seed, options...)
 }
 
-// NewMayflyOLCE creates a Mayfly optimizer using the OLCE-MA variant
+// NewMayflyOLCE creates a Mayfly optimizer using the OLCE-MA variant.
 func NewMayflyOLCE(maxIters, popSize int, seed int64, options ...MayflyOption) Optimizer {
 	return newAdapter("olce", maxIters, popSize, seed, options...)
 }
@@ -172,9 +177,11 @@ func NewMayflyVariant(variant string, maxIters, popSize int, seed int64, options
 	if variant == "" {
 		variant = variantStandard
 	}
+
 	if _, ok := supportedVariants[variant]; !ok {
 		return nil, fmt.Errorf("%w: %q", ErrUnknownVariant, variant)
 	}
+
 	return newAdapter(variant, maxIters, popSize, seed, options...), nil
 }
 
@@ -193,10 +200,11 @@ func (m *MayflyAdapter) RunWithInitial(initialParams []float64, initialCost floa
 	if err != nil {
 		return append([]float64(nil), initialParams...), initialCost
 	}
+
 	return result.BestParams, result.BestCost
 }
 
-// Run executes the Mayfly optimization using the external library
+// Run executes the Mayfly optimization using the external library.
 func (m *MayflyAdapter) Run(eval func([]float64) float64, lower, upper []float64, dim int) ([]float64, float64) {
 	result, err := m.RunContext(context.Background(), Problem{
 		Eval: eval, Lower: lower, Upper: upper, Dim: dim,
@@ -204,6 +212,7 @@ func (m *MayflyAdapter) Run(eval func([]float64) float64, lower, upper []float64
 	if err != nil {
 		return nil, math.Inf(1)
 	}
+
 	return result.BestParams, result.BestCost
 }
 
@@ -213,9 +222,11 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 	if err := validateProblem(problem); err != nil {
 		return Result{}, err
 	}
+
 	if options.ResumeCount < 0 {
-		return Result{}, fmt.Errorf("resume count cannot be negative")
+		return Result{}, errors.New("resume count cannot be negative")
 	}
+
 	if err := validateContinuationProfile(options.Continuation); err != nil {
 		return Result{}, err
 	}
@@ -247,6 +258,7 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 		for i := range params {
 			result[i] = problem.Lower[i] + params[i]*(problem.Upper[i]-problem.Lower[i])
 		}
+
 		return result
 	}
 	normalize := func(params []float64) []float64 {
@@ -254,6 +266,7 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 		for i := range params {
 			result[i] = (params[i] - problem.Lower[i]) / (problem.Upper[i] - problem.Lower[i])
 		}
+
 		return result
 	}
 
@@ -263,6 +276,7 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 	canonicalize := func(normalizedParams []float64) []float64 {
 		params := denormalize(normalizedParams)
 		repairCandidate(problem, params)
+
 		return params
 	}
 
@@ -277,15 +291,18 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 	config.NPop = m.popSize
 	config.NPopF = m.popSize
 	config.LowerBound = 0.0
+
 	config.UpperBound = 1.0
 	if m.parallelWorkers > 1 {
 		config.EnableParallel = true
 		config.MaxWorkers = m.parallelWorkers
 	}
+
 	if options.Continuation != nil && options.Continuation.MaxVelocity > 0 {
 		config.VelMax = options.Continuation.MaxVelocity
 		config.VelMin = -options.Continuation.MaxVelocity
 	}
+
 	if len(problem.Inequalities) > 0 {
 		// Aggregate after canonicalization so Repair runs once per constraint
 		// evaluation, regardless of how many inequalities a problem declares.
@@ -315,6 +332,7 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 			target := m.stop.TargetCost
 			convergence.TargetCost = &target
 		}
+
 		config.Convergence = convergence
 	}
 
@@ -323,46 +341,59 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 	if options.ResumeCount > 0 {
 		runSeed = continuationSeed(m.seed, options.ResumeCount)
 	}
+
 	rng := rand.New(rand.NewSource(runSeed))
 	config.Rand = rng
 
 	var runOptions []mayfly.RunOption
 	best := Result{BestCost: math.Inf(1), Termination: TerminationCompleted}
 	bestViolation := math.Inf(1)
+
 	seedCandidates := make([]Candidate, 0, len(options.AdditionalSeeds)+1)
 	if options.Initial != nil {
 		seedCandidates = append(seedCandidates, *options.Initial)
 	}
+
 	seedCandidates = append(seedCandidates, options.AdditionalSeeds...)
+
 	normalizedSeeds := make([][]float64, 0, len(seedCandidates))
 	for index, candidate := range seedCandidates {
 		candidate.Params = append([]float64(nil), candidate.Params...)
 		originalParams := append([]float64(nil), candidate.Params...)
 		repairCandidate(problem, candidate.Params)
+
 		if !slices.Equal(originalParams, candidate.Params) {
 			candidate.Cost = problem.Eval(candidate.Params)
 		}
-		if err := validateCandidate(candidate, problem); err != nil {
+
+		err := validateCandidate(candidate, problem)
+		if err != nil {
 			return Result{}, fmt.Errorf("initial candidate %d: %w", index, err)
 		}
+
 		violation := inequalityViolation(problem.Inequalities, candidate.Params)
 		if betterCandidate(candidate.Cost, violation, best.BestCost, bestViolation, config.Constraints) {
 			best.BestParams = append([]float64(nil), candidate.Params...)
 			best.BestCost = candidate.Cost
 			bestViolation = violation
 		}
+
 		normalizedSeeds = append(normalizedSeeds, normalize(candidate.Params))
 	}
+
 	if len(normalizedSeeds) > 0 {
 		maleSeeds, femaleSeeds := seededPopulationFromCandidates(normalizedSeeds, m.popSize, rng, options.Continuation)
 		runOptions = append(runOptions, mayfly.WithInitialPopulation(maleSeeds, femaleSeeds))
 	}
+
 	if m.logger != nil {
 		runOptions = append(runOptions, mayfly.WithLogger(mayflyLogger{logger: m.logger}))
 	}
+
 	runOptions = append(runOptions, mayfly.WithProgressObserver(func(progress mayfly.Progress) {
 		params := denormalize(progress.Best.Position)
 		repairCandidate(problem, params)
+
 		if betterCandidate(
 			progress.Best.Cost,
 			progress.Best.ConstraintViolation,
@@ -374,7 +405,9 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 			best.BestCost = progress.Best.Cost
 			bestViolation = progress.Best.ConstraintViolation
 		}
+
 		best.Iterations = progress.Iteration
+
 		best.Evaluations = progress.EvaluationCount
 		if options.Observer != nil {
 			reported := Progress{
@@ -386,6 +419,7 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 			if options.ProgressMapper != nil {
 				reported = options.ProgressMapper(reported)
 			}
+
 			options.Observer(reported)
 		}
 	}))
@@ -396,11 +430,13 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 			best.Termination = TerminationCancelled
 			return best, err
 		}
+
 		return Result{}, fmt.Errorf("mayfly optimization: %w", err)
 	}
 
 	params := denormalize(result.GlobalBest.Position)
 	repairCandidate(problem, params)
+
 	if betterCandidate(
 		result.GlobalBest.Cost,
 		result.GlobalBest.ConstraintViolation,
@@ -412,9 +448,11 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 		best.BestCost = result.GlobalBest.Cost
 		bestViolation = result.GlobalBest.ConstraintViolation
 	}
+
 	best.Iterations = result.IterationCount
 	best.Evaluations = result.FuncEvalCount
 	best.Termination = terminationFromMayfly(result.TerminationReason)
+
 	return best, nil
 }
 
@@ -429,16 +467,19 @@ func repairCandidate(problem Problem, params []float64) {
 // participate in the same feasibility ordering as the optimizer population.
 func inequalityViolation(constraints []InequalityConstraint, params []float64) float64 {
 	violation := 0.0
+
 	for _, constraint := range constraints {
 		value := constraint(params)
 		if math.IsNaN(value) || math.IsInf(value, 0) {
 			return math.Inf(1)
 		}
+
 		violation += max(0, value)
 		if math.IsInf(violation, 1) {
 			return math.Inf(1)
 		}
 	}
+
 	return violation
 }
 
@@ -466,33 +507,39 @@ func terminationFromMayfly(reason mayfly.TerminationReason) Termination {
 
 func validateProblem(problem Problem) error {
 	if problem.Eval == nil {
-		return fmt.Errorf("objective function is required")
+		return errors.New("objective function is required")
 	}
+
 	if problem.Dim <= 0 || len(problem.Lower) != problem.Dim || len(problem.Upper) != problem.Dim {
-		return fmt.Errorf("problem dimensions and bounds do not match")
+		return errors.New("problem dimensions and bounds do not match")
 	}
+
 	for i := range problem.Dim {
 		if math.IsNaN(problem.Lower[i]) || math.IsNaN(problem.Upper[i]) || math.IsInf(problem.Lower[i], 0) || math.IsInf(problem.Upper[i], 0) || problem.Lower[i] >= problem.Upper[i] {
 			return fmt.Errorf("invalid bounds at dimension %d", i)
 		}
 	}
+
 	for i, constraint := range problem.Inequalities {
 		if constraint == nil {
 			return fmt.Errorf("inequality constraint %d is nil", i)
 		}
 	}
+
 	return nil
 }
 
 func validateCandidate(candidate Candidate, problem Problem) error {
 	if len(candidate.Params) != problem.Dim || math.IsNaN(candidate.Cost) || math.IsInf(candidate.Cost, 0) {
-		return fmt.Errorf("initial candidate has invalid dimensions or cost")
+		return errors.New("initial candidate has invalid dimensions or cost")
 	}
+
 	for i, value := range candidate.Params {
 		if math.IsNaN(value) || math.IsInf(value, 0) || value < problem.Lower[i] || value > problem.Upper[i] {
 			return fmt.Errorf("initial candidate dimension %d is outside bounds", i)
 		}
 	}
+
 	return nil
 }
 
@@ -500,18 +547,19 @@ func seededPopulationFromCandidates(candidates [][]float64, population int, rng 
 	if len(candidates) == 0 {
 		return nil, nil
 	}
+
 	localFraction := 0.5
 	sigma := 0.05
 	coordinateRate := 1.0
+
 	if profile != nil {
 		localFraction = profile.LocalFraction
 		sigma = profile.Sigma
 		coordinateRate = profile.CoordinateRate
 	}
-	seedCount := int(math.Ceil(float64(population) * localFraction))
-	if seedCount < 1 {
-		seedCount = 1
-	}
+
+	seedCount := max(int(math.Ceil(float64(population)*localFraction)), 1)
+
 	seedCount = min(seedCount, population)
 	makeSeeds := func(exact bool) [][]float64 {
 		seeds := make([][]float64, seedCount)
@@ -519,14 +567,17 @@ func seededPopulationFromCandidates(candidates [][]float64, population int, rng 
 			seeds[i] = append([]float64(nil), candidates[i%len(candidates)]...)
 			if !exact || i >= len(candidates) {
 				perturbed := false
+
 				for dimension := range seeds[i] {
 					if coordinateRate < 1 && rng.Float64() > coordinateRate {
 						continue
 					}
+
 					seeds[i][dimension] += rng.NormFloat64() * sigma
 					seeds[i][dimension] = math.Max(0, math.Min(1, seeds[i][dimension]))
 					perturbed = true
 				}
+
 				if !perturbed && len(seeds[i]) > 0 {
 					dimension := rng.Intn(len(seeds[i]))
 					seeds[i][dimension] += rng.NormFloat64() * sigma
@@ -534,8 +585,10 @@ func seededPopulationFromCandidates(candidates [][]float64, population int, rng 
 				}
 			}
 		}
+
 		return seeds
 	}
+
 	return makeSeeds(true), makeSeeds(false)
 }
 
@@ -543,18 +596,23 @@ func validateContinuationProfile(profile *ContinuationProfile) error {
 	if profile == nil {
 		return nil
 	}
+
 	if profile.LocalFraction <= 0 || profile.LocalFraction > 1 {
-		return fmt.Errorf("continuation local fraction must be in (0,1]")
+		return errors.New("continuation local fraction must be in (0,1]")
 	}
+
 	if profile.Sigma <= 0 || profile.Sigma > 1 {
-		return fmt.Errorf("continuation sigma must be in (0,1]")
+		return errors.New("continuation sigma must be in (0,1]")
 	}
+
 	if profile.CoordinateRate <= 0 || profile.CoordinateRate > 1 {
-		return fmt.Errorf("continuation coordinate rate must be in (0,1]")
+		return errors.New("continuation coordinate rate must be in (0,1]")
 	}
+
 	if profile.MaxVelocity < 0 || profile.MaxVelocity > 1 {
-		return fmt.Errorf("continuation maximum velocity must be in [0,1]")
+		return errors.New("continuation maximum velocity must be in [0,1]")
 	}
+
 	return nil
 }
 
@@ -563,5 +621,6 @@ func continuationSeed(seed int64, resumeCount int) int64 {
 	value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9
 	value = (value ^ (value >> 27)) * 0x94d049bb133111eb
 	value ^= value >> 31
+
 	return int64(value & math.MaxInt64)
 }

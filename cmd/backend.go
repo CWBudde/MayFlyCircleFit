@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
@@ -14,6 +14,6 @@ func parseBackendFlag(raw string) (app.Backend, error) {
 	case renderer.BackendOpenCL:
 		return app.BackendOpenCL, nil
 	default:
-		return "", fmt.Errorf("backend must be one of: cpu, opencl (aliases: gpu, cl)")
+		return "", errors.New("backend must be one of: cpu, opencl (aliases: gpu, cl)")
 	}
 }

@@ -26,6 +26,7 @@ func resumeGradientReference(width, height int) *image.NRGBA {
 			})
 		}
 	}
+
 	return img
 }
 
@@ -33,6 +34,7 @@ func resumeGradientReference(width, height int) *image.NRGBA {
 // exactly the same vectors in the same order.
 func resumeCandidates(batches, workers, dim int, lower, upper []float64) [][][]float64 {
 	rng := rand.New(rand.NewSource(11))
+
 	all := make([][][]float64, batches)
 	for b := range all {
 		batch := make([][]float64, workers)
@@ -41,10 +43,13 @@ func resumeCandidates(batches, workers, dim int, lower, upper []float64) [][][]f
 			for j := range candidate {
 				candidate[j] = lower[j] + rng.Float64()*(upper[j]-lower[j])
 			}
+
 			batch[i] = candidate
 		}
+
 		all[b] = batch
 	}
+
 	return all
 }
 
@@ -55,6 +60,7 @@ func resumeCandidates(batches, workers, dim int, lower, upper []float64) [][][]f
 // what resume asks for whenever the checkpoint recorded --parallel-evaluation.
 func resumeEvaluationCosts(t *testing.T, workers int, circles int) []float64 {
 	t.Helper()
+
 	ref := resumeGradientReference(24, 18)
 	rend := renderer.NewCPURenderer(ref, circles)
 	rend.SetThreads(2)
@@ -65,19 +71,25 @@ func resumeEvaluationCosts(t *testing.T, workers int, circles int) []float64 {
 
 	batches := resumeCandidates(4, 4, joint.problem.Dim, joint.problem.Lower, joint.problem.Upper)
 	var costs []float64
+
 	for _, batch := range batches {
 		batchCosts := make([]float64, len(batch))
 		var group sync.WaitGroup
 		group.Add(len(batch))
+
 		for i := range batch {
 			go func() {
 				defer group.Done()
+
 				batchCosts[i] = joint.problem.Eval(append([]float64(nil), batch[i]...))
 			}()
 		}
+
 		group.Wait()
+
 		costs = append(costs, batchCosts...)
 	}
+
 	return costs
 }
 
@@ -89,10 +101,12 @@ func resumeEvaluationCosts(t *testing.T, workers int, circles int) []float64 {
 // Under -race the old code also reports a data race in render.
 func TestResumeJointProblemIsConcurrencySafe(t *testing.T) {
 	serial := resumeEvaluationCosts(t, 1, 3)
+
 	parallel := resumeEvaluationCosts(t, 4, 3)
 	if len(serial) == 0 {
 		t.Fatal("no evaluations recorded")
 	}
+
 	if !slices.Equal(serial, parallel) {
 		t.Fatalf("concurrent resume costs differ from serial costs\nserial:   %v\nparallel: %v", serial, parallel)
 	}
@@ -108,6 +122,7 @@ func TestResumeJointProblemUsesPooledSessions(t *testing.T) {
 
 	evaluator := renderer.NewConcurrentEvaluator(rend, 2)
 	defer evaluator.Close()
+
 	if got := evaluator.Width(); got != rend.ParallelEvaluationWorkers() {
 		t.Fatalf("evaluator width = %d, want %d", got, rend.ParallelEvaluationWorkers())
 	}

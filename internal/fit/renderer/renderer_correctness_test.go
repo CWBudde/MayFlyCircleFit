@@ -84,10 +84,12 @@ func TestCPURendererMatchesPreOptimizationBaseline(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			reference := randomNRGBA(test.width, test.height, 901)
+
 			var initial *image.NRGBA
 			if test.customCanvas {
 				initial = randomNRGBA(test.width, test.height, 902)
 			}
+
 			params := encodeCircles(test.circles)
 			want := renderPreOptimizationBaseline(test.width, test.height, initial, params)
 			wantCost := fit.MSECost(want, reference)
@@ -101,6 +103,7 @@ func TestCPURendererMatchesPreOptimizationBaseline(t *testing.T) {
 					} else {
 						renderer = NewCPURendererWithCanvas(reference, initial, len(test.circles))
 					}
+
 					renderer.SetThreads(threads)
 
 					assertRenderBytes(t, renderer.Render(params), want)
@@ -111,7 +114,9 @@ func TestCPURendererMatchesPreOptimizationBaseline(t *testing.T) {
 					if got := renderer.Cost(params); got != wantCost {
 						t.Fatalf("FastMSECost = %v, baseline MSECost = %v", got, wantCost)
 					}
+
 					renderer.SetCostFunc(fit.MSECost)
+
 					if got := renderer.Cost(params); got != wantCost {
 						t.Fatalf("MSECost = %v, baseline MSECost = %v", got, wantCost)
 					}
@@ -130,17 +135,20 @@ func renderPreOptimizationBaseline(width, height int, initial *image.NRGBA, para
 	}
 
 	circleCount := len(params) / paramsPerCircle
+
 	pv := fit.ParamVector{Data: params, K: circleCount, Width: width, Height: height}
-	for i := 0; i < circleCount; i++ {
+	for i := range circleCount {
 		circle := pv.DecodeCircle(i)
 		minX := int(math.Max(0, math.Floor(circle.X-circle.R)))
 		maxX := int(math.Min(float64(width-1), math.Ceil(circle.X+circle.R)))
 		minY := int(math.Max(0, math.Floor(circle.Y-circle.R)))
 		maxY := int(math.Min(float64(height-1), math.Ceil(circle.Y+circle.R)))
 		radiusSquared := circle.R * circle.R
+
 		for y := minY; y <= maxY; y++ {
 			for x := minX; x <= maxX; x++ {
 				dx := float64(x) - circle.X
+
 				dy := float64(y) - circle.Y
 				if dx*dx+dy*dy <= radiusSquared {
 					compositePreOptimizationPixel(canvas, x, y, circle)
@@ -148,6 +156,7 @@ func renderPreOptimizationBaseline(width, height int, initial *image.NRGBA, para
 			}
 		}
 	}
+
 	return canvas
 }
 
@@ -158,6 +167,7 @@ func compositePreOptimizationPixel(img *image.NRGBA, x, y int, circle fit.Circle
 	backgroundBlue := float64(img.Pix[offset+2]) / 255
 	backgroundAlpha := float64(img.Pix[offset+3]) / 255
 	foregroundAlpha := circle.Opacity
+
 	outputAlpha := foregroundAlpha + backgroundAlpha*(1-foregroundAlpha)
 	if outputAlpha == 0 {
 		return
@@ -171,35 +181,43 @@ func compositePreOptimizationPixel(img *image.NRGBA, x, y int, circle fit.Circle
 
 func encodeCircles(circles []fit.Circle) []float64 {
 	params := make([]float64, len(circles)*paramsPerCircle)
+
 	pv := fit.ParamVector{Data: params, K: len(circles)}
 	for i, circle := range circles {
 		pv.EncodeCircle(i, circle)
 	}
+
 	return params
 }
 
 func decodeCircles(params []float64, count, width, height int) []fit.Circle {
 	pv := fit.ParamVector{Data: params, K: count, Width: width, Height: height}
+
 	circles := make([]fit.Circle, count)
 	for i := range circles {
 		circles[i] = pv.DecodeCircle(i)
 	}
+
 	return circles
 }
 
 func assertRenderBytes(t *testing.T, got, want *image.NRGBA) {
 	t.Helper()
+
 	if len(got.Pix) != len(want.Pix) {
 		t.Fatalf("rendered pixel buffer length = %d, baseline = %d", len(got.Pix), len(want.Pix))
 	}
+
 	if bytes.Equal(got.Pix, want.Pix) {
 		return
 	}
+
 	for i := range want.Pix {
 		if got.Pix[i] != want.Pix[i] {
 			pixel := i / 4
 			t.Fatalf("pixel (%d,%d) channel %d = %d, baseline = %d", pixel%want.Bounds().Dx(), pixel/want.Bounds().Dx(), i%4, got.Pix[i], want.Pix[i])
 		}
 	}
+
 	t.Fatal("rendered pixel buffers differ")
 }

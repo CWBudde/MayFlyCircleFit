@@ -34,17 +34,22 @@ func TestRoutingDashboardEndpoint(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard", nil)
 
 	fixture.server.Handler().ServeHTTP(rec, req)
+
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/v1/dashboard status = %d, want %d", rec.Code, http.StatusOK)
 	}
+
 	if got, want := rec.Header().Get("Content-Type"), "application/json"; got != want {
 		t.Fatalf("content-type = %q, want %q", got, want)
 	}
 
 	var payload dashboardResponse
-	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+
+	err := json.NewDecoder(rec.Body).Decode(&payload)
+	if err != nil {
 		t.Fatalf("decode /api/v1/dashboard body: %v", err)
 	}
+
 	if payload.Campaigns == nil {
 		t.Fatal("dashboard response should include campaigns")
 	}
@@ -52,6 +57,7 @@ func TestRoutingDashboardEndpoint(t *testing.T) {
 
 func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 	fixture := newScheduleFixture(t, 2)
+
 	scheduleStore, err := fixture.server.scheduleStore()
 	if err != nil {
 		t.Fatalf("schedule store: %v", err)
@@ -59,13 +65,16 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 
 	base := time.Now().UTC().Add(-time.Hour)
 
-	for i := 0; i < dashboardCampaignLimit+4; i++ {
+	for i := range dashboardCampaignLimit + 4 {
 		state := store.ScheduleStateCompleted
-		if i == dashboardCampaignLimit+3 {
+
+		switch i {
+		case dashboardCampaignLimit + 3:
 			state = store.ScheduleStateRunning
-		} else if i == dashboardCampaignLimit+2 {
+		case dashboardCampaignLimit + 2:
 			state = store.ScheduleStatePending
 		}
+
 		saveCampaignScheduleForDashboard(
 			t,
 			scheduleStore,
@@ -95,6 +104,7 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 		job.BestCost = 42.5
 		job.InitialCost = 100
 		job.Evaluations = 120
+
 		job.BestParams = make([]float64, 56)
 		for i := range 200 {
 			job.MetricHistory = append(job.MetricHistory, MetricSample{
@@ -106,6 +116,7 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed running job: %v", err)
 	}
+
 	if err := fixture.server.jobManager.UpdateJob(completed.ID, func(job *Job) {
 		done := time.Now()
 		job.State = StateCompleted
@@ -119,6 +130,7 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard", nil)
 	rec := httptest.NewRecorder()
 	fixture.server.Handler().ServeHTTP(rec, req)
+
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
 	}
@@ -131,12 +143,15 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 	if len(response.Campaigns) != dashboardCampaignLimit {
 		t.Fatalf("campaign count = %d, want %d", len(response.Campaigns), dashboardCampaignLimit)
 	}
+
 	if response.Campaigns[0].State != string(store.ScheduleStateRunning) {
 		t.Fatalf("first campaign state = %q, want running", response.Campaigns[0].State)
 	}
+
 	if response.Campaigns[1].State != string(store.ScheduleStatePending) {
 		t.Fatalf("second campaign state = %q, want pending", response.Campaigns[1].State)
 	}
+
 	for i := 2; i < len(response.Campaigns); i++ {
 		if response.Campaigns[i].State == string(store.ScheduleStateRunning) || response.Campaigns[i].State == string(store.ScheduleStatePending) {
 			t.Fatalf("campaign %d state = %q, want non-active", i, response.Campaigns[i].State)
@@ -146,24 +161,31 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 	if response.Aggregates.Running != 1 || response.Aggregates.Pending != 1 || response.Aggregates.Completed != 1 {
 		t.Fatalf("aggregates = %+v, want running=1 pending=1 completed=1", response.Aggregates)
 	}
+
 	if response.Aggregates.CPS <= 0 {
 		t.Fatalf("aggregates cps = %f, want > 0", response.Aggregates.CPS)
 	}
+
 	if len(response.RunningJobs) != 1 {
 		t.Fatalf("running jobs = %d, want 1", len(response.RunningJobs))
 	}
+
 	if response.RunningJobs[0].ID != running.ID {
 		t.Fatalf("running job id = %q, want %q", response.RunningJobs[0].ID, running.ID)
 	}
+
 	if response.RunningJobs[0].Iterations != 55 {
 		t.Fatalf("running iterations = %d, want 55", response.RunningJobs[0].Iterations)
 	}
+
 	if response.RunningJobs[0].Project != app.DefaultProject {
 		t.Fatalf("running project = %q, want %q", response.RunningJobs[0].Project, app.DefaultProject)
 	}
+
 	if response.RunningJobs[0].MaxIters <= 0 {
 		t.Fatalf("running max iters = %d, want > 0", response.RunningJobs[0].MaxIters)
 	}
+
 	if len(response.RunningJobs[0].MetricHistory) != dashboardMetricHistoryLimit {
 		t.Fatalf("running metric history = %d, want %d", len(response.RunningJobs[0].MetricHistory), dashboardMetricHistoryLimit)
 	}
@@ -176,20 +198,25 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 	if len(runningCampaign.CampaignSeries) != 1 {
 		t.Fatalf("campaign series = %d points, want 1", len(runningCampaign.CampaignSeries))
 	}
+
 	point := runningCampaign.CampaignSeries[0]
 	if point.Kind != string(app.ScheduleStageBase) || point.Circles != 4 || point.BestCost != 10 {
 		t.Fatalf("campaign series point = %+v, want a base stage of 4 circles at cost 10", point)
 	}
+
 	if point.HasBestCost {
 		t.Fatalf("a running stage reported a best cost")
 	}
+
 	if runningCampaign.LeafJobID != "" {
 		t.Fatalf("running campaign leaf job = %q, want empty until a stage completes", runningCampaign.LeafJobID)
 	}
+
 	completedCampaign := response.Campaigns[2]
 	if !completedCampaign.CampaignSeries[0].HasBestCost {
 		t.Fatalf("a completed stage reported no best cost")
 	}
+
 	if completedCampaign.LeafJobID == "" {
 		t.Fatalf("completed campaign has no leaf job for its thumbnail")
 	}
@@ -200,12 +227,15 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 // base stage has to come first even though discovery walks from the leaf up.
 func TestDashboardChainCampaignCarriesRunOrderSeries(t *testing.T) {
 	root := t.TempDir()
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	imagePath := filepath.Join(root, "reference.png")
 	createSimpleTestImage(t, imagePath)
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{
 		DataRoot:   root,
 		InputRoots: rootList(root),
@@ -215,6 +245,7 @@ func TestDashboardChainCampaignCarriesRunOrderSeries(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard", nil)
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
+
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
 	}
@@ -223,6 +254,7 @@ func TestDashboardChainCampaignCarriesRunOrderSeries(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
 		t.Fatalf("decode dashboard: %v", err)
 	}
+
 	if len(response.Campaigns) != 1 {
 		t.Fatalf("campaigns = %d, want the one synthesized chain", len(response.Campaigns))
 	}
@@ -231,17 +263,21 @@ func TestDashboardChainCampaignCarriesRunOrderSeries(t *testing.T) {
 	if campaign.LeafJobID != chainSecondJob {
 		t.Fatalf("leaf job = %q, want %q", campaign.LeafJobID, chainSecondJob)
 	}
+
 	wantKinds := []string{"base", "extend", "polish", "extend"}
 	wantCircles := []int{8, 16, 16, 24}
 	wantCosts := []float64{812.5, 640.25, 631.75, 572.357}
+
 	if len(campaign.CampaignSeries) != len(wantKinds) {
 		t.Fatalf("series = %d points, want %d", len(campaign.CampaignSeries), len(wantKinds))
 	}
+
 	for i, point := range campaign.CampaignSeries {
 		if point.Index != i || point.Kind != wantKinds[i] || point.Circles != wantCircles[i] || point.BestCost != wantCosts[i] {
 			t.Fatalf("series point %d = %+v, want index %d kind %q circles %d cost %g",
 				i, point, i, wantKinds[i], wantCircles[i], wantCosts[i])
 		}
+
 		if !point.HasBestCost {
 			t.Fatalf("chain series point %d reported no best cost", i)
 		}
@@ -264,23 +300,27 @@ func TestSortDashboardCampaigns(t *testing.T) {
 
 func TestDashboardRunningJobFromBoundsMetricHistory(t *testing.T) {
 	fixture := newScheduleFixture(t, 1)
+
 	job := fixture.server.jobManager.CreateJob(app.DefaultProject, app.JobConfig{
 		RefPath: fixture.imagePath, Mode: app.ModeBatch, Circles: 8, Iters: 100, PopSize: 30, Seed: 42,
 	})
-	if err := fixture.server.jobManager.UpdateJob(job.ID, func(job *Job) {
+
+	err := fixture.server.jobManager.UpdateJob(job.ID, func(job *Job) {
 		job.State = StateRunning
 		job.StartTime = time.Now().Add(-time.Second)
 		job.Evaluations = 10
 		job.BestCost = 12.5
+
 		job.BestParams = make([]float64, 56)
-		for i := 0; i < dashboardMetricHistoryLimit+10; i++ {
+		for i := range dashboardMetricHistoryLimit + 10 {
 			job.MetricHistory = append(job.MetricHistory, MetricSample{
 				Iteration: i,
 				Cost:      float64(i),
 				Timestamp: time.Now().Add(time.Duration(i) * time.Millisecond),
 			})
 		}
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("seed running job: %v", err)
 	}
 
@@ -288,16 +328,20 @@ func TestDashboardRunningJobFromBoundsMetricHistory(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing seeded job")
 	}
+
 	row := dashboardRunningJobFrom(jobState, true)
 	if row.Project != app.DefaultProject {
 		t.Fatalf("row project = %q, want %q", row.Project, app.DefaultProject)
 	}
+
 	if len(row.MetricHistory) != dashboardMetricHistoryLimit {
 		t.Fatalf("metric history = %d, want %d", len(row.MetricHistory), dashboardMetricHistoryLimit)
 	}
+
 	if row.CPS <= 0 {
 		t.Fatalf("cps = %f, want >0", row.CPS)
 	}
+
 	if row.ElapsedSec <= 0 {
 		t.Fatalf("elapsed seconds = %f, want >0", row.ElapsedSec)
 	}
@@ -308,6 +352,7 @@ func TestDashboardRunningJobFromBoundsMetricHistory(t *testing.T) {
 	if len(lite.MetricHistory) != 0 {
 		t.Fatalf("history-free row carries %d samples, want 0", len(lite.MetricHistory))
 	}
+
 	if lite.ID != row.ID || lite.Iterations != row.Iterations || lite.BestCost != row.BestCost {
 		t.Fatalf("history-free row = %+v, want the same job fields as %+v", lite, row)
 	}
@@ -319,13 +364,17 @@ func TestDashboardRunningJobFromBoundsMetricHistory(t *testing.T) {
 // show.
 func TestDashboardCountsAndRowsComeFromOneSnapshot(t *testing.T) {
 	manager := NewJobManager()
+
 	config := app.JobConfig{Mode: app.ModeBatch, Circles: 8, Iters: 100, PopSize: 30, Seed: 42}
 	for i := range 3 {
 		job := manager.CreateJob(app.DefaultProject, config)
+
 		if i == 0 {
 			continue
 		}
-		if err := manager.StartJob(job.ID); err != nil {
+
+		err := manager.StartJob(job.ID)
+		if err != nil {
 			t.Fatalf("start job: %v", err)
 		}
 	}
@@ -334,9 +383,11 @@ func TestDashboardCountsAndRowsComeFromOneSnapshot(t *testing.T) {
 	if counts[StateRunning] != len(running) {
 		t.Fatalf("running count = %d, rows = %d, want them to agree", counts[StateRunning], len(running))
 	}
+
 	if counts[StatePending] != 1 {
 		t.Fatalf("pending count = %d, want 1", counts[StatePending])
 	}
+
 	for _, job := range running {
 		if job.State != StateRunning {
 			t.Fatalf("row state = %q, want running", job.State)
@@ -358,6 +409,7 @@ func TestCirclesPerSecondExcludesInheritedEvaluations(t *testing.T) {
 	if got := circlesPerSecond(job, 10*time.Second); got != 100 {
 		t.Fatalf("cps = %f, want 100 from the 100 evaluations this stage ran", got)
 	}
+
 	if got := circlesPerSecond(&Job{Evaluations: 300, BestParams: make([]float64, 70)}, 10*time.Second); got != 300 {
 		t.Fatalf("cps = %f, want 300 for a job that inherited nothing", got)
 	}
@@ -368,13 +420,18 @@ func TestCirclesPerSecondExcludesInheritedEvaluations(t *testing.T) {
 // records it without having to remember to.
 func TestStartJobRecordsInheritedEvaluations(t *testing.T) {
 	manager := NewJobManager()
+
 	job := manager.CreateJob(app.DefaultProject, app.JobConfig{
 		Mode: app.ModeBatch, Circles: 8, Iters: 100, PopSize: 30, Seed: 42,
 	})
-	if err := manager.UpdateJob(job.ID, func(live *Job) { live.Evaluations = 5000 }); err != nil {
+
+	err := manager.UpdateJob(job.ID, func(live *Job) { live.Evaluations = 5000 })
+	if err != nil {
 		t.Fatalf("seed inherited evaluations: %v", err)
 	}
-	if err := manager.StartJob(job.ID); err != nil {
+
+	err = manager.StartJob(job.ID)
+	if err != nil {
 		t.Fatalf("start job: %v", err)
 	}
 
@@ -382,9 +439,11 @@ func TestStartJobRecordsInheritedEvaluations(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing started job")
 	}
+
 	if started.InheritedEvaluations != 5000 {
 		t.Fatalf("inherited evaluations = %d, want 5000", started.InheritedEvaluations)
 	}
+
 	if cps := circlesPerSecond(started, time.Second); cps != 0 {
 		t.Fatalf("cps = %f, want 0 before the stage evaluates anything of its own", cps)
 	}
@@ -400,6 +459,7 @@ func saveCampaignScheduleForDashboard(
 	stageJobID string,
 ) string {
 	t.Helper()
+
 	scheduleID := uuid.NewString()
 	baseConfig := app.DefaultConfig()
 	baseConfig.RefPath = imagePath
@@ -422,11 +482,14 @@ func saveCampaignScheduleForDashboard(
 	if err != nil {
 		t.Fatalf("build schedule record: %v", err)
 	}
+
 	record.State = state
+
 	record.UpdatedAt = updated
 	if err := scheduleStore.SaveSchedule(record); err != nil {
 		t.Fatalf("save schedule %s: %v", scheduleID, err)
 	}
+
 	stage := store.NewScheduleStageRecord(scheduleID, app.ScheduleStage{
 		Index:             0,
 		Kind:              app.ScheduleStageBase,
@@ -441,10 +504,12 @@ func saveCampaignScheduleForDashboard(
 	stage.JobID = stageJobID
 	stage.BestCost = 10
 	stage.Iterations = 1
+
 	stage.Evaluations = 1
 	if err := scheduleStore.SaveScheduleStage(scheduleID, stage); err != nil {
 		t.Fatalf("save schedule stage %s: %v", scheduleID, err)
 	}
+
 	return scheduleID
 }
 
@@ -483,6 +548,7 @@ func TestDashboardPageSeedMatchesEndpointShape(t *testing.T) {
 			t.Errorf("the page seed carries %q but the endpoint does not", path)
 			continue
 		}
+
 		if got != want {
 			t.Errorf("%q = %v in the endpoint payload, want %v as in the page seed", path, got, want)
 		}
@@ -506,10 +572,12 @@ func TestDashboardPageSeedMatchesEndpointShape(t *testing.T) {
 // what makes two payloads comparable without sharing a Go type.
 func jsonLeafKeys(t *testing.T, value any) map[string]any {
 	t.Helper()
+
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
 	}
+
 	var decoded any
 	if err := json.Unmarshal(encoded, &decoded); err != nil {
 		t.Fatalf("decode payload: %v", err)
@@ -532,5 +600,6 @@ func jsonLeafKeys(t *testing.T, value any) map[string]any {
 		}
 	}
 	walk("", decoded)
+
 	return leaves
 }

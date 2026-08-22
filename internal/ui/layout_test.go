@@ -9,7 +9,9 @@ import (
 
 func TestLayoutIncludesThemeSwitcher(t *testing.T) {
 	var output bytes.Buffer
-	if err := Layout("Theme test").Render(context.Background(), &output); err != nil {
+
+	err := Layout("Theme test").Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render layout: %v", err)
 	}
 

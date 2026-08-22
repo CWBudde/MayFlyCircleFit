@@ -30,10 +30,12 @@ func (l mayflyLogger) Log(ctx context.Context, level slog.Level, message string,
 	if l.logger == nil {
 		return
 	}
+
 	level = remapEventLevel(level, args)
 	if !l.logger.Enabled(ctx, level) {
 		return
 	}
+
 	l.logger.Log(ctx, level, message, args...)
 }
 
@@ -46,13 +48,16 @@ func remapEventLevel(level slog.Level, args []any) slog.Level {
 		if !ok {
 			return level
 		}
+
 		if key != "event" {
 			continue
 		}
+
 		value, ok := args[i+1].(string)
 		if !ok {
 			return level
 		}
+
 		switch value {
 		case eventIterationCompleted:
 			// One record per iteration; only useful when debugging.
@@ -61,7 +66,9 @@ func remapEventLevel(level slog.Level, args []any) slog.Level {
 			// Redundant: the CLI and the pipeline already log run parameters.
 			return slog.LevelDebug
 		}
+
 		return level
 	}
+
 	return level
 }

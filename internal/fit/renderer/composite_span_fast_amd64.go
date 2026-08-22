@@ -40,6 +40,7 @@ func compositeOpaqueSpanFast(pix []byte, offset, pixels int, r, g, b, alpha floa
 	multiplier := [8]float32{mul, mul, mul, 1, mul, mul, mul, 1}
 
 	vectorPixels := 0
+
 	switch {
 	case fastCompositeKernel == fit.TierAVX2 && pixels >= fastCompositeAVX2MinPixels:
 		vectorPixels = pixels &^ 7

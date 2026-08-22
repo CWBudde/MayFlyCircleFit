@@ -15,6 +15,7 @@ func failureTestReference() *image.NRGBA {
 	for i := range ref.Pix {
 		ref.Pix[i] = 255
 	}
+
 	return ref
 }
 
@@ -34,7 +35,9 @@ func (o *failingOptimizer) RunContext(_ context.Context, problem opt.Problem, _ 
 	if o.calls == o.failOnCall {
 		return opt.Result{Iterations: 3, Termination: opt.TerminationCompleted}, errOptimizerFailed
 	}
+
 	params := transparentParams(problem.Dim / paramsPerCircle)
+
 	return opt.Result{
 		BestParams:  params,
 		BestCost:    problem.Eval(params),
@@ -106,13 +109,16 @@ func TestOptimizerFailurePropagates(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			optimizer := &failingOptimizer{failOnCall: test.failOnCall}
+
 			err := test.run(optimizer)
 			if err == nil {
 				t.Fatal("pipeline returned nil, want the optimizer failure")
 			}
+
 			if !errors.Is(err, errOptimizerFailed) {
 				t.Fatalf("error = %v, want it to wrap the optimizer failure", err)
 			}
+
 			if optimizer.calls < test.failOnCall {
 				t.Fatalf("optimizer ran %d times, want at least %d", optimizer.calls, test.failOnCall)
 			}
@@ -149,9 +155,11 @@ func TestInvalidOptimizerResultKeepsItsCause(t *testing.T) {
 	if err == nil {
 		t.Fatal("OptimizeJoint() = nil, want an invalid-result error")
 	}
+
 	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("error = %v, want ErrInvalidOptimizationInput", err)
 	}
+
 	if !strings.Contains(err.Error(), "parameter length") {
 		t.Fatalf("error = %v, want the underlying length complaint to survive the wrap", err)
 	}
@@ -163,13 +171,16 @@ func TestInvalidOptimizerResultKeepsItsCause(t *testing.T) {
 	if !ok {
 		t.Fatalf("error = %v (%T), want the cause wrapped rather than formatted into the message", err, err)
 	}
+
 	causes := multi.Unwrap()
 	if len(causes) != 2 {
 		t.Fatalf("unwrapped %d causes, want the sentinel and the underlying complaint", len(causes))
 	}
+
 	if !errors.Is(causes[0], ErrInvalidOptimizationInput) {
 		t.Fatalf("first cause = %v, want ErrInvalidOptimizationInput", causes[0])
 	}
+
 	if !strings.Contains(causes[1].Error(), "parameter length") {
 		t.Fatalf("second cause = %v, want the length complaint", causes[1])
 	}

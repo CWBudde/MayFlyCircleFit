@@ -14,6 +14,7 @@ func writePNG(path string, img image.Image) error {
 	if err != nil {
 		return err
 	}
+
 	return encodePNG(file, path, img)
 }
 
@@ -36,8 +37,10 @@ func encodePNG(destination io.WriteCloser, path string, img image.Image) (err er
 		}
 	}()
 
-	if encodeErr := png.Encode(destination, img); encodeErr != nil {
+	encodeErr := png.Encode(destination, img)
+	if encodeErr != nil {
 		return encodeErr
 	}
+
 	return nil
 }

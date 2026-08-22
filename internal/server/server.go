@@ -30,7 +30,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Server represents the HTTP server
+// Server represents the HTTP server.
 type Server struct {
 	jobManager *JobManager
 	uiEvents   *UIEventHub
@@ -76,10 +76,12 @@ type ServerOptions struct {
 	DataRoot string
 }
 
-var ErrJobQueueFull = errors.New("job queue is full")
-var errPausedWithoutCheckpoint = errors.New("pause requires a checkpointable state")
-var errScheduleStagePause = errors.New("a schedule stage is paused through its schedule")
-var errResumeCheckpointOverflow = errors.New("resume checkpoint evaluation count is out of range")
+var (
+	ErrJobQueueFull             = errors.New("job queue is full")
+	errPausedWithoutCheckpoint  = errors.New("pause requires a checkpointable state")
+	errScheduleStagePause       = errors.New("a schedule stage is paused through its schedule")
+	errResumeCheckpointOverflow = errors.New("resume checkpoint evaluation count is out of range")
+)
 
 // storeForSlug returns the store owning a project's artifacts. An empty slug
 // and the default project resolve to the store the server was built with, so a
@@ -91,10 +93,12 @@ func (s *Server) storeForSlug(slug app.Project) (store.Store, error) {
 	if slug == "" || slug == app.DefaultProject {
 		return s.store, nil
 	}
+
 	projectStore, ok := s.projects.Get(slug)
 	if !ok {
 		return nil, fmt.Errorf("%w: %q", errUnknownProject, slug)
 	}
+
 	return projectStore, nil
 }
 
@@ -106,6 +110,7 @@ func (s *Server) storeForJob(jobID string) (store.Store, error) {
 	if !ok {
 		return s.store, nil
 	}
+
 	return s.storeForSlug(job.Project)
 }
 
@@ -114,6 +119,7 @@ func (s *Server) projectForJob(jobID string) app.Project {
 	if job, ok := s.jobManager.GetJob(jobID); ok {
 		return app.NormalizeProject(job.Project)
 	}
+
 	return app.DefaultProject
 }
 
@@ -128,9 +134,11 @@ func NewServerWithOptions(addr string, checkpointStore store.Store, options Serv
 	if options.MaxConcurrentJobs <= 0 {
 		options.MaxConcurrentJobs = 1
 	}
+
 	if options.QueueSize <= 0 {
 		options.QueueSize = 16
 	}
+
 	options.DefaultBackend = normalizeServerBackend(options.DefaultBackend)
 	ctx, cancel := context.WithCancel(context.Background())
 	policy, policyErr := newInputPolicy(options.InputRoots)
@@ -157,6 +165,7 @@ func NewServerWithOptions(addr string, checkpointStore store.Store, options Serv
 	// Schedules are adopted after the jobs, because adopting an interrupted
 	// stage needs the restored job for that stage to already be visible.
 	server.restoreSchedules()
+
 	return server
 }
 
@@ -170,6 +179,7 @@ func normalizeServerBackend(raw app.Backend) app.Backend {
 		if raw != "" {
 			slog.Warn("Invalid server default backend, falling back to cpu", "backend", raw)
 		}
+
 		return app.BackendCPU
 	}
 }
@@ -184,14 +194,16 @@ func (s *Server) applyDefaultBackend(config *JobConfig) {
 	if strings.TrimSpace(string(config.Backend)) == "" {
 		config.Backend = s.options.DefaultBackend
 	}
+
 	config.Backend = app.Backend(renderer.NormalizeBackend(string(config.Backend)))
 }
 
-// Start starts the HTTP server
+// Start starts the HTTP server.
 func (s *Server) Start() error {
 	if s.options.EnablePprof && !isLoopbackAddress(s.addr) {
-		return fmt.Errorf("pprof requires a loopback bind address")
+		return errors.New("pprof requires a loopback bind address")
 	}
+
 	handler := s.Handler()
 
 	s.server = &http.Server{
@@ -204,6 +216,7 @@ func (s *Server) Start() error {
 	}
 
 	slog.Info("Starting HTTP server", "addr", s.addr)
+
 	return s.server.ListenAndServe()
 }
 
@@ -212,10 +225,13 @@ func isLoopbackAddress(address string) bool {
 	if err != nil {
 		return false
 	}
+
 	if host == "localhost" {
 		return true
 	}
+
 	ip := net.ParseIP(host)
+
 	return ip != nil && ip.IsLoopback()
 }
 
@@ -292,6 +308,7 @@ func staticPathGuard(next http.Handler) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -304,10 +321,11 @@ func isCanonicalPath(p string) bool {
 	if strings.HasSuffix(p, "/") && cleaned != "/" {
 		cleaned += "/"
 	}
+
 	return cleaned == p
 }
 
-// Shutdown gracefully shuts down the server
+// Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
 	slog.Info("Shutting down HTTP server")
 
@@ -321,12 +339,14 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 	// Shutdown HTTP server
 	if s.server != nil {
-		if err := s.server.Shutdown(ctx); err != nil {
+		err := s.server.Shutdown(ctx)
+		if err != nil {
 			return err
 		}
 	}
 
 	waited := make(chan struct{})
+
 	go func() {
 		// Schedule executors are waited on beside the job workers. An executor
 		// that is mid-stage returns on the cancelled context and leaves its
@@ -335,6 +355,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.workerWG.Wait()
 		close(waited)
 	}()
+
 	select {
 	case <-waited:
 		return nil
@@ -354,6 +375,7 @@ func (s *Server) ensureWorkers() {
 
 func (s *Server) enqueueJob(jobID string) error {
 	s.ensureWorkers()
+
 	select {
 	case s.queue <- jobID:
 		return nil
@@ -364,6 +386,7 @@ func (s *Server) enqueueJob(jobID string) error {
 
 func (s *Server) workerLoop() {
 	defer s.workerWG.Done()
+
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -381,13 +404,16 @@ func (s *Server) workerLoop() {
 				slog.Error("Refusing to run job with an unresolvable project",
 					"job_id", jobID, "project", string(job.Project), "error", err)
 				_ = s.jobManager.FailJob(jobID, "project store is unavailable")
+
 				continue
 			}
+
 			ctx, cancel := context.WithCancel(s.ctx)
 			s.cancelMu.Lock()
 			s.jobCancels[jobID] = cancel
 			s.cancelMu.Unlock()
 			_ = runJob(ctx, s.jobManager, jobStore, jobID)
+
 			cancel()
 			s.cancelMu.Lock()
 			delete(s.jobCancels, jobID)
@@ -401,22 +427,29 @@ func (s *Server) requestCancellation(jobID string) error {
 	if !ok {
 		return store.ErrNotFound
 	}
+
 	if job.State == StatePending {
 		return s.jobManager.CancelJob(jobID)
 	}
+
 	if job.State == StatePaused {
 		return s.jobManager.CancelJob(jobID)
 	}
+
 	if job.State != StateRunning {
 		return fmt.Errorf("%w: job is %s", ErrInvalidTransition, job.State)
 	}
+
 	s.cancelMu.Lock()
 	cancel := s.jobCancels[jobID]
 	s.cancelMu.Unlock()
+
 	if cancel == nil {
-		return fmt.Errorf("job cancellation is not yet available")
+		return errors.New("job cancellation is not yet available")
 	}
+
 	cancel()
+
 	return nil
 }
 
@@ -440,13 +473,18 @@ func (s *Server) requestPause(jobID string) error {
 	if err != nil {
 		return err
 	}
+
 	if err := s.persistPauseCheckpoint(jobID, claimed); err != nil {
-		if resumeErr := s.jobManager.ResumeJob(jobID); resumeErr != nil && !errors.Is(resumeErr, ErrInvalidTransition) {
+		resumeErr := s.jobManager.ResumeJob(jobID)
+		if resumeErr != nil && !errors.Is(resumeErr, ErrInvalidTransition) {
 			slog.Error("Unable to restore a job after a failed pause", "job_id", jobID, "error", resumeErr)
 		}
+
 		return err
 	}
+
 	s.invalidateChainCache()
+
 	if paused, ok := s.jobManager.GetJob(jobID); ok {
 		s.jobManager.broadcaster.Broadcast(jobProgressSnapshot(paused))
 	}
@@ -454,9 +492,11 @@ func (s *Server) requestPause(jobID string) error {
 	s.cancelMu.Lock()
 	cancel := s.jobCancels[jobID]
 	s.cancelMu.Unlock()
+
 	if cancel != nil {
 		cancel()
 	}
+
 	return nil
 }
 
@@ -465,6 +505,7 @@ func (s *Server) requestResume(jobID string) (*store.Checkpoint, error) {
 	if !ok {
 		return nil, store.ErrNotFound
 	}
+
 	if job.State != StatePaused {
 		return nil, fmt.Errorf("%w: job is %s", ErrInvalidTransition, job.State)
 	}
@@ -473,19 +514,24 @@ func (s *Server) requestResume(jobID string) (*store.Checkpoint, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if jobStore == nil {
 		return nil, errPausedWithoutCheckpoint
 	}
+
 	checkpoint, err := jobStore.LoadCheckpoint(jobID)
 	if err != nil {
 		return nil, err
 	}
+
 	if err := checkpoint.Validate(); err != nil {
 		return nil, err
 	}
+
 	if int64(int(checkpoint.Evaluations)) != checkpoint.Evaluations {
 		return nil, errResumeCheckpointOverflow
 	}
+
 	if err := s.jobManager.UpdateJob(jobID, func(j *Job) {
 		j.BestParams = append([]float64(nil), checkpoint.BestParams...)
 		j.BestCost = checkpoint.BestCost
@@ -500,6 +546,7 @@ func (s *Server) requestResume(jobID string) (*store.Checkpoint, error) {
 	}); err != nil {
 		return nil, err
 	}
+
 	if err := s.jobManager.ResumeJob(jobID); err != nil {
 		return nil, err
 	}
@@ -511,31 +558,38 @@ func (s *Server) persistPauseCheckpoint(jobID string, job *Job) error {
 	if s.store == nil {
 		return errPausedWithoutCheckpoint
 	}
+
 	if job == nil {
 		return store.ErrNotFound
 	}
+
 	if len(job.BestParams) == 0 || math.IsNaN(job.BestCost) || math.IsInf(job.BestCost, 0) {
 		return errPausedWithoutCheckpoint
 	}
+
 	jobStore, err := s.storeForJob(jobID)
 	if err != nil {
 		return err
 	}
+
 	if jobStore == nil {
 		return errPausedWithoutCheckpoint
 	}
+
 	checkpoint := store.NewCheckpoint(job.ID, job.BestParams, job.BestCost, job.InitialCost, job.Iterations, job.Config)
 	checkpoint.Evaluations = int64(job.Evaluations)
 	checkpoint.Termination = job.Termination
 	applyJobLineage(checkpoint, job)
+
 	if err := jobStore.SaveCheckpoint(jobID, checkpoint); err != nil {
 		slog.Error("Failed to persist pause checkpoint", "job_id", jobID, "error", err)
 		return err
 	}
+
 	return nil
 }
 
-// checkpointRunningJobs saves checkpoints for all running jobs
+// checkpointRunningJobs saves checkpoints for all running jobs.
 func (s *Server) checkpointRunningJobs(ctx context.Context) {
 	runningJobs := s.jobManager.GetRunningJobs()
 
@@ -565,7 +619,9 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 					"project", string(j.Project),
 					"error", err,
 				)
+
 				results <- checkpointResult{jobID: j.ID, err: err}
+
 				return
 			}
 
@@ -576,7 +632,9 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 					"job_id", j.ID,
 					"error", err,
 				)
+
 				results <- checkpointResult{jobID: j.ID, err: err}
+
 				return
 			}
 
@@ -594,7 +652,7 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 			// Re-fetch job to get updated values after potential checkpoint
 			job, exists := s.jobManager.GetJob(j.ID)
 			if !exists {
-				results <- checkpointResult{jobID: j.ID, err: fmt.Errorf("job not found")}
+				results <- checkpointResult{jobID: j.ID, err: errors.New("job not found")}
 				return
 			}
 
@@ -615,6 +673,7 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 					"job_id", j.ID,
 				)
 			}
+
 			results <- checkpointResult{jobID: j.ID, err: err}
 		}(job)
 	}
@@ -623,7 +682,7 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 	checkpointed := 0
 	failed := 0
 
-	for i := 0; i < len(runningJobs); i++ {
+	for range runningJobs {
 		select {
 		case result := <-results:
 			if result.err == nil {
@@ -637,6 +696,7 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 				"failed", failed,
 				"pending", len(runningJobs)-checkpointed-failed,
 			)
+
 			return
 		}
 	}
@@ -647,7 +707,7 @@ func (s *Server) checkpointRunningJobs(ctx context.Context) {
 	)
 }
 
-// handleJobs handles /api/v1/jobs
+// handleJobs handles /api/v1/jobs.
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
@@ -665,20 +725,25 @@ func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
 
 	facts := HostFactsFromMetadata(s.metadata)
+
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(facts); err != nil {
+
+	err := json.NewEncoder(w).Encode(facts)
+	if err != nil {
 		slog.Error("Failed to encode system facts response", "error", err)
 	}
 }
 
-// handleJobsWithID handles /api/v1/jobs/:id/*
+// handleJobsWithID handles /api/v1/jobs/:id/*.
 func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 	// Parse job ID from path
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/jobs/")
+
 	parts := strings.Split(path, "/")
 	if len(parts) == 0 || parts[0] == "" {
 		writeAPIError(w, http.StatusBadRequest, "invalid_job_id", "job ID required")
@@ -686,6 +751,7 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jobID := parts[0]
+
 	parsedID, err := uuid.Parse(jobID)
 	if err != nil || parsedID == uuid.Nil || parsedID.String() != jobID {
 		writeAPIError(w, http.StatusBadRequest, "invalid_job_id", "job ID must be a canonical UUID")
@@ -726,7 +792,7 @@ func (s *Server) handleJobsWithID(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleCreateJob handles POST /api/v1/jobs
+// handleCreateJob handles POST /api/v1/jobs.
 func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, app.MaxRequestBody)
 	// The body is kept, not just decoded: which keys the caller actually wrote
@@ -740,44 +806,55 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body exceeds the size limit")
 			return
 		}
+
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "unable to read request body")
+
 		return
 	}
 	var request createJobRequest
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
+
 	if err := decoder.Decode(&request); err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid JSON request body")
 		return
 	}
+
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "request body must contain one JSON object")
 		return
 	}
+
 	project, err := s.resolveRequestedProject(request.Project, r)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_project", err.Error())
 		return
 	}
+
 	s.applyDefaultBackend(&request.JobConfig)
+
 	config, err := app.NormalizeRequest(body, request.JobConfig)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_config", err.Error())
 		return
 	}
+
 	if config.PolishingOnly {
 		writeAPIError(w, http.StatusBadRequest, "invalid_config", "polishingOnly jobs must be created from a completed checkpoint")
 		return
 	}
+
 	if s.inputErr != nil {
 		writeAPIError(w, http.StatusInternalServerError, "server_config", "server input roots are unavailable")
 		return
 	}
+
 	config.RefPath, err = s.input.resolveImage(config.RefPath)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_ref_path", err.Error())
 		return
 	}
+
 	if config.CanvasPath != "" {
 		config.CanvasPath, err = s.input.resolveImage(config.CanvasPath)
 		if err != nil {
@@ -798,13 +875,16 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.enqueueJob(job.ID); err != nil {
 		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
+
 		writeAPIError(w, http.StatusTooManyRequests, "queue_full", "server job queue is full")
+
 		return
 	}
 
 	// Return job
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+
 	if err := json.NewEncoder(w).Encode(job); err != nil {
 		slog.Error("Failed to encode create-job response", "error", err)
 	}
@@ -814,16 +894,21 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request, jobID s
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
-	if err := s.requestCancellation(jobID); err != nil {
+
+	err := s.requestCancellation(jobID)
+	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		} else {
 			writeAPIError(w, http.StatusConflict, "invalid_state", err.Error())
 		}
+
 		return
 	}
+
 	w.WriteHeader(http.StatusAccepted)
 }
 
@@ -831,10 +916,14 @@ func (s *Server) handlePauseJob(w http.ResponseWriter, r *http.Request, jobID st
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
-	if err := s.requestPause(jobID); err != nil {
+
+	err := s.requestPause(jobID)
+	if err != nil {
 		slog.Warn("Failed to pause job", "job_id", jobID, "error", err)
+
 		switch {
 		case errors.Is(err, store.ErrNotFound):
 			writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
@@ -847,8 +936,10 @@ func (s *Server) handlePauseJob(w http.ResponseWriter, r *http.Request, jobID st
 		default:
 			writeAPIError(w, http.StatusInternalServerError, "pause_failed", "unable to pause job")
 		}
+
 		return
 	}
+
 	w.WriteHeader(http.StatusAccepted)
 }
 
@@ -862,19 +953,25 @@ func (s *Server) handleDeleteJob(w http.ResponseWriter, _ *http.Request, jobID s
 	if err != nil {
 		slog.Error("Failed to resolve project store for delete", "job_id", jobID, "error", err)
 		writeAPIError(w, http.StatusInternalServerError, "project_unavailable", "the project store is unavailable")
+
 		return
 	}
+
 	if err := s.jobManager.DeleteJob(jobID); err != nil {
 		if errors.Is(err, ErrInvalidTransition) {
 			writeAPIError(w, http.StatusConflict, "invalid_state", "active jobs must be cancelled before deletion")
 		} else {
 			writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		}
+
 		return
 	}
+
 	s.jobManager.broadcaster.CleanupJob(jobID)
+
 	if jobStore != nil {
-		if err := jobStore.DeleteCheckpoint(jobID); err != nil && !errors.Is(err, store.ErrNotFound) {
+		err := jobStore.DeleteCheckpoint(jobID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			slog.Warn("Failed to delete persisted job", "job_id", jobID, "error", err)
 		}
 	}
@@ -888,10 +985,11 @@ func (s *Server) handleDeleteJob(w http.ResponseWriter, _ *http.Request, jobID s
 			s.publishChainsChanged()
 		}
 	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListJobs handles GET /api/v1/jobs
+// handleListJobs handles GET /api/v1/jobs.
 func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	jobs := s.jobManager.ListJobSummaries()
 
@@ -900,38 +998,47 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	// Boundary: the `?project=` query parameter is untrusted input. It becomes
 	// an app.Project here, immediately before ValidateProjectSlug.
 	if filter := app.Project(strings.TrimSpace(r.URL.Query().Get("project"))); filter != "" && filter != "all" {
-		if err := app.ValidateProjectSlug(filter); err != nil {
+		err := app.ValidateProjectSlug(filter)
+		if err != nil {
 			writeAPIError(w, http.StatusBadRequest, "invalid_project", err.Error())
 			return
 		}
+
 		jobs = filterJobSummariesByProject(jobs, filter)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+
 	query := r.URL.Query()
 	if !query.Has("limit") && !query.Has("cursor") {
 		// Preserve the original array response for clients that have not opted in
 		// to pagination. The browser and bundled CLI always request bounded pages.
-		if err := json.NewEncoder(w).Encode(jobs); err != nil {
+		err := json.NewEncoder(w).Encode(jobs)
+		if err != nil {
 			slog.Error("Failed to encode job list response", "error", err)
 		}
+
 		return
 	}
 
 	limit := defaultJobListLimit
+
 	if raw := strings.TrimSpace(query.Get("limit")); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 || parsed > maxJobListLimit {
 			writeAPIError(w, http.StatusBadRequest, "invalid_limit", fmt.Sprintf("limit must be between 1 and %d", maxJobListLimit))
 			return
 		}
+
 		limit = parsed
 	}
+
 	page, err := paginateJobSummaries(jobs, strings.TrimSpace(query.Get("cursor")), limit)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_cursor", "cursor is invalid")
 		return
 	}
+
 	if err := json.NewEncoder(w).Encode(page); err != nil {
 		slog.Error("Failed to encode job list response", "error", err)
 	}
@@ -955,21 +1062,26 @@ type jobListCursor struct {
 
 func paginateJobSummaries(jobs []JobSummary, rawCursor string, limit int) (jobListPage, error) {
 	start := 0
+
 	if rawCursor != "" {
 		cursor, err := decodeJobListCursor(rawCursor)
 		if err != nil {
 			return jobListPage{}, err
 		}
+
 		start = sort.Search(len(jobs), func(i int) bool {
 			return jobs[i].StartTime.Before(cursor.StartTime) ||
 				(jobs[i].StartTime.Equal(cursor.StartTime) && jobs[i].ID > cursor.ID)
 		})
 	}
+
 	end := min(start+limit, len(jobs))
+
 	page := jobListPage{Jobs: jobs[start:end], Total: len(jobs)}
 	if end < len(jobs) && end > start {
 		page.NextCursor = encodeJobListCursor(jobs[end-1])
 	}
+
 	return page, nil
 }
 
@@ -982,6 +1094,7 @@ func decodeJobListCursor(raw string) (jobListCursor, error) {
 	if len(raw) > 512 {
 		return jobListCursor{}, errors.New("job list cursor is too long")
 	}
+
 	payload, err := base64.RawURLEncoding.DecodeString(raw)
 	if err != nil {
 		return jobListCursor{}, err
@@ -989,12 +1102,15 @@ func decodeJobListCursor(raw string) (jobListCursor, error) {
 	var cursor jobListCursor
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
+
 	if err := decoder.Decode(&cursor); err != nil {
 		return jobListCursor{}, err
 	}
+
 	if cursor.StartTime.IsZero() || cursor.ID == "" || decoder.Decode(&struct{}{}) != io.EOF {
 		return jobListCursor{}, errors.New("invalid job list cursor")
 	}
+
 	return cursor, nil
 }
 
@@ -1005,6 +1121,7 @@ func filterJobSummariesByProject(jobs []JobSummary, slug app.Project) []JobSumma
 			filtered = append(filtered, job)
 		}
 	}
+
 	return filtered
 }
 
@@ -1017,6 +1134,7 @@ func filterJobsByProject(jobs []*Job, slug app.Project) []*Job {
 			filtered = append(filtered, job)
 		}
 	}
+
 	return filtered
 }
 
@@ -1065,13 +1183,15 @@ type jobActions struct {
 	Polish bool `json:"polish"`
 }
 
-// handleGetJobStatus handles GET /api/v1/jobs/:id/status
+// handleGetJobStatus handles GET /api/v1/jobs/:id/status.
 func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobID string) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
+
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
 		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
@@ -1085,6 +1205,7 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 	if len(job.BestParams) > 0 {
 		psnr, psnrInfinite = serializablePSNR(job.BestCost)
 	}
+
 	actions := s.jobActions(job)
 	response := jobStatusResponse{
 		ID: job.ID, Project: app.NormalizeProject(job.Project), State: job.State, Config: job.Config,
@@ -1102,7 +1223,9 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 	response.CandidatePSNR, response.CandidatePSNRInfinite = serializableCandidatePSNR(job.CandidateCost)
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
 		slog.Error("Failed to encode job status response", "error", err)
 	}
 }
@@ -1111,7 +1234,9 @@ func (s *Server) jobActions(job *Job) jobActions {
 	if job == nil {
 		return jobActions{}
 	}
+
 	terminal := job.State == StateCompleted || job.State == StateFailed || job.State == StateCancelled
+
 	return jobActions{
 		Pause: job.State == StateRunning && job.ScheduleID == "" && s.store != nil &&
 			len(job.BestParams) == job.Config.Circles*7,
@@ -1134,29 +1259,37 @@ func (s *Server) handleGetJobMetrics(w http.ResponseWriter, r *http.Request, job
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
+
 	limit := defaultJobMetricsLimit
+
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 || parsed > maxJobMetricsLimit {
 			writeAPIError(w, http.StatusBadRequest, "invalid_limit", fmt.Sprintf("limit must be between 1 and %d", maxJobMetricsLimit))
 			return
 		}
+
 		limit = parsed
 	}
+
 	job, ok := s.jobManager.GetJob(jobID)
 	if !ok {
 		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
 		return
 	}
+
 	history := job.MetricHistory
 	if len(history) > limit {
 		history = history[len(history)-limit:]
 	}
+
 	if history == nil {
 		history = []MetricSample{}
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(history)
 }
@@ -1165,16 +1298,19 @@ func serializableCandidatePSNR(cost *float64) (*float64, bool) {
 	if cost == nil {
 		return nil, false
 	}
+
 	return serializablePSNR(*cost)
 }
 
-// handleGetBestImage handles GET /api/v1/jobs/:id/best.png
+// handleGetBestImage handles GET /api/v1/jobs/:id/best.png.
 func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobID string) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
+
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
 		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
@@ -1186,6 +1322,7 @@ func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobI
 		writeAPIError(w, http.StatusNotFound, "no_results", "no results yet")
 		return
 	}
+
 	if snapshotNotModified(w, r, fmt.Sprintf(`"best-%d"`, job.BestRevision)) {
 		return
 	}
@@ -1195,6 +1332,7 @@ func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobI
 	if err != nil {
 		slog.Error("Failed to load reference image", "job_id", jobID, "path", job.Config.RefPath, "error", err)
 		writeAPIError(w, http.StatusInternalServerError, "reference_load_failed", "failed to load reference image")
+
 		return
 	}
 
@@ -1208,6 +1346,7 @@ func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobI
 	// Set headers
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "no-cache")
+
 	if downloadRequested(r) {
 		setAttachment(w, artifactFilename(jobID, "best.png"))
 	}
@@ -1218,18 +1357,21 @@ func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobI
 	}
 }
 
-// handleGetDiffImage handles GET /api/v1/jobs/:id/diff.png
+// handleGetDiffImage handles GET /api/v1/jobs/:id/diff.png.
 func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobID string) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
+
 	colormap, err := requestedColormap(r)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_colormap", err.Error())
 		return
 	}
+
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
 		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
@@ -1241,6 +1383,7 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 		writeAPIError(w, http.StatusNotFound, "no_results", "no results yet")
 		return
 	}
+
 	if snapshotNotModified(w, r, fmt.Sprintf(`"diff-%s-%d"`, colormap, job.BestRevision)) {
 		return
 	}
@@ -1250,6 +1393,7 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 	if err != nil {
 		slog.Error("Failed to load reference image", "job_id", jobID, "path", job.Config.RefPath, "error", err)
 		writeAPIError(w, http.StatusInternalServerError, "reference_load_failed", "failed to load reference image")
+
 		return
 	}
 
@@ -1265,6 +1409,7 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 	// Set headers
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "no-cache")
+
 	if downloadRequested(r) {
 		setAttachment(w, artifactFilename(jobID, "diff.png"))
 	}
@@ -1277,20 +1422,25 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 
 func renderBestSnapshot(job *Job, ref *image.NRGBA) (*image.NRGBA, func(), error) {
 	actualCircles := len(job.BestParams) / 7
+
 	rend, cleanup, err := rendererForJob(job.Config, ref, actualCircles)
 	if err != nil {
 		return nil, func() {}, err
 	}
+
 	return rend.Render(job.BestParams), cleanup, nil
 }
 
 func snapshotNotModified(w http.ResponseWriter, r *http.Request, etag string) bool {
 	w.Header().Set("Cache-Control", "private, no-cache")
 	w.Header().Set("ETag", etag)
+
 	if r.Header.Get("If-None-Match") != etag {
 		return false
 	}
+
 	w.WriteHeader(http.StatusNotModified)
+
 	return true
 }
 
@@ -1303,6 +1453,7 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 			writeAPIError(w, http.StatusForbidden, "origin_forbidden", "cross-origin requests are not allowed")
 			return
 		}
+
 		w.Header().Add("Vary", "Origin")
 		next.ServeHTTP(w, r)
 	})
@@ -1313,6 +1464,7 @@ func sameOrigin(origin string, r *http.Request) bool {
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return false
 	}
+
 	return strings.EqualFold(parsed.Host, r.Host)
 }
 
@@ -1327,9 +1479,12 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string) {
 	var response apiErrorResponse
 	response.Error.Code = code
 	response.Error.Message = message
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
 		slog.Error("Failed to encode API error", "error", err)
 	}
 }
@@ -1341,13 +1496,15 @@ func (s *Server) handleAPINotFound(w http.ResponseWriter, r *http.Request) {
 	writeAPIError(w, http.StatusNotFound, "not_found", "no API endpoint at this path")
 }
 
-// handleGetRefImage handles GET /api/v1/jobs/:id/ref.png
+// handleGetRefImage handles GET /api/v1/jobs/:id/ref.png.
 func (s *Server) handleGetRefImage(w http.ResponseWriter, r *http.Request, jobID string) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
+
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
 		writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
@@ -1359,6 +1516,7 @@ func (s *Server) handleGetRefImage(w http.ResponseWriter, r *http.Request, jobID
 	if err != nil {
 		slog.Error("Failed to load reference image", "job_id", jobID, "path", job.Config.RefPath, "error", err)
 		writeAPIError(w, http.StatusInternalServerError, "reference_load_failed", "failed to load reference image")
+
 		return
 	}
 
@@ -1382,16 +1540,21 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
-	if failure := s.requireCheckpointStore(); failure != nil {
+
+	failure := s.requireCheckpointStore()
+	if failure != nil {
 		writeContinuationError(w, failure)
 		return
 	}
+
 	if job, ok := s.jobManager.GetJob(jobID); ok && job.State == StatePaused {
 		s.resumePausedJob(w, jobID)
 		return
 	}
+
 	s.forkJobFromCheckpoint(w, jobID)
 }
 
@@ -1400,6 +1563,7 @@ func (s *Server) resumePausedJob(w http.ResponseWriter, jobID string) {
 	checkpoint, err := s.requestResume(jobID)
 	if err != nil {
 		slog.Warn("Failed to resume job", "job_id", jobID, "error", err)
+
 		var validationErr *store.ValidationError
 		switch {
 		case errors.As(err, &validationErr):
@@ -1415,23 +1579,27 @@ func (s *Server) resumePausedJob(w http.ResponseWriter, jobID string) {
 		default:
 			writeAPIError(w, http.StatusInternalServerError, "resume_failed", "unable to resume job")
 		}
+
 		return
 	}
 
 	if err := s.enqueueJob(jobID); err != nil {
-		if resumeErr := s.jobManager.PauseJob(jobID); resumeErr != nil {
+		resumeErr := s.jobManager.PauseJob(jobID)
+		if resumeErr != nil {
 			slog.Warn("Failed to restore job to paused state", "job_id", jobID, "error", resumeErr)
 		}
+
 		if errors.Is(err, ErrJobQueueFull) {
 			writeAPIError(w, http.StatusTooManyRequests, "queue_full", "server job queue is full")
 		} else {
 			writeAPIError(w, http.StatusInternalServerError, "resume_failed", "unable to resume job")
 		}
+
 		return
 	}
 
 	slog.Info("Resuming job from checkpoint", "job_id", jobID, "iteration", checkpoint.Iteration, "best_cost", checkpoint.BestCost)
-	response := map[string]interface{}{
+	response := map[string]any{
 		"jobId":         jobID,
 		"resumedFrom":   jobID,
 		"state":         string(StateRunning),
@@ -1442,6 +1610,7 @@ func (s *Server) resumePausedJob(w http.ResponseWriter, jobID string) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
+
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		slog.Error("Failed to encode resume-job response", "error", err)
 	}
@@ -1455,18 +1624,23 @@ func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string) {
 	if err != nil {
 		slog.Error("Failed to resolve project store for resume", "job_id", jobID, "error", err)
 		writeAPIError(w, http.StatusInternalServerError, "project_unavailable", "the project store is unavailable")
+
 		return
 	}
+
 	checkpoint, err := jobStore.LoadCheckpoint(jobID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeAPIError(w, http.StatusNotFound, "not_found", "job or checkpoint not found")
 			return
 		}
+
 		slog.Error("Failed to load checkpoint for resume", "job_id", jobID, "error", err)
 		writeAPIError(w, http.StatusInternalServerError, "resume_failed", "unable to load checkpoint")
+
 		return
 	}
+
 	if err := checkpoint.Validate(); err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", err.Error())
 		return
@@ -1483,15 +1657,18 @@ func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint configuration is invalid")
 		return
 	}
+
 	if s.inputErr != nil {
 		writeAPIError(w, http.StatusInternalServerError, "server_config", "server input roots are unavailable")
 		return
 	}
+
 	config.RefPath, err = s.input.resolveImage(config.RefPath)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint reference is outside configured input roots")
 		return
 	}
+
 	if config.CanvasPath != "" {
 		config.CanvasPath, err = s.input.resolveImage(config.CanvasPath)
 		if err != nil {
@@ -1499,6 +1676,7 @@ func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string) {
 			return
 		}
 	}
+
 	config.EffectiveSeed = checkpoint.EffectiveSeed
 	config.ResumeCount = checkpoint.ResumeCount + 1
 	newJob := s.jobManager.CreateJob(s.projectForJob(jobID), config)
@@ -1515,11 +1693,13 @@ func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string) {
 
 	if err := s.enqueueJob(newJob.ID); err != nil {
 		_ = s.jobManager.FailJob(newJob.ID, "server job queue is full")
+
 		writeAPIError(w, http.StatusTooManyRequests, "queue_full", "server job queue is full")
+
 		return
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"jobId":         newJob.ID,
 		"resumedFrom":   jobID,
 		"state":         string(newJob.State),
@@ -1530,6 +1710,7 @@ func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		slog.Error("Failed to encode fork-job response", "error", err)
 	}
@@ -1553,8 +1734,10 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
+
 	if failure := s.requireCheckpointStore(); failure != nil {
 		writeContinuationError(w, failure)
 		return
@@ -1563,10 +1746,12 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 	r.Body = http.MaxBytesReader(w, r.Body, app.MaxRequestBody)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
+
 	if err := decoder.Decode(&request); err != nil && !errors.Is(err, io.EOF) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid polishing configuration")
 		return
 	}
+
 	source, failure := s.continuationSourceFor(jobID, polishContinuation)
 	if failure != nil {
 		writeContinuationError(w, failure)
@@ -1576,25 +1761,32 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 	config := source.config
 	config.InitialCircles = nil
 	config.PolishingEnabled = true
+
 	config.PolishingOnly = true
 	if request.Strategy != nil {
 		config.PolishingStrategy = *request.Strategy
 	}
+
 	if request.ActiveSetSize != nil {
 		config.PolishingActiveSetSize = *request.ActiveSetSize
 	}
+
 	if request.MaxSweeps != nil {
 		config.PolishingMaxSweeps = *request.MaxSweeps
 	}
+
 	if request.Epochs != nil {
 		config.PolishingEpochs = *request.Epochs
 	}
+
 	if request.Iters != nil {
 		config.PolishingIters = *request.Iters
 	}
+
 	if request.StagnationIters != nil {
 		config.PolishingStagnationIters = *request.StagnationIters
 	}
+
 	if request.MinImprovement != nil {
 		config.PolishingMinImprovement = *request.MinImprovement
 	}
@@ -1605,10 +1797,12 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 	if request.PopSize != nil {
 		config.PolishingPopSize = *request.PopSize
 	}
+
 	if request.Seed != nil {
 		config.Seed = *request.Seed
 		config.EffectiveSeed = *request.Seed
 	}
+
 	config, err := app.Normalize(config)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid polishing configuration")
@@ -1653,8 +1847,10 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
+
 	if failure := s.requireCheckpointStore(); failure != nil {
 		writeContinuationError(w, failure)
 		return
@@ -1663,19 +1859,23 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 	r.Body = http.MaxBytesReader(w, r.Body, app.MaxRequestBody)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
+
 	if err := decoder.Decode(&request); err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid extension configuration")
 		return
 	}
+
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "request body must contain one JSON object")
 		return
 	}
+
 	source, failure := s.continuationSourceFor(jobID, extendContinuation)
 	if failure != nil {
 		writeContinuationError(w, failure)
 		return
 	}
+
 	previousCircles := source.config.Circles
 	if request.AdditionalCircles < 1 || request.AdditionalCircles > app.MaxCircles-previousCircles {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "additionalCircles exceeds the supported circle limit")
@@ -1693,26 +1893,33 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 	config.Circles += request.AdditionalCircles
 	config.BatchSize = min(request.AdditionalCircles, app.MaxBatchSize)
 	config.PolishingEnabled = false
+
 	config.PolishingOnly = false
 	if request.BatchSize != nil {
 		config.BatchSize = *request.BatchSize
 	}
+
 	if request.Epochs != nil {
 		config.OptimizerEpochs = *request.Epochs
 	}
+
 	if request.Iters != nil {
 		config.Iters = *request.Iters
 	}
+
 	if request.PopSize != nil {
 		config.PopSize = *request.PopSize
 	}
+
 	if request.Seed != nil {
 		config.Seed = *request.Seed
 		config.EffectiveSeed = *request.Seed
 	}
+
 	if request.Polish != nil {
 		config.PolishingEnabled = *request.Polish
 	}
+
 	config, err := app.Normalize(config)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid extension configuration")
@@ -1742,6 +1949,7 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 
 type responseStatusWriter struct {
 	http.ResponseWriter
+
 	status int
 }
 
@@ -1749,6 +1957,7 @@ func (w *responseStatusWriter) WriteHeader(status int) {
 	if w.status != 0 {
 		return
 	}
+
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
 }
@@ -1757,6 +1966,7 @@ func (w *responseStatusWriter) Write(body []byte) (int, error) {
 	if w.status == 0 {
 		w.WriteHeader(http.StatusOK)
 	}
+
 	return w.ResponseWriter.Write(body)
 }
 
@@ -1768,6 +1978,7 @@ func (w *responseStatusWriter) statusCode() int {
 	if w.status == 0 {
 		return http.StatusOK
 	}
+
 	return w.status
 }
 
@@ -1779,6 +1990,7 @@ func (w *responseStatusFlusher) Flush() {
 	if w.status == 0 {
 		w.WriteHeader(http.StatusOK)
 	}
+
 	w.ResponseWriter.(http.Flusher).Flush()
 }
 
@@ -1790,6 +2002,7 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Request-ID", requestID)
 
 		statusWriter := &responseStatusWriter{ResponseWriter: w}
+
 		var responseWriter http.ResponseWriter = statusWriter
 		if _, ok := w.(http.Flusher); ok {
 			responseWriter = &responseStatusFlusher{responseStatusWriter: statusWriter}

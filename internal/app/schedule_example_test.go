@@ -17,11 +17,14 @@ import (
 // fails both packages rather than quietly leaving one of them behind.
 func readScheduleExample(t *testing.T) []byte {
 	t.Helper()
+
 	path := filepath.Join("..", "..", "docs", "examples", "512-circle-campaign.json")
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read the documented example: %v", err)
 	}
+
 	return data
 }
 
@@ -38,10 +41,12 @@ func TestDocumentedExamplePlansTheReferenceCampaign(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the documented example does not parse: %v", err)
 	}
+
 	plan, err := document.Expand()
 	if err != nil {
 		t.Fatalf("the documented example does not expand: %v", err)
 	}
+
 	summary := SummarizeSchedulePlan(plan)
 
 	checks := []struct {
@@ -64,6 +69,7 @@ func TestDocumentedExamplePlansTheReferenceCampaign(t *testing.T) {
 			t.Errorf("%s = %d, want %d", check.name, check.got, check.want)
 		}
 	}
+
 	if document.Seed != 4242 {
 		t.Errorf("documented seed = %d, want 4242", document.Seed)
 	}
@@ -78,11 +84,13 @@ func TestDocumentedExampleIsTheCampaignTheTestsAlreadyPin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the documented example does not parse: %v", err)
 	}
+
 	pinned := documentWithSteps(t, referenceCampaignSteps)
 	if !reflect.DeepEqual(documented.Steps, pinned.Steps) {
 		t.Errorf("the documented steps differ from referenceCampaignSteps:\n docs %+v\n test %+v",
 			documented.Steps, pinned.Steps)
 	}
+
 	if !reflect.DeepEqual(documented.Base, pinned.Base) {
 		t.Errorf("the documented base differs from baseDocument's:\n docs %+v\n test %+v",
 			documented.Base, pinned.Base)

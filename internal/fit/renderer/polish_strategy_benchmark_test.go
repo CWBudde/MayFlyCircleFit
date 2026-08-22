@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"io"
 	"log/slog"
 	"math/rand"
 	"testing"
@@ -128,17 +127,21 @@ func runPolishQualityBenchmark(
 
 	var costSum float64
 	var acceptedSum int
+
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for range b.N {
 		base := NewCPURenderer(reference, circleCount)
 		// One render thread keeps the measurement about selection and baking
 		// rather than about row-band scaling.
 		base.SetThreads(1)
+
 		optimizer, err := opt.NewMayflyVariant("standard", polishQualityIters, polishQualityPopSize, 4242)
 		if err != nil {
 			b.Fatalf("NewMayflyVariant() error = %v", err)
 		}
+
 		result, err := PolishCircleBatchContext(context.Background(), base, optimizer,
 			append([]float64(nil), initial...), BatchPolishOptions{
 				ActiveSetSize: polishQualityActiveSetSize,
@@ -148,6 +151,7 @@ func runPolishQualityBenchmark(
 		if err != nil {
 			b.Fatalf("PolishCircleBatchContext(%s) error = %v", strategy, err)
 		}
+
 		costSum += result.BestCost
 		acceptedSum += result.AcceptedSweeps
 		polishStrategyBenchmarkSink += result.BestCost
@@ -168,8 +172,10 @@ func runPolishQualityBenchmark(
 // measurement.
 func discardPolishBenchmarkLogs(b *testing.B) {
 	b.Helper()
+
 	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	slog.SetDefault(slog.New(slog.DiscardHandler))
 	b.Cleanup(func() { slog.SetDefault(previous) })
 }
 
@@ -178,6 +184,7 @@ func discardPolishBenchmarkLogs(b *testing.B) {
 // circle still contributes.
 func polishQualityTruth(circleCount, width, height int) []float64 {
 	random := rand.New(rand.NewSource(7))
+
 	params := make([]float64, 0, circleCount*paramsPerCircle)
 	for range circleCount {
 		params = append(params, circleParams(
@@ -193,6 +200,7 @@ func polishQualityTruth(circleCount, width, height int) []float64 {
 			0.25+random.Float64()*0.3,
 		)...)
 	}
+
 	return params
 }
 
@@ -202,6 +210,7 @@ func polishQualityReference(truth []float64, width, height int) *image.NRGBA {
 	circleCount := len(truth) / paramsPerCircle
 	source := NewCPURenderer(solidImage(width, height, color.NRGBA{R: 255, G: 255, B: 255, A: 255}), circleCount)
 	source.SetThreads(1)
+
 	return cloneNRGBA(source.Render(truth))
 }
 
@@ -211,11 +220,13 @@ func polishQualityReference(truth []float64, width, height int) *image.NRGBA {
 func polishQualityStart(truth []float64, width, height int) []float64 {
 	const jitter = 0.02
 	random := rand.New(rand.NewSource(11))
+
 	start := append([]float64(nil), truth...)
 	for circle := range len(truth) / paramsPerCircle {
 		offset := circle * paramsPerCircle
 		start[offset] += (random.Float64()*2 - 1) * jitter * float64(width)
 		start[offset+1] += (random.Float64()*2 - 1) * jitter * float64(height)
+
 		start[offset+2] *= 1 + (random.Float64()*2-1)*jitter
 		for channel := 3; channel < paramsPerCircle; channel++ {
 			start[offset+channel] += (random.Float64()*2 - 1) * jitter
@@ -224,5 +235,6 @@ func polishQualityStart(truth []float64, width, height int) []float64 {
 	// Keep the jittered vector inside the bounds the optimizer enforces, so the
 	// starting cost is one a real run could hold.
 	fit.NewBounds(len(start)/paramsPerCircle, width, height).ClampVector(start)
+
 	return start
 }

@@ -42,6 +42,7 @@ func TestLoggingMiddleware(t *testing.T) {
 		if _, err := uuid.Parse(requestID); err != nil {
 			t.Fatalf("X-Request-ID = %q, want UUID: %v", requestID, err)
 		}
+
 		output := logs.String()
 		for _, field := range []string{
 			"msg=\"HTTP request\"",
@@ -79,6 +80,7 @@ func TestLoggingMiddleware(t *testing.T) {
 			if !ok {
 				t.Fatal("logging response writer does not preserve http.Flusher")
 			}
+
 			flusher.Flush()
 		}))
 		recorder := httptest.NewRecorder()
@@ -88,6 +90,7 @@ func TestLoggingMiddleware(t *testing.T) {
 		if !recorder.Flushed {
 			t.Error("logging response writer did not forward Flush")
 		}
+
 		if output := logs.String(); !strings.Contains(output, "status=200") {
 			t.Errorf("request log %q does not contain flushed status 200", output)
 		}
@@ -124,7 +127,9 @@ func TestServer_CreateJob(t *testing.T) {
 	}
 
 	var job Job
-	if err := json.NewDecoder(w.Body).Decode(&job); err != nil {
+
+	err := json.NewDecoder(w.Body).Decode(&job)
+	if err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
@@ -163,10 +168,14 @@ func TestServer_CreateJob_BackendDefaults(t *testing.T) {
 		if w.Code != http.StatusCreated {
 			t.Fatalf("Expected status 201, got %d", w.Code)
 		}
+
 		var job Job
-		if err := json.NewDecoder(w.Body).Decode(&job); err != nil {
+
+		err := json.NewDecoder(w.Body).Decode(&job)
+		if err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
+
 		if job.Config.Backend != app.BackendOpenCL {
 			t.Fatalf("job backend = %q, want %q", job.Config.Backend, app.BackendOpenCL)
 		}
@@ -185,10 +194,14 @@ func TestServer_CreateJob_BackendDefaults(t *testing.T) {
 		if w.Code != http.StatusCreated {
 			t.Fatalf("Expected status 201, got %d", w.Code)
 		}
+
 		var job Job
-		if err := json.NewDecoder(w.Body).Decode(&job); err != nil {
+
+		err := json.NewDecoder(w.Body).Decode(&job)
+		if err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
+
 		if job.Config.Backend != app.BackendCPU {
 			t.Fatalf("job backend = %q, want %q", job.Config.Backend, app.BackendCPU)
 		}
@@ -215,31 +228,40 @@ func TestServer_ListJobs(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
+
 	if strings.Contains(w.Body.String(), `"bestParams"`) {
 		t.Fatal("job list serialized optimizer parameters")
 	}
 
 	var jobs []JobSummary
-	if err := json.NewDecoder(w.Body).Decode(&jobs); err != nil {
+
+	err := json.NewDecoder(w.Body).Decode(&jobs)
+	if err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
 	if len(jobs) != 2 {
 		t.Errorf("Expected 2 jobs, got %d", len(jobs))
 	}
+
 	if jobs[0].Config.RefPath != imgPath || jobs[0].Config.Mode != app.ModeJoint || jobs[0].Config.Circles != 1 {
 		t.Fatalf("job summary config = %+v", jobs[0].Config)
 	}
 
 	first := httptest.NewRecorder()
 	s.handleListJobs(first, httptest.NewRequest(http.MethodGet, "/api/v1/jobs?limit=1", nil))
+
 	if first.Code != http.StatusOK {
 		t.Fatalf("first page status = %d, want 200", first.Code)
 	}
+
 	var firstPage jobListPage
-	if err := json.NewDecoder(first.Body).Decode(&firstPage); err != nil {
+
+	err = json.NewDecoder(first.Body).Decode(&firstPage)
+	if err != nil {
 		t.Fatalf("decode first page: %v", err)
 	}
+
 	if len(firstPage.Jobs) != 1 || firstPage.Total != 2 || firstPage.NextCursor == "" {
 		t.Fatalf("first page = %+v, want one of two jobs and a cursor", firstPage)
 	}
@@ -247,13 +269,18 @@ func TestServer_ListJobs(t *testing.T) {
 	second := httptest.NewRecorder()
 	secondURL := "/api/v1/jobs?limit=1&cursor=" + url.QueryEscape(firstPage.NextCursor)
 	s.handleListJobs(second, httptest.NewRequest(http.MethodGet, secondURL, nil))
+
 	var secondPage jobListPage
-	if err := json.NewDecoder(second.Body).Decode(&secondPage); err != nil {
+
+	err = json.NewDecoder(second.Body).Decode(&secondPage)
+	if err != nil {
 		t.Fatalf("decode second page: %v", err)
 	}
+
 	if len(secondPage.Jobs) != 1 || secondPage.Total != 2 || secondPage.NextCursor != "" {
 		t.Fatalf("second page = %+v, want final job", secondPage)
 	}
+
 	if secondPage.Jobs[0].ID == firstPage.Jobs[0].ID {
 		t.Fatal("cursor page repeated the first job")
 	}
@@ -261,6 +288,7 @@ func TestServer_ListJobs(t *testing.T) {
 	for _, target := range []string{"/api/v1/jobs?limit=0", "/api/v1/jobs?cursor=not-a-cursor"} {
 		response := httptest.NewRecorder()
 		s.handleListJobs(response, httptest.NewRequest(http.MethodGet, target, nil))
+
 		if response.Code != http.StatusBadRequest {
 			t.Errorf("%s status = %d, want 400", target, response.Code)
 		}
@@ -275,24 +303,33 @@ func TestJobsPageBoundsHydrationSeed(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	server.handleJobsPage(response, httptest.NewRequest(http.MethodGet, "/jobs", nil))
+
 	if response.Code != http.StatusOK {
 		t.Fatalf("jobs page status = %d, want 200", response.Code)
 	}
+
 	body := response.Body.String()
 	const marker = `id="job-list-page"`
+
 	start := strings.Index(body, marker)
 	if start < 0 {
 		t.Fatal("jobs page has no hydration seed")
 	}
+
 	start += strings.Index(body[start:], ">") + 1
+
 	end := strings.Index(body[start:], "</script>")
 	if end < 0 {
 		t.Fatal("jobs page hydration seed is unterminated")
 	}
+
 	var seed jobListPage
-	if err := json.Unmarshal([]byte(body[start:start+end]), &seed); err != nil {
+
+	err := json.Unmarshal([]byte(body[start:start+end]), &seed)
+	if err != nil {
 		t.Fatalf("decode jobs page seed: %v", err)
 	}
+
 	if len(seed.Jobs) != defaultJobListLimit || seed.Total != defaultJobListLimit+1 || seed.NextCursor == "" {
 		t.Fatalf("jobs page seed has %d/%d jobs and cursor %q", len(seed.Jobs), seed.Total, seed.NextCursor)
 	}
@@ -316,8 +353,10 @@ func TestServer_GetJobStatus(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var response map[string]interface{}
-	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+	var response map[string]any
+
+	err := json.NewDecoder(w.Body).Decode(&response)
+	if err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
@@ -334,6 +373,7 @@ func TestServer_JobControlActions_E2E(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
+
 	persistence, err := createTestStore(filepath.Join(tmpDir, "checkpoints"))
 	if err != nil {
 		t.Fatal(err)
@@ -355,22 +395,27 @@ func TestServer_JobControlActions_E2E(t *testing.T) {
 	if err := server.jobManager.StartJob(pauseAndResume.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := server.jobManager.UpdateProgress(pauseAndResume.ID, 1, 1, []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7}, 125); err != nil {
 		t.Fatal(err)
 	}
 
 	pause := httptest.NewRecorder()
 	server.Handler().ServeHTTP(pause, httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+pauseAndResume.ID+"/pause", nil))
+
 	if pause.Code != http.StatusAccepted {
 		t.Fatalf("pause status = %d, body %s", pause.Code, pause.Body.String())
 	}
+
 	waitForJobState(t, server.jobManager, pauseAndResume.ID, StatePaused)
 
 	resume := httptest.NewRecorder()
 	server.Handler().ServeHTTP(resume, httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+pauseAndResume.ID+"/resume", nil))
+
 	if resume.Code != http.StatusAccepted {
 		t.Fatalf("resume status = %d, body %s", resume.Code, resume.Body.String())
 	}
+
 	waitForJobState(t, server.jobManager, pauseAndResume.ID, StateRunning)
 
 	cancelJob := server.jobManager.CreateJob(app.DefaultProject, JobConfig{
@@ -383,9 +428,11 @@ func TestServer_JobControlActions_E2E(t *testing.T) {
 	})
 	cancel := httptest.NewRecorder()
 	server.Handler().ServeHTTP(cancel, httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+cancelJob.ID+"/cancel", nil))
+
 	if cancel.Code != http.StatusAccepted {
 		t.Fatalf("cancel status = %d, body %s", cancel.Code, cancel.Body.String())
 	}
+
 	waitForJobState(t, server.jobManager, cancelJob.ID, StateCancelled)
 
 	completedJob := server.jobManager.CreateJob(app.DefaultProject, JobConfig{
@@ -399,6 +446,7 @@ func TestServer_JobControlActions_E2E(t *testing.T) {
 	if err := server.jobManager.StartJob(completedJob.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := server.jobManager.CompleteJob(
 		completedJob.ID,
 		10,
@@ -413,9 +461,11 @@ func TestServer_JobControlActions_E2E(t *testing.T) {
 
 	delete := httptest.NewRecorder()
 	server.Handler().ServeHTTP(delete, httptest.NewRequest(http.MethodDelete, "/api/v1/jobs/"+completedJob.ID, nil))
+
 	if delete.Code != http.StatusNoContent {
 		t.Fatalf("delete status = %d, body %s", delete.Code, delete.Body.String())
 	}
+
 	if _, ok := server.jobManager.GetJob(completedJob.ID); ok {
 		t.Fatalf("completed job %s was not deleted", completedJob.ID)
 	}
@@ -429,6 +479,7 @@ func TestServer_PauseJobRejections(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
+
 	persistence, err := createTestStore(filepath.Join(tmpDir, "checkpoints"))
 	if err != nil {
 		t.Fatal(err)
@@ -441,6 +492,7 @@ func TestServer_PauseJobRejections(t *testing.T) {
 	pause := func(jobID string) *httptest.ResponseRecorder {
 		recorder := httptest.NewRecorder()
 		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+jobID+"/pause", nil))
+
 		return recorder
 	}
 
@@ -449,6 +501,7 @@ func TestServer_PauseJobRejections(t *testing.T) {
 		if got := pause(job.ID).Code; got != http.StatusConflict {
 			t.Fatalf("pause status = %d, want %d", got, http.StatusConflict)
 		}
+
 		if state := server.jobManager.getJobState(job.ID); state != StatePending {
 			t.Fatalf("state = %q, want %q", state, StatePending)
 		}
@@ -456,9 +509,12 @@ func TestServer_PauseJobRejections(t *testing.T) {
 
 	t.Run("running job without progress", func(t *testing.T) {
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
-		if err := server.jobManager.StartJob(job.ID); err != nil {
+
+		err := server.jobManager.StartJob(job.ID)
+		if err != nil {
 			t.Fatal(err)
 		}
+
 		if got := pause(job.ID).Code; got != http.StatusConflict {
 			t.Fatalf("pause status = %d, want %d", got, http.StatusConflict)
 		}
@@ -470,18 +526,26 @@ func TestServer_PauseJobRejections(t *testing.T) {
 
 	t.Run("schedule stage", func(t *testing.T) {
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
-		if err := server.jobManager.StartJob(job.ID); err != nil {
+
+		err := server.jobManager.StartJob(job.ID)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if err := server.jobManager.UpdateProgress(job.ID, 1, 1, []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7}, 125); err != nil {
+
+		err = server.jobManager.UpdateProgress(job.ID, 1, 1, []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7}, 125)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if err := server.jobManager.UpdateJob(job.ID, func(j *Job) { j.ScheduleID = "schedule-1" }); err != nil {
+
+		err = server.jobManager.UpdateJob(job.ID, func(j *Job) { j.ScheduleID = "schedule-1" })
+		if err != nil {
 			t.Fatal(err)
 		}
+
 		if got := pause(job.ID).Code; got != http.StatusConflict {
 			t.Fatalf("pause status = %d, want %d", got, http.StatusConflict)
 		}
+
 		if state := server.jobManager.getJobState(job.ID); state != StateRunning {
 			t.Fatalf("state = %q, want %q", state, StateRunning)
 		}
@@ -502,6 +566,7 @@ func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
+
 	persistence, err := createTestStore(filepath.Join(tmpDir, "checkpoints"))
 	if err != nil {
 		t.Fatal(err)
@@ -516,36 +581,49 @@ func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
 	resume := func(jobID string) *httptest.ResponseRecorder {
 		recorder := httptest.NewRecorder()
 		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+jobID+"/resume", nil))
+
 		return recorder
 	}
 	decode := func(t *testing.T, recorder *httptest.ResponseRecorder) map[string]any {
 		t.Helper()
+
 		var payload map[string]any
-		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+
+		err := json.Unmarshal(recorder.Body.Bytes(), &payload)
+		if err != nil {
 			t.Fatalf("decode response %q: %v", recorder.Body.String(), err)
 		}
+
 		return payload
 	}
 
 	t.Run("paused job resumes in place", func(t *testing.T) {
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
-		if err := server.jobManager.StartJob(job.ID); err != nil {
+
+		err := server.jobManager.StartJob(job.ID)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if err := server.jobManager.UpdateProgress(job.ID, 5, 50, params, 600); err != nil {
+
+		err = server.jobManager.UpdateProgress(job.ID, 5, 50, params, 600)
+		if err != nil {
 			t.Fatal(err)
 		}
+
 		pause := httptest.NewRecorder()
 		server.Handler().ServeHTTP(pause, httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+job.ID+"/pause", nil))
+
 		if pause.Code != http.StatusAccepted {
 			t.Fatalf("pause status = %d, body %s", pause.Code, pause.Body.String())
 		}
+
 		waitForJobState(t, server.jobManager, job.ID, StatePaused)
 
 		recorder := resume(job.ID)
 		if recorder.Code != http.StatusAccepted {
 			t.Fatalf("resume status = %d, body %s", recorder.Code, recorder.Body.String())
 		}
+
 		if got := decode(t, recorder)["jobId"]; got != job.ID {
 			t.Fatalf("jobId = %v, want the paused job %s", got, job.ID)
 		}
@@ -553,15 +631,23 @@ func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
 
 	t.Run("cancelled job forks a new one", func(t *testing.T) {
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
-		if err := server.jobManager.StartJob(job.ID); err != nil {
+
+		err := server.jobManager.StartJob(job.ID)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if err := server.jobManager.CancelJob(job.ID); err != nil {
+
+		err = server.jobManager.CancelJob(job.ID)
+		if err != nil {
 			t.Fatal(err)
 		}
+
 		checkpoint := store.NewCheckpoint(job.ID, params, 600, 1000, 8, job.Config)
+
 		checkpoint.Evaluations = 80
-		if err := persistence.SaveCheckpoint(job.ID, checkpoint); err != nil {
+
+		err = persistence.SaveCheckpoint(job.ID, checkpoint)
+		if err != nil {
 			t.Fatal(err)
 		}
 
@@ -569,14 +655,17 @@ func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("resume status = %d, body %s", recorder.Code, recorder.Body.String())
 		}
+
 		payload := decode(t, recorder)
 		if got := payload["resumedFrom"]; got != job.ID {
 			t.Fatalf("resumedFrom = %v, want %s", got, job.ID)
 		}
+
 		forked, _ := payload["jobId"].(string)
 		if forked == "" || forked == job.ID {
 			t.Fatalf("jobId = %q, want a new job identifier", forked)
 		}
+
 		if _, ok := server.jobManager.GetJob(forked); !ok {
 			t.Fatalf("forked job %s was not created", forked)
 		}
@@ -588,12 +677,17 @@ func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
 
 	t.Run("job without a checkpoint", func(t *testing.T) {
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
-		if err := server.jobManager.StartJob(job.ID); err != nil {
+
+		err := server.jobManager.StartJob(job.ID)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if err := server.jobManager.CancelJob(job.ID); err != nil {
+
+		err = server.jobManager.CancelJob(job.ID)
+		if err != nil {
 			t.Fatal(err)
 		}
+
 		if got := resume(job.ID).Code; got != http.StatusNotFound {
 			t.Fatalf("resume status = %d, want %d", got, http.StatusNotFound)
 		}
@@ -605,23 +699,29 @@ func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
 // not publish the job as completed over the snapshot the operator asked for.
 func TestPausedJobCannotBeCompleted(t *testing.T) {
 	manager := NewJobManager()
+
 	job := manager.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
 	if err := manager.StartJob(job.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	claimed, err := manager.claimPause(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if claimed.State != StatePaused {
 		t.Fatalf("claimed state = %q, want %q", claimed.State, StatePaused)
 	}
+
 	if err := manager.MarkJobCompleted(job.ID); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("MarkJobCompleted error = %v, want %v", err, ErrInvalidTransition)
 	}
+
 	if state := manager.getJobState(job.ID); state != StatePaused {
 		t.Fatalf("state = %q, want %q", state, StatePaused)
 	}
+
 	if _, err := manager.claimPause(job.ID); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("second claimPause error = %v, want %v", err, ErrInvalidTransition)
 	}
@@ -629,31 +729,45 @@ func TestPausedJobCannotBeCompleted(t *testing.T) {
 
 func TestServerJobStatusRepresentsInfinitePSNRAndOptionalSSIM(t *testing.T) {
 	server := NewServer(":8080", nil)
+
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png", EnableSSIM: true})
-	if err := server.jobManager.StartJob(job.ID); err != nil {
+
+	err := server.jobManager.StartJob(job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := server.jobManager.UpdateProgress(job.ID, 1, 1, []float64{1}, 0); err != nil {
+
+	err = server.jobManager.UpdateProgress(job.ID, 1, 1, []float64{1}, 0)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	ssim := 1.0
-	if err := server.jobManager.RecordMetrics(job.ID, qualitySample(1, 0, &ssim, time.Now())); err != nil {
+
+	err = server.jobManager.RecordMetrics(job.ID, qualitySample(1, 0, &ssim, time.Now()))
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+job.ID+"/status", nil)
 	recorder := httptest.NewRecorder()
 	server.handleGetJobStatus(recorder, req, job.ID)
+
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", recorder.Code)
 	}
+
 	var response jobStatusResponse
-	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+
+	err = json.NewDecoder(recorder.Body).Decode(&response)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	if response.PSNR != nil || !response.PSNRInfinite {
 		t.Fatalf("PSNR response = (%v, %v), want (nil, true)", response.PSNR, response.PSNRInfinite)
 	}
+
 	if response.SSIM == nil || *response.SSIM != 1 {
 		t.Fatalf("SSIM response = %v, want 1", response.SSIM)
 	}
@@ -661,29 +775,42 @@ func TestServerJobStatusRepresentsInfinitePSNRAndOptionalSSIM(t *testing.T) {
 
 func TestServerJobStatusExposesProvisionalCandidateSeparately(t *testing.T) {
 	server := NewServer(":8080", nil)
+
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
-	if err := server.jobManager.StartJob(job.ID); err != nil {
+
+	err := server.jobManager.StartJob(job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := server.jobManager.UpdateProgress(job.ID, 1, 10, []float64{1}, 100); err != nil {
+
+	err = server.jobManager.UpdateProgress(job.ID, 1, 10, []float64{1}, 100)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := server.jobManager.UpdateCandidateProgress(job.ID, 2, 20, 95.25); err != nil {
+
+	err = server.jobManager.UpdateCandidateProgress(job.ID, 2, 20, 95.25)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	recorder := httptest.NewRecorder()
 	server.handleGetJobStatus(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+job.ID+"/status", nil), job.ID)
+
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", recorder.Code)
 	}
+
 	var response jobStatusResponse
-	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+
+	err = json.NewDecoder(recorder.Body).Decode(&response)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	if response.BestCost != 100 || response.CandidateCost == nil || *response.CandidateCost != 95.25 {
 		t.Fatalf("audited/candidate costs = %v/%v, want 100/95.25", response.BestCost, response.CandidateCost)
 	}
+
 	if response.CandidatePSNR == nil || response.CandidatePSNRInfinite {
 		t.Fatalf("candidate PSNR = (%v, %v), want finite value", response.CandidatePSNR, response.CandidatePSNRInfinite)
 	}
@@ -750,6 +877,7 @@ func TestServer_Integration(t *testing.T) {
 	// Start server in background
 	s := NewServerWithOptions("localhost:0", nil, ServerOptions{InputRoots: []string{tmpDir}}) // Use random port
 	shutdownTestServer(t, s)
+
 	srv := httptest.NewServer(s.corsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/jobs" && r.Method == http.MethodPost {
 			s.handleCreateJob(w, r)
@@ -772,6 +900,7 @@ func TestServer_Integration(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(config)
+
 	resp, err := http.Post(srv.URL+"/api/v1/jobs", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("Failed to create job: %v", err)
@@ -783,13 +912,13 @@ func TestServer_Integration(t *testing.T) {
 
 	// Poll status until completed
 	maxAttempts := 50
-	for i := 0; i < maxAttempts; i++ {
+	for i := range maxAttempts {
 		resp, err := http.Get(srv.URL + "/api/v1/jobs/" + job.ID + "/status")
 		if err != nil {
 			t.Fatalf("Failed to get status: %v", err)
 		}
 
-		var status map[string]interface{}
+		var status map[string]any
 		json.NewDecoder(resp.Body).Decode(&status)
 		resp.Body.Close()
 
@@ -837,7 +966,7 @@ func TestServer_JobDetailPage(t *testing.T) {
 	})
 
 	// Test job detail page renders successfully
-	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/jobs/%s", job.ID), nil)
+	req := httptest.NewRequest(http.MethodGet, "/jobs/"+job.ID, nil)
 	w := httptest.NewRecorder()
 
 	s.handleJobDetail(w, req)
@@ -855,25 +984,32 @@ func TestServer_JobDetailPage(t *testing.T) {
 	if !containsString(body, job.ID[:8]) {
 		t.Error("Response should contain job ID")
 	}
+
 	if !containsString(body, "Metrics") {
 		t.Error("Response should contain metrics section")
 	}
+
 	if !containsString(body, "Configuration") {
 		t.Error("Response should contain configuration section")
 	}
+
 	if !containsString(body, "Active-set Polishing") || !containsString(body, "Disabled") {
 		t.Error("Response should contain the polishing configuration")
 	}
+
 	if !containsString(body, "Images") {
 		t.Error("Response should contain images section")
 	}
+
 	if !containsString(body, "50 × 50 px") {
 		t.Error("Response should contain reference image dimensions")
 	}
+
 	info, err := os.Stat(imgPath)
 	if err != nil {
 		t.Fatalf("stat reference image: %v", err)
 	}
+
 	if !containsString(body, fmt.Sprintf("%d bytes", info.Size())) {
 		t.Error("Response should contain the original reference file size")
 	}
@@ -887,13 +1023,16 @@ func TestReferenceImageMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("referenceImageMetadata() error = %v", err)
 	}
+
 	if width != 50 || height != 50 {
 		t.Fatalf("referenceImageMetadata() dimensions = %dx%d, want 50x50", width, height)
 	}
+
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat reference image: %v", err)
 	}
+
 	if size != info.Size() {
 		t.Errorf("referenceImageMetadata() size = %d, want %d", size, info.Size())
 	}
@@ -962,16 +1101,23 @@ func TestServer_GetDiffImageColormap(t *testing.T) {
 	createSimpleTestImage(t, path)
 
 	server := NewServer(":8080", nil)
+
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: path, Circles: 1, Threads: 1})
-	if err := server.jobManager.StartJob(job.ID); err != nil {
+
+	err := server.jobManager.StartJob(job.ID)
+	if err != nil {
 		t.Fatalf("start job: %v", err)
 	}
+
 	params := []float64{25, 25, 10, 1, 0, 0, 1}
-	if err := server.jobManager.UpdateProgress(job.ID, 1, 1, params, 1); err != nil {
+
+	err = server.jobManager.UpdateProgress(job.ID, 1, 1, params, 1)
+	if err != nil {
 		t.Fatalf("update job: %v", err)
 	}
 
 	images := make(map[string]image.Image)
+
 	requests := []struct {
 		name  string
 		query string
@@ -984,29 +1130,36 @@ func TestServer_GetDiffImageColormap(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+job.ID+"/diff.png"+test.query, nil)
 		recorder := httptest.NewRecorder()
 		server.handleGetDiffImage(recorder, req, job.ID)
+
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("%s diff status = %d, want 200: %s", test.name, recorder.Code, recorder.Body.String())
 		}
+
 		colormap := test.name
 		if colormap == "default" {
 			colormap = "turbo"
 		}
+
 		if got, want := recorder.Header().Get("ETag"), fmt.Sprintf(`"diff-%s-1"`, colormap); got != want {
 			t.Errorf("%s ETag = %q, want %q", test.name, got, want)
 		}
+
 		decoded, err := png.Decode(recorder.Body)
 		if err != nil {
 			t.Fatalf("decode %s diff: %v", test.name, err)
 		}
+
 		images[test.name] = decoded
 	}
 
 	defaultColor := color.NRGBAModel.Convert(images["default"].At(0, 0))
 	turbo := color.NRGBAModel.Convert(images["turbo"].At(0, 0))
 	magma := color.NRGBAModel.Convert(images["magma"].At(0, 0))
+
 	if defaultColor != turbo {
 		t.Errorf("default pixel = %#v, want Turbo %#v", defaultColor, turbo)
 	}
+
 	if turbo == magma {
 		t.Errorf("Turbo and Magma pixels unexpectedly match: %#v", turbo)
 	}
@@ -1022,6 +1175,7 @@ func TestServer_GetDiffImageRejectsInvalidColormap(t *testing.T) {
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", recorder.Code)
 	}
+
 	if !containsString(recorder.Body.String(), `"code":"invalid_colormap"`) {
 		t.Errorf("response = %s, want invalid_colormap error", recorder.Body.String())
 	}
@@ -1050,20 +1204,25 @@ func TestServer_JobDetailPage_Integration(t *testing.T) {
 
 	// Set some initial values through the manager: CreateJob returns an immutable
 	// snapshot, so mutating it must not change the stored job.
-	if err := s.jobManager.StartJob(job.ID); err != nil {
+	err := s.jobManager.StartJob(job.ID)
+	if err != nil {
 		t.Fatalf("Failed to start job: %v", err)
 	}
-	if err := s.jobManager.UpdateProgress(job.ID, 3, 3, make([]float64, 14), 1000); err != nil {
+
+	err = s.jobManager.UpdateProgress(job.ID, 3, 3, make([]float64, 14), 1000)
+	if err != nil {
 		t.Fatalf("Failed to update job progress: %v", err)
 	}
-	if err := s.jobManager.UpdateJob(job.ID, func(stored *Job) {
+
+	err = s.jobManager.UpdateJob(job.ID, func(stored *Job) {
 		stored.InitialCost = 2000
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("Failed to set initial cost: %v", err)
 	}
 
 	// Test that the detail page renders with job data
-	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/jobs/%s", job.ID), nil)
+	req := httptest.NewRequest(http.MethodGet, "/jobs/"+job.ID, nil)
 	w := httptest.NewRecorder()
 
 	s.handleJobDetail(w, req)
@@ -1078,15 +1237,19 @@ func TestServer_JobDetailPage_Integration(t *testing.T) {
 	if !containsString(body, "1000.00") { // Best cost
 		t.Error("Response should contain best cost")
 	}
+
 	if !containsString(body, "joint") { // Mode
 		t.Error("Response should contain mode")
 	}
+
 	if !containsString(body, "Running") { // State badge
 		t.Error("Response should contain Running badge")
 	}
+
 	if !containsString(body, `id="parameter-count">2</span> of 2 circles available`) {
 		t.Error("Response should contain the materialized parameter count")
 	}
+
 	for _, description := range []string{
 		"Circle 1: (0.00, 0.00, 0.00) RGB(0, 0, 0) α=0.000",
 		"Circle 2: (0.00, 0.00, 0.00) RGB(0, 0, 0) α=0.000",
@@ -1113,14 +1276,21 @@ func TestServer_JobStream_SSE(t *testing.T) {
 		PopSize: 20,
 		Seed:    42,
 	})
-	if err := s.jobManager.StartJob(job.ID); err != nil {
+
+	err := s.jobManager.StartJob(job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.jobManager.CompleteJob(job.ID, 7, 20, make([]float64, 14), 12.5, 100, "completed"); err != nil {
+
+	err = s.jobManager.CompleteJob(job.ID, 7, 20, make([]float64, 14), 12.5, 100, "completed")
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	ssim := 0.75
-	if err := s.jobManager.RecordMetrics(job.ID, qualitySample(7, 12.5, &ssim, time.Now())); err != nil {
+
+	err = s.jobManager.RecordMetrics(job.ID, qualitySample(7, 12.5, &ssim, time.Now()))
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -1134,9 +1304,11 @@ func TestServer_JobStream_SSE(t *testing.T) {
 	if got := w.Header().Get("Content-Type"); got != "text/event-stream" {
 		t.Errorf("Content-Type = %q, want text/event-stream", got)
 	}
+
 	if got := w.Header().Get("Cache-Control"); got != "no-cache, no-transform" {
 		t.Errorf("Cache-Control = %q, want no-cache, no-transform", got)
 	}
+
 	if got := w.Header().Get("X-Accel-Buffering"); got != "no" {
 		t.Errorf("X-Accel-Buffering = %q, want no", got)
 	}
@@ -1145,9 +1317,11 @@ func TestServer_JobStream_SSE(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("event count = %d, want 1; body=%q", len(events), w.Body.String())
 	}
+
 	if events[0].State != StateCompleted || events[0].Iterations != 7 || events[0].BestCost != 12.5 {
 		t.Errorf("terminal event = %+v", events[0])
 	}
+
 	if events[0].PSNR == nil || events[0].PSNRInfinite || events[0].SSIM == nil || *events[0].SSIM != ssim {
 		t.Errorf("terminal quality metrics = %+v", events[0])
 	}
@@ -1190,6 +1364,7 @@ func TestEventBroadcaster(t *testing.T) {
 		if received.JobID != "job1" {
 			t.Errorf("Expected jobID job1, got %s", received.JobID)
 		}
+
 		if received.Iterations != 10 {
 			t.Errorf("Expected 10 iterations, got %d", received.Iterations)
 		}
@@ -1210,8 +1385,8 @@ func createSimpleTestImage(t *testing.T, path string) {
 	white := color.NRGBA{255, 255, 255, 255}
 	red := color.NRGBA{255, 0, 0, 255}
 
-	for y := 0; y < 50; y++ {
-		for x := 0; x < 50; x++ {
+	for y := range 50 {
+		for x := range 50 {
 			img.Set(x, y, white)
 		}
 	}
@@ -1257,12 +1432,15 @@ func TestServer_CreatePageGet(t *testing.T) {
 	if !containsString(body, "Optimization Parameters") {
 		t.Error("Expected page to contain 'Optimization Parameters'")
 	}
+
 	if !containsString(body, "batchSize") {
 		t.Error("Expected page to expose batch size")
 	}
+
 	if !containsString(body, "optimizerEpochs") {
 		t.Error("Expected page to expose optimizer epochs")
 	}
+
 	if !containsString(body, "polishingEnabled") || !containsString(body, "polishingActiveSetSize") {
 		t.Error("Expected page to expose active-set polishing controls")
 	}
@@ -1298,6 +1476,7 @@ func TestServer_CreatePagePost_Success(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/create", bytes.NewBufferString(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 	rec := httptest.NewRecorder()
 
 	server.handleCreatePage(rec, req)
@@ -1322,33 +1501,43 @@ func TestServer_CreatePagePost_Success(t *testing.T) {
 	if job.Config.RefPath != testImagePath {
 		t.Errorf("Expected refPath %s, got %s", testImagePath, job.Config.RefPath)
 	}
+
 	if job.Config.Mode != "batch" {
 		t.Errorf("Expected mode batch, got %s", job.Config.Mode)
 	}
+
 	if job.Config.Circles != 5 {
 		t.Errorf("Expected 5 circles, got %d", job.Config.Circles)
 	}
+
 	if job.Config.Iters != 50 {
 		t.Errorf("Expected 50 iters, got %d", job.Config.Iters)
 	}
+
 	if job.Config.PopSize != 20 {
 		t.Errorf("Expected popSize 20, got %d", job.Config.PopSize)
 	}
+
 	if job.Config.OptimizerEpochs != 4 {
 		t.Errorf("Expected optimizerEpochs 4, got %d", job.Config.OptimizerEpochs)
 	}
+
 	if job.Config.BatchSize != 5 {
 		t.Errorf("Expected batchSize 5, got %d", job.Config.BatchSize)
 	}
+
 	if !job.Config.PolishingEnabled || job.Config.PolishingActiveSetSize != 3 || job.Config.PolishingMaxSweeps != 2 {
 		t.Errorf("unexpected polishing configuration: %+v", job.Config)
 	}
+
 	if job.Config.PolishingEpochs != 2 || job.Config.PolishingIters != 10 || job.Config.PolishingStagnationIters != 5 || job.Config.PolishingMinImprovement != 0.01 {
 		t.Errorf("unexpected polishing optimizer settings: %+v", job.Config)
 	}
+
 	if job.Config.Seed != 42 {
 		t.Errorf("Expected seed 42, got %d", job.Config.Seed)
 	}
+
 	if !job.Config.EnableSSIM {
 		t.Error("Expected SSIM to be enabled")
 	}
@@ -1433,6 +1622,7 @@ func TestServer_CreatePagePost_ValidationErrors(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodPost, "/create", bytes.NewBufferString(form.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 			rec := httptest.NewRecorder()
 
 			server.handleCreatePage(rec, req)
@@ -1479,12 +1669,15 @@ func TestPolishEndpointCreatesCheckpointContinuation(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "ref.png")
 	createSimpleTestImage(t, imgPath)
+
 	fsStore, err := store.NewFSStore(filepath.Join(tmpDir, "data"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions(":0", fsStore, ServerOptions{InputRoots: []string{tmpDir}})
 	shutdownTestServer(t, server)
+
 	config, err := app.Normalize(JobConfig{
 		RefPath: imgPath, Mode: app.ModeBatch, Circles: 1, BatchSize: 1, Iters: 2,
 		PopSize: 20, Threads: 1, Seed: 42,
@@ -1492,15 +1685,20 @@ func TestPolishEndpointCreatesCheckpointContinuation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	source := server.jobManager.CreateJob(app.DefaultProject, config)
 	params := []float64{1, 1, 1, 1, 0, 0, 1}
+
 	if err := server.jobManager.StartJob(source.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := server.jobManager.CompleteJob(source.ID, 8000, 900000, params, 600, 1000, "completed"); err != nil {
 		t.Fatal(err)
 	}
+
 	checkpoint := store.NewCheckpoint(source.ID, params, 600, 1000, 8000, config)
+
 	checkpoint.Evaluations = 900000
 	if err := fsStore.SaveCheckpoint(source.ID, checkpoint); err != nil {
 		t.Fatal(err)
@@ -1521,24 +1719,30 @@ func TestPolishEndpointCreatesCheckpointContinuation(t *testing.T) {
 		"seed":99
 	}`))
 	req.Header.Set("Content-Type", "application/json")
+
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, req)
+
 	if response.Code != http.StatusCreated {
 		t.Fatalf("polish status = %d body=%s", response.Code, response.Body.String())
 	}
+
 	var payload struct {
 		JobID string `json:"jobId"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
 		t.Fatal(err)
 	}
+
 	continuation, ok := server.jobManager.GetJob(payload.JobID)
 	if !ok {
 		t.Fatal("polishing continuation job not found")
 	}
+
 	if !continuation.Config.PolishingEnabled || !continuation.Config.PolishingOnly || continuation.Config.Mode != app.ModeBatch {
 		t.Fatalf("polishing continuation config = %+v", continuation.Config)
 	}
+
 	if continuation.Config.PolishingStrategy != app.PolishingResidualRegion || continuation.Config.PolishingActiveSetSize != 1 ||
 		continuation.Config.PolishingMaxSweeps != 2 || continuation.Config.PolishingEpochs != 2 || continuation.Config.PolishingIters != 20 ||
 		continuation.Config.PolishingStagnationIters != 10 || continuation.Config.PolishingMinImprovement != 0.01 ||
@@ -1550,6 +1754,7 @@ func TestPolishEndpointCreatesCheckpointContinuation(t *testing.T) {
 	if continuation.Config.PopSize != 20 {
 		t.Fatalf("polishing continuation popSize = %d, want the inherited 20 to stay put", continuation.Config.PopSize)
 	}
+
 	if continuation.Iterations != 8000 || continuation.Evaluations != 900000 || !reflect.DeepEqual(continuation.BestParams, params) {
 		t.Fatalf("polishing continuation state = %+v", continuation)
 	}
@@ -1562,12 +1767,15 @@ func newExtendableBatchJob(t *testing.T) (*Server, string, []float64) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "ref.png")
 	createSimpleTestImage(t, imgPath)
+
 	fsStore, err := store.NewFSStore(filepath.Join(tmpDir, "data"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions(":0", fsStore, ServerOptions{InputRoots: []string{tmpDir}})
 	shutdownTestServer(t, server)
+
 	config, err := app.Normalize(JobConfig{
 		RefPath: imgPath, Mode: app.ModeBatch, Circles: 2, BatchSize: 2, Iters: 2,
 		OptimizerEpochs: 1, PopSize: 20, Threads: 1, Seed: 42,
@@ -1575,23 +1783,30 @@ func newExtendableBatchJob(t *testing.T) (*Server, string, []float64) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	source := server.jobManager.CreateJob(app.DefaultProject, config)
 	params := []float64{
 		1, 1, 1, 1, 0, 0, 1,
 		2, 2, 1, 0, 1, 0, 1,
 	}
+
 	if err := server.jobManager.StartJob(source.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := server.jobManager.CompleteJob(source.ID, 8000, 900000, params, 600, 1000, "completed"); err != nil {
 		t.Fatal(err)
 	}
+
 	checkpoint := store.NewCheckpoint(source.ID, params, 600, 1000, 8000, config)
+
 	checkpoint.Evaluations = 900000
 	if err := fsStore.SaveCheckpoint(source.ID, checkpoint); err != nil {
 		t.Fatal(err)
 	}
+
 	server.cancel()
+
 	return server, source.ID, params
 }
 
@@ -1607,30 +1822,39 @@ func TestExtendEndpointCreatesOrderedBatchContinuation(t *testing.T) {
 		"seed":99
 	}`))
 	req.Header.Set("Content-Type", "application/json")
+
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, req)
+
 	if response.Code != http.StatusCreated {
 		t.Fatalf("extend status = %d body=%s", response.Code, response.Body.String())
 	}
+
 	var payload struct {
 		JobID         string `json:"jobId"`
 		TargetCircles int    `json:"targetCircles"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+
+	err := json.NewDecoder(response.Body).Decode(&payload)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	if payload.TargetCircles != 12 {
 		t.Fatalf("target circles = %d, want 12", payload.TargetCircles)
 	}
+
 	continuation, ok := server.jobManager.GetJob(payload.JobID)
 	if !ok {
 		t.Fatal("extension continuation job not found")
 	}
+
 	if continuation.Config.Circles != 12 || continuation.Config.BatchSize != 10 || continuation.Config.OptimizerEpochs != 4 ||
 		continuation.Config.Iters != 2000 || continuation.Config.PopSize != 50 || continuation.Config.Seed != 99 ||
 		continuation.Config.EffectiveSeed != 99 || continuation.Config.PolishingEnabled || continuation.Config.PolishingOnly {
 		t.Fatalf("extension continuation config = %+v", continuation.Config)
 	}
+
 	if continuation.Iterations != 8000 || continuation.Evaluations != 900000 || !reflect.DeepEqual(continuation.BestParams, params) {
 		t.Fatalf("extension continuation state = %+v", continuation)
 	}
@@ -1649,24 +1873,30 @@ func (ineffectiveBatchOptimizer) Run(eval func([]float64) float64, _, _ []float6
 func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "black.png")
+
 	ref := image.NewNRGBA(image.Rect(0, 0, 8, 8))
 	for i := 3; i < len(ref.Pix); i += 4 {
 		ref.Pix[i] = 255
 	}
+
 	file, err := os.Create(imgPath)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if err := png.Encode(file, ref); err != nil {
 		_ = file.Close()
+
 		t.Fatal(err)
 	}
+
 	if err := file.Close(); err != nil {
 		t.Fatal(err)
 	}
 
 	const requestedCircles = 2
 	prefix := []float64{3.5, 3.5, 8, 0, 0, 0, 1}
+
 	result, err := renderer.OptimizeBatchAppendContext(
 		context.Background(),
 		renderer.NewCPURenderer(ref, requestedCircles),
@@ -1679,6 +1909,7 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if result.Termination != renderer.TerminationRefillLimit || result.OptimizedCircles != 1 {
 		t.Fatalf("pipeline result = termination %q, circles %d; want refill_limit with one circle",
 			result.Termination, result.OptimizedCircles)
@@ -1688,8 +1919,10 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions(":0", fsStore, ServerOptions{InputRoots: []string{tmpDir}})
 	shutdownTestServer(t, server)
+
 	config, err := app.Normalize(JobConfig{
 		RefPath: imgPath, Mode: app.ModeBatch, Circles: requestedCircles, BatchSize: 1,
 		Iters: 1, OptimizerEpochs: 1, PopSize: app.MinPopulation, Threads: 1, Seed: 42,
@@ -1697,16 +1930,20 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	source := server.jobManager.CreateJob(app.DefaultProject, config)
 	if err := server.jobManager.StartJob(source.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := server.jobManager.CompleteJob(source.ID, result.Iterations, result.Evaluations,
 		result.BestParams, result.BestCost, result.InitialCost, string(result.Termination)); err != nil {
 		t.Fatal(err)
 	}
+
 	checkpoint := store.NewCheckpoint(source.ID, result.BestParams, result.BestCost, result.InitialCost, result.Iterations, config)
 	checkpoint.Evaluations = int64(result.Evaluations)
+
 	checkpoint.Termination = string(result.Termination)
 	if err := fsStore.SaveCheckpoint(source.ID, checkpoint); err != nil {
 		t.Fatal(err)
@@ -1717,26 +1954,33 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 
 	status := httptest.NewRecorder()
 	server.Handler().ServeHTTP(status, httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+source.ID, nil))
+
 	if status.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", status.Code, status.Body.String())
 	}
+
 	var resource jobStatusResponse
 	if err := json.NewDecoder(status.Body).Decode(&resource); err != nil {
 		t.Fatal(err)
 	}
+
 	if resource.RequestedCircles != requestedCircles || resource.ActualCircles != 1 {
 		t.Fatalf("job resource circles = requested %d actual %d, want %d and 1",
 			resource.RequestedCircles, resource.ActualCircles, requestedCircles)
 	}
+
 	list := httptest.NewRecorder()
 	server.Handler().ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil))
+
 	if list.Code != http.StatusOK {
 		t.Fatalf("list = %d body=%s", list.Code, list.Body.String())
 	}
+
 	var summaries []JobSummary
 	if err := json.NewDecoder(list.Body).Decode(&summaries); err != nil {
 		t.Fatal(err)
 	}
+
 	if len(summaries) != 1 || summaries[0].RequestedCircles != requestedCircles || summaries[0].ActualCircles != 1 {
 		t.Fatalf("job list circle counts = %+v, want requested %d actual 1", summaries, requestedCircles)
 	}
@@ -1744,19 +1988,23 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 	polish := httptest.NewRecorder()
 	server.Handler().ServeHTTP(polish, httptest.NewRequest(http.MethodPost,
 		"/api/v1/jobs/"+source.ID+"/polish", strings.NewReader(`{}`)))
+
 	if polish.Code != http.StatusCreated {
 		t.Fatalf("polish status = %d body=%s", polish.Code, polish.Body.String())
 	}
+
 	var polishPayload struct {
 		JobID string `json:"jobId"`
 	}
 	if err := json.NewDecoder(polish.Body).Decode(&polishPayload); err != nil {
 		t.Fatal(err)
 	}
+
 	polishingContinuation, ok := server.jobManager.GetJob(polishPayload.JobID)
 	if !ok {
 		t.Fatal("polishing continuation job not found")
 	}
+
 	if polishingContinuation.Config.Circles != 1 || polishingContinuation.Config.BatchSize != 1 ||
 		polishingContinuation.Config.PolishingActiveSetSize != 1 || polishingContinuation.ActualCircles != 1 {
 		t.Fatalf("polishing continuation did not rebase count-dependent settings: %+v", polishingContinuation)
@@ -1765,9 +2013,11 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 	extend := httptest.NewRecorder()
 	server.Handler().ServeHTTP(extend, httptest.NewRequest(http.MethodPost,
 		"/api/v1/jobs/"+source.ID+"/extend", strings.NewReader(`{"additionalCircles":1}`)))
+
 	if extend.Code != http.StatusCreated {
 		t.Fatalf("extend status = %d body=%s", extend.Code, extend.Body.String())
 	}
+
 	var payload struct {
 		JobID           string `json:"jobId"`
 		PreviousCircles int    `json:"previousCircles"`
@@ -1776,14 +2026,17 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 	if err := json.NewDecoder(extend.Body).Decode(&payload); err != nil {
 		t.Fatal(err)
 	}
+
 	if payload.PreviousCircles != 1 || payload.TargetCircles != requestedCircles {
 		t.Fatalf("extension sizes = previous %d target %d, want 1 and %d",
 			payload.PreviousCircles, payload.TargetCircles, requestedCircles)
 	}
+
 	continuation, ok := server.jobManager.GetJob(payload.JobID)
 	if !ok {
 		t.Fatal("continuation job not found")
 	}
+
 	if continuation.Config.Circles != requestedCircles || continuation.RequestedCircles != requestedCircles ||
 		continuation.ActualCircles != 1 || !reflect.DeepEqual(continuation.BestParams, prefix) {
 		t.Fatalf("continuation did not inherit the actual checkpoint: %+v", continuation)
@@ -1796,9 +2049,11 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 	if err := fsStore.SaveCheckpoint(source.ID, checkpoint); err != nil {
 		t.Fatal(err)
 	}
+
 	invalid := httptest.NewRecorder()
 	server.Handler().ServeHTTP(invalid, httptest.NewRequest(http.MethodPost,
 		"/api/v1/jobs/"+source.ID+"/extend", strings.NewReader(`{"additionalCircles":1}`)))
+
 	if invalid.Code != http.StatusBadRequest || !strings.Contains(invalid.Body.String(), `"code":"invalid_checkpoint"`) {
 		t.Fatalf("ordinary short checkpoint response = %d body=%s", invalid.Code, invalid.Body.String())
 	}
@@ -1818,21 +2073,28 @@ func TestExtendEndpointPolishIsOptIn(t *testing.T) {
 			server, sourceID, _ := newExtendableBatchJob(t)
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+sourceID+"/extend", strings.NewReader(testCase.body))
 			req.Header.Set("Content-Type", "application/json")
+
 			response := httptest.NewRecorder()
 			server.Handler().ServeHTTP(response, req)
+
 			if response.Code != http.StatusCreated {
 				t.Fatalf("extend status = %d body=%s", response.Code, response.Body.String())
 			}
+
 			var payload struct {
 				JobID string `json:"jobId"`
 			}
-			if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+
+			err := json.NewDecoder(response.Body).Decode(&payload)
+			if err != nil {
 				t.Fatal(err)
 			}
+
 			continuation, ok := server.jobManager.GetJob(payload.JobID)
 			if !ok {
 				t.Fatal("extension continuation job not found")
 			}
+
 			if continuation.Config.PolishingEnabled != testCase.want || continuation.Config.PolishingOnly {
 				t.Fatalf("polishing enabled/only = %v/%v, want %v/false",
 					continuation.Config.PolishingEnabled, continuation.Config.PolishingOnly, testCase.want)
@@ -1870,6 +2132,7 @@ func TestServer_CreatePage_Integration(t *testing.T) {
 
 	req = httptest.NewRequest(http.MethodPost, "/create", bytes.NewBufferString(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 	rec = httptest.NewRecorder()
 	server.handleCreatePage(rec, req)
 
@@ -1897,6 +2160,7 @@ func TestServer_GracefulShutdownWithCheckpoint(t *testing.T) {
 
 	// Create checkpoint store
 	checkpointDir := filepath.Join(tmpDir, "data")
+
 	store, err := createTestStore(checkpointDir)
 	if err != nil {
 		t.Fatalf("Failed to create checkpoint store: %v", err)
@@ -1996,7 +2260,7 @@ func TestServer_GracefulShutdownWithCheckpoint(t *testing.T) {
 	}
 }
 
-// createTestStore creates a filesystem store for testing
+// createTestStore creates a filesystem store for testing.
 func createTestStore(baseDir string) (*store.FSStore, error) {
 	return store.NewFSStore(baseDir)
 }
@@ -2006,7 +2270,9 @@ func shutdownTestServer(t *testing.T, server *Server) {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := server.Shutdown(ctx); err != nil {
+
+		err := server.Shutdown(ctx)
+		if err != nil {
 			t.Errorf("Failed to shut down test server: %v", err)
 		}
 	})
@@ -2069,12 +2335,14 @@ func TestServer_CreatePagePost_EarlyStopDefersToAppValidation(t *testing.T) {
 			for k, v := range base {
 				form.Add(k, v)
 			}
+
 			for k, v := range tt.extra {
 				form.Add(k, v)
 			}
 
 			req := httptest.NewRequest(http.MethodPost, "/create", bytes.NewBufferString(form.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 			rec := httptest.NewRecorder()
 
 			server.handleCreatePage(rec, req)
@@ -2084,9 +2352,11 @@ func TestServer_CreatePagePost_EarlyStopDefersToAppValidation(t *testing.T) {
 				if rec.Code != http.StatusOK {
 					t.Fatalf("status = %d, want 200", rec.Code)
 				}
+
 				if !containsString(body, tt.errMsg) {
 					t.Fatalf("expected %q in the rendered error page, got:\n%s", tt.errMsg, body)
 				}
+
 				return
 			}
 			// A valid submission redirects to the created job instead of
@@ -2124,10 +2394,14 @@ func TestServer_BackendDefaults_AllEntryPoints(t *testing.T) {
 		if w.Code != http.StatusCreated {
 			t.Fatalf("Expected status 201, got %d: %s", w.Code, w.Body.String())
 		}
+
 		var job Job
-		if err := json.NewDecoder(w.Body).Decode(&job); err != nil {
+
+		err := json.NewDecoder(w.Body).Decode(&job)
+		if err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
+
 		if job.Config.Backend != app.BackendOpenCL {
 			t.Fatalf("job backend = %q, want %q", job.Config.Backend, app.BackendOpenCL)
 		}
@@ -2144,6 +2418,7 @@ func TestServer_BackendDefaults_AllEntryPoints(t *testing.T) {
 		}
 		req := httptest.NewRequest(http.MethodPost, "/create", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 		w := httptest.NewRecorder()
 
 		s.handleCreatePagePost(w, req)
@@ -2151,11 +2426,14 @@ func TestServer_BackendDefaults_AllEntryPoints(t *testing.T) {
 		if w.Code != http.StatusSeeOther {
 			t.Fatalf("Expected status 303, got %d: %s", w.Code, w.Body.String())
 		}
+
 		jobID := strings.TrimPrefix(w.Header().Get("Location"), "/jobs/")
+
 		job, ok := s.jobManager.GetJob(jobID)
 		if !ok {
 			t.Fatalf("job %q not found", jobID)
 		}
+
 		if job.Config.Backend != app.BackendOpenCL {
 			t.Fatalf("dashboard job backend = %q, want %q", job.Config.Backend, app.BackendOpenCL)
 		}
@@ -2167,10 +2445,12 @@ func TestServer_BackendDefaults_AllEntryPoints(t *testing.T) {
 			Kind:   app.ScheduleStageBase,
 			Config: JobConfig{RefPath: imgPath, Circles: 4, Iters: 2, PopSize: 20},
 		}
+
 		config, _, err := s.scheduleStageConfig(stage, []app.ScheduleStage{stage}, "", 0)
 		if err != nil {
 			t.Fatalf("scheduleStageConfig: %v", err)
 		}
+
 		if config.Backend != app.BackendOpenCL {
 			t.Fatalf("stage backend = %q, want %q", config.Backend, app.BackendOpenCL)
 		}
@@ -2182,10 +2462,12 @@ func TestServer_BackendDefaults_AllEntryPoints(t *testing.T) {
 			Kind:   app.ScheduleStageBase,
 			Config: JobConfig{RefPath: imgPath, Circles: 4, Iters: 2, PopSize: 20, Backend: app.BackendCPU},
 		}
+
 		config, _, err := s.scheduleStageConfig(stage, []app.ScheduleStage{stage}, "", 0)
 		if err != nil {
 			t.Fatalf("scheduleStageConfig: %v", err)
 		}
+
 		if config.Backend != app.BackendCPU {
 			t.Fatalf("stage backend = %q, want %q", config.Backend, app.BackendCPU)
 		}

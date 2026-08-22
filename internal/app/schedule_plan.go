@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -47,6 +48,7 @@ func SummarizeSchedulePlan(plan []ScheduleStage) SchedulePlanSummary {
 	for _, stage := range plan {
 		iterations := stage.PlannedIterations()
 		summary.TotalIterations += iterations
+
 		switch stage.Kind {
 		case ScheduleStageBase:
 			summary.Base++
@@ -55,11 +57,13 @@ func SummarizeSchedulePlan(plan []ScheduleStage) SchedulePlanSummary {
 		case ScheduleStagePolish:
 			summary.Polishes++
 		}
+
 		if stage.When != nil {
 			summary.Conditional++
 			summary.ConditionalIterations += iterations
 		}
 	}
+
 	return summary
 }
 
@@ -76,13 +80,16 @@ func SummarizeSchedulePlan(plan []ScheduleStage) SchedulePlanSummary {
 // number must say so — it is the nominal plan, not a bound in either direction.
 func (s ScheduleStage) PlannedIterations() int {
 	config := s.Config
+
 	total := 0
 	if !config.PolishingOnly {
 		total = s.plannedOptimizerStages() * config.Iters * max(config.OptimizerEpochs, 1)
 	}
+
 	if config.PolishingEnabled {
 		total += config.PolishingMaxSweeps * config.PolishingEpochs * config.PolishingIters
 	}
+
 	return total
 }
 
@@ -93,13 +100,16 @@ func (s ScheduleStage) PlannedIterations() int {
 // the appended circles are divided into batches.
 func (s ScheduleStage) plannedOptimizerStages() int {
 	config := s.Config
+
 	circles := config.Circles
 	if s.Kind == ScheduleStageExtend {
 		circles = s.AdditionalCircles
 	}
+
 	if circles < 1 {
 		return 0
 	}
+
 	switch config.Mode {
 	case ModeSequential:
 		return circles
@@ -117,20 +127,25 @@ func (c *ScheduleCondition) Describe() string {
 	if c == nil {
 		return ""
 	}
+
 	clauses := make([]string, 0, 2)
 	if len(c.Circles) > 0 {
 		counts := make([]string, len(c.Circles))
 		for i, circles := range c.Circles {
-			counts[i] = fmt.Sprint(circles)
+			counts[i] = strconv.Itoa(circles)
 		}
+
 		clauses = append(clauses, "only at "+strings.Join(counts, "/")+" circles")
 	}
+
 	if c.MinGain != nil && c.AbortAfterBarren != nil {
 		clauses = append(clauses, fmt.Sprintf("abandoned after %d consecutive stages gaining less than %g",
 			*c.AbortAfterBarren, *c.MinGain))
 	}
+
 	if len(clauses) == 0 {
 		return "decided at run time"
 	}
+
 	return strings.Join(clauses, "; ")
 }

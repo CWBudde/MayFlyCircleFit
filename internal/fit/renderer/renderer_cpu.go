@@ -1,7 +1,7 @@
 package renderer
 
 import (
-	"fmt"
+	"errors"
 	"image"
 	"image/draw"
 	"log/slog"
@@ -12,7 +12,7 @@ import (
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
 )
 
-// CPURenderer implements software rendering of circles
+// CPURenderer implements software rendering of circles.
 type CPURenderer struct {
 	reference    *image.NRGBA
 	k            int
@@ -61,11 +61,12 @@ type CPURenderer struct {
 	initialBg []byte       // Precomputed initial background (white or custom canvas)
 }
 
-// NewCPURenderer creates a CPU-based renderer with a white background
+// NewCPURenderer creates a CPU-based renderer with a white background.
 func NewCPURenderer(reference *image.NRGBA, k int) *CPURenderer {
 	if k < 0 {
 		k = 0
 	}
+
 	bounds := reference.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 
@@ -74,10 +75,12 @@ func NewCPURenderer(reference *image.NRGBA, k int) *CPURenderer {
 
 	// Precompute white background (NRGBA: 255,255,255,255 repeated)
 	pixelCount := width * height * 4 // 4 bytes per pixel (RGBA)
+
 	whiteBg := make([]byte, pixelCount)
-	for i := 0; i < pixelCount; i++ {
+	for i := range pixelCount {
 		whiteBg[i] = 255
 	}
+
 	initialSSD, initialSSDValid := exactInitialCanvasSSD(whiteBg, width, height, reference)
 
 	return &CPURenderer{
@@ -119,6 +122,7 @@ func newCPURendererWithCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int
 	if k < 0 {
 		k = 0
 	}
+
 	bounds := reference.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 
@@ -137,6 +141,7 @@ func newCPURendererWithCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int
 	if !shareInitial || canvas.Bounds().Min != (image.Point{}) || canvas.Stride != width*4 || len(canvas.Pix) != width*height*4 {
 		initialBg = append([]byte(nil), canvasCopy.Pix...)
 	}
+
 	initialSSD, initialSSDValid := exactInitialCanvasSSD(initialBg, width, height, reference)
 
 	return &CPURenderer{
@@ -157,7 +162,7 @@ func newCPURendererWithCanvas(reference *image.NRGBA, canvas *image.NRGBA, k int
 	}
 }
 
-// Render creates an image from parameter vector
+// Render creates an image from parameter vector.
 func (r *CPURenderer) Render(params []float64) *image.NRGBA {
 	return r.render(params, nil)
 }
@@ -165,12 +170,15 @@ func (r *CPURenderer) Render(params []float64) *image.NRGBA {
 func (r *CPURenderer) render(params []float64, dirty *dirtySpanSet) *image.NRGBA {
 	// Reset canvas to initial background using fast copy (avoids allocation)
 	copy(r.canvas.Pix, r.initialBg)
+
 	if dirty != nil {
 		dirty.reset(r.height, r.k)
 	}
+
 	if len(params) != r.Dim() {
 		return r.canvas
 	}
+
 	if r.k == 0 || r.height == 0 {
 		return r.canvas
 	}
@@ -184,14 +192,18 @@ func (r *CPURenderer) render(params []float64, dirty *dirtySpanSet) *image.NRGBA
 
 	var workers sync.WaitGroup
 	workers.Add(r.threads - 1)
-	for worker := 0; worker < r.threads-1; worker++ {
+
+	for worker := range r.threads - 1 {
 		minY := worker * r.height / r.threads
 		maxY := (worker + 1) * r.height / r.threads
+
 		go func() {
 			defer workers.Done()
+
 			r.renderRowsTracked(r.canvas, params, minY, maxY, dirty)
 		}()
 	}
+
 	r.renderRowsTracked(r.canvas, params, (r.threads-1)*r.height/r.threads, r.height, dirty)
 	workers.Wait()
 
@@ -204,7 +216,7 @@ func (r *CPURenderer) renderRowsTracked(img *image.NRGBA, params []float64, minY
 
 func (r *CPURenderer) compositeRows(img *image.NRGBA, params []float64, count, minY, maxY int, dirty *dirtySpanSet) {
 	pv := fit.ParamVector{Data: params, K: count, Width: r.width, Height: r.height}
-	for i := 0; i < count; i++ {
+	for i := range count {
 		circle := pv.DecodeCircle(i)
 		r.renderCircleScanlineRowsTracked(img, circle, minY, maxY, dirty)
 	}
@@ -218,9 +230,11 @@ func (r *CPURenderer) compositeParams(img *image.NRGBA, params []float64, count 
 	if img == nil || count <= 0 || r.height == 0 {
 		return
 	}
+
 	if len(params) < count*paramsPerCircle {
 		return
 	}
+
 	if img.Bounds().Dx() != r.width || img.Bounds().Dy() != r.height {
 		return
 	}
@@ -232,14 +246,18 @@ func (r *CPURenderer) compositeParams(img *image.NRGBA, params []float64, count 
 
 	var workers sync.WaitGroup
 	workers.Add(r.threads - 1)
-	for worker := 0; worker < r.threads-1; worker++ {
+
+	for worker := range r.threads - 1 {
 		minY := worker * r.height / r.threads
 		maxY := (worker + 1) * r.height / r.threads
+
 		go func() {
 			defer workers.Done()
+
 			r.compositeRows(img, params, count, minY, maxY, nil)
 		}()
 	}
+
 	r.compositeRows(img, params, count, (r.threads-1)*r.height/r.threads, r.height, nil)
 	workers.Wait()
 }
@@ -257,38 +275,48 @@ func (r *CPURenderer) compositeParamsRows(img *image.NRGBA, params []float64, co
 	if img == nil || count <= 0 || r.height == 0 {
 		return
 	}
+
 	if len(params) < count*paramsPerCircle {
 		return
 	}
+
 	if img.Bounds().Dx() != r.width || img.Bounds().Dy() != r.height {
 		return
 	}
+
 	minY = max(minY, 0)
+
 	maxY = min(maxY, r.height)
 	if minY >= maxY {
 		return
 	}
+
 	r.compositeRows(img, params, count, minY, maxY, nil)
 }
 
-// Cost computes error between params and reference
+// Cost computes error between params and reference.
 func (r *CPURenderer) Cost(params []float64) float64 {
 	if len(params) != r.Dim() || r.width == 0 || r.height == 0 {
 		return math.Inf(1)
 	}
+
 	if r.incrementalCostMode != incrementalCostDisabled && r.fastCostSelected && r.initialSSDValid {
 		if r.incrementalCostMode == incrementalCostAuto && !r.incrementalCandidateWorthwhile(params) {
 			return fit.FastMSECost(r.Render(params), r.reference)
 		}
+
 		rendered := r.render(params, &r.dirtySpans)
 		if r.incrementalCostMode == incrementalCostForce || incrementalCostWorthwhile(&r.dirtySpans, r.width*r.height) {
 			if total, ok := r.incrementalSSDTotal(rendered, &r.dirtySpans); ok {
 				return float64(total) / float64(r.width*r.height*3)
 			}
 		}
+
 		return fit.FastMSECost(rendered, r.reference)
 	}
+
 	rendered := r.Render(params)
+
 	return r.costFunc(rendered, r.reference)
 }
 
@@ -296,11 +324,12 @@ func (r *CPURenderer) Cost(params []float64) float64 {
 // base canvas, and selected cost function.
 func (r *CPURenderer) newSession(circleCount int) (Renderer, func(), error) {
 	if circleCount < 0 {
-		return nil, noopCleanup, fmt.Errorf("circle count cannot be negative")
+		return nil, noopCleanup, errors.New("circle count cannot be negative")
 	}
 
 	canvas := image.NewNRGBA(image.Rect(0, 0, r.width, r.height))
 	initialBg := append([]byte(nil), r.initialBg...)
+
 	return &CPURenderer{
 		reference:            r.reference,
 		k:                    circleCount,
@@ -330,6 +359,7 @@ func exactInitialCanvasSSD(initial []byte, width, height int, reference *image.N
 		Stride: width * 4,
 		Rect:   image.Rect(0, 0, width, height),
 	}
+
 	return fit.ExactSSD(canvas, reference)
 }
 
@@ -337,29 +367,34 @@ func exactInitialCanvasSSD(initial []byte, width, height int, reference *image.N
 // optimized circles over an already-retained canvas.
 func (r *CPURenderer) newSessionWithCanvas(canvas *image.NRGBA, circleCount int) (Renderer, func(), error) {
 	if canvas == nil {
-		return nil, noopCleanup, fmt.Errorf("canvas cannot be nil")
+		return nil, noopCleanup, errors.New("canvas cannot be nil")
 	}
+
 	if circleCount < 0 {
-		return nil, noopCleanup, fmt.Errorf("circle count cannot be negative")
+		return nil, noopCleanup, errors.New("circle count cannot be negative")
 	}
+
 	if canvas.Bounds().Dx() != r.width || canvas.Bounds().Dy() != r.height {
-		return nil, noopCleanup, fmt.Errorf("canvas dimensions must match reference image")
+		return nil, noopCleanup, errors.New("canvas dimensions must match reference image")
 	}
 
 	session := newCPURendererWithSharedCanvas(r.reference, canvas, circleCount)
 	session.costFunc = r.costFunc
 	session.fastCostSelected = r.fastCostSelected
 	session.incrementalCostMode = r.incrementalCostMode
+
 	session.stagedIncremental = r.stagedIncremental
 	if session.incrementalCostMode == incrementalCostDisabled && session.fastCostSelected &&
 		session.stagedIncremental && session.incrementalStagedSessionEligible() {
 		session.incrementalCostMode = incrementalCostAuto
 	}
+
 	session.threads = r.threads
 	session.forceFloatGeometry = r.forceFloatGeometry
 	session.forceFloat32Geometry = r.forceFloat32Geometry
 	session.enableRowSymmetry = r.enableRowSymmetry
 	session.fastCompositing = r.fastCompositing
+
 	return session, noopCleanup, nil
 }
 
@@ -367,25 +402,26 @@ func (r *CPURenderer) newSessionWithCanvas(canvas *image.NRGBA, circleCount int)
 func (r *CPURenderer) initialCanvas() *image.NRGBA {
 	canvas := image.NewNRGBA(image.Rect(0, 0, r.width, r.height))
 	copy(canvas.Pix, r.initialBg)
+
 	return canvas
 }
 
-// Dim returns the dimensionality of the parameter space
+// Dim returns the dimensionality of the parameter space.
 func (r *CPURenderer) Dim() int {
 	return r.k * 7 // paramsPerCircle
 }
 
-// Bounds returns lower and upper bounds for parameters
+// Bounds returns lower and upper bounds for parameters.
 func (r *CPURenderer) Bounds() (lower, upper []float64) {
 	return r.bounds.Lower, r.bounds.Upper
 }
 
-// Reference returns the reference image
+// Reference returns the reference image.
 func (r *CPURenderer) Reference() *image.NRGBA {
 	return r.reference
 }
 
-// SetCostFunc sets the cost function used for evaluation
+// SetCostFunc sets the cost function used for evaluation.
 func (r *CPURenderer) SetCostFunc(costFunc fit.CostFunc) {
 	r.costFunc = costFunc
 	r.fastCostSelected = false
@@ -441,6 +477,7 @@ func (r *CPURenderer) ParallelEvaluationWorkers() int {
 	if r.parallelEvaluationWorkers < 1 {
 		return 1
 	}
+
 	return r.parallelEvaluationWorkers
 }
 
@@ -455,6 +492,7 @@ func (r *CPURenderer) ParallelEvaluationWorkers() int {
 // drift apart between the CLI, resume, and the server.
 func ConfigureCPUParallelism(cpu *CPURenderer, threads, evaluationWorkers int, parallelEvaluation bool) {
 	cpu.SetThreads(threads)
+
 	if parallelEvaluation {
 		cpu.SetParallelEvaluationWorkers(evaluationWorkers)
 	}
@@ -470,9 +508,11 @@ func effectiveEvaluationWorkers(workers int) int {
 	if workers < 1 || workers > maxWorkers {
 		workers = maxWorkers
 	}
+
 	if workers < 1 {
 		return 1
 	}
+
 	return workers
 }
 
@@ -511,6 +551,7 @@ func CompositingBackend() string {
 // a log line reading only "fastCompositing=true" would hide that completely.
 func ConfigureCPUCompositing(cpu *CPURenderer, fastCompositing bool) {
 	cpu.SetFastCompositing(fastCompositing)
+
 	if fastCompositing && FastCompositingBackend() == fit.TierScalar.String() {
 		slog.Warn("Fast compositing has no vector kernel on this host; it is slower and less accurate than the exact compositor",
 			"tier", fit.Tier(), "exactCompositor", CompositingBackend())
@@ -534,19 +575,23 @@ func effectiveThreadCount(threads, height int) int {
 	if threads < 1 {
 		threads = runtime.GOMAXPROCS(0)
 	}
+
 	if maxThreads := runtime.GOMAXPROCS(0); threads > maxThreads {
 		threads = maxThreads
 	}
+
 	if height > 0 && threads > height {
 		threads = height
 	}
+
 	if threads < 1 {
 		return 1
 	}
+
 	return threads
 }
 
-// renderCircle composites a circle onto the image using premultiplied alpha
+// renderCircle composites a circle onto the image using premultiplied alpha.
 func (r *CPURenderer) renderCircle(img *image.NRGBA, c fit.Circle) {
 	// Early-reject: circle is fully transparent
 	if c.Opacity == 0 {
@@ -565,22 +610,17 @@ func (r *CPURenderer) renderCircle(img *image.NRGBA, c fit.Circle) {
 	}
 
 	// Clamp AABB to image bounds (use integer arithmetic)
-	minX := int(minXf)
-	if minX < 0 {
-		minX = 0
-	}
-	maxX := int(maxXf + 1) // +1 for ceiling
-	if maxX > r.width {
-		maxX = r.width
-	}
-	minY := int(minYf)
-	if minY < 0 {
-		minY = 0
-	}
-	maxY := int(maxYf + 1) // +1 for ceiling
-	if maxY > r.height {
-		maxY = r.height
-	}
+	minX := max(int(minXf), 0)
+
+	maxX := min(
+		// +1 for ceiling
+		int(maxXf+1), r.width)
+
+	minY := max(int(minYf), 0)
+
+	maxY := min(
+		// +1 for ceiling
+		int(maxYf+1), r.height)
 
 	r2 := c.R * c.R
 
@@ -589,6 +629,7 @@ func (r *CPURenderer) renderCircle(img *image.NRGBA, c fit.Circle) {
 		for x := minX; x < maxX; x++ {
 			// Check if inside circle
 			dx := float64(x) - c.X
+
 			dy := float64(y) - c.Y
 			if dx*dx+dy*dy > r2 {
 				continue
@@ -600,7 +641,7 @@ func (r *CPURenderer) renderCircle(img *image.NRGBA, c fit.Circle) {
 	}
 }
 
-// renderCircleScanline uses scanline algorithm to avoid per-pixel distance checks
+// renderCircleScanline uses scanline algorithm to avoid per-pixel distance checks.
 func (r *CPURenderer) renderCircleScanline(img *image.NRGBA, c fit.Circle) {
 	r.renderCircleScanlineRows(img, c, 0, r.height)
 }
@@ -632,27 +673,22 @@ func (r *CPURenderer) renderCircleScanlineRowsTracked(
 	}
 
 	// Clamp to image bounds
-	minY := int(minYf)
-	if minY < 0 {
-		minY = 0
-	}
-	if minY < rowStart {
-		minY = rowStart
-	}
-	maxY := int(maxYf + 1) // +1 for ceiling
-	if maxY > r.height {
-		maxY = r.height
-	}
-	if maxY > rowEnd {
-		maxY = rowEnd
-	}
+	minY := max(max(int(minYf), 0), rowStart)
+
+	maxY := min(
+		// +1 for ceiling
+		min(
+
+			int(maxYf+1), r.height), rowEnd)
 
 	r2 := c.R * c.R
 	var fixedGeometry fixedCircleQ16
+
 	useFixedGeometry := false
 	if !r.forceFloatGeometry && !r.forceFloat32Geometry {
 		fixedGeometry, useFixedGeometry = newFixedCircleQ16(c)
 	}
+
 	var center32, y32, radiusSquared32 float32
 	if r.forceFloat32Geometry {
 		center32 = float32(c.X)
@@ -666,21 +702,27 @@ func (r *CPURenderer) renderCircleScanlineRowsTracked(
 		r.renderFixedCircleRowsTracked(img, c, fixedGeometry, minY, maxY, dirty)
 		return
 	}
+
 	for y := minY; y < maxY; y++ {
 		if r.forceFloat32Geometry {
 			dy := float32(y) - y32
+
 			remaining := radiusSquared32 - dy*dy
 			if remaining < 0 {
 				continue
 			}
+
 			xStart, xEnd := circleSpanFloat32Selected(center32, remaining, r.width)
 			if xStart < 0 {
 				xStart = 0
 			}
+
 			if dirty != nil {
 				dirty.add(y, xStart, xEnd)
 			}
+
 			r.compositeCircleSpan(img, c, y, xStart, xEnd)
+
 			continue
 		}
 
@@ -699,9 +741,11 @@ func (r *CPURenderer) renderCircleScanlineRowsTracked(
 		if xStart < 0 {
 			xStart = 0
 		}
+
 		if dirty != nil {
 			dirty.add(y, xStart, xEnd)
 		}
+
 		r.compositeCircleSpan(img, c, y, xStart, xEnd)
 	}
 }
@@ -714,6 +758,7 @@ func (r *CPURenderer) renderFixedCircleRowsTracked(
 	dirty *dirtySpanSet,
 ) {
 	rowSum, symmetric := geometry.symmetricRowSum()
+
 	symmetric = symmetric && r.enableRowSymmetry
 	if !symmetric {
 		for y := minY; y < maxY; y++ {
@@ -721,11 +766,14 @@ func (r *CPURenderer) renderFixedCircleRowsTracked(
 			if !intersects {
 				continue
 			}
+
 			if dirty != nil {
 				dirty.add(y, xStart, xEnd)
 			}
+
 			r.compositeCircleSpan(img, c, y, xStart, xEnd)
 		}
+
 		return
 	}
 
@@ -749,17 +797,20 @@ func (r *CPURenderer) renderFixedCircleRowsTracked(
 				if dirty != nil {
 					dirty.add(topY, xStart, xEnd)
 				}
+
 				if bottomY != topY {
 					r.compositeCircleSpanPair(img, c, topY, bottomY, xStart, xEnd)
 				} else {
 					r.compositeCircleSpan(img, c, topY, xStart, xEnd)
 				}
+
 				if bottomY != topY {
 					if dirty != nil {
 						dirty.add(bottomY, xStart, xEnd)
 					}
 				}
 			}
+
 			topY++
 			bottomY--
 		}
@@ -777,9 +828,11 @@ func (r *CPURenderer) renderFixedCircleRowTracked(
 	if !intersects {
 		return
 	}
+
 	if dirty != nil {
 		dirty.add(y, xStart, xEnd)
 	}
+
 	r.compositeCircleSpan(img, c, y, xStart, xEnd)
 }
 
@@ -791,9 +844,12 @@ func (r *CPURenderer) compositeCircleSpan(img *image.NRGBA, c fit.Circle, y, xSt
 			compositeOpaqueSpanFast(img.Pix, y*img.Stride+xStart*4, xEnd-xStart, c.CR, c.CG, c.CB, c.Opacity)
 			return
 		}
+
 		compositeOpaqueSpan(img.Pix, y*img.Stride+xStart*4, xEnd-xStart, c.CR, c.CG, c.CB, c.Opacity)
+
 		return
 	}
+
 	for x := xStart; x < xEnd; x++ {
 		compositePixel(img, x, y, c.CR, c.CG, c.CB, c.Opacity)
 	}
@@ -806,8 +862,10 @@ func (r *CPURenderer) compositeCircleSpanPair(img *image.NRGBA, c fit.Circle, fi
 			// same crossover behaviour as the single-span path.
 			r.compositeCircleSpan(img, c, firstY, xStart, xEnd)
 			r.compositeCircleSpan(img, c, secondY, xStart, xEnd)
+
 			return
 		}
+
 		compositeOpaqueSpanPair(
 			img.Pix,
 			firstY*img.Stride+xStart*4,
@@ -818,8 +876,10 @@ func (r *CPURenderer) compositeCircleSpanPair(img *image.NRGBA, c fit.Circle, fi
 			c.CB,
 			c.Opacity,
 		)
+
 		return
 	}
+
 	r.compositeCircleSpan(img, c, firstY, xStart, xEnd)
 	r.compositeCircleSpan(img, c, secondY, xStart, xEnd)
 }
@@ -836,10 +896,10 @@ func (r *CPURenderer) renderCircleHybrid(img *image.NRGBA, c fit.Circle) {
 	r.renderCircleScanline(img, c)
 }
 
-// Optimization constants
+// Optimization constants.
 const inv255 = 1.0 / 255.0 // Reciprocal for fast division
 
-// compositePixel blends a color onto the image at (x,y) using premultiplied alpha
+// compositePixel blends a color onto the image at (x,y) using premultiplied alpha.
 func compositePixel(img *image.NRGBA, x, y int, r, g, b, alpha float64) {
 	// Inline PixOffset calculation (faster than function call)
 	i := y*img.Stride + x*4
@@ -862,6 +922,7 @@ func compositePixel(img *image.NRGBA, x, y int, r, g, b, alpha float64) {
 		img.Pix[i+0] = uint8((fgR+bgR*bgBlend)*255 + 0.5)
 		img.Pix[i+1] = uint8((fgG+bgG*bgBlend)*255 + 0.5)
 		img.Pix[i+2] = uint8((fgB+bgB*bgBlend)*255 + 0.5)
+
 		return
 	}
 

@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 )
@@ -45,32 +46,41 @@ func TestCheckpoint_JSONSerialization(t *testing.T) {
 	if restored.JobID != original.JobID {
 		t.Errorf("JobID mismatch: expected %s, got %s", original.JobID, restored.JobID)
 	}
+
 	if restored.BestCost != original.BestCost {
 		t.Errorf("BestCost mismatch: expected %f, got %f", original.BestCost, restored.BestCost)
 	}
+
 	if restored.InitialCost != original.InitialCost {
 		t.Errorf("InitialCost mismatch: expected %f, got %f", original.InitialCost, restored.InitialCost)
 	}
+
 	if restored.Iteration != original.Iteration {
 		t.Errorf("Iteration mismatch: expected %d, got %d", original.Iteration, restored.Iteration)
 	}
+
 	if !restored.Timestamp.Equal(original.Timestamp) {
 		t.Errorf("Timestamp mismatch: expected %v, got %v", original.Timestamp, restored.Timestamp)
 	}
+
 	if len(restored.BestParams) != len(original.BestParams) {
 		t.Fatalf("BestParams length mismatch: expected %d, got %d", len(original.BestParams), len(restored.BestParams))
 	}
+
 	for i := range original.BestParams {
 		if restored.BestParams[i] != original.BestParams[i] {
 			t.Errorf("BestParams[%d] mismatch: expected %f, got %f", i, original.BestParams[i], restored.BestParams[i])
 		}
 	}
+
 	if restored.Config.RefPath != original.Config.RefPath {
 		t.Errorf("Config.RefPath mismatch: expected %s, got %s", original.Config.RefPath, restored.Config.RefPath)
 	}
+
 	if restored.Config.Mode != original.Config.Mode {
 		t.Errorf("Config.Mode mismatch: expected %s, got %s", original.Config.Mode, restored.Config.Mode)
 	}
+
 	if restored.Config.Circles != original.Config.Circles {
 		t.Errorf("Config.Circles mismatch: expected %d, got %d", original.Config.Circles, restored.Config.Circles)
 	}
@@ -157,7 +167,8 @@ func TestCheckpoint_Validate_EmptyJobID(t *testing.T) {
 		t.Fatal("Expected validation error for empty JobID")
 	}
 
-	if _, ok := err.(*ValidationError); !ok {
+	validationError := &ValidationError{}
+	if !errors.As(err, &validationError) {
 		t.Errorf("Expected ValidationError, got %T", err)
 	}
 }
@@ -378,7 +389,8 @@ func TestCheckpoint_IsCompatible_DifferentRefPath(t *testing.T) {
 		t.Fatal("Expected compatibility error for different RefPath")
 	}
 
-	if _, ok := err.(*CompatibilityError); !ok {
+	compatibilityError := &CompatibilityError{}
+	if !errors.As(err, &compatibilityError) {
 		t.Errorf("Expected CompatibilityError, got %T", err)
 	}
 }
@@ -443,21 +455,27 @@ func TestCheckpointInfo_FromCheckpoint(t *testing.T) {
 	if info.JobID != checkpoint.JobID {
 		t.Errorf("JobID mismatch: expected %s, got %s", checkpoint.JobID, info.JobID)
 	}
+
 	if info.BestCost != checkpoint.BestCost {
 		t.Errorf("BestCost mismatch: expected %f, got %f", checkpoint.BestCost, info.BestCost)
 	}
+
 	if info.Iteration != checkpoint.Iteration {
 		t.Errorf("Iteration mismatch: expected %d, got %d", checkpoint.Iteration, info.Iteration)
 	}
+
 	if !info.Timestamp.Equal(checkpoint.Timestamp) {
 		t.Errorf("Timestamp mismatch")
 	}
+
 	if info.Mode != checkpoint.Config.Mode {
 		t.Errorf("Mode mismatch: expected %s, got %s", checkpoint.Config.Mode, info.Mode)
 	}
+
 	if info.Circles != checkpoint.Config.Circles {
 		t.Errorf("Circles mismatch: expected %d, got %d", checkpoint.Config.Circles, info.Circles)
 	}
+
 	if info.RefPath != checkpoint.Config.RefPath {
 		t.Errorf("RefPath mismatch: expected %s, got %s", checkpoint.Config.RefPath, info.RefPath)
 	}
@@ -483,15 +501,19 @@ func TestNewCheckpoint(t *testing.T) {
 	if checkpoint.JobID != jobID {
 		t.Errorf("JobID mismatch: expected %s, got %s", jobID, checkpoint.JobID)
 	}
+
 	if checkpoint.BestCost != bestCost {
 		t.Errorf("BestCost mismatch: expected %f, got %f", bestCost, checkpoint.BestCost)
 	}
+
 	if checkpoint.Iteration != iteration {
 		t.Errorf("Iteration mismatch: expected %d, got %d", iteration, checkpoint.Iteration)
 	}
+
 	if checkpoint.Timestamp.IsZero() {
 		t.Error("Timestamp should not be zero")
 	}
+
 	if len(checkpoint.BestParams) != len(bestParams) {
 		t.Errorf("BestParams length mismatch")
 	}
@@ -527,12 +549,15 @@ func TestCheckpointAcceptsNewTerminationValues(t *testing.T) {
 			if err := json.Unmarshal(data, &restored); err != nil {
 				t.Fatalf("Unmarshal() error = %v", err)
 			}
+
 			if restored.Termination != termination {
 				t.Fatalf("Termination = %q, want %q", restored.Termination, termination)
 			}
+
 			if restored.SchemaVersion != CheckpointSchemaVersion {
 				t.Fatalf("SchemaVersion = %d, want %d", restored.SchemaVersion, CheckpointSchemaVersion)
 			}
+
 			if err := restored.Validate(); err != nil {
 				t.Fatalf("Validate() error = %v", err)
 			}
@@ -579,15 +604,21 @@ func TestOldCheckpointLoadsWithoutEarlyStopFields(t *testing.T) {
 			}`
 
 			var checkpoint Checkpoint
-			if err := json.Unmarshal([]byte(raw), &checkpoint); err != nil {
+
+			err := json.Unmarshal([]byte(raw), &checkpoint)
+			if err != nil {
 				t.Fatalf("Unmarshal() error = %v", err)
 			}
-			if err := checkpoint.Validate(); err != nil {
+
+			err = checkpoint.Validate()
+			if err != nil {
 				t.Fatalf("Validate() error = %v", err)
 			}
+
 			if checkpoint.SchemaVersion != CheckpointSchemaVersion {
 				t.Fatalf("SchemaVersion = %d, want %d", checkpoint.SchemaVersion, CheckpointSchemaVersion)
 			}
+
 			if checkpoint.Termination != test.wantTermination {
 				t.Fatalf("Termination = %q, want %q", checkpoint.Termination, test.wantTermination)
 			}
@@ -597,6 +628,7 @@ func TestOldCheckpointLoadsWithoutEarlyStopFields(t *testing.T) {
 				config.StopStagnationIters != 0 || config.StopMinIters != 0 {
 				t.Fatalf("old checkpoint gained early-stop settings: %+v", config)
 			}
+
 			if config.EarlyStopEnabled() {
 				t.Fatal("old checkpoint resumes with early stopping enabled")
 			}

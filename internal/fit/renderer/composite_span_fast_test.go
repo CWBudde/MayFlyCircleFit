@@ -19,6 +19,7 @@ var fastSpanSizes = []int{1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64
 // so a kernel writing outside its span is detected.
 func fastSpanFixture(pixels int, seed uint64) []byte {
 	pix := make([]byte, (pixels+2)*4)
+
 	rng := rand.New(rand.NewPCG(seed, 0x66617374))
 	for i := 0; i < len(pix); i += 4 {
 		pix[i+0] = byte(rng.UintN(256))
@@ -26,6 +27,7 @@ func fastSpanFixture(pixels int, seed uint64) []byte {
 		pix[i+2] = byte(rng.UintN(256))
 		pix[i+3] = 255
 	}
+
 	return pix
 }
 
@@ -35,6 +37,7 @@ func fastSpanFixture(pixels int, seed uint64) []byte {
 // tautology that passes is worse than a skip: it reads as coverage.
 func requireFastVectorKernel(t *testing.T) {
 	t.Helper()
+
 	if fastCompositeKernel == fit.TierScalar {
 		t.Skipf("no float32 span kernel at tier %s; the comparison would be scalar against itself", fit.Tier())
 	}
@@ -77,7 +80,7 @@ func TestCompositeOpaqueSpanFastRandomMatchesScalarOracle(t *testing.T) {
 	rng := rand.New(rand.NewPCG(0x1013, 0x73736532))
 	const pixels = 261 // > any cutoff and not a multiple of 4 or 8
 
-	for iteration := 0; iteration < 128; iteration++ {
+	for iteration := range 128 {
 		want := fastSpanFixture(pixels, uint64(iteration))
 		got := bytes.Clone(want)
 
@@ -129,6 +132,7 @@ func TestCompositeOpaqueSpanFastWithinToleranceOfExact(t *testing.T) {
 
 	// Every byte value, once per colour, in one span.
 	const pixels = 256
+
 	base := make([]byte, (pixels+2)*4)
 	for i := range pixels {
 		value := byte(i)
@@ -141,10 +145,16 @@ func TestCompositeOpaqueSpanFastWithinToleranceOfExact(t *testing.T) {
 	colours := make([]struct{ r, g, b, alpha float64 }, 0, 2048)
 	// Corners and near-degenerate alphas first, then a randomised sweep.
 	colours = append(colours, []struct{ r, g, b, alpha float64 }{
-		{0, 0, 0, 0}, {1, 1, 1, 1}, {0, 0, 0, 1}, {1, 1, 1, 0},
-		{0.5, 0.5, 0.5, 0.5}, {0.2, 0.6, 0.9, 0.37},
-		{0.13, 0.87, 0.41, 0.02}, {0.99, 0.01, 0.5, 0.98},
-		{1, 0, 0, 1.0 / 255}, {1, 1, 1, 254.0 / 255},
+		{0, 0, 0, 0},
+		{1, 1, 1, 1},
+		{0, 0, 0, 1},
+		{1, 1, 1, 0},
+		{0.5, 0.5, 0.5, 0.5},
+		{0.2, 0.6, 0.9, 0.37},
+		{0.13, 0.87, 0.41, 0.02},
+		{0.99, 0.01, 0.5, 0.98},
+		{1, 0, 0, 1.0 / 255},
+		{1, 1, 1, 254.0 / 255},
 	}...)
 	for range 2000 {
 		colours = append(colours, struct{ r, g, b, alpha float64 }{
@@ -153,6 +163,7 @@ func TestCompositeOpaqueSpanFastWithinToleranceOfExact(t *testing.T) {
 	}
 
 	offByOne, total := 0, 0
+
 	for _, c := range colours {
 		exact := bytes.Clone(base)
 		fast := bytes.Clone(base)
@@ -163,9 +174,10 @@ func TestCompositeOpaqueSpanFastWithinToleranceOfExact(t *testing.T) {
 		for i := range exact {
 			diff := int(exact[i]) - int(fast[i])
 			total++
-			switch {
-			case diff == 0:
-			case diff == -1 || diff == 1:
+
+			switch diff {
+			case 0:
+			case -1, 1:
 				offByOne++
 			default:
 				t.Fatalf("colour=(%v,%v,%v,%v) byte %d: exact=%d fast=%d (diff %d)",
@@ -187,6 +199,7 @@ func TestCompositeOpaqueSpanFastWithinToleranceOfExact(t *testing.T) {
 // Two hundred layers at a low alpha is the worst case for that argument.
 func TestCompositeOpaqueSpanFastDoesNotAccumulate(t *testing.T) {
 	const pixels = 256
+
 	exact := make([]byte, pixels*4)
 	for i := range pixels {
 		exact[i*4+0] = byte(i)
@@ -194,6 +207,7 @@ func TestCompositeOpaqueSpanFastDoesNotAccumulate(t *testing.T) {
 		exact[i*4+2] = byte((i * 7) % 256)
 		exact[i*4+3] = 255
 	}
+
 	fast := bytes.Clone(exact)
 
 	source := rand.New(rand.NewPCG(0x1a7e, 0x57ac))
@@ -221,6 +235,7 @@ func TestCPURendererFastCompositingDefaultsOff(t *testing.T) {
 		{X: 32, Y: 32, R: 20, CR: 0.9, CG: 0.2, CB: 0.4, Opacity: 0.6},
 		{X: 20, Y: 40, R: 14, CR: 0.1, CG: 0.7, CB: 0.5, Opacity: 0.35},
 	}
+
 	params := make([]float64, 0, len(circles)*7)
 	for _, c := range circles {
 		params = append(params, c.X, c.Y, c.R, c.CR, c.CG, c.CB, c.Opacity)
@@ -250,6 +265,7 @@ func TestCPURendererFastCompositingDefaultsOff(t *testing.T) {
 	if bytes.Equal(exact, blank) {
 		t.Fatal("exact renderer produced the untouched background; the compositor never ran")
 	}
+
 	if bytes.Equal(fast, blank) {
 		t.Fatal("fast renderer produced the untouched background; the compositor never ran")
 	}
@@ -257,6 +273,7 @@ func TestCPURendererFastCompositingDefaultsOff(t *testing.T) {
 	if len(exact) != len(fast) {
 		t.Fatalf("length mismatch: %d vs %d", len(exact), len(fast))
 	}
+
 	for i := range exact {
 		if diff := int(exact[i]) - int(fast[i]); diff < -1 || diff > 1 {
 			t.Fatalf("byte %d: exact=%d fast=%d", i, exact[i], fast[i])
@@ -271,6 +288,7 @@ func BenchmarkCompositeOpaqueSpanFast(b *testing.B) {
 		b.Run("exact_float64/"+strconv.Itoa(pixels), func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(pixels * 4))
+
 			for b.Loop() {
 				compositeOpaqueSpanScalar(pix, 4, pixels, 0.3, 0.6, 0.9, 0.45)
 			}
@@ -283,6 +301,7 @@ func BenchmarkCompositeOpaqueSpanFast(b *testing.B) {
 		b.Run("exact_"+compositeSpanKernel.String()+"/"+strconv.Itoa(pixels), func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(pixels * 4))
+
 			for b.Loop() {
 				compositeOpaqueSpan(pix, 4, pixels, 0.3, 0.6, 0.9, 0.45)
 			}
@@ -291,6 +310,7 @@ func BenchmarkCompositeOpaqueSpanFast(b *testing.B) {
 		b.Run("fast_"+fastCompositeKernel.String()+"/"+strconv.Itoa(pixels), func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(pixels * 4))
+
 			for b.Loop() {
 				compositeOpaqueSpanFast(pix, 4, pixels, 0.3, 0.6, 0.9, 0.45)
 			}

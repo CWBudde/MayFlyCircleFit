@@ -12,6 +12,7 @@ func WithEpochs(base Optimizer, epochs int) Optimizer {
 	if base == nil || epochs <= 1 {
 		return base
 	}
+
 	return &epochOptimizer{base: base, epochs: epochs}
 }
 
@@ -42,16 +43,19 @@ func (o *epochOptimizer) Run(eval func([]float64) float64, lower, upper []float6
 	bestParams, bestCost := o.base.Run(eval, lower, upper, dim)
 	for epoch := 1; epoch < o.epochs; epoch++ {
 		var params []float64
+
 		var cost float64
 		if resumable, ok := o.base.(ResumableOptimizer); ok {
 			params, cost = resumable.RunWithInitial(bestParams, bestCost, eval, lower, upper, dim)
 		} else {
 			params, cost = o.base.Run(eval, lower, upper, dim)
 		}
+
 		if cost < bestCost {
 			bestParams, bestCost = params, cost
 		}
 	}
+
 	return bestParams, bestCost
 }
 
@@ -68,9 +72,10 @@ func (o *epochOptimizer) RunContext(ctx context.Context, problem Problem, option
 	initial := options.Initial
 	additionalSeeds := append([]Candidate(nil), options.AdditionalSeeds...)
 
-	for epoch := 0; epoch < o.epochs; epoch++ {
+	for epoch := range o.epochs {
 		iterationOffset := totalIterations
 		evaluationOffset := totalEvaluations
+
 		epochOptions := RunOptions{
 			Initial:         initial,
 			AdditionalSeeds: additionalSeeds,
@@ -88,15 +93,19 @@ func (o *epochOptimizer) RunContext(ctx context.Context, problem Problem, option
 
 		result, err := lifecycle.RunContext(ctx, problem, epochOptions)
 		totalIterations += result.Iterations
+
 		totalEvaluations += result.Evaluations
 		if len(result.BestParams) > 0 {
 			best = result
 		}
+
 		best.Iterations = totalIterations
+
 		best.Evaluations = totalEvaluations
 		if err != nil {
 			return best, err
 		}
+
 		if options.EpochObserver != nil {
 			progress := Progress{
 				Iterations:  totalIterations,
@@ -107,17 +116,21 @@ func (o *epochOptimizer) RunContext(ctx context.Context, problem Problem, option
 			if options.ProgressMapper != nil {
 				progress = options.ProgressMapper(progress)
 			}
-			if err := options.EpochObserver(EpochBoundary{
+
+			err := options.EpochObserver(EpochBoundary{
 				Epoch:       epoch + 1,
 				Progress:    progress,
 				Termination: result.Termination,
-			}); err != nil {
+			})
+			if err != nil {
 				return best, err
 			}
 		}
+
 		if result.Termination == TerminationTargetCost {
 			return best, nil
 		}
+
 		initial = &Candidate{
 			Params: append([]float64(nil), result.BestParams...),
 			Cost:   result.BestCost,
@@ -130,5 +143,6 @@ func (o *epochOptimizer) RunContext(ctx context.Context, problem Problem, option
 	// Consuming the requested number of restart epochs is a completed run even
 	// if an individual epoch used stagnation stopping before its iteration cap.
 	best.Termination = TerminationCompleted
+
 	return best, nil
 }

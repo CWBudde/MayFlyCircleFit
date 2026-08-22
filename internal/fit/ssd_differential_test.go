@@ -115,6 +115,7 @@ func TestSSDKernelsHandleStridePadding(t *testing.T) {
 
 					a := make([]uint8, lead+stride*height)
 					b := make([]uint8, lead+stride*height)
+
 					for i := range a {
 						a[i] = uint8(source.UintN(256))
 						b[i] = uint8(source.UintN(256))
@@ -146,6 +147,7 @@ func TestSSDKernelsAgreeOnRandomShapes(t *testing.T) {
 
 		a := make([]uint8, stride*height)
 		b := make([]uint8, stride*height)
+
 		for i := range a {
 			a[i] = uint8(source.UintN(256))
 			b[i] = uint8(source.UintN(256))

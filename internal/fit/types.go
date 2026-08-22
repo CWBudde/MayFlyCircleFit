@@ -1,18 +1,19 @@
 package fit
 
 import (
+	"errors"
 	"fmt"
 	"math"
 )
 
-// Circle represents a colored circle with opacity
+// Circle represents a colored circle with opacity.
 type Circle struct {
 	X, Y, R    float64 // Position and radius
 	CR, CG, CB float64 // Color in [0,1]
 	Opacity    float64 // Optimized opacity is in [MinCircleOpacity, 1]
 }
 
-// ParamVector encodes K circles as a flat float64 slice
+// ParamVector encodes K circles as a flat float64 slice.
 type ParamVector struct {
 	Data   []float64
 	K      int // Number of circles
@@ -22,7 +23,7 @@ type ParamVector struct {
 
 const paramsPerCircle = 7
 
-// NewParamVector creates a parameter vector for K circles
+// NewParamVector creates a parameter vector for K circles.
 func NewParamVector(k, width, height int) *ParamVector {
 	return &ParamVector{
 		Data:   make([]float64, k*paramsPerCircle),
@@ -32,7 +33,7 @@ func NewParamVector(k, width, height int) *ParamVector {
 	}
 }
 
-// EncodeCircle writes a circle to position i in the vector
+// EncodeCircle writes a circle to position i in the vector.
 func (pv *ParamVector) EncodeCircle(i int, c Circle) {
 	offset := i * paramsPerCircle
 	pv.Data[offset+0] = c.X
@@ -44,9 +45,10 @@ func (pv *ParamVector) EncodeCircle(i int, c Circle) {
 	pv.Data[offset+6] = c.Opacity
 }
 
-// DecodeCircle reads a circle from position i in the vector
+// DecodeCircle reads a circle from position i in the vector.
 func (pv *ParamVector) DecodeCircle(i int) Circle {
 	offset := i * paramsPerCircle
+
 	return Circle{
 		X:       pv.Data[offset+0],
 		Y:       pv.Data[offset+1],
@@ -82,7 +84,7 @@ type Bounds struct {
 	Height int
 }
 
-// NewBounds creates bounds for K circles in a WxH image
+// NewBounds creates bounds for K circles in a WxH image.
 func NewBounds(k, width, height int) *Bounds {
 	maxDim := float64(max(width, height))
 	maxX := float64(max(width-1, 0))
@@ -93,7 +95,7 @@ func NewBounds(k, width, height int) *Bounds {
 	lower := make([]float64, k*paramsPerCircle)
 	upper := make([]float64, k*paramsPerCircle)
 
-	for i := 0; i < k; i++ {
+	for i := range k {
 		offset := i * paramsPerCircle
 		// Centers may lie up to half the canvas width/height beyond an edge.
 		lower[offset+0] = -xOffset
@@ -145,10 +147,12 @@ func RequiredCircleRadius(x, y float64, width, height int) float64 {
 	required := math.Max(MinCircleRadius, math.Max(rasterDistance, quantizedDistance))
 	dx32 := float32(x) - float32(nearestX)
 	dy32 := float32(y) - float32(nearestY)
+
 	radius32 := float32(required)
 	if radius32*radius32 < dx32*dx32+dy32*dy32 {
 		required = math.Max(required, float64(math.Nextafter32(radius32, float32(math.Inf(1)))))
 	}
+
 	return required
 }
 
@@ -156,13 +160,15 @@ func RequiredCircleRadius(x, y float64, width, height int) float64 {
 // radius requirement for an outside center.
 func (b *Bounds) ValidateCircle(c Circle) error {
 	if b == nil || len(b.Lower) < paramsPerCircle || len(b.Upper) < paramsPerCircle {
-		return fmt.Errorf("circle bounds are not initialized")
+		return errors.New("circle bounds are not initialized")
 	}
+
 	values := []float64{c.X, c.Y, c.R, c.CR, c.CG, c.CB, c.Opacity}
 	for i, value := range values {
 		if math.IsNaN(value) || math.IsInf(value, 0) {
 			return fmt.Errorf("parameter %d is not finite", i)
 		}
+
 		if value < b.Lower[i] || value > b.Upper[i] {
 			return fmt.Errorf("parameter %d is %g, outside [%g, %g]", i, value, b.Lower[i], b.Upper[i])
 		}
@@ -172,6 +178,7 @@ func (b *Bounds) ValidateCircle(c Circle) error {
 	if c.R < requiredRadius {
 		return fmt.Errorf("radius %g is smaller than required radius %g for center (%g, %g)", c.R, requiredRadius, c.X, c.Y)
 	}
+
 	return nil
 }
 
@@ -180,12 +187,14 @@ func (b *Bounds) ValidVector(data []float64) bool {
 	if b == nil || len(data) != b.K*paramsPerCircle {
 		return false
 	}
+
 	vector := ParamVector{Data: data, K: b.K, Width: b.Width, Height: b.Height}
 	for i := 0; i < b.K; i++ {
 		if b.ValidateCircle(vector.DecodeCircle(i)) != nil {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -196,7 +205,7 @@ func (b *Bounds) RadiusViolation(c Circle) float64 {
 	return RequiredCircleRadius(c.X, c.Y, b.Width, b.Height) - c.R
 }
 
-// ClampCircle clamps circle parameters to valid bounds
+// ClampCircle clamps circle parameters to valid bounds.
 func (b *Bounds) ClampCircle(c Circle) Circle {
 	clamped := Circle{
 		X:       clamp(c.X, b.Lower[0], b.Upper[0]),
@@ -208,14 +217,16 @@ func (b *Bounds) ClampCircle(c Circle) Circle {
 	}
 	requiredRadius := RequiredCircleRadius(clamped.X, clamped.Y, b.Width, b.Height)
 	clamped.R = clamp(c.R, requiredRadius, b.Upper[2])
+
 	return clamped
 }
 
-// ClampVector clamps all parameters in a vector
+// ClampVector clamps all parameters in a vector.
 func (b *Bounds) ClampVector(data []float64) {
 	circleCount := min(len(data)/paramsPerCircle, b.K)
+
 	vector := ParamVector{Data: data, K: circleCount, Width: b.Width, Height: b.Height}
-	for i := 0; i < circleCount; i++ {
+	for i := range circleCount {
 		vector.EncodeCircle(i, b.ClampCircle(vector.DecodeCircle(i)))
 	}
 }
@@ -232,18 +243,4 @@ func (b *Bounds) ClampIndependentVector(data []float64) {
 
 func clamp(val, lo, hi float64) float64 {
 	return math.Max(lo, math.Min(hi, val))
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

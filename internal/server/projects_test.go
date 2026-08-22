@@ -22,10 +22,12 @@ import (
 // writeLegacyCheckpoint plants a job in the pre-project `<root>/jobs` layout.
 func writeLegacyCheckpoint(t *testing.T, root, jobID string) {
 	t.Helper()
+
 	legacy, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	checkpoint := &store.Checkpoint{
 		SchemaVersion: 2,
 		JobID:         jobID,
@@ -64,19 +66,23 @@ func TestLegacyLayoutRestoresWithoutMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
 
 	job, ok := server.jobManager.GetJob(jobID)
 	if !ok {
 		t.Fatalf("legacy job was not restored")
 	}
+
 	if job.Project != app.DefaultProject {
 		t.Fatalf("legacy job project = %q, want %q", job.Project, app.DefaultProject)
 	}
+
 	legacyStore, err := server.storeForJob(jobID)
 	if err != nil {
 		t.Fatalf("legacy job store: %v", err)
 	}
+
 	if legacyStore != persistence {
 		t.Fatalf("legacy job must resolve to the legacy store")
 	}
@@ -91,16 +97,19 @@ func TestLegacyLayoutRestoresWithoutMigration(t *testing.T) {
 // filtering separates them.
 func TestProjectIsolation(t *testing.T) {
 	root := t.TempDir()
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
 
 	legacyJob := server.jobManager.CreateJob(app.DefaultProject, store.JobConfig{RefPath: "a.png"})
 	if _, err := server.ensureProject("christian"); err != nil {
 		t.Fatal(err)
 	}
+
 	projectJob := server.jobManager.CreateJob("christian", store.JobConfig{RefPath: "b.png"})
 
 	// The project store must be a distinct directory under projects/.
@@ -108,14 +117,17 @@ func TestProjectIsolation(t *testing.T) {
 	if info, err := os.Stat(projectDir); err != nil || !info.IsDir() {
 		t.Fatalf("project jobs directory not created: %v", err)
 	}
+
 	projectStore, err := server.storeForJob(projectJob.ID)
 	if err != nil {
 		t.Fatalf("project job store: %v", err)
 	}
+
 	legacyStore, err := server.storeForJob(legacyJob.ID)
 	if err != nil {
 		t.Fatalf("legacy job store: %v", err)
 	}
+
 	if projectStore == legacyStore {
 		t.Fatalf("jobs in different projects must not share a store")
 	}
@@ -125,6 +137,7 @@ func TestProjectIsolation(t *testing.T) {
 	if got := len(filterJobsByProject(all, "christian")); got != 1 {
 		t.Fatalf("christian job count = %d, want 1", got)
 	}
+
 	if got := len(filterJobsByProject(all, app.DefaultProject)); got != 1 {
 		t.Fatalf("default job count = %d, want 1", got)
 	}
@@ -132,14 +145,17 @@ func TestProjectIsolation(t *testing.T) {
 
 func TestListJobsProjectFilterAndValidation(t *testing.T) {
 	root := t.TempDir()
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
 	if _, err := server.ensureProject("christian"); err != nil {
 		t.Fatal(err)
 	}
+
 	server.jobManager.CreateJob(app.DefaultProject, store.JobConfig{RefPath: "a.png"})
 	server.jobManager.CreateJob("christian", store.JobConfig{RefPath: "b.png"})
 
@@ -157,13 +173,18 @@ func TestListJobsProjectFilterAndValidation(t *testing.T) {
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodGet, "/api/v1/jobs"+tc.query, nil)
 		server.Handler().ServeHTTP(recorder, request)
+
 		if recorder.Code != tc.code {
 			t.Fatalf("%q status = %d, want %d", tc.query, recorder.Code, tc.code)
 		}
+
 		var jobs []*Job
-		if err := json.NewDecoder(recorder.Body).Decode(&jobs); err != nil {
+
+		err := json.NewDecoder(recorder.Body).Decode(&jobs)
+		if err != nil {
 			t.Fatalf("%q decode: %v", tc.query, err)
 		}
+
 		if len(jobs) != tc.want {
 			t.Fatalf("%q returned %d jobs, want %d", tc.query, len(jobs), tc.want)
 		}
@@ -173,6 +194,7 @@ func TestListJobsProjectFilterAndValidation(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?project=../../etc", nil)
 	server.Handler().ServeHTTP(recorder, request)
+
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("traversal slug status = %d, want 400", recorder.Code)
 	}
@@ -180,38 +202,47 @@ func TestListJobsProjectFilterAndValidation(t *testing.T) {
 
 func TestProjectsEndpoint(t *testing.T) {
 	root := t.TempDir()
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
 	if _, err := server.ensureProject("christian"); err != nil {
 		t.Fatal(err)
 	}
+
 	server.jobManager.CreateJob("christian", store.JobConfig{RefPath: "b.png"})
 
 	recorder := httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil))
+
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", recorder.Code)
 	}
+
 	var projects []projectResponse
 	if err := json.NewDecoder(recorder.Body).Decode(&projects); err != nil {
 		t.Fatal(err)
 	}
+
 	found := map[app.Project]int{}
 	for _, p := range projects {
 		found[p.Slug] = p.Jobs
 	}
+
 	if _, ok := found[app.DefaultProject]; !ok {
 		t.Fatalf("default project missing from %v", found)
 	}
+
 	if found["christian"] != 1 {
 		t.Fatalf("christian job count = %d, want 1", found["christian"])
 	}
 
 	recorder = httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/projects", nil))
+
 	if recorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST status = %d, want 405", recorder.Code)
 	}
@@ -222,10 +253,12 @@ func TestProjectsEndpoint(t *testing.T) {
 // DisallowUnknownFields still rejects a genuine typo.
 func TestCreateJobAcceptsProjectAndStillRejectsTypos(t *testing.T) {
 	root := t.TempDir()
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{
 		DataRoot:   root,
 		InputRoots: []string{"testdata"},
@@ -245,6 +278,7 @@ func TestCreateJobAcceptsProjectAndStillRejectsTypos(t *testing.T) {
 	recorder = httptest.NewRecorder()
 	request = httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(typo))
 	server.Handler().ServeHTTP(recorder, request)
+
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("unknown field status = %d, want 400", recorder.Code)
 	}
@@ -252,13 +286,16 @@ func TestCreateJobAcceptsProjectAndStillRejectsTypos(t *testing.T) {
 
 func TestResolveRequestedProjectConflict(t *testing.T) {
 	server := NewServerWithOptions("localhost:0", nil, ServerOptions{})
+
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/jobs?project=a", nil)
 	if _, err := server.resolveRequestedProject("b", request); err == nil {
 		t.Fatalf("conflicting project must be rejected")
 	}
+
 	if slug, err := server.resolveRequestedProject("a", request); err != nil || slug != "a" {
 		t.Fatalf("matching project = %q, %v", slug, err)
 	}
+
 	if slug, err := server.resolveRequestedProject("", request); err != nil || slug != "a" {
 		t.Fatalf("query fallback = %q, %v", slug, err)
 	}
@@ -269,8 +306,10 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	var buffer bytes.Buffer
 	previous := slog.Default()
+
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buffer, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	t.Cleanup(func() { slog.SetDefault(previous) })
+
 	return &buffer
 }
 
@@ -279,29 +318,35 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 // the default project's directory.
 func TestUnknownProjectDoesNotResolveToDefaultStore(t *testing.T) {
 	root := t.TempDir()
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
 
 	unknownStore, err := server.storeForSlug("ghost")
 	if err == nil {
 		t.Fatalf("unknown slug resolved to %v, want an error", unknownStore)
 	}
+
 	if !errors.Is(err, errUnknownProject) {
 		t.Fatalf("error = %v, want errUnknownProject", err)
 	}
+
 	if unknownStore != nil {
 		t.Fatalf("unknown slug must resolve to no store, got %v", unknownStore)
 	}
 
 	// The same must hold through a job that names the unloadable project.
 	orphan := server.jobManager.CreateJob("ghost", store.JobConfig{RefPath: "a.png"})
+
 	jobStore, err := server.storeForJob(orphan.ID)
 	if err == nil {
 		t.Fatalf("job in an unresolvable project resolved to %v, want an error", jobStore)
 	}
+
 	if jobStore == persistence {
 		t.Fatalf("job in an unresolvable project must not resolve to the default store")
 	}
@@ -311,6 +356,7 @@ func TestUnknownProjectDoesNotResolveToDefaultStore(t *testing.T) {
 	if err != nil || defaultStore != persistence {
 		t.Fatalf("default slug = %v, %v; want the injected store", defaultStore, err)
 	}
+
 	emptyStore, err := server.storeForSlug("")
 	if err != nil || emptyStore != persistence {
 		t.Fatalf("empty slug = %v, %v; want the injected store", emptyStore, err)
@@ -321,18 +367,22 @@ func TestUnknownProjectDoesNotResolveToDefaultStore(t *testing.T) {
 // resolved is not deleted against the default project's store.
 func TestDeleteRejectsUnresolvableProject(t *testing.T) {
 	root := t.TempDir()
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
 	orphan := server.jobManager.CreateJob("ghost", store.JobConfig{RefPath: "a.png"})
 
 	recorder := httptest.NewRecorder()
 	server.handleDeleteJob(recorder, httptest.NewRequest(http.MethodDelete, "/api/v1/jobs/"+orphan.ID, nil), orphan.ID)
+
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("delete status = %d, want 500", recorder.Code)
 	}
+
 	if _, ok := server.jobManager.GetJob(orphan.ID); !ok {
 		t.Fatalf("job must survive a failed store resolution")
 	}
@@ -345,23 +395,28 @@ func TestDiscoverLogsUnusableProjectDirectory(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, projectsDirName, "Alpha"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := os.WriteFile(filepath.Join(root, projectsDirName, "stray.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	logs := captureLogs(t)
+
 	registry := newProjectRegistry(root, persistence)
 	if _, ok := registry.Get("Alpha"); ok {
 		t.Fatalf("an invalid slug must not be adopted")
 	}
+
 	output := logs.String()
 	if !strings.Contains(output, "Alpha") {
 		t.Fatalf("skipped project directory was not logged: %s", output)
 	}
+
 	if !strings.Contains(output, "stray.txt") {
 		t.Fatalf("skipped non-directory entry was not logged: %s", output)
 	}
@@ -373,10 +428,12 @@ func TestDiscoverLogsUnusableProjectDirectory(t *testing.T) {
 // explicit skip the meaning depended on whether a store was injected.
 func TestDiscoverIgnoresDefaultProjectDirectory(t *testing.T) {
 	root := t.TempDir()
+
 	shadow := filepath.Join(root, projectsDirName, string(app.DefaultProject))
 	if err := os.MkdirAll(shadow, 0o755); err != nil {
 		t.Fatal(err)
 	}
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -384,13 +441,16 @@ func TestDiscoverIgnoresDefaultProjectDirectory(t *testing.T) {
 
 	logs := captureLogs(t)
 	registry := newProjectRegistry(root, persistence)
+
 	adopted, ok := registry.Get(app.DefaultProject)
 	if !ok {
 		t.Fatalf("the injected legacy store must stay registered as the default project")
 	}
+
 	if adopted != persistence {
 		t.Fatalf("the default project resolved to the shadow directory instead of the legacy store")
 	}
+
 	if !strings.Contains(logs.String(), shadow) {
 		t.Fatalf("the ignored default project directory was not logged: %s", logs.String())
 	}
@@ -417,10 +477,12 @@ func TestStoreFaultIsServerErrorWithoutPath(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, projectsDirName), []byte("not a directory"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{
 		DataRoot:   root,
 		InputRoots: []string{imageDir},
@@ -430,12 +492,15 @@ func TestStoreFaultIsServerErrorWithoutPath(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(body))
 	server.Handler().ServeHTTP(recorder, request)
+
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500; body = %s", recorder.Code, recorder.Body.String())
 	}
+
 	if strings.Contains(recorder.Body.String(), root) {
 		t.Fatalf("response leaked the data root: %s", recorder.Body.String())
 	}
+
 	if !strings.Contains(recorder.Body.String(), "project_unavailable") {
 		t.Fatalf("store fault used the wrong error code: %s", recorder.Body.String())
 	}
@@ -445,6 +510,7 @@ func TestStoreFaultIsServerErrorWithoutPath(t *testing.T) {
 	bad := fmt.Sprintf(`{"project":"Christian","refPath":%q,"mode":"joint","circles":1,"iters":1,"popSize":20,"seed":1}`, imagePath)
 	request = httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(bad))
 	server.Handler().ServeHTTP(recorder, request)
+
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("invalid slug status = %d, want 400; body = %s", recorder.Code, recorder.Body.String())
 	}
@@ -456,10 +522,12 @@ func TestStoreFaultIsServerErrorWithoutPath(t *testing.T) {
 // leaving a client holding only a job ID unable to learn who owns it.
 func TestJobStatusResponseCarriesProject(t *testing.T) {
 	root := t.TempDir()
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
 	if _, err := server.ensureProject("christian"); err != nil {
 		t.Fatal(err)
@@ -485,18 +553,21 @@ func TestJobStatusResponseCarriesProject(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			job := server.jobManager.CreateJob(tc.project, store.JobConfig{RefPath: "a.png"})
 			if tc.storeEmpty {
-				if err := server.jobManager.UpdateJob(job.ID, func(stored *Job) {
+				err := server.jobManager.UpdateJob(job.ID, func(stored *Job) {
 					stored.Project = ""
-				}); err != nil {
+				})
+				if err != nil {
 					t.Fatal(err)
 				}
 			}
+
 			for _, path := range []string{
 				"/api/v1/jobs/" + job.ID,
 				"/api/v1/jobs/" + job.ID + "/status",
 			} {
 				recorder := httptest.NewRecorder()
 				server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+
 				if recorder.Code != http.StatusOK {
 					t.Fatalf("%s status = %d, want 200", path, recorder.Code)
 				}
@@ -506,12 +577,16 @@ func TestJobStatusResponseCarriesProject(t *testing.T) {
 					ID      string `json:"id"`
 					Project string `json:"project"`
 				}
-				if err := json.Unmarshal(recorder.Body.Bytes(), &decoded); err != nil {
+
+				err := json.Unmarshal(recorder.Body.Bytes(), &decoded)
+				if err != nil {
 					t.Fatalf("%s: %v", path, err)
 				}
+
 				if decoded.ID != job.ID {
 					t.Fatalf("%s id = %q, want %q", path, decoded.ID, job.ID)
 				}
+
 				if decoded.Project != string(tc.want) {
 					t.Fatalf("%s project = %q, want %q", path, decoded.Project, tc.want)
 				}
@@ -525,10 +600,12 @@ func TestJobStatusResponseCarriesProject(t *testing.T) {
 // project after the process restarts, reading only what is on disk.
 func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 	root := t.TempDir()
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
 
 	// The job is created directly rather than over HTTP: what this test pins is
@@ -538,11 +615,14 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 	if _, err := server.ensureProject("christian"); err != nil {
 		t.Fatal(err)
 	}
+
 	projectStore, err := server.storeForSlug("christian")
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	job := server.jobManager.CreateJob("christian", store.JobConfig{RefPath: "example/Ref.png"})
+
 	checkpoint := &store.Checkpoint{
 		SchemaVersion: 2,
 		JobID:         job.ID,
@@ -562,12 +642,14 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	restarted := NewServerWithOptions("localhost:0", restartedPersistence, ServerOptions{DataRoot: root})
 
 	restored, ok := restarted.jobManager.GetJob(job.ID)
 	if !ok {
 		t.Fatalf("job %s did not survive the restart", job.ID)
 	}
+
 	if restored.Project != "christian" {
 		t.Fatalf("restored project = %q, want %q", restored.Project, "christian")
 	}
@@ -577,6 +659,7 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("restored job store: %v", err)
 	}
+
 	if restoredStore == restartedPersistence {
 		t.Fatalf("restored job resolved to the legacy store instead of its project store")
 	}
@@ -584,9 +667,11 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 	// And the filter must find it under its project and only there.
 	recorder := httptest.NewRecorder()
 	restarted.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/jobs?project=christian", nil))
+
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("filtered list status = %d, want 200", recorder.Code)
 	}
+
 	var listed []struct {
 		ID      string `json:"id"`
 		Project string `json:"project"`
@@ -594,15 +679,18 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &listed); err != nil {
 		t.Fatal(err)
 	}
+
 	if len(listed) != 1 || listed[0].ID != job.ID || listed[0].Project != "christian" {
 		t.Fatalf("filtered list = %+v, want exactly job %s in christian", listed, job.ID)
 	}
 
 	recorder = httptest.NewRecorder()
 	restarted.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/jobs?project="+string(app.DefaultProject), nil))
+
 	if err := json.Unmarshal(recorder.Body.Bytes(), &listed); err != nil {
 		t.Fatal(err)
 	}
+
 	if len(listed) != 0 {
 		t.Fatalf("default project listed %d jobs, want 0", len(listed))
 	}
@@ -613,10 +701,12 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 // in Go map order, which is randomized per run.
 func TestProjectsEndpointOrderingIsStable(t *testing.T) {
 	root := t.TempDir()
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
 
 	// Registered out of order, and deliberately only as jobs so they reach the
@@ -626,27 +716,36 @@ func TestProjectsEndpointOrderingIsStable(t *testing.T) {
 	}
 
 	var first []string
-	for i := 0; i < 20; i++ {
+
+	for i := range 20 {
 		recorder := httptest.NewRecorder()
 		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil))
+
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", recorder.Code)
 		}
+
 		var decoded []projectResponse
-		if err := json.Unmarshal(recorder.Body.Bytes(), &decoded); err != nil {
+
+		err := json.Unmarshal(recorder.Body.Bytes(), &decoded)
+		if err != nil {
 			t.Fatal(err)
 		}
+
 		got := make([]string, len(decoded))
 		for j, p := range decoded {
 			got[j] = string(p.Slug)
 		}
+
 		if i == 0 {
 			first = got
 			if !sort.StringsAreSorted(got) {
 				t.Fatalf("projects are not sorted: %v", got)
 			}
+
 			continue
 		}
+
 		if strings.Join(got, ",") != strings.Join(first, ",") {
 			t.Fatalf("ordering changed between requests: %v then %v", first, got)
 		}
@@ -659,17 +758,21 @@ func TestProjectsEndpointOrderingIsStable(t *testing.T) {
 // in the default project no matter which project the user came from.
 func TestCreateFormCarriesProjectThroughPost(t *testing.T) {
 	root := t.TempDir()
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
 
 	recorder := httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/create?project=christian", nil))
+
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("GET /create status = %d, want 200", recorder.Code)
 	}
+
 	body := recorder.Body.String()
 	if !strings.Contains(body, `name="project"`) || !strings.Contains(body, `value="christian"`) {
 		t.Fatalf("create form does not carry the project into the POST body")
@@ -679,6 +782,7 @@ func TestCreateFormCarriesProjectThroughPost(t *testing.T) {
 	// "default" indistinguishable from a project a user actually chose.
 	recorder = httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/create", nil))
+
 	if strings.Contains(recorder.Body.String(), `name="project"`) {
 		t.Fatalf("bare /create must not emit a project field")
 	}
@@ -689,15 +793,18 @@ func TestCreateFormCarriesProjectThroughPost(t *testing.T) {
 // the user was creating in.
 func TestCreateFormEchoesProjectOnValidationError(t *testing.T) {
 	root := t.TempDir()
+
 	persistence, err := store.NewFSStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
 
 	form := strings.NewReader("project=christian&mode=joint")
 	request := httptest.NewRequest(http.MethodPost, "/create", form)
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 	recorder := httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, request)
 
@@ -705,6 +812,7 @@ func TestCreateFormEchoesProjectOnValidationError(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (re-rendered form)", recorder.Code)
 	}
+
 	if !strings.Contains(recorder.Body.String(), `value="christian"`) {
 		t.Fatalf("validation error dropped the project from the re-rendered form")
 	}
@@ -713,14 +821,17 @@ func TestCreateFormEchoesProjectOnValidationError(t *testing.T) {
 // writeProjectCheckpoint plants a terminal job in `<root>/projects/<slug>/jobs`.
 func writeProjectCheckpoint(t *testing.T, root string, slug app.Project, jobID string) {
 	t.Helper()
+
 	dir := filepath.Join(root, projectsDirName, string(slug))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+
 	projectStore, err := store.NewFSStore(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	checkpoint := &store.Checkpoint{
 		SchemaVersion: 2,
 		JobID:         jobID,
@@ -764,6 +875,7 @@ func TestCrossProjectDuplicateJobIDIsDiagnosable(t *testing.T) {
 	if len(jobs) != 1 {
 		t.Fatalf("registered %d jobs, want exactly 1: %+v", len(jobs), jobs)
 	}
+
 	if jobs[0].ID != jobID {
 		t.Fatalf("registered job ID = %q, want %q", jobs[0].ID, jobID)
 	}
@@ -772,10 +884,12 @@ func TestCrossProjectDuplicateJobIDIsDiagnosable(t *testing.T) {
 	if jobs[0].Project != app.Project("alpha") {
 		t.Fatalf("surviving job project = %q, want %q", jobs[0].Project, "alpha")
 	}
+
 	survivingStore, err := server.storeForJob(jobID)
 	if err != nil {
 		t.Fatalf("surviving job store: %v", err)
 	}
+
 	if alphaStore, _ := server.projects.Get("alpha"); survivingStore != alphaStore {
 		t.Fatalf("surviving job did not resolve to alpha's own store")
 	}
@@ -785,18 +899,23 @@ func TestCrossProjectDuplicateJobIDIsDiagnosable(t *testing.T) {
 	if !strings.Contains(output, "collision") {
 		t.Fatalf("log does not identify the failure as a collision: %s", output)
 	}
+
 	if !strings.Contains(output, "owning_project=alpha") {
 		t.Fatalf("log does not name the project that kept the ID: %s", output)
 	}
+
 	if !strings.Contains(output, "skipped_project=zulu") {
 		t.Fatalf("log does not name the project whose copy was dropped: %s", output)
 	}
+
 	if !strings.Contains(output, "level=ERROR") {
 		t.Fatalf("a job disappearing must be logged at Error, not skipped quietly: %s", output)
 	}
+
 	if !strings.Contains(output, "remain on disk") {
 		t.Fatalf("log does not say the skipped copy's artifacts are still on disk: %s", output)
 	}
+
 	if !strings.Contains(output, jobID) {
 		t.Fatalf("log does not name the colliding job ID: %s", output)
 	}

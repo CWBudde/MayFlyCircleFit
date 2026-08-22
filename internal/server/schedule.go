@@ -51,12 +51,14 @@ func (s *Server) startScheduleDriver(scheduleID string) error {
 		s.schedulesMu.Unlock()
 		return errScheduleDriverRunning
 	}
+
 	s.scheduleDrivers[scheduleID] = struct{}{}
 	s.schedulesMu.Unlock()
 
 	s.scheduleWG.Add(1)
 	go func() {
 		defer s.scheduleWG.Done()
+
 		for {
 			exit := s.driveSchedule(scheduleID)
 			// Deregistering is the handoff point, so the durable intent is read
@@ -74,11 +76,14 @@ func (s *Server) startScheduleDriver(scheduleID string) error {
 				s.schedulesMu.Unlock()
 				continue
 			}
+
 			delete(s.scheduleDrivers, scheduleID)
 			s.schedulesMu.Unlock()
+
 			return
 		}
 	}()
+
 	return nil
 }
 
@@ -89,14 +94,17 @@ func (s *Server) scheduleWantsDriver(scheduleID string) bool {
 	if s.ctx.Err() != nil {
 		return false
 	}
+
 	scheduleStore, err := s.scheduleStore()
 	if err != nil {
 		return false
 	}
+
 	record, err := scheduleStore.LoadSchedule(scheduleID)
 	if err != nil {
 		return false
 	}
+
 	return record.State == store.ScheduleStateRunning
 }
 
@@ -108,19 +116,24 @@ func (s *Server) restoreSchedules() {
 	if err != nil {
 		return
 	}
+
 	records, err := scheduleStore.ListSchedules()
 	if err != nil {
 		slog.Warn("Unable to list schedules for restore", "error", err)
 		return
 	}
+
 	for _, record := range records {
 		if record.State != store.ScheduleStateRunning {
 			continue
 		}
-		if err := s.startScheduleDriver(record.ScheduleID); err != nil {
+
+		err := s.startScheduleDriver(record.ScheduleID)
+		if err != nil {
 			slog.Error("Unable to resume schedule", "schedule_id", record.ScheduleID, "error", err)
 			continue
 		}
+
 		slog.Info("Resumed schedule", "schedule_id", record.ScheduleID)
 	}
 }
@@ -146,6 +159,7 @@ func (s *Server) driveSchedule(scheduleID string) scheduleDriverExit {
 		slog.Error("Schedule executor has no schedule store", "schedule_id", scheduleID, "error", err)
 		return scheduleDriverFailed
 	}
+
 	for {
 		// Shutdown leaves the in-flight stage's record in `running`. That is the
 		// adoptable state, not a leak: the next start finds it and continues the
@@ -153,30 +167,36 @@ func (s *Server) driveSchedule(scheduleID string) scheduleDriverExit {
 		if s.ctx.Err() != nil {
 			return scheduleDriverStopped
 		}
+
 		record, err := scheduleStore.LoadSchedule(scheduleID)
 		if err != nil {
 			slog.Error("Unable to load schedule", "schedule_id", scheduleID, "error", err)
 			return scheduleDriverFailed
 		}
+
 		if record.State != store.ScheduleStateRunning {
 			slog.Info("Schedule executor stopping", "schedule_id", scheduleID, "state", string(record.State))
 			return scheduleDriverStopped
 		}
+
 		plan, err := record.Document.Expand()
 		if err != nil {
 			s.settleSchedule(scheduleID, store.ScheduleStateFailed, fmt.Sprintf("expand schedule: %v", err))
 			return scheduleDriverStopped
 		}
+
 		recorded, err := scheduleStore.LoadScheduleStages(scheduleID)
 		if err != nil {
 			slog.Error("Unable to load schedule stages", "schedule_id", scheduleID, "error", err)
 			return scheduleDriverFailed
 		}
+
 		index, existing, blocked := nextScheduleStage(plan, recorded)
 		if blocked != "" {
 			s.settleSchedule(scheduleID, store.ScheduleStateFailed, blocked)
 			return scheduleDriverStopped
 		}
+
 		if index < 0 {
 			s.settleSchedule(scheduleID, store.ScheduleStateCompleted, "")
 			return scheduleDriverStopped
@@ -192,26 +212,34 @@ func (s *Server) driveSchedule(scheduleID string) scheduleDriverExit {
 			s.settleSchedule(scheduleID, store.ScheduleStatePaused,
 				fmt.Sprintf("paused at the barrier before stage %d (%s, %d circles); resume to continue",
 					index, plan[index].Kind, plan[index].Circles))
+
 			return scheduleDriverStopped
 		}
+
 		if existing == nil {
 			verdict := app.EvaluateScheduleStage(plan, index, scheduleStageOutcomes(recorded))
 			if !verdict.Run {
-				if err := s.recordSkippedStage(scheduleStore, record.ScheduleID, plan[index], verdict.Reason); err != nil {
+				err := s.recordSkippedStage(scheduleStore, record.ScheduleID, plan[index], verdict.Reason)
+				if err != nil {
 					s.settleSchedule(scheduleID, store.ScheduleStateFailed, err.Error())
 					return scheduleDriverStopped
 				}
+
 				slog.Info("Schedule stage skipped by policy", "schedule_id", scheduleID,
 					"stage", index, "kind", string(plan[index].Kind), "reason", verdict.Reason)
+
 				continue
 			}
 		}
+
 		outcome, err := s.runScheduleStage(scheduleStore, record, plan, recorded, index, existing)
 		if err != nil {
 			slog.Error("Schedule stage did not run", "schedule_id", scheduleID, "stage", index, "error", err)
 			s.settleSchedule(scheduleID, store.ScheduleStateFailed, err.Error())
+
 			return scheduleDriverStopped
 		}
+
 		switch outcome {
 		case store.ScheduleStateCompleted:
 			// Loop: the records now say this stage is done.
@@ -235,6 +263,7 @@ func scheduleStageOutcomes(recorded []store.ScheduleStageRecord) []app.ScheduleS
 	outcomes := make([]app.ScheduleStageOutcome, 0, len(recorded))
 	for _, stage := range recorded {
 		state := app.ScheduleOutcomePending
+
 		switch stage.State {
 		case store.ScheduleStateCompleted:
 			state = app.ScheduleOutcomeCompleted
@@ -255,6 +284,7 @@ func scheduleStageOutcomes(recorded []store.ScheduleStageRecord) []app.ScheduleS
 			CostMeasured: measured,
 		})
 	}
+
 	return outcomes
 }
 
@@ -264,11 +294,16 @@ func scheduleStageOutcomes(recorded []store.ScheduleStageRecord) []app.ScheduleS
 func (s *Server) recordSkippedStage(scheduleStore store.ScheduleStore, scheduleID string, stage app.ScheduleStage, reason string) error {
 	stageRecord := store.NewScheduleStageRecord(scheduleID, stage)
 	stageRecord.State = store.ScheduleStateSkipped
+
 	stageRecord.Reason = reason
-	if err := scheduleStore.SaveScheduleStage(scheduleID, stageRecord); err != nil {
+
+	err := scheduleStore.SaveScheduleStage(scheduleID, stageRecord)
+	if err != nil {
 		return fmt.Errorf("record skipped stage %d: %w", stage.Index, err)
 	}
+
 	s.publishScheduleChanged(scheduleID)
+
 	return nil
 }
 
@@ -285,11 +320,13 @@ func nextScheduleStage(plan []app.ScheduleStage, recorded []store.ScheduleStageR
 	for i := range recorded {
 		byIndex[recorded[i].Index] = &recorded[i]
 	}
+
 	for index := range plan {
 		record, ok := byIndex[index]
 		if !ok {
 			return index, nil, ""
 		}
+
 		switch record.State {
 		case store.ScheduleStateCompleted:
 			continue
@@ -304,6 +341,7 @@ func nextScheduleStage(plan []app.ScheduleStage, recorded []store.ScheduleStageR
 			return index, record, ""
 		}
 	}
+
 	return -1, nil, ""
 }
 
@@ -341,11 +379,13 @@ func (s *Server) runScheduleStage(
 
 	parentJobID := ""
 	parentIndex := -1
+
 	if index > 0 {
 		previous := lastRunStageRecord(recorded, index)
 		if previous == nil || previous.State != store.ScheduleStateCompleted || previous.JobID == "" {
 			return "", fmt.Errorf("stage %d has no completed predecessor", index)
 		}
+
 		parentJobID = previous.JobID
 		parentIndex = previous.Index
 	}
@@ -355,13 +395,16 @@ func (s *Server) runScheduleStage(
 	jobID := uuid.New().String()
 	if existing != nil && existing.JobID != "" {
 		jobID = existing.JobID
+
 		settled, adopted, err := s.settleAdoptedStage(scheduleStore, record.ScheduleID, index, existing)
 		if err != nil {
 			return "", err
 		}
+
 		if adopted {
 			return settled, nil
 		}
+
 		s.discardStageAttempt(jobID)
 	}
 
@@ -390,20 +433,27 @@ func (s *Server) runScheduleStage(
 	stageRecord.JobID = jobID
 	stageRecord.ParentJobID = parentJobID
 	startedAt := time.Now().UTC()
+
 	stageRecord.StartedAt = &startedAt
 	if err := scheduleStore.SaveScheduleStage(record.ScheduleID, stageRecord); err != nil {
 		return "", fmt.Errorf("record stage %d: %w", index, err)
 	}
+
 	s.publishScheduleChanged(record.ScheduleID)
 
 	if err := s.startScheduleStageJob(jobID, config, source, stage, record.ScheduleID, parentJobID); err != nil {
 		stageRecord.State = store.ScheduleStateFailed
+
 		stageRecord.Error = err.Error()
-		if saveErr := scheduleStore.SaveScheduleStage(record.ScheduleID, stageRecord); saveErr != nil {
+
+		saveErr := scheduleStore.SaveScheduleStage(record.ScheduleID, stageRecord)
+		if saveErr != nil {
 			slog.Error("Unable to record a stage that could not start",
 				"schedule_id", record.ScheduleID, "stage", index, "error", saveErr)
 		}
+
 		s.publishScheduleChanged(record.ScheduleID)
+
 		return store.ScheduleStateFailed, nil
 	}
 
@@ -412,7 +462,8 @@ func (s *Server) runScheduleStage(
 	// exists now, so the durable intent is replayed against it rather than
 	// letting the stage run for hours after the campaign was cancelled.
 	if state, err := scheduleStateNow(scheduleStore, record.ScheduleID); err == nil && state == store.ScheduleStateCancelled {
-		if err := s.requestCancellation(jobID); err != nil {
+		err := s.requestCancellation(jobID)
+		if err != nil {
 			slog.Debug("Replayed cancel found the stage job already settling",
 				"schedule_id", record.ScheduleID, "job_id", jobID, "error", err)
 		}
@@ -428,6 +479,7 @@ func (s *Server) runScheduleStage(
 	stageRecord.CompletedAt = &completedAt
 	stageRecord.BestCost = job.BestCost
 	stageRecord.Iterations = job.Iterations
+
 	stageRecord.Evaluations = int64(job.Evaluations)
 	switch job.State {
 	case StateCompleted:
@@ -438,12 +490,15 @@ func (s *Server) runScheduleStage(
 		stageRecord.State = store.ScheduleStateFailed
 		stageRecord.Error = job.Error
 	}
+
 	if err := scheduleStore.SaveScheduleStage(record.ScheduleID, stageRecord); err != nil {
 		return "", fmt.Errorf("record stage %d outcome: %w", index, err)
 	}
+
 	s.publishScheduleChanged(record.ScheduleID)
 	slog.Info("Schedule stage settled", "schedule_id", record.ScheduleID, "stage", index,
 		"kind", string(stage.Kind), "job_id", jobID, "state", string(stageRecord.State), "best_cost", job.BestCost)
+
 	return stageRecord.State, nil
 }
 
@@ -458,14 +513,18 @@ func (s *Server) runScheduleStage(
 func (s *Server) scheduleStageConfig(stage app.ScheduleStage, plan []app.ScheduleStage, parentJobID string, parentIndex int) (JobConfig, *continuationSource, error) {
 	config := stage.Config
 	s.applyDefaultBackend(&config)
+
 	if parentJobID == "" {
-		if failure := s.resolveConfigPaths(&config, "schedule"); failure != nil {
+		failure := s.resolveConfigPaths(&config, "schedule")
+		if failure != nil {
 			return config, nil, failure
 		}
+
 		normalized, err := app.Normalize(config)
 		if err != nil {
 			return config, nil, fmt.Errorf("stage %d configuration: %w", stage.Index, err)
 		}
+
 		return normalized, nil, nil
 	}
 
@@ -473,6 +532,7 @@ func (s *Server) scheduleStageConfig(stage app.ScheduleStage, plan []app.Schedul
 	if stage.Kind == app.ScheduleStagePolish {
 		kind = polishContinuation
 	}
+
 	source, failure := s.continuationSourceFor(parentJobID, kind)
 	if failure != nil {
 		return config, nil, fmt.Errorf("stage %d cannot continue job %s: %s", stage.Index, parentJobID, failure.message)
@@ -484,14 +544,17 @@ func (s *Server) scheduleStageConfig(stage app.ScheduleStage, plan []app.Schedul
 		return config, nil, fmt.Errorf("stage %d expected a %d circle parent, found %d",
 			stage.Index, expected, source.config.Circles)
 	}
+
 	config.RefPath = source.config.RefPath
 	config.CanvasPath = source.config.CanvasPath
 	config.ResumeCount = source.config.ResumeCount
 	config.EffectiveSeed = source.config.EffectiveSeed
+
 	normalized, err := app.Normalize(config)
 	if err != nil {
 		return config, nil, fmt.Errorf("stage %d configuration: %w", stage.Index, err)
 	}
+
 	return normalized, source, nil
 }
 
@@ -509,6 +572,7 @@ func (s *Server) startScheduleStageJob(jobID string, config JobConfig, source *c
 		// job needs its own copy rather than a share of the loop's variable.
 		stageIndex := index
 		job.StageIndex = &stageIndex
+
 		switch stage.Kind {
 		case app.ScheduleStageExtend:
 			job.ExtendedFrom = parentJobID
@@ -517,6 +581,7 @@ func (s *Server) startScheduleStageJob(jobID string, config JobConfig, source *c
 		}
 	}
 	deadline := time.Now().Add(scheduleEnqueueTimeout)
+
 	for {
 		var failure *continuationError
 		if source != nil {
@@ -524,15 +589,18 @@ func (s *Server) startScheduleStageJob(jobID string, config JobConfig, source *c
 		} else {
 			failure = s.startBaseStageJob(jobID, config, lineage)
 		}
+
 		if failure == nil {
 			return nil
 		}
+
 		if failure.code != "queue_full" || time.Now().After(deadline) {
 			return errors.New(failure.message)
 		}
 		// startContinuation failed the job it created, so the identifier is free
 		// again only after the manager forgets it.
 		s.discardStageAttempt(jobID)
+
 		select {
 		case <-s.ctx.Done():
 			return s.ctx.Err()
@@ -548,17 +616,21 @@ func (s *Server) startBaseStageJob(jobID string, config JobConfig, lineage func(
 	if err != nil {
 		return continuationFailure(http.StatusInternalServerError, "job_error", fmt.Sprintf("failed to create base stage job: %v", err))
 	}
+
 	if err := s.jobManager.UpdateJob(job.ID, lineage); err != nil {
 		return continuationFailure(http.StatusInternalServerError, "job_error", "failed to initialize base stage job")
 	}
+
 	if initialized, ok := s.jobManager.GetJob(job.ID); ok {
 		s.jobManager.broadcaster.Broadcast(jobProgressSnapshot(initialized))
 		s.publishScheduleChanged(initialized.ScheduleID)
 	}
+
 	if err := s.enqueueJob(job.ID); err != nil {
 		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
 		return continuationFailure(http.StatusTooManyRequests, "queue_full", "server job queue is full")
 	}
+
 	return nil
 }
 
@@ -569,6 +641,7 @@ func scheduleStateNow(scheduleStore store.ScheduleStore, scheduleID string) (sto
 	if err != nil {
 		return "", err
 	}
+
 	return record.State, nil
 }
 
@@ -608,20 +681,26 @@ func (s *Server) settleAdoptedStage(
 	settled.BestCost = job.BestCost
 	settled.Iterations = job.Iterations
 	settled.Evaluations = int64(job.Evaluations)
+
 	completedAt := time.Now().UTC()
 	if job.EndTime != nil {
 		completedAt = job.EndTime.UTC()
 	}
+
 	settled.CompletedAt = &completedAt
-	if err := scheduleStore.SaveScheduleStage(scheduleID, &settled); err != nil {
+
+	err := scheduleStore.SaveScheduleStage(scheduleID, &settled)
+	if err != nil {
 		// Reporting the failure keeps the completed checkpoint: the alternative
 		// path from here discards it, and a store that cannot be written is no
 		// reason to throw away finished work.
 		return "", false, fmt.Errorf("record adopted stage %d: %w", index, err)
 	}
+
 	s.publishScheduleChanged(scheduleID)
 	slog.Info("Adopted a stage that had already completed", "schedule_id", scheduleID, "stage", index,
 		"job_id", existing.JobID, "best_cost", job.BestCost)
+
 	return store.ScheduleStateCompleted, true, nil
 }
 
@@ -638,12 +717,16 @@ func (s *Server) discardStageAttempt(jobID string) {
 	if err != nil {
 		jobStore = s.store
 	}
+
 	if err := s.jobManager.DeleteJob(jobID); err != nil && !errors.Is(err, ErrInvalidTransition) {
 		slog.Debug("No restored job to discard for an adopted stage", "job_id", jobID, "error", err)
 	}
+
 	s.jobManager.broadcaster.CleanupJob(jobID)
+
 	if jobStore != nil {
-		if err := jobStore.DeleteCheckpoint(jobID); err != nil && !errors.Is(err, store.ErrNotFound) {
+		err := jobStore.DeleteCheckpoint(jobID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			slog.Warn("Unable to discard an interrupted stage's checkpoint", "job_id", jobID, "error", err)
 		}
 	}
@@ -654,11 +737,13 @@ func (s *Server) discardStageAttempt(jobID string) {
 func (s *Server) awaitJobTermination(jobID string) (*Job, bool) {
 	ticker := time.NewTicker(scheduleStagePollInterval)
 	defer ticker.Stop()
+
 	for {
 		job, ok := s.jobManager.GetJob(jobID)
 		if !ok {
 			return nil, false
 		}
+
 		switch job.State {
 		case StateCancelled:
 			// Shutdown cancels every running job. That is the server stopping,
@@ -668,10 +753,12 @@ func (s *Server) awaitJobTermination(jobID string) (*Job, bool) {
 			if s.ctx.Err() != nil {
 				return nil, false
 			}
+
 			return job, true
 		case StateCompleted, StateFailed:
 			return job, true
 		}
+
 		select {
 		case <-s.ctx.Done():
 			return nil, false
@@ -689,20 +776,25 @@ func (s *Server) settleSchedule(scheduleID string, state store.ScheduleState, re
 	if err != nil {
 		return
 	}
+
 	record, err := scheduleStore.LoadSchedule(scheduleID)
 	if err != nil {
 		slog.Error("Unable to load schedule to settle it", "schedule_id", scheduleID, "error", err)
 		return
 	}
+
 	if record.State != store.ScheduleStateRunning {
 		return
 	}
+
 	record.State = state
+
 	record.Error = reason
 	if err := scheduleStore.SaveSchedule(record); err != nil {
 		slog.Error("Unable to record schedule outcome", "schedule_id", scheduleID, "state", string(state), "error", err)
 		return
 	}
+
 	s.publishScheduleChanged(scheduleID)
 	slog.Info("Schedule settled", "schedule_id", scheduleID, "state", string(state), "reason", reason)
 }
@@ -715,6 +807,7 @@ func (s *Server) publishScheduleChanged(scheduleID string) {
 
 func (s *Server) publishChainsChanged() {
 	s.invalidateChainCache()
+
 	if s.uiEvents != nil {
 		s.uiEvents.PublishCampaignChanged("chain", "")
 	}
@@ -728,16 +821,20 @@ func (s *Server) cancelScheduleStage(scheduleID string) {
 	if err != nil {
 		return
 	}
+
 	stages, err := scheduleStore.LoadScheduleStages(scheduleID)
 	if err != nil {
 		slog.Warn("Unable to load stages to cancel a schedule", "schedule_id", scheduleID, "error", err)
 		return
 	}
+
 	for _, stage := range stages {
 		if stage.State != store.ScheduleStateRunning || stage.JobID == "" {
 			continue
 		}
-		if err := s.requestCancellation(stage.JobID); err != nil {
+
+		err := s.requestCancellation(stage.JobID)
+		if err != nil {
 			slog.Debug("In-flight stage was already settled", "schedule_id", scheduleID, "job_id", stage.JobID, "error", err)
 		}
 	}
@@ -750,13 +847,16 @@ func (s *Server) cancelScheduleStage(scheduleID string) {
 // holds exactly the canvas the plan predicted.
 func lastRunStageRecord(records []store.ScheduleStageRecord, index int) *store.ScheduleStageRecord {
 	var found *store.ScheduleStageRecord
+
 	for i := range records {
 		if records[i].Index >= index || records[i].State == store.ScheduleStateSkipped {
 			continue
 		}
+
 		if found == nil || records[i].Index > found.Index {
 			found = &records[i]
 		}
 	}
+
 	return found
 }

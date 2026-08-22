@@ -1,0 +1,40 @@
+name: ci-lint
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # only-new-issues diffs against the merge base, which needs history.
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Download modules
+        run: go mod download
+      - name: Generate templ output
+        # The linter type-checks internal/ui, so the generated siblings of the
+        # .templ sources have to exist even though they are excluded from
+        # reporting. ci-generation.yml is what verifies they are committed.
+        run: go tool templ generate
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          # Keep in step with GOLANGCI_VERSION in the justfile.
+          version: v2.13.1
+          args: --config ./.golangci.toml --timeout 10m
+          # The `default = all` preset lands on a large pre-existing backlog, so
+          # the gate only reports issues introduced by the pull request. Drop
+          # this once `just fix` plus manual cleanup has emptied the backlog,
+          # and add `lint` to the release job's needs list in ci.yml.
+          only-new-issues: true

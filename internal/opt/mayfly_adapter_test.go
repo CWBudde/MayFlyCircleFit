@@ -10,12 +10,13 @@ import (
 	"testing"
 )
 
-// Sphere function: f(x) = sum(x_i^2), minimum at origin
+// Sphere function: f(x) = sum(x_i^2), minimum at origin.
 func sphere(x []float64) float64 {
 	var sum float64
 	for _, v := range x {
 		sum += v * v
 	}
+
 	return sum
 }
 
@@ -23,22 +24,27 @@ func TestMayflyAdapterLifecycleProgressAndCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	optimizer := NewMayfly(100, 20, 42).(*MayflyAdapter)
 	var updates []Progress
+
 	result, err := optimizer.RunContext(ctx, Problem{
 		Eval: sphere, Lower: []float64{-10, -10}, Upper: []float64{10, 10}, Dim: 2,
 	}, RunOptions{Observer: func(progress Progress) {
 		updates = append(updates, progress)
 		progress.BestParams[0] = 999
+
 		cancel()
 	}})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("RunContext error = %v, want context.Canceled", err)
 	}
+
 	if result.Termination != TerminationCancelled || result.Iterations != 1 || result.Evaluations == 0 {
 		t.Fatalf("unexpected cancelled result: %+v", result)
 	}
+
 	if len(updates) != 1 {
 		t.Fatalf("observer updates = %d, want 1", len(updates))
 	}
+
 	if len(result.BestParams) == 0 || result.BestParams[0] == 999 {
 		t.Fatal("observer received a mutable optimizer snapshot")
 	}
@@ -48,11 +54,13 @@ func TestMayflyAdapterRepairsEvaluationsProgressAndResult(t *testing.T) {
 	const repairedValue = 0.75
 	optimizer := NewMayfly(2, 20, 42).(*MayflyAdapter)
 	observations := 0
+
 	result, err := optimizer.RunContext(context.Background(), Problem{
 		Eval: func(params []float64) float64 {
 			if params[0] != repairedValue {
 				t.Fatalf("evaluated parameter = %g, want repaired value %g", params[0], repairedValue)
 			}
+
 			return params[0]
 		},
 		Repair: func(params []float64) { params[0] = repairedValue },
@@ -61,6 +69,7 @@ func TestMayflyAdapterRepairsEvaluationsProgressAndResult(t *testing.T) {
 		Dim:    1,
 	}, RunOptions{Observer: func(progress Progress) {
 		observations++
+
 		if len(progress.BestParams) != 1 || progress.BestParams[0] != repairedValue {
 			t.Fatalf("progress params = %v, want [%g]", progress.BestParams, repairedValue)
 		}
@@ -68,9 +77,11 @@ func TestMayflyAdapterRepairsEvaluationsProgressAndResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if observations == 0 {
 		t.Fatal("observer received no progress")
 	}
+
 	if len(result.BestParams) != 1 || result.BestParams[0] != repairedValue {
 		t.Fatalf("result params = %v, want [%g]", result.BestParams, repairedValue)
 	}
@@ -79,6 +90,7 @@ func TestMayflyAdapterRepairsEvaluationsProgressAndResult(t *testing.T) {
 func TestMayflyAdapterMapsProgressWithoutChangingLocalResult(t *testing.T) {
 	optimizer := NewMayfly(2, 20, 42).(*MayflyAdapter)
 	var mapped Progress
+
 	result, err := optimizer.RunContext(context.Background(), Problem{
 		Eval: sphere, Lower: []float64{-1}, Upper: []float64{1}, Dim: 1,
 	}, RunOptions{
@@ -91,9 +103,11 @@ func TestMayflyAdapterMapsProgressWithoutChangingLocalResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(mapped.BestParams) != 2 || mapped.BestParams[0] != 7 {
 		t.Fatalf("mapped progress params = %v, want staged prefix", mapped.BestParams)
 	}
+
 	if len(result.BestParams) != 1 {
 		t.Fatalf("optimizer-local result params = %v, want one dimension", result.BestParams)
 	}
@@ -103,19 +117,23 @@ func TestMayflyAdapterEvaluatesInequalitiesOnCanonicalParameters(t *testing.T) {
 	const repairedValue = 7.5
 	var constraintCalls int
 	optimizer := NewMayfly(2, 20, 42).(*MayflyAdapter)
+
 	result, err := optimizer.RunContext(context.Background(), Problem{
 		Eval: func(params []float64) float64 {
 			if params[0] != repairedValue {
 				t.Fatalf("objective parameter = %g, want repaired value %g", params[0], repairedValue)
 			}
+
 			return params[0] * params[0]
 		},
 		Repair: func(params []float64) { params[0] = repairedValue },
 		Inequalities: []InequalityConstraint{func(params []float64) float64 {
 			constraintCalls++
+
 			if params[0] != repairedValue {
 				t.Fatalf("constraint parameter = %g, want repaired value %g", params[0], repairedValue)
 			}
+
 			return 7 - params[0]
 		}},
 		Lower: []float64{0},
@@ -125,9 +143,11 @@ func TestMayflyAdapterEvaluatesInequalitiesOnCanonicalParameters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if constraintCalls == 0 {
 		t.Fatal("inequality constraint was not evaluated")
 	}
+
 	if result.BestParams[0] != repairedValue || result.BestCost != repairedValue*repairedValue {
 		t.Fatalf("result = (%v, %g), want ([%g], %g)",
 			result.BestParams, result.BestCost, repairedValue, repairedValue*repairedValue)
@@ -147,27 +167,33 @@ func TestMayflyAdapterUsesFeasibilityAndReportsRawCost(t *testing.T) {
 		Dim:   1,
 	}
 	optimizer := NewMayfly(20, 20, 42).(*MayflyAdapter)
+
 	result, err := optimizer.RunContext(context.Background(), problem, RunOptions{
 		Observer: func(progress Progress) { updates = append(updates, progress) },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(updates) == 0 {
 		t.Fatal("observer received no progress")
 	}
+
 	for _, progress := range updates {
 		if progress.BestParams[0] < minimum {
 			t.Fatalf("progress exposed infeasible best: %+v", progress)
 		}
+
 		wantCost := progress.BestParams[0] * progress.BestParams[0]
 		if math.Abs(progress.BestCost-wantCost) > 1e-12 {
 			t.Fatalf("progress cost = %g, want raw objective %g", progress.BestCost, wantCost)
 		}
 	}
+
 	if result.BestParams[0] < minimum {
 		t.Fatalf("result params = %v, want a feasible value >= %g", result.BestParams, minimum)
 	}
+
 	wantCost := result.BestParams[0] * result.BestParams[0]
 	if math.Abs(result.BestCost-wantCost) > 1e-12 {
 		t.Fatalf("result cost = %g, want raw objective %g", result.BestCost, wantCost)
@@ -186,15 +212,18 @@ func TestMayflyAdapterFeasibleResultReplacesCheaperInfeasibleResumeSeed(t *testi
 		Dim:   1,
 	}
 	optimizer := NewMayfly(5, 20, 42).(*MayflyAdapter)
+
 	result, err := optimizer.RunContext(context.Background(), problem, RunOptions{
 		Initial: &Candidate{Params: []float64{0}, Cost: 0},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if result.BestParams[0] < minimum {
 		t.Fatalf("result retained infeasible resume seed: %+v", result)
 	}
+
 	if result.BestCost != result.BestParams[0] {
 		t.Fatalf("result cost = %g, want raw objective %g", result.BestCost, result.BestParams[0])
 	}
@@ -202,6 +231,7 @@ func TestMayflyAdapterFeasibleResultReplacesCheaperInfeasibleResumeSeed(t *testi
 
 func TestMayflyAdapterRejectsNilInequality(t *testing.T) {
 	optimizer := NewMayfly(1, 20, 42).(*MayflyAdapter)
+
 	_, err := optimizer.RunContext(context.Background(), Problem{
 		Eval:         sphere,
 		Inequalities: []InequalityConstraint{nil},
@@ -221,21 +251,26 @@ func TestMayflyAdapterSeedsResumePopulationAroundBest(t *testing.T) {
 		if firstEvaluation == nil {
 			firstEvaluation = append([]float64(nil), params...)
 		}
+
 		return sphere(params)
 	}
 	optimizer := NewMayfly(1, 20, 42).(*MayflyAdapter)
+
 	result, err := optimizer.RunContext(context.Background(), Problem{
 		Eval: objective, Lower: []float64{-10, -10}, Upper: []float64{10, 10}, Dim: 2,
 	}, RunOptions{Initial: &initial, ResumeCount: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if firstEvaluation[0] != initial.Params[0] || firstEvaluation[1] != initial.Params[1] {
 		t.Fatalf("first population member = %v, want exact saved best %v", firstEvaluation, initial.Params)
 	}
+
 	if result.BestCost > initial.Cost {
 		t.Fatalf("resume worsened cost: got %v, initial %v", result.BestCost, initial.Cost)
 	}
+
 	if result.Evaluations == 0 || result.Iterations != 1 {
 		t.Fatalf("missing measured work: %+v", result)
 	}
@@ -246,6 +281,7 @@ func TestMayflyAdapterMixesIncumbentAndAlternativeSeedPopulations(t *testing.T) 
 	alternative := Candidate{Params: []float64{4, -1}, Cost: 17}
 	var evaluations [][]float64
 	optimizer := NewMayfly(1, 20, 42).(*MayflyAdapter)
+
 	result, err := optimizer.RunContext(context.Background(), Problem{
 		Eval: func(params []float64) float64 {
 			evaluations = append(evaluations, append([]float64(nil), params...))
@@ -259,9 +295,11 @@ func TestMayflyAdapterMixesIncumbentAndAlternativeSeedPopulations(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(evaluations) < 2 || !reflect.DeepEqual(evaluations[0], incumbent.Params) || !reflect.DeepEqual(evaluations[1], alternative.Params) {
 		t.Fatalf("first mixed seeds = %v, want incumbent %v then alternative %v", evaluations[:min(2, len(evaluations))], incumbent.Params, alternative.Params)
 	}
+
 	if result.BestCost > incumbent.Cost {
 		t.Fatalf("mixed continuation lost incumbent: %+v", result)
 	}
@@ -272,6 +310,7 @@ func TestContinuationSeedIsStableAndAdvances(t *testing.T) {
 	if first != continuationSeed(42, 1) {
 		t.Fatal("continuation seed is not deterministic")
 	}
+
 	if first == continuationSeed(42, 2) || first == 42 {
 		t.Fatal("continuation seed did not advance")
 	}
@@ -284,6 +323,7 @@ func TestSeededPopulationHonorsLocalContinuationProfile(t *testing.T) {
 		CoordinateRate: 0.1,
 		MaxVelocity:    0.02,
 	}
+
 	males, females := seededPopulationFromCandidates(
 		[][]float64{{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}},
 		20,
@@ -293,17 +333,21 @@ func TestSeededPopulationHonorsLocalContinuationProfile(t *testing.T) {
 	if len(males) != 20 || len(females) != 20 {
 		t.Fatalf("local seeded populations = %d/%d, want 20/20", len(males), len(females))
 	}
+
 	if !reflect.DeepEqual(males[0], []float64{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}) {
 		t.Fatalf("exact incumbent seed = %v", males[0])
 	}
+
 	for populationIndex, population := range [][][]float64{males[1:], females} {
 		for seedIndex, seed := range population {
 			changed := 0
+
 			for _, value := range seed {
 				if value != 0.5 {
 					changed++
 				}
 			}
+
 			if changed == 0 || changed == len(seed) {
 				t.Fatalf("population %d seed %d changed %d coordinates, want a non-empty sparse perturbation", populationIndex, seedIndex, changed)
 			}
@@ -313,6 +357,7 @@ func TestSeededPopulationHonorsLocalContinuationProfile(t *testing.T) {
 
 func TestMayflyAdapterRejectsInvalidContinuationProfile(t *testing.T) {
 	optimizer := NewMayfly(1, 20, 42).(*MayflyAdapter)
+
 	_, err := optimizer.RunContext(context.Background(), Problem{
 		Eval: sphere, Lower: []float64{-1}, Upper: []float64{1}, Dim: 1,
 	}, RunOptions{
@@ -329,8 +374,9 @@ func TestMayflyAdapterOnSphere(t *testing.T) {
 
 	dim := 3
 	lower := make([]float64, dim)
+
 	upper := make([]float64, dim)
-	for i := 0; i < dim; i++ {
+	for i := range dim {
 		lower[i] = -10
 		upper[i] = 10
 	}
@@ -374,8 +420,9 @@ func TestMayflyAdapterDeterministic(t *testing.T) {
 func TestMayflyAdapter_RunWithInitial(t *testing.T) {
 	dim := 3
 	lower := make([]float64, dim)
+
 	upper := make([]float64, dim)
-	for i := 0; i < dim; i++ {
+	for i := range dim {
 		lower[i] = -10
 		upper[i] = 10
 	}
@@ -386,6 +433,7 @@ func TestMayflyAdapter_RunWithInitial(t *testing.T) {
 
 	// Cast to ResumableOptimizer
 	optimizer := NewMayfly(100, 20, 42)
+
 	resumable, ok := optimizer.(ResumableOptimizer)
 	if !ok {
 		t.Fatal("MayflyAdapter should implement ResumableOptimizer")
@@ -436,8 +484,9 @@ func TestMayflyAdapter_RunWithInitial_AlreadyOptimal(t *testing.T) {
 func TestMayflyAdapter_RunWithInitial_VsFromScratch(t *testing.T) {
 	dim := 3
 	lower := make([]float64, dim)
+
 	upper := make([]float64, dim)
-	for i := 0; i < dim; i++ {
+	for i := range dim {
 		lower[i] = -10
 		upper[i] = 10
 	}
@@ -509,10 +558,12 @@ func TestNewMayflyVariantSelectsVariant(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewMayflyVariant(%q) error = %v", test.name, err)
 			}
+
 			adapter, ok := optimizer.(*MayflyAdapter)
 			if !ok {
 				t.Fatalf("NewMayflyVariant returned %T, want *MayflyAdapter", optimizer)
 			}
+
 			if adapter.variant != test.want {
 				t.Fatalf("variant = %q, want %q", adapter.variant, test.want)
 			}
@@ -525,6 +576,7 @@ func TestNewMayflyVariantRejectsUnknownName(t *testing.T) {
 	if !errors.Is(err, ErrUnknownVariant) {
 		t.Fatalf("error = %v, want ErrUnknownVariant", err)
 	}
+
 	if optimizer != nil {
 		t.Fatalf("optimizer = %v, want nil on error", optimizer)
 	}
@@ -552,14 +604,17 @@ func TestNewMayflyVariantMatchesNamedConstructors(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewMayflyVariant(%q) error = %v", test.name, err)
 			}
+
 			want, err := test.named.(LifecycleOptimizer).RunContext(context.Background(), problem, RunOptions{})
 			if err != nil {
 				t.Fatalf("named constructor run error = %v", err)
 			}
+
 			got, err := byName.(LifecycleOptimizer).RunContext(context.Background(), problem, RunOptions{})
 			if err != nil {
 				t.Fatalf("variant factory run error = %v", err)
 			}
+
 			if got.BestCost != want.BestCost || !slices.Equal(got.BestParams, want.BestParams) {
 				t.Fatalf("variant %q result = (%v, %v), want (%v, %v)",
 					test.name, got.BestParams, got.BestCost, want.BestParams, want.BestCost)
@@ -579,6 +634,7 @@ func runAdapter(t *testing.T, optimizer Optimizer) Result {
 	if err != nil {
 		t.Fatalf("RunContext() error = %v", err)
 	}
+
 	return result
 }
 
@@ -594,6 +650,7 @@ func TestMayflyAdapterDefaultsAreUnchanged(t *testing.T) {
 		t.Fatalf("zero options changed the result: got (%v, %v), want (%v, %v)",
 			withZeroOptions.BestParams, withZeroOptions.BestCost, want.BestParams, want.BestCost)
 	}
+
 	if withZeroOptions.Iterations != want.Iterations || withZeroOptions.Evaluations != want.Evaluations {
 		t.Fatalf("zero options changed measured work: got %d/%d, want %d/%d",
 			withZeroOptions.Iterations, withZeroOptions.Evaluations, want.Iterations, want.Evaluations)
@@ -603,6 +660,7 @@ func TestMayflyAdapterDefaultsAreUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMayflyVariant() error = %v", err)
 	}
+
 	if got := runAdapter(t, viaVariant); got.BestCost != want.BestCost || !slices.Equal(got.BestParams, want.BestParams) {
 		t.Fatalf("variant factory changed the result: got (%v, %v), want (%v, %v)",
 			got.BestParams, got.BestCost, want.BestParams, want.BestCost)
@@ -611,6 +669,7 @@ func TestMayflyAdapterDefaultsAreUnchanged(t *testing.T) {
 	if want.Termination != TerminationCompleted {
 		t.Fatalf("Termination = %q, want %q", want.Termination, TerminationCompleted)
 	}
+
 	if want.Iterations != 40 {
 		t.Fatalf("Iterations = %d, want the full budget of 40", want.Iterations)
 	}
@@ -622,9 +681,11 @@ func TestMayflyAdapterStopsOnTargetCost(t *testing.T) {
 	if result.Termination != TerminationTargetCost {
 		t.Fatalf("Termination = %q, want %q", result.Termination, TerminationTargetCost)
 	}
+
 	if result.Iterations >= 500 {
 		t.Fatalf("Iterations = %d, want fewer than the 500 budget", result.Iterations)
 	}
+
 	if result.BestCost > 1e-2 {
 		t.Fatalf("BestCost = %v, want at or below the 0.01 target", result.BestCost)
 	}
@@ -633,6 +694,7 @@ func TestMayflyAdapterStopsOnTargetCost(t *testing.T) {
 func TestMayflyAdapterStopsOnStagnation(t *testing.T) {
 	constant := func([]float64) float64 { return 1 }
 	optimizer := NewMayfly(100, 20, 42, WithEarlyStop(Stop{StagnationIters: 3, MinIters: 1}))
+
 	result, err := optimizer.(LifecycleOptimizer).RunContext(context.Background(), Problem{
 		Eval: constant, Lower: []float64{-10, -10}, Upper: []float64{10, 10}, Dim: 2,
 	}, RunOptions{})
@@ -643,6 +705,7 @@ func TestMayflyAdapterStopsOnStagnation(t *testing.T) {
 	if result.Termination != TerminationStagnation {
 		t.Fatalf("Termination = %q, want %q", result.Termination, TerminationStagnation)
 	}
+
 	if result.Iterations >= 100 {
 		t.Fatalf("Iterations = %d, want far fewer than the 100 budget", result.Iterations)
 	}
@@ -652,6 +715,7 @@ func TestMayflyAdapterMinItersDelaysStop(t *testing.T) {
 	const minIters = 20
 	constant := func([]float64) float64 { return 1 }
 	optimizer := NewMayfly(100, 20, 42, WithEarlyStop(Stop{StagnationIters: 1, MinIters: minIters}))
+
 	result, err := optimizer.(LifecycleOptimizer).RunContext(context.Background(), Problem{
 		Eval: constant, Lower: []float64{-10, -10}, Upper: []float64{10, 10}, Dim: 2,
 	}, RunOptions{})
@@ -672,6 +736,7 @@ func TestMayflyAdapterTargetCostUsesObjectiveUnits(t *testing.T) {
 	// anything were to rescale them.
 	constant := func([]float64) float64 { return 500 }
 	optimizer := NewMayfly(15, 20, 42, WithEarlyStop(Stop{TargetCost: 100, MinIters: 1}))
+
 	result, err := optimizer.(LifecycleOptimizer).RunContext(context.Background(), Problem{
 		Eval: constant, Lower: []float64{-1000, -1000}, Upper: []float64{1000, 1000}, Dim: 2,
 	}, RunOptions{})
@@ -683,6 +748,7 @@ func TestMayflyAdapterTargetCostUsesObjectiveUnits(t *testing.T) {
 		t.Fatalf("Termination = %q, want %q: a cost of 500 must not satisfy a target of 100",
 			result.Termination, TerminationCompleted)
 	}
+
 	if result.Iterations != 15 {
 		t.Fatalf("Iterations = %d, want the full budget of 15", result.Iterations)
 	}
@@ -701,6 +767,7 @@ func TestMayflyAdapterClampsMinItersToMaxIterations(t *testing.T) {
 	if result.Iterations != 10 {
 		t.Fatalf("Iterations = %d, want the full budget of 10", result.Iterations)
 	}
+
 	if result.Termination == TerminationCancelled {
 		t.Fatalf("Termination = %q, want a non-cancelled reason", result.Termination)
 	}

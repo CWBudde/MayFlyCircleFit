@@ -24,6 +24,7 @@ func BenchmarkSSDDispatchOverhead(b *testing.B) {
 		for b.Loop() {
 			result = ssdDispatchBenchmarkTarget(a, other, 4, 1, 1)
 		}
+
 		ssdDispatchBenchmarkSink = result
 	})
 
@@ -32,6 +33,7 @@ func BenchmarkSSDDispatchOverhead(b *testing.B) {
 		for b.Loop() {
 			result = ssdDispatchBenchmarkFunc(a, other, 4, 1, 1)
 		}
+
 		ssdDispatchBenchmarkSink = result
 	})
 }

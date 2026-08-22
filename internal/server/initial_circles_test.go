@@ -51,24 +51,30 @@ func TestRunJobStartsFromTheAuthoredArrangement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	params, err := config.InitialCircles.ToParams()
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	seededCost := renderer.NewCPURenderer(ref, config.Circles).Cost(params)
 
 	jm := NewJobManager()
+
 	job := jm.CreateJob(app.DefaultProject, config)
 	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	completed, ok := jm.GetJob(job.ID)
 	if !ok {
 		t.Fatal("completed job not found")
 	}
+
 	if completed.State != StateCompleted {
 		t.Fatalf("state = %s, want completed", completed.State)
 	}
+
 	if completed.BestCost > seededCost {
 		t.Fatalf("best cost = %f, want no worse than the seeded %f", completed.BestCost, seededCost)
 	}
@@ -85,14 +91,17 @@ func TestRunJobStartsFromTheAuthoredArrangement(t *testing.T) {
 	// something rather than merely hold.
 	unseeded := config
 	unseeded.InitialCircles = nil
+
 	control := jm.CreateJob(app.DefaultProject, unseeded)
 	if err := runJob(context.Background(), jm, nil, control.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	finished, ok := jm.GetJob(control.ID)
 	if !ok {
 		t.Fatal("control job not found")
 	}
+
 	if finished.BestCost <= completed.BestCost {
 		t.Fatalf("unseeded cost = %f beat the seeded %f; the arrangement is not being used",
 			finished.BestCost, completed.BestCost)
@@ -118,6 +127,7 @@ func TestRunJobPrefersAParentsParametersOverAnAuthoredArrangement(t *testing.T) 
 	parentCost := renderer.NewCPURenderer(ref, config.Circles).Cost(parentParams)
 
 	jm := NewJobManager()
+
 	job := jm.CreateJob(app.DefaultProject, config)
 	if err := jm.UpdateJob(job.ID, func(live *Job) {
 		updateBestResult(live, parentParams, parentCost)
@@ -125,13 +135,16 @@ func TestRunJobPrefersAParentsParametersOverAnAuthoredArrangement(t *testing.T) 
 	}); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	completed, ok := jm.GetJob(job.ID)
 	if !ok {
 		t.Fatal("completed job not found")
 	}
+
 	if math.Abs(completed.InitialCost-parentCost) > 1e-9 {
 		t.Fatalf("initial cost = %f, want the parent's %f", completed.InitialCost, parentCost)
 	}
@@ -147,14 +160,19 @@ func TestRunJobRefusesAnArrangementTheCanvasCannotHold(t *testing.T) {
 	config.InitialCircles = app.CircleSpecs{{X: 5000, Y: 25, R: 5, Color: "#ff0000", Opacity: 1}}
 
 	jm := NewJobManager()
+
 	job := jm.CreateJob(app.DefaultProject, config)
-	if err := runJob(context.Background(), jm, nil, job.ID); err == nil {
+
+	err := runJob(context.Background(), jm, nil, job.ID)
+	if err == nil {
 		t.Fatal("runJob accepted a circle outside the canvas bounds")
 	}
+
 	failed, ok := jm.GetJob(job.ID)
 	if !ok {
 		t.Fatal("failed job not found")
 	}
+
 	if failed.State != StateFailed {
 		t.Fatalf("state = %s, want failed", failed.State)
 	}
@@ -184,23 +202,28 @@ func TestSeededBatchRunsWhenTheBatchSizeIsDefaulted(t *testing.T) {
 	for i := range config.InitialCircles {
 		config.InitialCircles[i] = app.CircleSpec{X: 25, Y: 25, R: 5, Color: "#ff0000"}
 	}
+
 	normalized, err := app.Normalize(config)
 	if err != nil {
 		t.Fatalf("Normalize() = %v, want nil", err)
 	}
+
 	if normalized.BatchSize != normalized.Circles {
 		t.Fatalf("batchSize = %d, want %d", normalized.BatchSize, normalized.Circles)
 	}
 
 	jm := NewJobManager()
+
 	job := jm.CreateJob(app.DefaultProject, normalized)
 	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
 		t.Fatalf("runJob() = %v, want a seeded batch run to complete", err)
 	}
+
 	completed, ok := jm.GetJob(job.ID)
 	if !ok {
 		t.Fatal("job not found")
 	}
+
 	if completed.State != StateCompleted {
 		t.Fatalf("state = %s (%s), want completed", completed.State, completed.Error)
 	}
@@ -215,10 +238,12 @@ func TestExtendClearsTheAuthoredArrangement(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "ref.png")
 	createSimpleTestImage(t, imgPath)
+
 	fsStore, err := store.NewFSStore(filepath.Join(tmpDir, "data"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	server := NewServerWithOptions(":0", fsStore, ServerOptions{InputRoots: []string{tmpDir}})
 	shutdownTestServer(t, server)
 
@@ -233,46 +258,58 @@ func TestExtendClearsTheAuthoredArrangement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	source := server.jobManager.CreateJob(app.DefaultProject, config)
 	params := []float64{
 		1, 1, 1, 1, 0, 0, 1,
 		2, 2, 1, 0, 1, 0, 1,
 	}
+
 	if err := server.jobManager.StartJob(source.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := server.jobManager.CompleteJob(source.ID, 8000, 900000, params, 600, 1000, "completed"); err != nil {
 		t.Fatal(err)
 	}
+
 	checkpoint := store.NewCheckpoint(source.ID, params, 600, 1000, 8000, config)
+
 	checkpoint.Evaluations = 900000
 	if err := fsStore.SaveCheckpoint(source.ID, checkpoint); err != nil {
 		t.Fatal(err)
 	}
+
 	server.cancel()
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+source.ID+"/extend",
 		strings.NewReader(`{"additionalCircles":2}`))
 	request.Header.Set("Content-Type", "application/json")
+
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
+
 	if response.Code != http.StatusCreated {
 		t.Fatalf("extend status = %d body=%s", response.Code, response.Body.String())
 	}
+
 	var payload struct {
 		JobID string `json:"jobId"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
 		t.Fatal(err)
 	}
+
 	continuation, ok := server.jobManager.GetJob(payload.JobID)
 	if !ok {
 		t.Fatal("extension continuation job not found")
 	}
+
 	if len(continuation.Config.InitialCircles) != 0 {
 		t.Fatalf("continuation carries %d authored circles, want none",
 			len(continuation.Config.InitialCircles))
 	}
+
 	if continuation.Config.Circles != 4 {
 		t.Fatalf("continuation circles = %d, want 4", continuation.Config.Circles)
 	}
@@ -291,10 +328,12 @@ func TestJobConfigsDoNotShareAuthoredCircles(t *testing.T) {
 
 	// The caller's own slice must not be the job's.
 	config.InitialCircles[0].R = 999
+
 	fetched, ok := jm.GetJob(created.ID)
 	if !ok {
 		t.Fatal("job not found")
 	}
+
 	if fetched.Config.InitialCircles[0].R == 999 {
 		t.Fatal("the manager aliased the caller's arrangement")
 	}
@@ -302,11 +341,13 @@ func TestJobConfigsDoNotShareAuthoredCircles(t *testing.T) {
 	// Neither must one clone's slice be another's.
 	created.Config.InitialCircles[0].R = 777
 	fetched.Config.InitialCircles[0].R = 555
+
 	again, _ := jm.GetJob(created.ID)
 	if again.Config.InitialCircles[0].R != seededJobConfig(imgPath).InitialCircles[0].R {
 		t.Fatalf("radius = %v, want the stored arrangement unchanged",
 			again.Config.InitialCircles[0].R)
 	}
+
 	if listed := jm.ListJobs(); len(listed) == 1 &&
 		listed[0].Config.InitialCircles[0].R != seededJobConfig(imgPath).InitialCircles[0].R {
 		t.Fatal("ListJobs handed out the live arrangement")

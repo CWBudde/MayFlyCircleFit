@@ -32,9 +32,11 @@ func deltaSSDSpan(candidate, base, reference []byte, pixels int) int64 {
 	if deltaSSDKernel == fit.TierAVX2 && pixels >= 8 {
 		return deltaSSDSpanAVX2(&candidate[0], &base[0], &reference[0], pixels)
 	}
+
 	if deltaSSDKernel != fit.TierScalar && pixels >= 4 {
 		return deltaSSDSpanSSE2(&candidate[0], &base[0], &reference[0], pixels)
 	}
+
 	return deltaSSDSpanScalar(candidate, base, reference, pixels)
 }
 
@@ -67,6 +69,7 @@ func deltaSSDSpanSSE2(candidate, base, reference *byte, pixels int) int64 {
 	if pixels > deltaSSDSSE2MaxPixels {
 		return deltaSSDSpanSSE2Chunked(candidate, base, reference, pixels)
 	}
+
 	return deltaSSDSpanSSE2Kernel(candidate, base, reference, pixels)
 }
 
@@ -74,6 +77,7 @@ func deltaSSDSpanSSE2(candidate, base, reference *byte, pixels int) int64 {
 // can hold, by splitting them and summing the parts in int64.
 func deltaSSDSpanSSE2Chunked(candidate, base, reference *byte, pixels int) int64 {
 	var total int64
+
 	for pixels > 0 {
 		chunk := min(pixels, deltaSSDSSE2MaxPixels)
 		total += deltaSSDSpanSSE2Kernel(candidate, base, reference, chunk)
@@ -82,11 +86,13 @@ func deltaSSDSpanSSE2Chunked(candidate, base, reference *byte, pixels int) int64
 		if pixels == 0 {
 			break
 		}
+
 		advance := chunk * 4
 		candidate = (*byte)(unsafe.Add(unsafe.Pointer(candidate), advance))
 		base = (*byte)(unsafe.Add(unsafe.Pointer(base), advance))
 		reference = (*byte)(unsafe.Add(unsafe.Pointer(reference), advance))
 	}
+
 	return total
 }
 

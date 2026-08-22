@@ -5,7 +5,7 @@ import (
 	"math"
 )
 
-// ConvergenceConfig defines parameters for detecting optimization convergence
+// ConvergenceConfig defines parameters for detecting optimization convergence.
 type ConvergenceConfig struct {
 	// Enabled controls whether convergence detection is active
 	Enabled bool
@@ -21,7 +21,7 @@ type ConvergenceConfig struct {
 	Threshold float64
 }
 
-// DefaultConvergenceConfig returns sensible defaults for convergence detection
+// DefaultConvergenceConfig returns sensible defaults for convergence detection.
 func DefaultConvergenceConfig() ConvergenceConfig {
 	return ConvergenceConfig{
 		Enabled:   true,
@@ -30,14 +30,14 @@ func DefaultConvergenceConfig() ConvergenceConfig {
 	}
 }
 
-// DisabledConvergenceConfig returns a config with convergence detection disabled
+// DisabledConvergenceConfig returns a config with convergence detection disabled.
 func DisabledConvergenceConfig() ConvergenceConfig {
 	return ConvergenceConfig{
 		Enabled: false,
 	}
 }
 
-// ConvergenceTracker tracks cost history and detects when optimization has converged
+// ConvergenceTracker tracks cost history and detects when optimization has converged.
 type ConvergenceTracker struct {
 	config          ConvergenceConfig
 	costHistory     []float64
@@ -46,7 +46,7 @@ type ConvergenceTracker struct {
 	staleCount      int     // Number of iterations without significant improvement
 }
 
-// NewConvergenceTracker creates a new convergence tracker with the given config
+// NewConvergenceTracker creates a new convergence tracker with the given config.
 func NewConvergenceTracker(config ConvergenceConfig) *ConvergenceTracker {
 	return &ConvergenceTracker{
 		config:          config,
@@ -57,7 +57,7 @@ func NewConvergenceTracker(config ConvergenceConfig) *ConvergenceTracker {
 	}
 }
 
-// Update records a new cost value and returns true if convergence is detected
+// Update records a new cost value and returns true if convergence is detected.
 func (c *ConvergenceTracker) Update(cost float64) bool {
 	if !c.config.Enabled {
 		return false // Never converge if disabled
@@ -106,6 +106,7 @@ func (c *ConvergenceTracker) Update(cost float64) bool {
 				"patience", c.config.Patience,
 				"best_cost", c.bestCost,
 			)
+
 			return true
 		}
 	}
@@ -113,22 +114,22 @@ func (c *ConvergenceTracker) Update(cost float64) bool {
 	return false
 }
 
-// BestCost returns the best cost seen so far
+// BestCost returns the best cost seen so far.
 func (c *ConvergenceTracker) BestCost() float64 {
 	return c.bestCost
 }
 
-// History returns the full cost history
+// History returns the full cost history.
 func (c *ConvergenceTracker) History() []float64 {
 	return append([]float64{}, c.costHistory...) // Return copy
 }
 
-// StaleCount returns the current number of iterations without improvement
+// StaleCount returns the current number of iterations without improvement.
 func (c *ConvergenceTracker) StaleCount() int {
 	return c.staleCount
 }
 
-// Reset clears the tracker's state
+// Reset clears the tracker's state.
 func (c *ConvergenceTracker) Reset() {
 	c.costHistory = []float64{}
 	c.bestCost = math.Inf(1)

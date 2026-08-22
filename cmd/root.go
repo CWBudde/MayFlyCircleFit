@@ -25,6 +25,7 @@ with colored circles, featuring CPU/GPU backends and live visualization.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Setup logger
 		var level slog.Level
+
 		switch logLevel {
 		case "debug":
 			level = slog.LevelDebug
@@ -42,6 +43,7 @@ with colored circles, featuring CPU/GPU backends and live visualization.`,
 		handler := slog.NewJSONHandler(os.Stdout, opts)
 		logger = slog.New(handler)
 		slog.SetDefault(logger)
+
 		return nil
 	},
 }

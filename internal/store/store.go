@@ -89,9 +89,11 @@ func (e *NotFoundError) Error() string {
 	if kind == "" {
 		kind = "checkpoint"
 	}
+
 	if e.JobID != "" {
 		return kind + " not found: " + e.JobID
 	}
+
 	return kind + " not found"
 }
 

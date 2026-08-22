@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
@@ -19,6 +19,7 @@ import (
 // lives here rather than in app.JobConfig.
 type createJobRequest struct {
 	app.JobConfig
+
 	Project string `json:"project,omitempty"`
 	// Project stays a string here because this is the raw decoded request body.
 	// resolveRequestedProject performs the one conversion to app.Project,
@@ -76,12 +77,16 @@ func (s *Server) ensureProject(slug app.Project) (app.Project, error) {
 	if slug == "" || slug == app.DefaultProject {
 		return app.DefaultProject, nil
 	}
-	if err := app.ValidateProjectSlug(slug); err != nil {
+
+	err := app.ValidateProjectSlug(slug)
+	if err != nil {
 		return "", err
 	}
+
 	if _, err := s.projects.GetOrCreate(slug); err != nil {
 		return "", &projectStoreError{slug: slug, err: err}
 	}
+
 	return slug, nil
 }
 
@@ -93,8 +98,10 @@ func (s *Server) writeProjectError(w http.ResponseWriter, slug app.Project, err 
 	if errors.As(err, &storeErr) {
 		slog.Error("Unable to prepare project store", "project", string(slug), "error", storeErr.err)
 		writeAPIError(w, http.StatusInternalServerError, "project_unavailable", "the project store is unavailable")
+
 		return
 	}
+
 	writeAPIError(w, http.StatusBadRequest, "invalid_project", err.Error())
 }
 
@@ -106,6 +113,7 @@ func projectErrorMessage(slug app.Project, err error) string {
 		slog.Error("Unable to prepare project store", "project", string(slug), "error", storeErr.err)
 		return "The project store is unavailable"
 	}
+
 	return err.Error()
 }
 
@@ -128,6 +136,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	for _, slug := range slugs {
 		seen[slug] = true
 	}
+
 	for slug := range counts {
 		if !seen[slug] {
 			seen[slug] = true
@@ -136,7 +145,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	}
 	// Slugs() is sorted, but the union above appends in Go map order, so the
 	// response is only stable once everything is sorted together.
-	sort.Slice(slugs, func(i, j int) bool { return slugs[i] < slugs[j] })
+	slices.Sort(slugs)
 
 	response := make([]projectResponse, 0, len(slugs))
 	for _, slug := range slugs {
@@ -148,7 +157,9 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
 		slog.Error("Failed to encode projects response", "error", err)
 	}
 }

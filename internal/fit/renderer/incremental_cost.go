@@ -27,6 +27,7 @@ func incrementalCostWorthwhile(dirty *dirtySpanSet, totalPixels int) bool {
 	if pixels == 0 {
 		return true
 	}
+
 	if totalPixels < incrementalSmallImagePixels {
 		// At small dimensions the fixed per-span and dispatch costs are a larger
 		// share of a full AVX2 replay. Native 64x64 pipeline measurements put the
@@ -34,7 +35,9 @@ func incrementalCostWorthwhile(dirty *dirtySpanSet, totalPixels int) bool {
 		estimatedWork := uint64(pixels)*6 + uint64(spans)*16
 		return estimatedWork <= uint64(totalPixels)
 	}
+
 	estimatedWork := uint64(pixels)*3 + uint64(spans)*16
+
 	return estimatedWork <= uint64(totalPixels)
 }
 
@@ -48,19 +51,23 @@ func (r *CPURenderer) incrementalCandidateWorthwhile(params []float64) bool {
 	if r.width*r.height < incrementalSmallImagePixels {
 		maxAreaFraction = 0.15
 	}
+
 	limit := float64(r.width*r.height) * maxAreaFraction
 	pv := fit.ParamVector{Data: params, K: r.k, Width: r.width, Height: r.height}
 	area := 0.0
-	for i := 0; i < r.k; i++ {
+
+	for i := range r.k {
 		circle := pv.DecodeCircle(i)
 		if circle.Opacity == 0 || circle.R <= 0 {
 			continue
 		}
+
 		area += math.Pi * circle.R * circle.R
 		if area > limit {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -77,14 +84,17 @@ func (r *CPURenderer) incrementalSSDTotal(rendered *image.NRGBA, dirty *dirtySpa
 	}
 
 	delta := r.incrementalSSDDeltaRows(rendered, dirty, 0, dirty.height)
+
 	return addSSDDelta(r.initialSSD, delta)
 }
 
 func (r *CPURenderer) incrementalSSDDeltaRows(rendered *image.NRGBA, dirty *dirtySpanSet, minY, maxY int) int64 {
 	var delta int64
+
 	for y := minY; y < maxY; y++ {
 		referenceRow := y * r.reference.Stride
 		canvasRow := y * rendered.Stride
+
 		initialRow := y * r.width * 4
 		for _, span := range dirty.row(y) {
 			canvasOffset := canvasRow + span.start*4
@@ -98,6 +108,7 @@ func (r *CPURenderer) incrementalSSDDeltaRows(rendered *image.NRGBA, dirty *dirt
 			)
 		}
 	}
+
 	return delta
 }
 
@@ -107,11 +118,14 @@ func addSSDDelta(initialSSD uint64, delta int64) (uint64, bool) {
 		if decrease > initialSSD {
 			return 0, false
 		}
+
 		return initialSSD - decrease, true
 	}
+
 	increase := uint64(delta)
 	if increase > ^uint64(0)-initialSSD {
 		return 0, false
 	}
+
 	return initialSSD + increase, true
 }

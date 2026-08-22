@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -117,10 +118,13 @@ type ScheduleRecord struct {
 // into the persisted document, so every later expansion — in this process or
 // after a restart — plans the same stages.
 func NewScheduleRecord(scheduleID string, document app.ScheduleDocument) (*ScheduleRecord, error) {
-	if err := document.ResolveSeed(); err != nil {
+	err := document.ResolveSeed()
+	if err != nil {
 		return nil, fmt.Errorf("resolve campaign seed: %w", err)
 	}
+
 	now := time.Now().UTC()
+
 	return &ScheduleRecord{
 		SchemaVersion: ScheduleRecordSchemaVersion,
 		ScheduleID:    scheduleID,
@@ -137,15 +141,20 @@ func (r *ScheduleRecord) Validate() error {
 	if r == nil {
 		return &ValidationError{Field: "ScheduleRecord", Reason: "cannot be nil"}
 	}
-	if err := validateScheduleID(r.ScheduleID); err != nil {
+
+	err := validateScheduleID(r.ScheduleID)
+	if err != nil {
 		return &ValidationError{Field: "scheduleID", Reason: err.Error()}
 	}
+
 	if r.SchemaVersion != ScheduleRecordSchemaVersion {
 		return &ValidationError{Field: "SchemaVersion", Reason: fmt.Sprintf("must be %d", ScheduleRecordSchemaVersion)}
 	}
+
 	if !validScheduleState(r.State) {
 		return &ValidationError{Field: "State", Reason: fmt.Sprintf("%q is not a schedule state", r.State)}
 	}
+
 	if r.CreatedAt.IsZero() {
 		return &ValidationError{Field: "CreatedAt", Reason: "cannot be zero"}
 	}
@@ -153,7 +162,8 @@ func (r *ScheduleRecord) Validate() error {
 	// accept an embedded schema version or a step type this build does not
 	// understand, which is exactly what a record written by a newer binary looks
 	// like.
-	if err := r.Document.Validate(); err != nil {
+	err = r.Document.Validate()
+	if err != nil {
 		return &ValidationError{Field: "Document", Reason: err.Error()}
 	}
 	// A campaign whose seed is unresolved, or disagrees with its document, would
@@ -161,9 +171,11 @@ func (r *ScheduleRecord) Validate() error {
 	if r.CampaignSeed == 0 {
 		return &ValidationError{Field: "CampaignSeed", Reason: "must be resolved before a schedule is persisted"}
 	}
+
 	if r.Document.Seed != r.CampaignSeed {
 		return &ValidationError{Field: "CampaignSeed", Reason: fmt.Sprintf("must match the document seed (%d)", r.Document.Seed)}
 	}
+
 	return nil
 }
 
@@ -234,32 +246,41 @@ func (s *ScheduleStageRecord) Validate() error {
 	if s == nil {
 		return &ValidationError{Field: "ScheduleStageRecord", Reason: "cannot be nil"}
 	}
-	if err := validateScheduleID(s.ScheduleID); err != nil {
+
+	err := validateScheduleID(s.ScheduleID)
+	if err != nil {
 		return &ValidationError{Field: "scheduleID", Reason: err.Error()}
 	}
+
 	if s.SchemaVersion != ScheduleRecordSchemaVersion {
 		return &ValidationError{Field: "SchemaVersion", Reason: fmt.Sprintf("must be %d", ScheduleRecordSchemaVersion)}
 	}
+
 	if s.Index < 0 {
 		return &ValidationError{Field: "Index", Reason: "cannot be negative"}
 	}
+
 	switch s.Kind {
 	case app.ScheduleStageBase, app.ScheduleStageExtend, app.ScheduleStagePolish:
 	default:
 		return &ValidationError{Field: "Kind", Reason: fmt.Sprintf("%q is not a stage kind", s.Kind)}
 	}
+
 	if !validScheduleStageState(s.State) {
 		return &ValidationError{Field: "State", Reason: fmt.Sprintf("%q is not a stage state", s.State)}
 	}
+
 	if s.Circles < 1 {
 		return &ValidationError{Field: "Circles", Reason: "must be positive"}
 	}
 	// The stage config is what a single stage is replayed from, so it is checked
 	// like any other persisted configuration, and it must describe this stage:
 	// a config for a different circle count cannot reproduce the run.
-	if err := s.Config.Validate(); err != nil {
+	err = s.Config.Validate()
+	if err != nil {
 		return &ValidationError{Field: "Config", Reason: err.Error()}
 	}
+
 	if s.Config.Circles != s.Circles {
 		return &ValidationError{Field: "Config.Circles", Reason: fmt.Sprintf("must match the stage circle count (%d)", s.Circles)}
 	}
@@ -268,19 +289,25 @@ func (s *ScheduleStageRecord) Validate() error {
 	if s.State == ScheduleStateSkipped && s.JobID != "" {
 		return &ValidationError{Field: "JobID", Reason: "a skipped stage cannot name a job"}
 	}
+
 	if s.JobID != "" {
-		if err := validateJobID(s.JobID); err != nil {
+		err := validateJobID(s.JobID)
+		if err != nil {
 			return &ValidationError{Field: "JobID", Reason: err.Error()}
 		}
 	}
+
 	if s.ParentJobID != "" {
-		if err := validateJobID(s.ParentJobID); err != nil {
+		err := validateJobID(s.ParentJobID)
+		if err != nil {
 			return &ValidationError{Field: "ParentJobID", Reason: err.Error()}
 		}
 	}
+
 	if s.JobID != "" && s.JobID == s.ParentJobID {
 		return &ValidationError{Field: "ParentJobID", Reason: "cannot name the stage's own job"}
 	}
+
 	return nil
 }
 
@@ -311,9 +338,12 @@ type ScheduleStore interface {
 
 func (fs *FSStore) schedulesDir() (string, error) {
 	dir := filepath.Join(fs.baseDir, schedulesDirName)
-	if err := ensureSecureDir(fs.baseDir, dir); err != nil {
+
+	err := ensureSecureDir(fs.baseDir, dir)
+	if err != nil {
 		return "", fmt.Errorf("create schedules directory: %w", err)
 	}
+
 	return dir, nil
 }
 
@@ -321,14 +351,17 @@ func (fs *FSStore) schedulePath(scheduleID string) (string, error) {
 	if err := validateScheduleID(scheduleID); err != nil {
 		return "", fmt.Errorf("invalid scheduleID: %w", err)
 	}
+
 	root, err := fs.schedulesDir()
 	if err != nil {
 		return "", err
 	}
+
 	path := filepath.Join(root, scheduleID)
 	if err := ensureContained(fs.baseDir, path); err != nil {
 		return "", err
 	}
+
 	return path, nil
 }
 
@@ -337,39 +370,49 @@ func (fs *FSStore) existingScheduleDir(scheduleID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	info, err := os.Lstat(dir)
 	if os.IsNotExist(err) {
 		return "", &NotFoundError{JobID: scheduleID, Kind: "schedule"}
 	}
+
 	if err != nil {
 		return "", fmt.Errorf("stat schedule directory: %w", err)
 	}
+
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return "", fmt.Errorf("refusing non-directory or symlink schedule path")
+		return "", errors.New("refusing non-directory or symlink schedule path")
 	}
+
 	return dir, nil
 }
 
 // SaveSchedule atomically writes a validated schedule record.
 func (fs *FSStore) SaveSchedule(record *ScheduleRecord) error {
 	if record == nil {
-		return fmt.Errorf("schedule record cannot be nil")
+		return errors.New("schedule record cannot be nil")
 	}
+
 	if err := record.Validate(); err != nil {
 		return fmt.Errorf("invalid schedule: %w", err)
 	}
+
 	dir, err := fs.schedulePath(record.ScheduleID)
 	if err != nil {
 		return err
 	}
+
 	if err := ensureSecureDir(fs.baseDir, dir); err != nil {
 		return fmt.Errorf("create schedule directory: %w", err)
 	}
+
 	record.UpdatedAt = time.Now().UTC()
 	if err := fs.atomicWrite(filepath.Join(dir, "schedule.json"), encodeIndented(record)); err != nil {
 		return fmt.Errorf("save schedule: %w", err)
 	}
+
 	slog.Debug("Schedule saved", "schedule_id", record.ScheduleID, "path", dir)
+
 	return nil
 }
 
@@ -379,10 +422,12 @@ func (fs *FSStore) LoadSchedule(scheduleID string) (*ScheduleRecord, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	record, err := readScheduleRecord(filepath.Join(dir, "schedule.json"), scheduleID)
 	if err != nil {
 		return nil, err
 	}
+
 	return record, nil
 }
 
@@ -395,9 +440,11 @@ func readRegularFile(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("refusing non-regular or symlink path %q", filepath.Base(path))
 	}
+
 	return os.ReadFile(path)
 }
 
@@ -406,19 +453,24 @@ func readScheduleRecord(path, scheduleID string) (*ScheduleRecord, error) {
 	if os.IsNotExist(err) {
 		return nil, &NotFoundError{JobID: scheduleID, Kind: "schedule"}
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("read schedule: %w", err)
 	}
+
 	var record ScheduleRecord
 	if err := json.Unmarshal(data, &record); err != nil {
 		return nil, fmt.Errorf("deserialize schedule: %w", err)
 	}
+
 	if record.ScheduleID != scheduleID {
 		return nil, fmt.Errorf("schedule ID %q does not match %q", record.ScheduleID, scheduleID)
 	}
+
 	if err := record.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid schedule: %w", err)
 	}
+
 	return &record, nil
 }
 
@@ -428,23 +480,29 @@ func (fs *FSStore) ListSchedules() ([]ScheduleRecord, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, fmt.Errorf("read schedules directory: %w", err)
 	}
+
 	records := make([]ScheduleRecord, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() || validateScheduleID(entry.Name()) != nil {
 			continue
 		}
+
 		record, err := readScheduleRecord(filepath.Join(root, entry.Name(), "schedule.json"), entry.Name())
 		if err != nil {
 			slog.Warn("Failed to load schedule for listing", "schedule_id", entry.Name(), "error", err)
 			continue
 		}
+
 		records = append(records, *record)
 	}
+
 	sort.Slice(records, func(i, j int) bool { return records[i].ScheduleID < records[j].ScheduleID })
+
 	return records, nil
 }
 
@@ -456,13 +514,17 @@ func (fs *FSStore) DeleteSchedule(scheduleID string) error {
 	if err != nil {
 		return err
 	}
+
 	if err := ensureContained(fs.baseDir, dir); err != nil {
 		return err
 	}
+
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("remove schedule directory: %w", err)
 	}
+
 	slog.Debug("Schedule deleted", "schedule_id", scheduleID, "path", dir)
+
 	return nil
 }
 
@@ -470,11 +532,13 @@ func (fs *FSStore) DeleteSchedule(scheduleID string) error {
 // write for the same index.
 func (fs *FSStore) SaveScheduleStage(scheduleID string, stage *ScheduleStageRecord) error {
 	if stage == nil {
-		return fmt.Errorf("stage record cannot be nil")
+		return errors.New("stage record cannot be nil")
 	}
+
 	if err := stage.Validate(); err != nil {
 		return fmt.Errorf("invalid schedule stage: %w", err)
 	}
+
 	if stage.ScheduleID != scheduleID {
 		return fmt.Errorf("stage schedule ID %q does not match %q", stage.ScheduleID, scheduleID)
 	}
@@ -484,16 +548,21 @@ func (fs *FSStore) SaveScheduleStage(scheduleID string, stage *ScheduleStageReco
 	if err != nil {
 		return err
 	}
+
 	stagesDir := filepath.Join(dir, stagesDirName)
 	if err := ensureSecureDir(fs.baseDir, stagesDir); err != nil {
 		return fmt.Errorf("create schedule stages directory: %w", err)
 	}
+
 	stage.UpdatedAt = time.Now().UTC()
+
 	path := filepath.Join(stagesDir, stageFileName(stage.Index))
 	if err := fs.atomicWrite(path, encodeIndented(stage)); err != nil {
 		return fmt.Errorf("save schedule stage: %w", err)
 	}
+
 	slog.Debug("Schedule stage saved", "schedule_id", scheduleID, "index", stage.Index, "state", string(stage.State))
+
 	return nil
 }
 
@@ -503,40 +572,51 @@ func (fs *FSStore) LoadScheduleStages(scheduleID string) ([]ScheduleStageRecord,
 	if err != nil {
 		return nil, err
 	}
+
 	stagesDir, err := existingStagesDir(dir)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
+
 	if err != nil {
 		return nil, err
 	}
+
 	entries, err := os.ReadDir(stagesDir)
 	if err != nil {
 		return nil, fmt.Errorf("read schedule stages directory: %w", err)
 	}
+
 	stages := make([]ScheduleStageRecord, 0, len(entries))
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasPrefix(name, "stage-") || !strings.HasSuffix(name, ".json") {
 			continue
 		}
+
 		data, err := readRegularFile(filepath.Join(stagesDir, name))
 		if err != nil {
 			return nil, fmt.Errorf("read schedule stage: %w", err)
 		}
+
 		var stage ScheduleStageRecord
 		if err := json.Unmarshal(data, &stage); err != nil {
 			return nil, fmt.Errorf("deserialize schedule stage: %w", err)
 		}
+
 		if err := stage.Validate(); err != nil {
 			return nil, fmt.Errorf("invalid schedule stage %s: %w", name, err)
 		}
+
 		if stage.ScheduleID != scheduleID {
 			return nil, fmt.Errorf("stage schedule ID %q does not match %q", stage.ScheduleID, scheduleID)
 		}
+
 		stages = append(stages, stage)
 	}
+
 	sort.Slice(stages, func(i, j int) bool { return stages[i].Index < stages[j].Index })
+
 	return stages, nil
 }
 
@@ -548,6 +628,7 @@ func (fs *FSStore) LoadScheduleStage(scheduleID string, index int) (*ScheduleSta
 	if index < 0 {
 		return nil, &ValidationError{Field: "index", Reason: "cannot be negative"}
 	}
+
 	dir, err := fs.existingScheduleDir(scheduleID)
 	if err != nil {
 		return nil, err
@@ -560,30 +641,38 @@ func (fs *FSStore) LoadScheduleStage(scheduleID string, index int) (*ScheduleSta
 	if os.IsNotExist(err) {
 		return nil, &NotFoundError{JobID: scheduleID, Kind: "schedule stage"}
 	}
+
 	if err != nil {
 		return nil, err
 	}
+
 	path := filepath.Join(stagesDir, stageFileName(index))
 	if err := ensureContained(fs.baseDir, path); err != nil {
 		return nil, err
 	}
+
 	data, err := readRegularFile(path)
 	if os.IsNotExist(err) {
 		return nil, &NotFoundError{JobID: scheduleID, Kind: "schedule stage"}
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("read schedule stage: %w", err)
 	}
+
 	var stage ScheduleStageRecord
 	if err := json.Unmarshal(data, &stage); err != nil {
 		return nil, fmt.Errorf("deserialize schedule stage: %w", err)
 	}
+
 	if err := stage.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid schedule stage %d: %w", index, err)
 	}
+
 	if stage.ScheduleID != scheduleID {
 		return nil, fmt.Errorf("stage schedule ID %q does not match %q", stage.ScheduleID, scheduleID)
 	}
+
 	return &stage, nil
 }
 
@@ -597,16 +686,20 @@ func (fs *FSStore) LoadScheduleStage(scheduleID string, index int) (*ScheduleSta
 // asked for by index is not there.
 func existingStagesDir(scheduleDir string) (string, error) {
 	stagesDir := filepath.Join(scheduleDir, stagesDirName)
+
 	info, err := os.Lstat(stagesDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", err
 		}
+
 		return "", fmt.Errorf("stat schedule stages directory: %w", err)
 	}
+
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return "", fmt.Errorf("refusing non-directory or symlink stages path")
+		return "", errors.New("refusing non-directory or symlink stages path")
 	}
+
 	return stagesDir, nil
 }
 
@@ -620,6 +713,7 @@ func encodeIndented(value any) func(io.Writer) error {
 	return func(writer io.Writer) error {
 		encoder := json.NewEncoder(writer)
 		encoder.SetIndent("", "  ")
+
 		return encoder.Encode(value)
 	}
 }

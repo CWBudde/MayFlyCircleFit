@@ -32,6 +32,7 @@ func compositeOpaqueSpanPairScalar(pix []byte, firstOffset, secondOffset, pixels
 	bgBlend := 1 - alpha
 
 	firstEnd := firstOffset + pixels*4
+
 	second := secondOffset
 	for first := firstOffset; first < firstEnd; first, second = first+4, second+4 {
 		bgR := float64(pix[first+0]) * inv255
@@ -56,5 +57,6 @@ func pixelsAreOpaque(pix []byte) bool {
 			return false
 		}
 	}
+
 	return true
 }

@@ -29,22 +29,26 @@ func TestCPURenderer_DefaultCostMatchesMSE(t *testing.T) {
 			params := deterministicParams(test.circles, test.width, test.height, 99)
 
 			var r *CPURenderer
+
 			if test.customCanvas {
 				canvas := randomNRGBA(test.width, test.height, 7)
 				r = NewCPURendererWithCanvas(reference, canvas, test.circles)
 			} else {
 				r = NewCPURenderer(reference, test.circles)
 			}
+
 			r.SetThreads(1)
 
 			got := r.Cost(params)
 			r.SetCostFunc(fit.MSECost)
+
 			want := r.Cost(params)
 			if got != want {
 				t.Fatalf("default FastMSECost = %v, MSECost = %v", got, want)
 			}
 
 			r.UseFastCost()
+
 			if restored := r.Cost(params); restored != want {
 				t.Fatalf("restored FastMSECost = %v, MSECost = %v", restored, want)
 			}
@@ -52,7 +56,7 @@ func TestCPURenderer_DefaultCostMatchesMSE(t *testing.T) {
 	}
 }
 
-// TestCPURenderer_SetCostFunc verifies custom cost functions can be set
+// TestCPURenderer_SetCostFunc verifies custom cost functions can be set.
 func TestCPURenderer_SetCostFunc(t *testing.T) {
 	ref := image.NewNRGBA(image.Rect(0, 0, 16, 16))
 	r := NewCPURenderer(ref, 1)
@@ -63,6 +67,7 @@ func TestCPURenderer_SetCostFunc(t *testing.T) {
 	}
 
 	r.SetCostFunc(customCost)
+
 	params := make([]float64, 7)
 
 	cost := r.Cost(params)
@@ -95,6 +100,7 @@ func TestCPURendererPrecomputesInitialSSD(t *testing.T) {
 			if !ok {
 				t.Fatal("ExactSSD rejected renderer initial canvas")
 			}
+
 			if !renderer.initialSSDValid || renderer.initialSSD != want {
 				t.Fatalf("precomputed SSD = (%d, %v), want (%d, true)", renderer.initialSSD, renderer.initialSSDValid, want)
 			}
@@ -104,6 +110,7 @@ func TestCPURendererPrecomputesInitialSSD(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer cleanup()
+
 			inherited := session.(*CPURenderer)
 			if inherited.initialSSD != want || inherited.initialSSDValid != renderer.initialSSDValid {
 				t.Fatalf("inherited SSD = (%d, %v), want (%d, true)", inherited.initialSSD, inherited.initialSSDValid, want)
@@ -113,23 +120,28 @@ func TestCPURendererPrecomputesInitialSSD(t *testing.T) {
 
 	base := NewCPURenderer(reference, 2)
 	retained := base.Render(deterministicParams(2, width, height, 99))
+
 	wantRetained, ok := fit.ExactSSD(retained, reference)
 	if !ok {
 		t.Fatal("ExactSSD rejected retained canvas")
 	}
+
 	stagedSession, cleanup, err := base.newSessionWithCanvas(retained, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cleanup()
+
 	staged := stagedSession.(*CPURenderer)
 	if !staged.initialSSDValid || staged.initialSSD != wantRetained {
 		t.Fatalf("staged SSD = (%d, %v), want (%d, true)", staged.initialSSD, staged.initialSSDValid, wantRetained)
 	}
+
 	wantMode := incrementalCostDisabled
 	if deltaSSDVectorized() {
 		wantMode = incrementalCostAuto
 	}
+
 	if staged.incrementalCostMode != wantMode {
 		t.Fatalf("staged CPU cost mode = %d, want %d for %s", staged.incrementalCostMode, wantMode, deltaSSDKernel)
 	}
@@ -141,11 +153,13 @@ func BenchmarkCPURenderer_Cost_MSE(b *testing.B) {
 	r := NewCPURenderer(ref, 20)
 	r.SetThreads(1)
 	r.SetCostFunc(fit.MSECost)
+
 	params := deterministicParams(20, 128, 128, 99)
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for range b.N {
 		rendererCostSink = r.Cost(params)
 	}
 }
@@ -155,17 +169,19 @@ func BenchmarkCPURenderer_Cost_Fast(b *testing.B) {
 	ref := randomNRGBA(128, 128, 42)
 	r := NewCPURenderer(ref, 20)
 	r.SetThreads(1)
+
 	params := deterministicParams(20, 128, 128, 99)
 
 	b.Logf("Using SSD backend: %s", fit.ActiveSSDKernel())
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for range b.N {
 		rendererCostSink = r.Cost(params)
 	}
 }
 
-// BenchmarkCPURenderer_CostComparison compares MSECost vs FastMSECost
+// BenchmarkCPURenderer_CostComparison compares MSECost vs FastMSECost.
 func BenchmarkCPURenderer_CostComparison(b *testing.B) {
 	sizes := []struct {
 		name    string
@@ -188,7 +204,8 @@ func BenchmarkCPURenderer_CostComparison(b *testing.B) {
 			r.SetCostFunc(fit.MSECost)
 			b.ReportAllocs()
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+
+			for range b.N {
 				rendererCostSink = r.Cost(params)
 			}
 		})
@@ -199,7 +216,8 @@ func BenchmarkCPURenderer_CostComparison(b *testing.B) {
 			b.ReportAllocs()
 			b.Logf("Using SSD backend: %s", fit.ActiveSSDKernel())
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+
+			for range b.N {
 				rendererCostSink = r.Cost(params)
 			}
 		})
@@ -234,6 +252,7 @@ func BenchmarkIncrementalCostBaseline(b *testing.B) {
 	}
 
 	b.Logf("Using SSD backend: %s", fit.ActiveSSDKernel())
+
 	for _, workload := range workloads {
 		params := deterministicParams(workload.circles, width, height, int64(200+workload.circles))
 		newRenderer := func() *CPURenderer {
@@ -243,14 +262,18 @@ func BenchmarkIncrementalCostBaseline(b *testing.B) {
 			} else {
 				renderer = NewCPURendererWithCanvas(reference, workload.baseCanvas, workload.circles)
 			}
+
 			renderer.SetThreads(1)
+
 			return renderer
 		}
 
 		b.Run(workload.name+"/Render", func(b *testing.B) {
 			renderer := newRenderer()
+
 			b.ReportAllocs()
 			b.ResetTimer()
+
 			for range b.N {
 				rendererImageSink = renderer.Render(params)
 			}
@@ -258,9 +281,11 @@ func BenchmarkIncrementalCostBaseline(b *testing.B) {
 
 		b.Run(workload.name+"/FullImageSSD", func(b *testing.B) {
 			rendered := newRenderer().Render(params)
+
 			b.SetBytes(int64(width * height * 8))
 			b.ReportAllocs()
 			b.ResetTimer()
+
 			for range b.N {
 				rendererCostSink = fit.FastMSECost(rendered, reference)
 			}
@@ -268,8 +293,10 @@ func BenchmarkIncrementalCostBaseline(b *testing.B) {
 
 		b.Run(workload.name+"/Cost", func(b *testing.B) {
 			renderer := newRenderer()
+
 			b.ReportAllocs()
 			b.ResetTimer()
+
 			for range b.N {
 				rendererCostSink = renderer.Cost(params)
 			}
@@ -284,6 +311,7 @@ func BenchmarkIncrementalCostBaseline(b *testing.B) {
 			b.Logf("dirty pixels=%d (%.2f%%), spans=%d", dirtyPixels, 100*float64(dirtyPixels)/float64(width*height), dirtySpans)
 			b.ReportAllocs()
 			b.ResetTimer()
+
 			for range b.N {
 				rendererCostSink = renderer.Cost(params)
 			}
@@ -294,8 +322,10 @@ func BenchmarkIncrementalCostBaseline(b *testing.B) {
 			renderer.incrementalCostMode = incrementalCostAuto
 			// Populate reusable row/span storage before measuring steady state.
 			rendererCostSink = renderer.Cost(params)
+
 			b.ReportAllocs()
 			b.ResetTimer()
+
 			for range b.N {
 				rendererCostSink = renderer.Cost(params)
 			}
@@ -306,10 +336,12 @@ func BenchmarkIncrementalCostBaseline(b *testing.B) {
 func BenchmarkIncrementalCostCrossover(b *testing.B) {
 	const width, height = 256, 256
 	reference := randomNRGBA(width, height, 42)
+
 	canvas := randomNRGBA(width, height, 7)
 	for offset := 3; offset < len(canvas.Pix); offset += 4 {
 		canvas.Pix[offset] = 255
 	}
+
 	for _, radius := range []float64{4, 8, 16, 32, 48, 64, 80, 96, 112, 128} {
 		params := encodeCircles([]fit.Circle{{X: 128, Y: 128, R: radius, CR: 0.2, CG: 0.6, CB: 0.9, Opacity: 0.5}})
 		for _, mode := range []struct {
@@ -323,13 +355,16 @@ func BenchmarkIncrementalCostCrossover(b *testing.B) {
 				renderer := NewCPURendererWithCanvas(reference, canvas, 1)
 				renderer.SetThreads(1)
 				renderer.incrementalCostMode = mode.mode
+
 				rendererCostSink = renderer.Cost(params)
 				if mode.mode == incrementalCostForce {
 					pixels, spans := renderer.dirtySpans.metrics()
 					b.Logf("dirty=%.2f%% spans=%d", 100*float64(pixels)/float64(width*height), spans)
 				}
+
 				b.ReportAllocs()
 				b.ResetTimer()
+
 				for range b.N {
 					rendererCostSink = renderer.Cost(params)
 				}

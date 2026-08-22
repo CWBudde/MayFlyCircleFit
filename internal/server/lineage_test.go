@@ -43,25 +43,33 @@ func TestContinuationJobsRecordTheirParent(t *testing.T) {
 			server, sourceID, _ := newExtendableBatchJob(t)
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+sourceID+test.path, strings.NewReader(test.body))
 			req.Header.Set("Content-Type", "application/json")
+
 			response := httptest.NewRecorder()
 			server.Handler().ServeHTTP(response, req)
+
 			if response.Code != test.wantStatus {
 				t.Fatalf("%s status = %d body=%s", test.name, response.Code, response.Body.String())
 			}
+
 			var payload struct {
 				JobID string `json:"jobId"`
 			}
-			if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+
+			err := json.NewDecoder(response.Body).Decode(&payload)
+			if err != nil {
 				t.Fatal(err)
 			}
+
 			continuation, ok := server.jobManager.GetJob(payload.JobID)
 			if !ok {
 				t.Fatal("continuation job not found")
 			}
+
 			field, parent := test.parentOf(continuation)
 			if parent != sourceID {
 				t.Fatalf("continuation %s = %q, want %q", field, parent, sourceID)
 			}
+
 			if continuation.ExtendedFrom != "" && continuation.PolishedFrom != "" {
 				t.Fatalf("continuation claims two parents: %+v", continuation)
 			}
@@ -77,6 +85,7 @@ func TestJobLineageSurvivesTheCheckpoint(t *testing.T) {
 		parentID = "22222222-2222-4222-8222-222222222222"
 		schedule = "33333333-3333-4333-8333-333333333333"
 	)
+
 	config, err := app.Normalize(JobConfig{
 		RefPath: "assets/ref.png", Mode: app.ModeBatch, Circles: 1, BatchSize: 1,
 		Iters: 10, PopSize: 20, Threads: 1, Seed: 42,
@@ -84,6 +93,7 @@ func TestJobLineageSurvivesTheCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	baseStage := 0
 	job := &Job{
 		ID: jobID, Project: app.DefaultProject, State: StateCompleted, Config: config,
@@ -92,12 +102,15 @@ func TestJobLineageSurvivesTheCheckpoint(t *testing.T) {
 	checkpoint := store.NewCheckpoint(jobID, []float64{1, 1, 1, 1, 0, 0, 1}, 5, 10, 3, config)
 	checkpoint.Timestamp = time.Now()
 	applyJobLineage(checkpoint, job)
+
 	if checkpoint.ExtendedFrom != parentID || checkpoint.ScheduleID != schedule {
 		t.Fatalf("checkpoint lineage = %+v", checkpoint)
 	}
+
 	if checkpoint.StageIndex == nil || *checkpoint.StageIndex != 0 {
 		t.Fatalf("checkpoint StageIndex = %v, want 0", checkpoint.StageIndex)
 	}
+
 	if err := checkpoint.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
@@ -122,12 +135,15 @@ func TestJobWithoutLineageWritesNone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	job := &Job{ID: "11111111-1111-4111-8111-111111111111", Config: config}
 	checkpoint := store.NewCheckpoint(job.ID, []float64{1, 1, 1, 1, 0, 0, 1}, 5, 10, 3, config)
 	applyJobLineage(checkpoint, job)
+
 	if _, ok := checkpoint.ContinuedFrom(); ok {
 		t.Fatalf("checkpoint invented a parent: %+v", checkpoint)
 	}
+
 	if checkpoint.ScheduleID != "" || checkpoint.StageIndex != nil {
 		t.Fatalf("checkpoint invented a schedule: %+v", checkpoint)
 	}

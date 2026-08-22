@@ -11,10 +11,12 @@ func TestSerializablePSNR(t *testing.T) {
 	if value == nil || infinite || math.Abs(*value-48.1308036086791) > 1e-12 {
 		t.Fatalf("serializablePSNR(1) = (%v, %v)", value, infinite)
 	}
+
 	value, infinite = serializablePSNR(0)
 	if value != nil || !infinite {
 		t.Fatalf("serializablePSNR(0) = (%v, %v), want (nil, true)", value, infinite)
 	}
+
 	value, infinite = serializablePSNR(-1)
 	if value != nil || infinite {
 		t.Fatalf("serializablePSNR(-1) = (%v, %v), want unavailable", value, infinite)

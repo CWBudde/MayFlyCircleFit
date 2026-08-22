@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ func setupTestStore(t *testing.T) (*FSStore, string) {
 	t.Helper()
 
 	tempDir := t.TempDir() // Automatically cleaned up after test
+
 	store, err := NewFSStore(tempDir)
 	if err != nil {
 		t.Fatalf("Failed to create test store: %v", err)
@@ -83,11 +85,14 @@ func TestSaveCheckpoint(t *testing.T) {
 	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
 		t.Fatalf("Checkpoint file was not created at %s", expectedPath)
 	}
+
 	infoPath := filepath.Join(tempDir, "jobs", jobID, string(ArtifactCheckpointInfo))
+
 	infoData, err := os.ReadFile(infoPath)
 	if err != nil {
 		t.Fatalf("Checkpoint summary was not created: %v", err)
 	}
+
 	if strings.Contains(string(infoData), "bestParams") {
 		t.Fatal("Checkpoint summary contains the parameter vector")
 	}
@@ -106,10 +111,12 @@ func TestListCheckpointsProjectsLegacyCheckpointWithoutSidecar(t *testing.T) {
 	checkpoint.BestParams = append(checkpoint.BestParams, checkpoint.BestParams...)
 	checkpoint.Config.Circles = 2
 	checkpoint.ActualCircles = 0
+
 	checkpoint.RequestedCircles = 0
 	if err := fs.SaveCheckpoint(jobID, checkpoint); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := os.Remove(filepath.Join(tempDir, "jobs", jobID, string(ArtifactCheckpointInfo))); err != nil {
 		t.Fatal(err)
 	}
@@ -118,13 +125,16 @@ func TestListCheckpointsProjectsLegacyCheckpointWithoutSidecar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(infos) != 1 || infos[0].ActualCircles != 2 || infos[0].Circles != 2 {
 		t.Fatalf("projected checkpoint info = %+v", infos)
 	}
+
 	data, err := os.ReadFile(filepath.Join(tempDir, "jobs", jobID, string(ArtifactCheckpointInfo)))
 	if err != nil {
 		t.Fatalf("legacy summary was not backfilled: %v", err)
 	}
+
 	if strings.Contains(string(data), "bestParams") {
 		t.Fatal("backfilled summary contains the parameter vector")
 	}
@@ -133,12 +143,14 @@ func TestListCheckpointsProjectsLegacyCheckpointWithoutSidecar(t *testing.T) {
 func TestListCheckpointsFallsBackFromCorruptSidecar(t *testing.T) {
 	fs, tempDir := setupTestStore(t)
 	jobID := testJobID(1)
+
 	checkpoint := createTestCheckpoint(jobID)
 	if err := fs.SaveCheckpoint(jobID, checkpoint); err != nil {
 		t.Fatal(err)
 	}
+
 	infoPath := filepath.Join(tempDir, "jobs", jobID, string(ArtifactCheckpointInfo))
-	if err := os.WriteFile(infoPath, []byte("not json"), 0600); err != nil {
+	if err := os.WriteFile(infoPath, []byte("not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -146,6 +158,7 @@ func TestListCheckpointsFallsBackFromCorruptSidecar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(infos) != 1 || infos[0].JobID != jobID || infos[0].BestCost != checkpoint.BestCost {
 		t.Fatalf("fallback checkpoint info = %+v", infos)
 	}
@@ -222,15 +235,19 @@ func TestLoadCheckpoint(t *testing.T) {
 	if loaded.JobID != original.JobID {
 		t.Errorf("JobID mismatch: expected %s, got %s", original.JobID, loaded.JobID)
 	}
+
 	if loaded.BestCost != original.BestCost {
 		t.Errorf("BestCost mismatch: expected %f, got %f", original.BestCost, loaded.BestCost)
 	}
+
 	if loaded.Iteration != original.Iteration {
 		t.Errorf("Iteration mismatch: expected %d, got %d", original.Iteration, loaded.Iteration)
 	}
+
 	if len(loaded.BestParams) != len(original.BestParams) {
 		t.Errorf("BestParams length mismatch: expected %d, got %d", len(original.BestParams), len(loaded.BestParams))
 	}
+
 	if loaded.Config.Mode != original.Config.Mode {
 		t.Errorf("Config.Mode mismatch: expected %s, got %s", original.Config.Mode, loaded.Config.Mode)
 	}
@@ -279,7 +296,9 @@ func TestListCheckpoints_Multiple(t *testing.T) {
 	jobs := []string{testJobID(1), testJobID(2), testJobID(3)}
 	for _, jobID := range jobs {
 		checkpoint := createTestCheckpoint(jobID)
-		if err := store.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+		err := store.SaveCheckpoint(jobID, checkpoint)
+		if err != nil {
 			t.Fatalf("Failed to save checkpoint %s: %v", jobID, err)
 		}
 	}
@@ -312,6 +331,7 @@ func TestListCheckpoints_SkipsInvalidDirectories(t *testing.T) {
 
 	// Create valid checkpoint
 	validJobID := testJobID(1)
+
 	checkpoint := createTestCheckpoint(validJobID)
 	if err := store.SaveCheckpoint(validJobID, checkpoint); err != nil {
 		t.Fatalf("Failed to save valid checkpoint: %v", err)
@@ -319,21 +339,24 @@ func TestListCheckpoints_SkipsInvalidDirectories(t *testing.T) {
 
 	// Create directory without checkpoint.json
 	invalidJobDir := filepath.Join(tempDir, "jobs", "invalid-job")
-	if err := os.MkdirAll(invalidJobDir, 0755); err != nil {
+	if err := os.MkdirAll(invalidJobDir, 0o755); err != nil {
 		t.Fatalf("Failed to create invalid job directory: %v", err)
 	}
 
 	// Create non-directory file in jobs directory
 	jobsDir := filepath.Join(tempDir, "jobs")
+
 	dummyFile := filepath.Join(jobsDir, "dummy.txt")
-	if err := os.WriteFile(dummyFile, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(dummyFile, []byte("test"), 0o644); err != nil {
 		t.Fatalf("Failed to create dummy file: %v", err)
 	}
+
 	artifactOnlyDir := filepath.Join(jobsDir, testJobID(98))
-	if err := os.Mkdir(artifactOnlyDir, 0700); err != nil {
+	if err := os.Mkdir(artifactOnlyDir, 0o700); err != nil {
 		t.Fatalf("Failed to create artifact-only job directory: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(artifactOnlyDir, "trace.jsonl"), nil, 0600); err != nil {
+
+	if err := os.WriteFile(filepath.Join(artifactOnlyDir, "trace.jsonl"), nil, 0o600); err != nil {
 		t.Fatalf("Failed to create artifact-only trace: %v", err)
 	}
 
@@ -412,15 +435,19 @@ func TestCheckpointToInfo(t *testing.T) {
 	if info.JobID != checkpoint.JobID {
 		t.Errorf("JobID mismatch: expected %s, got %s", checkpoint.JobID, info.JobID)
 	}
+
 	if info.BestCost != checkpoint.BestCost {
 		t.Errorf("BestCost mismatch: expected %f, got %f", checkpoint.BestCost, info.BestCost)
 	}
+
 	if info.Iteration != checkpoint.Iteration {
 		t.Errorf("Iteration mismatch: expected %d, got %d", checkpoint.Iteration, info.Iteration)
 	}
+
 	if info.Mode != checkpoint.Config.Mode {
 		t.Errorf("Mode mismatch: expected %s, got %s", checkpoint.Config.Mode, info.Mode)
 	}
+
 	if info.Circles != checkpoint.Config.Circles {
 		t.Errorf("Circles mismatch: expected %d, got %d", checkpoint.Config.Circles, info.Circles)
 	}
@@ -433,19 +460,23 @@ func TestConcurrentSave(t *testing.T) {
 	const numJobs = 10
 	done := make(chan bool, numJobs)
 
-	for i := 0; i < numJobs; i++ {
+	for i := range numJobs {
 		go func(idx int) {
 			jobID := testJobID(idx + 1)
+
 			checkpoint := createTestCheckpoint(jobID)
-			if err := store.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+			err := store.SaveCheckpoint(jobID, checkpoint)
+			if err != nil {
 				t.Errorf("Concurrent save failed for job %s: %v", jobID, err)
 			}
+
 			done <- true
 		}(i)
 	}
 
 	// Wait for all goroutines
-	for i := 0; i < numJobs; i++ {
+	for range numJobs {
 		<-done
 	}
 
@@ -460,13 +491,15 @@ func TestConcurrentSave(t *testing.T) {
 	}
 }
 
-// Helper function to check error type (workaround for errors.As in tests)
-func isErrorType(err error, target interface{}) bool {
+// Helper function to check error type (workaround for errors.As in tests).
+func isErrorType(err error, target any) bool {
 	if err == nil {
 		return false
 	}
 	// Simple type check for NotFoundError
-	_, ok := err.(*NotFoundError)
+	notFoundError := &NotFoundError{}
+	ok := errors.As(err, &notFoundError)
+
 	return ok
 }
 
@@ -482,10 +515,12 @@ func TestSaveCheckpointBytesMatchMarshalJSON(t *testing.T) {
 	if err := store.SaveCheckpoint(jobID, checkpoint); err != nil {
 		t.Fatalf("SaveCheckpoint failed: %v", err)
 	}
+
 	path, err := store.ArtifactPath(jobID, ArtifactCheckpoint)
 	if err != nil {
 		t.Fatalf("ArtifactPath failed: %v", err)
 	}
+
 	written, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read checkpoint: %v", err)
@@ -494,9 +529,11 @@ func TestSaveCheckpointBytesMatchMarshalJSON(t *testing.T) {
 	var viaMarshaler bytes.Buffer
 	encoder := json.NewEncoder(&viaMarshaler)
 	encoder.SetIndent("", "  ")
+
 	if err := encoder.Encode(checkpoint.normalized()); err != nil {
 		t.Fatalf("encode via MarshalJSON: %v", err)
 	}
+
 	if string(written) != viaMarshaler.String() {
 		t.Errorf("saved checkpoint bytes differ from MarshalJSON output\n got: %s\nwant: %s",
 			written, viaMarshaler.String())

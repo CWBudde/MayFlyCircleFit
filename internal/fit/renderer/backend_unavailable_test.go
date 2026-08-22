@@ -20,21 +20,24 @@ import (
 // prepared OpenCL runner.
 func TestGPUUnavailableInAPortableBuild(t *testing.T) {
 	rend, cleanup, err := NewOpenCLRenderer(failureTestReference(), 4)
-
 	if err == nil {
 		t.Fatal("NewOpenCLRenderer() = nil error in a build without the gpu tag")
 	}
+
 	if rend != nil {
 		t.Fatalf("NewOpenCLRenderer() returned a renderer %T alongside its error", rend)
 	}
+
 	if cleanup == nil {
 		t.Fatal("NewOpenCLRenderer() returned a nil cleanup, so a caller's deferred release panics on the failure path")
 	}
+
 	cleanup() // Must be safe even though construction failed.
 
 	if !errors.Is(err, ErrBackendUnavailable) {
 		t.Fatalf("error = %v, want ErrBackendUnavailable so callers can fall back rather than string-match", err)
 	}
+
 	if !strings.Contains(strings.ToLower(err.Error()), "gpu tag") {
 		t.Fatalf("error = %v, want it to name the missing build tag as the reason", err)
 	}

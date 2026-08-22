@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
@@ -215,12 +216,14 @@ func NewCheckpoint(jobID string, bestParams []float64, bestCost, initialCost flo
 		Timestamp:        time.Now(),
 		Config:           config,
 	}
+
 	return &checkpoint
 }
 
 // ToInfo converts a full Checkpoint to CheckpointInfo (metadata only).
 func (c *Checkpoint) ToInfo() CheckpointInfo {
 	normalized := c.normalizedMetadata()
+
 	return CheckpointInfo{
 		SchemaVersion:    normalized.SchemaVersion,
 		JobID:            normalized.JobID,
@@ -248,16 +251,22 @@ func (c *Checkpoint) Validate() error {
 	if c == nil {
 		return &ValidationError{Field: "Checkpoint", Reason: "cannot be nil"}
 	}
+
 	normalized := c.normalized()
-	if err := validateJobID(normalized.JobID); err != nil {
+
+	err := validateJobID(normalized.JobID)
+	if err != nil {
 		return &ValidationError{Field: "JobID", Reason: err.Error()}
 	}
+
 	if normalized.SchemaVersion != CheckpointSchemaVersion {
 		return &ValidationError{Field: "SchemaVersion", Reason: fmt.Sprintf("must be %d", CheckpointSchemaVersion)}
 	}
+
 	if normalized.BestParams == nil {
 		return &ValidationError{Field: "BestParams", Reason: "cannot be nil"}
 	}
+
 	if len(normalized.BestParams) == 0 {
 		return &ValidationError{Field: "BestParams", Reason: "cannot be empty"}
 	}
@@ -265,46 +274,61 @@ func (c *Checkpoint) Validate() error {
 	if len(normalized.BestParams)%7 != 0 {
 		return &ValidationError{Field: "BestParams", Reason: "length must be multiple of 7"}
 	}
+
 	if normalized.BestCost < 0 {
 		return &ValidationError{Field: "BestCost", Reason: "cannot be negative"}
 	}
+
 	if normalized.InitialCost < 0 {
 		return &ValidationError{Field: "InitialCost", Reason: "cannot be negative"}
 	}
+
 	if normalized.Iterations < 0 {
 		return &ValidationError{Field: "Iterations", Reason: "cannot be negative"}
 	}
+
 	if normalized.Evaluations < 0 {
 		return &ValidationError{Field: "Evaluations", Reason: "cannot be negative"}
 	}
+
 	if normalized.ResumeCount < 0 {
 		return &ValidationError{Field: "ResumeCount", Reason: "cannot be negative"}
 	}
+
 	if normalized.Timestamp.IsZero() {
 		return &ValidationError{Field: "Timestamp", Reason: "cannot be zero"}
 	}
+
 	if normalized.Config.RefPath == "" {
 		return &ValidationError{Field: "Config.RefPath", Reason: "cannot be empty"}
 	}
+
 	if normalized.Config.Mode == "" {
 		return &ValidationError{Field: "Config.Mode", Reason: "cannot be empty"}
 	}
+
 	if normalized.Config.Circles <= 0 {
 		return &ValidationError{Field: "Config.Circles", Reason: "must be positive"}
 	}
+
 	if normalized.Config.Iters <= 0 {
 		return &ValidationError{Field: "Config.Iters", Reason: "must be positive"}
 	}
+
 	if normalized.Config.PopSize <= 0 {
 		return &ValidationError{Field: "Config.PopSize", Reason: "must be positive"}
 	}
+
 	if normalized.RequestedCircles != normalized.Config.Circles {
 		return &ValidationError{Field: "RequestedCircles", Reason: "must match Config.Circles"}
 	}
+
 	if normalized.ActualCircles < 1 || normalized.ActualCircles > normalized.RequestedCircles {
 		return &ValidationError{Field: "ActualCircles", Reason: "must be positive and no greater than RequestedCircles"}
 	}
-	if err := normalized.validateLineage(); err != nil {
+
+	err = normalized.validateLineage()
+	if err != nil {
 		return err
 	}
 	// Verify BestParams length matches the actual materialized circles.
@@ -315,6 +339,7 @@ func (c *Checkpoint) Validate() error {
 			Reason: fmt.Sprintf("length mismatch: expected %d params for %d actual circles", expectedParams, normalized.ActualCircles),
 		}
 	}
+
 	return nil
 }
 
@@ -325,30 +350,39 @@ func (c Checkpoint) validateLineage() error {
 	if c.ExtendedFrom != "" && c.PolishedFrom != "" {
 		return &ValidationError{Field: "PolishedFrom", Reason: "cannot be set together with ExtendedFrom"}
 	}
+
 	for field, parent := range map[string]string{"ExtendedFrom": c.ExtendedFrom, "PolishedFrom": c.PolishedFrom} {
 		if parent == "" {
 			continue
 		}
-		if err := validateJobID(parent); err != nil {
+
+		err := validateJobID(parent)
+		if err != nil {
 			return &ValidationError{Field: field, Reason: err.Error()}
 		}
+
 		if parent == c.JobID {
 			return &ValidationError{Field: field, Reason: "cannot name the checkpoint's own job"}
 		}
 	}
+
 	if c.ScheduleID != "" {
-		if err := validateScheduleID(c.ScheduleID); err != nil {
+		err := validateScheduleID(c.ScheduleID)
+		if err != nil {
 			return &ValidationError{Field: "ScheduleID", Reason: err.Error()}
 		}
 	}
+
 	if c.StageIndex != nil {
 		if c.ScheduleID == "" {
 			return &ValidationError{Field: "StageIndex", Reason: "requires ScheduleID"}
 		}
+
 		if *c.StageIndex < 0 {
 			return &ValidationError{Field: "StageIndex", Reason: "cannot be negative"}
 		}
 	}
+
 	return nil
 }
 
@@ -363,12 +397,16 @@ func (c Checkpoint) MarshalJSON() ([]byte, error) {
 // schemaVersion is either missing or explicitly 1.
 func (c *Checkpoint) UnmarshalJSON(data []byte) error {
 	var wire checkpointWire
-	if err := json.Unmarshal(data, &wire); err != nil {
+
+	err := json.Unmarshal(data, &wire)
+	if err != nil {
 		return err
 	}
+
 	if wire.SchemaVersion < 0 || wire.SchemaVersion > CheckpointSchemaVersion {
 		return fmt.Errorf("unsupported checkpoint schema version %d", wire.SchemaVersion)
 	}
+
 	if wire.SchemaVersion != 0 && wire.SchemaVersion != 1 && wire.SchemaVersion != CheckpointSchemaVersion {
 		return fmt.Errorf("unsupported checkpoint schema version %d", wire.SchemaVersion)
 	}
@@ -377,6 +415,7 @@ func (c *Checkpoint) UnmarshalJSON(data []byte) error {
 	if iterations == 0 && wire.Iteration != 0 {
 		iterations = wire.Iteration
 	}
+
 	*c = Checkpoint{
 		SchemaVersion:    CheckpointSchemaVersion,
 		JobID:            wire.JobID,
@@ -399,15 +438,18 @@ func (c *Checkpoint) UnmarshalJSON(data []byte) error {
 		Config:           wire.Config,
 	}
 	legacy := wire.SchemaVersion == 0 || wire.SchemaVersion == 1
+
 	*c = c.normalized()
 	if legacy {
 		if c.Evaluations == 0 && c.Iterations > 0 && c.Config.PopSize > 0 {
 			c.Evaluations = int64(c.Iterations) * int64(c.Config.PopSize)
 		}
+
 		if wire.Termination == "" {
 			c.Termination = TerminationLegacy
 		}
 	}
+
 	return nil
 }
 
@@ -458,11 +500,13 @@ func checkpointWireFrom(c Checkpoint) checkpointWire {
 
 func (c Checkpoint) normalized() Checkpoint {
 	c = c.normalizedMetadata()
+
 	c.BestParams = append([]float64(nil), c.BestParams...)
 	if c.StageIndex != nil {
 		index := *c.StageIndex
 		c.StageIndex = &index
 	}
+
 	return c
 }
 
@@ -473,27 +517,35 @@ func (c Checkpoint) normalizedMetadata() Checkpoint {
 	if c.SchemaVersion == 0 || c.SchemaVersion == 1 {
 		c.SchemaVersion = CheckpointSchemaVersion
 	}
+
 	if c.Iterations == 0 && c.Iteration != 0 {
 		c.Iterations = c.Iteration
 	}
+
 	c.Iteration = c.Iterations
 	if c.RequestedCircles == 0 {
 		c.RequestedCircles = c.Config.Circles
 	}
+
 	if c.ActualCircles == 0 && len(c.BestParams)%7 == 0 {
 		c.ActualCircles = len(c.BestParams) / 7
 	}
+
 	if c.EffectiveSeed == 0 {
 		c.EffectiveSeed = effectiveSeed(c.Config)
 	}
+
 	if c.ResumeCount == 0 {
 		c.ResumeCount = c.Config.ResumeCount
 	}
+
 	if c.Termination == "" {
 		c.Termination = TerminationUnknown
 	}
+
 	c.Config.EffectiveSeed = c.EffectiveSeed
 	c.Config.ResumeCount = c.ResumeCount
+
 	return c
 }
 
@@ -501,6 +553,7 @@ func effectiveSeed(config JobConfig) int64 {
 	if config.EffectiveSeed != 0 {
 		return config.EffectiveSeed
 	}
+
 	return config.Seed
 }
 
@@ -524,6 +577,7 @@ func (c *Checkpoint) IsCompatible(config JobConfig) error {
 			Actual:   config.RefPath,
 		}
 	}
+
 	if c.Config.Mode != config.Mode {
 		return &CompatibilityError{
 			Field:    "Mode",
@@ -531,13 +585,15 @@ func (c *Checkpoint) IsCompatible(config JobConfig) error {
 			Actual:   string(config.Mode),
 		}
 	}
+
 	if c.Config.Circles != config.Circles {
 		return &CompatibilityError{
 			Field:    "Circles",
-			Expected: fmt.Sprintf("%d", c.Config.Circles),
-			Actual:   fmt.Sprintf("%d", config.Circles),
+			Expected: strconv.Itoa(c.Config.Circles),
+			Actual:   strconv.Itoa(config.Circles),
 		}
 	}
+
 	return nil
 }
 
@@ -564,7 +620,7 @@ func ParamVectorToCircles(params []float64) ([]CircleData, error) {
 	numCircles := len(params) / 7
 	circles := make([]CircleData, numCircles)
 
-	for i := 0; i < numCircles; i++ {
+	for i := range numCircles {
 		offset := i * 7
 		circles[i] = CircleData{
 			CircleNum: i + 1, // 1-indexed

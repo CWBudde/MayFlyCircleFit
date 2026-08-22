@@ -10,9 +10,8 @@ import (
 	"testing"
 	"unsafe"
 
-	"golang.org/x/sys/cpu"
-
 	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"golang.org/x/sys/cpu"
 )
 
 const compositeNEONDisabledHelper = "MAYFLY_TEST_COMPOSITE_NEON_DISABLED"

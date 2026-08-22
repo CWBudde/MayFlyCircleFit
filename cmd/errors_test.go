@@ -28,20 +28,24 @@ func TestIsUsageError(t *testing.T) {
 }
 
 func TestNewUsageErrorPassesNilThrough(t *testing.T) {
-	if err := NewUsageError(nil); err != nil {
+	err := NewUsageError(nil)
+	if err != nil {
 		t.Fatalf("NewUsageError(nil) = %v, want nil", err)
 	}
 }
 
 func TestUsageErrorUnwrapsCause(t *testing.T) {
 	cause := errors.New("unknown flag: --nope")
+
 	err := NewUsageError(cause)
 	if err == nil {
 		t.Fatal("NewUsageError returned nil for a non-nil cause")
 	}
+
 	if !errors.Is(err, cause) {
 		t.Fatalf("NewUsageError does not unwrap to its cause")
 	}
+
 	if err.Error() != cause.Error() {
 		t.Fatalf("Error() = %q, want %q", err.Error(), cause.Error())
 	}
@@ -91,10 +95,12 @@ func TestExecuteClassifiesRealInvocations(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Cleanup(resetRootCommand(t))
 			rootCmd.SetArgs(test.args)
+
 			err := Execute()
 			if err == nil {
 				t.Fatalf("Execute(%v) succeeded, want an error", test.args)
 			}
+
 			if got := IsUsageError(err); got != test.want {
 				t.Fatalf("Execute(%v) = %v; usage = %v, want %v", test.args, err, got, test.want)
 			}
@@ -113,10 +119,12 @@ func resetRootCommand(t *testing.T) func() {
 	previousMaxJobs := serveMaxJobs
 	previousQueueSize := serveQueueSize
 	previousBackend := serveBackend
+
 	return func() {
 		rootCmd.SetArgs(nil)
 		rootCmd.SetOut(nil)
 		rootCmd.SetErr(nil)
+
 		logLevel = previousLevel
 		serveMaxJobs = previousMaxJobs
 		serveQueueSize = previousQueueSize

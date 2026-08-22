@@ -225,12 +225,15 @@ func ParseSchedule(data []byte) (*ScheduleDocument, error) {
 			"is %d bytes, over the %d a document may be; use repeat instead of writing a stanza per stage",
 			len(data), MaxScheduleDocumentBytes))
 	}
+
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
+
 	var doc ScheduleDocument
 	if err := decoder.Decode(&doc); err != nil {
 		return nil, fmt.Errorf("decode schedule: %w", err)
 	}
+
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return nil, invalid("schedule", "must contain exactly one JSON object")
 	}
@@ -239,6 +242,7 @@ func ParseSchedule(data []byte) (*ScheduleDocument, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if err := doc.validate(present); err != nil {
 		return nil, err
 	}
@@ -248,6 +252,7 @@ func ParseSchedule(data []byte) (*ScheduleDocument, error) {
 	if err := doc.ResolveSeed(); err != nil {
 		return nil, err
 	}
+
 	return &doc, nil
 }
 
@@ -259,12 +264,16 @@ func presentBaseFields(data []byte) (map[string]json.RawMessage, error) {
 	var raw struct {
 		Base map[string]json.RawMessage `json:"base"`
 	}
-	if err := json.Unmarshal(data, &raw); err != nil {
+
+	err := json.Unmarshal(data, &raw)
+	if err != nil {
 		return nil, fmt.Errorf("decode schedule base: %w", err)
 	}
+
 	if raw.Base == nil {
 		return map[string]json.RawMessage{}, nil
 	}
+
 	return raw.Base, nil
 }
 
@@ -275,18 +284,25 @@ func (d *ScheduleDocument) validate(presentBase map[string]json.RawMessage) erro
 	if d.SchemaVersion != 0 && d.SchemaVersion != ScheduleSchemaVersion {
 		return invalid("schemaVersion", fmt.Sprintf("must be %d", ScheduleSchemaVersion))
 	}
+
 	d.SchemaVersion = ScheduleSchemaVersion
+
 	for name, reason := range scheduleRefusedBaseFields {
 		if _, written := presentBase[name]; written {
 			return invalid("base."+name, reason)
 		}
 	}
-	if err := d.reconcileSeed(); err != nil {
+
+	err := d.reconcileSeed()
+	if err != nil {
 		return err
 	}
-	if err := validateNoDefaultOverrides("base", presentBase, d.Base); err != nil {
+
+	err = validateNoDefaultOverrides("base", presentBase, d.Base)
+	if err != nil {
 		return err
 	}
+
 	return d.Validate()
 }
 
@@ -301,30 +317,39 @@ func (d ScheduleDocument) Validate() error {
 	if d.SchemaVersion != 0 && d.SchemaVersion != ScheduleSchemaVersion {
 		return invalid("schemaVersion", fmt.Sprintf("must be %d", ScheduleSchemaVersion))
 	}
+
 	if len(d.Name) > MaxScheduleNameLen {
 		return invalid("name", fmt.Sprintf("must be at most %d characters", MaxScheduleNameLen))
 	}
+
 	if len(d.Steps) > MaxScheduleSteps {
 		return invalid("steps", fmt.Sprintf("must contain at most %d steps", MaxScheduleSteps))
 	}
+
 	if err := d.reconcileSeed(); err != nil {
 		return err
 	}
+
 	if d.Base.PolishingOnly {
 		return invalid("base.polishingOnly", "cannot be set on the base stage, which has no earlier parameters to polish; add a polish step instead")
 	}
+
 	base := d.Base
 	if err := base.ApplyDefaults(); err != nil {
 		return err
 	}
+
 	if err := base.Validate(); err != nil {
 		return fmt.Errorf("base: %w", err)
 	}
+
 	if len(d.Steps) > 0 && base.Mode != ModeBatch {
 		return invalid("base.mode", "must be batch for a schedule with steps, because extend and polish continue a batch checkpoint")
 	}
+
 	for i, step := range d.Steps {
-		if err := step.validate(i); err != nil {
+		err := step.validate(i)
+		if err != nil {
 			return err
 		}
 	}
@@ -332,6 +357,7 @@ func (d ScheduleDocument) Validate() error {
 	// per-stage configurations are what the optimizer sees, and only they can
 	// report an extension that walks past the circle limit.
 	_, err := d.Expand()
+
 	return err
 }
 
@@ -343,13 +369,19 @@ func (d *ScheduleDocument) ResolveSeed() error {
 	if d.Seed == 0 {
 		base := d.Base
 		base.Seed = 0
+
 		base.EffectiveSeed = 0
-		if err := base.ApplyDefaults(); err != nil {
+
+		err := base.ApplyDefaults()
+		if err != nil {
 			return err
 		}
+
 		d.Seed = base.EffectiveSeed
 	}
+
 	d.Base.Seed = d.Seed
+
 	return nil
 }
 
@@ -363,33 +395,43 @@ func (d *ScheduleDocument) reconcileSeed() error {
 	case d.Seed == 0:
 		d.Seed = d.Base.Seed
 	}
+
 	d.Base.Seed = d.Seed
+
 	return nil
 }
 
 func (s ScheduleStep) validate(index int) error {
 	field := func(name string) string { return fmt.Sprintf("steps[%d].%s", index, name) }
+
 	switch s.Type {
 	case ScheduleStepExtend, ScheduleStepPolish:
 	default:
 		return invalid(field("type"), "must be extend or polish")
 	}
+
 	if s.Repeat < 0 {
 		return invalid(field("repeat"), "cannot be negative")
 	}
+
 	if s.Repeat > MaxScheduleRepeat {
 		return invalid(field("repeat"), fmt.Sprintf("must be at most %d", MaxScheduleRepeat))
 	}
-	if err := s.When.validate(field); err != nil {
+
+	err := s.When.validate(field)
+	if err != nil {
 		return err
 	}
+
 	if s.Type == ScheduleStepExtend {
 		if s.When != nil {
 			return invalid(field("when"), "is valid on a polish step only, because skipping an extend would move the circle count of every later stage")
 		}
+
 		if s.AdditionalCircles < 1 {
 			return invalid(field("additionalCircles"), "must be positive on an extend step")
 		}
+
 		for name, set := range map[string]bool{
 			"strategy":        s.Strategy != nil,
 			"activeSetSize":   s.ActiveSetSize != nil,
@@ -401,14 +443,18 @@ func (s ScheduleStep) validate(index int) error {
 				return invalid(field(name), "is a polish override and cannot appear on an extend step")
 			}
 		}
+
 		return nil
 	}
+
 	if s.AdditionalCircles != 0 {
 		return invalid(field("additionalCircles"), "is an extend override and cannot appear on a polish step")
 	}
+
 	if s.BatchSize != nil {
 		return invalid(field("batchSize"), "is an extend override and cannot appear on a polish step")
 	}
+
 	return nil
 }
 
@@ -418,6 +464,7 @@ func (s ScheduleStep) Repetitions() int {
 	if s.Repeat <= 0 {
 		return 1
 	}
+
 	return s.Repeat
 }
 
@@ -440,11 +487,16 @@ func (d ScheduleDocument) Expand() ([]ScheduleStage, error) {
 	// document cannot declare one seed and run the stages with another; a
 	// document whose seed is still unresolved gets one from ApplyDefaults.
 	config.Seed = d.Seed
+
 	config.EffectiveSeed = d.Seed
-	if err := config.ApplyDefaults(); err != nil {
+
+	err := config.ApplyDefaults()
+	if err != nil {
 		return nil, err
 	}
-	if err := config.Validate(); err != nil {
+
+	err = config.Validate()
+	if err != nil {
 		return nil, fmt.Errorf("base: %w", err)
 	}
 
@@ -457,19 +509,23 @@ func (d ScheduleDocument) Expand() ([]ScheduleStage, error) {
 	}}
 
 	circles := config.Circles
+
 	for stepIndex, step := range d.Steps {
 		for repetition := 1; repetition <= step.Repetitions(); repetition++ {
 			if len(stages) >= MaxScheduleStages {
 				return nil, invalid("steps", fmt.Sprintf("expands to more than %d stages", MaxScheduleStages))
 			}
+
 			stage, next, err := step.realize(config, circles, len(stages), stepIndex, repetition)
 			if err != nil {
 				return nil, err
 			}
+
 			stages = append(stages, stage)
 			circles = next
 		}
 	}
+
 	return stages, nil
 }
 
@@ -503,47 +559,59 @@ func (s ScheduleStep) realize(config JobConfig, circles, index, stepIndex, repet
 			return ScheduleStage{}, 0, invalid(field("additionalCircles"),
 				fmt.Sprintf("grows the canvas past the %d circle limit at stage %d", MaxCircles, index))
 		}
+
 		next = circles + s.AdditionalCircles
 		stage.Kind = ScheduleStageExtend
 		stage.AdditionalCircles = s.AdditionalCircles
 		staged.Circles = next
 		staged.BatchSize = min(s.AdditionalCircles, MaxBatchSize)
 		staged.PolishingEnabled = false
+
 		staged.PolishingOnly = false
 		if s.BatchSize != nil {
 			staged.BatchSize = *s.BatchSize
 		}
+
 		if s.Epochs != nil {
 			staged.OptimizerEpochs = *s.Epochs
 		}
+
 		if s.Iters != nil {
 			staged.Iters = *s.Iters
 		}
+
 		if s.PopSize != nil {
 			staged.PopSize = *s.PopSize
 		}
 	case ScheduleStepPolish:
 		stage.Kind = ScheduleStagePolish
 		staged.PolishingEnabled = true
+
 		staged.PolishingOnly = true
 		if s.Strategy != nil {
 			staged.PolishingStrategy = *s.Strategy
 		}
+
 		if s.ActiveSetSize != nil {
 			staged.PolishingActiveSetSize = *s.ActiveSetSize
 		}
+
 		if s.MaxSweeps != nil {
 			staged.PolishingMaxSweeps = *s.MaxSweeps
 		}
+
 		if s.StagnationIters != nil {
 			staged.PolishingStagnationIters = *s.StagnationIters
 		}
+
 		if s.MinImprovement != nil {
 			staged.PolishingMinImprovement = *s.MinImprovement
 		}
+
 		if s.Epochs != nil {
 			staged.PolishingEpochs = *s.Epochs
 		}
+
 		if s.Iters != nil {
 			staged.PolishingIters = *s.Iters
 		}
@@ -554,11 +622,15 @@ func (s ScheduleStep) realize(config JobConfig, circles, index, stepIndex, repet
 			staged.PolishingPopSize = *s.PopSize
 		}
 	}
-	if err := staged.Validate(); err != nil {
+
+	err := staged.Validate()
+	if err != nil {
 		return ScheduleStage{}, 0, fmt.Errorf("steps[%d] stage %d: %w", stepIndex, index, err)
 	}
+
 	stage.Circles = next
 	stage.Config = staged
+
 	return stage, next, nil
 }
 
@@ -573,10 +645,14 @@ func validateNoDefaultOverrides(prefix string, present map[string]json.RawMessag
 	if len(present) == 0 {
 		return nil
 	}
+
 	defaulted := config
-	if err := defaulted.ApplyDefaults(); err != nil {
+
+	err := defaulted.ApplyDefaults()
+	if err != nil {
 		return err
 	}
+
 	written := reflect.ValueOf(config)
 	applied := reflect.ValueOf(defaulted)
 
@@ -584,6 +660,7 @@ func validateNoDefaultOverrides(prefix string, present map[string]json.RawMessag
 	for name := range present {
 		names = append(names, name)
 	}
+
 	sort.Strings(names)
 
 	for _, name := range names {
@@ -593,13 +670,17 @@ func validateNoDefaultOverrides(prefix string, present map[string]json.RawMessag
 			// refused any key without a field.
 			continue
 		}
+
 		before := written.FieldByIndex(field.Index).Interface()
+
 		after := applied.FieldByIndex(field.Index).Interface()
 		if reflect.DeepEqual(before, after) {
 			continue
 		}
+
 		return invalid(qualifiedField(prefix, name), defaultOverrideReason(name))
 	}
+
 	return nil
 }
 
@@ -607,6 +688,7 @@ func qualifiedField(prefix, name string) string {
 	if prefix == "" {
 		return name
 	}
+
 	return prefix + "." + name
 }
 
@@ -614,22 +696,27 @@ func defaultOverrideReason(name string) string {
 	if effective, ok := scheduleEffectiveFields[name]; ok {
 		return fmt.Sprintf("is silently replaced by the configuration defaults; use %s instead", effective)
 	}
+
 	return "is silently replaced by the configuration defaults; omit it or give it a value the defaults keep"
 }
 
 var jobConfigJSONFields = buildJobConfigJSONFields()
 
 func buildJobConfigJSONFields() map[string]reflect.StructField {
-	configType := reflect.TypeOf(JobConfig{})
+	configType := reflect.TypeFor[JobConfig]()
+
 	fields := make(map[string]reflect.StructField, configType.NumField())
 	for i := 0; i < configType.NumField(); i++ {
 		field := configType.Field(i)
+
 		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
 		if name == "" || name == "-" {
 			name = field.Name
 		}
+
 		fields[name] = field
 	}
+
 	return fields
 }
 

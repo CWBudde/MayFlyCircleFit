@@ -17,7 +17,7 @@ var ssdBenchmarkSink float64
 
 // ---------------------- Test Utilities ----------------------
 
-// randomNRGBA creates an NRGBA image with random pixel values
+// randomNRGBA creates an NRGBA image with random pixel values.
 func randomNRGBA(width, height int, seed int64) *image.NRGBA {
 	rng := rand.New(rand.NewSource(seed))
 	img := image.NewNRGBA(image.Rect(0, 0, width, height))
@@ -29,12 +29,12 @@ func randomNRGBA(width, height int, seed int64) *image.NRGBA {
 	return img
 }
 
-// solidColorNRGBA creates an NRGBA image with a solid color
+// solidColorNRGBA creates an NRGBA image with a solid color.
 func solidColorNRGBA(width, height int, c color.NRGBA) *image.NRGBA {
 	img := image.NewNRGBA(image.Rect(0, 0, width, height))
 
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for y := range height {
+		for x := range width {
 			img.SetNRGBA(x, y, c)
 		}
 	}
@@ -44,7 +44,7 @@ func solidColorNRGBA(width, height int, c color.NRGBA) *image.NRGBA {
 
 // ---------------------- Correctness Tests ----------------------
 
-// TestFastSSD_IdenticalImages tests that SSD of identical images is zero
+// TestFastSSD_IdenticalImages tests that SSD of identical images is zero.
 func TestFastSSD_IdenticalImages(t *testing.T) {
 	sizes := []struct {
 		width, height int
@@ -71,7 +71,7 @@ func TestFastSSD_IdenticalImages(t *testing.T) {
 	}
 }
 
-// TestFastSSD_KnownDifference tests SSD with known pixel differences
+// TestFastSSD_KnownDifference tests SSD with known pixel differences.
 func TestFastSSD_KnownDifference(t *testing.T) {
 	// Create two 2x2 images with known differences
 	img1 := solidColorNRGBA(2, 2, color.NRGBA{R: 100, G: 150, B: 200, A: 255})
@@ -94,7 +94,7 @@ func TestFastSSD_KnownDifference(t *testing.T) {
 	}
 }
 
-// TestFastSSD_MaxDifference tests SSD with maximum possible differences
+// TestFastSSD_MaxDifference tests SSD with maximum possible differences.
 func TestFastSSD_MaxDifference(t *testing.T) {
 	// White vs black: maximum possible difference
 	white := solidColorNRGBA(10, 10, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
@@ -114,7 +114,7 @@ func TestFastSSD_MaxDifference(t *testing.T) {
 	}
 }
 
-// TestFastSSD_AlphaIgnored tests that alpha channel is ignored in SSD computation
+// TestFastSSD_AlphaIgnored tests that alpha channel is ignored in SSD computation.
 func TestFastSSD_AlphaIgnored(t *testing.T) {
 	// Create two images with same RGB but different alpha
 	img1 := solidColorNRGBA(10, 10, color.NRGBA{R: 100, G: 150, B: 200, A: 255})
@@ -130,7 +130,7 @@ func TestFastSSD_AlphaIgnored(t *testing.T) {
 
 // ---------------------- Equivalence Tests (SIMD vs Scalar) ----------------------
 
-// TestFastSSD_ScalarEquivalence tests that active backend matches scalar reference
+// TestFastSSD_ScalarEquivalence tests that active backend matches scalar reference.
 func TestFastSSD_ScalarEquivalence(t *testing.T) {
 	if ActiveSSDKernel() == TierScalar {
 		t.Skip("Skipping equivalence test: active backend is scalar")
@@ -167,7 +167,7 @@ func TestFastSSD_ScalarEquivalence(t *testing.T) {
 	}
 }
 
-// TestFastSSD_CompareImplementations uses the built-in comparison utility
+// TestFastSSD_CompareImplementations uses the built-in comparison utility.
 func TestFastSSD_CompareImplementations(t *testing.T) {
 	if ActiveSSDKernel() == TierScalar {
 		t.Skip("Skipping comparison test: active backend is scalar")
@@ -207,7 +207,7 @@ func TestFastSSD_CompareImplementations(t *testing.T) {
 
 // ---------------------- Edge Case Tests ----------------------
 
-// TestFastSSD_SinglePixel tests SSD with 1x1 images
+// TestFastSSD_SinglePixel tests SSD with 1x1 images.
 func TestFastSSD_SinglePixel(t *testing.T) {
 	img1 := solidColorNRGBA(1, 1, color.NRGBA{R: 50, G: 100, B: 150, A: 255})
 	img2 := solidColorNRGBA(1, 1, color.NRGBA{R: 60, G: 90, B: 160, A: 255})
@@ -224,7 +224,7 @@ func TestFastSSD_SinglePixel(t *testing.T) {
 	}
 }
 
-// TestFastSSD_ThinImages tests edge case with very thin images
+// TestFastSSD_ThinImages tests edge case with very thin images.
 func TestFastSSD_ThinImages(t *testing.T) {
 	testCases := []struct {
 		name          string
@@ -258,6 +258,7 @@ func TestFastSSD_ThinImages(t *testing.T) {
 // TestFastSSD_DimensionMismatch tests safe rejection of mismatched dimensions.
 func TestFastSSD_DimensionMismatch(t *testing.T) {
 	img1 := randomNRGBA(64, 64, 111)
+
 	img2 := randomNRGBA(128, 128, 222) // Different size
 	if got := FastSSD(img1, img2); !math.IsInf(got, 1) {
 		t.Fatalf("FastSSD mismatch = %v, want +Inf", got)
@@ -275,7 +276,7 @@ func TestFastSSD_DimensionMismatch(t *testing.T) {
 
 // ---------------------- Concurrency Tests ----------------------
 
-// TestFastSSD_ConcurrentAccess tests thread-safety of SSD computation
+// TestFastSSD_ConcurrentAccess tests thread-safety of SSD computation.
 func TestFastSSD_ConcurrentAccess(t *testing.T) {
 	img1 := randomNRGBA(256, 256, 111)
 	img2 := randomNRGBA(256, 256, 222)
@@ -287,12 +288,13 @@ func TestFastSSD_ConcurrentAccess(t *testing.T) {
 	results := make([][]float64, goroutines)
 	var wg sync.WaitGroup
 
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
+
 			results[idx] = make([]float64, iterations)
-			for i := 0; i < iterations; i++ {
+			for i := range iterations {
 				results[idx][i] = FastSSD(img1, img2)
 			}
 		}(g)
@@ -302,8 +304,9 @@ func TestFastSSD_ConcurrentAccess(t *testing.T) {
 
 	// All results should be identical (no race conditions or shared state issues)
 	expected := results[0][0]
-	for g := 0; g < goroutines; g++ {
-		for i := 0; i < iterations; i++ {
+
+	for g := range goroutines {
+		for i := range iterations {
 			if results[g][i] != expected {
 				t.Errorf("Concurrent call mismatch: goroutine %d, iter %d: got %f, want %f",
 					g, i, results[g][i], expected)
@@ -316,7 +319,7 @@ func TestFastSSD_ConcurrentAccess(t *testing.T) {
 
 // ---------------------- Large Image Tests ----------------------
 
-// TestFastSSD_LargeImages stress tests with very large images
+// TestFastSSD_LargeImages stress tests with very large images.
 func TestFastSSD_LargeImages(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping large image test in short mode")
@@ -361,7 +364,7 @@ func TestFastSSD_LargeImages(t *testing.T) {
 
 // ---------------------- Padded Stride Tests ----------------------
 
-// TestFastSSD_PaddedStride tests handling of non-standard stride (padded images)
+// TestFastSSD_PaddedStride tests handling of non-standard stride (padded images).
 func TestFastSSD_PaddedStride(t *testing.T) {
 	width, height := 63, 32 // Non-multiple of 8 (tests remainder handling)
 
@@ -375,8 +378,9 @@ func TestFastSSD_PaddedStride(t *testing.T) {
 
 	// Fill with test pattern
 	rng := rand.New(rand.NewSource(777))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+
+	for y := range height {
+		for x := range width {
 			i := y*stride + x*4
 			pix1[i+0] = uint8(rng.Intn(256))
 			pix1[i+1] = uint8(rng.Intn(256))
@@ -397,6 +401,7 @@ func TestFastSSD_PaddedStride(t *testing.T) {
 	if result != want {
 		t.Errorf("Padded stride result = %f, scalar = %f", result, want)
 	}
+
 	wantExact := uint64(fastSSD_Scalar(img1.Pix, img2.Pix, stride, width, height))
 	if exact, ok := ExactSSD(img1, img2); !ok || exact != wantExact {
 		t.Errorf("ExactSSD padded stride = (%d, %v), want (%d, true)", exact, ok, wantExact)
@@ -425,10 +430,12 @@ func TestRequiredSIMDTier(t *testing.T) {
 	if required == "" {
 		t.Skipf("%s is not set", requiredTierEnv)
 	}
+
 	want, ok := ParseSIMDTier(required)
 	if !ok {
 		t.Fatalf("%s=%q is not a tier name", requiredTierEnv, required)
 	}
+
 	if got := Tier(); got != want {
 		t.Fatalf("detected tier = %s, required %s", got, want)
 	}
@@ -457,6 +464,7 @@ func TestInstalledKernelsMatchTier(t *testing.T) {
 	if tier == TierAVX2 {
 		wantSAD = TierAVX2
 	}
+
 	if got := ActiveSADKernel(); got != wantSAD {
 		t.Errorf("SAD kernel = %s, want %s at tier %s", got, wantSAD, tier)
 	}
@@ -464,6 +472,7 @@ func TestInstalledKernelsMatchTier(t *testing.T) {
 	if fastSSD == nil {
 		t.Error("fastSSD function pointer is nil")
 	}
+
 	if fastSAD == nil {
 		t.Error("fastSAD function pointer is nil")
 	}
@@ -487,6 +496,7 @@ func TestDetectedTierMatchesCPUFeatures(t *testing.T) {
 		if !cpu.X86.HasSSE2 {
 			t.Error("SSE2 tier selected but the CPU does not report SSE2")
 		}
+
 		if cpu.X86.HasAVX2 {
 			t.Error("SSE2 tier selected although AVX2 is available")
 		}
@@ -509,13 +519,14 @@ func TestDetectedTierMatchesCPUFeatures(t *testing.T) {
 
 // ---------------------- Benchmark Tests ----------------------
 
-// BenchmarkFastSSD_Scalar benchmarks scalar implementation
+// BenchmarkFastSSD_Scalar benchmarks scalar implementation.
 func BenchmarkFastSSD_Scalar(b *testing.B) {
 	img1 := randomNRGBA(256, 256, 1)
 	img2 := randomNRGBA(256, 256, 2)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for range b.N {
 		fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 	}
 
@@ -524,7 +535,7 @@ func BenchmarkFastSSD_Scalar(b *testing.B) {
 	b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
 }
 
-// BenchmarkFastSSD_Active benchmarks whichever kernel dispatch installed
+// BenchmarkFastSSD_Active benchmarks whichever kernel dispatch installed.
 func BenchmarkFastSSD_Active(b *testing.B) {
 	img1 := randomNRGBA(256, 256, 1)
 	img2 := randomNRGBA(256, 256, 2)
@@ -532,7 +543,8 @@ func BenchmarkFastSSD_Active(b *testing.B) {
 	b.Logf("Active backend: %s", ActiveSSDKernel())
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for range b.N {
 		fastSSD(img1.Pix, img2.Pix, img1.Stride, 256, 256)
 	}
 
@@ -540,13 +552,14 @@ func BenchmarkFastSSD_Active(b *testing.B) {
 	b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
 }
 
-// BenchmarkFastSSD_HighLevel benchmarks high-level FastSSD wrapper
+// BenchmarkFastSSD_HighLevel benchmarks high-level FastSSD wrapper.
 func BenchmarkFastSSD_HighLevel(b *testing.B) {
 	img1 := randomNRGBA(256, 256, 1)
 	img2 := randomNRGBA(256, 256, 2)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for range b.N {
 		FastSSD(img1, img2)
 	}
 
@@ -554,7 +567,7 @@ func BenchmarkFastSSD_HighLevel(b *testing.B) {
 	b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
 }
 
-// BenchmarkFastSSD_Comparison benchmarks scalar vs active backend side-by-side
+// BenchmarkFastSSD_Comparison benchmarks scalar vs active backend side-by-side.
 func BenchmarkFastSSD_Comparison(b *testing.B) {
 	sizes := []struct {
 		name          string
@@ -574,9 +587,11 @@ func BenchmarkFastSSD_Comparison(b *testing.B) {
 		b.Run(sz.name+"_scalar", func(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+
+			for range b.N {
 				ssdBenchmarkSink = fastSSD_Scalar(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height)
 			}
+
 			mpixelsPerSec := BenchmarkSSDBackend(b.N, sz.width, sz.height, b.Elapsed().Nanoseconds())
 			b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
 		})
@@ -586,9 +601,11 @@ func BenchmarkFastSSD_Comparison(b *testing.B) {
 		b.Run(sz.name+"_sse2", func(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+
+			for range b.N {
 				ssdBenchmarkSink = fastSSD_SSE2(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height)
 			}
+
 			mpixelsPerSec := BenchmarkSSDBackend(b.N, sz.width, sz.height, b.Elapsed().Nanoseconds())
 			b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
 		})
@@ -597,9 +614,11 @@ func BenchmarkFastSSD_Comparison(b *testing.B) {
 			b.Logf("Active backend: %s", ActiveSSDKernel())
 			b.ReportAllocs()
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+
+			for range b.N {
 				ssdBenchmarkSink = fastSSD(img1.Pix, img2.Pix, img1.Stride, sz.width, sz.height)
 			}
+
 			mpixelsPerSec := BenchmarkSSDBackend(b.N, sz.width, sz.height, b.Elapsed().Nanoseconds())
 			b.ReportMetric(mpixelsPerSec, "Mpixels/sec")
 		})
@@ -608,7 +627,7 @@ func BenchmarkFastSSD_Comparison(b *testing.B) {
 
 // ---------------------- Regression Tests ----------------------
 
-// TestFastMSECost_EquivalentToMSECost tests that FastMSECost matches MSECost
+// TestFastMSECost_EquivalentToMSECost tests that FastMSECost matches MSECost.
 func TestFastMSECost_EquivalentToMSECost(t *testing.T) {
 	sizes := []struct {
 		width, height int
@@ -644,7 +663,7 @@ func TestFastMSECost_EquivalentToMSECost(t *testing.T) {
 
 // ---------------------- Validation Test ----------------------
 
-// TestSSDBackendDetection validates that the correct backend was selected
+// TestSSDBackendDetection validates that the correct backend was selected.
 func TestSSDBackendDetection(t *testing.T) {
 	t.Logf("Active SSD backend: %s", ActiveSSDKernel())
 

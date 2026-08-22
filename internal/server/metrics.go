@@ -12,6 +12,7 @@ import (
 
 func qualitySample(iteration int, cost float64, ssim *float64, timestamp time.Time) MetricSample {
 	psnr, infinite := serializablePSNR(cost)
+
 	return MetricSample{
 		Iteration: iteration, Cost: cost, PSNR: psnr, PSNRInfinite: infinite,
 		SSIM: cloneFloat(ssim), Timestamp: timestamp,
@@ -26,6 +27,7 @@ func throughputCPS(stageEvaluations, circles int, elapsed float64) float64 {
 	if elapsed <= 0 || stageEvaluations <= 0 || circles <= 0 {
 		return 0
 	}
+
 	return float64(stageEvaluations*circles) / elapsed
 }
 
@@ -34,9 +36,11 @@ func serializablePSNR(mse float64) (*float64, bool) {
 	if math.IsInf(value, 1) {
 		return nil, true
 	}
+
 	if math.IsNaN(value) || math.IsInf(value, -1) {
 		return nil, false
 	}
+
 	return &value, false
 }
 
@@ -46,6 +50,7 @@ func calculateSSIM(current, reference *image.NRGBA, jobID string) *float64 {
 		slog.Warn("Failed to calculate SSIM", "job_id", jobID, "error", err)
 		return nil
 	}
+
 	return &value
 }
 

@@ -75,12 +75,15 @@ func normalizeBuildMetadata(meta BuildMetadata) BuildMetadata {
 	if meta.Version == "" {
 		meta.Version = "dev"
 	}
+
 	if meta.Commit == "" {
 		meta.Commit = "unknown"
 	}
+
 	if meta.BuildDate == "" {
 		meta.BuildDate = "unknown"
 	}
+
 	return meta
 }
 
@@ -101,15 +104,18 @@ func collectGPUInfo() GPUInfo {
 	for _, platform := range platforms {
 		deviceCount += len(platform.Devices)
 	}
+
 	if deviceCount == 0 {
 		return GPUInfo{State: GPUStateNoDevices}
 	}
+
 	return GPUInfo{State: GPUStateAvailable, Platforms: platforms}
 }
 
 // HostFactsFromMetadata gathers current host/runtime capabilities.
 func HostFactsFromMetadata(meta BuildMetadata) HostFacts {
 	meta = normalizeBuildMetadata(meta)
+
 	return HostFacts{
 		Version:                meta.Version,
 		Commit:                 meta.Commit,

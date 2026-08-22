@@ -43,10 +43,13 @@ func runVersion(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("encode version facts: %w", err)
 		}
+
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(facts))
+
 		return nil
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "mayflycirclefit version %s\n", versionInfo())
+
 	return nil
 }

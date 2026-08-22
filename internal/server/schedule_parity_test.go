@@ -99,6 +99,7 @@ func TestScheduleReproducesTheHandDrivenCampaign(t *testing.T) {
 	if len(byHand) != len(bySchedule) {
 		t.Fatalf("hand-driven chain ran %d stages, the schedule ran %d", len(byHand), len(bySchedule))
 	}
+
 	for index := range byHand {
 		if byHand[index] != bySchedule[index] {
 			t.Fatalf("stage %d cost: hand-driven %.17g, scheduled %.17g (difference %g)",
@@ -111,6 +112,7 @@ func TestScheduleReproducesTheHandDrivenCampaign(t *testing.T) {
 	if byHand[0] <= 0 {
 		t.Fatalf("base stage cost = %g, want a positive cost", byHand[0])
 	}
+
 	if byHand[len(byHand)-1] >= byHand[0] {
 		t.Fatalf("cost did not improve across the campaign: %v", byHand)
 	}
@@ -129,6 +131,7 @@ func TestScheduleReproducesTheHandDrivenCampaign(t *testing.T) {
 func createParityTestImage(t *testing.T, path string) string {
 	t.Helper()
 	const size = 64
+
 	img := image.NewNRGBA(image.Rect(0, 0, size, size))
 	for y := range size {
 		for x := range size {
@@ -140,21 +143,25 @@ func createParityTestImage(t *testing.T, path string) string {
 			})
 		}
 	}
+
 	file, err := os.Create(path)
 	if err != nil {
 		t.Fatalf("create parity image: %v", err)
 	}
 	defer file.Close()
+
 	if err := png.Encode(file, img); err != nil {
 		t.Fatalf("encode parity image: %v", err)
 	}
+
 	return path
 }
 
 // handDrivenCampaign is the orchestrator's job, done by hand: create, extend,
-// extend, extend, polish, reading the cost off each job as it settles.
+// polish, reading the cost off each job as it settles.
 func handDrivenCampaign(t *testing.T, fixture *scheduleFixture) []float64 {
 	t.Helper()
+
 	costs := make([]float64, 0, parityExtendCount+2)
 
 	body := fmt.Sprintf("{%s}", parityConfig(fixture.imagePath))
@@ -170,6 +177,7 @@ func handDrivenCampaign(t *testing.T, fixture *scheduleFixture) []float64 {
 
 	jobID = postJob(t, fixture, "/api/v1/jobs/"+jobID+"/polish", `{}`)
 	costs = append(costs, awaitParityJob(t, fixture, jobID))
+
 	return costs
 }
 
@@ -177,6 +185,7 @@ func handDrivenCampaign(t *testing.T, fixture *scheduleFixture) []float64 {
 // it, then reads the cost off the stage records.
 func scheduledCampaign(t *testing.T, fixture *scheduleFixture) []float64 {
 	t.Helper()
+
 	document := fmt.Sprintf(`{
   "name": "parity campaign",
   "base": {
@@ -195,13 +204,16 @@ func scheduledCampaign(t *testing.T, fixture *scheduleFixture) []float64 {
 	if len(stages) > 0 && stages[0].JobID != "" {
 		requireCompleteBatchCheckpoint(t, fixture, stages[0].JobID, parityBaseCircles)
 	}
+
 	costs := make([]float64, 0, len(stages))
 	for _, stage := range stages {
 		if stage.State != store.ScheduleStateCompleted {
 			t.Fatalf("stage %d state = %q, want completed: %s", stage.Index, stage.State, stage.Error)
 		}
+
 		costs = append(costs, stage.BestCost)
 	}
+
 	return costs
 }
 
@@ -219,14 +231,17 @@ func scheduledCampaign(t *testing.T, fixture *scheduleFixture) []float64 {
 // an unrelated request.
 func requireCompleteBatchCheckpoint(t *testing.T, fixture *scheduleFixture, jobID string, wantCircles int) {
 	t.Helper()
+
 	jobStore, err := fixture.server.storeForJob(jobID)
 	if err != nil {
 		t.Fatalf("resolve store for job %s: %v", jobID, err)
 	}
+
 	checkpoint, err := jobStore.LoadCheckpoint(jobID)
 	if err != nil {
 		t.Fatalf("job %s reported completed but has no readable checkpoint: %v", jobID, err)
 	}
+
 	if got := len(checkpoint.BestParams) / 7; got != wantCircles || len(checkpoint.BestParams)%7 != 0 {
 		t.Fatalf("base produced %d of %d circles (%d parameters, termination %q); "+
 			"the campaign cannot continue from an incomplete batch checkpoint",
@@ -239,25 +254,33 @@ func requireCompleteBatchCheckpoint(t *testing.T, fixture *scheduleFixture, jobI
 // `jobId`; POST /api/v1/jobs returns the whole job, whose identifier is `id`.
 func postJob(t *testing.T, fixture *scheduleFixture, path, body string) string {
 	t.Helper()
+
 	recorder := httptest.NewRecorder()
 	fixture.server.Handler().ServeHTTP(recorder,
 		httptest.NewRequest(http.MethodPost, path, strings.NewReader(body)))
+
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("POST %s status = %d, body %s", path, recorder.Code, recorder.Body.String())
 	}
+
 	var response struct {
 		ID    string `json:"id"`
 		JobID string `json:"jobId"`
 	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+
+	err := json.Unmarshal(recorder.Body.Bytes(), &response)
+	if err != nil {
 		t.Fatalf("decode POST %s response: %v", path, err)
 	}
+
 	if response.JobID != "" {
 		return response.JobID
 	}
+
 	if response.ID == "" {
 		t.Fatalf("POST %s named no job: %s", path, recorder.Body.String())
 	}
+
 	return response.ID
 }
 
@@ -271,30 +294,39 @@ func postJob(t *testing.T, fixture *scheduleFixture, path, body string) string {
 // resulting window turned CPU contention into a 404 from the next /extend.
 func awaitParityJob(t *testing.T, fixture *scheduleFixture, jobID string) float64 {
 	t.Helper()
+
 	deadline := time.Now().Add(parityJobTimeout)
 	for time.Now().Before(deadline) {
 		recorder := httptest.NewRecorder()
 		fixture.server.Handler().ServeHTTP(recorder,
 			httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+jobID, nil))
+
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("GET job %s status = %d, body %s", jobID, recorder.Code, recorder.Body.String())
 		}
+
 		var job struct {
 			State    JobState `json:"state"`
 			BestCost float64  `json:"bestCost"`
 			Error    string   `json:"error"`
 		}
-		if err := json.Unmarshal(recorder.Body.Bytes(), &job); err != nil {
+
+		err := json.Unmarshal(recorder.Body.Bytes(), &job)
+		if err != nil {
 			t.Fatalf("decode job %s: %v", jobID, err)
 		}
+
 		switch job.State {
 		case StateCompleted:
 			return job.BestCost
 		case StateFailed, StateCancelled:
 			t.Fatalf("job %s ended %s: %s", jobID, job.State, job.Error)
 		}
+
 		time.Sleep(5 * time.Millisecond)
 	}
+
 	t.Fatalf("job %s did not settle within %s", jobID, parityJobTimeout)
+
 	return 0
 }

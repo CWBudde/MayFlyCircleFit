@@ -22,8 +22,11 @@ func validJobResponse(t *testing.T, id string) jobResponse {
 
 	config := app.DefaultConfig()
 	config.RefPath = "assets/reference.png"
+
 	config.Seed = 42
-	if err := config.ApplyDefaults(); err != nil {
+
+	err := config.ApplyDefaults()
+	if err != nil {
 		t.Fatalf("apply config defaults: %v", err)
 	}
 
@@ -34,6 +37,7 @@ func validJobResponse(t *testing.T, id string) jobResponse {
 	elapsed := 1.5
 	cps := 100.0
 	startTime := time.Now().UTC()
+
 	return jobResponse{
 		ID:          id,
 		State:       "running",
@@ -50,11 +54,16 @@ func validJobResponse(t *testing.T, id string) jobResponse {
 
 func TestJobResponseAcceptsCompactCollectionConfig(t *testing.T) {
 	response := validJobResponse(t, "job-1")
+
 	response.Config = &app.JobConfig{RefPath: "assets/reference.png", Mode: app.ModeBatch, Circles: 8}
-	if err := response.validate(false); err != nil {
+
+	err := response.validate(false)
+	if err != nil {
 		t.Fatalf("compact collection response rejected: %v", err)
 	}
-	if err := response.validate(true); err == nil {
+
+	err = response.validate(true)
+	if err == nil {
 		t.Fatal("compact config was accepted for the detailed status response")
 	}
 }
@@ -63,6 +72,7 @@ func testCommand(ctx context.Context, output io.Writer) *cobra.Command {
 	command := &cobra.Command{}
 	command.SetContext(ctx)
 	command.SetOut(output)
+
 	return command
 }
 
@@ -70,10 +80,14 @@ func TestRunStatusEscapesJobIDAndUsesTypedResponse(t *testing.T) {
 	jobID := "job/with ?#"
 	response := validJobResponse(t, jobID)
 	requestURI := make(chan string, 1)
+
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		requestURI <- request.RequestURI
+
 		writer.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(writer).Encode(response); err != nil {
+
+		err := json.NewEncoder(writer).Encode(response)
+		if err != nil {
 			t.Errorf("encode response: %v", err)
 		}
 	}))
@@ -81,16 +95,20 @@ func TestRunStatusEscapesJobIDAndUsesTypedResponse(t *testing.T) {
 
 	previousURL := serverURL
 	serverURL = server.URL + "/"
+
 	t.Cleanup(func() { serverURL = previousURL })
 
 	var output bytes.Buffer
-	if err := runStatus(testCommand(context.Background(), &output), []string{jobID}); err != nil {
+
+	err := runStatus(testCommand(context.Background(), &output), []string{jobID})
+	if err != nil {
 		t.Fatalf("runStatus: %v", err)
 	}
 
 	if got := <-requestURI; got != "/api/v1/jobs/job%2Fwith%20%3F%23/status" {
 		t.Errorf("RequestURI = %q, want escaped job ID", got)
 	}
+
 	if !strings.Contains(output.String(), "Job: "+jobID) || !strings.Contains(output.String(), "Improvement: 6.00 (60.0%)") {
 		t.Errorf("unexpected status output:\n%s", output.String())
 	}
@@ -123,7 +141,9 @@ func TestListJobsRejectsMalformedOrSkewedResponses(t *testing.T) {
 			defer server.Close()
 
 			var output bytes.Buffer
-			if err := listJobs(context.Background(), &output, server.URL); err == nil {
+
+			err := listJobs(context.Background(), &output, server.URL)
+			if err == nil {
 				t.Fatalf("listJobs accepted malformed response %s", testCase.body)
 			}
 		})
@@ -143,16 +163,20 @@ func TestListJobsEmptyAndValidResponses(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-				if err := json.NewEncoder(writer).Encode(testCase.response); err != nil {
+				err := json.NewEncoder(writer).Encode(testCase.response)
+				if err != nil {
 					t.Errorf("encode response: %v", err)
 				}
 			}))
 			defer server.Close()
 
 			var output bytes.Buffer
-			if err := listJobs(context.Background(), &output, server.URL); err != nil {
+
+			err := listJobs(context.Background(), &output, server.URL)
+			if err != nil {
 				t.Fatalf("listJobs: %v", err)
 			}
+
 			if !strings.Contains(output.String(), testCase.wantOutput) {
 				t.Errorf("output %q does not contain %q", output.String(), testCase.wantOutput)
 			}
@@ -165,30 +189,40 @@ func TestListJobsReadsBoundedPages(t *testing.T) {
 	second := validJobResponse(t, "job-2")
 	total := 2
 	requests := 0
+
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		requests++
+
 		if got := request.URL.Query().Get("limit"); got != "100" {
 			t.Errorf("limit = %q, want 100", got)
 		}
+
 		writer.Header().Set("Content-Type", "application/json")
+
 		if request.URL.Query().Get("cursor") == "" {
 			_ = json.NewEncoder(writer).Encode(jobListPageResponse{Jobs: []jobResponse{first}, NextCursor: "page-2", Total: &total})
 			return
 		}
+
 		if got := request.URL.Query().Get("cursor"); got != "page-2" {
 			t.Errorf("cursor = %q, want page-2", got)
 		}
+
 		_ = json.NewEncoder(writer).Encode(jobListPageResponse{Jobs: []jobResponse{second}, Total: &total})
 	}))
 	defer server.Close()
 
 	var output bytes.Buffer
-	if err := listJobs(context.Background(), &output, server.URL); err != nil {
+
+	err := listJobs(context.Background(), &output, server.URL)
+	if err != nil {
 		t.Fatalf("listJobs: %v", err)
 	}
+
 	if requests != 2 {
 		t.Fatalf("requests = %d, want 2", requests)
 	}
+
 	for _, want := range []string{"Found 2 job(s)", "Job ID: job-1", "Job ID: job-2"} {
 		if !strings.Contains(output.String(), want) {
 			t.Errorf("output %q does not contain %q", output.String(), want)
@@ -218,7 +252,8 @@ func TestGetJobStatusRejectsMissingMetricsAndMismatchedID(t *testing.T) {
 			}))
 			defer server.Close()
 
-			if err := getJobStatus(context.Background(), io.Discard, server.URL, testCase.requested); err == nil {
+			err := getJobStatus(context.Background(), io.Discard, server.URL, testCase.requested)
+			if err == nil {
 				t.Fatal("getJobStatus accepted malformed status response")
 			}
 		})
@@ -277,10 +312,12 @@ func TestRunStatusUsesCommandContext(t *testing.T) {
 
 	previousURL := serverURL
 	serverURL = server.URL
+
 	t.Cleanup(func() { serverURL = previousURL })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
+
 	err := runStatus(testCommand(ctx, io.Discard), nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
@@ -290,23 +327,30 @@ func TestRunStatusUsesCommandContext(t *testing.T) {
 func TestRunResumeServerEscapesIDAndValidatesResponse(t *testing.T) {
 	jobID := "checkpoint/with ?#"
 	requestDetails := make(chan string, 1)
+
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		requestDetails <- fmt.Sprintf("%s %s %s", request.Method, request.RequestURI, request.Header.Get("Content-Type"))
+
 		_, _ = fmt.Fprintf(writer, `{"jobId":"new-job","resumedFrom":%q,"state":"pending","previousCost":2.5,"previousIters":40,"message":"resumed"}`, jobID)
 	}))
 	defer server.Close()
 
 	previousURL := resumeServerURL
 	resumeServerURL = server.URL + "/"
+
 	t.Cleanup(func() { resumeServerURL = previousURL })
 
 	var output bytes.Buffer
-	if err := runResumeServer(context.Background(), &output, jobID); err != nil {
+
+	err := runResumeServer(context.Background(), &output, jobID)
+	if err != nil {
 		t.Fatalf("runResumeServer: %v", err)
 	}
+
 	if got := <-requestDetails; got != "POST /api/v1/jobs/checkpoint%2Fwith%20%3F%23/resume application/json" {
 		t.Errorf("request = %q, want escaped POST with JSON content type", got)
 	}
+
 	if !strings.Contains(output.String(), "Job ID: new-job") {
 		t.Errorf("unexpected output: %s", output.String())
 	}
@@ -335,9 +379,11 @@ func TestRunResumeServerRejectsMalformedResponses(t *testing.T) {
 
 			previousURL := resumeServerURL
 			resumeServerURL = server.URL
+
 			t.Cleanup(func() { resumeServerURL = previousURL })
 
-			if err := runResumeServer(context.Background(), io.Discard, "source"); err == nil {
+			err := runResumeServer(context.Background(), io.Discard, "source")
+			if err == nil {
 				t.Fatalf("runResumeServer accepted malformed response %s", testCase.body)
 			}
 		})
@@ -353,6 +399,7 @@ func TestRunResumeServerReportsCheckpointNotFound(t *testing.T) {
 
 	previousURL := resumeServerURL
 	resumeServerURL = server.URL
+
 	t.Cleanup(func() { resumeServerURL = previousURL })
 
 	err := runResumeServer(context.Background(), io.Discard, "source")
@@ -387,18 +434,24 @@ func TestGetJobStatusPrintsTermination(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			response := validJobResponse(t, "job-1")
 			response.Termination = testCase.termination
+
 			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 				writer.Header().Set("Content-Type", "application/json")
-				if err := json.NewEncoder(writer).Encode(response); err != nil {
+
+				err := json.NewEncoder(writer).Encode(response)
+				if err != nil {
 					t.Errorf("encode response: %v", err)
 				}
 			}))
 			defer server.Close()
 
 			var output bytes.Buffer
-			if err := getJobStatus(context.Background(), &output, server.URL, "job-1"); err != nil {
+
+			err := getJobStatus(context.Background(), &output, server.URL, "job-1")
+			if err != nil {
 				t.Fatalf("getJobStatus: %v", err)
 			}
+
 			if got := strings.Contains(output.String(), testCase.want); got == testCase.absent {
 				t.Errorf("output contains %q = %v, want %v:\n%s",
 					testCase.want, got, !testCase.absent, output.String())

@@ -33,9 +33,11 @@ func TestCircleEncoding(t *testing.T) {
 			if decoded.X != tt.circle.X {
 				t.Errorf("X mismatch: got %f, want %f", decoded.X, tt.circle.X)
 			}
+
 			if decoded.Y != tt.circle.Y {
 				t.Errorf("Y mismatch: got %f, want %f", decoded.Y, tt.circle.Y)
 			}
+
 			if decoded.R != tt.circle.R {
 				t.Errorf("R mismatch: got %f, want %f", decoded.R, tt.circle.R)
 			}
@@ -67,6 +69,7 @@ func TestBoundsValidation(t *testing.T) {
 			t.Errorf("color bounds[%d] incorrect: [%f, %f]", i, bounds.Lower[i], bounds.Upper[i])
 		}
 	}
+
 	if bounds.Lower[6] != MinCircleOpacity || bounds.Upper[6] != 1 {
 		t.Errorf("opacity bounds incorrect: [%f, %f]", bounds.Lower[6], bounds.Upper[6])
 	}
@@ -87,15 +90,19 @@ func TestClampCircle(t *testing.T) {
 	if clamped.X != -50 {
 		t.Errorf("X not clamped: %f", clamped.X)
 	}
+
 	if clamped.Y != 149 {
 		t.Errorf("Y not clamped: %f", clamped.Y)
 	}
+
 	if clamped.R != 100 {
 		t.Errorf("radius not clamped: %f", clamped.R)
 	}
+
 	if clamped.CR < 0 || clamped.CR > 1 {
 		t.Errorf("CR not clamped: %f", clamped.CR)
 	}
+
 	if clamped.Opacity < MinCircleOpacity || clamped.Opacity > 1 {
 		t.Errorf("Opacity not clamped: %f", clamped.Opacity)
 	}
@@ -145,12 +152,15 @@ func TestRequiredCircleRadiusCoversRasterSampleAfterQ16Quantization(t *testing.T
 			yQ := int64(math.Round(tt.y * q16Scale))
 			radiusQ := int64(math.Round(RequiredCircleRadius(tt.x, tt.y, tt.width, tt.height) * q16Scale))
 			dxQ := int64(nearestX*q16Scale) - xQ
+
 			dyQ := int64(nearestY*q16Scale) - yQ
 			if dxQ*dxQ+dyQ*dyQ > radiusQ*radiusQ {
 				t.Fatalf("nearest sample (%g,%g) is outside quantized radius", nearestX, nearestY)
 			}
+
 			dx32 := float32(tt.x) - float32(nearestX)
 			dy32 := float32(tt.y) - float32(nearestY)
+
 			radius32 := float32(RequiredCircleRadius(tt.x, tt.y, tt.width, tt.height))
 			if dx32*dx32+dy32*dy32 > radius32*radius32 {
 				t.Fatalf("nearest sample (%g,%g) is outside float32 radius", nearestX, nearestY)
@@ -161,6 +171,7 @@ func TestRequiredCircleRadiusCoversRasterSampleAfterQ16Quantization(t *testing.T
 
 func TestBoundsValidateCircle(t *testing.T) {
 	bounds := NewBounds(1, 100, 80)
+
 	tests := []struct {
 		name   string
 		circle Circle
@@ -190,14 +201,18 @@ func TestBoundsValidateCircle(t *testing.T) {
 func TestClampCircleRaisesRadiusForOutsideCenter(t *testing.T) {
 	bounds := NewBounds(1, 100, 80)
 	clamped := bounds.ClampCircle(Circle{X: -30, Y: -40, R: 1, Opacity: 0})
+
 	wantRadius := 50.0
 	if clamped.R != wantRadius {
 		t.Fatalf("radius = %g, want %g", clamped.R, wantRadius)
 	}
+
 	if clamped.Opacity != MinCircleOpacity {
 		t.Fatalf("opacity = %g, want %g", clamped.Opacity, MinCircleOpacity)
 	}
-	if err := bounds.ValidateCircle(clamped); err != nil {
+
+	err := bounds.ValidateCircle(clamped)
+	if err != nil {
 		t.Fatalf("clamped circle is invalid: %v", err)
 	}
 }
@@ -206,13 +221,16 @@ func TestClampIndependentVectorPreservesDynamicRadiusViolation(t *testing.T) {
 	bounds := NewBounds(1, 100, 80)
 	params := []float64{-100, 200, 0, -1, 2, 0.5, 0}
 	bounds.ClampIndependentVector(params)
+
 	circle := (&ParamVector{Data: params, K: 1, Width: 100, Height: 80}).DecodeCircle(0)
 	if circle.X != bounds.Lower[0] || circle.Y != bounds.Upper[1] || circle.R != MinCircleRadius {
 		t.Fatalf("independently clamped geometry = (%g,%g,%g)", circle.X, circle.Y, circle.R)
 	}
+
 	if violation := bounds.RadiusViolation(circle); violation <= 0 {
 		t.Fatalf("radius violation = %g, want positive", violation)
 	}
+
 	if circle.Opacity != MinCircleOpacity {
 		t.Fatalf("opacity = %g, want %g", circle.Opacity, MinCircleOpacity)
 	}

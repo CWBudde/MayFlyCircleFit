@@ -13,8 +13,9 @@ import (
 
 func TestDeltaSSDSpanMatchesScalar(t *testing.T) {
 	rng := rand.New(rand.NewSource(10_016))
+
 	for _, pixels := range []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255, 256, 257} {
-		t.Run(fmt.Sprintf("%d", pixels), func(t *testing.T) {
+		t.Run(strconv.Itoa(pixels), func(t *testing.T) {
 			candidate := make([]byte, pixels*4)
 			base := make([]byte, pixels*4)
 			reference := make([]byte, pixels*4)
@@ -22,6 +23,7 @@ func TestDeltaSSDSpanMatchesScalar(t *testing.T) {
 			_, _ = rng.Read(base)
 			_, _ = rng.Read(reference)
 			got := deltaSSDSpan(candidate, base, reference, pixels)
+
 			want := deltaSSDSpanScalar(candidate, base, reference, pixels)
 			if got != want {
 				t.Fatalf("%s delta = %d, scalar = %d", deltaSSDKernel, got, want)
@@ -33,16 +35,19 @@ func TestDeltaSSDSpanMatchesScalar(t *testing.T) {
 func TestDeltaSSDSpanSignedExtremes(t *testing.T) {
 	const pixels = 257
 	black := make([]byte, pixels*4)
+
 	white := make([]byte, pixels*4)
 	for offset := 0; offset < len(white); offset += 4 {
 		white[offset+0] = 255
 		white[offset+1] = 255
 		white[offset+2] = 255
 	}
+
 	want := int64(pixels * 3 * 255 * 255)
 	if got := deltaSSDSpan(white, black, black, pixels); got != want {
 		t.Fatalf("positive delta = %d, want %d", got, want)
 	}
+
 	if got := deltaSSDSpan(black, white, black, pixels); got != -want {
 		t.Fatalf("negative delta = %d, want %d", got, -want)
 	}
@@ -51,6 +56,7 @@ func TestDeltaSSDSpanSignedExtremes(t *testing.T) {
 func TestDirtySpanSetMergesHalfOpenIntervals(t *testing.T) {
 	var dirty dirtySpanSet
 	dirty.reset(3, 6)
+
 	for _, span := range []dirtySpan{
 		{start: 30, end: 40},
 		{start: 10, end: 20},
@@ -63,18 +69,22 @@ func TestDirtySpanSetMergesHalfOpenIntervals(t *testing.T) {
 	}
 
 	want := []dirtySpan{{start: 5, end: 40}, {start: 50, end: 60}}
+
 	if !dirty.normalize() {
 		t.Fatal("span normalization failed")
 	}
+
 	got := dirty.row(1)
 	if len(got) != len(want) {
 		t.Fatalf("merged row = %#v, want %#v", got, want)
 	}
+
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("merged row = %#v, want %#v", got, want)
 		}
 	}
+
 	if pixels, spans := dirty.metrics(); pixels != 45 || spans != 2 {
 		t.Fatalf("metrics = (%d pixels, %d spans), want (45, 2)", pixels, spans)
 	}
@@ -85,6 +95,7 @@ func TestDirtySpanSetRandomizedUnion(t *testing.T) {
 	rng := rand.New(rand.NewSource(1016))
 	var dirty dirtySpanSet
 	dirty.reset(height, 2_000)
+
 	want := make([][]bool, height)
 	for y := range want {
 		want[y] = make([]bool, width)
@@ -95,32 +106,40 @@ func TestDirtySpanSetRandomizedUnion(t *testing.T) {
 		start := rng.Intn(width)
 		end := start + 1 + rng.Intn(width-start)
 		dirty.add(y, start, end)
+
 		for x := start; x < end; x++ {
 			want[y][x] = true
 		}
 	}
 
 	gotPixels := 0
+
 	if !dirty.normalize() {
 		t.Fatal("span normalization failed")
 	}
-	for y := 0; y < height; y++ {
+
+	for y := range height {
 		row := dirty.row(y)
+
 		previousEnd := -1
 		for _, span := range row {
 			if span.start <= previousEnd {
 				t.Fatalf("row %d is not strictly separated: %#v", y, row)
 			}
+
 			previousEnd = span.end
 			for x := span.start; x < span.end; x++ {
 				if !want[y][x] {
 					t.Fatalf("unexpected dirty pixel (%d,%d)", x, y)
 				}
+
 				gotPixels++
 			}
 		}
 	}
+
 	wantPixels := 0
+
 	for _, row := range want {
 		for _, covered := range row {
 			if covered {
@@ -128,6 +147,7 @@ func TestDirtySpanSetRandomizedUnion(t *testing.T) {
 			}
 		}
 	}
+
 	if gotPixels != wantPixels {
 		t.Fatalf("dirty pixels = %d, want %d", gotPixels, wantPixels)
 	}
@@ -136,10 +156,12 @@ func TestDirtySpanSetRandomizedUnion(t *testing.T) {
 func TestIncrementalCostMatchesFullImageSSD(t *testing.T) {
 	const width, height = 79, 61
 	reference := randomNRGBA(width, height, 42)
+
 	opaqueCanvas := randomNRGBA(width, height, 7)
 	for offset := 3; offset < len(opaqueCanvas.Pix); offset += 4 {
 		opaqueCanvas.Pix[offset] = 255
 	}
+
 	translucentCanvas := randomNRGBA(width, height, 8)
 
 	tests := []struct {
@@ -165,11 +187,13 @@ func TestIncrementalCostMatchesFullImageSSD(t *testing.T) {
 				circleCount := len(test.params) / paramsPerCircle
 				full := newCostTestRenderer(reference, test.canvas, circleCount)
 				incremental := newCostTestRenderer(reference, test.canvas, circleCount)
+
 				full.SetThreads(threads)
 				incremental.SetThreads(threads)
 				incremental.incrementalCostMode = incrementalCostForce
 
 				want := full.Cost(test.params)
+
 				got := incremental.Cost(test.params)
 				if got != want {
 					t.Fatalf("incremental cost = %.17g, full cost = %.17g", got, want)
@@ -183,6 +207,7 @@ func TestIncrementalCostSignedDeltaDirections(t *testing.T) {
 	const width, height = 17, 13
 	black := image.NewNRGBA(image.Rect(0, 0, width, height))
 	white := image.NewNRGBA(black.Bounds())
+
 	for y := range height {
 		for x := range width {
 			black.SetNRGBA(x, y, color.NRGBA{A: 255})
@@ -204,6 +229,7 @@ func TestIncrementalCostSignedDeltaDirections(t *testing.T) {
 			params := encodeCircles([]fit.Circle{test.circle})
 			full := NewCPURendererWithCanvas(test.reference, test.canvas, 1)
 			incremental := NewCPURendererWithCanvas(test.reference, test.canvas, 1)
+
 			incremental.incrementalCostMode = incrementalCostForce
 			if got, want := incremental.Cost(params), full.Cost(params); got != want {
 				t.Fatalf("incremental cost = %.17g, full cost = %.17g", got, want)
@@ -215,6 +241,7 @@ func TestIncrementalCostSignedDeltaDirections(t *testing.T) {
 func TestIncrementalCostRandomizedParity(t *testing.T) {
 	const width, height = 67, 53
 	reference := randomNRGBA(width, height, 501)
+
 	rng := rand.New(rand.NewSource(1016))
 	for iteration := range 250 {
 		circleCount := 1 + rng.Intn(8)
@@ -223,10 +250,12 @@ func TestIncrementalCostRandomizedParity(t *testing.T) {
 		full := NewCPURendererWithCanvas(reference, canvas, circleCount)
 		incremental := NewCPURendererWithCanvas(reference, canvas, circleCount)
 		incremental.incrementalCostMode = incrementalCostForce
+
 		if iteration%2 == 0 {
 			full.SetThreads(4)
 			incremental.SetThreads(4)
 		}
+
 		if got, want := incremental.Cost(params), full.Cost(params); got != want {
 			t.Fatalf("iteration %d: incremental cost = %.17g, full cost = %.17g", iteration, got, want)
 		}
@@ -239,9 +268,11 @@ func TestIncrementalCostFallbackAndSessionRules(t *testing.T) {
 	renderer.incrementalCostMode = incrementalCostAuto
 	custom := func(_, _ *image.NRGBA) float64 { return 42 }
 	renderer.SetCostFunc(custom)
+
 	if renderer.fastCostSelected {
 		t.Fatal("custom cost did not disable incremental FastMSE selection")
 	}
+
 	if got := renderer.Cost(deterministicParams(1, 32, 24, 99)); got != 42 {
 		t.Fatalf("custom fallback cost = %v, want 42", got)
 	}
@@ -251,16 +282,20 @@ func TestIncrementalCostFallbackAndSessionRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cleanup()
+
 	child := session.(*CPURenderer)
 	if child.fastCostSelected || child.incrementalCostMode != incrementalCostAuto {
 		t.Fatalf("child rules = (fast=%v, mode=%d), want (false, auto)", child.fastCostSelected, child.incrementalCostMode)
 	}
 
 	renderer.UseFastCost()
+
 	if !renderer.fastCostSelected {
 		t.Fatal("UseFastCost did not restore incremental FastMSE selection")
 	}
+
 	renderer.initialSSDValid = false
+
 	params := deterministicParams(1, 32, 24, 100)
 	if got, want := renderer.Cost(params), fit.FastMSECost(renderer.Render(params), reference); got != want {
 		t.Fatalf("invalid-base fallback = %.17g, full cost = %.17g", got, want)
@@ -271,12 +306,15 @@ func TestIncrementalCostWorthwhilePolicy(t *testing.T) {
 	var dirty dirtySpanSet
 	dirty.reset(100, 101)
 	dirty.add(0, 0, 10)
+
 	if !incrementalCostWorthwhile(&dirty, 10_000) {
 		t.Fatal("small contiguous dirty area rejected")
 	}
+
 	for y := range 100 {
 		dirty.add(y, 0, 100)
 	}
+
 	if incrementalCostWorthwhile(&dirty, 10_000) {
 		t.Fatal("full-image dirty area accepted")
 	}
@@ -284,24 +322,29 @@ func TestIncrementalCostWorthwhilePolicy(t *testing.T) {
 
 func TestIncrementalCostPreflightPolicy(t *testing.T) {
 	renderer := NewCPURenderer(randomNRGBA(256, 256, 42), 1)
+
 	small := encodeCircles([]fit.Circle{{X: 128, Y: 128, R: 64, Opacity: 1}})
 	if !renderer.incrementalCandidateWorthwhile(small) {
 		t.Fatal("measured small-circle case rejected")
 	}
+
 	large := encodeCircles([]fit.Circle{{X: 128, Y: 128, R: 96, Opacity: 1}})
 	if renderer.incrementalCandidateWorthwhile(large) {
 		t.Fatal("measured large-circle fallback case accepted")
 	}
+
 	transparent := encodeCircles([]fit.Circle{{X: 128, Y: 128, R: 128}})
 	if !renderer.incrementalCandidateWorthwhile(transparent) {
 		t.Fatal("transparent circle rejected")
 	}
 
 	smallRenderer := NewCPURenderer(randomNRGBA(64, 64, 43), 1)
+
 	smallAccepted := encodeCircles([]fit.Circle{{X: 32, Y: 32, R: 12, Opacity: 1}})
 	if !smallRenderer.incrementalCandidateWorthwhile(smallAccepted) {
 		t.Fatal("small-image measured winner rejected")
 	}
+
 	smallRejected := encodeCircles([]fit.Circle{{X: 32, Y: 32, R: 16, Opacity: 1}})
 	if smallRenderer.incrementalCandidateWorthwhile(smallRejected) {
 		t.Fatal("small-image measured loser accepted")
@@ -310,23 +353,29 @@ func TestIncrementalCostPreflightPolicy(t *testing.T) {
 
 func TestIncrementalStagedSessionEligibility(t *testing.T) {
 	reference := randomNRGBA(64, 64, 44)
+
 	smallSingle := NewCPURenderer(reference, 1)
 	if !smallSingle.incrementalStagedSessionEligible() {
 		t.Fatal("small single-circle stage rejected")
 	}
+
 	smallBatch := NewCPURenderer(reference, 5)
 	if smallBatch.incrementalStagedSessionEligible() {
 		t.Fatal("small multi-circle stage accepted")
 	}
+
 	smallBatch.stagedIncremental = true
+
 	session, cleanup, err := smallBatch.newSessionWithCanvas(smallBatch.initialCanvas(), 5)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cleanup()
+
 	if mode := session.(*CPURenderer).incrementalCostMode; mode != incrementalCostDisabled {
 		t.Fatalf("small batch session mode = %d, want disabled", mode)
 	}
+
 	largeBatch := NewCPURenderer(randomNRGBA(256, 256, 46), 5)
 	if !largeBatch.incrementalStagedSessionEligible() {
 		t.Fatal("large multi-circle stage rejected")
@@ -337,6 +386,7 @@ func newCostTestRenderer(reference, canvas *image.NRGBA, circles int) *CPURender
 	if canvas == nil {
 		return NewCPURenderer(reference, circles)
 	}
+
 	return NewCPURendererWithCanvas(reference, canvas, circles)
 }
 
@@ -349,9 +399,11 @@ func BenchmarkDeltaSSDSpan(b *testing.B) {
 		_, _ = rng.Read(candidate)
 		_, _ = rng.Read(base)
 		_, _ = rng.Read(reference)
+
 		b.Run(fmt.Sprintf("scalar/%d", pixels), func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(pixels * 12))
+
 			for range b.N {
 				rendererDeltaSink = deltaSSDSpanScalar(candidate, base, reference, pixels)
 			}
@@ -359,6 +411,7 @@ func BenchmarkDeltaSSDSpan(b *testing.B) {
 		b.Run(fmt.Sprintf("auto_%s/%d", deltaSSDKernel, pixels), func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(pixels * 12))
+
 			for range b.N {
 				rendererDeltaSink = deltaSSDSpan(candidate, base, reference, pixels)
 			}

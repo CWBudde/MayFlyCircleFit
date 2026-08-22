@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -9,7 +10,7 @@ import (
 	"time"
 )
 
-// ProgressEvent represents a progress update event
+// ProgressEvent represents a progress update event.
 type ProgressEvent struct {
 	JobID                 string    `json:"jobId"`
 	State                 JobState  `json:"state"`
@@ -31,7 +32,7 @@ func (e ProgressEvent) terminal() bool {
 	return e.State == StateCompleted || e.State == StateFailed || e.State == StateCancelled
 }
 
-// EventBroadcaster manages SSE connections for a job
+// EventBroadcaster manages SSE connections for a job.
 type EventBroadcaster struct {
 	mu        sync.RWMutex
 	clients   map[string]map[chan ProgressEvent]bool // jobID -> set of client channels
@@ -41,12 +42,13 @@ type EventBroadcaster struct {
 
 const wildcardJobID = "*"
 
-// NewEventBroadcaster creates a new event broadcaster
+// NewEventBroadcaster creates a new event broadcaster.
 func NewEventBroadcaster(uiEvents ...*UIEventHub) *EventBroadcaster {
 	var hub *UIEventHub
 	if len(uiEvents) > 0 {
 		hub = uiEvents[0]
 	}
+
 	return &EventBroadcaster{
 		clients:   make(map[string]map[chan ProgressEvent]bool),
 		lastEvent: make(map[string]ProgressEvent),
@@ -54,7 +56,7 @@ func NewEventBroadcaster(uiEvents ...*UIEventHub) *EventBroadcaster {
 	}
 }
 
-// Subscribe adds a client to receive events for a job
+// Subscribe adds a client to receive events for a job.
 func (eb *EventBroadcaster) Subscribe(jobID string) chan ProgressEvent {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
@@ -64,9 +66,11 @@ func (eb *EventBroadcaster) Subscribe(jobID string) chan ProgressEvent {
 	if eb.clients[jobID] == nil {
 		eb.clients[jobID] = make(map[chan ProgressEvent]bool)
 	}
+
 	eb.clients[jobID][ch] = true
 
 	slog.Debug("SSE client subscribed", "jobID", jobID, "total_clients", len(eb.clients[jobID]))
+
 	return ch
 }
 
@@ -75,7 +79,7 @@ func (eb *EventBroadcaster) SubscribeAll() chan ProgressEvent {
 	return eb.Subscribe(wildcardJobID)
 }
 
-// Unsubscribe removes a client from receiving events
+// Unsubscribe removes a client from receiving events.
 func (eb *EventBroadcaster) Unsubscribe(jobID string, ch chan ProgressEvent) {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
@@ -97,7 +101,7 @@ func (eb *EventBroadcaster) UnsubscribeAll(ch chan ProgressEvent) {
 	eb.Unsubscribe(wildcardJobID, ch)
 }
 
-// Broadcast sends an event to all subscribed clients for a job
+// Broadcast sends an event to all subscribed clients for a job.
 func (eb *EventBroadcaster) Broadcast(event ProgressEvent) {
 	eb.mu.Lock()
 
@@ -116,6 +120,7 @@ func (eb *EventBroadcaster) Broadcast(event ProgressEvent) {
 	// subscribers of its own still has to be fanned out to the global stream.
 	jobClients := eb.clients[event.JobID]
 	wildcardClients := eb.clients[wildcardJobID]
+
 	subscriberCount := len(jobClients) + len(wildcardClients)
 	if subscriberCount > 0 {
 		slog.Debug("Broadcasting event", "jobID", event.JobID, "clients", subscriberCount, "iterations", event.Iterations)
@@ -130,6 +135,7 @@ func (eb *EventBroadcaster) Broadcast(event ProgressEvent) {
 				slog.Warn("SSE channel full, skipping event", "jobID", event.JobID)
 			}
 		}
+
 		for ch := range wildcardClients {
 			select {
 			case ch <- event:
@@ -148,7 +154,7 @@ func (eb *EventBroadcaster) Broadcast(event ProgressEvent) {
 	eb.mu.Unlock()
 }
 
-// CleanupJob removes all clients and cached events for a job
+// CleanupJob removes all clients and cached events for a job.
 func (eb *EventBroadcaster) CleanupJob(jobID string) {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
@@ -157,6 +163,7 @@ func (eb *EventBroadcaster) CleanupJob(jobID string) {
 		for ch := range clients {
 			close(ch)
 		}
+
 		delete(eb.clients, jobID)
 	}
 
@@ -164,11 +171,12 @@ func (eb *EventBroadcaster) CleanupJob(jobID string) {
 	slog.Debug("Cleaned up SSE resources", "jobID", jobID)
 }
 
-// handleJobStream handles SSE connections for job progress
+// handleJobStream handles SSE connections for job progress.
 func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID string) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
 	// Check if job exists. The snapshot itself is taken again after
@@ -195,6 +203,7 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 	// fall into the gap between the snapshot and channel registration.
 	eventChan := s.jobManager.broadcaster.Subscribe(jobID)
 	defer s.jobManager.broadcaster.Unsubscribe(jobID, eventChan)
+
 	job, exists := s.jobManager.GetJob(jobID)
 	if !exists {
 		return
@@ -217,11 +226,14 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 	}
 	initialEvent.CandidatePSNR, initialEvent.CandidatePSNRInfinite = serializableCandidatePSNR(job.CandidateCost)
 
-	if err := writeSSEEvent(w, initialEvent); err != nil {
+	err := writeSSEEvent(w, initialEvent)
+	if err != nil {
 		slog.Error("Failed to write initial SSE event", "error", err)
 		return
 	}
+
 	flusher.Flush()
+
 	if initialEvent.terminal() {
 		return
 	}
@@ -231,7 +243,9 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 	defer pingTicker.Stop()
 
 	// Listen for events and client disconnect
-	ctx := r.Context()
+	ctx, releaseStream := s.streamContext(r)
+	defer releaseStream()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -245,11 +259,14 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 				return
 			}
 
-			if err := writeSSEEvent(w, event); err != nil {
+			err := writeSSEEvent(w, event)
+			if err != nil {
 				slog.Error("Failed to write SSE event", "error", err)
 				return
 			}
+
 			flusher.Flush()
+
 			if event.terminal() {
 				return
 			}
@@ -270,10 +287,40 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 // Unlike handleJobStream it does not return on a terminal event: a terminal
 // state ends one job, not the dashboard's view of every other one, so the
 // stream outlives the jobs it reports on and only the client closes it.
+// streamContext ends a server-sent-events stream on either of the two things
+// that should end one: the client going away, or the server beginning to shut
+// down.
+//
+// Only the first is covered by the request context. An SSE response never
+// completes on its own, and http.Server.Shutdown waits for active requests, so
+// a stream watching only its client keeps a shutdown waiting until the caller's
+// timeout expires -- ten seconds every time a dashboard happened to be open,
+// which is indistinguishable from a server ignoring the signal. Server.Shutdown
+// cancels s.ctx before it calls http.Server.Shutdown, so joining the two here
+// is what lets the drain finish promptly.
+func (s *Server) streamContext(r *http.Request) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(r.Context())
+
+	// A zero-value Server has no context, and context.AfterFunc panics on a
+	// nil one. Such a server has no shutdown to cooperate with either, so the
+	// request context alone is the whole answer for it.
+	if s.ctx == nil {
+		return ctx, cancel
+	}
+
+	stop := context.AfterFunc(s.ctx, cancel)
+
+	return ctx, func() {
+		stop()
+		cancel()
+	}
+}
+
 func (s *Server) handleAllJobStream(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+
 		return
 	}
 
@@ -304,14 +351,19 @@ func (s *Server) handleAllJobStream(w http.ResponseWriter, r *http.Request) {
 	// outrun the job, and terminal events bypass it so a cancellation is never
 	// the event that gets dropped.
 	iterationFloor := make(map[string]int)
+
 	for _, job := range s.jobManager.GetRunningJobs() {
 		snapshot := jobProgressSnapshot(job)
+
 		iterationFloor[snapshot.JobID] = snapshot.Iterations
-		if err := writeSSEEvent(w, snapshot); err != nil {
+
+		err := writeSSEEvent(w, snapshot)
+		if err != nil {
 			slog.Error("Failed to write initial SSE event", "error", err)
 			return
 		}
 	}
+
 	flusher.Flush()
 
 	// Set up ping ticker to keep connection alive
@@ -319,7 +371,9 @@ func (s *Server) handleAllJobStream(w http.ResponseWriter, r *http.Request) {
 	defer pingTicker.Stop()
 
 	// Listen for events and client disconnect
-	ctx := r.Context()
+	ctx, releaseStream := s.streamContext(r)
+	defer releaseStream()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -342,10 +396,12 @@ func (s *Server) handleAllJobStream(w http.ResponseWriter, r *http.Request) {
 				delete(iterationFloor, event.JobID)
 			}
 
-			if err := writeSSEEvent(w, event); err != nil {
+			err := writeSSEEvent(w, event)
+			if err != nil {
 				slog.Error("Failed to write SSE event", "error", err)
 				return
 			}
+
 			flusher.Flush()
 
 		case <-pingTicker.C:
@@ -375,10 +431,11 @@ func jobProgressSnapshot(job *Job) ProgressEvent {
 		Timestamp:     time.Now(),
 	}
 	event.CandidatePSNR, event.CandidatePSNRInfinite = serializableCandidatePSNR(job.CandidateCost)
+
 	return event
 }
 
-// writeSSEEvent writes an event in SSE format
+// writeSSEEvent writes an event in SSE format.
 func writeSSEEvent(w http.ResponseWriter, event ProgressEvent) error {
 	data, err := json.Marshal(event)
 	if err != nil {
@@ -387,5 +444,6 @@ func writeSSEEvent(w http.ResponseWriter, event ProgressEvent) error {
 
 	// SSE format: "data: {json}\n\n"
 	_, err = fmt.Fprintf(w, "data: %s\n\n", data)
+
 	return err
 }

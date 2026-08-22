@@ -21,8 +21,10 @@ func init() {
 		if tier == fit.TierAVX2 {
 			circleSpanFloat32Kernel = fit.TierAVX2
 			circleSpanFloat32Selected = circleSpanFloat32AVX2Unchecked
+
 			return
 		}
+
 		circleSpanFloat32Kernel = fit.TierScalar
 		circleSpanFloat32Selected = circleSpanFloat32
 	})
@@ -32,6 +34,7 @@ func circleSpanFloat32AVX2(centerX, radiusSquaredMinusDY float32, width int) (xS
 	if circleSpanFloat32Kernel != fit.TierAVX2 {
 		return circleSpanFloat32(centerX, radiusSquaredMinusDY, width)
 	}
+
 	return circleSpanFloat32AVX2Unchecked(centerX, radiusSquaredMinusDY, width)
 }
 
@@ -67,6 +70,7 @@ func circleSpanFloat32AVX2Unchecked(centerX, radiusSquaredMinusDY float32, width
 // decision should come with a profile.
 func (g fixedCircleQ16) spanAVX2(y, width int) (xStart, xEnd int, intersects bool) {
 	const vectorMarginQ = 8 * circleQ16Scale
+
 	roundedCenterQ := int64(g.centerX) << circleQ16FractionBits
 	if circleSpanFloat32Kernel != fit.TierAVX2 || g.centerX < 0 || g.centerX >= width ||
 		roundedCenterQ < math.MinInt32+vectorMarginQ || roundedCenterQ > math.MaxInt32-vectorMarginQ {
@@ -74,12 +78,14 @@ func (g fixedCircleQ16) spanAVX2(y, width int) (xStart, xEnd int, intersects boo
 	}
 
 	dyQ := (int64(y) << circleQ16FractionBits) - int64(g.yQ)
+
 	radiusQ := int64(g.radiusQ)
 	if dyQ < -radiusQ || dyQ > radiusQ {
 		return 0, 0, false
 	}
 
 	xStart, xEnd = circleSpanQ16AVX2Kernel(g.xQ, g.centerX, g.radiusSquared-dyQ*dyQ, width)
+
 	return xStart, xEnd, xEnd > xStart
 }
 

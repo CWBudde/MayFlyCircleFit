@@ -2,7 +2,6 @@ package renderer
 
 import (
 	"fmt"
-	"io"
 	"log/slog"
 	"runtime"
 	"testing"
@@ -32,10 +31,12 @@ func BenchmarkParallelEvaluationScaling(b *testing.B) {
 	// The pipeline logs one record per optimizer run at info level, which would
 	// otherwise dominate the benchmark output and the measurement itself.
 	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	slog.SetDefault(slog.New(slog.DiscardHandler))
 	b.Cleanup(func() { slog.SetDefault(previous) })
 
 	maxWorkers := runtime.GOMAXPROCS(0)
+
 	for _, workload := range []struct {
 		name          string
 		width, height int
@@ -53,6 +54,7 @@ func BenchmarkParallelEvaluationScaling(b *testing.B) {
 		b.Run(workload.name+"/serial", func(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
+
 			for range b.N {
 				base := NewCPURenderer(ref, workload.circles)
 				base.SetThreads(maxWorkers)
@@ -64,6 +66,7 @@ func BenchmarkParallelEvaluationScaling(b *testing.B) {
 			b.Run(workload.name+fmt.Sprintf("/eval=%d", workers), func(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
+
 				for range b.N {
 					base := NewCPURenderer(ref, workload.circles)
 					ConfigureCPUParallelism(base, maxWorkers, workers, true)
@@ -81,9 +84,11 @@ func benchmarkWorkerCounts(maxWorkers int) []int {
 	for workers := 2; workers < maxWorkers; workers *= 2 {
 		counts = append(counts, workers)
 	}
+
 	if maxWorkers > 1 {
 		counts = append(counts, maxWorkers)
 	}
+
 	return counts
 }
 
@@ -92,17 +97,21 @@ func benchmarkWorkerCounts(maxWorkers int) []int {
 // real run uses rather than a synthetic loop over Cost.
 func runJointBenchmark(b *testing.B, base *CPURenderer, circles, iters, popSize int) float64 {
 	b.Helper()
+
 	options := []opt.MayflyOption{}
 	if option, enabled := ParallelEvaluationOption(base, true); enabled {
 		options = append(options, option)
 	}
+
 	optimizer, err := opt.NewMayflyVariant("standard", iters, popSize, 4242, options...)
 	if err != nil {
 		b.Fatalf("NewMayflyVariant() error = %v", err)
 	}
+
 	result, err := OptimizeJoint(base, optimizer, circles, DisabledConvergenceConfig())
 	if err != nil {
 		b.Fatalf("OptimizeJoint() error = %v", err)
 	}
+
 	return result.BestCost
 }

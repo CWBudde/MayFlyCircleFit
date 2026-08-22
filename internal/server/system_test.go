@@ -17,11 +17,14 @@ import (
 // its stub's answer for every later one.
 func stubPlatformDiscovery(t *testing.T, fn func() ([]gpu.PlatformInfo, error)) {
 	t.Helper()
+
 	original := platformDiscovery
 	platformDiscovery = fn
+
 	resetGPUInfoCache()
 	t.Cleanup(func() {
 		platformDiscovery = original
+
 		resetGPUInfoCache()
 	})
 }
@@ -35,6 +38,7 @@ func TestHostFactsFromMetadataDefaultsToDevMetadata(t *testing.T) {
 	if facts.Version != "dev" || facts.Commit != "unknown" || facts.BuildDate != "unknown" {
 		t.Fatalf("build metadata = (%q, %q, %q), want dev/unknown/unknown", facts.Version, facts.Commit, facts.BuildDate)
 	}
+
 	if facts.GPU.State != GPUStateNoDevices {
 		t.Fatalf("GPU state = %q, want %q", facts.GPU.State, GPUStateNoDevices)
 	}
@@ -89,6 +93,7 @@ func TestHostFactsFromMetadataReportsGPUStates(t *testing.T) {
 			if facts.GPU.State != testCase.want {
 				t.Fatalf("state = %q, want %q", facts.GPU.State, testCase.want)
 			}
+
 			if testCase.want == GPUStateAvailable && len(facts.GPU.Platforms) != len(platforms) {
 				t.Fatalf("platforms len = %d, want %d", len(facts.GPU.Platforms), len(platforms))
 			}
@@ -112,12 +117,16 @@ func TestHandleSystem(t *testing.T) {
 	}
 
 	var facts HostFacts
-	if err := json.NewDecoder(resp.Body).Decode(&facts); err != nil {
+
+	err := json.NewDecoder(resp.Body).Decode(&facts)
+	if err != nil {
 		t.Fatalf("decode system facts: %v", err)
 	}
+
 	if facts.Version != "dev" || facts.Commit != "unknown" || facts.BuildDate != "unknown" {
 		t.Fatalf("build metadata = (%q, %q, %q)", facts.Version, facts.Commit, facts.BuildDate)
 	}
+
 	if facts.GOOS != runtime.GOOS || facts.GOARCH != runtime.GOARCH {
 		t.Fatalf("facts runtime = (%q, %q), want (%q, %q)", facts.GOOS, facts.GOARCH, runtime.GOOS, runtime.GOARCH)
 	}
@@ -126,6 +135,7 @@ func TestHandleSystem(t *testing.T) {
 	if facts.FastCompositingBackend != renderer.FastCompositingBackend() {
 		t.Fatalf("fast compositing backend = %q, want %q", facts.FastCompositingBackend, renderer.FastCompositingBackend())
 	}
+
 	if facts.GPU.State != GPUStateNotBuilt {
 		t.Fatalf("GPU state = %q, want %q", facts.GPU.State, GPUStateNotBuilt)
 	}
@@ -159,17 +169,22 @@ func TestRoutingSystemEndpoint(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/v1/system status = %d, want %d", rec.Code, http.StatusOK)
 	}
+
 	if got, want := rec.Header().Get("Content-Type"), "application/json"; got != want {
 		t.Fatalf("content-type = %q, want %q", got, want)
 	}
 
 	var payload map[string]any
-	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+
+	err := json.NewDecoder(rec.Body).Decode(&payload)
+	if err != nil {
 		t.Fatalf("decode /api/v1/system body: %v", err)
 	}
+
 	if _, ok := payload["hostFacts"]; ok {
 		t.Fatal("unexpected hostFacts key in system response")
 	}
+
 	if _, ok := payload["version"]; !ok {
 		t.Fatalf("system payload missing version key: %v", payload)
 	}
@@ -180,6 +195,7 @@ func TestRoutingSystemEndpoint(t *testing.T) {
 // polling /api/v1/system must not pay for it on every request.
 func TestGPUProbeRunsOncePerProcess(t *testing.T) {
 	probes := 0
+
 	stubPlatformDiscovery(t, func() ([]gpu.PlatformInfo, error) {
 		probes++
 		return nil, gpu.ErrNoDevices

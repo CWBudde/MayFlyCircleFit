@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,8 +29,9 @@ func validateScheduleID(scheduleID string) error {
 func validateIdentifier(id string) error {
 	parsed, err := uuid.Parse(id)
 	if err != nil || parsed == uuid.Nil || parsed.String() != id {
-		return fmt.Errorf("must be a canonical non-zero UUID")
+		return errors.New("must be a canonical non-zero UUID")
 	}
+
 	return nil
 }
 
@@ -37,17 +39,21 @@ func validateIdentifier(id string) error {
 // name. It is a syntactic check only and carries no application meaning.
 func validatePathSegment(name string) error {
 	if name == "" {
-		return fmt.Errorf("path segment cannot be empty")
+		return errors.New("path segment cannot be empty")
 	}
+
 	if name == "." || name == ".." {
 		return fmt.Errorf("path segment %q is not a directory name", name)
 	}
+
 	if strings.ContainsRune(name, 0) {
-		return fmt.Errorf("path segment contains a NUL byte")
+		return errors.New("path segment contains a NUL byte")
 	}
+
 	if strings.ContainsRune(name, '/') || strings.ContainsRune(name, filepath.Separator) {
 		return fmt.Errorf("path segment %q must not contain a separator", name)
 	}
+
 	return nil
 }
 
@@ -58,42 +64,52 @@ func EnsureSecureSubdir(parent, name string) (string, error) {
 	if err := validatePathSegment(name); err != nil {
 		return "", err
 	}
+
 	root, err := canonicalRoot(parent)
 	if err != nil {
 		return "", err
 	}
+
 	path := filepath.Join(root, name)
 	if err := ensureSecureDir(root, path); err != nil {
 		return "", err
 	}
+
 	return path, nil
 }
 
 func canonicalRoot(baseDir string) (string, error) {
 	if strings.TrimSpace(baseDir) == "" {
-		return "", fmt.Errorf("base directory cannot be empty")
+		return "", errors.New("base directory cannot be empty")
 	}
+
 	abs, err := filepath.Abs(baseDir)
 	if err != nil {
 		return "", fmt.Errorf("resolve base directory: %w", err)
 	}
+
 	if err := os.MkdirAll(abs, directoryMode); err != nil {
 		return "", fmt.Errorf("create base directory: %w", err)
 	}
+
 	resolved, err := filepath.EvalSymlinks(abs)
 	if err != nil {
 		return "", fmt.Errorf("resolve base directory symlinks: %w", err)
 	}
+
 	info, err := os.Stat(resolved)
 	if err != nil {
 		return "", fmt.Errorf("stat base directory: %w", err)
 	}
+
 	if !info.IsDir() {
-		return "", fmt.Errorf("base path is not a directory")
+		return "", errors.New("base path is not a directory")
 	}
+
 	if err := os.Chmod(resolved, directoryMode); err != nil {
 		return "", fmt.Errorf("secure base directory permissions: %w", err)
 	}
+
 	return filepath.Clean(resolved), nil
 }
 
@@ -102,9 +118,11 @@ func ensureContained(root, path string) error {
 	if err != nil {
 		return fmt.Errorf("resolve path relative to store root: %w", err)
 	}
+
 	if rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("path escapes store root")
+		return errors.New("path escapes store root")
 	}
+
 	return nil
 }
 
@@ -115,18 +133,23 @@ func ensureSecureDir(root, path string) error {
 	if err := ensureContained(root, path); err != nil {
 		return err
 	}
+
 	if err := os.Mkdir(path, directoryMode); err != nil && !os.IsExist(err) {
 		return err
 	}
+
 	info, err := os.Lstat(path)
 	if err != nil {
 		return err
 	}
+
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return fmt.Errorf("refusing non-directory or symlink path %q", path)
 	}
+
 	if err := os.Chmod(path, directoryMode); err != nil {
 		return err
 	}
+
 	return nil
 }
