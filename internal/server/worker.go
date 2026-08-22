@@ -1039,7 +1039,7 @@ func saveCheckpointWithImage(jm *JobManager, checkpointStore store.Store, rend r
 		persistenceErrors = append(persistenceErrors, fmt.Errorf("save checkpoint: %w", err))
 	}
 
-	err := saveCheckpointArtifacts(checkpointStore, rend, job.Config, jobID, job.BestParams, bestImage)
+	err = saveCheckpointArtifacts(checkpointStore, rend, job.Config, jobID, job.BestParams, bestImage)
 	if err != nil {
 		persistenceErrors = append(persistenceErrors, err)
 	}

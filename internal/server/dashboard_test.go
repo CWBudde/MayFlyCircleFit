@@ -427,7 +427,7 @@ func TestStartJobRecordsInheritedEvaluations(t *testing.T) {
 		t.Fatalf("seed inherited evaluations: %v", err)
 	}
 
-	err := manager.StartJob(job.ID)
+	err = manager.StartJob(job.ID)
 	if err != nil {
 		t.Fatalf("start job: %v", err)
 	}
