@@ -143,11 +143,14 @@ func (s *Server) handleUIEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	flusher.Flush()
 
+	ctx, releaseStream := s.streamContext(r)
+	defer releaseStream()
+
 	ticker := time.NewTicker(uiEventSyncInterval)
 	defer ticker.Stop()
 	for {
 		select {
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			return
 		case event, ok := <-events:
 			if !ok {

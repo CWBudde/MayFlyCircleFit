@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -231,7 +232,8 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 	defer pingTicker.Stop()
 
 	// Listen for events and client disconnect
-	ctx := r.Context()
+	ctx, releaseStream := s.streamContext(r)
+	defer releaseStream()
 	for {
 		select {
 		case <-ctx.Done():
@@ -270,6 +272,35 @@ func (s *Server) handleJobStream(w http.ResponseWriter, r *http.Request, jobID s
 // Unlike handleJobStream it does not return on a terminal event: a terminal
 // state ends one job, not the dashboard's view of every other one, so the
 // stream outlives the jobs it reports on and only the client closes it.
+// streamContext ends a server-sent-events stream on either of the two things
+// that should end one: the client going away, or the server beginning to shut
+// down.
+//
+// Only the first is covered by the request context. An SSE response never
+// completes on its own, and http.Server.Shutdown waits for active requests, so
+// a stream watching only its client keeps a shutdown waiting until the caller's
+// timeout expires -- ten seconds every time a dashboard happened to be open,
+// which is indistinguishable from a server ignoring the signal. Server.Shutdown
+// cancels s.ctx before it calls http.Server.Shutdown, so joining the two here
+// is what lets the drain finish promptly.
+func (s *Server) streamContext(r *http.Request) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(r.Context())
+
+	// A zero-value Server has no context, and context.AfterFunc panics on a
+	// nil one. Such a server has no shutdown to cooperate with either, so the
+	// request context alone is the whole answer for it.
+	if s.ctx == nil {
+		return ctx, cancel
+	}
+
+	stop := context.AfterFunc(s.ctx, cancel)
+
+	return ctx, func() {
+		stop()
+		cancel()
+	}
+}
+
 func (s *Server) handleAllJobStream(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -319,7 +350,8 @@ func (s *Server) handleAllJobStream(w http.ResponseWriter, r *http.Request) {
 	defer pingTicker.Stop()
 
 	// Listen for events and client disconnect
-	ctx := r.Context()
+	ctx, releaseStream := s.streamContext(r)
+	defer releaseStream()
 	for {
 		select {
 		case <-ctx.Done():
