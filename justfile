@@ -55,7 +55,7 @@ lint: templ-check
 	@echo "All checks passed!"
 
 # Run the complete local/CI verification suite
-check: templ-check bundle-check
+check: templ-check bundle-check web-typecheck web-unit
 	go test ./...
 	go vet ./...
 	@echo "Checking formatting..."
@@ -99,11 +99,15 @@ web-deps:
 web-typecheck:
 	cd web && npm run typecheck
 
+# Run the island unit tests over the formatters shared with the templ views
+web-unit:
+	cd web && npm run test:unit
+
 # Exercise stream disconnect/reconciliation behavior in a real browser
 web-test:
 	cd web && npm run test:e2e
 
-web-check: web-typecheck web-test
+web-check: web-typecheck web-unit web-test
 
 # Bundle the React islands into the committed internal/ui/static output
 bundle:
