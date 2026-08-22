@@ -20,6 +20,16 @@ const StaticPrefix = "/static/"
 // `go build ./...` never needs node or npm.
 const bundleName = "dashboard.js"
 
+// bundleMapName is the source map scripts/bundle-web.sh emits beside the
+// bundle. The bundle ends with a //# sourceMappingURL=dashboard.js.map
+// comment, which a browser resolves against the bundle's own URL and so asks
+// for as StaticPrefix+bundleMapName without the ?v= query the markup carries.
+// That is served, just with a revalidating Cache-Control instead of an
+// immutable one, which is the right trade for a file only devtools fetch. It
+// is committed and embedded alongside the bundle for the same reason: `go
+// build ./...` must never need node or npm.
+const bundleMapName = bundleName + ".map"
+
 //go:embed static
 var staticFS embed.FS
 

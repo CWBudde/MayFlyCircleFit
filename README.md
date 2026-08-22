@@ -148,6 +148,9 @@ Recent pages and API endpoints:
 - `GET /api/v1/stream` streams global progress updates for all running jobs.
 - `GET /static/dashboard.js` serves the committed React island bundle (versioned
   with a short content hash).
+- `GET /static/dashboard.js.map` serves that bundle's source map, so a minified
+  island stack trace maps back to `web/src`. The bundle links it, so only a
+  browser with devtools open ever downloads it.
 
 ### Run schedules
 

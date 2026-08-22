@@ -3,8 +3,11 @@ package ui
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"path"
 	"strings"
 	"testing"
 )
@@ -174,4 +177,108 @@ func firstLine(content []byte) []byte {
 		return content[:index]
 	}
 	return content
+}
+
+// The map is what makes a minified island stack trace readable. It is
+// committed and embedded exactly like the bundle, so a build without node
+// still ships it.
+func TestBundleSourceMapIsEmbeddedAndComplete(t *testing.T) {
+	asset, ok := staticAssets[bundleMapName]
+	if !ok {
+		t.Fatalf("source map %q is not embedded; run `just bundle`", bundleMapName)
+	}
+
+	var sourceMap struct {
+		Version        int      `json:"version"`
+		Sources        []string `json:"sources"`
+		SourcesContent []string `json:"sourcesContent"`
+		Mappings       string   `json:"mappings"`
+	}
+	if err := json.Unmarshal(asset.content, &sourceMap); err != nil {
+		t.Fatalf("embedded source map is not valid JSON: %v", err)
+	}
+	if sourceMap.Version != 3 {
+		t.Errorf("source map version = %d, want 3", sourceMap.Version)
+	}
+	if sourceMap.Mappings == "" {
+		t.Error("source map carries no mappings, so it maps nothing")
+	}
+	// Without sourcesContent devtools would go looking for web/src on the
+	// server, and the flat static namespace serves no such tree.
+	if len(sourceMap.SourcesContent) != len(sourceMap.Sources) {
+		t.Errorf("source map has %d sources but %d sourcesContent entries; is --sources-content still on?",
+			len(sourceMap.Sources), len(sourceMap.SourcesContent))
+	}
+	var hasEntryPoint bool
+	for _, source := range sourceMap.Sources {
+		if strings.HasSuffix(source, "web/src/dashboard.tsx") {
+			hasEntryPoint = true
+		}
+		// A machine-specific absolute path would make the drift gate fail on
+		// every developer's checkout.
+		if path.IsAbs(source) {
+			t.Errorf("source map names the absolute path %q", source)
+		}
+	}
+	if !hasEntryPoint {
+		t.Error("source map does not cover web/src/dashboard.tsx")
+	}
+}
+
+// The comment is the only thing that tells a browser the map exists, and it is
+// resolved against the bundle's own URL, so it must name a sibling the flat
+// static handler will actually serve.
+func TestBundleLinksItsSourceMap(t *testing.T) {
+	bundle := staticAssets[bundleName].content
+	want := "//# sourceMappingURL=" + bundleMapName
+	if !bytes.Contains(bundle, []byte(want)) {
+		t.Fatalf("bundle does not end with %q; is --sourcemap still set?", want)
+	}
+	if bytes.Contains(bundle, []byte("sourceMappingURL=data:")) {
+		t.Error("bundle inlines its source map; the linked map is the committed form")
+	}
+
+	base, err := url.Parse(BundleURL())
+	if err != nil {
+		t.Fatalf("parse bundle URL: %v", err)
+	}
+	resolved, err := base.Parse(bundleMapName)
+	if err != nil {
+		t.Fatalf("resolve source map URL: %v", err)
+	}
+	if got, want := resolved.Path, StaticPrefix+bundleMapName; got != want {
+		t.Fatalf("browser would fetch %q, want %q", got, want)
+	}
+
+	recorder := httptest.NewRecorder()
+	StaticHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, resolved.String(), nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if got, want := recorder.Header().Get("Content-Type"), "application/json; charset=utf-8"; got != want {
+		t.Errorf("Content-Type = %q, want %q", got, want)
+	}
+	if got, want := recorder.Header().Get("X-Content-Type-Options"), "nosniff"; got != want {
+		t.Errorf("X-Content-Type-Options = %q, want %q", got, want)
+	}
+	// esbuild's comment carries no ?v=, so the map is fetched unversioned and
+	// has to revalidate rather than be pinned forever.
+	if got, want := recorder.Header().Get("Cache-Control"), "no-cache"; got != want {
+		t.Errorf("Cache-Control = %q, want %q", got, want)
+	}
+	if !bytes.Equal(recorder.Body.Bytes(), staticAssets[bundleMapName].content) {
+		t.Error("served body does not match the embedded source map")
+	}
+}
+
+// The map is a devtools-only download; the page itself must never pull two
+// megabytes of sources on load.
+func TestIslandBundleDoesNotLinkTheSourceMap(t *testing.T) {
+	var output bytes.Buffer
+	if err := IslandBundle().Render(context.Background(), &output); err != nil {
+		t.Fatalf("render island bundle: %v", err)
+	}
+	if strings.Contains(output.String(), bundleMapName) {
+		t.Errorf("IslandBundle references %s; the browser fetches it from the bundle comment only", bundleMapName)
+	}
 }
