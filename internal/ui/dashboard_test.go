@@ -71,7 +71,7 @@ func TestDashboardPageRenders(t *testing.T) {
 		`/schedules`,
 		`data-island="dashboard"`,
 		`data-island-label="dashboard"`,
-		`/api/v1/stream`,
+		`/api/v1/events`,
 		`>CPS</th>`,
 		`id="dashboard-page"`,
 	} {
@@ -217,7 +217,7 @@ func TestDashboardPageRendersCampaignCardsWithLinksAndActions(t *testing.T) {
 	markers := []string{
 		"/chains/11111111-1111-1111-1111-111111111111",
 		"/schedules/22222222-2222-2222-2222-222222222222",
-		"/api/v1/stream",
+		"/api/v1/events",
 		`Running jobs`,
 		`Campaigns`,
 		`Open campaigns`,

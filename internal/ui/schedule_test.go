@@ -3,7 +3,6 @@ package ui
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"math"
 	"strconv"
 	"strings"
@@ -101,53 +100,24 @@ func TestCampaignPlotIsSelfContained(t *testing.T) {
 	}
 }
 
-// TestCampaignPlotHydratesInPlace pins the swap contract: the island mounts on
-// the container the SVG is already in, and reads the same series the dashboard
-// endpoint serves. A seed rendered outside the mount point, or a mount point
-// without one, leaves the React chart with nothing to draw.
-func TestCampaignPlotHydratesInPlace(t *testing.T) {
+// TestCampaignPageMountsOneIsland guards the defect that left the campaign cost
+// plot dead for as long as it existed: a data-island the mount registry does not
+// know, nested inside an island that does. mountIslands creates a root for each
+// match, so the outer island's first commit clears the inner one's container
+// away. The campaign page renders exactly one mount point; the cost plot is the
+// server-rendered SVG, which CampaignDetailIsland replaces along with the rest
+// of the page.
+func TestCampaignPageMountsOneIsland(t *testing.T) {
 	body := renderCampaign(t, synthesizedCampaign())
 	island := bodyWithoutLayout(body)
-	start := strings.Index(island, `data-island="campaign-cost"`)
-	if start < 0 {
-		t.Fatal("campaign page renders no campaign-cost island mount point")
+	if got := strings.Count(island, "data-island="); got != 1 {
+		t.Errorf("campaign page renders %d island mount points, want exactly 1", got)
 	}
-	island = island[start:]
-	seed := strings.Index(island, `id="campaign-cost-series"`)
-	svg := strings.Index(island, "<svg")
-	if seed < 0 || svg < 0 || seed > svg {
-		t.Error("campaign-cost island does not wrap the seed and the server-rendered SVG together")
+	if !strings.Contains(island, "<svg") {
+		t.Error("campaign page renders no server-side cost plot, so the page is blank without the bundle")
 	}
 	if !strings.Contains(body, BundleURL()) {
 		t.Error("campaign page renders an island but never loads the bundle that mounts it")
-	}
-}
-
-// TestCampaignStageSeriesSkipsUnmeasuredStages is the seed's half of the rule
-// buildCampaignPlot already applies: a stage with no recorded cost is never
-// handed to the chart as a zero.
-func TestCampaignStageSeriesSkipsUnmeasuredStages(t *testing.T) {
-	series := campaignStageSeries([]CampaignStage{
-		{Index: 0, Kind: "base", Circles: 100, BestCost: 900, HasBestCost: true},
-		{Index: 1, Kind: "extend", Circles: 200, State: "running"},
-		{Index: 2, Kind: "polish", Circles: 200, BestCost: math.Inf(1), HasBestCost: true},
-	})
-	if len(series) != 3 {
-		t.Fatalf("campaignStageSeries returned %d points, want one per stage", len(series))
-	}
-	if !series[0].HasBestCost || series[0].BestCost != 900 {
-		t.Errorf("measured stage lost its cost: %+v", series[0])
-	}
-	for _, point := range series[1:] {
-		if point.HasBestCost {
-			t.Errorf("stage %d is reported as measured: %+v", point.Index, point)
-		}
-		if point.BestCost != 0 {
-			t.Errorf("stage %d carries a cost JSON cannot encode: %v", point.Index, point.BestCost)
-		}
-	}
-	if _, err := json.Marshal(series); err != nil {
-		t.Fatalf("campaign series does not marshal, so the seed cannot render: %v", err)
 	}
 }
 

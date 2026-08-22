@@ -1,8 +1,18 @@
 import { Chart } from "chart.js";
-import { useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { CampaignCostChart } from "./CampaignCostChart";
 import { useChartTheme, useLineChart } from "./charts";
 import type { Palette } from "./charts";
+import {
+	campaignStageCount,
+	campaignURL,
+	formatCostGain,
+	formatJobCircles,
+	shortID,
+	stateClass,
+	stateLabel,
+} from "./format";
 import { mountIslands } from "./islands";
 import { JobListIsland } from "./JobList";
 import { CampaignDetailIsland, CampaignListIsland } from "./Campaigns";
@@ -49,6 +59,8 @@ type RunningJob = {
 	state: string;
 	iterations: number;
 	maxIters: number;
+	circles: number;
+	requestedCircles: number;
 	bestCost: number;
 	initialCost: number;
 	cps: number;
@@ -148,31 +160,6 @@ function clampProgress(value: number, max: number): number {
 	return Math.min(100, Math.max(0, (value / max) * 100));
 }
 
-// stateClass mirrors ui.StateBadge. The island replaces server-rendered rows,
-// so a different mapping here would recolor every badge on mount.
-function stateClass(state: string): string {
-	switch (state) {
-		case "pending":
-		case "running":
-			return "badge-info";
-		case "completed":
-			return "badge-success";
-		case "failed":
-			return "badge-error";
-		case "cancelled":
-			return "badge-warning";
-		default:
-			return "";
-	}
-}
-
-function stateLabel(state: string): string {
-	if (!state) {
-		return "unknown";
-	}
-	return state.charAt(0).toUpperCase() + state.slice(1);
-}
-
 function normalizeHistory(samples: MetricSample[]): MetricSample[] {
 	if (samples.length === 0) {
 		return [];
@@ -222,6 +209,8 @@ function mergeJobFromEvent(payload: DashboardResponse, event: ProgressEventPaylo
 			state: event.state,
 			iterations: event.iterations,
 			maxIters: 0,
+			circles: 0,
+			requestedCircles: 0,
 			bestCost: event.bestCost,
 			initialCost: 0,
 			cps: event.cps,
@@ -264,29 +253,6 @@ function formatInteger(value: number): string {
 		return "—";
 	}
 	return `${Math.round(value)}`;
-}
-
-// formatCostGain mirrors formatJobImprovement on the Go side.
-function formatCostGain(initial: number, best: number): string {
-	if (!Number.isFinite(initial) || !Number.isFinite(best) || initial <= 0 || best > initial) {
-		return "—";
-	}
-	return `↓ ${((1 - best / initial) * 100).toFixed(1)}%`;
-}
-
-function campaignStageCount(campaign: CampaignSummary): string {
-	if (campaign.plannedStages > 0) {
-		return `${campaign.recordedStages} / ${campaign.plannedStages}`;
-	}
-	return `${campaign.recordedStages}`;
-}
-
-function campaignURL(campaign: CampaignSummary): string {
-	return campaign.source === "chain" ? `/chains/${campaign.id}` : `/schedules/${campaign.id}`;
-}
-
-function shortID(id: string): string {
-	return id.length <= 8 ? id : id.slice(0, 8);
 }
 
 // architectureBadge reads like `amd64 · avx2 · cpu`. The third component is the
@@ -343,8 +309,108 @@ function JobSparkline({ history, palette }: { history: MetricSample[]; palette: 
 	);
 }
 
+// The running-job table is sortable by every column that holds a scalar. The
+// unsorted state is kept as its own value rather than as a default column,
+// because the server's order (the order jobs started) is meaningful and a
+// reader who cycles a column past descending should get it back.
+type SortKey = "id" | "state" | "circles" | "iterations" | "bestCost" | "gain" | "cps";
+
+type SortState = { key: SortKey; direction: "asc" | "desc" };
+
+function jobSortValue(job: RunningJob, key: SortKey): number | string {
+	switch (key) {
+		case "id":
+			return job.id;
+		case "state":
+			return job.state;
+		case "circles":
+			return job.circles;
+		case "iterations":
+			return job.iterations;
+		case "bestCost":
+			return job.bestCost;
+		case "gain":
+			// A job without a usable initial cost prints "—"; sorting it as no gain
+			// keeps those rows together at one end instead of interleaving them.
+			return job.initialCost > 0 && job.bestCost <= job.initialCost
+				? 1 - job.bestCost / job.initialCost
+				: -1;
+		case "cps":
+			return job.cps;
+	}
+}
+
+function sortJobs(jobs: RunningJob[], sort: SortState | null): RunningJob[] {
+	if (!sort) return jobs;
+	const factor = sort.direction === "asc" ? 1 : -1;
+	return [...jobs].sort((left, right) => {
+		const a = jobSortValue(left, sort.key);
+		const b = jobSortValue(right, sort.key);
+		if (typeof a === "string" || typeof b === "string") {
+			return factor * String(a).localeCompare(String(b));
+		}
+		if (a === b) return 0;
+		return factor * (a < b ? -1 : 1);
+	});
+}
+
+// nextSort cycles one column ascending → descending → unsorted.
+function nextSort(current: SortState | null, key: SortKey): SortState | null {
+	if (!current || current.key !== key) return { key, direction: "asc" };
+	if (current.direction === "asc") return { key, direction: "desc" };
+	return null;
+}
+
+function SortableHeader({
+	label,
+	sortKey,
+	sort,
+	onSort,
+	align,
+	style,
+}: {
+	label: string;
+	sortKey: SortKey;
+	sort: SortState | null;
+	onSort: (key: SortKey) => void;
+	align?: "left" | "right";
+	style?: CSSProperties;
+}) {
+	const active = sort?.key === sortKey ? sort : null;
+	return (
+		<th
+			aria-sort={active ? (active.direction === "asc" ? "ascending" : "descending") : "none"}
+			style={{ padding: "0.5rem", textAlign: align ?? "left", ...style }}
+		>
+			<button
+				type="button"
+				onClick={() => onSort(sortKey)}
+				title={`Sort by ${label}`}
+				style={{
+					background: "none",
+					border: "none",
+					padding: 0,
+					font: "inherit",
+					fontWeight: "inherit",
+					color: active ? "var(--primary-color)" : "inherit",
+					cursor: "pointer",
+					display: "inline-flex",
+					gap: "0.25rem",
+					alignItems: "center",
+				}}
+			>
+				{label}
+				<span aria-hidden="true" style={{ fontSize: "0.7rem", opacity: active ? 1 : 0.35 }}>
+					{active ? (active.direction === "asc" ? "▲" : "▼") : "↕"}
+				</span>
+			</button>
+		</th>
+	);
+}
+
 function DashboardIsland({ root }: { root: HTMLElement }) {
 	const palette = useChartTheme();
+	const [sort, setSort] = useState<SortState | null>(null);
 	const initial = readDashboardSeed(root);
 	const { value: payload, connected: streamConnected, error: errorText } = useLiveResource({
 		initial,
@@ -352,10 +418,12 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 		reduce: reduceDashboardEvent,
 	});
 
-	const jobs = payload?.runningJobs ?? [];
+	const unsortedJobs = payload?.runningJobs ?? [];
 	const campaigns = payload?.campaigns ?? [];
 	const aggregates = payload?.aggregates ?? { running: 0, pending: 0, completed: 0, runningCps: 0 };
 	const hostFacts = payload?.hostFacts;
+	const jobs = useMemo(() => sortJobs(unsortedJobs, sort), [unsortedJobs, sort]);
+	const onSort = useCallback((key: SortKey) => setSort((current) => nextSort(current, key)), []);
 
 	if (!payload) {
 		return (
@@ -429,12 +497,13 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 						<table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
 							<thead>
 								<tr style={{ textAlign: "left", borderBottom: "1px solid var(--border-color)" }}>
-									<th style={{ padding: "0.5rem 0.5rem 0.5rem 0" }}>Job</th>
-									<th style={{ padding: "0.5rem" }}>State</th>
-									<th style={{ padding: "0.5rem", textAlign: "right" }}>Iter</th>
-									<th style={{ padding: "0.5rem", textAlign: "right" }}>Best cost</th>
-									<th style={{ padding: "0.5rem", textAlign: "right" }}>Gain</th>
-									<th style={{ padding: "0.5rem", textAlign: "right" }}>CPS</th>
+									<SortableHeader label="Job" sortKey="id" sort={sort} onSort={onSort} style={{ padding: "0.5rem 0.5rem 0.5rem 0" }} />
+									<SortableHeader label="State" sortKey="state" sort={sort} onSort={onSort} />
+									<SortableHeader label="Circles" sortKey="circles" sort={sort} onSort={onSort} align="right" />
+									<SortableHeader label="Iter" sortKey="iterations" sort={sort} onSort={onSort} align="right" />
+									<SortableHeader label="Best cost" sortKey="bestCost" sort={sort} onSort={onSort} align="right" />
+									<SortableHeader label="Gain" sortKey="gain" sort={sort} onSort={onSort} align="right" />
+									<SortableHeader label="CPS" sortKey="cps" sort={sort} onSort={onSort} align="right" />
 									<th style={{ padding: "0.5rem" }}>Progress</th>
 									<th style={{ padding: "0.5rem" }}>Cost</th>
 								</tr>
@@ -447,7 +516,7 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 						</table>
 					</div>
 				)}
-				<a href="/api/v1/stream" style={{ display: "inline-block", marginTop: "0.75rem", color: "var(--primary-color)" }}>
+				<a href="/api/v1/events" style={{ display: "inline-block", marginTop: "0.75rem", color: "var(--primary-color)" }}>
 					Stream updates
 				</a>
 			</div>
@@ -522,6 +591,7 @@ function JobRow({ job, palette }: { job: RunningJob; palette: Palette }) {
 			<td style={{ padding: "0.75rem 0.5rem" }}>
 				<span className={`badge ${stateClass(job.state)}`}>{stateLabel(job.state)}</span>
 			</td>
+			<td style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>{formatJobCircles(job.circles, job.requestedCircles)}</td>
 			<td style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>{formatInteger(job.iterations)}</td>
 			<td style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>{formatFixed(job.bestCost, 4)}</td>
 			<td style={{ padding: "0.75rem 0.5rem", textAlign: "right", color: "var(--success-color)" }}>

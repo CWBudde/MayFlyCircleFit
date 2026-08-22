@@ -28,6 +28,9 @@ jobs:
       - name: Type-check React islands
         run: npm run typecheck
         working-directory: web
+      - name: Unit-test island formatters
+        run: npm run test:unit
+        working-directory: web
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
         working-directory: web

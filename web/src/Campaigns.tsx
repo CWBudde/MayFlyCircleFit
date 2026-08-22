@@ -1,6 +1,15 @@
 import { Fragment, useMemo } from "react";
 import { CampaignCostChart } from "./CampaignCostChart";
 import { useChartTheme } from "./charts";
+import {
+	acceptedSweepsTitle,
+	campaignProvenance,
+	campaignTitle,
+	formatAcceptedSweeps,
+	formatCost,
+	formatElapsed,
+	formatPsnr,
+} from "./format";
 import { fetchJSON, useLiveResource } from "./live";
 import type { UIEvent } from "./live";
 import { ImageViewer } from "./ImageViewer";
@@ -27,52 +36,6 @@ function seed<T>(root: HTMLElement, id: string, fallback: T): T {
 	const script = root.querySelector<HTMLScriptElement>(`#${id}`);
 	if (!script) return fallback;
 	try { return JSON.parse(script.textContent || "null") as T; } catch { return fallback; }
-}
-
-// The formatters below mirror the templ fallback so mounting the island keeps
-// the server-rendered projection instead of shrinking it.
-function formatCost(stage: CampaignStage): string {
-	return stage.hasBestCost ? stage.bestCost.toFixed(3) : "—";
-}
-
-function formatPsnr(stage: CampaignStage): string {
-	if (stage.psnrInfinite) return "∞ dB";
-	return stage.hasPsnr ? `${stage.psnr.toFixed(2)} dB` : "—";
-}
-
-function formatElapsed(stage: CampaignStage): string {
-	if (!stage.hasElapsed) return "—";
-	const total = Math.round(stage.elapsedSec);
-	const hours = Math.floor(total / 3600);
-	const minutes = Math.floor((total % 3600) / 60);
-	const seconds = total % 60;
-	if (hours > 0) return `${hours}h${minutes}m${seconds}s`;
-	if (minutes > 0) return `${minutes}m${seconds}s`;
-	return `${seconds}s`;
-}
-
-function formatAcceptedSweeps(stage: CampaignStage): string {
-	return stage.acceptedSweeps === undefined || stage.acceptedSweeps === null ? "—" : `${stage.acceptedSweeps}`;
-}
-
-function acceptedSweepsTitle(stage: CampaignStage): string {
-	if (stage.acceptedSweeps !== undefined && stage.acceptedSweeps !== null) return "";
-	return stage.kind !== "polish"
-		? "Only a polish stage runs sweeps"
-		: "The polisher does not persist its accepted-sweep count";
-}
-
-function campaignTitle(campaign: Campaign): string {
-	if (campaign.name) return campaign.name;
-	const short = campaign.id.slice(0, 8);
-	return campaign.source === "chain" ? `Imported chain ${short}` : `Campaign ${short}`;
-}
-
-function campaignProvenance(campaign: Campaign): string {
-	const recorded = campaign.stages.length;
-	if (campaign.source === "chain") return `Reconstructed from checkpoint lineage · ${recorded} stages`;
-	const text = `Schedule · ${recorded} of ${campaign.plannedStages} stages recorded`;
-	return campaign.hasSeed ? `${text} · seed ${campaign.campaignSeed}` : text;
 }
 
 function campaignEvent<T>(current: T, event: UIEvent) {

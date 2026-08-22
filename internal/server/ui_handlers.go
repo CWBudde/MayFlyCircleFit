@@ -32,16 +32,18 @@ func (s *Server) handleDashboardPage(w http.ResponseWriter, r *http.Request) {
 	jobs := make([]ui.DashboardRunningJob, 0, len(payload.RunningJobs))
 	for _, runningJob := range payload.RunningJobs {
 		jobs = append(jobs, ui.DashboardRunningJob{
-			ID:              runningJob.ID,
-			Project:         string(runningJob.Project),
-			State:           runningJob.State,
-			Iterations:      runningJob.Iterations,
-			MaxIters:        runningJob.MaxIters,
-			BestCost:        runningJob.BestCost,
-			InitialCost:     runningJob.InitialCost,
-			CPS:             runningJob.CPS,
-			EvaluationWidth: runningJob.EvaluationWidth,
-			ElapsedSec:      runningJob.ElapsedSec,
+			ID:               runningJob.ID,
+			Project:          string(runningJob.Project),
+			State:            runningJob.State,
+			Iterations:       runningJob.Iterations,
+			MaxIters:         runningJob.MaxIters,
+			Circles:          runningJob.Circles,
+			RequestedCircles: runningJob.RequestedCircles,
+			BestCost:         runningJob.BestCost,
+			InitialCost:      runningJob.InitialCost,
+			CPS:              runningJob.CPS,
+			EvaluationWidth:  runningJob.EvaluationWidth,
+			ElapsedSec:       runningJob.ElapsedSec,
 		})
 	}
 	if err := ui.DashboardPage(ui.DashboardPageData{

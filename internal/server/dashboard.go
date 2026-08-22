@@ -23,17 +23,19 @@ type dashboardResponse struct {
 }
 
 type dashboardRunningJob struct {
-	ID              string            `json:"id"`
-	Project         app.Project       `json:"project"`
-	State           string            `json:"state"`
-	Iterations      int               `json:"iterations"`
-	MaxIters        int               `json:"maxIters"`
-	BestCost        float64           `json:"bestCost"`
-	InitialCost     float64           `json:"initialCost"`
-	CPS             float64           `json:"cps"`
-	EvaluationWidth int               `json:"evaluationWidth,omitempty"`
-	ElapsedSec      float64           `json:"elapsedSec"`
-	MetricHistory   []ui.MetricSample `json:"metricHistory"`
+	ID               string            `json:"id"`
+	Project          app.Project       `json:"project"`
+	State            string            `json:"state"`
+	Iterations       int               `json:"iterations"`
+	MaxIters         int               `json:"maxIters"`
+	Circles          int               `json:"circles"`
+	RequestedCircles int               `json:"requestedCircles"`
+	BestCost         float64           `json:"bestCost"`
+	InitialCost      float64           `json:"initialCost"`
+	CPS              float64           `json:"cps"`
+	EvaluationWidth  int               `json:"evaluationWidth,omitempty"`
+	ElapsedSec       float64           `json:"elapsedSec"`
+	MetricHistory    []ui.MetricSample `json:"metricHistory"`
 }
 
 type dashboardAggregates struct {
@@ -155,17 +157,19 @@ func dashboardRunningJobFrom(job *Job, includeHistory bool) dashboardRunningJob 
 
 	elapsed := jobElapsed(job)
 	return dashboardRunningJob{
-		ID:              job.ID,
-		Project:         app.NormalizeProject(job.Project),
-		State:           string(job.State),
-		Iterations:      job.Iterations,
-		MaxIters:        plannedOptimizerIterations(job.Config),
-		BestCost:        job.BestCost,
-		InitialCost:     job.InitialCost,
-		CPS:             circlesPerSecond(job, elapsed),
-		EvaluationWidth: job.EvaluationWidth,
-		ElapsedSec:      elapsed.Seconds(),
-		MetricHistory:   history,
+		ID:               job.ID,
+		Project:          app.NormalizeProject(job.Project),
+		State:            string(job.State),
+		Iterations:       job.Iterations,
+		MaxIters:         plannedOptimizerIterations(job.Config),
+		Circles:          job.ActualCircles,
+		RequestedCircles: job.RequestedCircles,
+		BestCost:         job.BestCost,
+		InitialCost:      job.InitialCost,
+		CPS:              circlesPerSecond(job, elapsed),
+		EvaluationWidth:  job.EvaluationWidth,
+		ElapsedSec:       elapsed.Seconds(),
+		MetricHistory:    history,
 	}
 }
 
