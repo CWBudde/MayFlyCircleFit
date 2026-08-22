@@ -141,6 +141,12 @@ the relevant `PLAN.md` task or issue, summarize impact, include renders or
 metrics when optimization quality shifts, state which checks were run, and flag
 reviewer setup needs.
 
+`master` is protected: direct pushes are rejected and every change has to land
+through a pull request. Work on a topic branch, commit there, and open the pull
+request yourself (`gh pr create`) instead of pushing to `master`. If a commit
+already sits on local `master`, move it to a branch and reset `master` back to
+`origin/master` before pushing.
+
 ## Runtime notes
 
 The CLI reads reference imagery from `assets/`; pass relative paths in scripts
