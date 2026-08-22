@@ -152,7 +152,7 @@ func TestJobDetailPageShowsPolishingSchedule(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := output.String()
-	for _, marker := range []string{"Active-set Polishing", "Enabled · up to 3 sweeps of 5 circles", "2 × 1000 iterations", "progress threshold 0.001", "Polish weak circles", "/polish"} {
+	for _, marker := range []string{"Active-set Polishing", "Enabled · up to 3 sweeps of 5 circles", "2 × 1000 iterations", "progress threshold 0.001", "Polish weak circles", `data-can-polish="true"`} {
 		if !strings.Contains(body, marker) {
 			t.Errorf("rendered detail page missing %q", marker)
 		}
