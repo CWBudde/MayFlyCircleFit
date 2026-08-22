@@ -168,7 +168,7 @@ func TestCheckpoint_Validate_EmptyJobID(t *testing.T) {
 	}
 
 	validationError := &ValidationError{}
-	if errors.As(err, &validationError) {
+	if !errors.As(err, &validationError) {
 		t.Errorf("Expected ValidationError, got %T", err)
 	}
 }
@@ -390,7 +390,7 @@ func TestCheckpoint_IsCompatible_DifferentRefPath(t *testing.T) {
 	}
 
 	compatibilityError := &CompatibilityError{}
-	if errors.As(err, &compatibilityError) {
+	if !errors.As(err, &compatibilityError) {
 		t.Errorf("Expected CompatibilityError, got %T", err)
 	}
 }

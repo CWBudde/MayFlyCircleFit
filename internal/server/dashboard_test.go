@@ -44,6 +44,7 @@ func TestRoutingDashboardEndpoint(t *testing.T) {
 	}
 
 	var payload dashboardResponse
+
 	err := json.NewDecoder(rec.Body).Decode(&payload)
 	if err != nil {
 		t.Fatalf("decode /api/v1/dashboard body: %v", err)
@@ -303,6 +304,7 @@ func TestDashboardRunningJobFromBoundsMetricHistory(t *testing.T) {
 	job := fixture.server.jobManager.CreateJob(app.DefaultProject, app.JobConfig{
 		RefPath: fixture.imagePath, Mode: app.ModeBatch, Circles: 8, Iters: 100, PopSize: 30, Seed: 42,
 	})
+
 	err := fixture.server.jobManager.UpdateJob(job.ID, func(job *Job) {
 		job.State = StateRunning
 		job.StartTime = time.Now().Add(-time.Second)
@@ -422,6 +424,7 @@ func TestStartJobRecordsInheritedEvaluations(t *testing.T) {
 	job := manager.CreateJob(app.DefaultProject, app.JobConfig{
 		Mode: app.ModeBatch, Circles: 8, Iters: 100, PopSize: 30, Seed: 42,
 	})
+
 	err := manager.UpdateJob(job.ID, func(live *Job) { live.Evaluations = 5000 })
 	if err != nil {
 		t.Fatalf("seed inherited evaluations: %v", err)

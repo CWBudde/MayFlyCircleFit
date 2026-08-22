@@ -291,6 +291,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		iterations := baseIterations + progress.Iterations
 
 		evaluations := baseEvaluations + progress.Evaluations
+
 		err := jm.UpdateProgress(jobID, iterations, evaluations, progress.BestParams, progress.BestCost)
 		if err != nil {
 			return
@@ -350,6 +351,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		iterations := baseIterations + boundary.Progress.Iterations
 
 		evaluations := baseEvaluations + boundary.Progress.Evaluations
+
 		err := jm.UpdateProgress(jobID, iterations, evaluations, boundary.Progress.BestParams, boundary.Progress.BestCost)
 		if err != nil {
 			return err
@@ -696,6 +698,7 @@ func polishBatchResult(
 			progress.Iterations += mainIterations
 
 			progress.Evaluations += mainEvaluations
+
 			err := jm.UpdateCandidateProgress(
 				job.ID,
 				baseIterations+progress.Iterations,
@@ -1034,6 +1037,7 @@ func saveCheckpointWithImage(jm *JobManager, checkpointStore store.Store, rend r
 	}
 
 	var persistenceErrors []error
+
 	err := checkpointStore.SaveCheckpoint(jobID, checkpoint)
 	if err != nil {
 		persistenceErrors = append(persistenceErrors, fmt.Errorf("save checkpoint: %w", err))
