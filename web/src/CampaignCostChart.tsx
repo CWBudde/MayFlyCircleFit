@@ -4,6 +4,7 @@ import { useId, useMemo, useRef } from "react";
 import type { CSSProperties } from "react";
 import { applyAxisTheme, useLineChart } from "./charts";
 import type { Palette } from "./charts";
+import { campaignCostPointColor, formatChartCost } from "./format";
 
 // CampaignCostChartPoint mirrors ui.CampaignSeriesPoint. It is the same shape
 // the dashboard endpoint serves and the campaign page seeds, so one component
@@ -34,31 +35,10 @@ const chartHeight: Record<CampaignCostChartVariant, number> = { mini: 130, full:
 // has a third of the width for the same labels, so it settles for fewer.
 const xTickLimit: Record<CampaignCostChartVariant, number> = { mini: 4, full: 6 };
 
-// campaignCostPointColor matches campaignPointFill in the server-rendered SVG,
-// so a campaign keeps its stage colors when React swaps in.
-function campaignCostPointColor(kind: string, palette: Palette): string {
-	switch (kind) {
-		case "base":
-			return palette.success;
-		case "polish":
-			return palette.warning;
-		default:
-			return palette.primary;
-	}
-}
-
 // The SVG draws polish stages as squares because a polish repeats its extend
 // stage's circle count, which would otherwise hide one point behind another.
 function campaignCostPointStyle(kind: string): "circle" | "rect" {
 	return kind === "polish" ? "rect" : "circle";
-}
-
-// formatChartCost mirrors formatPlotCost in schedule.templ.
-function formatChartCost(cost: number): string {
-	if (Math.abs(cost) >= 1000) {
-		return cost.toFixed(0);
-	}
-	return cost.toFixed(2);
 }
 
 // plottableStages is the rule buildCampaignPlot applies: a stage without a

@@ -4,6 +4,15 @@ import type { CSSProperties } from "react";
 import { CampaignCostChart } from "./CampaignCostChart";
 import { useChartTheme, useLineChart } from "./charts";
 import type { Palette } from "./charts";
+import {
+	campaignStageCount,
+	campaignURL,
+	formatCostGain,
+	formatJobCircles,
+	shortID,
+	stateClass,
+	stateLabel,
+} from "./format";
 import { mountIslands } from "./islands";
 import { JobListIsland } from "./JobList";
 import { CampaignDetailIsland, CampaignListIsland } from "./Campaigns";
@@ -151,31 +160,6 @@ function clampProgress(value: number, max: number): number {
 	return Math.min(100, Math.max(0, (value / max) * 100));
 }
 
-// stateClass mirrors ui.StateBadge. The island replaces server-rendered rows,
-// so a different mapping here would recolor every badge on mount.
-function stateClass(state: string): string {
-	switch (state) {
-		case "pending":
-		case "running":
-			return "badge-info";
-		case "completed":
-			return "badge-success";
-		case "failed":
-			return "badge-error";
-		case "cancelled":
-			return "badge-warning";
-		default:
-			return "";
-	}
-}
-
-function stateLabel(state: string): string {
-	if (!state) {
-		return "unknown";
-	}
-	return state.charAt(0).toUpperCase() + state.slice(1);
-}
-
 function normalizeHistory(samples: MetricSample[]): MetricSample[] {
 	if (samples.length === 0) {
 		return [];
@@ -269,40 +253,6 @@ function formatInteger(value: number): string {
 		return "—";
 	}
 	return `${Math.round(value)}`;
-}
-
-// formatCostGain mirrors formatJobImprovement on the Go side.
-function formatCostGain(initial: number, best: number): string {
-	if (!Number.isFinite(initial) || !Number.isFinite(best) || initial <= 0 || best > initial) {
-		return "—";
-	}
-	return `↓ ${((1 - best / initial) * 100).toFixed(1)}%`;
-}
-
-// formatJobCircles mirrors formatJobCircles on the Go side: a job that has not
-// reached its requested count yet prints both, so the row says how far the
-// geometry still has to grow.
-function formatJobCircles(actual: number, requested: number): string {
-	if (!Number.isFinite(actual)) return "—";
-	if (Number.isFinite(requested) && requested > 0 && requested !== actual) {
-		return `${actual} / ${requested}`;
-	}
-	return `${actual}`;
-}
-
-function campaignStageCount(campaign: CampaignSummary): string {
-	if (campaign.plannedStages > 0) {
-		return `${campaign.recordedStages} / ${campaign.plannedStages}`;
-	}
-	return `${campaign.recordedStages}`;
-}
-
-function campaignURL(campaign: CampaignSummary): string {
-	return campaign.source === "chain" ? `/chains/${campaign.id}` : `/schedules/${campaign.id}`;
-}
-
-function shortID(id: string): string {
-	return id.length <= 8 ? id : id.slice(0, 8);
 }
 
 // architectureBadge reads like `amd64 · avx2 · cpu`. The third component is the
@@ -566,7 +516,7 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 						</table>
 					</div>
 				)}
-				<a href="/api/v1/stream" style={{ display: "inline-block", marginTop: "0.75rem", color: "var(--primary-color)" }}>
+				<a href="/api/v1/events" style={{ display: "inline-block", marginTop: "0.75rem", color: "var(--primary-color)" }}>
 					Stream updates
 				</a>
 			</div>
