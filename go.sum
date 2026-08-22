@@ -23,8 +23,8 @@ github.com/cucumber/godog v0.15.1 h1:rb/6oHDdvVZKS66hrhpjFQFHjthFSrQBCOI1LwshNTI
 github.com/cucumber/godog v0.15.1/go.mod h1:qju+SQDewOljHuq9NSM66s0xEhogx0q30flfxL4WUk8=
 github.com/cucumber/messages/go/v21 v21.0.1 h1:wzA0LxwjlWQYZd32VTlAVDTkW6inOFmSM+RuOwHZiMI=
 github.com/cucumber/messages/go/v21 v21.0.1/go.mod h1:zheH/2HS9JLVFukdrsPWoPdmUtmYQAQPLk7w5vWsk5s=
-github.com/cwbudde/mayfly v0.4.0 h1:EDA5nEJROkNNd7vWoufYKoP4UmsPzYsWv3RKqTVf9po=
-github.com/cwbudde/mayfly v0.4.0/go.mod h1:Kvhc6sAww1oFoR37ON2/iqIvOu/E8qHKAyQsM7tRs6U=
+github.com/cwbudde/mayfly v0.5.0 h1:gDXHuxRr8mWx0jcXFqltLEjTWLbfy/+/gwqxwPopSSk=
+github.com/cwbudde/mayfly v0.5.0/go.mod h1:Kvhc6sAww1oFoR37ON2/iqIvOu/E8qHKAyQsM7tRs6U=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/evanw/esbuild v0.28.2 h1:A2uETn4jrQTcXaT/shwTDTYBxDjl7fV7nXmUrJxfA2w=

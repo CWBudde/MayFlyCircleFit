@@ -304,6 +304,15 @@ the run: the startup log names the SIMD tier, both installed compositors, and
 `fastCompositing`, so one log line settles whether two campaigns can be
 compared.
 
+- **The optimizer version — the one that breaks comparability across a
+  dependency bump.** MayFly v0.5.0 scales the crossover offspring count with
+  the population, where v0.4.0 held it at an absolute 20. A run at the default
+  population of 20 is unaffected, but every run at any other population
+  performs a different number of crossovers and converges differently, so a
+  cost recorded under v0.4.0 is **not** comparable to one recorded under
+  v0.5.0. Every campaign in this repository ran at a raised population, so the
+  boundary is real rather than theoretical. Pin `config.NC = 20` inside the
+  adapter to reproduce a v0.4.0 run exactly.
 - **`fastCompositing` — the one that genuinely breaks comparability.** The
   float32 compositor is accurate to ±1 per channel, measured over 2,074,320
   channel writes. A changed channel changes the SSD, which changes an

@@ -40,7 +40,7 @@ take precedence if this document goes stale.
 - `internal/fit/renderer/opencl`: the cgo OpenCL renderer (`gpu` tag). It is a
   separate package because Go forbids Plan 9 assembly in a package that uses
   cgo; it must never import `internal/fit/renderer`.
-- `internal/opt`: optimizer interfaces and the MayFly v0.4.0 adapter.
+- `internal/opt`: optimizer interfaces and the MayFly v0.5.0 adapter.
 - `internal/server`: trusted-local HTTP boundary and background job lifecycle.
 - `internal/store`: filesystem checkpoint, trace, and artifact ownership.
 - `internal/ui`: templ views plus committed generated Go output.
@@ -56,7 +56,7 @@ reintroduce application configuration into the store package.
 - Go 1.24 source-compatibility floor (`go 1.24.0`). Production binaries should
   use a currently supported, security-patched release; vulnerability CI is
   pinned to Go 1.26.6.
-- MayFly is pinned to `github.com/cwbudde/mayfly v0.4.0`; templ to
+- MayFly is pinned to `github.com/cwbudde/mayfly v0.5.0`; templ to
   `github.com/a-h/templ v0.3.960` as a Go tool; `github.com/google/pprof` as a
   Go tool because some Go installations do not bundle it.
 - `github.com/evanw/esbuild/cmd/esbuild` is installed as a Go tool to compile the
