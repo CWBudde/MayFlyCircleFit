@@ -1,325 +1,264 @@
 {
   "schemaVersion": 1,
-  "name": "MayFly 3000 v2 \u2014 repair the guess, then cover every draw slot",
+  "name": "MayFly 3000 v2 \u2014 pow2 ladder from a cold 8-circle base",
   "seed": 20260822,
   "base": {
     "refPath": "example/MayFly-512.png",
     "mode": "batch",
-    "circles": 10,
-    "batchSize": 10,
-    "iters": 800,
-    "popSize": 48,
+    "circles": 8,
+    "batchSize": 8,
+    "iters": 1024,
+    "popSize": 4096,
     "optimizerEpochs": 2,
     "threads": 1,
     "parallelEvaluation": true,
-    "evaluationWorkers": 48,
+    "evaluationWorkers": 16,
     "disableConvergence": true,
     "stopMinImprovement": 0.002,
-    "stopStagnationIters": 250,
-    "stopMinIters": 200,
-    "initialCircles": [
-      {
-        "x": 256,
-        "y": 256,
-        "r": 400,
-        "color": "#474128",
-        "opacity": 1
-      },
-      {
-        "x": 256,
-        "y": 20,
-        "r": 210,
-        "color": "#302c0e",
-        "opacity": 0.75
-      },
-      {
-        "x": 400,
-        "y": 110,
-        "r": 42,
-        "color": "#d2b182",
-        "opacity": 0.95
-      },
-      {
-        "x": 399,
-        "y": 152,
-        "r": 26,
-        "color": "#8a7a52",
-        "opacity": 0.5
-      },
-      {
-        "x": 237,
-        "y": 470,
-        "r": 130,
-        "color": "#383523",
-        "opacity": 1
-      },
-      {
-        "x": 256,
-        "y": 640,
-        "r": 190,
-        "color": "#4b4830",
-        "opacity": 1
-      },
-      {
-        "x": 245,
-        "y": 165,
-        "r": 70,
-        "color": "#7d9085",
-        "opacity": 0.85
-      },
-      {
-        "x": 275,
-        "y": 275,
-        "r": 60,
-        "color": "#a8b99e",
-        "opacity": 0.8
-      },
-      {
-        "x": 205,
-        "y": 325,
-        "r": 14,
-        "color": "#6f6044",
-        "opacity": 0.8
-      },
-      {
-        "x": 330,
-        "y": 308,
-        "r": 16,
-        "color": "#776c50",
-        "opacity": 0.85
-      }
-    ]
+    "stopStagnationIters": 256,
+    "stopMinIters": 256
   },
   "steps": [
     {
       "type": "polish",
       "strategy": "replacement",
-      "activeSetSize": 10,
+      "activeSetSize": 8,
       "maxSweeps": 32,
-      "stagnationIters": 100,
+      "stagnationIters": 128,
       "minImprovement": 0.0005,
       "epochs": 2,
-      "iters": 200,
-      "popSize": 48
+      "iters": 256,
+      "popSize": 64
     },
     {
       "type": "polish",
       "strategy": "residual-region",
-      "activeSetSize": 10,
+      "activeSetSize": 8,
       "maxSweeps": 32,
-      "stagnationIters": 100,
+      "stagnationIters": 128,
       "minImprovement": 0.0005,
       "epochs": 2,
-      "iters": 200,
-      "popSize": 48
+      "iters": 256,
+      "popSize": 64
+    },
+    {
+      "type": "extend",
+      "repeat": 8,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 1024,
+      "popSize": 64
     },
     {
       "type": "polish",
       "strategy": "replacement",
-      "activeSetSize": 10,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48
-    },
-    {
-      "type": "polish",
-      "strategy": "residual-region",
-      "activeSetSize": 10,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48
-    },
-    {
-      "type": "extend",
-      "repeat": 6,
-      "additionalCircles": 1,
-      "batchSize": 1,
-      "epochs": 2,
-      "iters": 800,
-      "popSize": 48
-    },
-    {
-      "type": "polish",
-      "strategy": "residual-region",
       "activeSetSize": 16,
       "maxSweeps": 32,
-      "stagnationIters": 100,
+      "stagnationIters": 128,
       "minImprovement": 0.0005,
       "epochs": 2,
-      "iters": 200,
-      "popSize": 48
+      "iters": 256,
+      "popSize": 64
     },
     {
       "type": "extend",
-      "repeat": 8,
+      "repeat": 16,
       "additionalCircles": 1,
       "batchSize": 1,
       "epochs": 2,
-      "iters": 800,
-      "popSize": 48
-    },
-    {
-      "type": "polish",
-      "strategy": "residual-region",
-      "activeSetSize": 24,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48
-    },
-    {
-      "type": "extend",
-      "repeat": 8,
-      "additionalCircles": 1,
-      "batchSize": 1,
-      "epochs": 2,
-      "iters": 800,
-      "popSize": 48
+      "iters": 1024,
+      "popSize": 64
     },
     {
       "type": "polish",
       "strategy": "residual-region",
       "activeSetSize": 32,
       "maxSweeps": 32,
-      "stagnationIters": 100,
+      "stagnationIters": 128,
       "minImprovement": 0.0005,
       "epochs": 2,
-      "iters": 200,
-      "popSize": 48
+      "iters": 256,
+      "popSize": 64
     },
     {
       "type": "extend",
-      "repeat": 16,
+      "repeat": 32,
       "additionalCircles": 1,
       "batchSize": 1,
       "epochs": 2,
-      "iters": 800,
-      "popSize": 48
+      "iters": 1024,
+      "popSize": 64
     },
     {
       "type": "polish",
-      "strategy": "residual-region",
-      "activeSetSize": 48,
+      "strategy": "replacement",
+      "activeSetSize": 64,
       "maxSweeps": 32,
-      "stagnationIters": 100,
+      "stagnationIters": 128,
       "minImprovement": 0.0005,
       "epochs": 2,
-      "iters": 200,
-      "popSize": 48
+      "iters": 256,
+      "popSize": 64
     },
     {
       "type": "extend",
-      "repeat": 16,
+      "repeat": 64,
       "additionalCircles": 1,
       "batchSize": 1,
       "epochs": 2,
-      "iters": 800,
-      "popSize": 48
+      "iters": 1024,
+      "popSize": 64
     },
     {
       "type": "polish",
       "strategy": "residual-region",
       "activeSetSize": 64,
       "maxSweeps": 32,
-      "stagnationIters": 100,
+      "stagnationIters": 128,
       "minImprovement": 0.0005,
       "epochs": 2,
-      "iters": 200,
-      "popSize": 48
+      "iters": 256,
+      "popSize": 64
     },
     {
       "type": "extend",
-      "repeat": 32,
+      "repeat": 128,
       "additionalCircles": 1,
       "batchSize": 1,
       "epochs": 2,
-      "iters": 800,
-      "popSize": 48
+      "iters": 1024,
+      "popSize": 64
     },
     {
       "type": "polish",
       "strategy": "residual-region",
-      "activeSetSize": 96,
+      "activeSetSize": 64,
       "maxSweeps": 32,
-      "stagnationIters": 100,
+      "stagnationIters": 128,
       "minImprovement": 0.0005,
       "epochs": 2,
-      "iters": 200,
-      "popSize": 48
+      "iters": 256,
+      "popSize": 64
     },
     {
       "type": "extend",
-      "repeat": 32,
+      "repeat": 256,
       "additionalCircles": 1,
       "batchSize": 1,
       "epochs": 2,
-      "iters": 800,
-      "popSize": 48
+      "iters": 1024,
+      "popSize": 64,
+      "pauseBefore": true
     },
     {
       "type": "polish",
       "strategy": "contiguous-window",
-      "activeSetSize": 100,
+      "activeSetSize": 64,
       "maxSweeps": 32,
-      "stagnationIters": 100,
+      "stagnationIters": 128,
       "minImprovement": 0.0005,
       "epochs": 2,
-      "iters": 200,
-      "popSize": 48
-    },
-    {
-      "type": "extend",
-      "repeat": 64,
-      "additionalCircles": 1,
-      "batchSize": 1,
-      "epochs": 2,
-      "iters": 800,
-      "popSize": 48
-    },
-    {
-      "type": "polish",
-      "strategy": "contiguous-window",
-      "activeSetSize": 100,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
+      "iters": 256,
+      "popSize": 64,
       "when": {
-        "minGain": 0.15,
+        "minGain": 0.25,
         "abortAfterBarren": 4
       }
     },
     {
       "type": "extend",
-      "repeat": 64,
+      "repeat": 512,
       "additionalCircles": 1,
       "batchSize": 1,
       "epochs": 2,
-      "iters": 800,
-      "popSize": 48
+      "iters": 1024,
+      "popSize": 64
     },
     {
       "type": "polish",
       "strategy": "contiguous-window",
-      "activeSetSize": 100,
+      "activeSetSize": 64,
       "maxSweeps": 32,
-      "stagnationIters": 100,
+      "stagnationIters": 128,
       "minImprovement": 0.0005,
       "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
+      "iters": 256,
+      "popSize": 64,
       "when": {
-        "minGain": 0.15,
+        "minGain": 0.25,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 1024,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 1024,
+      "popSize": 64
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 64,
+      "maxSweeps": 32,
+      "stagnationIters": 128,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 256,
+      "popSize": 64,
+      "when": {
+        "minGain": 0.25,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 512,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 1024,
+      "popSize": 64
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 64,
+      "maxSweeps": 32,
+      "stagnationIters": 128,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 256,
+      "popSize": 64,
+      "when": {
+        "minGain": 0.25,
+        "abortAfterBarren": 4
+      }
+    },
+    {
+      "type": "extend",
+      "repeat": 256,
+      "additionalCircles": 1,
+      "batchSize": 1,
+      "epochs": 2,
+      "iters": 1024,
+      "popSize": 64
+    },
+    {
+      "type": "polish",
+      "strategy": "contiguous-window",
+      "activeSetSize": 64,
+      "maxSweeps": 32,
+      "stagnationIters": 128,
+      "minImprovement": 0.0005,
+      "epochs": 2,
+      "iters": 256,
+      "popSize": 64,
+      "when": {
+        "minGain": 0.25,
         "abortAfterBarren": 4
       }
     },
@@ -329,315 +268,45 @@
       "additionalCircles": 1,
       "batchSize": 1,
       "epochs": 2,
-      "iters": 800,
-      "popSize": 48
+      "iters": 1024,
+      "popSize": 64
     },
     {
       "type": "polish",
       "strategy": "contiguous-window",
-      "activeSetSize": 100,
+      "activeSetSize": 64,
       "maxSweeps": 32,
-      "stagnationIters": 100,
+      "stagnationIters": 128,
       "minImprovement": 0.0005,
       "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
+      "iters": 256,
+      "popSize": 64,
       "when": {
-        "minGain": 0.15,
+        "minGain": 0.25,
         "abortAfterBarren": 4
       }
     },
     {
       "type": "extend",
-      "repeat": 128,
+      "repeat": 56,
       "additionalCircles": 1,
       "batchSize": 1,
       "epochs": 2,
-      "iters": 800,
-      "popSize": 48
+      "iters": 1024,
+      "popSize": 64
     },
     {
       "type": "polish",
       "strategy": "contiguous-window",
-      "activeSetSize": 100,
+      "activeSetSize": 64,
       "maxSweeps": 32,
-      "stagnationIters": 100,
+      "stagnationIters": 128,
       "minImprovement": 0.0005,
       "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
+      "iters": 256,
+      "popSize": 64,
       "when": {
-        "minGain": 0.15,
-        "abortAfterBarren": 4
-      }
-    },
-    {
-      "type": "extend",
-      "repeat": 256,
-      "additionalCircles": 1,
-      "batchSize": 1,
-      "epochs": 2,
-      "iters": 800,
-      "popSize": 48
-    },
-    {
-      "type": "polish",
-      "strategy": "contiguous-window",
-      "activeSetSize": 100,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
-      "when": {
-        "minGain": 0.15,
-        "abortAfterBarren": 4
-      }
-    },
-    {
-      "type": "extend",
-      "repeat": 256,
-      "additionalCircles": 1,
-      "batchSize": 1,
-      "epochs": 2,
-      "iters": 800,
-      "popSize": 48
-    },
-    {
-      "type": "polish",
-      "strategy": "contiguous-window",
-      "activeSetSize": 100,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
-      "when": {
-        "minGain": 0.15,
-        "abortAfterBarren": 4
-      }
-    },
-    {
-      "type": "extend",
-      "repeat": 256,
-      "additionalCircles": 1,
-      "batchSize": 1,
-      "epochs": 2,
-      "iters": 800,
-      "popSize": 48
-    },
-    {
-      "type": "polish",
-      "strategy": "contiguous-window",
-      "activeSetSize": 100,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
-      "when": {
-        "minGain": 0.15,
-        "abortAfterBarren": 4
-      }
-    },
-    {
-      "type": "extend",
-      "repeat": 256,
-      "additionalCircles": 1,
-      "batchSize": 1,
-      "epochs": 2,
-      "iters": 800,
-      "popSize": 48
-    },
-    {
-      "type": "polish",
-      "strategy": "contiguous-window",
-      "activeSetSize": 100,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
-      "when": {
-        "minGain": 0.15,
-        "abortAfterBarren": 4
-      }
-    },
-    {
-      "type": "extend",
-      "repeat": 256,
-      "additionalCircles": 1,
-      "batchSize": 1,
-      "epochs": 2,
-      "iters": 800,
-      "popSize": 48
-    },
-    {
-      "type": "polish",
-      "strategy": "contiguous-window",
-      "activeSetSize": 100,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
-      "when": {
-        "minGain": 0.15,
-        "abortAfterBarren": 4
-      }
-    },
-    {
-      "type": "extend",
-      "repeat": 256,
-      "additionalCircles": 1,
-      "batchSize": 1,
-      "epochs": 2,
-      "iters": 800,
-      "popSize": 48
-    },
-    {
-      "type": "polish",
-      "strategy": "contiguous-window",
-      "activeSetSize": 100,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
-      "when": {
-        "minGain": 0.15,
-        "abortAfterBarren": 4
-      }
-    },
-    {
-      "type": "extend",
-      "repeat": 256,
-      "additionalCircles": 1,
-      "batchSize": 1,
-      "epochs": 2,
-      "iters": 800,
-      "popSize": 48
-    },
-    {
-      "type": "polish",
-      "strategy": "contiguous-window",
-      "activeSetSize": 100,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
-      "when": {
-        "minGain": 0.15,
-        "abortAfterBarren": 4
-      }
-    },
-    {
-      "type": "extend",
-      "repeat": 256,
-      "additionalCircles": 1,
-      "batchSize": 1,
-      "epochs": 2,
-      "iters": 800,
-      "popSize": 48
-    },
-    {
-      "type": "polish",
-      "strategy": "contiguous-window",
-      "activeSetSize": 100,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
-      "when": {
-        "minGain": 0.15,
-        "abortAfterBarren": 4
-      }
-    },
-    {
-      "type": "extend",
-      "repeat": 256,
-      "additionalCircles": 1,
-      "batchSize": 1,
-      "epochs": 2,
-      "iters": 800,
-      "popSize": 48
-    },
-    {
-      "type": "polish",
-      "strategy": "contiguous-window",
-      "activeSetSize": 100,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
-      "when": {
-        "minGain": 0.15,
-        "abortAfterBarren": 4
-      }
-    },
-    {
-      "type": "extend",
-      "repeat": 184,
-      "additionalCircles": 1,
-      "batchSize": 1,
-      "epochs": 2,
-      "iters": 800,
-      "popSize": 48
-    },
-    {
-      "type": "polish",
-      "strategy": "contiguous-window",
-      "activeSetSize": 100,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
-      "when": {
-        "minGain": 0.15,
-        "abortAfterBarren": 4
-      }
-    },
-    {
-      "type": "polish",
-      "strategy": "contiguous-window",
-      "activeSetSize": 100,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
-      "when": {
-        "minGain": 0.15,
-        "abortAfterBarren": 4
-      }
-    },
-    {
-      "type": "polish",
-      "strategy": "contiguous-window",
-      "activeSetSize": 100,
-      "maxSweeps": 32,
-      "stagnationIters": 100,
-      "minImprovement": 0.0005,
-      "epochs": 2,
-      "iters": 200,
-      "popSize": 48,
-      "when": {
-        "minGain": 0.15,
+        "minGain": 0.25,
         "abortAfterBarren": 4
       }
     }
