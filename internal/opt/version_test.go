@@ -1,0 +1,51 @@
+package opt
+
+import (
+	"runtime/debug"
+	"testing"
+)
+
+// TestLibraryVersionMatchesBuildInfo pins the reported version to the module
+// the test binary actually links, so a dependency bump that forgets to update
+// the documentation still reports the truth.
+func TestLibraryVersionMatchesBuildInfo(t *testing.T) {
+	got := LibraryVersion()
+	if got == "" {
+		t.Fatal("LibraryVersion returned an empty string")
+	}
+
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		if got != unknownLibraryVersion {
+			t.Fatalf("LibraryVersion() = %q without build info, want %q", got, unknownLibraryVersion)
+		}
+
+		return
+	}
+
+	want := unknownLibraryVersion
+
+	for _, dep := range info.Deps {
+		if dep.Path != mayflyModulePath {
+			continue
+		}
+
+		want = dep.Version
+
+		if dep.Replace != nil && dep.Replace.Version != "" {
+			want = dep.Replace.Version
+		}
+	}
+
+	if got != want {
+		t.Fatalf("LibraryVersion() = %q, want %q", got, want)
+	}
+}
+
+// TestLibraryVersionIsStable guards the cached lookup: a second call must not
+// re-read build info into a different answer.
+func TestLibraryVersionIsStable(t *testing.T) {
+	if first, second := LibraryVersion(), LibraryVersion(); first != second {
+		t.Fatalf("LibraryVersion() returned %q then %q", first, second)
+	}
+}

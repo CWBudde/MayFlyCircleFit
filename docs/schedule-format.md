@@ -298,12 +298,32 @@ than half of it.
 
 ## Comparing two campaigns
 
-A cost is only comparable to another cost produced by the same renderer, and
-none of what follows is visible in the schedule document. Record it alongside
-the run: the startup log names the SIMD tier, both installed compositors, and
-`fastCompositing`, so one log line settles whether two campaigns can be
-compared.
+A cost is only comparable to another cost produced by the same renderer and
+the same optimizer, and none of what follows is visible in the schedule
+document or in a checkpoint. Record it alongside the run.
 
+The startup log is the only place these travel together. `serve` logs the
+build version and the linked MayFly version; `run` logs the MayFly version on
+its `Starting optimization` line, next to the seed. The SIMD tier and both
+installed compositors are logged at debug level, and `fastCompositing` comes
+from the job configuration, so capture the log at debug level — or query
+`GET /api/v1/system`, which reports the tier, both compositors, and the build
+in one response — if you intend to compare across machines.
+
+Two records with identical seeds and identical renderer settings can still lie
+on opposite sides of the optimizer boundary below, and nothing persisted will
+say so. A campaign whose optimizer version was never captured cannot be made
+comparable after the fact; treat it as its own baseline.
+
+- **The optimizer version — the one that breaks comparability across a
+  dependency bump.** MayFly v0.5.0 scales the crossover offspring count with
+  the population, where v0.4.0 held it at an absolute 20. A run at the default
+  population of 20 is unaffected, but every run at any other population
+  performs a different number of crossovers and converges differently, so a
+  cost recorded under v0.4.0 is **not** comparable to one recorded under
+  v0.5.0. Every campaign in this repository ran at a raised population, so the
+  boundary is real rather than theoretical. Pin `config.NC = 20` inside the
+  adapter to reproduce a v0.4.0 run exactly.
 - **`fastCompositing` — the one that genuinely breaks comparability.** The
   float32 compositor is accurate to ±1 per channel, measured over 2,074,320
   channel writes. A changed channel changes the SSD, which changes an

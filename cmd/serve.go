@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cwbudde/mayflycirclefit/internal/opt"
 	"github.com/cwbudde/mayflycirclefit/internal/server"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 	"github.com/spf13/cobra"
@@ -102,7 +103,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	addr := fmt.Sprintf("%s:%d", serverAddr, serverPort)
 
-	slog.Info("Starting MayFlyCircleFit server", "addr", addr)
+	// The optimizer version is a comparability boundary, and nothing in a
+	// checkpoint records it, so a run log is the only place two campaigns can
+	// be told apart after the fact.
+	slog.Info("Starting MayFlyCircleFit server",
+		"addr", addr, "version", version, "mayfly", opt.LibraryVersion())
 	fmt.Printf("Server listening on http://%s\n", addr)
 	fmt.Println("API endpoints:")
 	fmt.Println("  POST   /api/v1/jobs          - Create new job")

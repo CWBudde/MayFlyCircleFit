@@ -11,7 +11,7 @@ tool (
 
 require (
 	github.com/a-h/templ v0.3.960
-	github.com/cwbudde/mayfly v0.4.0
+	github.com/cwbudde/mayfly v0.5.0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.1
 	golang.org/x/sys v0.37.0

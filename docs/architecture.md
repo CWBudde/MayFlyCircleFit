@@ -46,7 +46,7 @@ cgo OpenCL package does not import the assembly-bearing renderer package.
 | `internal/fit` | Image objectives and architecture-specific SSD/SAD dispatch | Optimizer lifecycle or application configuration |
 | `internal/fit/renderer` | CPU rendering, backend adapters, sessions, joint/sequential/batch pipelines, polishing | Job state or artifact paths |
 | `internal/fit/renderer/opencl` | cgo OpenCL device state, kernels, buffers, and readback | CPU renderer imports or server policy |
-| `internal/opt` | Optimizer interface and Mayfly v0.4.0 adapter | Rendering semantics |
+| `internal/opt` | Optimizer interface and MayFly v0.5.0 adapter | Rendering semantics |
 | `internal/server` | Trusted-local HTTP boundary, jobs/workers, schedules, SSE, and UI read models | Artifact file layout |
 | `internal/store` | Checkpoint, trace, schedule, metadata-index, and artifact ownership | CLI/API defaulting |
 | `internal/ui` | templ sources, generated Go, and embedded static assets | Authoritative live browser state |

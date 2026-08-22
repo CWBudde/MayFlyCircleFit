@@ -236,7 +236,11 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		slog.Info("CPU profiling enabled", "output", cpuProfile)
 	}
 
-	slog.Info("Starting optimization", "mode", config.Mode, "circles", config.Circles, "iters", config.Iters, "backend", config.Backend, "seed", config.EffectiveSeed)
+	// "mayfly" belongs on this line for the same reason the seed does: it
+	// selects which optimizer produced the cost, and no checkpoint records it.
+	slog.Info("Starting optimization", "mode", config.Mode, "circles", config.Circles,
+		"iters", config.Iters, "backend", config.Backend, "seed", config.EffectiveSeed,
+		"mayfly", opt.LibraryVersion())
 
 	// Load reference image
 	f, err := os.Open(refPath)
