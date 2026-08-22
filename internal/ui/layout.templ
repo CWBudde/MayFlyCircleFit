@@ -1,5 +1,53 @@
 package ui
 
+// darkThemeTokens is the dark palette. It is declared once here and rendered
+// into both dark selectors below, because plain CSS cannot share a single
+// declaration block between a media-conditional selector and an unconditional
+// one.
+const darkThemeTokens = `
+		color-scheme: dark;
+		--primary-color: #60a5fa;
+		--primary-hover: #93c5fd;
+		--success-color: #34d399;
+		--error-color: #f87171;
+		--warning-color: #fbbf24;
+		--bg-color: #0f172a;
+		--surface-color: #111827;
+		--text-color: #f3f4f6;
+		--text-muted: #9ca3af;
+		--border-color: #334155;
+		--grid-color: #1f2937;
+		--control-bg: #0f172a;
+		--secondary-hover: #475569;
+		--success-bg: #052e16;
+		--success-text: #a7f3d0;
+		--error-bg: #451a1a;
+		--error-border: #7f1d1d;
+		--error-text: #fecaca;
+		--warning-bg: #451a03;
+		--warning-text: #fde68a;
+		--info-bg: #172554;
+		--info-text: #bfdbfe;
+		--info-text-strong: #dbeafe;
+		--checker-a: #334155;
+		--checker-b: #1f2937;
+		--shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.45), 0 1px 2px -1px rgba(0, 0, 0, 0.4);
+		--shadow-md: 0 6px 12px -2px rgba(0, 0, 0, 0.5);
+`
+
+// darkThemeStyles applies darkThemeTokens to the two states that must render
+// dark: the explicit `data-theme="dark"` opt-in, which wins over the operating
+// system preference, and readers with no explicit choice whose system asks for
+// dark. An explicit `data-theme="light"` matches neither selector, so it keeps
+// the light palette declared on bare `:root`.
+const darkThemeStyles = `<style>
+	:root[data-theme="dark"] {`+darkThemeTokens+`	}
+
+	@media (prefers-color-scheme: dark) {
+		:root:not([data-theme]) {`+darkThemeTokens+`		}
+	}
+</style>`
+
 // Base layout component with HTML structure, minimal CSS, and navigation
 templ Layout(title string) {
 	<!DOCTYPE html>
@@ -58,70 +106,6 @@ templ Layout(title string) {
 					--checker-b: #ffffff;
 					--shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
 					--shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-				}
-
-				:root[data-theme="dark"] {
-					color-scheme: dark;
-					--primary-color: #60a5fa;
-					--primary-hover: #93c5fd;
-					--success-color: #34d399;
-					--error-color: #f87171;
-					--warning-color: #fbbf24;
-					--bg-color: #0f172a;
-					--surface-color: #111827;
-					--text-color: #f3f4f6;
-					--text-muted: #9ca3af;
-					--border-color: #334155;
-					--grid-color: #1f2937;
-					--control-bg: #0f172a;
-					--secondary-hover: #475569;
-					--success-bg: #052e16;
-					--success-text: #a7f3d0;
-					--error-bg: #451a1a;
-					--error-border: #7f1d1d;
-					--error-text: #fecaca;
-					--warning-bg: #451a03;
-					--warning-text: #fde68a;
-					--info-bg: #172554;
-					--info-text: #bfdbfe;
-					--info-text-strong: #dbeafe;
-					--checker-a: #334155;
-					--checker-b: #1f2937;
-					--shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.45), 0 1px 2px -1px rgba(0, 0, 0, 0.4);
-					--shadow-md: 0 6px 12px -2px rgba(0, 0, 0, 0.5);
-				}
-
-				@media (prefers-color-scheme: dark) {
-					:root:not([data-theme]) {
-						color-scheme: dark;
-						--primary-color: #60a5fa;
-						--primary-hover: #93c5fd;
-						--success-color: #34d399;
-						--error-color: #f87171;
-						--warning-color: #fbbf24;
-						--bg-color: #0f172a;
-						--surface-color: #111827;
-						--text-color: #f3f4f6;
-						--text-muted: #9ca3af;
-						--border-color: #334155;
-						--grid-color: #1f2937;
-						--control-bg: #0f172a;
-						--secondary-hover: #475569;
-						--success-bg: #052e16;
-						--success-text: #a7f3d0;
-						--error-bg: #451a1a;
-						--error-border: #7f1d1d;
-						--error-text: #fecaca;
-						--warning-bg: #451a03;
-						--warning-text: #fde68a;
-						--info-bg: #172554;
-						--info-text: #bfdbfe;
-						--info-text-strong: #dbeafe;
-						--checker-a: #334155;
-						--checker-b: #1f2937;
-						--shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.45), 0 1px 2px -1px rgba(0, 0, 0, 0.4);
-						--shadow-md: 0 6px 12px -2px rgba(0, 0, 0, 0.5);
-					}
 				}
 
 				body {
@@ -367,6 +351,7 @@ templ Layout(title string) {
 					}
 				}
 			</style>
+			@templ.Raw(darkThemeStyles)
 		</head>
 		<body>
 			<nav>
