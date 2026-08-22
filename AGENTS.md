@@ -147,6 +147,20 @@ request yourself (`gh pr create`) instead of pushing to `master`. If a commit
 already sits on local `master`, move it to a branch and reset `master` back to
 `origin/master` before pushing.
 
+## Long-running experiments
+
+Anything larger than a single quick run — a seed sweep, a parameter sweep, a
+variant screen, a multi-stage campaign — should be observable while it runs.
+Before starting one, offer to drive it through `serve` and hand over the
+dashboard link, and say what the alternative costs. Jobs submitted to the
+server appear in the web UI; runs launched straight from the CLI do not, so a
+CLI-driven sweep is invisible until it finishes and has to be restarted to
+become watchable.
+
+Where the machine is reachable only over SSH, that includes setting up the port
+forward and quoting the local URL, for example
+`ssh -N -L 8642:localhost:8080 <host>` and then `http://localhost:8642/`.
+
 ## Runtime notes
 
 The CLI reads reference imagery from `assets/`; pass relative paths in scripts
