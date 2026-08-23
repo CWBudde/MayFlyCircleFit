@@ -10,7 +10,6 @@ import (
 	"math"
 	"runtime"
 	"slices"
-	"strings"
 	"time"
 )
 
@@ -260,10 +259,17 @@ const (
 // JobConfig is the canonical configuration shared by all application entry
 // points and persisted checkpoints.
 type JobConfig struct {
-	RefPath         string  `json:"refPath"`
-	CanvasPath      string  `json:"canvasPath,omitempty"`
-	Mode            Mode    `json:"mode"`
-	Backend         Backend `json:"backend,omitempty"`
+	RefPath    string  `json:"refPath"`
+	CanvasPath string  `json:"canvasPath,omitempty"`
+	Mode       Mode    `json:"mode"`
+	Backend    Backend `json:"backend,omitempty"`
+	// Optimizer names the optimization library the job runs with. Empty means
+	// mayfly, so every configuration and checkpoint written before this field
+	// existed keeps its behavior. Read it through ResolvedOptimizer.
+	Optimizer Optimizer `json:"optimizer,omitempty"`
+	// Variant selects a MayFly algorithm variant. It stays empty for an
+	// optimizer that has no variants, and Validate refuses a variant there
+	// rather than ignoring it.
 	Variant         Variant `json:"variant,omitempty"`
 	Circles         int     `json:"circles"`
 	Iters           int     `json:"iters"`
@@ -416,6 +422,7 @@ func DefaultConfig() JobConfig {
 	return JobConfig{
 		Mode:                     ModeJoint,
 		Backend:                  BackendCPU,
+		Optimizer:                OptimizerMayfly,
 		Variant:                  VariantStandard,
 		Circles:                  10,
 		Iters:                    100,
@@ -481,7 +488,15 @@ func (c *JobConfig) ApplyDefaults() error {
 		c.Backend = defaults.Backend
 	}
 
-	if c.Variant == "" {
+	if c.Optimizer == "" {
+		c.Optimizer = defaults.Optimizer
+	}
+
+	// Only MayFly has variants, so only a MayFly job gets the default one. A
+	// Dragonfly job keeps an empty variant, which is what lets Validate tell
+	// "no variant was asked for" from "a variant was asked for and this engine
+	// cannot honor it".
+	if c.Variant == "" && c.Optimizer == OptimizerMayfly {
 		c.Variant = defaults.Variant
 	}
 
@@ -636,13 +651,11 @@ func (c JobConfig) Validate() error {
 		return invalid("backend", "must be cpu or opencl")
 	}
 
-	if !slices.Contains(variants, c.Variant) {
-		names := make([]string, len(variants))
-		for i, variant := range variants {
-			names[i] = string(variant)
-		}
-
-		return invalid("variant", fmt.Sprintf("must be one of %s", strings.Join(names, ", ")))
+	// The engine check owns the variant check, because which variants are
+	// legal depends on which library runs.
+	engineErr := c.validateOptimizerEngine()
+	if engineErr != nil {
+		return engineErr
 	}
 
 	if c.Circles < 1 || c.Circles > MaxCircles {

@@ -361,3 +361,37 @@ func TestConfigureCPUParallelismLeavesEvaluationWidthOptIn(t *testing.T) {
 		t.Fatalf("ParallelEvaluationWorkers() = %d, want the requested 4", got)
 	}
 }
+
+// TestParallelEvaluationWidthMatchesTheOption pins that the width every
+// optimizer library derives its worker count from is the same decision
+// ParallelEvaluationOption makes. A second engine reading a different number
+// would enable the parallel path on a renderer that cannot feed it, which is
+// exactly what TestParallelEvaluationOptionRequiresIndependentSessions guards
+// the MayFly path against.
+func TestParallelEvaluationWidthMatchesTheOption(t *testing.T) {
+	t.Parallel()
+
+	sessionless := &sessionlessRenderer{reference: gradientReference(8, 8), circles: 2}
+
+	width, granted := ParallelEvaluationWidth(sessionless, true)
+	if granted || width != 1 {
+		t.Fatalf("ParallelEvaluationWidth() = %d, %v, want 1, false for a renderer without sessions", width, granted)
+	}
+
+	capable := NewCPURenderer(gradientReference(8, 8), 2)
+	capable.SetParallelEvaluationWorkers(4)
+
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("needs at least two processors to enable parallel evaluation")
+	}
+
+	width, granted = ParallelEvaluationWidth(capable, true)
+	if !granted || width != EvaluationWidth(capable) {
+		t.Fatalf("ParallelEvaluationWidth() = %d, %v, want %d, true", width, granted, EvaluationWidth(capable))
+	}
+
+	width, granted = ParallelEvaluationWidth(capable, false)
+	if granted || width != 1 {
+		t.Fatalf("ParallelEvaluationWidth() = %d, %v, want 1, false when not requested", width, granted)
+	}
+}

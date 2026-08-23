@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
@@ -268,5 +269,37 @@ func TestDragonflyAdapterRunReturnsInfinityOnAnInvalidProblem(t *testing.T) {
 	params, cost := optimizer.Run(nil, []float64{0}, []float64{1}, 1)
 	if params != nil || !math.IsInf(cost, 1) {
 		t.Errorf("Run() = %v, %v, want nil and +Inf", params, cost)
+	}
+}
+
+// TestDragonflyAdapterIsDeterministicWithParallelEvaluation pins the claim the
+// server relies on when it hands a Dragonfly job the renderer's evaluation
+// width: a parallel run reproduces bit-for-bit for a fixed seed, exactly as
+// the MayFly path promises. As with MayFly, that is reproducibility per seed,
+// not equality with a serial run of the same seed -- the two are different,
+// deterministic search trajectories.
+func TestDragonflyAdapterIsDeterministicWithParallelEvaluation(t *testing.T) {
+	t.Parallel()
+
+	run := func() opt.Result {
+		t.Helper()
+
+		optimizer := dragonflyLifecycle(t, opt.NewDragonfly(15, 12, 99, opt.WithDragonflyParallelEvaluation(4)))
+
+		result, err := optimizer.RunContext(context.Background(), dragonflyProblem(), opt.RunOptions{})
+		if err != nil {
+			t.Fatalf("RunContext() error = %v", err)
+		}
+
+		return result
+	}
+
+	first, second := run(), run()
+	if first.BestCost != second.BestCost || !slices.Equal(first.BestParams, second.BestParams) {
+		t.Errorf("parallel runs of one seed differed: %v and %v", first.BestCost, second.BestCost)
+	}
+
+	if first.Evaluations != second.Evaluations {
+		t.Errorf("evaluation counts differed: %d and %d", first.Evaluations, second.Evaluations)
 	}
 }

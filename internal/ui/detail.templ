@@ -33,6 +33,10 @@ type JobDetail struct {
 	State         string
 	RefPath       string
 	Mode          string
+	// Optimizer is the library the job ran with. Variant is empty for an
+	// optimizer that has no variants, and the view then renders no variant
+	// rather than a MayFly one the job never used.
+	Optimizer     string
 	Variant       string
 	// EvaluationWorkers is the width the job's renderer actually ran at, not the
 	// width its configuration requested: a backend without independent sessions
@@ -367,9 +371,15 @@ templ JobDetailPage(job JobDetail) {
 					<div style="font-weight: 500; text-transform: capitalize;">{ job.Mode }</div>
 				</div>
 				<div>
-					<div style="font-size: 0.875rem; color: var(--text-muted);">Variant</div>
-					<div style="font-weight: 500; text-transform: uppercase;">{ job.Variant }</div>
+					<div style="font-size: 0.875rem; color: var(--text-muted);">Optimizer</div>
+					<div style="font-weight: 500; text-transform: capitalize;">{ job.Optimizer }</div>
 				</div>
+				if job.Variant != "" {
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted);">Variant</div>
+						<div style="font-weight: 500; text-transform: uppercase;">{ job.Variant }</div>
+					</div>
+				}
 				if job.EvaluationWorkers > 1 {
 					<div>
 						<div style="font-size: 0.875rem; color: var(--text-muted);">Parallel Evaluation</div>

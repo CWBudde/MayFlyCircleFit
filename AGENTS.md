@@ -63,8 +63,9 @@ take precedence if this document goes stale.
   separate package because Go forbids Plan 9 assembly in a package that uses
   cgo; it must never import `internal/fit/renderer`.
 - `internal/opt`: optimizer interfaces, the MayFly v0.6.0 adapter, and a
-  proof-of-concept Dragonfly v0.1.0 adapter reachable only through `run
-  --optimizer dragonfly`.
+  proof-of-concept Dragonfly v0.1.0 adapter. `JobConfig.optimizer` selects
+  between them from the CLI, the server, and a schedule document; polishing is
+  MayFly-only.
 - `internal/server`: trusted-local HTTP boundary and background job lifecycle.
 - `internal/store`: filesystem checkpoint, trace, and artifact ownership.
 - `internal/ui`: templ views plus committed generated Go output.

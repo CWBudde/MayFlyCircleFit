@@ -51,17 +51,36 @@ func EvaluationWidth(base Renderer) int {
 // A false second result with enabled set means the request could not be
 // honored, which is worth a warning rather than silence.
 func ParallelEvaluationOption(base Renderer, enabled bool) (opt.MayflyOption, bool) {
-	noop := func(*opt.MayflyAdapter) {}
+	width, granted := ParallelEvaluationWidth(base, enabled)
+	if !granted {
+		return func(*opt.MayflyAdapter) {}, false
+	}
+
+	return opt.WithParallelEvaluation(width), true
+}
+
+// ParallelEvaluationWidth reports the concurrent evaluation width base can
+// actually deliver when enabled, and whether parallel evaluation was granted.
+// A false second result means the run evaluates serially, whatever it asked
+// for, and the width is one.
+//
+// It exists because ParallelEvaluationOption can only speak for one optimizer
+// library. The decision itself -- what the renderer can really hand out -- is
+// the same for every optimizer, so callers configuring a different adapter take
+// the width from here rather than from the requested worker count. See
+// ParallelEvaluationOption for why deriving it from the renderer is the only
+// safe order.
+func ParallelEvaluationWidth(base Renderer, enabled bool) (int, bool) {
 	if !enabled {
-		return noop, false
+		return 1, false
 	}
 
 	width := evaluationWorkers(base)
 	if width < 2 {
-		return noop, false
+		return 1, false
 	}
 
-	return opt.WithParallelEvaluation(width), true
+	return width, true
 }
 
 // threadedRenderer reports the rendering width a backend was configured for.

@@ -174,13 +174,24 @@ Rendering-side invariants live in
 
 ## Determinism, resume, and termination
 
+- **A job runs the optimizer library its configuration names, and a resumed job
+  runs the library its checkpoint names.** `config.optimizer` is `mayfly` or
+  `dragonfly`, and an absent value is `mayfly`, so every configuration and
+  checkpoint written before the field existed keeps its behavior. The engine is
+  persisted in the checkpoint together with that engine's library version in
+  `optimizerVersion`, and no resume path reads the engine from anywhere else:
+  neither `resume --local` nor the resume endpoint can continue a run under a
+  different optimizer than produced it. A setting the named engine cannot read
+  — a MayFly `variant` or advanced knob, or polishing, under `dragonfly` — is
+  refused at validation rather than accepted and ignored, because a dropped
+  setting makes the recorded cost impossible to compare.
 - Resume is restart-from-best: the MayFly v0.6.0 population is seeded with the
   saved best and deterministic nearby variations. It is not an exact restoration
   of optimizer internals. Server restart-from-best for sequential and batch jobs
   is not supported.
 - A zero user seed generates and reports an effective seed; a nonzero seed is
   deterministic.
-- Every checkpoint records the MayFly version that produced it, in
+- Every checkpoint records the version of the optimizer that produced it, in
   `optimizerVersion`, and resume refuses to cross that boundary. A checkpoint
   whose recorded version differs from the one the running binary links is
   rejected — exit non-zero for `resume --local`, HTTP 409

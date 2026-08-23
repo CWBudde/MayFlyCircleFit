@@ -536,7 +536,12 @@ func (s *Server) requestResume(jobID string, allowOptimizerMismatch bool) (*stor
 		return nil, errResumeCheckpointOverflow
 	}
 
-	warning, err := opt.GuardCheckpointVersion(checkpoint.OptimizerVersion, s.optimizerVersion(), allowOptimizerMismatch)
+	warning, err := opt.GuardCheckpointVersion(
+		optimizerLibraryName(checkpoint.Config.ResolvedOptimizer()),
+		checkpoint.OptimizerVersion,
+		s.optimizerVersion(checkpoint.Config.ResolvedOptimizer()),
+		allowOptimizerMismatch,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1575,15 +1580,31 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 	s.forkJobFromCheckpoint(w, jobID, allowOptimizerMismatch)
 }
 
-// optimizerVersion reports the optimizer version this server resumes under.
-// The override exists for tests: a test binary carries no module information,
-// so opt.LibraryVersion cannot produce a version to disagree with.
-func (s *Server) optimizerVersion() string {
+// optimizerVersion reports the version this server resumes a checkpoint of the
+// given engine under. The override exists for tests: a test binary carries no
+// module information, so the library lookups cannot produce a version to
+// disagree with.
+func (s *Server) optimizerVersion(optimizer app.Optimizer) string {
 	if s.optimizerVersionOverride != "" {
 		return s.optimizerVersionOverride
 	}
 
+	if optimizer == app.OptimizerDragonfly {
+		return opt.DragonflyLibraryVersion()
+	}
+
 	return opt.LibraryVersion()
+}
+
+// optimizerLibraryName reports the human-readable library name used in
+// operator-facing messages, so a Dragonfly checkpoint is never described as a
+// MayFly one.
+func optimizerLibraryName(optimizer app.Optimizer) string {
+	if optimizer == app.OptimizerDragonfly {
+		return "Dragonfly"
+	}
+
+	return "MayFly"
 }
 
 // boolQueryParam reads an opt-in query flag. Only an explicit true enables it,
@@ -1683,7 +1704,12 @@ func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string, allo
 		return
 	}
 
-	warning, err := opt.GuardCheckpointVersion(checkpoint.OptimizerVersion, s.optimizerVersion(), allowOptimizerMismatch)
+	warning, err := opt.GuardCheckpointVersion(
+		optimizerLibraryName(checkpoint.Config.ResolvedOptimizer()),
+		checkpoint.OptimizerVersion,
+		s.optimizerVersion(checkpoint.Config.ResolvedOptimizer()),
+		allowOptimizerMismatch,
+	)
 	if err != nil {
 		writeAPIError(w, http.StatusConflict, "optimizer_version_mismatch", err.Error())
 		return
