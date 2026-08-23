@@ -32,6 +32,9 @@ var (
 	optimizerEpochs          int
 	optimizerRestarts        int
 	crossoverCount           int
+	danceDamp                float64
+	aquilaWeight             float64
+	oppositionProbability    float64
 	batchSize                int
 	polishingEnabled         bool
 	polishingStrategy        string
@@ -79,6 +82,19 @@ func init() {
 	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
 	runCmd.Flags().IntVar(&optimizerEpochs, "optimizer-epochs", 1, "Optimizer runs per stage, reseeding each continuation from the best result")
 	runCmd.Flags().IntVar(&optimizerRestarts, "restarts", 1, "Independent cold attempts per optimizer run, keeping the best. Unlike --optimizer-epochs this does not reseed from the previous best, so each attempt explores from a fresh population")
+	// Advanced MayFly parameters. Each is left to the library unless the
+	// operator names it on the command line, which is why they are read back
+	// through Flags().Changed rather than by value: zero is a meaningful
+	// setting for all three, so a bare zero cannot mean "unset" here.
+	runCmd.Flags().Float64Var(&danceDamp, "dance-damp", 0,
+		"Advanced. Per-iteration decay of the nuptial-dance term, between 0 and 1 "+
+			"(unset leaves the library default of 0.8). Governs how fast the swarm stops exploring")
+	runCmd.Flags().Float64Var(&aquilaWeight, "aquila-weight", 0,
+		"Advanced, aoblmoa only. Probability of an Aquila step instead of the MayFly update, "+
+			"between 0 and 1 (unset leaves the library default of 1.0, which never runs the MayFly update)")
+	runCmd.Flags().Float64Var(&oppositionProbability, "opposition-probability", 0,
+		"Advanced, aoblmoa only. Share of solutions reflected through the search space each iteration, "+
+			"between 0 and 1 (unset leaves the library default of 0.3)")
 	runCmd.Flags().IntVar(&crossoverCount, "crossover-count", 0,
 		"MayFly crossover offspring per iteration (0 uses the library default of one per population member)")
 	runCmd.Flags().IntVar(&batchSize, "batch-size", 0, "Circles optimized together in batch mode (0 selects the automatic default)")
@@ -145,6 +161,22 @@ func earlyStopFromConfig(config app.JobConfig) opt.Stop {
 	}
 }
 
+// floatFlag reports an advanced float flag as a pointer, yielding nil when the
+// operator never named it.
+//
+// The surrounding flags treat a zero as "decide for me", but zero is a real
+// setting for each of these, so only whether the flag was written can
+// distinguish an explicit zero from an absent one.
+func floatFlag(cmd *cobra.Command, name string, value float64) *float64 {
+	// A nil command is how the validation tests drive this path without
+	// parsing flags. Nothing was named there, which is exactly what nil means.
+	if cmd == nil || !cmd.Flags().Changed(name) {
+		return nil
+	}
+
+	return &value
+}
+
 func runOptimization(cmd *cobra.Command, args []string) error {
 	// Flag values the user typed are invocation errors, so they exit with
 	// status 2 rather than the status reserved for work that failed.
@@ -165,6 +197,9 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		OptimizerEpochs:          optimizerEpochs,
 		OptimizerRestarts:        optimizerRestarts,
 		CrossoverCount:           crossoverCount,
+		DanceDamp:                floatFlag(cmd, "dance-damp", danceDamp),
+		AquilaWeight:             floatFlag(cmd, "aquila-weight", aquilaWeight),
+		OppositionProbability:    floatFlag(cmd, "opposition-probability", oppositionProbability),
 		BatchSize:                batchSize,
 		PolishingEnabled:         polishingEnabled,
 		PolishingStrategy:        app.PolishingStrategy(polishingStrategy),
@@ -207,6 +242,9 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	config.OptimizerEpochs = optimizerEpochs
 	config.OptimizerRestarts = optimizerRestarts
 	config.CrossoverCount = crossoverCount
+	config.DanceDamp = floatFlag(cmd, "dance-damp", danceDamp)
+	config.AquilaWeight = floatFlag(cmd, "aquila-weight", aquilaWeight)
+	config.OppositionProbability = floatFlag(cmd, "opposition-probability", oppositionProbability)
 	config.PolishingActiveSetSize = polishingActiveSetSize
 	config.PolishingMaxSweeps = polishingMaxSweeps
 	config.PolishingEpochs = polishingEpochs
