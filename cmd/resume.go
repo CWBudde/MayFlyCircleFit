@@ -261,6 +261,7 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 
 	optimizer, err := opt.NewMayflyVariant(string(checkpoint.Config.Variant), checkpoint.Config.Iters, checkpoint.Config.PopSize, seed,
 		opt.WithLogger(slog.Default()), opt.WithEarlyStop(earlyStopFromConfig(checkpoint.Config)),
+		opt.WithCrossoverCount(checkpoint.Config.CrossoverCount),
 		parallelEvaluationOption(checkpoint.Config, rend))
 	if err != nil {
 		return fmt.Errorf("create optimizer: %w", err)

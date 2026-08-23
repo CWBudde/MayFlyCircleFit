@@ -224,6 +224,10 @@ Rendering-side invariants live in
   the running best rather than the attempt's own result -- an observer that
   persists a checkpoint is never handed a candidate worse than one it already
   stored.
+- **`crossoverCount` applies to optimizer stages, not polishing sweeps.**
+  Polishing runs its own, smaller population, and an offspring count sized for
+  the main population would exceed what that population can mate. Zero leaves
+  the library's own scaling alone, so an unset configuration is unchanged.
 - The configured `variant` is honored at every optimizer construction site.
   All seven MayFly variants the adapter can build (`standard`, `desma`, `olce`,
   `eobbma`, `gsasma`, `mpma`, `aoblmoa`) are accepted by `JobConfig`
