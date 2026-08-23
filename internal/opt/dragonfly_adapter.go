@@ -12,6 +12,14 @@ import (
 	"github.com/CWBudde/dragonfly"
 )
 
+// errNegativeResumeCount reports a resume count below zero, which is a caller
+// bug rather than an optimizer outcome.
+var errNegativeResumeCount = errors.New("resume count cannot be negative")
+
+// dragonflyModulePath is the module the proof-of-concept adapter optimizes
+// with.
+const dragonflyModulePath = "github.com/CWBudde/dragonfly"
+
 // DragonflyAdapter runs the continuous Dragonfly Algorithm behind this
 // package's Optimizer interface. It is a proof of concept, not a peer of
 // MayflyAdapter.
@@ -133,41 +141,17 @@ func (d *DragonflyAdapter) RunWithInitial(
 // RunContext executes Dragonfly with cancellation, progress, measured work,
 // and optional swarm seeding around known candidates.
 func (d *DragonflyAdapter) RunContext(ctx context.Context, problem Problem, options RunOptions) (Result, error) {
-	err := validateProblem(problem)
+	err := validateDragonflyRun(problem, options)
 	if err != nil {
 		return Result{}, err
 	}
 
-	if options.ResumeCount < 0 {
-		return Result{}, errors.New("resume count cannot be negative")
-	}
-
-	err = validateContinuationProfile(options.Continuation)
-	if err != nil {
-		return Result{}, err
-	}
-
-	// Dragonfly, like Mayfly, only supports uniform bounds, so the search runs
-	// in [0,1] and every callback denormalizes before it touches the problem.
-	canonicalize := func(normalizedParams []float64) []float64 {
-		params := make([]float64, len(normalizedParams))
-		for i := range normalizedParams {
-			params[i] = problem.Lower[i] + normalizedParams[i]*(problem.Upper[i]-problem.Lower[i])
-		}
-
-		repairCandidate(problem, params)
-
-		return params
-	}
-
+	canonicalize := canonicalizer(problem)
 	config := d.buildConfig(problem, options, canonicalize)
 
-	runSeed := d.seed
-	if options.ResumeCount > 0 || options.SeedOffset > 0 {
-		runSeed = continuationSeed(d.seed, options.ResumeCount, options.SeedOffset)
-	}
-
-	rng := rand.New(rand.NewSource(runSeed))
+	// A seeded generator is the whole point: a run has to reproduce
+	// bit-for-bit for a fixed seed, which a cryptographic source cannot do.
+	rng := rand.New(rand.NewSource(d.runSeed(options))) //nolint:gosec // deterministic runs require a seeded PRNG
 	config.Rand = rng
 
 	best := Result{BestCost: math.Inf(1), Termination: TerminationCompleted}
@@ -178,58 +162,22 @@ func (d *DragonflyAdapter) RunContext(ctx context.Context, problem Problem, opti
 		return Result{}, err
 	}
 
-	var runOptions []dragonfly.RunOption
-
-	if len(normalizedSeeds) > 0 {
-		// Dragonfly has a single swarm where Mayfly has male and female
-		// populations, so only the exact-first half of the seeded pair is used.
-		positions, _ := seededPopulationFromCandidates(normalizedSeeds, d.popSize, rng, options.Continuation)
-		runOptions = append(runOptions, dragonfly.WithInitialPopulation(positions))
-	}
-
-	if d.logger != nil {
-		runOptions = append(runOptions, dragonfly.WithLogger(mayflyLogger{logger: d.logger}))
-	}
-
-	runOptions = append(runOptions, dragonfly.WithProgressObserver(func(progress dragonfly.Progress) {
-		params := canonicalize(progress.Best.Position)
-
-		if betterDragonflyCandidate(
-			progress.Best.Cost,
-			progress.Best.ConstraintViolation,
-			best.BestCost,
-			bestViolation,
-			config.Constraints,
-		) {
-			best.BestParams = params
-			best.BestCost = progress.Best.Cost
-			bestViolation = progress.Best.ConstraintViolation
-		}
-
-		best.Iterations = progress.Iteration
-		best.Evaluations = progress.EvaluationCount
-
-		if options.Observer != nil {
-			reported := Progress{
-				Iterations:  progress.Iteration,
-				Evaluations: progress.EvaluationCount,
-				BestParams:  append([]float64(nil), best.BestParams...),
-				BestCost:    best.BestCost,
-			}
-			if options.ProgressMapper != nil {
-				reported = options.ProgressMapper(reported)
-			}
-
-			options.Observer(reported)
-		}
-	}))
+	runOptions := d.buildRunOptions(buildRunOptionsInput{
+		normalizedSeeds: normalizedSeeds,
+		rng:             rng,
+		config:          config,
+		options:         options,
+		canonicalize:    canonicalize,
+		best:            &best,
+		bestViolation:   &bestViolation,
+	})
 
 	result, err := dragonfly.OptimizeContext(ctx, config, runOptions...)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			best.Termination = TerminationCancelled
 
-			return best, err
+			return best, fmt.Errorf("dragonfly optimization: %w", err)
 		}
 
 		return Result{}, fmt.Errorf("dragonfly optimization: %w", err)
@@ -252,6 +200,123 @@ func (d *DragonflyAdapter) RunContext(ctx context.Context, problem Problem, opti
 	best.Termination = terminationFromDragonfly(result.TerminationReason)
 
 	return best, nil
+}
+
+// validateDragonflyRun rejects a problem or a set of run options the adapter
+// cannot honor, before any optimizer state is built.
+func validateDragonflyRun(problem Problem, options RunOptions) error {
+	err := validateProblem(problem)
+	if err != nil {
+		return err
+	}
+
+	if options.ResumeCount < 0 {
+		return errNegativeResumeCount
+	}
+
+	return validateContinuationProfile(options.Continuation)
+}
+
+// canonicalizer returns the conversion every callback applies to a candidate.
+//
+// Dragonfly, like Mayfly, only supports uniform bounds, so the search runs in
+// [0,1] and every callback denormalizes and repairs before the candidate
+// reaches the problem.
+func canonicalizer(problem Problem) func([]float64) []float64 {
+	return func(normalizedParams []float64) []float64 {
+		params := make([]float64, len(normalizedParams))
+		for i := range normalizedParams {
+			params[i] = problem.Lower[i] + normalizedParams[i]*(problem.Upper[i]-problem.Lower[i])
+		}
+
+		repairCandidate(problem, params)
+
+		return params
+	}
+}
+
+// runSeed derives the seed one invocation runs with. A continuation or a
+// restart attempt varies it without losing reproducibility for a fixed base
+// seed.
+func (d *DragonflyAdapter) runSeed(options RunOptions) int64 {
+	if options.ResumeCount > 0 || options.SeedOffset > 0 {
+		return continuationSeed(d.seed, options.ResumeCount, options.SeedOffset)
+	}
+
+	return d.seed
+}
+
+// buildRunOptionsInput carries the run-scoped state the library options close
+// over. It is a struct because the observer needs the incumbent by pointer and
+// a positional parameter list of that shape reads as an accident.
+type buildRunOptionsInput struct {
+	rng           *rand.Rand
+	config        *dragonfly.Config
+	canonicalize  func([]float64) []float64
+	best          *Result
+	bestViolation *float64
+	options       RunOptions
+
+	normalizedSeeds [][]float64
+}
+
+// buildRunOptions assembles the library's run options: swarm seeding, logging,
+// and the progress observer that maintains the incumbent.
+func (d *DragonflyAdapter) buildRunOptions(input buildRunOptionsInput) []dragonfly.RunOption {
+	var runOptions []dragonfly.RunOption
+
+	if len(input.normalizedSeeds) > 0 {
+		// Dragonfly has a single swarm where Mayfly has male and female
+		// populations, so only the exact-first half of the seeded pair is used.
+		positions, _ := seededPopulationFromCandidates(
+			input.normalizedSeeds, d.popSize, input.rng, input.options.Continuation)
+		runOptions = append(runOptions, dragonfly.WithInitialPopulation(positions))
+	}
+
+	if d.logger != nil {
+		runOptions = append(runOptions, dragonfly.WithLogger(mayflyLogger{logger: d.logger}))
+	}
+
+	return append(runOptions, dragonfly.WithProgressObserver(progressObserver(input)))
+}
+
+// progressObserver folds each iteration's best candidate into the incumbent and
+// forwards a snapshot to the caller's observer.
+func progressObserver(input buildRunOptionsInput) dragonfly.ProgressObserver {
+	return func(progress dragonfly.Progress) {
+		params := input.canonicalize(progress.Best.Position)
+
+		if betterDragonflyCandidate(
+			progress.Best.Cost,
+			progress.Best.ConstraintViolation,
+			input.best.BestCost,
+			*input.bestViolation,
+			input.config.Constraints,
+		) {
+			input.best.BestParams = params
+			input.best.BestCost = progress.Best.Cost
+			*input.bestViolation = progress.Best.ConstraintViolation
+		}
+
+		input.best.Iterations = progress.Iteration
+		input.best.Evaluations = progress.EvaluationCount
+
+		if input.options.Observer == nil {
+			return
+		}
+
+		reported := Progress{
+			Iterations:  progress.Iteration,
+			Evaluations: progress.EvaluationCount,
+			BestParams:  append([]float64(nil), input.best.BestParams...),
+			BestCost:    input.best.BestCost,
+		}
+		if input.options.ProgressMapper != nil {
+			reported = input.options.ProgressMapper(reported)
+		}
+
+		input.options.Observer(reported)
+	}
 }
 
 // buildConfig translates the adapter's settings and the problem onto a
@@ -386,4 +451,4 @@ func terminationFromDragonfly(reason dragonfly.TerminationReason) Termination {
 
 // DragonflyLibraryVersion reports the Dragonfly module version compiled into
 // this binary, for the same comparability reason LibraryVersion exists.
-func DragonflyLibraryVersion() string { return dragonflyLibraryVersion() }
+func DragonflyLibraryVersion() string { return moduleVersion(dragonflyModulePath) }

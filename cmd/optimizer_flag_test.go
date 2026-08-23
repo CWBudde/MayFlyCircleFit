@@ -1,3 +1,4 @@
+//nolint:testpackage // exercises unexported flag parsing and optimizer construction, as the other cmd tests do
 package cmd
 
 import (
@@ -10,6 +11,8 @@ import (
 )
 
 func TestParseOptimizerFlag(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		want    string
@@ -23,6 +26,8 @@ func TestParseOptimizerFlag(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			got, err := parseOptimizerFlag(test.name)
 			if test.wantErr {
 				if err == nil {
@@ -44,6 +49,8 @@ func TestParseOptimizerFlag(t *testing.T) {
 }
 
 func TestNewStageOptimizerSelectsTheRequestedLibrary(t *testing.T) {
+	t.Parallel()
+
 	config := app.JobConfig{
 		Variant: app.VariantStandard,
 		Iters:   10,
@@ -70,8 +77,12 @@ func TestNewStageOptimizerSelectsTheRequestedLibrary(t *testing.T) {
 }
 
 func TestNewStageOptimizerRefusesMayflyOnlyFlagsForDragonfly(t *testing.T) {
+	t.Parallel()
+
 	for _, name := range mayflyOnlyFlags {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			command := &cobra.Command{Use: "run"}
 			for _, flag := range mayflyOnlyFlags {
 				command.Flags().String(flag, "", "")
@@ -95,6 +106,8 @@ func TestNewStageOptimizerRefusesMayflyOnlyFlagsForDragonfly(t *testing.T) {
 }
 
 func TestNewStageOptimizerRejectsAnUnknownLibrary(t *testing.T) {
+	t.Parallel()
+
 	_, err := newStageOptimizer(nil, "swarm", app.JobConfig{Iters: 10, PopSize: 20}, nil)
 	if !IsUsageError(err) {
 		t.Fatalf("newStageOptimizer error = %v, want a usage error", err)

@@ -78,7 +78,9 @@ func init() {
 	runCmd.Flags().StringVar(&mode, "mode", "joint", "Optimization mode: joint, sequential, batch")
 	runCmd.Flags().StringVar(&backendName, "backend", "cpu", "Renderer backend to use (cpu, opencl; aliases: gpu, cl)")
 	runCmd.Flags().StringVar(&variantName, "variant", "standard", "MayFly algorithm variant: standard, desma, olce, eobbma, gsasma, mpma, aoblmoa")
-	runCmd.Flags().StringVar(&optimizerName, "optimizer", optimizerMayfly, "Optimizer library: mayfly, or dragonfly (experimental proof of concept; see newStageOptimizer for what it does not support)")
+	runCmd.Flags().StringVar(&optimizerName, "optimizer", optimizerMayfly,
+		"Optimizer library: mayfly, or dragonfly (an experimental proof of concept; "+
+			"see newStageOptimizer for what it does not support)")
 	runCmd.Flags().IntVar(&circles, "circles", 10, "Number of circles")
 	runCmd.Flags().IntVar(&iters, "iters", 100, "Max iterations")
 	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
@@ -191,7 +193,12 @@ var mayflyOnlyFlags = []string{
 // evaluation, and no polishing stage. Nothing else in the application can
 // select it -- serve, resume and the schedule format are Mayfly-only, and no
 // checkpoint records which library produced a cost.
-func newStageOptimizer(cmd *cobra.Command, library string, config app.JobConfig, rend renderer.Renderer) (opt.Optimizer, error) {
+func newStageOptimizer(
+	cmd *cobra.Command,
+	library string,
+	config app.JobConfig,
+	rend renderer.Renderer,
+) (opt.Optimizer, error) {
 	switch library {
 	case optimizerMayfly:
 		optimizer, err := opt.NewMayflyVariant(string(config.Variant), config.Iters, config.PopSize, config.EffectiveSeed,
