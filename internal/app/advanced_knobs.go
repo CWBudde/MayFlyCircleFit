@@ -37,7 +37,9 @@ func (c JobConfig) validateAdvancedOptimizerKnobs() error {
 //
 // The library range-checks aquilaWeight and oppositionProbability itself, but
 // silently clamps rather than reporting, and does not check danceDamp at all --
-// a damping factor above 1 grows the dance term without bound.
+// a damping factor above 1 grows the dance coefficient every iteration. The
+// library still returns finite results -- velocity and position are clamped --
+// so this bound guards against a saturated random walk, not against a crash.
 func (c JobConfig) validateAdvancedKnobRanges() error {
 	for _, knob := range c.advancedKnobs() {
 		if knob.value == nil {

@@ -297,8 +297,12 @@ and the JSON fields are omitted rather than zero when unset.
 the leading male takes on top of its velocity. It therefore sets how fast the
 swarm stops exploring: at the default of 0.8 the term keeps about a tenth of
 its initial size after ten iterations. Raising it slows that decay. Note that
-the library does not range-check this one at all -- a value above 1 makes the
-term grow without bound -- so the range is enforced here instead.
+the library does not range-check this one at all, so the range is enforced
+here instead. Above 1 the dance coefficient grows every iteration, but the
+library clamps velocity to `VelMin`/`VelMax` and positions to the bounds, so
+the search degenerates into a saturated random walk inside the box rather than
+diverging. The bound is a guard against that degenerate mode, not against a
+crash: MayFly runs such a configuration and returns finite results.
 
 `--aquila-weight` is the probability that an AOBLMOA individual takes an Aquila
 step instead of the ordinary MayFly velocity and position update. The library

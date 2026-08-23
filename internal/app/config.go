@@ -288,8 +288,9 @@ type JobConfig struct {
 	// nuptial-dance term, whose library default is 0.8. The dance is the
 	// random walk the leading male takes on top of its velocity, so this
 	// governs how fast the swarm stops exploring. Advanced: the library does
-	// not range-check it, and a value above 1 makes the term grow without
-	// bound.
+	// not range-check it. Above 1 the dance coefficient grows every iteration;
+	// velocity and position clamping keep the run finite, so the bound guards
+	// against a saturated random walk rather than against divergence.
 	//
 	// Nil leaves the library default. It is a pointer because zero is a
 	// meaningful setting -- it retires the dance after one iteration -- so

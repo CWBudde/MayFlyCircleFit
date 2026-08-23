@@ -119,7 +119,9 @@ func OptionalFloat(value *float64, build func(float64) MayflyOption) MayflyOptio
 // so the damping factor sets how fast the swarm's exploration decays: at 0.8
 // the term retains about a tenth of its initial size after ten iterations.
 // Raising it slows that decay. This is an advanced parameter, and the library
-// itself does not range-check it -- app.JobConfig does.
+// itself does not range-check it -- app.JobConfig does. Above 1 the
+// coefficient grows each iteration, but velocity and position clamping keep
+// the run finite, so the effect is a saturated random walk, not divergence.
 func WithDanceDamp(damp float64) MayflyOption {
 	return func(m *MayflyAdapter) { m.danceDamp = &damp }
 }
