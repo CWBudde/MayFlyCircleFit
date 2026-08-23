@@ -515,6 +515,30 @@ load caveat, and reproduction commands are in
   the old ranking was partly determined by which active set happened to cover
   inherited blocker circles.
 
+### Task 15.11: Spend a Stage's Budget as Restarts, Not One Long Run (P1)
+
+A budget-matched restart ladder over twelve paired blocks measured the base
+stage's budget spent as one long run against the same budget spent as several
+independent cold runs, keeping the best. Splitting it is worth about 160 cost
+points, wins every block at eight and sixteen restarts, and survives a hard
+evaluation cap; four restarts of 64 iterations beat one 2048-iteration run by
+88 points on 15% of the compute. The mechanism is measured: population spread
+falls below 10% of its initial value by iteration 11-16, after which 80-96% of
+the run's gain is already banked. See
+[`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md).
+
+- [ ] Decide the surface. `--optimizer-epochs` reseeds each continuation from
+  the previous best, which inherits the collapsed population's basin; a
+  restart needs independent re-initialization plus best-of selection.
+- [ ] Implement restarts for the base stage on the CLI, the job config, and
+  the schedule format, keeping determinism per seed.
+- [ ] Re-measure on a second reference image before changing any default; the
+  ladder covered one image, `variant` standard, and the eight-circle base
+  stage only.
+- [ ] Measure whether extend and polish stages benefit. They start from a
+  fitted vector rather than a cold population, so the collapse dynamics there
+  are unmeasured.
+
 ## Phase 16: Declarative Run Schedules
 
 Schedules replace one-off external orchestration with a persisted,
@@ -990,14 +1014,17 @@ Current open work, in priority order:
 1. **Release gate (P0):** Task 14.13.
 2. **Correctness and throughput (P1):** Tasks 15.7 and 15.8, followed by the
    remaining Phase 15 measurement and optimization tasks.
-3. **Dashboard sign-off (P1):** Task 17.11.
-4. **Frontend island transition (P1/P2):** Tasks 18.1, 18.2, and 18.7, then
+3. **Search quality (P1):** Task 15.11 — restarts beat a longer single run by
+   a measured, significant margin; see
+   [`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md).
+4. **Dashboard sign-off (P1):** Task 17.11.
+5. **Frontend island transition (P1/P2):** Tasks 18.1, 18.2, and 18.7, then
    18.3–18.6. The shadcn SPA rewrite is recorded as a deferred alternative at
    the end of Phase 18, not as scheduled work.
-5. **Server memory (P2):** Task 17.12.
-6. **Schedule quality (P2):** Task 16.9.
-7. **UX and supporting documentation (P2/P3):** Tasks 12.9 and 13.15.
-8. **Experimental backends/research:** Tasks 11.9–11.13 and 10.20.
+6. **Server memory (P2):** Task 17.12.
+7. **Schedule quality (P2):** Task 16.9.
+8. **UX and supporting documentation (P2/P3):** Tasks 12.9 and 13.15.
+9. **Experimental backends/research:** Tasks 11.9–11.13 and 10.20.
 
 Do not mark a check complete from its presence in code or CI configuration
 alone. Record the exact command or observed CI result for the revision, and
