@@ -527,9 +527,16 @@ falls below 10% of its initial value by iteration 11-16, after which 80-96% of
 the run's gain is already banked. See
 [`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md).
 
-- [ ] Decide the surface. `--optimizer-epochs` reseeds each continuation from
-  the previous best, which inherits the collapsed population's basin; a
-  restart needs independent re-initialization plus best-of selection.
+- [ ] Measure `--optimizer-epochs` against cold restarts at a matched budget
+  before settling on any API. An epoch advances to a fresh deterministic seed
+  and, with no continuation profile, seeds only half the population around the
+  incumbent while re-initializing the rest, so it already performs substantial
+  re-initialization. Every ladder arm ran with `optimizerEpochs: 1`, so this
+  comparison is unmeasured.
+- [ ] Decide the surface, once that comparison exists. A full restart differs
+  from an epoch in independent re-initialization of the whole population plus
+  best-of selection; if epochs already capture most of the gain, tune them
+  rather than adding a second mode.
 - [ ] Implement restarts for the base stage on the CLI, the job config, and
   the schedule format, keeping determinism per seed.
 - [ ] Re-measure on a second reference image before changing any default; the

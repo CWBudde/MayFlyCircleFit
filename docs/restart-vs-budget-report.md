@@ -7,9 +7,11 @@ improvement survives a strict budget cap, and the mechanism behind it is
 measured rather than inferred: the swarm loses its diversity within roughly
 fifteen iterations and everything after that is decided.
 
-This report supersedes the working assumption that a stalled fit needs a
-larger population, a different variant, or a longer run. Those were measured
-and are null; see *What was eliminated first*.
+This report supersedes the working assumption that a stalled fit is cured by a
+larger population, a different variant, or a longer run: none of those delays
+the collapse. That is a statement about premature convergence, not a verdict on
+population size as a quality knob, which this report did not measure. See *What
+was eliminated first*.
 
 ## What was run
 
@@ -189,7 +191,25 @@ Population size does not delay this. Measured at seed 1:
 | 1024 | 15 | 940.50 |
 | 4096 | 16 | 965.48 |
 
-Sixty-four times the individuals buys one iteration of extra diversity.
+Sixty-four times the individuals buys one iteration of extra diversity. That is
+the claim this arm supports, and it is the only one: the collapse iteration is
+flat in population size.
+
+The final-cost column is **not** a quality result. It is one seed per
+population, under MayFly v0.5.1, and the spread it shows — 1253.34 at 64
+against 940.50 at 1024, 313 points — is far larger than the differences this
+report calls significant elsewhere on twelve paired blocks. A single seed
+cannot separate a population effect from the initialization lottery documented
+in the *Result* section, where a single long run's sd across blocks is 148.55.
+Read the column as evidence about diversity collapse, not about which
+population to run.
+
+Nothing here contradicts
+[`docs/seed-variance-and-population-report.md`](seed-variance-and-population-report.md),
+which measured under MayFly v0.5.0 that quality improves monotonically with
+`popSize` to about 1024. That finding stands for the version it was measured
+on, it has not been re-measured under v0.5.1, and this report did not attempt
+to reproduce or refute it.
 
 A 2048-iteration run at seed 1 reaches mean velocity 0.0000 by iteration 1280
 and its best cost is frozen at 936.53 from about iteration 640 onward —
@@ -223,11 +243,15 @@ The diagnosis is premature convergence, and restarts address it directly.
 ## What was eliminated first
 
 Every one of these was measured on the same reference image and host, and none
-produced a significant improvement. They are recorded so they are not retried.
+of them delayed the diversity collapse or produced a significant improvement in
+the respect noted. They are recorded so the same negative result is not
+re-derived. Read each row for what it actually rules out; a row that eliminates
+an intervention as a fix for premature convergence does not eliminate it as a
+knob in general.
 
 | Intervention | Result |
 | --- | --- |
-| Population size 64 to 4096 | No effect on collapse; quality differences within noise |
+| Population size 64 to 4096 | Does not delay the collapse (spread falls below 10% at iteration 11–16 at every population). Whether it improves quality was **not** measured here — one seed per population |
 | `NC` beyond about 64 offspring | Null (t = -0.27 at `NC` 64 versus 1024) |
 | `DanceDamp` 0.8 / 0.9 / 0.95 / 0.99 / 1.0 | All null; several seeds bit-identical across values |
 | MayFly v0.5.0 versus v0.5.1 blend crossover | Null (t = -0.15, 12 paired seeds) |
@@ -250,13 +274,34 @@ reason restarts do: it re-initializes a sub-problem.
   other six variants were not run in this ladder.
 - Returns had not flattened at 32 restarts, so the ladder does not locate an
   upper bound on useful restart count.
+- It does not compare cold restarts against `--optimizer-epochs`. Every arm ran
+  with `optimizerEpochs: 1`, and an epoch already re-initializes half the
+  population globally, so the relative value of the two is unmeasured.
+- It does not measure whether population size improves quality. The population
+  arm was one seed per population and was run to locate the collapse iteration.
+  The v0.5.0 finding that quality improves monotonically to about `popSize`
+  1024, in
+  [`docs/seed-variance-and-population-report.md`](seed-variance-and-population-report.md),
+  is untouched by this report.
 
 ## What to change
 
-`--optimizer-epochs` reseeds each continuation from the previous best result.
-That is continuation, not restart: it inherits the collapsed population's
-position and therefore inherits its basin. A restart mode needs independent
-re-initialization and best-of selection across the attempts.
+`--optimizer-epochs` already does part of this, and the ladder did not measure
+how much. Each epoch advances to a fresh deterministic seed and reseeds from
+the previous best result — but with no continuation profile configured,
+`seededPopulationFromCandidates` in `internal/opt/mayfly_adapter.go` uses
+`localFraction` 0.5, so only half the population is drawn around the incumbent
+and the other half is initialized globally. An epoch is therefore a partial
+re-initialization, not a pure continuation, and it is not obvious in advance
+how much of the restart gain it already captures.
+
+What the ladder measured is cold restarts against a single long run: every arm
+in it ran with `optimizerEpochs: 1`. The relative value of epochs versus cold
+restarts at a matched budget is **unmeasured**, and it should be measured
+before a separate restart surface is designed — a new mode that duplicates the
+existing mechanism would be worse than tuning the mechanism. A full restart
+does differ in kind: independent re-initialization of the whole population plus
+best-of selection across attempts.
 
 Concretely, the smallest change that captures most of the measured gain is to
 spend a stage's budget as four or more cold attempts and keep the best, rather
