@@ -296,21 +296,30 @@ type JobConfig struct {
 	// meaningful setting -- it retires the dance after one iteration -- so
 	// omitempty on a plain float64 would erase exactly that configuration.
 	DanceDamp *float64 `json:"danceDamp,omitempty"`
-	// AquilaWeight overrides the probability that an AOBLMOA individual takes
-	// an Aquila step instead of the ordinary MayFly velocity and position
-	// update. The library default of 1.0 follows the paper and means the
-	// MayFly dynamics never run. Applies to the aoblmoa variant only.
+	// AquilaWeight overrides the AOBLMOA branch rule with a probability that
+	// an individual takes an Aquila step instead of the ordinary MayFly
+	// velocity and position update. Applies to the aoblmoa variant only.
+	//
+	// Deprecated as of MayFly v0.6.0, which made the branch a deterministic
+	// fitness test as its source paper defines it. The library default is now
+	// the AquilaWeightAuto sentinel; setting a value in [0,1] here restores
+	// the pre-v0.6.0 probabilistic behavior.
 	//
 	// Nil leaves the library default; zero is meaningful (pure MayFly), hence
 	// the pointer.
 	AquilaWeight *float64 `json:"aquilaWeight,omitempty"`
-	// OppositionProbability overrides the AOBLMOA opposition-based-learning
-	// rate, the share of solutions reflected through the search space each
-	// iteration. The library default is 0.3. Applies to the aoblmoa variant
-	// only.
+	// OppositionProbability is retained but inert. Applies to the aoblmoa
+	// variant only.
 	//
-	// Nil leaves the library default; zero is meaningful (no opposition
-	// step), hence the pointer.
+	// MayFly v0.6.0 moved opposition-based learning to the offspring stage,
+	// where the paper applies it to every offspring unconditionally, so the
+	// library range-checks this value and then never reads it. The field stays
+	// because job submission and schedules decode with DisallowUnknownFields
+	// and resume reads it back out of existing checkpoints: dropping it would
+	// reject configurations that load today.
+	//
+	// Nil leaves the library default, and the pointer is kept for symmetry
+	// with the other knobs and so a stored explicit zero still round-trips.
 	OppositionProbability    *float64          `json:"oppositionProbability,omitempty"`
 	BatchSize                int               `json:"batchSize,omitempty"`
 	PolishingEnabled         bool              `json:"polishingEnabled,omitempty"`

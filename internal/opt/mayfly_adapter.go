@@ -136,11 +136,13 @@ func WithAquilaWeight(weight float64) MayflyOption {
 	return func(m *MayflyAdapter) { m.aquilaWeight = &weight }
 }
 
-// WithOppositionProbability overrides the AOBLMOA opposition-based-learning
-// rate, whose library default is 0.3.
+// WithOppositionProbability sets the AOBLMOA opposition-based-learning rate.
 //
-// It is the share of solutions reflected through the search space each
-// iteration. It has no effect on any other variant.
+// The value is inert as of MayFly v0.6.0: the library applies stochastic
+// opposition to every offspring instead of a sampled share, so it range-checks
+// this setting and then never reads it. The option is kept so stored
+// configurations and checkpoints continue to load. It has no effect on any
+// other variant.
 func WithOppositionProbability(probability float64) MayflyOption {
 	return func(m *MayflyAdapter) { m.oppositionProbability = &probability }
 }
