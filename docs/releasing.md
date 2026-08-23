@@ -32,7 +32,7 @@ must use the prefixed form or it will wait forever on a check that never reports
 
 ## Prepare and verify
 
-1. Work from a clean commit that is part of `master`.
+1. Work from a clean commit that is part of `main`.
 2. Move relevant entries from `CHANGELOG.md`'s Unreleased section into a dated
    version section.
 3. Run the local gates:
@@ -64,7 +64,7 @@ git push origin v0.2.0
 ```
 
 Tags such as `v0.2.0-rc.1` create GitHub prereleases. The tag workflow validates
-the tag and verifies that its commit belongs to `master`, reruns the complete CI
+the tag and verifies that its commit belongs to `main`, reruns the complete CI
 matrix, builds the archives, checks their SHA-256 hashes, creates a draft with
 generated release notes, uploads every artifact, and publishes the draft last.
 
