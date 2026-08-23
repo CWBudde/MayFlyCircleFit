@@ -8,7 +8,7 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     tags: ["v*"]
   pull_request:
 
@@ -110,9 +110,9 @@ jobs:
             printf 'Release tag is not valid SemVer: %s\n' "$tag"
             exit 1
           fi
-          git fetch --no-tags origin master
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/master; then
-            printf 'Tagged commit %s is not part of master.\n' "$GITHUB_SHA"
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            printf 'Tagged commit %s is not part of main.\n' "$GITHUB_SHA"
             exit 1
           fi
       - name: Build and verify release archives
