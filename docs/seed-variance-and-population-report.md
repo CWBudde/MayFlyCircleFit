@@ -193,11 +193,12 @@ worth trying next are, in rough order of expected value:
   circles instead of committing them one at a time, which attacks Finding 1 at
   its source.
 
-Two gaps are worth recording. `internal/app` accepts only `standard`, `desma`
-and `olce`, while `internal/opt` supports four more (`eobbma`, `gsasma`, `mpma`,
-`aoblmoa`) that no configuration can currently reach. And `NC` and the damping
-coefficients are not exposed at all, so the mechanisms most likely to govern
-this problem cannot be configured from a campaign document.
+One gap is worth recording. `NC` and the damping coefficients are not exposed
+at all, so the mechanisms most likely to govern this problem cannot be
+configured from a campaign document. The other gap this report found — that
+`internal/app` accepted only `standard`, `desma` and `olce` while `internal/opt`
+supported four more — has since been closed: all seven variants are now
+selectable from a configuration.
 
 ## Reproducing
 
