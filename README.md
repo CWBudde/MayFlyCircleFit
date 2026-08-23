@@ -235,6 +235,27 @@ to each stage, so they can shorten stages without ending the run. `status` and
 Use `--variant` to select the MayFly algorithm variant: `standard`, `desma`,
 `olce`, `eobbma`, `gsasma`, `mpma`, or `aoblmoa`.
 
+### Restarts
+
+`--restarts N` runs each optimizer invocation as N independent cold attempts
+and keeps the best. It is not `--optimizer-epochs`: an epoch reseeds the next
+run from the best candidate found so far and therefore inherits that
+candidate's basin, while a restart draws a fresh population and explores
+independently. Both can be combined -- restarts wrap epochs, so one attempt is
+a whole epoch chain.
+
+Restarts multiply the work, so `--restarts 4` costs four times a single
+attempt at the same `--iters`. To hold a budget fixed, divide `--iters` by the
+restart count. On the eight-circle base stage that trade is strongly
+favourable: the same budget spent as several short attempts beat one long run
+by about 160 cost points, and four attempts beat a single run of sixteen times
+their length while using 15% of its compute. See
+[`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md) for the
+measurement, its limits, and the population-collapse behaviour behind it.
+
+A restarted run stays reproducible for a fixed `--seed`; the attempts vary the
+seed deterministically rather than drawing fresh entropy.
+
 ## Checkpoints and restart-from-best
 
 Checkpoint files record the best candidate and measured progress. Resume does

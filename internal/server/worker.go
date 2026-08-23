@@ -187,7 +187,9 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		return err
 	}
 
-	optimizer = opt.WithEpochs(optimizer, job.Config.OptimizerEpochs)
+	// Restarts wrap epochs: one attempt is a whole epoch chain, and the
+	// attempts themselves are independent.
+	optimizer = opt.WithRestarts(opt.WithEpochs(optimizer, job.Config.OptimizerEpochs), job.Config.OptimizerRestarts)
 	start := time.Now()
 	baseIterations, baseEvaluations := job.Iterations, job.Evaluations
 	initialCost := job.InitialCost

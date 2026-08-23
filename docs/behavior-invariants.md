@@ -210,6 +210,20 @@ Rendering-side invariants live in
   is only an optimization: its decoded dimensions and exact `FastMSECost` must
   match the checkpoint, and a missing or mismatched artifact falls back to the
   parameter replay. Checkpoint JSON remains the durable parameter source.
+- **A restart does not inherit the previous attempt's basin.**
+  `optimizerRestarts` runs independent cold attempts and keeps the best, which
+  is what separates it from `optimizerEpochs`: an epoch reseeds from the best
+  candidate found so far. A caller-supplied initial candidate is still honored
+  by every attempt, so a resumed or staged run never discards work it was
+  handed. Attempts vary the run seed on a dimension of their own, so epochs
+  nested inside an attempt cannot alias onto another attempt's seed, and a
+  restarted run stays reproducible for a fixed seed.
+- **Restarted progress stays monotonic.** Optimizer progress is best-so-far. A
+  fresh attempt's early costs are worse than what an earlier attempt already
+  reached, so only improvements are forwarded, and an epoch boundary carries
+  the running best rather than the attempt's own result -- an observer that
+  persists a checkpoint is never handed a candidate worse than one it already
+  stored.
 - The configured `variant` is honored at every optimizer construction site.
   All seven MayFly variants the adapter can build (`standard`, `desma`, `olce`,
   `eobbma`, `gsasma`, `mpma`, `aoblmoa`) are accepted by `JobConfig`
@@ -406,8 +420,8 @@ read-only, and both refuse to state anything they cannot derive.
   campaign measures.
 - **The iteration count is the nominal plan, not a prediction and not a
   bound.** It is what the configuration lays out: batch stages times epochs
-  times iterations, plus sweeps times epochs times iterations for a polish
-  stage. Early stopping and convergence detection spend less than it, while a
+  times restarts times iterations, plus sweeps times epochs times iterations
+  for a polish stage. Early stopping and convergence detection spend less than it, while a
   batch stage that leaves circles unplaced may run up to
   `renderer.MaxExtraBatchStages` residual-refill stages beyond its plan and
   spend more. Those refills are excluded from the count because most stages

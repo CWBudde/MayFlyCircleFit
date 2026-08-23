@@ -30,6 +30,7 @@ var (
 	iters                    int
 	popSize                  int
 	optimizerEpochs          int
+	optimizerRestarts        int
 	batchSize                int
 	polishingEnabled         bool
 	polishingStrategy        string
@@ -76,6 +77,7 @@ func init() {
 	runCmd.Flags().IntVar(&iters, "iters", 100, "Max iterations")
 	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
 	runCmd.Flags().IntVar(&optimizerEpochs, "optimizer-epochs", 1, "Optimizer runs per stage, reseeding each continuation from the best result")
+	runCmd.Flags().IntVar(&optimizerRestarts, "restarts", 1, "Independent cold attempts per optimizer run, keeping the best. Unlike --optimizer-epochs this does not reseed from the previous best, so each attempt explores from a fresh population")
 	runCmd.Flags().IntVar(&batchSize, "batch-size", 0, "Circles optimized together in batch mode (0 selects the automatic default)")
 	runCmd.Flags().BoolVar(&polishingEnabled, "polishing", false, "Polish weak circles transactionally after a batch run")
 	runCmd.Flags().StringVar(&polishingStrategy, "polishing-strategy", "replacement", "Polishing strategy: replacement, hybrid-overlap, residual-region, or contiguous-window")
@@ -158,6 +160,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		Iters:                    iters,
 		PopSize:                  popSize,
 		OptimizerEpochs:          optimizerEpochs,
+		OptimizerRestarts:        optimizerRestarts,
 		BatchSize:                batchSize,
 		PolishingEnabled:         polishingEnabled,
 		PolishingStrategy:        app.PolishingStrategy(polishingStrategy),
@@ -198,6 +201,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	config.Iters = iters
 	config.PopSize = popSize
 	config.OptimizerEpochs = optimizerEpochs
+	config.OptimizerRestarts = optimizerRestarts
 	config.PolishingActiveSetSize = polishingActiveSetSize
 	config.PolishingMaxSweeps = polishingMaxSweeps
 	config.PolishingEpochs = polishingEpochs
@@ -349,7 +353,9 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create optimizer: %w", err)
 	}
 
-	optimizer = opt.WithEpochs(optimizer, config.OptimizerEpochs)
+	// Restarts wrap epochs: one attempt is a whole epoch chain, and the
+	// attempts themselves are independent.
+	optimizer = opt.WithRestarts(opt.WithEpochs(optimizer, config.OptimizerEpochs), config.OptimizerRestarts)
 
 	// Create convergence config
 	convergenceConfig := renderer.ConvergenceConfig{
