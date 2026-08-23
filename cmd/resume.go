@@ -24,9 +24,10 @@ import (
 )
 
 var (
-	resumeServerURL string
-	resumeLocalMode bool
-	resumeOutputDir string
+	resumeServerURL              string
+	resumeLocalMode              bool
+	resumeOutputDir              string
+	resumeAllowOptimizerMismatch bool
 )
 
 var resumeCmd = &cobra.Command{
@@ -52,6 +53,8 @@ func init() {
 	resumeCmd.Flags().StringVar(&resumeServerURL, "server-url", "http://localhost:8080", "Server URL for remote resume")
 	resumeCmd.Flags().BoolVar(&resumeLocalMode, "local", false, "Run resume locally instead of via server")
 	resumeCmd.Flags().StringVar(&resumeOutputDir, "output", "./resumed", "Output directory for local mode")
+	resumeCmd.Flags().BoolVar(&resumeAllowOptimizerMismatch, "allow-optimizer-mismatch", false,
+		"Resume even when the checkpoint was written by a different MayFly version")
 	rootCmd.AddCommand(resumeCmd)
 }
 
@@ -68,14 +71,24 @@ func runResume(cmd *cobra.Command, args []string) error {
 // runResumeServer sends a resume request to the server.
 func runResumeServer(ctx context.Context, output io.Writer, jobID string) error {
 	endpoint := fmt.Sprintf("%s/api/v1/jobs/%s/resume", strings.TrimRight(resumeServerURL, "/"), url.PathEscape(jobID))
+	if resumeAllowOptimizerMismatch {
+		endpoint += "?allowOptimizerMismatch=true"
+	}
 
 	slog.Info("Resuming job via server", "job_id", jobID, "url", endpoint)
 
 	body, err := requestCLI(ctx, http.MethodPost, endpoint)
 	if err != nil {
 		var apiErr *cliAPIError
-		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
-			return fmt.Errorf("checkpoint not found for job %q: %w", jobID, err)
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case http.StatusNotFound:
+				return fmt.Errorf("checkpoint not found for job %q: %w", jobID, err)
+			case http.StatusConflict:
+				if apiErr.Code == "optimizer_version_mismatch" {
+					return fmt.Errorf("%w\nPass --allow-optimizer-mismatch to resume anyway", err)
+				}
+			}
 		}
 
 		return fmt.Errorf("resume job %q: %w", jobID, err)
@@ -146,6 +159,20 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	checkpoint.Config, err = app.Normalize(checkpoint.Config)
 	if err != nil {
 		return fmt.Errorf("invalid checkpoint configuration: %w", err)
+	}
+
+	warning, err := opt.GuardCheckpointVersion(checkpoint.OptimizerVersion, opt.LibraryVersion(), resumeAllowOptimizerMismatch)
+	if err != nil {
+		if errors.Is(err, opt.ErrOptimizerVersionMismatch) {
+			return fmt.Errorf("%w (pass --allow-optimizer-mismatch to resume anyway)", err)
+		}
+
+		return err
+	}
+
+	if warning != "" {
+		slog.Warn("Optimizer version check", "job_id", jobID, "warning", warning)
+		fmt.Printf("! %s\n\n", warning)
 	}
 
 	fmt.Printf("Loaded checkpoint:\n")

@@ -67,6 +67,7 @@ an omitted field is defaulted.
 | 404 | `not_found` | No job, schedule, checkpoint, or project with that identifier — or no API endpoint at that path. |
 | 404 | `no_results` | The job exists but has not produced a best result yet. Poll the status endpoint or the SSE stream first. |
 | 409 | `invalid_state` | The action does not apply in the job's current state, such as pausing a job that already finished. |
+| 409 | `optimizer_version_mismatch` | The checkpoint was written by a different MayFly version than the server links, so the continuation would not be comparable. Re-baseline, or repeat the request with `?allowOptimizerMismatch=true`. |
 | 413 | `request_too_large` | The request body exceeded the server's limit. |
 | 429 | `queue_full` | The server's job queue is full. Wait for a job to finish, cancel one, or raise `--queue-size`. |
 | 500 | `reference_load_failed` | The job's reference image could not be read from disk. Check the server log for the path and the underlying cause. |

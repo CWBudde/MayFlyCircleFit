@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/mayflycirclefit/internal/opt"
 )
 
 // CircleData represents a single optimized circle with its parameters and metadata.
@@ -137,6 +138,18 @@ type Checkpoint struct {
 	ScheduleID string `json:"scheduleId,omitempty"`
 	StageIndex *int   `json:"stageIndex,omitempty"`
 
+	// OptimizerVersion records the MayFly module version that produced this
+	// checkpoint. The optimizer version is a comparability boundary — v0.5.0
+	// scales the crossover offspring count with the population, v0.5.1 restores
+	// blend crossover — so resuming across a bump continues the run under an
+	// algorithm the recorded cost was never measured with. Persisting it lets
+	// the resume paths refuse that instead of doing it silently.
+	//
+	// It is additive and optional: every checkpoint written before the field
+	// existed decodes with it empty, which resume treats as unknown rather than
+	// as a mismatch, so the schema version does not move.
+	OptimizerVersion string `json:"optimizerVersion,omitempty"`
+
 	// Config holds the job configuration, needed for validation during resume.
 	// We ensure that resumed jobs use compatible settings (same image, mode, etc.)
 	Config JobConfig `json:"config"`
@@ -187,6 +200,11 @@ type CheckpointInfo struct {
 	PolishedFrom string `json:"polishedFrom,omitempty"`
 	ScheduleID   string `json:"scheduleId,omitempty"`
 
+	// OptimizerVersion mirrors the checkpoint's recorded optimizer version so a
+	// listing can show which records sit on the far side of a bump. It is empty
+	// for a checkpoint written before the field existed.
+	OptimizerVersion string `json:"optimizerVersion,omitempty"`
+
 	// Mode is the optimization mode (joint, sequential, batch)
 	Mode app.Mode `json:"mode"`
 
@@ -214,6 +232,7 @@ func NewCheckpoint(jobID string, bestParams []float64, bestCost, initialCost flo
 		Iteration:        iteration,
 		Termination:      TerminationUnknown,
 		Timestamp:        time.Now(),
+		OptimizerVersion: opt.LibraryVersion(),
 		Config:           config,
 	}
 
@@ -239,6 +258,7 @@ func (c *Checkpoint) ToInfo() CheckpointInfo {
 		ExtendedFrom:     normalized.ExtendedFrom,
 		PolishedFrom:     normalized.PolishedFrom,
 		ScheduleID:       normalized.ScheduleID,
+		OptimizerVersion: normalized.OptimizerVersion,
 		Mode:             normalized.Config.Mode,
 		Circles:          normalized.Config.Circles,
 		RefPath:          normalized.Config.RefPath,
@@ -435,6 +455,7 @@ func (c *Checkpoint) UnmarshalJSON(data []byte) error {
 		PolishedFrom:     wire.PolishedFrom,
 		ScheduleID:       wire.ScheduleID,
 		StageIndex:       wire.StageIndex,
+		OptimizerVersion: wire.OptimizerVersion,
 		Config:           wire.Config,
 	}
 	legacy := wire.SchemaVersion == 0 || wire.SchemaVersion == 1
@@ -472,6 +493,7 @@ type checkpointWire struct {
 	PolishedFrom     string    `json:"polishedFrom,omitempty"`
 	ScheduleID       string    `json:"scheduleId,omitempty"`
 	StageIndex       *int      `json:"stageIndex,omitempty"`
+	OptimizerVersion string    `json:"optimizerVersion,omitempty"`
 	Config           JobConfig `json:"config"`
 }
 
@@ -494,6 +516,7 @@ func checkpointWireFrom(c Checkpoint) checkpointWire {
 		PolishedFrom:     c.PolishedFrom,
 		ScheduleID:       c.ScheduleID,
 		StageIndex:       c.StageIndex,
+		OptimizerVersion: c.OptimizerVersion,
 		Config:           c.Config,
 	}
 }

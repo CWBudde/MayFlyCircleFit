@@ -336,9 +336,14 @@ comparable after the fact; treat it as its own baseline.
   v0.5.0 run cannot be reproduced. The same release changed the OLCE, EOBBMA,
   GSASMA and AOBLMOA variants and moved the `AquilaWeight` default from 0.5 to
   1.0. **A cost recorded under v0.5.0 or earlier is not comparable to one
-  recorded under v0.5.1.** Every campaign in `data/` predates the bump; resume
-  one and it silently continues under a different optimizer. Re-baseline
-  instead.
+  recorded under v0.5.1.** Every campaign in `data/` predates the bump. Resume
+  no longer crosses that boundary quietly: a checkpoint records the optimizer
+  version that produced it, and resuming it under a different one is refused
+  unless the mismatch is explicitly overridden — with
+  `resume --allow-optimizer-mismatch`, or `?allowOptimizerMismatch=true` on the
+  resume endpoint. A checkpoint written before the field existed records no
+  version, so it resumes with a warning rather than a refusal. Re-baseline
+  instead of overriding.
 - **`fastCompositing` — the one that genuinely breaks comparability.** The
   float32 compositor is accurate to ±1 per channel, measured over 2,074,320
   channel writes. A changed channel changes the SSD, which changes an

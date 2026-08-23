@@ -180,6 +180,19 @@ Rendering-side invariants live in
   is not supported.
 - A zero user seed generates and reports an effective seed; a nonzero seed is
   deterministic.
+- Every checkpoint records the MayFly version that produced it, in
+  `optimizerVersion`, and resume refuses to cross that boundary. A checkpoint
+  whose recorded version differs from the one the running binary links is
+  rejected — exit non-zero for `resume --local`, HTTP 409
+  `optimizer_version_mismatch` for the resume endpoint — because the optimizer
+  version decides which algorithm the continuation runs and the resulting cost
+  is not comparable with the recorded one. The refusal is deliberately
+  overridable: `resume --allow-optimizer-mismatch`, or
+  `?allowOptimizerMismatch=true` on the endpoint, proceeds and warns instead. A
+  checkpoint that records no version at all — every checkpoint written before
+  the field existed — is never refused; it warns, naming the running version.
+  The same applies when either side reports `unknown`, which is what a build
+  without module information reports.
 - Optimizer termination reasons propagate from the adapter through the pipeline
   to jobs, checkpoints, `status`, and `checkpoints list`. The checkpoint
   `termination` field is free-form, so new reasons need no schema bump, and
