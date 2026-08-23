@@ -24,6 +24,15 @@ take precedence if this document goes stale.
   treat the 1024 figure as indicative rather than established. The
   seed-variance half of the report still holds. Do not size a new campaign's
   population from the v0.4.0 figures.
+- [`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md) — why
+  a stage's budget is better spent as several independent cold runs than as
+  one long run, and the measured population collapse behind it. It also records
+  which interventions did **not** delay that collapse (population size, `NC`,
+  `DanceDamp`, variant choice, longer budgets) so they are not retried as a fix
+  for premature convergence. Mind the version caveat: it was measured under
+  MayFly v0.5.1 and it did not measure population size as a quality knob, so it
+  neither reproduces nor refutes the v0.5.0 monotonic-to-1024 figure above.
+  Read this before proposing a search-quality change.
 - [`docs/schedule-format.md`](docs/schedule-format.md) — the schedule document
   format, its worked example, and when two campaigns' costs are comparable.
 - [`docs/support-matrix.md`](docs/support-matrix.md),
