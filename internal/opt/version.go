@@ -17,13 +17,20 @@ const mayflyModulePath = "github.com/cwbudde/mayfly"
 const unknownLibraryVersion = "unknown"
 
 var libraryVersion = sync.OnceValue(func() string {
+	return moduleVersion(mayflyModulePath)
+})
+
+// moduleVersion reports the version of one dependency compiled into this
+// binary, or unknownLibraryVersion when the build carries no module
+// information.
+func moduleVersion(path string) string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return unknownLibraryVersion
 	}
 
 	for _, dep := range info.Deps {
-		if dep.Path != mayflyModulePath {
+		if dep.Path != path {
 			continue
 		}
 		// A replace directive points at the module actually compiled in, which
@@ -38,7 +45,7 @@ var libraryVersion = sync.OnceValue(func() string {
 	}
 
 	return unknownLibraryVersion
-})
+}
 
 // LibraryVersion reports the MayFly module version compiled into this binary.
 //

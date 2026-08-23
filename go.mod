@@ -10,6 +10,7 @@ tool (
 )
 
 require (
+	github.com/CWBudde/dragonfly v0.1.0
 	github.com/a-h/templ v0.3.960
 	github.com/cwbudde/mayfly v0.6.0
 	github.com/google/uuid v1.6.0
@@ -33,7 +34,7 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/natefinch/atomic v1.0.1 // indirect
-	github.com/spf13/pflag v1.0.9 // indirect
+	github.com/spf13/pflag v1.0.10 // indirect
 	golang.org/x/mod v0.26.0 // indirect
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/perf v0.0.0-20250710210952-7b7c2de18447 // indirect
