@@ -330,8 +330,10 @@ comparable after the fact; treat it as its own baseline.
   and offspring may fall outside the interval their parents span. That changes
   the trajectory of *every* run at *every* population — there is no unaffected
   configuration the way `NPop = 20` was unaffected by the v0.5.0 change — and
-  it cannot be pinned back from the adapter without setting a deliberately
-  degenerate `CrossoverGamma`. The same release changed the OLCE, EOBBMA,
+  it cannot be pinned back from the adapter at all. MayFly resolves a zero,
+  negative, or non-finite `CrossoverGamma` to its own default of 0.4, so the
+  v0.5.0 `U(0, 1)` interpolation is unreachable from configuration and a
+  v0.5.0 run cannot be reproduced. The same release changed the OLCE, EOBBMA,
   GSASMA and AOBLMOA variants and moved the `AquilaWeight` default from 0.5 to
   1.0. **A cost recorded under v0.5.0 or earlier is not comparable to one
   recorded under v0.5.1.** Every campaign in `data/` predates the bump; resume
