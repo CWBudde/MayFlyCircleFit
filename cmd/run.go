@@ -90,11 +90,12 @@ func init() {
 		"Advanced. Per-iteration decay of the nuptial-dance term, between 0 and 1 "+
 			"(unset leaves the library default of 0.8). Governs how fast the swarm stops exploring")
 	runCmd.Flags().Float64Var(&aquilaWeight, "aquila-weight", 0,
-		"Advanced, aoblmoa only. Probability of an Aquila step instead of the MayFly update, "+
-			"between 0 and 1 (unset leaves the library default of 1.0, which never runs the MayFly update)")
+		"Advanced, aoblmoa only, deprecated. Probability of an Aquila step instead of the MayFly update, "+
+			"between 0 and 1. Unset selects the paper's fitness test, which is the default; "+
+			"a value restores the pre-v0.6.0 random branch")
 	runCmd.Flags().Float64Var(&oppositionProbability, "opposition-probability", 0,
-		"Advanced, aoblmoa only. Share of solutions reflected through the search space each iteration, "+
-			"between 0 and 1 (unset leaves the library default of 0.3)")
+		"Advanced, aoblmoa only, inert since MayFly v0.6.0. Range-checked and then ignored: "+
+			"opposition now applies to every offspring. Accepted so existing configs keep loading")
 	runCmd.Flags().IntVar(&crossoverCount, "crossover-count", 0,
 		"MayFly crossover offspring per iteration (0 uses the library default of one per population member)")
 	runCmd.Flags().IntVar(&batchSize, "batch-size", 0, "Circles optimized together in batch mode (0 selects the automatic default)")

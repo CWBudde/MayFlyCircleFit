@@ -101,7 +101,8 @@ func TestOppositionProbabilityIsInertButStillValidated(t *testing.T) {
 			none, always)
 	}
 
-	if err := knobRunErr("aoblmoa", opt.WithOppositionProbability(1.5)); err == nil {
+	err := knobRunErr("aoblmoa", opt.WithOppositionProbability(1.5))
+	if err == nil {
 		t.Fatal("an opposition rate of 1.5 was accepted, so the option no longer reaches validation")
 	}
 }
