@@ -22,11 +22,11 @@ Source paper: Zhao, Y.; Huang, C.; Zhang, M.; Cui, Y. *Biomimetics* **2023**,
 
 ## What was run
 
-`MayFly-512.png` (512x512, blank-canvas cost 38732.12), eight circles, `mode`
-batch with `batchSize` 8, `popSize` 1024, `optimizerEpochs` 1, `threads` 1,
-`parallelEvaluation` with 8 evaluation workers, convergence detection disabled
-so early stopping could not distort a budget. `aquilaWeight` was left unset,
-which under v0.6.0 selects the paper's deterministic fitness test.
+`example/MayFly-512.png` (512x512, blank-canvas cost 38732.12), eight circles,
+`mode` batch with `batchSize` 8, `popSize` 1024, `optimizerEpochs` 1, `threads`
+1, `parallelEvaluation` with 8 evaluation workers, convergence detection
+disabled so early stopping could not distort a budget. `aquilaWeight` was left
+unset, which under v0.6.0 selects the paper's deterministic fitness test.
 
 207 jobs on a 64-core box, driven through `serve` so the campaign was
 observable while it ran. Binary built from `48c3a7b`.
