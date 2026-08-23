@@ -392,6 +392,11 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	optimizer, err := opt.NewMayflyVariant(string(config.Variant), config.Iters, config.PopSize, config.EffectiveSeed,
 		opt.WithLogger(slog.Default()), opt.WithEarlyStop(earlyStopFromConfig(config)),
 		opt.WithCrossoverCount(config.CrossoverCount),
+		// Optimizer stages only. Polishing below runs its own smaller
+		// standard-variant population and is deliberately left alone.
+		opt.OptionalFloat(config.DanceDamp, opt.WithDanceDamp),
+		opt.OptionalFloat(config.AquilaWeight, opt.WithAquilaWeight),
+		opt.OptionalFloat(config.OppositionProbability, opt.WithOppositionProbability),
 		parallelEvaluationOption(config, rend))
 	if err != nil {
 		return fmt.Errorf("create optimizer: %w", err)
