@@ -33,6 +33,13 @@ take precedence if this document goes stale.
   MayFly v0.5.1 and it did not measure population size as a quality knob, so it
   neither reproduces nor refutes the v0.5.0 monotonic-to-1024 figure above.
   Read this before proposing a search-quality change.
+- [`docs/aoblmoa-paper-fidelity-report.md`](docs/aoblmoa-paper-fidelity-report.md)
+  — the v0.6.0 paper-faithful `aoblmoa` measured against `standard` on the
+  eight-circle base stage. It loses significantly under restarts
+  (evaluation-matched, `t = -3.01` over twelve blocks) and is a null result as
+  a single long run, while spending 31% more evaluations per iteration. Read
+  this before proposing `aoblmoa` as a default or re-running a variant screen
+  that includes it.
 - [`docs/schedule-format.md`](docs/schedule-format.md) — the schedule document
   format, its worked example, and when two campaigns' costs are comparable.
 - [`docs/support-matrix.md`](docs/support-matrix.md),
@@ -76,7 +83,9 @@ reintroduce application configuration into the store package.
   measurement taken before this upgrade describes a different algorithm and
   must not be compared against a current run. The other six variants are
   unaffected. `aquilaWeight` is deprecated (unset now selects the paper's
-  fitness test) and `oppositionProbability` is inert but still accepted.
+  fitness test) and `oppositionProbability` is inert but still accepted. The
+  faithful variant measures *worse* than `standard` on this problem; see
+  [`docs/aoblmoa-paper-fidelity-report.md`](docs/aoblmoa-paper-fidelity-report.md).
 - MayFly is pinned to `github.com/cwbudde/mayfly v0.6.0`; templ to
   `github.com/a-h/templ v0.3.960` as a Go tool; `github.com/google/pprof` as a
   Go tool because some Go installations do not bundle it.
