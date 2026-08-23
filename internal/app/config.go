@@ -274,7 +274,16 @@ type JobConfig struct {
 	// OptimizerEpochs: an epoch reseeds from the best candidate so far and
 	// inherits its basin, while a restart explores from a fresh
 	// population. One preserves the historical single-attempt behaviour.
-	OptimizerRestarts        int               `json:"optimizerRestarts,omitempty"`
+	OptimizerRestarts int `json:"optimizerRestarts,omitempty"`
+	// CrossoverCount overrides how many crossover offspring MayFly produces
+	// per iteration. Zero leaves the library's own scaling alone, which is
+	// one offspring per population member.
+	//
+	// Measured on the eight-circle base stage: about 64 offspring at a
+	// population of 1024 is statistically indistinguishable from the
+	// library default while spending 25% fewer evaluations, and cutting it
+	// to 2 is significantly worse. See docs/restart-vs-budget-report.md.
+	CrossoverCount           int               `json:"crossoverCount,omitempty"`
 	BatchSize                int               `json:"batchSize,omitempty"`
 	PolishingEnabled         bool              `json:"polishingEnabled,omitempty"`
 	PolishingOnly            bool              `json:"polishingOnly,omitempty"`
@@ -626,6 +635,15 @@ func (c JobConfig) Validate() error {
 
 	if c.OptimizerRestarts < 1 || c.OptimizerRestarts > MaxOptimizerRestarts {
 		return invalid("optimizerRestarts", fmt.Sprintf("must be between 1 and %d", MaxOptimizerRestarts))
+	}
+
+	// Zero defers to the library. Two is the smallest count the library
+	// accepts, because it draws its mutant pool from the offspring and cannot
+	// do that from an empty one. The upper bound is what mating can consume:
+	// the library forms pairs from the male and female populations.
+	if c.CrossoverCount != 0 && (c.CrossoverCount < 2 || c.CrossoverCount > 2*c.PopSize) {
+		return invalid("crossoverCount",
+			fmt.Sprintf("must be 0 to use the library default, or between 2 and %d", 2*c.PopSize))
 	}
 
 	if c.BatchSize < 1 || c.BatchSize > MaxBatchSize || c.Mode == ModeBatch && c.BatchSize > c.Circles {

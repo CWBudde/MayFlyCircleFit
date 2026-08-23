@@ -42,6 +42,9 @@ type MayflyAdapter struct {
 	// bounds its worker pool. Values below two keep evaluation serial, which is
 	// the default.
 	parallelWorkers int
+	// crossoverCount overrides Mayfly's offspring count per iteration. Zero
+	// leaves the library's own scaling alone.
+	crossoverCount int
 }
 
 // Stop configures optimizer-level early stopping, evaluated per iteration
@@ -72,6 +75,16 @@ func (s Stop) enabled() bool {
 // per optimizer rather than per run, so wrappers that rebuild RunOptions cannot
 // drop them.
 type MayflyOption func(*MayflyAdapter)
+
+// WithCrossoverCount overrides how many crossover offspring Mayfly produces
+// per iteration. Zero leaves the library's own scaling alone.
+//
+// The library derives its mutant pool from the offspring, so a count below the
+// mutant count starves mutation rather than merely reducing recombination.
+// An odd count yields one fewer offspring, because the library mates pairs.
+func WithCrossoverCount(count int) MayflyOption {
+	return func(m *MayflyAdapter) { m.crossoverCount = count }
+}
 
 // WithLogger reports Mayfly lifecycle events through logger. Per-iteration
 // events are demoted to debug so an ordinary run logs one completion record per
@@ -290,6 +303,10 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 	config.MaxIterations = m.maxIters
 	config.NPop = m.popSize
 	config.NPopF = m.popSize
+
+	if m.crossoverCount > 0 {
+		config.NC = m.crossoverCount
+	}
 	config.LowerBound = 0.0
 
 	config.UpperBound = 1.0

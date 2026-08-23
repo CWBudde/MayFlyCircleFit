@@ -255,6 +255,24 @@ measurement, its limits, and the population-collapse behaviour behind it.
 
 A restarted run stays reproducible for a fixed `--seed`; the attempts vary the
 seed deterministically rather than drawing fresh entropy.
+### Crossover count
+
+`--crossover-count N` sets how many crossover offspring MayFly produces per
+iteration. Zero, the default, leaves the library's own scaling alone, which is
+one offspring per population member.
+
+The offspring count is the dominant per-iteration cost, so lowering it lowers
+the evaluation budget proportionally. On the eight-circle base stage at a
+population of 1024, about 64 offspring was statistically indistinguishable from
+the library default while spending 25% fewer evaluations, and cutting it to 2
+was significantly worse. See
+[`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md).
+
+Two caveats. The library draws its mutant pool from the offspring, so a count
+below the mutant count starves mutation rather than merely reducing
+recombination. And an odd count yields one fewer offspring, because the library
+mates pairs. The setting applies to the optimizer stages only, not to polishing
+sweeps, which run their own smaller population.
 
 ## Checkpoints and restart-from-best
 

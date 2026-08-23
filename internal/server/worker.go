@@ -181,6 +181,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 
 	optimizer, err := opt.NewMayflyVariant(string(job.Config.Variant), job.Config.Iters, job.Config.PopSize, seed,
 		opt.WithLogger(slog.Default()), opt.WithEarlyStop(buildEarlyStop(job.Config)),
+		opt.WithCrossoverCount(job.Config.CrossoverCount),
 		parallelEvaluationOption(job.Config, rend))
 	if err != nil {
 		markJobFailed(jm, jobID, err)
