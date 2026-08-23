@@ -40,6 +40,13 @@ take precedence if this document goes stale.
   a single long run, while spending 31% more evaluations per iteration. Read
   this before proposing `aoblmoa` as a default or re-running a variant screen
   that includes it.
+- [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
+  proof-of-concept Dragonfly v0.1.0 adapter measured against MayFly `standard`
+  on the eight-circle base stage. It loses all twelve blocks in every arm,
+  by 431.68 (`t = -16.81`) even when given more evaluations than the baseline,
+  and tripling its restarts moves it only 30 points. Dragonfly stays available
+  as an expert-only alternative; read this before proposing it as a default or
+  re-running the screen against v0.1.0.
 - [`docs/schedule-format.md`](docs/schedule-format.md) — the schedule document
   format, its worked example, and when two campaigns' costs are comparable.
 - [`docs/support-matrix.md`](docs/support-matrix.md),
