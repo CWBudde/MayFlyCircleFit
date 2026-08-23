@@ -197,6 +197,18 @@ Rendering-side invariants live in
   to jobs, checkpoints, `status`, and `checkpoints list`. The checkpoint
   `termination` field is free-form, so new reasons need no schema bump, and
   readers reject a version above 2.
+- **A batch run spends the iterations its configuration asked for, and no
+  more.** Every stage is a full optimizer run, refills included, so an
+  unbudgeted refill is a silent doubling of a run's compute. Two things keep it
+  from happening: a batch that improves the image is retained as the optimizer
+  produced it, so a weak circle the audit would drop no longer leaves a hole
+  that has to be refilled; and a refill of a batch nothing can be kept from is
+  only started while the run's own budget --- its planned stages times the
+  optimizer's iteration cap --- still covers it. An optimizer that does not
+  declare an iteration cap leaves the loop bounded by `MaxExtraBatchStages`
+  alone, as before. A run that stops short reports it in `actualCircles` and
+  `refill_limit`, which is visible, rather than in an iteration count nobody
+  budgeted, which was not.
 - A batch that exhausts its bounded refill attempts reports `refill_limit` and
   remains a completed, continuable result at the number of circles it actually
   materialized. Job status and list resources expose both `requestedCircles`
@@ -446,11 +458,11 @@ read-only, and both refuse to state anything they cannot derive.
 - **The iteration count is the nominal plan, not a prediction and not a
   bound.** It is what the configuration lays out: batch stages times epochs
   times restarts times iterations, plus sweeps times epochs times iterations
-  for a polish stage. Early stopping and convergence detection spend less than it, while a
-  batch stage that leaves circles unplaced may run up to
-  `renderer.MaxExtraBatchStages` residual-refill stages beyond its plan and
-  spend more. Those refills are excluded from the count because most stages
-  never run them, so every place that presents the figure labels it nominal.
+  for a polish stage. Early stopping and convergence detection spend less than
+  it. Nothing spends more: residual-refill stages used to, by a whole stage
+  each, which is what made the arms of two campaigns incomparable, and they are
+  now bounded by the same nominal figure. It remains a plan rather than a
+  prediction because a run may still stop under it.
 - **The finish projection is measured, never modelled.** It divides observed
   stage wall clock by completed stages of the same kind and multiplies by the
   stages of that kind still planned. Kinds are never blended: an extend is

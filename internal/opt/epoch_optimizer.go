@@ -28,6 +28,13 @@ func (o *epochOptimizer) ParallelEvaluationWorkers() int {
 	return ParallelEvaluationWidth(o.base)
 }
 
+// IterationBudget reports what one Run of the whole epoch chain may consume.
+// A wrapper that reported only the inner optimizer's cap would let a pipeline
+// budgeting from it underestimate every invocation by a factor of epochs.
+func (o *epochOptimizer) IterationBudget() int {
+	return o.epochs * StageIterationBudget(o.base)
+}
+
 func (o *epochOptimizer) Run(eval func([]float64) float64, lower, upper []float64, dim int) ([]float64, float64) {
 	if _, ok := o.base.(LifecycleOptimizer); ok {
 		result, err := o.RunContext(

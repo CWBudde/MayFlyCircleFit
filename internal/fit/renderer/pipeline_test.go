@@ -442,7 +442,17 @@ func TestOptimizeBatchRejectsIneffectiveCirclesAfterBoundedRefill(t *testing.T) 
 	}
 }
 
-func TestOptimizeBatchRefillsPrunedSlotsFromResidualSeed(t *testing.T) {
+// TestOptimizeBatchKeepsWeakCirclesRatherThanRefillingThem replaces the check
+// that a stage's weak slots are pruned and refilled from the residual seed.
+// Refilling them is not free: a refill is a whole further optimizer run at the
+// full configured iteration count, so replacing one weak circle doubled what
+// the run spent, silently and only for the runs that happened to produce one.
+// A batch that improves the image is now kept as the optimizer produced it,
+// weak circles included, so the run costs the budget it was given and still
+// produces the circle count its continuations expect.
+func TestOptimizeBatchKeepsWeakCirclesRatherThanRefillingThem(t *testing.T) {
+	t.Parallel()
+
 	const total = 4
 	ref := solidImage(32, 32, color.NRGBA{A: 255})
 	optimizer := &refillSeedOptimizer{}
@@ -453,11 +463,11 @@ func TestOptimizeBatchRefillsPrunedSlotsFromResidualSeed(t *testing.T) {
 	}
 
 	if result.OptimizedCircles != total || len(result.BestParams) != total*paramsPerCircle {
-		t.Fatalf("refilled result has %d circles and %d params", result.OptimizedCircles, len(result.BestParams))
+		t.Fatalf("result has %d circles and %d params", result.OptimizedCircles, len(result.BestParams))
 	}
 
-	if result.Stages != 2 || optimizer.calls != 2 {
-		t.Fatalf("stages/calls = %d/%d, want 2/2", result.Stages, optimizer.calls)
+	if result.Stages != 1 || optimizer.calls != 1 {
+		t.Fatalf("stages/calls = %d/%d, want 1/1", result.Stages, optimizer.calls)
 	}
 
 	for stage, count := range optimizer.mappedParamCounts {
@@ -469,16 +479,23 @@ func TestOptimizeBatchRefillsPrunedSlotsFromResidualSeed(t *testing.T) {
 	if result.Termination != opt.TerminationCompleted {
 		t.Fatalf("termination = %q, want completed", result.Termination)
 	}
-
+	// The audit still has an opinion about those circles; the pipeline reports
+	// it and leaves them in place instead of spending a second budget on them.
 	audit, err := AuditCircleBatch(NewCPURenderer(ref, total), result.BestParams)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	weak := 0
+
 	for _, circle := range audit.Circles {
 		if circle.FinalChangedPixels < 1 || circle.MSEContribution <= minBatchMSEContribution {
-			t.Fatalf("retained weak circle: %#v", circle)
+			weak++
 		}
+	}
+
+	if weak == 0 {
+		t.Fatal("expected the kept batch to still contain the circles the audit called weak")
 	}
 }
 

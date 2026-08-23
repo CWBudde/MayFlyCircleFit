@@ -194,6 +194,21 @@ release is declared by this file.
 
 ### Fixed
 
+- A batch run no longer silently spends two to four times the iterations its
+  configuration asked for. Every batch stage is a full optimizer run at the
+  configured iteration count, refills included, so a stage whose circles the
+  post-stage audit pruned bought that slot back with a second complete budget:
+  `iters: 2048` recorded 4096 iterations and twice the evaluations, as an
+  ordinary `completed` job, with no resume and no second job directory. It fired
+  more often the shorter the run, because a short run produces weaker circles —
+  0% of the 2048-iteration jobs of one campaign against 21% of its 64-iteration
+  jobs — which is what left that campaign's arms holding up to 22% more compute
+  than the arm they were compared against. A batch that improves the image is
+  now kept as the optimizer produced it, weak circles included, so pruning no
+  longer opens a hole that has to be refilled; and a refill of a batch nothing
+  can be kept from runs only while the run's own budget still covers it. A run
+  that stops short reports it where it was always visible, in `actualCircles`
+  and `refill_limit`.
 - Active-set polishing no longer vetoes every sweep on an incrementally grown
   vector. The acceptance gate required every circle in the candidate to be
   useful, which also required a sweep to repair circles outside its active set —

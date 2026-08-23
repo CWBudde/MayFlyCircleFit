@@ -188,6 +188,12 @@ func (m *MayflyAdapter) ParallelEvaluationWorkers() int {
 	return m.parallelWorkers
 }
 
+// IterationBudget reports the iteration cap one run of this adapter consumes.
+// Early stopping can end a run below it; nothing takes it above.
+func (m *MayflyAdapter) IterationBudget() int {
+	return m.maxIters
+}
+
 // parallelEvaluationReporter is implemented by optimizers that can say how many
 // goroutines will call the objective, and by every wrapper around one.
 type parallelEvaluationReporter interface {

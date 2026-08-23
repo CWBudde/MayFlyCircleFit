@@ -90,8 +90,10 @@ The three pipelines have different ownership:
 - **Sequential** retains the accepted canvas and optimizes one new circle per
   stage.
 - **Batch** retains the accepted canvas and optimizes up to `batchSize` new
-  circles, with a smaller final batch and bounded refill attempts when pruning
-  leaves the result short.
+  circles, with a smaller final batch. A batch that improves the image is kept
+  whole, weak circles included; only a batch nothing can be kept from is
+  refilled, and refills draw on the run's own iteration budget rather than
+  minting a further one.
 
 All modes preserve the selected backend and starting canvas. A backend that
 cannot honor a required session capability returns an explicit unsupported

@@ -63,6 +63,12 @@ func (o *progressOptimizer) ParallelEvaluationWorkers() int {
 	return opt.ParallelEvaluationWidth(o.base)
 }
 
+// IterationBudget forwards the wrapped optimizer's iteration cap so the
+// pipeline can budget its stages through this wrapper.
+func (o *progressOptimizer) IterationBudget() int {
+	return opt.StageIterationBudget(o.base)
+}
+
 func (o *progressOptimizer) RunContext(ctx context.Context, problem opt.Problem, options opt.RunOptions) (opt.Result, error) {
 	lifecycle, ok := o.base.(opt.LifecycleOptimizer)
 	if !ok {

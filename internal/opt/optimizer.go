@@ -158,3 +158,25 @@ type ResumableOptimizer interface {
 	//   - Iteration count may reset or continue (implementation-specific)
 	RunWithInitial(initialParams []float64, initialCost float64, eval func([]float64) float64, lower, upper []float64, dim int) ([]float64, float64)
 }
+
+// IterationBudgetOptimizer is implemented by optimizers that can say how many
+// iterations one invocation may consume, and by every wrapper around one.
+type IterationBudgetOptimizer interface {
+	IterationBudget() int
+}
+
+// StageIterationBudget reports the iterations one optimizer invocation may
+// spend, or zero when the optimizer does not declare a cap.
+//
+// A pipeline that runs an optimizer several times needs this to keep its own
+// budget: the iteration count is configured on the optimizer, not passed per
+// run, so without asking there is no way to tell what a further invocation
+// would cost before paying for it.
+func StageIterationBudget(optimizer Optimizer) int {
+	reporter, ok := optimizer.(IterationBudgetOptimizer)
+	if !ok {
+		return 0
+	}
+
+	return max(0, reporter.IterationBudget())
+}
