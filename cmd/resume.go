@@ -161,7 +161,12 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 		return fmt.Errorf("invalid checkpoint configuration: %w", err)
 	}
 
-	warning, err := opt.GuardCheckpointVersion(checkpoint.OptimizerVersion, opt.LibraryVersion(), resumeAllowOptimizerMismatch)
+	warning, err := opt.GuardCheckpointVersion(
+		optimizerLibraryName(checkpoint.Config.ResolvedOptimizer()),
+		checkpoint.OptimizerVersion,
+		optimizerLibraryVersion(checkpoint.Config.ResolvedOptimizer()),
+		resumeAllowOptimizerMismatch,
+	)
 	if err != nil {
 		if errors.Is(err, opt.ErrOptimizerVersionMismatch) {
 			return fmt.Errorf("%w (pass --allow-optimizer-mismatch to resume anyway)", err)
@@ -259,18 +264,22 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 		seed = checkpoint.Config.Seed
 	}
 
-	optimizer, err := opt.NewMayflyVariant(string(checkpoint.Config.Variant), checkpoint.Config.Iters, checkpoint.Config.PopSize, seed,
-		opt.WithLogger(slog.Default()), opt.WithEarlyStop(earlyStopFromConfig(checkpoint.Config)),
-		opt.WithCrossoverCount(checkpoint.Config.CrossoverCount),
-		// A checkpoint written before these knobs existed carries nil for all
-		// three and resumes exactly as it did.
-		opt.OptionalFloat(checkpoint.Config.DanceDamp, opt.WithDanceDamp),
-		opt.OptionalFloat(checkpoint.Config.AquilaWeight, opt.WithAquilaWeight),
-		opt.OptionalFloat(checkpoint.Config.OppositionProbability, opt.WithOppositionProbability),
-		parallelEvaluationOption(checkpoint.Config, rend))
+	// The engine comes from the checkpoint, never from a flag: a run resumes
+	// the optimizer it was produced by, or its cost is not comparable with the
+	// one it continues. A checkpoint written before the field existed carries
+	// no engine and resumes as MayFly, with its advanced knobs nil, exactly as
+	// it did.
+	resumeConfig := checkpoint.Config
+	resumeConfig.EffectiveSeed = seed
+
+	optimizer, err := newStageOptimizer(resumeConfig, rend)
 	if err != nil {
-		return fmt.Errorf("create optimizer: %w", err)
+		return err
 	}
+
+	slog.Info("Resuming with the checkpoint's optimizer",
+		"optimizer", resumeConfig.ResolvedOptimizer(),
+		"optimizerVersion", optimizerLibraryVersion(resumeConfig.ResolvedOptimizer()))
 
 	optimizer = opt.WithRestarts(
 		opt.WithEpochs(optimizer, max(checkpoint.Config.OptimizerEpochs, 1)),

@@ -138,8 +138,9 @@ type Checkpoint struct {
 	ScheduleID string `json:"scheduleId,omitempty"`
 	StageIndex *int   `json:"stageIndex,omitempty"`
 
-	// OptimizerVersion records the MayFly module version that produced this
-	// checkpoint. The optimizer version is a comparability boundary — v0.5.0
+	// OptimizerVersion records the version of the optimizer library that
+	// produced this checkpoint, which is the library Config.Optimizer names.
+	// The optimizer version is a comparability boundary — v0.5.0
 	// scales the crossover offspring count with the population, v0.5.1 restores
 	// blend crossover — so resuming across a bump continues the run under an
 	// algorithm the recorded cost was never measured with. Persisting it lets
@@ -232,11 +233,22 @@ func NewCheckpoint(jobID string, bestParams []float64, bestCost, initialCost flo
 		Iteration:        iteration,
 		Termination:      TerminationUnknown,
 		Timestamp:        time.Now(),
-		OptimizerVersion: opt.LibraryVersion(),
+		OptimizerVersion: optimizerVersion(config),
 		Config:           config,
 	}
 
 	return &checkpoint
+}
+
+// optimizerVersion reports the version of the library the configuration's
+// engine runs with, so a checkpoint records the optimizer that actually
+// produced it rather than MayFly's version unconditionally.
+func optimizerVersion(config JobConfig) string {
+	if config.ResolvedOptimizer() == app.OptimizerDragonfly {
+		return opt.DragonflyLibraryVersion()
+	}
+
+	return opt.LibraryVersion()
 }
 
 // ToInfo converts a full Checkpoint to CheckpointInfo (metadata only).

@@ -220,6 +220,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		State:                    string(job.State),
 		RefPath:                  job.Config.RefPath,
 		Mode:                     string(job.Config.Mode),
+		Optimizer:                string(job.Config.ResolvedOptimizer()),
 		Variant:                  string(job.Config.Variant),
 		EvaluationWorkers:        job.EvaluationWidth,
 		FastCompositing:          job.Config.FastCompositing,

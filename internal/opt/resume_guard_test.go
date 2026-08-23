@@ -78,7 +78,7 @@ func TestGuardCheckpointVersion(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			warning, err := GuardCheckpointVersion(testCase.recorded, testCase.running, testCase.allowMismatch)
+			warning, err := GuardCheckpointVersion("MayFly", testCase.recorded, testCase.running, testCase.allowMismatch)
 
 			if testCase.wantRefusal {
 				if !errors.Is(err, ErrOptimizerVersionMismatch) {

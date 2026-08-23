@@ -37,16 +37,31 @@ behavior is production-ready.
 
 ## Rendering and optimization
 
-- The Dragonfly optimizer is a proof of concept. It is reachable only through
-  `run --optimizer dragonfly`; `serve`, `resume`, the schedule format, and the
-  web UI are MayFly-only, and no checkpoint records which library produced a
-  cost, so a resumed run silently becomes a MayFly run. Naming `--variant`,
-  `--crossover-count`, `--dance-damp`, `--aquila-weight`,
-  `--opposition-probability`, `--parallel-evaluation`, or `--polishing`
-  alongside it is refused rather than ignored. Its published behavior is to
-  explore well and exploit poorly -- the convergence factor reaches zero at the
-  halfway point of a run -- so a worse fit than MayFly is the expected outcome,
-  and no measurement of it has been taken.
+- The Dragonfly optimizer is a proof of concept. It is selected with
+  `"optimizer": "dragonfly"` — the `run --optimizer` flag, the `optimizer` field
+  of a job payload, or a schedule document's `base` — and an absent field means
+  `mayfly`, which is what every configuration and checkpoint written before the
+  field existed carries.
+
+  The resume gap this entry used to record is closed: a checkpoint stores the
+  engine in `config.optimizer` and records that engine's library version in
+  `optimizerVersion`, and both the CLI and the server resume the engine the
+  checkpoint names rather than the one a flag asks for. A resumed run can no
+  longer silently change optimizer.
+
+  What Dragonfly still does not support: `variant`, `crossoverCount`,
+  `danceDamp`, `aquilaWeight`, `oppositionProbability`, and polishing. Setting
+  any of them alongside it is refused — a usage error from the CLI, an
+  `invalid_config` envelope from the API, and a parse failure for a schedule
+  whose steps include a `polish` — rather than accepted and ignored.
+  `parallelEvaluation` and `evaluationWorkers` are supported and behave as they
+  do for MayFly: reproducible for a fixed seed, but not identical to a serial
+  run of the same seed.
+
+  Its published behavior is to explore well and exploit poorly -- the
+  convergence factor reaches zero at the halfway point of a run -- so a worse
+  fit than MayFly is the expected outcome, and no measurement of it has been
+  taken.
 
 - CPU and OpenCL support joint, sequential, and batch pipelines; only CPU
   supports custom base canvases. Staged OpenCL modes replay all retained circles

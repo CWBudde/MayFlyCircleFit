@@ -20,6 +20,11 @@ var ErrOptimizerVersionMismatch = errors.New("optimizer version mismatch")
 // GuardCheckpointVersion decides whether a checkpoint that recorded optimizer
 // version recorded may be resumed by a build linking optimizer version running.
 //
+// library names the optimizer both versions belong to, so a checkpoint written
+// by an engine other than MayFly is not described as a MayFly one. An empty
+// name reads as MayFly, which is what every caller predating a second engine
+// meant.
+//
 // The running version is a parameter rather than a LibraryVersion call so the
 // decision stays a pure function: a test binary carries no module information,
 // so a guard that read the version itself could only ever exercise its unknown
@@ -38,9 +43,14 @@ var ErrOptimizerVersionMismatch = errors.New("optimizer version mismatch")
 // A checkpoint whose version is absent is never refused. Every checkpoint
 // written before this guard existed is in that state, so refusing them would
 // strand every campaign already on disk.
-func GuardCheckpointVersion(recorded, running string, allowMismatch bool) (string, error) {
+func GuardCheckpointVersion(library, recorded, running string, allowMismatch bool) (string, error) {
 	recorded = strings.TrimSpace(recorded)
 	running = strings.TrimSpace(running)
+
+	library = strings.TrimSpace(library)
+	if library == "" {
+		library = "MayFly"
+	}
 
 	if running == "" {
 		running = unknownLibraryVersion
@@ -49,25 +59,28 @@ func GuardCheckpointVersion(recorded, running string, allowMismatch bool) (strin
 	switch {
 	case recorded == "" || recorded == unknownLibraryVersion:
 		return fmt.Sprintf(
-			"checkpoint records no optimizer version; resuming it under MayFly %s, whose costs may not be comparable with the recorded ones",
-			running,
+			"checkpoint records no optimizer version; resuming it under %s %s, "+
+				"whose costs may not be comparable with the recorded ones",
+			library, running,
 		), nil
 	case running == unknownLibraryVersion:
 		return fmt.Sprintf(
-			"this build reports no optimizer version, so a checkpoint written by MayFly %s cannot be verified against it",
-			recorded,
+			"this build reports no optimizer version, so a checkpoint written by %s %s cannot be verified against it",
+			library, recorded,
 		), nil
 	case recorded == running:
 		return "", nil
 	case allowMismatch:
 		return fmt.Sprintf(
-			"resuming a checkpoint written by MayFly %s under MayFly %s; the resulting cost is not comparable with the recorded one",
-			recorded, running,
+			"resuming a checkpoint written by %s %s under %s %s; the resulting cost is not comparable with the recorded one",
+			library, recorded, library, running,
 		), nil
 	default:
 		return "", fmt.Errorf(
-			"%w: checkpoint was written by MayFly %s but this build links MayFly %s, and costs across that boundary are not comparable; re-baseline the run, or override the check to resume anyway",
-			ErrOptimizerVersionMismatch, recorded, running,
+			"%w: checkpoint was written by %s %s but this build links %s %s, "+
+				"and costs across that boundary are not comparable; "+
+				"re-baseline the run, or override the check to resume anyway",
+			ErrOptimizerVersionMismatch, library, recorded, library, running,
 		)
 	}
 }

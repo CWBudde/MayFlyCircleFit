@@ -185,15 +185,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		seed = job.Config.Seed
 	}
 
-	optimizer, err := opt.NewMayflyVariant(string(job.Config.Variant), job.Config.Iters, job.Config.PopSize, seed,
-		opt.WithLogger(slog.Default()), opt.WithEarlyStop(buildEarlyStop(job.Config)),
-		opt.WithCrossoverCount(job.Config.CrossoverCount),
-		// Optimizer stages only. Polishing below runs its own smaller
-		// standard-variant population and is deliberately left alone.
-		opt.OptionalFloat(job.Config.DanceDamp, opt.WithDanceDamp),
-		opt.OptionalFloat(job.Config.AquilaWeight, opt.WithAquilaWeight),
-		opt.OptionalFloat(job.Config.OppositionProbability, opt.WithOppositionProbability),
-		parallelEvaluationOption(job.Config, rend))
+	optimizer, err := newStageOptimizer(job.Config, rend, seed)
 	if err != nil {
 		markJobFailed(jm, jobID, err)
 		return err
@@ -868,6 +860,61 @@ func completedCheckpointTermination(termination string) bool {
 // parallelEvaluationOption derives the optimizer option from what the renderer
 // can actually deliver and warns when an explicit request cannot be honored,
 // which is the case for every backend without independent sessions.
+// newStageOptimizer builds the optimizer a job's stages run with.
+//
+// It is the server's half of a decision cmd/run.go makes in its own
+// newStageOptimizer; the two must agree on which engine a configuration names,
+// because a job resumed from the CLI has to run what the server ran. Nothing
+// here refuses a MayFly-only setting: app.JobConfig.Validate already did, so a
+// Dragonfly configuration reaching this point carries no variant, no advanced
+// MayFly knob and no polishing.
+//
+// An empty optimizer is MayFly. That is what every checkpoint and job payload
+// written before the field existed carries, and they must keep running exactly
+// as they did.
+func newStageOptimizer(config store.JobConfig, rend renderer.Renderer, seed int64) (opt.Optimizer, error) {
+	if config.ResolvedOptimizer() == app.OptimizerDragonfly {
+		return newDragonflyOptimizer(config, rend, seed), nil
+	}
+
+	optimizer, err := opt.NewMayflyVariant(string(config.Variant), config.Iters, config.PopSize, seed,
+		opt.WithLogger(slog.Default()), opt.WithEarlyStop(buildEarlyStop(config)),
+		opt.WithCrossoverCount(config.CrossoverCount),
+		// Optimizer stages only. Polishing runs its own smaller
+		// standard-variant population and is deliberately left alone.
+		opt.OptionalFloat(config.DanceDamp, opt.WithDanceDamp),
+		opt.OptionalFloat(config.AquilaWeight, opt.WithAquilaWeight),
+		opt.OptionalFloat(config.OppositionProbability, opt.WithOppositionProbability),
+		parallelEvaluationOption(config, rend))
+	if err != nil {
+		return nil, fmt.Errorf("create optimizer: %w", err)
+	}
+
+	return optimizer, nil
+}
+
+// newDragonflyOptimizer builds the proof-of-concept Dragonfly adapter. It
+// carries the iteration cap, population, seed, logging, optimizer-level early
+// stopping and parallel evaluation across, and nothing else.
+func newDragonflyOptimizer(config store.JobConfig, rend renderer.Renderer, seed int64) opt.Optimizer {
+	options := []opt.DragonflyOption{
+		opt.WithDragonflyLogger(slog.Default()),
+		opt.WithDragonflyEarlyStop(buildEarlyStop(config)),
+	}
+
+	width, granted := renderer.ParallelEvaluationWidth(rend, config.ParallelEvaluation)
+	if granted {
+		options = append(options, opt.WithDragonflyParallelEvaluation(width))
+	}
+
+	if config.ParallelEvaluation && !granted {
+		slog.Warn("Parallel evaluation requested but unavailable; evaluating serially",
+			"backend", config.Backend, "evaluationWorkers", config.EvaluationWorkers)
+	}
+
+	return opt.NewDragonfly(config.Iters, config.PopSize, seed, options...)
+}
+
 func parallelEvaluationOption(config store.JobConfig, rend renderer.Renderer) opt.MayflyOption {
 	option, enabled := renderer.ParallelEvaluationOption(rend, config.ParallelEvaluation)
 	if config.ParallelEvaluation && !enabled {

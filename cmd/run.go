@@ -77,10 +77,11 @@ func init() {
 	runCmd.Flags().StringVar(&outPath, "out", "out.png", "Output image path")
 	runCmd.Flags().StringVar(&mode, "mode", "joint", "Optimization mode: joint, sequential, batch")
 	runCmd.Flags().StringVar(&backendName, "backend", "cpu", "Renderer backend to use (cpu, opencl; aliases: gpu, cl)")
-	runCmd.Flags().StringVar(&variantName, "variant", "standard", "MayFly algorithm variant: standard, desma, olce, eobbma, gsasma, mpma, aoblmoa")
-	runCmd.Flags().StringVar(&optimizerName, "optimizer", optimizerMayfly,
+	runCmd.Flags().StringVar(&variantName, "variant", "standard",
+		"MayFly algorithm variant: standard, desma, olce, eobbma, gsasma, mpma, aoblmoa (MayFly only)")
+	runCmd.Flags().StringVar(&optimizerName, "optimizer", string(app.OptimizerMayfly),
 		"Optimizer library: mayfly, or dragonfly (an experimental proof of concept; "+
-			"see newStageOptimizer for what it does not support)")
+			"see docs/known-limitations.md for what it does not support)")
 	runCmd.Flags().IntVar(&circles, "circles", 10, "Number of circles")
 	runCmd.Flags().IntVar(&iters, "iters", 100, "Max iterations")
 	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
@@ -166,91 +167,105 @@ func earlyStopFromConfig(config app.JobConfig) opt.Stop {
 	}
 }
 
-// Optimizer library names accepted by --optimizer.
-const (
-	optimizerMayfly    = "mayfly"
-	optimizerDragonfly = "dragonfly"
-)
-
-// mayflyOnlyFlags configure behavior the Dragonfly proof of concept has no
-// equivalent for. Naming one alongside --optimizer=dragonfly is refused rather
-// than ignored, because a silently dropped knob looks like a measurement.
-var mayflyOnlyFlags = []string{
-	"variant",
-	"crossover-count",
-	"dance-damp",
-	"aquila-weight",
-	"opposition-probability",
-	"parallel-evaluation",
-	"polishing",
-}
-
-// newStageOptimizer builds the optimizer the pipeline stages run with.
+// newStageOptimizer builds the optimizer the pipeline stages run with, for a
+// configuration that has already been normalized and validated.
 //
-// The Dragonfly branch is a proof of concept. It carries the iteration cap,
-// population, seed, logging and optimizer-level early stopping across, and
-// nothing else: no Mayfly variant, no advanced Mayfly parameters, no parallel
-// evaluation, and no polishing stage. Nothing else in the application can
-// select it -- serve, resume and the schedule format are Mayfly-only, and no
-// checkpoint records which library produced a cost.
-func newStageOptimizer(
-	cmd *cobra.Command,
-	library string,
-	config app.JobConfig,
-	rend renderer.Renderer,
-) (opt.Optimizer, error) {
-	switch library {
-	case optimizerMayfly:
-		optimizer, err := opt.NewMayflyVariant(string(config.Variant), config.Iters, config.PopSize, config.EffectiveSeed,
-			opt.WithLogger(slog.Default()), opt.WithEarlyStop(earlyStopFromConfig(config)),
-			opt.WithCrossoverCount(config.CrossoverCount),
-			// Optimizer stages only. Polishing below runs its own smaller
-			// standard-variant population and is deliberately left alone.
-			opt.OptionalFloat(config.DanceDamp, opt.WithDanceDamp),
-			opt.OptionalFloat(config.AquilaWeight, opt.WithAquilaWeight),
-			opt.OptionalFloat(config.OppositionProbability, opt.WithOppositionProbability),
-			parallelEvaluationOption(config, rend))
-		if err != nil {
-			return nil, fmt.Errorf("create optimizer: %w", err)
-		}
-
-		return optimizer, nil
-	case optimizerDragonfly:
-		for _, name := range mayflyOnlyFlags {
-			if cmd != nil && cmd.Flags().Changed(name) {
-				return nil, NewUsageError(fmt.Errorf("--%s is not supported by the experimental dragonfly optimizer", name))
-			}
-		}
-
-		return opt.NewDragonfly(config.Iters, config.PopSize, config.EffectiveSeed,
-			opt.WithDragonflyLogger(slog.Default()),
-			opt.WithDragonflyEarlyStop(earlyStopFromConfig(config))), nil
-	default:
-		return nil, NewUsageError(fmt.Errorf("unknown optimizer %q (mayfly, dragonfly)", library))
+// It is the CLI's half of a decision the server makes in
+// internal/server/worker.go; the two must agree on which engine a
+// configuration names. Nothing here refuses a MayFly-only setting, because
+// app.JobConfig.Validate already did: a Dragonfly configuration that reached
+// this point carries no variant, no advanced MayFly knob and no polishing.
+//
+// An empty optimizer is MayFly, which is what a checkpoint written before the
+// field existed carries, so resume keeps working unchanged.
+func newStageOptimizer(config app.JobConfig, rend renderer.Renderer) (opt.Optimizer, error) {
+	seed := config.EffectiveSeed
+	if seed == 0 {
+		seed = config.Seed
 	}
+
+	if config.ResolvedOptimizer() == app.OptimizerDragonfly {
+		return newDragonflyOptimizer(config, rend, seed), nil
+	}
+
+	optimizer, err := opt.NewMayflyVariant(string(config.Variant), config.Iters, config.PopSize, seed,
+		opt.WithLogger(slog.Default()), opt.WithEarlyStop(earlyStopFromConfig(config)),
+		opt.WithCrossoverCount(config.CrossoverCount),
+		// Optimizer stages only. Polishing runs its own smaller
+		// standard-variant population and is deliberately left alone.
+		opt.OptionalFloat(config.DanceDamp, opt.WithDanceDamp),
+		opt.OptionalFloat(config.AquilaWeight, opt.WithAquilaWeight),
+		opt.OptionalFloat(config.OppositionProbability, opt.WithOppositionProbability),
+		parallelEvaluationOption(config, rend))
+	if err != nil {
+		return nil, fmt.Errorf("create optimizer: %w", err)
+	}
+
+	return optimizer, nil
 }
 
-// parseOptimizerFlag canonicalizes the --optimizer value. An empty value keeps
-// the historical Mayfly default.
-func parseOptimizerFlag(name string) (string, error) {
-	switch name {
-	case "", optimizerMayfly:
-		return optimizerMayfly, nil
-	case optimizerDragonfly:
-		return optimizerDragonfly, nil
-	default:
-		return "", fmt.Errorf("unknown optimizer %q (mayfly, dragonfly)", name)
+// newDragonflyOptimizer builds the proof-of-concept Dragonfly adapter. It
+// carries the iteration cap, population, seed, logging, optimizer-level early
+// stopping and parallel evaluation across, and nothing else.
+func newDragonflyOptimizer(config app.JobConfig, rend renderer.Renderer, seed int64) opt.Optimizer {
+	options := []opt.DragonflyOption{
+		opt.WithDragonflyLogger(slog.Default()),
+		opt.WithDragonflyEarlyStop(earlyStopFromConfig(config)),
 	}
+
+	width, granted := renderer.ParallelEvaluationWidth(rend, config.ParallelEvaluation)
+	if granted {
+		options = append(options, opt.WithDragonflyParallelEvaluation(width))
+	}
+
+	if config.ParallelEvaluation && !granted {
+		slog.Warn("Parallel evaluation requested but unavailable; evaluating serially",
+			"backend", config.Backend, "evaluationWorkers", config.EvaluationWorkers)
+	}
+
+	return opt.NewDragonfly(config.Iters, config.PopSize, seed, options...)
 }
 
 // optimizerLibraryVersion reports the compiled-in version of the library that
 // will actually run.
-func optimizerLibraryVersion(library string) string {
-	if library == optimizerDragonfly {
+func optimizerLibraryVersion(optimizer app.Optimizer) string {
+	if optimizer == app.OptimizerDragonfly {
 		return opt.DragonflyLibraryVersion()
 	}
 
 	return opt.LibraryVersion()
+}
+
+// optimizerLibraryName reports the human-readable library name used in
+// operator-facing messages, so a Dragonfly checkpoint is never described as a
+// MayFly one.
+func optimizerLibraryName(optimizer app.Optimizer) string {
+	if optimizer == app.OptimizerDragonfly {
+		return "Dragonfly"
+	}
+
+	return "MayFly"
+}
+
+// variantFlag reports the MayFly variant a configuration should carry.
+//
+// The flag has a MayFly default, and an engine without variants must not
+// inherit it: an unnamed flag has to reach the configuration empty so
+// validation can tell "no variant was asked for" from "a variant was asked for
+// and this engine cannot honor it".
+func variantFlag(cmd *cobra.Command, optimizer, name string) app.Variant {
+	if optimizer != string(app.OptimizerMayfly) && optimizer != "" && !flagChanged(cmd, "variant") {
+		return ""
+	}
+
+	return app.Variant(name)
+}
+
+// flagChanged reports whether the operator named a flag. A nil command is how
+// the validation tests drive these paths without parsing flags; nothing was
+// named there, which is exactly what nil means.
+func flagChanged(cmd *cobra.Command, name string) bool {
+	return cmd != nil && cmd.Flags().Changed(name)
 }
 
 // floatFlag reports an advanced float flag as a pointer, yielding nil when the
@@ -260,9 +275,7 @@ func optimizerLibraryVersion(library string) string {
 // setting for each of these, so only whether the flag was written can
 // distinguish an explicit zero from an absent one.
 func floatFlag(cmd *cobra.Command, name string, value float64) *float64 {
-	// A nil command is how the validation tests drive this path without
-	// parsing flags. Nothing was named there, which is exactly what nil means.
-	if cmd == nil || !cmd.Flags().Changed(name) {
+	if !flagChanged(cmd, name) {
 		return nil
 	}
 
@@ -277,17 +290,13 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		return NewUsageError(fmt.Errorf("invalid backend: %w", err))
 	}
 
-	optimizerLibrary, err := parseOptimizerFlag(optimizerName)
-	if err != nil {
-		return NewUsageError(err)
-	}
-
 	config, err := app.Normalize(app.JobConfig{
 		RefPath:                  refPath,
 		CanvasPath:               canvasPath,
 		Mode:                     app.Mode(mode),
 		Backend:                  backend,
-		Variant:                  app.Variant(variantName),
+		Optimizer:                app.Optimizer(optimizerName),
+		Variant:                  variantFlag(cmd, optimizerName, variantName),
 		Circles:                  circles,
 		Iters:                    iters,
 		PopSize:                  popSize,
@@ -385,7 +394,8 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	// no checkpoint records either.
 	slog.Info("Starting optimization", "mode", config.Mode, "circles", config.Circles,
 		"iters", config.Iters, "backend", config.Backend, "seed", config.EffectiveSeed,
-		"optimizer", optimizerLibrary, "optimizerVersion", optimizerLibraryVersion(optimizerLibrary))
+		"optimizer", config.ResolvedOptimizer(),
+		"optimizerVersion", optimizerLibraryVersion(config.ResolvedOptimizer()))
 
 	// Load reference image
 	f, err := os.Open(refPath)
@@ -487,7 +497,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	defer cleanup()
 
 	// Create optimizer
-	optimizer, err := newStageOptimizer(cmd, optimizerLibrary, config, rend)
+	optimizer, err := newStageOptimizer(config, rend)
 	if err != nil {
 		return err
 	}
