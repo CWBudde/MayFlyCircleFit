@@ -2,6 +2,7 @@ package opt
 
 import (
 	"context"
+	"errors"
 	"math"
 	"testing"
 )
@@ -231,5 +232,115 @@ func TestWithRestartsComposesWithEpochsWithoutSeedAliasing(t *testing.T) {
 		}
 
 		seen[k] = true
+	}
+}
+
+// With epochs nested inside attempts the inner optimizer owns the boundaries.
+// They have to reach the caller: the server persists a checkpoint per boundary,
+// and swallowing them until the whole epoch chain finished would drop every
+// intermediate checkpoint of an attempt.
+func TestWithRestartsForwardsNestedEpochBoundaries(t *testing.T) {
+	base := &recordingOptimizer{costs: []float64{9, 8, 7, 6}, iterations: 5}
+
+	var boundaries []EpochBoundary
+
+	_, err := WithRestarts(WithEpochs(base, 2), 2).(LifecycleOptimizer).RunContext(
+		context.Background(), Problem{},
+		RunOptions{EpochObserver: func(b EpochBoundary) error {
+			boundaries = append(boundaries, b)
+			return nil
+		}},
+	)
+	if err != nil {
+		t.Fatalf("RunContext: %v", err)
+	}
+
+	if len(boundaries) != 4 {
+		t.Fatalf("reported %d boundaries, want 4 (2 attempts x 2 epochs)", len(boundaries))
+	}
+
+	wantCosts := []float64{9, 8, 7, 6}
+	for i, boundary := range boundaries {
+		if boundary.Epoch != i+1 {
+			t.Fatalf("boundary %d numbered %d; the count runs across attempts and must not restart",
+				i+1, boundary.Epoch)
+		}
+
+		if boundary.Progress.BestCost != wantCosts[i] {
+			t.Fatalf("boundary %d cost = %v, want %v", i+1, boundary.Progress.BestCost, wantCosts[i])
+		}
+
+		if boundary.Progress.Iterations != 5*(i+1) || boundary.Progress.Evaluations != 100*(i+1) {
+			t.Fatalf("boundary %d work = %d/%d, want %d/%d accumulated across attempts",
+				i+1, boundary.Progress.Iterations, boundary.Progress.Evaluations, 5*(i+1), 100*(i+1))
+		}
+	}
+}
+
+// A fresh attempt's early epochs are worse than what an earlier attempt already
+// reached, and an observer that persists them must not be handed that
+// regression.
+func TestWithRestartsNestedBoundariesCarryTheRunningBest(t *testing.T) {
+	base := &recordingOptimizer{costs: []float64{3, 4, 10, 5}, iterations: 5}
+
+	var boundaries []EpochBoundary
+
+	_, err := WithRestarts(WithEpochs(base, 2), 2).(LifecycleOptimizer).RunContext(
+		context.Background(), Problem{},
+		RunOptions{EpochObserver: func(b EpochBoundary) error {
+			boundaries = append(boundaries, b)
+			return nil
+		}},
+	)
+	if err != nil {
+		t.Fatalf("RunContext: %v", err)
+	}
+
+	if len(boundaries) != 4 {
+		t.Fatalf("reported %d boundaries, want 4", len(boundaries))
+	}
+
+	for i, boundary := range boundaries {
+		if boundary.Progress.BestCost != 3 {
+			t.Fatalf("boundary %d cost = %v, want the running best 3", i+1, boundary.Progress.BestCost)
+		}
+
+		if len(boundary.Progress.BestParams) != 1 || boundary.Progress.BestParams[0] != 3 {
+			t.Fatalf("boundary %d params = %v, want the running best candidate [3]",
+				i+1, boundary.Progress.BestParams)
+		}
+	}
+}
+
+// The documented contract: an observer error aborts the remaining work, so a
+// persistence failure cannot be silently ignored for the rest of the run.
+func TestWithRestartsNestedBoundaryErrorAborts(t *testing.T) {
+	base := &recordingOptimizer{costs: []float64{9, 8, 7, 6}, iterations: 5}
+	failure := errors.New("checkpoint failed")
+
+	calls := 0
+
+	_, err := WithRestarts(WithEpochs(base, 2), 2).(LifecycleOptimizer).RunContext(
+		context.Background(), Problem{},
+		RunOptions{EpochObserver: func(EpochBoundary) error {
+			calls++
+			if calls == 2 {
+				return failure
+			}
+
+			return nil
+		}},
+	)
+
+	if !errors.Is(err, failure) {
+		t.Fatalf("RunContext error = %v, want the observer's error", err)
+	}
+
+	if calls != 2 {
+		t.Fatalf("observer ran %d times, want 2; the error must abort the remaining epochs", calls)
+	}
+
+	if len(base.seen) != 2 {
+		t.Fatalf("ran %d underlying runs after the abort, want 2", len(base.seen))
 	}
 }

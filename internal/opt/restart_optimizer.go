@@ -71,6 +71,19 @@ func (o *restartOptimizer) RunContext(ctx context.Context, problem Problem, opti
 	totalIterations := 0
 	totalEvaluations := 0
 	best := Result{BestCost: math.Inf(1), Termination: TerminationCompleted}
+	// boundaryBest is the best candidate any epoch boundary has already
+	// carried. It is tracked separately from best because epochs nested inside
+	// an attempt report boundaries before that attempt has finished, so best
+	// is not yet up to date when they do.
+	boundaryBest := Candidate{Cost: math.Inf(1)}
+	// Boundaries are numbered by one counter that runs over the whole set of
+	// attempts instead of restarting at one per attempt. An observer that
+	// persists a checkpoint per boundary would otherwise see the epoch number
+	// jump back to 1 with every attempt and read as if the run had gone
+	// backwards. With epochs nested inside attempts the sequence is therefore
+	// 1..epochs for the first attempt, epochs+1..2*epochs for the second, and
+	// so on.
+	boundaryCount := 0
 
 	for attempt := range o.restarts {
 		iterationOffset := totalIterations
@@ -109,6 +122,24 @@ func (o *restartOptimizer) RunContext(ctx context.Context, problem Problem, opti
 			}
 		}
 
+		reportedInnerBoundary := false
+
+		if options.EpochObserver != nil {
+			// Forward the nested optimizer's per-epoch boundaries instead of
+			// swallowing them. Without this the caller's observer -- for the
+			// server, the checkpoint writer -- would only run once the entire
+			// epoch chain of an attempt had finished, dropping the durable
+			// checkpoint every epoch is supposed to leave behind and
+			// postponing the abort a persistence error is meant to trigger.
+			attemptOptions.EpochObserver = func(boundary EpochBoundary) error {
+				reportedInnerBoundary = true
+				boundary.Progress.Iterations += iterationOffset
+				boundary.Progress.Evaluations += evaluationOffset
+
+				return reportBoundary(options.EpochObserver, &boundaryCount, &boundaryBest, boundary)
+			}
+		}
+
 		result, err := lifecycle.RunContext(ctx, problem, attemptOptions)
 		totalIterations += result.Iterations
 		totalEvaluations += result.Evaluations
@@ -124,10 +155,13 @@ func (o *restartOptimizer) RunContext(ctx context.Context, problem Problem, opti
 			return best, err
 		}
 
-		if options.EpochObserver != nil {
-			// The boundary carries the running best, not this attempt's
-			// result. An observer that persists a checkpoint must never be
-			// handed a worse candidate than one it has already stored.
+		if options.EpochObserver != nil && !reportedInnerBoundary {
+			// A nested epoch optimizer reports one boundary per epoch, and the
+			// last of those already carries the attempt's complete cumulative
+			// work and the running best, so a second report here would
+			// duplicate it. The outer boundary therefore fires only for an
+			// attempt whose inner optimizer reported none of its own -- the
+			// epochs == 1 case, where the attempt itself is the boundary.
 			progress := Progress{
 				Iterations:  totalIterations,
 				Evaluations: totalEvaluations,
@@ -138,12 +172,8 @@ func (o *restartOptimizer) RunContext(ctx context.Context, problem Problem, opti
 				progress = options.ProgressMapper(progress)
 			}
 
-			err := options.EpochObserver(EpochBoundary{
-				Epoch:       attempt + 1,
-				Progress:    progress,
-				Termination: result.Termination,
-			})
-			if err != nil {
+			boundary := EpochBoundary{Progress: progress, Termination: result.Termination}
+			if err := reportBoundary(options.EpochObserver, &boundaryCount, &boundaryBest, boundary); err != nil {
 				return best, err
 			}
 		}
@@ -158,4 +188,24 @@ func (o *restartOptimizer) RunContext(ctx context.Context, problem Problem, opti
 	best.Termination = TerminationCompleted
 
 	return best, nil
+}
+
+// reportBoundary numbers a boundary from the run-wide counter, clamps it to the
+// best candidate any earlier boundary already carried, and hands it to the
+// caller's observer. Clamping is what keeps the contract that an observer
+// persisting a checkpoint is never handed a regression: a fresh attempt's early
+// epochs are far worse than what an earlier attempt already reached.
+func reportBoundary(observer EpochObserver, count *int, running *Candidate, boundary EpochBoundary) error {
+	if boundary.Progress.BestCost < running.Cost {
+		running.Cost = boundary.Progress.BestCost
+		running.Params = append([]float64(nil), boundary.Progress.BestParams...)
+	} else {
+		boundary.Progress.BestCost = running.Cost
+		boundary.Progress.BestParams = append([]float64(nil), running.Params...)
+	}
+
+	*count++
+	boundary.Epoch = *count
+
+	return observer(boundary)
 }
