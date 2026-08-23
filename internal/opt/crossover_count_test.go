@@ -1,9 +1,11 @@
-package opt
+package opt_test
 
 import (
 	"context"
 	"math"
 	"testing"
+
+	"github.com/cwbudde/mayflycirclefit/internal/opt"
 )
 
 // crossoverRastrigin is a local multimodal objective. It is deliberately not
@@ -17,7 +19,7 @@ func crossoverRastrigin(x []float64) float64 {
 	return total
 }
 
-func crossoverProblem(dim int) Problem {
+func crossoverProblem(dim int) opt.Problem {
 	lower := make([]float64, dim)
 	upper := make([]float64, dim)
 
@@ -25,17 +27,29 @@ func crossoverProblem(dim int) Problem {
 		lower[i], upper[i] = -5.12, 5.12
 	}
 
-	return Problem{Eval: crossoverRastrigin, Lower: lower, Upper: upper, Dim: dim}
+	return opt.Problem{Eval: crossoverRastrigin, Lower: lower, Upper: upper, Dim: dim}
+}
+
+func crossoverOptimizer(t *testing.T, options ...opt.MayflyOption) opt.LifecycleOptimizer {
+	t.Helper()
+
+	optimizer, ok := opt.NewMayfly(10, 40, 3, options...).(opt.LifecycleOptimizer)
+	if !ok {
+		t.Fatal("NewMayfly did not return a LifecycleOptimizer")
+	}
+
+	return optimizer
 }
 
 // The offspring count is the dominant per-iteration cost, so a lower count has
 // to show up as fewer evaluations. This is what proves the option reaches the
 // library rather than being silently dropped.
 func TestCrossoverCountChangesTheEvaluationBudget(t *testing.T) {
-	run := func(count int) int {
-		optimizer := NewMayfly(10, 40, 3, WithCrossoverCount(count)).(LifecycleOptimizer)
+	t.Parallel()
 
-		result, err := optimizer.RunContext(context.Background(), crossoverProblem(4), RunOptions{})
+	run := func(count int) int {
+		result, err := crossoverOptimizer(t, opt.WithCrossoverCount(count)).
+			RunContext(context.Background(), crossoverProblem(4), opt.RunOptions{})
 		if err != nil {
 			t.Fatalf("RunContext: %v", err)
 		}
@@ -53,10 +67,11 @@ func TestCrossoverCountChangesTheEvaluationBudget(t *testing.T) {
 }
 
 func TestCrossoverCountZeroLeavesTheLibraryDefault(t *testing.T) {
-	run := func(options ...MayflyOption) float64 {
-		optimizer := NewMayfly(10, 40, 3, options...).(LifecycleOptimizer)
+	t.Parallel()
 
-		result, err := optimizer.RunContext(context.Background(), crossoverProblem(4), RunOptions{})
+	run := func(options ...opt.MayflyOption) float64 {
+		result, err := crossoverOptimizer(t, options...).
+			RunContext(context.Background(), crossoverProblem(4), opt.RunOptions{})
 		if err != nil {
 			t.Fatalf("RunContext: %v", err)
 		}
@@ -64,7 +79,7 @@ func TestCrossoverCountZeroLeavesTheLibraryDefault(t *testing.T) {
 		return result.BestCost
 	}
 
-	if withZero, without := run(WithCrossoverCount(0)), run(); withZero != without {
+	if withZero, without := run(opt.WithCrossoverCount(0)), run(); withZero != without {
 		t.Fatalf("crossover count 0 changed the run: %v versus %v", withZero, without)
 	}
 }

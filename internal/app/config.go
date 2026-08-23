@@ -642,7 +642,8 @@ func (c JobConfig) Validate() error {
 	// do that from an empty one. The upper bound is what mating can consume:
 	// the library forms pairs from the male and female populations.
 	if c.CrossoverCount != 0 && (c.CrossoverCount < 2 || c.CrossoverCount > 2*c.PopSize) {
-		return invalid("crossoverCount", fmt.Sprintf("must be 0 to use the library default, or between 2 and %d", 2*c.PopSize))
+		return invalid("crossoverCount",
+			fmt.Sprintf("must be 0 to use the library default, or between 2 and %d", 2*c.PopSize))
 	}
 
 	if c.BatchSize < 1 || c.BatchSize > MaxBatchSize || c.Mode == ModeBatch && c.BatchSize > c.Circles {

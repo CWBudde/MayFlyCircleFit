@@ -79,7 +79,8 @@ func init() {
 	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
 	runCmd.Flags().IntVar(&optimizerEpochs, "optimizer-epochs", 1, "Optimizer runs per stage, reseeding each continuation from the best result")
 	runCmd.Flags().IntVar(&optimizerRestarts, "restarts", 1, "Independent cold attempts per optimizer run, keeping the best. Unlike --optimizer-epochs this does not reseed from the previous best, so each attempt explores from a fresh population")
-	runCmd.Flags().IntVar(&crossoverCount, "crossover-count", 0, "MayFly crossover offspring per iteration (0 uses the library default of one per population member)")
+	runCmd.Flags().IntVar(&crossoverCount, "crossover-count", 0,
+		"MayFly crossover offspring per iteration (0 uses the library default of one per population member)")
 	runCmd.Flags().IntVar(&batchSize, "batch-size", 0, "Circles optimized together in batch mode (0 selects the automatic default)")
 	runCmd.Flags().BoolVar(&polishingEnabled, "polishing", false, "Polish weak circles transactionally after a batch run")
 	runCmd.Flags().StringVar(&polishingStrategy, "polishing-strategy", "replacement", "Polishing strategy: replacement, hybrid-overlap, residual-region, or contiguous-window")

@@ -1,8 +1,18 @@
-package app
+package app_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/cwbudde/mayflycirclefit/internal/app"
+)
+
+// crossoverRefPath is the reference image every case in this file normalizes
+// against. It is a constant so the literal appears once.
+const crossoverRefPath = "reference.png"
 
 func TestCrossoverCountBounds(t *testing.T) {
+	t.Parallel()
+
 	const popSize = 64
 
 	for _, testCase := range []struct {
@@ -15,12 +25,14 @@ func TestCrossoverCountBounds(t *testing.T) {
 		{"within the population", popSize, true},
 		{"at the mating limit", 2 * popSize, true},
 		{"one starves the mutant pool", 1, false},
-		{"negative", -4, false},
+		{"a negative count", -4, false},
 		{"beyond what mating can consume", 2*popSize + 1, false},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			_, err := Normalize(JobConfig{
-				RefPath:        "reference.png",
+			t.Parallel()
+
+			_, err := app.Normalize(app.JobConfig{
+				RefPath:        crossoverRefPath,
 				PopSize:        popSize,
 				CrossoverCount: testCase.count,
 			})
@@ -37,7 +49,9 @@ func TestCrossoverCountBounds(t *testing.T) {
 }
 
 func TestCrossoverCountDefaultsToLibraryScaling(t *testing.T) {
-	config, err := Normalize(JobConfig{RefPath: "reference.png"})
+	t.Parallel()
+
+	config, err := app.Normalize(app.JobConfig{RefPath: crossoverRefPath})
 	if err != nil {
 		t.Fatal(err)
 	}
