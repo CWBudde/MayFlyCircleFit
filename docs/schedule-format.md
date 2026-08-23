@@ -344,6 +344,18 @@ comparable after the fact; treat it as its own baseline.
   resume endpoint. A checkpoint written before the field existed records no
   version, so it resumes with a warning rather than a refusal. Re-baseline
   instead of overriding.
+
+  **v0.6.0 draws a boundary for one variant only.** It reimplements AOBLMOA to
+  match its source paper: the Mayfly/Aquila switch becomes a deterministic
+  fitness test rather than a probability, opposition-based learning moves to
+  the offspring stage and applies to every offspring, and Gaussian mutation is
+  removed for that variant. **An `aoblmoa` cost recorded under v0.5.1 or
+  earlier is not comparable to one recorded under v0.6.0** — it was produced by
+  a different algorithm. The other six variants are unaffected, so a
+  `standard`, `desma`, `olce`, `eobbma`, `gsasma` or `mpma` cost still crosses
+  this particular boundary unchanged. `AquilaWeight` is deprecated but can
+  still reproduce the old random branch; `OppositionProbability` is accepted,
+  range-checked, and then ignored.
 - **`fastCompositing` — the one that genuinely breaks comparability.** The
   float32 compositor is accurate to ±1 per channel, measured over 2,074,320
   channel writes. A changed channel changes the SSD, which changes an

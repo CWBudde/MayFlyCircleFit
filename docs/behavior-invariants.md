@@ -174,7 +174,7 @@ Rendering-side invariants live in
 
 ## Determinism, resume, and termination
 
-- Resume is restart-from-best: the MayFly v0.5.1 population is seeded with the
+- Resume is restart-from-best: the MayFly v0.6.0 population is seeded with the
   saved best and deterministic nearby variations. It is not an exact restoration
   of optimizer internals. Server restart-from-best for sequential and batch jobs
   is not supported.
@@ -238,10 +238,19 @@ Rendering-side invariants live in
   whose zero is free to mean "unset" because the library refuses an offspring
   count of zero outright.
 - **An advanced knob no variant would read is rejected, not ignored.**
-  `aquilaWeight` and `oppositionProbability` are read only by `aoblmoa`, so
-  setting either on another variant fails validation. Accepting them would
-  persist a setting into a checkpoint and report it back unchanged while it
-  never reached the optimizer.
+  `aquilaWeight` and `oppositionProbability` belong to `aoblmoa`, so setting
+  either on another variant fails validation. Accepting them would persist a
+  setting into a checkpoint and report it back unchanged while it never reached
+  the optimizer.
+- **`oppositionProbability` is accepted, range-checked, and then ignored.**
+  MayFly v0.6.0 moved opposition-based learning to the offspring stage and
+  applies it to every offspring unconditionally, so no sampled share remains for
+  this knob to set. It is deliberately not removed: job submission and schedules
+  decode with `DisallowUnknownFields`, and resume reads the field back out of
+  existing checkpoints, so dropping it would reject configurations that load
+  today. `aquilaWeight` is likewise deprecated but still live -- an unset weight
+  selects the paper's fitness test, and a value in `[0,1]` restores the
+  pre-v0.6.0 probabilistic branch.
 - **The advanced knobs apply to optimizer stages, not polishing sweeps.**
   Polishing runs its own smaller standard-variant population, which is not what
   an operator is tuning when they reach for these. `danceDamp` is enforced to

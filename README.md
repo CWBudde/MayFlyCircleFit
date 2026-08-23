@@ -20,7 +20,7 @@ request fails.
 
 The repository pins templ `v0.3.960` as a Go tool and commits generated
 `internal/ui/*_templ.go` files. A clean checkout therefore builds without a
-separate templ installation. MayFly is pinned to `v0.5.1`.
+separate templ installation. MayFly is pinned to `v0.6.0`.
 
 ## Quick start
 
@@ -284,8 +284,8 @@ value degrades a run quietly rather than failing it.
 | Flag | Applies to | Library default |
 | --- | --- | --- |
 | `--dance-damp` | every variant | 0.8 |
-| `--aquila-weight` | `aoblmoa` only | 1.0 |
-| `--opposition-probability` | `aoblmoa` only | 0.3 |
+| `--aquila-weight` | `aoblmoa` only | automatic fitness test (deprecated knob) |
+| `--opposition-probability` | `aoblmoa` only | none -- inert since MayFly v0.6.0 |
 
 All three take a value between 0 and 1, and all three are left entirely to the
 library unless you name the flag. That distinction matters here because zero is
@@ -304,11 +304,22 @@ the search degenerates into a saturated random walk inside the box rather than
 diverging. The bound is a guard against that degenerate mode, not against a
 crash: MayFly runs such a configuration and returns finite results.
 
-`--aquila-weight` is the probability that an AOBLMOA individual takes an Aquila
-step instead of the ordinary MayFly velocity and position update. The library
-default of 1.0 follows the paper, which means the MayFly dynamics never run at
-all; lowering it mixes the two. `--opposition-probability` is the share of
-solutions reflected through the search space each iteration.
+`--aquila-weight` is deprecated as of MayFly v0.6.0. It used to be the
+probability that an AOBLMOA individual takes an Aquila step instead of the
+ordinary MayFly velocity and position update. The library now decides that
+branch with a deterministic fitness test, as its source paper defines it, and
+an unset flag selects exactly that. Naming the flag reinstates the old random
+branch at the probability you give, which is useful only for reproducing a
+pre-v0.6.0 run.
+
+`--opposition-probability` is inert as of MayFly v0.6.0. It used to be the
+share of solutions reflected through the search space each iteration; the
+library now applies stochastic opposition to every offspring instead, so it
+range-checks whatever you pass and then never reads it. The flag is still
+accepted rather than removed because job submission and schedules reject
+unknown fields, and resume reads the value back out of existing checkpoints --
+dropping it would refuse configurations that load today. Setting it has no
+effect on a run.
 
 Setting either of the AOBLMOA knobs on another variant is rejected rather than
 ignored, so a configuration that would have done nothing fails at validation
