@@ -1639,7 +1639,14 @@ func TestServer_CreatePagePost_ValidationErrors(t *testing.T) {
 	}
 }
 
-func TestPlannedOptimizerIterationsIncludesStagesRefillsAndPolishing(t *testing.T) {
+// TestPlannedOptimizerIterationsCoversStagesAndPolishing pins the denominator
+// every progress bar divides by. Batch refills used to be added to it, back
+// when a refill minted a further full budget on top of the plan; they are now
+// drawn from the planned budget instead, so counting them here would leave a
+// one-stage job showing a quarter of its progress and then finishing.
+func TestPlannedOptimizerIterationsCoversStagesAndPolishing(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		config JobConfig
@@ -1648,16 +1655,30 @@ func TestPlannedOptimizerIterationsIncludesStagesRefillsAndPolishing(t *testing.
 		{name: "joint", config: JobConfig{Mode: app.ModeJoint, Iters: 100, OptimizerEpochs: 2}, want: 200},
 		{name: "sequential", config: JobConfig{Mode: app.ModeSequential, Circles: 3, Iters: 100, OptimizerEpochs: 2}, want: 600},
 		{
-			name: "batch with refill budget and polishing",
+			// One planned stage of 2000 iterations over four epochs, plus three
+			// polishing sweeps of 1000 over two epochs. The refill stages this
+			// run may still attempt come out of the 8000, not on top of it.
+			name: "batch with polishing",
 			config: JobConfig{
 				Mode: app.ModeBatch, Circles: 30, BatchSize: 30, Iters: 2000, OptimizerEpochs: 4,
 				PolishingEnabled: true, PolishingMaxSweeps: 3, PolishingEpochs: 2, PolishingIters: 1000,
 			},
-			want: 38_000,
+			want: 14_000,
+		},
+		{
+			// Four planned stages, so four budgets: the batch count is what
+			// scales the denominator, and only the planned batches count.
+			name: "batch with several planned stages",
+			config: JobConfig{
+				Mode: app.ModeBatch, Circles: 32, BatchSize: 8, Iters: 100, OptimizerEpochs: 1,
+			},
+			want: 400,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := plannedOptimizerIterations(test.config); got != test.want {
 				t.Fatalf("plannedOptimizerIterations() = %d, want %d", got, test.want)
 			}

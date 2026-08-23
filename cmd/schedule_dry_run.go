@@ -101,12 +101,13 @@ func printSchedulePlan(output io.Writer, path string, document *app.ScheduleDocu
 	fmt.Fprintf(output, "  unconditional: %d\n", summary.FirmIterations())
 	fmt.Fprintf(output, "  conditional:   %d across %d %s, decided at run time\n",
 		summary.ConditionalIterations, summary.Conditional, pluralStages(summary.Conditional))
-	fmt.Fprintln(output, "\nThe figure is the nominal planned count, not a prediction, and not a hard")
-	fmt.Fprintln(output, "ceiling either. Early stopping and convergence detection spend less than it;")
-	fmt.Fprintf(output, "a batch stage that leaves circles unplaced may run up to %d residual-refill\n",
+	fmt.Fprintln(output, "\nThe figure is the nominal planned count rather than a prediction: early")
+	fmt.Fprintln(output, "stopping, convergence detection and a polish sweep that stops improving all")
+	fmt.Fprintln(output, "spend less than it. Nothing spends more. A batch stage that places nothing")
+	fmt.Fprintf(output, "may still retry against the residual, up to %d times, but those retries are\n",
 		renderer.MaxExtraBatchStages)
-	fmt.Fprintln(output, "stages beyond its plan and spend more. Those refills are excluded here")
-	fmt.Fprintln(output, "because most stages never run them.")
+	fmt.Fprintln(output, "drawn from the stage's own iteration budget instead of being added to it,")
+	fmt.Fprintln(output, "so they cannot take a campaign past this plan.")
 
 	return nil
 }

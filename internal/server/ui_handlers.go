@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/ui"
 )
 
@@ -282,8 +281,13 @@ func plannedOptimizerIterations(config JobConfig) int {
 	case app.ModeSequential:
 		stages = config.Circles
 	case app.ModeBatch:
+		// Only the planned batch stages count. A batch run's residual refills
+		// are drawn from this same budget rather than added to it, so
+		// including MaxExtraBatchStages here would divide by four times the
+		// iterations a one-stage job can actually reach: the job would show a
+		// quarter of its progress bar filled and then finish.
 		batchSize := max(config.BatchSize, 1)
-		stages = (config.Circles+batchSize-1)/batchSize + renderer.MaxExtraBatchStages
+		stages = (config.Circles + batchSize - 1) / batchSize
 	}
 
 	total := stages * perStage

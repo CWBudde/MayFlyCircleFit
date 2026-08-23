@@ -888,3 +888,77 @@ func TestNonLifecycleOptimizerReportsCompleted(t *testing.T) {
 		t.Fatalf("StagesStoppedEarly = %d, want 0", result.StagesStoppedEarly)
 	}
 }
+
+// sessionReplayRenderer offers independent sessions but no accumulated canvas,
+// which is the shape the OpenCL backend has: every stage replays the retained
+// circles into a fresh session instead of compositing onto a canvas the
+// pipeline carries. Embedding the interface rather than the concrete renderer
+// is what hides initialCanvas and newSessionWithCanvas, and hiding those is
+// what selects the replay path.
+type sessionReplayRenderer struct {
+	Renderer
+
+	factory  rendererSessionFactory
+	sessions *int
+}
+
+func (r sessionReplayRenderer) newSession(circleCount int) (Renderer, func(), error) {
+	session, cleanup, err := r.factory.newSession(circleCount)
+	if err == nil && r.sessions != nil {
+		*r.sessions++
+	}
+
+	return session, cleanup, err
+}
+
+// TestOptimizeBatchKeepsAWholeBatchOnTheReplayPath is the CPU-visible half of
+// the OpenCL pipeline check in renderer_opencl_gpu_test.go, which no runner
+// without OpenCL headers can execute. Both drive a batch whose every circle
+// covers a solid reference completely: the first drives the cost to zero, so
+// the batch improves the image and is retained whole, and every later stage
+// adds nothing at all and is refilled until the bounded attempts run out.
+//
+// The batch is retained with the redundant circle in it. That is the deliberate
+// trade this pipeline makes: buying the slot back costs a whole further
+// optimizer run at the full configured budget, and doubling what a job spends
+// in order to drop one circle is worse than carrying it.
+func TestOptimizeBatchKeepsAWholeBatchOnTheReplayPath(t *testing.T) {
+	t.Parallel()
+
+	ref := solidImage(3, 3, color.NRGBA{A: 255})
+	base := NewCPURenderer(ref, 5)
+	sessions := 0
+
+	result, err := OptimizeBatch(sessionReplayRenderer{Renderer: base, factory: base, sessions: &sessions},
+		opaqueBlackOptimizer(), 5, 2, DisabledConvergenceConfig())
+	if err != nil {
+		t.Fatalf("OptimizeBatch() error = %v", err)
+	}
+
+	if want := 3 + MaxExtraBatchStages; result.Stages != want {
+		t.Fatalf("stages = %d, want %d", result.Stages, want)
+	}
+
+	if result.OptimizedCircles != 2 {
+		t.Fatalf("optimized circles = %d, want the whole first batch of 2", result.OptimizedCircles)
+	}
+
+	if got, want := len(result.BestParams), 2*paramsPerCircle; got != want {
+		t.Fatalf("parameter count = %d, want %d", got, want)
+	}
+
+	if result.BestCost != 0 {
+		t.Fatalf("best cost = %v, want 0", result.BestCost)
+	}
+
+	if got := result.BestImage.NRGBAAt(1, 1); got != (color.NRGBA{A: 255}) {
+		t.Fatalf("best image pixel = %#v, want opaque black", got)
+	}
+	// The replay path opens one session per stage plus the baseline, the one
+	// retention this run makes, and the final replay. Retaining the whole batch
+	// changes what those sessions hold, not how many there are, which is why
+	// the OpenCL check's session count is unaffected.
+	if sessions != 9 {
+		t.Fatalf("sessions = %d, want 9", sessions)
+	}
+}

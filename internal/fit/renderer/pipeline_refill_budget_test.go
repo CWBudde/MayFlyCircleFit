@@ -1,4 +1,4 @@
-package renderer
+package renderer_test
 
 import (
 	"context"
@@ -6,8 +6,15 @@ import (
 	"image/color"
 	"testing"
 
+	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
 	"github.com/cwbudde/mayflycirclefit/internal/opt"
 )
+
+// paramsPerCircle mirrors the renderer's own stride: X, Y, R, CR, CG, CB,
+// Opacity. It is restated here because these tests build parameter vectors from
+// outside the package, and it is the one thing they would otherwise need from
+// inside it.
+const paramsPerCircle = 7
 
 // budgetedBatchOptimizer answers every stage with a batch of a declared shape
 // and reports the whole iteration budget it declares, as a Mayfly run that is
@@ -103,10 +110,10 @@ func TestOptimizeBatchSpendsOneBudgetOnABatchWithAWeakCircle(t *testing.T) {
 	)
 
 	optimizer := &budgetedBatchOptimizer{budget: budget}
-	base := NewCPURenderer(splitToneReference(12), totalCircles)
+	base := renderer.NewCPURenderer(splitToneReference(12), totalCircles)
 
-	result, err := OptimizeBatchContext(context.Background(), base, optimizer,
-		totalCircles, batchSize, DisabledConvergenceConfig())
+	result, err := renderer.OptimizeBatchContext(context.Background(), base, optimizer,
+		totalCircles, batchSize, renderer.DisabledConvergenceConfig())
 	if err != nil {
 		t.Fatalf("OptimizeBatchContext() error = %v", err)
 	}
@@ -144,10 +151,10 @@ func TestOptimizeBatchRefillsStayInsideTheRunBudget(t *testing.T) {
 	)
 
 	optimizer := &budgetedBatchOptimizer{budget: budget, useless: true}
-	base := NewCPURenderer(splitToneReference(12), totalCircles)
+	base := renderer.NewCPURenderer(splitToneReference(12), totalCircles)
 
-	result, err := OptimizeBatchContext(context.Background(), base, optimizer,
-		totalCircles, batchSize, DisabledConvergenceConfig())
+	result, err := renderer.OptimizeBatchContext(context.Background(), base, optimizer,
+		totalCircles, batchSize, renderer.DisabledConvergenceConfig())
 	if err != nil {
 		t.Fatalf("OptimizeBatchContext() error = %v", err)
 	}
@@ -165,7 +172,7 @@ func TestOptimizeBatchRefillsStayInsideTheRunBudget(t *testing.T) {
 		t.Fatalf("optimized circles = %d, want 0", result.OptimizedCircles)
 	}
 
-	if result.Termination != TerminationRefillLimit {
-		t.Fatalf("termination = %q, want %q", result.Termination, TerminationRefillLimit)
+	if result.Termination != renderer.TerminationRefillLimit {
+		t.Fatalf("termination = %q, want %q", result.Termination, renderer.TerminationRefillLimit)
 	}
 }

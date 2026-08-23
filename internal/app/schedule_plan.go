@@ -70,14 +70,14 @@ func SummarizeSchedulePlan(plan []ScheduleStage) SchedulePlanSummary {
 // PlannedIterations is the nominal optimizer iteration count of one realized
 // stage: the planned stages times their epochs times their iterations.
 //
-// It is not a prediction of the iterations actually spent, and it is not a hard
-// ceiling either. Early stopping, convergence detection, and a polish sweep
-// that stops improving all cut the real figure; the bounded residual-refill
-// stages a batch run may add (renderer.MaxExtraBatchStages) push it the other
-// way. Those refills are deliberately excluded rather than counted: they are
-// attempted only when a stage leaves circles unplaced, so including them would
-// inflate every plan by work most stages never do. Callers presenting this
-// number must say so — it is the nominal plan, not a bound in either direction.
+// It is not a prediction of the iterations actually spent: early stopping,
+// convergence detection, and a polish sweep that stops improving all cut the
+// real figure. Nothing raises it. The bounded residual-refill stages a batch
+// run may attempt (renderer.MaxExtraBatchStages) used to, by a whole stage
+// each, which is what made the arms of two campaigns incomparable; a refill is
+// now drawn from the planned budget rather than added to it, so it is counted
+// here already. Callers presenting this number must still say what it is — the
+// nominal plan and an upper bound, not a prediction.
 func (s ScheduleStage) PlannedIterations() int {
 	config := s.Config
 

@@ -153,11 +153,26 @@ func TestOpenCLOptimizationPipelines(t *testing.T) {
 	ref := solidImage(3, 3, color.NRGBA{A: 255})
 
 	// Every opaqueBlackOptimizer circle covers this 3x3 reference completely, so
-	// the first one drives the cost to zero and visibility pruning correctly
-	// discards the rest. wantCircles therefore tracks what survives pruning, not
-	// the requested count, and batch exhausts its refill budget. The CPU
-	// equivalents are TestOptimizeBatchRejectsIneffectiveCirclesAfterBoundedRefill
-	// and TestStagedOptimizationRollsBackWorseningStage.
+	// the first one drives the cost to zero and the rest add nothing at all.
+	// wantCircles therefore tracks what each pipeline retains, not the requested
+	// count, and batch exhausts its refill budget.
+	//
+	// The three pipelines differ in what they do with a stage that is only
+	// partly useful, and batch is the one that has to weigh the cost of asking
+	// again. Sequential offers one circle per stage, so a useless circle is
+	// simply rejected. Batch offers batchSize of them at once: dropping the
+	// redundant one leaves the stage short, and the only way to fill that hole
+	// is a refill stage -- a whole further optimizer run at the full configured
+	// iteration budget. So a batch that improves the image is retained as the
+	// optimizer produced it, and batch keeps both circles of its first stage
+	// where sequential keeps one. Later stages add nothing whatsoever, are
+	// retained by neither, and are refilled until the bounded attempts run out.
+	//
+	// The CPU equivalents are TestOptimizeBatchKeepsAWholeBatchOnTheReplayPath,
+	// which drives this same case through a renderer double with the same
+	// no-accumulated-canvas shape and is runnable without a device,
+	// TestOptimizeBatchRejectsIneffectiveCirclesAfterBoundedRefill, and
+	// TestStagedOptimizationRollsBackWorseningStage.
 	//
 	// Session counts follow the replay path: the OpenCL renderer offers
 	// newSession but no accumulated canvas, so each stage replays retained
@@ -194,7 +209,7 @@ func TestOpenCLOptimizationPipelines(t *testing.T) {
 			name:        "batch",
 			circles:     5,
 			wantStages:  6, // 2+2+1 stages plus MaxExtraBatchStages refill attempts
-			wantCircles: 1,
+			wantCircles: 2, // the whole first batch, redundant second circle included
 			wantSession: 9,
 			run: func(r Renderer) (*OptimizationResult, error) {
 				return OptimizeBatch(r, opaqueBlackOptimizer(), 5, 2, DisabledConvergenceConfig())
