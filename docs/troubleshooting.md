@@ -77,10 +77,16 @@ an omitted field is defaulted.
 
 ### A batch ends at `refill_limit`
 
-Batch pruning can reject an appended circle that does not change a pixel or
-remove enough error to earn its slot. After three extra refill stages the job
-finishes with `termination: "refill_limit"`. This is a usable result, but it may
-contain fewer circles than requested. Read the explicit counts from the job
+A batch whose circles change no pixel at all, or that leaves the image no
+better than it found it, places nothing. The stage is then retried against the
+residual --- but only while the run's own iteration budget still covers the
+retry, because a refill is a whole further optimizer run and an unbudgeted one
+doubles what the job spends. A job that runs out of budget, or out of the three
+bounded attempts, finishes with `termination: "refill_limit"`. This is a usable
+result, but it may contain fewer circles than requested.
+
+A batch that does improve the image is kept whole, so a single weak circle in
+an otherwise useful batch no longer sends the job into a refill. Read the explicit counts from the job
 resource instead of inferring production from the configuration:
 
 ```json

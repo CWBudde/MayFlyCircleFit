@@ -38,6 +38,13 @@ func (o *restartOptimizer) ParallelEvaluationWorkers() int {
 	return ParallelEvaluationWidth(o.base)
 }
 
+// IterationBudget reports what one Run of every attempt may consume, for the
+// same reason the epoch wrapper does: an attempt is a whole optimizer run, so
+// the attempts multiply the inner cap.
+func (o *restartOptimizer) IterationBudget() int {
+	return o.restarts * StageIterationBudget(o.base)
+}
+
 func (o *restartOptimizer) Run(eval func([]float64) float64, lower, upper []float64, dim int) ([]float64, float64) {
 	if _, ok := o.base.(LifecycleOptimizer); ok {
 		result, err := o.RunContext(

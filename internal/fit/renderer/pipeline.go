@@ -549,7 +549,30 @@ func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	}
 
 	maxStages := plannedStages + MaxExtraBatchStages
+	// Every stage costs a full optimizer run, refills included, so a run that
+	// loses circles to the post-stage audit would otherwise spend two to four
+	// times the iterations its configuration asked for -- silently, and only
+	// for the jobs unlucky enough to need a refill. Campaign arms are compared
+	// at equal budget, so a refill has to be paid for out of the run's own
+	// budget rather than minted on top of it. stageBudget is zero for an
+	// optimizer that does not declare a cap, which leaves the loop unbounded
+	// exactly as before.
+	stageBudget := opt.StageIterationBudget(optimizer)
+	plannedIterations := plannedStages * stageBudget
+
 	for optimizedCircles < totalCircles && stages < maxStages {
+		if plannedIterations > 0 && iterations+stageBudget > plannedIterations {
+			slog.Info("Skipping a refill stage that the run cannot afford",
+				"stages", stages,
+				"iterations", iterations,
+				"planned_iterations", plannedIterations,
+				"optimized_circles", optimizedCircles,
+				"total_circles", totalCircles,
+			)
+
+			break
+		}
+
 		stageCircles := min(batchSize, totalCircles-optimizedCircles)
 		retainedCircles := len(bestParams) / paramsPerCircle
 
@@ -660,12 +683,25 @@ func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 			}
 
 			retainedBatch = pruned.Params
-			if len(pruned.Removed) > 0 {
-				slog.Info("Pruned weak batch circles",
+			if len(pruned.Removed) > 0 && len(pruned.Params) > 0 {
+				// Dropping a circle leaves the stage short of the count it was
+				// asked to place, and the only way this loop can fill that hole
+				// is a refill stage -- a whole further optimizer run at the
+				// full configured budget. A batch that improves the image is
+				// therefore kept as the optimizer produced it: a weak circle is
+				// not worth doubling what the run spends, and the doubling is
+				// invisible in every artifact except the iteration count.
+				//
+				// A batch the audit empties is a different matter. Nothing in
+				// it earned its place, so there is nothing to keep and the
+				// refill below is the whole point of the stage.
+				slog.Info("Keeping weak batch circles a refill would have to buy back",
 					"stage", stages,
-					"removed", len(pruned.Removed),
-					"retained", len(retainedBatch)/paramsPerCircle,
+					"weak", len(pruned.Removed),
+					"circles", len(candidateBatch)/paramsPerCircle,
 				)
+
+				retainedBatch = candidateBatch
 			}
 		}
 

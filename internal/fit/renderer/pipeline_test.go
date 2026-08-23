@@ -442,7 +442,17 @@ func TestOptimizeBatchRejectsIneffectiveCirclesAfterBoundedRefill(t *testing.T) 
 	}
 }
 
-func TestOptimizeBatchRefillsPrunedSlotsFromResidualSeed(t *testing.T) {
+// TestOptimizeBatchKeepsWeakCirclesRatherThanRefillingThem replaces the check
+// that a stage's weak slots are pruned and refilled from the residual seed.
+// Refilling them is not free: a refill is a whole further optimizer run at the
+// full configured iteration count, so replacing one weak circle doubled what
+// the run spent, silently and only for the runs that happened to produce one.
+// A batch that improves the image is now kept as the optimizer produced it,
+// weak circles included, so the run costs the budget it was given and still
+// produces the circle count its continuations expect.
+func TestOptimizeBatchKeepsWeakCirclesRatherThanRefillingThem(t *testing.T) {
+	t.Parallel()
+
 	const total = 4
 	ref := solidImage(32, 32, color.NRGBA{A: 255})
 	optimizer := &refillSeedOptimizer{}
@@ -453,11 +463,11 @@ func TestOptimizeBatchRefillsPrunedSlotsFromResidualSeed(t *testing.T) {
 	}
 
 	if result.OptimizedCircles != total || len(result.BestParams) != total*paramsPerCircle {
-		t.Fatalf("refilled result has %d circles and %d params", result.OptimizedCircles, len(result.BestParams))
+		t.Fatalf("result has %d circles and %d params", result.OptimizedCircles, len(result.BestParams))
 	}
 
-	if result.Stages != 2 || optimizer.calls != 2 {
-		t.Fatalf("stages/calls = %d/%d, want 2/2", result.Stages, optimizer.calls)
+	if result.Stages != 1 || optimizer.calls != 1 {
+		t.Fatalf("stages/calls = %d/%d, want 1/1", result.Stages, optimizer.calls)
 	}
 
 	for stage, count := range optimizer.mappedParamCounts {
@@ -469,16 +479,23 @@ func TestOptimizeBatchRefillsPrunedSlotsFromResidualSeed(t *testing.T) {
 	if result.Termination != opt.TerminationCompleted {
 		t.Fatalf("termination = %q, want completed", result.Termination)
 	}
-
+	// The audit still has an opinion about those circles; the pipeline reports
+	// it and leaves them in place instead of spending a second budget on them.
 	audit, err := AuditCircleBatch(NewCPURenderer(ref, total), result.BestParams)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	weak := 0
+
 	for _, circle := range audit.Circles {
 		if circle.FinalChangedPixels < 1 || circle.MSEContribution <= minBatchMSEContribution {
-			t.Fatalf("retained weak circle: %#v", circle)
+			weak++
 		}
+	}
+
+	if weak == 0 {
+		t.Fatal("expected the kept batch to still contain the circles the audit called weak")
 	}
 }
 
@@ -869,5 +886,79 @@ func TestNonLifecycleOptimizerReportsCompleted(t *testing.T) {
 
 	if result.StagesStoppedEarly != 0 {
 		t.Fatalf("StagesStoppedEarly = %d, want 0", result.StagesStoppedEarly)
+	}
+}
+
+// sessionReplayRenderer offers independent sessions but no accumulated canvas,
+// which is the shape the OpenCL backend has: every stage replays the retained
+// circles into a fresh session instead of compositing onto a canvas the
+// pipeline carries. Embedding the interface rather than the concrete renderer
+// is what hides initialCanvas and newSessionWithCanvas, and hiding those is
+// what selects the replay path.
+type sessionReplayRenderer struct {
+	Renderer
+
+	factory  rendererSessionFactory
+	sessions *int
+}
+
+func (r sessionReplayRenderer) newSession(circleCount int) (Renderer, func(), error) {
+	session, cleanup, err := r.factory.newSession(circleCount)
+	if err == nil && r.sessions != nil {
+		*r.sessions++
+	}
+
+	return session, cleanup, err
+}
+
+// TestOptimizeBatchKeepsAWholeBatchOnTheReplayPath is the CPU-visible half of
+// the OpenCL pipeline check in renderer_opencl_gpu_test.go, which no runner
+// without OpenCL headers can execute. Both drive a batch whose every circle
+// covers a solid reference completely: the first drives the cost to zero, so
+// the batch improves the image and is retained whole, and every later stage
+// adds nothing at all and is refilled until the bounded attempts run out.
+//
+// The batch is retained with the redundant circle in it. That is the deliberate
+// trade this pipeline makes: buying the slot back costs a whole further
+// optimizer run at the full configured budget, and doubling what a job spends
+// in order to drop one circle is worse than carrying it.
+func TestOptimizeBatchKeepsAWholeBatchOnTheReplayPath(t *testing.T) {
+	t.Parallel()
+
+	ref := solidImage(3, 3, color.NRGBA{A: 255})
+	base := NewCPURenderer(ref, 5)
+	sessions := 0
+
+	result, err := OptimizeBatch(sessionReplayRenderer{Renderer: base, factory: base, sessions: &sessions},
+		opaqueBlackOptimizer(), 5, 2, DisabledConvergenceConfig())
+	if err != nil {
+		t.Fatalf("OptimizeBatch() error = %v", err)
+	}
+
+	if want := 3 + MaxExtraBatchStages; result.Stages != want {
+		t.Fatalf("stages = %d, want %d", result.Stages, want)
+	}
+
+	if result.OptimizedCircles != 2 {
+		t.Fatalf("optimized circles = %d, want the whole first batch of 2", result.OptimizedCircles)
+	}
+
+	if got, want := len(result.BestParams), 2*paramsPerCircle; got != want {
+		t.Fatalf("parameter count = %d, want %d", got, want)
+	}
+
+	if result.BestCost != 0 {
+		t.Fatalf("best cost = %v, want 0", result.BestCost)
+	}
+
+	if got := result.BestImage.NRGBAAt(1, 1); got != (color.NRGBA{A: 255}) {
+		t.Fatalf("best image pixel = %#v, want opaque black", got)
+	}
+	// The replay path opens one session per stage plus the baseline, the one
+	// retention this run makes, and the final replay. Retaining the whole batch
+	// changes what those sessions hold, not how many there are, which is why
+	// the OpenCL check's session count is unaffected.
+	if sessions != 9 {
+		t.Fatalf("sessions = %d, want 9", sessions)
 	}
 }
