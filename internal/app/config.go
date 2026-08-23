@@ -283,7 +283,34 @@ type JobConfig struct {
 	// population of 1024 is statistically indistinguishable from the
 	// library default while spending 25% fewer evaluations, and cutting it
 	// to 2 is significantly worse. See docs/restart-vs-budget-report.md.
-	CrossoverCount           int               `json:"crossoverCount,omitempty"`
+	CrossoverCount int `json:"crossoverCount,omitempty"`
+	// DanceDamp overrides the per-iteration decay applied to MayFly's
+	// nuptial-dance term, whose library default is 0.8. The dance is the
+	// random walk the leading male takes on top of its velocity, so this
+	// governs how fast the swarm stops exploring. Advanced: the library does
+	// not range-check it, and a value above 1 makes the term grow without
+	// bound.
+	//
+	// Nil leaves the library default. It is a pointer because zero is a
+	// meaningful setting -- it retires the dance after one iteration -- so
+	// omitempty on a plain float64 would erase exactly that configuration.
+	DanceDamp *float64 `json:"danceDamp,omitempty"`
+	// AquilaWeight overrides the probability that an AOBLMOA individual takes
+	// an Aquila step instead of the ordinary MayFly velocity and position
+	// update. The library default of 1.0 follows the paper and means the
+	// MayFly dynamics never run. Applies to the aoblmoa variant only.
+	//
+	// Nil leaves the library default; zero is meaningful (pure MayFly), hence
+	// the pointer.
+	AquilaWeight *float64 `json:"aquilaWeight,omitempty"`
+	// OppositionProbability overrides the AOBLMOA opposition-based-learning
+	// rate, the share of solutions reflected through the search space each
+	// iteration. The library default is 0.3. Applies to the aoblmoa variant
+	// only.
+	//
+	// Nil leaves the library default; zero is meaningful (no opposition
+	// step), hence the pointer.
+	OppositionProbability    *float64          `json:"oppositionProbability,omitempty"`
 	BatchSize                int               `json:"batchSize,omitempty"`
 	PolishingEnabled         bool              `json:"polishingEnabled,omitempty"`
 	PolishingOnly            bool              `json:"polishingOnly,omitempty"`
@@ -641,6 +668,11 @@ func (c JobConfig) Validate() error {
 	// accepts, because it draws its mutant pool from the offspring and cannot
 	// do that from an empty one. The upper bound is what mating can consume:
 	// the library forms pairs from the male and female populations.
+	err := c.validateAdvancedOptimizerKnobs()
+	if err != nil {
+		return err
+	}
+
 	if c.CrossoverCount != 0 && (c.CrossoverCount < 2 || c.CrossoverCount > 2*c.PopSize) {
 		return invalid("crossoverCount",
 			fmt.Sprintf("must be 0 to use the library default, or between 2 and %d", 2*c.PopSize))

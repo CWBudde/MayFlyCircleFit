@@ -262,6 +262,11 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	optimizer, err := opt.NewMayflyVariant(string(checkpoint.Config.Variant), checkpoint.Config.Iters, checkpoint.Config.PopSize, seed,
 		opt.WithLogger(slog.Default()), opt.WithEarlyStop(earlyStopFromConfig(checkpoint.Config)),
 		opt.WithCrossoverCount(checkpoint.Config.CrossoverCount),
+		// A checkpoint written before these knobs existed carries nil for all
+		// three and resumes exactly as it did.
+		opt.OptionalFloat(checkpoint.Config.DanceDamp, opt.WithDanceDamp),
+		opt.OptionalFloat(checkpoint.Config.AquilaWeight, opt.WithAquilaWeight),
+		opt.OptionalFloat(checkpoint.Config.OppositionProbability, opt.WithOppositionProbability),
 		parallelEvaluationOption(checkpoint.Config, rend))
 	if err != nil {
 		return fmt.Errorf("create optimizer: %w", err)

@@ -182,6 +182,11 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	optimizer, err := opt.NewMayflyVariant(string(job.Config.Variant), job.Config.Iters, job.Config.PopSize, seed,
 		opt.WithLogger(slog.Default()), opt.WithEarlyStop(buildEarlyStop(job.Config)),
 		opt.WithCrossoverCount(job.Config.CrossoverCount),
+		// Optimizer stages only. Polishing below runs its own smaller
+		// standard-variant population and is deliberately left alone.
+		opt.OptionalFloat(job.Config.DanceDamp, opt.WithDanceDamp),
+		opt.OptionalFloat(job.Config.AquilaWeight, opt.WithAquilaWeight),
+		opt.OptionalFloat(job.Config.OppositionProbability, opt.WithOppositionProbability),
 		parallelEvaluationOption(job.Config, rend))
 	if err != nil {
 		markJobFailed(jm, jobID, err)
