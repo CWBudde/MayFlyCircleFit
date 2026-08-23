@@ -16,14 +16,19 @@ const mayflyModulePath = "github.com/cwbudde/mayfly"
 // toolchains and for tests run from an unbuilt module cache.
 const unknownLibraryVersion = "unknown"
 
-var libraryVersion = sync.OnceValue(func() string {
+// dragonflyModulePath is the module the proof-of-concept Dragonfly adapter
+// optimizes with.
+const dragonflyModulePath = "github.com/CWBudde/dragonfly"
+
+// moduleVersion reports the compiled-in version of one dependency.
+func moduleVersion(path string) string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return unknownLibraryVersion
 	}
 
 	for _, dep := range info.Deps {
-		if dep.Path != mayflyModulePath {
+		if dep.Path != path {
 			continue
 		}
 		// A replace directive points at the module actually compiled in, which
@@ -38,6 +43,14 @@ var libraryVersion = sync.OnceValue(func() string {
 	}
 
 	return unknownLibraryVersion
+}
+
+var libraryVersion = sync.OnceValue(func() string {
+	return moduleVersion(mayflyModulePath)
+})
+
+var dragonflyLibraryVersion = sync.OnceValue(func() string {
+	return moduleVersion(dragonflyModulePath)
 })
 
 // LibraryVersion reports the MayFly module version compiled into this binary.

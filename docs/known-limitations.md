@@ -37,6 +37,17 @@ behavior is production-ready.
 
 ## Rendering and optimization
 
+- The Dragonfly optimizer is a proof of concept. It is reachable only through
+  `run --optimizer dragonfly`; `serve`, `resume`, the schedule format, and the
+  web UI are MayFly-only, and no checkpoint records which library produced a
+  cost, so a resumed run silently becomes a MayFly run. Naming `--variant`,
+  `--crossover-count`, `--dance-damp`, `--aquila-weight`,
+  `--opposition-probability`, `--parallel-evaluation`, or `--polishing`
+  alongside it is refused rather than ignored. Its published behavior is to
+  explore well and exploit poorly -- the convergence factor reaches zero at the
+  halfway point of a run -- so a worse fit than MayFly is the expected outcome,
+  and no measurement of it has been taken.
+
 - CPU and OpenCL support joint, sequential, and batch pipelines; only CPU
   supports custom base canvases. Staged OpenCL modes replay all retained circles
   in independent device sessions, so their performance remains uncharacterized

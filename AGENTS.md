@@ -55,7 +55,9 @@ take precedence if this document goes stale.
 - `internal/fit/renderer/opencl`: the cgo OpenCL renderer (`gpu` tag). It is a
   separate package because Go forbids Plan 9 assembly in a package that uses
   cgo; it must never import `internal/fit/renderer`.
-- `internal/opt`: optimizer interfaces and the MayFly v0.6.0 adapter.
+- `internal/opt`: optimizer interfaces, the MayFly v0.6.0 adapter, and a
+  proof-of-concept Dragonfly v0.1.0 adapter reachable only through `run
+  --optimizer dragonfly`.
 - `internal/server`: trusted-local HTTP boundary and background job lifecycle.
 - `internal/store`: filesystem checkpoint, trace, and artifact ownership.
 - `internal/ui`: templ views plus committed generated Go output.
