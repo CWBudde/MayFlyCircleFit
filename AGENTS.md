@@ -18,10 +18,12 @@ take precedence if this document goes stale.
   — why base-stage quality does not predict the fit built on it, and what the
   population knob does and does not buy. Its population conclusions were
   measured under MayFly v0.4.0 and are **historical**: they describe an
-  unscaled `NC`, which v0.5.0 removes. Under the pinned v0.5.0, raising
-  `popSize` does buy quality, monotonically to about 1024. The seed-variance
-  half of the report still holds. Do not size a new campaign's population from
-  the v0.4.0 figures.
+  unscaled `NC`, which v0.5.0 removes. Under v0.5.0, raising `popSize` does buy
+  quality, monotonically to about 1024. That measurement has **not** been
+  repeated under the pinned v0.5.1, which changes the crossover operator, so
+  treat the 1024 figure as indicative rather than established. The
+  seed-variance half of the report still holds. Do not size a new campaign's
+  population from the v0.4.0 figures.
 - [`docs/schedule-format.md`](docs/schedule-format.md) — the schedule document
   format, its worked example, and when two campaigns' costs are comparable.
 - [`docs/support-matrix.md`](docs/support-matrix.md),
@@ -44,7 +46,7 @@ take precedence if this document goes stale.
 - `internal/fit/renderer/opencl`: the cgo OpenCL renderer (`gpu` tag). It is a
   separate package because Go forbids Plan 9 assembly in a package that uses
   cgo; it must never import `internal/fit/renderer`.
-- `internal/opt`: optimizer interfaces and the MayFly v0.5.0 adapter.
+- `internal/opt`: optimizer interfaces and the MayFly v0.5.1 adapter.
 - `internal/server`: trusted-local HTTP boundary and background job lifecycle.
 - `internal/store`: filesystem checkpoint, trace, and artifact ownership.
 - `internal/ui`: templ views plus committed generated Go output.
@@ -60,7 +62,7 @@ reintroduce application configuration into the store package.
 - Go 1.24 source-compatibility floor (`go 1.24.0`). Production binaries should
   use a currently supported, security-patched release; vulnerability CI is
   pinned to Go 1.26.6.
-- MayFly is pinned to `github.com/cwbudde/mayfly v0.5.0`; templ to
+- MayFly is pinned to `github.com/cwbudde/mayfly v0.5.1`; templ to
   `github.com/a-h/templ v0.3.960` as a Go tool; `github.com/google/pprof` as a
   Go tool because some Go installations do not bundle it.
 - `github.com/evanw/esbuild/cmd/esbuild` is installed as a Go tool to compile the

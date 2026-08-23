@@ -25,6 +25,7 @@ import (
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
+	"github.com/cwbudde/mayflycirclefit/internal/opt"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 	"github.com/cwbudde/mayflycirclefit/internal/ui"
 	"github.com/google/uuid"
@@ -49,6 +50,9 @@ type Server struct {
 	jobCancels map[string]context.CancelFunc
 	input      *inputPolicy
 	inputErr   error
+	// optimizerVersionOverride replaces the compiled-in optimizer version when
+	// set. Only tests set it; see (*Server).optimizerVersion.
+	optimizerVersionOverride string
 	// schedulesMu guards scheduleDrivers, which holds one entry per schedule
 	// with a live executor. It is the in-process guarantee that a schedule
 	// never has two executors, and so never two jobs for one stage.
@@ -500,7 +504,7 @@ func (s *Server) requestPause(jobID string) error {
 	return nil
 }
 
-func (s *Server) requestResume(jobID string) (*store.Checkpoint, error) {
+func (s *Server) requestResume(jobID string, allowOptimizerMismatch bool) (*store.Checkpoint, error) {
 	job, ok := s.jobManager.GetJob(jobID)
 	if !ok {
 		return nil, store.ErrNotFound
@@ -530,6 +534,15 @@ func (s *Server) requestResume(jobID string) (*store.Checkpoint, error) {
 
 	if int64(int(checkpoint.Evaluations)) != checkpoint.Evaluations {
 		return nil, errResumeCheckpointOverflow
+	}
+
+	warning, err := opt.GuardCheckpointVersion(checkpoint.OptimizerVersion, s.optimizerVersion(), allowOptimizerMismatch)
+	if err != nil {
+		return nil, err
+	}
+
+	if warning != "" {
+		slog.Warn("Optimizer version check", "job_id", jobID, "warning", warning)
 	}
 
 	if err := s.jobManager.UpdateJob(jobID, func(j *Job) {
@@ -927,6 +940,8 @@ func (s *Server) handlePauseJob(w http.ResponseWriter, r *http.Request, jobID st
 		switch {
 		case errors.Is(err, store.ErrNotFound):
 			writeAPIError(w, http.StatusNotFound, "not_found", "job not found")
+		case errors.Is(err, opt.ErrOptimizerVersionMismatch):
+			writeAPIError(w, http.StatusConflict, "optimizer_version_mismatch", err.Error())
 		case errors.Is(err, errPausedWithoutCheckpoint):
 			writeAPIError(w, http.StatusConflict, "invalid_state", "job has no checkpointable progress yet")
 		case errors.Is(err, errScheduleStagePause):
@@ -1550,17 +1565,37 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request, jobID s
 		return
 	}
 
+	allowOptimizerMismatch := boolQueryParam(r, "allowOptimizerMismatch")
+
 	if job, ok := s.jobManager.GetJob(jobID); ok && job.State == StatePaused {
-		s.resumePausedJob(w, jobID)
+		s.resumePausedJob(w, jobID, allowOptimizerMismatch)
 		return
 	}
 
-	s.forkJobFromCheckpoint(w, jobID)
+	s.forkJobFromCheckpoint(w, jobID, allowOptimizerMismatch)
+}
+
+// optimizerVersion reports the optimizer version this server resumes under.
+// The override exists for tests: a test binary carries no module information,
+// so opt.LibraryVersion cannot produce a version to disagree with.
+func (s *Server) optimizerVersion() string {
+	if s.optimizerVersionOverride != "" {
+		return s.optimizerVersionOverride
+	}
+
+	return opt.LibraryVersion()
+}
+
+// boolQueryParam reads an opt-in query flag. Only an explicit true enables it,
+// so a malformed value fails closed rather than silently overriding a guard.
+func boolQueryParam(r *http.Request, name string) bool {
+	value, err := strconv.ParseBool(r.URL.Query().Get(name))
+	return err == nil && value
 }
 
 // resumePausedJob restarts a suspended job under its own identity.
-func (s *Server) resumePausedJob(w http.ResponseWriter, jobID string) {
-	checkpoint, err := s.requestResume(jobID)
+func (s *Server) resumePausedJob(w http.ResponseWriter, jobID string, allowOptimizerMismatch bool) {
+	checkpoint, err := s.requestResume(jobID, allowOptimizerMismatch)
 	if err != nil {
 		slog.Warn("Failed to resume job", "job_id", jobID, "error", err)
 
@@ -1574,6 +1609,8 @@ func (s *Server) resumePausedJob(w http.ResponseWriter, jobID string) {
 			writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", "checkpoint evaluation count is out of range")
 		case errors.Is(err, ErrInvalidTransition):
 			writeAPIError(w, http.StatusConflict, "invalid_state", err.Error())
+		case errors.Is(err, opt.ErrOptimizerVersionMismatch):
+			writeAPIError(w, http.StatusConflict, "optimizer_version_mismatch", err.Error())
 		case errors.Is(err, errPausedWithoutCheckpoint):
 			writeAPIError(w, http.StatusConflict, "invalid_state", "job has no checkpoint to resume from")
 		default:
@@ -1619,7 +1656,7 @@ func (s *Server) resumePausedJob(w http.ResponseWriter, jobID string) {
 // forkJobFromCheckpoint seeds a new job from a stopped job's checkpoint. The
 // source job is left exactly as it is, so a cancelled run stays cancelled and
 // its artifacts stay addressable under the original ID.
-func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string) {
+func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string, allowOptimizerMismatch bool) {
 	jobStore, err := s.storeForJob(jobID)
 	if err != nil {
 		slog.Error("Failed to resolve project store for resume", "job_id", jobID, "error", err)
@@ -1644,6 +1681,16 @@ func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string) {
 	if err := checkpoint.Validate(); err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", err.Error())
 		return
+	}
+
+	warning, err := opt.GuardCheckpointVersion(checkpoint.OptimizerVersion, s.optimizerVersion(), allowOptimizerMismatch)
+	if err != nil {
+		writeAPIError(w, http.StatusConflict, "optimizer_version_mismatch", err.Error())
+		return
+	}
+
+	if warning != "" {
+		slog.Warn("Optimizer version check", "job_id", jobID, "warning", warning)
 	}
 
 	slog.Info("Resuming job from checkpoint",

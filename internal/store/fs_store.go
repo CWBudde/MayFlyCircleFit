@@ -415,6 +415,7 @@ type checkpointInfoProjection struct {
 	PolishedFrom     string                     `json:"polishedFrom"`
 	ScheduleID       string                     `json:"scheduleId"`
 	StageIndex       *int                       `json:"stageIndex"`
+	OptimizerVersion string                     `json:"optimizerVersion"`
 	Config           checkpointConfigProjection `json:"config"`
 }
 
@@ -548,8 +549,8 @@ func (p checkpointInfoProjection) toInfo(jobID string) (CheckpointInfo, error) {
 		Iteration: p.Iterations, Evaluations: p.Evaluations, RequestedCircles: p.RequestedCircles,
 		ActualCircles: p.ActualCircles, EffectiveSeed: p.EffectiveSeed, ResumeCount: p.ResumeCount,
 		Termination: p.Termination, Timestamp: p.Timestamp, ExtendedFrom: p.ExtendedFrom,
-		PolishedFrom: p.PolishedFrom, ScheduleID: p.ScheduleID, Mode: config.Mode,
-		Circles: config.Circles, RefPath: config.RefPath,
+		PolishedFrom: p.PolishedFrom, ScheduleID: p.ScheduleID, OptimizerVersion: p.OptimizerVersion,
+		Mode: config.Mode, Circles: config.Circles, RefPath: config.RefPath,
 	}
 
 	err := validateCheckpointInfo(info, jobID)

@@ -44,8 +44,9 @@ var libraryVersion = sync.OnceValue(func() string {
 //
 // It exists because the optimizer version is a comparability boundary: v0.5.0
 // scales the crossover offspring count with the population where v0.4.0 held it
-// at an absolute 20, so two campaigns with identical seeds and renderer
-// settings are not comparable across the bump. Nothing else in a run record
-// distinguishes them, so the version has to be reported somewhere a run log can
-// capture it.
+// at an absolute 20, and v0.5.1 restores blend crossover so offspring may land
+// outside the interval their parents span. Two campaigns with identical seeds
+// and renderer settings are not comparable across either bump. Nothing else in
+// a run record distinguishes them, so the version has to be reported somewhere
+// a run log can capture it.
 func LibraryVersion() string { return libraryVersion() }

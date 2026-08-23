@@ -146,7 +146,7 @@ canonicalized and checked against those roots.
 | Go source compatibility | 1.24 or newer |
 | Production/security toolchain | A currently supported patched Go release; vulnerability CI uses 1.26.6 |
 | templ | `v0.3.960`, pinned Go tool; generated Go committed |
-| MayFly | `v0.5.0` |
+| MayFly | `v0.5.1` |
 | govulncheck in CI | `v1.1.4`, installed at an explicit version |
 | staticcheck in CI | `v0.6.1`, installed at an explicit version |
 
