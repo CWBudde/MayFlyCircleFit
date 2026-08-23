@@ -306,12 +306,12 @@ func TestMayflyAdapterMixesIncumbentAndAlternativeSeedPopulations(t *testing.T) 
 }
 
 func TestContinuationSeedIsStableAndAdvances(t *testing.T) {
-	first := continuationSeed(42, 1)
-	if first != continuationSeed(42, 1) {
+	first := continuationSeed(42, 1, 0)
+	if first != continuationSeed(42, 1, 0) {
 		t.Fatal("continuation seed is not deterministic")
 	}
 
-	if first == continuationSeed(42, 2) || first == 42 {
+	if first == continuationSeed(42, 2, 0) || first == continuationSeed(42, 1, 1) || first == 42 {
 		t.Fatal("continuation seed did not advance")
 	}
 }

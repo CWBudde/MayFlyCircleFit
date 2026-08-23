@@ -266,7 +266,10 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 		return fmt.Errorf("create optimizer: %w", err)
 	}
 
-	optimizer = opt.WithEpochs(optimizer, max(checkpoint.Config.OptimizerEpochs, 1))
+	optimizer = opt.WithRestarts(
+		opt.WithEpochs(optimizer, max(checkpoint.Config.OptimizerEpochs, 1)),
+		max(checkpoint.Config.OptimizerRestarts, 1),
+	)
 
 	lifecycle, ok := optimizer.(opt.LifecycleOptimizer)
 	if !ok {

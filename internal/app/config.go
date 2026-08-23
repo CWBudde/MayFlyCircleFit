@@ -68,12 +68,16 @@ const (
 	// TestParametersPerCircleMatchesTheRenderer pins the two together.
 	ParametersPerCircle = 7
 	MaxOptimizerEpochs  = 32
-	MaxBatchSize        = 100
-	MaxPolishingSweeps  = 32
-	MaxImagePixels      = 16_777_216
-	MaxImageFileSize    = 64 << 20
-	MaxRequestBody      = 1 << 20
-	MaxProjectSlugLen   = 64
+	// MaxOptimizerRestarts bounds independent cold attempts per optimizer run.
+	// Measured returns had not flattened at 32; see
+	// docs/restart-vs-budget-report.md.
+	MaxOptimizerRestarts = 64
+	MaxBatchSize         = 100
+	MaxPolishingSweeps   = 32
+	MaxImagePixels       = 16_777_216
+	MaxImageFileSize     = 64 << 20
+	MaxRequestBody       = 1 << 20
+	MaxProjectSlugLen    = 64
 
 	// MaxCLIResponseBytes bounds what the CLI will decode from a server
 	// response. It lives here rather than in cmd because the server is what has
@@ -256,15 +260,21 @@ const (
 // JobConfig is the canonical configuration shared by all application entry
 // points and persisted checkpoints.
 type JobConfig struct {
-	RefPath                  string            `json:"refPath"`
-	CanvasPath               string            `json:"canvasPath,omitempty"`
-	Mode                     Mode              `json:"mode"`
-	Backend                  Backend           `json:"backend,omitempty"`
-	Variant                  Variant           `json:"variant,omitempty"`
-	Circles                  int               `json:"circles"`
-	Iters                    int               `json:"iters"`
-	PopSize                  int               `json:"popSize"`
-	OptimizerEpochs          int               `json:"optimizerEpochs,omitempty"`
+	RefPath         string  `json:"refPath"`
+	CanvasPath      string  `json:"canvasPath,omitempty"`
+	Mode            Mode    `json:"mode"`
+	Backend         Backend `json:"backend,omitempty"`
+	Variant         Variant `json:"variant,omitempty"`
+	Circles         int     `json:"circles"`
+	Iters           int     `json:"iters"`
+	PopSize         int     `json:"popSize"`
+	OptimizerEpochs int     `json:"optimizerEpochs,omitempty"`
+	// OptimizerRestarts runs each optimizer invocation as this many
+	// independent cold attempts and keeps the best. It is not
+	// OptimizerEpochs: an epoch reseeds from the best candidate so far and
+	// inherits its basin, while a restart explores from a fresh
+	// population. One preserves the historical single-attempt behaviour.
+	OptimizerRestarts        int               `json:"optimizerRestarts,omitempty"`
 	BatchSize                int               `json:"batchSize,omitempty"`
 	PolishingEnabled         bool              `json:"polishingEnabled,omitempty"`
 	PolishingOnly            bool              `json:"polishingOnly,omitempty"`
@@ -365,6 +375,7 @@ func DefaultConfig() JobConfig {
 		Iters:                    100,
 		PopSize:                  30,
 		OptimizerEpochs:          1,
+		OptimizerRestarts:        1,
 		BatchSize:                5,
 		PolishingActiveSetSize:   5,
 		PolishingStrategy:        PolishingReplacement,
@@ -442,6 +453,10 @@ func (c *JobConfig) ApplyDefaults() error {
 
 	if c.OptimizerEpochs == 0 {
 		c.OptimizerEpochs = defaults.OptimizerEpochs
+	}
+
+	if c.OptimizerRestarts == 0 {
+		c.OptimizerRestarts = defaults.OptimizerRestarts
 	}
 
 	if c.BatchSize == 0 {
@@ -607,6 +622,10 @@ func (c JobConfig) Validate() error {
 
 	if c.OptimizerEpochs < 1 || c.OptimizerEpochs > MaxOptimizerEpochs {
 		return invalid("optimizerEpochs", fmt.Sprintf("must be between 1 and %d", MaxOptimizerEpochs))
+	}
+
+	if c.OptimizerRestarts < 1 || c.OptimizerRestarts > MaxOptimizerRestarts {
+		return invalid("optimizerRestarts", fmt.Sprintf("must be between 1 and %d", MaxOptimizerRestarts))
 	}
 
 	if c.BatchSize < 1 || c.BatchSize > MaxBatchSize || c.Mode == ModeBatch && c.BatchSize > c.Circles {

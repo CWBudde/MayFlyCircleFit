@@ -273,7 +273,9 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func plannedOptimizerIterations(config JobConfig) int {
-	perStage := config.Iters * max(config.OptimizerEpochs, 1)
+	// Restarts multiply the work exactly as epochs do; a progress bar that
+	// ignored them would sit at the wrong fraction for the whole run.
+	perStage := config.Iters * max(config.OptimizerEpochs, 1) * max(config.OptimizerRestarts, 1)
 	stages := 1
 
 	switch config.Mode {

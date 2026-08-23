@@ -338,8 +338,8 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 
 	// Create RNG for population initialization
 	runSeed := m.seed
-	if options.ResumeCount > 0 {
-		runSeed = continuationSeed(m.seed, options.ResumeCount)
+	if options.ResumeCount > 0 || options.SeedOffset > 0 {
+		runSeed = continuationSeed(m.seed, options.ResumeCount, options.SeedOffset)
 	}
 
 	rng := rand.New(rand.NewSource(runSeed))
@@ -616,8 +616,11 @@ func validateContinuationProfile(profile *ContinuationProfile) error {
 	return nil
 }
 
-func continuationSeed(seed int64, resumeCount int) int64 {
-	value := uint64(seed) + uint64(resumeCount)*0x9e3779b97f4a7c15
+func continuationSeed(seed int64, resumeCount, seedOffset int) int64 {
+	// A zero seedOffset contributes nothing, so seeds chosen before restarts
+	// existed are unchanged.
+	value := uint64(seed) + uint64(resumeCount)*0x9e3779b97f4a7c15 +
+		uint64(seedOffset)*0xc2b2ae3d27d4eb4f
 	value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9
 	value = (value ^ (value >> 27)) * 0x94d049bb133111eb
 	value ^= value >> 31

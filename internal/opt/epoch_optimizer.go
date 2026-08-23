@@ -81,6 +81,7 @@ func (o *epochOptimizer) RunContext(ctx context.Context, problem Problem, option
 			AdditionalSeeds: additionalSeeds,
 			ProgressMapper:  options.ProgressMapper,
 			ResumeCount:     options.ResumeCount + epoch,
+			SeedOffset:      options.SeedOffset,
 			Continuation:    options.Continuation,
 		}
 		if options.Observer != nil {

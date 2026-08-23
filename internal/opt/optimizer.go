@@ -63,6 +63,12 @@ type RunOptions struct {
 	// lost; additional seeds broaden exploration around other promising basins.
 	AdditionalSeeds []Candidate
 	ResumeCount     int
+	// SeedOffset varies the run seed without implying a continuation. Restart
+	// attempts use it so they stay reproducible for a fixed base seed while
+	// remaining a distinct dimension from ResumeCount: if both used the same
+	// field, epoch 2 of attempt 1 and epoch 1 of attempt 2 would alias onto
+	// one seed. Zero reproduces the seed a run would have had without it.
+	SeedOffset int
 	// Continuation optionally concentrates a seeded run around its known
 	// candidates. Nil preserves the historical half-local, half-global Mayfly
 	// population and velocity scale. Active-set polishing uses this to request

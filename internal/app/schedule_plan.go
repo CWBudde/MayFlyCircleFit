@@ -83,7 +83,8 @@ func (s ScheduleStage) PlannedIterations() int {
 
 	total := 0
 	if !config.PolishingOnly {
-		total = s.plannedOptimizerStages() * config.Iters * max(config.OptimizerEpochs, 1)
+		total = s.plannedOptimizerStages() * config.Iters *
+			max(config.OptimizerEpochs, 1) * max(config.OptimizerRestarts, 1)
 	}
 
 	if config.PolishingEnabled {
