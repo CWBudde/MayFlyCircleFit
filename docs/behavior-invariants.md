@@ -228,6 +228,27 @@ Rendering-side invariants live in
   Polishing runs its own, smaller population, and an offspring count sized for
   the main population would exceed what that population can mate. Zero leaves
   the library's own scaling alone, so an unset configuration is unchanged.
+- **An unset advanced knob is left to the library, and an explicit zero is
+  not.** `danceDamp`, `aquilaWeight` and `oppositionProbability` are pointers
+  because zero is a meaningful setting for each -- no dance decay, no Aquila
+  step, no opposition step -- so a plain `float64` with `omitempty` would erase
+  exactly the configuration the knob exists to express. Nil means the library
+  default; a checkpoint written before these fields existed carries nil for all
+  three and resumes unchanged. This is why they do not follow `crossoverCount`,
+  whose zero is free to mean "unset" because the library refuses an offspring
+  count of zero outright.
+- **An advanced knob no variant would read is rejected, not ignored.**
+  `aquilaWeight` and `oppositionProbability` are read only by `aoblmoa`, so
+  setting either on another variant fails validation. Accepting them would
+  persist a setting into a checkpoint and report it back unchanged while it
+  never reached the optimizer.
+- **The advanced knobs apply to optimizer stages, not polishing sweeps.**
+  Polishing runs its own smaller standard-variant population, which is not what
+  an operator is tuning when they reach for these. `danceDamp` is enforced to
+  [0, 1] here because the library does not range-check it at all. Above 1 the
+  dance coefficient grows each iteration, though velocity and position clamping
+  keep the run finite, so the bound guards against a saturated random walk
+  rather than against divergence.
 - The configured `variant` is honored at every optimizer construction site.
   All seven MayFly variants the adapter can build (`standard`, `desma`, `olce`,
   `eobbma`, `gsasma`, `mpma`, `aoblmoa`) are accepted by `JobConfig`

@@ -274,6 +274,50 @@ recombination. And an odd count yields one fewer offspring, because the library
 mates pairs. The setting applies to the optimizer stages only, not to polishing
 sweeps, which run their own smaller population.
 
+### Advanced MayFly parameters
+
+Three further knobs reach parameters the MayFly library normally keeps to
+itself. They are worth knowing about and are not worth changing casually: the
+defaults are the ones the algorithm was published and tuned with, and a bad
+value degrades a run quietly rather than failing it.
+
+| Flag | Applies to | Library default |
+| --- | --- | --- |
+| `--dance-damp` | every variant | 0.8 |
+| `--aquila-weight` | `aoblmoa` only | 1.0 |
+| `--opposition-probability` | `aoblmoa` only | 0.3 |
+
+All three take a value between 0 and 1, and all three are left entirely to the
+library unless you name the flag. That distinction matters here because zero is
+a real setting for each of them, not an absence -- so unlike the other numeric
+flags, these are read back from whether the flag appeared on the command line,
+and the JSON fields are omitted rather than zero when unset.
+
+`--dance-damp` is the per-iteration decay on the nuptial dance, the random walk
+the leading male takes on top of its velocity. It therefore sets how fast the
+swarm stops exploring: at the default of 0.8 the term keeps about a tenth of
+its initial size after ten iterations. Raising it slows that decay. Note that
+the library does not range-check this one at all, so the range is enforced
+here instead. Above 1 the dance coefficient grows every iteration, but the
+library clamps velocity to `VelMin`/`VelMax` and positions to the bounds, so
+the search degenerates into a saturated random walk inside the box rather than
+diverging. The bound is a guard against that degenerate mode, not against a
+crash: MayFly runs such a configuration and returns finite results.
+
+`--aquila-weight` is the probability that an AOBLMOA individual takes an Aquila
+step instead of the ordinary MayFly velocity and position update. The library
+default of 1.0 follows the paper, which means the MayFly dynamics never run at
+all; lowering it mixes the two. `--opposition-probability` is the share of
+solutions reflected through the search space each iteration.
+
+Setting either of the AOBLMOA knobs on another variant is rejected rather than
+ignored, so a configuration that would have done nothing fails at validation
+instead of running silently and being persisted into a checkpoint.
+
+Like `--crossover-count`, all three apply to the optimizer stages only, not to
+polishing sweeps, which run their own smaller standard-variant population.
+
+
 ## Checkpoints and restart-from-best
 
 Checkpoint files record the best candidate and measured progress. Resume does

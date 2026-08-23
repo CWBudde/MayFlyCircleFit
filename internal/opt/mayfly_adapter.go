@@ -45,6 +45,17 @@ type MayflyAdapter struct {
 	// crossoverCount overrides Mayfly's offspring count per iteration. Zero
 	// leaves the library's own scaling alone.
 	crossoverCount int
+	// danceDamp, aquilaWeight and oppositionProbability override library
+	// parameters whose zero value is a meaningful setting rather than an
+	// absence, so each is a pointer and nil means "leave the library's own
+	// default alone". This is why they do not follow crossoverCount's
+	// zero-as-unset convention: the library refuses an offspring count of
+	// zero, which frees that value to act as a sentinel, while a damping
+	// factor of zero, an Aquila weight of zero and an opposition rate of zero
+	// are all configurations the library accepts and runs.
+	danceDamp             *float64
+	aquilaWeight          *float64
+	oppositionProbability *float64
 }
 
 // Stop configures optimizer-level early stopping, evaluated per iteration
@@ -84,6 +95,54 @@ type MayflyOption func(*MayflyAdapter)
 // An odd count yields one fewer offspring, because the library mates pairs.
 func WithCrossoverCount(count int) MayflyOption {
 	return func(m *MayflyAdapter) { m.crossoverCount = count }
+}
+
+// OptionalFloat adapts a pointer-valued setting to an optimizer option,
+// yielding a no-op when the setting is nil.
+//
+// The advanced parameters below are configured as pointers because each has a
+// meaningful zero, so nil is the only way to say "leave the library's own
+// default alone". Every caller that reads one out of a JobConfig or a
+// checkpoint needs the same nil check, so it lives here once.
+func OptionalFloat(value *float64, build func(float64) MayflyOption) MayflyOption {
+	if value == nil {
+		return func(*MayflyAdapter) {}
+	}
+
+	return build(*value)
+}
+
+// WithDanceDamp overrides the per-iteration decay applied to the nuptial-dance
+// term, whose library default is 0.8.
+//
+// The dance is the random walk the leading male takes on top of its velocity,
+// so the damping factor sets how fast the swarm's exploration decays: at 0.8
+// the term retains about a tenth of its initial size after ten iterations.
+// Raising it slows that decay. This is an advanced parameter, and the library
+// itself does not range-check it -- app.JobConfig does. Above 1 the
+// coefficient grows each iteration, but velocity and position clamping keep
+// the run finite, so the effect is a saturated random walk, not divergence.
+func WithDanceDamp(damp float64) MayflyOption {
+	return func(m *MayflyAdapter) { m.danceDamp = &damp }
+}
+
+// WithAquilaWeight overrides the probability that an AOBLMOA individual takes
+// an Aquila step instead of the ordinary Mayfly velocity and position update.
+//
+// The library default is 1.0, following the paper, which means every
+// individual takes the Aquila step every iteration and the Mayfly dynamics
+// never run. Lowering it mixes the two. It has no effect on any other variant.
+func WithAquilaWeight(weight float64) MayflyOption {
+	return func(m *MayflyAdapter) { m.aquilaWeight = &weight }
+}
+
+// WithOppositionProbability overrides the AOBLMOA opposition-based-learning
+// rate, whose library default is 0.3.
+//
+// It is the share of solutions reflected through the search space each
+// iteration. It has no effect on any other variant.
+func WithOppositionProbability(probability float64) MayflyOption {
+	return func(m *MayflyAdapter) { m.oppositionProbability = &probability }
 }
 
 // WithLogger reports Mayfly lifecycle events through logger. Per-iteration
@@ -306,6 +365,18 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 
 	if m.crossoverCount > 0 {
 		config.NC = m.crossoverCount
+	}
+
+	if m.danceDamp != nil {
+		config.DanceDamp = *m.danceDamp
+	}
+
+	if m.aquilaWeight != nil {
+		config.AquilaWeight = *m.aquilaWeight
+	}
+
+	if m.oppositionProbability != nil {
+		config.OppositionProbability = *m.oppositionProbability
 	}
 	config.LowerBound = 0.0
 
