@@ -25,8 +25,10 @@ github.com/cucumber/godog v0.16.0 h1:ezQbgItuWqZrjPUQwLJ3muwIlvzXBOfZso5QZfG7efE
 github.com/cucumber/godog v0.16.0/go.mod h1:EDUX9yCqANK+GpbftMDeu61sUDtdLuo1JJgXD2n3bbM=
 github.com/cucumber/messages/go/v34 v34.2.0 h1:VCbcNOMz+f8ccjjOOx1NLBNhwvE7/X49Atc8klJa+i8=
 github.com/cucumber/messages/go/v34 v34.2.0/go.mod h1:LYUPjqlTS1kS0pdkdf6sS5uirnjwiIzEGyXPezXNhL8=
-github.com/cwbudde/mayfly v0.6.0 h1:Hpm1L38VzWzj+UIFEGDOB29KKwjE8K++Kk+tpwZF1Ag=
-github.com/cwbudde/mayfly v0.6.0/go.mod h1:Kvhc6sAww1oFoR37ON2/iqIvOu/E8qHKAyQsM7tRs6U=
+github.com/cwbudde/mayfly v0.7.0 h1:v5IvgQrVk4CDSAQrLhDpD4rcDZ5vF5kE9/vUVDL2L0w=
+github.com/cwbudde/mayfly v0.7.0/go.mod h1:OkFqBCPZGhDlzxIp3Vixuwzg97P8XVRmElmmIq7xoms=
+github.com/cwbudde/qmc v0.2.0 h1:kKkTnDMbBErTGWuDV60vg9kf/VhzUi/fKBokRzPEvZg=
+github.com/cwbudde/qmc v0.2.0/go.mod h1:PX169uG71n+uRSFx64xMHMEKkX77VSyCXc6rRUUgSKQ=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/evanw/esbuild v0.28.2 h1:A2uETn4jrQTcXaT/shwTDTYBxDjl7fV7nXmUrJxfA2w=

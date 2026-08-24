@@ -401,13 +401,14 @@ comparable after the fact; treat it as its own baseline.
   [`task-10.17-sse2-report.md`](task-10.17-sse2-report.md) is the example, and
   the report marks an earlier measurement as predating it for exactly this
   reason. Cite the revision when a cost is meant to be compared later.
-- **`parallelEvaluation` — the mode must match, the worker count need not.**
-  Parallel evaluation reproduces bit-identically for a fixed seed at *any*
-  evaluation-worker count, but its trajectory differs from a serial run of the
-  same seed, because MayFly holds the global best fixed for a whole parallel
-  generation. So a parallel campaign is not comparable to a serial one of the
-  same seed, while two parallel campaigns of that seed are — including at
-  different `evaluationWorkers`.
+- **`parallelEvaluation` — comparable, as of the MayFly v0.7.0 pin.** Parallel
+  evaluation reproduces bit-identically for a fixed seed at *any*
+  evaluation-worker count, and v0.7.0 made it bit-identical to the serial run of
+  that seed as well, for every variant and for Dragonfly. So a parallel campaign
+  and a serial one of the same seed are comparable, as are two parallel
+  campaigns at different `evaluationWorkers`. **A campaign recorded under
+  v0.6.0 or earlier is not**: the modes were different trajectories then, so
+  such a run is comparable only against runs with the same setting.
 - **`threads` — comparable.** Threads shard the rows of one render into disjoint
   bands, and every worker composites every circle in index order within its own
   rows, so the image is pixel-exact at any thread count. The cost is then

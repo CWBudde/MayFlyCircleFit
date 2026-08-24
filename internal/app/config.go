@@ -270,7 +270,20 @@ type JobConfig struct {
 	// Variant selects a MayFly algorithm variant. It stays empty for an
 	// optimizer that has no variants, and Validate refuses a variant there
 	// rather than ignoring it.
-	Variant         Variant `json:"variant,omitempty"`
+	Variant Variant `json:"variant,omitempty"`
+	// QMCInit selects how MayFly draws its initial population: independent
+	// uniform draws, or a low-discrepancy sequence covering the search box
+	// more evenly for the same number of evaluations. Empty means uniform,
+	// which is what every configuration and checkpoint written before this
+	// field existed carries. Read it through ResolvedQMCInit.
+	//
+	// This is an expert knob, not a recommended default. The library's own
+	// study finds a chance-level effect across its benchmark suite, and the
+	// mechanism is weakest exactly where this project runs it: the gap a
+	// low-discrepancy sample closes is largest when the population is small
+	// relative to the dimension, and a popSize of 1024 over 56 dimensions is
+	// not that. See docs/known-limitations.md.
+	QMCInit         QMCInit `json:"qmcInit,omitempty"`
 	Circles         int     `json:"circles"`
 	Iters           int     `json:"iters"`
 	PopSize         int     `json:"popSize"`
@@ -656,6 +669,11 @@ func (c JobConfig) Validate() error {
 	engineErr := c.validateOptimizerEngine()
 	if engineErr != nil {
 		return engineErr
+	}
+
+	qmcErr := c.validateQMCInit()
+	if qmcErr != nil {
+		return qmcErr
 	}
 
 	if c.Circles < 1 || c.Circles > MaxCircles {

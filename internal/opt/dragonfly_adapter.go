@@ -27,10 +27,10 @@ const dragonflyModulePath = "github.com/CWBudde/dragonfly"
 // What it supports is deliberately the subset the renderer pipelines actually
 // call: bounded minimization, Repair, inequality constraints, per-iteration
 // progress, early stopping, parallel evaluation, and seeding from known
-// candidates so WithEpochs and WithRestarts work. It is not selectable from
-// the server, the schedule format, resume, or the web UI, and no checkpoint
-// records that a run used it, so a resumed run silently becomes a Mayfly run.
-// Only cmd/run's --optimizer flag reaches it today.
+// candidates so WithEpochs and WithRestarts work. It is reachable from
+// cmd/run's --optimizer flag, a job payload, and a schedule document's base;
+// the checkpoint records the engine, and resume runs the engine the checkpoint
+// names. Polishing stays MayFly-only.
 //
 // Fit quality is expected to be worse than Mayfly's. Dragonfly's shared
 // convergence factor reaches zero at the halfway point of a run, after which
@@ -71,6 +71,9 @@ func WithDragonflyEarlyStop(stop Stop) DragonflyOption {
 // concurrently with at most workers goroutines. The caller must guarantee that
 // the objective is safe to call from several goroutines at once, exactly as
 // WithParallelEvaluation requires.
+//
+// Like MayFly's, it is bit-identical to a serial run of the same seed;
+// TestDragonflyParallelEvaluationMatchesSerial pins it.
 func WithDragonflyParallelEvaluation(workers int) DragonflyOption {
 	return func(d *DragonflyAdapter) { d.parallelWorkers = workers }
 }

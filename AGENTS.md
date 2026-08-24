@@ -33,6 +33,10 @@ take precedence if this document goes stale.
   MayFly v0.5.1 and it did not measure population size as a quality knob, so it
   neither reproduces nor refutes the v0.5.0 monotonic-to-1024 figure above.
   Read this before proposing a search-quality change.
+- **Every report below was measured under MayFly v0.6.0 or earlier. The pin is
+  now v0.7.0, which changes results for every variant, so none of their numbers
+  is comparable to a run made today.** Read them for method and for what was
+  ruled out; re-measure before citing a figure. See the Toolchain section.
 - [`docs/aoblmoa-paper-fidelity-report.md`](docs/aoblmoa-paper-fidelity-report.md)
   — the v0.6.0 paper-faithful `aoblmoa` measured against `standard` on the
   eight-circle base stage. It loses significantly under restarts
@@ -62,7 +66,7 @@ take precedence if this document goes stale.
 - `internal/fit/renderer/opencl`: the cgo OpenCL renderer (`gpu` tag). It is a
   separate package because Go forbids Plan 9 assembly in a package that uses
   cgo; it must never import `internal/fit/renderer`.
-- `internal/opt`: optimizer interfaces, the MayFly v0.6.0 adapter, and a
+- `internal/opt`: optimizer interfaces, the MayFly v0.7.0 adapter, and a
   proof-of-concept Dragonfly v0.1.0 adapter. `JobConfig.optimizer` selects
   between them from the CLI, the server, and a schedule document; polishing is
   MayFly-only.
@@ -89,7 +93,29 @@ reintroduce application configuration into the store package.
   fitness test) and `oppositionProbability` is inert but still accepted. The
   faithful variant measures *worse* than `standard` on this problem; see
   [`docs/aoblmoa-paper-fidelity-report.md`](docs/aoblmoa-paper-fidelity-report.md).
-- MayFly is pinned to `github.com/cwbudde/mayfly v0.6.0`; templ to
+- **MayFly v0.7.0 is a correctness release, and it changes results for every
+  variant.** The library reworked its core update rules, so a given seed no
+  longer reproduces the trajectory it produced under v0.6.0 — verified directly,
+  not inferred: standard MA on a 10-dimension sphere at seed 4242 returns
+  9.1756e-05 under v0.6.0 and 2.7848e-04 under v0.7.0. **Every measurement
+  recorded in `docs/` was taken under v0.6.0 or earlier and is not comparable to
+  a run on the current pin.** That includes the AOBLMOA, restart-vs-budget,
+  Dragonfly and seed-variance reports. Their *conclusions* about method — spend
+  a budget on restarts, do not size a population from v0.4.0 figures — carry
+  over; their *numbers* are a different algorithm's. Re-measure a baseline
+  before comparing anything new against a recorded figure. Resume enforces this
+  on its own: a checkpoint recording v0.6.0 is refused by a v0.7.0 binary.
+- v0.7.0 also adds HMMA as a separately registered variant. This repository does
+  not offer it yet: `app.variants` and `opt.supportedVariants` are unchanged, so
+  a job naming it is refused at validation rather than silently run.
+- **The MayFly pin carries quasi-random initial populations.** `qmcInit`
+  selects `uniform` (the default and every earlier measurement's behavior),
+  `sobol`, or `halton`. It is MayFly-only, refused under `dragonfly`, and an
+  expert knob: nothing has measured it on this problem, and the library's own
+  benchmark study finds a chance-level effect. See
+  [`docs/known-limitations.md`](docs/known-limitations.md) before proposing it
+  as a default or reading a single campaign as evidence for it.
+- MayFly is pinned to `github.com/cwbudde/mayfly v0.7.0`; templ to
   `github.com/a-h/templ v0.3.960` as a Go tool; `github.com/google/pprof` as a
   Go tool because some Go installations do not bundle it.
 - `github.com/evanw/esbuild/cmd/esbuild` is installed as a Go tool to compile the

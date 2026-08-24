@@ -20,7 +20,7 @@ request fails.
 
 The repository pins templ `v0.3.960` as a Go tool and commits generated
 `internal/ui/*_templ.go` files. A clean checkout therefore builds without a
-separate templ installation. MayFly is pinned to `v0.6.0`.
+separate templ installation. MayFly is pinned to `v0.7.0`.
 
 ## Quick start
 
@@ -234,6 +234,31 @@ to each stage, so they can shorten stages without ending the run. `status` and
 
 Use `--variant` to select the MayFly algorithm variant: `standard`, `desma`,
 `olce`, `eobbma`, `gsasma`, `mpma`, or `aoblmoa`.
+
+### Initial population
+
+`--qmc-init` selects how a MayFly run draws its first generation: `uniform`
+(the default), `sobol`, or `halton`. Uniform takes every coordinate as an
+independent random draw. The other two take the whole population from a
+low-discrepancy sequence, which covers the search box more evenly for the same
+number of evaluations -- the standard cheap addition to a population-based
+optimizer. It is MayFly-only and refused under `--optimizer dragonfly`.
+
+**This is an expert knob with no measurement on circle fitting.** MayFly's own
+benchmark study finds a chance-level effect, and the mechanism is weakest in
+the regime this project usually runs: what an even sample buys is largest when
+the population is small relative to the dimension, and a `--pop-size` of 1024
+over a 56-dimension batch stage is the opposite of that. Where it is worth
+trying is a small population on a short restart. Do not read a single campaign
+as evidence for it, and see
+[`docs/known-limitations.md`](docs/known-limitations.md).
+
+Setting it keeps a run reproducible -- the sequence's scramble is drawn from
+the run's own seeded generator, not from the clock -- but a quasi-random run is
+not comparable to the uniform run of the same seed, because a different
+starting population consumes the generator differently from the first
+iteration onwards. Pair strategies across seeds rather than assuming a shared
+trajectory.
 
 ### Restarts
 

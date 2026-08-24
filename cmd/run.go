@@ -26,6 +26,7 @@ var (
 	mode                     string
 	backendName              string
 	variantName              string
+	qmcInitName              string
 	circles                  int
 	iters                    int
 	popSize                  int
@@ -79,6 +80,11 @@ func init() {
 	runCmd.Flags().StringVar(&backendName, "backend", "cpu", "Renderer backend to use (cpu, opencl; aliases: gpu, cl)")
 	runCmd.Flags().StringVar(&variantName, "variant", "standard",
 		"MayFly algorithm variant: standard, desma, olce, eobbma, gsasma, mpma, aoblmoa (MayFly only)")
+	// The default is empty rather than "uniform" so an unnamed flag reaches a
+	// non-MayFly engine as "not asked for" instead of as a MayFly-only setting
+	// validation would then refuse. Empty and "uniform" run the same search.
+	runCmd.Flags().StringVar(&qmcInitName, "qmc-init", "",
+		"initial population sequence: uniform (default), sobol, halton (MayFly only, expert)")
 	runCmd.Flags().StringVar(&optimizerName, "optimizer", string(app.OptimizerMayfly),
 		"Optimizer library: mayfly, or dragonfly (an experimental proof of concept; "+
 			"see docs/known-limitations.md for what it does not support)")
@@ -192,7 +198,11 @@ func newStageOptimizer(config app.JobConfig, rend renderer.Renderer) (opt.Optimi
 		opt.WithLogger(slog.Default()), opt.WithEarlyStop(earlyStopFromConfig(config)),
 		opt.WithCrossoverCount(config.CrossoverCount),
 		// Optimizer stages only. Polishing runs its own smaller
-		// standard-variant population and is deliberately left alone.
+		// standard-variant population and is deliberately left alone. That
+		// includes the initial-population sequence: a polishing run starts
+		// from the incumbent it is polishing, so how a cold population would
+		// have sampled the box does not apply to it.
+		opt.WithQMCInit(string(config.ResolvedQMCInit())),
 		opt.OptionalFloat(config.DanceDamp, opt.WithDanceDamp),
 		opt.OptionalFloat(config.AquilaWeight, opt.WithAquilaWeight),
 		opt.OptionalFloat(config.OppositionProbability, opt.WithOppositionProbability),
@@ -297,6 +307,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		Backend:                  backend,
 		Optimizer:                app.Optimizer(optimizerName),
 		Variant:                  variantFlag(cmd, optimizerName, variantName),
+		QMCInit:                  app.QMCInit(qmcInitName),
 		Circles:                  circles,
 		Iters:                    iters,
 		PopSize:                  popSize,

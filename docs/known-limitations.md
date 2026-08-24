@@ -23,7 +23,7 @@ behavior is production-ready.
 ## Resume and persistence
 
 - “Resume” is restart-from-best, not exact continuation. The saved best is put
-  into a newly initialized MayFly v0.6.0 population along with deterministic
+  into a newly initialized MayFly v0.7.0 population along with deterministic
   perturbations. Velocity, mating state, RNG position, and other optimizer
   internals are not restored.
 - A continuation seed is derived from the original seed and resume count, so a
@@ -36,6 +36,26 @@ behavior is production-ready.
   available artifacts after restart.
 
 ## Rendering and optimization
+
+- The MayFly initial-population sequence (`qmcInit`: `uniform`, `sobol`,
+  `halton`) is an expert knob with no measurement on this problem. The library's
+  own study finds a chance-level effect across sixteen benchmark problems — two
+  significant results for Sobol, none against, against about 1.6 expected by
+  chance, and an earlier run of the same study found two hits on *different*
+  problems. Nothing here has been measured on circle fitting.
+
+  The mechanism is also weakest where this project usually runs. What a
+  low-discrepancy sample buys is even coverage of the search box, and that gap
+  is largest when the population is small relative to the dimension; a `popSize`
+  of 1024 over a 56-dimension batch stage is the opposite regime. Where it is
+  worth trying is a small population on a short restart, which is where the
+  library's evidence and the mechanism agree — not as a default, and not as a
+  change to any existing campaign's settings.
+
+  Setting it does not make a run irreproducible: the scramble comes from the
+  run's seeded generator. It does make the run incomparable to the uniform run
+  of the same seed, so a campaign has to pair strategies across seeds rather
+  than assume a shared trajectory. See `docs/behavior-invariants.md`.
 
 - The Dragonfly optimizer is a proof of concept. It is selected with
   `"optimizer": "dragonfly"` — the `run --optimizer` flag, the `optimizer` field
@@ -55,8 +75,10 @@ behavior is production-ready.
   `invalid_config` envelope from the API, and a parse failure for a schedule
   whose steps include a `polish` — rather than accepted and ignored.
   `parallelEvaluation` and `evaluationWorkers` are supported and behave as they
-  do for MayFly: reproducible for a fixed seed, but not identical to a serial
-  run of the same seed.
+  do for MayFly: reproducible for a fixed seed, and measured identical to a
+  serial run of that seed.
+  `TestDragonflyParallelEvaluationMatchesSerial` pins it separately from
+  MayFly's, because this is a separate library on a separate pin.
 
   Its published behavior is to explore well and exploit poorly -- the
   convergence factor reaches zero at the halfway point of a run -- so a worse
@@ -185,15 +207,18 @@ behavior is production-ready.
   request is declined with a warning and the run evaluates serially, rather
   than paying for an altered search trajectory without a validated throughput
   gain.
-- Parallel evaluation is reproducible but not equivalent to a serial run of the
-  same seed. Evaluation order does not leak into the result: MayFly advances its
-  RNG only from serial phase code and breaks ties in a parallel batch by
-  population index, so a seed reproduces bit-identically and the result does not
-  depend on the worker count. The trajectory differs because MayFly's serial
-  male loop updates the global best in the middle of a generation, steering the
-  remaining members, while its parallel loop holds the global best fixed for the
-  whole generation and merges afterwards. Compare `--parallel-evaluation` runs
-  only against other runs with the same setting.
+- Parallel evaluation is reproducible *and*, since the MayFly v0.7.0 pin,
+  equivalent to a serial run of the same seed. Evaluation order does not leak
+  into the result: MayFly advances its RNG only from serial phase code and
+  breaks ties in a parallel batch by population index, so a seed reproduces
+  bit-identically and the result does not depend on the worker count. v0.7.0
+  additionally gave the serial and parallel modes the same proposal and commit
+  semantics, so the two now walk one trajectory; this is measured for all seven
+  variants and for Dragonfly, and pinned by
+  `TestParallelEvaluationMatchesSerial`. Runs recorded under v0.6.0 and earlier
+  predate that and stay comparable only against runs with the same setting,
+  because the older serial loop steered a generation from its own mid-generation
+  best while the parallel loop did not.
 - Transactional polishing (`--polishing`) uses the configured parallel-
   evaluation width on a backend that provides and advertises independent
   concurrent sessions. Every slot owns its renderer and scratch vector; only
