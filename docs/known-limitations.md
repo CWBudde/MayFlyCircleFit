@@ -23,7 +23,7 @@ behavior is production-ready.
 ## Resume and persistence
 
 - “Resume” is restart-from-best, not exact continuation. The saved best is put
-  into a newly initialized MayFly v0.7.0 population along with deterministic
+  into a newly initialized MayFly v0.7.1 population along with deterministic
   perturbations. Velocity, mating state, RNG position, and other optimizer
   internals are not restored.
 - A continuation seed is derived from the original seed and resume count, so a
@@ -38,19 +38,25 @@ behavior is production-ready.
 ## Rendering and optimization
 
 - The MayFly initial-population sequence (`qmcInit`: `uniform`, `sobol`,
-  `halton`) is an expert knob with no measurement on this problem. The library's
-  own study finds a chance-level effect across sixteen benchmark problems — two
-  significant results for Sobol, none against, against about 1.6 expected by
-  chance, and an earlier run of the same study found two hits on *different*
-  problems. Nothing here has been measured on circle fitting.
+  `halton`) is an expert knob that buys nothing measurable here.
+  [`qmc-initial-population-report.md`](qmc-initial-population-report.md) screened
+  both sequences against `uniform` on the eight-circle batch stage at `popSize`
+  64, 128, and 1024, paired on seed and evaluation-matched. All six comparisons
+  are null, the intervals bound any effect to about ±4-5% in the two cheap
+  regimes, and the signs are not even consistent across regimes. That agrees
+  with the library's own study, which finds a chance-level effect across sixteen
+  benchmark problems — two significant results for Sobol, none against, against
+  about 1.6 expected by chance, and an earlier run of the same study found two
+  hits on *different* problems.
 
-  The mechanism is also weakest where this project usually runs. What a
+  The mechanism is weakest where this project usually runs. What a
   low-discrepancy sample buys is even coverage of the search box, and that gap
   is largest when the population is small relative to the dimension; a `popSize`
-  of 1024 over a 56-dimension batch stage is the opposite regime. Where it is
-  worth trying is a small population on a short restart, which is where the
-  library's evidence and the mechanism agree — not as a default, and not as a
-  change to any existing campaign's settings.
+  of 1024 over a 56-dimension batch stage is the opposite regime. The screen
+  above therefore went *below* that regime, down to `popSize` 64 over 128
+  iterations, to give the mechanism its best chance — and still found nothing.
+  Treat `uniform` as settled for this problem rather than as an untested
+  default, and do not change an existing campaign's settings to a sequence.
 
   The mechanism is further weakened by how this project seeds its runs. The
   sequence does not initialize the whole population: wherever residual seeding
