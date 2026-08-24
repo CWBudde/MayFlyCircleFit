@@ -12,6 +12,7 @@ import (
 func TestGuardCheckpointVersion(t *testing.T) {
 	cases := []struct {
 		name          string
+		library       string
 		recorded      string
 		running       string
 		allowMismatch bool
@@ -60,6 +61,38 @@ func TestGuardCheckpointVersion(t *testing.T) {
 			mustName:    []string{"v0.4.0"},
 		},
 		{
+			name:     "v0.7.1 build accepts a v0.7.0 checkpoint",
+			recorded: "v0.7.0",
+			running:  "v0.7.1",
+		},
+		{
+			name:     "v0.7.0 build accepts a v0.7.1 checkpoint",
+			recorded: "v0.7.1",
+			running:  "v0.7.0",
+		},
+		{
+			name:        "v0.6.0 checkpoint is still refused under v0.7.1",
+			recorded:    "v0.6.0",
+			running:     "v0.7.1",
+			wantRefusal: true,
+			mustName:    []string{"v0.6.0", "v0.7.1"},
+		},
+		{
+			name:        "v0.6.0 checkpoint is still refused under v0.7.0",
+			recorded:    "v0.6.0",
+			running:     "v0.7.0",
+			wantRefusal: true,
+			mustName:    []string{"v0.6.0", "v0.7.0"},
+		},
+		{
+			name:        "the MayFly allowlist does not carry over to another library",
+			library:     "Dragonfly",
+			recorded:    "v0.7.0",
+			running:     "v0.7.1",
+			wantRefusal: true,
+			mustName:    []string{"Dragonfly", "v0.7.0", "v0.7.1"},
+		},
+		{
 			name:        "mismatch is refused",
 			recorded:    "v0.4.0",
 			running:     "v0.5.1",
@@ -78,7 +111,12 @@ func TestGuardCheckpointVersion(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			warning, err := GuardCheckpointVersion("MayFly", testCase.recorded, testCase.running, testCase.allowMismatch)
+			library := testCase.library
+			if library == "" {
+				library = "MayFly"
+			}
+
+			warning, err := GuardCheckpointVersion(library, testCase.recorded, testCase.running, testCase.allowMismatch)
 
 			if testCase.wantRefusal {
 				if !errors.Is(err, ErrOptimizerVersionMismatch) {

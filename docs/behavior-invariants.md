@@ -208,7 +208,7 @@ Rendering-side invariants live in
   keep precedence over the sequence — a continuation still starts from its
   incumbent — and polishing is unaffected, since it starts from the candidate
   it is polishing rather than from a cold population.
-- Resume is restart-from-best: the MayFly v0.7.0 population is seeded with the
+- Resume is restart-from-best: the MayFly v0.7.1 population is seeded with the
   saved best and deterministic nearby variations. It is not an exact restoration
   of optimizer internals. Server restart-from-best for sequential and batch jobs
   is not supported.
@@ -226,7 +226,11 @@ Rendering-side invariants live in
   checkpoint that records no version at all — every checkpoint written before
   the field existed — is never refused; it warns, naming the running version.
   The same applies when either side reports `unknown`, which is what a build
-  without module information reports.
+  without module information reports. One pair of versions is exempt: MayFly
+  v0.7.0 and v0.7.1 are measured to be behaviour-neutral against each other, so
+  a checkpoint written by either resumes silently under the other. That is an
+  explicit two-version allowlist, not a rule about minor versions — every other
+  pair, v0.6.0 against v0.7.x included, is still refused.
 - Optimizer termination reasons propagate from the adapter through the pipeline
   to jobs, checkpoints, `status`, and `checkpoints list`. The checkpoint
   `termination` field is free-form, so new reasons need no schema bump, and
