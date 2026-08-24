@@ -31,20 +31,17 @@ const (
 	QMCInitHalton QMCInit = "halton"
 )
 
-// qmcInits lists the strategies a JobConfig may select, in the order they are
-// reported to the caller.
-var qmcInits = []QMCInit{
-	QMCInitUniform,
-	QMCInitSobol,
-	QMCInitHalton,
-}
-
 // SupportedQMCInits returns the initial-population strategies a JobConfig may
-// select. It must stay in step with what internal/opt can configure;
-// internal/opt owns a contract test that fails if the two drift apart, because
-// app is dependency-free and cannot import it.
+// select, in the order they are reported to the caller. It must stay in step
+// with what internal/opt can configure; internal/opt owns a contract test that
+// fails if the two drift apart, because app is dependency-free and cannot
+// import it.
 func SupportedQMCInits() []QMCInit {
-	return slices.Clone(qmcInits)
+	return []QMCInit{
+		QMCInitUniform,
+		QMCInitSobol,
+		QMCInitHalton,
+	}
 }
 
 // ResolvedQMCInit reports the strategy this configuration runs, treating an
@@ -64,12 +61,13 @@ func (c JobConfig) ResolvedQMCInit() QMCInit {
 // validateQMCInit enforces the strategy set. It runs only for MayFly jobs,
 // because mayflyOnlyFields has already refused the field for any other engine.
 func (c JobConfig) validateQMCInit() error {
-	if slices.Contains(qmcInits, c.ResolvedQMCInit()) {
+	supported := SupportedQMCInits()
+	if slices.Contains(supported, c.ResolvedQMCInit()) {
 		return nil
 	}
 
-	names := make([]string, len(qmcInits))
-	for i, init := range qmcInits {
+	names := make([]string, len(supported))
+	for i, init := range supported {
 		names[i] = string(init)
 	}
 

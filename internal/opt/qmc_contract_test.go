@@ -75,7 +75,12 @@ func TestQMCInitIsDeterministicForAFixedSeed(t *testing.T) {
 			t.Fatalf("opt.NewMayflyVariant() error = %v", err)
 		}
 
-		result, err := built.(opt.LifecycleOptimizer).RunContext(context.Background(), opt.Problem{
+		lifecycle, ok := built.(opt.LifecycleOptimizer)
+		if !ok {
+			t.Fatal("adapter does not implement opt.LifecycleOptimizer")
+		}
+
+		result, err := lifecycle.RunContext(context.Background(), opt.Problem{
 			Eval:  dragonflySphere,
 			Lower: []float64{-5, -5},
 			Upper: []float64{5, 5},
@@ -109,7 +114,12 @@ func TestQMCInitChangesTheSearch(t *testing.T) {
 			t.Fatalf("opt.NewMayflyVariant() error = %v", err)
 		}
 
-		result, err := built.(opt.LifecycleOptimizer).RunContext(context.Background(), opt.Problem{
+		lifecycle, ok := built.(opt.LifecycleOptimizer)
+		if !ok {
+			t.Fatal("adapter does not implement opt.LifecycleOptimizer")
+		}
+
+		result, err := lifecycle.RunContext(context.Background(), opt.Problem{
 			Eval:  dragonflySphere,
 			Lower: []float64{-5, -5},
 			Upper: []float64{5, 5},

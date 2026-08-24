@@ -101,10 +101,15 @@ func TestParallelEvaluationIsReproducible(t *testing.T) {
 //
 // Every variant is covered rather than standard alone: the modes are shared
 // machinery, but each variant commits its own updates, so one could regress by
-// itself.
+// itself. Ranging over supportedVariants rather than a literal list means a
+// variant added to the adapter is covered without this test being remembered.
 func TestParallelEvaluationMatchesSerial(t *testing.T) {
-	for _, variant := range []string{variantStandard, "desma", "olce", "eobbma", "gsasma", "mpma", "aoblmoa"} {
+	t.Parallel()
+
+	for variant := range supportedVariants {
 		t.Run(variant, func(t *testing.T) {
+			t.Parallel()
+
 			serial := runRippledSphereVariant(t, variant, 1)
 			repeated := runRippledSphereVariant(t, variant, 1)
 			parallel := runRippledSphereVariant(t, variant, 4)
@@ -278,6 +283,8 @@ func TestParallelEvaluationWidthSeesThroughWrappers(t *testing.T) {
 // MayFly's; docs/known-limitations.md describes both engines in one sentence
 // and would otherwise be one bump away from being wrong about one of them.
 func TestDragonflyParallelEvaluationMatchesSerial(t *testing.T) {
+	t.Parallel()
+
 	run := func(t *testing.T, workers int) Result {
 		t.Helper()
 
@@ -295,7 +302,12 @@ func TestDragonflyParallelEvaluationMatchesSerial(t *testing.T) {
 			options = append(options, WithDragonflyParallelEvaluation(workers))
 		}
 
-		result, err := NewDragonfly(25, 20, 4242, options...).(LifecycleOptimizer).RunContext(
+		lifecycle, ok := NewDragonfly(25, 20, 4242, options...).(LifecycleOptimizer)
+		if !ok {
+			t.Fatal("dragonfly adapter does not implement LifecycleOptimizer")
+		}
+
+		result, err := lifecycle.RunContext(
 			context.Background(),
 			Problem{Eval: rippledSphere, Lower: lower, Upper: upper, Dim: dim},
 			RunOptions{},
