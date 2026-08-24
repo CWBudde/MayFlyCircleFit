@@ -17,6 +17,45 @@ import (
 // the checkpoint recorded, and nothing downstream would say so.
 var ErrOptimizerVersionMismatch = errors.New("optimizer version mismatch")
 
+// interchangeableVersion names an ordered-insensitive pair of versions of one
+// optimizer library that produce identical results, so a checkpoint written by
+// either may be resumed by a build linking the other.
+type interchangeableVersion struct {
+	library string
+	first   string
+	second  string
+}
+
+// interchangeableVersions returns an explicit allowlist, never a semver rule:
+// only a pair that has been measured to be bit-identical belongs here. MayFly
+// v0.7.1 is a lint and readability release over v0.7.0, verified directly --
+// standard MA on a sphere at seed 4242 returns bit-identical costs under both, for
+// uniform, sobol, and halton initialization, at 10 and 56 dimensions. Matching
+// on a version prefix or a minor number instead would silently admit the next
+// release, which has no such guarantee.
+func interchangeableVersions() []interchangeableVersion {
+	return []interchangeableVersion{
+		{library: "MayFly", first: "v0.7.0", second: "v0.7.1"},
+	}
+}
+
+// versionsInterchangeable reports whether recorded and running name a pair this
+// build knows to be behaviour-neutral for the named library.
+func versionsInterchangeable(library, recorded, running string) bool {
+	for _, pair := range interchangeableVersions() {
+		if pair.library != library {
+			continue
+		}
+
+		if (recorded == pair.first && running == pair.second) ||
+			(recorded == pair.second && running == pair.first) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // GuardCheckpointVersion decides whether a checkpoint that recorded optimizer
 // version recorded may be resumed by a build linking optimizer version running.
 //
@@ -39,6 +78,10 @@ var ErrOptimizerVersionMismatch = errors.New("optimizer version mismatch")
 //   - a non-nil error wrapping ErrOptimizerVersionMismatch: the resume must be
 //     refused. The message names both versions so the operator can decide
 //     between re-baselining and overriding.
+//
+// A pair of versions listed in interchangeableVersions is treated exactly like
+// an exact match: those releases are measured to be behaviour-neutral against
+// each other, so refusing the resume would strand in-flight jobs for nothing.
 //
 // A checkpoint whose version is absent is never refused. Every checkpoint
 // written before this guard existed is in that state, so refusing them would
@@ -69,6 +112,8 @@ func GuardCheckpointVersion(library, recorded, running string, allowMismatch boo
 			library, recorded,
 		), nil
 	case recorded == running:
+		return "", nil
+	case versionsInterchangeable(library, recorded, running):
 		return "", nil
 	case allowMismatch:
 		return fmt.Sprintf(

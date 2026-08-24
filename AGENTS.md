@@ -33,10 +33,17 @@ take precedence if this document goes stale.
   MayFly v0.5.1 and it did not measure population size as a quality knob, so it
   neither reproduces nor refutes the v0.5.0 monotonic-to-1024 figure above.
   Read this before proposing a search-quality change.
-- **Every report below was measured under MayFly v0.6.0 or earlier. The pin is
-  now v0.7.0, which changes results for every variant, so none of their numbers
-  is comparable to a run made today.** Read them for method and for what was
-  ruled out; re-measure before citing a figure. See the Toolchain section.
+- **Every report below except the QMC screen was measured under MayFly v0.6.0
+  or earlier. The pin is now v0.7.1, and v0.7.0 changed results for every
+  variant, so none of their numbers is comparable to a run made today.** Read
+  them for method and for what was ruled out; re-measure before citing a figure.
+  See the Toolchain section.
+- [`docs/qmc-initial-population-report.md`](docs/qmc-initial-population-report.md)
+  — `qmcInit` measured on the eight-circle batch stage at three population
+  sizes. All six comparisons are null and the data bound any effect to about
+  ±4-5%; restarts buy 10-20% in every arm and buy it equally. Read this before
+  proposing `sobol` or `halton` as a default, and for the worked example of an
+  interim signal (-7% at fourteen blocks, p = 0.07) that vanished by forty.
 - [`docs/aoblmoa-paper-fidelity-report.md`](docs/aoblmoa-paper-fidelity-report.md)
   — the v0.6.0 paper-faithful `aoblmoa` measured against `standard` on the
   eight-circle base stage. It loses significantly under restarts
@@ -73,7 +80,7 @@ take precedence if this document goes stale.
 - `internal/fit/renderer/opencl`: the cgo OpenCL renderer (`gpu` tag). It is a
   separate package because Go forbids Plan 9 assembly in a package that uses
   cgo; it must never import `internal/fit/renderer`.
-- `internal/opt`: optimizer interfaces, the MayFly v0.7.0 adapter, and a
+- `internal/opt`: optimizer interfaces, the MayFly v0.7.1 adapter, and a
   proof-of-concept Dragonfly v0.1.0 adapter. `JobConfig.optimizer` selects
   between them from the CLI, the server, and a schedule document; polishing is
   MayFly-only.
@@ -111,21 +118,31 @@ reintroduce application configuration into the store package.
   a budget on restarts, do not size a population from v0.4.0 figures — carry
   over; their *numbers* are a different algorithm's. Re-measure a baseline
   before comparing anything new against a recorded figure. Resume enforces this
-  on its own: a checkpoint recording v0.6.0 is refused by a v0.7.0 binary.
+  on its own: a checkpoint recording v0.6.0 is refused by a v0.7.x binary.
 - v0.7.0 also adds HMMA as a separately registered variant. This repository does
   not offer it yet: `app.variants` and `opt.supportedVariants` are unchanged, so
   a job naming it is refused at validation rather than silently run.
 - **The MayFly pin carries quasi-random initial populations.** `qmcInit`
   selects `uniform` (the default and every earlier measurement's behavior),
   `sobol`, or `halton`. It is MayFly-only, refused under `dragonfly`, and an
-  expert knob: nothing has measured it on this problem, the library's own
-  benchmark study finds a chance-level effect, and the sequence only fills the
-  population slots residual seeding leaves free — normally half of them. See
-  [`docs/known-limitations.md`](docs/known-limitations.md) before proposing it
-  as a default or reading a single campaign as evidence for it.
-- MayFly is pinned to `github.com/cwbudde/mayfly v0.7.0`; templ to
-  `github.com/a-h/templ v0.3.960` as a Go tool; `github.com/google/pprof` as a
-  Go tool because some Go installations do not bundle it.
+  expert knob, and the sequence only fills the population slots residual
+  seeding leaves free — normally half of them. It has now been measured on this
+  problem and it is a null: see
+  [`docs/qmc-initial-population-report.md`](docs/qmc-initial-population-report.md),
+  which agrees with the library's own chance-level benchmark finding. `uniform`
+  stays the default; do not read a single campaign as evidence for a sequence.
+  See also [`docs/known-limitations.md`](docs/known-limitations.md).
+- MayFly is pinned to `github.com/cwbudde/mayfly v0.7.1`. v0.7.1 is a lint and
+  readability release and is **behaviour-neutral against v0.7.0**, verified
+  directly: standard MA on a sphere at seed 4242 returns bit-identical costs
+  under both, for `uniform`, `sobol`, and `halton`, at 10 and 56 dimensions. So
+  a v0.7.0 measurement is comparable to a run on the current pin, which is not
+  true of any earlier version. The resume guard knows that pair: v0.7.0 and
+  v0.7.1 checkpoints resume under either binary, by an explicit two-version
+  allowlist in `internal/opt/resume_guard.go` rather than a semver rule. Templ
+  is pinned to `github.com/a-h/templ v0.3.960` as a Go tool, and
+  `github.com/google/pprof` as a Go tool because some Go installations do not
+  bundle it.
 - `github.com/evanw/esbuild/cmd/esbuild` is installed as a Go tool to compile the
   frontend bundle, while `npm` is only used to fetch TypeScript dependency files.
 - `internal/ui/*_templ.go` is generated and committed. After changing a `.templ`

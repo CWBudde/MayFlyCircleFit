@@ -12,7 +12,7 @@ tool (
 require (
 	github.com/CWBudde/dragonfly v0.1.0
 	github.com/a-h/templ v0.3.960
-	github.com/cwbudde/mayfly v0.7.0
+	github.com/cwbudde/mayfly v0.7.1
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.1
 	golang.org/x/sys v0.37.0
