@@ -386,7 +386,7 @@ keep selection quality-driven unless a new end-to-end profile shows otherwise.
 
 These are wall-clock comparisons on one machine, one reference, and one seed.
 Per the repository convention, do not compare these absolute timings against
-`docs/task-9.9-performance-report.md` or any other machine's report, and re-run
+`docs/cpu-performance-history.md` or any other machine's report, and re-run
 the benchmarks before drawing a conclusion about a different workload.
 
 ## Reproducing

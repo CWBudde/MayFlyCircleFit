@@ -5,9 +5,13 @@
 > — was fixed at an absolute 20 no matter how large `NPop` was. Raising
 > `popSize` therefore bought more evaluations per iteration but no additional
 > recombination, which is why the answer here is "a large population buys
-> nothing". The pinned MayFly v0.5.0 scales `NC` with the population and that
-> answer no longer holds; see *After the fix* at the end. **Do not size a new
-> campaign's population from the figures below.**
+> nothing". MayFly v0.5.0 scales `NC` with the population and that answer no
+> longer holds; see *After the fix* at the end, which was measured under v0.5.0.
+> That measurement has **not** been repeated under the currently pinned v0.7.1.
+> v0.5.1 changed the crossover operator in between, and v0.7.0 reworked the core
+> update rules for every variant, so treat its monotonic-to-1024 figure as
+> indicative rather than established. **Do not size a new campaign's population
+> from any figure below.**
 >
 > The seed-variance half — that base-stage quality does not predict the fit
 > built on it — was not a function of `NC` and still stands.

@@ -410,7 +410,8 @@ assets/                 Small example input
 docs/                   Support, limitations, and design notes
 ```
 
-See the [architecture guide](docs/architecture.md),
+[`docs/README.md`](docs/README.md) indexes every document in `docs/`, grouped by
+what you came for. See also the [architecture guide](docs/architecture.md),
 [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md), the
 [release process](docs/releasing.md), and [PLAN.md](PLAN.md) for system
 boundaries, contribution checks, current work, and publishing status.

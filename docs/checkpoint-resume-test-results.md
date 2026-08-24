@@ -1,12 +1,39 @@
-# Checkpoint and Resume End-to-End Test Results
+# Checkpoint and resume: end-to-end test results
 
-**Test Date:** 2025-10-26
-**Phase:** 8.11 - Test Checkpoint/Resume Flow End-to-End
-**Status:** ✅ PASSED (with documented limitations)
+**Tested:** 2025-10-26 · **Result:** passed, with the limitations recorded below
+
+> **Read the status of each limitation before relying on it.** Two still hold
+> and one does not:
+>
+> - **Still true:** resume is joint-mode only — `cmd/resume.go` rejects
+>   `sequential` and `batch` outright.
+> - **Still true, and understated here:** resume is *restart-from-best*, not
+>   exact continuation. Velocity, mating state, and RNG position are not
+>   restored.
+> - **No longer true:** the report's headline finding, that periodic
+>   checkpointing during a run is impossible, has since been implemented — and
+>   with it the per-iteration trace logging the report records as limited to a
+>   single initial entry.
+>   `checkpointInterval` in `app.JobConfig` drives a periodic save from the
+>   server's progress loop (`internal/server/worker.go`). Read the sections
+>   below as a record of the 2025-10-26 state, not as current behavior.
+>
+> [`known-limitations.md`](known-limitations.md) carries the maintained
+> statement of what resume does and does not restore.
 
 ## Executive Summary
 
-The checkpoint and resume system works correctly within the constraints of the current Mayfly optimizer implementation. The primary limitation is that the external Mayfly library does not expose intermediate optimization state, which prevents periodic checkpointing **during** optimization runs. However, all checkpoint/resume functionality works as designed for the supported use cases.
+**As of 2025-10-26.** The checkpoint and resume system worked correctly within
+the constraints of the Mayfly optimizer as it stood then. The primary limitation
+was that the optimizer library exposed no intermediate optimization state, which
+prevented periodic checkpointing **during** optimization runs; everything else
+worked as designed for the supported use cases.
+
+**Superseded.** That limitation is gone. The pinned library reports progress
+during a run, and `internal/server/worker.go` writes both a periodic checkpoint
+(driven by `checkpointInterval`) and a trace entry per progress sample.
+Everything below records the 2025-10-26 behavior; where a finding no longer
+holds it is marked inline.
 
 ## Test Scenarios and Results
 
@@ -14,12 +41,13 @@ The checkpoint and resume system works correctly within the constraints of the c
 
 **Test:** Verify checkpoint files are created periodically during optimization.
 
-**Result:** CONDITIONAL PASS
-- Checkpoint monitoring goroutine starts correctly
-- Checkpoint files are **not** created during optimization runs
-- **Root Cause:** Mayfly optimizer library runs synchronously and doesn't expose intermediate state
-- **Impact:** `job.BestParams` only populated after optimization completes
-- **Mitigation:** Checkpoints can be created on graceful shutdown for running jobs
+**Result:** CONDITIONAL PASS — **superseded; periodic checkpointing now works.**
+- Checkpoint monitoring goroutine started correctly
+- Checkpoint files were **not** created during optimization runs
+- **Root Cause:** the Mayfly optimizer library ran synchronously and exposed no intermediate state
+- **Impact:** `job.BestParams` was only populated after optimization completed
+- **Mitigation at the time:** checkpoints could be created on graceful shutdown for running jobs
+- **Today:** the pinned library reports progress mid-run and the worker saves on the `checkpointInterval` schedule
 
 **Evidence:**
 ```
@@ -44,7 +72,7 @@ The checkpoint and resume system works correctly within the constraints of the c
 {"level":"INFO","msg":"Shutdown checkpoint complete","checkpointed":1,"failed":0}
 ```
 
-**Limitation:** Jobs that haven't completed their first optimizer run have no BestParams to checkpoint.
+**Limitation (2025-10-26):** jobs that had not completed their first optimizer run had no BestParams to checkpoint.
 
 ### 3. ✅ Checkpoint File Validation
 
@@ -188,11 +216,11 @@ Error: resume not yet supported for mode: batch
 
 **Test:** Verify trace.jsonl files are created and contain valid data.
 
-**Result:** CONDITIONAL PASS
+**Result:** CONDITIONAL PASS — **superseded; per-sample trace entries now work.**
 - Trace files created correctly
 - Initial state logged
 - JSON format valid
-- **Limitation:** Only initial entry logged due to optimizer constraints
+- **Limitation at the time:** only the initial entry was logged, due to optimizer constraints
 
 **Evidence:**
 ```bash
@@ -207,7 +235,7 @@ $ cat ./data/jobs/fcbb56ca-85b0-4b0c-a656-57f1c2e4a209/trace.jsonl | python3 -m 
 }
 ```
 
-**Trace Monitoring Limitation:** Like checkpoints, trace monitoring can't log intermediate iterations because the Mayfly optimizer doesn't expose them.
+**Trace Monitoring Limitation (2025-10-26, no longer true):** like checkpoints, trace monitoring could not log intermediate iterations because the optimizer did not expose them. The worker now writes one trace entry per progress sample.
 
 ### 9. ✅ SIGKILL vs SIGTERM Behavior
 
@@ -227,16 +255,23 @@ $ cat ./data/jobs/fcbb56ca-85b0-4b0c-a656-57f1c2e4a209/trace.jsonl | python3 -m 
 
 ## Known Limitations
 
-### Primary Limitation: Optimizer Library Constraints
+### Primary Limitation: Optimizer Library Constraints — **no longer applies**
 
-The external Mayfly library (`github.com/arl/mayfly`) does not expose intermediate optimization state:
+At the time of the test the optimizer library exposed no intermediate state:
 
-1. **No iteration callbacks:** Library doesn't call back during optimization
-2. **Synchronous execution:** `Run()` blocks until completion
-3. **No population access:** Can't inspect or extract current best during run
-4. **Impact:** Periodic checkpointing **during** optimization is not possible
+1. **No iteration callbacks:** the library did not call back during optimization
+2. **Synchronous execution:** `Run()` blocked until completion
+3. **No population access:** the current best could not be inspected during a run
+4. **Impact:** periodic checkpointing **during** optimization was not possible
+
+The pinned `github.com/cwbudde/mayfly` reports progress during a run, so points
+1, 3, and 4 no longer hold. `known-limitations.md` carries the maintained
+statement of what resume does and does not restore.
 
 ### Workarounds and Mitigations
+
+These were the 2025-10-26 workarounds; graceful-shutdown checkpointing still
+works, but it is no longer the only way to capture a running job.
 
 1. **Graceful shutdown checkpointing:**
    - Users can send SIGTERM to checkpoint running jobs
@@ -281,73 +316,28 @@ The external Mayfly library (`github.com/arl/mayfly`) does not expose intermedia
 
 | Criterion | Status | Notes |
 |-----------|--------|-------|
-| Kill server mid-run, restart, resume from checkpoint | ⚠️ PARTIAL | Checkpoint saved on graceful shutdown only |
+| Kill server mid-run, restart, resume from checkpoint | ⚠️ PARTIAL *(as of 2025-10-26; now full — `checkpointInterval` saves periodically)* | Checkpoint saved on graceful shutdown only |
 | Cost continues decreasing from previous best | ✅ PASS | RunWithInitial() guarantees no regression |
 | Checkpoint files are valid and complete | ✅ PASS | JSON validation passed |
-| Trace logging works correctly | ⚠️ PARTIAL | Files created, limited to initial state |
+| Trace logging works correctly | ⚠️ PARTIAL *(as of 2025-10-26; now full — one entry per progress sample)* | Files created, limited to initial state |
 | Graceful shutdown saves checkpoints | ✅ PASS | SIGTERM handler works correctly |
 | Checkpoint management commands work | ✅ PASS | list and clean commands functional |
 
-## Recommendations
-
-### For Documentation (CLAUDE.md)
-
-Update CLAUDE.md to clearly document the optimizer limitation:
-
-```markdown
-**Checkpoint Limitations:**
-- Periodic checkpointing during optimization is not supported due to Mayfly library constraints
-- Checkpoints can be created:
-  1. On graceful server shutdown (SIGTERM/SIGINT) for running jobs
-  2. Manually after job completion
-- Resume is only supported for joint mode
-- Trace logging can only capture initial and final states
-```
-
-### For PLAN.md
-
-Mark Task 8.11 as COMPLETE with documented limitations:
-
-```markdown
-### Task 8.11: Test Checkpoint/Resume Flow End-to-End ✅
-
-- [x] Start optimization, verify checkpoint files created (on shutdown)
-- [x] Kill server (SIGTERM) during optimization
-- [x] Verify checkpoint files exist and are valid JSON
-- [x] Resume from checkpoint using CLI
-- [x] Verify cost continues decreasing from previous best
-- [x] Test graceful shutdown (SIGTERM) with checkpoint save
-- [x] Test with different modes (joint supported, sequential/batch not supported)
-- [x] Verify trace.jsonl is valid (limited to initial state)
-- [x] Document test results
-
-**Limitations Documented:**
-- Periodic checkpointing during optimization not possible (optimizer library limitation)
-- Only joint mode supports resume
-- Trace logging limited to initial/final states
-```
-
-### For Future Work
-
-Consider these enhancements in future phases:
-
-1. **Phase 9+:** Implement custom optimizer with iteration callbacks
-2. **Phase 11:** GPU renderer with built-in progress monitoring
-3. **Phase 12:** UI support for checkpoint management and resume triggers
-
 ## Conclusion
 
-The checkpoint and resume system is **functionally correct and ready for production use** with the understanding that:
+As of 2025-10-26 the checkpoint and resume system was **functionally correct and
+ready for production use** with the understanding that:
 
-1. ✅ Resume functionality works perfectly for joint mode
-2. ✅ Checkpoint file format is valid and complete
-3. ✅ Graceful shutdown checkpointing works as designed
+1. ✅ Resume functionality works for joint mode — still true, and it is
+   restart-from-best rather than exact continuation
+2. ✅ Checkpoint file format is valid and complete — still true
+3. ✅ Graceful shutdown checkpointing works as designed — still true
 4. ⚠️ Periodic checkpointing during runs is not possible (optimizer limitation)
-5. ⚠️ Sequential/batch modes don't support resume (future enhancement)
+   — **no longer true**, `checkpointInterval` drives a periodic save
+5. ⚠️ Sequential/batch modes don't support resume (future enhancement) — still
+   true
 
-The system provides value for:
+The system provided value for:
 - Long-running optimizations that can be gracefully stopped and resumed
 - Saving progress before server maintenance
 - Experimenting with different iteration counts on same initial state
-
-**Task 8.11 Status: ✅ COMPLETE**

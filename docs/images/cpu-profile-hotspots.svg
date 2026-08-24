@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="720" viewBox="0 0 1440 720" role="img" aria-labelledby="title desc">
-  <title id="title">Phase 9 CPU profile hotspot comparison</title>
+  <title id="title">CPU profile hotspot comparison</title>
   <desc id="desc">Simplified flame views compare flat CPU sample shares before optimization and on the optimized 12-thread renderer.</desc>
   <rect width="1440" height="720" fill="#111827"/>
   <text x="720" y="48" text-anchor="middle" fill="#f9fafb" font-family="sans-serif" font-size="30" font-weight="700">CPU profile hotspot shift</text>

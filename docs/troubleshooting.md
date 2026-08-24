@@ -168,7 +168,7 @@ The defence is therefore a bound, applied before anything is allocated:
 references above 16,777,216 pixels and requests above 3000 circles are rejected
 at validation, on the CLI and at the API alike. If you are hitting the limit
 rather than the bound, the levers are the reference resolution, `--circles`, and
-`--pop-size`, in that order of effect.
+`--pop`, in that order of effect.
 
 For a long-lived server, also set Go's soft heap limit below the memory the host
 can spare. For example, on a machine where the server may use at most 8 GiB:

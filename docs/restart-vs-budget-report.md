@@ -1,5 +1,16 @@
 # Restarts versus budget
 
+> **Measured under MayFly v0.5.1.** The pin is now v0.7.1. v0.6.0 reimplemented
+> `aoblmoa` and left the other six variants alone, but v0.7.0 reworked the core
+> update rules and changes results for **every** variant, `standard` included,
+> so none of the numbers below is comparable to a run made today. The
+> conclusion — spend a budget on restarts rather than on one long run — is a
+> statement about method and carries over; the figures do not. The measurements
+> have not been repeated. This
+> report did not measure population size as a quality knob, so it neither
+> reproduces nor refutes the figures in
+> [`seed-variance-and-population-report.md`](seed-variance-and-population-report.md).
+
 A fixed evaluation budget spent as many short independent runs beats the same
 budget spent as one long run, by about 160 cost points on the eight-circle
 base stage, with a perfect win record across twelve paired blocks. The

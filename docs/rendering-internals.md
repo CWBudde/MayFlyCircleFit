@@ -7,14 +7,71 @@ assembly.
 
 Related documents:
 
-- [`simd-design.md`](simd-design.md) — the original Phase 10 research record
-  (option analysis, why Plan 9 assembly won). Historical; the implementation
-  notes below take precedence.
-- [`task-10.10-simd-performance-report.md`](task-10.10-simd-performance-report.md),
-  [`task-10.12-neon-span-report.md`](task-10.12-neon-span-report.md),
-  [`task-9.9-performance-report.md`](task-9.9-performance-report.md) — measured
-  results. Timings are machine-specific; do not compare them across hosts.
+- [`renderer-correctness.md`](renderer-correctness.md) — the byte-exact parity
+  contract every kernel below has to hold. Read it before relaxing a tolerance.
+- [`cpu-performance-history.md`](cpu-performance-history.md) — the measured
+  milestones. Timings are machine-specific; do not compare them across hosts.
+- [`exact-span-compositors.md`](exact-span-compositors.md) — the exact span
+  kernels in detail, and why `--fast-compositing` still exists.
+- [`incremental-cost.md`](incremental-cost.md) — the dirty-span cost contract
+  and its selection rule.
+- [`rejected-optimizations.md`](rejected-optimizations.md) — what was measured
+  and *not* shipped. Check it before proposing a rendering optimization.
+- [`simd-design.md`](simd-design.md) — the pre-implementation research record.
+  Historical; the notes below take precedence where they disagree.
 - [`support-matrix.md`](support-matrix.md) — supported platforms and backends.
+
+## Canvas, traversal, and the scalar contract
+
+These are the properties every faster path below has to preserve. They are
+cheap to break silently, so they are stated before the kernels.
+
+- **One reusable canvas.** A `CPURenderer` allocates its `image.NRGBA` once at
+  construction and resets it with a single `copy(r.canvas.Pix, r.initialBg)`
+  from a precomputed background. `initialBg` generalizes to custom and shared
+  canvases (`NewCPURendererWithCanvas`, `newCPURendererWithSharedCanvas`). This
+  is why the hot path is allocation-free; it is also why the returned buffer is
+  mutable and reused, which callers must respect.
+- **AABB precomputation and early reject.** Each circle's bounding box is
+  computed once and clamped to integer image bounds; circles fully off-canvas
+  cost four float comparisons. The opacity reject fires only at **exactly
+  zero** — a `0.001` threshold changes an 8-bit channel on non-white canvases,
+  which is a regression the correctness matrix caught once already. See
+  [`renderer-correctness.md`](renderer-correctness.md).
+- **Rounding.** `uint8(x*255 + 0.5)` replaces `math.Round`, and is exactly
+  equivalent over the `[0, 255.5]` domain the compositor produces. It removed
+  `math.Round` and `math.Float64bits` — together ~20% of the pre-optimization
+  profile — from the hot path entirely.
+- **The scalar blend is the normative reference.** `compositePixel`
+  (`renderer_cpu.go`) is what every vector compositor must reproduce
+  bit-for-bit. It was division-bound at seven divisions per pixel; it is now
+  one, via a `const inv255` multiply, one hoisted `1/outA` reciprocal, common
+  subexpression reuse of `bgA*(1-fgA)`, and an inlined pixel offset. All four
+  transforms are algebraic, so output is unchanged. An opaque-destination fast
+  path (`img.Pix[i+3] == 255`) handles the common case.
+- **Circle parameters stay array-of-structures.** All seven fields are read
+  together per circle and reused across thousands of pixels: 56 bytes, one cache
+  line. Parameter loading is under 1% of runtime, so no layout change there can
+  pay. See [`rejected-optimizations.md`](rejected-optimizations.md).
+- **Scanline sharding.** Row workers own disjoint row ranges, so no two
+  goroutines write the same pixel and no locking is needed. Threading has real
+  overhead and is wrong for tiny workloads; see
+  [`cpu-rendering-threads.md`](cpu-rendering-threads.md).
+
+## Circle span geometry
+
+- Representable geometry walks span edges in **scalar Q16.16**; geometry Q16.16
+  cannot represent falls back to the exact float64 oracle. Q16.16 is a
+  quantified approximation, not bit-identity: it changes about 0.00074% of row
+  spans.
+- The transferable win is **monotonic eight-pixel batching**, not the number
+  format. One farthest-candidate comparison certifies eight pixels at a time,
+  and finite differences handle the 0–7 tail. It applies to float32, float64,
+  and fixed point alike.
+- Neither the AVX2 Q16.16 kernel nor the AVX2 float32 kernel is on the
+  production path; both were measured and rejected. The AVX2 kernels remain
+  reachable for measurement only. See
+  [`rejected-optimizations.md`](rejected-optimizations.md).
 
 ## SSD kernels
 
@@ -102,7 +159,7 @@ Related documents:
   measure any future change to it against the exact *vector* path, never against
   the scalar loop. Below 16 pixels it is slower as well as less accurate. It has
   no kernel outside amd64, where enabling it is a pure loss and startup warns.
-  See `docs/task-10.18-exact-compositor.md`.
+  See [`exact-span-compositors.md`](exact-span-compositors.md).
 - Circle-span geometry has no SSE2 kernel in either form. The Q16.16 AVX2 kernel
   compares Q32.32 products with `VPCMPGTQ`, SSE2 has no 64-bit signed compare,
   and a measured no-AVX2 profile attributes only 2.80% of flat samples to
@@ -116,9 +173,15 @@ Related documents:
   on a genuine no-AVX2 CPU, not on an AVX2 host under GODEBUG; the crossover
   table is in `staged_incremental_amd64.go`. ARM64 has a NEON delta-SSD kernel,
   but the staged path was never profiled there, so it stays off.
-- CPU renderers use `FastMSECost` after parity coverage against `MSECost`.
-  Independent image origins and strides, empty images, and dimension-mismatch
-  behavior all have dedicated correctness handling and tests.
+- CPU renderers use `FastMSECost` after parity coverage against `MSECost`. Both
+  constructors select it; `MSECost` stays as the readable oracle and as the
+  explicit opt-out through `SetCostFunc`, with `UseFastCost` restoring the
+  default. Independent image origins and strides, empty images, and
+  dimension-mismatch behavior all have dedicated correctness handling and tests.
+  Note the scale: `FastMSECost` is 9–18× faster than `MSECost` in isolation but
+  moves end-to-end cost by only 1.03–1.29×, because compositing dominates. That
+  measurement is why the vector work targets the compositor and not the cost
+  kernel.
 - Appended CPU batches may start from a verified, already-rendered prefix.
   Every evaluation slot owns its mutable canvas and dirty-span state, but the
   slots share the retained pixels as an immutable reset background. The staged
@@ -142,9 +205,10 @@ The post-Task-10.12 Apple M5 profile assigns 65.01% of flat samples to the
 scalar span compositor, 26.47% to scanline traversal, and 1.95% to gated NEON.
 Keep further rendering work profile-guided and pixel-equivalent.
 
-Phase 9 CPU measurements on a Ryzen 5 4600H show a 2.09–2.47× single-thread
+Early CPU measurements on a Ryzen 5 4600H show a 2.09–2.47× single-thread
 renderer speedup, zero timed allocations after canvas reuse, and a 6.39× median
-large-workload gain when Task 9.7 uses 12 workers.
+large-workload gain with 12 scanline workers. See
+[`cpu-performance-history.md`](cpu-performance-history.md).
 
 `github.com/google/pprof` is pinned as a Go tool because some Go installations
 do not bundle it; use `go tool pprof` for profile analysis.

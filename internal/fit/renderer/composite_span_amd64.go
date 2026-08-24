@@ -45,7 +45,7 @@ func init() {
 // Neither is the ARM64 kernel's 256: that one deinterleaves with VLD4 and
 // widens in three stages, so it has a much larger setup cost to amortize.
 //
-// See docs/task-10.18-exact-compositor.md.
+// See docs/exact-span-compositors.md.
 const (
 	compositeSpanAVX2MinPixels = 16
 	compositeSpanSSE2MinPixels = 24

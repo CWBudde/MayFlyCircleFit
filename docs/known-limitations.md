@@ -168,7 +168,7 @@ behavior is production-ready.
   well as less accurate, because its scalar fallback is slower than the exact
   float64 loop. Circle edges are exactly where short spans occur. The
   measurements behind the cutoffs are in
-  `docs/task-10.18-exact-compositor.md`.
+  `docs/exact-span-compositors.md`.
 - Non-AMD64 targets have no float32 kernel, so `--fast-compositing` there is a
   pure loss. Startup warns rather than failing, because a checkpoint written on
   AMD64 can legitimately be resumed elsewhere.

@@ -95,7 +95,7 @@ caveat there.
 
 These are wall-clock comparisons on one machine. Per the repository convention,
 do not compare these absolute timings against those in
-`docs/task-9.9-performance-report.md` or any other machine's report; re-run the
+`docs/cpu-performance-history.md` or any other machine's report; re-run the
 benchmark on the target hardware instead.
 
 ## Reproducing

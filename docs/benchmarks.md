@@ -1,6 +1,6 @@
 # CPU benchmark suite
 
-Task 9.8 defines a canonical, deterministic benchmark suite in
+The canonical, deterministic benchmark suite lives in
 `internal/fit/bench_test.go`. Its stable `BenchmarkFit` name lets local and CI
 runs compare the same cases across revisions.
 
@@ -62,13 +62,13 @@ case reports allocations.
 complete render-plus-cost measurements at 64×64/K10, 256×256/K50, and
 512×512/K100. It explicitly selects `MSECost` for the baseline and compares it
 with the production `FastMSECost` default using one rendering thread. This is
-the full-cost integration benchmark used by Task 10.7; the canonical `Cost`
-cases isolate the SSD improvement from circle rendering.
+the full-cost integration benchmark behind the SIMD cost-integration result;
+the canonical `Cost` cases isolate the SSD improvement from circle rendering.
 
 `BenchmarkCompositeOpaqueSpan` isolates scalar and automatically dispatched
 opaque-span compositing. `BenchmarkCPURendererOpaqueSpan` compares the former
 per-pixel loop with the production horizontal-span renderer at 512×512/K100;
-it is the integration benchmark used by Task 10.12.
+it is the integration benchmark behind the span-compositing result.
 
 `BenchmarkCircleSpanGeometry` compares the `float64` oracle, scalar `float32`,
 runtime-selected float32 SIMD, and Q16.16 span-edge searches across small,
@@ -78,14 +78,17 @@ AMD64, `BenchmarkCircleSpanFloat32AVX2Direct` isolates the AVX2 per-row kernel
 crossover, while `BenchmarkCircleSpanQ16AVX2Direct` compares scalar monotonic
 Q16.16 with its exact eight-lane AVX2 prototype. The latter remains a benchmark
 backend because widened integer multiplies make it slower on the validated
-AMD64 host. These are the Task 10.13 geometry and integration benchmarks.
+AMD64 host. These are the geometry and integration benchmarks behind the fixed-point
+result.
 
 `BenchmarkCPURendererCombinedOptimizations` stacks the renderer components and
 compares the old float64 per-pixel scanline path, span compositing, production
 Q16.16 geometry, and the exact-but-experimental paired-row prototype. Separate
 fractional, half-pixel, R5, R25, and four-worker fixtures make symmetry
-eligibility, span-length crossover, and row-shard effects visible. Task 10.14
-records the symmetry result; Task 10.15 records the combined selection.
+eligibility, span-length crossover, and row-shard effects visible.
+[`rejected-optimizations.md`](rejected-optimizations.md) records why symmetry is
+disabled; [`cpu-performance-history.md`](cpu-performance-history.md) records the
+combined span-plus-Q16.16 result.
 
 ## Running benchmarks
 
@@ -176,6 +179,25 @@ Do not compare absolute timings from different machines. Prefer at least six
 samples, close background applications, and record CPU, OS, Go version, and
 power settings with any published result. Allocation-count changes are usually
 more portable than elapsed-time changes.
+
+## Benchmarking across history
+
+Comparing a revision against one from before a package move needs more than a
+checkout, because a test file in the current package cannot be replayed into an
+older tree. The harness for that lives in `scripts/profiling/benchmarks/` as
+`.txt` **templates** rather than as committed test files: copy a template into a
+detached worktree at the target commit, run it there, and compare with
+`benchstat`. This is how the pre-optimization renderer baseline is still
+measurable even though the renderer moved from `internal/fit` to
+`internal/fit/renderer`.
+
+Whatever the vintage, a timed benchmark must build its renderer and parameter
+vector *before* the timer starts, reuse the renderer across iterations, and
+report allocations. Raw benchmark and profile output stays untracked because
+absolute profiles are machine- and build-specific; the templates, commit hashes,
+and exact commands are what make an experiment reproducible. Worked examples
+with commits and results are in
+[`cpu-performance-history.md`](cpu-performance-history.md).
 
 ## CI regression reporting
 

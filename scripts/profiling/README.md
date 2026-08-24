@@ -6,7 +6,7 @@ The repository pins `github.com/google/pprof` as a Go tool. Use
 `go tool pprof`; this works even with Go installations that do not bundle
 `pprof` in the toolchain. Phase 9's cross-revision renderer harness templates
 and measured results are documented in
-[`docs/task-9.9-performance-report.md`](../../docs/task-9.9-performance-report.md).
+[`docs/cpu-performance-history.md`](../../docs/cpu-performance-history.md).
 
 ## Scripts
 
