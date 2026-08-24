@@ -60,8 +60,11 @@ behavior is production-ready.
 
   Its published behavior is to explore well and exploit poorly -- the
   convergence factor reaches zero at the halfway point of a run -- so a worse
-  fit than MayFly is the expected outcome, and no measurement of it has been
-  taken.
+  fit than MayFly is the expected outcome. That outcome is now measured: on the
+  eight-circle base stage Dragonfly loses every one of twelve blocks, by 431.68
+  (`t = -16.81`) even when handed more evaluations than the MayFly baseline. See
+  [`docs/dragonfly-poc-report.md`](dragonfly-poc-report.md). It is kept as an
+  expert-only alternative for further experiments, not as a candidate default.
 
 - CPU and OpenCL support joint, sequential, and batch pipelines; only CPU
   supports custom base canvases. Staged OpenCL modes replay all retained circles
