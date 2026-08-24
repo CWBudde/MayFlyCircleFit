@@ -36,8 +36,7 @@ release is declared by this file.
   nothing below its 24-pixel cutoff. AMD64 previously had no vector span
   compositor at any tier, while the span compositor is the largest symbol in
   every profile this repository has taken. See
-  [docs/task-10.19-sse2-compositor.md](docs/task-10.19-sse2-compositor.md) and
-  [docs/task-10.18-exact-compositor.md](docs/task-10.18-exact-compositor.md).
+  [docs/exact-span-compositors.md](docs/exact-span-compositors.md).
 - `run --fast-compositing` selects an opt-in float32 SIMD span compositor with
   SSE2 and AVX2 kernels. It is accurate to +/-1 per channel rather than
   byte-identical, and defaults to off. It is kept now that an exact vector
@@ -56,7 +55,7 @@ release is declared by this file.
   widen once at the end. Measured on a CPU that genuinely lacks AVX2: SSD is
   5.3x to 6.2x over scalar, delta-SSD 2.25x to 4.45x, and `BenchmarkFit` cost
   5.85x to 6.12x with whole pipelines 1.13x to 1.24x. See
-  [docs/task-10.17-sse2-report.md](docs/task-10.17-sse2-report.md).
+  [docs/exact-span-compositors.md](docs/exact-span-compositors.md).
 - A single resolved SIMD tier. `fit.Tier()` decides once which instruction set
   the process uses, and every kernel installs from it through
   `fit.RegisterTierConsumer` instead of reading `x/sys/cpu` itself. This

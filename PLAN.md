@@ -23,7 +23,7 @@ measurements, and caveats live in the linked documentation and git history.
 | 6 | Trusted-local background server, job lifecycle, REST/image endpoints, SSE progress, CLI integration, and lifecycle coverage. |
 | 7 | templ job list/detail/create UI, live metrics and images, sparkline, validation, and UI documentation. Browser/mobile validation continues in Task 12.9. |
 | 8 | Atomic filesystem checkpoints, traces, retention, and restart-from-best; corrected semantics are documented in `docs/checkpoint-resume-test-results.md`. |
-| 9 | Profiling/benchmark infrastructure, allocation-free CPU fast paths, scanline sharding, and correctness validation. See `docs/benchmarks.md`, `docs/task-9.9-performance-report.md`, and `docs/task-9.10-correctness-validation.md`. |
+| 9 | Profiling/benchmark infrastructure, allocation-free CPU fast paths, scanline sharding, and correctness validation. See `docs/benchmarks.md`, `docs/cpu-performance-history.md`, and `docs/renderer-correctness.md`. |
 
 ---
 
@@ -42,10 +42,10 @@ measurements, and caveats live in the linked documentation and git history.
   rendering, exact SIMD compositors, Q16.16 geometry with an exact range
   fallback, and a measured opt-in symmetry prototype. The selected combined
   path and tradeoffs are recorded in
-  `docs/task-10.15-combined-optimization-report.md`.
+  `docs/cpu-performance-history.md`.
 - Task 10.16 shipped exact incremental dirty-span SSD for staged pipelines; its
   arithmetic, crossover, and parity evidence are in
-  `docs/task-10.16-incremental-cost-report.md`.
+  `docs/incremental-cost.md`.
 - Tasks 10.17–10.19 completed the AMD64 SSE2 tier and exact SSE2/AVX2
   compositors. Population evaluation parallelism was subsequently implemented
   and measured in `docs/parallel-evaluation-report.md`.
@@ -64,7 +64,7 @@ research follow-ups, not blockers for the selected production CPU path.
   randomized circles, and row sharding.
 - [ ] If the original Pascal/Delphi source becomes available, document its
   exact cost arithmetic and numeric/SIMD representations; until then,
-  `docs/task-10.16-incremental-cost-report.md` remains the Go contract.
+  `docs/incremental-cost.md` remains the Go contract.
 - [ ] Hoist the exact compositor's per-span constant block to once per circle
   and remeasure the SSE2/AVX2 crossover before changing production dispatch.
 

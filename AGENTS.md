@@ -5,66 +5,64 @@ take precedence if this document goes stale.
 
 ## Read before broad changes
 
+[`docs/README.md`](docs/README.md) indexes everything in `docs/`. These are the
+ones that will change what you propose:
+
 - [`docs/architecture.md`](docs/architecture.md) — package ownership and the
   CLI, server, renderer, persistence, schedule, and web-UI data flows.
 - [`docs/behavior-invariants.md`](docs/behavior-invariants.md) — observable
   behavior that must stay explicit (backends, SIMD dispatch, parallel
   evaluation, polishing, determinism, early stopping, server trust boundary).
-- [`docs/rendering-internals.md`](docs/rendering-internals.md) — SIMD SSD
-  kernels, dispatch, and CPU span compositing.
-- [`docs/polishing-throughput-report.md`](docs/polishing-throughput-report.md)
-  — polishing session-pool and active-set performance tradeoffs.
-- [`docs/seed-variance-and-population-report.md`](docs/seed-variance-and-population-report.md)
-  — why base-stage quality does not predict the fit built on it, and what the
-  population knob does and does not buy. Its population conclusions were
-  measured under MayFly v0.4.0 and are **historical**: they describe an
-  unscaled `NC`, which v0.5.0 removes. Under v0.5.0, raising `popSize` does buy
-  quality, monotonically to about 1024. That measurement has **not** been
-  repeated under the pinned v0.5.1, which changes the crossover operator, so
-  treat the 1024 figure as indicative rather than established. The
-  seed-variance half of the report still holds. Do not size a new campaign's
-  population from the v0.4.0 figures.
+- [`docs/rendering-internals.md`](docs/rendering-internals.md) — the rendering
+  hot path as implemented: canvas invariants, span geometry, SSD kernels, tier
+  dispatch, and span compositing.
+- [`docs/renderer-correctness.md`](docs/renderer-correctness.md) — the
+  byte-exact parity contract every renderer change has to hold, and the two
+  places where it deliberately does not apply.
+- [`docs/rejected-optimizations.md`](docs/rejected-optimizations.md) — what was
+  built, measured, and deliberately not shipped. Read before proposing a
+  rendering or evaluation optimization; several obvious ideas are already
+  measured losses.
 - [`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md) — why
-  a stage's budget is better spent as several independent cold runs than as
-  one long run, and the measured population collapse behind it. It also records
-  which interventions did **not** delay that collapse (population size, `NC`,
-  `DanceDamp`, variant choice, longer budgets) so they are not retried as a fix
-  for premature convergence. Mind the version caveat: it was measured under
-  MayFly v0.5.1 and it did not measure population size as a quality knob, so it
-  neither reproduces nor refutes the v0.5.0 monotonic-to-1024 figure above.
-  Read this before proposing a search-quality change.
-- **Every report below except the QMC screen was measured under MayFly v0.6.0
-  or earlier. The pin is now v0.7.1, and v0.7.0 changed results for every
-  variant, so none of their numbers is comparable to a run made today.** Read
-  them for method and for what was ruled out; re-measure before citing a figure.
-  See the Toolchain section.
+  a stage's budget is better spent as several independent cold runs than as one
+  long run, and which interventions did **not** delay population collapse
+  (population size, `NC`, `DanceDamp`, variant choice, longer budgets). Read
+  before proposing a search-quality change.
+- **Every measurement report in `docs/` except the QMC screen was taken under
+  MayFly v0.6.0 or earlier. The pin is now v0.7.1, and v0.7.0 changed results
+  for every variant, so none of their numbers is comparable to a run made
+  today.** Read them for method and for what was ruled out; re-measure before
+  citing a figure. See the Toolchain section.
 - [`docs/qmc-initial-population-report.md`](docs/qmc-initial-population-report.md)
   — `qmcInit` measured on the eight-circle batch stage at three population
   sizes. All six comparisons are null and the data bound any effect to about
-  ±4-5%; restarts buy 10-20% in every arm and buy it equally. Read this before
+  ±4-5%; restarts buy 10-20% in every arm and buy it equally. Read before
   proposing `sobol` or `halton` as a default, and for the worked example of an
   interim signal (-7% at fourteen blocks, p = 0.07) that vanished by forty.
 - [`docs/aoblmoa-paper-fidelity-report.md`](docs/aoblmoa-paper-fidelity-report.md)
-  — the v0.6.0 paper-faithful `aoblmoa` measured against `standard` on the
-  eight-circle base stage. It loses significantly under restarts
-  (evaluation-matched, `t = -3.01` over twelve blocks) and is a null result as
-  a single long run, while spending 31% more evaluations per iteration. Read
-  this before proposing `aoblmoa` as a default or re-running a variant screen
-  that includes it.
+  — the v0.6.0 paper-faithful `aoblmoa` loses significantly to `standard` under
+  restarts (evaluation-matched, `t = -3.01` over twelve blocks) and is a null
+  result as a single long run, while spending 31% more evaluations per
+  iteration. Read before proposing it as a default or re-running a variant
+  screen that includes it.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
-  proof-of-concept Dragonfly v0.1.0 adapter measured against MayFly `standard`
-  on the eight-circle base stage. It loses all twelve blocks in every arm,
-  by 431.68 (`t = -16.81`) even when given more evaluations than the baseline,
-  and tripling its restarts moves it only 30 points. Dragonfly stays available
-  as an expert-only alternative; read this before proposing it as a default or
-  re-running the screen against v0.1.0.
+  proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
+  `standard` in every arm, by 431.68 (`t = -16.81`) even when given more
+  evaluations, and tripling its restarts moves it only 30 points. It stays
+  available as an expert-only alternative; read before proposing it as a
+  default or re-running the screen against v0.1.0.
+- [`docs/seed-variance-and-population-report.md`](docs/seed-variance-and-population-report.md),
+  [`docs/polishing-throughput-report.md`](docs/polishing-throughput-report.md) —
+  base-stage quality does not predict the fit built on it; polishing session-pool
+  and active-set tradeoffs. Both carry their own version caveats; heed them
+  rather than reusing their numbers.
 - [`docs/schedule-format.md`](docs/schedule-format.md) — the schedule document
   format, its worked example, and when two campaigns' costs are comparable.
 - [`docs/support-matrix.md`](docs/support-matrix.md),
   [`docs/known-limitations.md`](docs/known-limitations.md),
-  [`docs/troubleshooting.md`](docs/troubleshooting.md) — CLI exit statuses and
-  the JSON API error envelope — and the active
-  Phase 14 section of `PLAN.md`.
+  [`docs/troubleshooting.md`](docs/troubleshooting.md) — supported targets, CLI
+  exit statuses, and the JSON API error envelope — and the active Phase 14
+  section of `PLAN.md`.
 
 ## Architecture
 

@@ -43,7 +43,17 @@ optimizer only when the backend cannot pool sessions for it. Its population is
 ## Build targets
 
 The portable CI matrix is defined with `CGO_ENABLED=0`, which intentionally
-excludes OpenCL.
+excludes OpenCL. The CPU build stays a pure-Go-toolchain build: the SIMD kernels
+are Go Plan 9 assembly, so no C compiler, cross-compiler, or external linker is
+required for any target here.
+
+`just cross-build` (`scripts/check-cross-build.sh`) is the local form of the
+cross-build gate. For each target it first asks `go list` **which** Go and
+assembly files were selected and asserts the expected SSD implementation, and
+only then builds the CLI and the `internal/fit` test binary. A misplaced or
+weakened build constraint therefore fails loudly at selection rather than
+producing a silently scalar binary. Linux/386 is in the matrix as a
+scalar-fallback and portability gate, not as a published release artifact.
 
 | Target | CPU build path | SIMD path | CI cross-build gate | Native SSD gate |
 | --- | --- | --- | --- | --- |

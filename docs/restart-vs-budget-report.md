@@ -1,5 +1,12 @@
 # Restarts versus budget
 
+> **Measured under MayFly v0.5.1.** The pin is now v0.6.0, which reimplemented
+> `aoblmoa` but left the other six variants unaffected, so the conclusions below
+> still apply to `standard`. The measurements have not been repeated. This
+> report did not measure population size as a quality knob, so it neither
+> reproduces nor refutes the figures in
+> [`seed-variance-and-population-report.md`](seed-variance-and-population-report.md).
+
 A fixed evaluation budget spent as many short independent runs beats the same
 budget spent as one long run, by about 160 cost points on the eight-circle
 base stage, with a perfect win record across twelve paired blocks. The

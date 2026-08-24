@@ -1,8 +1,23 @@
-# Checkpoint and Resume End-to-End Test Results
+# Checkpoint and resume: end-to-end test results
 
-**Test Date:** 2025-10-26
-**Phase:** 8.11 - Test Checkpoint/Resume Flow End-to-End
-**Status:** ✅ PASSED (with documented limitations)
+**Tested:** 2025-10-26 · **Result:** passed, with the limitations recorded below
+
+> **Read the status of each limitation before relying on it.** Two still hold
+> and one does not:
+>
+> - **Still true:** resume is joint-mode only — `cmd/resume.go` rejects
+>   `sequential` and `batch` outright.
+> - **Still true, and understated here:** resume is *restart-from-best*, not
+>   exact continuation. Velocity, mating state, and RNG position are not
+>   restored.
+> - **No longer true:** the report's headline finding, that periodic
+>   checkpointing during a run is impossible, has since been implemented.
+>   `checkpointInterval` in `app.JobConfig` drives a periodic save from the
+>   server's progress loop (`internal/server/worker.go`). Read the sections
+>   below as a record of the 2025-10-26 state, not as current behavior.
+>
+> [`known-limitations.md`](known-limitations.md) carries the maintained
+> statement of what resume does and does not restore.
 
 ## Executive Summary
 
@@ -288,53 +303,6 @@ The external Mayfly library (`github.com/arl/mayfly`) does not expose intermedia
 | Graceful shutdown saves checkpoints | ✅ PASS | SIGTERM handler works correctly |
 | Checkpoint management commands work | ✅ PASS | list and clean commands functional |
 
-## Recommendations
-
-### For Documentation (CLAUDE.md)
-
-Update CLAUDE.md to clearly document the optimizer limitation:
-
-```markdown
-**Checkpoint Limitations:**
-- Periodic checkpointing during optimization is not supported due to Mayfly library constraints
-- Checkpoints can be created:
-  1. On graceful server shutdown (SIGTERM/SIGINT) for running jobs
-  2. Manually after job completion
-- Resume is only supported for joint mode
-- Trace logging can only capture initial and final states
-```
-
-### For PLAN.md
-
-Mark Task 8.11 as COMPLETE with documented limitations:
-
-```markdown
-### Task 8.11: Test Checkpoint/Resume Flow End-to-End ✅
-
-- [x] Start optimization, verify checkpoint files created (on shutdown)
-- [x] Kill server (SIGTERM) during optimization
-- [x] Verify checkpoint files exist and are valid JSON
-- [x] Resume from checkpoint using CLI
-- [x] Verify cost continues decreasing from previous best
-- [x] Test graceful shutdown (SIGTERM) with checkpoint save
-- [x] Test with different modes (joint supported, sequential/batch not supported)
-- [x] Verify trace.jsonl is valid (limited to initial state)
-- [x] Document test results
-
-**Limitations Documented:**
-- Periodic checkpointing during optimization not possible (optimizer library limitation)
-- Only joint mode supports resume
-- Trace logging limited to initial/final states
-```
-
-### For Future Work
-
-Consider these enhancements in future phases:
-
-1. **Phase 9+:** Implement custom optimizer with iteration callbacks
-2. **Phase 11:** GPU renderer with built-in progress monitoring
-3. **Phase 12:** UI support for checkpoint management and resume triggers
-
 ## Conclusion
 
 The checkpoint and resume system is **functionally correct and ready for production use** with the understanding that:
@@ -349,5 +317,3 @@ The system provides value for:
 - Long-running optimizations that can be gracefully stopped and resumed
 - Saving progress before server maintenance
 - Experimenting with different iteration counts on same initial state
-
-**Task 8.11 Status: ✅ COMPLETE**

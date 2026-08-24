@@ -374,17 +374,16 @@ comparable after the fact; treat it as its own baseline.
   compositing settings converge to different circle sets and different final
   costs. Fast-compositing costs are **not** comparable to exact-compositor
   costs — not within a tolerance, not approximately. See
-  [`task-10.18-exact-compositor.md`](task-10.18-exact-compositor.md). On ARM64
+  [`exact-span-compositors.md`](exact-span-compositors.md). On ARM64
   the flag is a pure loss as well: there is no float32 NEON kernel, so it falls
   back to a float32 scalar loop that is both slower and less accurate than the
   default.
 - **SIMD tier — comparable *within* an architecture, and only by construction.**
   Every shipped kernel on the default path is byte-identical to its scalar
-  oracle: SSD, delta-SSD and circle-span since
-  [`task-10.17-sse2-report.md`](task-10.17-sse2-report.md), and the exact span
-  compositors since [`task-10.19`](task-10.19-sse2-compositor.md) and
-  [`task-10.18`](task-10.18-exact-compositor.md). So swapping AVX2 for SSE2 for
-  scalar on one machine does not move a cost. That is a property the current
+  oracle — SSD, delta-SSD, circle-span, and the exact span compositors alike;
+  see [`exact-span-compositors.md`](exact-span-compositors.md) and
+  [`renderer-correctness.md`](renderer-correctness.md). So swapping AVX2 for
+  SSE2 for scalar on one machine does not move a cost. That is a property the current
   kernels hold and parity tests pin — `TestCompositeSpanExactFusionContract`
   among them — not a guarantee the schedule format makes, and a future inexact
   kernel would end it silently. `MAYFLY_SIMD_TIER` forces a tier and
@@ -397,9 +396,9 @@ comparable after the fact; treat it as its own baseline.
 - **Renderer version, where parity was not the contract.** Compositor work is
   safe to compare across, because byte-parity was the acceptance condition for
   each kernel. A change to how the cost itself is accumulated is not covered by
-  that — the delta-SSD accumulator change noted in
-  [`task-10.17-sse2-report.md`](task-10.17-sse2-report.md) is the example, and
-  the report marks an earlier measurement as predating it for exactly this
+  that — the delta-SSD accumulator change recorded in
+  [`cpu-performance-history.md`](cpu-performance-history.md) is the example, and
+  that report marks an earlier measurement as predating it for exactly this
   reason. Cite the revision when a cost is meant to be compared later.
 - **`parallelEvaluation` — comparable, as of the MayFly v0.7.0 pin.** Parallel
   evaluation reproduces bit-identically for a fixed seed at *any*
@@ -440,7 +439,7 @@ they could be. Treat them as history, and cite them as such.
   evaluation, SIMD dispatch, and the server trust boundary.
 - [`rendering-internals.md`](rendering-internals.md) — the SSD kernels and span
   compositors whose choice the caveats above turn on.
-- [`task-10.18-exact-compositor.md`](task-10.18-exact-compositor.md) — the
+- [`exact-span-compositors.md`](exact-span-compositors.md) — the
   measured ±1-per-channel bound and why the flag breaks reproducibility.
 - [`architecture.md`](architecture.md) — how schedules, ordinary jobs,
   persistence, and campaign read models fit together.

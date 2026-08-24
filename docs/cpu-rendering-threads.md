@@ -1,6 +1,6 @@
 # CPU Rendering Threads
 
-Task 9.7 adds optional scanline sharding to the CPU renderer. Each worker owns
+The CPU renderer supports optional scanline sharding. Each worker owns
 a disjoint horizontal band and composites all circles in parameter order. No
 two workers write the same pixel, so parallel output is pixel-identical to the
 single-threaded renderer and needs no per-pixel locking.
