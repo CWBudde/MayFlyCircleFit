@@ -239,10 +239,17 @@ Use `--variant` to select the MayFly algorithm variant: `standard`, `desma`,
 
 `--qmc-init` selects how a MayFly run draws its first generation: `uniform`
 (the default), `sobol`, or `halton`. Uniform takes every coordinate as an
-independent random draw. The other two take the whole population from a
-low-discrepancy sequence, which covers the search box more evenly for the same
-number of evaluations -- the standard cheap addition to a population-based
-optimizer. It is MayFly-only and refused under `--optimizer dragonfly`.
+independent random draw. The other two draw from a low-discrepancy sequence,
+which covers the search box more evenly for the same number of evaluations --
+the standard cheap addition to a population-based optimizer. It is MayFly-only
+and refused under `--optimizer dragonfly`.
+
+The sequence does not place the whole population. Whenever residual seeding
+succeeds -- always for a batch stage, and for a cold joint or sequential base
+stage as well as for a continuation -- the seed candidate is expanded into half
+the male and half the female population, and only the remaining slots come from
+the sequence. So `sobol` and `halton` change how the unseeded half is placed,
+which halves whatever the even-coverage argument is worth here.
 
 **This is an expert knob with no measurement on circle fitting.** MayFly's own
 benchmark study finds a chance-level effect, and the mechanism is weakest in

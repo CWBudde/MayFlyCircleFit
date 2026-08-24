@@ -52,6 +52,15 @@ behavior is production-ready.
   library's evidence and the mechanism agree — not as a default, and not as a
   change to any existing campaign's settings.
 
+  The mechanism is further weakened by how this project seeds its runs. The
+  sequence does not initialize the whole population: wherever residual seeding
+  succeeds — unconditionally for batch stages, and for cold joint and
+  sequential base stages just as for continuations — the seed candidate already
+  occupies half of the male and half of the female population, and only the
+  remaining slots are drawn from the sequence. An experiment on `qmcInit` is
+  therefore measuring a change to half a population, not to a whole one. See
+  `docs/behavior-invariants.md` for the exact split.
+
   Setting it does not make a run irreproducible: the scramble comes from the
   run's seeded generator. It does make the run incomparable to the uniform run
   of the same seed, so a campaign has to pair strategies across seeds rather
