@@ -26,21 +26,23 @@ type interchangeableVersion struct {
 	second  string
 }
 
-// interchangeableVersions is an explicit allowlist, never a semver rule: only a
-// pair that has been measured to be bit-identical belongs here. MayFly v0.7.1
-// is a lint and readability release over v0.7.0, verified directly -- standard
-// MA on a sphere at seed 4242 returns bit-identical costs under both, for
+// interchangeableVersions returns an explicit allowlist, never a semver rule:
+// only a pair that has been measured to be bit-identical belongs here. MayFly
+// v0.7.1 is a lint and readability release over v0.7.0, verified directly --
+// standard MA on a sphere at seed 4242 returns bit-identical costs under both, for
 // uniform, sobol, and halton initialization, at 10 and 56 dimensions. Matching
 // on a version prefix or a minor number instead would silently admit the next
 // release, which has no such guarantee.
-var interchangeableVersions = []interchangeableVersion{
-	{library: "MayFly", first: "v0.7.0", second: "v0.7.1"},
+func interchangeableVersions() []interchangeableVersion {
+	return []interchangeableVersion{
+		{library: "MayFly", first: "v0.7.0", second: "v0.7.1"},
+	}
 }
 
 // versionsInterchangeable reports whether recorded and running name a pair this
 // build knows to be behaviour-neutral for the named library.
 func versionsInterchangeable(library, recorded, running string) bool {
-	for _, pair := range interchangeableVersions {
+	for _, pair := range interchangeableVersions() {
 		if pair.library != library {
 			continue
 		}

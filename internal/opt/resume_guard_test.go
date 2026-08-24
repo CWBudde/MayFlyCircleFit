@@ -6,6 +6,17 @@ import (
 	"testing"
 )
 
+// Versions used across the guard's table cases. MayFly v0.7.0 and v0.7.1 are the
+// one allowlisted interchangeable pair; v0.6.0 is the release before it, which
+// must stay refused.
+const (
+	testVersionMayfly070 = "v0.7.0"
+	testVersionMayfly071 = "v0.7.1"
+	testVersionMayfly060 = "v0.6.0"
+	testVersionMayfly051 = "v0.5.1"
+	testVersionMayfly040 = "v0.4.0"
+)
+
 // TestGuardCheckpointVersion pins every branch of the resume guard. The running
 // version is supplied rather than read, so the table can exercise a real
 // mismatch even though a test binary carries no module information.
@@ -22,90 +33,90 @@ func TestGuardCheckpointVersion(t *testing.T) {
 	}{
 		{
 			name:     "matching version is silent",
-			recorded: "v0.5.1",
-			running:  "v0.5.1",
+			recorded: testVersionMayfly051,
+			running:  testVersionMayfly051,
 		},
 		{
 			name:        "legacy checkpoint warns and proceeds",
 			recorded:    "",
-			running:     "v0.5.1",
+			running:     testVersionMayfly051,
 			wantWarning: true,
-			mustName:    []string{"v0.5.1"},
+			mustName:    []string{testVersionMayfly051},
 		},
 		{
 			name:        "blank recorded version is treated as absent",
 			recorded:    "   ",
-			running:     "v0.5.1",
+			running:     testVersionMayfly051,
 			wantWarning: true,
-			mustName:    []string{"v0.5.1"},
+			mustName:    []string{testVersionMayfly051},
 		},
 		{
 			name:        "unknown recorded version warns and proceeds",
 			recorded:    unknownLibraryVersion,
-			running:     "v0.5.1",
+			running:     testVersionMayfly051,
 			wantWarning: true,
-			mustName:    []string{"v0.5.1"},
+			mustName:    []string{testVersionMayfly051},
 		},
 		{
 			name:        "unknown running version warns and proceeds",
-			recorded:    "v0.4.0",
+			recorded:    testVersionMayfly040,
 			running:     unknownLibraryVersion,
 			wantWarning: true,
-			mustName:    []string{"v0.4.0"},
+			mustName:    []string{testVersionMayfly040},
 		},
 		{
 			name:        "missing running version is treated as unknown",
-			recorded:    "v0.4.0",
+			recorded:    testVersionMayfly040,
 			running:     "",
 			wantWarning: true,
-			mustName:    []string{"v0.4.0"},
+			mustName:    []string{testVersionMayfly040},
 		},
 		{
 			name:     "v0.7.1 build accepts a v0.7.0 checkpoint",
-			recorded: "v0.7.0",
-			running:  "v0.7.1",
+			recorded: testVersionMayfly070,
+			running:  testVersionMayfly071,
 		},
 		{
 			name:     "v0.7.0 build accepts a v0.7.1 checkpoint",
-			recorded: "v0.7.1",
-			running:  "v0.7.0",
+			recorded: testVersionMayfly071,
+			running:  testVersionMayfly070,
 		},
 		{
 			name:        "v0.6.0 checkpoint is still refused under v0.7.1",
-			recorded:    "v0.6.0",
-			running:     "v0.7.1",
+			recorded:    testVersionMayfly060,
+			running:     testVersionMayfly071,
 			wantRefusal: true,
-			mustName:    []string{"v0.6.0", "v0.7.1"},
+			mustName:    []string{testVersionMayfly060, testVersionMayfly071},
 		},
 		{
 			name:        "v0.6.0 checkpoint is still refused under v0.7.0",
-			recorded:    "v0.6.0",
-			running:     "v0.7.0",
+			recorded:    testVersionMayfly060,
+			running:     testVersionMayfly070,
 			wantRefusal: true,
-			mustName:    []string{"v0.6.0", "v0.7.0"},
+			mustName:    []string{testVersionMayfly060, testVersionMayfly070},
 		},
 		{
 			name:        "the MayFly allowlist does not carry over to another library",
 			library:     "Dragonfly",
-			recorded:    "v0.7.0",
-			running:     "v0.7.1",
+			recorded:    testVersionMayfly070,
+			running:     testVersionMayfly071,
 			wantRefusal: true,
-			mustName:    []string{"Dragonfly", "v0.7.0", "v0.7.1"},
+			mustName:    []string{"Dragonfly", testVersionMayfly070, testVersionMayfly071},
 		},
 		{
 			name:        "mismatch is refused",
-			recorded:    "v0.4.0",
-			running:     "v0.5.1",
+			recorded:    testVersionMayfly040,
+			running:     testVersionMayfly051,
 			wantRefusal: true,
-			mustName:    []string{"v0.4.0", "v0.5.1"},
+			mustName:    []string{testVersionMayfly040, testVersionMayfly051},
 		},
 		{
 			name:          "mismatch proceeds under the override",
-			recorded:      "v0.4.0",
-			running:       "v0.5.1",
+			recorded:      testVersionMayfly040,
+			running:       testVersionMayfly051,
 			allowMismatch: true,
 			wantWarning:   true,
-			mustName:      []string{"v0.4.0", "v0.5.1"},
+			mustName:      []string{testVersionMayfly040, testVersionMayfly051},
 		},
 	}
 

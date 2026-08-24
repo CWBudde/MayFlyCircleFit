@@ -132,9 +132,10 @@ reintroduce application configuration into the store package.
   a v0.7.0 measurement is comparable to a run on the current pin, which is not
   true of any earlier version. The resume guard knows that pair: v0.7.0 and
   v0.7.1 checkpoints resume under either binary, by an explicit two-version
-  allowlist in `internal/opt/resume_guard.go` rather than a semver rule. Templ is pinned to
-  `github.com/a-h/templ v0.3.960` as a Go tool; `github.com/google/pprof` as a
-  Go tool because some Go installations do not bundle it.
+  allowlist in `internal/opt/resume_guard.go` rather than a semver rule. Templ
+  is pinned to `github.com/a-h/templ v0.3.960` as a Go tool, and
+  `github.com/google/pprof` as a Go tool because some Go installations do not
+  bundle it.
 - `github.com/evanw/esbuild/cmd/esbuild` is installed as a Go tool to compile the
   frontend bundle, while `npm` is only used to fetch TypeScript dependency files.
 - `internal/ui/*_templ.go` is generated and committed. After changing a `.templ`
