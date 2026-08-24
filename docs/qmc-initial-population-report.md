@@ -153,10 +153,21 @@ seventeenth, real problem. The two agree.
   the one exception to the rule that every recorded figure predates the current
   pin.
 
+## The data
+
+The per-run costs are committed as
+[`qmc-initial-population-screen.csv`](qmc-initial-population-screen.csv)
+— one row per job, with the regime, arm, block, effective seed, iteration and
+evaluation counts, and `bestCost`. Every table above is derived from that file
+and nothing else. The checkpoints it was extracted from no longer exist, so this
+is the record. `initialCost` is `nan` throughout because a batch-stage
+checkpoint does not carry it; it is kept only so the columns match the
+collector.
+
 ## Reproducing
 
 Campaign and analysis scripts are not committed; the campaign is a submit loop
-against a `serve` instance and the checkpoints hold everything needed:
+against a `serve` instance, and the checkpoints hold everything needed:
 
 ```sh
 mayflycirclefit serve --port 8084 --data-root ./data-qmc --max-jobs 8 \
