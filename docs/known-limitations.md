@@ -23,7 +23,7 @@ behavior is production-ready.
 ## Resume and persistence
 
 - “Resume” is restart-from-best, not exact continuation. The saved best is put
-  into a newly initialized MayFly v0.7.0 population along with deterministic
+  into a newly initialized MayFly v0.7.1 population along with deterministic
   perturbations. Velocity, mating state, RNG position, and other optimizer
   internals are not restored.
 - A continuation seed is derived from the original seed and resume count, so a

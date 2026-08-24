@@ -111,7 +111,7 @@ reintroduce application configuration into the store package.
   a budget on restarts, do not size a population from v0.4.0 figures — carry
   over; their *numbers* are a different algorithm's. Re-measure a baseline
   before comparing anything new against a recorded figure. Resume enforces this
-  on its own: a checkpoint recording v0.6.0 is refused by a v0.7.0 binary.
+  on its own: a checkpoint recording v0.6.0 is refused by a v0.7.x binary.
 - v0.7.0 also adds HMMA as a separately registered variant. This repository does
   not offer it yet: `app.variants` and `opt.supportedVariants` are unchanged, so
   a job naming it is refused at validation rather than silently run.
@@ -127,7 +127,9 @@ reintroduce application configuration into the store package.
   directly: standard MA on a sphere at seed 4242 returns bit-identical costs
   under both, for `uniform`, `sobol`, and `halton`, at 10 and 56 dimensions. So
   a v0.7.0 measurement is comparable to a run on the current pin, which is not
-  true of any earlier version. Templ is pinned to
+  true of any earlier version. The resume guard knows that pair: v0.7.0 and
+  v0.7.1 checkpoints resume under either binary, by an explicit two-version
+  allowlist in `internal/opt/resume_guard.go` rather than a semver rule. Templ is pinned to
   `github.com/a-h/templ v0.3.960` as a Go tool; `github.com/google/pprof` as a
   Go tool because some Go installations do not bundle it.
 - `github.com/evanw/esbuild/cmd/esbuild` is installed as a Go tool to compile the
