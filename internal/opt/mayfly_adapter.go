@@ -56,6 +56,10 @@ type MayflyAdapter struct {
 	danceDamp             *float64
 	aquilaWeight          *float64
 	oppositionProbability *float64
+	// qmcInit names the sequence the initial population is drawn from. Empty
+	// is the library's uniform default, which is what every run recorded
+	// before this option existed used.
+	qmcInit string
 }
 
 // Stop configures optimizer-level early stopping, evaluated per iteration
@@ -147,6 +151,30 @@ func WithOppositionProbability(probability float64) MayflyOption {
 	return func(m *MayflyAdapter) { m.oppositionProbability = &probability }
 }
 
+// WithQMCInit draws the initial population from a low-discrepancy sequence
+// instead of independent uniform draws. An empty sequence keeps the library's
+// uniform default.
+//
+// The adapter normalizes every parameter into the unit box, so the sequence
+// samples exactly the hypercube it is defined on. Caller-supplied seeds keep
+// precedence: the library fills from the quasi-random block only for the
+// individuals no initial population already covers, so a continuation still
+// starts from its incumbent.
+//
+// Determinism is unaffected. The library draws the sequence's scramble from
+// the run's generator when Config.QMCSeed is left at zero, and this adapter
+// always seeds that generator, so a fixed seed still reproduces a run exactly.
+// It is not comparable to a uniform run of the same seed: a different starting
+// population consumes the generator differently from the first iteration
+// onwards, so the two walk different trajectories even though each is
+// reproducible on its own.
+//
+// This is an expert knob. See docs/known-limitations.md for what the library's
+// own measurement of it does and does not support.
+func WithQMCInit(sequence string) MayflyOption {
+	return func(m *MayflyAdapter) { m.qmcInit = sequence }
+}
+
 // WithLogger reports Mayfly lifecycle events through logger. Per-iteration
 // events are demoted to debug so an ordinary run logs one completion record per
 // optimizer run. A nil logger disables optimizer logging entirely.
@@ -165,12 +193,18 @@ func WithEarlyStop(stop Stop) MayflyOption {
 // function is safe to call from several goroutines at once; the renderer
 // pipeline does that by leasing an independent session per evaluation.
 //
-// Parallel evaluation is reproducible for a fixed seed but is not bit-identical
-// to a serial run of the same seed. Mayfly's serial male loop lets a member
-// that improves the global best steer the very next member of the same
-// generation, while the parallel loop holds the global best fixed for the whole
-// generation and merges afterwards. Both orders are deterministic; they are
-// different search trajectories.
+// As of Mayfly v0.7.0 parallel evaluation is bit-identical to a serial run of
+// the same seed, at any worker count, for every variant this adapter
+// configures: the library gave both modes the same proposal and commit
+// semantics. TestParallelEvaluationMatchesSerial pins that, because the
+// comparability rules in docs/schedule-format.md depend on it.
+//
+// Before v0.7.0 the two diverged -- the serial male loop let a member that
+// improved the global best steer the very next member of the same generation,
+// while the parallel loop held the best fixed for the whole generation and
+// merged afterwards. Both were deterministic, but they were different
+// trajectories, so a measurement taken before that release is comparable only
+// against runs with the same setting.
 func WithParallelEvaluation(workers int) MayflyOption {
 	return func(m *MayflyAdapter) { m.parallelWorkers = workers }
 }
@@ -391,6 +425,15 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 
 	if m.oppositionProbability != nil {
 		config.OppositionProbability = *m.oppositionProbability
+	}
+
+	if m.qmcInit != "" {
+		// Left unset the library draws uniformly, so writing the field only
+		// when it is asked for keeps an unconfigured run byte-for-byte on the
+		// path every earlier measurement used. QMCSeed stays at zero
+		// deliberately: that is what makes the scramble come from the run's
+		// own generator rather than pinning every run to one point set.
+		config.QMCInit = m.qmcInit
 	}
 	config.LowerBound = 0.0
 

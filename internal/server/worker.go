@@ -881,7 +881,11 @@ func newStageOptimizer(config store.JobConfig, rend renderer.Renderer, seed int6
 		opt.WithLogger(slog.Default()), opt.WithEarlyStop(buildEarlyStop(config)),
 		opt.WithCrossoverCount(config.CrossoverCount),
 		// Optimizer stages only. Polishing runs its own smaller
-		// standard-variant population and is deliberately left alone.
+		// standard-variant population and is deliberately left alone. That
+		// includes the initial-population sequence: a polishing run starts
+		// from the incumbent it is polishing, so how a cold population would
+		// have sampled the box does not apply to it.
+		opt.WithQMCInit(string(config.ResolvedQMCInit())),
 		opt.OptionalFloat(config.DanceDamp, opt.WithDanceDamp),
 		opt.OptionalFloat(config.AquilaWeight, opt.WithAquilaWeight),
 		opt.OptionalFloat(config.OppositionProbability, opt.WithOppositionProbability),

@@ -12,7 +12,7 @@ tool (
 require (
 	github.com/CWBudde/dragonfly v0.1.0
 	github.com/a-h/templ v0.3.960
-	github.com/cwbudde/mayfly v0.6.0
+	github.com/cwbudde/mayfly v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.1
 	golang.org/x/sys v0.37.0
@@ -25,6 +25,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/cli/browser v1.3.0 // indirect
+	github.com/cwbudde/qmc v0.2.0 // indirect
 	github.com/evanw/esbuild v0.28.2 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect

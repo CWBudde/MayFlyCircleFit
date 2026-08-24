@@ -30,12 +30,21 @@ Rendering-side invariants live in
 
 ## Parallel evaluation
 
-- `--parallel-evaluation` is opt-in and defaults off, because it changes the
-  result of a fixed seed. It leases one independent renderer session per
-  concurrent evaluation and reproduces bit-identically for a fixed seed and any
-  worker count, but its trajectory differs from a serial run of that seed
-  because MayFly holds the global best fixed for a whole parallel generation.
-  Compare runs only against runs with the same settings.
+- `--parallel-evaluation` is opt-in and defaults off, because it trades cores
+  for throughput rather than because it changes the answer. It leases one
+  independent renderer session per concurrent evaluation and reproduces
+  bit-identically for a fixed seed at any worker count — and, as of MayFly
+  v0.7.0, bit-identically to the *serial* run of that seed as well, for every
+  variant and for Dragonfly. A campaign is therefore comparable across the
+  setting. `TestParallelEvaluationMatchesSerial` and
+  `TestDragonflyParallelEvaluationMatchesSerial` pin it, so a library bump that
+  reintroduces the divergence fails rather than quietly invalidating a
+  comparison.
+- **Runs recorded before the v0.7.0 pin do not have that property.** Under
+  v0.6.0 and earlier the serial male loop updated the global best mid-generation
+  and steered the rest of it, while the parallel loop held it fixed; the two
+  were different trajectories. A measurement from that era is comparable only
+  against runs made with the same setting.
 - `--evaluation-workers` sizes that pool and is separate from `--threads` on
   purpose: threads shard the rows of one render, evaluation workers run whole
   independent renders, and a pooled session always renders single-threaded. The
@@ -185,7 +194,35 @@ Rendering-side invariants live in
   — a MayFly `variant` or advanced knob, or polishing, under `dragonfly` — is
   refused at validation rather than accepted and ignored, because a dropped
   setting makes the recorded cost impossible to compare.
-- Resume is restart-from-best: the MayFly v0.6.0 population is seeded with the
+- **`config.qmcInit` decides how a MayFly run draws its first generation, and
+  an absent value is `uniform`.** `uniform` takes every coordinate as an
+  independent draw from the run's generator; `sobol` and `halton` draw from a
+  scrambled low-discrepancy sequence over the unit box the adapter normalizes
+  into. It is MayFly-only and refused under `dragonfly` alongside the other
+  MayFly-only settings.
+  **The sequence only fills the population slots seeding leaves free, and on
+  this problem that is normally half of them.** Whenever the renderer can build
+  a residual seed it passes it as `RunOptions.Initial` — unconditionally for a
+  batch stage, and for a joint or sequential stage whenever residual seeding
+  succeeds, which includes a cold base stage and not only a continuation. The
+  adapter then expands that candidate into `ceil(popSize * 0.5)` male and
+  `ceil(popSize * 0.5)` female seeds (the continuation profile's
+  `LocalFraction`, default `0.5`), and MayFly fills only the remaining slots of
+  each sub-population from the chosen sequence. So `sobol` and `halton` change
+  how the unseeded half of the population is placed; they never give
+  full-population coverage of the box, and the even-coverage argument for them
+  applies only to that half. A run reaches the whole-population case only when
+  residual seeding fails and the renderer falls back to optimizer
+  initialization. Two properties have to hold together: a fixed seed still
+  reproduces a run exactly under every strategy, because the sequence's
+  scramble is drawn from the run's own generator rather than from the clock;
+  and a quasi-random run is *not* comparable to the uniform run of the same
+  seed, because a different starting population consumes the generator
+  differently from the first iteration onwards. Seeds keep precedence over the
+  sequence — a continuation still starts from its incumbent — and polishing is
+  unaffected, because the polishing optimizer is constructed without the
+  setting at all.
+- Resume is restart-from-best: the MayFly v0.7.0 population is seeded with the
   saved best and deterministic nearby variations. It is not an exact restoration
   of optimizer internals. Server restart-from-best for sequential and batch jobs
   is not supported.

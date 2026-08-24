@@ -70,6 +70,7 @@ type mayflyOnlyField struct {
 func (c JobConfig) mayflyOnlyFields() []mayflyOnlyField {
 	fields := []mayflyOnlyField{
 		{"variant", c.Variant != ""},
+		{"qmcInit", c.QMCInit != ""},
 		{"crossoverCount", c.CrossoverCount != 0},
 	}
 

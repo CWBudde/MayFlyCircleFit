@@ -13,6 +13,7 @@ import (
 const (
 	referenceImage             = "ref.png"
 	fieldVariant               = "variant"
+	fieldQMCInit               = "qmcInit"
 	fieldDanceDamp             = "danceDamp"
 	fieldAquilaWeight          = "aquilaWeight"
 	fieldOppositionProbability = "oppositionProbability"
@@ -102,6 +103,7 @@ func TestValidateRefusesMayflyOnlyFieldsUnderDragonfly(t *testing.T) {
 		field string
 	}{
 		{fieldVariant, func(c *app.JobConfig) { c.Variant = app.VariantDESMA }, fieldVariant},
+		{fieldQMCInit, func(c *app.JobConfig) { c.QMCInit = app.QMCInitSobol }, fieldQMCInit},
 		{"crossoverCount", func(c *app.JobConfig) { c.CrossoverCount = 40 }, "crossoverCount"},
 		{fieldDanceDamp, func(c *app.JobConfig) { c.DanceDamp = &weight }, fieldDanceDamp},
 		{fieldAquilaWeight, func(c *app.JobConfig) { c.AquilaWeight = &weight }, fieldAquilaWeight},

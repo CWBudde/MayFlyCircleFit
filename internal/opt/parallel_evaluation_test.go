@@ -84,27 +84,46 @@ func TestParallelEvaluationIsReproducible(t *testing.T) {
 	}
 }
 
-// TestParallelEvaluationDiffersFromSerial documents the caveat deliberately, so
-// that the difference is a pinned, reviewed property instead of a surprise.
+// TestParallelEvaluationMatchesSerial pins the property MayFly v0.7.0
+// introduced: parallel and serial evaluation now walk the same trajectory, so
+// a seed reproduces across the flag rather than only with it held fixed.
 //
-// Mayfly's serial male loop updates the global best in the middle of the
-// population, which steers the remaining members of the same generation. Its
-// parallel loop clones the global best for the whole generation and merges
-// afterwards. Both are deterministic search trajectories, but they are not the
-// same trajectory, so a seed only reproduces with the flag held fixed. That is
-// why ParallelEvaluation is opt-in and defaults to false.
-func TestParallelEvaluationDiffersFromSerial(t *testing.T) {
-	serial := runRippledSphere(t, 1)
-	repeated := runRippledSphere(t, 1)
-	parallel := runRippledSphere(t, 4)
+// Before v0.7.0 the two diverged, because the serial male loop updated the
+// global best in the middle of a generation and steered the rest of it, while
+// the parallel loop held the best fixed for the whole generation and merged
+// afterwards. v0.7.0 gave the modes the same proposal and commit semantics.
+//
+// This is the previous tripwire inverted. It was written to fail once the
+// divergence stopped being real, which is how the stale caveat was found on the
+// version bump; it now fails if the divergence returns, because the
+// comparability rules in docs/behavior-invariants.md and docs/schedule-format.md
+// depend on the equivalence holding.
+//
+// Every variant is covered rather than standard alone: the modes are shared
+// machinery, but each variant commits its own updates, so one could regress by
+// itself. Ranging over supportedVariants rather than a literal list means a
+// variant added to the adapter is covered without this test being remembered.
+func TestParallelEvaluationMatchesSerial(t *testing.T) {
+	t.Parallel()
 
-	if serial.BestCost != repeated.BestCost || !slices.Equal(serial.BestParams, repeated.BestParams) {
-		t.Fatalf("serial run is not reproducible: %.17g vs %.17g", serial.BestCost, repeated.BestCost)
-	}
+	for variant := range supportedVariants {
+		t.Run(variant, func(t *testing.T) {
+			t.Parallel()
 
-	if serial.BestCost == parallel.BestCost && slices.Equal(serial.BestParams, parallel.BestParams) {
-		t.Fatal("parallel and serial results now match; the documented caveat in " +
-			"docs/known-limitations.md and WithParallelEvaluation is stale and should be removed")
+			serial := runRippledSphereVariant(t, variant, 1)
+			repeated := runRippledSphereVariant(t, variant, 1)
+			parallel := runRippledSphereVariant(t, variant, 4)
+
+			if serial.BestCost != repeated.BestCost || !slices.Equal(serial.BestParams, repeated.BestParams) {
+				t.Fatalf("serial run is not reproducible: %.17g vs %.17g", serial.BestCost, repeated.BestCost)
+			}
+
+			if serial.BestCost != parallel.BestCost || !slices.Equal(serial.BestParams, parallel.BestParams) {
+				t.Fatalf("parallel diverged from serial: serial %.17g, parallel %.17g; "+
+					"the equivalence documented in docs/behavior-invariants.md no longer holds",
+					serial.BestCost, parallel.BestCost)
+			}
+		})
 	}
 }
 
@@ -255,5 +274,56 @@ func TestParallelEvaluationWidthSeesThroughWrappers(t *testing.T) {
 
 	if got := ParallelEvaluationWidth(WithEpochs(parallel, 3)); got != 4 {
 		t.Fatalf("ParallelEvaluationWidth() through WithEpochs = %d, want 4", got)
+	}
+}
+
+// TestDragonflyParallelEvaluationMatchesSerial is the Dragonfly half of
+// TestParallelEvaluationMatchesSerial. It is a separate library on a separate
+// pin, so the equivalence has to be pinned separately rather than assumed from
+// MayFly's; docs/known-limitations.md describes both engines in one sentence
+// and would otherwise be one bump away from being wrong about one of them.
+func TestDragonflyParallelEvaluationMatchesSerial(t *testing.T) {
+	t.Parallel()
+
+	run := func(t *testing.T, workers int) Result {
+		t.Helper()
+
+		const dim = 8
+
+		lower := make([]float64, dim)
+
+		upper := make([]float64, dim)
+		for i := range lower {
+			lower[i], upper[i] = -5, 5
+		}
+
+		var options []DragonflyOption
+		if workers > 1 {
+			options = append(options, WithDragonflyParallelEvaluation(workers))
+		}
+
+		lifecycle, ok := NewDragonfly(25, 20, 4242, options...).(LifecycleOptimizer)
+		if !ok {
+			t.Fatal("dragonfly adapter does not implement LifecycleOptimizer")
+		}
+
+		result, err := lifecycle.RunContext(
+			context.Background(),
+			Problem{Eval: rippledSphere, Lower: lower, Upper: upper, Dim: dim},
+			RunOptions{},
+		)
+		if err != nil {
+			t.Fatalf("RunContext() error = %v", err)
+		}
+
+		return result
+	}
+
+	serial := run(t, 1)
+	parallel := run(t, 4)
+
+	if serial.BestCost != parallel.BestCost || !slices.Equal(serial.BestParams, parallel.BestParams) {
+		t.Errorf("parallel diverged from serial: serial %.17g, parallel %.17g",
+			serial.BestCost, parallel.BestCost)
 	}
 }
