@@ -67,8 +67,10 @@ of the twelve `standard` block scores.
 ## What the restart arm settles
 
 Tripling the restarts moved Dragonfly by 30 points (-462.04 to -431.68) against
-a deficit of over 400. The loss is therefore not a budgeting artefact, and it is
-not something more restarts close. This is measured rather than argued, which is
+a deficit of over 400. The loss is therefore not a budgeting artefact: adding 32
+restarts closes almost none of the gap at this budget. What happens beyond 48
+draws was not measured, so this rules out the restart count as the explanation
+only over the range that was run. This is measured rather than argued, which is
 why the supplementary arm was worth its 384 jobs.
 
 The direction matches the library's own documentation: DA explores well and
@@ -82,6 +84,9 @@ run. The magnitude was not predictable from that alone.
 - Dragonfly v0.1.0 only. The adapter maps a fixed set of knobs; a different
   parameterisation of DA was not searched, and the library is early enough that
   its own defects have not been ruled out as a contributor.
+- Nothing beyond 48 restarts per block. The distribution of a larger restart
+  budget was not sampled, so the report does not say where, if anywhere, more
+  draws would close the gap.
 - No multi-objective arm. Only continuous DA was measured; BDA and MODA are out
   of scope for this problem.
 
