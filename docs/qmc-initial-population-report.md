@@ -157,12 +157,22 @@ seventeenth, real problem. The two agree.
 
 The per-run costs are committed as
 [`qmc-initial-population-screen.csv`](qmc-initial-population-screen.csv)
-— one row per job, with the regime, arm, block, effective seed, iteration and
-evaluation counts, and `bestCost`. Every table above is derived from that file
-and nothing else. The checkpoints it was extracted from no longer exist, so this
-is the record. `initialCost` is `nan` throughout because a batch-stage
-checkpoint does not carry it; it is kept only so the columns match the
-collector.
+— one row per job, 288 in total. Its columns, in file order, are:
+
+| column | meaning |
+| --- | --- |
+| `regime` | `scarce`, `mid`, or `prod`. **`prod` is the regime this report calls `large`**; the file predates the rename and was not rewritten. |
+| `qmc` | the arm: the `qmcInit` value, `uniform`, `sobol`, or `halton`. |
+| `block` | the paired block number, 1-based. |
+| `seed` | the *effective* seed the run used, `7000 + block`. There is no separate user-seed column. |
+| `iters` | iterations the stage ran. |
+| `evals` | objective evaluations the stage spent. |
+| `bestCost` | the run's final cost, the only quantity every table above is computed from. |
+| `initialCost` | `nan` throughout, because a batch-stage checkpoint does not carry it. It is kept only so the columns match the collector. |
+| `termination` | the optimizer's termination reason, `completed` for every row. |
+
+Every table above is derived from that file and nothing else. The checkpoints it
+was extracted from no longer exist, so this is the record.
 
 ## Reproducing
 
