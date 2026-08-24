@@ -3,11 +3,13 @@
 **Validated:** 2026-08-12 · **Historical baseline:** revision `3650d61`
 
 The CPU renderer's correctness guarantee is **byte-for-byte NRGBA equality with
-the project's pre-optimization rasterizer**, and exact equality between the
-production `FastMSECost` and the scalar `MSECost` for every rendered case. Every
-optimization since — AABB rejection, the reusable canvas, strength reduction,
-scanline sharding, span compositing, the SIMD tiers, incremental cost — holds
-that line or does not ship.
+the project's pre-optimization rasterizer** on the exact float64-geometry path,
+and exact equality between the production `FastMSECost` and the scalar `MSECost`
+for every rendered case. Every optimization since — AABB rejection, the reusable
+canvas, strength reduction, scanline sharding, span compositing, the SIMD tiers,
+incremental cost — holds that line or does not ship. A short list of paths is
+*deliberately* outside it, Q16.16 span geometry among them; they are named at the
+end and are not covered by the sentence above.
 
 Read this before changing renderer math, adding a kernel, or relaxing a
 tolerance. The mechanism of the current code is in

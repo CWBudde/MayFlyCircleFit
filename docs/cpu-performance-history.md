@@ -246,13 +246,16 @@ deterministic 512×512/K100.
 | float64 scanline + per-pixel opaque loop | 13.986 ms | 1.00× | 0 |
 | Production span + Q16.16 | 7.376 ms | **1.90×** | 0 |
 
-Output is byte-identical between the two. The exact incremental cost policy adds
-a further **1.16×** on 256×256 sequential K1; see
-[`incremental-cost.md`](incremental-cost.md).
+The two are **not** byte-identical in general: Q16.16 geometry is a *quantified
+approximation*, changing about 0.00074% of row spans against the float64 oracle,
+and geometry it cannot represent falls back to that oracle exactly. This
+benchmark measured throughput, not output equality, so do not read the two rows
+as interchangeable renderers —
+[`renderer-correctness.md`](renderer-correctness.md) lists Q16.16 among the
+deliberate parity exceptions.
 
-Q16.16 geometry is a *quantified approximation*, not bit-identity: it changes
-about 0.00074% of row spans against the float64 oracle, and geometry it cannot
-represent falls back to that oracle exactly.
+The exact incremental cost policy adds a further **1.16×** on 256×256 sequential
+K1; see [`incremental-cost.md`](incremental-cost.md).
 
 ## Reproducing any of this
 

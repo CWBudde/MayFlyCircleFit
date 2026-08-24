@@ -2,9 +2,14 @@
 
 The opaque span compositor is the largest symbol in every CPU profile this
 repository has taken — 25.17% of flat samples on a no-AVX2 host, 65.01% on an
-Apple M5 after span integration. Every architecture therefore has a vector
+Apple M5 after span integration. amd64 and arm64 therefore each have a vector
 kernel for it, and every one of those kernels is **byte-identical to the scalar
-span**, which is why none of them is behind a flag.
+span**, which is why none of them is behind a flag. Every other target — the
+supported linux/386 build among them — composites scalar: `compositeSpanKernel`
+is a constant `fit.TierScalar` in `composite_span_generic.go`, so the timings
+below do not describe it. amd64 and arm64 also fall back to the scalar span when
+their tier is unavailable at runtime or the span is shorter than the tier's
+cutoff.
 
 The one exception is `--fast-compositing`, a float32 path that is *not* exact and
 whose costs are consequently not comparable to anything else.
@@ -89,8 +94,12 @@ the dispatched `--fast-compositing` path.
 | 256 px | 761.4 ns | 412.6 ns | 111.5 ns | 1.85× | 3.70× |
 | 1024 px | 2869.0 ns | 1562.0 ns | 373.8 ns | 1.84× | 4.18× |
 
-Below 16 pixels both vector paths dispatch to their scalar fallbacks, so the
-first three rows measure those fallbacks rather than the kernels.
+The two vector columns have different cutoffs. `compositeSpanAVX2MinPixels = 16`
+governs the exact column, so its first three rows measure the scalar fallback
+rather than the kernel. The fast float32 path enters far earlier —
+`fastCompositeAVX2MinPixels = 8` (`fastCompositeSSE2MinPixels = 4`) — so the
+8-pixel `fast f32` figure is already vectorized, which is why that column turns
+the corner one row before the exact one does.
 `compositeSpanAVX2MinPixels = 16` is a measured crossover, not the vector width:
 called directly the exact kernel already beats scalar at 4 pixels (1.21×), and
 the gap is per-span setup of the twenty float64 constants.
