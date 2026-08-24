@@ -118,10 +118,13 @@ reintroduce application configuration into the store package.
 - **The MayFly pin carries quasi-random initial populations.** `qmcInit`
   selects `uniform` (the default and every earlier measurement's behavior),
   `sobol`, or `halton`. It is MayFly-only, refused under `dragonfly`, and an
-  expert knob. It has now been measured on this problem and it is a null:
-  see [`docs/qmc-initial-population-report.md`](docs/qmc-initial-population-report.md),
+  expert knob, and the sequence only fills the population slots residual
+  seeding leaves free — normally half of them. It has now been measured on this
+  problem and it is a null: see
+  [`docs/qmc-initial-population-report.md`](docs/qmc-initial-population-report.md),
   which agrees with the library's own chance-level benchmark finding. `uniform`
   stays the default; do not read a single campaign as evidence for a sequence.
+  See also [`docs/known-limitations.md`](docs/known-limitations.md).
 - MayFly is pinned to `github.com/cwbudde/mayfly v0.7.1`. v0.7.1 is a lint and
   readability release and is **behaviour-neutral against v0.7.0**, verified
   directly: standard MA on a sphere at seed 4242 returns bit-identical costs

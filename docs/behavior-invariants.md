@@ -196,18 +196,32 @@ Rendering-side invariants live in
   setting makes the recorded cost impossible to compare.
 - **`config.qmcInit` decides how a MayFly run draws its first generation, and
   an absent value is `uniform`.** `uniform` takes every coordinate as an
-  independent draw from the run's generator; `sobol` and `halton` take the
-  whole population from a scrambled low-discrepancy sequence over the unit box
-  the adapter normalizes into. It is MayFly-only and refused under `dragonfly`
-  alongside the other MayFly-only settings. Two properties have to hold
-  together: a fixed seed still reproduces a run exactly under every strategy,
-  because the sequence's scramble is drawn from the run's own generator rather
-  than from the clock; and a quasi-random run is *not* comparable to the
-  uniform run of the same seed, because a different starting population
-  consumes the generator differently from the first iteration onwards. Seeds
-  keep precedence over the sequence — a continuation still starts from its
-  incumbent — and polishing is unaffected, since it starts from the candidate
-  it is polishing rather than from a cold population.
+  independent draw from the run's generator; `sobol` and `halton` draw from a
+  scrambled low-discrepancy sequence over the unit box the adapter normalizes
+  into. It is MayFly-only and refused under `dragonfly` alongside the other
+  MayFly-only settings.
+  **The sequence only fills the population slots seeding leaves free, and on
+  this problem that is normally half of them.** Whenever the renderer can build
+  a residual seed it passes it as `RunOptions.Initial` — unconditionally for a
+  batch stage, and for a joint or sequential stage whenever residual seeding
+  succeeds, which includes a cold base stage and not only a continuation. The
+  adapter then expands that candidate into `ceil(popSize * 0.5)` male and
+  `ceil(popSize * 0.5)` female seeds (the continuation profile's
+  `LocalFraction`, default `0.5`), and MayFly fills only the remaining slots of
+  each sub-population from the chosen sequence. So `sobol` and `halton` change
+  how the unseeded half of the population is placed; they never give
+  full-population coverage of the box, and the even-coverage argument for them
+  applies only to that half. A run reaches the whole-population case only when
+  residual seeding fails and the renderer falls back to optimizer
+  initialization. Two properties have to hold together: a fixed seed still
+  reproduces a run exactly under every strategy, because the sequence's
+  scramble is drawn from the run's own generator rather than from the clock;
+  and a quasi-random run is *not* comparable to the uniform run of the same
+  seed, because a different starting population consumes the generator
+  differently from the first iteration onwards. Seeds keep precedence over the
+  sequence — a continuation still starts from its incumbent — and polishing is
+  unaffected, because the polishing optimizer is constructed without the
+  setting at all.
 - Resume is restart-from-best: the MayFly v0.7.1 population is seeded with the
   saved best and deterministic nearby variations. It is not an exact restoration
   of optimizer internals. Server restart-from-best for sequential and batch jobs
