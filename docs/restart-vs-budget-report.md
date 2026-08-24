@@ -1,8 +1,12 @@
 # Restarts versus budget
 
-> **Measured under MayFly v0.5.1.** The pin is now v0.6.0, which reimplemented
-> `aoblmoa` but left the other six variants unaffected, so the conclusions below
-> still apply to `standard`. The measurements have not been repeated. This
+> **Measured under MayFly v0.5.1.** The pin is now v0.7.1. v0.6.0 reimplemented
+> `aoblmoa` and left the other six variants alone, but v0.7.0 reworked the core
+> update rules and changes results for **every** variant, `standard` included,
+> so none of the numbers below is comparable to a run made today. The
+> conclusion — spend a budget on restarts rather than on one long run — is a
+> statement about method and carries over; the figures do not. The measurements
+> have not been repeated. This
 > report did not measure population size as a quality knob, so it neither
 > reproduces nor refutes the figures in
 > [`seed-variance-and-population-report.md`](seed-variance-and-population-report.md).
