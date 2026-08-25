@@ -1041,6 +1041,34 @@ every user-facing surface.
 
 ---
 
+## Phase 20: CMA-ES Configuration ✅
+
+**Goal:** Expose the completed CMA-ES adapter through the canonical
+configuration and every engine-selection surface.
+
+- [x] Add `cmaes` to `JobConfig.optimizer`; carry it through CLI, JSON jobs,
+      schedules, checkpoints, resume routing, and the web creation form.
+- [x] Add normalized `initialSigma`, `covarianceMode`, `activeCMA`, and
+      `restartStrategy` fields with CMA-only defaults and engine-specific
+      refusal.
+- [x] Support full, separable, and seven-coordinate block covariance; refuse
+      full covariance above 512 optimizer dimensions.
+- [x] Run IPOP/BIPOP under one `iters * popSize` evaluation budget and require
+      `optimizerRestarts=1`, while retaining fixed attempts for
+      `restartStrategy=none`.
+- [x] Keep polishing MayFly-only and reject CMA-ES schedules containing a
+      polish stage.
+- [x] Advance the CMA-ES pin to
+      `v0.0.0-20260825143954-e528faf326bf`, which includes block covariance,
+      and update the support matrix, behavior invariants, known limitations,
+      architecture, changelog, and contributor guidance.
+
+**Rationale:** Engine selection now has one typed path from every entry point
+to optimizer construction and persistence. Adaptive restart schedules replace,
+rather than silently multiply, the consumer's fixed-attempt mechanism.
+
+---
+
 ## Summary and Next Steps
 
 Completed implementation history is intentionally summarized above; detailed
@@ -1056,8 +1084,8 @@ Current open work, in priority order:
 3. **Search quality (P1):** Task 15.11 — restarts beat a longer single run by
    a measured, significant margin; see
    [`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md).
-4. **CMA-ES configuration (P1):** expose the completed Phase 19 adapter through
-   typed configuration, CLI, server, schedules, and checkpoint routing.
+4. **CMA-ES measurement (P1):** compare evaluation-matched MayFly and CMA-ES
+   arms, including IPOP and separable covariance.
 5. **Dashboard sign-off (P1):** Task 17.11.
 6. **Frontend island transition (P1/P2):** Tasks 18.1, 18.2, and 18.7, then
    18.3–18.6. The shadcn SPA rewrite is recorded as a deferred alternative at

@@ -19,10 +19,16 @@ type runCommandState struct {
 	mode                     string
 	backendName              string
 	variantName              string
+	optimizerName            string
+	initialSigma             float64
+	covarianceMode           string
+	activeCMA                bool
+	restartStrategy          string
 	circles                  int
 	iters                    int
 	popSize                  int
 	optimizerEpochs          int
+	optimizerRestarts        int
 	batchSize                int
 	polishingEnabled         bool
 	polishingStrategy        string
@@ -55,10 +61,16 @@ func captureRunCommandState() runCommandState {
 		mode:                     mode,
 		backendName:              backendName,
 		variantName:              variantName,
+		optimizerName:            optimizerName,
+		initialSigma:             initialSigma,
+		covarianceMode:           covarianceMode,
+		activeCMA:                activeCMA,
+		restartStrategy:          restartStrategy,
 		circles:                  circles,
 		iters:                    iters,
 		popSize:                  popSize,
 		optimizerEpochs:          optimizerEpochs,
+		optimizerRestarts:        optimizerRestarts,
 		batchSize:                batchSize,
 		polishingEnabled:         polishingEnabled,
 		polishingStrategy:        polishingStrategy,
@@ -91,10 +103,16 @@ func restoreRunCommandState(state runCommandState) {
 	mode = state.mode
 	backendName = state.backendName
 	variantName = state.variantName
+	optimizerName = state.optimizerName
+	initialSigma = state.initialSigma
+	covarianceMode = state.covarianceMode
+	activeCMA = state.activeCMA
+	restartStrategy = state.restartStrategy
 	circles = state.circles
 	iters = state.iters
 	popSize = state.popSize
 	optimizerEpochs = state.optimizerEpochs
+	optimizerRestarts = state.optimizerRestarts
 	batchSize = state.batchSize
 	polishingEnabled = state.polishingEnabled
 	polishingStrategy = state.polishingStrategy
@@ -126,10 +144,16 @@ func setRunValidationDefaults(referencePath string) {
 	mode = string(app.ModeJoint)
 	backendName = string(app.BackendCPU)
 	variantName = string(app.VariantStandard)
+	optimizerName = string(app.OptimizerMayfly)
+	initialSigma = app.DefaultCMAESInitialSigma
+	covarianceMode = ""
+	activeCMA = true
+	restartStrategy = ""
 	circles = 10
 	iters = 100
 	popSize = 30
 	optimizerEpochs = 1
+	optimizerRestarts = 1
 	batchSize = 0
 	polishingEnabled = false
 	polishingStrategy = string(app.PolishingReplacement)

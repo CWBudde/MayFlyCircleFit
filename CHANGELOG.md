@@ -11,10 +11,13 @@ release is declared by this file.
 - A pinned CMA-ES adapter at `internal/opt`, with normalized mixed-range
   parameters, repair and nonlinear-constraint mapping, restart-from-best and
   alternative seeds, measured progress, epoch callbacks, early stopping,
-  cancellation, and serial/parallel bit equivalence. It intentionally composes
-  with the consumer's fixed-attempt `WithRestarts` wrapper rather than silently
-  nesting the library's IPOP/BIPOP scheduler. CLI, server, schedule, and
-  CMA-ES-specific configuration wiring remain a follow-on phase.
+  cancellation, and serial/parallel bit equivalence. `optimizer: "cmaes"` now
+  selects it from CLI, JSON jobs, schedules, checkpoints, resume, and the web
+  creation form. CMA-ES jobs expose normalized `initialSigma`, full, separable,
+  or seven-parameter block covariance, `activeCMA`, and shared-budget IPOP/BIPOP
+  through `restartStrategy`. IPOP/BIPOP and the consumer's fixed-attempt
+  `optimizerRestarts` wrapper are mutually exclusive so restart mechanisms never
+  multiply work silently.
 - A `convergence` termination reason. CMA-ES stops on its own distribution-aware
   criteria (TolX, TolFun, TolXUp, condition number, no-effect axis and
   coordinate) well below the iteration cap, and reporting those as `completed`

@@ -1589,8 +1589,11 @@ func (s *Server) optimizerVersion(optimizer app.Optimizer) string {
 		return s.optimizerVersionOverride
 	}
 
-	if optimizer == app.OptimizerDragonfly {
+	switch optimizer {
+	case app.OptimizerDragonfly:
 		return opt.DragonflyLibraryVersion()
+	case app.OptimizerCMAES:
+		return opt.CMAESLibraryVersion()
 	}
 
 	return opt.LibraryVersion()
@@ -1600,8 +1603,11 @@ func (s *Server) optimizerVersion(optimizer app.Optimizer) string {
 // operator-facing messages, so a Dragonfly checkpoint is never described as a
 // MayFly one.
 func optimizerLibraryName(optimizer app.Optimizer) string {
-	if optimizer == app.OptimizerDragonfly {
+	switch optimizer {
+	case app.OptimizerDragonfly:
 		return "Dragonfly"
+	case app.OptimizerCMAES:
+		return "CMA-ES"
 	}
 
 	return "MayFly"

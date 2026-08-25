@@ -271,6 +271,17 @@ type JobConfig struct {
 	// optimizer that has no variants, and Validate refuses a variant there
 	// rather than ignoring it.
 	Variant Variant `json:"variant,omitempty"`
+	// InitialSigma is CMA-ES's initial step size in the normalized [0,1]
+	// search box. Nil leaves the CMA-ES default of 0.3. It is a pointer so an
+	// explicitly invalid zero is not confused with omission.
+	InitialSigma *float64 `json:"initialSigma,omitempty"`
+	// ActiveCMA controls CMA-ES negative rank-mu covariance adaptation. Nil
+	// means enabled, the library default; a pointer preserves an explicit false.
+	ActiveCMA *bool `json:"activeCMA,omitempty"` //nolint:tagliatelle // Public spelling is fixed by PLAN.md.
+	// CovarianceMode and RestartStrategy are CMA-ES-only settings. Empty values
+	// resolve to full covariance and no shared-budget restart schedule.
+	CovarianceMode  CMAESCovarianceMode  `json:"covarianceMode,omitempty"`
+	RestartStrategy CMAESRestartStrategy `json:"restartStrategy,omitempty"`
 	// QMCInit selects how MayFly draws its initial population: independent
 	// uniform draws, or a low-discrepancy sequence covering the search box
 	// more evenly for the same number of evaluations. Empty means uniform,
@@ -503,6 +514,26 @@ func (c *JobConfig) ApplyDefaults() error {
 
 	if c.Optimizer == "" {
 		c.Optimizer = defaults.Optimizer
+	}
+
+	if c.Optimizer == OptimizerCMAES {
+		if c.InitialSigma == nil {
+			sigma := DefaultCMAESInitialSigma
+			c.InitialSigma = &sigma
+		}
+
+		if c.ActiveCMA == nil {
+			active := true
+			c.ActiveCMA = &active
+		}
+
+		if c.CovarianceMode == "" {
+			c.CovarianceMode = CMAESCovarianceFull
+		}
+
+		if c.RestartStrategy == "" {
+			c.RestartStrategy = CMAESRestartNone
+		}
 	}
 
 	// Only MayFly has variants, so only a MayFly job gets the default one. A

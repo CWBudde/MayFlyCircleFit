@@ -38,8 +38,7 @@ Rendering-side invariants live in
   variant, Dragonfly, and CMA-ES. A campaign is therefore comparable across the
   setting. `TestParallelEvaluationMatchesSerial` and
   `TestDragonflyParallelEvaluationMatchesSerial` pin the selectable engines;
-  `TestCMAESParallelEvaluationMatchesSerial` independently pins the CMA-ES
-  adapter before its configuration surface lands. A library bump that
+  `TestCMAESParallelEvaluationMatchesSerial` independently pins CMA-ES. A library bump that
   reintroduces divergence therefore fails rather than quietly invalidating a
   comparison.
 - **Runs recorded before the v0.7.0 pin do not have that property.** Under
@@ -186,22 +185,25 @@ Rendering-side invariants live in
 ## Determinism, resume, and termination
 
 - **A job runs the optimizer library its configuration names, and a resumed job
-  runs the library its checkpoint names.** `config.optimizer` is `mayfly` or
-  `dragonfly`, and an absent value is `mayfly`, so every configuration and
-  checkpoint written before the field existed keeps its behavior. The engine is
-  persisted in the checkpoint together with that engine's library version in
+  runs the library its checkpoint names.** `config.optimizer` is `mayfly`,
+  `dragonfly`, or `cmaes`, and an absent value is `mayfly`, so every
+  configuration and checkpoint written before the field existed keeps its
+  behavior. The engine is persisted in the checkpoint together with that engine's library version in
   `optimizerVersion`, and no resume path reads the engine from anywhere else:
   neither `resume --local` nor the resume endpoint can continue a run under a
   different optimizer than produced it. A setting the named engine cannot read
-  — a MayFly `variant` or advanced knob, or polishing, under `dragonfly` — is
-  refused at validation rather than accepted and ignored, because a dropped
-  setting makes the recorded cost impossible to compare.
+  is refused at validation rather than accepted and ignored, because a dropped
+  setting makes the recorded cost impossible to compare. That refusal runs in
+  both directions: a MayFly `variant`, `qmcInit`, `crossoverCount`, advanced
+  knob, or polishing is refused under `dragonfly` and under `cmaes`, and the
+  CMA-ES-only `initialSigma`, `covarianceMode`, `activeCMA`, and
+  `restartStrategy` are refused under `mayfly` and under `dragonfly`.
 - **`config.qmcInit` decides how a MayFly run draws its first generation, and
   an absent value is `uniform`.** `uniform` takes every coordinate as an
   independent draw from the run's generator; `sobol` and `halton` draw from a
   scrambled low-discrepancy sequence over the unit box the adapter normalizes
-  into. It is MayFly-only and refused under `dragonfly` alongside the other
-  MayFly-only settings.
+  into. It is MayFly-only and refused under `dragonfly` and `cmaes` alongside
+  the other MayFly-only settings.
   **The sequence only fills the population slots seeding leaves free, and on
   this problem that is normally half of them.** Whenever the renderer can build
   a residual seed it passes it as `RunOptions.Initial` — unconditionally for a
@@ -284,14 +286,28 @@ Rendering-side invariants live in
   handed. Attempts vary the run seed on a dimension of their own, so epochs
   nested inside an attempt cannot alias onto another attempt's seed, and a
   restarted run stays reproducible for a fixed seed.
-- **CMA-ES uses the consumer's restart wrapper in this integration phase.**
-  `WithRestarts(NewCMAES(...), N)` therefore means the same fixed number of
-  independent cold attempts, seed offsets, iteration accounting, progress, and
-  epoch boundaries as it does for the other adapters. The adapter does not
-  silently invoke the library's IPOP or BIPOP scheduler underneath that
-  wrapper. Those schedulers require one shared evaluation budget and a strategy
-  knob; exposing them belongs to the CMA-ES configuration phase, where their
-  semantics can replace rather than multiply `optimizerRestarts` deliberately.
+- **CMA-ES has two explicit, mutually exclusive restart forms.** With
+  `restartStrategy: "none"`, `optimizerRestarts` retains the consumer's fixed
+  number of independent cold attempts. With `ipop` or `bipop`,
+  `optimizerRestarts` must be one and the CMA-ES library owns a single shared
+  `iters * popSize` evaluation budget. A converged internal run releases its
+  unused evaluations to a fresh CMA-ES run; IPOP grows the population and BIPOP
+  balances large and small regimes. `optimizerEpochs` may repeat the complete
+  schedule and therefore multiplies that budget deliberately. Progress and the
+  returned iteration/evaluation counts are cumulative across internal runs,
+  and stagnation is a per-run restart trigger under IPOP/BIPOP rather than the
+  termination of the whole schedule.
+- **CMA-ES settings are normalized and engine-specific.** `initialSigma` is a
+  fraction of the adapter's [0,1] box, not a pixel or color-channel unit;
+  omission means 0.3. Full covariance is the default and is limited to 512
+  optimizer dimensions. `block` groups each circle's seven consecutive
+  coordinates, while `separable` learns only diagonal variance. `activeCMA`
+  defaults true and preserves an explicit false. Continuation-profile sigma
+  controls the seeded first internal run; configured sigma remains the cold-run
+  value for later IPOP/BIPOP restarts.
+- **Polishing is MayFly-only.** A CMA-ES or Dragonfly job that enables
+  polishing, or a schedule for either engine containing a polish step, is
+  rejected during configuration validation. No stage silently switches engine.
 - **Restarted progress stays monotonic.** Optimizer progress is best-so-far. A
   fresh attempt's early costs are worse than what an earlier attempt already
   reached, so only improvements are forwarded, and an epoch boundary carries

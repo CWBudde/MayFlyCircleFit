@@ -213,6 +213,11 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	maxIterations := plannedOptimizerIterations(job.Config)
+	canPolish := s.store != nil &&
+		job.State == StateCompleted &&
+		job.Config.ResolvedOptimizer() == app.OptimizerMayfly &&
+		job.Config.Mode == app.ModeBatch &&
+		len(job.BestParams) == job.Config.Circles*7
 
 	// Convert to UI job detail
 	jobDetail := ui.JobDetail{
@@ -222,6 +227,10 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		Mode:                     string(job.Config.Mode),
 		Optimizer:                string(job.Config.ResolvedOptimizer()),
 		Variant:                  string(job.Config.Variant),
+		InitialSigma:             job.Config.ResolvedCMAESInitialSigma(),
+		CovarianceMode:           string(job.Config.ResolvedCMAESCovarianceMode()),
+		ActiveCMA:                job.Config.ResolvedCMAESActive(),
+		RestartStrategy:          string(job.Config.ResolvedCMAESRestartStrategy()),
 		EvaluationWorkers:        job.EvaluationWidth,
 		FastCompositing:          job.Config.FastCompositing,
 		Circles:                  job.Config.Circles,
@@ -234,7 +243,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		PolishingEnabled:         job.Config.PolishingEnabled,
 		PolishingOnly:            job.Config.PolishingOnly,
 		PolishingStrategy:        string(job.Config.PolishingStrategy),
-		CanPolish:                s.store != nil && job.State == StateCompleted && job.Config.Mode == app.ModeBatch && len(job.BestParams) == job.Config.Circles*7,
+		CanPolish:                canPolish,
 		PolishingActiveSetSize:   job.Config.PolishingActiveSetSize,
 		PolishingMaxSweeps:       job.Config.PolishingMaxSweeps,
 		PolishingEpochs:          job.Config.PolishingEpochs,
@@ -384,6 +393,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	refPath := r.FormValue("refPath")
 	canvasPath := r.FormValue("canvasPath")
 	mode := r.FormValue("mode")
+	optimizer := r.FormValue("optimizer")
 	circlesStr := r.FormValue("circles")
 	itersStr := r.FormValue("iters")
 	popSizeStr := r.FormValue("popSize")
@@ -554,6 +564,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		RefPath:                  refPath,
 		CanvasPath:               canvasPath,
 		Mode:                     app.Mode(mode),
+		Optimizer:                app.Optimizer(optimizer),
 		Circles:                  circles,
 		Iters:                    iters,
 		PopSize:                  popSize,

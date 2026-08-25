@@ -36,6 +36,7 @@ func TestApplyDefaultsResolvesTheEngine(t *testing.T) {
 		{name: "mayfly", optimizer: app.OptimizerMayfly, wantEngine: app.OptimizerMayfly, wantVariant: app.VariantStandard},
 		// Only MayFly has variants, so a Dragonfly job must not inherit one.
 		{name: "dragonfly", optimizer: app.OptimizerDragonfly, wantEngine: app.OptimizerDragonfly, wantVariant: ""},
+		{name: "cmaes", optimizer: app.OptimizerCMAES, wantEngine: app.OptimizerCMAES, wantVariant: ""},
 	}
 
 	for _, test := range tests {
@@ -162,7 +163,7 @@ func TestSupportedOptimizersListsEveryConstantOnce(t *testing.T) {
 	t.Parallel()
 
 	supported := app.SupportedOptimizers()
-	want := []app.Optimizer{app.OptimizerMayfly, app.OptimizerDragonfly}
+	want := []app.Optimizer{app.OptimizerMayfly, app.OptimizerDragonfly, app.OptimizerCMAES}
 
 	if len(supported) != len(want) {
 		t.Fatalf("app.SupportedOptimizers() = %v, want %v", supported, want)

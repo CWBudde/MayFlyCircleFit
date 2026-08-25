@@ -40,15 +40,22 @@ A campaign has exactly one seed. `seed` and `base.seed` may both be written only
 if they agree; disagreeing is an error, not a precedence rule to memorize.
 
 A campaign also has exactly one optimizer. `base.optimizer` is `mayfly`
-(the default, and what an omitted field means) or `dragonfly`, and every stage
+(the default, and what an omitted field means), `dragonfly`, or `cmaes`, and every stage
 inherits it, so a campaign cannot change engine halfway through. Two campaigns
 that ran different optimizers are not comparable, for the same reason two that
 ran different MayFly versions are not. A `dragonfly` base refuses the settings
-that engine cannot read — `variant`, `crossoverCount`, `danceDamp`,
+that engine cannot read — `variant`, `qmcInit`, `crossoverCount`, `danceDamp`,
 `aquilaWeight`, `oppositionProbability` — and refuses a document containing a
 `polish` step, because polishing runs its own MayFly population. The refusal
 names the failing stage, so it arrives when the document is parsed rather than
 when the campaign reaches that stage.
+
+A `cmaes` base accepts `initialSigma` (finite and positive), `covarianceMode`
+(`full`, `separable`, or `block`), `activeCMA`, and `restartStrategy` (`none`,
+`ipop`, or `bipop`). Full covariance is limited to 512 optimizer dimensions;
+block mode groups the seven parameters of each circle. IPOP/BIPOP use one
+shared `iters * popSize` evaluation budget and require `optimizerRestarts: 1`.
+CMA-ES refuses the same MayFly-only fields and polish steps as Dragonfly.
 
 A document with steps must run its base in `"mode": "batch"`, because both
 continuation paths require a completed batch checkpoint.

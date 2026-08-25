@@ -12,6 +12,13 @@ import (
 	cmaes "github.com/CWBudde/go-cma-es"
 )
 
+const cmaesRestartNone = "none"
+
+var (
+	errUnknownCMAESRestartStrategy = errors.New("unknown CMA-ES restart strategy")
+	errCMAESRestartBudgetOverflow  = errors.New("CMA-ES restart evaluation budget overflows int")
+)
+
 // CMAESAdapter runs covariance matrix adaptation behind this package's
 // optimizer contracts. The adapter works in a normalized unit box so one
 // initial step size has the same meaning for coordinates with different
@@ -20,11 +27,16 @@ type CMAESAdapter struct {
 	logger *slog.Logger
 	stop   Stop
 
-	seed int64
+	initialSigma    float64
+	covarianceMode  string
+	restartStrategy string
+	seed            int64
 
 	maxIters        int
 	popSize         int
 	parallelWorkers int
+	blockSize       int
+	activeCMA       bool
 }
 
 // CMAESOption customizes a CMA-ES adapter at construction time.
@@ -55,9 +67,43 @@ func WithCMAESParallelEvaluation(workers int) CMAESOption {
 	return func(adapter *CMAESAdapter) { adapter.parallelWorkers = workers }
 }
 
+// WithCMAESInitialSigma sets the initial step size in the adapter's normalized
+// [0,1] search box.
+func WithCMAESInitialSigma(sigma float64) CMAESOption {
+	return func(adapter *CMAESAdapter) { adapter.initialSigma = sigma }
+}
+
+// WithCMAESCovarianceMode selects full, separable, or block covariance. In
+// block mode, blockSize partitions consecutive coordinates.
+func WithCMAESCovarianceMode(mode string, blockSize int) CMAESOption {
+	return func(adapter *CMAESAdapter) {
+		adapter.covarianceMode = mode
+		adapter.blockSize = blockSize
+	}
+}
+
+// WithCMAESActiveCMA enables or disables negative rank-mu adaptation.
+func WithCMAESActiveCMA(enabled bool) CMAESOption {
+	return func(adapter *CMAESAdapter) { adapter.activeCMA = enabled }
+}
+
+// WithCMAESRestartStrategy selects none, IPOP, or BIPOP. IPOP and BIPOP share
+// one maxIters*popSize evaluation budget across all of their internal runs.
+func WithCMAESRestartStrategy(strategy string) CMAESOption {
+	return func(adapter *CMAESAdapter) { adapter.restartStrategy = strategy }
+}
+
 // NewCMAES creates a CMA-ES optimizer adapter.
 func NewCMAES(maxIters, popSize int, seed int64, options ...CMAESOption) Optimizer {
-	adapter := &CMAESAdapter{maxIters: maxIters, popSize: popSize, seed: seed}
+	adapter := &CMAESAdapter{
+		initialSigma:    0.3,
+		covarianceMode:  string(cmaes.CovarianceFull),
+		restartStrategy: cmaesRestartNone,
+		seed:            seed,
+		maxIters:        maxIters,
+		popSize:         popSize,
+		activeCMA:       true,
+	}
 
 	for _, option := range options {
 		if option != nil {
@@ -134,6 +180,11 @@ func (adapter *CMAESAdapter) RunContext(
 		return Result{}, err
 	}
 
+	err = adapter.validateSettings()
+	if err != nil {
+		return Result{}, err
+	}
+
 	canonicalize := canonicalizer(problem)
 	config := adapter.buildCMAESConfig(problem, options, canonicalize)
 	// A reproducible optimizer needs a deterministic rather than cryptographic
@@ -153,24 +204,12 @@ func (adapter *CMAESAdapter) RunContext(
 		config, options, seedState, canonicalize, rng, &best, &bestViolation,
 	)
 
-	result, err := cmaes.OptimizeContext(ctx, config, runOptions...)
+	reason, err := adapter.executeCMAES(ctx, config, runOptions, canonicalize, &best, &bestViolation)
 	if err != nil {
 		return cmaesErrorResult(best, err)
 	}
 
-	updateCMAESBest(
-		&best,
-		&bestViolation,
-		canonicalize(result.GlobalBest.Position),
-		result.GlobalBest.Cost,
-		result.GlobalBest.ConstraintViolation,
-		config.Constraints,
-	)
-	best.Iterations = result.IterationCount
-	best.Evaluations = result.FuncEvalCount
-	best.Termination = terminationFromCMAES(result.TerminationReason)
-
-	if result.TerminationReason == cmaes.TerminationCancelled {
+	if reason == cmaes.TerminationCancelled {
 		ctxErr := ctx.Err()
 		if ctxErr != nil {
 			return best, fmt.Errorf("cma-es optimization: %w", ctxErr)
@@ -183,6 +222,86 @@ func (adapter *CMAESAdapter) RunContext(
 	}
 
 	return best, nil
+}
+
+func (adapter *CMAESAdapter) validateSettings() error {
+	if adapter.restartStrategy != cmaesRestartNone &&
+		adapter.restartStrategy != string(cmaes.RestartIPOP) &&
+		adapter.restartStrategy != string(cmaes.RestartBIPOP) {
+		return fmt.Errorf("%w %q", errUnknownCMAESRestartStrategy, adapter.restartStrategy)
+	}
+
+	if adapter.restartStrategy != cmaesRestartNone &&
+		(adapter.popSize <= 0 || adapter.maxIters > int(^uint(0)>>1)/adapter.popSize) {
+		return errCMAESRestartBudgetOverflow
+	}
+
+	return nil
+}
+
+func (adapter *CMAESAdapter) executeCMAES(
+	ctx context.Context,
+	config *cmaes.Config,
+	runOptions []cmaes.RunOption,
+	canonicalize func([]float64) []float64,
+	best *Result,
+	bestViolation *float64,
+) (cmaes.TerminationReason, error) {
+	if adapter.restartStrategy == cmaesRestartNone {
+		result, err := cmaes.OptimizeContext(ctx, config, runOptions...)
+		if err != nil {
+			return "", fmt.Errorf("run CMA-ES: %w", err)
+		}
+
+		updateCMAESBestFromLibrary(best, bestViolation, result.GlobalBest, config, canonicalize)
+		best.Iterations = result.IterationCount
+		best.Evaluations = result.FuncEvalCount
+		best.Termination = terminationFromCMAES(result.TerminationReason)
+
+		return result.TerminationReason, nil
+	}
+
+	config.MaxEvaluations = adapter.maxIters * adapter.popSize
+
+	restarted, err := cmaes.OptimizeWithRestartsContext(
+		ctx, config, cmaes.RestartStrategy(adapter.restartStrategy), runOptions...,
+	)
+	if err != nil {
+		return "", fmt.Errorf("run CMA-ES restart schedule: %w", err)
+	}
+
+	updateCMAESBestFromLibrary(best, bestViolation, restarted.GlobalBest, config, canonicalize)
+
+	best.Iterations = 0
+	for _, record := range restarted.Restarts {
+		best.Iterations += record.Iterations
+	}
+
+	best.Evaluations = restarted.FuncEvalCount
+	best.Termination = terminationFromCMAES(restarted.TerminationReason)
+
+	return restarted.TerminationReason, nil
+}
+
+func updateCMAESBestFromLibrary(
+	best *Result,
+	bestViolation *float64,
+	candidate cmaes.Best,
+	config *cmaes.Config,
+	canonicalize func([]float64) []float64,
+) {
+	if len(candidate.Position) != config.ProblemSize {
+		return
+	}
+
+	updateCMAESBest(
+		best,
+		bestViolation,
+		canonicalize(candidate.Position),
+		candidate.Cost,
+		candidate.ConstraintViolation,
+		config.Constraints,
+	)
 }
 
 func validateCMAESRun(problem Problem, options RunOptions) error {
@@ -223,6 +342,10 @@ func (adapter *CMAESAdapter) buildCMAESConfig(
 
 	config.LowerBound = 0
 	config.UpperBound = 1
+	config.InitialSigma = adapter.initialSigma
+	config.CovarianceMode = cmaes.CovarianceMode(adapter.covarianceMode)
+	config.BlockSize = adapter.blockSize
+	config.ActiveCMA = adapter.activeCMA
 	config.MaxIterations = adapter.maxIters
 	config.Lambda = adapter.popSize
 	config.Mu = adapter.popSize / 2
@@ -250,10 +373,6 @@ func (adapter *CMAESAdapter) buildCMAESConfig(
 			target := adapter.stop.TargetCost
 			config.Convergence.TargetCost = &target
 		}
-	}
-
-	if options.Continuation != nil {
-		config.InitialSigma = options.Continuation.Sigma
 	}
 
 	return config
@@ -330,6 +449,7 @@ func (adapter *CMAESAdapter) cmaesRunOptions(
 	bestViolation *float64,
 ) []cmaes.RunOption {
 	runOptions := make([]cmaes.RunOption, 0, 4)
+	progressTotals := cmaesProgressTotals{}
 
 	if len(seeds.positions) > 0 {
 		positions, _ := seededPopulationFromCandidates(
@@ -338,9 +458,20 @@ func (adapter *CMAESAdapter) cmaesRunOptions(
 		runOptions = append(runOptions, cmaes.WithInitialPopulation(positions))
 	}
 
-	if len(seeds.initialMean) > 0 {
+	initialMean := seeds.initialMean
+
+	initialSigma := config.InitialSigma
+	if options.Continuation != nil {
+		initialSigma = options.Continuation.Sigma
+
+		if len(initialMean) == 0 {
+			initialMean = config.InitialMean
+		}
+	}
+
+	if len(initialMean) > 0 {
 		runOptions = append(runOptions,
-			cmaes.WithInitialMean(seeds.initialMean, config.InitialSigma))
+			cmaes.WithInitialMean(initialMean, initialSigma))
 	}
 
 	if adapter.logger != nil {
@@ -348,6 +479,7 @@ func (adapter *CMAESAdapter) cmaesRunOptions(
 	}
 
 	runOptions = append(runOptions, cmaes.WithProgressObserver(func(progress cmaes.Progress) {
+		iterations, evaluations := progressTotals.cumulative(progress)
 		updateCMAESBest(
 			best,
 			bestViolation,
@@ -356,16 +488,16 @@ func (adapter *CMAESAdapter) cmaesRunOptions(
 			progress.Best.ConstraintViolation,
 			config.Constraints,
 		)
-		best.Iterations = progress.Iteration
-		best.Evaluations = progress.EvaluationCount
+		best.Iterations = iterations
+		best.Evaluations = evaluations
 
 		if options.Observer == nil {
 			return
 		}
 
 		reported := Progress{
-			Iterations:  progress.Iteration,
-			Evaluations: progress.EvaluationCount,
+			Iterations:  iterations,
+			Evaluations: evaluations,
 			BestParams:  append([]float64(nil), best.BestParams...),
 			BestCost:    best.BestCost,
 		}
@@ -377,6 +509,26 @@ func (adapter *CMAESAdapter) cmaesRunOptions(
 	}))
 
 	return runOptions
+}
+
+type cmaesProgressTotals struct {
+	iterationOffset  int
+	evaluationOffset int
+	lastIteration    int
+	lastEvaluations  int
+}
+
+func (totals *cmaesProgressTotals) cumulative(progress cmaes.Progress) (int, int) {
+	if totals.lastIteration > 0 && progress.Iteration <= totals.lastIteration {
+		totals.iterationOffset += totals.lastIteration
+		totals.evaluationOffset += totals.lastEvaluations
+	}
+
+	totals.lastIteration = progress.Iteration
+	totals.lastEvaluations = progress.EvaluationCount
+
+	return totals.iterationOffset + progress.Iteration,
+		totals.evaluationOffset + progress.EvaluationCount
 }
 
 func updateCMAESBest(

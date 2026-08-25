@@ -11,7 +11,7 @@ tool (
 
 require (
 	github.com/CWBudde/dragonfly v0.1.0
-	github.com/CWBudde/go-cma-es v0.0.0-20260825113115-96b7c9adff3a
+	github.com/CWBudde/go-cma-es v0.0.0-20260825143954-e528faf326bf
 	github.com/a-h/templ v0.3.960
 	github.com/cwbudde/mayfly v0.7.1
 	github.com/google/uuid v1.6.0

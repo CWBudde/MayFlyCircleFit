@@ -23,9 +23,9 @@ behavior is production-ready.
 ## Resume and persistence
 
 - “Resume” is restart-from-best, not exact continuation. The saved best is put
-  into a newly initialized MayFly v0.7.1 population along with deterministic
-  perturbations. Velocity, mating state, RNG position, and other optimizer
-  internals are not restored.
+  into a newly initialized population of the checkpoint's recorded engine along
+  with deterministic perturbations. Covariance, velocity, mating state, RNG
+  position, and other optimizer internals are not restored.
 - A continuation seed is derived from the original seed and resume count, so a
   fixed checkpoint/configuration is reproducible, but its trajectory differs
   from an uninterrupted run.
@@ -103,25 +103,25 @@ behavior is production-ready.
   [`docs/dragonfly-poc-report.md`](dragonfly-poc-report.md). It is kept as an
   expert-only alternative for further experiments, not as a candidate default.
 
-- A CMA-ES adapter exists at the `internal/opt` seam and satisfies the same
+- CMA-ES is selected with `"optimizer": "cmaes"` through `run --optimizer`,
+  JSON job payloads, schedule `base` configuration, and the web creation form.
+  Its adapter satisfies the same
   lifecycle, continuation, constraint, repair, progress, epoch, and parallel-
   evaluation contracts as the selectable engines. It is pinned to
   `github.com/CWBudde/go-cma-es`
-  `v0.0.0-20260825113115-96b7c9adff3a`, and
+  `v0.0.0-20260825143954-e528faf326bf`, and
   `TestCMAESParallelEvaluationMatchesSerial` verifies that evaluation workers
-  do not change a seeded result. It is not yet accepted by `JobConfig`, the CLI,
-  server payloads, or schedules; those surfaces and the CMA-ES-specific sigma,
-  covariance, and restart-strategy knobs are the next configuration phase.
-  Until that lands, it is reachable only by Go code constructing
-  `opt.NewCMAES` directly. Continuation profiles control the seeded-population
+  do not change a seeded result. Continuation profiles control the seeded-population
   fraction, perturbation sigma, coordinate rate, and initial CMA-ES sigma;
   `MaxVelocity` has no CMA-ES analogue and is not applied.
 
-  The adapter deliberately uses the consumer's fixed-attempt `WithRestarts`
-  wrapper and does not nest the CMA-ES library's IPOP/BIPOP scheduler. The
-  latter owns a shared evaluation budget, while the current consumer contract
-  owns an iteration cap per attempt. Silently applying both would multiply
-  work and change the meaning of `optimizerRestarts`.
+  Full covariance is refused above 512 optimizer dimensions because its matrix
+  storage is quadratic and eigendecomposition cubic; select `block` (one
+  seven-coordinate block per circle) or `separable` there. IPOP/BIPOP spend at
+  most `iters * popSize` evaluations across their internal runs and require
+  `optimizerRestarts=1`; fixed attempts remain available with
+  `restartStrategy: "none"`. Polishing remains MayFly-only and is rejected,
+  not ignored, for CMA-ES jobs and schedules.
 
 - CPU and OpenCL support joint, sequential, and batch pipelines; only CPU
   supports custom base canvases. Staged OpenCL modes replay all retained circles

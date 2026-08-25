@@ -80,9 +80,10 @@ ones that will change what you propose:
   cgo; it must never import `internal/fit/renderer`.
 - `internal/opt`: optimizer interfaces; the MayFly v0.7.1 adapter, a
   proof-of-concept Dragonfly v0.1.0 adapter, and the pinned CMA-ES adapter.
-  `JobConfig.optimizer` currently selects MayFly or Dragonfly from the CLI,
-  server, and schedules; the CMA-ES configuration surface is the next phase.
-  Polishing is MayFly-only.
+  `JobConfig.optimizer` selects MayFly, Dragonfly, or CMA-ES from the CLI,
+  server, schedules, and web creation form. CMA-ES exposes normalized initial
+  sigma, full/separable/block covariance, active adaptation, and IPOP/BIPOP.
+  Polishing remains MayFly-only.
 - `internal/server`: trusted-local HTTP boundary and background job lifecycle.
 - `internal/store`: filesystem checkpoint, trace, and artifact ownership.
 - `internal/ui`: templ views plus committed generated Go output.

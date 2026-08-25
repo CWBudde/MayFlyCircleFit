@@ -19,14 +19,12 @@ templ CreateJobPage(errorMsg, project string) {
 					Configure and start a new circle fitting optimization job.
 				</p>
 			</div>
-
 			if errorMsg != "" {
 				<div class="card" style="background-color: var(--error-bg); border: 1px solid var(--error-border); margin-bottom: 1.5rem;">
 					<h3 style="color: var(--error-text); font-weight: 600; margin-bottom: 0.5rem;">Error</h3>
 					<p style="color: var(--error-text); font-size: 0.875rem;">{ errorMsg }</p>
 				</div>
 			}
-
 			<form method="POST" action="/create" enctype="multipart/form-data" class="card">
 				if project != "" {
 					<input type="hidden" name="project" value={ project }/>
@@ -36,7 +34,6 @@ templ CreateJobPage(errorMsg, project string) {
 					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
 						Reference Image
 					</h2>
-
 					<div style="margin-bottom: 1rem;">
 						<label for="refPath" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 							Image Path <span style="color: var(--error-color);">*</span>
@@ -53,7 +50,6 @@ templ CreateJobPage(errorMsg, project string) {
 							Enter the path to your reference image file on the server.
 						</p>
 					</div>
-
 					<div style="margin-bottom: 1rem;">
 						<label for="canvasPath" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 							Canvas Path (Optional)
@@ -70,14 +66,30 @@ templ CreateJobPage(errorMsg, project string) {
 						</p>
 					</div>
 				</div>
-
 				<!-- Optimization Parameters -->
 				<div style="margin-bottom: 2rem;">
 					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
 						Optimization Parameters
 					</h2>
-
 					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+						<div>
+							<label for="optimizer" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+								Optimizer <span style="color: var(--error-color);">*</span>
+							</label>
+							<select
+								id="optimizer"
+								name="optimizer"
+								required
+								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem; background-color: var(--control-bg);"
+							>
+								<option value="mayfly" selected>MayFly</option>
+								<option value="cmaes">CMA-ES</option>
+								<option value="dragonfly">Dragonfly (experimental)</option>
+							</select>
+							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+								CMA-ES uses its default full covariance, active adaptation, and no internal restart schedule here.
+							</p>
+						</div>
 						<div>
 							<label for="mode" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 								Mode <span style="color: var(--error-color);">*</span>
@@ -96,7 +108,6 @@ templ CreateJobPage(errorMsg, project string) {
 								Optimization strategy
 							</p>
 						</div>
-
 						<div>
 							<label for="circles" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 								Circles <span style="color: var(--error-color);">*</span>
@@ -115,7 +126,6 @@ templ CreateJobPage(errorMsg, project string) {
 								Number of circles (1-3000)
 							</p>
 						</div>
-
 						<div>
 							<label for="iters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 								Iterations <span style="color: var(--error-color);">*</span>
@@ -134,7 +144,6 @@ templ CreateJobPage(errorMsg, project string) {
 								Max iterations (1-10000)
 							</p>
 						</div>
-
 						<div>
 							<label for="popSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 								Population Size <span style="color: var(--error-color);">*</span>
@@ -153,7 +162,6 @@ templ CreateJobPage(errorMsg, project string) {
 								Population size (20-4096)
 							</p>
 						</div>
-
 						<div>
 							<label for="batchSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 								Batch Size
@@ -171,7 +179,6 @@ templ CreateJobPage(errorMsg, project string) {
 								Batch mode only. Set equal to Circles to optimize them all together; 0 selects the automatic default.
 							</p>
 						</div>
-
 						<div>
 							<label for="seed" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 								Random Seed
@@ -187,7 +194,6 @@ templ CreateJobPage(errorMsg, project string) {
 								0 for random, or set for reproducibility
 							</p>
 						</div>
-
 						<div>
 							<label for="optimizerEpochs" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 								Optimizer Epochs
@@ -207,7 +213,6 @@ templ CreateJobPage(errorMsg, project string) {
 						</div>
 					</div>
 				</div>
-
 				<!-- Active-set Polishing -->
 				<div style="margin-bottom: 2rem;">
 					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
@@ -280,13 +285,11 @@ templ CreateJobPage(errorMsg, project string) {
 						</div>
 					</div>
 				</div>
-
 				<!-- Convergence Settings -->
 				<div style="margin-bottom: 2rem;">
 					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
 						Convergence Settings
 					</h2>
-
 					<div style="margin-bottom: 1rem;">
 						<label style="display: flex; align-items: center; cursor: pointer;">
 							<input
@@ -302,7 +305,6 @@ templ CreateJobPage(errorMsg, project string) {
 							Stop early when optimizer can't improve further (sequential/batch modes only).
 						</p>
 					</div>
-
 					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
 						<div>
 							<label for="convergencePatience" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
@@ -321,7 +323,6 @@ templ CreateJobPage(errorMsg, project string) {
 								Iterations with no improvement before stopping
 							</p>
 						</div>
-
 						<div>
 							<label for="convergenceThreshold" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 								Threshold
@@ -342,7 +343,6 @@ templ CreateJobPage(errorMsg, project string) {
 						</div>
 					</div>
 				</div>
-
 				<!-- Early Stopping (optimizer) -->
 				<div style="margin-bottom: 2rem;">
 					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
@@ -353,7 +353,6 @@ templ CreateJobPage(errorMsg, project string) {
 						convergence settings above instead count whole circles or batches. Leave
 						these empty to disable early stopping and keep runs reproducible.
 					</p>
-
 					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
 						<div>
 							<label for="stopTargetCost" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
@@ -372,7 +371,6 @@ templ CreateJobPage(errorMsg, project string) {
 								Stop once the best cost reaches this absolute value
 							</p>
 						</div>
-
 						<div>
 							<label for="stopStagnationIters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 								Stagnation Iterations
@@ -389,7 +387,6 @@ templ CreateJobPage(errorMsg, project string) {
 								Stop after N consecutive iterations without progress
 							</p>
 						</div>
-
 						<div>
 							<label for="stopMinImprovement" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 								Minimum Improvement
@@ -407,7 +404,6 @@ templ CreateJobPage(errorMsg, project string) {
 								ABSOLUTE cost reduction counted as progress; requires stagnation iterations
 							</p>
 						</div>
-
 						<div>
 							<label for="stopMinIters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 								Minimum Iterations
@@ -426,7 +422,6 @@ templ CreateJobPage(errorMsg, project string) {
 						</div>
 					</div>
 				</div>
-
 				<!-- Advanced Metrics -->
 				<div style="margin-bottom: 2rem;">
 					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
@@ -445,7 +440,6 @@ templ CreateJobPage(errorMsg, project string) {
 						Track structural similarity during the run. This adds periodic image rendering and metric work.
 					</p>
 				</div>
-
 				<!-- Submit Button -->
 				<div style="display: flex; gap: 1rem; justify-content: flex-end; padding-top: 1rem; border-top: 1px solid var(--border-color);">
 					<a href="/jobs" class="btn" style="background-color: var(--border-color); text-decoration: none;">
@@ -456,7 +450,6 @@ templ CreateJobPage(errorMsg, project string) {
 					</button>
 				</div>
 			</form>
-
 			<!-- Quick Tips -->
 			<div class="card" style="margin-top: 1.5rem; background-color: var(--info-bg);">
 				<h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--info-text);">

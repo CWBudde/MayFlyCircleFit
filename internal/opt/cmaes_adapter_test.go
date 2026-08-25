@@ -506,3 +506,105 @@ func TestCMAESAdapterReportsCompletedAtTheBudget(t *testing.T) {
 		t.Fatalf("Termination = %q, want %q", result.Termination, opt.TerminationCompleted)
 	}
 }
+
+func TestCMAESConfigurationModesRun(t *testing.T) {
+	t.Parallel()
+
+	const dim = 14
+	lower := make([]float64, dim)
+	upper := make([]float64, dim)
+
+	for index := range upper {
+		upper[index] = 1
+	}
+
+	for _, mode := range []string{"full", "separable", "block"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := cmaesLifecycle(t, opt.NewCMAES(
+				4, 10, 42,
+				opt.WithCMAESInitialSigma(0.2),
+				opt.WithCMAESCovarianceMode(mode, 7),
+				opt.WithCMAESActiveCMA(false),
+			)).RunContext(context.Background(), opt.Problem{
+				Eval: cmaesSphere, Lower: lower, Upper: upper, Dim: dim,
+			}, opt.RunOptions{})
+			if err != nil {
+				t.Fatalf("RunContext() error = %v", err)
+			}
+
+			if result.Iterations < 1 || result.Iterations > 4 || result.Evaluations != result.Iterations*10 {
+				t.Errorf("work = %d iterations/%d evaluations", result.Iterations, result.Evaluations)
+			}
+		})
+	}
+}
+
+func TestCMAESRestartStrategiesShareOneEvaluationBudget(t *testing.T) {
+	t.Parallel()
+
+	for _, strategy := range []string{"ipop", "bipop"} {
+		t.Run(strategy, func(t *testing.T) {
+			t.Parallel()
+
+			var observed []opt.Progress
+
+			result, err := cmaesLifecycle(t, opt.NewCMAES(
+				20, 8, 123,
+				opt.WithCMAESRestartStrategy(strategy),
+			)).RunContext(context.Background(), opt.Problem{
+				Eval:  func([]float64) float64 { return 1 },
+				Lower: []float64{0, 0, 0}, Upper: []float64{1, 1, 1}, Dim: 3,
+			}, opt.RunOptions{Observer: func(progress opt.Progress) {
+				observed = append(observed, progress)
+			}})
+			if err != nil {
+				t.Fatalf("RunContext() error = %v", err)
+			}
+
+			if result.Evaluations != 160 {
+				t.Errorf("Evaluations = %d, want shared budget 160", result.Evaluations)
+			}
+
+			if result.Iterations < 2 || result.Iterations > 20 {
+				t.Errorf("Iterations = %d, want several runs within cap 20", result.Iterations)
+			}
+
+			for index := 1; index < len(observed); index++ {
+				if observed[index].Iterations <= observed[index-1].Iterations ||
+					observed[index].Evaluations <= observed[index-1].Evaluations ||
+					observed[index].BestCost > observed[index-1].BestCost {
+					t.Fatalf("progress regressed at %d: before=%+v after=%+v",
+						index, observed[index-1], observed[index])
+				}
+			}
+		})
+	}
+}
+
+func TestCMAESRejectsInvalidConfigurationOptions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		optimizer opt.Optimizer
+	}{
+		{name: "sigma", optimizer: opt.NewCMAES(2, 8, 1, opt.WithCMAESInitialSigma(0))},
+		{name: "covariance", optimizer: opt.NewCMAES(2, 8, 1, opt.WithCMAESCovarianceMode("sparse", 0))},
+		{name: "restart", optimizer: opt.NewCMAES(2, 8, 1, opt.WithCMAESRestartStrategy("random"))},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := cmaesLifecycle(t, testCase.optimizer).RunContext(
+				context.Background(), cmaesProblem(), opt.RunOptions{},
+			)
+			if err == nil {
+				t.Fatal("RunContext() accepted an invalid CMA-ES option")
+			}
+		})
+	}
+}
