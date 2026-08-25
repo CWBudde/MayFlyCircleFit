@@ -78,10 +78,11 @@ ones that will change what you propose:
 - `internal/fit/renderer/opencl`: the cgo OpenCL renderer (`gpu` tag). It is a
   separate package because Go forbids Plan 9 assembly in a package that uses
   cgo; it must never import `internal/fit/renderer`.
-- `internal/opt`: optimizer interfaces, the MayFly v0.7.1 adapter, and a
-  proof-of-concept Dragonfly v0.1.0 adapter. `JobConfig.optimizer` selects
-  between them from the CLI, the server, and a schedule document; polishing is
-  MayFly-only.
+- `internal/opt`: optimizer interfaces; the MayFly v0.7.1 adapter, a
+  proof-of-concept Dragonfly v0.1.0 adapter, and the pinned CMA-ES adapter.
+  `JobConfig.optimizer` currently selects MayFly or Dragonfly from the CLI,
+  server, and schedules; the CMA-ES configuration surface is the next phase.
+  Polishing is MayFly-only.
 - `internal/server`: trusted-local HTTP boundary and background job lifecycle.
 - `internal/store`: filesystem checkpoint, trace, and artifact ownership.
 - `internal/ui`: templ views plus committed generated Go output.

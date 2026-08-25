@@ -49,3 +49,49 @@ func TestLibraryVersionIsStable(t *testing.T) {
 		t.Fatalf("LibraryVersion() returned %q then %q", first, second)
 	}
 }
+
+// TestCMAESLibraryVersionMatchesBuildInfo pins the CMA-ES checkpoint guard to
+// the dependency actually linked into the consumer.
+func TestCMAESLibraryVersionMatchesBuildInfo(t *testing.T) {
+	t.Parallel()
+
+	got := CMAESLibraryVersion()
+	if got == "" {
+		t.Fatal("CMAESLibraryVersion returned an empty string")
+	}
+
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		if got != unknownLibraryVersion {
+			t.Fatalf("CMAESLibraryVersion() = %q without build info, want %q",
+				got, unknownLibraryVersion)
+		}
+
+		return
+	}
+
+	want := unknownLibraryVersion
+
+	for _, dep := range info.Deps {
+		if dep.Path != cmaesModulePath {
+			continue
+		}
+
+		want = dep.Version
+		if dep.Replace != nil && dep.Replace.Version != "" {
+			want = dep.Replace.Version
+		}
+	}
+
+	if got != want {
+		t.Fatalf("CMAESLibraryVersion() = %q, want %q", got, want)
+	}
+}
+
+func TestCMAESLibraryVersionIsStable(t *testing.T) {
+	t.Parallel()
+
+	if first, second := CMAESLibraryVersion(), CMAESLibraryVersion(); first != second {
+		t.Fatalf("CMAESLibraryVersion() returned %q then %q", first, second)
+	}
+}

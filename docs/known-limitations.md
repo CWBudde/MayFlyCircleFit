@@ -103,6 +103,26 @@ behavior is production-ready.
   [`docs/dragonfly-poc-report.md`](dragonfly-poc-report.md). It is kept as an
   expert-only alternative for further experiments, not as a candidate default.
 
+- A CMA-ES adapter exists at the `internal/opt` seam and satisfies the same
+  lifecycle, continuation, constraint, repair, progress, epoch, and parallel-
+  evaluation contracts as the selectable engines. It is pinned to
+  `github.com/CWBudde/go-cma-es`
+  `v0.0.0-20260825113115-96b7c9adff3a`, and
+  `TestCMAESParallelEvaluationMatchesSerial` verifies that evaluation workers
+  do not change a seeded result. It is not yet accepted by `JobConfig`, the CLI,
+  server payloads, or schedules; those surfaces and the CMA-ES-specific sigma,
+  covariance, and restart-strategy knobs are the next configuration phase.
+  Until that lands, it is reachable only by Go code constructing
+  `opt.NewCMAES` directly. Continuation profiles control the seeded-population
+  fraction, perturbation sigma, coordinate rate, and initial CMA-ES sigma;
+  `MaxVelocity` has no CMA-ES analogue and is not applied.
+
+  The adapter deliberately uses the consumer's fixed-attempt `WithRestarts`
+  wrapper and does not nest the CMA-ES library's IPOP/BIPOP scheduler. The
+  latter owns a shared evaluation budget, while the current consumer contract
+  owns an iteration cap per attempt. Silently applying both would multiply
+  work and change the meaning of `optimizerRestarts`.
+
 - CPU and OpenCL support joint, sequential, and batch pipelines; only CPU
   supports custom base canvases. Staged OpenCL modes replay all retained circles
   in independent device sessions, so their performance remains uncharacterized

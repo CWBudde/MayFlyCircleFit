@@ -11,6 +11,9 @@ import (
 // go.mod, a build-info lookup cannot.
 const mayflyModulePath = "github.com/cwbudde/mayfly"
 
+// cmaesModulePath is the pinned CMA-ES module used by CMAESAdapter.
+const cmaesModulePath = "github.com/CWBudde/go-cma-es"
+
 // unknownLibraryVersion is reported when the build carries no module
 // information, which happens for binaries built with -buildvcs=false in some
 // toolchains and for tests run from an unbuilt module cache.
@@ -18,6 +21,10 @@ const unknownLibraryVersion = "unknown"
 
 var libraryVersion = sync.OnceValue(func() string {
 	return moduleVersion(mayflyModulePath)
+})
+
+var cmaesLibraryVersion = sync.OnceValue(func() string { //nolint:gochecknoglobals // Cache build metadata exactly once.
+	return moduleVersion(cmaesModulePath)
 })
 
 // moduleVersion reports the version of one dependency compiled into this
@@ -57,3 +64,7 @@ func moduleVersion(path string) string {
 // a run record distinguishes them, so the version has to be reported somewhere
 // a run log can capture it.
 func LibraryVersion() string { return libraryVersion() }
+
+// CMAESLibraryVersion reports the CMA-ES module version compiled into this
+// binary. Checkpoints use it as a search-trajectory compatibility guard.
+func CMAESLibraryVersion() string { return cmaesLibraryVersion() }

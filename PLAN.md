@@ -1009,6 +1009,38 @@ client-rendered UI on its own. `/api/v1/events` is deliberately an invalidation
 channel — `campaign.changed` carries no payload — so the refetch loop in
 `web/src/live.ts` stays either way.
 
+## Phase 19: CMA-ES Adapter ✅
+
+**Goal:** Add the CMA-ES library at the established optimizer seam without yet
+expanding the CLI, server, or schedule configuration surface.
+
+- [x] Add `internal/opt/cmaes_adapter.go` with `CMAESAdapter`, `NewCMAES`,
+      logging, optimizer-level early stopping, and bounded parallel evaluation.
+- [x] Implement `Optimizer`, `ResumableOptimizer`, `LifecycleOptimizer`, and
+      `IterationBudgetOptimizer`; map initial and additional candidates, resume
+      and restart seed dimensions, progress mapping, and epoch observers.
+- [x] Canonicalize `Problem.Repair` before every objective and inequality
+      callback and map inequalities to CMA-ES feasibility ranking.
+- [x] Pin `github.com/CWBudde/go-cma-es` to
+      `v0.0.0-20260825113115-96b7c9adff3a`; report the linked version from
+      build information and cover CMA-ES with the generic checkpoint version
+      mismatch guard.
+- [x] Keep `optimizer_contract_test.go` and `parallel_evaluation_test.go`
+      unchanged; add focused adapter coverage and
+      `TestCMAESParallelEvaluationMatchesSerial`.
+- [x] Use the consumer's fixed-attempt `WithRestarts` wrapper for this adapter.
+      Do not nest IPOP/BIPOP: those schedules require a shared evaluation
+      budget and belong with the next phase's explicit CMA-ES configuration.
+
+**Rationale:** The optimizer contracts already isolate the rendering pipelines
+from library-specific state. Landing the adapter first makes continuation,
+constraints, determinism, parallel evaluation, accounting, and persistence
+observable under focused tests. Configuration can then expose sigma,
+covariance mode, and restart strategy without mixing algorithm integration with
+every user-facing surface.
+
+---
+
 ## Summary and Next Steps
 
 Completed implementation history is intentionally summarized above; detailed
@@ -1024,14 +1056,16 @@ Current open work, in priority order:
 3. **Search quality (P1):** Task 15.11 — restarts beat a longer single run by
    a measured, significant margin; see
    [`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md).
-4. **Dashboard sign-off (P1):** Task 17.11.
-5. **Frontend island transition (P1/P2):** Tasks 18.1, 18.2, and 18.7, then
+4. **CMA-ES configuration (P1):** expose the completed Phase 19 adapter through
+   typed configuration, CLI, server, schedules, and checkpoint routing.
+5. **Dashboard sign-off (P1):** Task 17.11.
+6. **Frontend island transition (P1/P2):** Tasks 18.1, 18.2, and 18.7, then
    18.3–18.6. The shadcn SPA rewrite is recorded as a deferred alternative at
    the end of Phase 18, not as scheduled work.
-6. **Server memory (P2):** Task 17.12.
-7. **Schedule quality (P2):** Task 16.9.
-8. **UX and supporting documentation (P2/P3):** Tasks 12.9 and 13.15.
-9. **Experimental backends/research:** Tasks 11.9–11.13 and 10.20.
+7. **Server memory (P2):** Task 17.12.
+8. **Schedule quality (P2):** Task 16.9.
+9. **UX and supporting documentation (P2/P3):** Tasks 12.9 and 13.15.
+10. **Experimental backends/research:** Tasks 11.9–11.13 and 10.20.
 
 Do not mark a check complete from its presence in code or CI configuration
 alone. Record the exact command or observed CI result for the revision, and

@@ -104,6 +104,18 @@ func TestGuardCheckpointVersion(t *testing.T) {
 			mustName:    []string{"Dragonfly", testVersionMayfly070, testVersionMayfly071},
 		},
 		{
+			name:        "CMA-ES checkpoints refuse a different optimizer revision",
+			library:     "CMA-ES",
+			recorded:    "v0.0.0-20260825113115-96b7c9adff3a",
+			running:     "v0.0.0-20260826120000-aaaaaaaaaaaa",
+			wantRefusal: true,
+			mustName: []string{
+				"CMA-ES",
+				"v0.0.0-20260825113115-96b7c9adff3a",
+				"v0.0.0-20260826120000-aaaaaaaaaaaa",
+			},
+		},
+		{
 			name:        "mismatch is refused",
 			recorded:    testVersionMayfly040,
 			running:     testVersionMayfly051,
