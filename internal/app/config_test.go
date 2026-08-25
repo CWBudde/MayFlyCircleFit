@@ -46,6 +46,17 @@ func TestNormalizeAppliesCanonicalDefaults(t *testing.T) {
 	}
 }
 
+func TestOptimizerDiagnosticsRequireTrace(t *testing.T) {
+	t.Parallel()
+
+	_, err := Normalize(JobConfig{
+		RefPath: "reference.png", DisableTrace: true, EnableOptimizerDiagnostics: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "enableOptimizerDiagnostics") {
+		t.Fatalf("Normalize() error = %v, want enableOptimizerDiagnostics", err)
+	}
+}
+
 func TestNormalizePreservesExplicitSeedAndDisables(t *testing.T) {
 	config, err := Normalize(JobConfig{
 		RefPath:            "reference.png",

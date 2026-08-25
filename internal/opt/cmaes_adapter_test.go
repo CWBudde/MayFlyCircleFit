@@ -541,6 +541,32 @@ func TestCMAESConfigurationModesRun(t *testing.T) {
 	}
 }
 
+func TestCMAESSearchDiagnosticsMatchProgress(t *testing.T) {
+	t.Parallel()
+
+	var updates []opt.Progress
+
+	_, err := cmaesLifecycle(t, opt.NewCMAES(
+		4, 10, 42, opt.WithCMAESSearchDiagnostics(),
+	)).RunContext(context.Background(), cmaesProblem(), opt.RunOptions{
+		Observer: func(progress opt.Progress) { updates = append(updates, progress) },
+	})
+	if err != nil {
+		t.Fatalf("RunContext() error = %v", err)
+	}
+
+	if len(updates) != 4 {
+		t.Fatalf("diagnostic updates = %d, want 4", len(updates))
+	}
+
+	for _, update := range updates {
+		if update.Diagnostics == nil || update.Diagnostics.Sigma <= 0 ||
+			update.Diagnostics.ConditionNumber < 1 {
+			t.Fatalf("diagnostic update = %+v, want positive sigma and condition >= 1", update)
+		}
+	}
+}
+
 func TestCMAESRestartStrategiesShareOneEvaluationBudget(t *testing.T) {
 	t.Parallel()
 

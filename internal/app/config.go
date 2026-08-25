@@ -392,14 +392,19 @@ type JobConfig struct {
 	// compositor. It is additive and optional: checkpoints written before it
 	// existed decode as false, which is also the default, so the exact
 	// compositor stays in charge unless a run asks otherwise.
-	FastCompositing      bool    `json:"fastCompositing,omitempty"`
-	Seed                 int64   `json:"seed"`
-	EffectiveSeed        int64   `json:"effectiveSeed,omitempty"`
-	ResumeCount          int     `json:"resumeCount,omitempty"`
-	CheckpointInterval   int     `json:"checkpointInterval,omitempty"`
-	TraceInterval        int     `json:"traceInterval,omitempty"`
-	EnableTrace          bool    `json:"enableTrace,omitempty"`
-	DisableTrace         bool    `json:"disableTrace,omitempty"`
+	FastCompositing    bool  `json:"fastCompositing,omitempty"`
+	Seed               int64 `json:"seed"`
+	EffectiveSeed      int64 `json:"effectiveSeed,omitempty"`
+	ResumeCount        int   `json:"resumeCount,omitempty"`
+	CheckpointInterval int   `json:"checkpointInterval,omitempty"`
+	TraceInterval      int   `json:"traceInterval,omitempty"`
+	EnableTrace        bool  `json:"enableTrace,omitempty"`
+	DisableTrace       bool  `json:"disableTrace,omitempty"`
+	// EnableOptimizerDiagnostics adds optimizer-specific search-state metrics
+	// to trace entries. It is opt-in because Mayfly must copy both populations
+	// to measure their spread. CMA-ES records sigma and covariance condition.
+	EnableOptimizerDiagnostics bool `json:"enableOptimizerDiagnostics,omitempty"`
+	//nolint:tagliatelle // Public spelling predates the linter.
 	EnableSSIM           bool    `json:"enableSSIM,omitempty"`
 	SaveSnapshots        bool    `json:"saveSnapshots,omitempty"`
 	ConvergenceEnabled   bool    `json:"convergenceEnabled,omitempty"`
@@ -821,6 +826,10 @@ func (c JobConfig) Validate() error {
 
 	if c.TraceInterval < 0 {
 		return invalid("traceInterval", "cannot be negative")
+	}
+
+	if c.EnableOptimizerDiagnostics && !c.EnableTrace {
+		return invalid("enableOptimizerDiagnostics", "requires tracing to be enabled")
 	}
 
 	if c.ConvergencePatience < 1 || c.ConvergencePatience > 100 {

@@ -32,11 +32,12 @@ type CMAESAdapter struct {
 	restartStrategy string
 	seed            int64
 
-	maxIters        int
-	popSize         int
-	parallelWorkers int
-	blockSize       int
-	activeCMA       bool
+	maxIters          int
+	popSize           int
+	parallelWorkers   int
+	blockSize         int
+	activeCMA         bool
+	searchDiagnostics bool
 }
 
 // CMAESOption customizes a CMA-ES adapter at construction time.
@@ -91,6 +92,12 @@ func WithCMAESActiveCMA(enabled bool) CMAESOption {
 // one maxIters*popSize evaluation budget across all of their internal runs.
 func WithCMAESRestartStrategy(strategy string) CMAESOption {
 	return func(adapter *CMAESAdapter) { adapter.restartStrategy = strategy }
+}
+
+// WithCMAESSearchDiagnostics reports sigma and covariance condition number
+// with each progress update.
+func WithCMAESSearchDiagnostics() CMAESOption {
+	return func(adapter *CMAESAdapter) { adapter.searchDiagnostics = true }
 }
 
 // NewCMAES creates a CMA-ES optimizer adapter.
@@ -450,6 +457,7 @@ func (adapter *CMAESAdapter) cmaesRunOptions(
 ) []cmaes.RunOption {
 	runOptions := make([]cmaes.RunOption, 0, 4)
 	progressTotals := cmaesProgressTotals{}
+	var pendingProgress *Progress
 
 	if len(seeds.positions) > 0 {
 		positions, _ := seededPopulationFromCandidates(
@@ -501,12 +509,30 @@ func (adapter *CMAESAdapter) cmaesRunOptions(
 			BestParams:  append([]float64(nil), best.BestParams...),
 			BestCost:    best.BestCost,
 		}
-		if options.ProgressMapper != nil {
-			reported = options.ProgressMapper(reported)
+		if adapter.searchDiagnostics {
+			pendingProgress = &reported
+
+			return
 		}
 
-		options.Observer(reported)
+		reportObservedProgress(options, reported)
 	}))
+
+	if adapter.searchDiagnostics && options.Observer != nil {
+		runOptions = append(runOptions, cmaes.WithDistributionObserver(func(snapshot cmaes.DistributionSnapshot) {
+			if pendingProgress == nil {
+				return
+			}
+
+			reported := *pendingProgress
+			reported.Diagnostics = &SearchDiagnostics{
+				Sigma: snapshot.Sigma, ConditionNumber: snapshot.ConditionNumber,
+			}
+			pendingProgress = nil
+
+			reportObservedProgress(options, reported)
+		}))
+	}
 
 	return runOptions
 }

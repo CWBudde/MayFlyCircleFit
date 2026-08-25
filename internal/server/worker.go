@@ -318,6 +318,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 
 		sample := qualitySample(iterations, progress.BestCost, sampledSSIM, now)
 		sample.Evaluations = evaluations
+		sample.OptimizerDiagnostics = progress.Diagnostics
 
 		sample.CPS = throughputCPS(progress.Evaluations, job.Config.Circles, now.Sub(start).Seconds())
 		if traceWriter != nil {
@@ -633,13 +634,25 @@ func polishBatchResult(
 	// Polishing leases a session per evaluation like the staged pipelines do, so
 	// it honors the job's evaluation width instead of falling back to a serial
 	// optimizer while the rest of the run is 48 evaluations wide.
-	polisher, err := opt.NewMayflyVariant(string(app.VariantStandard), job.Config.PolishingIters, job.Config.PolishingPopSize, seed,
+	polishingOptions := []opt.MayflyOption{
 		opt.WithLogger(slog.Default()),
 		opt.WithEarlyStop(opt.Stop{
 			MinImprovement:  job.Config.PolishingMinImprovement,
 			StagnationIters: job.Config.PolishingStagnationIters,
 		}),
 		parallelEvaluationOption(job.Config, rend),
+	}
+	// Diagnostics are a job-wide opt-in, and a polishing-only job has no other
+	// optimizer to report them. Leaving the polishing adapter out would make
+	// such a job complete with every trace entry missing optimizerDiagnostics
+	// despite having explicitly asked for them.
+	if job.Config.EnableOptimizerDiagnostics {
+		polishingOptions = append(polishingOptions, opt.WithMayflySearchDiagnostics())
+	}
+
+	polisher, err := opt.NewMayflyVariant(
+		string(app.VariantStandard), job.Config.PolishingIters, job.Config.PolishingPopSize, seed,
+		polishingOptions...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create polishing optimizer: %w", err)
@@ -880,7 +893,7 @@ func newStageOptimizer(config store.JobConfig, rend renderer.Renderer, seed int6
 		return newCMAESOptimizer(config, rend, seed), nil
 	}
 
-	optimizer, err := opt.NewMayflyVariant(string(config.Variant), config.Iters, config.PopSize, seed,
+	mayflyOptions := []opt.MayflyOption{
 		opt.WithLogger(slog.Default()), opt.WithEarlyStop(buildEarlyStop(config)),
 		opt.WithCrossoverCount(config.CrossoverCount),
 		// Optimizer stages only. Polishing runs its own smaller
@@ -892,7 +905,15 @@ func newStageOptimizer(config store.JobConfig, rend renderer.Renderer, seed int6
 		opt.OptionalFloat(config.DanceDamp, opt.WithDanceDamp),
 		opt.OptionalFloat(config.AquilaWeight, opt.WithAquilaWeight),
 		opt.OptionalFloat(config.OppositionProbability, opt.WithOppositionProbability),
-		parallelEvaluationOption(config, rend))
+		parallelEvaluationOption(config, rend),
+	}
+	if config.EnableOptimizerDiagnostics {
+		mayflyOptions = append(mayflyOptions, opt.WithMayflySearchDiagnostics())
+	}
+
+	optimizer, err := opt.NewMayflyVariant(
+		string(config.Variant), config.Iters, config.PopSize, seed, mayflyOptions...,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create optimizer: %w", err)
 	}
@@ -912,6 +933,9 @@ func newCMAESOptimizer(config store.JobConfig, rend renderer.Renderer, seed int6
 		),
 		opt.WithCMAESActiveCMA(config.ResolvedCMAESActive()),
 		opt.WithCMAESRestartStrategy(string(config.ResolvedCMAESRestartStrategy())),
+	}
+	if config.EnableOptimizerDiagnostics {
+		options = append(options, opt.WithCMAESSearchDiagnostics())
 	}
 
 	width, granted := renderer.ParallelEvaluationWidth(rend, config.ParallelEvaluation)

@@ -8,6 +8,16 @@ release is declared by this file.
 
 ### Added
 
+- An offline preliminary collector and an explicitly non-inferential report for
+  the stopped CMA-ES measurement campaign. The preserved subset contains three
+  completed jobs and one interrupted IPOP job from the first paired block; the
+  remaining multi-day queue was not run.
+- Opt-in `enableOptimizerDiagnostics` trace samples. Mayfly jobs record RMS
+  pairwise population spread in normalized optimizer space; CMA-ES jobs record
+  sigma and covariance condition number at the same iteration boundary as
+  cost. The Phase 11 campaign driver under `scripts/cmaes-measurement` submits
+  the evaluation-matched five-arm design and produces its paired statistics
+  and downsampled mechanism trajectories.
 - A pinned CMA-ES adapter at `internal/opt`, with normalized mixed-range
   parameters, repair and nonlinear-constraint mapping, restart-from-best and
   alternative seeds, measured progress, epoch callbacks, early stopping,

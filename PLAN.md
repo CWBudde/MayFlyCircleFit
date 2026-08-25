@@ -1069,6 +1069,38 @@ rather than silently multiply, the consumer's fixed-attempt mechanism.
 
 ---
 
+## Phase 21: CMA-ES Measurement
+
+**Goal:** Measure whether CMA-ES fixes the premature-convergence failure that
+motivated the adapter, under the same evidentiary standard as the existing
+restart report.
+
+- [x] Add opt-in trace diagnostics for normalized Mayfly population spread and
+      CMA-ES sigma/condition number without charging ordinary jobs for Mayfly
+      population snapshots.
+- [x] Add an observable server-driven campaign/collector for twelve paired
+      blocks, disjoint seed pools, a shared within-block seed prefix, and the
+      five required arms.
+- [ ] Re-establish the Mayfly v0.7.1 single-run and r16 baseline on the
+      eight-circle 512x512 workload.
+- [ ] Complete the full, separable, single-run, and IPOP CMA-ES arms under the
+      same 6,502,400-evaluation cap.
+- [ ] Commit the raw costs and mechanism trajectories; report paired t-tests
+      (`df=11`), blocks won, and explicit limitations.
+- [x] Preserve and report the operator-stopped preliminary subset offline:
+      three completed jobs and one interrupted job from block 1, with raw
+      downsampled trajectories and no inferential statistics.
+
+**Rationale:** A new optimizer is useful here only if its learned metric and
+step-size adaptation change the measured collapse, not merely if one seed ends
+well. The raw paired blocks and opt-in distribution traces make both claims
+auditable. The first campaign was intentionally stopped on 2026-08-25 after its
+several-day runtime became clear; its one-block descriptive result is recorded
+in [`docs/cmaes-preliminary-report.md`](docs/cmaes-preliminary-report.md), while
+the three twelve-block requirements above remain open.
+
+---
+
 ## Summary and Next Steps
 
 Completed implementation history is intentionally summarized above; detailed

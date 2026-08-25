@@ -60,7 +60,8 @@ func shouldSampleSSIM(now, lastSample time.Time, cost, lastSampleCost float64) b
 
 func traceEntry(sample MetricSample) store.TraceEntry {
 	return store.TraceEntry{
-		Iteration: sample.Iteration, Evaluations: sample.Evaluations, Cost: sample.Cost,
+		OptimizerDiagnostics: sample.OptimizerDiagnostics,
+		Iteration:            sample.Iteration, Evaluations: sample.Evaluations, Cost: sample.Cost,
 		PSNR: cloneFloat(sample.PSNR), PSNRInfinite: sample.PSNRInfinite,
 		SSIM: cloneFloat(sample.SSIM), CPS: sample.CPS, Timestamp: sample.Timestamp,
 	}

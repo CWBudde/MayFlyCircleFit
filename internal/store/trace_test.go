@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/cwbudde/mayflycirclefit/internal/opt"
 )
 
 func TestTraceWriter_WriteAndRead(t *testing.T) {
@@ -28,7 +30,10 @@ func TestTraceWriter_WriteAndRead(t *testing.T) {
 		{Iteration: 10, Cost: 0.8, PSNR: &psnr, SSIM: &ssim, Timestamp: time.Now()},
 		{Iteration: 15, Cost: 0, PSNRInfinite: true, Timestamp: time.Now()},
 		{Iteration: 20, Cost: 0.6, Timestamp: time.Now(), Params: []float64{1, 2, 3}},
-		{Iteration: 30, Cost: 0.4, Timestamp: time.Now()},
+		{
+			OptimizerDiagnostics: &opt.SearchDiagnostics{Sigma: 0.2, ConditionNumber: 7},
+			Iteration:            30, Cost: 0.4, Timestamp: time.Now(),
+		},
 	}
 
 	for _, entry := range entries {
@@ -64,6 +69,11 @@ func TestTraceWriter_WriteAndRead(t *testing.T) {
 	// Verify count
 	if len(readEntries) != len(entries) {
 		t.Fatalf("Expected %d entries, got %d", len(entries), len(readEntries))
+	}
+
+	if diagnostics := readEntries[4].OptimizerDiagnostics; diagnostics == nil ||
+		diagnostics.Sigma != 0.2 || diagnostics.ConditionNumber != 7 {
+		t.Fatalf("optimizer diagnostics = %+v, want sigma 0.2 and condition 7", diagnostics)
 	}
 
 	// Verify data

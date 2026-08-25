@@ -115,14 +115,29 @@ func (o *restartOptimizer) RunContext(ctx context.Context, problem Problem, opti
 			// from a fresh population and its early costs are far worse than
 			// what earlier attempts already reached, so forwarding them raw
 			// would break that contract and make a monitored run look like it
-			// regressed. Only improvements are forwarded.
+			// regressed.
+			//
+			// Dropping those reports instead would censor everything else the
+			// progress carries. Search diagnostics describe the population an
+			// attempt currently holds, not the incumbent, so suppressing a
+			// non-improving report hides exactly the fresh high-spread
+			// populations a restart exists to create and biases a recorded
+			// mechanism trajectory toward already-collapsed ones. Every report
+			// is therefore forwarded, with the cost and parameters clamped to
+			// the running best so the reported incumbent stays monotonic.
 			bestReported := best.BestCost
+			paramsReported := append([]float64(nil), best.BestParams...)
 			attemptOptions.Observer = func(progress Progress) {
-				if progress.BestCost >= bestReported {
-					return
+				switch {
+				case progress.BestCost < bestReported:
+					bestReported = progress.BestCost
+					paramsReported = append([]float64(nil), progress.BestParams...)
+				case len(paramsReported) > 0:
+					progress.BestCost = bestReported
+
+					progress.BestParams = append([]float64(nil), paramsReported...)
 				}
 
-				bestReported = progress.BestCost
 				progress.Iterations += iterationOffset
 				progress.Evaluations += evaluationOffset
 				options.Observer(progress)

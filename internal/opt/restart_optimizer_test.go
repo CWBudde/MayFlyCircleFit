@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -34,9 +35,19 @@ func (o *recordingOptimizer) RunContext(_ context.Context, _ Problem, options Ru
 
 	if options.Observer != nil {
 		// A real optimizer walks down to its best; the second value is what a
-		// fresh attempt's early progress looks like.
-		options.Observer(Progress{Iterations: 1, Evaluations: 10, BestParams: []float64{cost + 100}, BestCost: cost + 100})
-		options.Observer(Progress{Iterations: o.iterations, Evaluations: 100, BestParams: []float64{cost}, BestCost: cost})
+		// fresh attempt's early progress looks like. The diagnostics describe
+		// the attempt's own population, so they differ per attempt and per
+		// report even where the cost does not improve on an earlier attempt.
+		options.Observer(Progress{
+			Iterations: 1, Evaluations: 10,
+			BestParams: []float64{cost + 100}, BestCost: cost + 100,
+			Diagnostics: &SearchDiagnostics{PopulationSpread: cost + 100},
+		})
+		options.Observer(Progress{
+			Iterations: o.iterations, Evaluations: 100,
+			BestParams: []float64{cost}, BestCost: cost,
+			Diagnostics: &SearchDiagnostics{PopulationSpread: cost},
+		})
 	}
 
 	return Result{
@@ -152,13 +163,62 @@ func TestWithRestartsReportsMonotonicProgress(t *testing.T) {
 	}
 
 	for i := 1; i < len(reported); i++ {
-		if reported[i] >= reported[i-1] {
+		if reported[i] > reported[i-1] {
 			t.Fatalf("progress regressed: %v", reported)
 		}
 	}
 
 	if reported[len(reported)-1] != 3 {
 		t.Fatalf("final reported cost = %v, want 3", reported[len(reported)-1])
+	}
+}
+
+// Diagnostics describe the population an attempt currently holds, not the
+// incumbent. A later attempt whose costs never beat an earlier one must still
+// reach the observer, or a recorded mechanism trajectory only ever samples
+// collapsed populations.
+func TestWithRestartsForwardsDiagnosticsFromNonImprovingAttempts(t *testing.T) {
+	t.Parallel()
+
+	// The second attempt is worse than the first throughout, so every one of
+	// its reports is non-improving.
+	base := &recordingOptimizer{costs: []float64{3, 10}, iterations: 5}
+
+	var (
+		costs   []float64
+		spreads []float64
+	)
+
+	lifecycle, ok := WithRestarts(base, 2).(LifecycleOptimizer)
+	if !ok {
+		t.Fatal("WithRestarts did not preserve lifecycle optimization")
+	}
+
+	_, err := lifecycle.RunContext(
+		context.Background(), Problem{},
+		RunOptions{Observer: func(progress Progress) {
+			costs = append(costs, progress.BestCost)
+			if progress.Diagnostics == nil {
+				t.Errorf("progress %v lost its diagnostics", progress)
+				return
+			}
+
+			spreads = append(spreads, progress.Diagnostics.PopulationSpread)
+		}},
+	)
+	if err != nil {
+		t.Fatalf("RunContext: %v", err)
+	}
+
+	wantSpreads := []float64{103, 3, 110, 10}
+	if !slices.Equal(spreads, wantSpreads) {
+		t.Fatalf("diagnostics = %v, want %v (every attempt's population, uncensored)", spreads, wantSpreads)
+	}
+
+	// The reported incumbent stays monotonic even though the raw reports did not.
+	wantCosts := []float64{103, 3, 3, 3}
+	if !slices.Equal(costs, wantCosts) {
+		t.Fatalf("reported costs = %v, want %v (clamped to the running best)", costs, wantCosts)
 	}
 }
 

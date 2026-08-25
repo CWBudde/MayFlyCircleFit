@@ -76,6 +76,9 @@ re-measure instead.
 
 **Search quality**
 
+- [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
+  one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
+  explicitly without the planned twelve-block inference.
 - [`restart-vs-budget-report.md`](restart-vs-budget-report.md) — why a stage's
   budget is better spent as several cold runs than one long one, and which
   interventions did *not* delay population collapse. Read before proposing a
