@@ -178,6 +178,8 @@ func TestWithRestartsReportsMonotonicProgress(t *testing.T) {
 // reach the observer, or a recorded mechanism trajectory only ever samples
 // collapsed populations.
 func TestWithRestartsForwardsDiagnosticsFromNonImprovingAttempts(t *testing.T) {
+	t.Parallel()
+
 	// The second attempt is worse than the first throughout, so every one of
 	// its reports is non-improving.
 	base := &recordingOptimizer{costs: []float64{3, 10}, iterations: 5}
@@ -187,16 +189,17 @@ func TestWithRestartsForwardsDiagnosticsFromNonImprovingAttempts(t *testing.T) {
 		spreads []float64
 	)
 
-	_, err := WithRestarts(base, 2).(LifecycleOptimizer).RunContext(
+	lifecycle := WithRestarts(base, 2).(LifecycleOptimizer)
+	_, err := lifecycle.RunContext(
 		context.Background(), Problem{},
-		RunOptions{Observer: func(p Progress) {
-			costs = append(costs, p.BestCost)
-			if p.Diagnostics == nil {
-				t.Errorf("progress %v lost its diagnostics", p)
+		RunOptions{Observer: func(progress Progress) {
+			costs = append(costs, progress.BestCost)
+			if progress.Diagnostics == nil {
+				t.Errorf("progress %v lost its diagnostics", progress)
 				return
 			}
 
-			spreads = append(spreads, p.Diagnostics.PopulationSpread)
+			spreads = append(spreads, progress.Diagnostics.PopulationSpread)
 		}},
 	)
 	if err != nil {

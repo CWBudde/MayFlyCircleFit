@@ -134,6 +134,7 @@ func (o *restartOptimizer) RunContext(ctx context.Context, problem Problem, opti
 					paramsReported = append([]float64(nil), progress.BestParams...)
 				case len(paramsReported) > 0:
 					progress.BestCost = bestReported
+
 					progress.BestParams = append([]float64(nil), paramsReported...)
 				}
 
