@@ -71,8 +71,8 @@ func (c JobConfig) ResolvedCMAESRestartStrategy() CMAESRestartStrategy {
 	return c.RestartStrategy
 }
 
-func (c JobConfig) cmaesOnlyFields() []mayflyOnlyField {
-	return []mayflyOnlyField{
+func (c JobConfig) cmaesOnlyFields() []engineOnlyField {
+	return []engineOnlyField{
 		{"initialSigma", c.InitialSigma != nil},
 		{"covarianceMode", c.CovarianceMode != ""},
 		{"activeCMA", c.ActiveCMA != nil},

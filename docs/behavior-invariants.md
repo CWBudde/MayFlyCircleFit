@@ -185,22 +185,25 @@ Rendering-side invariants live in
 ## Determinism, resume, and termination
 
 - **A job runs the optimizer library its configuration names, and a resumed job
-  runs the library its checkpoint names.** `config.optimizer` is `mayfly` or
-  `dragonfly`, and an absent value is `mayfly`, so every configuration and
-  checkpoint written before the field existed keeps its behavior. The engine is
-  persisted in the checkpoint together with that engine's library version in
+  runs the library its checkpoint names.** `config.optimizer` is `mayfly`,
+  `dragonfly`, or `cmaes`, and an absent value is `mayfly`, so every
+  configuration and checkpoint written before the field existed keeps its
+  behavior. The engine is persisted in the checkpoint together with that engine's library version in
   `optimizerVersion`, and no resume path reads the engine from anywhere else:
   neither `resume --local` nor the resume endpoint can continue a run under a
   different optimizer than produced it. A setting the named engine cannot read
-  — a MayFly `variant` or advanced knob, or polishing, under `dragonfly` — is
-  refused at validation rather than accepted and ignored, because a dropped
-  setting makes the recorded cost impossible to compare.
+  is refused at validation rather than accepted and ignored, because a dropped
+  setting makes the recorded cost impossible to compare. That refusal runs in
+  both directions: a MayFly `variant`, `qmcInit`, `crossoverCount`, advanced
+  knob, or polishing is refused under `dragonfly` and under `cmaes`, and the
+  CMA-ES-only `initialSigma`, `covarianceMode`, `activeCMA`, and
+  `restartStrategy` are refused under `mayfly` and under `dragonfly`.
 - **`config.qmcInit` decides how a MayFly run draws its first generation, and
   an absent value is `uniform`.** `uniform` takes every coordinate as an
   independent draw from the run's generator; `sobol` and `halton` draw from a
   scrambled low-discrepancy sequence over the unit box the adapter normalizes
-  into. It is MayFly-only and refused under `dragonfly` alongside the other
-  MayFly-only settings.
+  into. It is MayFly-only and refused under `dragonfly` and `cmaes` alongside
+  the other MayFly-only settings.
   **The sequence only fills the population slots seeding leaves free, and on
   this problem that is normally half of them.** Whenever the renderer can build
   a residual seed it passes it as `RunOptions.Initial` — unconditionally for a
