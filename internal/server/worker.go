@@ -850,7 +850,7 @@ func inheritedContiguousWindowVisitCounts(checkpointStore store.Store, job *Job)
 
 func completedCheckpointTermination(termination string) bool {
 	switch termination {
-	case "completed", "target_cost", "stagnation", "stage_convergence", "refill_limit":
+	case "completed", "target_cost", "stagnation", "convergence", "stage_convergence", "refill_limit":
 		return true
 	default:
 		return false

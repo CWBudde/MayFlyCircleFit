@@ -107,6 +107,13 @@ const (
 	// TerminationStagnation means the best cost stopped improving within the
 	// configured stagnation window.
 	TerminationStagnation Termination = "stagnation"
+	// TerminationConvergence means the optimizer's own distribution-aware
+	// criteria judged the search converged (or numerically exhausted) before
+	// the iteration budget was consumed. CMA-ES reports it for TolX, TolFun,
+	// TolXUp, an ill-conditioned covariance, and the no-effect axis and
+	// coordinate tests; population optimizers without such criteria never
+	// return it.
+	TerminationConvergence Termination = "convergence"
 )
 
 // Result is the complete, measured outcome of an optimization run.

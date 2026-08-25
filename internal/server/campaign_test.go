@@ -370,7 +370,7 @@ func TestCampaignListPageShowsSchedulesAndChains(t *testing.T) {
 // "cancelled" is the contradiction this guards against.
 func TestChainStageStateMatchesRestore(t *testing.T) {
 	terminations := []string{
-		"completed", "target_cost", "stagnation", "stage_convergence", "refill_limit",
+		"completed", "target_cost", "stagnation", "convergence", "stage_convergence", "refill_limit",
 		"failed", "cancelled",
 		"", store.TerminationUnknown, store.TerminationLegacy,
 		"something_a_future_version_writes",

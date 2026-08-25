@@ -69,7 +69,9 @@ type stageOutcome struct {
 // stoppedEarly reports whether the optimizer ended a stage before exhausting
 // its iteration budget.
 func (o stageOutcome) stoppedEarly() bool {
-	return o.Termination == opt.TerminationTargetCost || o.Termination == opt.TerminationStagnation
+	return o.Termination == opt.TerminationTargetCost ||
+		o.Termination == opt.TerminationStagnation ||
+		o.Termination == opt.TerminationConvergence
 }
 
 // CircleCallback is called after each circle is optimized in sequential mode.

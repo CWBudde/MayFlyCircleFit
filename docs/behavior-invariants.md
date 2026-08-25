@@ -349,6 +349,11 @@ Two distinct mechanisms exist and must not be conflated.
   config) counts whole circles or batches, uses a relative improvement ratio,
   and applies to sequential and batch only; `OptimizeJointContext` discards it.
   Only this tracker reports `stage_convergence`.
+- **Optimizer-internal convergence** is CMA-ES's own distribution-aware set
+  (TolX, TolFun, TolXUp, condition number, no-effect axis and coordinate). It is
+  always on inside the library and reports `convergence`, which counts as an
+  early stop rather than as budget completion. MayFly and Dragonfly have no such
+  criteria and never report it.
 - **Optimizer-level stopping** (`--stop-*`, `Stop*` config) is evaluated per
   iteration inside one optimizer run, uses an absolute improvement, and applies
   in every mode. It is off by default, and `ApplyDefaults` must never fill those

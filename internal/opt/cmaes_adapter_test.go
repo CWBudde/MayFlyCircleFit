@@ -462,3 +462,47 @@ func TestCMAESParallelEvaluationCallsObjectiveConcurrently(t *testing.T) {
 		t.Fatalf("peak concurrent evaluations = %d, want at least 2", peak.Load())
 	}
 }
+
+// TestCMAESAdapterReportsConvergenceBelowTheBudget pins the mapping of CMA-ES's
+// distribution-aware criteria (TolX, TolFun, TolXUp, condition number, and the
+// no-effect tests). They stop the run before the iteration cap, so reporting
+// TerminationCompleted would contradict that value's promise that the budget
+// was consumed, and would hide the stage from StagesStoppedEarly.
+func TestCMAESAdapterReportsConvergenceBelowTheBudget(t *testing.T) {
+	t.Parallel()
+
+	const maxIters = 4000
+
+	result, err := cmaesLifecycle(t, opt.NewCMAES(maxIters, 12, 7)).
+		RunContext(context.Background(), cmaesProblem(), opt.RunOptions{})
+	if err != nil {
+		t.Fatalf("RunContext() error = %v", err)
+	}
+
+	if result.Iterations >= maxIters {
+		t.Fatalf("Iterations = %d, want a run that stops below the %d cap",
+			result.Iterations, maxIters)
+	}
+
+	if result.Termination != opt.TerminationConvergence {
+		t.Fatalf("Termination = %q, want %q", result.Termination, opt.TerminationConvergence)
+	}
+}
+
+// TestCMAESAdapterReportsCompletedAtTheBudget keeps the counterpart honest: a
+// run that does consume its cap still reports completion.
+func TestCMAESAdapterReportsCompletedAtTheBudget(t *testing.T) {
+	t.Parallel()
+
+	const maxIters = 3
+
+	result, err := cmaesLifecycle(t, opt.NewCMAES(maxIters, 12, 7)).
+		RunContext(context.Background(), cmaesProblem(), opt.RunOptions{})
+	if err != nil {
+		t.Fatalf("RunContext() error = %v", err)
+	}
+
+	if result.Termination != opt.TerminationCompleted {
+		t.Fatalf("Termination = %q, want %q", result.Termination, opt.TerminationCompleted)
+	}
+}

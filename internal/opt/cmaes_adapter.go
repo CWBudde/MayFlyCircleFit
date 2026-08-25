@@ -43,8 +43,14 @@ func WithCMAESEarlyStop(stop Stop) CMAESOption {
 }
 
 // WithCMAESParallelEvaluation makes CMA-ES evaluate population members
-// concurrently with at most workers goroutines. The objective must be safe for
-// concurrent calls. A seeded parallel run is bit-identical to its serial run.
+// concurrently with at most workers goroutines. The worker goroutines run the
+// whole per-candidate chain, not just the objective: the caller must guarantee
+// that Problem.Eval, Problem.Repair, and every Problem.Inequalities callback
+// are safe to call from several goroutines at once, because the adapter
+// canonicalizes (and therefore repairs) each normalized candidate inside the
+// objective and inside the constraint wrapper. The renderer pipeline does that
+// by leasing an independent session per evaluation. A seeded parallel run is
+// bit-identical to its serial run.
 func WithCMAESParallelEvaluation(workers int) CMAESOption {
 	return func(adapter *CMAESAdapter) { adapter.parallelWorkers = workers }
 }
@@ -404,6 +410,12 @@ func cmaesErrorResult(best Result, err error) (Result, error) {
 	return Result{}, fmt.Errorf("cma-es optimization: %w", err)
 }
 
+// terminationFromCMAES maps every reason the library defines. Only the two
+// budget reasons may report TerminationCompleted, because that value promises
+// the run consumed its budget; the distribution-aware criteria report
+// TerminationConvergence so pipelines and persisted status can tell that the
+// stage stopped early. A reason a future library release adds falls through to
+// TerminationCompleted, so keep this switch exhaustive.
 func terminationFromCMAES(reason cmaes.TerminationReason) Termination {
 	switch reason {
 	case cmaes.TerminationTargetCost:
@@ -412,6 +424,15 @@ func terminationFromCMAES(reason cmaes.TerminationReason) Termination {
 		return TerminationStagnation
 	case cmaes.TerminationCancelled:
 		return TerminationCancelled
+	case cmaes.TerminationTolX,
+		cmaes.TerminationTolFun,
+		cmaes.TerminationTolXUp,
+		cmaes.TerminationConditionNumber,
+		cmaes.TerminationNoEffectAxis,
+		cmaes.TerminationNoEffectCoord:
+		return TerminationConvergence
+	case cmaes.TerminationMaxIterations, cmaes.TerminationMaxEvaluations:
+		return TerminationCompleted
 	default:
 		return TerminationCompleted
 	}
