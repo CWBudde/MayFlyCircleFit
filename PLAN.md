@@ -1087,11 +1087,17 @@ restart report.
       same 6,502,400-evaluation cap.
 - [ ] Commit the raw costs and mechanism trajectories; report paired t-tests
       (`df=11`), blocks won, and explicit limitations.
+- [x] Preserve and report the operator-stopped preliminary subset offline:
+      three completed jobs and one interrupted job from block 1, with raw
+      downsampled trajectories and no inferential statistics.
 
 **Rationale:** A new optimizer is useful here only if its learned metric and
 step-size adaptation change the measured collapse, not merely if one seed ends
 well. The raw paired blocks and opt-in distribution traces make both claims
-auditable.
+auditable. The first campaign was intentionally stopped on 2026-08-25 after its
+several-day runtime became clear; its one-block descriptive result is recorded
+in [`docs/cmaes-preliminary-report.md`](docs/cmaes-preliminary-report.md), while
+the three twelve-block requirements above remain open.
 
 ---
 

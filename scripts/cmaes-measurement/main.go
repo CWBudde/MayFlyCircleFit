@@ -73,6 +73,13 @@ type checkpoint struct {
 	OptimizerVersion string `json:"optimizerVersion"`
 }
 
+type checkpointInfo struct {
+	Termination      string `json:"termination"`
+	OptimizerVersion string `json:"optimizerVersion"`
+	Iteration        int    `json:"iteration"`
+	Evaluations      int    `json:"evaluations"`
+}
+
 type settings struct {
 	server       string
 	dataRoot     string
@@ -97,10 +104,12 @@ func main() {
 		err = submit(config)
 	case "collect":
 		err = collect(config)
+	case "preliminary":
+		err = collectPreliminary(config)
 	case "analyze":
 		err = analyze(config.resultsPath)
 	default:
-		err = fmt.Errorf("unknown action %q (want submit, collect, or analyze)", config.action)
+		err = fmt.Errorf("unknown action %q (want submit, collect, preliminary, or analyze)", config.action)
 	}
 
 	if err != nil {
@@ -111,7 +120,7 @@ func main() {
 
 func parseFlags() settings {
 	var config settings
-	flag.StringVar(&config.action, "action", "collect", "submit, collect, or analyze")
+	flag.StringVar(&config.action, "action", "collect", "submit, collect, preliminary, or analyze")
 	flag.StringVar(&config.server, "server", "http://localhost:8085", "serve base URL")
 	flag.StringVar(&config.dataRoot, "data-root", "./data/cmaes-phase11", "serve data root")
 	flag.StringVar(&config.reference, "ref", "example/MayFly-512.png", "reference image")
@@ -298,6 +307,60 @@ func collect(config settings) error {
 	return analyze(config.resultsPath)
 }
 
+func collectPreliminary(config settings) error {
+	manifest, err := readManifest(config.manifestPath)
+	if err != nil {
+		return err
+	}
+
+	results := make([]resultRow, 0, len(manifest))
+	available := make([]manifestRow, 0, len(manifest))
+	for _, record := range manifest {
+		jobDir := filepath.Join(config.dataRoot, "projects", config.project, "jobs", record.JobID)
+		body, readErr := os.ReadFile(filepath.Join(jobDir, "checkpoint-info.json"))
+		if errors.Is(readErr, os.ErrNotExist) {
+			continue
+		}
+		if readErr != nil {
+			return fmt.Errorf("read %s checkpoint info: %w", record.JobID, readErr)
+		}
+
+		var saved checkpointInfo
+		if err := json.Unmarshal(body, &saved); err != nil {
+			return fmt.Errorf("decode %s checkpoint info: %w", record.JobID, err)
+		}
+		state := "interrupted"
+		if saved.Termination == "completed" {
+			state = "completed"
+		}
+		status := jobStatus{
+			State: state, Termination: saved.Termination,
+			Iterations: saved.Iteration, Evaluations: saved.Evaluations,
+		}
+		result, collectErr := collectJob(config, record, status)
+		if collectErr != nil {
+			return collectErr
+		}
+		result.OptimizerVersion = saved.OptimizerVersion
+		results = append(results, result)
+		available = append(available, record)
+	}
+	if len(results) == 0 {
+		return errors.New("campaign has no persisted job results")
+	}
+
+	if err := writeResults(config.resultsPath, results); err != nil {
+		return err
+	}
+	if err := writeTrajectories(config, available); err != nil {
+		return err
+	}
+
+	fmt.Printf("wrote %d preliminary results from %d planned jobs; no inferential statistics were calculated\n", len(results), len(manifest))
+
+	return nil
+}
+
 func fetchStatus(client *http.Client, server, jobID string) (jobStatus, error) {
 	request, err := http.NewRequestWithContext(
 		context.Background(), http.MethodGet, server+"/api/v1/jobs/"+jobID+"/status", nil,
@@ -342,6 +405,9 @@ func collectJob(config settings, record manifestRow, status jobStatus) (resultRo
 	}
 	if math.IsInf(score, 1) {
 		return resultRow{}, fmt.Errorf("job %s has no trace sample within budget", record.JobID)
+	}
+	if status.Elapsed == 0 && len(trace) > 1 {
+		status.Elapsed = trace[len(trace)-1].Timestamp.Sub(trace[0].Timestamp).Seconds()
 	}
 
 	var saved checkpoint
@@ -468,24 +534,38 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 		if readErr != nil {
 			return readErr
 		}
+		lastEligible := -1
+		for index, entry := range entries {
+			if entry.OptimizerDiagnostics != nil && entry.Evaluations <= config.budget {
+				lastEligible = index
+			}
+		}
 		lastBucket := -1
-		for _, entry := range entries {
+		for index, entry := range entries {
 			if entry.OptimizerDiagnostics == nil || entry.Evaluations > config.budget {
 				continue
 			}
 			bucket := entry.Evaluations * 256 / config.budget
-			if !early[entry.Iteration] && bucket == lastBucket {
+			isLast := index == lastEligible
+			if !isLast && !early[entry.Iteration] && bucket == lastBucket {
 				continue
 			}
 			lastBucket = bucket
 			diagnostic := entry.OptimizerDiagnostics
+			populationSpread := ""
+			sigma := ""
+			conditionNumber := ""
+			if diagnostic.Sigma == 0 && diagnostic.ConditionNumber == 0 {
+				populationSpread = strconv.FormatFloat(diagnostic.PopulationSpread, 'g', 17, 64)
+			} else {
+				sigma = strconv.FormatFloat(diagnostic.Sigma, 'g', 17, 64)
+				conditionNumber = strconv.FormatFloat(diagnostic.ConditionNumber, 'g', 17, 64)
+			}
 			record := []string{
 				record.Arm, strconv.Itoa(record.Block), strconv.FormatInt(record.Seed, 10),
 				strconv.Itoa(entry.Iteration), strconv.Itoa(entry.Evaluations),
 				strconv.FormatFloat(entry.Cost, 'g', 17, 64),
-				strconv.FormatFloat(diagnostic.PopulationSpread, 'g', 17, 64),
-				strconv.FormatFloat(diagnostic.Sigma, 'g', 17, 64),
-				strconv.FormatFloat(diagnostic.ConditionNumber, 'g', 17, 64),
+				populationSpread, sigma, conditionNumber,
 			}
 			if err := writer.Write(record); err != nil {
 				return err

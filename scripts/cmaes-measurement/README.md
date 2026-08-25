@@ -35,6 +35,23 @@ writes `docs/cmaes-measurement.csv`, writes the downsampled optimizer mechanism
 data to `docs/cmaes-trajectories.csv`, and prints Markdown statistics. Use
 `-action analyze` to reproduce the result table from the first CSV alone.
 
+The first campaign was stopped by operator request after three completed jobs
+and one interrupted job because the calibrated queue duration was several days.
+Do not restart its server unless resuming that work is intentional. Its
+persisted subset can be collected entirely offline, without touching the queue:
+
+```sh
+go run ./scripts/cmaes-measurement \
+  -action preliminary \
+  -results docs/cmaes-preliminary-results.csv \
+  -trajectories docs/cmaes-preliminary-trajectories.csv
+```
+
+That action collects only job directories which have checkpoint metadata and
+labels a non-completed checkpoint `interrupted`. It deliberately prints no
+inferential statistics. See
+[`docs/cmaes-preliminary-report.md`](../../docs/cmaes-preliminary-report.md).
+
 ## Budget and pairing
 
 The current Mayfly v0.7.1 pin consumes 6,502,400 optimizer evaluations in the
