@@ -873,8 +873,11 @@ func completedCheckpointTermination(termination string) bool {
 // written before the field existed carries, and they must keep running exactly
 // as they did.
 func newStageOptimizer(config store.JobConfig, rend renderer.Renderer, seed int64) (opt.Optimizer, error) {
-	if config.ResolvedOptimizer() == app.OptimizerDragonfly {
+	switch config.ResolvedOptimizer() {
+	case app.OptimizerDragonfly:
 		return newDragonflyOptimizer(config, rend, seed), nil
+	case app.OptimizerCMAES:
+		return newCMAESOptimizer(config, rend, seed), nil
 	}
 
 	optimizer, err := opt.NewMayflyVariant(string(config.Variant), config.Iters, config.PopSize, seed,
@@ -895,6 +898,33 @@ func newStageOptimizer(config store.JobConfig, rend renderer.Renderer, seed int6
 	}
 
 	return optimizer, nil
+}
+
+// newCMAESOptimizer builds the configured CMA-ES adapter. The application
+// validates the mode and resource limits before a worker reaches this point.
+func newCMAESOptimizer(config store.JobConfig, rend renderer.Renderer, seed int64) opt.Optimizer {
+	options := []opt.CMAESOption{
+		opt.WithCMAESLogger(slog.Default()),
+		opt.WithCMAESEarlyStop(buildEarlyStop(config)),
+		opt.WithCMAESInitialSigma(config.ResolvedCMAESInitialSigma()),
+		opt.WithCMAESCovarianceMode(
+			string(config.ResolvedCMAESCovarianceMode()), app.ParametersPerCircle,
+		),
+		opt.WithCMAESActiveCMA(config.ResolvedCMAESActive()),
+		opt.WithCMAESRestartStrategy(string(config.ResolvedCMAESRestartStrategy())),
+	}
+
+	width, granted := renderer.ParallelEvaluationWidth(rend, config.ParallelEvaluation)
+	if granted {
+		options = append(options, opt.WithCMAESParallelEvaluation(width))
+	}
+
+	if config.ParallelEvaluation && !granted {
+		slog.Warn("Parallel evaluation requested but unavailable; evaluating serially",
+			"backend", config.Backend, "evaluationWorkers", config.EvaluationWorkers)
+	}
+
+	return opt.NewCMAES(config.Iters, config.PopSize, seed, options...)
 }
 
 // newDragonflyOptimizer builds the proof-of-concept Dragonfly adapter. It

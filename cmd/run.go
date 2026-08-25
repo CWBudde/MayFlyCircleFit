@@ -36,6 +36,10 @@ var (
 	danceDamp                float64
 	aquilaWeight             float64
 	oppositionProbability    float64
+	initialSigma             float64
+	covarianceMode           string
+	activeCMA                bool
+	restartStrategy          string
 	batchSize                int
 	polishingEnabled         bool
 	polishingStrategy        string
@@ -86,8 +90,16 @@ func init() {
 	runCmd.Flags().StringVar(&qmcInitName, "qmc-init", "",
 		"initial population sequence: uniform (default), sobol, halton (MayFly only, expert)")
 	runCmd.Flags().StringVar(&optimizerName, "optimizer", string(app.OptimizerMayfly),
-		"Optimizer library: mayfly, or dragonfly (an experimental proof of concept; "+
+		"Optimizer library: mayfly, cmaes, or dragonfly (an experimental proof of concept; "+
 			"see docs/known-limitations.md for what it does not support)")
+	runCmd.Flags().Float64Var(&initialSigma, "initial-sigma", app.DefaultCMAESInitialSigma,
+		"CMA-ES initial step size in the normalized search box (finite and positive)")
+	runCmd.Flags().StringVar(&covarianceMode, "covariance-mode", "",
+		"CMA-ES covariance representation: full (default), separable, or block")
+	runCmd.Flags().BoolVar(&activeCMA, "active-cma", true,
+		"Enable CMA-ES negative rank-mu covariance adaptation")
+	runCmd.Flags().StringVar(&restartStrategy, "restart-strategy", "",
+		"CMA-ES shared-budget restart strategy: none (default), ipop, or bipop")
 	runCmd.Flags().IntVar(&circles, "circles", 10, "Number of circles")
 	runCmd.Flags().IntVar(&iters, "iters", 100, "Max iterations")
 	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
@@ -190,8 +202,11 @@ func newStageOptimizer(config app.JobConfig, rend renderer.Renderer) (opt.Optimi
 		seed = config.Seed
 	}
 
-	if config.ResolvedOptimizer() == app.OptimizerDragonfly {
+	switch config.ResolvedOptimizer() {
+	case app.OptimizerDragonfly:
 		return newDragonflyOptimizer(config, rend, seed), nil
+	case app.OptimizerCMAES:
+		return newCMAESOptimizer(config, rend, seed), nil
 	}
 
 	optimizer, err := opt.NewMayflyVariant(string(config.Variant), config.Iters, config.PopSize, seed,
@@ -212,6 +227,33 @@ func newStageOptimizer(config app.JobConfig, rend renderer.Renderer) (opt.Optimi
 	}
 
 	return optimizer, nil
+}
+
+// newCMAESOptimizer carries the typed CMA-ES configuration onto the adapter.
+// Block covariance follows the consumer's seven-coordinate circle layout.
+func newCMAESOptimizer(config app.JobConfig, rend renderer.Renderer, seed int64) opt.Optimizer {
+	options := []opt.CMAESOption{
+		opt.WithCMAESLogger(slog.Default()),
+		opt.WithCMAESEarlyStop(earlyStopFromConfig(config)),
+		opt.WithCMAESInitialSigma(config.ResolvedCMAESInitialSigma()),
+		opt.WithCMAESCovarianceMode(
+			string(config.ResolvedCMAESCovarianceMode()), app.ParametersPerCircle,
+		),
+		opt.WithCMAESActiveCMA(config.ResolvedCMAESActive()),
+		opt.WithCMAESRestartStrategy(string(config.ResolvedCMAESRestartStrategy())),
+	}
+
+	width, granted := renderer.ParallelEvaluationWidth(rend, config.ParallelEvaluation)
+	if granted {
+		options = append(options, opt.WithCMAESParallelEvaluation(width))
+	}
+
+	if config.ParallelEvaluation && !granted {
+		slog.Warn("Parallel evaluation requested but unavailable; evaluating serially",
+			"backend", config.Backend, "evaluationWorkers", config.EvaluationWorkers)
+	}
+
+	return opt.NewCMAES(config.Iters, config.PopSize, seed, options...)
 }
 
 // newDragonflyOptimizer builds the proof-of-concept Dragonfly adapter. It
@@ -239,8 +281,11 @@ func newDragonflyOptimizer(config app.JobConfig, rend renderer.Renderer, seed in
 // optimizerLibraryVersion reports the compiled-in version of the library that
 // will actually run.
 func optimizerLibraryVersion(optimizer app.Optimizer) string {
-	if optimizer == app.OptimizerDragonfly {
+	switch optimizer {
+	case app.OptimizerDragonfly:
 		return opt.DragonflyLibraryVersion()
+	case app.OptimizerCMAES:
+		return opt.CMAESLibraryVersion()
 	}
 
 	return opt.LibraryVersion()
@@ -250,8 +295,11 @@ func optimizerLibraryVersion(optimizer app.Optimizer) string {
 // operator-facing messages, so a Dragonfly checkpoint is never described as a
 // MayFly one.
 func optimizerLibraryName(optimizer app.Optimizer) string {
-	if optimizer == app.OptimizerDragonfly {
+	switch optimizer {
+	case app.OptimizerDragonfly:
 		return "Dragonfly"
+	case app.OptimizerCMAES:
+		return "CMA-ES"
 	}
 
 	return "MayFly"
@@ -292,6 +340,14 @@ func floatFlag(cmd *cobra.Command, name string, value float64) *float64 {
 	return &value
 }
 
+func boolFlag(cmd *cobra.Command, name string, value bool) *bool {
+	if !flagChanged(cmd, name) {
+		return nil
+	}
+
+	return &value
+}
+
 func runOptimization(cmd *cobra.Command, args []string) error {
 	// Flag values the user typed are invocation errors, so they exit with
 	// status 2 rather than the status reserved for work that failed.
@@ -307,6 +363,10 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		Backend:                  backend,
 		Optimizer:                app.Optimizer(optimizerName),
 		Variant:                  variantFlag(cmd, optimizerName, variantName),
+		InitialSigma:             floatFlag(cmd, "initial-sigma", initialSigma),
+		ActiveCMA:                boolFlag(cmd, "active-cma", activeCMA),
+		CovarianceMode:           app.CMAESCovarianceMode(covarianceMode),
+		RestartStrategy:          app.CMAESRestartStrategy(restartStrategy),
 		QMCInit:                  app.QMCInit(qmcInitName),
 		Circles:                  circles,
 		Iters:                    iters,

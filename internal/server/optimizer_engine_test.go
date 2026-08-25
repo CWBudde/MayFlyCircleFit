@@ -22,8 +22,11 @@ const (
 	fieldCircles      = "circles"
 	fieldIters        = "iters"
 	fieldPopSize      = "popSize"
+	fieldOptimizer    = "optimizer"
+	fieldSeed         = "seed"
 	modeJoint         = "joint"
 	modeBatch         = "batch"
+	optimizerCMAES    = "cmaes"
 	codeInvalidConfig = "invalid_config"
 )
 
@@ -38,10 +41,12 @@ func TestNewStageOptimizerSelectsTheConfiguredEngine(t *testing.T) {
 		optimizer app.Optimizer
 		variant   app.Variant
 		dragonfly bool
+		cmaes     bool
 	}{
 		{name: "absent", optimizer: "", variant: app.VariantStandard},
 		{name: "mayfly", optimizer: app.OptimizerMayfly, variant: app.VariantAOBLMOA},
 		{name: "dragonfly", optimizer: app.OptimizerDragonfly, dragonfly: true},
+		{name: optimizerCMAES, optimizer: app.OptimizerCMAES, cmaes: true},
 	}
 
 	for _, test := range tests {
@@ -63,12 +68,61 @@ func TestNewStageOptimizerSelectsTheConfiguredEngine(t *testing.T) {
 				t.Fatalf("optimizer = %T, want dragonfly = %v", optimizer, test.dragonfly)
 			}
 
-			if !test.dragonfly {
+			_, isCMAES := optimizer.(*opt.CMAESAdapter)
+			if isCMAES != test.cmaes {
+				t.Fatalf("optimizer = %T, want cmaes = %v", optimizer, test.cmaes)
+			}
+
+			if !test.dragonfly && !test.cmaes {
 				if _, ok := optimizer.(*opt.MayflyAdapter); !ok {
 					t.Fatalf("optimizer = %T, want *opt.MayflyAdapter", optimizer)
 				}
 			}
 		})
+	}
+}
+
+func TestCreateJobAcceptsCMAESConfiguration(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	reference := filepath.Join(tmpDir, "ref.png")
+	createSimpleTestImage(t, reference)
+
+	server := NewServerWithOptions("localhost:8080", nil, ServerOptions{InputRoots: []string{tmpDir}})
+	body := map[string]any{
+		fieldRefPath:      reference,
+		fieldMode:         modeJoint,
+		fieldCircles:      5,
+		fieldIters:        10,
+		fieldPopSize:      20,
+		fieldOptimizer:    optimizerCMAES,
+		"initialSigma":    0.2,
+		"covarianceMode":  "block",
+		"activeCMA":       false,
+		"restartStrategy": "bipop",
+	}
+
+	response := postEngineJob(t, server, body)
+	if response.Code != http.StatusCreated && response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want a created job: %s", response.Code, response.Body.String())
+	}
+
+	var created struct {
+		Config app.JobConfig `json:"config"`
+	}
+
+	err := json.Unmarshal(response.Body.Bytes(), &created)
+	if err != nil {
+		t.Fatalf("decode created job: %v", err)
+	}
+
+	if created.Config.ResolvedOptimizer() != app.OptimizerCMAES ||
+		created.Config.ResolvedCMAESInitialSigma() != 0.2 ||
+		created.Config.ResolvedCMAESCovarianceMode() != app.CMAESCovarianceBlock ||
+		created.Config.ResolvedCMAESActive() ||
+		created.Config.ResolvedCMAESRestartStrategy() != app.CMAESRestartBIPOP {
+		t.Fatalf("created CMA-ES config = %+v", created.Config)
 	}
 }
 
@@ -91,6 +145,19 @@ func TestNewStageOptimizerDeclinesParallelEvaluationWithoutSessions(t *testing.T
 
 	if width := opt.ParallelEvaluationWidth(optimizer); width != 1 {
 		t.Errorf("ParallelEvaluationWidth() = %d, want 1", width)
+	}
+}
+
+func TestCMAESVersionAndNameFollowTheEngine(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer("localhost:0", nil)
+	if got := server.optimizerVersion(app.OptimizerCMAES); got != opt.CMAESLibraryVersion() {
+		t.Errorf("optimizerVersion(cmaes) = %q, want %q", got, opt.CMAESLibraryVersion())
+	}
+
+	if got := optimizerLibraryName(app.OptimizerCMAES); got != "CMA-ES" {
+		t.Errorf("optimizerLibraryName(cmaes) = %q, want CMA-ES", got)
 	}
 }
 

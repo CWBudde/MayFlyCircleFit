@@ -17,6 +17,19 @@ staged sessions returns `ErrStagedOptimizationUnsupported`. Batch mode accepts a
 requested total and batch size, including a smaller final batch, so result
 cardinality matches the total.
 
+## Optimizer engines
+
+| Engine | Engine-specific configuration | Fixed attempts | Adaptive restarts | Polishing |
+| --- | --- | --- | --- | --- |
+| MayFly | variant, QMC initialization, crossover and advanced movement knobs | `optimizerRestarts` | No | Supported |
+| Dragonfly | None | `optimizerRestarts` | No | Unsupported |
+| CMA-ES | normalized sigma, full/separable/seven-coordinate block covariance, active CMA | `optimizerRestarts` when `restartStrategy=none` | IPOP/BIPOP with one shared evaluation budget | Unsupported |
+
+MayFly remains the default for an omitted engine. Full CMA-ES covariance is
+limited to 512 optimizer dimensions; larger CMA-ES jobs must use block or
+separable covariance. IPOP/BIPOP require `optimizerRestarts=1` so the adaptive
+and fixed restart mechanisms cannot multiply each other silently.
+
 ## Early stopping
 
 Two independent mechanisms exist. They use different units and must not be
@@ -33,11 +46,13 @@ ending the run; the run then reports `completed`. Reported termination reasons
 are `completed`, `cancelled`, `target_cost`, `stagnation`, `convergence`, and
 `stage_convergence`. `convergence` is CMA-ES only: it covers the TolX, TolFun,
 TolXUp, condition-number, and no-effect criteria, which stop a run below its
-iteration cap. MayFly evaluation parallelism (`EnableParallel`) is opt-in
-through `--parallel-evaluation`, sized by `--evaluation-workers`, and off by
-default. It requires a backend that can hand out independent renderer sessions,
-so it applies to the CPU backend only; OpenCL declines it with a warning and
-evaluates serially. Transactional polishing leases a session per evaluation from
+iteration cap. Optimizer evaluation parallelism is opt-in through
+`--parallel-evaluation`, sized by `--evaluation-workers`, and off by default.
+MayFly, Dragonfly, and CMA-ES are bit-identical to their serial run for a fixed
+seed. Parallel evaluation requires a backend that can hand out independent
+renderer sessions, so it applies to the CPU backend only; OpenCL declines it
+with a warning and evaluates serially. Transactional polishing leases a session
+per evaluation from
 the same pool, so it honors the job's evaluation width too; it rejects a parallel
 optimizer only when the backend cannot pool sessions for it. Its population is
 `--polishing-pop`, which is its own knob rather than the job-wide `--pop`.
@@ -158,7 +173,9 @@ canonicalized and checked against those roots.
 | Go source compatibility | 1.24 or newer |
 | Production/security toolchain | A currently supported patched Go release; vulnerability CI uses 1.26.6 |
 | templ | `v0.3.960`, pinned Go tool; generated Go committed |
-| MayFly | `v0.6.0` |
+| MayFly | `v0.7.1` |
+| Dragonfly | `v0.1.0` |
+| CMA-ES | `v0.0.0-20260825143954-e528faf326bf` |
 | govulncheck in CI | `v1.1.4`, installed at an explicit version |
 | staticcheck in CI | `v0.6.1`, installed at an explicit version |
 

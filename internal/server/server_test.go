@@ -1441,6 +1441,10 @@ func TestServer_CreatePageGet(t *testing.T) {
 		t.Error("Expected page to expose optimizer epochs")
 	}
 
+	if !containsString(body, `name="optimizer"`) || !containsString(body, `value="cmaes"`) {
+		t.Error("Expected page to expose the CMA-ES engine selector")
+	}
+
 	if !containsString(body, "polishingEnabled") || !containsString(body, "polishingActiveSetSize") {
 		t.Error("Expected page to expose active-set polishing controls")
 	}
@@ -1540,6 +1544,44 @@ func TestServer_CreatePagePost_Success(t *testing.T) {
 
 	if !job.Config.EnableSSIM {
 		t.Error("Expected SSIM to be enabled")
+	}
+}
+
+func TestServerCreatePagePostsCMAESEngine(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testImagePath := filepath.Join(tmpDir, "test.png")
+	createSimpleTestImage(t, testImagePath)
+
+	server := NewServerWithOptions(":0", nil, ServerOptions{InputRoots: []string{tmpDir}})
+	shutdownTestServer(t, server)
+
+	form := url.Values{
+		"refPath":      {testImagePath},
+		fieldMode:      {modeJoint},
+		fieldOptimizer: {optimizerCMAES},
+		fieldCircles:   {"1"},
+		fieldIters:     {"1"},
+		fieldPopSize:   {"20"},
+		fieldSeed:      {"42"},
+	}
+	req := httptest.NewRequestWithContext(
+		t.Context(), http.MethodPost, "/create", bytes.NewBufferString(form.Encode()),
+	)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	rec := httptest.NewRecorder()
+
+	server.handleCreatePage(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303: %s", rec.Code, rec.Body.String())
+	}
+
+	jobs := server.jobManager.ListJobs()
+	if len(jobs) != 1 || jobs[0].Config.ResolvedOptimizer() != app.OptimizerCMAES {
+		t.Fatalf("created jobs = %+v, want one CMA-ES job", jobs)
 	}
 }
 

@@ -38,6 +38,10 @@ type JobDetail struct {
 	// rather than a MayFly one the job never used.
 	Optimizer     string
 	Variant       string
+	InitialSigma  float64
+	CovarianceMode string
+	ActiveCMA bool
+	RestartStrategy string
 	// EvaluationWorkers is the width the job's renderer actually ran at, not the
 	// width its configuration requested: a backend without independent sessions
 	// runs serially however many workers were asked for, and a CPU request above
@@ -378,6 +382,24 @@ templ JobDetailPage(job JobDetail) {
 					<div>
 						<div style="font-size: 0.875rem; color: var(--text-muted);">Variant</div>
 						<div style="font-weight: 500; text-transform: uppercase;">{ job.Variant }</div>
+					</div>
+				}
+				if job.Optimizer == "cmaes" {
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted);">Initial Sigma</div>
+						<div style="font-weight: 500;">{ fmt.Sprintf("%g", job.InitialSigma) }</div>
+					</div>
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted);">Covariance</div>
+						<div style="font-weight: 500; text-transform: capitalize;">{ job.CovarianceMode }</div>
+					</div>
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted);">Active CMA</div>
+						<div style="font-weight: 500;">{ fmt.Sprintf("%t", job.ActiveCMA) }</div>
+					</div>
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted);">Restart Strategy</div>
+						<div style="font-weight: 500; text-transform: uppercase;">{ job.RestartStrategy }</div>
 					</div>
 				}
 				if job.EvaluationWorkers > 1 {

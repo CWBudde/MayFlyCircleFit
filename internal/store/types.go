@@ -244,8 +244,11 @@ func NewCheckpoint(jobID string, bestParams []float64, bestCost, initialCost flo
 // engine runs with, so a checkpoint records the optimizer that actually
 // produced it rather than MayFly's version unconditionally.
 func optimizerVersion(config JobConfig) string {
-	if config.ResolvedOptimizer() == app.OptimizerDragonfly {
+	switch config.ResolvedOptimizer() {
+	case app.OptimizerDragonfly:
 		return opt.DragonflyLibraryVersion()
+	case app.OptimizerCMAES:
+		return opt.CMAESLibraryVersion()
 	}
 
 	return opt.LibraryVersion()

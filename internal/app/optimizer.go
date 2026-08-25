@@ -23,6 +23,10 @@ const (
 	// proof of concept: see docs/known-limitations.md for what it does not
 	// support.
 	OptimizerDragonfly Optimizer = "dragonfly"
+	// OptimizerCMAES runs covariance matrix adaptation. Its algorithm-specific
+	// settings live beside JobConfig because CLI, server, schedules, and
+	// checkpoints must all agree on them.
+	OptimizerCMAES Optimizer = "cmaes"
 )
 
 // SupportedOptimizers returns the engines a JobConfig may select, in the order
@@ -33,6 +37,7 @@ func SupportedOptimizers() []Optimizer {
 	return []Optimizer{
 		OptimizerMayfly,
 		OptimizerDragonfly,
+		OptimizerCMAES,
 	}
 }
 
@@ -101,6 +106,11 @@ func (c JobConfig) validateOptimizerEngine() error {
 	}
 
 	if c.ResolvedOptimizer() == OptimizerMayfly {
+		err := c.refuseCMAESOnlyFields()
+		if err != nil {
+			return err
+		}
+
 		return c.validateVariant()
 	}
 
@@ -109,12 +119,19 @@ func (c JobConfig) validateOptimizerEngine() error {
 			continue
 		}
 
-		return invalid(field.field, fmt.Sprintf(
-			"is read only by the %q optimizer, but this job runs %q",
-			OptimizerMayfly, c.ResolvedOptimizer()))
+		return engineOnlyFieldError(field.field, OptimizerMayfly, c.ResolvedOptimizer())
 	}
 
-	return nil
+	if c.ResolvedOptimizer() == OptimizerCMAES {
+		return c.validateCMAESConfig()
+	}
+
+	return c.refuseCMAESOnlyFields()
+}
+
+func engineOnlyFieldError(field string, owner, running Optimizer) error {
+	return invalid(field, fmt.Sprintf(
+		"is read only by the %q optimizer, but this job runs %q", owner, running))
 }
 
 // validateVariant enforces the MayFly variant set. It runs only for MayFly

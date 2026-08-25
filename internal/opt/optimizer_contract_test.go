@@ -65,6 +65,8 @@ func newContractOptimizer(t *testing.T, optimizer app.Optimizer) opt.Optimizer {
 		return built
 	case app.OptimizerDragonfly:
 		return opt.NewDragonfly(5, 20, 1234)
+	case app.OptimizerCMAES:
+		return opt.NewCMAES(5, 20, 1234)
 	default:
 		t.Fatalf("app accepts optimizer %q that opt cannot construct", optimizer)
 

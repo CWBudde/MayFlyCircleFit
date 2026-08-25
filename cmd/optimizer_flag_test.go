@@ -12,6 +12,7 @@ import (
 const (
 	mayflyAdapterType    = "*opt.MayflyAdapter"
 	dragonflyAdapterType = "*opt.DragonflyAdapter"
+	cmaesAdapterType     = "*opt.CMAESAdapter"
 )
 
 func TestNewStageOptimizerSelectsTheConfiguredEngine(t *testing.T) {
@@ -28,6 +29,7 @@ func TestNewStageOptimizerSelectsTheConfiguredEngine(t *testing.T) {
 		{name: "absent", optimizer: "", variant: app.VariantStandard, want: mayflyAdapterType},
 		{name: "mayfly", optimizer: app.OptimizerMayfly, variant: app.VariantDESMA, want: mayflyAdapterType},
 		{name: "dragonfly", optimizer: app.OptimizerDragonfly, want: dragonflyAdapterType},
+		{name: "cmaes", optimizer: app.OptimizerCMAES, want: cmaesAdapterType},
 	}
 
 	for _, test := range tests {
@@ -52,6 +54,10 @@ func TestNewStageOptimizerSelectsTheConfiguredEngine(t *testing.T) {
 				}
 			case *opt.DragonflyAdapter:
 				if test.want != dragonflyAdapterType {
+					t.Errorf("optimizer = %T, want %s", optimizer, test.want)
+				}
+			case *opt.CMAESAdapter:
+				if test.want != cmaesAdapterType {
 					t.Errorf("optimizer = %T, want %s", optimizer, test.want)
 				}
 			default:
@@ -114,5 +120,21 @@ func TestOptimizerLibraryVersionFollowsTheEngine(t *testing.T) {
 
 	if got := optimizerLibraryVersion(app.OptimizerMayfly); got != opt.LibraryVersion() {
 		t.Errorf("optimizerLibraryVersion(mayfly) = %q, want the MayFly version", got)
+	}
+
+	if got := optimizerLibraryVersion(app.OptimizerCMAES); got != opt.CMAESLibraryVersion() {
+		t.Errorf("optimizerLibraryVersion(cmaes) = %q, want the CMA-ES version", got)
+	}
+}
+
+func TestRunCommandExposesCMAESFlags(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{
+		"optimizer", "initial-sigma", "covariance-mode", "active-cma", "restart-strategy",
+	} {
+		if runCmd.Flags().Lookup(name) == nil {
+			t.Errorf("run command has no --%s flag", name)
+		}
 	}
 }

@@ -46,7 +46,7 @@ cgo OpenCL package does not import the assembly-bearing renderer package.
 | `internal/fit` | Image objectives and architecture-specific SSD/SAD dispatch | Optimizer lifecycle or application configuration |
 | `internal/fit/renderer` | CPU rendering, backend adapters, sessions, joint/sequential/batch pipelines, polishing | Job state or artifact paths |
 | `internal/fit/renderer/opencl` | cgo OpenCL device state, kernels, buffers, and readback | CPU renderer imports or server policy |
-| `internal/opt` | Optimizer interface; MayFly v0.7.1, Dragonfly v0.1.0, and pinned CMA-ES adapters. `JobConfig.optimizer` currently selects MayFly or Dragonfly; CMA-ES configuration is the follow-on phase. | Rendering semantics |
+| `internal/opt` | Optimizer interface; MayFly v0.7.1, Dragonfly v0.1.0, and pinned CMA-ES adapters. `JobConfig.optimizer` selects all three engines. | Rendering semantics |
 | `internal/server` | Trusted-local HTTP boundary, jobs/workers, schedules, SSE, and UI read models | Artifact file layout |
 | `internal/store` | Checkpoint, trace, schedule, metadata-index, and artifact ownership | CLI/API defaulting |
 | `internal/ui` | templ sources, generated Go, and embedded static assets | Authoritative live browser state |

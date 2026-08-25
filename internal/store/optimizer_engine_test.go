@@ -30,6 +30,12 @@ func TestNewCheckpointRecordsTheEngineAndItsVersion(t *testing.T) {
 			wantEngine:  app.OptimizerDragonfly,
 			wantVersion: opt.DragonflyLibraryVersion(),
 		},
+		{
+			name:        "cmaes",
+			optimizer:   app.OptimizerCMAES,
+			wantEngine:  app.OptimizerCMAES,
+			wantVersion: opt.CMAESLibraryVersion(),
+		},
 		// A configuration written before the field existed records no engine
 		// and keeps MayFly's version, exactly as it always did.
 		{name: "absent", optimizer: "", wantEngine: "", wantVersion: opt.LibraryVersion()},
@@ -90,5 +96,37 @@ func TestCheckpointRoundTripsTheEngine(t *testing.T) {
 
 	if legacy.Config.ResolvedOptimizer() != app.OptimizerMayfly {
 		t.Errorf("legacy ResolvedOptimizer() = %q, want %q", legacy.Config.ResolvedOptimizer(), app.OptimizerMayfly)
+	}
+}
+
+func TestCheckpointRoundTripsCMAESConfiguration(t *testing.T) {
+	t.Parallel()
+
+	sigma := 0.2
+	active := false
+	config := store.JobConfig{
+		RefPath: "ref.png", Circles: 1, Optimizer: app.OptimizerCMAES,
+		InitialSigma: &sigma, ActiveCMA: &active,
+		CovarianceMode: app.CMAESCovarianceBlock, RestartStrategy: app.CMAESRestartBIPOP,
+	}
+
+	encoded, err := json.Marshal(store.NewCheckpoint("job", make([]float64, 7), 1, 2, 3, config))
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	var decoded store.Checkpoint
+
+	err = json.Unmarshal(encoded, &decoded)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if decoded.Config.ResolvedOptimizer() != app.OptimizerCMAES ||
+		decoded.Config.ResolvedCMAESInitialSigma() != sigma ||
+		decoded.Config.ResolvedCMAESActive() ||
+		decoded.Config.ResolvedCMAESCovarianceMode() != app.CMAESCovarianceBlock ||
+		decoded.Config.ResolvedCMAESRestartStrategy() != app.CMAESRestartBIPOP {
+		t.Fatalf("decoded CMA-ES config = %+v", decoded.Config)
 	}
 }
