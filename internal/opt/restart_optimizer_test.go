@@ -189,7 +189,11 @@ func TestWithRestartsForwardsDiagnosticsFromNonImprovingAttempts(t *testing.T) {
 		spreads []float64
 	)
 
-	lifecycle := WithRestarts(base, 2).(LifecycleOptimizer)
+	lifecycle, ok := WithRestarts(base, 2).(LifecycleOptimizer)
+	if !ok {
+		t.Fatal("WithRestarts did not preserve lifecycle optimization")
+	}
+
 	_, err := lifecycle.RunContext(
 		context.Background(), Problem{},
 		RunOptions{Observer: func(progress Progress) {
