@@ -30,8 +30,10 @@ confused.
 Joint mode ignores stage-level convergence. In staged modes, optimizer-level
 stopping applies to each stage independently, so it can shorten stages without
 ending the run; the run then reports `completed`. Reported termination reasons
-are `completed`, `cancelled`, `target_cost`, `stagnation`, and
-`stage_convergence`. MayFly evaluation parallelism (`EnableParallel`) is opt-in
+are `completed`, `cancelled`, `target_cost`, `stagnation`, `convergence`, and
+`stage_convergence`. `convergence` is CMA-ES only: it covers the TolX, TolFun,
+TolXUp, condition-number, and no-effect criteria, which stop a run below its
+iteration cap. MayFly evaluation parallelism (`EnableParallel`) is opt-in
 through `--parallel-evaluation`, sized by `--evaluation-workers`, and off by
 default. It requires a backend that can hand out independent renderer sessions,
 so it applies to the CPU backend only; OpenCL declines it with a warning and

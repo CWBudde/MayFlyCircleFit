@@ -8,6 +8,18 @@ release is declared by this file.
 
 ### Added
 
+- A pinned CMA-ES adapter at `internal/opt`, with normalized mixed-range
+  parameters, repair and nonlinear-constraint mapping, restart-from-best and
+  alternative seeds, measured progress, epoch callbacks, early stopping,
+  cancellation, and serial/parallel bit equivalence. It intentionally composes
+  with the consumer's fixed-attempt `WithRestarts` wrapper rather than silently
+  nesting the library's IPOP/BIPOP scheduler. CLI, server, schedule, and
+  CMA-ES-specific configuration wiring remain a follow-on phase.
+- A `convergence` termination reason. CMA-ES stops on its own distribution-aware
+  criteria (TolX, TolFun, TolXUp, condition number, no-effect axis and
+  coordinate) well below the iteration cap, and reporting those as `completed`
+  would have contradicted that value's promise that the budget was consumed and
+  would have kept such stages out of `stages_stopped_early`.
 - `run --polishing-pop` and the `polishingPopSize` configuration field give
   polishing a population of its own. It used to borrow the job-wide `popSize`,
   which is sized for the whole vector, so a 512-circle run optimized an

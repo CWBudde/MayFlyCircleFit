@@ -108,7 +108,7 @@ func jobFromCheckpoint(checkpoint *store.Checkpoint, project app.Project) *Job {
 	state := StateCancelled
 
 	switch checkpoint.Termination {
-	case "completed", "target_cost", "stagnation", "stage_convergence", "refill_limit":
+	case "completed", "target_cost", "stagnation", "convergence", "stage_convergence", "refill_limit":
 		state = StateCompleted
 	case "failed":
 		state = StateFailed

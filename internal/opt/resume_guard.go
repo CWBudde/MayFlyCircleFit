@@ -7,7 +7,9 @@ import (
 )
 
 // ErrOptimizerVersionMismatch reports that a checkpoint was written by an
-// optimizer version other than the one compiled into this binary.
+// optimizer version other than the one compiled into this binary. The guard is
+// library-neutral: MayFly, Dragonfly, and CMA-ES all use the same exact-version
+// rule, with only measured behaviour-neutral pairs admitted below.
 //
 // The optimizer version is a comparability boundary rather than a cosmetic
 // detail: v0.5.0 scales the crossover offspring count with the population where
@@ -60,9 +62,8 @@ func versionsInterchangeable(library, recorded, running string) bool {
 // version recorded may be resumed by a build linking optimizer version running.
 //
 // library names the optimizer both versions belong to, so a checkpoint written
-// by an engine other than MayFly is not described as a MayFly one. An empty
-// name reads as MayFly, which is what every caller predating a second engine
-// meant.
+// by Dragonfly or CMA-ES is not described as a MayFly one. An empty name reads
+// as MayFly, which is what every caller predating a second engine meant.
 //
 // The running version is a parameter rather than a LibraryVersion call so the
 // decision stays a pure function: a test binary carries no module information,

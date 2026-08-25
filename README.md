@@ -230,7 +230,8 @@ reproducible for a given seed:
 by `status` and written to the trace. In sequential and batch modes these apply
 to each stage, so they can shorten stages without ending the run. `status` and
 `checkpoints list` report why a run stopped: `completed`, `cancelled`,
-`target_cost`, `stagnation`, or `stage_convergence`.
+`target_cost`, `stagnation`, `convergence`, or `stage_convergence`. Only
+CMA-ES reports `convergence`, for its own distribution-aware criteria.
 
 Use `--variant` to select the MayFly algorithm variant: `standard`, `desma`,
 `olce`, `eobbma`, `gsasma`, `mpma`, or `aoblmoa`.

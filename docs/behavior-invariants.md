@@ -35,10 +35,12 @@ Rendering-side invariants live in
   independent renderer session per concurrent evaluation and reproduces
   bit-identically for a fixed seed at any worker count — and, as of MayFly
   v0.7.0, bit-identically to the *serial* run of that seed as well, for every
-  variant and for Dragonfly. A campaign is therefore comparable across the
+  variant, Dragonfly, and CMA-ES. A campaign is therefore comparable across the
   setting. `TestParallelEvaluationMatchesSerial` and
-  `TestDragonflyParallelEvaluationMatchesSerial` pin it, so a library bump that
-  reintroduces the divergence fails rather than quietly invalidating a
+  `TestDragonflyParallelEvaluationMatchesSerial` pin the selectable engines;
+  `TestCMAESParallelEvaluationMatchesSerial` independently pins the CMA-ES
+  adapter before its configuration surface lands. A library bump that
+  reintroduces divergence therefore fails rather than quietly invalidating a
   comparison.
 - **Runs recorded before the v0.7.0 pin do not have that property.** Under
   v0.6.0 and earlier the serial male loop updated the global best mid-generation
@@ -282,6 +284,14 @@ Rendering-side invariants live in
   handed. Attempts vary the run seed on a dimension of their own, so epochs
   nested inside an attempt cannot alias onto another attempt's seed, and a
   restarted run stays reproducible for a fixed seed.
+- **CMA-ES uses the consumer's restart wrapper in this integration phase.**
+  `WithRestarts(NewCMAES(...), N)` therefore means the same fixed number of
+  independent cold attempts, seed offsets, iteration accounting, progress, and
+  epoch boundaries as it does for the other adapters. The adapter does not
+  silently invoke the library's IPOP or BIPOP scheduler underneath that
+  wrapper. Those schedulers require one shared evaluation budget and a strategy
+  knob; exposing them belongs to the CMA-ES configuration phase, where their
+  semantics can replace rather than multiply `optimizerRestarts` deliberately.
 - **Restarted progress stays monotonic.** Optimizer progress is best-so-far. A
   fresh attempt's early costs are worse than what an earlier attempt already
   reached, so only improvements are forwarded, and an epoch boundary carries
@@ -339,6 +349,11 @@ Two distinct mechanisms exist and must not be conflated.
   config) counts whole circles or batches, uses a relative improvement ratio,
   and applies to sequential and batch only; `OptimizeJointContext` discards it.
   Only this tracker reports `stage_convergence`.
+- **Optimizer-internal convergence** is CMA-ES's own distribution-aware set
+  (TolX, TolFun, TolXUp, condition number, no-effect axis and coordinate). It is
+  always on inside the library and reports `convergence`, which counts as an
+  early stop rather than as budget completion. MayFly and Dragonfly have no such
+  criteria and never report it.
 - **Optimizer-level stopping** (`--stop-*`, `Stop*` config) is evaluated per
   iteration inside one optimizer run, uses an absolute improvement, and applies
   in every mode. It is off by default, and `ApplyDefaults` must never fill those

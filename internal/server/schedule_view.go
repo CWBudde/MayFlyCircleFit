@@ -238,7 +238,7 @@ func chainStageKindFromInfo(info store.CheckpointInfo) string {
 // rather than claiming a campaign completed.
 func chainStageState(termination string) string {
 	switch termination {
-	case "completed", "target_cost", "stagnation", "stage_convergence", "refill_limit":
+	case "completed", "target_cost", "stagnation", "convergence", "stage_convergence", "refill_limit":
 		return string(StateCompleted)
 	case "failed":
 		return string(StateFailed)
