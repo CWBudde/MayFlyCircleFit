@@ -29,6 +29,8 @@ const (
 	defaultBudget  = 6_502_400
 	defaultProject = "cmaes-phase11"
 	defaultPop     = 1024
+	// resultColumns is the width of the header writeResults emits.
+	resultColumns = 12
 )
 
 type arm struct {
@@ -140,6 +142,18 @@ func parseFlags() settings {
 func campaignArms(budget int) ([]arm, error) {
 	if budget <= 0 || budget%defaultPop != 0 {
 		return nil, fmt.Errorf("budget %d must be positive and divisible by population %d", budget, defaultPop)
+	}
+	// The two Mayfly arms have a fixed campaign shape -- 2048 iterations,
+	// however they are split across restarts -- whose cost is defaultBudget
+	// evaluations. Only the CMA-ES arms derive their length from the budget,
+	// so a larger one would fund them past anything the Mayfly arms ever
+	// reach and the collector would still print the comparison as
+	// evaluation-matched. Reject that instead of reporting it.
+	if budget > defaultBudget {
+		return nil, fmt.Errorf(
+			"budget %d exceeds the fixed Mayfly campaign budget %d; the arms would no longer be evaluation-matched",
+			budget, defaultBudget,
+		)
 	}
 
 	return []arm{
@@ -552,15 +566,9 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 			}
 			lastBucket = bucket
 			diagnostic := entry.OptimizerDiagnostics
-			populationSpread := ""
-			sigma := ""
-			conditionNumber := ""
-			if diagnostic.Sigma == 0 && diagnostic.ConditionNumber == 0 {
-				populationSpread = strconv.FormatFloat(diagnostic.PopulationSpread, 'g', 17, 64)
-			} else {
-				sigma = strconv.FormatFloat(diagnostic.Sigma, 'g', 17, 64)
-				conditionNumber = strconv.FormatFloat(diagnostic.ConditionNumber, 'g', 17, 64)
-			}
+			populationSpread, sigma, conditionNumber := formatDiagnostics(
+				diagnostic.PopulationSpread, diagnostic.Sigma, diagnostic.ConditionNumber,
+			)
 			record := []string{
 				record.Arm, strconv.Itoa(record.Block), strconv.FormatInt(record.Seed, 10),
 				strconv.Itoa(entry.Iteration), strconv.Itoa(entry.Evaluations),
@@ -575,6 +583,14 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 	writer.Flush()
 
 	return writer.Error()
+}
+
+func formatDiagnostics(spread, sigma, conditionNumber float64) (string, string, string) {
+	if sigma == 0 && conditionNumber == 0 {
+		return strconv.FormatFloat(spread, 'g', 17, 64), "", ""
+	}
+
+	return "", strconv.FormatFloat(sigma, 'g', 17, 64), strconv.FormatFloat(conditionNumber, 'g', 17, 64)
 }
 
 func analyze(path string) error {
@@ -635,22 +651,75 @@ func readResults(path string) ([]resultRow, error) {
 	}
 
 	rows := make([]resultRow, 0, 60)
-	for _, record := range records[1:] {
-		block, _ := strconv.Atoi(record[1])
-		seed, _ := strconv.ParseInt(record[2], 10, 64)
-		score, _ := strconv.ParseFloat(record[7], 64)
-		scored, _ := strconv.Atoi(record[8])
-		final, _ := strconv.Atoi(record[9])
-		iterations, _ := strconv.Atoi(record[10])
-		elapsed, _ := strconv.ParseFloat(record[11], 64)
-		rows = append(rows, resultRow{
-			manifestRow: manifestRow{Arm: record[0], Block: block, Seed: seed, JobID: record[3]},
-			State:       record[4], Termination: record[5], OptimizerVersion: record[6], Score: score,
-			ScoredEvaluations: scored, FinalEvaluations: final, Iterations: iterations, ElapsedSeconds: elapsed,
-		})
+	for index, record := range records[1:] {
+		line := index + 2
+		if len(record) != resultColumns {
+			return nil, fmt.Errorf("results line %d has %d columns, want %d", line, len(record), resultColumns)
+		}
+
+		parser := rowParser{record: record, line: line}
+		row := resultRow{
+			manifestRow: manifestRow{
+				Arm: record[0], Block: parser.integer(1), Seed: parser.integer64(2), JobID: record[3],
+			},
+			State: record[4], Termination: record[5], OptimizerVersion: record[6],
+			Score:             parser.float(7),
+			ScoredEvaluations: parser.integer(8),
+			FinalEvaluations:  parser.integer(9),
+			Iterations:        parser.integer(10),
+			ElapsedSeconds:    parser.float(11),
+		}
+		if parser.err != nil {
+			return nil, parser.err
+		}
+
+		rows = append(rows, row)
 	}
 
 	return rows, nil
+}
+
+// rowParser reads the numeric columns of one result record and keeps the first
+// failure. Discarding the strconv errors instead would let a hand-edited or
+// truncated CSV parse as zeros and be reported as a statistic, which is the
+// one failure mode a measurement collector must not have.
+type rowParser struct {
+	record []string
+	err    error
+	line   int
+}
+
+func (p *rowParser) fail(column int, err error) {
+	if p.err == nil {
+		p.err = fmt.Errorf("results line %d column %d (%q): %w", p.line, column+1, p.record[column], err)
+	}
+}
+
+func (p *rowParser) integer(column int) int {
+	value, err := strconv.Atoi(p.record[column])
+	if err != nil {
+		p.fail(column, err)
+	}
+
+	return value
+}
+
+func (p *rowParser) integer64(column int) int64 {
+	value, err := strconv.ParseInt(p.record[column], 10, 64)
+	if err != nil {
+		p.fail(column, err)
+	}
+
+	return value
+}
+
+func (p *rowParser) float(column int) float64 {
+	value, err := strconv.ParseFloat(p.record[column], 64)
+	if err != nil {
+		p.fail(column, err)
+	}
+
+	return value
 }
 
 func costs(rows []resultRow) []float64 {
