@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/mayflycirclefit/internal/opt"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 	"github.com/google/uuid"
 )
@@ -91,14 +92,15 @@ type Job struct {
 // MetricSample is a live-history point used by the detail page. The sampling
 // cadence and job iteration limit bound this in-memory history.
 type MetricSample struct {
-	Iteration    int       `json:"iteration"`
-	Cost         float64   `json:"cost"`
-	Evaluations  int       `json:"evaluations"`
-	PSNR         *float64  `json:"psnr"`
-	PSNRInfinite bool      `json:"psnrInfinite,omitempty"`
-	SSIM         *float64  `json:"ssim,omitempty"`
-	CPS          float64   `json:"cps"`
-	Timestamp    time.Time `json:"timestamp"`
+	OptimizerDiagnostics *opt.SearchDiagnostics `json:"optimizerDiagnostics,omitempty"`
+	Iteration            int                    `json:"iteration"`
+	Cost                 float64                `json:"cost"`
+	Evaluations          int                    `json:"evaluations"`
+	PSNR                 *float64               `json:"psnr"`
+	PSNRInfinite         bool                   `json:"psnrInfinite,omitempty"`
+	SSIM                 *float64               `json:"ssim,omitempty"`
+	CPS                  float64                `json:"cps"`
+	Timestamp            time.Time              `json:"timestamp"`
 }
 
 // JobSummary is the detached projection used by collection endpoints. A job

@@ -26,10 +26,22 @@ type Candidate struct {
 
 // Progress is an immutable best-so-far optimizer snapshot.
 type Progress struct {
+	Diagnostics *SearchDiagnostics
 	Iterations  int
 	Evaluations int
 	BestParams  []float64
 	BestCost    float64
+}
+
+// SearchDiagnostics records optimizer-specific distribution state at the
+// same iteration boundary as Progress. Fields that do not apply to an engine
+// remain zero: Mayfly reports PopulationSpread, while CMA-ES reports Sigma and
+// ConditionNumber. Diagnostics are opt-in because observing Mayfly's complete
+// population requires a deep copy of every individual.
+type SearchDiagnostics struct {
+	PopulationSpread float64 `json:"populationSpread,omitempty"`
+	Sigma            float64 `json:"sigma,omitempty"`
+	ConditionNumber  float64 `json:"conditionNumber,omitempty"`
 }
 
 // Observer consumes synchronous best-so-far snapshots.

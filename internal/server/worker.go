@@ -318,6 +318,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 
 		sample := qualitySample(iterations, progress.BestCost, sampledSSIM, now)
 		sample.Evaluations = evaluations
+		sample.OptimizerDiagnostics = progress.Diagnostics
 
 		sample.CPS = throughputCPS(progress.Evaluations, job.Config.Circles, now.Sub(start).Seconds())
 		if traceWriter != nil {
@@ -880,7 +881,7 @@ func newStageOptimizer(config store.JobConfig, rend renderer.Renderer, seed int6
 		return newCMAESOptimizer(config, rend, seed), nil
 	}
 
-	optimizer, err := opt.NewMayflyVariant(string(config.Variant), config.Iters, config.PopSize, seed,
+	mayflyOptions := []opt.MayflyOption{
 		opt.WithLogger(slog.Default()), opt.WithEarlyStop(buildEarlyStop(config)),
 		opt.WithCrossoverCount(config.CrossoverCount),
 		// Optimizer stages only. Polishing runs its own smaller
@@ -892,7 +893,15 @@ func newStageOptimizer(config store.JobConfig, rend renderer.Renderer, seed int6
 		opt.OptionalFloat(config.DanceDamp, opt.WithDanceDamp),
 		opt.OptionalFloat(config.AquilaWeight, opt.WithAquilaWeight),
 		opt.OptionalFloat(config.OppositionProbability, opt.WithOppositionProbability),
-		parallelEvaluationOption(config, rend))
+		parallelEvaluationOption(config, rend),
+	}
+	if config.EnableOptimizerDiagnostics {
+		mayflyOptions = append(mayflyOptions, opt.WithMayflySearchDiagnostics())
+	}
+
+	optimizer, err := opt.NewMayflyVariant(
+		string(config.Variant), config.Iters, config.PopSize, seed, mayflyOptions...,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create optimizer: %w", err)
 	}
@@ -912,6 +921,9 @@ func newCMAESOptimizer(config store.JobConfig, rend renderer.Renderer, seed int6
 		),
 		opt.WithCMAESActiveCMA(config.ResolvedCMAESActive()),
 		opt.WithCMAESRestartStrategy(string(config.ResolvedCMAESRestartStrategy())),
+	}
+	if config.EnableOptimizerDiagnostics {
+		options = append(options, opt.WithCMAESSearchDiagnostics())
 	}
 
 	width, granted := renderer.ParallelEvaluationWidth(rend, config.ParallelEvaluation)

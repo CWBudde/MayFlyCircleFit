@@ -60,6 +60,9 @@ type MayflyAdapter struct {
 	// is the library's uniform default, which is what every run recorded
 	// before this option existed used.
 	qmcInit string
+	// searchDiagnostics opts into the library's deep population snapshots so
+	// the adapter can report normalized RMS pairwise spread.
+	searchDiagnostics bool
 }
 
 // Stop configures optimizer-level early stopping, evaluated per iteration
@@ -173,6 +176,13 @@ func WithOppositionProbability(probability float64) MayflyOption {
 // own measurement of it does and does not support.
 func WithQMCInit(sequence string) MayflyOption {
 	return func(m *MayflyAdapter) { m.qmcInit = sequence }
+}
+
+// WithMayflySearchDiagnostics reports normalized RMS pairwise distance across
+// the male population with each progress update. Population snapshots are
+// deliberately opt-in because the Mayfly library deep-copies every member.
+func WithMayflySearchDiagnostics() MayflyOption {
+	return func(m *MayflyAdapter) { m.searchDiagnostics = true }
 }
 
 // WithLogger reports Mayfly lifecycle events through logger. Per-iteration
@@ -535,6 +545,8 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 		runOptions = append(runOptions, mayfly.WithLogger(mayflyLogger{logger: m.logger}))
 	}
 
+	var pendingProgress *Progress
+
 	runOptions = append(runOptions, mayfly.WithProgressObserver(func(progress mayfly.Progress) {
 		params := denormalize(progress.Best.Position)
 		repairCandidate(problem, params)
@@ -561,13 +573,31 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 				BestParams:  append([]float64(nil), best.BestParams...),
 				BestCost:    best.BestCost,
 			}
-			if options.ProgressMapper != nil {
-				reported = options.ProgressMapper(reported)
+			if m.searchDiagnostics {
+				pendingProgress = &reported
+
+				return
 			}
 
-			options.Observer(reported)
+			reportObservedProgress(options, reported)
 		}
 	}))
+
+	if m.searchDiagnostics && options.Observer != nil {
+		runOptions = append(runOptions, mayfly.WithPopulationObserver(func(snapshot mayfly.PopulationSnapshot) {
+			if pendingProgress == nil || pendingProgress.Iterations != snapshot.Iteration {
+				return
+			}
+
+			reported := *pendingProgress
+			reported.Diagnostics = &SearchDiagnostics{
+				PopulationSpread: rmsPairwiseSpread(snapshot.Males),
+			}
+			pendingProgress = nil
+
+			reportObservedProgress(options, reported)
+		}))
+	}
 
 	result, err := mayfly.OptimizeContext(ctx, config, runOptions...)
 	if err != nil {
@@ -599,6 +629,49 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 	best.Termination = terminationFromMayfly(result.TerminationReason)
 
 	return best, nil
+}
+
+func reportObservedProgress(options RunOptions, progress Progress) {
+	if options.ProgressMapper != nil {
+		progress = options.ProgressMapper(progress)
+	}
+
+	options.Observer(progress)
+}
+
+// rmsPairwiseSpread uses the identity
+// sum(i<j)||x_i-x_j||^2 = n*sum||x_i||^2 - ||sum x_i||^2, avoiding an
+// O(population^2) observer on the measurement path.
+func rmsPairwiseSpread(population []mayfly.Mayfly) float64 {
+	if len(population) < 2 {
+		return 0
+	}
+
+	dimension := len(population[0].Position)
+	sums := make([]float64, dimension)
+	sumSquares := 0.0
+
+	for _, individual := range population {
+		for coordinate, value := range individual.Position {
+			sums[coordinate] += value
+			sumSquares += value * value
+		}
+	}
+
+	n := float64(len(population))
+	pairwiseSquares := n * sumSquares
+
+	for _, sum := range sums {
+		pairwiseSquares -= sum * sum
+	}
+
+	if pairwiseSquares < 0 {
+		pairwiseSquares = 0
+	}
+
+	pairs := n * (n - 1) / 2
+
+	return math.Sqrt(pairwiseSquares / pairs)
 }
 
 func repairCandidate(problem Problem, params []float64) {

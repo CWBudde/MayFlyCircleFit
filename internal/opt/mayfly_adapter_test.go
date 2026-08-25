@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+
+	"github.com/cwbudde/mayfly"
 )
 
 // Sphere function: f(x) = sum(x_i^2), minimum at origin.
@@ -18,6 +20,42 @@ func sphere(x []float64) float64 {
 	}
 
 	return sum
+}
+
+func TestMayflySearchDiagnosticsReportNormalizedRMSPairwiseSpread(t *testing.T) {
+	t.Parallel()
+
+	population := []mayfly.Mayfly{
+		{Position: []float64{0, 0}},
+		{Position: []float64{3, 4}},
+	}
+	if got := rmsPairwiseSpread(population); got != 5 {
+		t.Fatalf("rmsPairwiseSpread() = %v, want 5", got)
+	}
+
+	var updates []Progress
+
+	optimizer, ok := NewMayfly(3, 20, 42, WithMayflySearchDiagnostics()).(*MayflyAdapter)
+	if !ok {
+		t.Fatal("NewMayfly() did not return *MayflyAdapter")
+	}
+
+	_, err := optimizer.RunContext(context.Background(), Problem{
+		Eval: sphere, Lower: []float64{-10, -10}, Upper: []float64{10, 10}, Dim: 2,
+	}, RunOptions{Observer: func(progress Progress) { updates = append(updates, progress) }})
+	if err != nil {
+		t.Fatalf("RunContext() error = %v", err)
+	}
+
+	if len(updates) != 3 {
+		t.Fatalf("diagnostic updates = %d, want 3", len(updates))
+	}
+
+	for _, update := range updates {
+		if update.Diagnostics == nil || update.Diagnostics.PopulationSpread <= 0 {
+			t.Fatalf("diagnostic update = %+v, want positive population spread", update)
+		}
+	}
 }
 
 func TestMayflyAdapterLifecycleProgressAndCancellation(t *testing.T) {

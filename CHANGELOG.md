@@ -8,6 +8,12 @@ release is declared by this file.
 
 ### Added
 
+- Opt-in `enableOptimizerDiagnostics` trace samples. Mayfly jobs record RMS
+  pairwise population spread in normalized optimizer space; CMA-ES jobs record
+  sigma and covariance condition number at the same iteration boundary as
+  cost. The Phase 11 campaign driver under `scripts/cmaes-measurement` submits
+  the evaluation-matched five-arm design and produces its paired statistics
+  and downsampled mechanism trajectories.
 - A pinned CMA-ES adapter at `internal/opt`, with normalized mixed-range
   parameters, repair and nonlinear-constraint mapping, restart-from-best and
   alternative seeds, measured progress, epoch callbacks, early stopping,

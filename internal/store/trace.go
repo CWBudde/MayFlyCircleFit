@@ -9,19 +9,22 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/cwbudde/mayflycirclefit/internal/opt"
 )
 
 // TraceEntry represents a single entry in the cost history trace.
 type TraceEntry struct {
-	Iteration    int       `json:"iteration"`
-	Cost         float64   `json:"cost"`
-	Evaluations  int       `json:"evaluations"`
-	PSNR         *float64  `json:"psnr"`
-	PSNRInfinite bool      `json:"psnrInfinite,omitempty"`
-	SSIM         *float64  `json:"ssim,omitempty"`
-	CPS          float64   `json:"cps"`
-	Timestamp    time.Time `json:"timestamp"`
-	Params       []float64 `json:"params,omitempty"`
+	OptimizerDiagnostics *opt.SearchDiagnostics `json:"optimizerDiagnostics,omitempty"`
+	Iteration            int                    `json:"iteration"`
+	Cost                 float64                `json:"cost"`
+	Evaluations          int                    `json:"evaluations"`
+	PSNR                 *float64               `json:"psnr"`
+	PSNRInfinite         bool                   `json:"psnrInfinite,omitempty"`
+	SSIM                 *float64               `json:"ssim,omitempty"`
+	CPS                  float64                `json:"cps"`
+	Timestamp            time.Time              `json:"timestamp"`
+	Params               []float64              `json:"params,omitempty"`
 }
 
 // TraceWriter writes buffered JSONL entries and is safe for concurrent use.
