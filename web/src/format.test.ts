@@ -2,10 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
 	acceptedSweepsTitle,
 	campaignCostPointColor,
+	campaignPerCircleRate,
+	campaignPerHourRate,
+	campaignProjectedFinish,
+	campaignProjectedPlanEnd,
+	campaignProjectionBasis,
 	campaignProvenance,
+	campaignRemainingCircles,
+	campaignRemainingElapsed,
 	campaignStageCount,
 	campaignTitle,
 	campaignURL,
+	campaignWarningHeading,
 	formatAcceptedSweeps,
 	formatChartCost,
 	formatCost,
@@ -336,5 +344,75 @@ describe("campaignCostPointColor", () => {
 	];
 	it.each(cases)("paints a %j stage %j", (kind, want) => {
 		expect(campaignCostPointColor(kind, palette)).toBe(want);
+	});
+});
+
+// The projection formatters mirror the ones in schedule.templ. The fixture is
+// the measured growth campaign the estimator was built from: 2000 circles at
+// cost 64.602, a trailing rate of 0.017697 cost per circle, and 1000 circles
+// left to the plan's 3000 ceiling.
+const projectionFixture = {
+	projected: true,
+	samples: 3,
+	recentLegs: 1,
+	recentCircles: 1000,
+	recentElapsedSec: 3360,
+	recentGainPerCircle: 0.017697,
+	recentGainPerHour: 18.96,
+	latestCircles: 2000,
+	latestCost: 64.602,
+	remainingCircles: 1000,
+	costAtPlanEnd: 46.905,
+	planEndPsnr: 31.42,
+	planEndPsnrInfinite: false,
+	hasPlanEndPsnr: true,
+	hasCircleCeiling: true,
+	remainingElapsedSec: 5760,
+	costAtFinish: 46.905,
+	finishPsnr: 31.42,
+	finishPsnrInfinite: false,
+	hasFinishPsnr: true,
+	hasTimeBudget: true,
+};
+
+describe("campaignWarningHeading", () => {
+	it("agrees with the list under it", () => {
+		expect(campaignWarningHeading(["one"])).toBe("Advisory:");
+		expect(campaignWarningHeading(["one", "two"])).toBe("Advisories:");
+	});
+});
+
+describe("the projection formatters", () => {
+	it("prints the trailing rates the projections were extrapolated with", () => {
+		expect(campaignPerCircleRate(projectionFixture)).toBe(
+			"0.017697 cost/circle over the last 1000 circles");
+		expect(campaignPerHourRate(projectionFixture)).toBe("18.96 cost/hour over the last 56m0s");
+	});
+
+	it("names the ceiling as well as the shortfall", () => {
+		expect(campaignRemainingCircles(projectionFixture)).toBe("1000 circles to 3000");
+		expect(campaignRemainingElapsed(projectionFixture)).toBe("1h36m0s");
+	});
+
+	it("parenthesises the PSNR beside the cost it restates", () => {
+		expect(campaignProjectedPlanEnd(projectionFixture)).toBe("46.905 (PSNR 31.42 dB)");
+		expect(campaignProjectedFinish(projectionFixture)).toBe("46.905 (PSNR 31.42 dB)");
+	});
+
+	// A projected cost that is absent must not be printed as the zero the field
+	// carries: that would report a perfect fit for a campaign nobody estimated.
+	it("prints an absent projection as a dash rather than as zero", () => {
+		const absent = { ...projectionFixture, hasCircleCeiling: false, hasTimeBudget: false, costAtPlanEnd: 0, costAtFinish: 0 };
+		expect(campaignProjectedPlanEnd(absent)).toBe("—");
+		expect(campaignProjectedFinish(absent)).toBe("—");
+	});
+
+	it("says what the estimate rests on, and when it rests on nothing", () => {
+		expect(campaignProjectionBasis(projectionFixture)).toBe(
+			"From 3 measured stages alone, at 2000 circles and cost 64.602. " +
+			"The projections below extrapolate the trailing leg, not the whole campaign.");
+		expect(campaignProjectionBasis({ ...projectionFixture, projected: false })).toBe(
+			"Not enough completed stages to project a cost yet.");
+		expect(campaignPerCircleRate({ ...projectionFixture, projected: false })).toBe("—");
 	});
 });

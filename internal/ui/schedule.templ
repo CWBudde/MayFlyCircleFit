@@ -84,6 +84,88 @@ type Campaign struct {
 
 	Stages []CampaignStage `json:"stages"`
 	Error  string          `json:"error"`
+
+	// Warnings are the document's advisories: settings the campaign runs
+	// exactly as authored and a measurement says are wasted. They sit apart
+	// from Error because nothing went wrong — the campaign is running, and the
+	// note is about how it is spending its budget.
+	Warnings []string `json:"warnings"`
+
+	// Projection is what the measured stages say is still to come, and it is
+	// nil whenever there is nothing to say: a campaign that will not advance
+	// again, or a plan with no stage left.
+	Projection *CampaignProjection `json:"projection,omitempty"`
+}
+
+// CampaignProjection is the estimate card, in the two rates a campaign can be
+// short of: cost removed per circle added, and cost removed per hour spent.
+//
+// It carries both because the objective flips with whichever resource is
+// scarce, and the same settings win one while losing the other. A page showing
+// only one of them would answer a question the reader did not ask.
+//
+// Every optional figure carries its own presence flag, for the reason
+// CampaignStage does: a projected cost of zero is a perfect fit and an
+// unprojected one is silence, and a card whose whole purpose is comparing two
+// estimates must not blur them. As with the stage rows, this package computes
+// no metrics — the rates, the projected costs and their PSNR all arrive
+// derived, and a field the server could not fill stays visibly blank.
+type CampaignProjection struct {
+	// Projected says the estimate rests on enough completed, cost-measured
+	// stages to carry rates at all. When it is false every rate below is zero
+	// and Note says what is missing.
+	Projected bool `json:"projected"`
+
+	// Samples is the completed, cost-measured stages read, and RecentLegs how
+	// many of the gains between them the trailing rates cover. RecentCircles
+	// and RecentElapsedSec are the two denominators those rates were divided
+	// by, so the card can say what a rate was measured over in the units the
+	// campaign was spending rather than in legs, which are this projection's
+	// own internal unit and mean nothing to a reader.
+	Samples          int     `json:"samples"`
+	RecentLegs       int     `json:"recentLegs"`
+	RecentCircles    int     `json:"recentCircles"`
+	RecentElapsedSec float64 `json:"recentElapsedSec"`
+
+	// GainPerCircle and GainPerHour describe the whole measured campaign.
+	// RecentGainPerCircle and RecentGainPerHour cover the trailing window
+	// alone, and are the rates the two projected costs were extrapolated with:
+	// per-circle return decays, so the campaign average over-predicts.
+	GainPerCircle       float64 `json:"gainPerCircle"`
+	GainPerHour         float64 `json:"gainPerHour"`
+	RecentGainPerCircle float64 `json:"recentGainPerCircle"`
+	RecentGainPerHour   float64 `json:"recentGainPerHour"`
+
+	// LatestCircles and LatestCost are where the campaign measurably stands,
+	// which is where both projections start from.
+	LatestCircles int     `json:"latestCircles"`
+	LatestCost    float64 `json:"latestCost"`
+
+	// The circle-ceiling column: the circles the plan still calls for, and the
+	// cost the trailing per-circle rate puts the campaign at once they are
+	// spent.
+	RemainingCircles    int     `json:"remainingCircles"`
+	CostAtPlanEnd       float64 `json:"costAtPlanEnd"`
+	PlanEndPSNR         float64 `json:"planEndPsnr"`
+	PlanEndPSNRInfinite bool    `json:"planEndPsnrInfinite"`
+	HasPlanEndPSNR      bool    `json:"hasPlanEndPsnr"`
+	HasCircleCeiling    bool    `json:"hasCircleCeiling"`
+
+	// The time-budget column: the wall clock the finish projection still
+	// expects, and the cost the trailing per-hour rate puts the campaign at
+	// once it is spent. Seconds rather than a duration, because that is what
+	// CampaignStage.ElapsedSec already uses and both are formatted the same way.
+	RemainingElapsedSec float64 `json:"remainingElapsedSec"`
+	CostAtFinish        float64 `json:"costAtFinish"`
+	FinishPSNR          float64 `json:"finishPsnr"`
+	FinishPSNRInfinite  bool    `json:"finishPsnrInfinite"`
+	HasFinishPSNR       bool    `json:"hasFinishPsnr"`
+	HasTimeBudget       bool    `json:"hasTimeBudget"`
+
+	// Note is the projection's own qualification: why it has no rates yet, or
+	// that the per-circle return is decaying fast enough that even the trailing
+	// estimate reads optimistic.
+	Note string `json:"note"`
 }
 
 // CampaignSummary is a campaign in a listing. It is also the JSON the dashboard
@@ -228,10 +310,23 @@ templ CampaignPage(campaign Campaign) {
 				<strong>Error:</strong> { campaign.Error }
 			</div>
 		}
+		if len(campaign.Warnings) > 0 {
+			<div class="card" style="background-color: var(--warning-bg); color: var(--warning-text);">
+				<strong>{ campaignWarningHeading(campaign.Warnings) }</strong>
+				<ul style="margin: 0.5rem 0 0 1.25rem;">
+					for _, warning := range campaign.Warnings {
+						<li style="margin-bottom: 0.25rem;">{ warning }</li>
+					}
+				</ul>
+			</div>
+		}
 		<div class="card">
 			<h2 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 0.75rem;">Cost against circle count</h2>
 			@CampaignCostPlot(campaign.Stages)
 		</div>
+		if campaign.Projection != nil {
+			@CampaignProjectionCard(*campaign.Projection)
+		}
 		if stage, ok := latestCompletedCampaignStage(campaign.Stages); ok {
 			@ImageViewer(ImageViewerData{
 				JobID:             stage.JobID,
@@ -309,6 +404,53 @@ templ CampaignPage(campaign Campaign) {
 		</div>
 		@IslandBundle()
 		}
+}
+
+// CampaignProjectionCard reports where the fit lands, once against the plan's
+// circle ceiling and once against the finish projection's clock.
+//
+// The two columns sit side by side rather than one under the other because
+// they are alternatives, not steps: a reader is short of circles or short of
+// time, and the card's job is to make the disagreement between the two answers
+// visible when the rates diverge.
+templ CampaignProjectionCard(projection CampaignProjection) {
+	<div class="card">
+		<h2 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 0.25rem;">Where the fit lands</h2>
+		<p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1rem;">
+			{ campaignProjectionBasis(projection) }
+		</p>
+		<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1.5rem;">
+			<div>
+				<h3 style="font-size: 0.9375rem; font-weight: 600; margin-bottom: 0.5rem;">Against a circle ceiling</h3>
+				@campaignProjectionRow("Measured", campaignPerCircleRate(projection))
+				@campaignProjectionRow("Remaining", campaignRemainingCircles(projection))
+				@campaignProjectionRow("Projected", campaignProjectedPlanEnd(projection))
+			</div>
+			<div>
+				<h3 style="font-size: 0.9375rem; font-weight: 600; margin-bottom: 0.5rem;">Against a time budget</h3>
+				@campaignProjectionRow("Measured", campaignPerHourRate(projection))
+				@campaignProjectionRow("Remaining", campaignRemainingElapsed(projection))
+				@campaignProjectionRow("Projected", campaignProjectedFinish(projection))
+			</div>
+		</div>
+		if projection.Note != "" {
+			<p style="color: var(--text-muted); font-size: 0.8125rem; margin-top: 1rem;">{ projection.Note }</p>
+		}
+		<p style="color: var(--text-muted); font-size: 0.8125rem; margin-top: 0.5rem;">
+			The two answers differ because the objective does: while the circle budget is open, gain per
+			hour decides; against a fixed ceiling, gain per circle does. See <code>docs/schedule-format.md</code>.
+		</p>
+	</div>
+}
+
+// campaignProjectionRow is one labelled figure. The label column is fixed so
+// the two projections line up with each other, which is the comparison the
+// card exists for.
+templ campaignProjectionRow(label string, value string) {
+	<div style="display: flex; gap: 0.75rem; font-size: 0.875rem; margin-bottom: 0.25rem;">
+		<span style="color: var(--text-muted); min-width: 5.5rem;">{ label }</span>
+		<span>{ value }</span>
+	</div>
 }
 
 // CampaignNotFound is the campaign counterpart of JobNotFound.
@@ -644,6 +786,110 @@ func formatCampaignElapsed(stage CampaignStage) string {
 		return "—"
 	}
 	return time.Duration(stage.ElapsedSec * float64(time.Second)).Round(time.Second).String()
+}
+
+// campaignWarningHeading labels the advisory card. A card that said
+// "Advisories: 1 stage…" would read as a count of nothing in particular, so the
+// heading agrees with the list under it instead.
+func campaignWarningHeading(warnings []string) string {
+	if len(warnings) == 1 {
+		return "Advisory:"
+	}
+	return "Advisories:"
+}
+
+// campaignProjectionBasis says what the estimate was built from, so a reader
+// can weigh it before reading it.
+func campaignProjectionBasis(projection CampaignProjection) string {
+	if !projection.Projected {
+		return "Not enough completed stages to project a cost yet."
+	}
+	return fmt.Sprintf(
+		"From %s alone, at %d circles and cost %.3f. The projections below extrapolate the trailing %s, not the whole campaign.",
+		countedCampaignStages(projection.Samples), projection.LatestCircles, projection.LatestCost,
+		countedCampaignLegs(projection.RecentLegs))
+}
+
+// campaignPerCircleRate and campaignPerHourRate print the trailing rate each
+// projection was extrapolated with, rather than the whole-campaign one. The
+// campaign average is shown nowhere on this card for the reason it is not
+// extrapolated: per-circle return decays, so quoting it beside a projection
+// built from a different number would invite the reader to check one against
+// the other.
+func campaignPerCircleRate(projection CampaignProjection) string {
+	if !projection.Projected || projection.RecentGainPerCircle == 0 {
+		return "—"
+	}
+	return fmt.Sprintf("%.6f cost/circle over the last %d circles",
+		projection.RecentGainPerCircle, projection.RecentCircles)
+}
+
+func campaignPerHourRate(projection CampaignProjection) string {
+	if !projection.Projected || projection.RecentGainPerHour == 0 {
+		return "—"
+	}
+	return fmt.Sprintf("%.2f cost/hour over the last %s", projection.RecentGainPerHour,
+		time.Duration(projection.RecentElapsedSec*float64(time.Second)).Round(time.Second))
+}
+
+// campaignRemainingCircles names the ceiling as well as the shortfall, because
+// "1000 circles" alone does not say what the plan is aiming at.
+func campaignRemainingCircles(projection CampaignProjection) string {
+	if projection.RemainingCircles <= 0 {
+		return "—"
+	}
+	return fmt.Sprintf("%d circles to %d", projection.RemainingCircles,
+		projection.LatestCircles+projection.RemainingCircles)
+}
+
+func campaignRemainingElapsed(projection CampaignProjection) string {
+	if projection.RemainingElapsedSec <= 0 {
+		return "—"
+	}
+	return time.Duration(projection.RemainingElapsedSec * float64(time.Second)).Round(time.Second).String()
+}
+
+func campaignProjectedPlanEnd(projection CampaignProjection) string {
+	return formatProjectedCost(projection.HasCircleCeiling, projection.CostAtPlanEnd,
+		projection.HasPlanEndPSNR, projection.PlanEndPSNRInfinite, projection.PlanEndPSNR)
+}
+
+func campaignProjectedFinish(projection CampaignProjection) string {
+	return formatProjectedCost(projection.HasTimeBudget, projection.CostAtFinish,
+		projection.HasFinishPSNR, projection.FinishPSNRInfinite, projection.FinishPSNR)
+}
+
+// formatProjectedCost prints a projected cost with the PSNR the caller derived
+// for it. The PSNR is parenthesised rather than given a column of its own,
+// because it restates the cost beside it instead of adding a second figure.
+func formatProjectedCost(present bool, cost float64, hasPSNR, infinite bool, psnr float64) string {
+	if !present {
+		return "—"
+	}
+	switch {
+	case infinite:
+		return fmt.Sprintf("%.3f (PSNR ∞ dB)", cost)
+	case hasPSNR:
+		return fmt.Sprintf("%.3f (PSNR %.2f dB)", cost, psnr)
+	default:
+		return fmt.Sprintf("%.3f", cost)
+	}
+}
+
+// countedCampaignStages and countedCampaignLegs count in words a sentence can
+// contain, so a card never reads "1 stages" or "1 legs".
+func countedCampaignStages(stages int) string {
+	if stages == 1 {
+		return "1 measured stage"
+	}
+	return fmt.Sprintf("%d measured stages", stages)
+}
+
+func countedCampaignLegs(legs int) string {
+	if legs == 1 {
+		return "leg"
+	}
+	return fmt.Sprintf("%d legs", legs)
 }
 
 func formatAcceptedSweeps(stage CampaignStage) string {

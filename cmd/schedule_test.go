@@ -676,3 +676,227 @@ func decodeFixture(t *testing.T, fixture map[string]any, target any) {
 		t.Fatalf("decode fixture: %v", err)
 	}
 }
+
+// Task 16.9: a document may be valid and still spend its budget on something a
+// measurement says is worthless. The dry run is where an author reads a document
+// before submitting it, so the advisory has to appear there.
+
+// wastefulPopulationDocument raises the population above the default without
+// raising the epochs that would give it somewhere to go. Every stage inherits
+// the base's pair, so one note covers all four.
+const wastefulPopulationDocument = `{
+  "schemaVersion": 1,
+  "name": "population without epochs",
+  "seed": 4242,
+  "base": {"refPath": "assets/ref.png", "mode": "batch", "circles": 8, "batchSize": 8,
+           "iters": 200, "popSize": 100, "optimizerEpochs": 1},
+  "steps": [{"type": "extend", "repeat": 3, "additionalCircles": 8}]
+}`
+
+// TestScheduleDryRunWarnsAboutAPopulationWithoutEpochs is the advisory half of
+// Task 16.9 at the command level: the note is printed with the `!` marker the
+// CLI already uses for a warning that stops nothing, and the plan is printed
+// anyway, because the document is valid and runs exactly as written.
+func TestScheduleDryRunWarnsAboutAPopulationWithoutEpochs(t *testing.T) {
+	_, stub := newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
+		t.Error("a dry run reached the server")
+		writer.WriteHeader(http.StatusInternalServerError)
+	})
+	body := dryRun(t, writeScheduleDocument(t, wastefulPopulationDocument))
+
+	for _, marker := range []string{
+		"! base.popSize 100 with optimizerEpochs 1, on 4 stages:",
+		"raising popSize 30 to 100 at optimizerEpochs 1 moved cost by 0.026 for 2.2x the wall clock",
+		"Raise both or neither.",
+		"See docs/schedule-format.md.",
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("dry run output missing %q:\n%s", marker, firstLines(body, 12))
+		}
+	}
+	// The advisory does not replace the plan: the stage table is still printed,
+	// with the population the document asked for.
+	if !hasRow(body, "0", "base", "8", "200") {
+		t.Errorf("the advisory suppressed the stage table:\n%s", firstLines(body, 12))
+	}
+
+	if !strings.Contains(body, "pop 100") {
+		t.Errorf("the stage table does not report the raised population:\n%s", firstLines(body, 12))
+	}
+
+	select {
+	case path := <-stub.paths:
+		t.Fatalf("the dry run called %q", path)
+	default:
+	}
+}
+
+// TestScheduleDryRunIsSilentWhenTheEpochsAreRaisedToo is the negative control:
+// the same population with the epochs to spend it is not advised against, so
+// the marker is absent rather than merely differently worded.
+func TestScheduleDryRunIsSilentWhenTheEpochsAreRaisedToo(t *testing.T) {
+	_, _ = newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
+		t.Error("a dry run reached the server")
+		writer.WriteHeader(http.StatusInternalServerError)
+	})
+	document := strings.Replace(wastefulPopulationDocument, `"optimizerEpochs": 1`, `"optimizerEpochs": 3`, 1)
+	body := dryRun(t, writeScheduleDocument(t, document))
+
+	for line := range strings.SplitSeq(body, "\n") {
+		if strings.HasPrefix(line, "! ") {
+			t.Errorf("a document that raises both still drew an advisory: %q", line)
+		}
+	}
+
+	if strings.Contains(body, "popSize") {
+		t.Errorf("a document that raises both still mentions popSize:\n%s", firstLines(body, 12))
+	}
+}
+
+// growthCampaignDocument reproduces the shape of the measured growth campaign:
+// three milestones a thousand circles apart, and one shorter extend still to
+// run so both projections have something left to spend.
+const growthCampaignDocument = `{
+  "schemaVersion": 1,
+  "name": "measured growth campaign",
+  "seed": 4242,
+  "base": {"refPath": "assets/ref.png", "mode": "batch", "circles": 500, "batchSize": 4, "iters": 200, "popSize": 30},
+  "steps": [
+    {"type": "extend", "repeat": 2, "additionalCircles": 1000},
+    {"type": "extend", "repeat": 1, "additionalCircles": 500}
+  ]
+}`
+
+// growthCampaignDetail is that campaign three stages in, carrying the costs the
+// real run measured at its three milestones.
+func growthCampaignDetail(t *testing.T) scheduleDetailResponse {
+	t.Helper()
+
+	document, err := app.ParseSchedule([]byte(growthCampaignDocument))
+	if err != nil {
+		t.Fatalf("ParseSchedule() error = %v", err)
+	}
+
+	plan, err := document.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+
+	if len(plan) != 4 {
+		t.Fatalf("the fixture expands to %d stages, want 4", len(plan))
+	}
+	// The measured campaign, as recorded: 96.199 at its first thousand circles,
+	// 64.602 at its second, 46.905 at its third. The circle counts are shifted
+	// down by five hundred so the plan can still hold an unrun stage under
+	// app.MaxCircles; the thousand-circle spacing between the milestones, which
+	// is what the rates are computed from, is the campaign's own.
+	costs := []float64{96.199, 64.602, 46.905}
+	elapsed := []time.Duration{30 * time.Minute, 28 * time.Minute, 28 * time.Minute}
+
+	detail := scheduleDetailResponse{Document: *document}
+	detail.ScheduleID = testScheduleID
+	detail.Name = document.Name
+	detail.State = string(store.ScheduleStateRunning)
+	detail.CampaignSeed = document.Seed
+	detail.TotalStages = len(plan)
+	detail.CreatedAt = time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	detail.UpdatedAt = detail.CreatedAt
+
+	for _, stage := range plan {
+		summary := scheduleStageSummaryResponse{
+			Index: stage.Index, Kind: stage.Kind,
+			State: store.ScheduleStatePending, Circles: stage.Circles,
+		}
+		if stage.Index < len(costs) {
+			nanos := elapsed[stage.Index].Nanoseconds()
+			summary.State = store.ScheduleStateCompleted
+			summary.BestCost = costs[stage.Index]
+			summary.ElapsedNanos = &nanos
+			summary.JobID = fmt.Sprintf("00000000-0000-4000-8000-%012d", stage.Index)
+		}
+
+		detail.Stages = append(detail.Stages, summary)
+	}
+
+	return detail
+}
+
+// TestScheduleStatusProjectsBothScarceResources is the Task 16.9 acceptance
+// check on the PSNR side. It drives `schedule status` against a server serving
+// the measured campaign's three milestones and asserts the PSNR the CLI derives
+// for each of them, in the stage table and in the two projection blocks.
+func TestScheduleStatusProjectsBothScarceResources(t *testing.T) {
+	detail := growthCampaignDetail(t)
+
+	payload, err := json.Marshal(detail)
+	if err != nil {
+		t.Fatalf("marshal detail: %v", err)
+	}
+
+	_, _ = newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write(payload)
+	})
+
+	var output bytes.Buffer
+	if err := runScheduleStatus(testCommand(context.Background(), &output), []string{testScheduleID}); err != nil {
+		t.Fatalf("runScheduleStatus() error = %v", err)
+	}
+
+	body := output.String()
+	// The three measured milestones, each with the PSNR the campaign recorded.
+	for _, row := range [][]string{
+		{"0", "base", "completed", "500", "96.199", "28.30"},
+		{"1", "extend", "completed", "1500", "64.602", "30.03"},
+		{"2", "extend", "completed", "2500", "46.905", "31.42"},
+	} {
+		if !hasRow(body, row...) {
+			t.Errorf("no stage row %v in the table:\n%s", row, body)
+		}
+	}
+
+	for _, marker := range []string{
+		// Where the campaign stands, in the same PSNR the last row carries.
+		"Cost, from 3 measured stages at 2500 circles and 46.905 (PSNR 31.42):",
+		// The trailing leg's rate, which is the 2000 -> 3000 rate of the real
+		// campaign, and the rate both projections below are computed from. It is
+		// labelled with the trailing window's own denominator, never the whole
+		// campaign's, because the two differ and the projection used this one.
+		"Against a circle ceiling (gain per circle):",
+		"  measured   0.017697 cost/circle over the last 1000 circles (1 leg)",
+		"  remaining  500 circles to 3000",
+		"  projected  38.056 (PSNR 32.33)",
+		"Against a time budget (gain per hour):",
+		"  measured   37.922 cost/hour over the last 28m0s (1 leg)",
+		"  remaining  28m0s",
+		"  projected  29.208 (PSNR 33.48)",
+		// The decaying return, which is the reason the trailing window exists.
+		"Note: the per-circle return is decaying: 0.017697 cost/circle over the last 1 leg(s) " +
+			"against 0.024647 over the whole campaign",
+		"The two answers differ because the objective does: see docs/schedule-format.md.",
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("status output missing %q:\n%s", marker, body)
+		}
+	}
+}
+
+// TestScheduleStatusReportsAnUnprojectableCost is the honesty requirement on
+// the cost side: one measured stage is a starting point, not a gain, and is
+// reported as insufficient rather than extrapolated.
+func TestScheduleStatusReportsAnUnprojectableCost(t *testing.T) {
+	fixture := projectionDetailFixture(0, nil)
+	var detail scheduleDetailResponse
+	decodeFixture(t, fixture, &detail)
+
+	var output bytes.Buffer
+	printScheduleDetail(&output, detail, time.Date(2026, 8, 1, 13, 0, 0, 0, time.UTC))
+
+	body := output.String()
+	if !strings.Contains(body, "No cost projection: insufficient data: 1 completed cost-measured stage(s)") {
+		t.Errorf("status output does not report the unprojectable cost:\n%s", body)
+	}
+
+	if strings.Contains(body, "Against a circle ceiling") {
+		t.Errorf("a single measured stage still drew a cost block:\n%s", body)
+	}
+}

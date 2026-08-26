@@ -302,6 +302,17 @@ func TestProjectionIsUnchangedByTheSummaryProjection(t *testing.T) {
 		!fromSummaries.EarliestFinish.Equal(fromRecords.EarliestFinish) {
 		t.Fatalf("projection from the listing = %+v, from the records = %+v", fromSummaries, fromRecords)
 	}
+	// The cost projection is comparable, so the whole of it is compared rather
+	// than the handful of fields a reviewer thought to list.
+	if fromSummaries.Cost != fromRecords.Cost {
+		t.Fatalf("cost projection from the listing = %+v, from the records = %+v",
+			fromSummaries.Cost, fromRecords.Cost)
+	}
+
+	if !fromRecords.Cost.Projected() {
+		t.Fatalf("the fixture projects no cost, so the cost comparison proves nothing: %+v",
+			fromRecords.Cost)
+	}
 
 	if len(fromSummaries.Kinds) != len(fromRecords.Kinds) {
 		t.Fatalf("projected %d kinds from the listing, %d from the records",
@@ -370,13 +381,20 @@ func recordedStages(t *testing.T, persistence store.ScheduleStore, plan []app.Sc
 // timingsFromRecords is the reduction the CLI performed before the listing
 // became a projection: it reads the two timestamps off the full stage record.
 // It stays here as the reference the summary is compared against.
+//
+// It fills the cost fields on the same rule stageTimings does, and has to: the
+// two are compared field for field, and a reference that left them empty would
+// let the comparison pass by agreeing that nothing was projected.
 func timingsFromRecords(stages []store.ScheduleStageRecord) []app.ScheduleStageTiming {
 	timings := make([]app.ScheduleStageTiming, 0, len(stages))
 	for _, stage := range stages {
 		timing := app.ScheduleStageTiming{
-			Index: stage.Index,
-			Kind:  stage.Kind,
-			State: scheduleOutcomeState(stage.State),
+			Index:        stage.Index,
+			Kind:         stage.Kind,
+			State:        scheduleOutcomeState(stage.State),
+			Circles:      stage.Circles,
+			BestCost:     stage.BestCost,
+			CostMeasured: stage.State == store.ScheduleStateCompleted,
 		}
 		if stage.StartedAt != nil && stage.CompletedAt != nil {
 			timing.Elapsed = stage.CompletedAt.Sub(*stage.StartedAt)

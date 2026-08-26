@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -37,6 +38,13 @@ type scheduleSummary struct {
 	CreatedAt    time.Time           `json:"createdAt"`
 	UpdatedAt    time.Time           `json:"updatedAt"`
 	Error        string              `json:"error,omitempty"`
+
+	// Warnings are the document's advisories: settings the campaign runs
+	// exactly as authored and a measurement says are wasted. They are not
+	// errors, which is why they travel beside Error rather than in it — the
+	// schedule was accepted, and a client that ignores them still sees a
+	// campaign that ran.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // scheduleDetail adds the stage listing, which is the single source of truth
@@ -55,6 +63,256 @@ type scheduleDetail struct {
 
 	Document app.ScheduleDocument   `json:"document"`
 	Stages   []scheduleStageSummary `json:"stages"`
+
+	// Projection is the estimate of what is left, and it is absent whenever
+	// there is nothing to estimate: a campaign that will not advance again, a
+	// stored document that no longer expands, or a plan every stage of which
+	// has already completed or been skipped. See projectSchedule.
+	Projection *scheduleProjectionWire `json:"projection,omitempty"`
+}
+
+// scheduleProjectionWire is the finish and cost estimate for one campaign.
+//
+// It carries both answers because a campaign can be short of two different
+// things. The kind table below says when the plan finishes; Cost says where the
+// fit lands, once against the plan's circle ceiling and once against that
+// clock. The measured campaign behind Task 16.9 is why: the settings that win
+// per hour lose per circle, so a surface reporting only wall clock hands a
+// campaign against a ceiling the wrong answer.
+//
+// Durations are nanoseconds for the reason elapsedNanos already is: it is
+// shorter than the timestamps it is derived from, and it is exact, so a figure
+// read off this response equals the one the CLI computes locally. The two
+// finish timestamps are pointers rather than zero times, because a projection
+// that could not be completed has no finish time at all and a zero-valued
+// RFC 3339 instant reads as one.
+type scheduleProjectionWire struct {
+	AsOf time.Time `json:"asOf"`
+
+	RemainingStages int  `json:"remainingStages"`
+	Complete        bool `json:"complete"`
+
+	RemainingNanos int64      `json:"remainingNanos"`
+	FirmNanos      int64      `json:"firmNanos"`
+	FinishBy       *time.Time `json:"finishBy,omitempty"`
+	EarliestFinish *time.Time `json:"earliestFinish,omitempty"`
+
+	Kinds []scheduleKindProjectionWire `json:"kinds"`
+	Cost  scheduleCostProjectionWire   `json:"cost"`
+}
+
+// scheduleKindProjectionWire is one stage kind's share of the finish estimate.
+// Projected is sent rather than left for the client to re-derive from Samples,
+// because the rule behind it — enough samples *and* a per-stage figure above
+// zero — is the application layer's and not the browser's.
+type scheduleKindProjectionWire struct {
+	Kind    app.ScheduleStageKind `json:"kind"`
+	Samples int                   `json:"samples"`
+
+	ObservedNanos int64 `json:"observedNanos"`
+	PerStageNanos int64 `json:"perStageNanos"`
+
+	RemainingStages   int `json:"remainingStages"`
+	ConditionalStages int `json:"conditionalStages"`
+
+	RemainingNanos            int64 `json:"remainingNanos"`
+	ConditionalRemainingNanos int64 `json:"conditionalRemainingNanos"`
+
+	Projected bool   `json:"projected"`
+	Note      string `json:"note,omitempty"`
+}
+
+// scheduleCostProjectionWire is what the measured stages say about cost.
+//
+// PSNR is derived here rather than in the client. The conversion is
+// fit.PSNR's, one implementation of it already serves every other metric this
+// server sends, and a second one written in TypeScript could only drift from
+// it. It follows serializablePSNR's contract exactly: a nil pointer with the
+// Infinite flag set is a perfect fit, and a nil pointer without it is a cost
+// PSNR says nothing about.
+type scheduleCostProjectionWire struct {
+	Projected bool `json:"projected"`
+	Samples   int  `json:"samples"`
+
+	Gain         float64 `json:"gain"`
+	AddedCircles int     `json:"addedCircles"`
+	ElapsedNanos int64   `json:"elapsedNanos"`
+
+	GainPerCircle float64 `json:"gainPerCircle"`
+	GainPerHour   float64 `json:"gainPerHour"`
+
+	// RecentCircles and RecentElapsedNanos are the denominators the two trailing
+	// rates were divided by, so a client can say what a rate was measured over
+	// without labelling it with the whole campaign's span.
+	RecentGainPerCircle float64 `json:"recentGainPerCircle"`
+	RecentGainPerHour   float64 `json:"recentGainPerHour"`
+	RecentLegs          int     `json:"recentLegs"`
+	RecentCircles       int     `json:"recentCircles"`
+	RecentElapsedNanos  int64   `json:"recentElapsedNanos"`
+
+	LatestCircles int     `json:"latestCircles"`
+	LatestCost    float64 `json:"latestCost"`
+
+	RemainingCircles    int      `json:"remainingCircles"`
+	CostAtPlanEnd       float64  `json:"costAtPlanEnd"`
+	PlanEndPSNR         *float64 `json:"planEndPsnr,omitempty"`
+	PlanEndPSNRInfinite bool     `json:"planEndPsnrInfinite"`
+	HasCircleCeiling    bool     `json:"hasCircleCeiling"`
+
+	RemainingElapsedNanos int64    `json:"remainingElapsedNanos"`
+	CostAtFinish          float64  `json:"costAtFinish"`
+	FinishPSNR            *float64 `json:"finishPsnr,omitempty"`
+	FinishPSNRInfinite    bool     `json:"finishPsnrInfinite"`
+	HasTimeBudget         bool     `json:"hasTimeBudget"`
+
+	Note string `json:"note,omitempty"`
+}
+
+// projectScheduleWire shapes a projection for the wire.
+func projectScheduleWire(projection app.ScheduleProjection) *scheduleProjectionWire {
+	wire := &scheduleProjectionWire{
+		AsOf:            projection.AsOf,
+		RemainingStages: projection.RemainingStages,
+		Complete:        projection.Complete,
+		RemainingNanos:  projection.Remaining.Nanoseconds(),
+		FirmNanos:       projection.Firm.Nanoseconds(),
+		Kinds:           make([]scheduleKindProjectionWire, 0, len(projection.Kinds)),
+		Cost:            costProjectionWire(projection.Cost),
+	}
+
+	if projection.Complete {
+		finishBy, earliest := projection.FinishBy, projection.EarliestFinish
+		wire.FinishBy, wire.EarliestFinish = &finishBy, &earliest
+	}
+
+	for _, kind := range projection.Kinds {
+		wire.Kinds = append(wire.Kinds, scheduleKindProjectionWire{
+			Kind:                      kind.Kind,
+			Samples:                   kind.Samples,
+			ObservedNanos:             kind.Observed.Nanoseconds(),
+			PerStageNanos:             kind.PerStage.Nanoseconds(),
+			RemainingStages:           kind.RemainingStages,
+			ConditionalStages:         kind.ConditionalStages,
+			RemainingNanos:            kind.Remaining.Nanoseconds(),
+			ConditionalRemainingNanos: kind.ConditionalRemaining.Nanoseconds(),
+			Projected:                 kind.Projected(),
+			Note:                      kind.Note,
+		})
+	}
+
+	return wire
+}
+
+func costProjectionWire(cost app.ScheduleCostProjection) scheduleCostProjectionWire {
+	wire := scheduleCostProjectionWire{
+		Projected:             cost.Projected(),
+		Samples:               cost.Samples,
+		Gain:                  cost.Gain,
+		AddedCircles:          cost.AddedCircles,
+		ElapsedNanos:          cost.Elapsed.Nanoseconds(),
+		GainPerCircle:         cost.GainPerCircle,
+		GainPerHour:           cost.GainPerHour,
+		RecentGainPerCircle:   cost.RecentGainPerCircle,
+		RecentGainPerHour:     cost.RecentGainPerHour,
+		RecentLegs:            cost.RecentLegs,
+		RecentCircles:         cost.RecentCircles,
+		RecentElapsedNanos:    cost.RecentElapsed.Nanoseconds(),
+		LatestCircles:         cost.LatestCircles,
+		LatestCost:            cost.LatestCost,
+		RemainingCircles:      cost.RemainingCircles,
+		CostAtPlanEnd:         cost.CostAtPlanEnd,
+		HasCircleCeiling:      cost.HasCircleCeiling,
+		RemainingElapsedNanos: cost.RemainingElapsed.Nanoseconds(),
+		CostAtFinish:          cost.CostAtFinish,
+		HasTimeBudget:         cost.HasTimeBudget,
+		Note:                  cost.Note,
+	}
+	// A projected cost that is not there has no PSNR either: converting the
+	// zero the field carries would report a perfect fit for a campaign nobody
+	// could estimate.
+	if cost.HasCircleCeiling {
+		wire.PlanEndPSNR, wire.PlanEndPSNRInfinite = serializablePSNR(cost.CostAtPlanEnd)
+	}
+
+	if cost.HasTimeBudget {
+		wire.FinishPSNR, wire.FinishPSNRInfinite = serializablePSNR(cost.CostAtFinish)
+	}
+
+	return wire
+}
+
+// scheduleStageTimings projects the stage records onto the values both
+// projections read.
+//
+// It is the timing counterpart of scheduleStageOutcomes and applies that
+// function's rule for a measured cost, for the same reason: only a completed
+// stage produced a cost, and only a finite one is a number, so a completed
+// stage's zero is a perfect fit while every other zero is an absence.
+func scheduleStageTimings(stages []store.ScheduleStageRecord) []app.ScheduleStageTiming {
+	timings := make([]app.ScheduleStageTiming, 0, len(stages))
+
+	for i := range stages {
+		stage := &stages[i]
+
+		state := app.ScheduleOutcomePending
+
+		switch stage.State {
+		case store.ScheduleStateCompleted:
+			state = app.ScheduleOutcomeCompleted
+		case store.ScheduleStateSkipped:
+			state = app.ScheduleOutcomeSkipped
+		}
+
+		timing := app.ScheduleStageTiming{
+			Index:    stage.Index,
+			Kind:     stage.Kind,
+			State:    state,
+			Circles:  stage.Circles,
+			BestCost: stage.BestCost,
+			CostMeasured: state == app.ScheduleOutcomeCompleted &&
+				!math.IsNaN(stage.BestCost) && !math.IsInf(stage.BestCost, 0),
+		}
+		if stage.StartedAt != nil && stage.CompletedAt != nil {
+			timing.Elapsed = stage.CompletedAt.Sub(*stage.StartedAt)
+		}
+
+		timings = append(timings, timing)
+	}
+
+	return timings
+}
+
+// projectSchedule estimates what a campaign has left, and reports whether
+// there was anything to estimate.
+//
+// Both surfaces that show a projection — this file's detail response and the
+// campaign page — go through here, so they cannot disagree about whether a
+// campaign has one. The rules are the CLI's, in printScheduleProjection. A
+// campaign that will not advance gets nothing, because the estimate anchors at
+// asOf and that is a claim about the clock which a completed, failed or
+// cancelled campaign makes false. A stored document that no longer expands has
+// no plan to project against, and that is the stage table's problem to report
+// rather than the projection's. A plan whose every stage has completed or been
+// skipped has a measurement, not an estimate.
+func projectSchedule(
+	record *store.ScheduleRecord, stages []store.ScheduleStageRecord, asOf time.Time,
+) (app.ScheduleProjection, bool) {
+	switch record.State {
+	case store.ScheduleStateCompleted, store.ScheduleStateFailed, store.ScheduleStateCancelled:
+		return app.ScheduleProjection{}, false
+	}
+
+	plan, err := record.Document.Expand()
+	if err != nil {
+		return app.ScheduleProjection{}, false
+	}
+
+	projection := app.ProjectScheduleFinish(plan, scheduleStageTimings(stages), asOf)
+	if projection.RemainingStages == 0 {
+		return app.ScheduleProjection{}, false
+	}
+
+	return projection, true
 }
 
 // scheduleStageSummary is one realized stage without its configuration.
@@ -129,7 +387,30 @@ func summarizeSchedule(record *store.ScheduleRecord) scheduleSummary {
 		CreatedAt:    record.CreatedAt,
 		UpdatedAt:    record.UpdatedAt,
 		Error:        record.Error,
+		Warnings:     scheduleWarnings(record.Document),
 	}
+}
+
+// scheduleWarnings renders a document's advisories for the wire.
+//
+// They are recomputed on every read and never persisted. An advisory is a pure
+// function of the stored document, so a stored copy could only ever disagree
+// with it — with the document, once the advice is revised, and with older
+// records, which would need a migration to gain a field that was already
+// derivable. Recomputing costs one plan expansion, which summarizeSchedule
+// already pays for TotalStages, so nothing about the store changes for this.
+func scheduleWarnings(document app.ScheduleDocument) []string {
+	advisories := document.Advisories()
+	if len(advisories) == 0 {
+		return nil
+	}
+
+	warnings := make([]string, 0, len(advisories))
+	for _, advisory := range advisories {
+		warnings = append(warnings, advisory.Message)
+	}
+
+	return warnings
 }
 
 // handleSchedules handles /api/v1/schedules.
@@ -226,6 +507,15 @@ func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The advisories are logged once, here, and not on every read: they are a
+	// property of the authored document, so a campaign that runs for a day
+	// would otherwise repeat the same note for every poll. The resume guard's
+	// version warning reaches the log the same way.
+	for _, advisory := range record.Document.Advisories() {
+		slog.Warn("Schedule advisory", "schedule_id", record.ScheduleID,
+			"field", advisory.Field, "stages", advisory.Stages, "warning", advisory.Message)
+	}
+
 	record.State = store.ScheduleStateRunning
 	if err := scheduleStore.SaveSchedule(record); err != nil {
 		slog.Error("Failed to persist schedule", "error", err)
@@ -298,12 +588,20 @@ func (s *Server) handleGetSchedule(w http.ResponseWriter, r *http.Request, sched
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(scheduleDetail{
+	detail := scheduleDetail{
 		scheduleSummary: summarizeSchedule(record),
 		Document:        record.Document,
 		Stages:          summarizeScheduleStages(stages),
-	})
+	}
+	// The anchor is this instant, which is the same one the CLI passes when it
+	// projects the identical stages locally, so the two answers differ only by
+	// the round trip between them.
+	if projection, ok := projectSchedule(record, stages, time.Now().UTC()); ok {
+		detail.Projection = projectScheduleWire(projection)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(detail)
 }
 
 // handleGetScheduleStage handles GET /api/v1/schedules/:id/stages/:index and

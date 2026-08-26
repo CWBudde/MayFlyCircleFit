@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -125,6 +126,16 @@ type scheduleSummaryResponse struct {
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
 	Error        string    `json:"error,omitempty"`
+
+	// Warnings carries the server's advisories about the stored document —
+	// settings that run exactly as authored and that a measurement says are
+	// wasted. The CLI does not print them: it holds the document itself and
+	// computes the same list from the same pure function before it submits, so
+	// echoing the server's copy would print every note twice. The field is here
+	// because the decoder refuses unknown fields, and without it every
+	// `schedule create` and `schedule status` against a server that sends them
+	// fails outright.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type scheduleDetailResponse struct {
@@ -132,6 +143,17 @@ type scheduleDetailResponse struct {
 
 	Document app.ScheduleDocument           `json:"document"`
 	Stages   []scheduleStageSummaryResponse `json:"stages"`
+
+	// Projection is the server's own finish and cost estimate, left undecoded.
+	//
+	// The CLI keeps computing its projection locally from the stage listing, so
+	// `schedule status` reports the same figures against a server that sends
+	// none. This field exists only so the decoder does not refuse a response
+	// from one that does. Holding it as raw JSON rather than mirroring the
+	// twenty-five fields behind it is what keeps the two from drifting: a
+	// mirror that is never read is a mirror nothing checks, and it would have to
+	// be maintained against every change to the wire type regardless.
+	Projection json.RawMessage `json:"projection,omitempty"`
 }
 
 // scheduleStageSummaryResponse mirrors the server's stage projection. The
@@ -186,8 +208,15 @@ func runScheduleCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	if scheduleDryRun {
+		// The dry run prints its own advisories, above the stage table where an
+		// author is already reading; printing them here as well would double
+		// every note on that path.
 		return printSchedulePlan(cmd.OutOrStdout(), args[0], parsed, scheduleDocumentNamesSeed(document))
 	}
+	// Before the request, not after it: a submitted campaign starts running,
+	// and a note about how it spends its budget is worth something while the
+	// operator can still stop and edit the document.
+	printScheduleAdvisories(cmd.OutOrStdout(), parsed.Advisories())
 
 	body, err := requestCLIBody(cmd.Context(), http.MethodPost, scheduleBaseURL()+"/schedules", document)
 	if err != nil {
@@ -205,6 +234,22 @@ func runScheduleCreate(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(output, "  Seed: %s\n", formatCampaignSeed(summary.CampaignSeed))
 
 	return nil
+}
+
+// printScheduleAdvisories writes the document's non-fatal notes.
+//
+// The marker is the one the CLI already uses for a warning that stops nothing:
+// `resume` prints the optimizer version mismatch as `! %s` followed by a blank
+// line, and an advisory is the same kind of thing — the campaign runs exactly as
+// written either way. A note runs to a full paragraph, so the blank line is what
+// keeps it from reading as the first row of whatever follows it.
+//
+// An empty list prints nothing at all. A document with nothing to warn about
+// should look like a document with nothing to warn about.
+func printScheduleAdvisories(output io.Writer, advisories []app.ScheduleAdvisory) {
+	for _, advisory := range advisories {
+		fmt.Fprintf(output, "! %s\n\n", advisory)
+	}
 }
 
 // formatCampaignSeed renders the campaign seed for an operator.

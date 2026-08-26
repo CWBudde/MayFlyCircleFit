@@ -1044,3 +1044,215 @@ func TestScheduleBarrierPausesBeforeTheStageAndResumeReleasesIt(t *testing.T) {
 		t.Fatalf("resumed campaign recorded %d stages, want 2", len(stages))
 	}
 }
+
+// advisoryDocument raises the population above the default while leaving the
+// epochs alone, which is the pair Task 16.9 measured as wasted: an epoch
+// reseeds from the best candidate so far, so a large population with one epoch
+// has nowhere to spend itself.
+func advisoryDocument(imagePath string, epochs int) string {
+	return fmt.Sprintf(`{
+  "name": "advisory campaign",
+  "seed": 42,
+  "base": {"refPath": %q, "mode": "batch", "circles": 2, "batchSize": 1, "iters": 5, "popSize": 100, "optimizerEpochs": %d},
+  "steps": [{"type": "extend", "additionalCircles": 1}]
+}`, imagePath, epochs)
+}
+
+// TestScheduleAdvisoriesReachBothResponses pins the advisory on the HTTP
+// surface. It is not persisted anywhere -- it is recomputed from the stored
+// document on every read -- so the create response and a detail fetched later
+// have to agree, and a document that raises both halves of the budget pair has
+// to fall silent.
+func TestScheduleAdvisoriesReachBothResponses(t *testing.T) {
+	fixture := newScheduleFixture(t, 2)
+
+	recorder := httptest.NewRecorder()
+	fixture.server.Handler().ServeHTTP(recorder, httptest.NewRequest(
+		http.MethodPost, "/api/v1/schedules", strings.NewReader(advisoryDocument(fixture.imagePath, 1))))
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body %s", recorder.Code, recorder.Body.String())
+	}
+
+	var created scheduleSummary
+	if err := json.Unmarshal(recorder.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+
+	if len(created.Warnings) != 1 {
+		t.Fatalf("create response carried %d warnings, want 1: %v", len(created.Warnings), created.Warnings)
+	}
+
+	if !strings.Contains(created.Warnings[0], "base.popSize") ||
+		!strings.Contains(created.Warnings[0], "optimizerEpochs") {
+		t.Fatalf("warning does not name the field pair it is about: %q", created.Warnings[0])
+	}
+
+	detail := fixture.detail(t, created.ScheduleID)
+	if len(detail.Warnings) != 1 || detail.Warnings[0] != created.Warnings[0] {
+		t.Fatalf("detail warnings = %v, want the create response's %v", detail.Warnings, created.Warnings)
+	}
+
+	// The same population with the epochs to spend it is the advice being
+	// followed, and following advice must silence it.
+	quiet := fixture.detail(t, fixture.createSchedule(t, advisoryDocument(fixture.imagePath, 3)))
+	if len(quiet.Warnings) != 0 {
+		t.Fatalf("a document raising both halves of the pair still warned: %v", quiet.Warnings)
+	}
+}
+
+// detail fetches the campaign detail response through the handler.
+func (f *scheduleFixture) detail(t *testing.T, scheduleID string) scheduleDetail {
+	t.Helper()
+
+	recorder := httptest.NewRecorder()
+	f.server.Handler().ServeHTTP(recorder, httptest.NewRequest(
+		http.MethodGet, "/api/v1/schedules/"+scheduleID, nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, body %s", recorder.Code, recorder.Body.String())
+	}
+
+	var detail scheduleDetail
+	if err := json.Unmarshal(recorder.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("decode detail response: %v", err)
+	}
+
+	return detail
+}
+
+// growthCampaign writes a campaign that has measurably progressed without
+// running one: a three-stage plan to 3000 circles, with the first two stages
+// recorded as completed at the costs the measured campaign reached. It is
+// written straight to the store rather than posted, because a posted schedule
+// starts a driver and this test is about arithmetic over records, not about
+// stages that run.
+func (f *scheduleFixture) growthCampaign(t *testing.T, state store.ScheduleState) string {
+	t.Helper()
+
+	document := fmt.Sprintf(`{
+  "name": "growth campaign",
+  "seed": 42,
+  "base": {"refPath": %q, "mode": "batch", "circles": 1000, "batchSize": 1, "iters": 5, "popSize": 20},
+  "steps": [{"type": "extend", "additionalCircles": 1000, "repeat": 2}]
+}`, f.imagePath)
+
+	parsed, err := app.ParseSchedule([]byte(document))
+	if err != nil {
+		t.Fatalf("parse schedule: %v", err)
+	}
+
+	record, err := store.NewScheduleRecord(uuid.New().String(), *parsed)
+	if err != nil {
+		t.Fatalf("build schedule record: %v", err)
+	}
+
+	record.State = state
+
+	scheduleStore, err := f.server.scheduleStore()
+	if err != nil {
+		t.Fatalf("schedule store: %v", err)
+	}
+
+	if err := scheduleStore.SaveSchedule(record); err != nil {
+		t.Fatalf("save schedule: %v", err)
+	}
+
+	plan, err := record.Document.Expand()
+	if err != nil {
+		t.Fatalf("expand document: %v", err)
+	}
+
+	if len(plan) != 3 {
+		t.Fatalf("plan expands to %d stages, want 3", len(plan))
+	}
+
+	// The costs are the measured campaign's own milestones at 1000 and 2000
+	// circles, so the leg between them is the one the estimator was built on.
+	started := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+
+	for index, cost := range []float64{96.199, 64.602} {
+		stage := store.NewScheduleStageRecord(record.ScheduleID, plan[index])
+		stage.State = store.ScheduleStateCompleted
+		stage.BestCost = cost
+
+		begin := started.Add(time.Duration(index) * time.Hour)
+		end := begin.Add(30 * time.Minute)
+		stage.StartedAt, stage.CompletedAt = &begin, &end
+
+		if err := scheduleStore.SaveScheduleStage(record.ScheduleID, stage); err != nil {
+			t.Fatalf("save stage %d: %v", index, err)
+		}
+	}
+
+	return record.ScheduleID
+}
+
+// TestScheduleDetailProjectsWhatIsLeft covers the second question the campaign
+// surface now answers: not when the plan finishes, but where the fit lands
+// once it does. The figures are checked against the leg the records describe
+// rather than against the whole campaign average, because that is the rate the
+// projection is required to extrapolate.
+func TestScheduleDetailProjectsWhatIsLeft(t *testing.T) {
+	fixture := newScheduleFixture(t, 1)
+	scheduleID := fixture.growthCampaign(t, store.ScheduleStateRunning)
+
+	detail := fixture.detail(t, scheduleID)
+	if detail.Projection == nil {
+		t.Fatal("a running campaign with two measured stages and one to go carries no projection")
+	}
+
+	cost := detail.Projection.Cost
+	if !cost.Projected || cost.Samples != 2 {
+		t.Fatalf("cost projection = (projected %v, %d samples), want projected over 2",
+			cost.Projected, cost.Samples)
+	}
+
+	if cost.LatestCircles != 2000 || cost.LatestCost != 64.602 {
+		t.Fatalf("campaign stands at (%d circles, cost %f), want (2000, 64.602)",
+			cost.LatestCircles, cost.LatestCost)
+	}
+
+	if cost.RemainingCircles != 1000 || !cost.HasCircleCeiling {
+		t.Fatalf("circle ceiling = (%d remaining, has %v), want (1000, true)",
+			cost.RemainingCircles, cost.HasCircleCeiling)
+	}
+
+	// 96.199 - 64.602 over the 1000 circles between them is 0.031597 per
+	// circle, which over the last 1000 leaves 33.005.
+	if math.Abs(cost.RecentGainPerCircle-0.031597) > 1e-9 {
+		t.Errorf("trailing rate = %f cost/circle, want 0.031597", cost.RecentGainPerCircle)
+	}
+
+	if math.Abs(cost.CostAtPlanEnd-33.005) > 1e-6 {
+		t.Errorf("cost at the plan's end = %f, want 33.005", cost.CostAtPlanEnd)
+	}
+
+	// PSNR is derived server-side so the browser never re-implements it.
+	if cost.PlanEndPSNR == nil || cost.PlanEndPSNRInfinite {
+		t.Errorf("plan-end PSNR = (%v, infinite %v), want a finite figure",
+			cost.PlanEndPSNR, cost.PlanEndPSNRInfinite)
+	}
+
+	if detail.Projection.RemainingStages != 1 {
+		t.Errorf("remaining stages = %d, want 1", detail.Projection.RemainingStages)
+	}
+}
+
+// TestScheduleDetailOmitsTheProjectionForACampaignThatIsOver is the other half
+// of the rule the CLI applies: the estimate anchors at a clock, and a campaign
+// that will never advance again makes that anchor a false claim.
+func TestScheduleDetailOmitsTheProjectionForACampaignThatIsOver(t *testing.T) {
+	fixture := newScheduleFixture(t, 1)
+
+	for _, state := range []store.ScheduleState{
+		store.ScheduleStateCompleted, store.ScheduleStateFailed, store.ScheduleStateCancelled,
+	} {
+		t.Run(string(state), func(t *testing.T) {
+			scheduleID := fixture.growthCampaign(t, state)
+			if detail := fixture.detail(t, scheduleID); detail.Projection != nil {
+				t.Fatalf("a %s campaign carries a projection: %+v", state, detail.Projection)
+			}
+		})
+	}
+}

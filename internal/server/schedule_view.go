@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 	"github.com/cwbudde/mayflycirclefit/internal/store"
 	"github.com/cwbudde/mayflycirclefit/internal/ui"
 )
@@ -37,6 +38,18 @@ func campaignFromSchedule(record *store.ScheduleRecord, stages []store.ScheduleS
 		HasSeed:       hasSeed,
 		PlannedStages: planned,
 		Error:         record.Error,
+		Warnings:      scheduleWarnings(record.Document),
+	}
+	// The projection anchors at this instant, exactly as the JSON detail
+	// response does, and goes through the same projectSchedule so the page and
+	// the API cannot disagree about whether a campaign has an estimate. Only
+	// the two finish timestamps depend on the anchor and the card shows
+	// neither, so the clock read decides nothing the page renders — it is
+	// passed anyway rather than a zero time, so a field added later that does
+	// depend on it is anchored correctly instead of quietly wrong.
+	if projection, ok := projectSchedule(record, stages, time.Now().UTC()); ok {
+		card := campaignProjectionFrom(projection.Cost)
+		campaign.Projection = &card
 	}
 
 	campaign.Stages = make([]ui.CampaignStage, 0, len(stages))
@@ -45,6 +58,55 @@ func campaignFromSchedule(record *store.ScheduleRecord, stages []store.ScheduleS
 	}
 
 	return campaign
+}
+
+// campaignProjectionFrom shapes the cost projection for the page.
+//
+// PSNR is derived here rather than in the browser, for the reason every other
+// PSNR on this surface is: fit.PSNR is the conversion, serializablePSNR is the
+// one wrapper around it, and a second implementation written in TypeScript
+// could only drift. A projected cost that is absent gets no PSNR at all —
+// converting the zero the field carries would report a perfect fit for a
+// campaign nobody could estimate.
+func campaignProjectionFrom(cost app.ScheduleCostProjection) ui.CampaignProjection {
+	card := ui.CampaignProjection{
+		Projected:           cost.Projected(),
+		Samples:             cost.Samples,
+		RecentLegs:          cost.RecentLegs,
+		RecentCircles:       cost.RecentCircles,
+		RecentElapsedSec:    cost.RecentElapsed.Seconds(),
+		GainPerCircle:       cost.GainPerCircle,
+		GainPerHour:         cost.GainPerHour,
+		RecentGainPerCircle: cost.RecentGainPerCircle,
+		RecentGainPerHour:   cost.RecentGainPerHour,
+		LatestCircles:       cost.LatestCircles,
+		LatestCost:          cost.LatestCost,
+		RemainingCircles:    cost.RemainingCircles,
+		CostAtPlanEnd:       cost.CostAtPlanEnd,
+		HasCircleCeiling:    cost.HasCircleCeiling,
+		RemainingElapsedSec: cost.RemainingElapsed.Seconds(),
+		CostAtFinish:        cost.CostAtFinish,
+		HasTimeBudget:       cost.HasTimeBudget,
+		Note:                cost.Note,
+	}
+
+	if cost.HasCircleCeiling {
+		if psnr, infinite := serializablePSNR(cost.CostAtPlanEnd); infinite {
+			card.PlanEndPSNRInfinite = true
+		} else if psnr != nil {
+			card.PlanEndPSNR, card.HasPlanEndPSNR = *psnr, true
+		}
+	}
+
+	if cost.HasTimeBudget {
+		if psnr, infinite := serializablePSNR(cost.CostAtFinish); infinite {
+			card.FinishPSNRInfinite = true
+		} else if psnr != nil {
+			card.FinishPSNR, card.HasFinishPSNR = *psnr, true
+		}
+	}
+
+	return card
 }
 
 // campaignSeed reports the seed the campaign actually ran with.
@@ -161,6 +223,13 @@ func chainCheckpoints(checkpoints store.Store, leafJobID string) ([]*store.Check
 }
 
 // campaignFromChain presents a walked lineage as a campaign.
+//
+// It leaves Warnings and Projection empty, and that is not an omission. Both
+// are read off a schedule document, and an imported chain has none: nobody
+// planned it, so there is no authoring site an advisory could name and no
+// remaining stage a projection could extrapolate towards. A chain is a record
+// of what happened, and the only honest thing to say about its future is
+// nothing.
 func campaignFromChain(leafJobID string, chain []*store.Checkpoint) ui.Campaign {
 	campaign := ui.Campaign{
 		ID:     leafJobID,
