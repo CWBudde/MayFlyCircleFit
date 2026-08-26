@@ -35,9 +35,23 @@ type interchangeableVersion struct {
 // uniform, sobol, and halton initialization, at 10 and 56 dimensions. Matching
 // on a version prefix or a minor number instead would silently admit the next
 // release, which has no such guarantee.
+//
+// The CMA-ES pair is the same situation reached from the other direction: this
+// repository pinned the library by pseudo-version before it carried any tag,
+// and v0.1.0 is that code plus a benchmark function suite, a demo, and the
+// version constant itself. No file on the search path differs, and Rosenbrock
+// at seeds 4242 and 7 returns bit-identical costs, iteration counts, and
+// evaluation counts under both, in full and separable mode, at 5 and 14
+// dimensions. Without the pair, every CMA-ES checkpoint written before the tag
+// would be refused by a build linking it.
 func interchangeableVersions() []interchangeableVersion {
 	return []interchangeableVersion{
 		{library: "MayFly", first: "v0.7.0", second: "v0.7.1"},
+		{
+			library: "CMA-ES",
+			first:   "v0.0.0-20260825143954-e528faf326bf",
+			second:  "v0.1.0",
+		},
 	}
 }
 

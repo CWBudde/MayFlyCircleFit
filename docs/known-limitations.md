@@ -108,8 +108,11 @@ behavior is production-ready.
   Its adapter satisfies the same
   lifecycle, continuation, constraint, repair, progress, epoch, and parallel-
   evaluation contracts as the selectable engines. It is pinned to
-  `github.com/CWBudde/go-cma-es`
-  `v0.0.0-20260825143954-e528faf326bf`, and
+  `github.com/CWBudde/go-cma-es` `v0.1.0`, the library's first tagged release
+  and the same search path as the pseudo-version
+  `v0.0.0-20260825143954-e528faf326bf` this repository pinned before it —
+  verified bit-identical, so the resume guard admits the pair and no checkpoint
+  written under the pseudo-version is stranded.
   `TestCMAESParallelEvaluationMatchesSerial` verifies that evaluation workers
   do not change a seeded result. Continuation profiles control the seeded-population
   fraction, perturbation sigma, coordinate rate, and initial CMA-ES sigma;

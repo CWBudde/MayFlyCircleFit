@@ -1,7 +1,7 @@
 github.com/CWBudde/dragonfly v0.1.0 h1:C8OIWma56kyqY2AjnvtBZ/uKmkIBHyQ2DErR7Oeir+4=
 github.com/CWBudde/dragonfly v0.1.0/go.mod h1:NkuTvO4l+lTjP080z7DHvgFP7ZqF707dxaVfLGYY/Bs=
-github.com/CWBudde/go-cma-es v0.0.0-20260825143954-e528faf326bf h1:KGFBBY8zdomWdRpbvzftjQJrR7NGeWduQGkDKkO10AA=
-github.com/CWBudde/go-cma-es v0.0.0-20260825143954-e528faf326bf/go.mod h1:cfQeIn434La9FwwbXcGlmhAz4UA6K8KoHINugULB0oM=
+github.com/CWBudde/go-cma-es v0.1.0 h1:IZ97udSQ7FC40bPeC7B9mXcx8CSEDym0NojjFyQ5m2Q=
+github.com/CWBudde/go-cma-es v0.1.0/go.mod h1:cfQeIn434La9FwwbXcGlmhAz4UA6K8KoHINugULB0oM=
 github.com/a-h/parse v0.0.0-20250122154542-74294addb73e h1:HjVbSQHy+dnlS6C3XajZ69NYAb5jbGNfHanvm1+iYlo=
 github.com/a-h/parse v0.0.0-20250122154542-74294addb73e/go.mod h1:3mnrkvGpurZ4ZrTDbYU84xhwXW2TjTKShSwjRi2ihfQ=
 github.com/a-h/templ v0.3.960 h1:trshEpGa8clF5cdI39iY4ZrZG8Z/QixyzEyUnA7feTM=

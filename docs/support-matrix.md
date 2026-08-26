@@ -175,7 +175,7 @@ canonicalized and checked against those roots.
 | templ | `v0.3.960`, pinned Go tool; generated Go committed |
 | MayFly | `v0.7.1` |
 | Dragonfly | `v0.1.0` |
-| CMA-ES | `v0.0.0-20260825143954-e528faf326bf` |
+| CMA-ES | `v0.1.0` |
 | govulncheck in CI | `v1.1.4`, installed at an explicit version |
 | staticcheck in CI | `v0.6.1`, installed at an explicit version |
 
