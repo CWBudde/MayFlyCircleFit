@@ -32,8 +32,12 @@ restarts.
 The identified binary was built from MayFlyCircleFit commit
 `dd1fce31ee4fd00fbc9c96c1689027f7de908bc2` with Go 1.26.0. It pinned Mayfly
 v0.7.1 and go-cma-es
-`v0.0.0-20260825143954-e528faf326bf`. The host was a six-core/twelve-thread AMD
-Ryzen 5 4600H. The server admitted one job at a time.
+`v0.0.0-20260825143954-e528faf326bf`. That pseudo-version is code-identical to
+the library's later `v0.1.0` tag on the search path — the intervening commits
+added a benchmark function suite, the WebAssembly demo, and the version constant
+— so this measurement remains comparable to a run on the current pin. The host
+was a six-core/twelve-thread AMD Ryzen 5 4600H. The server admitted one job at a
+time.
 
 The planned design had five arms in each of twelve paired blocks. Three jobs
 completed, the fourth was checkpointed on interruption, and the remaining 56

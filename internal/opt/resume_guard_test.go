@@ -17,6 +17,13 @@ const (
 	testVersionMayfly040 = "v0.4.0"
 )
 
+// The CMA-ES pair: the pseudo-version this repository pinned before the library
+// carried a tag, and the tag that turned out to be the same search path.
+const (
+	testVersionCMAESPreTag = "v0.0.0-20260825143954-e528faf326bf"
+	testVersionCMAES010    = "v0.1.0"
+)
+
 // TestGuardCheckpointVersion pins every branch of the resume guard. The running
 // version is supplied rather than read, so the table can exercise a real
 // mismatch even though a test binary carries no module information.
@@ -102,6 +109,34 @@ func TestGuardCheckpointVersion(t *testing.T) {
 			running:     testVersionMayfly071,
 			wantRefusal: true,
 			mustName:    []string{"Dragonfly", testVersionMayfly070, testVersionMayfly071},
+		},
+		{
+			name:     "v0.1.0 build accepts a pre-tag CMA-ES checkpoint",
+			library:  "CMA-ES",
+			recorded: testVersionCMAESPreTag,
+			running:  testVersionCMAES010,
+		},
+		{
+			name:     "pre-tag build accepts a v0.1.0 CMA-ES checkpoint",
+			library:  "CMA-ES",
+			recorded: testVersionCMAES010,
+			running:  testVersionCMAESPreTag,
+		},
+		{
+			name:        "the CMA-ES allowlist does not carry over to another library",
+			library:     "MayFly",
+			recorded:    testVersionCMAESPreTag,
+			running:     testVersionCMAES010,
+			wantRefusal: true,
+			mustName:    []string{"MayFly", testVersionCMAESPreTag, testVersionCMAES010},
+		},
+		{
+			name:        "an older CMA-ES revision is still refused under v0.1.0",
+			library:     "CMA-ES",
+			recorded:    "v0.0.0-20260825113115-96b7c9adff3a",
+			running:     testVersionCMAES010,
+			wantRefusal: true,
+			mustName:    []string{"CMA-ES", "v0.0.0-20260825113115-96b7c9adff3a", testVersionCMAES010},
 		},
 		{
 			name:        "CMA-ES checkpoints refuse a different optimizer revision",

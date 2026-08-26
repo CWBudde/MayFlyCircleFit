@@ -169,6 +169,15 @@ release is declared by this file.
 
 ### Changed
 
+- The CMA-ES pin is `github.com/CWBudde/go-cma-es v0.1.0`, the library's first
+  tagged release, instead of the pseudo-version
+  `v0.0.0-20260825143954-e528faf326bf`. The tag is that revision plus a
+  benchmark function suite, the WebAssembly demo, and the version constant; no
+  file on the search path differs, and Rosenbrock at seeds 4242 and 7 returns
+  bit-identical costs, iteration counts, and evaluation counts under both, in
+  full and separable mode, at 5 and 14 dimensions. The resume guard's
+  interchangeable-version allowlist carries the pair, so a checkpoint written
+  under the pseudo-version still resumes.
 - The polishing defaults are re-derived from a measurement rather than inherited
   from the batch configuration: `polishingIters` 1000 -> 200,
   `polishingMaxSweeps` 3 -> 8, `polishingStagnationIters` 500 -> 100 (half its

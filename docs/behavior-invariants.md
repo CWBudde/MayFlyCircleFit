@@ -244,11 +244,17 @@ Rendering-side invariants live in
   checkpoint that records no version at all — every checkpoint written before
   the field existed — is never refused; it warns, naming the running version.
   The same applies when either side reports `unknown`, which is what a build
-  without module information reports. One pair of versions is exempt: MayFly
-  v0.7.0 and v0.7.1 are measured to be behaviour-neutral against each other, so
-  a checkpoint written by either resumes silently under the other. That is an
-  explicit two-version allowlist, not a rule about minor versions — every other
-  pair, v0.6.0 against v0.7.x included, is still refused.
+  without module information reports. Two pairs of versions are exempt, each
+  measured to be behaviour-neutral so that a checkpoint written by either member
+  resumes silently under the other: MayFly v0.7.0 and v0.7.1, and CMA-ES
+  `v0.0.0-20260825143954-e528faf326bf` — the pseudo-version pinned before the
+  library carried a tag — and its `v0.1.0` release. The exemption is an explicit
+  list of measured pairs, not a rule about minor versions or about tags
+  superseding pseudo-versions: every other pair, MayFly v0.6.0 against v0.7.x
+  and any older CMA-ES revision against `v0.1.0` included, is still refused. A
+  pair belongs on that list only once it has been measured, and it is scoped to
+  the library it names — the MayFly exemption does not admit the same version
+  strings under another engine.
 - Optimizer termination reasons propagate from the adapter through the pipeline
   to jobs, checkpoints, `status`, and `checkpoints list`. The checkpoint
   `termination` field is free-form, so new reasons need no schema bump, and
