@@ -62,3 +62,7 @@ diff.png
 # Local example inputs (personal images; keep them out of the public repo)
 /example/*.jpg
 /example/*.jpeg
+
+# Playwright run artifacts
+/web/test-results/
+/web/playwright-report/

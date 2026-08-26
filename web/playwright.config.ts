@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 // Specs are routed to projects by filename suffix. The two behavior specs
 // predate the suffix convention and are matched by name.
-const BEHAVIOR = [/live-sync\.spec\.ts/, /job-infinite-scroll\.spec\.ts/];
+const BEHAVIOR = [/.*\.behavior\.spec\.ts/, /live-sync\.spec\.ts/, /job-infinite-scroll\.spec\.ts/];
 const A11Y = /.*\.a11y\.spec\.ts/;
 const KEYBOARD = /.*\.keyboard\.spec\.ts/;
 const LAYOUT = /.*\.layout\.spec\.ts/;
