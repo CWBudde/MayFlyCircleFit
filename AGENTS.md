@@ -138,11 +138,20 @@ reintroduce application configuration into the store package.
   under both, for `uniform`, `sobol`, and `halton`, at 10 and 56 dimensions. So
   a v0.7.0 measurement is comparable to a run on the current pin, which is not
   true of any earlier version. The resume guard knows that pair: v0.7.0 and
-  v0.7.1 checkpoints resume under either binary, by an explicit two-version
-  allowlist in `internal/opt/resume_guard.go` rather than a semver rule. Templ
-  is pinned to `github.com/a-h/templ v0.3.960` as a Go tool, and
+  v0.7.1 checkpoints resume under either binary, by an explicit allowlist of
+  measured pairs in `internal/opt/resume_guard.go` rather than a semver rule.
+  Templ is pinned to `github.com/a-h/templ v0.3.960` as a Go tool, and
   `github.com/google/pprof` as a Go tool because some Go installations do not
   bundle it.
+- CMA-ES is pinned to `github.com/CWBudde/go-cma-es v0.1.0`, the library's first
+  tagged release. It is the same search path as the pseudo-version
+  `v0.0.0-20260825143954-e528faf326bf` this repository pinned before the tag
+  existed — the intervening commits added a benchmark function suite, the
+  WebAssembly demo, and the library's own version constant. Verified directly:
+  Rosenbrock at seeds 4242 and 7 returns bit-identical costs, iteration counts
+  and evaluation counts under both, in full and separable mode, at 5 and 14
+  dimensions. That pair is the guard's second allowlist entry, so a checkpoint
+  written before the tag still resumes. Any older CMA-ES revision is refused.
 - `github.com/evanw/esbuild/cmd/esbuild` is installed as a Go tool to compile the
   frontend bundle, while `npm` is only used to fetch TypeScript dependency files.
 - `internal/ui/*_templ.go` is generated and committed. After changing a `.templ`
