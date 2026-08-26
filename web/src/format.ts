@@ -146,13 +146,18 @@ export function campaignProjectionBasis(projection: ProjectionShape): string {
 		`The projections below extrapolate the trailing ${legs}, not the whole campaign.`;
 }
 
+// Both rate helpers gate on the denominator, never on the rate itself: a
+// trailing window that added circles and removed no cost measured zero, which
+// is a finding rather than a missing number. campaignPerCircleRate in
+// internal/ui/schedule.templ carries the same rule, and the CLI prints such a
+// window as 0.000000.
 export function campaignPerCircleRate(projection: ProjectionShape): string {
-	if (!projection.projected || projection.recentGainPerCircle === 0) return "—";
+	if (!projection.projected || projection.recentCircles <= 0) return "—";
 	return `${projection.recentGainPerCircle.toFixed(6)} cost/circle over the last ${projection.recentCircles} circles`;
 }
 
 export function campaignPerHourRate(projection: ProjectionShape): string {
-	if (!projection.projected || projection.recentGainPerHour === 0) return "—";
+	if (!projection.projected || projection.recentElapsedSec <= 0) return "—";
 	return `${projection.recentGainPerHour.toFixed(2)} cost/hour over the last ${formatDurationSeconds(projection.recentElapsedSec)}`;
 }
 

@@ -389,6 +389,22 @@ describe("the projection formatters", () => {
 		expect(campaignPerHourRate(projectionFixture)).toBe("18.96 cost/hour over the last 56m0s");
 	});
 
+	it("prints a measured zero rate rather than hiding it behind a dash", () => {
+		// A trailing window that added circles and spent wall clock but removed
+		// no cost measured a rate of zero. That is a finding about the campaign,
+		// and the CLI prints it as 0.000000; a dash would say the number is
+		// missing. The denominators are what decide presence.
+		const flat = { ...projectionFixture, recentGainPerCircle: 0, recentGainPerHour: 0 };
+		expect(campaignPerCircleRate(flat)).toBe("0.000000 cost/circle over the last 1000 circles");
+		expect(campaignPerHourRate(flat)).toBe("0.00 cost/hour over the last 56m0s");
+	});
+
+	it("dashes only when the window has no denominator to divide by", () => {
+		const unmeasured = { ...projectionFixture, recentCircles: 0, recentElapsedSec: 0 };
+		expect(campaignPerCircleRate(unmeasured)).toBe("—");
+		expect(campaignPerHourRate(unmeasured)).toBe("—");
+	});
+
 	it("names the ceiling as well as the shortfall", () => {
 		expect(campaignRemainingCircles(projectionFixture)).toBe("1000 circles to 3000");
 		expect(campaignRemainingElapsed(projectionFixture)).toBe("1h36m0s");

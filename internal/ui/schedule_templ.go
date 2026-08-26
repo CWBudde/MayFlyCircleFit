@@ -2019,7 +2019,13 @@ func campaignProjectionBasis(projection CampaignProjection) string {
 // built from a different number would invite the reader to check one against
 // the other.
 func campaignPerCircleRate(projection CampaignProjection) string {
-	if !projection.Projected || projection.RecentGainPerCircle == 0 {
+	// Gated on the denominator, never on the rate: a trailing window that added
+	// circles and removed no cost measured a rate of zero, which is a finding
+	// about the campaign rather than a missing number. The CLI's own block
+	// gates on HasCircleCeiling for the same reason and prints 0.000000, and a
+	// dash here would make the two surfaces disagree about a measurement they
+	// both hold.
+	if !projection.Projected || projection.RecentCircles <= 0 {
 		return "—"
 	}
 	return fmt.Sprintf("%.6f cost/circle over the last %d circles",
@@ -2027,7 +2033,7 @@ func campaignPerCircleRate(projection CampaignProjection) string {
 }
 
 func campaignPerHourRate(projection CampaignProjection) string {
-	if !projection.Projected || projection.RecentGainPerHour == 0 {
+	if !projection.Projected || projection.RecentElapsedSec <= 0 {
 		return "—"
 	}
 	return fmt.Sprintf("%.2f cost/hour over the last %s", projection.RecentGainPerHour,
