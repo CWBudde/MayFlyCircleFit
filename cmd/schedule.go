@@ -162,15 +162,21 @@ type scheduleDetailResponse struct {
 // CLI's response cap at roughly 865 of them. A stage's configuration is fetched
 // one stage at a time from /schedules/:id/stages/:index.
 type scheduleStageSummaryResponse struct {
-	Index        int                   `json:"index"`
-	Kind         app.ScheduleStageKind `json:"kind"`
-	State        store.ScheduleState   `json:"state"`
-	Circles      int                   `json:"circles"`
-	BestCost     float64               `json:"bestCost,omitempty"`
-	ElapsedNanos *int64                `json:"elapsedNanos,omitempty"`
-	JobID        string                `json:"jobId,omitempty"`
-	Error        string                `json:"error,omitempty"`
-	Reason       string                `json:"reason,omitempty"`
+	Index   int                   `json:"index"`
+	Kind    app.ScheduleStageKind `json:"kind"`
+	State   store.ScheduleState   `json:"state"`
+	Circles int                   `json:"circles"`
+	// ActualCircles is what a settled stage really built, which is not
+	// necessarily what it planned: a batch stage that stopped at its refill
+	// limit holds fewer. It is absent from a stage that has not settled and
+	// from every server that predates the field, so the projection falls back
+	// to Circles rather than reading the zero as a count.
+	ActualCircles int     `json:"actualCircles,omitempty"`
+	BestCost      float64 `json:"bestCost,omitempty"`
+	ElapsedNanos  *int64  `json:"elapsedNanos,omitempty"`
+	JobID         string  `json:"jobId,omitempty"`
+	Error         string  `json:"error,omitempty"`
+	Reason        string  `json:"reason,omitempty"`
 }
 
 // chainStageResponse mirrors the server's chain stage projection, which carries

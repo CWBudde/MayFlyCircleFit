@@ -264,10 +264,14 @@ func scheduleStageTimings(stages []store.ScheduleStageRecord) []app.ScheduleStag
 		}
 
 		timing := app.ScheduleStageTiming{
-			Index:    stage.Index,
-			Kind:     stage.Kind,
-			State:    state,
-			Circles:  stage.Circles,
+			Index: stage.Index,
+			Kind:  stage.Kind,
+			State: state,
+			// The projection divides a cost gain by the circles that bought it,
+			// so it needs the count the stage really built: a stage that
+			// stopped at its refill limit spent fewer circles than it planned
+			// and would otherwise be charged for ones that never existed.
+			Circles:  stage.MaterializedCircles(),
 			BestCost: stage.BestCost,
 			CostMeasured: state == app.ScheduleOutcomeCompleted &&
 				!math.IsNaN(stage.BestCost) && !math.IsInf(stage.BestCost, 0),
@@ -334,6 +338,13 @@ type scheduleStageSummary struct {
 	State   store.ScheduleState   `json:"state"`
 	Circles int                   `json:"circles"`
 
+	// ActualCircles is what a settled stage really built, absent until it has
+	// settled and on every record written before the field existed. Circles
+	// stays the planned count the stage table reports; this is what the cost
+	// projection divides by, and it is sent so the CLI projects from the same
+	// figure the server does.
+	ActualCircles int `json:"actualCircles,omitempty"`
+
 	BestCost     float64 `json:"bestCost,omitempty"`
 	ElapsedNanos *int64  `json:"elapsedNanos,omitempty"`
 
@@ -355,14 +366,15 @@ func summarizeScheduleStages(stages []store.ScheduleStageRecord) []scheduleStage
 
 func summarizeScheduleStage(stage *store.ScheduleStageRecord) scheduleStageSummary {
 	summary := scheduleStageSummary{
-		Index:    stage.Index,
-		Kind:     stage.Kind,
-		State:    stage.State,
-		Circles:  stage.Circles,
-		BestCost: stage.BestCost,
-		JobID:    stage.JobID,
-		Error:    stage.Error,
-		Reason:   stage.Reason,
+		Index:         stage.Index,
+		Kind:          stage.Kind,
+		State:         stage.State,
+		Circles:       stage.Circles,
+		ActualCircles: stage.ActualCircles,
+		BestCost:      stage.BestCost,
+		JobID:         stage.JobID,
+		Error:         stage.Error,
+		Reason:        stage.Reason,
 	}
 	if stage.StartedAt != nil && stage.CompletedAt != nil {
 		elapsed := stage.CompletedAt.Sub(*stage.StartedAt).Nanoseconds()
@@ -601,7 +613,14 @@ func (s *Server) handleGetSchedule(w http.ResponseWriter, r *http.Request, sched
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(detail)
+	// This is the one schedule response that carries floats: the projection's
+	// cost rates. Encoding them can fail where the sibling handlers' integer
+	// and string payloads cannot, so the error is reported rather than dropped.
+	err = json.NewEncoder(w).Encode(detail)
+	if err != nil {
+		slog.Error("Failed to encode schedule detail response",
+			"schedule_id", scheduleID, "error", err)
+	}
 }
 
 // handleGetScheduleStage handles GET /api/v1/schedules/:id/stages/:index and

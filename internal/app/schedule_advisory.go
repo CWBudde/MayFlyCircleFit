@@ -126,6 +126,20 @@ func (d ScheduleDocument) wastefulBudget(stage ScheduleStage, defaults JobConfig
 
 	switch stage.Kind {
 	case ScheduleStageBase, ScheduleStageExtend:
+		// The measurement behind this note is MayFly's, but popSize is not.
+		// The same key reaches CMA-ES as lambda and Dragonfly as NPop, and a
+		// population above the default is an ordinary setting there rather than
+		// a measured waste — raising lambda on a multimodal landscape is
+		// exactly what the IPOP and BIPOP restart strategies this repository
+		// exposes do on purpose. An advisory that quotes a figure may only fire
+		// where the figure was taken, so the engine is checked before the
+		// budget is. It is read through ResolvedOptimizer rather than off the
+		// field, because a document that names no engine runs MayFly and still
+		// has to be warned.
+		if config.ResolvedOptimizer() != OptimizerMayfly {
+			return scheduleBudget{}, false
+		}
+
 		if config.PopSize <= defaults.PopSize || config.OptimizerEpochs != 1 {
 			return scheduleBudget{}, false
 		}
@@ -137,6 +151,12 @@ func (d ScheduleDocument) wastefulBudget(stage ScheduleStage, defaults JobConfig
 			epochs:     config.OptimizerEpochs,
 		}, true
 	case ScheduleStagePolish:
+		// Deliberately ungated, and not a symmetry the file forgot: a polishing
+		// sweep runs its own MayFly population whatever engine the document
+		// names, so the measurement's engine is this stage's engine by
+		// construction. A document that names another engine and asks for a
+		// polish step never reaches here anyway — validation refuses the
+		// polishing fields under a non-MayFly engine before the plan expands.
 		if config.PolishingPopSize <= defaults.PolishingPopSize || config.PolishingEpochs != 1 {
 			return scheduleBudget{}, false
 		}

@@ -285,7 +285,11 @@ pays full price for nothing.
 The parser now says so. `schedule create` and `schedule create --dry-run` print
 it as a `!` line, the API carries it in `warnings`, and the campaign page shows
 it. It is an advisory and never a refusal: the document is valid and the
-configuration runs exactly as written — it is only measured wasteful.
+configuration runs exactly as written — it is only measured wasteful. On base
+and extend stages it fires for MayFly only, because the measurement is MayFly's
+and the same `popSize` reaches CMA-ES as lambda and Dragonfly as `NPop`, where a
+larger population is a different trade; polish stages always carry it, since
+polishing runs MayFly whatever engine the document names.
 
 **The objective flips with what is scarce.** While the circle budget is open,
 gain per *hour* is the objective and the cheapest settings that still converge

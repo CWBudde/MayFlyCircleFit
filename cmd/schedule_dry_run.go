@@ -226,6 +226,7 @@ func printScheduleProjection(output io.Writer, detail scheduleDetailResponse, as
 	}
 
 	_ = writer.Flush()
+
 	printScheduleFinish(output, projection, detail.State)
 	printScheduleCostProjection(output, projection.Cost)
 }
@@ -391,11 +392,20 @@ func countedCostSamples(samples int) string {
 func stageTimings(stages []scheduleStageSummaryResponse) []app.ScheduleStageTiming {
 	timings := make([]app.ScheduleStageTiming, 0, len(stages))
 	for _, stage := range stages {
+		// The cost projection charges a gain to the circles that bought it, so
+		// it reads what the stage really built. A stage that has not settled,
+		// and any stage read from a server that predates the field, sends no
+		// count and falls back to the planned one.
+		circles := stage.Circles
+		if stage.ActualCircles > 0 {
+			circles = stage.ActualCircles
+		}
+
 		timing := app.ScheduleStageTiming{
 			Index:        stage.Index,
 			Kind:         stage.Kind,
 			State:        scheduleOutcomeState(stage.State),
-			Circles:      stage.Circles,
+			Circles:      circles,
 			BestCost:     stage.BestCost,
 			CostMeasured: stage.State == store.ScheduleStateCompleted,
 		}

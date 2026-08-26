@@ -697,6 +697,8 @@ const wastefulPopulationDocument = `{
 // Task 16.9 at the command level: the note is printed with the `!` marker the
 // CLI already uses for a warning that stops nothing, and the plan is printed
 // anyway, because the document is valid and runs exactly as written.
+//
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleDryRunWarnsAboutAPopulationWithoutEpochs(t *testing.T) {
 	_, stub := newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
 		t.Error("a dry run reached the server")
@@ -734,6 +736,8 @@ func TestScheduleDryRunWarnsAboutAPopulationWithoutEpochs(t *testing.T) {
 // TestScheduleDryRunIsSilentWhenTheEpochsAreRaisedToo is the negative control:
 // the same population with the epochs to spend it is not advised against, so
 // the marker is absent rather than merely differently worded.
+//
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleDryRunIsSilentWhenTheEpochsAreRaisedToo(t *testing.T) {
 	_, _ = newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
 		t.Error("a dry run reached the server")
@@ -825,6 +829,8 @@ func growthCampaignDetail(t *testing.T) scheduleDetailResponse {
 // check on the PSNR side. It drives `schedule status` against a server serving
 // the measured campaign's three milestones and asserts the PSNR the CLI derives
 // for each of them, in the stage table and in the two projection blocks.
+//
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleStatusProjectsBothScarceResources(t *testing.T) {
 	detail := growthCampaignDetail(t)
 
@@ -838,7 +844,9 @@ func TestScheduleStatusProjectsBothScarceResources(t *testing.T) {
 	})
 
 	var output bytes.Buffer
-	if err := runScheduleStatus(testCommand(context.Background(), &output), []string{testScheduleID}); err != nil {
+
+	err = runScheduleStatus(testCommand(context.Background(), &output), []string{testScheduleID})
+	if err != nil {
 		t.Fatalf("runScheduleStatus() error = %v", err)
 	}
 
@@ -883,6 +891,8 @@ func TestScheduleStatusProjectsBothScarceResources(t *testing.T) {
 // TestScheduleStatusReportsAnUnprojectableCost is the honesty requirement on
 // the cost side: one measured stage is a starting point, not a gain, and is
 // reported as insufficient rather than extrapolated.
+//
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleStatusReportsAnUnprojectableCost(t *testing.T) {
 	fixture := projectionDetailFixture(0, nil)
 	var detail scheduleDetailResponse
@@ -898,5 +908,60 @@ func TestScheduleStatusReportsAnUnprojectableCost(t *testing.T) {
 
 	if strings.Contains(body, "Against a circle ceiling") {
 		t.Errorf("a single measured stage still drew a cost block:\n%s", body)
+	}
+}
+
+// TestStageTimingsPreferTheCirclesAStageBuilt is the client half of the
+// refill-limit fix. The listing carries both counts: circles is what the plan
+// asked for and cannot change once a stage has run, actualCircles what the
+// stage really built. The cost projection divides a gain by the circles that
+// bought it, so it has to read the second — while still working against a
+// server old enough not to send it.
+func TestStageTimingsPreferTheCirclesAStageBuilt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		stage scheduleStageSummaryResponse
+		want  int
+	}{
+		{
+			// A stage that stopped at its refill limit: the canvas holds 63
+			// circles however many were requested.
+			name: "a refill-limited stage is charged for what it built",
+			stage: scheduleStageSummaryResponse{
+				State: store.ScheduleStateCompleted, Circles: 64, ActualCircles: 63,
+			},
+			want: 63,
+		},
+		{
+			// A server that predates the field sends no count, and so does a
+			// stage that has not settled. Both fall back to the plan, which is
+			// the figure the CLI used before the field existed.
+			name:  "an absent count falls back to the plan",
+			stage: scheduleStageSummaryResponse{State: store.ScheduleStateCompleted, Circles: 64},
+			want:  64,
+		},
+		{
+			name: "a stage that built its whole request is unchanged",
+			stage: scheduleStageSummaryResponse{
+				State: store.ScheduleStateCompleted, Circles: 64, ActualCircles: 64,
+			},
+			want: 64,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			timings := stageTimings([]scheduleStageSummaryResponse{test.stage})
+			if len(timings) != 1 {
+				t.Fatalf("stageTimings() returned %d timings, want 1", len(timings))
+			}
+
+			if timings[0].Circles != test.want {
+				t.Errorf("timing circles = %d, want %d", timings[0].Circles, test.want)
+			}
+		})
 	}
 }

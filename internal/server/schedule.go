@@ -479,6 +479,11 @@ func (s *Server) runScheduleStage(
 	stageRecord.CompletedAt = &completedAt
 	stageRecord.BestCost = job.BestCost
 	stageRecord.Iterations = job.Iterations
+	// The record's own Circles is the planned count and stays pinned to the
+	// stage config, so what the stage actually built is recorded beside it. A
+	// batch stage that stopped at its refill limit holds fewer circles than it
+	// asked for, and the projections read this one.
+	stageRecord.ActualCircles = job.ActualCircles
 
 	stageRecord.Evaluations = int64(job.Evaluations)
 	switch job.State {
@@ -680,6 +685,7 @@ func (s *Server) settleAdoptedStage(
 	settled.Error = ""
 	settled.BestCost = job.BestCost
 	settled.Iterations = job.Iterations
+	settled.ActualCircles = job.ActualCircles
 	settled.Evaluations = int64(job.Evaluations)
 
 	completedAt := time.Now().UTC()

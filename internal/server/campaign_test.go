@@ -665,6 +665,8 @@ func growthCampaignRecord(t *testing.T) (*store.ScheduleRecord, []store.Schedule
 // a planned campaign knows that an imported chain cannot: what its document
 // says about its own budget, and where the stages it has left are heading.
 func TestCampaignFromScheduleCarriesAdvisoriesAndProjection(t *testing.T) {
+	t.Parallel()
+
 	record, stages := growthCampaignRecord(t)
 
 	campaign := campaignFromSchedule(record, stages)
@@ -710,6 +712,8 @@ func TestCampaignFromScheduleCarriesAdvisoriesAndProjection(t *testing.T) {
 // authoring site an advisory could name and no remaining stage to project
 // towards. Empty here is the honest answer, not a missing feature.
 func TestCampaignFromChainHasNothingToAdviseOrProject(t *testing.T) {
+	t.Parallel()
+
 	chain := []*store.Checkpoint{
 		{JobID: chainBaseJob, ActualCircles: 1000, BestCost: 96.199, Termination: "completed"},
 		{

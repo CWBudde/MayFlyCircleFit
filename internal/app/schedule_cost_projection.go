@@ -162,7 +162,9 @@ func (p ScheduleCostProjection) Projected() bool {
 // guards the estimate above the gate is the trailing window and the decay note,
 // not a larger threshold — a campaign that has run two stages still has to be
 // told something, and the alternative is to say nothing until it has run three.
-func ProjectScheduleCost(plan []ScheduleStage, timings []ScheduleStageTiming, remaining time.Duration) ScheduleCostProjection {
+func ProjectScheduleCost(
+	plan []ScheduleStage, timings []ScheduleStageTiming, remaining time.Duration,
+) ScheduleCostProjection {
 	measured := costMilestones(plan, timings)
 
 	projection := ScheduleCostProjection{Samples: len(measured), RemainingElapsed: remaining}
@@ -326,6 +328,7 @@ func costDecayNote(projection ScheduleCostProjection) string {
 	}
 
 	return fmt.Sprintf(
-		"the per-circle return is decaying: %.6f cost/circle over the last %d leg(s) against %.6f over the whole campaign, so even this projection is optimistic",
+		"the per-circle return is decaying: %.6f cost/circle over the last %d leg(s) "+
+			"against %.6f over the whole campaign, so even this projection is optimistic",
 		projection.RecentGainPerCircle, projection.RecentLegs, projection.GainPerCircle)
 }

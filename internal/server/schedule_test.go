@@ -1053,7 +1053,8 @@ func advisoryDocument(imagePath string, epochs int) string {
 	return fmt.Sprintf(`{
   "name": "advisory campaign",
   "seed": 42,
-  "base": {"refPath": %q, "mode": "batch", "circles": 2, "batchSize": 1, "iters": 5, "popSize": 100, "optimizerEpochs": %d},
+  "base": {"refPath": %q, "mode": "batch", "circles": 2, "batchSize": 1,
+           "iters": 5, "popSize": 100, "optimizerEpochs": %d},
   "steps": [{"type": "extend", "additionalCircles": 1}]
 }`, imagePath, epochs)
 }
@@ -1063,19 +1064,24 @@ func advisoryDocument(imagePath string, epochs int) string {
 // document on every read -- so the create response and a detail fetched later
 // have to agree, and a document that raises both halves of the budget pair has
 // to fall silent.
+//
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleAdvisoriesReachBothResponses(t *testing.T) {
 	fixture := newScheduleFixture(t, 2)
 
 	recorder := httptest.NewRecorder()
-	fixture.server.Handler().ServeHTTP(recorder, httptest.NewRequest(
-		http.MethodPost, "/api/v1/schedules", strings.NewReader(advisoryDocument(fixture.imagePath, 1))))
+	fixture.server.Handler().ServeHTTP(recorder, httptest.NewRequestWithContext(
+		t.Context(), http.MethodPost, "/api/v1/schedules",
+		strings.NewReader(advisoryDocument(fixture.imagePath, 1))))
 
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, body %s", recorder.Code, recorder.Body.String())
 	}
 
 	var created scheduleSummary
-	if err := json.Unmarshal(recorder.Body.Bytes(), &created); err != nil {
+
+	err := json.Unmarshal(recorder.Body.Bytes(), &created)
+	if err != nil {
 		t.Fatalf("decode create response: %v", err)
 	}
 
@@ -1106,15 +1112,17 @@ func (f *scheduleFixture) detail(t *testing.T, scheduleID string) scheduleDetail
 	t.Helper()
 
 	recorder := httptest.NewRecorder()
-	f.server.Handler().ServeHTTP(recorder, httptest.NewRequest(
-		http.MethodGet, "/api/v1/schedules/"+scheduleID, nil))
+	f.server.Handler().ServeHTTP(recorder, httptest.NewRequestWithContext(
+		t.Context(), http.MethodGet, "/api/v1/schedules/"+scheduleID, nil))
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("detail status = %d, body %s", recorder.Code, recorder.Body.String())
 	}
 
 	var detail scheduleDetail
-	if err := json.Unmarshal(recorder.Body.Bytes(), &detail); err != nil {
+
+	err := json.Unmarshal(recorder.Body.Bytes(), &detail)
+	if err != nil {
 		t.Fatalf("decode detail response: %v", err)
 	}
 
@@ -1154,7 +1162,8 @@ func (f *scheduleFixture) growthCampaign(t *testing.T, state store.ScheduleState
 		t.Fatalf("schedule store: %v", err)
 	}
 
-	if err := scheduleStore.SaveSchedule(record); err != nil {
+	err = scheduleStore.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("save schedule: %v", err)
 	}
 
@@ -1180,7 +1189,8 @@ func (f *scheduleFixture) growthCampaign(t *testing.T, state store.ScheduleState
 		end := begin.Add(30 * time.Minute)
 		stage.StartedAt, stage.CompletedAt = &begin, &end
 
-		if err := scheduleStore.SaveScheduleStage(record.ScheduleID, stage); err != nil {
+		err = scheduleStore.SaveScheduleStage(record.ScheduleID, stage)
+		if err != nil {
 			t.Fatalf("save stage %d: %v", index, err)
 		}
 	}
@@ -1193,6 +1203,8 @@ func (f *scheduleFixture) growthCampaign(t *testing.T, state store.ScheduleState
 // once it does. The figures are checked against the leg the records describe
 // rather than against the whole campaign average, because that is the rate the
 // projection is required to extrapolate.
+//
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleDetailProjectsWhatIsLeft(t *testing.T) {
 	fixture := newScheduleFixture(t, 1)
 	scheduleID := fixture.growthCampaign(t, store.ScheduleStateRunning)
@@ -1242,6 +1254,8 @@ func TestScheduleDetailProjectsWhatIsLeft(t *testing.T) {
 // TestScheduleDetailOmitsTheProjectionForACampaignThatIsOver is the other half
 // of the rule the CLI applies: the estimate anchors at a clock, and a campaign
 // that will never advance again makes that anchor a false claim.
+//
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleDetailOmitsTheProjectionForACampaignThatIsOver(t *testing.T) {
 	fixture := newScheduleFixture(t, 1)
 
@@ -1254,5 +1268,116 @@ func TestScheduleDetailOmitsTheProjectionForACampaignThatIsOver(t *testing.T) {
 				t.Fatalf("a %s campaign carries a projection: %+v", state, detail.Projection)
 			}
 		})
+	}
+}
+
+// TestSettledStageRecordsTheCirclesItMaterialized covers the settlement copy
+// the projections depend on. A stage record's Circles is the *planned* count —
+// it comes from the expanded plan and Validate pins it to Config.Circles, so it
+// can never be rewritten — which means a stage that built fewer circles than it
+// asked for has nowhere to say so unless settlement records the job's own tally.
+//
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
+func TestSettledStageRecordsTheCirclesItMaterialized(t *testing.T) {
+	fixture := newScheduleFixture(t, 2)
+	scheduleID := fixture.createSchedule(t, scheduleDocument(fixture.imagePath, 5, 20))
+	fixture.waitForScheduleState(t, scheduleID, store.ScheduleStateCompleted, 60*time.Second)
+
+	stages := fixture.stages(t, scheduleID)
+	if len(stages) != 2 {
+		t.Fatalf("recorded %d stages, want 2", len(stages))
+	}
+
+	for _, stage := range stages {
+		if stage.State != store.ScheduleStateCompleted {
+			t.Fatalf("stage %d state = %q, want completed: %s", stage.Index, stage.State, stage.Error)
+		}
+		// The checkpoint is where the job's tally lands, so it is the
+		// independent copy of the figure the record is supposed to carry.
+		checkpoint, err := fixture.server.store.LoadCheckpoint(stage.JobID)
+		if err != nil {
+			t.Fatalf("load stage %d checkpoint: %v", stage.Index, err)
+		}
+
+		if stage.ActualCircles != checkpoint.ActualCircles {
+			t.Errorf("stage %d recorded %d materialized circles, its job built %d",
+				stage.Index, stage.ActualCircles, checkpoint.ActualCircles)
+		}
+		// A settled stage that left the field at zero would read back as the
+		// planned count through MaterializedCircles, which is exactly the
+		// silent fallback this copy exists to make unnecessary.
+		if stage.ActualCircles == 0 {
+			t.Errorf("stage %d settled without recording what it built", stage.Index)
+		}
+
+		if stage.MaterializedCircles() != checkpoint.ActualCircles {
+			t.Errorf("stage %d reports %d circles on the canvas, the checkpoint holds %d",
+				stage.Index, stage.MaterializedCircles(), checkpoint.ActualCircles)
+		}
+	}
+}
+
+// TestScheduleProjectionChargesOnlyTheCirclesAStageBuilt is the refill-limit
+// case. A batch stage that terminates at its refill limit materializes fewer
+// circles than the plan requested, and both halves of the cost projection —
+// the per-circle rate's denominator and the distance left to the plan's
+// ceiling — have to be measured against what exists rather than what was asked
+// for, or the campaign is charged for circles that were never drawn.
+//
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
+func TestScheduleProjectionChargesOnlyTheCirclesAStageBuilt(t *testing.T) {
+	fixture := newScheduleFixture(t, 1)
+	scheduleID := fixture.growthCampaign(t, store.ScheduleStateRunning)
+
+	scheduleStore, err := fixture.server.scheduleStore()
+	if err != nil {
+		t.Fatalf("schedule store: %v", err)
+	}
+
+	stages := fixture.stages(t, scheduleID)
+	if len(stages) != 2 || stages[1].Circles != 2000 {
+		t.Fatalf("fixture recorded %d stages, the last at %d circles; want 2 ending at 2000",
+			len(stages), stages[len(stages)-1].Circles)
+	}
+
+	// The second stage asked for 2000 circles and refilled its way to 1999.
+	limited := stages[1]
+	limited.ActualCircles = limited.Circles - 1
+
+	err = scheduleStore.SaveScheduleStage(scheduleID, &limited)
+	if err != nil {
+		t.Fatalf("record the refill-limited stage: %v", err)
+	}
+
+	detail := fixture.detail(t, scheduleID)
+	if detail.Projection == nil {
+		t.Fatal("a running campaign with two measured stages and one to go carries no projection")
+	}
+	// The listing carries the realized count too, so the CLI projects from the
+	// same figure rather than re-deriving one the server did not send.
+	if detail.Stages[1].ActualCircles != 1999 {
+		t.Errorf("stage 1 summary reports %d materialized circles, want 1999",
+			detail.Stages[1].ActualCircles)
+	}
+
+	cost := detail.Projection.Cost
+	if cost.LatestCircles != 1999 {
+		t.Errorf("campaign stands at %d circles, want the 1999 it built", cost.LatestCircles)
+	}
+
+	if cost.RemainingCircles != 1001 {
+		t.Errorf("remaining circles = %d, want 3000 - 1999", cost.RemainingCircles)
+	}
+
+	// 96.199 - 64.602 over the 999 circles that actually appeared, not over
+	// the 1000 the stage requested.
+	wantRate := (96.199 - 64.602) / 999
+	if math.Abs(cost.RecentGainPerCircle-wantRate) > 1e-9 {
+		t.Errorf("trailing rate = %f cost/circle, want %f", cost.RecentGainPerCircle, wantRate)
+	}
+
+	wantEnd := 64.602 - wantRate*1001
+	if math.Abs(cost.CostAtPlanEnd-wantEnd) > 1e-6 {
+		t.Errorf("cost at the plan's end = %f, want %f", cost.CostAtPlanEnd, wantEnd)
 	}
 }

@@ -1,10 +1,12 @@
-package app
+package app_test
 
 import (
 	"math"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cwbudde/mayflycirclefit/internal/app"
 )
 
 // The fixture is the 512x512 growth campaign of 2026-08-19/20, sampled at its
@@ -47,36 +49,38 @@ func closeTo(t *testing.T, name string, got, want float64) {
 
 // costPlanTo is the fixture's plan, optionally carrying one more extend so
 // there are circles left for a projection to be made against.
-func costPlanTo(ceiling int) []ScheduleStage {
-	plan := []ScheduleStage{
-		{Index: 0, Kind: ScheduleStageBase, Circles: 1000},
-		{Index: 1, Kind: ScheduleStageExtend, Circles: 2000, AdditionalCircles: 1000},
-		{Index: 2, Kind: ScheduleStageExtend, Circles: 3000, AdditionalCircles: 1000},
+func costPlanTo(ceiling int) []app.ScheduleStage {
+	plan := []app.ScheduleStage{
+		{Index: 0, Kind: app.ScheduleStageBase, Circles: 1000},
+		{Index: 1, Kind: app.ScheduleStageExtend, Circles: 2000, AdditionalCircles: 1000},
+		{Index: 2, Kind: app.ScheduleStageExtend, Circles: 3000, AdditionalCircles: 1000},
 	}
 
 	if ceiling > 3000 {
-		plan = append(plan, ScheduleStage{
-			Index: 3, Kind: ScheduleStageExtend, Circles: ceiling, AdditionalCircles: ceiling - 3000,
+		plan = append(plan, app.ScheduleStage{
+			Index: 3, Kind: app.ScheduleStageExtend, Circles: ceiling, AdditionalCircles: ceiling - 3000,
 		})
 	}
 
 	return plan
 }
 
-func costMeasured(index int, kind ScheduleStageKind, circles int, cost float64, elapsed time.Duration) ScheduleStageTiming {
-	return ScheduleStageTiming{
-		Index: index, Kind: kind, State: ScheduleOutcomeCompleted, Elapsed: elapsed,
+func costMeasured(
+	index int, kind app.ScheduleStageKind, circles int, cost float64, elapsed time.Duration,
+) app.ScheduleStageTiming {
+	return app.ScheduleStageTiming{
+		Index: index, Kind: kind, State: app.ScheduleOutcomeCompleted, Elapsed: elapsed,
 		Circles: circles, BestCost: cost, CostMeasured: true,
 	}
 }
 
 // costTimings is the campaign as measured: base to 1000 circles, then two
 // extends of 1000 each.
-func costTimings() []ScheduleStageTiming {
-	return []ScheduleStageTiming{
-		costMeasured(0, ScheduleStageBase, 1000, costAt1000, baseElapsed),
-		costMeasured(1, ScheduleStageExtend, 2000, costAt2000, leg1000To2000),
-		costMeasured(2, ScheduleStageExtend, 3000, costAt3000, leg2000To3000),
+func costTimings() []app.ScheduleStageTiming {
+	return []app.ScheduleStageTiming{
+		costMeasured(0, app.ScheduleStageBase, 1000, costAt1000, baseElapsed),
+		costMeasured(1, app.ScheduleStageExtend, 2000, costAt2000, leg1000To2000),
+		costMeasured(2, app.ScheduleStageExtend, 3000, costAt3000, leg2000To3000),
 	}
 }
 
@@ -84,12 +88,14 @@ func costTimings() []ScheduleStageTiming {
 // the campaign: the whole measured span, and each of its two legs read on its
 // own.
 func TestProjectScheduleCostMeasuresTheSpanAndEachLeg(t *testing.T) {
+	t.Parallel()
+
 	plan := costPlanTo(3000)
 	timings := costTimings()
 
 	tests := []struct {
 		name             string
-		timings          []ScheduleStageTiming
+		timings          []app.ScheduleStageTiming
 		wantSamples      int
 		wantGain         float64
 		wantAddedCircles int
@@ -133,7 +139,9 @@ func TestProjectScheduleCostMeasuresTheSpanAndEachLeg(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			projection := ProjectScheduleCost(plan, testCase.timings, 0)
+			t.Parallel()
+
+			projection := app.ProjectScheduleCost(plan, testCase.timings, 0)
 
 			if !projection.Projected() {
 				t.Fatalf("projection gated with %d samples: %q", projection.Samples, projection.Note)
@@ -164,9 +172,11 @@ func TestProjectScheduleCostMeasuresTheSpanAndEachLeg(t *testing.T) {
 // over-predicted the next thousand circles by 1.79x, which is the whole reason
 // the forward projections read the trailing window and not the average.
 func TestProjectScheduleCostProjectsFromTheTrailingWindow(t *testing.T) {
+	t.Parallel()
+
 	timings := costTimings()
 
-	atTwoThousand := ProjectScheduleCost(costPlanTo(3000), timings[:2], 0)
+	atTwoThousand := app.ProjectScheduleCost(costPlanTo(3000), timings[:2], 0)
 	if !atTwoThousand.HasCircleCeiling {
 		t.Fatalf("no circle ceiling projected at 2000 circles: %+v", atTwoThousand)
 	}
@@ -191,7 +201,7 @@ func TestProjectScheduleCostProjectsFromTheTrailingWindow(t *testing.T) {
 	// Standing at 3000 with another thousand planned, the two legs are averaged
 	// by the whole-campaign rate and only the second is spent by the trailing
 	// one. The projection must use the second.
-	atThreeThousand := ProjectScheduleCost(costPlanTo(4000), timings, leg2000To3000)
+	atThreeThousand := app.ProjectScheduleCost(costPlanTo(4000), timings, leg2000To3000)
 	if atThreeThousand.RecentLegs != 1 {
 		t.Fatalf("trailing legs = %d, want 1 — the trailing half of two legs", atThreeThousand.RecentLegs)
 	}
@@ -225,7 +235,9 @@ func TestProjectScheduleCostProjectsFromTheTrailingWindow(t *testing.T) {
 // decay is stated rather than left for the reader to notice, and that a
 // campaign holding its rate is not qualified for no reason.
 func TestProjectScheduleCostReportsDecayingReturn(t *testing.T) {
-	decaying := ProjectScheduleCost(costPlanTo(4000), costTimings(), 0)
+	t.Parallel()
+
+	decaying := app.ProjectScheduleCost(costPlanTo(4000), costTimings(), 0)
 	if !strings.Contains(decaying.Note, "decaying") {
 		t.Fatalf("note = %q, want it to report the decaying per-circle return", decaying.Note)
 	}
@@ -238,10 +250,10 @@ func TestProjectScheduleCostReportsDecayingReturn(t *testing.T) {
 
 	// The same shape of campaign removing the same cost per circle in both
 	// legs: the trailing rate equals the average, and there is nothing to say.
-	steady := ProjectScheduleCost(costPlanTo(4000), []ScheduleStageTiming{
-		costMeasured(0, ScheduleStageBase, 1000, 90, baseElapsed),
-		costMeasured(1, ScheduleStageExtend, 2000, 70, leg1000To2000),
-		costMeasured(2, ScheduleStageExtend, 3000, 50, leg2000To3000),
+	steady := app.ProjectScheduleCost(costPlanTo(4000), []app.ScheduleStageTiming{
+		costMeasured(0, app.ScheduleStageBase, 1000, 90, baseElapsed),
+		costMeasured(1, app.ScheduleStageExtend, 2000, 70, leg1000To2000),
+		costMeasured(2, app.ScheduleStageExtend, 3000, 50, leg2000To3000),
 	}, 0)
 	if steady.Note != "" {
 		t.Errorf("note = %q on a campaign holding its rate, want none", steady.Note)
@@ -252,11 +264,13 @@ func TestProjectScheduleCostReportsDecayingReturn(t *testing.T) {
 // denominator was never measured. In every case the rates stay zero and the
 // projection says why rather than filling the gap.
 func TestProjectScheduleCostRefusesToGuess(t *testing.T) {
+	t.Parallel()
+
 	plan := costPlanTo(4000)
 
 	tests := []struct {
 		name    string
-		timings []ScheduleStageTiming
+		timings []app.ScheduleStageTiming
 	}{
 		{name: "nothing has run"},
 		{
@@ -265,30 +279,38 @@ func TestProjectScheduleCostRefusesToGuess(t *testing.T) {
 		},
 		{
 			name: "completed stages that recorded no cost",
-			timings: []ScheduleStageTiming{
-				{Index: 0, Kind: ScheduleStageBase, State: ScheduleOutcomeCompleted, Elapsed: baseElapsed, Circles: 1000},
-				{Index: 1, Kind: ScheduleStageExtend, State: ScheduleOutcomeCompleted, Elapsed: leg1000To2000, Circles: 2000},
+			timings: []app.ScheduleStageTiming{
+				{Index: 0, Kind: app.ScheduleStageBase, State: app.ScheduleOutcomeCompleted, Elapsed: baseElapsed, Circles: 1000},
+				{
+					Index: 1, Kind: app.ScheduleStageExtend, State: app.ScheduleOutcomeCompleted,
+					Elapsed: leg1000To2000, Circles: 2000,
+				},
 			},
 		},
 		{
 			name: "a skipped stage is not a measurement",
-			timings: []ScheduleStageTiming{
+			timings: []app.ScheduleStageTiming{
 				costTimings()[0],
-				{Index: 1, Kind: ScheduleStageExtend, State: ScheduleOutcomeSkipped, Circles: 2000, BestCost: costAt2000, CostMeasured: true},
+				{
+					Index: 1, Kind: app.ScheduleStageExtend, State: app.ScheduleOutcomeSkipped,
+					Circles: 2000, BestCost: costAt2000, CostMeasured: true,
+				},
 			},
 		},
 		{
 			name: "measurements from outside the plan cannot move the estimate",
-			timings: []ScheduleStageTiming{
+			timings: []app.ScheduleStageTiming{
 				costTimings()[0],
-				costMeasured(99, ScheduleStageExtend, 2000, costAt2000, leg1000To2000),
+				costMeasured(99, app.ScheduleStageExtend, 2000, costAt2000, leg1000To2000),
 			},
 		},
 	}
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			projection := ProjectScheduleCost(plan, testCase.timings, time.Hour)
+			t.Parallel()
+
+			projection := app.ProjectScheduleCost(plan, testCase.timings, time.Hour)
 
 			if projection.Projected() {
 				t.Fatalf("projected from %d samples: %+v", projection.Samples, projection)
@@ -315,16 +337,18 @@ func TestProjectScheduleCostRefusesToGuess(t *testing.T) {
 // finish cannot be estimated still has a per-circle answer. Neither absence
 // takes the other down with it.
 func TestProjectScheduleCostSeparatesTheTwoQuestions(t *testing.T) {
+	t.Parallel()
+
 	// A polish-only span: three measured stages, all at the same circle count.
-	polishPlan := []ScheduleStage{
-		{Index: 0, Kind: ScheduleStagePolish, Circles: 3000},
-		{Index: 1, Kind: ScheduleStagePolish, Circles: 3000},
-		{Index: 2, Kind: ScheduleStagePolish, Circles: 3000},
+	polishPlan := []app.ScheduleStage{
+		{Index: 0, Kind: app.ScheduleStagePolish, Circles: 3000},
+		{Index: 1, Kind: app.ScheduleStagePolish, Circles: 3000},
+		{Index: 2, Kind: app.ScheduleStagePolish, Circles: 3000},
 	}
-	polish := ProjectScheduleCost(polishPlan, []ScheduleStageTiming{
-		costMeasured(0, ScheduleStagePolish, 3000, 50, 10*time.Minute),
-		costMeasured(1, ScheduleStagePolish, 3000, 48, 10*time.Minute),
-		costMeasured(2, ScheduleStagePolish, 3000, 47, 10*time.Minute),
+	polish := app.ProjectScheduleCost(polishPlan, []app.ScheduleStageTiming{
+		costMeasured(0, app.ScheduleStagePolish, 3000, 50, 10*time.Minute),
+		costMeasured(1, app.ScheduleStagePolish, 3000, 48, 10*time.Minute),
+		costMeasured(2, app.ScheduleStagePolish, 3000, 47, 10*time.Minute),
 	}, 30*time.Minute)
 
 	if polish.HasCircleCeiling {
@@ -340,7 +364,7 @@ func TestProjectScheduleCostSeparatesTheTwoQuestions(t *testing.T) {
 	closeTo(t, "cost at finish", polish.CostAtFinish, 44)
 
 	// The same measurements with no finish estimate behind them.
-	noClock := ProjectScheduleCost(costPlanTo(4000), costTimings(), 0)
+	noClock := app.ProjectScheduleCost(costPlanTo(4000), costTimings(), 0)
 	if noClock.HasTimeBudget {
 		t.Errorf("a projection with no time budget still answered the clock: %+v", noClock)
 	}
@@ -354,16 +378,18 @@ func TestProjectScheduleCostSeparatesTheTwoQuestions(t *testing.T) {
 // the answer depends on the plan and the measurements, not on the order they
 // arrive in or on how often it is asked.
 func TestProjectScheduleCostIsPure(t *testing.T) {
+	t.Parallel()
+
 	plan := costPlanTo(4000)
 	ordered := costTimings()
-	shuffled := []ScheduleStageTiming{ordered[2], ordered[0], ordered[1]}
+	shuffled := []app.ScheduleStageTiming{ordered[2], ordered[0], ordered[1]}
 
-	first := ProjectScheduleCost(plan, ordered, leg2000To3000)
-	if second := ProjectScheduleCost(plan, ordered, leg2000To3000); first != second {
+	first := app.ProjectScheduleCost(plan, ordered, leg2000To3000)
+	if second := app.ProjectScheduleCost(plan, ordered, leg2000To3000); first != second {
 		t.Fatalf("two calls with the same inputs differed:\n%+v\n%+v", first, second)
 	}
 
-	if outOfOrder := ProjectScheduleCost(plan, shuffled, leg2000To3000); first != outOfOrder {
+	if outOfOrder := app.ProjectScheduleCost(plan, shuffled, leg2000To3000); first != outOfOrder {
 		t.Fatalf("the timing order moved the estimate:\n%+v\n%+v", first, outOfOrder)
 	}
 }
@@ -372,10 +398,12 @@ func TestProjectScheduleCostIsPure(t *testing.T) {
 // point: the finish projection fills the cost projection, and hands it its own
 // Remaining as the time budget so the two cannot disagree.
 func TestProjectScheduleFinishCarriesTheCostProjection(t *testing.T) {
+	t.Parallel()
+
 	plan := costPlanTo(4000)
 	asOf := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
 
-	projection := ProjectScheduleFinish(plan, costTimings(), asOf)
+	projection := app.ProjectScheduleFinish(plan, costTimings(), asOf)
 	if !projection.Complete {
 		t.Fatalf("projection incomplete: %+v", projection.Kinds)
 	}
