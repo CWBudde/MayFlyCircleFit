@@ -26,6 +26,20 @@ type ScheduleStageTiming struct {
 	Kind    ScheduleStageKind
 	State   ScheduleOutcomeState
 	Elapsed time.Duration
+
+	// Circles is the count the canvas held once the stage completed, and
+	// BestCost the cost it reached there. Together with Elapsed they are one
+	// point on the cost curve, which is all ProjectScheduleCost reads.
+	Circles  int
+	BestCost float64
+
+	// CostMeasured says whether BestCost is a number the stage actually
+	// produced, and follows ScheduleStageOutcome's convention for the same
+	// reason: zero is a legitimate cost — a perfect fit costs exactly nothing —
+	// so absence has to be stated rather than inferred from the value. It
+	// defaults to false, so a timing assembled without a cost cannot pass an
+	// accidental zero off as a measurement.
+	CostMeasured bool
 }
 
 // ScheduleKindProjection is the estimate for one stage kind.
@@ -98,6 +112,12 @@ type ScheduleProjection struct {
 
 	FinishBy       time.Time
 	EarliestFinish time.Time
+
+	// Cost is what the same measurements say about the other scarce resource.
+	// It hangs here rather than behind a second entry point so a caller cannot
+	// build one projection from one set of stages and the other from another,
+	// and so the time answer it carries is by construction the Remaining above.
+	Cost ScheduleCostProjection
 }
 
 // ProjectScheduleFinish estimates the remaining wall clock of a campaign from
@@ -111,6 +131,9 @@ type ScheduleProjection struct {
 // A running stage counts as fully remaining. The alternative — subtracting the
 // part of it already elapsed — would need a per-stage progress model, which is
 // the a-priori reasoning this projection exists to avoid.
+//
+// It also fills Cost from the same timings, so one call answers both of the
+// questions a campaign can be asking. See ProjectScheduleCost.
 func ProjectScheduleFinish(plan []ScheduleStage, timings []ScheduleStageTiming, asOf time.Time) ScheduleProjection {
 	observed := make(map[ScheduleStageKind]*ScheduleKindProjection)
 	kindOf := func(kind ScheduleStageKind) *ScheduleKindProjection {
@@ -173,17 +196,22 @@ func ProjectScheduleFinish(plan []ScheduleStage, timings []ScheduleStageTiming, 
 		projection.Kinds = append(projection.Kinds, *entry)
 	}
 
-	if !projection.Complete {
-		return projection
+	if projection.Complete {
+		for _, entry := range projection.Kinds {
+			projection.Remaining += entry.Remaining
+			projection.Firm += entry.Remaining - entry.ConditionalRemaining
+		}
+
+		projection.FinishBy = asOf.Add(projection.Remaining)
+		projection.EarliestFinish = asOf.Add(projection.Firm)
 	}
 
-	for _, entry := range projection.Kinds {
-		projection.Remaining += entry.Remaining
-		projection.Firm += entry.Remaining - entry.ConditionalRemaining
-	}
-
-	projection.FinishBy = asOf.Add(projection.Remaining)
-	projection.EarliestFinish = asOf.Add(projection.Firm)
+	// The cost projection is computed last because it takes Remaining as its
+	// time budget. An incomplete finish projection leaves that zero, which is
+	// the honest input: the campaign then gets its circle answer and no time
+	// answer, rather than a time answer resting on a finish nobody could
+	// estimate.
+	projection.Cost = ProjectScheduleCost(plan, timings, projection.Remaining)
 
 	return projection
 }

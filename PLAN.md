@@ -546,7 +546,7 @@ the run's gain is already banked. See
   fitted vector rather than a cold population, so the collapse dynamics there
   are unmeasured.
 
-## Phase 16: Declarative Run Schedules
+## Phase 16: Declarative Run Schedules ✅
 
 Schedules replace one-off external orchestration with a persisted,
 server-owned campaign: validate and estimate a declarative document, execute
@@ -628,7 +628,7 @@ everything; the ordering is costing gain and buying nothing.
 - [x] Determinism regression: same config, parent, and seed produce an identical
       cost across two runs.
 
-### Task 16.9: Let the Estimator Spend the Scarce Resource (P2)
+### Task 16.9: Let the Estimator Spend the Scarce Resource (P2) ✅
 
 A campaign run to 3 000 circles on 2026-08-19/20 produced a growth recipe that
 the schedule format can express but the estimator gives no guidance on. All
@@ -657,21 +657,56 @@ figures are from A/Bs branching from a common parent on
   on the same cost. Neither survived a 50-circle sample. Any estimator advice
   derived from short probes needs a stated sample size.
 
-- [ ] Extend `schedule estimate` (Task 16.4) to report projected cost per circle
+- [x] Extend `schedule estimate` (Task 16.4) to report projected cost per circle
       and per hour separately, so a campaign against a circle ceiling and one
       against a time budget are not given the same answer.
-- [ ] Warn at validation when a document raises `popSize` above the default with
+- [x] Warn at validation when a document raises `popSize` above the default with
       `optimizerEpochs` 1, naming the measurement.
-- [ ] Record the recipe and its evidence in `docs/schedule-format.md`, including
+- [x] Record the recipe and its evidence in `docs/schedule-format.md`, including
       that `MaxCircles` was raised 1000 -> 3000 over this campaign because the
       cap, not diminishing returns, was the binding constraint each time.
 
+Implemented: `app.ProjectScheduleCost` derives both rates from the stage records
+the finish projection already reads, and hangs off `ScheduleProjection.Cost` so
+one call cannot answer the two questions from different measurements. Forward
+projections extrapolate the **trailing half** of the measured legs rather than
+the campaign average, because the per-circle return decays -- on the recorded
+campaign 1000 -> 2000 removed 31.597 cost units and 2000 -> 3000 removed 17.697,
+so the average over-predicts the next leg by 1.79x -- and the projection says so
+in a note when the trailing rate falls a quarter below the average.
+`ScheduleDocument.Advisories()` is a separate pure query rather than a branch in
+`Validate`, because the document is valid: it reports the population/epoch pair
+for base, extend **and** polish stages, reading the thresholds from
+`DefaultConfig()` so a moved default moves the check, deduplicating a repeated
+step into one note, and saying explicitly that the polish figure was borrowed
+from extends. Both reach the CLI (`!` lines), the API (`warnings`, `projection`)
+and the campaign page; `internal/app` stays dependency-free, so PSNR is derived
+by each surface through the existing `fit.PSNR` wrappers.
+
 **Acceptance Checks:**
 
-- [ ] The estimator's two projections are asserted against the measured campaign
+- [x] The estimator's two projections are asserted against the measured campaign
       figures at 1 000, 2 000, and 3 000 circles
       (96.199 / 64.602 / 46.905, PSNR 28.299 / 30.028 / 31.419).
-- [ ] A validation test covers the population-without-epochs warning.
+      `internal/app.TestProjectScheduleCostMeasuresTheSpanAndEachLeg` and
+      `TestProjectScheduleCostProjectsFromTheTrailingWindow` pin the costs and
+      the 1.7854x over-prediction; `cmd.TestScheduleStatusProjectsBothScarceResources`
+      pins the printed PSNRs. The per-leg wall clock in the fixture is
+      **plausible, not recorded** -- the campaign's costs are the measurement,
+      its stage timings were not kept -- and the fixture says so.
+- [x] A validation test covers the population-without-epochs warning.
+      `internal/app.TestScheduleDocumentAdvisories` and its five siblings.
+
+Checks observed on this revision: `gofmt -s -l .` (clean), `go vet ./...`,
+`go test -short ./...`, `go test -race -short ./...`, `go build ./...`,
+`CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...`, `go tool templ generate`
+followed by `git diff --exit-code -- 'internal/ui/*_templ.go'` (clean),
+`just bundle`, and in `web/`: `npm run typecheck` and `npm run test:unit`
+(117 passing). End-to-end against `serve`: the advisory prints on
+`schedule create --dry-run` and disappears at `optimizerEpochs` 3, the server
+logs it as `Schedule advisory`, and a running campaign's `schedule status`,
+`GET /api/v1/schedules/:id` and campaign page each report the two projections
+with different answers, while a settled campaign omits the projection entirely.
 
 ---
 
@@ -1101,6 +1136,139 @@ the three twelve-block requirements above remain open.
 
 ---
 
+## Phase 22: CMA-ES Surface Parity and Project Identity
+
+Phases 19–21 landed the adapter, its configuration, and one stopped
+measurement. A 2026-08-26 audit of the working tree found the plumbing complete
+and the product surface asymmetric: CMA-ES is already a peer in configuration,
+validation, persistence, and contract tests, but not in the two places a user
+meets it.
+
+Already at parity, and not to be redone here:
+
+- Typed configuration with `Resolved*` accessors and engine-scoped refusal in
+  both directions — a CMA-ES job carrying `variant` and a MayFly job carrying
+  `initialSigma` are each rejected rather than ignored
+  (`internal/app/cmaes.go`, `internal/app/optimizer.go`).
+- Nineteen focused adapter tests against MayFly's twenty-eight, covering
+  lifecycle, determinism, continuation seeds, repair and constraints, progress
+  and cancellation, epochs, the restart wrapper, and
+  `TestCMAESParallelEvaluationMatchesSerial`.
+- `internal/opt/optimizer_contract_test.go` fails if `app.SupportedOptimizers`
+  drifts from the engines `internal/opt` can construct.
+- Checkpoints record a per-engine `optimizerVersion`
+  (`internal/store/types.go:247`), and the resume guard holds CMA-ES versions to
+  the same measured-pair standard as MayFly.
+- A `cmaes` base carrying a `polish` step is refused at document validation,
+  because `Validate` expands the plan (`internal/app/schedule.go:359`), not
+  part-way through a campaign.
+
+### Task 22.1: Expose the CMA-ES knobs in the creation form (P1)
+
+`internal/ui/create.templ:86` offers the engine and then admits the gap at
+`:90`: "CMA-ES uses its default full covariance, active adaptation, and no
+internal restart schedule here." All four settings reach the CLI, JSON job
+payloads, and a schedule `base`; none reaches the form. The detail page renders
+them read-only (`internal/ui/detail.templ:387`), so the dashboard reports a
+configuration it cannot produce.
+
+This matters more than a missing input usually would. `AGENTS.md` requires long
+experiments to be offered through `serve` so they stay watchable, and Phase 21's
+open blocks are exactly such experiments; today a `separable` or `bipop`
+campaign has to be submitted as JSON.
+
+- [ ] Add `initialSigma`, `covarianceMode`, `activeCMA`, and `restartStrategy`
+      to the creation form, revealed when `optimizer` is `cmaes` and omitted
+      otherwise, so a MayFly submission still sends no CMA-ES-only field and
+      keeps passing `refuseCMAESOnlyFields`.
+- [ ] Surface the two configuration-level refusals in the form rather than only
+      as a rejected submission: full covariance above `MaxCMAESFullDimensions`,
+      and a `restartStrategy` other than `none` with `optimizerRestarts != 1`.
+- [ ] Cover the round trip with a server test asserting that a submission naming
+      each covariance mode and restart strategy reaches `JobConfig` intact,
+      mirroring `internal/server/optimizer_engine_test.go:121`.
+- [ ] Regenerate `internal/ui/*_templ.go` and observe the generation gate.
+
+### Task 22.2: Document the optimizer engines in the README (P2)
+
+The README has no optimizer-engine section. `--optimizer` appears once in
+passing (`README.md:246`), CMA-ES once (`README.md:234`), and
+`--initial-sigma`, `--covariance-mode`, `--active-cma`, and
+`--restart-strategy` only in `--help`. The surrounding sections — variants,
+initial population, restarts, crossover count, advanced parameters — are all
+MayFly's, and nothing says so.
+
+- [ ] Add an "Optimizer engines" section covering the three engines, what
+      selects each, and which knobs belong to which; nest the MayFly-specific
+      sections under it so `--variant` and `--qmc-init` stop reading as global.
+- [ ] Document the four CMA-ES flags with their defaults, the 512-dimension
+      full-covariance limit, and the shared IPOP/BIPOP evaluation budget.
+- [ ] State plainly that no engine ranking is established, linking
+      [`docs/cmaes-preliminary-report.md`](docs/cmaes-preliminary-report.md) for
+      what the stopped campaign does and does not support.
+
+### Task 22.3: Settle CMA-ES polishing as a decision, not a gap (P2)
+
+Polishing is MayFly-only by construction, so a CMA-ES campaign cannot take the
+base/extend/polish shape a MayFly campaign can, and `MaxVelocity` in a
+continuation profile has no CMA-ES analogue and is silently not applied
+(`docs/known-limitations.md:116`). Both are recorded; neither is recorded as
+permanent.
+
+- [ ] Decide and record one of: polishing stays MayFly-only, with the reason
+      stated in [`docs/behavior-invariants.md`](docs/behavior-invariants.md), or
+      a CMA-ES polishing stage is scoped as its own phase. Do not leave it
+      implicit.
+- [ ] Either way, make a CMA-ES job requesting polishing explain the
+      restriction in its rejection, rather than reporting only that the field
+      belongs to another engine.
+
+### Task 22.4: Rename the project (P2)
+
+The repository is named for one of the three engines it now hosts, and that name
+reaches the module path, the binary, the Cobra root command, the version
+template, and the CLI's error hints. `CircleFit` is the proposed name;
+`github.com/cwbudde/circlefit` with a `circlefit` binary is its corresponding
+form.
+
+Measured surface in the working tree: 145 files reference the module path
+`github.com/cwbudde/mayflycirclefit`, 25 documentation and CI lines name the
+binary, and 27 lines carry the `MayFlyCircleFit` spelling. The user-visible ones
+are `cmd/root.go:17`, `cmd/version.go:31`, `main.go:54`, and `main.go:118-122`.
+
+**There is no tag, locally or on `origin`.** Nothing imports this module and
+nothing is cached in `proxy.golang.org`, so the module path can change today for
+the cost of a mechanical rewrite. The first release tag ends that permanently --
+pressure in the opposite direction from waiting on Phase 21.
+
+The two need not be sequenced, because the rename does not depend on the
+measurement. A repository hosting MayFly, CMA-ES, and Dragonfly is misnamed
+whether or not CMA-ES wins; a ranking decides which engine is the *default*, not
+whether the project should be named after one of them. Rename on that argument,
+before the first tag, and leave the default-engine question with Phase 21.
+
+- [ ] Confirm the name, then rename the GitHub repository and rewrite the module
+      path, imports, binary name, Cobra `Use`, version template, error hints,
+      `justfile` recipes, CI workflow references, and documentation in one
+      commit that changes nothing else.
+- [ ] Leave the pinned library names untouched: `cwbudde/mayfly`,
+      `CWBudde/go-cma-es`, and `CWBudde/dragonfly` are separate projects, and
+      their spellings are load-bearing in `go.mod` and in the resume guard's
+      per-library allowlist.
+- [ ] Verify with `go build ./...`, `go test -short ./...`, the cross-build, and
+      a fresh clone at the new path; confirm no artifact, checkpoint, or trace
+      field carried the old name.
+
+**Rationale:** The engine seam is done, and the remaining asymmetry is
+presentational rather than architectural — which is precisely why it is worth a
+task list instead of being absorbed into whichever phase touches the UI next. A
+knob reachable only by hand-written JSON is a knob the dashboard cannot make
+observable, and Phase 21's open blocks are the campaigns that need it. The
+rename is grouped here because it has the same cause: the project outgrew the
+assumption that one library is the project.
+
+---
+
 ## Summary and Next Steps
 
 Completed implementation history is intentionally summarized above; detailed
@@ -1118,12 +1286,15 @@ Current open work, in priority order:
    [`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md).
 4. **CMA-ES measurement (P1):** compare evaluation-matched MayFly and CMA-ES
    arms, including IPOP and separable covariance.
-5. **Dashboard sign-off (P1):** Task 17.11.
-6. **Frontend island transition (P1/P2):** Tasks 18.1, 18.2, and 18.7, then
+5. **CMA-ES surface parity (P1):** Task 22.1 — the creation form cannot
+   configure an engine the CLI and schedules can, and Phase 21's open blocks
+   are exactly the campaigns that should be started from the dashboard. Then
+   Tasks 22.2–22.4.
+6. **Dashboard sign-off (P1):** Task 17.11.
+7. **Frontend island transition (P1/P2):** Tasks 18.1, 18.2, and 18.7, then
    18.3–18.6. The shadcn SPA rewrite is recorded as a deferred alternative at
    the end of Phase 18, not as scheduled work.
-7. **Server memory (P2):** Task 17.12.
-8. **Schedule quality (P2):** Task 16.9.
+8. **Server memory (P2):** Task 17.12.
 9. **UX and supporting documentation (P2/P3):** Tasks 12.9 and 13.15.
 10. **Experimental backends/research:** Tasks 11.9–11.13 and 10.20.
 

@@ -57,7 +57,10 @@ ones that will change what you propose:
   and active-set tradeoffs. Both carry their own version caveats; heed them
   rather than reusing their numbers.
 - [`docs/schedule-format.md`](docs/schedule-format.md) — the schedule document
-  format, its worked example, and when two campaigns' costs are comparable.
+  format, its worked example, the measured growth recipe (grow `+1` per extend,
+  raise `popSize` and `optimizerEpochs` together, and which objective a scarce
+  circle budget versus a scarce hour selects), and when two campaigns' costs are
+  comparable.
 - [`docs/support-matrix.md`](docs/support-matrix.md),
   [`docs/known-limitations.md`](docs/known-limitations.md),
   [`docs/troubleshooting.md`](docs/troubleshooting.md) — supported targets, CLI

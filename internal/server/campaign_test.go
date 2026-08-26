@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -613,4 +614,120 @@ func inOrder(text string, markers ...string) bool {
 	}
 
 	return true
+}
+
+// growthCampaignRecord is the campaign the estimator was built from, as far as
+// the view is concerned: a plan to 3000 circles, measured at 1000 and 2000, and
+// a population raised without the epochs to spend it.
+func growthCampaignRecord(t *testing.T) (*store.ScheduleRecord, []store.ScheduleStageRecord) {
+	t.Helper()
+
+	document, err := app.ParseSchedule([]byte(`{
+  "name": "growth campaign",
+  "seed": 42,
+  "base": {"refPath": "assets/ref.png", "mode": "batch", "circles": 1000, "batchSize": 1, "iters": 100, "popSize": 100},
+  "steps": [{"type": "extend", "additionalCircles": 1000, "repeat": 2}]
+}`))
+	if err != nil {
+		t.Fatalf("parse schedule: %v", err)
+	}
+
+	record := &store.ScheduleRecord{
+		SchemaVersion: store.ScheduleRecordSchemaVersion,
+		ScheduleID:    chainScheduleID,
+		State:         store.ScheduleStateRunning,
+		CampaignSeed:  42,
+		Document:      *document,
+	}
+
+	started := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	firstEnd := started.Add(30 * time.Minute)
+	secondStart := started.Add(time.Hour)
+	secondEnd := secondStart.Add(30 * time.Minute)
+
+	stages := []store.ScheduleStageRecord{
+		{
+			Index: 0, Kind: app.ScheduleStageBase, State: store.ScheduleStateCompleted,
+			Circles: 1000, BestCost: 96.199, JobID: chainBaseJob,
+			StartedAt: &started, CompletedAt: &firstEnd,
+		},
+		{
+			Index: 1, Kind: app.ScheduleStageExtend, State: store.ScheduleStateCompleted,
+			Circles: 2000, BestCost: 64.602, JobID: chainExtendJob, ParentJobID: chainBaseJob,
+			StartedAt: &secondStart, CompletedAt: &secondEnd,
+		},
+	}
+
+	return record, stages
+}
+
+// TestCampaignFromScheduleCarriesAdvisoriesAndProjection covers the two things
+// a planned campaign knows that an imported chain cannot: what its document
+// says about its own budget, and where the stages it has left are heading.
+func TestCampaignFromScheduleCarriesAdvisoriesAndProjection(t *testing.T) {
+	t.Parallel()
+
+	record, stages := growthCampaignRecord(t)
+
+	campaign := campaignFromSchedule(record, stages)
+	if len(campaign.Warnings) != 1 {
+		t.Fatalf("campaign carried %d warnings, want the one its document earns: %v",
+			len(campaign.Warnings), campaign.Warnings)
+	}
+
+	if !strings.Contains(campaign.Warnings[0], "base.popSize") {
+		t.Errorf("warning does not name the field it is about: %q", campaign.Warnings[0])
+	}
+
+	if campaign.Projection == nil {
+		t.Fatal("a running campaign with a stage left carries no projection")
+	}
+
+	projection := *campaign.Projection
+	if !projection.Projected || projection.Samples != 2 {
+		t.Fatalf("projection = (projected %v, %d samples), want projected over 2",
+			projection.Projected, projection.Samples)
+	}
+
+	if projection.LatestCircles != 2000 || projection.RemainingCircles != 1000 {
+		t.Errorf("projection stands at %d circles with %d to go, want 2000 and 1000",
+			projection.LatestCircles, projection.RemainingCircles)
+	}
+
+	if !projection.HasCircleCeiling || math.Abs(projection.CostAtPlanEnd-33.005) > 1e-6 {
+		t.Errorf("cost at the plan's end = (%v, %f), want a projected 33.005",
+			projection.HasCircleCeiling, projection.CostAtPlanEnd)
+	}
+
+	// The card shows a PSNR beside the cost, and derives it here rather than in
+	// the browser, for the same reason every stage row does.
+	if !projection.HasPlanEndPSNR || projection.PlanEndPSNRInfinite {
+		t.Errorf("plan-end PSNR = (%v, infinite %v), want a finite figure",
+			projection.HasPlanEndPSNR, projection.PlanEndPSNRInfinite)
+	}
+}
+
+// TestCampaignFromChainHasNothingToAdviseOrProject pins the deliberate gap: a
+// lineage walked backwards out of checkpoints was never planned, so there is no
+// authoring site an advisory could name and no remaining stage to project
+// towards. Empty here is the honest answer, not a missing feature.
+func TestCampaignFromChainHasNothingToAdviseOrProject(t *testing.T) {
+	t.Parallel()
+
+	chain := []*store.Checkpoint{
+		{JobID: chainBaseJob, ActualCircles: 1000, BestCost: 96.199, Termination: "completed"},
+		{
+			JobID: chainExtendJob, ExtendedFrom: chainBaseJob, ActualCircles: 2000,
+			BestCost: 64.602, Termination: "completed",
+		},
+	}
+
+	campaign := campaignFromChain(chainExtendJob, chain)
+	if len(campaign.Warnings) != 0 {
+		t.Errorf("an imported chain has no document, but carried warnings: %v", campaign.Warnings)
+	}
+
+	if campaign.Projection != nil {
+		t.Errorf("an imported chain has no plan, but carried a projection: %+v", campaign.Projection)
+	}
 }

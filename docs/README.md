@@ -19,7 +19,8 @@ Everything in `docs/`, grouped by what you came here to do. Start from
 - [`cpu-rendering-threads.md`](cpu-rendering-threads.md) — how many render
   threads to give a workload, and when one is right.
 - [`schedule-format.md`](schedule-format.md) — the declarative campaign
-  document, a worked example, and when two campaigns' costs are comparable.
+  document, a worked example, the measured growth recipe, and when two
+  campaigns' costs are comparable.
 - [`benchmarks.md`](benchmarks.md) — the CPU benchmark suite: workloads, how to
   run them, how to compare revisions, and CI regression reporting.
 

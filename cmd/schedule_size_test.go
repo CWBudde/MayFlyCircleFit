@@ -302,6 +302,17 @@ func TestProjectionIsUnchangedByTheSummaryProjection(t *testing.T) {
 		!fromSummaries.EarliestFinish.Equal(fromRecords.EarliestFinish) {
 		t.Fatalf("projection from the listing = %+v, from the records = %+v", fromSummaries, fromRecords)
 	}
+	// The cost projection is comparable, so the whole of it is compared rather
+	// than the handful of fields a reviewer thought to list.
+	if fromSummaries.Cost != fromRecords.Cost {
+		t.Fatalf("cost projection from the listing = %+v, from the records = %+v",
+			fromSummaries.Cost, fromRecords.Cost)
+	}
+
+	if !fromRecords.Cost.Projected() {
+		t.Fatalf("the fixture projects no cost, so the cost comparison proves nothing: %+v",
+			fromRecords.Cost)
+	}
 
 	if len(fromSummaries.Kinds) != len(fromRecords.Kinds) {
 		t.Fatalf("projected %d kinds from the listing, %d from the records",
@@ -334,6 +345,12 @@ const projectionCampaignDocument = `{
   ]
 }`
 
+// refillLimitedStageIndex is the stage recordedStages settles short of its
+// planned circle count. It is an extend stage in the middle of the campaign, so
+// it lands inside the trailing window the cost projection extrapolates from and
+// a path that read the planned count instead would compute a different rate.
+const refillLimitedStageIndex = 3
+
 // recordedStages writes every stage but the last as completed, so both kinds
 // clear MinProjectionSamples and one stage is still to come.
 func recordedStages(t *testing.T, persistence store.ScheduleStore, plan []app.ScheduleStage) []store.ScheduleStageRecord {
@@ -352,6 +369,14 @@ func recordedStages(t *testing.T, persistence store.ScheduleStore, plan []app.Sc
 		record.State = store.ScheduleStateCompleted
 		record.JobID = fmt.Sprintf("00000000-0000-4000-8000-%012d", stage.Index)
 		record.BestCost = 812.5 - float64(stage.Index)
+		// One stage stops a circle short of its request, which is what a batch
+		// stage that hit its refill limit does. Both projection paths have to
+		// read that count rather than the plan's, so the parity comparison
+		// below only holds if both of them do.
+		if stage.Index == refillLimitedStageIndex {
+			record.ActualCircles = stage.Circles - 1
+		}
+
 		started, completed := at, at.Add(elapsed[stage.Kind])
 		record.StartedAt, record.CompletedAt = &started, &completed
 		at = completed
@@ -370,13 +395,23 @@ func recordedStages(t *testing.T, persistence store.ScheduleStore, plan []app.Sc
 // timingsFromRecords is the reduction the CLI performed before the listing
 // became a projection: it reads the two timestamps off the full stage record.
 // It stays here as the reference the summary is compared against.
+//
+// It fills the cost fields on the same rule stageTimings does, and has to: the
+// two are compared field for field, and a reference that left them empty would
+// let the comparison pass by agreeing that nothing was projected. For the same
+// reason it reads the materialized circle count: one stage of the fixture
+// settled short of its request, and a reference that charged the planned count
+// would disagree with the listing rather than check it.
 func timingsFromRecords(stages []store.ScheduleStageRecord) []app.ScheduleStageTiming {
 	timings := make([]app.ScheduleStageTiming, 0, len(stages))
 	for _, stage := range stages {
 		timing := app.ScheduleStageTiming{
-			Index: stage.Index,
-			Kind:  stage.Kind,
-			State: scheduleOutcomeState(stage.State),
+			Index:        stage.Index,
+			Kind:         stage.Kind,
+			State:        scheduleOutcomeState(stage.State),
+			Circles:      stage.MaterializedCircles(),
+			BestCost:     stage.BestCost,
+			CostMeasured: stage.State == store.ScheduleStateCompleted,
 		}
 		if stage.StartedAt != nil && stage.CompletedAt != nil {
 			timing.Elapsed = stage.CompletedAt.Sub(*stage.StartedAt)

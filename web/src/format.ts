@@ -86,18 +86,109 @@ export function formatPsnr(stage: { psnrInfinite: boolean; hasPsnr: boolean; psn
 	return stage.hasPsnr ? `${stage.psnr.toFixed(2)} dB` : "—";
 }
 
-// formatElapsed mirrors formatCampaignElapsed, which rounds to whole seconds
-// and prints the Go duration form: the largest non-zero unit leads, and every
-// unit below it is printed even when zero.
-export function formatElapsed(stage: { hasElapsed: boolean; elapsedSec: number }): string {
-	if (!stage.hasElapsed) return "—";
-	const total = Math.round(stage.elapsedSec);
+// formatDurationSeconds prints the Go duration form time.Duration.String()
+// produces after rounding to whole seconds: the largest non-zero unit leads,
+// and every unit below it is printed even when zero.
+export function formatDurationSeconds(seconds: number): string {
+	const total = Math.round(seconds);
 	const hours = Math.floor(total / 3600);
 	const minutes = Math.floor((total % 3600) / 60);
-	const seconds = total % 60;
-	if (hours > 0) return `${hours}h${minutes}m${seconds}s`;
-	if (minutes > 0) return `${minutes}m${seconds}s`;
-	return `${seconds}s`;
+	const rest = total % 60;
+	if (hours > 0) return `${hours}h${minutes}m${rest}s`;
+	if (minutes > 0) return `${minutes}m${rest}s`;
+	return `${rest}s`;
+}
+
+// formatElapsed mirrors formatCampaignElapsed.
+export function formatElapsed(stage: { hasElapsed: boolean; elapsedSec: number }): string {
+	return stage.hasElapsed ? formatDurationSeconds(stage.elapsedSec) : "—";
+}
+
+// The projection formatters below mirror the ones in schedule.templ, so the
+// card the island renders reads exactly like the server-rendered fallback it
+// replaces. Their parameter types stay structural for the reason this whole
+// module's are: the island's own Campaign type satisfies them without an
+// import back the other way.
+type ProjectionShape = {
+	projected: boolean;
+	samples: number;
+	recentLegs: number;
+	recentCircles: number;
+	recentElapsedSec: number;
+	recentGainPerCircle: number;
+	recentGainPerHour: number;
+	latestCircles: number;
+	latestCost: number;
+	remainingCircles: number;
+	costAtPlanEnd: number;
+	planEndPsnr: number;
+	planEndPsnrInfinite: boolean;
+	hasPlanEndPsnr: boolean;
+	hasCircleCeiling: boolean;
+	remainingElapsedSec: number;
+	costAtFinish: number;
+	finishPsnr: number;
+	finishPsnrInfinite: boolean;
+	hasFinishPsnr: boolean;
+	hasTimeBudget: boolean;
+};
+
+// campaignWarningHeading mirrors the Go helper of the same name.
+export function campaignWarningHeading(warnings: unknown[]): string {
+	return warnings.length === 1 ? "Advisory:" : "Advisories:";
+}
+
+export function campaignProjectionBasis(projection: ProjectionShape): string {
+	if (!projection.projected) return "Not enough completed stages to project a cost yet.";
+	const stages = projection.samples === 1 ? "1 measured stage" : `${projection.samples} measured stages`;
+	const legs = projection.recentLegs === 1 ? "leg" : `${projection.recentLegs} legs`;
+	return `From ${stages} alone, at ${projection.latestCircles} circles and cost ${projection.latestCost.toFixed(3)}. ` +
+		`The projections below extrapolate the trailing ${legs}, not the whole campaign.`;
+}
+
+// Both rate helpers gate on the denominator, never on the rate itself: a
+// trailing window that added circles and removed no cost measured zero, which
+// is a finding rather than a missing number. campaignPerCircleRate in
+// internal/ui/schedule.templ carries the same rule, and the CLI prints such a
+// window as 0.000000.
+export function campaignPerCircleRate(projection: ProjectionShape): string {
+	if (!projection.projected || projection.recentCircles <= 0) return "—";
+	return `${projection.recentGainPerCircle.toFixed(6)} cost/circle over the last ${projection.recentCircles} circles`;
+}
+
+export function campaignPerHourRate(projection: ProjectionShape): string {
+	if (!projection.projected || projection.recentElapsedSec <= 0) return "—";
+	return `${projection.recentGainPerHour.toFixed(2)} cost/hour over the last ${formatDurationSeconds(projection.recentElapsedSec)}`;
+}
+
+export function campaignRemainingCircles(projection: ProjectionShape): string {
+	if (projection.remainingCircles <= 0) return "—";
+	return `${projection.remainingCircles} circles to ${projection.latestCircles + projection.remainingCircles}`;
+}
+
+export function campaignRemainingElapsed(projection: ProjectionShape): string {
+	if (projection.remainingElapsedSec <= 0) return "—";
+	return formatDurationSeconds(projection.remainingElapsedSec);
+}
+
+export function campaignProjectedPlanEnd(projection: ProjectionShape): string {
+	return formatProjectedCost(projection.hasCircleCeiling, projection.costAtPlanEnd,
+		projection.hasPlanEndPsnr, projection.planEndPsnrInfinite, projection.planEndPsnr);
+}
+
+export function campaignProjectedFinish(projection: ProjectionShape): string {
+	return formatProjectedCost(projection.hasTimeBudget, projection.costAtFinish,
+		projection.hasFinishPsnr, projection.finishPsnrInfinite, projection.finishPsnr);
+}
+
+// formatProjectedCost mirrors the Go helper: the PSNR restates the cost beside
+// it, so it is parenthesised rather than given a figure of its own.
+export function formatProjectedCost(
+	present: boolean, cost: number, hasPsnr: boolean, infinite: boolean, psnr: number,
+): string {
+	if (!present) return "—";
+	if (infinite) return `${cost.toFixed(3)} (PSNR ∞ dB)`;
+	return hasPsnr ? `${cost.toFixed(3)} (PSNR ${psnr.toFixed(2)} dB)` : cost.toFixed(3);
 }
 
 export function formatAcceptedSweeps(stage: { acceptedSweeps?: number | null }): string {

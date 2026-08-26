@@ -329,3 +329,36 @@ func TestCampaignPageWithoutCompletedStagesSaysSo(t *testing.T) {
 		t.Error("campaign page does not explain why it shows no images")
 	}
 }
+
+// TestCampaignRatesPrintAMeasuredZero pins the presence rule the two rate rows
+// follow: a trailing window that added circles and spent wall clock but removed
+// no cost measured a rate of zero, which is a finding about the campaign rather
+// than a number the page failed to get. The CLI's own block gates on the same
+// denominators and prints 0.000000, so a dash here would put the two surfaces
+// in disagreement about a measurement they both hold.
+func TestCampaignRatesPrintAMeasuredZero(t *testing.T) {
+	t.Parallel()
+
+	flat := CampaignProjection{
+		Projected:     true,
+		RecentCircles: 1000, RecentElapsedSec: 3360,
+		RecentGainPerCircle: 0, RecentGainPerHour: 0,
+	}
+
+	if got := campaignPerCircleRate(flat); got != "0.000000 cost/circle over the last 1000 circles" {
+		t.Errorf("campaignPerCircleRate() = %q, want the measured zero spelled out", got)
+	}
+
+	if got := campaignPerHourRate(flat); got != "0.00 cost/hour over the last 56m0s" {
+		t.Errorf("campaignPerHourRate() = %q, want the measured zero spelled out", got)
+	}
+	// The dash is reserved for the window that has no denominator to divide by.
+	unmeasured := CampaignProjection{Projected: true}
+	if got := campaignPerCircleRate(unmeasured); got != "—" {
+		t.Errorf("campaignPerCircleRate() = %q, want a dash without circles to divide by", got)
+	}
+
+	if got := campaignPerHourRate(unmeasured); got != "—" {
+		t.Errorf("campaignPerHourRate() = %q, want a dash without wall clock to divide by", got)
+	}
+}

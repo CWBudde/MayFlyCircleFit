@@ -196,6 +196,22 @@ type ScheduleStageRecord struct {
 	Circles           int `json:"circles"`
 	AdditionalCircles int `json:"additionalCircles,omitempty"`
 
+	// ActualCircles is the count the stage actually materialized, recorded at
+	// settlement from the job's own tally. It differs from Circles because
+	// Circles is the *planned* count: it is copied from the expanded plan and
+	// pinned to Config.Circles by Validate, so it cannot be rewritten in place
+	// once the stage has run. A batch stage that terminates at its refill limit
+	// materializes fewer circles than it asked for, and anything reasoning about
+	// what the canvas holds — the cost projection's per-circle rate above all —
+	// has to read this rather than the request.
+	//
+	// It is zero for a stage that has not settled and for every record written
+	// before the field existed, which is why MaterializedCircles falls back to
+	// the planned count and why ScheduleRecordSchemaVersion is deliberately not
+	// bumped: the field is additive and optional, and an older record's zero
+	// reads correctly through that fallback.
+	ActualCircles int `json:"actualCircles,omitempty"`
+
 	// Config is what the stage ran with, seed included, so a single stage can be
 	// replayed without re-deriving it from the document.
 	Config JobConfig `json:"config"`
@@ -241,6 +257,22 @@ func NewScheduleStageRecord(scheduleID string, stage app.ScheduleStage) *Schedul
 	}
 }
 
+// MaterializedCircles reports the circle count a settled stage actually
+// produced, falling back to the planned count.
+//
+// The fallback is what lets every reader use one accessor: a pending stage has
+// nothing to report yet, and a record written before ActualCircles existed
+// never will, so in both cases the plan's count is the only figure there is and
+// it is the figure those readers used before. A settled stage overrides it with
+// what it really built.
+func (s *ScheduleStageRecord) MaterializedCircles() int {
+	if s.ActualCircles > 0 {
+		return s.ActualCircles
+	}
+
+	return s.Circles
+}
+
 // Validate checks a stage record without reference to the filesystem.
 func (s *ScheduleStageRecord) Validate() error {
 	if s == nil {
@@ -283,6 +315,17 @@ func (s *ScheduleStageRecord) Validate() error {
 
 	if s.Config.Circles != s.Circles {
 		return &ValidationError{Field: "Config.Circles", Reason: fmt.Sprintf("must match the stage circle count (%d)", s.Circles)}
+	}
+	// A stage can materialize fewer circles than it planned for, never more, so
+	// a count above the request is a record that disagrees with the job it came
+	// from rather than an unusually productive stage. Zero is not an error: it
+	// is what an unsettled stage carries, and what every record written before
+	// the field existed carries.
+	if s.ActualCircles < 0 || s.ActualCircles > s.Circles {
+		return &ValidationError{
+			Field:  "ActualCircles",
+			Reason: fmt.Sprintf("must be between zero and the planned circle count (%d)", s.Circles),
+		}
 	}
 	// A skipped stage never ran, so a job identifier on one would mean the
 	// record and the job tree disagree about whether work happened.

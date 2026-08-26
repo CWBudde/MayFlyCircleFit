@@ -422,6 +422,41 @@ func TestScheduleStoreRejectsInvalidInput(t *testing.T) {
 			wantErr: "Config.Circles",
 		},
 		{
+			// A materialized count is a tally of circles, and a negative tally
+			// is a record nothing could have produced.
+			name: "negative materialized circle count",
+			run: func() error {
+				err := fsStore.SaveSchedule(valid)
+				if err != nil {
+					return err
+				}
+
+				stage := NewScheduleStageRecord(testScheduleID, stages[0])
+				stage.ActualCircles = -1
+
+				return fsStore.SaveScheduleStage(testScheduleID, stage)
+			},
+			wantErr: "ActualCircles",
+		},
+		{
+			// A stage can stop short of what it planned; it cannot overshoot
+			// it, so a count above the request means the record and the job it
+			// settled from disagree.
+			name: "materialized circles above the planned count",
+			run: func() error {
+				err := fsStore.SaveSchedule(valid)
+				if err != nil {
+					return err
+				}
+
+				stage := NewScheduleStageRecord(testScheduleID, stages[0])
+				stage.ActualCircles = stage.Circles + 1
+
+				return fsStore.SaveScheduleStage(testScheduleID, stage)
+			},
+			wantErr: "ActualCircles",
+		},
+		{
 			name: "unknown stage state",
 			run: func() error {
 				err := fsStore.SaveSchedule(valid)
@@ -683,5 +718,50 @@ func TestSkippedIsAStageStateOnly(t *testing.T) {
 	record.State = ScheduleStateSkipped
 	if err := fsStore.SaveSchedule(record); err == nil {
 		t.Fatal("SaveSchedule() accepted a skipped campaign")
+	}
+}
+
+// TestMaterializedCirclesPrefersWhatTheStageBuilt covers the split between the
+// two circle counts a stage record carries. Circles is the planned count and is
+// pinned to Config.Circles, so it can never be rewritten once the stage has run;
+// a batch stage that terminates at its refill limit therefore records what it
+// actually built in ActualCircles, and every reader that means "what is on the
+// canvas" has to go through the accessor rather than the plan.
+func TestMaterializedCirclesPrefersWhatTheStageBuilt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		record ScheduleStageRecord
+		want   int
+	}{
+		{
+			// A stage that has not settled and a record written before the
+			// field existed are the same case: zero is an absence, and the
+			// planned count is the only figure either one has.
+			name:   "an unset count falls back to the plan",
+			record: ScheduleStageRecord{Circles: 64},
+			want:   64,
+		},
+		{
+			name:   "a refill-limited stage reports what it built",
+			record: ScheduleStageRecord{Circles: 64, ActualCircles: 63},
+			want:   63,
+		},
+		{
+			name:   "a stage that built its whole request reports the same count",
+			record: ScheduleStageRecord{Circles: 64, ActualCircles: 64},
+			want:   64,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := test.record.MaterializedCircles()
+			if got != test.want {
+				t.Errorf("MaterializedCircles() = %d, want %d", got, test.want)
+			}
+		})
 	}
 }

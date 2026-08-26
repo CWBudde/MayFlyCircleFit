@@ -252,6 +252,89 @@ Hours were lost to that silent drop; a schedule refuses rather than repeats it.
 **Unknown fields are refused** at every level, exactly as the HTTP request types
 refuse them. A typo is an error, not a dropped setting.
 
+## Spending the scarce resource
+
+Everything above is what the format accepts. This is what a campaign measured
+about how to spend it. The figures come from A/Bs branching from a common
+parent on `example/Christian_after.jpeg` (512x512), each arm adding the same
+number of circles, over a campaign run to 3000 circles on 2026-08-19/20.
+
+**They were taken under an earlier MayFly pin, and MayFly v0.7.0 changed
+results for every variant.** The *method* transfers — each finding below is one
+arm against another, decided by the difference between them rather than by an
+absolute — but the *numbers* are a different algorithm's. Re-measure a baseline
+before comparing anything new against them. The boundary is stated in
+`AGENTS.md` under Toolchain, and the same rule governs the historical baselines
+at the end of this page.
+
+**Grow one circle at a time.** `+1` per extend beat `+4` by 4.05 cost units at
+identical population and per-circle budget — 202.114 against 206.163 at 312
+circles — and the lead compounded rather than washing out: the arm was 1.2%
+behind a reference campaign at 312 circles and 10.8% ahead of it at 1000.
+`additionalCircles: 1` is the documented default for growth. Batching is a
+throughput convenience — fewer stages to plan, record and poll — and it is
+**not** in fact faster per circle.
+
+**Population is coupled to epochs. Raise both or neither.** An epoch reseeds
+from the best candidate so far, so a large population with one epoch has
+nowhere to spend itself. At `optimizerEpochs` 1, raising `popSize` from 30 to
+100 moved cost by 0.026 for 2.2x the wall clock; at `optimizerEpochs` 3 the
+same change was worth 1.94. A configuration that raises one without the other
+pays full price for nothing.
+
+The parser now says so. `schedule create` and `schedule create --dry-run` print
+it as a `!` line, the API carries it in `warnings`, and the campaign page shows
+it. It is an advisory and never a refusal: the document is valid and the
+configuration runs exactly as written — it is only measured wasteful. On base
+and extend stages it fires for MayFly only, because the measurement is MayFly's
+and the same `popSize` reaches CMA-ES as lambda and Dragonfly as `NPop`, where a
+larger population is a different trade; polish stages always carry it, since
+polishing runs MayFly whatever engine the document names.
+
+**The objective flips with what is scarce.** While the circle budget is open,
+gain per *hour* is the objective and the cheapest settings that still converge
+win: `iters` 500 with `epochs` 1 carried the campaign from 300 to 2000 circles.
+Against a fixed circle ceiling, gain per *circle* is the objective instead, and
+it ranks the same two settings the other way round. Measured at 2000 circles
+over a 50-circle sample:
+
+| `iters` | Gain per circle | Gain per hour |
+| --- | --- | --- |
+| 50 | 0.0113 | 11.3 units/hour |
+| 500 | 0.0207 | 6.05 units/hour |
+
+`iters` 500 returns 1.84x the gain per circle of `iters` 50 for roughly half
+the gain per hour. Neither figure is the answer on its own; which one to read
+depends on which resource runs out first. `schedule status` prints the two
+projections separately for exactly that reason, as "Against a circle ceiling"
+and "Against a time budget".
+
+Both are measured from completed stages only, and the forward projection uses
+the trailing half of the measured legs rather than the whole campaign, because
+the per-circle return decays as the canvas grows: 1000 → 2000 removed 31.597
+cost units, 2000 → 3000 removed 17.697 — a factor of 1.79. A whole-campaign
+average over-predicts the next leg by that much.
+
+**State the sample size, or a ranking is noise.** The same comparison over 12
+circles ranked `iters` 1500 *below* `iters` 500, and a single-circle probe put
+`iters` 50 and `iters` 500 on the same cost. Neither result survived a
+50-circle sample. Any advice derived from a short probe carries its sample size
+with it, or it is not advice.
+
+The campaign's milestones are the evidence all of the above rests on:
+
+| Circles | Cost | PSNR |
+| --- | --- | --- |
+| 1000 | 96.199 | 28.299 |
+| 2000 | 64.602 | 30.028 |
+| 3000 | 46.905 | 31.419 |
+
+`MaxCircles` was raised 1000 → 3000 over this campaign, in two steps, because
+the cap and not diminishing returns was the binding constraint each time: at
+both milestones the marginal return still on offer was what argued for the
+raise. That evidence is written into the constant's own comment in
+`internal/app/config.go` and is not repeated here.
+
 ## Worked example: the 512-circle campaign
 
 [`examples/512-circle-campaign.json`](examples/512-circle-campaign.json) is the
