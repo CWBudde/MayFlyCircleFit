@@ -170,7 +170,11 @@ func scriptSources(markup string) []string {
 // bodyWithoutLayout drops the shared layout so the assertion is about the
 // campaign markup rather than about the navigation the layout already owns.
 func bodyWithoutLayout(body string) string {
-	start := strings.Index(body, "<main>")
+	// Match the opening tag rather than the literal "<main>": the layout gives
+	// it an id and a tabindex so the skip link can move focus into it, and a
+	// helper that silently returns the whole document when it stops matching
+	// would hand every caller the navigation's own external links.
+	start := strings.Index(body, "<main")
 
 	end := strings.Index(body, "</main>")
 	if start < 0 || end < 0 {
