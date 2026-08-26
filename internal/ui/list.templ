@@ -32,7 +32,7 @@ templ JobList(page JobListPage) {
 	@Layout("Jobs") {
 		<div data-island="job-list" data-island-label="job list">
 		@templ.JSONScript("job-list-page", page)
-		<div style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center;">
+		<div class="row-between" style="margin-bottom: 2rem;">
 			<h1 style="font-size: 2rem; font-weight: 700;">
 				Optimization Jobs
 			</h1>
@@ -43,7 +43,7 @@ templ JobList(page JobListPage) {
 
 		if len(page.Jobs) == 0 {
 			<div class="card" style="text-align: center; padding: 3rem;">
-				<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 1rem; color: var(--text-muted);">
+				<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 1rem; color: var(--text-muted);" aria-hidden="true">
 					<circle cx="12" cy="12" r="10"></circle>
 					<line x1="12" y1="8" x2="12" y2="12"></line>
 					<line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -72,32 +72,33 @@ templ JobList(page JobListPage) {
 
 // JobCard displays a single job card
 templ JobCard(job JobListItem) {
-	<a href={ templ.URL(fmt.Sprintf("/jobs/%s", job.ID)) } style="text-decoration: none; color: inherit;">
-		<div class="card" style="cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;"
-			 onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='var(--shadow-md)';"
-			 onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--shadow)';"
-			 >
-		<div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+	<a href={ templ.URL(fmt.Sprintf("/jobs/%s", job.ID)) } class="card-link">
+		<div class="card" style="cursor: pointer;">
+		<div class="row-between row-between-top" style="margin-bottom: 1rem;">
 			<div style="flex: 1;">
-				<div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+				<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
 					<h3 style="font-size: 1.125rem; font-weight: 600; font-family: monospace;">
 						{ job.ID[:8] }...
 					</h3>
 					@StateBadge(job.State)
 				</div>
-				<div style="display: flex; gap: 1.5rem; color: var(--text-muted); font-size: 0.875rem;">
-					<span title="Mode">
-						<strong>Mode:</strong> { job.Mode }
+				<!-- The abbreviated visible labels are hidden from assistive tech in favour of spelled-out ones. -->
+				<div class="meta-row" style="color: var(--text-muted); font-size: 0.875rem;">
+					<span>
+						<span class="sr-only">Optimization mode</span>
+						<strong aria-hidden="true">Mode:</strong> { job.Mode }
 					</span>
-					<span title="Circles">
-						<strong>Circles:</strong> { fmt.Sprintf("%d", job.Circles) }
+					<span>
+						<span class="sr-only">Circle count</span>
+						<strong aria-hidden="true">Circles:</strong> { fmt.Sprintf("%d", job.Circles) }
 					</span>
-					<span title="Iterations">
-						<strong>Iterations:</strong> { fmt.Sprintf("%d", job.Iterations) }
+					<span>
+						<span class="sr-only">Iteration count</span>
+						<strong aria-hidden="true">Iterations:</strong> { fmt.Sprintf("%d", job.Iterations) }
 					</span>
 				</div>
 			</div>
-			<div style="text-align: right;">
+			<div class="row-end">
 				if job.State == "completed" || job.State == "running" {
 					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
 						Cost
@@ -106,7 +107,7 @@ templ JobCard(job JobListItem) {
 						{ fmt.Sprintf("%.2f", job.BestCost) }
 					</div>
 					if job.InitialCost > 0 {
-						<div style="font-size: 0.75rem; color: var(--success-color);">
+						<div style="font-size: 0.75rem; color: var(--success-text-strong);">
 							{ fmt.Sprintf("%.1f%% improvement", (1-job.BestCost/job.InitialCost)*100) }
 						</div>
 					}
@@ -114,8 +115,8 @@ templ JobCard(job JobListItem) {
 			</div>
 		</div>
 
-		<div style="display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; border-top: 1px solid var(--border-color); font-size: 0.875rem; color: var(--text-muted);">
-			<div>
+		<div class="row-between" style="padding-top: 1rem; border-top: 1px solid var(--border-color); font-size: 0.875rem; color: var(--text-muted);">
+			<div style="overflow-wrap: anywhere;">
 				<strong>Reference:</strong> { job.RefPath }
 			</div>
 			<div>

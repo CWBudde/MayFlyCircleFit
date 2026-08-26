@@ -131,6 +131,15 @@ web-check: web-typecheck web-unit web-test
 bundle:
 	bash scripts/bundle-web.sh
 
+# Install the browser engines the Playwright matrix drives
+web-browsers:
+	cd web && npx playwright install --with-deps chromium webkit
+
+# Run only the accessibility sweep, on one engine: the tight loop while
+# working violations down. The full matrix is `just web-test`.
+web-a11y:
+	cd web && npx playwright test --project=chromium e2e/accessibility.a11y.spec.ts
+
 # Verify the committed island bundle is current
 bundle-check:
 	bash scripts/bundle-web.sh

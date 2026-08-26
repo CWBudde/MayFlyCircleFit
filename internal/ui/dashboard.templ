@@ -79,7 +79,7 @@ templ DashboardPage(page DashboardPageData) {
 					Monitor jobs, campaigns, and host state from one view.
 				</p>
 			</div>
-			<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+			<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
 				<div class="card">
 					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem;">Jobs</h2>
 					<div style="display: grid; gap: 0.5rem; color: var(--text-muted);">
@@ -105,24 +105,25 @@ templ DashboardPage(page DashboardPageData) {
 				</div>
 			</div>
 			<div class="card" style="margin-bottom: 1.5rem;">
-				<div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
+				<div class="row-between" style="margin-bottom: 1rem;">
 					<h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">Running jobs</h2>
 					<a href="/jobs" class="btn" style="background-color: var(--border-color);">Open jobs page</a>
 				</div>
 				if len(page.RunningJobs) == 0 {
 					<p style="color: var(--text-muted);">No jobs are running right now.</p>
 				} else {
-					<div style="overflow-x: auto;">
+					<!-- tabindex makes the scroller reachable by keyboard; the label keeps that focus stop named. -->
+					<div class="table-scroll" role="region" aria-label="Running jobs" tabindex="0">
 						<table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
 							<thead>
 								<tr style="text-align: left; border-bottom: 1px solid var(--border-color);">
-									<th style="padding: 0.5rem 0.5rem 0.5rem 0;">Job</th>
-									<th style="padding: 0.5rem;">State</th>
-									<th style="padding: 0.5rem; text-align: right;">Circles</th>
-									<th style="padding: 0.5rem; text-align: right;">Iter</th>
-									<th style="padding: 0.5rem; text-align: right;">Best cost</th>
-									<th style="padding: 0.5rem; text-align: right;">Gain</th>
-									<th style="padding: 0.5rem; text-align: right;">CPS</th>
+									<th scope="col" style="padding: 0.5rem 0.5rem 0.5rem 0;">Job</th>
+									<th scope="col" style="padding: 0.5rem;">State</th>
+									<th scope="col" style="padding: 0.5rem; text-align: right;">Circles</th>
+									<th scope="col" style="padding: 0.5rem; text-align: right;">Iter</th>
+									<th scope="col" style="padding: 0.5rem; text-align: right;">Best cost</th>
+									<th scope="col" style="padding: 0.5rem; text-align: right;">Gain</th>
+									<th scope="col" style="padding: 0.5rem; text-align: right;">CPS</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -140,7 +141,7 @@ templ DashboardPage(page DashboardPageData) {
 										<td style="padding: 0.75rem 0.5rem; text-align: right;">{ formatJobCircles(job.Circles, job.RequestedCircles) }</td>
 										<td style="padding: 0.75rem 0.5rem; text-align: right;">{ fmt.Sprintf("%d", job.Iterations) }</td>
 										<td style="padding: 0.75rem 0.5rem; text-align: right;">{ fmt.Sprintf("%.4f", job.BestCost) }</td>
-										<td style="padding: 0.75rem 0.5rem; text-align: right; color: var(--success-color);">{ formatJobImprovement(job.InitialCost, job.BestCost) }</td>
+										<td style="padding: 0.75rem 0.5rem; text-align: right; color: var(--success-text-strong);">{ formatJobImprovement(job.InitialCost, job.BestCost) }</td>
 										<td style="padding: 0.75rem 0.5rem; text-align: right;">{ fmt.Sprintf("%.2f", job.CPS) }</td>
 									</tr>
 								}
@@ -151,7 +152,7 @@ templ DashboardPage(page DashboardPageData) {
 				<a href="/api/v1/events" style="display:inline-block; margin-top: 0.75rem; color: var(--primary-color);">Stream updates</a>
 			</div>
 			<div class="card" style="margin-bottom: 1.5rem;">
-				<div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
+				<div class="row-between" style="margin-bottom: 1rem;">
 					<h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">Campaigns</h2>
 					<a href="/schedules" class="btn" style="background-color: var(--border-color);">Open campaigns</a>
 				</div>
@@ -172,22 +173,22 @@ templ DashboardPage(page DashboardPageData) {
 }
 
 templ dashboardCampaignCard(summary CampaignSummary) {
-	<a href={ templ.URL(dashboardCampaignURL(summary)) } style="text-decoration: none; color: inherit;">
+	<a href={ templ.URL(dashboardCampaignURL(summary)) } class="card-link">
 		<div class="card" style="border-left: 4px solid var(--primary-color);">
-			<div style="display: flex; justify-content: space-between; align-items: start; gap: 1rem;">
+			<div class="row-between row-between-top">
 				<div>
-					<div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+					<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
 						<h3 style="font-size: 1.125rem; font-weight: 600; font-family: monospace;">{ shortID(summary.ID) }</h3>
 						if summary.Name != "" {
 							<span style="color: var(--text-muted);">{ summary.Name }</span>
 						}
 					</div>
-					<div style="display: flex; gap: 1rem; color: var(--text-muted); font-size: 0.875rem;">
+					<div class="meta-row" style="color: var(--text-muted); font-size: 0.875rem;">
 						<span><strong>Stages:</strong> { campaignStageCount(summary) }</span>
 						<span><strong>Circles:</strong> { fmt.Sprintf("%d", summary.Circles) }</span>
 					</div>
 				</div>
-				<div style="text-align: right;">
+				<div class="row-end">
 					if summary.State != "" {
 						@ScheduleStateBadge(summary.State)
 					}

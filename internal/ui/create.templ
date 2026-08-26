@@ -5,6 +5,29 @@ package ui
 // posts to a bare "/create" action, which discards the query string the page
 // was opened with. Without it every job created from the UI silently lands in
 // the default project. An empty slug means the default project.
+//
+// Each section is a fieldset rather than a div so that the controls inside it
+// are announced as one group, which is what gives the standalone checkboxes
+// ("Enable SSIM", "Active covariance adaptation") the context their own label
+// does not carry. The heading stays a real <h2> inside the <legend>, so the
+// page keeps its heading outline as well; a legend's content model allows
+// heading content. `min-inline-size: 0` is not cosmetic: a fieldset defaults to
+// `min-inline-size: min-content`, which would let the grids inside it push past
+// a narrow viewport however the tracks are sized.
+const createSectionStyle = "min-inline-size: 0; border: 0; padding: 0; margin: 0 0 2rem;"
+
+// createFieldGridStyle sizes every parameter grid. minmax(min(200px, 100%), 1fr)
+// rather than minmax(200px, 1fr): an auto-fit track keeps its stated minimum
+// even when the container is narrower than it, so a 200px track overflows a
+// phone-width card and scrolls the whole page sideways. min() clamps the track
+// to the container instead.
+const createFieldGridStyle = "display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 1rem;"
+
+// createInputStyle is the shared text-control appearance.
+const createInputStyle = "width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+
+const createSelectStyle = createInputStyle + " background-color: var(--control-bg);"
+
 templ CreateJobPage(errorMsg, project string) {
 	@Layout("Create Job") {
 		<div style="max-width: 800px; margin: 0 auto;">
@@ -20,7 +43,10 @@ templ CreateJobPage(errorMsg, project string) {
 				</p>
 			</div>
 			if errorMsg != "" {
-				<div class="card" style="background-color: var(--error-bg); border: 1px solid var(--error-border); margin-bottom: 1.5rem;">
+				// role="alert" because the page is re-rendered after a failed
+				// submission: without it the rejection is a silent change of
+				// content for anyone not looking at the top of the form.
+				<div class="card" role="alert" style="background-color: var(--error-bg); border: 1px solid var(--error-border); margin-bottom: 1.5rem;">
 					<h3 style="color: var(--error-text); font-weight: 600; margin-bottom: 0.5rem;">Error</h3>
 					<p style="color: var(--error-text); font-size: 0.875rem;">{ errorMsg }</p>
 				</div>
@@ -29,14 +55,16 @@ templ CreateJobPage(errorMsg, project string) {
 				if project != "" {
 					<input type="hidden" name="project" value={ project }/>
 				}
-				<!-- Reference Image Section -->
-				<div style="margin-bottom: 2rem;">
-					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-						Reference Image
-					</h2>
+				<fieldset style={ createSectionStyle }>
+					<legend style="padding: 0;">
+						<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+							Reference Image
+						</h2>
+					</legend>
 					<div style="margin-bottom: 1rem;">
 						<label for="refPath" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-							Image Path <span style="color: var(--error-color);">*</span>
+							Image Path
+							@requiredMarker()
 						</label>
 						<input
 							type="text"
@@ -44,7 +72,8 @@ templ CreateJobPage(errorMsg, project string) {
 							name="refPath"
 							placeholder="e.g., assets/test.png"
 							required
-							style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+							aria-required="true"
+							style={ createInputStyle }
 						/>
 						<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 							Enter the path to your reference image file on the server.
@@ -59,28 +88,31 @@ templ CreateJobPage(errorMsg, project string) {
 							id="canvasPath"
 							name="canvasPath"
 							placeholder="e.g., output/previous-result.png"
-							style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+							style={ createInputStyle }
 						/>
 						<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 							Load existing canvas to continue from a previous result. Leave empty for blank canvas.
 						</p>
 					</div>
-				</div>
-				<!-- Optimization Parameters -->
-				<div style="margin-bottom: 2rem;">
-					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-						Optimization Parameters
-					</h2>
-					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+				</fieldset>
+				<fieldset style={ createSectionStyle }>
+					<legend style="padding: 0;">
+						<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+							Optimization Parameters
+						</h2>
+					</legend>
+					<div style={ createFieldGridStyle }>
 						<div>
 							<label for="optimizer" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Optimizer <span style="color: var(--error-color);">*</span>
+								Optimizer
+								@requiredMarker()
 							</label>
 							<select
 								id="optimizer"
 								name="optimizer"
 								required
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem; background-color: var(--control-bg);"
+								aria-required="true"
+								style={ createSelectStyle }
 							>
 								<option value="mayfly" selected>MayFly</option>
 								<option value="cmaes">CMA-ES</option>
@@ -92,13 +124,15 @@ templ CreateJobPage(errorMsg, project string) {
 						</div>
 						<div>
 							<label for="mode" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Mode <span style="color: var(--error-color);">*</span>
+								Mode
+								@requiredMarker()
 							</label>
 							<select
 								id="mode"
 								name="mode"
 								required
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem; background-color: var(--control-bg);"
+								aria-required="true"
+								style={ createSelectStyle }
 							>
 								<option value="joint" selected>Joint</option>
 								<option value="sequential">Sequential</option>
@@ -110,7 +144,8 @@ templ CreateJobPage(errorMsg, project string) {
 						</div>
 						<div>
 							<label for="circles" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Circles <span style="color: var(--error-color);">*</span>
+								Circles
+								@requiredMarker()
 							</label>
 							<input
 								type="number"
@@ -120,7 +155,8 @@ templ CreateJobPage(errorMsg, project string) {
 								min="1"
 								max="3000"
 								required
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+								aria-required="true"
+								style={ createInputStyle }
 							/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 								Number of circles (1-3000)
@@ -128,7 +164,8 @@ templ CreateJobPage(errorMsg, project string) {
 						</div>
 						<div>
 							<label for="iters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Iterations <span style="color: var(--error-color);">*</span>
+								Iterations
+								@requiredMarker()
 							</label>
 							<input
 								type="number"
@@ -138,7 +175,8 @@ templ CreateJobPage(errorMsg, project string) {
 								min="1"
 								max="10000"
 								required
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+								aria-required="true"
+								style={ createInputStyle }
 							/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 								Max iterations (1-10000)
@@ -146,7 +184,8 @@ templ CreateJobPage(errorMsg, project string) {
 						</div>
 						<div>
 							<label for="popSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Population Size <span style="color: var(--error-color);">*</span>
+								Population Size
+								@requiredMarker()
 							</label>
 							<input
 								type="number"
@@ -156,7 +195,8 @@ templ CreateJobPage(errorMsg, project string) {
 								min="20"
 								max="4096"
 								required
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+								aria-required="true"
+								style={ createInputStyle }
 							/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 								Population size (20-4096)
@@ -173,7 +213,7 @@ templ CreateJobPage(errorMsg, project string) {
 								value="0"
 								min="0"
 								max="100"
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+								style={ createInputStyle }
 							/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 								Batch mode only. Set equal to Circles to optimize them all together; 0 selects the automatic default.
@@ -188,7 +228,7 @@ templ CreateJobPage(errorMsg, project string) {
 								id="seed"
 								name="seed"
 								value="0"
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+								style={ createInputStyle }
 							/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 								0 for random, or set for reproducibility
@@ -205,23 +245,24 @@ templ CreateJobPage(errorMsg, project string) {
 								value="1"
 								min="1"
 								max="32"
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+								style={ createInputStyle }
 							/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 								Repeat each optimizer stage, retaining the best and reseeding with fresh diversity (4 × 2000 = 4 epochs at 2000 iterations).
 							</p>
 						</div>
 					</div>
-				</div>
-				<!-- CMA-ES Settings -->
-				<div style="margin-bottom: 2rem;">
-					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-						CMA-ES
-					</h2>
+				</fieldset>
+				<fieldset style={ createSectionStyle }>
+					<legend style="padding: 0;">
+						<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+							CMA-ES
+						</h2>
+					</legend>
 					<p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;">
 						These settings apply only when the optimizer above is CMA-ES. A MayFly or Dragonfly job ignores them, whatever is entered here.
 					</p>
-					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+					<div style={ createFieldGridStyle }>
 						<div>
 							<label for="initialSigma" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 								Initial Sigma
@@ -232,7 +273,7 @@ templ CreateJobPage(errorMsg, project string) {
 								name="initialSigma"
 								value="0.3"
 								step="any"
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+								style={ createInputStyle }
 							/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 								Initial step size in the normalized [0,1] search box, so it means the same for every circle parameter. Must be finite and positive.
@@ -245,7 +286,7 @@ templ CreateJobPage(errorMsg, project string) {
 							<select
 								id="covarianceMode"
 								name="covarianceMode"
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem; background-color: var(--control-bg);"
+								style={ createSelectStyle }
 							>
 								<option value="full" selected>Full</option>
 								<option value="separable">Separable</option>
@@ -262,7 +303,7 @@ templ CreateJobPage(errorMsg, project string) {
 							<select
 								id="restartStrategy"
 								name="restartStrategy"
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem; background-color: var(--control-bg);"
+								style={ createSelectStyle }
 							>
 								<option value="none" selected>None</option>
 								<option value="ipop">IPOP</option>
@@ -273,7 +314,7 @@ templ CreateJobPage(errorMsg, project string) {
 							</p>
 						</div>
 					</div>
-					<label style="display: flex; align-items: center; cursor: pointer; margin-top: 1rem;">
+					<label for="activeCMA" style="display: flex; align-items: center; cursor: pointer; margin-top: 1rem;">
 						<input
 							type="checkbox"
 							id="activeCMA"
@@ -286,13 +327,14 @@ templ CreateJobPage(errorMsg, project string) {
 					<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;">
 						Negative rank-mu updates, which also learn from the worst candidates of each generation. Enabled by default.
 					</p>
-				</div>
-				<!-- Active-set Polishing -->
-				<div style="margin-bottom: 2rem;">
-					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-						Active-set Polishing
-					</h2>
-					<label style="display: flex; align-items: center; cursor: pointer; margin-bottom: 0.5rem;">
+				</fieldset>
+				<fieldset style={ createSectionStyle }>
+					<legend style="padding: 0;">
+						<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+							Active-set Polishing
+						</h2>
+					</legend>
+					<label for="polishingEnabled" style="display: flex; align-items: center; cursor: pointer; margin-bottom: 0.5rem;">
 						<input
 							type="checkbox"
 							id="polishingEnabled"
@@ -304,10 +346,10 @@ templ CreateJobPage(errorMsg, project string) {
 					<p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem; margin-left: 1.5rem;">
 						Batch mode only. Every strategy preserves draw order, and a sweep is kept only when the complete image improves.
 					</p>
-					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+					<div style={ createFieldGridStyle }>
 						<div>
 							<label for="polishingStrategy" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Strategy</label>
-							<select id="polishingStrategy" name="polishingStrategy" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem; background-color: var(--control-bg);">
+							<select id="polishingStrategy" name="polishingStrategy" style={ createSelectStyle }>
 								<option value="replacement" selected>Weakest replacement</option>
 								<option value="hybrid-overlap">Hybrid overlap</option>
 								<option value="residual-region">Residual region</option>
@@ -326,46 +368,47 @@ templ CreateJobPage(errorMsg, project string) {
 						</div>
 						<div>
 							<label for="polishingActiveSetSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Active Set Size</label>
-							<input type="number" id="polishingActiveSetSize" name="polishingActiveSetSize" value="5" min="1" max="100" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"/>
+							<input type="number" id="polishingActiveSetSize" name="polishingActiveSetSize" value="5" min="1" max="100" style={ createInputStyle }/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Circles optimized together</p>
 						</div>
 						<div>
 							<label for="polishingMaxSweeps" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Maximum Sweeps</label>
-							<input type="number" id="polishingMaxSweeps" name="polishingMaxSweeps" value="8" min="1" max="32" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"/>
+							<input type="number" id="polishingMaxSweeps" name="polishingMaxSweeps" value="8" min="1" max="32" style={ createInputStyle }/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Regional polishing continues to the next tile after a rejection</p>
 						</div>
 						<div>
 							<label for="polishingEpochs" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Epochs per Sweep</label>
-							<input type="number" id="polishingEpochs" name="polishingEpochs" value="2" min="1" max="32" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"/>
+							<input type="number" id="polishingEpochs" name="polishingEpochs" value="2" min="1" max="32" style={ createInputStyle }/>
 						</div>
 						<div>
 							<label for="polishingIters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Iterations per Epoch</label>
-							<input type="number" id="polishingIters" name="polishingIters" value="200" min="1" max="10000" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"/>
+							<input type="number" id="polishingIters" name="polishingIters" value="200" min="1" max="10000" style={ createInputStyle }/>
 						</div>
 						<div>
 							<label for="polishingPopSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Sweep Population</label>
-							<input type="number" id="polishingPopSize" name="polishingPopSize" value="30" min="20" max="4096" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"/>
+							<input type="number" id="polishingPopSize" name="polishingPopSize" value="30" min="20" max="4096" style={ createInputStyle }/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Population for the active set, independent of the population size above</p>
 						</div>
 						<div>
 							<label for="polishingStagnationIters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Stagnation Iterations</label>
-							<input type="number" id="polishingStagnationIters" name="polishingStagnationIters" value="100" min="1" max="10000" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"/>
+							<input type="number" id="polishingStagnationIters" name="polishingStagnationIters" value="100" min="1" max="10000" style={ createInputStyle }/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Must not exceed iterations per epoch</p>
 						</div>
 						<div>
 							<label for="polishingMinImprovement" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Progress Threshold</label>
-							<input type="number" id="polishingMinImprovement" name="polishingMinImprovement" value="0.001" min="0.000000001" step="any" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"/>
+							<input type="number" id="polishingMinImprovement" name="polishingMinImprovement" value="0.001" min="0.000000001" step="any" style={ createInputStyle }/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Absolute optimizer cost reduction that resets stagnation</p>
 						</div>
 					</div>
-				</div>
-				<!-- Convergence Settings -->
-				<div style="margin-bottom: 2rem;">
-					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-						Convergence Settings
-					</h2>
+				</fieldset>
+				<fieldset style={ createSectionStyle }>
+					<legend style="padding: 0;">
+						<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+							Convergence Settings
+						</h2>
+					</legend>
 					<div style="margin-bottom: 1rem;">
-						<label style="display: flex; align-items: center; cursor: pointer;">
+						<label for="convergenceEnabled" style="display: flex; align-items: center; cursor: pointer;">
 							<input
 								type="checkbox"
 								id="convergenceEnabled"
@@ -379,7 +422,7 @@ templ CreateJobPage(errorMsg, project string) {
 							Stop early when optimizer can't improve further (sequential/batch modes only).
 						</p>
 					</div>
-					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+					<div style={ createFieldGridStyle }>
 						<div>
 							<label for="convergencePatience" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 								Patience
@@ -391,7 +434,7 @@ templ CreateJobPage(errorMsg, project string) {
 								value="3"
 								min="1"
 								max="100"
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+								style={ createInputStyle }
 							/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 								Iterations with no improvement before stopping
@@ -409,25 +452,26 @@ templ CreateJobPage(errorMsg, project string) {
 								min="0.0001"
 								max="0.1"
 								step="0.0001"
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+								style={ createInputStyle }
 							/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 								Minimum relative improvement (0.001 = 0.1%)
 							</p>
 						</div>
 					</div>
-				</div>
-				<!-- Early Stopping (optimizer) -->
-				<div style="margin-bottom: 2rem;">
-					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-						Early Stopping (Optimizer)
-					</h2>
+				</fieldset>
+				<fieldset style={ createSectionStyle }>
+					<legend style="padding: 0;">
+						<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+							Early Stopping (Optimizer)
+						</h2>
+					</legend>
 					<p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;">
 						Applied per iteration inside a single optimizer run, in every mode. The
 						convergence settings above instead count whole circles or batches. Leave
 						these empty to disable early stopping and keep runs reproducible.
 					</p>
-					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+					<div style={ createFieldGridStyle }>
 						<div>
 							<label for="stopTargetCost" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
 								Target Cost
@@ -439,7 +483,7 @@ templ CreateJobPage(errorMsg, project string) {
 								min="0"
 								step="any"
 								placeholder="disabled"
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+								style={ createInputStyle }
 							/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 								Stop once the best cost reaches this absolute value
@@ -455,7 +499,7 @@ templ CreateJobPage(errorMsg, project string) {
 								name="stopStagnationIters"
 								min="0"
 								placeholder="disabled"
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+								style={ createInputStyle }
 							/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 								Stop after N consecutive iterations without progress
@@ -472,7 +516,7 @@ templ CreateJobPage(errorMsg, project string) {
 								min="0"
 								step="any"
 								placeholder="any improvement"
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+								style={ createInputStyle }
 							/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 								ABSOLUTE cost reduction counted as progress; requires stagnation iterations
@@ -488,20 +532,21 @@ templ CreateJobPage(errorMsg, project string) {
 								name="stopMinIters"
 								min="0"
 								placeholder="0"
-								style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+								style={ createInputStyle }
 							/>
 							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 								Iterations completed before any early stop can fire
 							</p>
 						</div>
 					</div>
-				</div>
-				<!-- Advanced Metrics -->
-				<div style="margin-bottom: 2rem;">
-					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-						Advanced Metrics
-					</h2>
-					<label style="display: flex; align-items: center; cursor: pointer;">
+				</fieldset>
+				<fieldset style={ createSectionStyle }>
+					<legend style="padding: 0;">
+						<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+							Advanced Metrics
+						</h2>
+					</legend>
+					<label for="enableSSIM" style="display: flex; align-items: center; cursor: pointer;">
 						<input
 							type="checkbox"
 							id="enableSSIM"
@@ -513,9 +558,8 @@ templ CreateJobPage(errorMsg, project string) {
 					<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;">
 						Track structural similarity during the run. This adds periodic image rendering and metric work.
 					</p>
-				</div>
-				<!-- Submit Button -->
-				<div style="display: flex; gap: 1rem; justify-content: flex-end; padding-top: 1rem; border-top: 1px solid var(--border-color);">
+				</fieldset>
+				<div class="action-row" style="padding-top: 1rem; border-top: 1px solid var(--border-color);">
 					<a href="/jobs" class="btn" style="background-color: var(--border-color); text-decoration: none;">
 						Cancel
 					</a>
@@ -524,10 +568,12 @@ templ CreateJobPage(errorMsg, project string) {
 					</button>
 				</div>
 			</form>
-			<!-- Quick Tips -->
 			<div class="card" style="margin-top: 1.5rem; background-color: var(--info-bg);">
 				<h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--info-text);">
-					💡 Tips
+					// The emoji is decoration, but it is inside the heading and so
+					// becomes part of the heading's accessible name; a heading
+					// announced as "light bulb Tips" is worse than "Tips".
+					<span aria-hidden="true">💡</span> Tips
 				</h3>
 				<ul style="margin-left: 1.5rem; color: var(--info-text-strong); font-size: 0.875rem; line-height: 1.6;">
 					<li><strong>Joint mode</strong>: Optimizes all circles simultaneously (fastest for small K)</li>
@@ -539,4 +585,13 @@ templ CreateJobPage(errorMsg, project string) {
 			</div>
 		</div>
 	}
+}
+
+// requiredMarker is the "this field is required" affordance. The red asterisk on
+// its own carries the fact in colour and glyph only, which WCAG 1.3.1 does not
+// accept: the asterisk is hidden from the accessibility tree and the word is
+// supplied beside it instead, while the matching control carries
+// aria-required="true".
+templ requiredMarker() {
+	<span style="color: var(--error-color);" aria-hidden="true">*</span><span class="sr-only">{ " (required)" }</span>
 }

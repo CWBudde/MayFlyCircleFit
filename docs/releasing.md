@@ -20,7 +20,7 @@ Because the gates are reusable workflows, each one reports as
 `<caller job>` / `<job name>` rather than `<job name>` alone: the bundle gate is
 `bundle / Committed island bundle is current`, the generation gate is
 `generation / Generated UI is current`, the browser gate is
-`web / Live Web UI reconciles without reloads`, the vet gate is
+`web / Browser matrix, accessibility, and live reconciliation`, the vet gate is
 `quality / Format and vet`, and matrix gates expand per entry, such as
 `native-simd / Native SSD (Linux AMD64 / AVX2)`. Only `Publish release` keeps a
 bare name, because it still lives in `ci.yml`.

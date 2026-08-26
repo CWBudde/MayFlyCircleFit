@@ -24,7 +24,7 @@ func TestLayoutIncludesThemeSwitcher(t *testing.T) {
 		`data-theme-value="light"`,
 		`data-theme-value="dark"`,
 		`mayflycirclefit.theme`,
-		`localStorage.removeItem(storageKey)`,
+		`localStorage.removeItem(theme.storageKey)`,
 		`aria-label="Use system theme" aria-pressed="true"`,
 		`>Dashboard<`,
 		`>Jobs<`,
@@ -109,12 +109,14 @@ func TestLayoutPairsEveryAccentBackgroundWithItsOwnForeground(t *testing.T) {
 		"--on-primary:", "--on-danger:", "--on-warning:",
 		"--danger-bg:", "--warning-btn-bg:", "--success-text-strong:",
 	} {
-		// Three times: once on bare :root for light, then once for each of the
-		// two selectors darkThemeTokens is rendered into -- the explicit
-		// data-theme="dark" opt-in and the system-preference media query.
-		// Plain CSS cannot share one declaration block between them.
-		if got := strings.Count(body, token); got != 3 {
-			t.Errorf("token %q declared %d times, want 3 (light, explicit dark, system dark)", token, got)
+		// Five times: the bare :root light block, the two selectors
+		// darkThemeTokens is rendered into -- the explicit data-theme="dark"
+		// opt-in and the system-preference media query, which plain CSS cannot
+		// share one declaration block between -- and both palettes again inside
+		// the preload script, which emits whichever one was stored before the
+		// first paint.
+		if got := strings.Count(body, token); got != 5 {
+			t.Errorf("token %q declared %d times, want 5 (light, explicit dark, system dark, and both preload palettes)", token, got)
 		}
 	}
 

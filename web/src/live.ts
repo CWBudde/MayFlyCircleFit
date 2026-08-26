@@ -27,6 +27,12 @@ export type UIEvent = {
 	timestamp: string;
 };
 
+// LiveConnectionState distinguishes "has not opened yet" from "opened and then
+// dropped". A boolean cannot: it starts false, so every island painted
+// "reconnecting" on first paint even on a perfectly healthy page, and the one
+// state a reader has to act on looked identical to the one they never should.
+export type LiveConnectionState = "connecting" | "connected" | "reconnecting";
+
 type ConnectionNotice =
 	| { kind: "event"; event: UIEvent }
 	| { kind: "open" }
@@ -45,16 +51,25 @@ class LiveEventBus {
 	private source: EventSource | null = null;
 	private listeners = new Set<Listener>();
 	private lastSequence = 0;
+	private state: LiveConnectionState = "connecting";
 
 	subscribe(listener: Listener): () => void {
 		this.listeners.add(listener);
 		this.ensureConnected();
+		// onopen fires once per connection, not once per listener, so an island
+		// mounted after the stream came up would never learn it is connected and
+		// would never take its first authoritative fetch. Replay the settled
+		// state to the newcomer instead.
+		if (this.state !== "connecting") {
+			listener({ kind: this.state === "connected" ? "open" : "error" });
+		}
 		return () => {
 			this.listeners.delete(listener);
 			if (this.listeners.size === 0 && this.source) {
 				this.source.close();
 				this.source = null;
 				this.lastSequence = 0;
+				this.state = "connecting";
 			}
 		};
 	}
@@ -67,8 +82,14 @@ class LiveEventBus {
 		if (this.source) return;
 		const source = new EventSource("/api/v1/events");
 		this.source = source;
-		source.onopen = () => this.emit({ kind: "open" });
-		source.onerror = () => this.emit({ kind: "error" });
+		source.onopen = () => {
+			this.state = "connected";
+			this.emit({ kind: "open" });
+		};
+		source.onerror = () => {
+			this.state = "reconnecting";
+			this.emit({ kind: "error" });
+		};
 		source.onmessage = (message) => {
 			let event: UIEvent;
 			try {
@@ -115,7 +136,7 @@ type LiveResourceOptions<T> = {
 // the queued events are replayed on top before the state is committed.
 export function useLiveResource<T>({ initial, load, reduce }: LiveResourceOptions<T>) {
 	const [value, setValue] = useState(initial);
-	const [connected, setConnected] = useState(false);
+	const [status, setStatus] = useState<LiveConnectionState>("connecting");
 	const [error, setError] = useState<string | null>(null);
 	const valueRef = useRef(initial);
 	const mountedRef = useRef(false);
@@ -195,11 +216,14 @@ export function useLiveResource<T>({ initial, load, reduce }: LiveResourceOption
 		const unsubscribe = liveEvents.subscribe((notice) => {
 			switch (notice.kind) {
 				case "open":
-					setConnected(true);
+					setStatus("connected");
 					void refresh();
 					break;
 				case "error":
-					setConnected(false);
+					// Not back to "connecting": the reader has seen this stream work
+					// at least once in this bus's lifetime, and a drop is the state
+					// worth announcing.
+					setStatus("reconnecting");
 					break;
 				case "gap":
 					void refresh();
@@ -240,7 +264,7 @@ export function useLiveResource<T>({ initial, load, reduce }: LiveResourceOption
 		commit(updater(valueRef.current));
 	}, [commit]);
 
-	return { value, connected, error, refresh, update };
+	return { value, status, error, refresh, update };
 }
 
 export async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T> {

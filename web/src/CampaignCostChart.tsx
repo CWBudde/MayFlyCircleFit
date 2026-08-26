@@ -1,7 +1,6 @@
 import { Chart } from "chart.js";
 import type { TooltipItem } from "chart.js";
 import { useId, useMemo, useRef } from "react";
-import type { CSSProperties } from "react";
 import { applyAxisTheme, useLineChart } from "./charts";
 import type { Palette } from "./charts";
 import { campaignCostPointColor, formatChartCost } from "./format";
@@ -56,20 +55,6 @@ function plottableStages(points: CampaignCostChartPoint[]): CampaignCostChartPoi
 // SVG with a canvas does not take the plot's name away from a screen reader.
 const chartLabel = "Best cost against circle count across the campaign";
 
-// srOnly keeps the textual reading of the plot in the accessibility tree while
-// leaving it out of the drawing. A canvas has no structure to announce, so the
-// stage sentences the SVG puts in each point's <title> live here instead.
-const srOnly: CSSProperties = {
-	position: "absolute",
-	width: "1px",
-	height: "1px",
-	margin: "-1px",
-	padding: 0,
-	overflow: "hidden",
-	clip: "rect(0 0 0 0)",
-	whiteSpace: "nowrap",
-	border: 0,
-};
 
 // CampaignCostChart is the React port of CampaignCostPlot: best cost against
 // circle count, one point per stage that recorded one.
@@ -166,9 +151,9 @@ export function CampaignCostChart({ points, palette, variant = "mini" }: Campaig
 							}),
 				}}
 			>
-				<canvas ref={canvasRef} role="img" aria-label={chartLabel} aria-describedby={descriptionId} />
+				<canvas ref={canvasRef} role="img" aria-label={chartLabel} aria-describedby={descriptionId} style={{ maxWidth: "100%" }} />
 			</div>
-			<ul id={descriptionId} style={srOnly}>
+			<ul id={descriptionId} className="sr-only">
 				{plotted.map((point) => (
 					<li key={point.index}>
 						{`stage ${point.index} (${point.kind}): ${point.circles} circles, cost ${point.bestCost.toFixed(3)}`}

@@ -6,6 +6,9 @@ Everything in `docs/`, grouped by what you came here to do. Start from
 
 ## Using it
 
+- [`browser-support.md`](browser-support.md) — supported browser engines and
+  viewport sizes, what `ci-web` enforces, and the manual Safari/VoiceOver
+  checklist for the parts it cannot.
 - [`support-matrix.md`](support-matrix.md) — supported platforms, backends,
   build targets, CI gates, and the toolchain baseline.
 - [`known-limitations.md`](known-limitations.md) — current operational

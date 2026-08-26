@@ -58,6 +58,15 @@ func imageViewerSrc(path string, revision uint64) string {
 	return path + sep + fmt.Sprintf("v=%d", revision)
 }
 
+// ImageViewer renders the reference/best/difference/overlay panels.
+//
+// It carries no <style> of its own. The campaign page renders it inside the
+// `campaign-detail` island root, and mounting an island calls
+// createRoot(root).render(...), which replaces every child of that root — a
+// component-local <style> block included. So on /schedules/{id} the viewer used
+// to paint with no view-mode, frame or focus styling at all. The whole
+// vocabulary now lives in Layout, outside every island root; see the
+// image-viewer section of layout.templ.
 func ImageViewer(data ImageViewerData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -104,7 +113,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(imageViewerMode(data.DefaultMode))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 54, Col: 109}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 63, Col: 109}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -117,7 +126,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(data.JobID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 54, Col: 136}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 63, Col: 136}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -130,7 +139,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(data.JobState)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 54, Col: 169}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 63, Col: 169}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -143,7 +152,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", data.MaxIterations))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 54, Col: 226}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 63, Col: 226}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -156,7 +165,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", data.CircleCount))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 54, Col: 284}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 63, Col: 284}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -169,13 +178,13 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", data.BestRevision))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 54, Col: 344}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 63, Col: 344}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"><style>\n\t\t\t.view-mode-selector {\n\t\t\t\tdisplay: flex;\n\t\t\t\tflex-wrap: wrap;\n\t\t\t\tgap: 0.5rem;\n\t\t\t\tborder: 0;\n\t\t\t}\n\t\t\t.view-mode-selector legend {\n\t\t\t\tposition: absolute;\n\t\t\t\twidth: 1px;\n\t\t\t\theight: 1px;\n\t\t\t\tpadding: 0;\n\t\t\t\tmargin: -1px;\n\t\t\t\toverflow: hidden;\n\t\t\t\tclip: rect(0, 0, 0, 0);\n\t\t\t\twhite-space: nowrap;\n\t\t\t\tborder: 0;\n\t\t\t}\n\t\t\t.view-mode-option {\n\t\t\t\tposition: relative;\n\t\t\t}\n\t\t\t.view-mode-option input {\n\t\t\t\tposition: absolute;\n\t\t\t\topacity: 0;\n\t\t\t\tpointer-events: none;\n\t\t\t}\n\t\t\t.view-mode-option label {\n\t\t\t\tdisplay: inline-flex;\n\t\t\t\talign-items: center;\n\t\t\t\tgap: 0.4rem;\n\t\t\t\tpadding: 0.4rem 0.7rem;\n\t\t\t\tborder: 1px solid var(--border-color);\n\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t\tfont-size: 0.875rem;\n\t\t\t\tfont-weight: 500;\n\t\t\t\tcursor: pointer;\n\t\t\t\ttransition: all 0.2s;\n\t\t\t}\n\t\t\t.view-mode-option input:checked + label {\n\t\t\t\tborder-color: var(--primary-color);\n\t\t\t\tbackground-color: var(--info-bg);\n\t\t\t\tcolor: var(--info-text);\n\t\t\t}\n\t\t\t.view-mode-option input:focus-visible + label {\n\t\t\t\toutline: 2px solid var(--primary-color);\n\t\t\t\toutline-offset: 2px;\n\t\t\t}\n\t\t\t.view-mode-shortcut {\n\t\t\t\tfont-family: monospace;\n\t\t\t\tfont-size: 0.75rem;\n\t\t\t\topacity: 0.75;\n\t\t\t}\n\t\t\t.image-view-panels {\n\t\t\t\tdisplay: grid;\n\t\t\t\tgrid-template-columns: minmax(0, 1fr);\n\t\t\t\tgap: 2rem;\n\t\t\t}\n\t\t\t.image-view-panel {\n\t\t\t\tdisplay: none;\n\t\t\t\tmin-width: 0;\n\t\t\t}\n\t\t\t.image-viewer[data-view-mode=\"reference\"] [data-view-panel=\"reference\"],\n\t\t\t.image-viewer[data-view-mode=\"best\"] [data-view-panel=\"best\"],\n\t\t\t.image-viewer[data-view-mode=\"overlay\"] [data-view-panel=\"overlay\"],\n\t\t\t.image-viewer[data-view-mode=\"difference\"] [data-view-panel=\"difference\"],\n\t\t\t.image-viewer[data-view-mode=\"side-by-side\"] [data-view-panel=\"reference\"],\n\t\t\t.image-viewer[data-view-mode=\"side-by-side\"] [data-view-panel=\"best\"] {\n\t\t\t\tdisplay: block;\n\t\t\t}\n\t\t\t.image-viewer[data-view-mode=\"side-by-side\"] .image-view-panels {\n\t\t\t\tgrid-template-columns: repeat(2, minmax(0, 1fr));\n\t\t\t}\n\t\t\t.image-frame {\n\t\t\t\tposition: relative;\n\t\t\t\tborder: 1px solid var(--border-color);\n\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\toverflow: hidden;\n\t\t\t\tbackground: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%) 50% / 20px 20px;\n\t\t\t}\n\t\t\t.image-frame-difference {\n\t\t\t\tbackground: #000000;\n\t\t\t}\n\t\t\t.image-frame-overlay {\n\t\t\t\tmin-height: 6rem;\n\t\t\t}\n\t\t\t.overlay-best-layer {\n\t\t\t\tposition: absolute;\n\t\t\t\tinset: 0;\n\t\t\t}\n\t\t\t.overlay-best-layer img {\n\t\t\t\twidth: 100%;\n\t\t\t\theight: 100%;\n\t\t\t\tobject-fit: fill;\n\t\t\t\ttransition: none;\n\t\t\t}\n\t\t\t.image-frame-overlay .image-state {\n\t\t\t\tposition: absolute;\n\t\t\t\ttop: 50%;\n\t\t\t\tleft: 50%;\n\t\t\t\ttransform: translate(-50%, -50%);\n\t\t\t\tpadding: 0.5rem 0.75rem;\n\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\tbackground-color: var(--surface-color);\n\t\t\t}\n\t\t\t.overlay-heading {\n\t\t\t\tdisplay: flex;\n\t\t\t\tflex-wrap: wrap;\n\t\t\t\talign-items: center;\n\t\t\t\tjustify-content: space-between;\n\t\t\t\tgap: 0.75rem;\n\t\t\t\tmargin-bottom: 0.75rem;\n\t\t\t}\n\t\t\t.overlay-opacity-control {\n\t\t\t\tdisplay: inline-flex;\n\t\t\t\talign-items: center;\n\t\t\t\tgap: 0.5rem;\n\t\t\t\tfont-size: 0.875rem;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t}\n\t\t\t.overlay-opacity-control input[type=\"range\"] {\n\t\t\t\twidth: 10rem;\n\t\t\t\taccent-color: var(--primary-color);\n\t\t\t}\n\t\t\t.overlay-opacity-value {\n\t\t\t\tmin-width: 3rem;\n\t\t\t\tfont-family: monospace;\n\t\t\t\tfont-size: 0.8125rem;\n\t\t\t\ttext-align: right;\n\t\t\t}\n\t\t\t.image-frame img {\n\t\t\t\twidth: 100%;\n\t\t\t\theight: auto;\n\t\t\t\tdisplay: block;\n\t\t\t\ttransition: opacity 0.3s ease;\n\t\t\t}\n\t\t\t.image-state {\n\t\t\t\tdisplay: none;\n\t\t\t\tpadding: 2rem;\n\t\t\t\ttext-align: center;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t}\n\t\t\t.image-loading {\n\t\t\t\tposition: absolute;\n\t\t\t\ttop: 50%;\n\t\t\t\tleft: 50%;\n\t\t\t\ttransform: translate(-50%, -50%);\n\t\t\t}\n\t\t\t.image-metadata {\n\t\t\t\tdisplay: flex;\n\t\t\t\tflex-wrap: wrap;\n\t\t\t\tgap: 0.75rem;\n\t\t\t\tmargin-top: 0.5rem;\n\t\t\t\tfont-size: 0.75rem;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t}\n\t\t\t.heatmap-heading {\n\t\t\t\tdisplay: flex;\n\t\t\t\tflex-wrap: wrap;\n\t\t\t\talign-items: center;\n\t\t\t\tjustify-content: space-between;\n\t\t\t\tgap: 0.75rem;\n\t\t\t\tmargin-bottom: 0.75rem;\n\t\t\t}\n\t\t\t.heatmap-colormap-control {\n\t\t\t\tdisplay: inline-flex;\n\t\t\t\talign-items: center;\n\t\t\t\tgap: 0.5rem;\n\t\t\t\tfont-size: 0.875rem;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t}\n\t\t\t.heatmap-colormap-control select {\n\t\t\t\tpadding: 0.3rem 0.5rem;\n\t\t\t\tborder: 1px solid var(--border-color);\n\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\tbackground-color: var(--surface-color);\n\t\t\t\tcolor: var(--text-color);\n\t\t\t}\n\t\t\t.heatmap-legend {\n\t\t\t\tdisplay: grid;\n\t\t\t\tgrid-template-columns: auto minmax(120px, 1fr) auto;\n\t\t\t\talign-items: center;\n\t\t\t\tgap: 0.5rem;\n\t\t\t\tmargin-top: 0.75rem;\n\t\t\t\tfont-size: 0.75rem;\n\t\t\t\tcolor: var(--text-muted);\n\t\t\t}\n\t\t\t.heatmap-legend-gradient {\n\t\t\t\theight: 0.75rem;\n\t\t\t\tborder: 1px solid var(--border-color);\n\t\t\t\tborder-radius: 9999px;\n\t\t\t\tbackground: linear-gradient(\n\t\t\t\t\t90deg,\n\t\t\t\t\t#23171b,\n\t\t\t\t\t#4145ab,\n\t\t\t\t\t#2aa7d6,\n\t\t\t\t\t#49df75,\n\t\t\t\t\t#d5e21a,\n\t\t\t\t\t#f68513,\n\t\t\t\t\t#900c00\n\t\t\t\t);\n\t\t\t}\n\t\t\t.heatmap-legend-description {\n\t\t\t\tgrid-column: 1 / -1;\n\t\t\t\ttext-align: center;\n\t\t\t}\n\t\t\t@media (max-width: 768px) {\n\t\t\t\t.image-viewer[data-view-mode=\"side-by-side\"] .image-view-panels {\n\t\t\t\t\tgrid-template-columns: minmax(0, 1fr);\n\t\t\t\t}\n\t\t\t}\n\t\t</style><div style=\"display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem;\"><h2 style=\"font-size: 1.25rem; font-weight: 600;\">Images</h2><fieldset class=\"view-mode-selector\" aria-label=\"Image view mode\"><legend>Image view mode</legend><div class=\"view-mode-option\"><input type=\"radio\" id=\"view-mode-reference\" name=\"view-mode\" value=\"reference\" aria-keyshortcuts=\"1\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"><div style=\"display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem;\"><h2 style=\"font-size: 1.25rem; font-weight: 600;\">Images</h2><fieldset class=\"view-mode-selector\" aria-label=\"Image view mode\"><legend class=\"sr-only\">Image view mode</legend><div class=\"view-mode-option\"><input type=\"radio\" id=\"view-mode-reference\" name=\"view-mode\" value=\"reference\" aria-keyshortcuts=\"1\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -232,13 +241,13 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(data.ReferenceImageURL))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 303, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 100, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\" alt=\"Reference Image\"><div id=\"reference-image-loading\" class=\"image-state image-loading\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"reference-image-error\" class=\"image-state\">Reference image not available</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\" alt=\"Reference Image\"><div id=\"reference-image-loading\" class=\"image-state image-loading\" role=\"status\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"reference-image-error\" class=\"image-state\">Reference image not available</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -255,7 +264,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d × %d px", data.ReferenceWidth, data.ReferenceHeight))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 317, Col: 84}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 114, Col: 84}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -274,7 +283,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d bytes", data.ReferenceSize))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 320, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 117, Col: 64}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -287,7 +296,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(formatFileSize(data.ReferenceSize))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 320, Col: 103}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 117, Col: 103}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -316,13 +325,13 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(imageViewerSrc(data.BestImageURL, data.BestRevision)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 335, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 132, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" alt=\"Current Best Image\"><div id=\"best-image-loading\" class=\"image-state image-loading\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"best-image-error\" class=\"image-state\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" alt=\"Current Best Image\"><div id=\"best-image-loading\" class=\"image-state image-loading\" role=\"status\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"best-image-error\" class=\"image-state\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -344,13 +353,13 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(imageViewerSrc(data.DiffImageURL+"?colormap=turbo", data.BestRevision)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 367, Col: 97}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 164, Col: 97}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" alt=\"False-color difference heatmap\"><div id=\"diff-image-loading\" class=\"image-state image-loading\" style=\"color: #cccccc;\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"diff-image-error\" class=\"image-state\" style=\"color: #cccccc;\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" alt=\"False-color difference heatmap\"><div id=\"diff-image-loading\" class=\"image-state image-loading\" role=\"status\" style=\"color: #cccccc;\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"diff-image-error\" class=\"image-state\" style=\"color: #cccccc;\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -365,14 +374,14 @@ func ImageViewer(data ImageViewerData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</div></div><div class=\"heatmap-legend\" role=\"img\" aria-label=\"Mean absolute RGB error scale from 0 to 255\"><span>0</span><div id=\"heatmap-legend-gradient\" class=\"heatmap-legend-gradient\"></div><span>255</span> <span class=\"heatmap-legend-description\">Mean absolute RGB error per pixel</span></div></div><div class=\"image-view-panel\" data-view-panel=\"overlay\"><div class=\"overlay-heading\"><h3 style=\"font-size: 1rem; font-weight: 600; color: var(--text-muted);\">Best over Reference</h3><div class=\"overlay-opacity-control\"><label for=\"overlay-opacity\">Best opacity</label> <input type=\"range\" id=\"overlay-opacity\" min=\"0\" max=\"100\" step=\"1\" value=\"50\" aria-label=\"Best image opacity in percent\"> <output id=\"overlay-opacity-value\" class=\"overlay-opacity-value\" for=\"overlay-opacity\" aria-live=\"off\">50%</output></div></div><div class=\"image-frame image-frame-overlay\"><img id=\"overlay-reference-image\" src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</div></div><div class=\"heatmap-legend\" role=\"img\" aria-label=\"Mean absolute RGB error scale from 0 to 255\"><span>0</span><div id=\"heatmap-legend-gradient\" class=\"heatmap-legend-gradient\"></div><span>255</span> <span class=\"heatmap-legend-description\">Mean absolute RGB error per pixel</span></div></div><div class=\"image-view-panel\" data-view-panel=\"overlay\"><div class=\"overlay-heading\"><h3 style=\"font-size: 1rem; font-weight: 600; color: var(--text-muted);\">Best over Reference</h3><div class=\"overlay-opacity-control\"><label for=\"overlay-opacity\">Best opacity</label> <input type=\"range\" id=\"overlay-opacity\" min=\"0\" max=\"100\" step=\"1\" value=\"50\" aria-label=\"Best image opacity in percent\"> <output id=\"overlay-opacity-value\" class=\"overlay-opacity-value\" for=\"overlay-opacity\" aria-live=\"polite\">50%</output></div></div><div class=\"image-frame image-frame-overlay\"><img id=\"overlay-reference-image\" src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(data.ReferenceImageURL))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 411, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 208, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -385,13 +394,13 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var17 string
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(imageViewerSrc(data.BestImageURL, data.BestRevision)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 417, Col: 80}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 214, Col: 80}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\" alt=\"Current best image blended over the reference\"></div><div id=\"overlay-best-image-loading\" class=\"image-state image-loading\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"overlay-best-image-error\" class=\"image-state\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\" alt=\"Current best image blended over the reference\"></div><div id=\"overlay-best-image-loading\" class=\"image-state image-loading\" role=\"status\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"overlay-best-image-error\" class=\"image-state\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

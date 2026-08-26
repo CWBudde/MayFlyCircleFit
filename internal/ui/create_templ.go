@@ -13,6 +13,29 @@ import templruntime "github.com/a-h/templ/runtime"
 // posts to a bare "/create" action, which discards the query string the page
 // was opened with. Without it every job created from the UI silently lands in
 // the default project. An empty slug means the default project.
+//
+// Each section is a fieldset rather than a div so that the controls inside it
+// are announced as one group, which is what gives the standalone checkboxes
+// ("Enable SSIM", "Active covariance adaptation") the context their own label
+// does not carry. The heading stays a real <h2> inside the <legend>, so the
+// page keeps its heading outline as well; a legend's content model allows
+// heading content. `min-inline-size: 0` is not cosmetic: a fieldset defaults to
+// `min-inline-size: min-content`, which would let the grids inside it push past
+// a narrow viewport however the tracks are sized.
+const createSectionStyle = "min-inline-size: 0; border: 0; padding: 0; margin: 0 0 2rem;"
+
+// createFieldGridStyle sizes every parameter grid. minmax(min(200px, 100%), 1fr)
+// rather than minmax(200px, 1fr): an auto-fit track keeps its stated minimum
+// even when the container is narrower than it, so a 200px track overflows a
+// phone-width card and scrolls the whole page sideways. min() clamps the track
+// to the container instead.
+const createFieldGridStyle = "display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 1rem;"
+
+// createInputStyle is the shared text-control appearance.
+const createInputStyle = "width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;"
+
+const createSelectStyle = createInputStyle + " background-color: var(--control-bg);"
+
 func CreateJobPage(errorMsg, project string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -51,14 +74,14 @@ func CreateJobPage(errorMsg, project string) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if errorMsg != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"card\" style=\"background-color: var(--error-bg); border: 1px solid var(--error-border); margin-bottom: 1.5rem;\"><h3 style=\"color: var(--error-text); font-weight: 600; margin-bottom: 0.5rem;\">Error</h3><p style=\"color: var(--error-text); font-size: 0.875rem;\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "   <div class=\"card\" role=\"alert\" style=\"background-color: var(--error-bg); border: 1px solid var(--error-border); margin-bottom: 1.5rem;\"><h3 style=\"color: var(--error-text); font-weight: 600; margin-bottom: 0.5rem;\">Error</h3><p style=\"color: var(--error-text); font-size: 0.875rem;\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var3 string
 				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(errorMsg)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 25, Col: 73}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 51, Col: 73}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 				if templ_7745c5c3_Err != nil {
@@ -81,7 +104,7 @@ func CreateJobPage(errorMsg, project string) templ.Component {
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(project)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 30, Col: 56}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 56, Col: 56}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -92,13 +115,615 @@ func CreateJobPage(errorMsg, project string) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<!-- Reference Image Section --><div style=\"margin-bottom: 2rem;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Reference Image</h2><div style=\"margin-bottom: 1rem;\"><label for=\"refPath\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Image Path <span style=\"color: var(--error-color);\">*</span></label> <input type=\"text\" id=\"refPath\" name=\"refPath\" placeholder=\"e.g., assets/test.png\" required style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Enter the path to your reference image file on the server.</p></div><div style=\"margin-bottom: 1rem;\"><label for=\"canvasPath\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Canvas Path (Optional)</label> <input type=\"text\" id=\"canvasPath\" name=\"canvasPath\" placeholder=\"e.g., output/previous-result.png\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Load existing canvas to continue from a previous result. Leave empty for blank canvas.</p></div></div><!-- Optimization Parameters --><div style=\"margin-bottom: 2rem;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Optimization Parameters</h2><div style=\"display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;\"><div><label for=\"optimizer\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Optimizer <span style=\"color: var(--error-color);\">*</span></label> <select id=\"optimizer\" name=\"optimizer\" required style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem; background-color: var(--control-bg);\"><option value=\"mayfly\" selected>MayFly</option> <option value=\"cmaes\">CMA-ES</option> <option value=\"dragonfly\">Dragonfly (experimental)</option></select><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">CMA-ES is configured in the CMA-ES section below. MayFly and Dragonfly ignore that section.</p></div><div><label for=\"mode\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Mode <span style=\"color: var(--error-color);\">*</span></label> <select id=\"mode\" name=\"mode\" required style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem; background-color: var(--control-bg);\"><option value=\"joint\" selected>Joint</option> <option value=\"sequential\">Sequential</option> <option value=\"batch\">Batch</option></select><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Optimization strategy</p></div><div><label for=\"circles\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Circles <span style=\"color: var(--error-color);\">*</span></label> <input type=\"number\" id=\"circles\" name=\"circles\" value=\"10\" min=\"1\" max=\"3000\" required style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Number of circles (1-3000)</p></div><div><label for=\"iters\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Iterations <span style=\"color: var(--error-color);\">*</span></label> <input type=\"number\" id=\"iters\" name=\"iters\" value=\"100\" min=\"1\" max=\"10000\" required style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Max iterations (1-10000)</p></div><div><label for=\"popSize\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Population Size <span style=\"color: var(--error-color);\">*</span></label> <input type=\"number\" id=\"popSize\" name=\"popSize\" value=\"30\" min=\"20\" max=\"4096\" required style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Population size (20-4096)</p></div><div><label for=\"batchSize\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Batch Size</label> <input type=\"number\" id=\"batchSize\" name=\"batchSize\" value=\"0\" min=\"0\" max=\"100\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Batch mode only. Set equal to Circles to optimize them all together; 0 selects the automatic default.</p></div><div><label for=\"seed\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Random Seed</label> <input type=\"number\" id=\"seed\" name=\"seed\" value=\"0\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">0 for random, or set for reproducibility</p></div><div><label for=\"optimizerEpochs\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Optimizer Epochs</label> <input type=\"number\" id=\"optimizerEpochs\" name=\"optimizerEpochs\" value=\"1\" min=\"1\" max=\"32\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Repeat each optimizer stage, retaining the best and reseeding with fresh diversity (4 × 2000 = 4 epochs at 2000 iterations).</p></div></div></div><!-- CMA-ES Settings --><div style=\"margin-bottom: 2rem;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">CMA-ES</h2><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;\">These settings apply only when the optimizer above is CMA-ES. A MayFly or Dragonfly job ignores them, whatever is entered here.</p><div style=\"display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;\"><div><label for=\"initialSigma\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Initial Sigma</label> <input type=\"number\" id=\"initialSigma\" name=\"initialSigma\" value=\"0.3\" step=\"any\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Initial step size in the normalized [0,1] search box, so it means the same for every circle parameter. Must be finite and positive.</p></div><div><label for=\"covarianceMode\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Covariance</label> <select id=\"covarianceMode\" name=\"covarianceMode\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem; background-color: var(--control-bg);\"><option value=\"full\" selected>Full</option> <option value=\"separable\">Separable</option> <option value=\"block\">Block</option></select><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Full covariance supports at most 512 optimizer dimensions and a larger search is refused rather than run. One run searches 7 dimensions per circle: every circle in joint mode, one batch in batch mode, a single circle in sequential mode. That is 73 circles per run at most: in joint mode that caps the whole canvas, while a batch or sequential job stays inside it whatever its total circle count. Choose block or separable above that.</p></div><div><label for=\"restartStrategy\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Restart Strategy</label> <select id=\"restartStrategy\" name=\"restartStrategy\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem; background-color: var(--control-bg);\"><option value=\"none\" selected>None</option> <option value=\"ipop\">IPOP</option> <option value=\"bipop\">BIPOP</option></select><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">CMA-ES's own restart schedule, spending one stage budget across several runs. IPOP grows the population at each restart; BIPOP alternates large and small ones.</p></div></div><label style=\"display: flex; align-items: center; cursor: pointer; margin-top: 1rem;\"><input type=\"checkbox\" id=\"activeCMA\" name=\"activeCMA\" checked style=\"margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;\"> <span style=\"font-weight: 500;\">Active covariance adaptation</span></label><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;\">Negative rank-mu updates, which also learn from the worst candidates of each generation. Enabled by default.</p></div><!-- Active-set Polishing --><div style=\"margin-bottom: 2rem;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Active-set Polishing</h2><label style=\"display: flex; align-items: center; cursor: pointer; margin-bottom: 0.5rem;\"><input type=\"checkbox\" id=\"polishingEnabled\" name=\"polishingEnabled\" style=\"margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;\"> <span style=\"font-weight: 500;\">Polish selected circles after the batch run</span></label><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem; margin-left: 1.5rem;\">Batch mode only. Every strategy preserves draw order, and a sweep is kept only when the complete image improves.</p><div style=\"display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;\"><div><label for=\"polishingStrategy\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Strategy</label> <select id=\"polishingStrategy\" name=\"polishingStrategy\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem; background-color: var(--control-bg);\"><option value=\"replacement\" selected>Weakest replacement</option> <option value=\"hybrid-overlap\">Hybrid overlap</option> <option value=\"residual-region\">Residual region</option> <option value=\"contiguous-window\">Contiguous window</option></select><dl style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\"><dt style=\"font-weight: 500;\">Weakest replacement</dt><dd style=\"margin: 0 0 0.25rem 0;\">Reseeds the weakest circles from the residual image.</dd><dt style=\"font-weight: 500;\">Hybrid overlap</dt><dd style=\"margin: 0 0 0.25rem 0;\">Combines weak circles with the ones that overlap them.</dd><dt style=\"font-weight: 500;\">Residual region</dt><dd style=\"margin: 0 0 0.25rem 0;\">Visits distinct high-error tiles and optimizes their influencing circles.</dd><dt style=\"font-weight: 500;\">Contiguous window</dt><dd style=\"margin: 0;\">Polishes a consecutive run of slots, so the circles ahead of the window can be baked and each candidate evaluates fewer circles. Cheaper per sweep but selected by position rather than error, so it needs roughly circles / active set size sweeps to reach every circle.</dd></dl></div><div><label for=\"polishingActiveSetSize\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Active Set Size</label> <input type=\"number\" id=\"polishingActiveSetSize\" name=\"polishingActiveSetSize\" value=\"5\" min=\"1\" max=\"100\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Circles optimized together</p></div><div><label for=\"polishingMaxSweeps\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Maximum Sweeps</label> <input type=\"number\" id=\"polishingMaxSweeps\" name=\"polishingMaxSweeps\" value=\"8\" min=\"1\" max=\"32\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Regional polishing continues to the next tile after a rejection</p></div><div><label for=\"polishingEpochs\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Epochs per Sweep</label> <input type=\"number\" id=\"polishingEpochs\" name=\"polishingEpochs\" value=\"2\" min=\"1\" max=\"32\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"></div><div><label for=\"polishingIters\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Iterations per Epoch</label> <input type=\"number\" id=\"polishingIters\" name=\"polishingIters\" value=\"200\" min=\"1\" max=\"10000\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"></div><div><label for=\"polishingPopSize\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Sweep Population</label> <input type=\"number\" id=\"polishingPopSize\" name=\"polishingPopSize\" value=\"30\" min=\"20\" max=\"4096\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Population for the active set, independent of the population size above</p></div><div><label for=\"polishingStagnationIters\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Stagnation Iterations</label> <input type=\"number\" id=\"polishingStagnationIters\" name=\"polishingStagnationIters\" value=\"100\" min=\"1\" max=\"10000\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Must not exceed iterations per epoch</p></div><div><label for=\"polishingMinImprovement\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Progress Threshold</label> <input type=\"number\" id=\"polishingMinImprovement\" name=\"polishingMinImprovement\" value=\"0.001\" min=\"0.000000001\" step=\"any\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Absolute optimizer cost reduction that resets stagnation</p></div></div></div><!-- Convergence Settings --><div style=\"margin-bottom: 2rem;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Convergence Settings</h2><div style=\"margin-bottom: 1rem;\"><label style=\"display: flex; align-items: center; cursor: pointer;\"><input type=\"checkbox\" id=\"convergenceEnabled\" name=\"convergenceEnabled\" checked style=\"margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;\"> <span style=\"font-weight: 500;\">Enable Convergence Detection</span></label><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;\">Stop early when optimizer can't improve further (sequential/batch modes only).</p></div><div style=\"display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;\"><div><label for=\"convergencePatience\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Patience</label> <input type=\"number\" id=\"convergencePatience\" name=\"convergencePatience\" value=\"3\" min=\"1\" max=\"100\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Iterations with no improvement before stopping</p></div><div><label for=\"convergenceThreshold\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Threshold</label> <input type=\"number\" id=\"convergenceThreshold\" name=\"convergenceThreshold\" value=\"0.001\" min=\"0.0001\" max=\"0.1\" step=\"0.0001\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Minimum relative improvement (0.001 = 0.1%)</p></div></div></div><!-- Early Stopping (optimizer) --><div style=\"margin-bottom: 2rem;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Early Stopping (Optimizer)</h2><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;\">Applied per iteration inside a single optimizer run, in every mode. The convergence settings above instead count whole circles or batches. Leave these empty to disable early stopping and keep runs reproducible.</p><div style=\"display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;\"><div><label for=\"stopTargetCost\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Target Cost</label> <input type=\"number\" id=\"stopTargetCost\" name=\"stopTargetCost\" min=\"0\" step=\"any\" placeholder=\"disabled\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Stop once the best cost reaches this absolute value</p></div><div><label for=\"stopStagnationIters\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Stagnation Iterations</label> <input type=\"number\" id=\"stopStagnationIters\" name=\"stopStagnationIters\" min=\"0\" placeholder=\"disabled\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Stop after N consecutive iterations without progress</p></div><div><label for=\"stopMinImprovement\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Minimum Improvement</label> <input type=\"number\" id=\"stopMinImprovement\" name=\"stopMinImprovement\" min=\"0\" step=\"any\" placeholder=\"any improvement\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">ABSOLUTE cost reduction counted as progress; requires stagnation iterations</p></div><div><label for=\"stopMinIters\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Minimum Iterations</label> <input type=\"number\" id=\"stopMinIters\" name=\"stopMinIters\" min=\"0\" placeholder=\"0\" style=\"width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 0.375rem; font-size: 0.875rem;\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Iterations completed before any early stop can fire</p></div></div></div><!-- Advanced Metrics --><div style=\"margin-bottom: 2rem;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Advanced Metrics</h2><label style=\"display: flex; align-items: center; cursor: pointer;\"><input type=\"checkbox\" id=\"enableSSIM\" name=\"enableSSIM\" style=\"margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;\"> <span style=\"font-weight: 500;\">Enable SSIM</span></label><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;\">Track structural similarity during the run. This adds periodic image rendering and metric work.</p></div><!-- Submit Button --><div style=\"display: flex; gap: 1rem; justify-content: flex-end; padding-top: 1rem; border-top: 1px solid var(--border-color);\"><a href=\"/jobs\" class=\"btn\" style=\"background-color: var(--border-color); text-decoration: none;\">Cancel</a> <button type=\"submit\" class=\"btn btn-primary\">Create Job</button></div></form><!-- Quick Tips --><div class=\"card\" style=\"margin-top: 1.5rem; background-color: var(--info-bg);\"><h3 style=\"font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--info-text);\">💡 Tips</h3><ul style=\"margin-left: 1.5rem; color: var(--info-text-strong); font-size: 0.875rem; line-height: 1.6;\"><li><strong>Joint mode</strong>: Optimizes all circles simultaneously (fastest for small K)</li><li><strong>Sequential mode</strong>: Adds circles one at a time greedily (better for large K)</li><li><strong>Batch mode</strong>: Adds circles in batches (balanced approach)</li><li><strong>More iterations</strong>: Better results but takes longer</li><li><strong>Larger population</strong>: More exploration but slower per iteration</li></ul></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<fieldset style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var5 string
+			templ_7745c5c3_Var5, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSectionStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 58, Col: 40}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"><legend style=\"padding: 0;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Reference Image</h2></legend><div style=\"margin-bottom: 1rem;\"><label for=\"refPath\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Image Path")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = requiredMarker().Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</label> <input type=\"text\" id=\"refPath\" name=\"refPath\" placeholder=\"e.g., assets/test.png\" required aria-required=\"true\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var6 string
+			templ_7745c5c3_Var6, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 76, Col: 31}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Enter the path to your reference image file on the server.</p></div><div style=\"margin-bottom: 1rem;\"><label for=\"canvasPath\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Canvas Path (Optional)</label> <input type=\"text\" id=\"canvasPath\" name=\"canvasPath\" placeholder=\"e.g., output/previous-result.png\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var7 string
+			templ_7745c5c3_Var7, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 91, Col: 31}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Load existing canvas to continue from a previous result. Leave empty for blank canvas.</p></div></fieldset><fieldset style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var8 string
+			templ_7745c5c3_Var8, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSectionStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 98, Col: 40}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\"><legend style=\"padding: 0;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Optimization Parameters</h2></legend><div style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var9 string
+			templ_7745c5c3_Var9, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createFieldGridStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 104, Col: 38}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\"><div><label for=\"optimizer\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Optimizer")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = requiredMarker().Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</label> <select id=\"optimizer\" name=\"optimizer\" required aria-required=\"true\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var10 string
+			templ_7745c5c3_Var10, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSelectStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 115, Col: 33}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\"><option value=\"mayfly\" selected>MayFly</option> <option value=\"cmaes\">CMA-ES</option> <option value=\"dragonfly\">Dragonfly (experimental)</option></select><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">CMA-ES is configured in the CMA-ES section below. MayFly and Dragonfly ignore that section.</p></div><div><label for=\"mode\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Mode")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = requiredMarker().Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</label> <select id=\"mode\" name=\"mode\" required aria-required=\"true\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var11 string
+			templ_7745c5c3_Var11, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSelectStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 135, Col: 33}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\"><option value=\"joint\" selected>Joint</option> <option value=\"sequential\">Sequential</option> <option value=\"batch\">Batch</option></select><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Optimization strategy</p></div><div><label for=\"circles\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Circles")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = requiredMarker().Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</label> <input type=\"number\" id=\"circles\" name=\"circles\" value=\"10\" min=\"1\" max=\"3000\" required aria-required=\"true\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var12 string
+			templ_7745c5c3_Var12, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 159, Col: 32}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Number of circles (1-3000)</p></div><div><label for=\"iters\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Iterations")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = requiredMarker().Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</label> <input type=\"number\" id=\"iters\" name=\"iters\" value=\"100\" min=\"1\" max=\"10000\" required aria-required=\"true\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var13 string
+			templ_7745c5c3_Var13, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 179, Col: 32}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Max iterations (1-10000)</p></div><div><label for=\"popSize\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Population Size")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = requiredMarker().Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</label> <input type=\"number\" id=\"popSize\" name=\"popSize\" value=\"30\" min=\"20\" max=\"4096\" required aria-required=\"true\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var14 string
+			templ_7745c5c3_Var14, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 199, Col: 32}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Population size (20-4096)</p></div><div><label for=\"batchSize\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Batch Size</label> <input type=\"number\" id=\"batchSize\" name=\"batchSize\" value=\"0\" min=\"0\" max=\"100\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var15 string
+			templ_7745c5c3_Var15, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 216, Col: 32}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Batch mode only. Set equal to Circles to optimize them all together; 0 selects the automatic default.</p></div><div><label for=\"seed\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Random Seed</label> <input type=\"number\" id=\"seed\" name=\"seed\" value=\"0\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var16 string
+			templ_7745c5c3_Var16, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 231, Col: 32}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">0 for random, or set for reproducibility</p></div><div><label for=\"optimizerEpochs\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Optimizer Epochs</label> <input type=\"number\" id=\"optimizerEpochs\" name=\"optimizerEpochs\" value=\"1\" min=\"1\" max=\"32\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var17 string
+			templ_7745c5c3_Var17, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 248, Col: 32}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Repeat each optimizer stage, retaining the best and reseeding with fresh diversity (4 × 2000 = 4 epochs at 2000 iterations).</p></div></div></fieldset><fieldset style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var18 string
+			templ_7745c5c3_Var18, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSectionStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 256, Col: 40}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\"><legend style=\"padding: 0;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">CMA-ES</h2></legend><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;\">These settings apply only when the optimizer above is CMA-ES. A MayFly or Dragonfly job ignores them, whatever is entered here.</p><div style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var19 string
+			templ_7745c5c3_Var19, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createFieldGridStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 265, Col: 38}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\"><div><label for=\"initialSigma\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Initial Sigma</label> <input type=\"number\" id=\"initialSigma\" name=\"initialSigma\" value=\"0.3\" step=\"any\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var20 string
+			templ_7745c5c3_Var20, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 276, Col: 32}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Initial step size in the normalized [0,1] search box, so it means the same for every circle parameter. Must be finite and positive.</p></div><div><label for=\"covarianceMode\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Covariance</label> <select id=\"covarianceMode\" name=\"covarianceMode\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var21 string
+			templ_7745c5c3_Var21, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSelectStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 289, Col: 33}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\"><option value=\"full\" selected>Full</option> <option value=\"separable\">Separable</option> <option value=\"block\">Block</option></select><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Full covariance supports at most 512 optimizer dimensions and a larger search is refused rather than run. One run searches 7 dimensions per circle: every circle in joint mode, one batch in batch mode, a single circle in sequential mode. That is 73 circles per run at most: in joint mode that caps the whole canvas, while a batch or sequential job stays inside it whatever its total circle count. Choose block or separable above that.</p></div><div><label for=\"restartStrategy\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Restart Strategy</label> <select id=\"restartStrategy\" name=\"restartStrategy\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var22 string
+			templ_7745c5c3_Var22, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSelectStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 306, Col: 33}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\"><option value=\"none\" selected>None</option> <option value=\"ipop\">IPOP</option> <option value=\"bipop\">BIPOP</option></select><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">CMA-ES's own restart schedule, spending one stage budget across several runs. IPOP grows the population at each restart; BIPOP alternates large and small ones.</p></div></div><label for=\"activeCMA\" style=\"display: flex; align-items: center; cursor: pointer; margin-top: 1rem;\"><input type=\"checkbox\" id=\"activeCMA\" name=\"activeCMA\" checked style=\"margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;\"> <span style=\"font-weight: 500;\">Active covariance adaptation</span></label><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;\">Negative rank-mu updates, which also learn from the worst candidates of each generation. Enabled by default.</p></fieldset><fieldset style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var23 string
+			templ_7745c5c3_Var23, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSectionStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 331, Col: 40}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\"><legend style=\"padding: 0;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Active-set Polishing</h2></legend> <label for=\"polishingEnabled\" style=\"display: flex; align-items: center; cursor: pointer; margin-bottom: 0.5rem;\"><input type=\"checkbox\" id=\"polishingEnabled\" name=\"polishingEnabled\" style=\"margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;\"> <span style=\"font-weight: 500;\">Polish selected circles after the batch run</span></label><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem; margin-left: 1.5rem;\">Batch mode only. Every strategy preserves draw order, and a sweep is kept only when the complete image improves.</p><div style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var24 string
+			templ_7745c5c3_Var24, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createFieldGridStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 349, Col: 38}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\"><div><label for=\"polishingStrategy\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Strategy</label> <select id=\"polishingStrategy\" name=\"polishingStrategy\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var25 string
+			templ_7745c5c3_Var25, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSelectStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 352, Col: 88}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\"><option value=\"replacement\" selected>Weakest replacement</option> <option value=\"hybrid-overlap\">Hybrid overlap</option> <option value=\"residual-region\">Residual region</option> <option value=\"contiguous-window\">Contiguous window</option></select><dl style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\"><dt style=\"font-weight: 500;\">Weakest replacement</dt><dd style=\"margin: 0 0 0.25rem 0;\">Reseeds the weakest circles from the residual image.</dd><dt style=\"font-weight: 500;\">Hybrid overlap</dt><dd style=\"margin: 0 0 0.25rem 0;\">Combines weak circles with the ones that overlap them.</dd><dt style=\"font-weight: 500;\">Residual region</dt><dd style=\"margin: 0 0 0.25rem 0;\">Visits distinct high-error tiles and optimizes their influencing circles.</dd><dt style=\"font-weight: 500;\">Contiguous window</dt><dd style=\"margin: 0;\">Polishes a consecutive run of slots, so the circles ahead of the window can be baked and each candidate evaluates fewer circles. Cheaper per sweep but selected by position rather than error, so it needs roughly circles / active set size sweeps to reach every circle.</dd></dl></div><div><label for=\"polishingActiveSetSize\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Active Set Size</label> <input type=\"number\" id=\"polishingActiveSetSize\" name=\"polishingActiveSetSize\" value=\"5\" min=\"1\" max=\"100\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var26 string
+			templ_7745c5c3_Var26, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 371, Col: 138}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Circles optimized together</p></div><div><label for=\"polishingMaxSweeps\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Maximum Sweeps</label> <input type=\"number\" id=\"polishingMaxSweeps\" name=\"polishingMaxSweeps\" value=\"8\" min=\"1\" max=\"32\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var27 string
+			templ_7745c5c3_Var27, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 376, Col: 129}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Regional polishing continues to the next tile after a rejection</p></div><div><label for=\"polishingEpochs\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Epochs per Sweep</label> <input type=\"number\" id=\"polishingEpochs\" name=\"polishingEpochs\" value=\"2\" min=\"1\" max=\"32\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var28 string
+			templ_7745c5c3_Var28, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 381, Col: 123}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\"></div><div><label for=\"polishingIters\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Iterations per Epoch</label> <input type=\"number\" id=\"polishingIters\" name=\"polishingIters\" value=\"200\" min=\"1\" max=\"10000\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var29 string
+			templ_7745c5c3_Var29, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 385, Col: 126}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\"></div><div><label for=\"polishingPopSize\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Sweep Population</label> <input type=\"number\" id=\"polishingPopSize\" name=\"polishingPopSize\" value=\"30\" min=\"20\" max=\"4096\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var30 string
+			templ_7745c5c3_Var30, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 389, Col: 129}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Population for the active set, independent of the population size above</p></div><div><label for=\"polishingStagnationIters\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Stagnation Iterations</label> <input type=\"number\" id=\"polishingStagnationIters\" name=\"polishingStagnationIters\" value=\"100\" min=\"1\" max=\"10000\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var31 string
+			templ_7745c5c3_Var31, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 394, Col: 146}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Must not exceed iterations per epoch</p></div><div><label for=\"polishingMinImprovement\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Progress Threshold</label> <input type=\"number\" id=\"polishingMinImprovement\" name=\"polishingMinImprovement\" value=\"0.001\" min=\"0.000000001\" step=\"any\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var32 string
+			templ_7745c5c3_Var32, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 399, Col: 155}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Absolute optimizer cost reduction that resets stagnation</p></div></div></fieldset><fieldset style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var33 string
+			templ_7745c5c3_Var33, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSectionStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 404, Col: 40}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "\"><legend style=\"padding: 0;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Convergence Settings</h2></legend><div style=\"margin-bottom: 1rem;\"><label for=\"convergenceEnabled\" style=\"display: flex; align-items: center; cursor: pointer;\"><input type=\"checkbox\" id=\"convergenceEnabled\" name=\"convergenceEnabled\" checked style=\"margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;\"> <span style=\"font-weight: 500;\">Enable Convergence Detection</span></label><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;\">Stop early when optimizer can't improve further (sequential/batch modes only).</p></div><div style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var34 string
+			templ_7745c5c3_Var34, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createFieldGridStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 425, Col: 38}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "\"><div><label for=\"convergencePatience\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Patience</label> <input type=\"number\" id=\"convergencePatience\" name=\"convergencePatience\" value=\"3\" min=\"1\" max=\"100\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var35 string
+			templ_7745c5c3_Var35, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 437, Col: 32}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Iterations with no improvement before stopping</p></div><div><label for=\"convergenceThreshold\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Threshold</label> <input type=\"number\" id=\"convergenceThreshold\" name=\"convergenceThreshold\" value=\"0.001\" min=\"0.0001\" max=\"0.1\" step=\"0.0001\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var36 string
+			templ_7745c5c3_Var36, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 455, Col: 32}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Minimum relative improvement (0.001 = 0.1%)</p></div></div></fieldset><fieldset style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var37 string
+			templ_7745c5c3_Var37, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSectionStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 463, Col: 40}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "\"><legend style=\"padding: 0;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Early Stopping (Optimizer)</h2></legend><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;\">Applied per iteration inside a single optimizer run, in every mode. The convergence settings above instead count whole circles or batches. Leave these empty to disable early stopping and keep runs reproducible.</p><div style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var38 string
+			templ_7745c5c3_Var38, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createFieldGridStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 474, Col: 38}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\"><div><label for=\"stopTargetCost\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Target Cost</label> <input type=\"number\" id=\"stopTargetCost\" name=\"stopTargetCost\" min=\"0\" step=\"any\" placeholder=\"disabled\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var39 string
+			templ_7745c5c3_Var39, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 486, Col: 32}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Stop once the best cost reaches this absolute value</p></div><div><label for=\"stopStagnationIters\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Stagnation Iterations</label> <input type=\"number\" id=\"stopStagnationIters\" name=\"stopStagnationIters\" min=\"0\" placeholder=\"disabled\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var40 string
+			templ_7745c5c3_Var40, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 502, Col: 32}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Stop after N consecutive iterations without progress</p></div><div><label for=\"stopMinImprovement\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Minimum Improvement</label> <input type=\"number\" id=\"stopMinImprovement\" name=\"stopMinImprovement\" min=\"0\" step=\"any\" placeholder=\"any improvement\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var41 string
+			templ_7745c5c3_Var41, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 519, Col: 32}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">ABSOLUTE cost reduction counted as progress; requires stagnation iterations</p></div><div><label for=\"stopMinIters\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Minimum Iterations</label> <input type=\"number\" id=\"stopMinIters\" name=\"stopMinIters\" min=\"0\" placeholder=\"0\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var42 string
+			templ_7745c5c3_Var42, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 535, Col: 32}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Iterations completed before any early stop can fire</p></div></div></fieldset><fieldset style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var43 string
+			templ_7745c5c3_Var43, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSectionStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 543, Col: 40}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "\"><legend style=\"padding: 0;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Advanced Metrics</h2></legend> <label for=\"enableSSIM\" style=\"display: flex; align-items: center; cursor: pointer;\"><input type=\"checkbox\" id=\"enableSSIM\" name=\"enableSSIM\" style=\"margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;\"> <span style=\"font-weight: 500;\">Enable SSIM</span></label><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;\">Track structural similarity during the run. This adds periodic image rendering and metric work.</p></fieldset><div class=\"action-row\" style=\"padding-top: 1rem; border-top: 1px solid var(--border-color);\"><a href=\"/jobs\" class=\"btn\" style=\"background-color: var(--border-color); text-decoration: none;\">Cancel</a> <button type=\"submit\" class=\"btn btn-primary\">Create Job</button></div></form><div class=\"card\" style=\"margin-top: 1.5rem; background-color: var(--info-bg);\"><h3 style=\"font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--info-text);\"><span aria-hidden=\"true\">💡</span> Tips</h3><ul style=\"margin-left: 1.5rem; color: var(--info-text-strong); font-size: 0.875rem; line-height: 1.6;\"><li><strong>Joint mode</strong>: Optimizes all circles simultaneously (fastest for small K)</li><li><strong>Sequential mode</strong>: Adds circles one at a time greedily (better for large K)</li><li><strong>Batch mode</strong>: Adds circles in batches (balanced approach)</li><li><strong>More iterations</strong>: Better results but takes longer</li><li><strong>Larger population</strong>: More exploration but slower per iteration</li></ul></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
 		templ_7745c5c3_Err = Layout("Create Job").Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// requiredMarker is the "this field is required" affordance. The red asterisk on
+// its own carries the fact in colour and glyph only, which WCAG 1.3.1 does not
+// accept: the asterisk is hidden from the accessibility tree and the word is
+// supplied beside it instead, while the matching control carries
+// aria-required="true".
+func requiredMarker() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var44 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var44 == nil {
+			templ_7745c5c3_Var44 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<span style=\"color: var(--error-color);\" aria-hidden=\"true\">*</span><span class=\"sr-only\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var45 string
+		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(" (required)")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 596, Col: 106}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "</span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

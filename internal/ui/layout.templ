@@ -1,5 +1,47 @@
 package ui
 
+// lightThemeTokens is the default palette. Like darkThemeTokens it is a
+// const rather than literal CSS because the preload script below emits one
+// palette or the other as a stylesheet, and both spellings have to stay the
+// same values.
+const lightThemeTokens = `
+		color-scheme: light;
+		--primary-color: #2563eb;
+		--primary-hover: #1d4ed8;
+		--success-color: #10b981;
+		--success-text-strong: #047857;
+		--on-primary: #ffffff;
+		--danger-bg: #dc2626;
+		--on-danger: #ffffff;
+		--warning-btn-bg: #f59e0b;
+		--on-warning: #451a03;
+		--error-color: #ef4444;
+		--warning-color: #f59e0b;
+		--bg-color: #f9fafb;
+		--surface-color: #ffffff;
+		--text-color: #111827;
+		--text-muted: #6b7280;
+		--border-color: #e5e7eb;
+		--grid-color: #f3f4f6;
+		--control-bg: #ffffff;
+		--secondary-hover: #d1d5db;
+		--btn-bg: #e5e7eb;
+		--success-bg: #d1fae5;
+		--success-text: #065f46;
+		--error-bg: #fee2e2;
+		--error-border: #fca5a5;
+		--error-text: #991b1b;
+		--warning-bg: #fef3c7;
+		--warning-text: #92400e;
+		--info-bg: #dbeafe;
+		--info-text: #1e40af;
+		--info-text-strong: #1e3a8a;
+		--checker-a: #f9fafb;
+		--checker-b: #ffffff;
+		--shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+		--shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+`
+
 // darkThemeTokens is the dark palette. It is declared once here and rendered
 // into both dark selectors below, because plain CSS cannot share a single
 // declaration block between a media-conditional selector and an unconditional
@@ -25,6 +67,7 @@ const darkThemeTokens = `
 		--grid-color: #1f2937;
 		--control-bg: #0f172a;
 		--secondary-hover: #475569;
+		--btn-bg: #334155;
 		--success-bg: #052e16;
 		--success-text: #a7f3d0;
 		--error-bg: #451a1a;
@@ -41,20 +84,83 @@ const darkThemeTokens = `
 		--shadow-md: 0 6px 12px -2px rgba(0, 0, 0, 0.5);
 `
 
-// darkThemeStyles applies darkThemeTokens to the two states that must render
-// dark: the explicit `data-theme="dark"` opt-in, which wins over the operating
-// system preference, and readers with no explicit choice whose system asks for
-// dark. An explicit `data-theme="light"` matches neither selector, so it keeps
-// the light palette declared on bare `:root`.
-const darkThemeStyles = `<style>
-	:root[data-theme="dark"] {`+darkThemeTokens+`	}
+// themeStyles carries every :root declaration in the document, in one
+// stylesheet, deliberately.
+//
+// Splitting them across sheets tripped a WebKit style-caching bug: with the
+// light palette in one <style> and the dark overrides in another, the root
+// element resolved the right tokens but nothing beneath it inherited them at
+// all, so Safari rendered the dark theme as black text on the dark surface --
+// 1.17:1 against a 4.5:1 threshold. Disabling any one sheet forced a
+// recalculation and the values appeared, which is what identified it as a
+// caching problem rather than a cascade one. Keep :root declarations here and
+// nowhere else.
+const themeStyles = `<style>
+	:root {` + lightThemeTokens + `	}
+
+	/* The root carries the background as well as body. With only body painted,
+	   the background propagates to the canvas and WebKit then reports body's
+	   own background as transparent, so anything walking the tree for an
+	   effective background -- an accessibility checker included -- falls back
+	   to assuming white and reads every light-on-dark pairing as a failure. */
+	:root {
+		background-color: var(--bg-color);
+	}
+
+	:root[data-theme="dark"] {` + darkThemeTokens + `	}
 
 	@media (prefers-color-scheme: dark) {
-		:root:not([data-theme]) {`+darkThemeTokens+`		}
+		:root:not([data-theme]) {` + darkThemeTokens + `		}
 	}
 </style>`
 
-// Base layout component with HTML structure, minimal CSS, and navigation
+// themePreloadScript owns the theme, from before the first paint onward.
+//
+// It applies a palette by swapping the text of one stylesheet, and never sets an
+// attribute on <html>. Mutating the root element leaves WebKit unable to inherit
+// custom properties into elements parsed before the mutation: the root keeps the
+// right tokens and everything beneath it resolves none at all, so Safari
+// rendered the dark theme as black text on the dark surface -- measured at
+// 1.17:1 against a 4.5:1 threshold. It looked survivable on the dashboard and
+// job pages only because a React island replaces their markup with fresh
+// elements, which do inherit; the pages with no island, settings and create,
+// stayed unreadable.
+//
+// A rule appended last in <head> beats both the bare :root block and the
+// system-preference media query without extra specificity, so "auto" is simply
+// the absence of this stylesheet.
+const themePreloadScript = `<script>
+	(() => {
+		const tokens = {
+			light: ` + "`" + lightThemeTokens + "`" + `,
+			dark: ` + "`" + darkThemeTokens + "`" + `,
+		};
+		const storageKey = "mayflycirclefit.theme";
+		const apply = (theme) => {
+			const existing = document.getElementById("theme-override");
+			if (theme !== "light" && theme !== "dark") {
+				if (existing) existing.remove();
+				return;
+			}
+			const style = existing || document.createElement("style");
+			style.id = "theme-override";
+			style.textContent = ":root{" + tokens[theme] + "}";
+			if (!existing) document.head.appendChild(style);
+		};
+		const selected = () => {
+			try {
+				const stored = localStorage.getItem(storageKey);
+				return stored === "light" || stored === "dark" ? stored : "auto";
+			} catch (_) {
+				// Storage can be unavailable in privacy-restricted contexts.
+				return "auto";
+			}
+		};
+		apply(selected());
+		window.mayflyTheme = { apply, selected, storageKey };
+	})();
+</script>`
+
 templ Layout(title string) {
 	<!DOCTYPE html>
 	<html lang="en">
@@ -63,18 +169,6 @@ templ Layout(title string) {
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<meta name="description" content="MayFlyCircleFit - High-performance circle fitting optimization"/>
 			<title>{ title } - MayFlyCircleFit</title>
-			<script>
-				(() => {
-					try {
-						const theme = localStorage.getItem("mayflycirclefit.theme");
-						if (theme === "light" || theme === "dark") {
-							document.documentElement.dataset.theme = theme;
-						}
-					} catch (_) {
-						// Storage can be unavailable in privacy-restricted browser contexts.
-					}
-				})();
-			</script>
 			<style>
 				/* Reset and base styles */
 				* {
@@ -83,42 +177,6 @@ templ Layout(title string) {
 					box-sizing: border-box;
 				}
 
-				:root {
-					color-scheme: light;
-					--primary-color: #2563eb;
-					--primary-hover: #1d4ed8;
-					--success-color: #10b981;
-					--success-text-strong: #047857;
-					--on-primary: #ffffff;
-					--danger-bg: #dc2626;
-					--on-danger: #ffffff;
-					--warning-btn-bg: #f59e0b;
-					--on-warning: #451a03;
-					--error-color: #ef4444;
-					--warning-color: #f59e0b;
-					--bg-color: #f9fafb;
-					--surface-color: #ffffff;
-					--text-color: #111827;
-					--text-muted: #6b7280;
-					--border-color: #e5e7eb;
-					--grid-color: #f3f4f6;
-					--control-bg: #ffffff;
-					--secondary-hover: #d1d5db;
-					--success-bg: #d1fae5;
-					--success-text: #065f46;
-					--error-bg: #fee2e2;
-					--error-border: #fca5a5;
-					--error-text: #991b1b;
-					--warning-bg: #fef3c7;
-					--warning-text: #92400e;
-					--info-bg: #dbeafe;
-					--info-text: #1e40af;
-					--info-text-strong: #1e3a8a;
-					--checker-a: #f9fafb;
-					--checker-b: #ffffff;
-					--shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
-					--shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-				}
 
 				body {
 					font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -142,8 +200,10 @@ templ Layout(title string) {
 					margin: 0 auto;
 					padding: 1rem 2rem;
 					display: flex;
+					flex-wrap: wrap;
 					align-items: center;
 					justify-content: space-between;
+					gap: 0.75rem;
 				}
 
 				.nav-brand {
@@ -250,6 +310,11 @@ templ Layout(title string) {
 					border-radius: 0.375rem;
 					font-weight: 500;
 					text-decoration: none;
+					/* An explicit surface, not the UA button default. WebKit's
+					   default is #c0c0c0 regardless of color-scheme, so a plain
+					   .btn on the dark palette was --text-color on silver:
+					   1.65:1, and that is what Safari actually rendered. */
+					background-color: var(--btn-bg);
 					color: var(--text-color);
 					cursor: pointer;
 					border: none;
@@ -371,6 +436,21 @@ templ Layout(title string) {
 					text-align: right;
 				}
 
+				/* A flex item defaults to min-width:auto, which refuses to
+				   shrink below its own min-content. A reference path or a job
+				   id is one unbroken token, so without these two rules that
+				   token sets a floor on the card's width and the whole page
+				   scrolls sideways on a phone -- the card grows, not the text. */
+				.row-between > *,
+				.meta-row > *,
+				.action-row > * {
+					min-width: 0;
+				}
+
+				.card {
+					overflow-wrap: anywhere;
+				}
+
 				/* A wide table stays a table: these are dense numeric columns
 				   people scan vertically, and one of them is sortable. Scrolling
 				   is kept, but the container is made a named, focusable region
@@ -413,7 +493,19 @@ templ Layout(title string) {
 
 				input, select, textarea {
 					background-color: var(--control-bg);
-					color: var(--text-color);
+					/* inherit, not var(--text-color): WebKit does not inherit
+					   custom properties into form controls, so the var resolved
+					   to nothing there and the whole declaration was dropped,
+					   leaving a select rendering black on #0f172a. Ordinary
+					   inheritance reaches the control on every engine. */
+					color: inherit;
+					/* WebKit paints form-control text with its own control
+					   color and ignores `color` here, so a select on the dark
+					   palette rendered black on #0f172a -- 1.17:1, and
+					   unreadable in Safari's dark mode. -webkit-text-fill-color
+					   is the property WebKit does honor; other engines ignore
+					   it and keep using `color` above. */
+					-webkit-text-fill-color: currentColor;
 				}
 
 				.badge {
@@ -681,7 +773,7 @@ templ Layout(title string) {
 				}
 				.heatmap-legend {
 					display: grid;
-					grid-template-columns: auto minmax(120px, 1fr) auto;
+					grid-template-columns: auto minmax(min(120px, 100%), 1fr) auto;
 					align-items: center;
 					gap: 0.5rem;
 					margin-top: 0.75rem;
@@ -767,7 +859,8 @@ templ Layout(title string) {
 					}
 				}
 			</style>
-			@templ.Raw(darkThemeStyles)
+			@templ.Raw(themeStyles)
+			@templ.Raw(themePreloadScript)
 		</head>
 		<body>
 			<a class="skip-link" href="#main-content">Skip to main content</a>
@@ -809,29 +902,27 @@ templ Layout(title string) {
 			</main>
 			<script>
 				(() => {
-					const storageKey = "mayflycirclefit.theme";
+					// The palette itself is owned by the preload script in
+					// <head>; this only wires the buttons to it, so the toggle
+					// swaps one stylesheet rather than mutating <html>.
+					const theme = window.mayflyTheme;
 					const buttons = document.querySelectorAll("[data-theme-value]");
-					const selectedTheme = () => document.documentElement.dataset.theme || "auto";
 					const updateButtons = () => {
-						const selected = selectedTheme();
+						const current = theme.selected();
 						buttons.forEach((button) => {
-							button.setAttribute("aria-pressed", String(button.dataset.themeValue === selected));
+							button.setAttribute("aria-pressed", String(button.dataset.themeValue === current));
 						});
 					};
-					const setTheme = (theme) => {
-						if (theme === "auto") {
-							delete document.documentElement.dataset.theme;
-						} else {
-							document.documentElement.dataset.theme = theme;
-						}
+					const setTheme = (next) => {
+						theme.apply(next);
 						try {
-							if (theme === "auto") {
-								localStorage.removeItem(storageKey);
+							if (next === "auto") {
+								localStorage.removeItem(theme.storageKey);
 							} else {
-								localStorage.setItem(storageKey, theme);
+								localStorage.setItem(theme.storageKey, next);
 							}
 						} catch (_) {
-							// The theme still applies for this page when storage is unavailable.
+							// The choice still applies to this page without storage.
 						}
 						updateButtons();
 					};

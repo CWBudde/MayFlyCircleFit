@@ -28,7 +28,10 @@ test("reconciles after a network outage without reloading", async ({
 	// refresh explicitly so the offline failure is observed deterministically
 	// rather than depending on the initial request still being in flight.
 	await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-	await expect(page.getByText(/Failed to fetch/)).toBeVisible();
+	// Each engine words a failed fetch differently: Chromium says "Failed to
+	// fetch", WebKit says "Load failed". The assertion is that the failure
+	// surfaces to the reader at all, not which sentence it picked.
+	await expect(page.getByText(/Failed to fetch|Load failed|NetworkError/)).toBeVisible();
 
 	await context.setOffline(false);
 	await page.evaluate(() => window.dispatchEvent(new Event("focus")));

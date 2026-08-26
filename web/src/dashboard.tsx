@@ -1,5 +1,5 @@
 import { Chart } from "chart.js";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useId, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { CampaignCostChart } from "./CampaignCostChart";
 import { useChartTheme, useLineChart } from "./charts";
@@ -19,6 +19,8 @@ import { CampaignDetailIsland, CampaignListIsland } from "./Campaigns";
 import { JobControlsIsland } from "./JobControls";
 import { fetchJSON, useLiveResource } from "./live";
 import type { UIEvent } from "./live";
+import { LiveStatus } from "./LiveStatus";
+import { SkeletonBar } from "./Skeleton";
 
 // DashboardResponse is the shape of both GET /api/v1/dashboard and the
 // server-rendered seed in `#dashboard-page`. The Go side keeps those two in
@@ -268,8 +270,9 @@ function architectureBadge(host: HostFacts | undefined): string {
 
 // JobSparkline draws the cost curve of one running job, seeded from the
 // endpoint's metric history and grown by the stream.
-function JobSparkline({ history, palette }: { history: MetricSample[]; palette: Palette }) {
+function JobSparkline({ history, palette, jobId }: { history: MetricSample[]; palette: Palette; jobId: string }) {
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
+	const descriptionId = useId();
 	const historyRef = useRef(history);
 	historyRef.current = history;
 
@@ -302,9 +305,23 @@ function JobSparkline({ history, palette }: { history: MetricSample[]; palette: 
 		[history, palette],
 	);
 
+	// A bare <canvas> is an empty box to a screen reader. The same treatment
+	// CampaignCostChart gives its plot applies here: name the drawing, and put
+	// the reading of it — first cost, last cost, sample count — in a sibling the
+	// canvas points at, since the curve itself announces nothing.
+	const first = history[0];
+	const last = history[history.length - 1];
+	const label = `Best cost over ${history.length} samples for job ${shortID(jobId)}`;
 	return (
-		<div style={{ width: "180px", height: "44px" }}>
-			<canvas ref={canvasRef} />
+		// 180px was a hard width in a nine-column table. Capping it instead lets
+		// the column give room back to the columns that carry numbers.
+		<div style={{ width: "100%", maxWidth: "180px", height: "44px" }}>
+			<canvas ref={canvasRef} role="img" aria-label={label} aria-describedby={descriptionId} style={{ maxWidth: "100%" }} />
+			<span id={descriptionId} className="sr-only">
+				{first && last
+					? `Cost fell from ${formatFixed(first.cost, 4)} at iteration ${formatInteger(first.iteration)} to ${formatFixed(last.cost, 4)} at iteration ${formatInteger(last.iteration)}.`
+					: "No cost samples recorded yet."}
+			</span>
 		</div>
 	);
 }
@@ -379,6 +396,7 @@ function SortableHeader({
 	const active = sort?.key === sortKey ? sort : null;
 	return (
 		<th
+			scope="col"
 			aria-sort={active ? (active.direction === "asc" ? "ascending" : "descending") : "none"}
 			style={{ padding: "0.5rem", textAlign: align ?? "left", ...style }}
 		>
@@ -408,11 +426,57 @@ function SortableHeader({
 	);
 }
 
+// min() caps the track at the container's own width. Without it a 220px
+// minimum is a 220px floor even inside a 180px column, and the grid — not the
+// content — is what pushes the page into a horizontal scroll on a phone.
+const summaryGridStyle: CSSProperties = {
+	display: "grid",
+	gridTemplateColumns: "repeat(auto-fill, minmax(min(220px, 100%), 1fr))",
+	gap: "1rem",
+	marginBottom: "1.5rem",
+};
+
+// A skeleton rather than a sentence: the dashboard's shape is known before its
+// numbers are, and showing it keeps the page from jumping when they arrive. The
+// wording still reaches a screen reader, now from a region that announces it.
+function DashboardSkeleton({ error }: { error: string | null }) {
+	return (
+		<div>
+			<div style={{ marginBottom: "2rem" }}>
+				<h1 style={{ fontSize: "2rem", fontWeight: 700 }}>Dashboard</h1>
+				<p role="status" aria-live="polite" style={{ color: "var(--text-muted)" }}>
+					{error ?? "Loading the dashboard…"}
+				</p>
+			</div>
+			{error ? null : (
+				<>
+					<div style={summaryGridStyle}>
+						{["jobs", "throughput", "host"].map((name) => (
+							<div key={name} className="card" style={{ display: "grid", gap: "0.75rem" }}>
+								<SkeletonBar width="40%" height="1.25rem" />
+								<SkeletonBar width="70%" />
+								<SkeletonBar width="55%" />
+								<SkeletonBar width="62%" />
+							</div>
+						))}
+					</div>
+					<div className="card" style={{ display: "grid", gap: "0.75rem" }}>
+						<SkeletonBar width="30%" height="1.25rem" />
+						<SkeletonBar width="100%" height="2.5rem" />
+						<SkeletonBar width="100%" height="2.5rem" />
+						<SkeletonBar width="100%" height="2.5rem" />
+					</div>
+				</>
+			)}
+		</div>
+	);
+}
+
 function DashboardIsland({ root }: { root: HTMLElement }) {
 	const palette = useChartTheme();
 	const [sort, setSort] = useState<SortState | null>(null);
 	const initial = readDashboardSeed(root);
-	const { value: payload, connected: streamConnected, error: errorText } = useLiveResource({
+	const { value: payload, status: streamStatus, error: errorText } = useLiveResource({
 		initial,
 		load: async (signal) => normalizePayload(await fetchJSON<DashboardResponse>("/api/v1/dashboard", signal)),
 		reduce: reduceDashboardEvent,
@@ -426,11 +490,7 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 	const onSort = useCallback((key: SortKey) => setSort((current) => nextSort(current, key)), []);
 
 	if (!payload) {
-		return (
-			<p style={{ color: "var(--text-muted)" }}>
-				{errorText ?? "Loading the dashboard…"}
-			</p>
-		);
+		return <DashboardSkeleton error={errorText} />;
 	}
 
 	return (
@@ -440,14 +500,7 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 				<p style={{ color: "var(--text-muted)" }}>Monitor jobs, campaigns, and host state from one view.</p>
 			</div>
 
-			<div
-				style={{
-					display: "grid",
-					gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-					gap: "1rem",
-					marginBottom: "1.5rem",
-				}}
-			>
+			<div style={summaryGridStyle}>
 				<div className="card">
 					<h2 style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "0.5rem" }}>Jobs</h2>
 					<div style={{ display: "grid", gap: "0.5rem", color: "var(--text-muted)" }}>
@@ -475,16 +528,7 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 			</div>
 
 			<div className="card" style={{ marginBottom: "1.5rem" }}>
-				<div
-					style={{
-						display: "flex",
-						justifyContent: "space-between",
-						alignItems: "center",
-						gap: "1rem",
-						flexWrap: "wrap",
-						marginBottom: "1rem",
-					}}
-				>
+				<div className="row-between" style={{ marginBottom: "1rem" }}>
 					<h2 style={{ fontSize: "1.25rem", fontWeight: 600, margin: 0 }}>Running jobs</h2>
 					<a href="/jobs" className="btn" style={{ backgroundColor: "var(--border-color)" }}>
 						Open jobs page
@@ -493,7 +537,10 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 				{jobs.length === 0 ? (
 					<p style={{ color: "var(--text-muted)" }}>No jobs are running right now.</p>
 				) : (
-					<div style={{ overflowX: "auto" }}>
+					// A named, focusable region: the table scrolls sideways on a narrow
+					// screen, and without tabindex a keyboard could never reach the
+					// columns that scrolled out of view.
+					<div className="table-scroll" role="region" aria-label="Running jobs" tabIndex={0}>
 						<table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
 							<thead>
 								<tr style={{ textAlign: "left", borderBottom: "1px solid var(--border-color)" }}>
@@ -504,8 +551,8 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 									<SortableHeader label="Best cost" sortKey="bestCost" sort={sort} onSort={onSort} align="right" />
 									<SortableHeader label="Gain" sortKey="gain" sort={sort} onSort={onSort} align="right" />
 									<SortableHeader label="CPS" sortKey="cps" sort={sort} onSort={onSort} align="right" />
-									<th style={{ padding: "0.5rem" }}>Progress</th>
-									<th style={{ padding: "0.5rem" }}>Cost</th>
+									<th scope="col" style={{ padding: "0.5rem" }}>Progress</th>
+									<th scope="col" style={{ padding: "0.5rem" }}>Cost</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -522,16 +569,7 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 			</div>
 
 			<div className="card" style={{ marginBottom: "1.5rem" }}>
-				<div
-					style={{
-						display: "flex",
-						justifyContent: "space-between",
-						alignItems: "center",
-						gap: "1rem",
-						flexWrap: "wrap",
-						marginBottom: "1rem",
-					}}
-				>
+				<div className="row-between" style={{ marginBottom: "1rem" }}>
 					<h2 style={{ fontSize: "1.25rem", fontWeight: 600, margin: 0 }}>Campaigns</h2>
 					<a href="/schedules" className="btn" style={{ backgroundColor: "var(--border-color)" }}>
 						Open campaigns
@@ -550,10 +588,7 @@ function DashboardIsland({ root }: { root: HTMLElement }) {
 				)}
 			</div>
 
-			<p style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
-				Live updates: {streamConnected ? "connected" : "reconnecting"}
-				{errorText ? ` · ${errorText}` : ""}
-			</p>
+			<LiveStatus state={streamStatus} error={errorText} />
 		</div>
 	);
 }
@@ -594,21 +629,36 @@ function JobRow({ job, palette }: { job: RunningJob; palette: Palette }) {
 			<td style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>{formatJobCircles(job.circles, job.requestedCircles)}</td>
 			<td style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>{formatInteger(job.iterations)}</td>
 			<td style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>{formatFixed(job.bestCost, 4)}</td>
-			<td style={{ padding: "0.75rem 0.5rem", textAlign: "right", color: "var(--success-color)" }}>
+			{/* --success-color is a fill, not a foreground: at 2.54:1 on white it
+			    fails AA as text. --success-text-strong is the same hue darkened
+			    for light mode and left as-is for dark. */}
+			<td style={{ padding: "0.75rem 0.5rem", textAlign: "right", color: "var(--success-text-strong)" }}>
 				{formatCostGain(job.initialCost, job.bestCost)}
 			</td>
 			<td style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>{formatFixed(job.cps, 2)}</td>
-			<td style={{ padding: "0.75rem 0.5rem", minWidth: "9rem" }}>
+			{/* 9rem plus the sparkline's old 180px claimed a quarter of a
+			    nine-column table before any content did. */}
+			<td style={{ padding: "0.75rem 0.5rem", minWidth: "7rem" }}>
 				<div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
 					{job.maxIters > 0 ? `${progress.toFixed(1)}%` : "—"}
 				</div>
-				<div style={{ height: "6px", backgroundColor: "var(--border-color)", borderRadius: "3px", overflow: "hidden" }}>
+				<div
+					role="progressbar"
+					aria-label={`Iteration progress for job ${shortID(job.id)}`}
+					aria-valuemin={0}
+					aria-valuemax={100}
+					// A job with no iteration budget has no determinate progress, and
+					// omitting aria-valuenow is how that is said.
+					aria-valuenow={job.maxIters > 0 ? Math.round(progress) : undefined}
+					aria-valuetext={job.maxIters > 0 ? `${progress.toFixed(1)}%` : "unknown"}
+					style={{ height: "6px", backgroundColor: "var(--border-color)", borderRadius: "3px", overflow: "hidden" }}
+				>
 					<div style={{ height: "100%", width: `${progress}%`, backgroundColor: "var(--primary-color)" }} />
 				</div>
 			</td>
 			<td style={{ padding: "0.75rem 0.5rem" }}>
 				{history.length > 1 ? (
-					<JobSparkline history={history} palette={palette} />
+					<JobSparkline history={history} palette={palette} jobId={job.id} />
 				) : (
 					<span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>—</span>
 				)}
@@ -625,16 +675,16 @@ function CampaignCard({ campaign, palette }: { campaign: CampaignSummary; palett
 
 	return (
 		<div className="card" style={{ borderLeft: "4px solid var(--primary-color)" }}>
-			<div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "1rem", flexWrap: "wrap" }}>
-				<div style={{ flex: "1 1 260px" }}>
-					<div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
+			<div className="row-between row-between-top">
+				<div style={{ flex: "1 1 260px", minWidth: 0 }}>
+					<div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
 						<a href={campaignURL(campaign)} style={{ textDecoration: "none", color: "inherit" }}>
 							<h3 style={{ fontSize: "1.125rem", fontWeight: 600, fontFamily: "monospace" }}>{shortID(campaign.id)}</h3>
 						</a>
 						{campaign.name ? <span style={{ color: "var(--text-muted)" }}>{campaign.name}</span> : null}
 						{campaign.state ? <span className={`badge ${stateClass(campaign.state)}`}>{stateLabel(campaign.state)}</span> : null}
 					</div>
-					<div style={{ display: "flex", gap: "1rem", color: "var(--text-muted)", fontSize: "0.875rem" }}>
+					<div className="meta-row" style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
 						<span><strong>Stages:</strong> {campaignStageCount(campaign)}</span>
 						<span><strong>Circles:</strong> {campaign.circles}</span>
 					</div>
@@ -648,7 +698,7 @@ function CampaignCard({ campaign, palette }: { campaign: CampaignSummary; palett
 				{/* Wraps because the thumbnail is a fixed 140px and the chart needs
 				    room of its own: side by side they do not fit a phone-width card,
 				    and without wrapping the card would scroll sideways instead. */}
-				<div style={{ flex: "0 1 420px", minWidth: "180px", display: "flex", flexWrap: "wrap", gap: "0.75rem", justifyContent: "flex-end", alignItems: "stretch" }}>
+				<div style={{ flex: "0 1 420px", minWidth: 0, display: "flex", flexWrap: "wrap", gap: "0.75rem", justifyContent: "flex-end", alignItems: "stretch" }}>
 					{campaign.leafJobId ? (
 						<a
 							href={`/jobs/${campaign.leafJobId}`}
@@ -660,7 +710,11 @@ function CampaignCard({ campaign, palette }: { campaign: CampaignSummary; palett
 								alt="Latest campaign best result"
 								style={{
 									display: "block",
+									// Fixed at 140x100 the thumbnail never gave ground, so on a
+									// phone it and the chart competed for a card narrower than
+									// either. It may now shrink; the aspect ratio holds it.
 									width: "140px",
+									maxWidth: "100%",
 									height: "100px",
 									objectFit: "cover",
 									objectPosition: "center",
@@ -672,7 +726,7 @@ function CampaignCard({ campaign, palette }: { campaign: CampaignSummary; palett
 						</a>
 					) : null}
 					{plotted.length > 0 ? (
-						<div style={{ flex: "1 1 180px", minWidth: "180px", minHeight: "120px" }}>
+						<div style={{ flex: "1 1 180px", minWidth: "min(180px, 100%)", minHeight: "120px" }}>
 							<CampaignCostChart points={plotted} palette={palette} />
 						</div>
 					) : null}

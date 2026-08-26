@@ -257,11 +257,14 @@ templ CampaignListPage(schedules []CampaignSummary, chains []CampaignSummary, un
 }
 
 templ campaignCard(summary CampaignSummary, href string) {
-	<a href={ templ.URL(href) } style="text-decoration: none; color: inherit;">
-		<div class="card" style="cursor: pointer; margin-bottom: 0;">
-			<div style="display: flex; justify-content: space-between; align-items: start; gap: 1rem;">
+	// card-link rather than a bare wrapping anchor: the hover lift used to be
+	// the card's own inline style, which a keyboard reaching the link never
+	// triggered. The shared class drives both hover and focus-visible.
+	<a class="card-link" href={ templ.URL(href) }>
+		<div class="card" style="margin-bottom: 0;">
+			<div class="row-between row-between-top">
 				<div>
-					<div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+					<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
 						<h3 style="font-size: 1.125rem; font-weight: 600; font-family: monospace;">
 							{ shortID(summary.ID) }
 						</h3>
@@ -270,12 +273,12 @@ templ campaignCard(summary CampaignSummary, href string) {
 							<span style="color: var(--text-muted);">{ summary.Name }</span>
 						}
 					</div>
-					<div style="display: flex; gap: 1.5rem; color: var(--text-muted); font-size: 0.875rem;">
+					<div class="meta-row" style="color: var(--text-muted); font-size: 0.875rem;">
 						<span><strong>Stages:</strong> { campaignStageCount(summary) }</span>
 						<span><strong>Circles:</strong> { fmt.Sprintf("%d", summary.Circles) }</span>
 					</div>
 				</div>
-				<div style="text-align: right;">
+				<div class="row-end">
 					if summary.HasBestCost {
 						<div style="font-size: 0.875rem; color: var(--text-muted);">Best cost</div>
 						<div style="font-size: 1.25rem; font-weight: 600;">{ fmt.Sprintf("%.2f", summary.BestCost) }</div>
@@ -350,19 +353,28 @@ templ CampaignPage(campaign Campaign) {
 			if len(campaign.Stages) == 0 {
 				<p style="color: var(--text-muted);">No stage has been recorded yet.</p>
 			} else {
-				<div style="overflow-x: auto;">
+				// Nine dense numeric columns stay a table and stay scrollable,
+				// but a bare scrolling div is unreachable by keyboard: the
+				// columns past the viewport can only be brought into view with
+				// a pointer. tabindex makes the region focusable and therefore
+				// arrow-scrollable, and the label keeps that focus stop from
+				// being an unnamed one.
+				<div class="table-scroll" role="region" aria-label="Campaign stages" tabindex="0">
 					<table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
 						<thead>
 							<tr style="text-align: left; border-bottom: 1px solid var(--border-color);">
-								<th style="padding: 0.5rem 0.75rem;">#</th>
-								<th style="padding: 0.5rem 0.75rem;">Stage</th>
-								<th style="padding: 0.5rem 0.75rem;">State</th>
-								<th style="padding: 0.5rem 0.75rem; text-align: right;">Circles</th>
-								<th style="padding: 0.5rem 0.75rem; text-align: right;">Cost</th>
-								<th style="padding: 0.5rem 0.75rem; text-align: right;">PSNR</th>
-								<th style="padding: 0.5rem 0.75rem; text-align: right;">Elapsed</th>
-								<th style="padding: 0.5rem 0.75rem; text-align: right;" title="Accepted polishing sweeps">Accepted</th>
-								<th style="padding: 0.5rem 0.75rem;">Job</th>
+								<th scope="col" style="padding: 0.5rem 0.75rem;">#</th>
+								<th scope="col" style="padding: 0.5rem 0.75rem;">Stage</th>
+								<th scope="col" style="padding: 0.5rem 0.75rem;">State</th>
+								<th scope="col" style="padding: 0.5rem 0.75rem; text-align: right;">Circles</th>
+								<th scope="col" style="padding: 0.5rem 0.75rem; text-align: right;">Cost</th>
+								<th scope="col" style="padding: 0.5rem 0.75rem; text-align: right;">PSNR</th>
+								<th scope="col" style="padding: 0.5rem 0.75rem; text-align: right;">Elapsed</th>
+								// The column head carried its meaning in a title
+								// attribute alone, which neither a keyboard nor a
+								// screen reader surfaces reliably.
+								<th scope="col" style="padding: 0.5rem 0.75rem; text-align: right;">Accepted<span class="sr-only"> polishing sweeps</span></th>
+								<th scope="col" style="padding: 0.5rem 0.75rem;">Job</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -374,8 +386,23 @@ templ CampaignPage(campaign Campaign) {
 									<td style="padding: 0.5rem 0.75rem; text-align: right;">{ fmt.Sprintf("%d", stage.Circles) }</td>
 									<td style="padding: 0.5rem 0.75rem; text-align: right;">{ formatCampaignCost(stage) }</td>
 									<td style="padding: 0.5rem 0.75rem; text-align: right;">{ formatCampaignPSNR(stage) }</td>
-									<td style="padding: 0.5rem 0.75rem; text-align: right;" title={ stage.ElapsedAbsent }>{ formatCampaignElapsed(stage) }</td>
-									<td style="padding: 0.5rem 0.75rem; text-align: right;" title={ acceptedSweepsTitle(stage) }>{ formatAcceptedSweeps(stage) }</td>
+									// Both cells explain an em dash through a title
+									// attribute. The title stays for the mouse,
+									// but the explanation is also written into
+									// the cell so a reader who never hovers still
+									// learns why the figure is missing.
+									<td style="padding: 0.5rem 0.75rem; text-align: right;" title={ stage.ElapsedAbsent }>
+										{ formatCampaignElapsed(stage) }
+										if stage.ElapsedAbsent != "" {
+											<span class="sr-only">{ stage.ElapsedAbsent }</span>
+										}
+									</td>
+									<td style="padding: 0.5rem 0.75rem; text-align: right;" title={ acceptedSweepsTitle(stage) }>
+										{ formatAcceptedSweeps(stage) }
+										if acceptedSweepsTitle(stage) != "" {
+											<span class="sr-only">{ acceptedSweepsTitle(stage) }</span>
+										}
+									</td>
 									<td style="padding: 0.5rem 0.75rem; font-family: monospace;">
 										if stage.JobID != "" {
 											<a href={ templ.URL(fmt.Sprintf("/jobs/%s", stage.JobID)) }>{ shortID(stage.JobID) }</a>
@@ -419,7 +446,11 @@ templ CampaignProjectionCard(projection CampaignProjection) {
 		<p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1rem;">
 			{ campaignProjectionBasis(projection) }
 		</p>
-		<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1.5rem;">
+		// min(18rem, 100%) rather than a bare 18rem: an auto-fit track keeps its
+		// minimum even when the container is narrower than it, so on a 320px
+		// viewport the 288px track overflowed a ~240px card interior and scrolled
+		// the whole page sideways.
+		<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr)); gap: 1.5rem;">
 			<div>
 				<h3 style="font-size: 0.9375rem; font-weight: 600; margin-bottom: 0.5rem;">Against a circle ceiling</h3>
 				@campaignProjectionRow("Measured", campaignPerCircleRate(projection))
@@ -523,10 +554,13 @@ templ CampaignCostPlot(stages []CampaignStage) {
 			<text x={ plot.XLabelX } y={ plot.XLabelY } text-anchor="middle" font-size="12" fill="var(--text-muted)">Circles</text>
 			<text x={ plot.YLabelX } y={ plot.YLabelY } text-anchor="middle" font-size="12" fill="var(--text-muted)" transform={ plot.YLabelTransform }>Best cost</text>
 		</svg>
-		<div style="display: flex; gap: 1.5rem; margin-top: 0.5rem; font-size: 0.8125rem; color: var(--text-muted);">
-			<span><svg width="10" height="10" style="vertical-align: middle;"><circle cx="5" cy="5" r="4" fill="var(--success-color)"></circle></svg> base</span>
-			<span><svg width="10" height="10" style="vertical-align: middle;"><circle cx="5" cy="5" r="4" fill="var(--primary-color)"></circle></svg> extend</span>
-			<span><svg width="10" height="10" style="vertical-align: middle;"><rect x="1" y="1" width="8" height="8" fill="var(--warning-color)"></rect></svg> polish</span>
+		// The swatches are decorative: each one's meaning is the word beside it,
+		// so an unnamed graphic in the accessibility tree would only repeat the
+		// label as noise.
+		<div class="meta-row" style="margin-top: 0.5rem; font-size: 0.8125rem; color: var(--text-muted);">
+			<span><svg aria-hidden="true" width="10" height="10" style="vertical-align: middle;"><circle cx="5" cy="5" r="4" fill="var(--success-color)"></circle></svg> base</span>
+			<span><svg aria-hidden="true" width="10" height="10" style="vertical-align: middle;"><circle cx="5" cy="5" r="4" fill="var(--primary-color)"></circle></svg> extend</span>
+			<span><svg aria-hidden="true" width="10" height="10" style="vertical-align: middle;"><rect x="1" y="1" width="8" height="8" fill="var(--warning-color)"></rect></svg> polish</span>
 		</div>
 	}
 }

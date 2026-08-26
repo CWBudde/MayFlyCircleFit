@@ -142,7 +142,7 @@ func statusBorderColor(state string) string {
 templ JobDetailPage(job JobDetail) {
 	@Layout(fmt.Sprintf("Job %s", job.ID[:8])) {
 		<div style="margin-bottom: 2rem;">
-			<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+			<div class="row-between" style="margin-bottom: 1rem;">
 				<div>
 					<a href="/jobs" style="color: var(--text-muted); text-decoration: none; font-size: 0.875rem; margin-bottom: 0.5rem; display: inline-block;">
 						← Back to Jobs
@@ -164,42 +164,49 @@ templ JobDetailPage(job JobDetail) {
 						data-initial-cost={ fmt.Sprintf("%.12f", job.InitialCost) }
 						data-cps={ fmt.Sprintf("%.12f", job.CPS) }
 						data-can-polish={ fmt.Sprintf("%t", job.CanPolish) }
-						style="text-align: right;"
+						class="action-row"
 					>
 					@StateBadge(job.State)
+					// The accent buttons carry their foreground with their
+					// background (.btn-danger / .btn-warning) instead of setting
+					// only the background inline: --text-color over --warning-color
+					// is 1.51:1 in dark mode. .action-row supplies the gap, so no
+					// button carries a margin of its own any more.
 					if job.State == "running" {
-						<button id="pause-job" class="btn" style="margin-left: 0.5rem; background-color: var(--warning-color); color: var(--text-color);" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
+						<button id="pause-job" class="btn btn-warning" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
 							Pause job
 						</button>
-						<button id="cancel-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
+						<button id="cancel-job" class="btn btn-danger" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
 							Cancel job
 						</button>
 					}
 					if job.State == "paused" {
-						<button id="resume-job" class="btn btn-primary" style="margin-left: 0.5rem;" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
+						<button id="resume-job" class="btn btn-primary" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
 							Resume job
 						</button>
-						<button id="cancel-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
+						<button id="cancel-job" class="btn btn-danger" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
 							Cancel job
 						</button>
 					}
 					if job.State == "pending" {
-						<button id="cancel-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
+						<button id="cancel-job" class="btn btn-danger" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
 							Cancel job
 						</button>
 					}
 					if job.State == "completed" || job.State == "failed" || job.State == "cancelled" {
-						<button id="delete-job" class="btn btn-primary" style="margin-left: 0.5rem; background-color: var(--error-color); color: var(--text-color);" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
+						<button id="delete-job" class="btn btn-danger" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
 							Delete job
 						</button>
 					}
 					if job.CanPolish {
-						<button id="polish-job" class="btn btn-primary" style="margin-left: 0.5rem;" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
+						<button id="polish-job" class="btn btn-primary" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
 							Polish weak circles
 						</button>
 					}
-					<button onclick="location.reload()" class="btn" style="margin-left: 0.5rem; background-color: var(--border-color);">
-						⟳ Refresh
+					// The glyph is decorative; unhidden it becomes part of the
+					// button's accessible name ("⟳ Refresh").
+					<button onclick="location.reload()" class="btn" style="background-color: var(--border-color);">
+						<span aria-hidden="true">⟳</span> Refresh
 					</button>
 				</div>
 			</div>
@@ -225,7 +232,7 @@ templ JobDetailPage(job JobDetail) {
 			<!-- Compact metric summary -->
 			<div class="card detail-summary" style={ fmt.Sprintf("margin-bottom: 1.5rem; border-left: 6px solid %s;", statusBorderColor(job.State)) }>
 				<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">Metrics</h2>
-				<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem;">
+				<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 1rem;">
 				<div data-metric-card="cost">
 					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
 						Audited Best Cost
@@ -235,7 +242,7 @@ templ JobDetailPage(job JobDetail) {
 					</div>
 					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">RGB mean squared error · committed and checkpoint-safe · lower is better</div>
 				if job.InitialCost > 0 && job.BestCost < job.InitialCost {
-						<div style="font-size: 0.75rem; color: var(--success-color); margin-top: 0.25rem;">
+						<div style="font-size: 0.75rem; color: var(--success-text-strong); margin-top: 0.25rem;">
 							↓ { fmt.Sprintf("%.1f%%", (1-job.BestCost/job.InitialCost)*100) } improvement
 						</div>
 					}
@@ -253,7 +260,7 @@ templ JobDetailPage(job JobDetail) {
 							—
 						}
 					</div>
-					<div style="font-size: 0.75rem; color: var(--success-color); margin-top: 0.25rem;" data-metric="candidate-gain">
+					<div style="font-size: 0.75rem; color: var(--success-text-strong); margin-top: 0.25rem;" data-metric="candidate-gain">
 						if job.CandidateCost != nil && *job.CandidateCost < job.BestCost {
 							↓ { fmt.Sprintf("%.4f (%.2f%%) provisional gain", job.BestCost-*job.CandidateCost, (1-*job.CandidateCost/job.BestCost)*100) }
 						}
@@ -318,7 +325,15 @@ templ JobDetailPage(job JobDetail) {
 						<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
 							<span data-metric="iteration-progress">{ fmt.Sprintf("%.1f%%", progressPercent(job.Iterations, job.MaxIters)) }</span> of planned optimizer steps
 						</div>
-						<div style="margin-top: 0.5rem; background-color: var(--border-color); height: 4px; border-radius: 2px; overflow: hidden;">
+						<div
+							id="iteration-progress-track"
+							role="progressbar"
+							aria-label="Optimizer iteration progress"
+							aria-valuemin="0"
+							aria-valuemax="100"
+							aria-valuenow={ fmt.Sprintf("%.1f", progressPercent(job.Iterations, job.MaxIters)) }
+							style="margin-top: 0.5rem; background-color: var(--border-color); height: 4px; border-radius: 2px; overflow: hidden;"
+						>
 							<div id="iteration-progress-bar" style={ fmt.Sprintf("width: %.1f%%; height: 100%%; background-color: var(--primary-color);", progressPercent(job.Iterations, job.MaxIters)) }></div>
 						</div>
 					}
@@ -369,7 +384,7 @@ templ JobDetailPage(job JobDetail) {
 			<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
 				Configuration
 			</h2>
-			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 1rem;">
 				<div>
 					<div style="font-size: 0.875rem; color: var(--text-muted);">Mode</div>
 					<div style="font-weight: 500; text-transform: capitalize;">{ job.Mode }</div>
@@ -502,9 +517,10 @@ templ JobDetailPage(job JobDetail) {
 		<style>
 			.parameter-viewer summary {
 				display: flex;
+				flex-wrap: wrap;
 				align-items: center;
 				justify-content: space-between;
-				gap: 1rem;
+				gap: 0.5rem 1rem;
 				cursor: pointer;
 				list-style: none;
 			}
@@ -610,7 +626,7 @@ templ JobDetailPage(job JobDetail) {
 
 			<!-- Metric history, immediately after the images -->
 			<div id="metric-history-card" class="card detail-history" style="margin-bottom: 1.5rem;">
-				<div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+				<div class="row-between" style="margin-bottom: 1rem;">
 					<div>
 						<h2 style="font-size: 1.25rem; font-weight: 600;">Metric History</h2>
 						<p style="font-size: 0.8125rem; color: var(--text-muted);">Quality over optimizer iterations</p>
@@ -769,6 +785,7 @@ templ JobDetailPage(job JobDetail) {
 					sparkline.addEventListener("pointermove", updateSparklineHover);
 					sparkline.addEventListener("pointerleave", clearSparklineHover);
 					sparkline.addEventListener("focus", showLatestSparklinePoint);
+					sparkline.addEventListener("keydown", moveSparklineSelection);
 				}
 				window.addEventListener("resize", function () {
 					if (sparklineVisible) updateSparkline();
@@ -879,6 +896,11 @@ templ JobDetailPage(job JobDetail) {
 					updateMetric("iteration-progress", percent.toFixed(1) + "%");
 					const bar = document.getElementById("iteration-progress-bar");
 					if (bar) bar.style.width = percent.toFixed(1) + "%";
+					// The width and the exposed value have to move together;
+					// updating only the fill leaves a screen reader on the
+					// server-rendered figure for the rest of the run.
+					const track = document.getElementById("iteration-progress-track");
+					if (track) track.setAttribute("aria-valuenow", percent.toFixed(1));
 				}
 
 				function updateThroughputDisplay(sample) {
@@ -1415,6 +1437,39 @@ templ JobDetailPage(job JobDetail) {
 						tooltip.style.opacity = 1;
 					}
 					hoveredSample = point;
+					positionSparklineTooltip();
+				}
+
+				// Placing the tooltip belongs to the renderer, not to the pointer
+				// handler that used to own it: focus and the arrow keys select
+				// points too, and they would otherwise leave the tooltip visible
+				// wherever the mouse last put it.
+				function positionSparklineTooltip() {
+					if (sparklineTooltip == null) {
+						sparklineTooltip = document.getElementById("sparkline-tooltip");
+					}
+					const svg = document.getElementById("cost-sparkline");
+					const container = document.getElementById("cost-sparkline-container");
+					if (!sparklineTooltip || !hoveredSample || !sparklineInteraction || !svg || !container) return;
+					// xPosition/yPosition are viewBox units; the SVG is scaled to the
+					// card width and sits below the controls, so both the scale and the
+					// SVG's offset inside the container have to be applied before the
+					// tooltip can be placed in CSS pixels.
+					const rect = svg.getBoundingClientRect();
+					const containerRect = container.getBoundingClientRect();
+					const scaleX = sparklineInteraction.width === 0 ? 1 : rect.width / sparklineInteraction.width;
+					const scaleY = sparklineInteraction.height === 0 ? 1 : rect.height / sparklineInteraction.height;
+					const offsetX = rect.left - containerRect.left;
+					const offsetY = rect.top - containerRect.top;
+					const pointX = offsetX + sparklineInteraction.xPosition(hoveredSample.iteration) * scaleX;
+					const pointY = offsetY + sparklineInteraction.yPosition(hoveredSample.value) * scaleY;
+					const tooltipWidth = sparklineTooltip.offsetWidth;
+					const tooltipHeight = sparklineTooltip.offsetHeight;
+					const maxLeft = Math.max(8, containerRect.width - tooltipWidth - 8);
+					const left = Math.min(Math.max(8, pointX + 12), maxLeft);
+					const top = Math.min(Math.max(8, pointY - tooltipHeight - 8), Math.max(8, containerRect.height - tooltipHeight - 8));
+					sparklineTooltip.style.left = `${left}px`;
+					sparklineTooltip.style.top = `${top}px`;
 				}
 
 				function updateSparklineHover(event) {
@@ -1423,9 +1478,6 @@ templ JobDetailPage(job JobDetail) {
 						!sparklineInteraction.points ||
 						sparklineInteraction.points.length === 0
 					) return;
-					if (sparklineTooltip == null) {
-						sparklineTooltip = document.getElementById("sparkline-tooltip");
-					}
 					const svg = document.getElementById("cost-sparkline");
 					const rect = svg.getBoundingClientRect();
 					const x = ((event.clientX - rect.left) / rect.width) * sparklineInteraction.width;
@@ -1436,27 +1488,33 @@ templ JobDetailPage(job JobDetail) {
 						if (candidate < distance) { nearest = point; distance = candidate; }
 					});
 					renderSparklineHover(nearest);
-					const container = document.getElementById("cost-sparkline-container");
-					if (sparklineTooltip && hoveredSample && sparklineInteraction && container) {
-						// xPosition/yPosition are viewBox units; the SVG is scaled to the
-						// card width and sits below the controls, so both the scale and the
-						// SVG's offset inside the container have to be applied before the
-						// tooltip can be placed in CSS pixels.
-						const containerRect = container.getBoundingClientRect();
-						const scaleX = sparklineInteraction.width === 0 ? 1 : rect.width / sparklineInteraction.width;
-						const scaleY = sparklineInteraction.height === 0 ? 1 : rect.height / sparklineInteraction.height;
-						const offsetX = rect.left - containerRect.left;
-						const offsetY = rect.top - containerRect.top;
-						const pointX = offsetX + sparklineInteraction.xPosition(hoveredSample.iteration) * scaleX;
-						const pointY = offsetY + sparklineInteraction.yPosition(hoveredSample.value) * scaleY;
-						const tooltipWidth = sparklineTooltip.offsetWidth;
-						const tooltipHeight = sparklineTooltip.offsetHeight;
-						const maxLeft = Math.max(8, containerRect.width - tooltipWidth - 8);
-						const left = Math.min(Math.max(8, pointX + 12), maxLeft);
-						const top = Math.min(Math.max(8, pointY - tooltipHeight - 8), Math.max(8, containerRect.height - tooltipHeight - 8));
-						sparklineTooltip.style.left = `${left}px`;
-						sparklineTooltip.style.top = `${top}px`;
+				}
+
+				// The chart is focusable and role="img", but the readout beside it
+				// was driven by pointer events alone, so a keyboard reader could
+				// land on the chart and be told nothing. Arrow keys walk the very
+				// list the pointer path snaps to and hand the point to the same
+				// renderer, so both routes announce identical text.
+				function moveSparklineSelection(event) {
+					if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+					if (
+						!sparklineInteraction ||
+						!sparklineInteraction.points ||
+						sparklineInteraction.points.length === 0
+					) return;
+					const points = sparklineInteraction.points;
+					const last = points.length - 1;
+					let index = hoveredSample ? points.indexOf(hoveredSample) : -1;
+					if (index < 0) index = last;
+					switch (event.key) {
+						case "ArrowLeft": index = Math.max(0, index - 1); break;
+						case "ArrowRight": index = Math.min(last, index + 1); break;
+						case "Home": index = 0; break;
+						case "End": index = last; break;
+						default: return;
 					}
+					event.preventDefault();
+					renderSparklineHover(points[index]);
 				}
 
 				function showLatestSparklinePoint() {

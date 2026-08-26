@@ -8,9 +8,9 @@ permissions:
 
 jobs:
   web:
-    name: Live Web UI reconciles without reloads
+    name: Browser matrix, accessibility, and live reconciliation
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -31,9 +31,24 @@ jobs:
       - name: Unit-test island formatters
         run: npm run test:unit
         working-directory: web
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Install browsers
+        # Chromium and WebKit are the two engines docs/browser-support.md
+        # declares. Firefox shares neither and is deliberately not tested.
+        run: npx playwright install --with-deps chromium webkit
         working-directory: web
-      - name: Test reconnect reconciliation
+      - name: Run browser matrix, accessibility sweep, and reconciliation
+        # One invocation for every project: the webServer block boots the Go
+        # server once and shares it. Splitting this into per-project steps
+        # would re-pay the `go run` compile each time.
         run: npm run test:e2e
         working-directory: web
+      - name: Upload Playwright report
+        # An axe violation is not diagnosable from the GitHub annotation alone.
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 14

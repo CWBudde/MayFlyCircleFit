@@ -42,8 +42,8 @@ templ JobReportPage(report JobReport) {
 				.subtitle { margin: -0.75rem 0 0.25rem; color: #4b5563; }
 				.header-metadata { margin: 0 0 1.5rem; color: #4b5563; }
 				.card { margin-bottom: 1.5rem; padding: 1.5rem; border: 1px solid #e5e7eb; border-radius: 0.5rem; background: white; }
-				.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
-				.label { color: #6b7280; font-size: 0.8rem; }
+				.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 1rem; }
+				.label { color: #4b5563; font-size: 0.8rem; }
 				.value { overflow-wrap: anywhere; font-weight: 600; }
 				.images { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
 				figure { margin: 0; min-width: 0; }
@@ -55,7 +55,7 @@ templ JobReportPage(report JobReport) {
 				.metrics-table th { width: 50%; }
 				.parameters { max-height: 38rem; overflow: auto; }
 				.swatch { display: inline-block; width: 0.85rem; height: 0.85rem; margin-right: 0.4rem; border: 1px solid #d1d5db; border-radius: 50%; vertical-align: -0.1rem; }
-				footer { color: #6b7280; font-size: 0.8rem; text-align: center; }
+				footer { color: #4b5563; font-size: 0.8rem; text-align: center; }
 				@media (max-width: 800px) { main { padding: 1rem; } .images { grid-template-columns: 1fr; } }
 				@media print {
 					@page { margin: 1.5cm; }
@@ -119,9 +119,9 @@ templ JobReportPage(report JobReport) {
 				</section>
 				<section class="card report-section parameters-section">
 					<h2>Parameters</h2>
-					<div class="parameters">
+					<div class="parameters" role="region" aria-label="Circle parameters" tabindex="0">
 						<table>
-							<thead><tr><th>Circle</th><th>X</th><th>Y</th><th>Radius</th><th>RGB</th><th>Opacity</th></tr></thead>
+							<thead><tr><th scope="col">Circle</th><th scope="col">X</th><th scope="col">Y</th><th scope="col">Radius</th><th scope="col">RGB</th><th scope="col">Opacity</th></tr></thead>
 							<tbody>
 								for _, circle := range report.Parameters {
 									<tr>
