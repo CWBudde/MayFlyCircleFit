@@ -17,17 +17,19 @@ import (
 
 // Field names and values this file writes into request bodies more than once.
 const (
-	fieldRefPath      = "refPath"
-	fieldMode         = "mode"
-	fieldCircles      = "circles"
-	fieldIters        = "iters"
-	fieldPopSize      = "popSize"
-	fieldOptimizer    = "optimizer"
-	fieldSeed         = "seed"
-	modeJoint         = "joint"
-	modeBatch         = "batch"
-	optimizerCMAES    = "cmaes"
-	codeInvalidConfig = "invalid_config"
+	fieldRefPath       = "refPath"
+	fieldMode          = "mode"
+	fieldCircles       = "circles"
+	fieldIters         = "iters"
+	fieldPopSize       = "popSize"
+	fieldOptimizer     = "optimizer"
+	fieldSeed          = "seed"
+	modeJoint          = "joint"
+	modeBatch          = "batch"
+	optimizerCMAES     = "cmaes"
+	optimizerDragonfly = "dragonfly"
+	caseAbsent         = "absent"
+	codeInvalidConfig  = "invalid_config"
 )
 
 // TestNewStageOptimizerSelectsTheConfiguredEngine pins the server half of the
@@ -43,9 +45,9 @@ func TestNewStageOptimizerSelectsTheConfiguredEngine(t *testing.T) {
 		dragonfly bool
 		cmaes     bool
 	}{
-		{name: "absent", optimizer: "", variant: app.VariantStandard},
+		{name: caseAbsent, optimizer: "", variant: app.VariantStandard},
 		{name: "mayfly", optimizer: app.OptimizerMayfly, variant: app.VariantAOBLMOA},
-		{name: "dragonfly", optimizer: app.OptimizerDragonfly, dragonfly: true},
+		{name: optimizerDragonfly, optimizer: app.OptimizerDragonfly, dragonfly: true},
 		{name: optimizerCMAES, optimizer: app.OptimizerCMAES, cmaes: true},
 	}
 

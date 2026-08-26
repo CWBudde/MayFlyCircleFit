@@ -46,7 +46,8 @@ func cmaesCreateForm(reference string) url.Values {
 func submitCreateForm(t *testing.T, server *Server, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
 
-	request := httptest.NewRequest(http.MethodPost, "/create", strings.NewReader(form.Encode()))
+	request := httptest.NewRequestWithContext(
+		t.Context(), http.MethodPost, "/create", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	recorder := httptest.NewRecorder()
@@ -100,7 +101,8 @@ func TestCreatePageExposesCMAESSettings(t *testing.T) {
 	server := NewServer(":0", nil)
 
 	recorder := httptest.NewRecorder()
-	server.handleCreatePage(recorder, httptest.NewRequest(http.MethodGet, "/create", nil))
+	server.handleCreatePage(recorder,
+		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/create", nil))
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", recorder.Code)
@@ -149,6 +151,8 @@ func TestCreateFormRoundTripsCMAESSettings(t *testing.T) {
 	for _, mode := range modes {
 		for _, strategy := range strategies {
 			t.Run(string(mode)+"-"+string(strategy), func(t *testing.T) {
+				t.Parallel()
+
 				form := cmaesCreateForm(reference)
 				form.Set(fieldCovarianceMode, string(mode))
 				form.Set(fieldRestartStrategy, string(strategy))
@@ -180,6 +184,8 @@ func TestCreateFormRoundTripsCMAESSettings(t *testing.T) {
 	// An unchecked checkbox is absent from the submission entirely, which is
 	// the only way the form can ask for adaptation to be off.
 	t.Run("unchecked active adaptation", func(t *testing.T) {
+		t.Parallel()
+
 		form := cmaesCreateForm(reference)
 		form.Del(fieldActiveCMA)
 
@@ -192,6 +198,8 @@ func TestCreateFormRoundTripsCMAESSettings(t *testing.T) {
 	// An emptied number input means "leave the default", not zero, which
 	// app.Normalize would refuse as a non-positive step size.
 	t.Run("empty initial sigma keeps the default", func(t *testing.T) {
+		t.Parallel()
+
 		form := cmaesCreateForm(reference)
 		form.Set(fieldInitialSigma, "")
 
@@ -218,12 +226,14 @@ func TestCreateFormDropsCMAESSettingsForOtherEngines(t *testing.T) {
 		optimizer string
 	}{
 		{name: "mayfly", optimizer: string(app.OptimizerMayfly)},
-		{name: "absent", optimizer: ""},
-		{name: "dragonfly", optimizer: string(app.OptimizerDragonfly)},
+		{name: caseAbsent, optimizer: ""},
+		{name: optimizerDragonfly, optimizer: string(app.OptimizerDragonfly)},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			form := cmaesCreateForm(reference)
 			form.Set(fieldOptimizer, test.optimizer)
 			// Values a user could leave behind after switching the engine away
