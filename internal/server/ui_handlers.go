@@ -559,12 +559,22 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cmaes, err := parseCMAESForm(r, optimizer)
+	if err != nil {
+		renderCreateError(w, r, formProject, err)
+		return
+	}
+
 	// Create job configuration through the same normalization path as the API.
 	requestedConfig := JobConfig{
 		RefPath:                  refPath,
 		CanvasPath:               canvasPath,
 		Mode:                     app.Mode(mode),
 		Optimizer:                app.Optimizer(optimizer),
+		InitialSigma:             cmaes.initialSigma,
+		ActiveCMA:                cmaes.activeCMA,
+		CovarianceMode:           cmaes.covarianceMode,
+		RestartStrategy:          cmaes.restartStrategy,
 		Circles:                  circles,
 		Iters:                    iters,
 		PopSize:                  popSize,
@@ -653,6 +663,53 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 // error value, which is most of the parsed-field checks.
 func renderCreateError(w http.ResponseWriter, r *http.Request, project string, err error) {
 	renderCreateJobError(w, r, err.Error(), project)
+}
+
+// cmaesFormValues carries the CMA-ES section of the creation form into the
+// JobConfig literal. Every field stays at its zero value for a job that does
+// not run CMA-ES, which is what app.Normalize requires: InitialSigma and
+// ActiveCMA are pointers precisely so "omitted" is distinguishable from an
+// explicit value, and the two string types are empty when omitted.
+type cmaesFormValues struct {
+	initialSigma    *float64
+	activeCMA       *bool
+	covarianceMode  app.CMAESCovarianceMode
+	restartStrategy app.CMAESRestartStrategy
+}
+
+// parseCMAESForm reads the four CMA-ES-only settings, but only for a CMA-ES
+// job. The creation form carries no JavaScript, so it always renders and always
+// submits those inputs whatever engine is selected; app.Normalize refuses a
+// CMA-ES-only field on a MayFly or Dragonfly job rather than ignoring it, so
+// they have to be dropped here instead of passed along.
+//
+// The form deliberately has no optimizerRestarts input, so OptimizerRestarts
+// keeps its default of 1 and the "ipop or bipop needs optimizerRestarts == 1"
+// rejection in app cannot be triggered from this page. Adding such an input
+// later would make that rejection reachable and it would need its own message.
+func parseCMAESForm(r *http.Request, optimizer string) (cmaesFormValues, error) {
+	if app.Optimizer(optimizer) != app.OptimizerCMAES {
+		return cmaesFormValues{}, nil
+	}
+
+	// An emptied field means "use the CMA-ES default" rather than zero, which
+	// app.Normalize would refuse as a non-positive step size. Bounds stay in
+	// app.Normalize so the form and the JSON API cannot drift apart.
+	sigma, err := formFloatOrDefault(r.FormValue("initialSigma"), app.DefaultCMAESInitialSigma, "initialSigma")
+	if err != nil {
+		return cmaesFormValues{}, err
+	}
+
+	// An unchecked checkbox is absent from the submission, which is the only
+	// way the form can express a disabled active adaptation.
+	active := r.FormValue("activeCMA") == "on"
+
+	return cmaesFormValues{
+		initialSigma:    &sigma,
+		activeCMA:       &active,
+		covarianceMode:  app.CMAESCovarianceMode(r.FormValue("covarianceMode")),
+		restartStrategy: app.CMAESRestartStrategy(r.FormValue("restartStrategy")),
+	}, nil
 }
 
 func formIntOrDefault(raw string, defaultValue int, label string) (int, error) {
