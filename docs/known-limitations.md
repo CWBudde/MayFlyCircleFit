@@ -388,6 +388,17 @@ behavior is production-ready.
   (`VMOV`+`VFMLA` becomes `FMUL`+`FADD`) encoded as `WORD`s, because Go's arm64
   assembler has no vector `FMUL`/`FADD` mnemonic.
 
+  **Contraction is blocked on the rendered path only.** Everything that decides
+  a pixel - the compositors and the span geometry, including each squared radius
+  at its assignment, because an unrounded product is fused straight into the
+  subtraction that follows it - is explicitly rounded. Four sites are
+  deliberately left fused, because they choose search behaviour rather than
+  output: the circle-area budget heuristics in `polish_dirty_cost.go` and
+  `incremental_cost.go`, the seed separation test and `correctiveChannel` in
+  `batch_audit.go`. A one-ULP difference there can pick a different seed or trip
+  an area limit at a different moment on ARM64, so fits are not bit-reproducible
+  across architectures even though renders are. Nothing tests that today.
+
   **Nothing was testing the NEON kernel.** Both ARM64 span tests force the
   scalar tier, so they compared the scalar path with itself.
   `TestCompositeSpanNEONMatchesScalar` now compares the kernel against the

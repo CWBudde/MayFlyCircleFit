@@ -697,7 +697,10 @@ func (r *CPURenderer) renderCircleScanlineRowsTracked(
 	// the row-shard goroutines so it stays on the stack that composites with it.
 	blend := newSpanBlend(c.CR, c.CG, c.CB, c.Opacity)
 
-	r2 := c.R * c.R
+	// Rounded at the assignment, not only where it is used: this is a product,
+	// so leaving it unrounded lets arm64 fuse it straight into the radiusSquared-dy2
+	// subtraction below and decide a span boundary differently than amd64.
+	radiusSquared := float64(c.R * c.R)
 	var fixedGeometry fixedCircleQ16
 
 	useFixedGeometry := false
@@ -710,7 +713,7 @@ func (r *CPURenderer) renderCircleScanlineRowsTracked(
 		center32 = float32(c.X)
 		y32 = float32(c.Y)
 		radius32 := float32(c.R)
-		radiusSquared32 = radius32 * radius32
+		radiusSquared32 = float32(radius32 * radius32)
 	}
 
 	// Scanline algorithm: for each row, compute horizontal span
@@ -744,16 +747,16 @@ func (r *CPURenderer) renderCircleScanlineRowsTracked(
 
 		// Calculate distance from row to circle center
 		dy := float64(y) - c.Y
-		dy2 := dy * dy
+		dy2 := float64(dy * dy)
 
 		// Check if row intersects circle
-		if dy2 > r2 {
+		if dy2 > radiusSquared {
 			continue // Row entirely outside circle
 		}
 
 		// Find the horizontal extent with the float64 oracle. This path also
 		// handles geometry outside the safe signed Q16.16 coordinate range.
-		xStart, xEnd := circleSpanFloat64(c.X, r2-dy2, r.width)
+		xStart, xEnd := circleSpanFloat64(c.X, radiusSquared-dy2, r.width)
 		if xStart < 0 {
 			xStart = 0
 		}
