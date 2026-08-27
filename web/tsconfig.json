@@ -1,10 +1,11 @@
 {
-  "//": "Editor support only. esbuild strips types and never typechecks, so nothing in the build depends on this file.",
+  "//": "Editor support only. esbuild strips types and never typechecks, so nothing in the build depends on this file. resolveJsonModule is on for one file: web/src/state-badge-parity.json, the shared Go/TypeScript state-badge contract format.test.ts imports directly.",
   "compilerOptions": {
     "target": "ES2020",
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "resolveJsonModule": true,
     "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": true,

@@ -408,6 +408,28 @@ bounded. pprof is off by default and `--enable-pprof` requires a loopback bind.
   that a client must *omit* a field it has no opinion on. Marshalling a
   zero-valued configuration struct writes explicit zeros and is a request for
   them, because nothing on the wire distinguishes the two.
+- **The creation page keeps two admission paths, and they store the same
+  configuration.** `POST /create` takes the templ form and `POST /api/v1/jobs`
+  takes the island's JSON. The form POST handler is retained deliberately: it is
+  what makes the page work without JavaScript, which the templ-fallback
+  invariant below requires, and removing it would delete that invariant for the
+  one page where a user creates work rather than reads it. The cost of keeping
+  it is that the two paths represent "no opinion" differently — the form sends
+  an empty string, which the handler resolves against the defaults before a
+  configuration exists, while the API sends no key at all — and this is not
+  allowed to reach the stored configuration. The island therefore omits a field
+  the user left blank and omits an explicit zero the defaults would replace,
+  such as `batchSize`, while writing an explicit zero the defaults leave alone,
+  such as `seed` or `stopMinIters`. It also drops the CMA-ES section for a job
+  that does not run CMA-ES, as the form handler does. The equivalence is pinned,
+  not asserted: `web/src/create-job-parity.json` states each submission in both
+  shapes, `TestCreateJobIslandAndFormStoreTheSameConfiguration` posts both to
+  the real handlers and compares the stored `JobConfig`, and
+  `web/src/createJobBody.test.ts` checks the island's body builder against the
+  same file. The page states no bound of its own either: the fallback's `min`
+  and `max` attributes and the island's are written from one
+  `ui.CreateJobLimits` projected from `internal/app`, and `app.Validate` remains
+  what decides a request.
 - **A CLI flag is never omitted, so its value is never defaulted.** A flag
   carries either its own default or what the operator typed, so `run` keeps the
   typed value and validates it: `--circles 0` fails instead of fitting ten. The
@@ -444,12 +466,30 @@ bounded. pprof is off by default and `--enable-pprof` requires a loopback bind.
   pages near the viewport. The no-query array response remains a compatibility
   surface, while the bundled CLI consumes bounded pages.
 - **Templ output is the fallback and hydration seed, not a second live state
-  model.** Job, dashboard, and campaign islands replace their server-rendered
-  fallback after mount and then read `/api/v1/jobs`, job `/status` and
-  `/metrics`, `/api/v1/dashboard`, and `/api/v1/campaigns...`. The existing
-  `/api/v1/jobs/:id/stream` and `/api/v1/stream` payloads remain compatibility
-  surfaces and are not the browser's reconciliation protocol. A terminal state
-  or transient stream failure must not reload the page.
+  model.** Every island — the eight registered in `web/src/dashboard.tsx` —
+  replaces its server-rendered fallback after mount, and the data-driven ones
+  then read `/api/v1/jobs`, job `/status` and `/metrics`, `/api/v1/dashboard`,
+  and `/api/v1/campaigns...`. The existing `/api/v1/jobs/:id/stream` and
+  `/api/v1/stream` payloads remain compatibility surfaces and are not the
+  browser's reconciliation protocol. A terminal state or transient stream
+  failure must not reload the page. The creation page is the one mount point
+  whose fallback is a *working* control rather than an inert one: it contains
+  the complete `<form>` that posts to `/create`, and the island reads that
+  form's current values and option lists before replacing it, so the defaults
+  the page ships and the enumerations it offers exist once, in the templ source.
+  The settings page and the theme switch also fall back to controls, but inert
+  ones — there is nothing on the server to store a browser-local preference in,
+  and both say so.
+- **The fallback has to survive a broken bundle, not only a disabled one.**
+  These are different failure modes and a page can pass one and fail the other:
+  with JavaScript off nothing runs and `<noscript>` shows, while a bundle that
+  404s or throws leaves scripts enabled, `<noscript>` hidden, and every mount
+  point sitting there with its server-rendered children and no island coming.
+  `web/e2e/fallback.behavior.spec.ts` asserts all three modes across every
+  surface in `web/e2e/fixtures/surfaces.ts`, including that no island root is
+  left empty. A control that only works when the island mounts must be rendered
+  disabled, or be a plain link; `internal/ui/inline_script_gate_test.go` refuses
+  the third option, an inline `onclick`, which looks alive and is not.
 
 These controls do not make the server multi-user or internet-ready. Do not add
 documentation suggesting otherwise.

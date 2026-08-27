@@ -89,9 +89,20 @@ ones that will change what you propose:
   Polishing remains MayFly-only.
 - `internal/server`: trusted-local HTTP boundary and background job lifecycle.
 - `internal/store`: filesystem checkpoint, trace, and artifact ownership.
-- `internal/ui`: templ views plus committed generated Go output.
-- `web/`: TypeScript/React dashboard and campaign-island sources.
-- `internal/ui/static`: bundled JavaScript asset served from `go:embed`.
+- `internal/ui`: templ views plus committed generated Go output. Every page is
+  server-rendered complete; that markup is the no-JavaScript fallback and the
+  islands' hydration seed. The only inline script left in a `.templ` file is
+  `layout.templ`'s pre-paint theme IIFE, which has to run before the first
+  paint; `internal/ui/inline_script_gate_test.go` fails on any other.
+- `web/`: the React island sources. Eight islands, registered in one place at
+  the bottom of `web/src/dashboard.tsx`: `dashboard`, `job-list`, `job-detail`,
+  `campaign-list`, `campaign-detail`, `create-job`, `settings`, and
+  `theme-switch`. The image viewer is a shared component
+  (`web/src/ImageViewer.tsx`) rendered inside the job-detail and
+  campaign-detail islands, not an island of its own; job controls are part of
+  the job-detail island.
+- `internal/ui/static`: bundled JavaScript asset served from `go:embed`. The
+  layout links it on every page, because the theme switch mounts everywhere.
 
 Assets, fixtures, and notes live in `assets/`, `data/`, `docs/`, and
 `profiles/`. Keep dependencies flowing toward the lower-level packages; do not

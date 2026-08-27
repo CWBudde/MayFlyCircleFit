@@ -1,0 +1,14 @@
+{
+	"note": "The one state-badge contract, read by both sides of the mirror: web/src/format.test.ts checks stateClass, stateLabel and stateBadgeStyle against it, and internal/ui/state_badge_parity_test.go renders ui.StateBadge for the same states and checks the markup it produces. Neither side is the source of truth; this file is. The `style` field is the CSS text the templ badge writes inline, which the TypeScript test reconstructs from the CSSProperties object stateBadgeStyle returns. An empty `style` means the badge carries no style attribute at all.",
+	"badges": [
+		{ "state": "pending", "class": "badge badge-info", "label": "Pending", "style": "" },
+		{ "state": "running", "class": "badge badge-info", "label": "Running", "style": "animation: pulse 2s ease-in-out infinite;" },
+		{ "state": "completed", "class": "badge badge-success", "label": "Completed", "style": "" },
+		{ "state": "failed", "class": "badge badge-error", "label": "Failed", "style": "" },
+		{ "state": "paused", "class": "badge badge-warning", "label": "Paused", "style": "" },
+		{ "state": "cancelled", "class": "badge badge-warning", "label": "Cancelled", "style": "" },
+		{ "state": "skipped", "class": "badge", "label": "Skipped", "style": "background-color: var(--border-color); color: var(--text-color);" },
+		{ "state": "", "class": "badge", "label": "Unknown", "style": "background-color: var(--border-color); color: var(--text-color);" },
+		{ "state": "nonsense", "class": "badge", "label": "Nonsense", "style": "background-color: var(--border-color); color: var(--text-color);" }
+	]
+}

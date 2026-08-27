@@ -7,6 +7,61 @@ import (
 	"testing"
 )
 
+// TestLayoutThemeFallbackMakesNoClaimItCannotHonour pins the two halves of the
+// degraded-mode contract for the theme switch: the server-rendered buttons are
+// inert until ThemeToggleIsland mounts, so they must be disabled, and the
+// server has no way to read this browser's stored choice, so none of them may
+// announce itself as pressed.
+func TestLayoutThemeFallbackMakesNoClaimItCannotHonour(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+
+	err := Layout("Theme fallback test").Render(context.Background(), &output)
+	if err != nil {
+		t.Fatalf("render layout: %v", err)
+	}
+
+	body := output.String()
+
+	// Scoped to the switch's own markup: the style block legitimately carries
+	// a .theme-option[aria-pressed="true"] rule, which is a selector for the
+	// state the island will set, not a claim the fallback makes.
+	start := strings.Index(body, `data-island="theme-switch"`)
+	if start < 0 {
+		t.Fatal("rendered layout has no theme-switch mount point")
+	}
+
+	end := strings.Index(body[start:], "</div>")
+	if end < 0 {
+		t.Fatal("theme-switch mount point is unterminated")
+	}
+
+	group := body[start : start+end]
+
+	if strings.Contains(group, `aria-pressed`) {
+		t.Error("the theme fallback announces a pressed state the server cannot know")
+	}
+
+	if got := strings.Count(group, `class="theme-option" type="button"`); got != 3 {
+		t.Fatalf("well-formed theme buttons = %d, want 3", got)
+	}
+
+	for _, label := range []string{"Use system theme", "Use light theme", "Use dark theme"} {
+		marker := `aria-label="` + label + `"`
+
+		idx := strings.Index(group, marker)
+		if idx < 0 {
+			t.Fatalf("rendered layout missing %q", marker)
+		}
+
+		tagEnd := strings.Index(group[idx:], ">")
+		if tagEnd < 0 || !strings.Contains(group[idx:idx+tagEnd], "disabled") {
+			t.Errorf("theme button %q is not disabled in the fallback", label)
+		}
+	}
+}
+
 func TestLayoutIncludesThemeSwitcher(t *testing.T) {
 	var output bytes.Buffer
 
@@ -24,8 +79,17 @@ func TestLayoutIncludesThemeSwitcher(t *testing.T) {
 		`data-theme-value="light"`,
 		`data-theme-value="dark"`,
 		`mayflycirclefit.theme`,
-		`localStorage.removeItem(theme.storageKey)`,
-		`aria-label="Use system theme" aria-pressed="true"`,
+		// The pre-paint script publishes the controller; the toggle island is
+		// what consumes it, so the handover has to survive in the markup.
+		`window.mayflyTheme = { apply, selected, storageKey }`,
+		`data-island="theme-switch"`,
+		// The fallback carries no aria-pressed and every button is disabled:
+		// the handler lives in the bundle, and the server cannot know which
+		// theme the pre-paint script restored from this browser's storage.
+		// ThemeToggleIsland renders the pressed state once it owns the group.
+		`aria-label="Use system theme" title="Auto theme" disabled`,
+		`aria-label="Use light theme" title="Light theme" disabled`,
+		`aria-label="Use dark theme" title="Dark theme" disabled`,
 		`>Dashboard<`,
 		`>Jobs<`,
 		`/jobs`,
@@ -142,5 +206,44 @@ func TestLayoutPairsEveryAccentBackgroundWithItsOwnForeground(t *testing.T) {
 		if !strings.Contains(body, pairing) {
 			t.Errorf("rendered layout missing %q", pairing)
 		}
+	}
+}
+
+// TestLayoutCarriesOnlyThePrePaintScript is Task 18.7's gate applied to the
+// shell early. The theme toggle's handler moved into ThemeToggleIsland, so the
+// one script the layout may still write inline is the pre-paint IIFE, which has
+// to run before the first paint and therefore cannot wait for a module. Every
+// other script tag it emits must be a src= reference to an embedded asset.
+func TestLayoutCarriesOnlyThePrePaintScript(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+
+	err := Layout("Inline script").Render(context.Background(), &output)
+	if err != nil {
+		t.Fatalf("render layout: %v", err)
+	}
+
+	var inline int
+
+	for _, fragment := range strings.Split(output.String(), "<script")[1:] {
+		tag, body, ok := strings.Cut(fragment, ">")
+		if !ok {
+			t.Fatal("layout emits an unterminated script tag")
+		}
+
+		if strings.Contains(tag, "src=") {
+			continue
+		}
+
+		inline++
+
+		if !strings.Contains(body, "window.mayflyTheme") {
+			t.Errorf("layout writes an inline script that is not the pre-paint theme IIFE: %.80s", body)
+		}
+	}
+
+	if inline != 1 {
+		t.Errorf("layout writes %d inline scripts, want exactly 1 (the pre-paint theme IIFE)", inline)
 	}
 }

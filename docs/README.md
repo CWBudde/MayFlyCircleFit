@@ -106,6 +106,10 @@ re-measure instead.
   rendering optimization.**
 - [`simd-design.md`](simd-design.md) — why the kernels are hand-written Plan 9
   assembly, and what the original design got wrong.
+- [`typescript-read-model-generation.md`](typescript-read-model-generation.md) —
+  why the `web/src` read models are not generated from the Go structs, measured
+  against `tygo`, and which parity tests are the contract instead. **Read before
+  proposing Go→TypeScript codegen.**
 
 ## Other directories
 

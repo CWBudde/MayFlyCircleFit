@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { stateBadgeStyle, stateClass, stateLabel } from "./format";
 import { fetchJSON, useLiveResource } from "./live";
 import type { UIEvent } from "./live";
 import { LiveStatus } from "./LiveStatus";
@@ -248,7 +249,7 @@ function JobCard({ job }: { job: JobListItem }) {
 					<div style={{ minWidth: 0 }}>
 						<div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
 							<h3 style={{ fontSize: "1.125rem", fontWeight: 600, fontFamily: "monospace" }}>{job.id.slice(0, 8)}…</h3>
-							<StateBadge state={job.state} />
+							<span className={stateClass(job.state)} style={stateBadgeStyle(job.state)}>{stateLabel(job.state)}</span>
 						</div>
 						<div className="meta-row" style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
 							<span><strong>Mode:</strong> {job.mode}</span><span><strong>Circles:</strong> {job.circles}</span>
@@ -269,9 +270,4 @@ function JobCard({ job }: { job: JobListItem }) {
 			</div>
 		</a>
 	);
-}
-
-function StateBadge({ state }: { state: string }) {
-	const kind = state === "completed" ? "badge-success" : state === "failed" ? "badge-error" : state === "cancelled" || state === "paused" ? "badge-warning" : "badge-info";
-	return <span className={`badge ${kind}`}>{state ? state[0].toUpperCase() + state.slice(1) : "Unknown"}</span>;
 }

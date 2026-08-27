@@ -3,6 +3,13 @@ package ui
 // SettingsPage renders the browser-local UI preference editor. Every value is
 // stored in localStorage under the same keys the job detail and image viewer
 // scripts read, so the page never round-trips to the server.
+//
+// The reads and writes belong to SettingsIsland (web/src/Settings.tsx), which
+// replaces everything inside the mount point once the bundle loads. What stays
+// here is the fallback, and it states the defaults rather than the first option
+// in each list: the controls are inert without JavaScript, so whatever they show
+// is what a reader will believe a job page uses. The <noscript> says why they
+// are inert -- there is nothing on the server to store a preference in.
 templ SettingsPage() {
 	@Layout("Settings") {
 		<div style="margin-bottom: 1.5rem;">
@@ -68,12 +75,21 @@ templ SettingsPage() {
 				color: var(--text-color);
 			}
 		</style>
-		<div class="card settings-card">
+		<!-- Everything inside the mount point is the fallback; mounting replaces it.
+		     Every control in it is disabled, because the fallback is shown in two
+		     degraded modes and is inert in both: JavaScript off, and JavaScript on
+		     with the bundle missing or throwing. Only the first raises <noscript>,
+		     so a control that merely looked live would silently discard every
+		     change in the second. SettingsIsland renders enabled controls. -->
+		<div class="card settings-card" data-island="settings" data-island-label="settings">
+			<noscript>
+				<p class="settings-note">These preferences live in this browser's local storage, and reading or writing them needs JavaScript. With JavaScript disabled the controls below are inactive and show the built-in defaults; job pages use those same defaults.</p>
+			</noscript>
 			<div class="setting-group">
 				<h2 style="font-size: 1.125rem; font-weight: 600; margin: 0;">Image refresh</h2>
 				<div class="setting-control">
 					<label for="settings-image-refresh">Auto image refresh</label>
-					<select id="settings-image-refresh" aria-describedby="settings-image-refresh-note">
+					<select id="settings-image-refresh" aria-describedby="settings-image-refresh-note" disabled>
 						<option value="0">SSE-driven (default)</option>
 						<option value="1000">1 second</option>
 						<option value="2000">2 seconds</option>
@@ -88,10 +104,10 @@ templ SettingsPage() {
 				<h2 style="font-size: 1.125rem; font-weight: 600; margin: 0;">Image defaults</h2>
 				<div class="setting-control">
 					<label for="settings-default-view-mode">Default image view mode</label>
-					<select id="settings-default-view-mode" aria-describedby="settings-default-view-mode-note">
+					<select id="settings-default-view-mode" aria-describedby="settings-default-view-mode-note" disabled>
 						<option value="reference">Reference</option>
 						<option value="best">Best</option>
-						<option value="side-by-side">Side-by-Side</option>
+						<option value="side-by-side" selected>Side-by-Side</option>
 						<option value="difference">Difference</option>
 						<option value="overlay">Overlay</option>
 					</select>
@@ -99,7 +115,7 @@ templ SettingsPage() {
 				<p id="settings-default-view-mode-note" class="settings-note">Applies to every job page. Switching modes on a job page updates this value too.</p>
 				<div class="setting-control">
 					<label for="settings-default-colormap">Default difference colormap</label>
-					<select id="settings-default-colormap" aria-describedby="settings-default-colormap-note">
+					<select id="settings-default-colormap" aria-describedby="settings-default-colormap-note" disabled>
 						<option value="turbo">Turbo</option>
 						<option value="magma">Magma</option>
 					</select>
@@ -110,205 +126,28 @@ templ SettingsPage() {
 				<h2 style="font-size: 1.125rem; font-weight: 600; margin: 0;">Metric visibility</h2>
 				<div class="settings-metric-list" id="settings-visible-metrics">
 					<div class="settings-metric-option">
-						<input id="settings-metric-cost" type="checkbox" value="cost"/>
+						<input id="settings-metric-cost" type="checkbox" value="cost" checked disabled/>
 						<label for="settings-metric-cost">Cost</label>
 					</div>
 					<div class="settings-metric-option">
-						<input id="settings-metric-psnr" type="checkbox" value="psnr"/>
+						<input id="settings-metric-psnr" type="checkbox" value="psnr" checked disabled/>
 						<label for="settings-metric-psnr">PSNR</label>
 					</div>
 					<div class="settings-metric-option">
-						<input id="settings-metric-ssim" type="checkbox" value="ssim"/>
+						<input id="settings-metric-ssim" type="checkbox" value="ssim" checked disabled/>
 						<label for="settings-metric-ssim">SSIM</label>
 					</div>
 					<div class="settings-metric-option">
-						<input id="settings-metric-cps" type="checkbox" value="cps"/>
+						<input id="settings-metric-cps" type="checkbox" value="cps" checked disabled/>
 						<label for="settings-metric-cps">Throughput (cps)</label>
 					</div>
 				</div>
 				<p id="settings-visible-metrics-note" class="settings-note">Controls which summary metric cards are visible on job detail pages. Clearing every box restores all of them.</p>
 			</div>
 			<div class="settings-actions">
-				<button id="settings-reset" type="button" class="btn" style="background: var(--border-color);">Reset to Defaults</button>
+				<button id="settings-reset" type="button" class="btn" style="background: var(--border-color);" disabled>Reset to Defaults</button>
 				<span id="settings-feedback" aria-live="polite" class="settings-note" role="status"></span>
 			</div>
 		</div>
-		<script>
-			(function () {
-				const preferenceKeys = {
-					autoRefresh: "mayflycirclefit.imageRefreshInterval",
-					viewMode: "mayflycirclefit.viewMode",
-					colormap: "mayflycirclefit.diffColormap",
-					visibleMetrics: "mayflycirclefit.visibleMetrics",
-				};
-				const defaults = {
-					autoRefresh: 0,
-					viewMode: "side-by-side",
-					colormap: "turbo",
-					visibleMetrics: ["cost", "psnr", "ssim", "cps"],
-				};
-				const metricIds = ["cost", "psnr", "ssim", "cps"];
-				const validViewModes = new Set([
-					"reference",
-					"best",
-					"side-by-side",
-					"difference",
-					"overlay",
-				]);
-				const validColormaps = new Set(["turbo", "magma"]);
-				const feedback = document.getElementById("settings-feedback");
-				const refreshSelect = document.getElementById("settings-image-refresh");
-				const modeSelect = document.getElementById("settings-default-view-mode");
-				const colormapSelect = document.getElementById("settings-default-colormap");
-				const metricInputs = {
-					cost: document.getElementById("settings-metric-cost"),
-					psnr: document.getElementById("settings-metric-psnr"),
-					ssim: document.getElementById("settings-metric-ssim"),
-					cps: document.getElementById("settings-metric-cps"),
-				};
-				const resetButton = document.getElementById("settings-reset");
-
-				function setStatus(message) {
-					if (feedback) {
-						feedback.textContent = message;
-					}
-				}
-
-				function readStored(key) {
-					try {
-						return window.localStorage.getItem(key);
-					} catch (_error) {
-						return null;
-					}
-				}
-
-				function readVisibleMetrics() {
-					const raw = readStored(preferenceKeys.visibleMetrics);
-					if (!raw) {
-						return defaults.visibleMetrics.slice();
-					}
-					try {
-						const parsed = JSON.parse(raw);
-						const enabled = new Set();
-						for (const metric of Array.isArray(parsed) ? parsed : []) {
-							if (metricIds.includes(metric)) {
-								enabled.add(metric);
-							}
-						}
-						if (enabled.size === 0) {
-							return defaults.visibleMetrics.slice();
-						}
-						return metricIds.filter(function (metric) {
-							return enabled.has(metric);
-						});
-					} catch (_error) {
-						return defaults.visibleMetrics.slice();
-					}
-				}
-
-				function loadPreferences() {
-					const storedRefresh = Number.parseInt(readStored(preferenceKeys.autoRefresh), 10);
-					const refresh = Number.isFinite(storedRefresh) && storedRefresh >= 0
-						? storedRefresh
-						: defaults.autoRefresh;
-					const storedMode = readStored(preferenceKeys.viewMode);
-					const mode = validViewModes.has(storedMode) ? storedMode : defaults.viewMode;
-					const storedColormap = readStored(preferenceKeys.colormap);
-					const colormap = validColormaps.has(storedColormap)
-						? storedColormap
-						: defaults.colormap;
-
-					if (refreshSelect) {
-						refreshSelect.value = String(refresh);
-						if (!refreshSelect.value) {
-							refreshSelect.value = String(defaults.autoRefresh);
-						}
-					}
-					if (modeSelect) modeSelect.value = mode;
-					if (colormapSelect) colormapSelect.value = colormap;
-
-					const metrics = readVisibleMetrics();
-					metricIds.forEach(function (metric) {
-						const control = metricInputs[metric];
-						if (control) {
-							control.checked = metrics.indexOf(metric) >= 0;
-						}
-					});
-				}
-
-				function selectedMetrics() {
-					const selected = metricIds.filter(function (metric) {
-						const control = metricInputs[metric];
-						return control && control.checked;
-					});
-					if (selected.length === 0) {
-						metricIds.forEach(function (metric) {
-							const control = metricInputs[metric];
-							if (control) {
-								control.checked = true;
-							}
-						});
-						return defaults.visibleMetrics.slice();
-					}
-					return selected;
-				}
-
-				function writePreferences() {
-					const parsedRefresh = refreshSelect
-						? Number.parseInt(refreshSelect.value, 10)
-						: defaults.autoRefresh;
-					const refresh = Number.isFinite(parsedRefresh) && parsedRefresh >= 0
-						? parsedRefresh
-						: defaults.autoRefresh;
-					const mode = modeSelect && validViewModes.has(modeSelect.value)
-						? modeSelect.value
-						: defaults.viewMode;
-					const colormap = colormapSelect && validColormaps.has(colormapSelect.value)
-						? colormapSelect.value
-						: defaults.colormap;
-					const visibleMetrics = selectedMetrics();
-					try {
-						window.localStorage.setItem(preferenceKeys.autoRefresh, String(refresh));
-						window.localStorage.setItem(preferenceKeys.viewMode, mode);
-						window.localStorage.setItem(preferenceKeys.colormap, colormap);
-						window.localStorage.setItem(
-							preferenceKeys.visibleMetrics,
-							JSON.stringify(visibleMetrics),
-						);
-						setStatus("Saved. Open a job to see your new defaults.");
-					} catch (_error) {
-						setStatus("Could not save preferences. Local storage is not available.");
-					}
-				}
-
-				function resetDefaults() {
-					try {
-						Object.values(preferenceKeys).forEach(function (key) {
-							window.localStorage.removeItem(key);
-						});
-						loadPreferences();
-						setStatus("Reset to defaults.");
-					} catch (_error) {
-						setStatus("Could not reset preferences. Local storage is not available.");
-					}
-				}
-
-				[refreshSelect, modeSelect, colormapSelect].forEach(function (control) {
-					if (control) {
-						control.addEventListener("change", writePreferences);
-					}
-				});
-				Object.values(metricInputs).forEach(function (input) {
-					if (input) {
-						input.addEventListener("change", writePreferences);
-					}
-				});
-				if (resetButton) {
-					resetButton.addEventListener("click", resetDefaults);
-				}
-
-				loadPreferences();
-			})();
-		</script>
 	}
 }

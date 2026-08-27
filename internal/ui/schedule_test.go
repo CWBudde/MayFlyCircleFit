@@ -311,6 +311,14 @@ func TestCampaignPageShowsTheLatestCompletedStageImages(t *testing.T) {
 	if !strings.Contains(body, `data-view-mode="side-by-side"`) {
 		t.Error("campaign viewer does not open on the side-by-side comparison")
 	}
+
+	// This viewer sits inside the campaign-detail island root, which mounting
+	// replaces wholesale. It is the no-JavaScript fallback here; the live viewer
+	// is the same React component, reached through Campaigns.tsx. A mount point
+	// in this subtree would be a second React root over a doomed node.
+	if strings.Contains(body, `data-island="image-viewer"`) {
+		t.Error("campaign page advertises an image-viewer mount point inside the campaign-detail island")
+	}
 }
 
 // TestCampaignPageWithoutCompletedStagesSaysSo is the other half of the branch:

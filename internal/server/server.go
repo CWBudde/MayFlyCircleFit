@@ -63,6 +63,24 @@ type Server struct {
 	chainCacheMu    sync.Mutex
 	chainCache      []discoveredChain
 	chainCacheValid bool
+
+	// refImageMu guards refImageCache, which memoizes the reference-image
+	// facts per path. The status endpoint is polled, and decoding an image
+	// header on every poll is work the answer never changes for; see
+	// (*Server).referenceImageFacts.
+	refImageMu    sync.Mutex
+	refImageCache map[string]referenceImageFacts
+}
+
+// referenceImageFacts is one memoized answer from referenceImageMetadata,
+// together with what it was true of. modTime and size identify the file the
+// dimensions were read from, so a reference image replaced under a running
+// server is picked up rather than served stale.
+type referenceImageFacts struct {
+	width   int
+	height  int
+	size    int64
+	modTime time.Time
 }
 
 // ServerOptions configures the trusted-local HTTP boundary.
@@ -1186,13 +1204,21 @@ type jobStatusResponse struct {
 	// is omitted when the run was serial or the width is unknown. Config carries
 	// only the request, which differs whenever the backend declined it or the
 	// GOMAXPROCS clamp applied, so clients comparing two runs must read this.
-	EvaluationWidth int        `json:"evaluationWidth,omitempty"`
-	Termination     string     `json:"termination,omitempty"`
-	Elapsed         float64    `json:"elapsed"`
-	CPS             float64    `json:"cps"`
-	StartTime       time.Time  `json:"startTime"`
-	EndTime         *time.Time `json:"endTime,omitempty"`
-	Error           string     `json:"error,omitempty"`
+	EvaluationWidth int `json:"evaluationWidth,omitempty"`
+	// RefWidth, RefHeight and RefSize describe the reference image file itself,
+	// not the canvas the run evaluates against. They are omitted rather than
+	// zeroed when the file cannot be probed, because a client that received
+	// zeros could not tell a missing image apart from a genuine 0x0 image of
+	// zero bytes and would render one as the other.
+	RefWidth    int        `json:"refWidth,omitempty"`
+	RefHeight   int        `json:"refHeight,omitempty"`
+	RefSize     int64      `json:"refSize,omitempty"`
+	Termination string     `json:"termination,omitempty"`
+	Elapsed     float64    `json:"elapsed"`
+	CPS         float64    `json:"cps"`
+	StartTime   time.Time  `json:"startTime"`
+	EndTime     *time.Time `json:"endTime,omitempty"`
+	Error       string     `json:"error,omitempty"`
 }
 
 type jobActions struct {
@@ -1227,6 +1253,13 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 	}
 
 	actions := s.jobActions(job)
+
+	// The error is deliberately dropped, exactly as the job detail page drops
+	// it: the reference image is a display fact, not a job fact, so a missing
+	// or unreadable file leaves the three fields at zero (and so unserialized)
+	// instead of failing a status request that is otherwise answerable.
+	refWidth, refHeight, refSize, _ := s.referenceImageFactsFor(job.Config.RefPath)
+
 	response := jobStatusResponse{
 		ID: job.ID, Project: app.NormalizeProject(job.Project), State: job.State, Config: job.Config,
 		RequestedCircles: job.RequestedCircles, ActualCircles: job.ActualCircles,
@@ -1237,7 +1270,8 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 		MaxIterations:   plannedOptimizerIterations(job.Config),
 		Actions:         &actions,
 		EvaluationWidth: job.EvaluationWidth,
-		Termination:     job.Termination, Elapsed: elapsed.Seconds(), CPS: cps,
+		RefWidth:        refWidth, RefHeight: refHeight, RefSize: refSize,
+		Termination: job.Termination, Elapsed: elapsed.Seconds(), CPS: cps,
 		StartTime: job.StartTime, EndTime: job.EndTime, Error: job.Error,
 	}
 	response.CandidatePSNR, response.CandidatePSNRInfinite = serializableCandidatePSNR(job.CandidateCost)

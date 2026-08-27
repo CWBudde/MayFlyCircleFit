@@ -156,10 +156,16 @@ func TestIslandBundleLoadsTheVersionedBundle(t *testing.T) {
 	}
 }
 
-// The bundle is opt-in per page. Loading it from the shared layout would make
-// every page in the UI fetch and parse it, including the ones that have no
-// island for it to mount into.
-func TestLayoutDoesNotLoadTheIslandBundle(t *testing.T) {
+// The bundle used to be opt-in per page, so that a page with no island would
+// not fetch and parse it. Task 18.3 ended that distinction rather than relaxing
+// it: the theme switch in the navigation is an island now, the layout renders it
+// on every page, and a page whose chrome does not mount has a dead control in
+// it. So the layout loads the bundle itself, and Task 18.7 deleted the five
+// leftover per-page call sites that Task 18.3 had left in place. There is one
+// link, and it is in the shell; see TestOnlyTheLayoutLinksTheIslandBundle.
+func TestLayoutLoadsTheIslandBundle(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 
 	err := Layout("Bundle test").Render(context.Background(), &output)
@@ -167,8 +173,13 @@ func TestLayoutDoesNotLoadTheIslandBundle(t *testing.T) {
 		t.Fatalf("render layout: %v", err)
 	}
 
-	if body := output.String(); strings.Contains(body, bundleName) {
-		t.Errorf("layout links %s; only pages with an island may load it", bundleName)
+	body := output.String()
+	if !strings.Contains(body, BundleURL()) {
+		t.Errorf("layout does not link %s, so the theme switch would never mount", bundleName)
+	}
+
+	if !strings.Contains(body, `data-island="theme-switch"`) {
+		t.Error("layout loads the bundle but renders no mount point for the theme switch")
 	}
 }
 

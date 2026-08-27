@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { describe, expect, it } from "vitest";
 import {
 	acceptedSweepsTitle,
@@ -22,53 +23,50 @@ import {
 	formatJobCircles,
 	formatPsnr,
 	shortID,
+	stateBadgeStyle,
 	stateClass,
 	stateLabel,
 } from "./format";
 import type { Palette } from "./charts";
+import stateBadgeContract from "./state-badge-parity.json";
 
 // Every case below was checked against the Go helper it mirrors — the expected
 // strings are what fmt/time produce for the same input, not what the TypeScript
 // happens to return. Where the two genuinely diverge the case carries a comment
 // saying so.
 
-describe("stateClass", () => {
-	// Mirrors ui.StateBadge in internal/ui/list.templ.
-	const cases: Array<[string, string]> = [
-		["pending", "badge-info"],
-		["running", "badge-info"],
-		["completed", "badge-success"],
-		["failed", "badge-error"],
-		["paused", "badge-warning"],
-		["cancelled", "badge-warning"],
-		["skipped", ""],
-		["", ""],
-		["nonsense", ""],
-	];
-	it.each(cases)("classes %j as %j", (state, want) => {
-		expect(stateClass(state)).toBe(want);
-	});
-});
+// The state badge is the one formatter with a fixture instead of a table. Its
+// Go mirror is a templ component rather than a function, so the two cannot be
+// compared by reading one from the other; both are compared against
+// state-badge-parity.json, which is the contract. The Go half is
+// TestStateBadgeMatchesSharedContract in internal/ui/state_badge_parity_test.go
+// and it renders ui.StateBadge for exactly these states.
+type StateBadgeExpectation = (typeof stateBadgeContract)["badges"][number];
 
-describe("stateLabel", () => {
-	const cases: Array<[string, string]> = [
-		["pending", "Pending"],
-		["running", "Running"],
-		["completed", "Completed"],
-		["failed", "Failed"],
-		["paused", "Paused"],
-		["cancelled", "Cancelled"],
-		// The Go default arm prints the raw state; this one capitalises it. The
-		// difference is cosmetic and only reachable for a state neither side
-		// enumerates.
-		["skipped", "Skipped"],
-		// StateBadge renders an empty badge for an empty state; the island has no
-		// badge to render, so it names the gap instead.
-		["", "unknown"],
-	];
-	it.each(cases)("labels %j as %j", (state, want) => {
-		expect(stateLabel(state)).toBe(want);
+// cssText writes a style object the way templ writes its style attribute, so
+// the fixture can pin one string for both languages. Object key order is
+// insertion order, which is the order stateBadgeStyle declares them in.
+function cssText(style: CSSProperties | undefined): string {
+	if (!style) return "";
+	return Object.entries(style)
+		.map(([property, value]) => `${property.replace(/[A-Z]/g, (upper) => `-${upper.toLowerCase()}`)}: ${String(value)};`)
+		.join(" ");
+}
+
+describe("state badge parity", () => {
+	it("enumerates every state the contract names", () => {
+		expect(stateBadgeContract.badges.map((badge) => badge.state)).toEqual([
+			"pending", "running", "completed", "failed", "paused", "cancelled", "skipped", "", "nonsense",
+		]);
 	});
+
+	it.each(stateBadgeContract.badges.map((badge): [string, StateBadgeExpectation] => [badge.state, badge]))(
+		"renders %j as the Go badge does", (_state, badge) => {
+			expect(stateClass(badge.state)).toBe(badge.class);
+			expect(stateLabel(badge.state)).toBe(badge.label);
+			expect(cssText(stateBadgeStyle(badge.state))).toBe(badge.style);
+		},
+	);
 });
 
 describe("formatCostGain", () => {

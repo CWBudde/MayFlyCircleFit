@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -27,72 +28,80 @@ type CircleParameter struct {
 	Opacity float64 `json:"opacity"`
 }
 
-// JobDetail represents a job in the detail view
+// JobDetail represents a job in the detail view.
+//
+// It is also the job-detail island's hydration seed: JobDetailPage serializes
+// the whole struct into #job-detail-data and web/src/JobDetail.tsx reads it for
+// its first render, so the wire names below are a contract with that island and
+// not an implementation detail. Where a field also exists on
+// GET /api/v1/jobs/{id}/status -- the endpoint the island refetches -- it
+// carries that endpoint's name, so the island reads one name for both sources;
+// TestJobDetailSeedMatchesStatusEndpoint pins the overlap.
 type JobDetail struct {
-	ID            string
-	State         string
-	RefPath       string
-	Mode          string
+	ID            string `json:"id"`
+	State         string `json:"state"`
+	RefPath       string `json:"refPath"`
+	Mode          string `json:"mode"`
 	// Optimizer is the library the job ran with. Variant is empty for an
 	// optimizer that has no variants, and the view then renders no variant
 	// rather than a MayFly one the job never used.
-	Optimizer     string
-	Variant       string
-	InitialSigma  float64
-	CovarianceMode string
-	ActiveCMA bool
-	RestartStrategy string
+	Optimizer     string `json:"optimizer"`
+	Variant       string `json:"variant,omitempty"`
+	InitialSigma  float64 `json:"initialSigma"`
+	CovarianceMode string `json:"covarianceMode"`
+	ActiveCMA bool `json:"activeCMA"`
+	RestartStrategy string `json:"restartStrategy"`
 	// EvaluationWorkers is the width the job's renderer actually ran at, not the
 	// width its configuration requested: a backend without independent sessions
 	// runs serially however many workers were asked for, and a CPU request above
 	// GOMAXPROCS is clamped. Zero means serial or unknown and renders nothing,
 	// because a wrong number here is worse than none -- the value exists so two
 	// runs can be told apart.
-	EvaluationWorkers int
+	EvaluationWorkers int `json:"evaluationWidth,omitempty"`
 	// FastCompositing records that the job ran the reduced-precision span
 	// compositor. It belongs next to the seed, not with the tuning knobs: two
 	// runs that differ in it are not pixel-comparable, so a completed job has to
 	// be able to say which one it was.
-	FastCompositing bool
-	Circles       int
-	Iterations    int
-	Evaluations   int
-	MaxIters      int
-	ItersPerEpoch int
-	OptimizerEpochs int
-	PopSize       int
-	PolishingEnabled bool
-	PolishingOnly bool
-	CanPolish bool
-	PolishingStrategy string
-	PolishingActiveSetSize int
-	PolishingMaxSweeps int
-	PolishingEpochs int
-	PolishingIters int
-	PolishingPopSize int
-	PolishingStagnationIters int
-	PolishingMinImprovement float64
-	BestCost      float64
-	CandidateCost *float64
-	CandidatePSNR *float64
-	CandidatePSNRInfinite bool
-	BestRevision  uint64
-	InitialCost   float64
-	StartTime     time.Time
-	EndTime       *time.Time
-	ElapsedSec    float64
-	CPS           float64
-	Termination   string
-	Error         string
-	RefWidth      int
-	RefHeight     int
-	RefSize       int64
-	PSNR          *float64
-	PSNRInfinite  bool
-	SSIM          *float64
-	SSIMEnabled   bool
-	MetricHistory []MetricSample
-	Parameters    []CircleParameter
+	FastCompositing bool `json:"fastCompositing"`
+	Circles       int `json:"circles"`
+	Iterations    int `json:"iterations"`
+	Evaluations   int `json:"evaluations"`
+	MaxIters      int `json:"maxIterations"`
+	ItersPerEpoch int `json:"itersPerEpoch"`
+	OptimizerEpochs int `json:"optimizerEpochs"`
+	PopSize       int `json:"popSize"`
+	PolishingEnabled bool `json:"polishingEnabled"`
+	PolishingOnly bool `json:"polishingOnly"`
+	CanPolish bool `json:"canPolish"`
+	PolishingStrategy string `json:"polishingStrategy"`
+	PolishingActiveSetSize int `json:"polishingActiveSetSize"`
+	PolishingMaxSweeps int `json:"polishingMaxSweeps"`
+	PolishingEpochs int `json:"polishingEpochs"`
+	PolishingIters int `json:"polishingIters"`
+	PolishingPopSize int `json:"polishingPopSize"`
+	PolishingStagnationIters int `json:"polishingStagnationIters"`
+	PolishingMinImprovement float64 `json:"polishingMinImprovement"`
+	BestCost      float64 `json:"bestCost"`
+	CandidateCost *float64 `json:"candidateCost,omitempty"`
+	CandidatePSNR *float64 `json:"candidatePsnr,omitempty"`
+	CandidatePSNRInfinite bool `json:"candidatePsnrInfinite,omitempty"`
+	BestRevision  uint64 `json:"bestRevision"`
+	InitialCost   float64 `json:"initialCost"`
+	StartTime     time.Time `json:"startTime"`
+	EndTime       *time.Time `json:"endTime,omitempty"`
+	ElapsedSec    float64 `json:"elapsed"`
+	CPS           float64 `json:"cps"`
+	Termination   string `json:"termination,omitempty"`
+	Error         string `json:"error,omitempty"`
+	RefWidth      int `json:"refWidth,omitempty"`
+	RefHeight     int `json:"refHeight,omitempty"`
+	RefSize       int64 `json:"refSize,omitempty"`
+	PSNR          *float64 `json:"psnr"`
+	PSNRInfinite  bool `json:"psnrInfinite,omitempty"`
+	SSIM          *float64 `json:"ssim,omitempty"`
+	SSIMEnabled   bool `json:"ssimEnabled"`
+	MetricHistory []MetricSample `json:"metricHistory"`
+	Parameters    []CircleParameter `json:"parameters"`
 }
 
 func parameterDescription(circle CircleParameter) string {
@@ -138,87 +147,21 @@ func statusBorderColor(state string) string {
 	}
 }
 
-// JobDetailPage displays detailed view of a single job
+// JobDetailPage displays detailed view of a single job.
+//
+// Everything between the island root's braces is the no-JavaScript fallback and
+// the island's hydration seed at once, as docs/behavior-invariants.md requires:
+// web/src/JobDetail.tsx mounts over this element, which replaces every child,
+// so a page that never loads the bundle keeps exactly what the server wrote.
+// The mount point therefore has to contain the whole detail body -- the action
+// row included, because the job-controls island was folded into this one.
+//
+// Two things deliberately sit outside the root. The <style> block, because
+// mounting would otherwise destroy the rules the mounted markup still uses, and
+// #job-detail-data, because the island reads it and a seed inside the element
+// it seeds is a seed that can be swept away mid-read.
 templ JobDetailPage(job JobDetail) {
 	@Layout(fmt.Sprintf("Job %s", job.ID[:8])) {
-		<div style="margin-bottom: 2rem;">
-			<div class="row-between" style="margin-bottom: 1rem;">
-				<div>
-					<a href="/jobs" style="color: var(--text-muted); text-decoration: none; font-size: 0.875rem; margin-bottom: 0.5rem; display: inline-block;">
-						← Back to Jobs
-					</a>
-					<h1 style="font-size: 2rem; font-weight: 700; font-family: monospace;">
-						{ job.ID[:8] }...
-					</h1>
-				</div>
-					<div
-						data-island="job-controls"
-						data-island-label="job controls"
-						data-job-id={ job.ID }
-						data-job-state={ job.State }
-						data-best-revision={ fmt.Sprintf("%d", job.BestRevision) }
-						data-max-iterations={ fmt.Sprintf("%d", job.MaxIters) }
-						data-iterations={ fmt.Sprintf("%d", job.Iterations) }
-						data-evaluations={ fmt.Sprintf("%d", job.Evaluations) }
-						data-best-cost={ fmt.Sprintf("%.12f", job.BestCost) }
-						data-initial-cost={ fmt.Sprintf("%.12f", job.InitialCost) }
-						data-cps={ fmt.Sprintf("%.12f", job.CPS) }
-						data-can-polish={ fmt.Sprintf("%t", job.CanPolish) }
-						class="action-row"
-					>
-					@StateBadge(job.State)
-					// The accent buttons carry their foreground with their
-					// background (.btn-danger / .btn-warning) instead of setting
-					// only the background inline: --text-color over --warning-color
-					// is 1.51:1 in dark mode. .action-row supplies the gap, so no
-					// button carries a margin of its own any more.
-					if job.State == "running" {
-						<button id="pause-job" class="btn btn-warning" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
-							Pause job
-						</button>
-						<button id="cancel-job" class="btn btn-danger" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
-							Cancel job
-						</button>
-					}
-					if job.State == "paused" {
-						<button id="resume-job" class="btn btn-primary" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
-							Resume job
-						</button>
-						<button id="cancel-job" class="btn btn-danger" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
-							Cancel job
-						</button>
-					}
-					if job.State == "pending" {
-						<button id="cancel-job" class="btn btn-danger" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
-							Cancel job
-						</button>
-					}
-					if job.State == "completed" || job.State == "failed" || job.State == "cancelled" {
-						<button id="delete-job" class="btn btn-danger" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
-							Delete job
-						</button>
-					}
-					if job.CanPolish {
-						<button id="polish-job" class="btn btn-primary" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
-							Polish weak circles
-						</button>
-					}
-					// The glyph is decorative; unhidden it becomes part of the
-					// button's accessible name ("⟳ Refresh").
-					<button onclick="location.reload()" class="btn" style="background-color: var(--border-color);">
-						<span aria-hidden="true">⟳</span> Refresh
-					</button>
-				</div>
-			</div>
-		</div>
-		if job.Error != "" {
-			<div class="card" style="background-color: var(--error-bg); border: 1px solid var(--error-border); margin-bottom: 1.5rem;">
-				<h3 style="color: var(--error-text); font-weight: 600; margin-bottom: 0.5rem;">Error</h3>
-				<p style="color: var(--error-text); font-family: monospace; font-size: 0.875rem;">
-					{ job.Error }
-				</p>
-			</div>
-		}
 		<style>
 			.detail-stack { display: flex; flex-direction: column; }
 			.detail-summary { order: 1; }
@@ -227,241 +170,6 @@ templ JobDetailPage(job JobDetail) {
 			.detail-downloads { order: 4; }
 			.detail-configuration { order: 5; }
 			.detail-parameters { order: 6; }
-		</style>
-		<div class="detail-stack">
-			<!-- Compact metric summary -->
-			<div class="card detail-summary" style={ fmt.Sprintf("margin-bottom: 1.5rem; border-left: 6px solid %s;", statusBorderColor(job.State)) }>
-				<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">Metrics</h2>
-				<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 1rem;">
-				<div data-metric-card="cost">
-					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
-						Audited Best Cost
-					</div>
-					<div style="font-size: 1.5rem; font-weight: 600;" data-metric="best-cost">
-						{ fmt.Sprintf("%.4f", job.BestCost) }
-					</div>
-					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">RGB mean squared error · committed and checkpoint-safe · lower is better</div>
-				if job.InitialCost > 0 && job.BestCost < job.InitialCost {
-						<div style="font-size: 0.75rem; color: var(--success-text-strong); margin-top: 0.25rem;">
-							↓ { fmt.Sprintf("%.1f%%", (1-job.BestCost/job.InitialCost)*100) } improvement
-						</div>
-					}
-					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-						<span>Cost change / iter:</span>
-						<span data-metric="cost-improvement-rate" style="margin-left: 0.35rem;">—</span>
-					</div>
-				</div>
-				<div id="candidate-metrics" style={ fmt.Sprintf("display: %s; padding: 0.75rem; border: 1px solid var(--primary-color); border-radius: 0.5rem; background: color-mix(in srgb, var(--primary-color) 8%%, transparent);", displayValue(job.CandidateCost != nil)) }>
-					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">In-flight Candidate</div>
-					<div style="font-size: 1.5rem; font-weight: 600;" data-metric="candidate-cost">
-						if job.CandidateCost != nil {
-							{ fmt.Sprintf("%.4f", *job.CandidateCost) }
-						} else {
-							—
-						}
-					</div>
-					<div style="font-size: 0.75rem; color: var(--success-text-strong); margin-top: 0.25rem;" data-metric="candidate-gain">
-						if job.CandidateCost != nil && *job.CandidateCost < job.BestCost {
-							↓ { fmt.Sprintf("%.4f (%.2f%%) provisional gain", job.BestCost-*job.CandidateCost, (1-*job.CandidateCost/job.BestCost)*100) }
-						}
-					</div>
-					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-						<span data-metric="candidate-psnr">
-							if job.CandidatePSNRInfinite {
-								∞
-							} else if job.CandidatePSNR != nil {
-								{ fmt.Sprintf("%.2f", *job.CandidatePSNR) }
-							} else {
-								—
-							}
-						</span> dB · pending full-image usefulness audit
-					</div>
-				</div>
-				<div data-metric-card="psnr">
-					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
-						Audited PSNR
-					</div>
-					<div style="font-size: 1.5rem; font-weight: 600;">
-						<span data-metric="psnr">
-							if job.PSNRInfinite {
-								∞
-							} else if job.PSNR != nil {
-								{ fmt.Sprintf("%.2f", *job.PSNR) }
-							} else {
-								—
-							}
-						</span> dB
-					</div>
-					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-						Peak signal-to-noise ratio · higher is better
-					</div>
-				</div>
-				if job.SSIMEnabled {
-					<div data-metric-card="ssim">
-						<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
-							SSIM
-						</div>
-						<div style="font-size: 1.5rem; font-weight: 600;" data-metric="ssim">
-							if job.SSIM != nil {
-								{ fmt.Sprintf("%.4f", *job.SSIM) }
-							} else {
-								Calculating…
-							}
-						</div>
-						<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-							Structural similarity, higher is better
-						</div>
-					</div>
-				}
-				<div>
-					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Iterations</div>
-					<div style="font-size: 1.5rem; font-weight: 600;">
-						<span data-metric="iterations">{ fmt.Sprintf("%d", job.Iterations) }</span>
-						if job.MaxIters > 0 {
-							<span style="font-size: 1rem; color: var(--text-muted);">/ { fmt.Sprintf("%d", job.MaxIters) }</span>
-						}
-					</div>
-					if job.MaxIters > 0 {
-						<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-							<span data-metric="iteration-progress">{ fmt.Sprintf("%.1f%%", progressPercent(job.Iterations, job.MaxIters)) }</span> of planned optimizer steps
-						</div>
-						<div
-							id="iteration-progress-track"
-							role="progressbar"
-							aria-label="Optimizer iteration progress"
-							aria-valuemin="0"
-							aria-valuemax="100"
-							aria-valuenow={ fmt.Sprintf("%.1f", progressPercent(job.Iterations, job.MaxIters)) }
-							style="margin-top: 0.5rem; background-color: var(--border-color); height: 4px; border-radius: 2px; overflow: hidden;"
-						>
-							<div id="iteration-progress-bar" style={ fmt.Sprintf("width: %.1f%%; height: 100%%; background-color: var(--primary-color);", progressPercent(job.Iterations, job.MaxIters)) }></div>
-						</div>
-					}
-				</div>
-				<div>
-					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Evaluations</div>
-					<div style="font-size: 1.5rem; font-weight: 600;" data-metric="evaluations" title={ fmt.Sprintf("%d objective evaluations", job.Evaluations) }>{ formatNumber(float64(job.Evaluations)) }</div>
-					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Objective function calls</div>
-				</div>
-				<div data-metric-card="cps">
-					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
-						Throughput
-					</div>
-						<div style="font-size: 1.5rem; font-weight: 600;" data-metric="cps" data-raw-cps={ fmt.Sprintf("%.12f", job.CPS) }>
-							{ formatNumber(job.CPS) }
-						</div>
-					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-						avg circles/sec
-					</div>
-					<div style="font-size: 0.75rem; color: var(--text-muted);">
-						Current: <span data-metric="cps-current">{ formatNumber(job.CPS) }</span> circles/sec
-					</div>
-					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-						ETA:
-						<span data-metric="eta" style="margin-left: 0.35rem;">—</span>
-					</div>
-				</div>
-				<div>
-					<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
-						Elapsed Time
-					</div>
-					<div style="font-size: 1.5rem; font-weight: 600;">
-						{ formatDuration(job.ElapsedSec) }
-					</div>
-					<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-						{ formatTimestamp(job.StartTime) }
-					</div>
-					if job.Termination != "" {
-						<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;" data-metric="termination">
-							stopped: { job.Termination }
-						</div>
-					}
-				</div>
-			</div>
-		</div>
-			<!-- Configuration Panel -->
-			<div class="card detail-configuration" style="margin-bottom: 1.5rem;">
-			<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-				Configuration
-			</h2>
-			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 1rem;">
-				<div>
-					<div style="font-size: 0.875rem; color: var(--text-muted);">Mode</div>
-					<div style="font-weight: 500; text-transform: capitalize;">{ job.Mode }</div>
-				</div>
-				<div>
-					<div style="font-size: 0.875rem; color: var(--text-muted);">Optimizer</div>
-					<div style="font-weight: 500; text-transform: capitalize;">{ job.Optimizer }</div>
-				</div>
-				if job.Variant != "" {
-					<div>
-						<div style="font-size: 0.875rem; color: var(--text-muted);">Variant</div>
-						<div style="font-weight: 500; text-transform: uppercase;">{ job.Variant }</div>
-					</div>
-				}
-				if job.Optimizer == "cmaes" {
-					<div>
-						<div style="font-size: 0.875rem; color: var(--text-muted);">Initial Sigma</div>
-						<div style="font-weight: 500;">{ fmt.Sprintf("%g", job.InitialSigma) }</div>
-					</div>
-					<div>
-						<div style="font-size: 0.875rem; color: var(--text-muted);">Covariance</div>
-						<div style="font-weight: 500; text-transform: capitalize;">{ job.CovarianceMode }</div>
-					</div>
-					<div>
-						<div style="font-size: 0.875rem; color: var(--text-muted);">Active CMA</div>
-						<div style="font-weight: 500;">{ fmt.Sprintf("%t", job.ActiveCMA) }</div>
-					</div>
-					<div>
-						<div style="font-size: 0.875rem; color: var(--text-muted);">Restart Strategy</div>
-						<div style="font-weight: 500; text-transform: uppercase;">{ job.RestartStrategy }</div>
-					</div>
-				}
-				if job.EvaluationWorkers > 1 {
-					<div>
-						<div style="font-size: 0.875rem; color: var(--text-muted);">Parallel Evaluation</div>
-						<div style="font-weight: 500;">{ fmt.Sprintf("%d workers", job.EvaluationWorkers) }</div>
-					</div>
-				}
-				if job.FastCompositing {
-					<div>
-						<div style="font-size: 0.875rem; color: var(--text-muted);">Compositing</div>
-						<div style="font-weight: 500;">Fast (+/-1 per channel)</div>
-					</div>
-				}
-				<div>
-					<div style="font-size: 0.875rem; color: var(--text-muted);">Circles</div>
-					<div style="font-weight: 500;">{ fmt.Sprintf("%d", job.Circles) }</div>
-				</div>
-				<div>
-					<div style="font-size: 0.875rem; color: var(--text-muted);">Population Size</div>
-					<div style="font-weight: 500;">{ fmt.Sprintf("%d", job.PopSize) }</div>
-				</div>
-				<div>
-					<div style="font-size: 0.875rem; color: var(--text-muted);">Optimizer Schedule</div>
-					<div style="font-weight: 500;">{ fmt.Sprintf("%d × %d iterations", job.OptimizerEpochs, job.ItersPerEpoch) }</div>
-				</div>
-				<div>
-					<div style="font-size: 0.875rem; color: var(--text-muted);">Active-set Polishing</div>
-					if job.PolishingEnabled {
-						if job.PolishingOnly {
-							<div style="font-weight: 500;">Continuation only · { fmt.Sprintf("up to %d sweeps of %d circles", job.PolishingMaxSweeps, job.PolishingActiveSetSize) }</div>
-						} else {
-							<div style="font-weight: 500;">Enabled · { fmt.Sprintf("up to %d sweeps of %d circles", job.PolishingMaxSweeps, job.PolishingActiveSetSize) }</div>
-						}
-						<div style="font-size: 0.75rem; color: var(--text-muted);">{ fmt.Sprintf("%s · population %d · %d × %d iterations · stagnation %d · progress threshold %.4g", job.PolishingStrategy, job.PolishingPopSize, job.PolishingEpochs, job.PolishingIters, job.PolishingStagnationIters, job.PolishingMinImprovement) }</div>
-					} else {
-						<div style="font-weight: 500;">Disabled</div>
-					}
-				</div>
-				<div style="grid-column: 1 / -1;">
-					<div style="font-size: 0.875rem; color: var(--text-muted);">Reference Image</div>
-					<div style="font-weight: 500; font-family: monospace; font-size: 0.875rem;">{ job.RefPath }</div>
-				</div>
-			</div>
-		</div>
-			<!-- Artifact downloads -->
-		<style>
 			.download-card { padding: 1rem 1.25rem; }
 			.download-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem 1rem; margin-bottom: 0.75rem; }
 			.download-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
@@ -469,52 +177,6 @@ templ JobDetailPage(job JobDetail) {
 			.download-button:hover { background: var(--secondary-hover); }
 			.download-button[aria-disabled="true"], .download-button:disabled { pointer-events: none; cursor: not-allowed; opacity: 0.5; }
 			.download-button[aria-busy="true"]::before { content: ""; width: 0.8rem; height: 0.8rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; }
-		</style>
-			<div class="card detail-downloads download-card" style="margin-bottom: 1.5rem;">
-				<div class="download-header">
-					<h2 style="font-size: 1.125rem; font-weight: 600;">Downloads</h2>
-					<p style="color: var(--text-muted); font-size: 0.8125rem;">Current immutable result artifacts</p>
-				</div>
-				<div class="download-grid">
-				<a
-					class="btn download-button"
-					data-result-download
-					href={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/best.png?download=1", job.ID)) }
-					download={ fmt.Sprintf("job-%s-best.png", job.ID) }
-					aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
-					tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
-				>Best PNG</a>
-				<a
-					class="btn download-button"
-					data-result-download
-					href={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/params.json", job.ID)) }
-					download={ fmt.Sprintf("job-%s-params.json", job.ID) }
-					aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
-					tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
-				>Parameters JSON</a>
-				<a
-					id="download-difference"
-					class="btn download-button"
-					data-result-download
-					href={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/diff.png?colormap=turbo&download=1", job.ID)) }
-					download={ fmt.Sprintf("job-%s-diff.png", job.ID) }
-					aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
-					tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
-				>Difference PNG</a>
-				<button
-					id="download-report"
-					class="btn download-button"
-					data-result-download
-					type="button"
-					if len(job.Parameters) == 0 {
-						disabled
-					}
-				>HTML Report</button>
-			</div>
-			<p id="report-download-status" role="status" aria-live="polite" style="min-height: 1rem; margin-top: 0.5rem; color: var(--text-muted); font-size: 0.75rem;"></p>
-		</div>
-			<!-- Current best parameter viewer -->
-		<style>
 			.parameter-viewer summary {
 				display: flex;
 				flex-wrap: wrap;
@@ -568,976 +230,477 @@ templ JobDetailPage(job JobDetail) {
 				pointer-events: none;
 				opacity: 0.5;
 			}
+			/* The frame is sized, the canvas is not: Chart.js writes its own
+			   inline width and height onto a responsive canvas, so sizing the
+			   canvas from CSS as well makes it resize the element its
+			   ResizeObserver watches, and it redraws forever. See MetricChart
+			   in web/src/JobDetail.tsx. */
+			.metric-chart-frame { position: relative; width: 100%; height: 280px; border: 1px solid var(--border-color); border-radius: 0.25rem; background-color: var(--control-bg); }
+			.metric-chart-canvas { display: block; }
 		</style>
-			<div class="card detail-parameters" style="margin-bottom: 1.5rem;">
-				<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem;">
-				<div>
-					<h2 style="font-size: 1.25rem; font-weight: 600;">Current Best Parameters</h2>
-					<p style="font-size: 0.875rem; color: var(--text-muted);">
-						<span id="parameter-count">{ fmt.Sprintf("%d", len(job.Parameters)) }</span> of { fmt.Sprintf("%d", job.Circles) } circles available
-					</p>
-				</div>
-				<a
-					id="parameter-export"
-					class="btn parameter-export"
-					style="background-color: var(--border-color); font-size: 0.875rem;"
-					href={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/params.json", job.ID)) }
-					download={ fmt.Sprintf("job-%s-params.json", job.ID) }
-					aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
-					tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
-				>
-					Download params.json
-				</a>
-			</div>
-			<details id="parameter-viewer" class="parameter-viewer" style="margin-top: 1rem;">
-				<summary>
-					<span style="font-weight: 600;">Inspect circles</span>
-					<span style="font-size: 0.75rem; color: var(--text-muted);">X, Y, radius, RGB, opacity</span>
-				</summary>
-				<p id="parameter-empty" style={ fmt.Sprintf("display: %s; margin-top: 1rem; color: var(--text-muted); font-size: 0.875rem;", displayValue(len(job.Parameters) == 0)) }>
-					No best parameters available yet.
-				</p>
-				<ol id="parameter-list" class="parameter-list" style={ fmt.Sprintf("display: %s;", displayValue(len(job.Parameters) > 0)) }>
-					for _, circle := range job.Parameters {
-						<li title={ parameterDescription(circle) }>
-							<span class="parameter-color" style={ fmt.Sprintf("background-color: rgba(%d, %d, %d, %.3f);", colorChannel(circle.Red), colorChannel(circle.Green), colorChannel(circle.Blue), circle.Opacity) }></span>
-							<span>{ parameterDescription(circle) }</span>
-						</li>
-					}
-				</ol>
-			</details>
-		</div>
-		@ImageViewer(ImageViewerData{
-			JobID:           job.ID,
-			DefaultMode:     "side-by-side",
-			BestRevision:    job.BestRevision,
-			ReferenceImageURL: fmt.Sprintf("/api/v1/jobs/%s/ref.png", job.ID),
-			BestImageURL:      fmt.Sprintf("/api/v1/jobs/%s/best.png", job.ID),
-			DiffImageURL:      fmt.Sprintf("/api/v1/jobs/%s/diff.png", job.ID),
-			JobState:          job.State,
-			MaxIterations:     job.MaxIters,
-			CircleCount:       job.Circles,
-			ReferenceWidth:    job.RefWidth,
-			ReferenceHeight:   job.RefHeight,
-			ReferenceSize:     job.RefSize,
-			ShowMetadata:      true,
-			ExtraClass:        "detail-images",
-		})
-
-			<!-- Metric history, immediately after the images -->
-			<div id="metric-history-card" class="card detail-history" style="margin-bottom: 1.5rem;">
+		<div data-island="job-detail" data-island-label="job detail">
+			<div style="margin-bottom: 2rem;">
 				<div class="row-between" style="margin-bottom: 1rem;">
 					<div>
-						<h2 style="font-size: 1.25rem; font-weight: 600;">Metric History</h2>
-						<p style="font-size: 0.8125rem; color: var(--text-muted);">Quality over optimizer iterations</p>
+						<a href="/jobs" style="color: var(--text-muted); text-decoration: none; font-size: 0.875rem; margin-bottom: 0.5rem; display: inline-block;">
+							← Back to Jobs
+						</a>
+						<h1 style="font-size: 2rem; font-weight: 700; font-family: monospace;">
+							{ job.ID[:8] }...
+						</h1>
 					</div>
-					if len(job.MetricHistory) > 0 {
-						<button id="sparkline-toggle" class="btn" style="font-size: 0.8125rem; padding: 0.35rem 0.7rem; background-color: var(--border-color);">Hide History</button>
-					} else {
-						<button id="sparkline-toggle" class="btn" style="display: none; font-size: 0.8125rem; padding: 0.35rem 0.7rem; background-color: var(--border-color);">Hide History</button>
-					}
-				</div>
-				<p id="metric-history-empty" style={ fmt.Sprintf("display: %s; color: var(--text-muted); font-size: 0.875rem;", displayValue(len(job.MetricHistory) == 0)) }>No metric samples yet. History will appear when optimization begins.</p>
-				<div id="cost-sparkline-container" style={ fmt.Sprintf("display: %s; padding: 1rem; background-color: var(--bg-color); border-radius: 0.375rem; position: relative;", displayValue(len(job.MetricHistory) > 0)) }>
-					<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
-						<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem;">
-							<label for="metric-history-series" style="font-size: 0.875rem; font-weight: 600; color: var(--text-muted);">Metric
-									<select id="metric-history-series" style="margin-left: 0.35rem; padding: 0.3rem 0.5rem; border: 1px solid var(--border-color); border-radius: 0.25rem; background: var(--control-bg);">
-									<option value="cost">Cost</option>
-									<option value="psnr">PSNR</option>
-									if job.SSIMEnabled {
-										<option value="ssim">SSIM</option>
-									}
-									<option value="cps">CPS</option>
-								</select>
-							</label>
-							<label for="metric-history-window" style="font-size: 0.875rem; font-weight: 600; color: var(--text-muted);">Window
-								<select id="metric-history-window" style="margin-left: 0.35rem; padding: 0.3rem 0.5rem; border: 1px solid var(--border-color); border-radius: 0.25rem; background: var(--control-bg);">
-									<option value="all" selected>All samples</option>
-									<option value="100">Last 100</option><option value="250">Last 250</option><option value="500">Last 500</option><option value="1000">Last 1,000</option>
-								</select>
-							</label>
-						</div>
-						<div id="sparkline-stats" style="font-size: 0.75rem; color: var(--text-muted);">Showing <span id="sparkline-samples">0</span> of <span id="sparkline-total-samples">0</span> samples</div>
+					<div class="action-row">
+						@StateBadge(job.State)
+						// The accent buttons carry their foreground with their
+						// background (.btn-danger / .btn-warning) instead of setting
+						// only the background inline: --text-color over --warning-color
+						// is 1.51:1 in dark mode. .action-row supplies the gap, so no
+						// button carries a margin of its own any more.
+						if job.State == "running" {
+							<button id="pause-job" class="btn btn-warning" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
+								Pause job
+							</button>
+							<button id="cancel-job" class="btn btn-danger" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
+								Cancel job
+							</button>
+						}
+						if job.State == "paused" {
+							<button id="resume-job" class="btn btn-primary" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
+								Resume job
+							</button>
+							<button id="cancel-job" class="btn btn-danger" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
+								Cancel job
+							</button>
+						}
+						if job.State == "pending" {
+							<button id="cancel-job" class="btn btn-danger" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
+								Cancel job
+							</button>
+						}
+						if job.State == "completed" || job.State == "failed" || job.State == "cancelled" {
+							<button id="delete-job" class="btn btn-danger" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
+								Delete job
+							</button>
+						}
+						if job.CanPolish {
+							<button id="polish-job" class="btn btn-primary" disabled aria-disabled="true" title="Job actions need the interactive controls to load; reload the page if they stay inactive.">
+								Polish weak circles
+							</button>
+						}
+						// A link to this same page, not a button with an inline
+						// onclick. The island replaces it with a real refresh
+						// control on mount; until then it has to work with no
+						// script at all, and a navigation is the only thing that
+						// does. The glyph is decorative; unhidden it becomes
+						// part of the accessible name ("⟳ Refresh").
+						<a href={ templ.SafeURL("/jobs/" + job.ID) } class="btn" style="background-color: var(--border-color);">
+							<span aria-hidden="true">⟳</span> Refresh
+						</a>
 					</div>
-					<svg id="cost-sparkline" width="100%" height="280" tabindex="0" role="img" aria-label="Metric history chart" style="display: block; border: 1px solid var(--border-color); border-radius: 0.25rem; background-color: var(--control-bg); font-family: inherit; touch-action: none;">
-						<g id="sparkline-grid"></g><g id="sparkline-axes"></g>
-						<polyline id="sparkline-line" fill="none" stroke="var(--primary-color)" stroke-width="2"></polyline>
-						<circle id="sparkline-dot" r="3" fill="var(--primary-color)" style="display: none;"></circle>
-						<g id="sparkline-hover-layer" style="display: none; pointer-events: none;"><line id="sparkline-hover-line" stroke="var(--text-muted)" stroke-width="1" stroke-dasharray="3 3"></line><circle id="sparkline-hover-dot" r="4" fill="var(--primary-color)" stroke="var(--surface-color)" stroke-width="2"></circle></g>
-						<text id="sparkline-empty" text-anchor="middle" fill="var(--text-muted)" style="display: none; font-size: 13px;">No samples available</text>
-					</svg>
-					<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1rem; margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">
-						<span>Start: <span id="sparkline-start">-</span></span><span>Current: <span id="sparkline-current">-</span></span><span><span id="sparkline-best-label">Min</span>: <span id="sparkline-min">-</span></span>
-						<span id="sparkline-hover-readout" aria-live="polite">Move over the chart for an exact value</span>
-					</div>
-					<div id="sparkline-tooltip" style="position: absolute; pointer-events: none; opacity: 0; transition: opacity 0.1s ease; background-color: var(--surface-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 0.375rem; padding: 0.4rem 0.5rem; font-size: 0.75rem; white-space: nowrap; z-index: 2;"></div>
 				</div>
 			</div>
-		</div>
-		@templ.JSONScript("metric-history-data", job.MetricHistory)
-		@templ.JSONScript("parameter-data", job.Parameters)
-		<!-- SSE for live updates -->
-		<script>
-			(function () {
-				const imageViewer = document.getElementById("image-viewer");
-				const jobId = imageViewer.dataset.jobId;
-				const jobState = imageViewer.dataset.jobState;
-				const maxIters = Number.parseInt(imageViewer.dataset.maxIters, 10) || 0;
-				const circleCount = Number.parseInt(imageViewer.dataset.circleCount, 10) || 0;
-				const visibleMetricStorageKey = "mayflycirclefit.visibleMetrics";
-				const imageRefreshIntervalMs = readImageRefreshInterval();
-				const initialCPS = Number.parseFloat(
-					document.querySelector('[data-metric="cps"]')?.dataset.rawCps || "0",
-				) || 0;
-				let lastRenderedBestRevision =
-					Number.parseInt(imageViewer.dataset.bestRevision, 10) || 0;
-				let parameterRefreshPending = false;
-				let currentCPS = Number.isFinite(initialCPS) ? initialCPS : 0;
-				let sparklineInteraction = null;
-				let sparklineTooltip = null;
-				let hoveredSample = null;
-				const metricVisibilityIds = ["cost", "psnr", "ssim", "cps"];
-
-									initializeParameterViewer();
-									initializeDownloadControls();
-
-				// Server-seeded quality history for the selectable chart.
-				function parseSampleTimestamp(value) {
-					if (!value) return null;
-					const parsed = Date.parse(value);
-					return Number.isNaN(parsed) ? null : parsed;
-				}
-
-				function normalizeHistorySample(raw) {
-					return {
-						iteration: Number.parseInt(raw.iteration, 10) || 0,
-						evaluations: Number.parseInt(raw.evaluations, 10) || 0,
-						cost: Number.parseFloat(raw.cost) || 0,
-						psnr: Number.parseFloat(raw.psnr),
-						psnrInfinite: raw.psnrInfinite === true,
-						ssim: Number.parseFloat(raw.ssim),
-						cps: Number.parseFloat(raw.cps) || 0,
-						timestamp: parseSampleTimestamp(raw.timestamp),
-					};
-				}
-
-				let metricHistory = [];
-				applyMetricCardVisibility();
-				window.addEventListener("storage", function (event) {
-					if (event.key === visibleMetricStorageKey) {
-						applyMetricCardVisibility();
-					}
-				});
-				const historyData = document.getElementById("metric-history-data");
-					if (historyData) {
-					try {
-						metricHistory = (JSON.parse(historyData.textContent) || []).map(normalizeHistorySample);
-						if (metricHistory.length > 0) {
-							updateCostImprovementRate(metricHistory);
-							updateThroughputDisplay();
-							updateEta(metricHistory[metricHistory.length - 1].iteration);
+			if job.Error != "" {
+				<div class="card" style="background-color: var(--error-bg); border: 1px solid var(--error-border); margin-bottom: 1.5rem;">
+					<h3 style="color: var(--error-text); font-weight: 600; margin-bottom: 0.5rem;">Error</h3>
+					<p style="color: var(--error-text); font-family: monospace; font-size: 0.875rem;">
+						{ job.Error }
+					</p>
+				</div>
+			}
+			<div class="detail-stack">
+				<!-- Compact metric summary -->
+				<div class="card detail-summary" style={ fmt.Sprintf("margin-bottom: 1.5rem; border-left: 6px solid %s;", statusBorderColor(job.State)) }>
+					<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">Metrics</h2>
+					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 1rem;">
+					<div data-metric-card="cost">
+						<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+							Audited Best Cost
+						</div>
+						<div style="font-size: 1.5rem; font-weight: 600;" data-metric="best-cost">
+							{ fmt.Sprintf("%.4f", job.BestCost) }
+						</div>
+						<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">RGB mean squared error · committed and checkpoint-safe · lower is better</div>
+					if job.InitialCost > 0 && job.BestCost < job.InitialCost {
+							<div style="font-size: 0.75rem; color: var(--success-text-strong); margin-top: 0.25rem;">
+								↓ { fmt.Sprintf("%.1f%%", (1-job.BestCost/job.InitialCost)*100) } improvement
+							</div>
 						}
-					} catch (err) {
-						console.error("Unable to parse metric history:", err);
-					}
-					document.addEventListener("mayflycirclefit:job-metrics", function (event) {
-						if (!Array.isArray(event.detail)) return;
-						metricHistory = event.detail.map(normalizeHistorySample);
-						updateThroughputDisplay();
-						updateCostImprovementRate();
-						if (metricHistory.length > 0) updateEta(metricHistory[metricHistory.length - 1].iteration);
-						if (sparklineVisible) updateSparkline();
-					});
-				}
-
-				// History chart controls
-				const toggleBtn = document.getElementById("sparkline-toggle");
-				const sparklineContainer = document.getElementById(
-					"cost-sparkline-container",
-				);
-				const metricSeries = document.getElementById("metric-history-series");
-				const metricWindow = document.getElementById("metric-history-window");
-				let sparklineVisible = metricHistory.length > 0;
-
-				if (toggleBtn) {
-					toggleBtn.addEventListener("click", function () {
-						sparklineVisible = !sparklineVisible;
-						sparklineContainer.style.display = sparklineVisible
-							? "block"
-							: "none";
-						toggleBtn.textContent = sparklineVisible
-							? "Hide History"
-							: "Show History";
-						if (sparklineVisible) {
-							updateSparkline();
-						}
-					});
-				}
-				if (metricSeries) {
-					metricSeries.addEventListener("change", updateSparkline);
-				}
-				if (metricWindow) {
-					metricWindow.addEventListener("change", updateSparkline);
-				}
-				const sparkline = document.getElementById("cost-sparkline");
-				if (sparkline) {
-					sparkline.addEventListener("pointermove", updateSparklineHover);
-					sparkline.addEventListener("pointerleave", clearSparklineHover);
-					sparkline.addEventListener("focus", showLatestSparklinePoint);
-					sparkline.addEventListener("keydown", moveSparklineSelection);
-				}
-				window.addEventListener("resize", function () {
-					if (sparklineVisible) updateSparkline();
-				});
-				if (sparklineVisible) updateSparkline();
-
-				// Applies one progress payload to the metric panel. The stream event and
-				// the status endpoint share these field names, so both update paths feed
-				// the same function.
-				function applyProgressMetrics(data) {
-					updateMetric("best-cost", data.bestCost.toFixed(4));
-					updateCandidateMetrics(data);
-					updateMetric("iterations", data.iterations);
-					updateMetric("evaluations", formatNumber(data.evaluations));
-					updateIterationProgress(data.iterations);
-					if (data.psnrInfinite) {
-						updateMetric("psnr", "∞");
-					} else if (typeof data.psnr === "number") {
-						updateMetric("psnr", data.psnr.toFixed(2));
-					}
-					if (typeof data.ssim === "number") {
-						updateMetric("ssim", data.ssim.toFixed(4));
-					}
-					addMetricSample(data);
-					refreshParameterViewer();
-				}
-
-					// The React job-controls island owns the ordered EventSource and
-					// republishes both live frames and authoritative reconnect snapshots.
-					document.addEventListener("mayflycirclefit:job-status", function (event) {
-						if (event.detail) applyProgressMetrics(event.detail);
-					});
-
-				function updateMetric(id, value) {
-					const elements = document.querySelectorAll(
-						'[data-metric="' + id + '"]',
-					);
-					elements.forEach(function (el) {
-						el.textContent = value;
-					});
-				}
-
-				function applyMetricCardVisibility() {
-					const visibleMetrics = parseVisibleMetrics();
-					metricVisibilityIds.forEach(function (metricId) {
-						const isVisible = visibleMetrics.indexOf(metricId) >= 0;
-						document
-							.querySelectorAll('[data-metric-card="' + metricId + '"]')
-							.forEach(function (card) {
-								card.style.display = isVisible ? "" : "none";
-							});
-					});
-				}
-
-				function parseVisibleMetrics() {
-					const defaults = metricVisibilityIds;
-					const allowed = new Set(defaults);
-					let raw = null;
-					try {
-						raw = window.localStorage.getItem(visibleMetricStorageKey);
-					} catch (_error) {
-						raw = null;
-					}
-					try {
-						const parsed = raw ? JSON.parse(raw) : null;
-						if (!Array.isArray(parsed)) {
-							return defaults.slice();
-						}
-						const enabled = new Set();
-						parsed.forEach(function (metric) {
-							if (allowed.has(metric)) {
-								enabled.add(metric);
+						<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+							<span>Cost change / iter:</span>
+							<span data-metric="cost-improvement-rate" style="margin-left: 0.35rem;">{ costImprovementRate(job.MetricHistory) }</span>
+						</div>
+					</div>
+					<div id="candidate-metrics" style={ fmt.Sprintf("display: %s; padding: 0.75rem; border: 1px solid var(--primary-color); border-radius: 0.5rem; background: color-mix(in srgb, var(--primary-color) 8%%, transparent);", displayValue(job.CandidateCost != nil)) }>
+						<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">In-flight Candidate</div>
+						<div style="font-size: 1.5rem; font-weight: 600;" data-metric="candidate-cost">
+							if job.CandidateCost != nil {
+								{ fmt.Sprintf("%.4f", *job.CandidateCost) }
+							} else {
+								—
 							}
-						});
-						if (enabled.size === 0) {
-							return defaults.slice();
-						}
-						return defaults.filter(function (metric) {
-							return enabled.has(metric);
-						});
-					} catch (_error) {
-						return defaults.slice();
-					}
-				}
-
-				function updateCandidateMetrics(data) {
-					const panel = document.getElementById("candidate-metrics");
-					if (!panel) return;
-					if (typeof data.candidateCost !== "number") {
-						panel.style.display = "none";
-						return;
-					}
-					panel.style.display = "block";
-					updateMetric("candidate-cost", data.candidateCost.toFixed(4));
-					const gain = data.bestCost - data.candidateCost;
-					const percent = data.bestCost > 0 ? (gain / data.bestCost) * 100 : 0;
-					updateMetric("candidate-gain", "↓ " + gain.toFixed(4) + " (" + percent.toFixed(2) + "%) provisional gain");
-					if (data.candidatePsnrInfinite) {
-						updateMetric("candidate-psnr", "∞");
-					} else if (typeof data.candidatePsnr === "number") {
-						updateMetric("candidate-psnr", data.candidatePsnr.toFixed(2));
-					}
-				}
-
-				function updateIterationProgress(iterations) {
-					if (maxIters <= 0) return;
-					const percent = Math.max(0, Math.min(100, (iterations / maxIters) * 100));
-					updateMetric("iteration-progress", percent.toFixed(1) + "%");
-					const bar = document.getElementById("iteration-progress-bar");
-					if (bar) bar.style.width = percent.toFixed(1) + "%";
-					// The width and the exposed value have to move together;
-					// updating only the fill leaves a screen reader on the
-					// server-rendered figure for the rest of the run.
-					const track = document.getElementById("iteration-progress-track");
-					if (track) track.setAttribute("aria-valuenow", percent.toFixed(1));
-				}
-
-				function updateThroughputDisplay(sample) {
-					const activeSample =
-						sample && Number.isFinite(sample.iteration)
-							? sample
-							: latestTimestampedHistorySample();
-					if (!activeSample) return;
-					const avgCPS =
-						typeof activeSample.cps === "number" && Number.isFinite(activeSample.cps)
-							? activeSample.cps
-							: 0;
-					let current = currentCPS;
-					if (
-						typeof activeSample.evaluations === "number" &&
-						Number.isFinite(activeSample.timestamp) &&
-						metricHistory.length > 0
-					) {
-						const latest = activeSample;
-						const latestIndex = Math.max(
-							0,
-							metricHistory.length - 1,
-						);
-						const previous = findPreviousHistoricalSample(
-							latest.timestamp,
-							latestIndex - 1,
-							latest.iteration,
-						);
-						if (
-							previous &&
-							previous.evaluations !== latest.evaluations &&
-							Number.isFinite(previous.evaluations)
-						) {
-							const deltaEval = latest.evaluations - previous.evaluations;
-							const deltaMs = latest.timestamp - previous.timestamp;
-							if (deltaEval > 0 && deltaMs > 0 && circleCount > 0) {
-								current = (deltaEval * circleCount) / (deltaMs / 1000);
+						</div>
+						<div style="font-size: 0.75rem; color: var(--success-text-strong); margin-top: 0.25rem;" data-metric="candidate-gain">
+							if job.CandidateCost != nil && *job.CandidateCost < job.BestCost {
+								↓ { fmt.Sprintf("%.4f (%.2f%%) provisional gain", job.BestCost-*job.CandidateCost, (1-*job.CandidateCost/job.BestCost)*100) }
 							}
+						</div>
+						<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+							<span data-metric="candidate-psnr">
+								if job.CandidatePSNRInfinite {
+									∞
+								} else if job.CandidatePSNR != nil {
+									{ fmt.Sprintf("%.2f", *job.CandidatePSNR) }
+								} else {
+									—
+								}
+							</span> dB · pending full-image usefulness audit
+						</div>
+					</div>
+					<div data-metric-card="psnr">
+						<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+							Audited PSNR
+						</div>
+						<div style="font-size: 1.5rem; font-weight: 600;">
+							<span data-metric="psnr">
+								if job.PSNRInfinite {
+									∞
+								} else if job.PSNR != nil {
+									{ fmt.Sprintf("%.2f", *job.PSNR) }
+								} else {
+									—
+								}
+							</span> dB
+						</div>
+						<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+							Peak signal-to-noise ratio · higher is better
+						</div>
+					</div>
+					if job.SSIMEnabled {
+						<div data-metric-card="ssim">
+							<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+								SSIM
+							</div>
+							<div style="font-size: 1.5rem; font-weight: 600;" data-metric="ssim">
+								if job.SSIM != nil {
+									{ fmt.Sprintf("%.4f", *job.SSIM) }
+								} else {
+									Calculating…
+								}
+							</div>
+							<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+								Structural similarity, higher is better
+							</div>
+						</div>
+					}
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Iterations</div>
+						<div style="font-size: 1.5rem; font-weight: 600;">
+							<span data-metric="iterations">{ fmt.Sprintf("%d", job.Iterations) }</span>
+							if job.MaxIters > 0 {
+								<span style="font-size: 1rem; color: var(--text-muted);">/ { fmt.Sprintf("%d", job.MaxIters) }</span>
+							}
+						</div>
+						if job.MaxIters > 0 {
+							<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+								<span data-metric="iteration-progress">{ fmt.Sprintf("%.1f%%", progressPercent(job.Iterations, job.MaxIters)) }</span> of planned optimizer steps
+							</div>
+							<div
+								id="iteration-progress-track"
+								role="progressbar"
+								aria-label="Optimizer iteration progress"
+								aria-valuemin="0"
+								aria-valuemax="100"
+								aria-valuenow={ fmt.Sprintf("%.1f", progressPercent(job.Iterations, job.MaxIters)) }
+								style="margin-top: 0.5rem; background-color: var(--border-color); height: 4px; border-radius: 2px; overflow: hidden;"
+							>
+								<div id="iteration-progress-bar" style={ fmt.Sprintf("width: %.1f%%; height: 100%%; background-color: var(--primary-color);", progressPercent(job.Iterations, job.MaxIters)) }></div>
+							</div>
 						}
-					}
-					if (Number.isFinite(current) && current >= 0) {
-						currentCPS = current;
-					}
-					updateMetric("cps", formatNumber(avgCPS, 2));
-					updateMetric("cps-current", formatNumber(currentCPS, 2));
-				}
-
-				function findPreviousHistoricalSample(
-					targetTimestamp,
-					upperExclusiveIndex,
-					targetIteration,
-				) {
-					const limit = Number.isInteger(upperExclusiveIndex)
-						? Math.min(Math.max(0, upperExclusiveIndex), metricHistory.length - 1)
-						: metricHistory.length - 1;
-					if (limit < 0 || metricHistory.length === 0) return null;
-					for (let i = limit; i >= 0; i--) {
-						const candidate = metricHistory[i];
-						if (!candidate || !Number.isFinite(candidate.timestamp)) continue;
-						if (!Number.isFinite(targetTimestamp)) return candidate;
-						if (
-							candidate.timestamp < targetTimestamp ||
-							(
-								candidate.timestamp === targetTimestamp &&
-								Number.isFinite(candidate.iteration) &&
-								Number.isFinite(targetIteration) &&
-								candidate.iteration < targetIteration
-							)
-						) {
-							return candidate;
+					</div>
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Evaluations</div>
+						<div style="font-size: 1.5rem; font-weight: 600;" data-metric="evaluations" title={ fmt.Sprintf("%d objective evaluations", job.Evaluations) }>{ formatNumber(float64(job.Evaluations)) }</div>
+						<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Objective function calls</div>
+					</div>
+					<div data-metric-card="cps">
+						<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+							Throughput
+						</div>
+							<div style="font-size: 1.5rem; font-weight: 600;" data-metric="cps">
+								{ formatNumber(averageCPS(job.MetricHistory, job.CPS)) }
+							</div>
+						<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+							avg circles/sec
+						</div>
+						<div style="font-size: 0.75rem; color: var(--text-muted);">
+							Current: <span data-metric="cps-current">{ formatNumber(currentCPS(job.MetricHistory, job.Circles, job.CPS)) }</span> circles/sec
+						</div>
+						<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+							ETA:
+							<span data-metric="eta" style="margin-left: 0.35rem;">{ etaLabel(job.MetricHistory, job.MaxIters) }</span>
+						</div>
+					</div>
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+							Elapsed Time
+						</div>
+						<div style="font-size: 1.5rem; font-weight: 600;" data-metric="elapsed">
+							{ formatDuration(job.ElapsedSec) }
+						</div>
+						<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+							{ formatTimestamp(job.StartTime) }
+						</div>
+						if job.Termination != "" {
+							<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;" data-metric="termination">
+								stopped: { job.Termination }
+							</div>
 						}
+					</div>
+				</div>
+			</div>
+				<!-- Configuration Panel -->
+				<div class="card detail-configuration" style="margin-bottom: 1.5rem;">
+				<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+					Configuration
+				</h2>
+				<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 1rem;">
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted);">Mode</div>
+						<div style="font-weight: 500; text-transform: capitalize;">{ job.Mode }</div>
+					</div>
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted);">Optimizer</div>
+						<div style="font-weight: 500; text-transform: capitalize;">{ job.Optimizer }</div>
+					</div>
+					if job.Variant != "" {
+						<div>
+							<div style="font-size: 0.875rem; color: var(--text-muted);">Variant</div>
+							<div style="font-weight: 500; text-transform: uppercase;">{ job.Variant }</div>
+						</div>
 					}
-					return null;
-				}
-
-				function latestTimestampedHistorySample() {
-					for (let i = metricHistory.length - 1; i >= 0; i--) {
-						const sample = metricHistory[i];
-						if (sample && Number.isFinite(sample.timestamp)) return sample;
+					if job.Optimizer == "cmaes" {
+						<div>
+							<div style="font-size: 0.875rem; color: var(--text-muted);">Initial Sigma</div>
+							<div style="font-weight: 500;">{ fmt.Sprintf("%g", job.InitialSigma) }</div>
+						</div>
+						<div>
+							<div style="font-size: 0.875rem; color: var(--text-muted);">Covariance</div>
+							<div style="font-weight: 500; text-transform: capitalize;">{ job.CovarianceMode }</div>
+						</div>
+						<div>
+							<div style="font-size: 0.875rem; color: var(--text-muted);">Active CMA</div>
+							<div style="font-weight: 500;">{ fmt.Sprintf("%t", job.ActiveCMA) }</div>
+						</div>
+						<div>
+							<div style="font-size: 0.875rem; color: var(--text-muted);">Restart Strategy</div>
+							<div style="font-weight: 500; text-transform: uppercase;">{ job.RestartStrategy }</div>
+						</div>
 					}
-					return metricHistory.length > 0 ? metricHistory[metricHistory.length - 1] : null;
-				}
-
-				function iterationRateFromHistory() {
-					const latest = latestTimestampedHistorySample();
-					if (!latest || !Number.isFinite(latest.timestamp)) return 0;
-					const previous = findPreviousHistoricalSample(
-						latest.timestamp,
-						metricHistory.length - 2,
-						latest.iteration,
-					);
-					if (!previous || !Number.isFinite(previous.timestamp)) return 0;
-					const deltaIterations = latest.iteration - previous.iteration;
-					const deltaMs = latest.timestamp - previous.timestamp;
-					if (deltaIterations <= 0 || deltaMs <= 0) return 0;
-					return (deltaIterations * 1000) / deltaMs;
-				}
-
-				function updateCostImprovementRate(samples) {
-					const source = Array.isArray(samples) ? samples : metricHistory;
-					if (!source || source.length < 2) {
-						updateMetric("cost-improvement-rate", "—");
-						return;
+					if job.EvaluationWorkers > 1 {
+						<div>
+							<div style="font-size: 0.875rem; color: var(--text-muted);">Parallel Evaluation</div>
+							<div style="font-weight: 500;">{ fmt.Sprintf("%d workers", job.EvaluationWorkers) }</div>
+						</div>
 					}
-					let latest = null;
-					let previous = null;
-					for (let i = source.length - 1; i >= 0; i--) {
-						if (!latest && Number.isFinite(source[i].cost)) latest = source[i];
-						else if (latest && Number.isFinite(source[i].cost)) {
-							previous = source[i];
-							break;
-						}
+					if job.FastCompositing {
+						<div>
+							<div style="font-size: 0.875rem; color: var(--text-muted);">Compositing</div>
+							<div style="font-weight: 500;">Fast (+/-1 per channel)</div>
+						</div>
 					}
-					if (
-						!latest ||
-						!previous ||
-						!Number.isFinite(latest.cost) ||
-						!Number.isFinite(previous.cost) ||
-						previous.iteration === latest.iteration
-					) {
-						updateMetric("cost-improvement-rate", "—");
-						return;
-					}
-					const deltaCost = latest.cost - previous.cost;
-					const deltaIter = latest.iteration - previous.iteration;
-					if (!Number.isFinite(deltaIter) || deltaIter <= 0) {
-						updateMetric("cost-improvement-rate", "—");
-						return;
-					}
-					const rate = deltaCost / deltaIter;
-					const formatted = formatNumber(Math.abs(rate), 4);
-					const arrow = rate < 0 ? "↓" : rate > 0 ? "↑" : "→";
-					updateMetric("cost-improvement-rate", arrow + " " + formatted + " / iter");
-				}
-
-				function formatEta(seconds) {
-					if (!Number.isFinite(seconds) || seconds < 0) return "—";
-					if (seconds < 60) return `${Math.round(seconds)}s`;
-					const minutes = Math.floor(seconds / 60);
-					const remainingSeconds = Math.floor(seconds % 60);
-					if (seconds < 3600) {
-						return `${minutes}m ${remainingSeconds}s`;
-					}
-					const hours = Math.floor(minutes / 60);
-					const remainingMinutes = minutes % 60;
-					return `${hours}h ${remainingMinutes}m`;
-				}
-
-				function updateEta(iteration) {
-					if (maxIters <= 0) {
-						updateMetric("eta", "—");
-						return;
-					}
-					const completed = Number.parseInt(iteration, 10);
-					if (!Number.isFinite(completed) || completed < 0) {
-						updateMetric("eta", "—");
-						return;
-					}
-					if (completed >= maxIters) {
-						updateMetric("eta", "0s");
-						return;
-					}
-					const rate = iterationRateFromHistory();
-					if (!Number.isFinite(rate) || rate <= 0) {
-						updateMetric("eta", "—");
-						return;
-					}
-					const remaining = maxIters - completed;
-					updateMetric("eta", formatEta(remaining / rate));
-				}
-
-				function initializeParameterViewer() {
-					const viewer = document.getElementById("parameter-viewer");
-					if (!viewer) return;
-					viewer.addEventListener("toggle", function () {
-						if (viewer.open) refreshParameterViewer();
-					});
-
-					const data = document.getElementById("parameter-data");
-					if (!data) return;
-					try {
-						const circles = JSON.parse(data.textContent) || [];
-						if (circles.length > 0) renderParameters(circles);
-					} catch (err) {
-						console.error("Unable to parse parameter data:", err);
-					}
-				}
-
-				function initializeDownloadControls() {
-					const reportButton = document.getElementById("download-report");
-					if (reportButton) {
-						reportButton.addEventListener("click", downloadReport);
-					}
-					syncArtifactDownloadColormap();
-				}
-
-				async function downloadReport() {
-					const button = document.getElementById("download-report");
-					const status = document.getElementById("report-download-status");
-					if (!button || button.disabled) return;
-
-					button.disabled = true;
-					button.setAttribute("aria-busy", "true");
-					const originalText = button.textContent;
-					button.textContent = "Generating report…";
-					if (status) status.textContent = "Rendering images and assembling report…";
-					try {
-						const response = await fetch(
-							"/api/v1/jobs/" + jobId + "/report.html?colormap=" +
-							encodeURIComponent(selectedHeatmapColormap()),
-							{ cache: "no-store" },
-						);
-						if (!response.ok) throw new Error("HTTP " + response.status);
-						const blob = await response.blob();
-						const objectURL = URL.createObjectURL(blob);
-						const link = document.createElement("a");
-						link.href = objectURL;
-						link.download = "job-" + jobId + "-report.html";
-						document.body.appendChild(link);
-						link.click();
-						link.remove();
-						setTimeout(function () { URL.revokeObjectURL(objectURL); }, 1000);
-						if (status) status.textContent = "Report download ready.";
-					} catch (err) {
-						console.error("Unable to generate report:", err);
-						if (status) status.textContent = "Report generation failed. Please try again.";
-					} finally {
-						button.removeAttribute("aria-busy");
-						button.textContent = originalText;
-						button.disabled = false;
-					}
-				}
-
-				async function refreshParameterViewer() {
-					const viewer = document.getElementById("parameter-viewer");
-					if (!viewer || !viewer.open || parameterRefreshPending) return;
-					parameterRefreshPending = true;
-					try {
-						const response = await fetch(
-							"/api/v1/jobs/" + jobId + "/params.json",
-							{ cache: "no-store", headers: { Accept: "application/json" } },
-						);
-						if (response.status === 404) return;
-						if (!response.ok) throw new Error("HTTP " + response.status);
-						const snapshot = await response.json();
-						renderParameters(snapshot.circles || []);
-					} catch (err) {
-						console.error("Unable to refresh parameters:", err);
-					} finally {
-						parameterRefreshPending = false;
-					}
-				}
-
-				function renderParameters(circles) {
-					const list = document.getElementById("parameter-list");
-					const empty = document.getElementById("parameter-empty");
-					const count = document.getElementById("parameter-count");
-					const exportLink = document.getElementById("parameter-export");
-					if (!list || !empty || !count) return;
-
-					list.replaceChildren();
-					circles.forEach(function (circle) {
-						const description = formatParameter(circle);
-						const item = document.createElement("li");
-						item.title = description;
-						const swatch = document.createElement("span");
-						swatch.className = "parameter-color";
-						swatch.style.backgroundColor =
-							"rgba(" +
-							colorChannel(circle.red) + ", " +
-							colorChannel(circle.green) + ", " +
-							colorChannel(circle.blue) + ", " +
-							circle.opacity.toFixed(3) + ")";
-						const text = document.createElement("span");
-						text.textContent = description;
-						item.append(swatch, text);
-						list.appendChild(item);
-					});
-
-					count.textContent = circles.length;
-					list.style.display = circles.length > 0 ? "block" : "none";
-					empty.style.display = circles.length > 0 ? "none" : "block";
-					if (exportLink) {
-						exportLink.setAttribute(
-							"aria-disabled",
-							circles.length > 0 ? "false" : "true",
-						);
-						exportLink.tabIndex = circles.length > 0 ? 0 : -1;
-					}
-					updateResultDownloads(circles.length > 0);
-				}
-
-				function updateResultDownloads(available) {
-					document.querySelectorAll("[data-result-download]").forEach(function (control) {
-						if (control.tagName === "BUTTON") {
-							control.disabled =
-								!available || control.getAttribute("aria-busy") === "true";
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted);">Circles</div>
+						<div style="font-weight: 500;">{ fmt.Sprintf("%d", job.Circles) }</div>
+					</div>
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted);">Population Size</div>
+						<div style="font-weight: 500;">{ fmt.Sprintf("%d", job.PopSize) }</div>
+					</div>
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted);">Optimizer Schedule</div>
+						<div style="font-weight: 500;">{ fmt.Sprintf("%d × %d iterations", job.OptimizerEpochs, job.ItersPerEpoch) }</div>
+					</div>
+					<div>
+						<div style="font-size: 0.875rem; color: var(--text-muted);">Active-set Polishing</div>
+						if job.PolishingEnabled {
+							if job.PolishingOnly {
+								<div style="font-weight: 500;">Continuation only · { fmt.Sprintf("up to %d sweeps of %d circles", job.PolishingMaxSweeps, job.PolishingActiveSetSize) }</div>
+							} else {
+								<div style="font-weight: 500;">Enabled · { fmt.Sprintf("up to %d sweeps of %d circles", job.PolishingMaxSweeps, job.PolishingActiveSetSize) }</div>
+							}
+							<div style="font-size: 0.75rem; color: var(--text-muted);">{ fmt.Sprintf("%s · population %d · %d × %d iterations · stagnation %d · progress threshold %.4g", job.PolishingStrategy, job.PolishingPopSize, job.PolishingEpochs, job.PolishingIters, job.PolishingStagnationIters, job.PolishingMinImprovement) }</div>
 						} else {
-							control.setAttribute("aria-disabled", available ? "false" : "true");
-							control.tabIndex = available ? 0 : -1;
+							<div style="font-weight: 500;">Disabled</div>
 						}
-					});
-				}
-
-				function formatParameter(circle) {
-					return (
-						"Circle " + circle.number + ": (" +
-						circle.x.toFixed(2) + ", " +
-						circle.y.toFixed(2) + ", " +
-						circle.radius.toFixed(2) + ") RGB(" +
-						colorChannel(circle.red) + ", " +
-						colorChannel(circle.green) + ", " +
-						colorChannel(circle.blue) + ") α=" +
-						circle.opacity.toFixed(3)
-					);
-				}
-
-				function colorChannel(value) {
-					return Math.round(Math.min(1, Math.max(0, value)) * 255);
-				}
-
-				function formatNumber(n, decimals) {
-					if (!Number.isFinite(n)) return "—";
-					const precision = Number.isInteger(decimals) ? decimals : 0;
-					if (n >= 1000000) {
-						return (n / 1000000).toFixed(Math.max(0, precision)) + "M";
-					} else if (n >= 1000) {
-						return (n / 1000).toFixed(Math.max(0, precision)) + "K";
+					</div>
+					<div style="grid-column: 1 / -1;">
+						<div style="font-size: 0.875rem; color: var(--text-muted);">Reference Image</div>
+						<div style="font-weight: 500; font-family: monospace; font-size: 0.875rem;">{ job.RefPath }</div>
+					</div>
+				</div>
+			</div>
+				<!-- Artifact downloads -->
+				<div class="card detail-downloads download-card" style="margin-bottom: 1.5rem;">
+					<div class="download-header">
+						<h2 style="font-size: 1.125rem; font-weight: 600;">Downloads</h2>
+						<p style="color: var(--text-muted); font-size: 0.8125rem;">Current immutable result artifacts</p>
+					</div>
+					<div class="download-grid">
+					<a
+						class="btn download-button"
+						href={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/best.png?download=1", job.ID)) }
+						download={ fmt.Sprintf("job-%s-best.png", job.ID) }
+						aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
+						tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
+					>Best PNG</a>
+					<a
+						class="btn download-button"
+						href={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/params.json", job.ID)) }
+						download={ fmt.Sprintf("job-%s-params.json", job.ID) }
+						aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
+						tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
+					>Parameters JSON</a>
+					<a
+						id="download-difference"
+						class="btn download-button"
+						href={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/diff.png?colormap=turbo&download=1", job.ID)) }
+						download={ fmt.Sprintf("job-%s-diff.png", job.ID) }
+						aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
+						tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
+					>Difference PNG</a>
+					// The report is rendered on demand and handed over as a blob, so
+					// it is the one artifact with no URL to link to. Without the
+					// bundle there is nothing to click, and a disabled button says
+					// that more honestly than a link that would 404.
+					<button
+						id="download-report"
+						class="btn download-button"
+						type="button"
+						disabled
+						aria-disabled="true"
+						title="The HTML report is assembled in the browser and needs the interactive controls to load."
+					>HTML Report</button>
+				</div>
+				<p id="report-download-status" role="status" aria-live="polite" style="min-height: 1rem; margin-top: 0.5rem; color: var(--text-muted); font-size: 0.75rem;"></p>
+			</div>
+				<!-- Current best parameter viewer -->
+				<div class="card detail-parameters" style="margin-bottom: 1.5rem;">
+					<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem;">
+					<div>
+						<h2 style="font-size: 1.25rem; font-weight: 600;">Current Best Parameters</h2>
+						<p style="font-size: 0.875rem; color: var(--text-muted);">
+							<span id="parameter-count">{ fmt.Sprintf("%d", len(job.Parameters)) }</span> of { fmt.Sprintf("%d", job.Circles) } circles available
+						</p>
+					</div>
+					<a
+						id="parameter-export"
+						class="btn parameter-export"
+						style="background-color: var(--border-color); font-size: 0.875rem;"
+						href={ templ.URL(fmt.Sprintf("/api/v1/jobs/%s/params.json", job.ID)) }
+						download={ fmt.Sprintf("job-%s-params.json", job.ID) }
+						aria-disabled={ fmt.Sprintf("%t", len(job.Parameters) == 0) }
+						tabindex={ parameterTabIndex(len(job.Parameters) > 0) }
+					>
+						Download params.json
+					</a>
+				</div>
+				<details id="parameter-viewer" class="parameter-viewer" style="margin-top: 1rem;">
+					<summary>
+						<span style="font-weight: 600;">Inspect circles</span>
+						<span style="font-size: 0.75rem; color: var(--text-muted);">X, Y, radius, RGB, opacity</span>
+					</summary>
+					<p id="parameter-empty" style={ fmt.Sprintf("display: %s; margin-top: 1rem; color: var(--text-muted); font-size: 0.875rem;", displayValue(len(job.Parameters) == 0)) }>
+						No best parameters available yet.
+					</p>
+					<ol id="parameter-list" class="parameter-list" style={ fmt.Sprintf("display: %s;", displayValue(len(job.Parameters) > 0)) }>
+						for _, circle := range job.Parameters {
+							<li title={ parameterDescription(circle) }>
+								<span class="parameter-color" style={ fmt.Sprintf("background-color: rgba(%d, %d, %d, %.3f);", colorChannel(circle.Red), colorChannel(circle.Green), colorChannel(circle.Blue), circle.Opacity) }></span>
+								<span>{ parameterDescription(circle) }</span>
+							</li>
+						}
+					</ol>
+				</details>
+			</div>
+			// MountIsland is false: this card sits inside the job-detail island
+			// root, which replaces every child when it mounts, so advertising a
+			// second mount point here would start a React root over a node on its
+			// way out. JobDetail.tsx renders the shared ImageViewer component in
+			// its place, exactly as the campaign page does.
+			@ImageViewer(ImageViewerData{
+				JobID:           job.ID,
+				DefaultMode:     "side-by-side",
+				BestRevision:    job.BestRevision,
+				ReferenceImageURL: fmt.Sprintf("/api/v1/jobs/%s/ref.png", job.ID),
+				BestImageURL:      fmt.Sprintf("/api/v1/jobs/%s/best.png", job.ID),
+				DiffImageURL:      fmt.Sprintf("/api/v1/jobs/%s/diff.png", job.ID),
+				JobState:          job.State,
+				MaxIterations:     job.MaxIters,
+				CircleCount:       job.Circles,
+				ReferenceWidth:    job.RefWidth,
+				ReferenceHeight:   job.RefHeight,
+				ReferenceSize:     job.RefSize,
+				ShowMetadata:      true,
+				ExtraClass:        "detail-images",
+			})
+				<!-- Metric history, immediately after the images -->
+				<div id="metric-history-card" class="card detail-history" style="margin-bottom: 1.5rem;">
+					<div class="row-between" style="margin-bottom: 1rem;">
+						<div>
+							<h2 style="font-size: 1.25rem; font-weight: 600;">Metric History</h2>
+							<p style="font-size: 0.8125rem; color: var(--text-muted);">Quality over optimizer iterations</p>
+						</div>
+					</div>
+					if len(job.MetricHistory) == 0 {
+						<p id="metric-history-empty" style="color: var(--text-muted); font-size: 0.875rem;">No metric samples yet. History will appear when optimization begins.</p>
 					} else {
-						return n.toFixed(Math.max(0, precision));
+						// The fallback is the numbers, not the picture: the chart is
+						// drawn onto a canvas by the island, and a canvas the bundle
+						// never reaches is an empty box. A table says the same thing
+						// and says it to a screen reader as well.
+						<p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 0.75rem;">
+							{ fmt.Sprintf("%d samples recorded. The interactive chart needs JavaScript; the table below is the same series.", len(job.MetricHistory)) }
+						</p>
+						<div style="max-height: 20rem; overflow: auto; border: 1px solid var(--border-color); border-radius: 0.375rem;">
+							<table id="metric-history-table" style="width: 100%; border-collapse: collapse; font-size: 0.8125rem; font-family: monospace;">
+								<caption class="sr-only">Recorded metric samples over optimizer iterations</caption>
+								<thead>
+									<tr>
+										<th scope="col" style="text-align: right; padding: 0.35rem 0.6rem;">Iteration</th>
+										<th scope="col" style="text-align: right; padding: 0.35rem 0.6rem;">Cost</th>
+										<th scope="col" style="text-align: right; padding: 0.35rem 0.6rem;">PSNR</th>
+										if job.SSIMEnabled {
+											<th scope="col" style="text-align: right; padding: 0.35rem 0.6rem;">SSIM</th>
+										}
+										<th scope="col" style="text-align: right; padding: 0.35rem 0.6rem;">CPS</th>
+									</tr>
+								</thead>
+								<tbody>
+									for _, sample := range historyTail(job.MetricHistory) {
+										<tr>
+											<td style="text-align: right; padding: 0.35rem 0.6rem;">{ fmt.Sprintf("%d", sample.Iteration) }</td>
+											<td style="text-align: right; padding: 0.35rem 0.6rem;">{ fmt.Sprintf("%.4f", sample.Cost) }</td>
+											<td style="text-align: right; padding: 0.35rem 0.6rem;">{ samplePSNR(sample) }</td>
+											if job.SSIMEnabled {
+												<td style="text-align: right; padding: 0.35rem 0.6rem;">{ sampleSSIM(sample) }</td>
+											}
+											<td style="text-align: right; padding: 0.35rem 0.6rem;">{ fmt.Sprintf("%.2f", sample.CPS) }</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						</div>
 					}
-				}
-
-				function addMetricSample(data) {
-					const firstSample = metricHistory.length === 0;
-					const normalized = {
-						iteration: Number.parseInt(data.iterations, 10) || 0,
-						evaluations: Number.parseInt(data.evaluations, 10) || 0,
-						cost: Number.parseFloat(data.bestCost) || 0,
-						psnr: Number.isFinite(data.psnr) ? Number.parseFloat(data.psnr) : null,
-						psnrInfinite: data.psnrInfinite === true,
-						ssim: Number.isFinite(data.ssim) ? Number.parseFloat(data.ssim) : null,
-						cps: Number.isFinite(data.cps) ? Number.parseFloat(data.cps) : 0,
-						timestamp: parseSampleTimestamp(data.timestamp),
-					};
-					if (normalized.timestamp == null || !Number.isFinite(normalized.timestamp)) {
-						normalized.timestamp = Date.now();
-					}
-					metricHistory.push(normalized);
-					updateThroughputDisplay(normalized);
-					updateCostImprovementRate();
-					updateEta(normalized.iteration);
-					if (firstSample) {
-						sparklineVisible = true;
-						const emptyState = document.getElementById("metric-history-empty");
-						if (emptyState) emptyState.style.display = "none";
-						if (sparklineContainer) sparklineContainer.style.display = "block";
-						if (toggleBtn) toggleBtn.style.display = "inline-flex";
-					}
-					if (sparklineVisible) updateSparkline();
-				}
-
-				function selectedMetricPoints() {
-					const series = metricSeries ? metricSeries.value : "cost";
-					const allPoints = metricHistory
-						.map(function (sample) {
-							const value = sample[series];
-							return typeof value === "number" && Number.isFinite(value)
-								? { iteration: sample.iteration, value: value }
-								: null;
-						})
-						.filter(function (point) {
-							return point !== null;
-						});
-					const windowValue = metricWindow ? metricWindow.value : "all";
-					const windowSize = Number.parseInt(windowValue, 10);
-					const points = Number.isFinite(windowSize)
-						? allPoints.slice(-windowSize)
-						: allPoints;
-					return {
-						series: series,
-						points: points,
-						total: allPoints.length,
-					};
-				}
-
-				function formatMetricValue(series, value) {
-					if (series === "psnr") return value.toFixed(2) + " dB";
-					if (series === "cps") return value.toFixed(2) + " cps";
-					return value.toFixed(4);
-				}
-
-				function formatAxisValue(series, value) {
-					const magnitude = Math.abs(value);
-					if (magnitude !== 0 && (magnitude >= 10000 || magnitude < 0.001)) {
-						return value.toExponential(2);
-					}
-					if (series === "ssim") return value.toFixed(3);
-					if (series === "psnr") return value.toFixed(1);
-					if (series === "cps") return value.toFixed(2);
-					return value.toFixed(magnitude < 10 ? 3 : 1);
-				}
-
-				function appendSVG(parent, tag, attributes, text) {
-					const element = document.createElementNS("http://www.w3.org/2000/svg", tag);
-					Object.entries(attributes).forEach(function (entry) {
-						element.setAttribute(entry[0], entry[1]);
-					});
-					if (text !== undefined) element.textContent = text;
-					parent.appendChild(element);
-					return element;
-				}
-
-				function updateSparkline() {
-					const svg = document.getElementById("cost-sparkline");
-					const line = document.getElementById("sparkline-line");
-					const dot = document.getElementById("sparkline-dot");
-					const grid = document.getElementById("sparkline-grid");
-					const axes = document.getElementById("sparkline-axes");
-					const empty = document.getElementById("sparkline-empty");
-					if (!svg || !line || !grid || !axes || !empty) return;
-					const selected = selectedMetricPoints();
-					const points = selected.points;
-					const values = points.map(function (point) { return point.value; });
-					document.getElementById("sparkline-samples").textContent =
-						values.length;
-					document.getElementById("sparkline-total-samples").textContent =
-						selected.total;
-					document.getElementById("sparkline-best-label").textContent =
-						selected.series === "cost" ? "Min" : "Max";
-					grid.replaceChildren();
-					axes.replaceChildren();
-					const width = Math.max(480, Math.round(svg.clientWidth || 960));
-					const height = 280;
-					const margin = { top: 18, right: 18, bottom: 48, left: 76 };
-					const plotWidth = width - margin.left - margin.right;
-					const plotHeight = height - margin.top - margin.bottom;
-					svg.setAttribute("viewBox", "0 0 " + width + " " + height);
-					empty.setAttribute("x", width / 2);
-					empty.setAttribute("y", height / 2);
-					if (values.length === 0) {
-						sparklineInteraction = null;
-						line.setAttribute("points", "");
-						dot.style.display = "none";
-						empty.style.display = "block";
-						document.getElementById("sparkline-start").textContent = "-";
-						document.getElementById("sparkline-current").textContent = "-";
-						document.getElementById("sparkline-min").textContent = "-";
-						return;
-					}
-					empty.style.display = "none";
-
-					const minimum = Math.min(...values);
-					const maximum = Math.max(...values);
-					const rawRange = maximum - minimum;
-					const yPadding = rawRange === 0 ? Math.max(Math.abs(maximum) * 0.05, 1) : rawRange * 0.05;
-					const yMinimum = minimum - yPadding;
-					const yMaximum = maximum + yPadding;
-					const yRange = yMaximum - yMinimum;
-					const xMinimum = points[0].iteration;
-					const xMaximum = points[points.length - 1].iteration;
-					const xRange = xMaximum - xMinimum;
-					const xPosition = function (iteration) {
-						if (xRange === 0) return margin.left + plotWidth / 2;
-						return margin.left + ((iteration - xMinimum) / xRange) * plotWidth;
-					};
-					const yPosition = function (value) {
-						return margin.top + ((yMaximum - value) / yRange) * plotHeight;
-					};
-					sparklineInteraction = { series: selected.series, points: points, xPosition: xPosition, yPosition: yPosition, margin: margin, height: height, width: width };
-
-					const tickCount = 5;
-					for (let i = 0; i < tickCount; i++) {
-						const fraction = i / (tickCount - 1);
-						const y = margin.top + fraction * plotHeight;
-						const yValue = yMaximum - fraction * yRange;
-						appendSVG(grid, "line", { x1: margin.left, y1: y, x2: width - margin.right, y2: y, stroke: "var(--border-color)", "stroke-width": 1 });
-						appendSVG(axes, "text", { x: margin.left - 10, y: y + 4, "text-anchor": "end", fill: "var(--text-muted)", "font-size": 11 }, formatAxisValue(selected.series, yValue));
-					}
-					const xTickCount = xRange === 0 ? 1 : tickCount;
-					for (let i = 0; i < xTickCount; i++) {
-						const fraction = xTickCount === 1 ? 0.5 : i / (xTickCount - 1);
-						const x = margin.left + fraction * plotWidth;
-						const iteration = Math.round(xMinimum + fraction * xRange);
-						appendSVG(grid, "line", { x1: x, y1: margin.top, x2: x, y2: height - margin.bottom, stroke: "var(--grid-color)", "stroke-width": 1 });
-						appendSVG(axes, "text", { x: x, y: height - margin.bottom + 19, "text-anchor": "middle", fill: "var(--text-muted)", "font-size": 11 }, iteration.toLocaleString());
-					}
-					appendSVG(axes, "line", { x1: margin.left, y1: margin.top, x2: margin.left, y2: height - margin.bottom, stroke: "var(--text-muted)", "stroke-width": 1 });
-					appendSVG(axes, "line", { x1: margin.left, y1: height - margin.bottom, x2: width - margin.right, y2: height - margin.bottom, stroke: "var(--text-muted)", "stroke-width": 1 });
-					appendSVG(axes, "text", { x: margin.left + plotWidth / 2, y: height - 10, "text-anchor": "middle", fill: "var(--text-muted)", "font-size": 12, "font-weight": 600 }, "Iteration");
-					const yLabel = selected.series === "psnr"
-						? "PSNR (dB)"
-						: selected.series === "cps"
-							? "CPS (circles/sec)"
-							: selected.series.toUpperCase();
-					appendSVG(axes, "text", { x: 16, y: margin.top + plotHeight / 2, "text-anchor": "middle", fill: "var(--text-muted)", "font-size": 12, "font-weight": 600, transform: "rotate(-90 16 " + (margin.top + plotHeight / 2) + ")" }, yLabel);
-
-					const linePoints = values
-						.map((value, i) => {
-							return xPosition(selected.points[i].iteration) + "," + yPosition(value);
-						})
-						.join(" ");
-					line.setAttribute("points", linePoints);
-					const lastValue = values[values.length - 1];
-					dot.setAttribute("cx", xPosition(selected.points[selected.points.length - 1].iteration));
-					dot.setAttribute("cy", yPosition(lastValue));
-					dot.style.display = "block";
-					document.getElementById("sparkline-start").textContent =
-						formatMetricValue(selected.series, values[0]);
-					document.getElementById("sparkline-current").textContent =
-						formatMetricValue(selected.series, lastValue);
-					const best = selected.series === "cost" ? minimum : maximum;
-					document.getElementById("sparkline-min").textContent =
-						formatMetricValue(selected.series, best);
-					showLatestSparklinePoint();
-				}
-
-				function renderSparklineHover(point) {
-					if (!sparklineInteraction || !point) return;
-					const layer = document.getElementById("sparkline-hover-layer");
-					const line = document.getElementById("sparkline-hover-line");
-					const dot = document.getElementById("sparkline-hover-dot");
-					const tooltip = document.getElementById("sparkline-tooltip");
-					const tooltipText = "Iteration " + point.iteration.toLocaleString() + " · " + formatMetricValue(sparklineInteraction.series, point.value);
-					const x = sparklineInteraction.xPosition(point.iteration);
-					const y = sparklineInteraction.yPosition(point.value);
-					line.setAttribute("x1", x); line.setAttribute("x2", x);
-					line.setAttribute("y1", sparklineInteraction.margin.top); line.setAttribute("y2", sparklineInteraction.height - sparklineInteraction.margin.bottom);
-					dot.setAttribute("cx", x); dot.setAttribute("cy", y);
-					layer.style.display = "block";
-					document.getElementById("sparkline-hover-readout").textContent = "Iteration " + point.iteration.toLocaleString() + " · " + formatMetricValue(sparklineInteraction.series, point.value);
-					if (tooltip) {
-						tooltip.textContent = tooltipText;
-						tooltip.style.opacity = 1;
-					}
-					hoveredSample = point;
-					positionSparklineTooltip();
-				}
-
-				// Placing the tooltip belongs to the renderer, not to the pointer
-				// handler that used to own it: focus and the arrow keys select
-				// points too, and they would otherwise leave the tooltip visible
-				// wherever the mouse last put it.
-				function positionSparklineTooltip() {
-					if (sparklineTooltip == null) {
-						sparklineTooltip = document.getElementById("sparkline-tooltip");
-					}
-					const svg = document.getElementById("cost-sparkline");
-					const container = document.getElementById("cost-sparkline-container");
-					if (!sparklineTooltip || !hoveredSample || !sparklineInteraction || !svg || !container) return;
-					// xPosition/yPosition are viewBox units; the SVG is scaled to the
-					// card width and sits below the controls, so both the scale and the
-					// SVG's offset inside the container have to be applied before the
-					// tooltip can be placed in CSS pixels.
-					const rect = svg.getBoundingClientRect();
-					const containerRect = container.getBoundingClientRect();
-					const scaleX = sparklineInteraction.width === 0 ? 1 : rect.width / sparklineInteraction.width;
-					const scaleY = sparklineInteraction.height === 0 ? 1 : rect.height / sparklineInteraction.height;
-					const offsetX = rect.left - containerRect.left;
-					const offsetY = rect.top - containerRect.top;
-					const pointX = offsetX + sparklineInteraction.xPosition(hoveredSample.iteration) * scaleX;
-					const pointY = offsetY + sparklineInteraction.yPosition(hoveredSample.value) * scaleY;
-					const tooltipWidth = sparklineTooltip.offsetWidth;
-					const tooltipHeight = sparklineTooltip.offsetHeight;
-					const maxLeft = Math.max(8, containerRect.width - tooltipWidth - 8);
-					const left = Math.min(Math.max(8, pointX + 12), maxLeft);
-					const top = Math.min(Math.max(8, pointY - tooltipHeight - 8), Math.max(8, containerRect.height - tooltipHeight - 8));
-					sparklineTooltip.style.left = `${left}px`;
-					sparklineTooltip.style.top = `${top}px`;
-				}
-
-				function updateSparklineHover(event) {
-					if (
-						!sparklineInteraction ||
-						!sparklineInteraction.points ||
-						sparklineInteraction.points.length === 0
-					) return;
-					const svg = document.getElementById("cost-sparkline");
-					const rect = svg.getBoundingClientRect();
-					const x = ((event.clientX - rect.left) / rect.width) * sparklineInteraction.width;
-					let nearest = sparklineInteraction.points[0];
-					let distance = Math.abs(sparklineInteraction.xPosition(nearest.iteration) - x);
-					sparklineInteraction.points.forEach(function (point) {
-						const candidate = Math.abs(sparklineInteraction.xPosition(point.iteration) - x);
-						if (candidate < distance) { nearest = point; distance = candidate; }
-					});
-					renderSparklineHover(nearest);
-				}
-
-				// The chart is focusable and role="img", but the readout beside it
-				// was driven by pointer events alone, so a keyboard reader could
-				// land on the chart and be told nothing. Arrow keys walk the very
-				// list the pointer path snaps to and hand the point to the same
-				// renderer, so both routes announce identical text.
-				function moveSparklineSelection(event) {
-					if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-					if (
-						!sparklineInteraction ||
-						!sparklineInteraction.points ||
-						sparklineInteraction.points.length === 0
-					) return;
-					const points = sparklineInteraction.points;
-					const last = points.length - 1;
-					let index = hoveredSample ? points.indexOf(hoveredSample) : -1;
-					if (index < 0) index = last;
-					switch (event.key) {
-						case "ArrowLeft": index = Math.max(0, index - 1); break;
-						case "ArrowRight": index = Math.min(last, index + 1); break;
-						case "Home": index = 0; break;
-						case "End": index = last; break;
-						default: return;
-					}
-					event.preventDefault();
-					renderSparklineHover(points[index]);
-				}
-
-				function showLatestSparklinePoint() {
-					if (!sparklineInteraction || sparklineInteraction.points.length === 0) return;
-					renderSparklineHover(sparklineInteraction.points[sparklineInteraction.points.length - 1]);
-				}
-
-				function clearSparklineHover() {
-					const layer = document.getElementById("sparkline-hover-layer");
-					if (layer) layer.style.display = "none";
-					if (sparklineTooltip) {
-						sparklineTooltip.style.opacity = 0;
-					}
-					if (sparklineInteraction) {
-						if (!sparklineInteraction.points || sparklineInteraction.points.length === 0) return;
-						const latest = sparklineInteraction.points[sparklineInteraction.points.length - 1];
-						document.getElementById("sparkline-hover-readout").textContent = "Latest: iteration " + latest.iteration.toLocaleString() + " · " + formatMetricValue(sparklineInteraction.series, latest.value);
-					}
-				}
-			})();
-			</script>
-			@IslandBundle()
-		}
+				</div>
+			</div>
+			<noscript>
+				<p style="margin-top: 1rem; font-size: 0.8125rem; color: var(--text-muted);">
+					Live updates, the metric chart, the report download and the job actions need JavaScript. Everything above is the state at the moment this page was served; reload it for a newer one.
+				</p>
+			</noscript>
+		</div>
+		@templ.JSONScript("job-detail-data", job)
+	}
 }
 
 // JobNotFound displays a 404 page for jobs that don't exist
@@ -1567,6 +730,35 @@ func progressPercent(iterations, maximum int) float64 {
 	return min(100, max(0, float64(iterations)/float64(maximum)*100))
 }
 
+// historyTailLimit bounds the fallback table. A long run records thousands of
+// samples and the fallback exists to be readable, not exhaustive; the island
+// draws the whole series.
+const historyTailLimit = 200
+
+func historyTail(history []MetricSample) []MetricSample {
+	if len(history) <= historyTailLimit {
+		return history
+	}
+	return history[len(history)-historyTailLimit:]
+}
+
+func samplePSNR(sample MetricSample) string {
+	if sample.PSNRInfinite {
+		return "∞"
+	}
+	if sample.PSNR == nil {
+		return "—"
+	}
+	return fmt.Sprintf("%.2f", *sample.PSNR)
+}
+
+func sampleSSIM(sample MetricSample) string {
+	if sample.SSIM == nil {
+		return "—"
+	}
+	return fmt.Sprintf("%.4f", *sample.SSIM)
+}
+
 // Helper function to format large numbers with K/M suffix
 func formatNumber(n float64) string {
 	if n >= 1_000_000 {
@@ -1576,6 +768,22 @@ func formatNumber(n float64) string {
 	} else {
 		return fmt.Sprintf("%.0f", n)
 	}
+}
+
+// formatCompactNumber is formatNumber with a caller-chosen precision, which the
+// cost-change rate needs: four decimals on a value that is normally far below
+// one. formatNumber is formatCompactNumber(n, 1, 1, 0) and stays separate only
+// because it is the form every other call site wants.
+func formatCompactNumber(n float64, decimals int) string {
+	if math.IsNaN(n) || math.IsInf(n, 0) {
+		return "—"
+	}
+	if n >= 1_000_000 {
+		return fmt.Sprintf("%.*fM", decimals, n/1_000_000)
+	} else if n >= 1_000 {
+		return fmt.Sprintf("%.*fK", decimals, n/1_000)
+	}
+	return fmt.Sprintf("%.*f", decimals, n)
 }
 
 // Helper function to format duration in seconds to human-readable string
@@ -1610,4 +818,243 @@ func formatFileSize(size int64) string {
 // Helper function to format timestamp
 func formatTimestamp(t time.Time) string {
 	return t.Format("Jan 2, 2006 3:04 PM")
+}
+
+// The five helpers below are the derived figures the metric panel shows: the
+// cost-change rate, the two throughput readings and the ETA. They used to be
+// computed only in the browser, which left the server rendering an em dash in
+// four places and made "the same numbers before and after mount" impossible to
+// state, let alone test. They are mirrored field for field in
+// web/src/JobDetail.tsx and pinned by web/src/job-detail-parity.json, which
+// both languages check themselves against.
+
+// sampleInstant reports a sample's timestamp in milliseconds and whether it has
+// one at all. A sample recorded before the run learned its clock carries the
+// zero time, which is not an instant on the timeline and must not be compared
+// as if it were -- the mirror recognizes the same value through its RFC 3339
+// spelling.
+func sampleInstant(sample MetricSample) (float64, bool) {
+	if sample.Timestamp.IsZero() {
+		return 0, false
+	}
+	return float64(sample.Timestamp.UnixNano()) / 1e6, true
+}
+
+// latestHistorySample is the newest sample carrying an instant, or, when none
+// does, simply the newest sample. The distinction matters: throughput needs two
+// instants to divide by, while the average it also reports does not.
+func latestHistorySample(history []MetricSample) (MetricSample, bool) {
+	for i := len(history) - 1; i >= 0; i-- {
+		if _, ok := sampleInstant(history[i]); ok {
+			return history[i], true
+		}
+	}
+
+	if len(history) > 0 {
+		return history[len(history)-1], true
+	}
+
+	return MetricSample{}, false
+}
+
+// previousHistorySample walks back from upperExclusive for the newest sample
+// strictly older than the target. Two samples may share an instant when the
+// clock is coarser than the loop, so an equal instant is only older when its
+// iteration is lower.
+func previousHistorySample(history []MetricSample, upperExclusive int, target MetricSample) (MetricSample, bool) {
+	limit := min(max(0, upperExclusive), len(history)-1)
+	if limit < 0 || len(history) == 0 {
+		return MetricSample{}, false
+	}
+
+	targetInstant, targetHasInstant := sampleInstant(target)
+
+	for i := limit; i >= 0; i-- {
+		instant, ok := sampleInstant(history[i])
+		if !ok {
+			continue
+		}
+
+		if !targetHasInstant {
+			return history[i], true
+		}
+
+		if instant < targetInstant || (instant == targetInstant && history[i].Iteration < target.Iteration) {
+			return history[i], true
+		}
+	}
+
+	return MetricSample{}, false
+}
+
+// averageCPS is the run's own average as the newest sample recorded it. The
+// job-level figure is the fallback for a run that has recorded nothing yet.
+func averageCPS(history []MetricSample, fallback float64) float64 {
+	latest, ok := latestHistorySample(history)
+	if !ok {
+		return fallback
+	}
+
+	if math.IsNaN(latest.CPS) || math.IsInf(latest.CPS, 0) {
+		return 0
+	}
+
+	return latest.CPS
+}
+
+// currentCPS is the instantaneous rate across the two newest samples, which is
+// what says whether a run is speeding up or slowing down; the average cannot.
+// It falls back to the job-level figure whenever the two samples cannot be
+// differenced -- no second sample, no clock, no advance in evaluations.
+func currentCPS(history []MetricSample, circles int, fallback float64) float64 {
+	latest, ok := latestHistorySample(history)
+	if !ok {
+		return fallback
+	}
+
+	latestInstant, hasInstant := sampleInstant(latest)
+	if !hasInstant || circles <= 0 {
+		return fallback
+	}
+
+	previous, ok := previousHistorySample(history, len(history)-2, latest)
+	if !ok || previous.Evaluations == latest.Evaluations {
+		return fallback
+	}
+
+	previousInstant, _ := sampleInstant(previous)
+
+	deltaEvaluations := latest.Evaluations - previous.Evaluations
+	deltaMilliseconds := latestInstant - previousInstant
+
+	if deltaEvaluations <= 0 || deltaMilliseconds <= 0 {
+		return fallback
+	}
+
+	return (float64(deltaEvaluations) * float64(circles)) / (deltaMilliseconds / 1000)
+}
+
+// iterationRate is iterations per second across the two newest samples, and the
+// only rate an ETA may be built from: the average would keep promising the
+// speed of a warm-up that is long over.
+func iterationRate(history []MetricSample) float64 {
+	latest, ok := latestHistorySample(history)
+	if !ok {
+		return 0
+	}
+
+	latestInstant, hasInstant := sampleInstant(latest)
+	if !hasInstant {
+		return 0
+	}
+
+	previous, ok := previousHistorySample(history, len(history)-2, latest)
+	if !ok {
+		return 0
+	}
+
+	previousInstant, hasPrevious := sampleInstant(previous)
+	if !hasPrevious {
+		return 0
+	}
+
+	deltaIterations := latest.Iteration - previous.Iteration
+	deltaMilliseconds := latestInstant - previousInstant
+
+	if deltaIterations <= 0 || deltaMilliseconds <= 0 {
+		return 0
+	}
+
+	return (float64(deltaIterations) * 1000) / deltaMilliseconds
+}
+
+// costImprovementRate is the cost change per iteration between the two newest
+// samples, with the arrow saying which way it went. An em dash means the two
+// samples do not support the division, not that the rate is zero -- a zero rate
+// is a stalled run and reads "→ 0.0000 / iter".
+func costImprovementRate(history []MetricSample) string {
+	const unavailable = "—"
+
+	if len(history) < 2 {
+		return unavailable
+	}
+
+	latest := history[len(history)-1]
+	previous := history[len(history)-2]
+
+	if math.IsNaN(latest.Cost) || math.IsNaN(previous.Cost) {
+		return unavailable
+	}
+
+	deltaIterations := latest.Iteration - previous.Iteration
+	if deltaIterations <= 0 {
+		return unavailable
+	}
+
+	rate := (latest.Cost - previous.Cost) / float64(deltaIterations)
+
+	arrow := "→"
+
+	switch {
+	case rate < 0:
+		arrow = "↓"
+	case rate > 0:
+		arrow = "↑"
+	}
+
+	return arrow + " " + formatCompactNumber(math.Abs(rate), 4) + " / iter"
+}
+
+// etaLabel is the projected time to the planned iteration count. It is an em
+// dash rather than a guess wherever the projection has no basis: no planned
+// count, no recorded history, or a rate of zero.
+func etaLabel(history []MetricSample, maxIterations int) string {
+	const unavailable = "—"
+
+	if maxIterations <= 0 {
+		return unavailable
+	}
+
+	if len(history) == 0 {
+		return unavailable
+	}
+
+	// The iteration the projection counts down from is the newest sample's,
+	// clock or no clock; only the rate needs an instant to divide by.
+	completed := history[len(history)-1].Iteration
+	if completed < 0 {
+		return unavailable
+	}
+
+	if completed >= maxIterations {
+		return "0s"
+	}
+
+	rate := iterationRate(history)
+	if rate <= 0 {
+		return unavailable
+	}
+
+	return formatETA(float64(maxIterations-completed) / rate)
+}
+
+// formatETA prints a remaining duration at the resolution a reader can act on:
+// seconds under a minute, minutes and seconds under an hour, hours and minutes
+// above it. It is deliberately not formatDuration, which is an elapsed time and
+// keeps a decimal second.
+func formatETA(seconds float64) string {
+	if math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds < 0 {
+		return "—"
+	}
+
+	if seconds < 60 {
+		return fmt.Sprintf("%.0fs", math.Round(seconds))
+	}
+
+	minutes := int(math.Floor(seconds / 60))
+	if seconds < 3600 {
+		return fmt.Sprintf("%dm %ds", minutes, int(math.Floor(math.Mod(seconds, 60))))
+	}
+
+	return fmt.Sprintf("%dh %dm", minutes/60, minutes%60)
 }

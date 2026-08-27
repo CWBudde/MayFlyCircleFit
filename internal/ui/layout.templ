@@ -123,8 +123,10 @@ const themeStyles = `<style>
 // rendered the dark theme as black text on the dark surface -- measured at
 // 1.17:1 against a 4.5:1 threshold. It looked survivable on the dashboard and
 // job pages only because a React island replaces their markup with fresh
-// elements, which do inherit; the pages with no island, settings and create,
-// stayed unreadable.
+// elements, which do inherit; the pages that had no island at the time --
+// create and settings, both islands since Phase 18 -- stayed unreadable. That
+// is an escape, not a fix: a control painted outside every island root brings
+// the defect back.
 //
 // The override selector is :root:root, and the doubled pseudo-class is load
 // bearing. The system-preference rule is :root:not([data-theme]), which computes
@@ -276,8 +278,16 @@ templ Layout(title string) {
 					cursor: pointer;
 				}
 
-				.theme-option:hover {
+				.theme-option:hover:not(:disabled) {
 					color: var(--text-color);
+				}
+
+				/* The server-rendered fallback is disabled until the island mounts
+				   over it, so it must not offer a pointer or a hover affordance it
+				   cannot honour. */
+				.theme-option:disabled {
+					cursor: default;
+					opacity: 0.5;
 				}
 
 				.theme-option[aria-pressed="true"] {
@@ -301,12 +311,6 @@ templ Layout(title string) {
 				}
 
 				/* Utility classes */
-				.container {
-					max-width: 1200px;
-					margin: 0 auto;
-					padding: 0 1rem;
-				}
-
 				.card {
 					background-color: var(--surface-color);
 					border-radius: 0.5rem;
@@ -577,21 +581,6 @@ templ Layout(title string) {
 					margin: 0 auto;
 				}
 
-				/* Fade transitions */
-				@keyframes fadeIn {
-					from {
-						opacity: 0;
-					}
-					to {
-						opacity: 1;
-					}
-				}
-
-				.fade-in {
-					animation: fadeIn 0.3s ease-in;
-				}
-
-
 				/* Image-viewer vocabulary.
 				   This lives in the layout rather than in image_viewer.templ
 				   because the campaign detail page renders that component
@@ -605,17 +594,6 @@ templ Layout(title string) {
 					display: flex;
 					flex-wrap: wrap;
 					gap: 0.5rem;
-					border: 0;
-				}
-				.view-mode-selector legend {
-					position: absolute;
-					width: 1px;
-					height: 1px;
-					padding: 0;
-					margin: -1px;
-					overflow: hidden;
-					clip: rect(0, 0, 0, 0);
-					white-space: nowrap;
 					border: 0;
 				}
 				.view-mode-option {
@@ -740,8 +718,11 @@ templ Layout(title string) {
 					display: block;
 					transition: opacity 0.3s ease;
 				}
+				/* Rendered only when it applies. It used to be display:none here
+				   and toggled by the viewer's inline script, which kept four
+				   spinners and four placeholders in every job page's DOM at all
+				   times; the island renders the one that is true instead. */
 				.image-state {
-					display: none;
 					padding: 2rem;
 					text-align: center;
 					color: var(--text-muted);
@@ -894,14 +875,21 @@ templ Layout(title string) {
 							<li><a href="/settings">Settings</a></li>
 							<li><a href="https://github.com/CWBudde/MayFlyCircleFit" target="_blank">GitHub</a></li>
 						</ul>
-						<div class="theme-switch" role="group" aria-label="Color theme">
-							<button class="theme-option" type="button" data-theme-value="auto" aria-label="Use system theme" aria-pressed="true" title="Auto theme">
+						<!-- ThemeToggleIsland replaces these buttons; see its comment. The
+						     fallback pair is disabled and carries no aria-pressed: the
+						     handler lives in the bundle, so with the bundle missing or
+						     throwing these buttons do nothing, and the server cannot know
+						     which theme the pre-paint script restored from local storage.
+						     Claiming "Auto" is pressed would be wrong for every visitor
+						     who chose light or dark. The island renders the real state. -->
+						<div class="theme-switch" role="group" aria-label="Color theme" data-island="theme-switch" data-island-label="color theme">
+							<button class="theme-option" type="button" data-theme-value="auto" aria-label="Use system theme" title="Auto theme" disabled>
 								<svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>
 							</button>
-							<button class="theme-option" type="button" data-theme-value="light" aria-label="Use light theme" aria-pressed="false" title="Light theme">
+							<button class="theme-option" type="button" data-theme-value="light" aria-label="Use light theme" title="Light theme" disabled>
 								<svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"></path></svg>
 							</button>
-							<button class="theme-option" type="button" data-theme-value="dark" aria-label="Use dark theme" aria-pressed="false" title="Dark theme">
+							<button class="theme-option" type="button" data-theme-value="dark" aria-label="Use dark theme" title="Dark theme" disabled>
 								<svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
 							</button>
 						</div>
@@ -911,45 +899,22 @@ templ Layout(title string) {
 			<main id="main-content" tabindex="-1">
 				{ children... }
 			</main>
-			<script>
-				(() => {
-					// The palette itself is owned by the preload script in
-					// <head>; this only wires the buttons to it, so the toggle
-					// swaps one stylesheet rather than mutating <html>.
-					const theme = window.mayflyTheme;
-					const buttons = document.querySelectorAll("[data-theme-value]");
-					const updateButtons = () => {
-						const current = theme.selected();
-						buttons.forEach((button) => {
-							button.setAttribute("aria-pressed", String(button.dataset.themeValue === current));
-						});
-					};
-					const setTheme = (next) => {
-						theme.apply(next);
-						try {
-							if (next === "auto") {
-								localStorage.removeItem(theme.storageKey);
-							} else {
-								localStorage.setItem(theme.storageKey, next);
-							}
-						} catch (_) {
-							// The choice still applies to this page without storage.
-						}
-						updateButtons();
-					};
-					buttons.forEach((button) => {
-						button.addEventListener("click", () => setTheme(button.dataset.themeValue));
-					});
-					updateButtons();
-				})();
-			</script>
+			@IslandBundle()
 		</body>
 	</html>
 }
 
-// IslandBundle links the React island bundle. Only pages that actually render
-// a data-island element should call it: the bundle is large, and on a page
-// with no island it would download and parse just to run an empty query.
+// IslandBundle links the React island bundle. Layout is the only caller, and
+// it calls it for every page, because every page renders at least one island:
+// the theme switch in the navigation is chrome, and moving its handler out of
+// the shell is what stopped the shell carrying a script.
+//
+// The bundle used to be opt-in per page. Task 18.3 ended that and left five
+// pages calling this template a second time from inside their own body; the
+// duplicate was inert -- one module URL resolves to one entry in the module map
+// however many script tags name it -- but it invited the reader to believe the
+// opt-in rule still held. Task 18.7 removed those call sites.
+// TestOnlyTheLayoutLinksTheIslandBundle keeps them removed.
 //
 // The bundle is committed and embedded, so this binary serves it rather than
 // fetching it from a network the host may not have. Module scripts are

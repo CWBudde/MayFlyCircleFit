@@ -79,13 +79,18 @@ Run against a release candidate, with the server started as
 
 ### Safari on macOS (current, and one prior major)
 
-> **Check this first.** Open `/settings` and `/create` with the theme set to
-> dark. If the text is near-black on the dark background, Safari shares the
-> WebKit style-caching defect recorded in
-> [`known-limitations.md`](known-limitations.md), and that is a release
-> blocker rather than a harness artifact. Report what you see either way: a
-> clean result is what lets the two entries in
-> `web/e2e/fixtures/known-a11y-violations.ts` be deleted.
+> **Check this first, and check it with the bundle blocked.** Open `/settings`
+> and `/create` with the theme set to dark. If the text is near-black on the
+> dark background, Safari shares the WebKit style-caching defect recorded in
+> [`known-limitations.md`](known-limitations.md), and that is a release blocker
+> rather than a harness artifact.
+>
+> Blocking the bundle is what makes this check meaningful now. Phase 18 turned
+> both pages into React islands, and mounting one replaces the server-rendered
+> markup with freshly created elements, which inherit correctly -- so the defect
+> is hidden on a healthy page even where it still exists. Repeat the check with
+> JavaScript disabled (Develop → Disable JavaScript), which is what a reader
+> sees before the bundle arrives and if it ever fails to. Report both results.
 
 - [ ] All seven pages render: `/`, `/jobs`, `/jobs/{id}`, `/create`,
       `/schedules`, `/schedules/{id}`, `/settings`.

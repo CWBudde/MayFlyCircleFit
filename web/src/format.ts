@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { Palette } from "./charts";
 
 // This module holds the pure formatters the islands share. They live here
@@ -10,31 +11,75 @@ import type { Palette } from "./charts";
 // payload type satisfies them without this module having to import it back,
 // which would close an import cycle.
 
-// stateClass mirrors ui.StateBadge in internal/ui/list.templ. The island
-// replaces server-rendered rows, so a different mapping here would recolor
-// every badge on mount.
+// stateClass, stateLabel and stateBadgeStyle are the one state badge the
+// TypeScript side renders. Every island composes its badge from them:
+//
+//     <span className={stateClass(s)} style={stateBadgeStyle(s)}>{stateLabel(s)}</span>
+//
+// ui.StateBadge in internal/ui/list.templ is their Go mirror, and it covers the
+// same vocabulary — the six job states (pending, running, paused, completed,
+// failed, cancelled) plus the two the schedule adds (paused at campaign level,
+// skipped at stage level). web/src/state-badge-parity.json is the contract both
+// sides are tested against; changing a mapping here without changing it there
+// fails on both sides at once.
+//
+// The three axes the five superseded implementations disagreed on, decided once:
+//
+//   - Fallthrough class. A state neither side enumerates gets no modifier —
+//     `badge` alone, plus the neutral chip colors below — never `badge-info`.
+//     badge-info is the color of a job that is pending or running, and painting
+//     an unrecognized value with it claims the UI understands a state it does
+//     not.
+//   - Label casing. The state with its first letter capitalized, so a badge
+//     never prints a bare lowercase identifier beside capitalized ones. The
+//     rule applies to unknown states too ("nonsense" reads "Nonsense"); only an
+//     empty state has no word of its own, and it reads "Unknown".
+//   - skipped. A first-class state, not a fallthrough: it is a planned stage
+//     the campaign's policy declined to run, which is neither a failure nor a
+//     run. It carries the neutral chip so it reads as an absence of a result,
+//     and the label says which absence.
 export function stateClass(state: string): string {
 	switch (state) {
 		case "pending":
 		case "running":
-			return "badge-info";
+			return "badge badge-info";
 		case "completed":
-			return "badge-success";
+			return "badge badge-success";
 		case "failed":
-			return "badge-error";
+			return "badge badge-error";
 		case "paused":
 		case "cancelled":
-			return "badge-warning";
+			return "badge badge-warning";
 		default:
-			return "";
+			return "badge";
 	}
 }
 
 export function stateLabel(state: string): string {
 	if (!state) {
-		return "unknown";
+		return "Unknown";
 	}
 	return state.charAt(0).toUpperCase() + state.slice(1);
+}
+
+// stateBadgeStyle carries the two decorations that have no class of their own:
+// the running badge's pulse, which says the row is still moving, and the
+// neutral chip that skipped and unrecognized states wear in place of a color.
+// Both mirror the inline styles ui.StateBadge writes; without them a mounted
+// island would drop the pulse and leave those two badges as unpainted text.
+export function stateBadgeStyle(state: string): CSSProperties | undefined {
+	switch (state) {
+		case "running":
+			return { animation: "pulse 2s ease-in-out infinite" };
+		case "pending":
+		case "completed":
+		case "failed":
+		case "paused":
+		case "cancelled":
+			return undefined;
+		default:
+			return { backgroundColor: "var(--border-color)", color: "var(--text-color)" };
+	}
 }
 
 // formatCostGain mirrors formatJobImprovement on the Go side.
@@ -97,6 +142,91 @@ export function formatDurationSeconds(seconds: number): string {
 	if (hours > 0) return `${hours}h${minutes}m${rest}s`;
 	if (minutes > 0) return `${minutes}m${rest}s`;
 	return `${rest}s`;
+}
+
+// The five formatters below mirror the Go helpers of the same shape in
+// internal/ui/detail.templ, which the job detail page renders as its
+// no-JavaScript fallback and the job detail island then re-renders in place.
+// Because both languages draw the same panel, the two have to agree character
+// for character: web/src/job-detail-parity.json is the contract they are each
+// tested against, and neither side is the source of truth.
+
+// goFixed rounds the way Go's fmt does and JavaScript's toFixed does not: to
+// nearest, ties to even. The two differ on exactly one input in ten thousand,
+// which is precisely the kind of divergence a mirror is supposed to not have --
+// Go prints 2.5 as "2" and toFixed(0) prints it as "3".
+function goFixed(value: number, decimals: number): string {
+	const factor = 10 ** decimals;
+	const scaled = value * factor;
+	const floor = Math.floor(scaled);
+	const remainder = scaled - floor;
+
+	let rounded = floor;
+	if (remainder > 0.5) rounded = floor + 1;
+	else if (remainder === 0.5) rounded = floor % 2 === 0 ? floor : floor + 1;
+
+	return (rounded / factor).toFixed(decimals);
+}
+
+// formatCompactNumber mirrors formatNumber and formatCompactNumber in
+// detail.templ: thousands and millions carry a suffix, and the precision
+// defaults to the one the Go helper hard-codes.
+export function formatCompactNumber(value: number, decimals?: number): string {
+	if (!Number.isFinite(value)) return "—";
+	if (value >= 1_000_000) return `${goFixed(value / 1_000_000, decimals ?? 1)}M`;
+	if (value >= 1_000) return `${goFixed(value / 1_000, decimals ?? 1)}K`;
+	return goFixed(value, decimals ?? 0);
+}
+
+// formatElapsedDuration mirrors formatDuration in detail.templ, which is not
+// formatDurationSeconds above: this one keeps a millisecond and a decimal
+// second, because an elapsed time under a minute is the one case where the
+// fraction is the interesting part.
+export function formatElapsedDuration(seconds: number): string {
+	if (seconds < 1) return `${goFixed(seconds * 1000, 0)}ms`;
+	if (seconds < 60) return `${goFixed(seconds, 1)}s`;
+	if (seconds < 3600) return `${Math.trunc(seconds / 60)}m ${Math.trunc(seconds) % 60}s`;
+	return `${Math.trunc(seconds / 3600)}h ${Math.trunc(seconds / 60) % 60}m`;
+}
+
+// formatFileSize mirrors formatFileSize in detail.templ, binary units and all.
+export function formatFileSize(size: number): string {
+	if (size < 1024) return `${Math.trunc(size)} B`;
+	if (size < 1024 * 1024) return `${goFixed(size / 1024, 1)} KiB`;
+	if (size < 1024 * 1024 * 1024) return `${goFixed(size / (1024 * 1024), 1)} MiB`;
+	return `${goFixed(size / (1024 * 1024 * 1024), 1)} GiB`;
+}
+
+// formatReferenceDimensions mirrors imageViewerDimensions in image_viewer.templ.
+// An unprobeable reference image has no dimensions at all rather than 0 x 0,
+// and the empty string is what the viewer reads as "say nothing here".
+export function formatReferenceDimensions(width: number, height: number): string {
+	if (width <= 0 || height <= 0) return "";
+	return `${width} × ${height} px`;
+}
+
+// formatWallClock mirrors formatTimestamp in detail.templ, which formats a
+// time.Time in its own location. The RFC 3339 string Go marshals already *is*
+// that wall clock -- the offset it carries is the location's -- so the fields
+// are read straight out of the text. Parsing it into a Date would re-render it
+// in the reader's zone instead, and a job started at 09:00 would read 11:00 to
+// anyone two zones east of the server.
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const RFC3339 = /^(\d{4})-(\d{2})-(\d{2})[Tt ](\d{2}):(\d{2})/;
+
+export function formatWallClock(timestamp: string | null | undefined): string {
+	const match = RFC3339.exec(timestamp ?? "");
+	if (!match) return "—";
+
+	const [, year, month, day, hour, minute] = match;
+	const monthName = MONTH_NAMES[Number.parseInt(month, 10) - 1];
+	if (!monthName) return "—";
+
+	const hours24 = Number.parseInt(hour, 10);
+	const suffix = hours24 < 12 ? "AM" : "PM";
+	const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+
+	return `${monthName} ${Number.parseInt(day, 10)}, ${year} ${hours12}:${minute} ${suffix}`;
 }
 
 // formatElapsed mirrors formatCampaignElapsed.

@@ -168,7 +168,6 @@ templ DashboardPage(page DashboardPageData) {
 			</div>
 			<p style="color: var(--text-muted); margin-top: 0; margin-bottom: 0;">Interactive charts and updates load client-side.</p>
 		</div>
-		@IslandBundle()
 	}
 }
 
@@ -190,7 +189,7 @@ templ dashboardCampaignCard(summary CampaignSummary) {
 				</div>
 				<div class="row-end">
 					if summary.State != "" {
-						@ScheduleStateBadge(summary.State)
+						@StateBadge(summary.State)
 					}
 					if summary.HasBestCost {
 						<div style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.5rem;">Best cost</div>

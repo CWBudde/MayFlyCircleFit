@@ -338,25 +338,32 @@ behavior is production-ready.
   gated NEON span kernel is unlikely to be the cause. The defect predates the
   SSE2 work and needs real ARM64 hardware to diagnose; it is not reproducible by
   cross-compiling. Until it is fixed, ARM64 renderer output is unverified.
-- **The dark theme may be unreadable in Safari on the settings and create
-  pages.** On WebKit this document finishes its initial style pass with the
-  root's custom properties resolved but inherited by nothing, so body and every
-  server-rendered element beneath it fall back to a near-black text colour --
-  1.17:1 on the dark surface, against a 4.5:1 AA threshold. Light mode hides it.
-  What the audit actually flags is narrower than the mechanism: on both pages
-  every reported node is a `<select>`. Probing the live page confirms the wider
-  cause anyway -- before anything touches it, `body` itself computes
-  `--text-color` as the empty string, and setting any inline style on a single
-  element makes the whole subtree resolve correctly.
-  Every other page mounts a React island, and mounting replaces the markup with
-  freshly created elements, which inherit correctly; settings and create have no
-  island. It reproduces with scripts stripped and the palette chosen purely by
-  `prefers-color-scheme`, and it does not reproduce on a minimal document with
-  the same rule shape, so it is a style-caching problem rather than a cascade
-  one. Whether *real* Safari shares it is unresolved: Playwright ships WebKit
-  built for Linux, not Safari, and no Linux runner can settle the difference.
-  The `ci-web` gate records it as an engine-scoped entry in
-  `web/e2e/fixtures/known-a11y-violations.ts`; the manual dark-mode check in
+- **The dark theme may be unreadable in Safari on any page a React island does
+  not repaint.** On WebKit this document finishes its initial style pass with
+  the root's custom properties resolved but inherited by nothing, so body and
+  every server-rendered element beneath it fall back to a near-black text colour
+  -- 1.17:1 on the dark surface, against a 4.5:1 AA threshold. Light mode hides
+  it. What the audit flagged was narrower than the mechanism: every reported
+  node was a `<select>`. Probing the live page confirmed the wider cause anyway
+  -- before anything touches it, `body` itself computes `--text-color` as the
+  empty string, and setting any inline style on a single element makes the whole
+  subtree resolve correctly. It reproduces with scripts stripped and the palette
+  chosen purely by `prefers-color-scheme`, and it does not reproduce on a
+  minimal document with the same rule shape, so it is a style-caching problem
+  rather than a cascade one.
+  It stopped being observable in Phase 18, and it was escaped rather than fixed.
+  Mounting an island calls `createRoot().render()`, which replaces the
+  server-rendered markup with freshly created elements, and those inherit
+  correctly. Settings and create were the last two pages without an island; both
+  are islands now, and with the Phase 18 bundle in place the two allowlist
+  entries in `web/e2e/fixtures/known-a11y-violations.ts` stopped firing and were
+  deleted, taking `MAX_KNOWN_VIOLATIONS` to zero. The browser defect is
+  unchanged: a control painted outside every island root -- a new page with no
+  island, or a fallback a reader interacts with before the bundle arrives --
+  brings it back, and the `ci-web` a11y gate will then report it as a fresh
+  failure rather than as a known entry. Whether *real* Safari shares it is still
+  unresolved: Playwright ships WebKit built for Linux, not Safari, and no Linux
+  runner can settle the difference. The manual dark-mode check in
   [`browser-support.md`](browser-support.md) is what decides whether it is real.
 - Firefox is untested. `ci-web` covers Chromium and WebKit, which is both
   engines the UI is supported on, but Gecko shares neither, so "expected to

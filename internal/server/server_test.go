@@ -1044,6 +1044,120 @@ func TestReferenceImageMetadataUnavailable(t *testing.T) {
 	}
 }
 
+func TestJobStatusCarriesReferenceImageFacts(t *testing.T) {
+	t.Parallel()
+
+	// The three keys the reference image contributes to the status payload.
+	// Both halves below check the same set, from opposite directions.
+	refKeys := []string{"refWidth", "refHeight", "refSize"}
+
+	t.Run("present and typed for a readable image", func(t *testing.T) {
+		t.Parallel()
+
+		imgPath := filepath.Join(t.TempDir(), "reference.png")
+		createSimpleTestImage(t, imgPath)
+
+		server := NewServer(":8080", nil)
+		job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: imgPath, Circles: 2})
+
+		recorder := httptest.NewRecorder()
+		server.handleGetJobStatus(
+			recorder,
+			httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/jobs/"+job.ID+"/status", nil),
+			job.ID,
+		)
+
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", recorder.Code)
+		}
+
+		body := recorder.Body.Bytes()
+
+		var raw map[string]any
+
+		err := json.Unmarshal(body, &raw)
+		if err != nil {
+			t.Fatalf("decode raw status: %v", err)
+		}
+
+		for _, key := range refKeys {
+			value, ok := raw[key]
+			if !ok {
+				t.Fatalf("status JSON is missing %q", key)
+			}
+
+			if _, ok := value.(float64); !ok {
+				t.Fatalf("status JSON %q = %T, want a JSON number", key, value)
+			}
+		}
+
+		wantWidth, wantHeight, wantSize, err := referenceImageMetadata(imgPath)
+		if err != nil {
+			t.Fatalf("referenceImageMetadata() error = %v", err)
+		}
+
+		info, err := os.Stat(imgPath)
+		if err != nil {
+			t.Fatalf("stat reference image: %v", err)
+		}
+
+		if wantSize != info.Size() {
+			t.Fatalf("fixture size = %d, want %d", wantSize, info.Size())
+		}
+
+		var response jobStatusResponse
+
+		err = json.Unmarshal(body, &response)
+		if err != nil {
+			t.Fatalf("decode status: %v", err)
+		}
+
+		if response.RefWidth != wantWidth || response.RefHeight != wantHeight {
+			t.Fatalf(
+				"reference dimensions = %dx%d, want %dx%d",
+				response.RefWidth, response.RefHeight, wantWidth, wantHeight,
+			)
+		}
+
+		if response.RefSize != info.Size() {
+			t.Fatalf("reference size = %d, want %d", response.RefSize, info.Size())
+		}
+	})
+
+	t.Run("omitted for an unreadable image", func(t *testing.T) {
+		t.Parallel()
+
+		missing := filepath.Join(t.TempDir(), "missing.png")
+
+		server := NewServer(":8080", nil)
+		job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: missing, Circles: 2})
+
+		recorder := httptest.NewRecorder()
+		server.handleGetJobStatus(
+			recorder,
+			httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/jobs/"+job.ID+"/status", nil),
+			job.ID,
+		)
+
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", recorder.Code)
+		}
+
+		var raw map[string]any
+
+		err := json.Unmarshal(recorder.Body.Bytes(), &raw)
+		if err != nil {
+			t.Fatalf("decode raw status: %v", err)
+		}
+
+		for _, key := range refKeys {
+			if value, ok := raw[key]; ok {
+				t.Fatalf("status JSON has %q = %v for an unreadable image, want it omitted", key, value)
+			}
+		}
+	})
+}
+
 func TestServer_JobDetailPage_NotFound(t *testing.T) {
 	s := NewServer(":8080", nil)
 
@@ -2535,4 +2649,78 @@ func TestServer_BackendDefaults_AllEntryPoints(t *testing.T) {
 			t.Fatalf("stage backend = %q, want %q", config.Backend, app.BackendCPU)
 		}
 	})
+}
+
+// TestReferenceImageFactsAreMemoizedAndRevalidated pins both halves of the memo
+// the polled status endpoint depends on. The cache is proven by corrupting the
+// file's contents while keeping its size and modification time: a call that
+// still answers correctly cannot have decoded the header again. Invalidation is
+// proven by writing a genuinely different image, which changes both.
+func TestReferenceImageFactsAreMemoizedAndRevalidated(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "reference.png")
+	createSimpleTestImage(t, path)
+
+	srv := &Server{}
+
+	width, height, size, err := srv.referenceImageFactsFor(path)
+	if err != nil {
+		t.Fatalf("referenceImageFactsFor() error = %v", err)
+	}
+
+	if width != 50 || height != 50 {
+		t.Fatalf("referenceImageFactsFor() dimensions = %dx%d, want 50x50", width, height)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat reference image: %v", err)
+	}
+
+	// Same length, same timestamps, unreadable as an image. Only a cache hit
+	// can answer this correctly.
+	err = os.WriteFile(path, bytes.Repeat([]byte{0}, int(size)), 0o600)
+	if err != nil {
+		t.Fatalf("corrupt reference image: %v", err)
+	}
+
+	err = os.Chtimes(path, info.ModTime(), info.ModTime())
+	if err != nil {
+		t.Fatalf("restore modification time: %v", err)
+	}
+
+	cachedWidth, cachedHeight, cachedSize, err := srv.referenceImageFactsFor(path)
+	if err != nil {
+		t.Fatalf("referenceImageFactsFor() decoded again instead of using the memo: %v", err)
+	}
+
+	if cachedWidth != width || cachedHeight != height || cachedSize != size {
+		t.Errorf("memoized facts = %dx%d/%d, want %dx%d/%d", cachedWidth, cachedHeight, cachedSize, width, height, size)
+	}
+
+	// A different image changes size and modification time, so the memo has to
+	// stand aside rather than serve the previous answer.
+	replaced := image.NewNRGBA(image.Rect(0, 0, 12, 34))
+
+	var encoded bytes.Buffer
+
+	err = png.Encode(&encoded, replaced)
+	if err != nil {
+		t.Fatalf("encode replacement image: %v", err)
+	}
+
+	err = os.WriteFile(path, encoded.Bytes(), 0o600)
+	if err != nil {
+		t.Fatalf("replace reference image: %v", err)
+	}
+
+	freshWidth, freshHeight, _, err := srv.referenceImageFactsFor(path)
+	if err != nil {
+		t.Fatalf("referenceImageFactsFor() error after replacement = %v", err)
+	}
+
+	if freshWidth != 12 || freshHeight != 34 {
+		t.Errorf("facts after replacement = %dx%d, want 12x34; the memo was served stale", freshWidth, freshHeight)
+	}
 }

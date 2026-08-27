@@ -15,16 +15,19 @@ import (
 
 // ImageViewerData drives ImageViewer.
 //
-// One instance per page. The component owns the fixed ids "image-viewer",
-// "view-mode-*", "overlay-opacity" and the rest, and its script reaches them
-// through document.getElementById, so a second instance on the same page would
-// silently drive the first one's controls. Both callers today — the job detail
-// page and the campaign page's latest completed stage — render exactly one.
+// One instance per page: the component owns the fixed id "image-viewer", so a
+// second instance would duplicate it. Both callers today -- the job detail page
+// and the campaign page's latest completed stage -- render exactly one, and on
+// both of them this markup sits inside an island root. Mounting that island
+// replaces every child of the root, so what is written here is the
+// no-JavaScript fallback and the props the React viewer is handed, never a live
+// view of its own.
 type ImageViewerData struct {
 	JobID string
 
-	// DefaultMode sets the startup value for the panel selector and persists in localStorage
-	// unless the viewer has an earlier user preference.
+	// DefaultMode is the mode the island starts in unless the browser already
+	// holds a view-mode preference. It does not change what the no-JavaScript
+	// fallback shows, which is always the side-by-side pair.
 	DefaultMode string
 
 	// BestRevision is appended to best and difference image URLs so a cache is always fresh.
@@ -58,15 +61,22 @@ func imageViewerSrc(path string, revision uint64) string {
 	return path + sep + fmt.Sprintf("v=%d", revision)
 }
 
-// ImageViewer renders the reference/best/difference/overlay panels.
+// ImageViewer renders the reference/best/difference/overlay card.
 //
-// It carries no <style> of its own. The campaign page renders it inside the
-// `campaign-detail` island root, and mounting an island calls
-// createRoot(root).render(...), which replaces every child of that root — a
-// component-local <style> block included. So on /schedules/{id} the viewer used
-// to paint with no view-mode, frame or focus styling at all. The whole
-// vocabulary now lives in Layout, outside every island root; see the
-// image-viewer section of layout.templ.
+// What is emitted here is the no-JavaScript fallback: the reference and the
+// current best render, side by side, with no control that needs a script to do
+// anything. The five comparison modes, the overlay blend, the difference
+// heatmap and the 1-5 shortcuts all belong to web/src/ImageViewer.tsx, which is
+// what both pages render: the campaign page from Campaigns.tsx and the job
+// detail page from JobDetail.tsx. There is one implementation of this
+// component, and it is not this file.
+//
+// It carries no <style> of its own. Both callers render it inside an island
+// root, and mounting an island calls createRoot(root).render(...), which
+// replaces every child of that root -- a component-local <style> block
+// included. So the viewer would paint with no view-mode, frame or focus styling
+// at all. The whole vocabulary lives in Layout, outside every island root; see
+// the image-viewer section of layout.templ.
 func ImageViewer(data ImageViewerData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -106,14 +116,14 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" data-view-mode=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" data-view-mode=\"side-by-side\" data-default-mode=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(imageViewerMode(data.DefaultMode))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 63, Col: 109}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 77, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -126,7 +136,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(data.JobID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 63, Col: 136}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 78, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -139,7 +149,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(data.JobState)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 63, Col: 169}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 79, Col: 32}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -152,7 +162,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", data.MaxIterations))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 63, Col: 226}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 80, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -165,7 +175,7 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", data.CircleCount))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 63, Col: 284}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 81, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -178,95 +188,168 @@ func ImageViewer(data ImageViewerData) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", data.BestRevision))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 63, Col: 344}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 82, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"><div style=\"display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem;\"><h2 style=\"font-size: 1.25rem; font-weight: 600;\">Images</h2><fieldset class=\"view-mode-selector\" aria-label=\"Image view mode\"><legend class=\"sr-only\">Image view mode</legend><div class=\"view-mode-option\"><input type=\"radio\" id=\"view-mode-reference\" name=\"view-mode\" value=\"reference\" aria-keyshortcuts=\"1\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if imageViewerMode(data.DefaultMode) == "reference" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, " checked")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "> <label for=\"view-mode-reference\">Reference <span class=\"view-mode-shortcut\" aria-hidden=\"true\">1</span></label></div><div class=\"view-mode-option\"><input type=\"radio\" id=\"view-mode-best\" name=\"view-mode\" value=\"best\" aria-keyshortcuts=\"2\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if imageViewerMode(data.DefaultMode) == "best" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, " checked")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "> <label for=\"view-mode-best\">Best <span class=\"view-mode-shortcut\" aria-hidden=\"true\">2</span></label></div><div class=\"view-mode-option\"><input type=\"radio\" id=\"view-mode-side-by-side\" name=\"view-mode\" value=\"side-by-side\" aria-keyshortcuts=\"3\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if imageViewerMode(data.DefaultMode) == "side-by-side" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " checked")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "> <label for=\"view-mode-side-by-side\">Side-by-Side <span class=\"view-mode-shortcut\" aria-hidden=\"true\">3</span></label></div><div class=\"view-mode-option\"><input type=\"radio\" id=\"view-mode-difference\" name=\"view-mode\" value=\"difference\" aria-keyshortcuts=\"4\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if imageViewerMode(data.DefaultMode) == "difference" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, " checked")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "> <label for=\"view-mode-difference\">Difference <span class=\"view-mode-shortcut\" aria-hidden=\"true\">4</span></label></div><div class=\"view-mode-option\"><input type=\"radio\" id=\"view-mode-overlay\" name=\"view-mode\" value=\"overlay\" aria-keyshortcuts=\"5\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if imageViewerMode(data.DefaultMode) == "overlay" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, " checked")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "> <label for=\"view-mode-overlay\">Overlay <span class=\"view-mode-shortcut\" aria-hidden=\"true\">5</span></label></div></fieldset></div><div class=\"image-view-panels\"><div class=\"image-view-panel\" data-view-panel=\"reference\"><h3 style=\"font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-muted);\">Reference</h3><div class=\"image-frame\"><img id=\"reference-image\" src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" data-colormap=\"turbo\" data-reference-url=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var10 string
-		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(data.ReferenceImageURL))
+		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(data.ReferenceImageURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 100, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 84, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\" alt=\"Reference Image\"><div id=\"reference-image-loading\" class=\"image-state image-loading\" role=\"status\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"reference-image-error\" class=\"image-state\">Reference image not available</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" data-best-url=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var11 string
+		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(data.BestImageURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 85, Col: 35}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" data-diff-url=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var12 string
+		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(data.DiffImageURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 86, Col: 35}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" data-show-metadata=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var13 string
+		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%t", data.ShowMetadata))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 87, Col: 59}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" data-ref-dimensions=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var14 string
+		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(imageViewerDimensions(data))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 88, Col: 51}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" data-ref-filesize=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var15 string
+		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(imageViewerFileSize(data))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 89, Col: 47}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" data-ref-bytes=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var16 string
+		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(imageViewerBytes(data))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 90, Col: 41}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\"><div class=\"row-between\" style=\"margin-bottom: 1rem;\"><h2 style=\"font-size: 1.25rem; font-weight: 600;\">Images</h2></div><div class=\"image-view-panels\"><div class=\"image-view-panel\" data-view-panel=\"reference\"><h3 style=\"font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-muted);\">Reference</h3><div class=\"image-frame\"><img src=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var17 string
+		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(data.ReferenceImageURL))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 104, Col: 49}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" alt=\"Reference Image\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if data.ShowMetadata {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<div class=\"image-metadata\" aria-label=\"Reference image metadata\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<div class=\"image-metadata\" aria-label=\"Reference image metadata\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if data.ReferenceWidth > 0 && data.ReferenceHeight > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<span>")
+			if imageViewerDimensions(data) != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var11 string
-				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d × %d px", data.ReferenceWidth, data.ReferenceHeight))
+				var templ_7745c5c3_Var18 string
+				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(imageViewerDimensions(data))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 114, Col: 84}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 111, Col: 42}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</span> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			if imageViewerFileSize(data) != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<span title=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var19 string
+				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(imageViewerBytes(data))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 114, Col: 43}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var20 string
+				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(imageViewerFileSize(data))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 114, Col: 73}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -275,147 +358,31 @@ func ImageViewer(data ImageViewerData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			if data.ReferenceSize > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<span title=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var12 string
-				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d bytes", data.ReferenceSize))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 117, Col: 64}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var13 string
-				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(formatFileSize(data.ReferenceSize))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 117, Col: 103}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</span> ")
+			if imageViewerDimensions(data) == "" && imageViewerFileSize(data) == "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<span>Metadata unavailable</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			if data.ReferenceWidth <= 0 && data.ReferenceHeight <= 0 && data.ReferenceSize <= 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<span>Metadata unavailable</span>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div><div class=\"image-view-panel\" data-view-panel=\"best\"><h3 style=\"font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-muted);\">Current Best</h3><div class=\"image-frame\"><img id=\"best-image\" src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</div><div class=\"image-view-panel\" data-view-panel=\"best\"><h3 style=\"font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-muted);\">Current Best</h3><div class=\"image-frame\"><img src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var14 string
-		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(imageViewerSrc(data.BestImageURL, data.BestRevision)))
+		var templ_7745c5c3_Var21 string
+		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(imageViewerSrc(data.BestImageURL, data.BestRevision)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 132, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 128, Col: 79}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" alt=\"Current Best Image\"><div id=\"best-image-loading\" class=\"image-state image-loading\" role=\"status\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"best-image-error\" class=\"image-state\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if data.JobState == "pending" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "Optimization not started yet")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "No results yet")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</div></div></div><div class=\"image-view-panel\" data-view-panel=\"difference\"><div class=\"heatmap-heading\"><h3 style=\"font-size: 1rem; font-weight: 600; color: var(--text-muted);\">Difference Heatmap</h3><label class=\"heatmap-colormap-control\" for=\"heatmap-colormap\">Colormap <select id=\"heatmap-colormap\"><option value=\"turbo\" selected>Turbo</option> <option value=\"magma\">Magma</option></select></label></div><div class=\"image-frame image-frame-difference\"><img id=\"diff-image\" src=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var15 string
-		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(imageViewerSrc(data.DiffImageURL+"?colormap=turbo", data.BestRevision)))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 164, Col: 97}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" alt=\"False-color difference heatmap\"><div id=\"diff-image-loading\" class=\"image-state image-loading\" role=\"status\" style=\"color: #cccccc;\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"diff-image-error\" class=\"image-state\" style=\"color: #cccccc;\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if data.JobState == "pending" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "Not available yet")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "No results yet")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</div></div><div class=\"heatmap-legend\" role=\"img\" aria-label=\"Mean absolute RGB error scale from 0 to 255\"><span>0</span><div id=\"heatmap-legend-gradient\" class=\"heatmap-legend-gradient\"></div><span>255</span> <span class=\"heatmap-legend-description\">Mean absolute RGB error per pixel</span></div></div><div class=\"image-view-panel\" data-view-panel=\"overlay\"><div class=\"overlay-heading\"><h3 style=\"font-size: 1rem; font-weight: 600; color: var(--text-muted);\">Best over Reference</h3><div class=\"overlay-opacity-control\"><label for=\"overlay-opacity\">Best opacity</label> <input type=\"range\" id=\"overlay-opacity\" min=\"0\" max=\"100\" step=\"1\" value=\"50\" aria-label=\"Best image opacity in percent\"> <output id=\"overlay-opacity-value\" class=\"overlay-opacity-value\" for=\"overlay-opacity\" aria-live=\"polite\">50%</output></div></div><div class=\"image-frame image-frame-overlay\"><img id=\"overlay-reference-image\" src=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var16 string
-		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(data.ReferenceImageURL))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 208, Col: 49}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\" alt=\"Reference image underlay\"><div id=\"overlay-best-layer\" class=\"overlay-best-layer\" style=\"opacity: 0.5;\"><img id=\"overlay-best-image\" src=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var17 string
-		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(imageViewerSrc(data.BestImageURL, data.BestRevision)))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/image_viewer.templ`, Line: 214, Col: 80}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\" alt=\"Current best image blended over the reference\"></div><div id=\"overlay-best-image-loading\" class=\"image-state image-loading\" role=\"status\"><div class=\"spinner\"></div><p style=\"margin-top: 0.5rem; font-size: 0.875rem;\">Loading...</p></div><div id=\"overlay-best-image-error\" class=\"image-state\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if data.JobState == "pending" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "Optimization not started yet")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "No results yet")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</div></div><p style=\"margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-muted);\">Drag the slider to blend the current best render over the reference. 0% shows the reference alone, 100% the best render alone.</p></div></div></div><script>\n\t\tfunction initializeViewMode() {\n\t\t\tconst viewer = document.getElementById(\"image-viewer\");\n\t\t\tconst controls = viewer ? viewer.querySelectorAll('input[name=\"view-mode\"]') : [];\n\t\t\tconst viewModes = [\n\t\t\t\t\"reference\",\n\t\t\t\t\"best\",\n\t\t\t\t\"side-by-side\",\n\t\t\t\t\"difference\",\n\t\t\t\t\"overlay\",\n\t\t\t];\n\t\t\tconst shortcutViews = {\n\t\t\t\t1: \"reference\",\n\t\t\t\t2: \"best\",\n\t\t\t\t3: \"side-by-side\",\n\t\t\t\t4: \"difference\",\n\t\t\t\t5: \"overlay\",\n\t\t\t};\n\t\t\tconst viewStorageKey = \"mayflycirclefit.viewMode\";\n\t\t\tif (!viewer) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tcontrols.forEach(function (control) {\n\t\t\t\tcontrol.addEventListener(\"change\", function () {\n\t\t\t\t\tif (control.checked) {\n\t\t\t\t\t\tapplyViewMode(control.value, true);\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t});\n\n\t\t\tlet initialMode = viewer.dataset.viewMode;\n\t\t\tif (viewModes.indexOf(initialMode) < 0) {\n\t\t\t\tinitialMode = \"side-by-side\";\n\t\t\t}\n\t\t\ttry {\n\t\t\t\tconst storedMode = window.localStorage.getItem(viewStorageKey);\n\t\t\t\tif (viewModes.includes(storedMode)) {\n\t\t\t\t\tinitialMode = storedMode;\n\t\t\t\t}\n\t\t\t} catch (err) {\n\t\t\t\t// Storage can be unavailable in privacy-restricted browser contexts.\n\t\t\t}\n\t\t\tapplyViewMode(initialMode, false);\n\n\t\t\tdocument.addEventListener(\"keydown\", function (event) {\n\t\t\t\tif (\n\t\t\t\t\tevent.defaultPrevented ||\n\t\t\t\t\tevent.altKey ||\n\t\t\t\t\tevent.ctrlKey ||\n\t\t\t\t\tevent.metaKey ||\n\t\t\t\t\tevent.shiftKey\n\t\t\t\t) {\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tconst target = event.target;\n\t\t\t\tif (\n\t\t\t\t\ttarget &&\n\t\t\t\t\t(target.isContentEditable || [\"INPUT\", \"SELECT\", \"TEXTAREA\"].includes(target.tagName))\n\t\t\t\t) {\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tconst mode = shortcutViews[event.key];\n\t\t\t\tif (!mode) {\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tevent.preventDefault();\n\t\t\t\tapplyViewMode(mode, true);\n\t\t\t});\n\t\t}\n\n\t\tfunction applyViewMode(mode, persist) {\n\t\t\tconst viewer = document.getElementById(\"image-viewer\");\n\t\t\tif (!viewer) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tconst viewModes = [\"reference\", \"best\", \"side-by-side\", \"difference\", \"overlay\"];\n\t\t\tif (!viewModes.includes(mode)) {\n\t\t\t\tmode = \"side-by-side\";\n\t\t\t}\n\t\t\tviewer.dataset.viewMode = mode;\n\t\t\tconst control = viewer.querySelector(\n\t\t\t\t'input[name=\"view-mode\"][value=\"' + mode + '\"]',\n\t\t\t);\n\t\t\tif (control) {\n\t\t\t\tcontrol.checked = true;\n\t\t\t}\n\t\t\tif (!persist) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\ttry {\n\t\t\t\twindow.localStorage.setItem(\"mayflycirclefit.viewMode\", mode);\n\t\t\t} catch (err) {\n\t\t\t\t// The selected view still applies for the current page.\n\t\t\t}\n\t\t}\n\n\t\tfunction initializeImageState(imgId, loadingId, errorId) {\n\t\t\tconst img = document.getElementById(imgId);\n\t\t\tconst loading = document.getElementById(loadingId);\n\t\t\tconst error = document.getElementById(errorId);\n\t\t\tif (!img) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\timg.addEventListener(\"load\", function () {\n\t\t\t\timg.style.display = \"block\";\n\t\t\t\timg.style.opacity = \"1\";\n\t\t\t\tif (loading) loading.style.display = \"none\";\n\t\t\t\tif (error) error.style.display = \"none\";\n\t\t\t});\n\t\t\timg.addEventListener(\"error\", function () {\n\t\t\t\tif (loading) loading.style.display = \"none\";\n\t\t\t\tshowImageError(img, error);\n\t\t\t});\n\t\t\tif (img.complete) {\n\t\t\t\tif (img.naturalWidth > 0) {\n\t\t\t\t\timg.style.display = \"block\";\n\t\t\t\t\tif (error) error.style.display = \"none\";\n\t\t\t\t} else {\n\t\t\t\t\tshowImageError(img, error);\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\n\t\tfunction showImageError(img, error) {\n\t\t\timg.style.display = \"none\";\n\t\t\tif (error) {\n\t\t\t\terror.style.display = \"block\";\n\t\t\t}\n\t\t}\n\n\t\tconst heatmapColormapStorageKey = \"mayflycirclefit.diffColormap\";\n\n\t\tfunction initializeHeatmapColormap() {\n\t\t\tconst select = document.getElementById(\"heatmap-colormap\");\n\t\t\tconst colormapStorageKey = heatmapColormapStorageKey;\n\t\t\tif (!select) {\n\t\t\t\treturn;\n\t\t\t}\n\n\t\t\tconst renderedColormap = normalizeColormap(select.value);\n\t\t\tlet preferredColormap = renderedColormap;\n\t\t\ttry {\n\t\t\t\tconst stored = window.localStorage.getItem(colormapStorageKey);\n\t\t\t\tif (stored === \"turbo\" || stored === \"magma\") {\n\t\t\t\t\tpreferredColormap = stored;\n\t\t\t\t}\n\t\t\t} catch (err) {\n\t\t\t\t// The selected colormap still applies for this page.\n\t\t\t}\n\t\t\tapplyHeatmapColormap(preferredColormap, false, preferredColormap !== renderedColormap);\n\n\t\t\tselect.addEventListener(\"change\", function () {\n\t\t\t\tapplyHeatmapColormap(normalizeColormap(select.value), true, true);\n\t\t\t});\n\t\t}\n\n\t\tfunction selectedHeatmapColormap() {\n\t\t\tconst select = document.getElementById(\"heatmap-colormap\");\n\t\t\treturn select ? select.value : \"turbo\";\n\t\t}\n\n\t\tfunction syncArtifactDownloadColormap() {\n\t\t\tconst differenceLink = document.getElementById(\"download-difference\");\n\t\t\tif (!differenceLink) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tconst viewer = document.getElementById(\"image-viewer\");\n\t\t\tif (!viewer) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tconst jobId = viewer.dataset.jobId || \"\";\n\t\t\tif (!jobId) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tdifferenceLink.href =\n\t\t\t\t\t\"/api/v1/jobs/\" +\n\t\t\t\t\tencodeURIComponent(jobId) +\n\t\t\t\t\t\"/diff.png?colormap=\" +\n\t\t\t\t\tencodeURIComponent(selectedHeatmapColormap()) +\n\t\t\t\t\t\"&download=1\";\n\t\t}\n\n\t\tfunction normalizeColormap(raw) {\n\t\t\treturn raw === \"magma\" ? \"magma\" : \"turbo\";\n\t\t}\n\n\t\tfunction applyHeatmapColormap(raw, persist, reloadImage) {\n\t\t\tconst select = document.getElementById(\"heatmap-colormap\");\n\t\t\tconst viewer = document.getElementById(\"image-viewer\");\n\t\t\tconst jobId = viewer ? viewer.dataset.jobId : \"\";\n\t\t\tconst revision = viewer ? Number.parseInt(viewer.dataset.bestRevision, 10) || 0 : 0;\n\t\t\tconst colormap = normalizeColormap(raw);\n\n\t\t\tif (select) {\n\t\t\t\tselect.value = colormap;\n\t\t\t\tupdateHeatmapLegend(colormap);\n\t\t\t}\n\t\t\tsyncArtifactDownloadColormap();\n\t\t\tif (jobId && reloadImage) {\n\t\t\t\trefreshImage(\n\t\t\t\t\t\"diff-image\",\n\t\t\t\t\t\"diff-image-loading\",\n\t\t\t\t\tjobId,\n\t\t\t\t\t\"diff.png\",\n\t\t\t\t\trevision,\n\t\t\t\t\tcolormap,\n\t\t\t\t);\n\t\t\t}\n\t\t\tif (!persist) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\ttry {\n\t\t\t\twindow.localStorage.setItem(heatmapColormapStorageKey, colormap);\n\t\t\t} catch (err) {\n\t\t\t\t// The colormap selection still applies for the current page.\n\t\t\t}\n\t\t}\n\n\t\tfunction initializeOverlayOpacity() {\n\t\t\tconst slider = document.getElementById(\"overlay-opacity\");\n\t\t\tconst layer = document.getElementById(\"overlay-best-layer\");\n\t\t\tconst readout = document.getElementById(\"overlay-opacity-value\");\n\t\t\tif (!slider || !layer) {\n\t\t\t\treturn;\n\t\t\t}\n\n\t\t\tlet initialPercent = clampOverlayPercent(Number.parseInt(slider.value, 10));\n\t\t\ttry {\n\t\t\t\tconst stored = window.localStorage.getItem(\"mayflycirclefit.overlayOpacity\");\n\t\t\t\tif (stored !== null) {\n\t\t\t\t\tconst parsed = Number.parseInt(stored, 10);\n\t\t\t\t\tif (Number.isFinite(parsed)) {\n\t\t\t\t\t\tinitialPercent = clampOverlayPercent(parsed);\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t} catch (err) {\n\t\t\t\t// The selected opacity still applies for the current page.\n\t\t\t}\n\t\t\tapplyOverlayOpacity(initialPercent, false);\n\n\t\t\tslider.addEventListener(\"input\", function () {\n\t\t\t\tapplyOverlayOpacity(clampOverlayPercent(Number.parseInt(slider.value, 10)), true);\n\t\t\t});\n\n\t\t\tfunction applyOverlayOpacity(percent, persist) {\n\t\t\t\tslider.value = String(percent);\n\t\t\t\tlayer.style.opacity = String(percent / 100);\n\t\t\t\tif (readout) {\n\t\t\t\t\treadout.textContent = percent + \"%\";\n\t\t\t\t}\n\t\t\t\tif (!persist) {\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\ttry {\n\t\t\t\t\twindow.localStorage.setItem(\"mayflycirclefit.overlayOpacity\", String(percent));\n\t\t\t\t} catch (err) {\n\t\t\t\t\t// The chosen blend still applies for the current page.\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\n\t\tfunction clampOverlayPercent(percent) {\n\t\t\tif (!Number.isFinite(percent)) {\n\t\t\t\treturn 50;\n\t\t\t}\n\t\t\treturn Math.min(100, Math.max(0, Math.round(percent)));\n\t\t}\n\n\t\tfunction refreshImage(imgId, loadingId, jobId, filename, revision, colormap) {\n\t\t\tconst img = document.getElementById(imgId);\n\t\t\tconst loading = document.getElementById(loadingId);\n\t\t\tconst error = document.getElementById(imgId + \"-error\");\n\n\t\t\tif (!img || !filename || !jobId) return;\n\n\t\t\tif (loading) {\n\t\t\t\tloading.style.display = \"block\";\n\t\t\t}\n\t\t\tif (img.naturalWidth > 0) {\n\t\t\t\timg.style.display = \"block\";\n\t\t\t\timg.style.opacity = \"0.5\";\n\t\t\t}\n\n\t\t\tconst newImg = new Image();\n\t\t\tnewImg.onload = function () {\n\t\t\t\timg.src = newImg.src;\n\t\t\t\timg.style.display = \"block\";\n\t\t\t\timg.style.opacity = \"1\";\n\t\t\t\tif (loading) {\n\t\t\t\t\tloading.style.display = \"none\";\n\t\t\t\t}\n\t\t\t\tif (error) {\n\t\t\t\t\terror.style.display = \"none\";\n\t\t\t\t}\n\t\t\t};\n\t\t\tnewImg.onerror = function () {\n\t\t\t\timg.style.opacity = \"1\";\n\t\t\t\tif (loading) {\n\t\t\t\t\tloading.style.display = \"none\";\n\t\t\t\t}\n\t\t\t\tif (img.naturalWidth === 0) {\n\t\t\t\t\tshowImageError(img, error);\n\t\t\t\t}\n\t\t\t};\n\t\t\tlet imageURL = \"/api/v1/jobs/\" + encodeURIComponent(jobId) + \"/\" + filename;\n\t\t\tif (imageURL.indexOf(\"?\") < 0) {\n\t\t\t\tif (colormap) {\n\t\t\t\t\timageURL += \"?colormap=\" + encodeURIComponent(colormap);\n\t\t\t\t}\n\t\t\t} else if (colormap) {\n\t\t\t\timageURL += \"&colormap=\" + encodeURIComponent(colormap);\n\t\t\t}\n\t\t\tif (Number.isFinite(revision) && revision > 0) {\n\t\t\t\timageURL += imageURL.indexOf(\"?\") < 0 ? \"?\" : \"&\";\n\t\t\t\timageURL += \"v=\" + revision;\n\t\t\t}\n\t\t\tnewImg.src = imageURL;\n\t\t}\n\n\t\tfunction initializeImageRefreshPolling() {\n\t\t\tconst viewer = document.getElementById(\"image-viewer\");\n\t\t\tif (!viewer) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tconst jobId = viewer.dataset.jobId;\n\t\t\tif (!jobId) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tlet lastRevision = Number.parseInt(viewer.dataset.bestRevision, 10) || 0;\n\t\t\tlet timer = null;\n\t\t\tlet inFlight = false;\n\n\t\t\tfunction stopPolling() {\n\t\t\t\tif (timer) {\n\t\t\t\t\twindow.clearInterval(timer);\n\t\t\t\t\ttimer = null;\n\t\t\t\t}\n\t\t\t}\n\n\t\t\t// One request at a time: a slow network must not let ticks pile up into\n\t\t\t// overlapping fetches that apply their updates out of order.\n\t\t\tfunction applyImageStatus(status) {\n\t\t\t\tif (!status) return;\n\t\t\t\tconst nextRevision = Number.parseInt(status.bestRevision, 10);\n\t\t\t\tif (Number.isFinite(nextRevision) && nextRevision > lastRevision) {\n\t\t\t\t\tlastRevision = nextRevision;\n\t\t\t\t\tviewer.dataset.bestRevision = String(nextRevision);\n\t\t\t\t\tconst colormap = selectedHeatmapColormap();\n\t\t\t\t\trefreshImage(\"best-image\", \"best-image-loading\", jobId, \"best.png\", nextRevision);\n\t\t\t\t\trefreshImage(\"overlay-best-image\", \"overlay-best-image-loading\", jobId, \"best.png\", nextRevision);\n\t\t\t\t\trefreshImage(\"diff-image\", \"diff-image-loading\", jobId, \"diff.png\", nextRevision, colormap);\n\t\t\t\t}\n\t\t\t\tif (status.state) viewer.dataset.jobState = status.state;\n\t\t\t}\n\n\t\t\tdocument.addEventListener(\"mayflycirclefit:job-status\", function (event) {\n\t\t\t\tapplyImageStatus(event.detail);\n\t\t\t});\n\n\t\t\tasync function checkImageRevision() {\n\t\t\t\tif (inFlight) {\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tinFlight = true;\n\t\t\t\ttry {\n\t\t\t\t\tconst response = await fetch(\n\t\t\t\t\t\t\"/api/v1/jobs/\" + encodeURIComponent(jobId) + \"/status\",\n\t\t\t\t\t\t{ cache: \"no-store\" },\n\t\t\t\t\t);\n\t\t\t\t\tif (!response.ok) {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tconst status = await response.json();\n\t\t\t\t\t// Republish for the job detail page, which owns the metric panel.\n\t\t\t\t\tdocument.dispatchEvent(\n\t\t\t\t\t\tnew CustomEvent(\"mayflycirclefit:job-status\", { detail: status }),\n\t\t\t\t\t);\n\t\t\t\t\tapplyImageStatus(status);\n\t\t\t\t\tif (\n\t\t\t\t\t\tstatus.state === \"completed\" ||\n\t\t\t\t\t\tstatus.state === \"failed\" ||\n\t\t\t\t\t\tstatus.state === \"cancelled\"\n\t\t\t\t\t) {\n\t\t\t\t\t\tstopPolling();\n\t\t\t\t\t\tviewer.dataset.jobState = status.state;\n\t\t\t\t\t}\n\t\t\t\t} catch (_err) {\n\t\t\t\t\t// Keep polling and let errors self-recover.\n\t\t\t\t} finally {\n\t\t\t\t\tinFlight = false;\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tconst jobState = viewer.dataset.jobState;\n\t\t\tconst intervalMs = readImageRefreshInterval();\n\t\t\tif (\n\t\t\t\t(jobState === \"running\" || jobState === \"pending\" || jobState === \"paused\") &&\n\t\t\t\tNumber.isFinite(intervalMs) && intervalMs > 0\n\t\t\t) {\n\t\t\t\ttimer = window.setInterval(checkImageRevision, intervalMs);\n\t\t\t\tcheckImageRevision();\n\t\t\t}\n\t\t\twindow.addEventListener(\"pagehide\", stopPolling);\n\t\t}\n\n\t\tfunction readImageRefreshInterval() {\n\t\t\tconst storageKey = \"mayflycirclefit.imageRefreshInterval\";\n\t\t\tlet stored = \"0\";\n\t\t\ttry {\n\t\t\t\tstored = window.localStorage.getItem(storageKey);\n\t\t\t} catch (_err) {\n\t\t\t\treturn 0;\n\t\t\t}\n\t\t\tconst parsed = Number.parseInt(stored, 10);\n\t\t\treturn Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;\n\t\t}\n\n\t\tfunction updateHeatmapLegend(colormap) {\n\t\t\tconst gradient = document.getElementById(\"heatmap-legend-gradient\");\n\t\t\tif (!gradient) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tif (colormap === \"magma\") {\n\t\t\t\tgradient.style.background =\n\t\t\t\t\t\"linear-gradient(90deg, #000004, #180f3d, #3d0f70, #65156e, #8c2961, #b7374b, #de492f, #f67019, #fda50a, #f9dc5c, #fcfdbf)\";\n\t\t\t} else {\n\t\t\t\tgradient.style.background =\n\t\t\t\t\t\"linear-gradient(90deg, #23171b, #4145ab, #2aa7d6, #49df75, #d5e21a, #f68513, #900c00)\";\n\t\t\t}\n\t\t}\n\n\t\t(function () {\n\t\t\tinitializeViewMode();\n\t\t\tinitializeImageState(\"reference-image\", \"reference-image-loading\", \"reference-image-error\");\n\t\t\tinitializeImageState(\"best-image\", \"best-image-loading\", \"best-image-error\");\n\t\t\tinitializeImageState(\"diff-image\", \"diff-image-loading\", \"diff-image-error\");\n\t\t\tinitializeImageState(\"overlay-best-image\", \"overlay-best-image-loading\", \"overlay-best-image-error\");\n\t\t\tinitializeHeatmapColormap();\n\t\t\tinitializeImageRefreshPolling();\n\t\t\tinitializeOverlayOpacity();\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" alt=\"Current Best Image\"></div></div></div><noscript><p style=\"margin-top: 1rem; font-size: 0.8125rem; color: var(--text-muted);\">The comparison modes, the difference heatmap and the overlay blend need JavaScript. Without it this card shows the reference and the current best render side by side.</p></noscript></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -431,10 +398,10 @@ func imageViewerClasses(data ImageViewerData) string {
 	return classes
 }
 
-// imageViewerMode clamps DefaultMode to a mode the markup actually has. The
-// panel CSS keys off data-view-mode, so an unrecognized value would match no
-// selector and the no-JS view would show no image at all — a caller's typo has
-// to degrade to the default view, not to a blank card.
+// imageViewerMode clamps DefaultMode to a mode the island actually has, so a
+// caller's typo degrades to the default view rather than to a blank card. It no
+// longer decides what the server renders: the fallback is always the
+// side-by-side pair, because those are the only two panels that need no script.
 func imageViewerMode(defaultMode string) string {
 	switch defaultMode {
 	case "reference", "best", "side-by-side", "difference", "overlay":
@@ -442,6 +409,30 @@ func imageViewerMode(defaultMode string) string {
 	default:
 		return "side-by-side"
 	}
+}
+
+// The three metadata strings travel to the island pre-formatted. formatFileSize
+// is Go, and shipping a second implementation of it to the browser to render
+// three spans would be one more Go/TypeScript pair to keep in step for nothing.
+func imageViewerDimensions(data ImageViewerData) string {
+	if data.ReferenceWidth <= 0 || data.ReferenceHeight <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d × %d px", data.ReferenceWidth, data.ReferenceHeight)
+}
+
+func imageViewerFileSize(data ImageViewerData) string {
+	if data.ReferenceSize <= 0 {
+		return ""
+	}
+	return formatFileSize(data.ReferenceSize)
+}
+
+func imageViewerBytes(data ImageViewerData) string {
+	if data.ReferenceSize <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d bytes", data.ReferenceSize)
 }
 
 var _ = templruntime.GeneratedTemplate

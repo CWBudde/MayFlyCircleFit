@@ -195,18 +195,78 @@ response size. Full stage configuration is retrieved one stage at a time. See
 
 ## Web UI
 
-templ renders complete HTML for the dashboard, jobs, campaigns, and detail
-pages. That markup is both the no-JavaScript fallback and the hydration seed.
-React islands add charts, live actions, pagination, and reconciliation; they do
-not create a second server-side state model.
+templ renders complete HTML for every page — dashboard, job list, job detail,
+campaign list, campaign detail, job creation, and settings. That markup is both
+the no-JavaScript fallback and the hydration seed. React islands add charts,
+live actions, pagination, and reconciliation; they do not create a second
+server-side state model.
+
+There are eight islands, and they are registered in one place, the
+`mountIslands({...})` call at the bottom of `web/src/dashboard.tsx`:
+
+| Island | Mount point | What it owns |
+| --- | --- | --- |
+| `dashboard` | `dashboard.templ` | aggregates, running jobs, campaign cards |
+| `job-list` | `list.templ` | the job list and its infinite scroll |
+| `job-detail` | `detail.templ` | the whole job detail body |
+| `campaign-list` | `schedule.templ` | campaign and chain summaries |
+| `campaign-detail` | `schedule.templ` | one campaign's stages and cost chart |
+| `create-job` | `create.templ` | the creation form, posting JSON |
+| `settings` | `settings.templ` | the browser-local preference editor |
+| `theme-switch` | `layout.templ` | the color-theme buttons in the navigation |
+
+Two things are deliberately *not* in that list. The image viewer is one shared
+component (`web/src/ImageViewer.tsx`) rendered as an ordinary React child by
+both the job-detail and campaign-detail islands, so
+reference/best/difference/overlay behavior has one contract and no mount point
+of its own — a second React root over a node an outer island is about to
+replace would be a root over a node on its way out. The job action buttons are
+part of the job-detail island for the same reason; they were a separate
+`job-controls` island until Phase 18 folded them in.
+
+`theme-switch` is chrome the layout renders on every page, so `Layout` links
+the bundle unconditionally and is the only place that does. No page opts in.
+The palette itself is not the island's: the pre-paint script in `layout.templ`
+applies the stored theme before the first paint and publishes
+`window.mayflyTheme`, and the island only wires the buttons to it. That script
+is the one hand-written inline script left anywhere in `internal/ui/*.templ`,
+because a deferred module cannot run before the first paint;
+`internal/ui/inline_script_gate_test.go` fails the build on any other.
 
 The JSON embedded in a page and the corresponding REST response use the same
 projection shape. After mount, an island updates the existing state rather than
 reconstructing it from DOM text. Shared chart code resolves colors from CSS
-custom properties, listens for both explicit theme changes and system-theme
-changes, and updates each Chart.js instance in place rather than reallocating a
-canvas for every event. The job and campaign pages share one image-viewer
-component, so reference/best/difference/overlay behavior has one contract.
+custom properties, refreshes them when the theme stylesheet is swapped or the
+system preference changes, and updates each Chart.js instance in place rather
+than reallocating a canvas for every event.
+
+The job detail page is one island over its entire body — state badge, actions,
+metrics, configuration, downloads, parameters, images and the metric chart. It
+is seeded by the `#job-detail-data` blob the page renders beside its root and
+refetches `GET /api/v1/jobs/{id}/status` and `/metrics`. Configuration is read
+from the seed and never refetched, because `/status` carries the raw
+`JobConfig` whose resolved forms are Go functions the island must not
+reimplement. The four derived figures the panel shows — the cost-change rate,
+the average and instantaneous throughput, and the ETA — are computed on both
+sides from the same recorded history, so the fallback carries them too;
+`web/src/job-detail-parity.json` is the contract both languages are tested
+against.
+
+Job creation has two admission paths, and both are kept. `POST /create` accepts
+the templ form and is the no-JavaScript path; `POST /api/v1/jobs` accepts the
+JSON `CreateJobIsland` builds and is what a browser with the bundle uses. The
+alternative — deleting the form handler once the island existed — was rejected
+because it would leave the page unusable without JavaScript, which the templ
+fallback contract does not allow. The two paths differ in one place that
+matters: the form resolves an empty field against the defaults before a
+configuration exists, while the JSON path reads the raw body and refuses a value
+the defaults would replace, so the island omits what the user left blank instead
+of sending zeros. `web/src/create-job-parity.json` is the contract that keeps
+them equivalent, checked from Go in `internal/server/create_job_parity_test.go`
+and from TypeScript in `web/src/createJobBody.test.ts`. The page's bounds are a
+single `ui.CreateJobLimits` projected from `internal/app`: the fallback's
+`min`/`max` attributes and the island's are written from it, so the browser
+carries no limits of its own.
 
 The frontend build has two distinct phases:
 

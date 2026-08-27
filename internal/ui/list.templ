@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // JobListItem represents a job in the list view
@@ -66,7 +68,6 @@ templ JobList(page JobListPage) {
 			</div>
 		}
 		</div>
-		@IslandBundle()
 	}
 }
 
@@ -133,27 +134,86 @@ templ JobCard(job JobListItem) {
 	</a>
 }
 
-// StateBadge displays a badge for job state
+// StateBadge renders one state as a badge. It is the only state badge in the
+// UI: job states, schedule states and stage states share a vocabulary (see
+// store.ScheduleState), so they share a rendering, and the schedule-only
+// ScheduleStateBadge it replaced is gone.
+//
+// stateClass, stateLabel and stateBadgeStyle in web/src/format.ts are the
+// TypeScript mirror an island swaps in, and
+// web/src/state-badge-parity.json is the contract both sides are tested
+// against — changing a mapping here without changing it there fails on both
+// sides at once.
+//
+// The three axes the five superseded implementations disagreed on, decided
+// once:
+//
+//   - Fallthrough class. A state neither side enumerates gets no modifier —
+//     `badge` alone, plus the neutral chip colors — never `badge-info`.
+//     badge-info is the color of a job that is pending or running, and painting
+//     an unrecognized value with it claims the UI understands a state it does
+//     not.
+//   - Label casing. The state with its first letter capitalized, so a badge
+//     never prints a bare lowercase identifier beside capitalized ones. The
+//     rule applies to unknown states too ("nonsense" reads "Nonsense"); only an
+//     empty state has no word of its own, and it reads "Unknown" rather than
+//     leaving an empty chip the way this badge used to.
+//   - skipped. A first-class state, not a fallthrough: it is a planned stage
+//     the campaign's policy declined to run, which is neither a failure nor a
+//     run. It carries the neutral chip so it reads as an absence of a result,
+//     and the label says which absence.
 templ StateBadge(state string) {
+	{{ style := stateBadgeStyle(state) }}
+	if style == "" {
+		<span class={ stateBadgeClass(state) }>{ stateBadgeLabel(state) }</span>
+	} else {
+		<span class={ stateBadgeClass(state) } style={ style }>{ stateBadgeLabel(state) }</span>
+	}
+}
+
+// stateBadgeClass is the badge's complete class attribute, the neutral
+// fallthrough included. It is the whole attribute rather than the modifier
+// alone because that is the string the TypeScript stateClass returns, and a
+// parity test that compares halves of an attribute proves less than one that
+// compares the attribute.
+func stateBadgeClass(state string) string {
 	switch state {
-		case "pending":
-			<span class="badge badge-info">Pending</span>
-		case "running":
-			<span class="badge badge-info" style="animation: pulse 2s ease-in-out infinite;">
-				Running
-			</span>
+	case "pending", "running":
+		return "badge badge-info"
 	case "completed":
-			<span class="badge badge-success">Completed</span>
-		case "failed":
-			<span class="badge badge-error">Failed</span>
-		case "paused":
-			<span class="badge badge-warning">Paused</span>
-		case "cancelled":
-			<span class="badge badge-warning">Cancelled</span>
-		default:
-			<span class="badge" style="background-color: var(--border-color); color: var(--text-color);">
-				{ state }
-			</span>
+		return "badge badge-success"
+	case "failed":
+		return "badge badge-error"
+	case "paused", "cancelled":
+		return "badge badge-warning"
+	default:
+		return "badge"
+	}
+}
+
+// stateBadgeLabel capitalizes the state, and names the empty one.
+func stateBadgeLabel(state string) string {
+	if state == "" {
+		return "Unknown"
+	}
+
+	first, width := utf8.DecodeRuneInString(state)
+
+	return string(unicode.ToUpper(first)) + state[width:]
+}
+
+// stateBadgeStyle carries the two decorations that have no class of their own:
+// the running badge's pulse, which says the row is still moving, and the
+// neutral chip that skipped and unrecognized states wear in place of a color.
+// An empty return means the badge is written without a style attribute.
+func stateBadgeStyle(state string) string {
+	switch state {
+	case "running":
+		return "animation: pulse 2s ease-in-out infinite;"
+	case "pending", "completed", "failed", "paused", "cancelled":
+		return ""
+	default:
+		return "background-color: var(--border-color); color: var(--text-color);"
 	}
 }
 

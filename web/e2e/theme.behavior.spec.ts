@@ -27,12 +27,20 @@ test("the theme switch applies, persists, and returns to auto", async ({ page })
 	expect(await page.evaluate(() => localStorage.getItem("mayflycirclefit.theme"))).toBeNull();
 });
 
-test("a stored theme survives a page with no island", async ({ page }) => {
+// The premise this test was written on -- "create has no island, so nothing
+// repaints it" -- stopped being true in Phase 18, and the assertion is worth
+// more now than it was then. Every page mounts at least the theme switch, and
+// /create mounts CreateJobIsland over its whole form as well, so what is pinned
+// here is that the stored palette survives a mount: the pre-paint script paints
+// the document, React then replaces the markup underneath it, and the freshly
+// created elements have to inherit the same tokens. They are read off body,
+// which is outside every island root, so a mount that broke inheritance would
+// show up here rather than being hidden by the element being replaced.
+test("a stored theme survives the islands mounting over the page", async ({ page }) => {
 	await page.goto("/create");
 	await page.getByRole("button", { name: "Use dark theme" }).click();
 	await page.reload();
-	// create has no React island, so nothing replaces the server-rendered
-	// markup after load: whatever the first paint produced is what stays.
+	await expect(page.locator("[data-island='create-job'] form")).toBeVisible();
 	expect(await page.locator("body").evaluate((n) => getComputedStyle(n).color)).toBe("rgb(243, 244, 246)");
 });
 

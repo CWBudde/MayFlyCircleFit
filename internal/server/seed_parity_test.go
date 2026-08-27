@@ -3,8 +3,11 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -228,9 +231,9 @@ func TestCampaignDetailSeedMatchesEndpointShape(t *testing.T) {
 	)
 }
 
-// jobControlsDataAttrs renders the job detail page and returns the data-*
-// attributes of the job-controls island root, keyed by attribute name.
-func jobControlsDataAttrs(t *testing.T, job ui.JobDetail) map[string]string {
+// jobDetailSeed renders the job detail page and returns the JSON blob it seeds
+// its island with, decoded to leaf paths.
+func jobDetailSeed(t *testing.T, job ui.JobDetail) map[string]any {
 	t.Helper()
 
 	var rendered bytes.Buffer
@@ -240,131 +243,390 @@ func jobControlsDataAttrs(t *testing.T, job ui.JobDetail) map[string]string {
 		t.Fatalf("render job detail page: %v", err)
 	}
 
-	body := rendered.String()
-
-	start := strings.Index(body, `data-island="job-controls"`)
-	if start < 0 {
-		t.Fatalf("the job detail page has no job-controls island root")
-	}
-	// Walk back to the opening angle bracket, then forward to the tag's end.
-	open := strings.LastIndex(body[:start], "<")
-
-	end := strings.Index(body[start:], ">")
-	if open < 0 || end < 0 {
-		t.Fatalf("the job-controls island root is not a well-formed tag")
+	match := regexp.MustCompile(`(?s)<script id="job-detail-data"[^>]*>(.*?)</script>`).
+		FindStringSubmatch(rendered.String())
+	if match == nil {
+		t.Fatal("the job detail page renders no #job-detail-data seed")
 	}
 
-	tag := body[open : start+end]
+	var decoded map[string]any
 
-	attrs := make(map[string]string)
-	for _, match := range regexp.MustCompile(`data-([a-z0-9-]+)="([^"]*)"`).FindAllStringSubmatch(tag, -1) {
-		attrs[match[1]] = match[2]
+	err = json.Unmarshal([]byte(match[1]), &decoded)
+	if err != nil {
+		t.Fatalf("decode the job detail seed: %v", err)
 	}
 
-	return attrs
+	return decoded
 }
 
-// TestJobDetailDataSeedMatchesStatusEndpoint covers the fifth pairing. The job
-// detail page seeds its island through data-* attributes rather than a
-// JSONScript, so jsonLeafKeys cannot compare the two sides directly: every
-// attribute is a formatted string and the names are kebab-case, not JSON tags.
-// What is testable, and what actually breaks the island, is the mapping the
-// island performs in initialStatus (web/src/JobControls.tsx): each attribute it
-// reads must exist in the /status payload under the name it refetches, holding
-// the same value. Each row below is one of those reads.
-func TestJobDetailDataSeedMatchesStatusEndpoint(t *testing.T) {
+// TestJobDetailSeedMatchesStatusEndpoint covers the fifth pairing. Task 18.1
+// replaced the job detail page's twelve data-* attributes with one JSON seed,
+// which makes this comparison the same shape as the other four: the island
+// renders the seed on its first paint and then refetches
+// GET /api/v1/jobs/{id}/status, so every field it reads from both has to be
+// named the same on both. The rows below are that overlap, and refWidth,
+// refHeight and refSize are on it because Task 18.1 put them on the endpoint --
+// before that they were view-model fields no JSON response carried, and the
+// island had no way to describe the reference image after a refetch.
+//
+// Fields that exist only on the seed are not listed and are not a gap: the
+// configuration block is seeded once and never refetched, because /status
+// carries the raw JobConfig whose resolved forms are Go functions the island
+// must not reimplement.
+func TestJobDetailSeedMatchesStatusEndpoint(t *testing.T) {
+	t.Parallel()
+
 	start := time.Date(2026, time.August, 13, 9, 0, 0, 0, time.UTC)
+	psnr, ssim, candidate := 31.25, 0.9123, 11.5
 	job := ui.JobDetail{
-		ID:           "88888888-8888-8888-8888-888888888888",
-		State:        string(StateCompleted),
-		Circles:      64,
-		Iterations:   25,
-		Evaluations:  12345,
-		MaxIters:     100,
-		BestCost:     12.5,
-		InitialCost:  40.5,
-		BestRevision: 7,
-		CPS:          2.5,
-		CanPolish:    true,
-		StartTime:    start,
+		ID:                    "88888888-8888-8888-8888-888888888888",
+		State:                 string(StateCompleted),
+		Circles:               64,
+		Iterations:            25,
+		Evaluations:           12345,
+		MaxIters:              100,
+		BestCost:              12.5,
+		InitialCost:           40.5,
+		BestRevision:          7,
+		CandidateCost:         &candidate,
+		CandidatePSNR:         &psnr,
+		CandidatePSNRInfinite: true,
+		PSNR:                  &psnr,
+		PSNRInfinite:          true,
+		SSIM:                  &ssim,
+		CPS:                   2.5,
+		ElapsedSec:            95.5,
+		EvaluationWorkers:     4,
+		Termination:           "budget exhausted",
+		Error:                 "",
+		RefWidth:              640,
+		RefHeight:             480,
+		RefSize:               2048,
+		CanPolish:             true,
+		StartTime:             start,
 	}
 	payload := jobStatusResponse{
-		ID:            job.ID,
-		Project:       app.DefaultProject,
-		State:         JobState(job.State),
-		BestCost:      job.BestCost,
-		BestRevision:  job.BestRevision,
-		InitialCost:   job.InitialCost,
-		Iterations:    job.Iterations,
-		Evaluations:   job.Evaluations,
-		MaxIterations: job.MaxIters,
-		Actions:       &jobActions{Polish: job.CanPolish},
-		CPS:           job.CPS,
-		StartTime:     start,
+		ID:                    job.ID,
+		Project:               app.DefaultProject,
+		State:                 JobState(job.State),
+		BestCost:              job.BestCost,
+		BestRevision:          job.BestRevision,
+		CandidateCost:         job.CandidateCost,
+		CandidatePSNR:         job.CandidatePSNR,
+		CandidatePSNRInfinite: job.CandidatePSNRInfinite,
+		InitialCost:           job.InitialCost,
+		PSNR:                  job.PSNR,
+		PSNRInfinite:          job.PSNRInfinite,
+		SSIM:                  job.SSIM,
+		Iterations:            job.Iterations,
+		Evaluations:           job.Evaluations,
+		MaxIterations:         job.MaxIters,
+		EvaluationWidth:       job.EvaluationWorkers,
+		Termination:           job.Termination,
+		Elapsed:               job.ElapsedSec,
+		CPS:                   job.CPS,
+		RefWidth:              job.RefWidth,
+		RefHeight:             job.RefHeight,
+		RefSize:               job.RefSize,
+		Actions:               &jobActions{Polish: job.CanPolish},
+		StartTime:             start,
 	}
 
-	attrs := jobControlsDataAttrs(t, job)
+	seed := jobDetailSeed(t, job)
 	endpointKeys := jsonLeafKeys(t, payload)
 
-	const (
-		asString = "string"
-		asNumber = "number"
-		asBool   = "bool"
-	)
-	for _, testCase := range []struct {
-		attr string
-		path string
-		kind string
-	}{
-		{attr: "job-id", path: "id", kind: asString},
-		{attr: "job-state", path: "state", kind: asString},
-		{attr: "best-revision", path: "bestRevision", kind: asNumber},
-		{attr: "max-iterations", path: "maxIterations", kind: asNumber},
-		{attr: "iterations", path: "iterations", kind: asNumber},
-		{attr: "evaluations", path: "evaluations", kind: asNumber},
-		{attr: "best-cost", path: "bestCost", kind: asNumber},
-		{attr: "initial-cost", path: "initialCost", kind: asNumber},
-		{attr: "cps", path: "cps", kind: asNumber},
-		{attr: "can-polish", path: "actions.polish", kind: asBool},
+	shared := map[string]any{}
+
+	for _, name := range []string{
+		"id", "state", "bestCost", "bestRevision", "candidateCost", "candidatePsnr",
+		"candidatePsnrInfinite", "initialCost", "psnr", "psnrInfinite", "ssim",
+		"iterations", "evaluations", "maxIterations", "evaluationWidth",
+		"termination", "elapsed", "cps", "startTime", "refWidth", "refHeight", "refSize",
 	} {
-		t.Run(testCase.attr, func(t *testing.T) {
-			raw, ok := attrs[testCase.attr]
-			if !ok {
-				t.Fatalf("the job detail page no longer seeds data-%s, which the island reads", testCase.attr)
+		value, ok := seed[name]
+		if !ok {
+			t.Errorf("the job detail seed no longer carries %q, which the island reads", name)
+			continue
+		}
+
+		shared[name] = value
+	}
+
+	assertSeedSubset(t, "job detail", shared, endpointKeys, nil)
+
+	// canPolish is the one field the two spell differently: the seed states it
+	// flat because the page renders one button from it, and the endpoint nests
+	// it with the other four actions.
+	if seed["canPolish"] != endpointKeys["actions.polish"] {
+		t.Errorf("seed canPolish = %v but the endpoint's actions.polish = %v",
+			seed["canPolish"], endpointKeys["actions.polish"])
+	}
+}
+
+// The tests above compare two Go payloads with each other. Nothing in them
+// looks at the TypeScript that actually consumes those payloads, so the second
+// half of the contract — that the hand-written read models in web/src name the
+// same wire fields the Go structs emit — was checked by nobody. Task 18.6
+// evaluated generating those read models from the Go structs and decided
+// against it (docs/typescript-read-model-generation.md); this test is the
+// cheaper half of what generation would have bought, and the decision names it
+// as the contract that replaces generation.
+//
+// It reads the declarations straight out of web/src and asserts that every
+// field they declare exists on the Go type serving them. That is deliberately
+// one-directional: a Go struct may carry fields the island ignores (it usually
+// does), but an island field with no Go field behind it is always undefined at
+// runtime, and TypeScript cannot see that because every payload enters through
+// `fetchJSON<T>`'s unchecked `as T` cast.
+
+// webSourceDir is web/src as seen from this package's test working directory.
+const webSourceDir = "../../web/src"
+
+// tsFieldNamePattern matches one field of a TypeScript object type literal.
+// Only the name and its optional marker matter here; the declared type is not
+// compared, because Go and TypeScript disagree about number widths by design.
+var tsFieldNamePattern = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)(\??):`)
+
+// tsObjectFields returns the field names a hand-written read model declares,
+// mapped to whether the declaration marks them optional. It reads the object
+// type literal of `type <decl> = ... { ... }`, which covers both a plain
+// object type and the `A & { ... }` intersections two islands use — the named
+// half of an intersection is checked as its own row of the table below.
+//
+// Only fields at the literal's own brace depth are returned. A nested literal
+// (HostFacts.gpu, RawJob.config) contributes its own name and stops there,
+// which is what the Go side has a single struct field for.
+func tsObjectFields(t *testing.T, file, decl string) map[string]bool {
+	t.Helper()
+
+	source, err := os.ReadFile(filepath.Join(webSourceDir, file))
+	if err != nil {
+		t.Fatalf("read %s: %v", file, err)
+	}
+
+	body := tsDeclarationBody(t, string(source), file, decl)
+	fields := make(map[string]bool)
+	depth := 0
+
+	for _, fragment := range splitTSFields(body, &depth) {
+		if match := tsFieldNamePattern.FindStringSubmatch(fragment); match != nil {
+			fields[match[1]] = match[2] == "?"
+		}
+	}
+
+	if len(fields) == 0 {
+		t.Fatalf("%s: read no fields out of `type %s`; the declaration style changed", file, decl)
+	}
+
+	return fields
+}
+
+// tsDeclarationBody returns the contents of the first brace-balanced object
+// literal belonging to `type <decl> =`.
+func tsDeclarationBody(t *testing.T, source, file, decl string) string {
+	t.Helper()
+
+	header := regexp.MustCompile(`(?m)^(?:export )?type ` + regexp.QuoteMeta(decl) + `\b[^=]*=`)
+
+	loc := header.FindStringIndex(source)
+	if loc == nil {
+		t.Fatalf("%s declares no `type %s`; the read model was renamed or moved", file, decl)
+	}
+
+	rest := source[loc[1]:]
+
+	open := strings.Index(rest, "{")
+	if open < 0 {
+		t.Fatalf("%s: `type %s` is not an object type", file, decl)
+	}
+
+	depth := 0
+
+	for index, char := range rest[open:] {
+		switch char {
+		case '{':
+			depth++
+		case '}':
+			depth--
+
+			if depth == 0 {
+				return rest[open+1 : open+index]
+			}
+		}
+	}
+
+	t.Fatalf("%s: `type %s` has no balanced closing brace", file, decl)
+
+	return ""
+}
+
+// splitTSFields cuts an object literal body into one fragment per field. It
+// splits on `;` and on newlines, skips `//` comments, and reports only
+// fragments that begin at the literal's own depth so a nested literal's fields
+// are not mistaken for the outer type's.
+func splitTSFields(body string, depth *int) []string {
+	var (
+		fragments []string
+		current   strings.Builder
+		startedAt = *depth
+	)
+
+	flush := func() {
+		if text := strings.TrimSpace(current.String()); text != "" && startedAt == 0 {
+			fragments = append(fragments, text)
+		}
+
+		current.Reset()
+
+		startedAt = *depth
+	}
+
+	for line := range strings.SplitSeq(body, "\n") {
+		if comment := strings.Index(line, "//"); comment >= 0 {
+			line = line[:comment]
+		}
+
+		for _, char := range line {
+			switch char {
+			case '{', '<':
+				*depth++
+			case '}', '>':
+				*depth--
+			case ';':
+				flush()
+
+				continue
 			}
 
-			value, ok := endpointKeys[testCase.path]
-			if !ok {
-				t.Fatalf("the status payload has no %q, which the island refetches for data-%s", testCase.path, testCase.attr)
+			current.WriteRune(char)
+		}
+
+		flush()
+	}
+
+	flush()
+
+	return fragments
+}
+
+// goWireNames returns the JSON names a struct type serializes, read from the
+// tags rather than from a marshalled value so that an omitempty field is
+// reported even when its zero value would drop it from the wire. Embedded
+// structs without a tag of their own are flattened, exactly as encoding/json
+// flattens them.
+func goWireNames(t *testing.T, value any) map[string]bool {
+	t.Helper()
+
+	names := make(map[string]bool)
+	collectWireNames(t, reflect.TypeOf(value), names)
+
+	return names
+}
+
+func collectWireNames(t *testing.T, structType reflect.Type, into map[string]bool) {
+	t.Helper()
+
+	for structType.Kind() == reflect.Pointer {
+		structType = structType.Elem()
+	}
+
+	if structType.Kind() != reflect.Struct {
+		t.Fatalf("goWireNames wants a struct, got %s", structType.Kind())
+	}
+
+	for index := range structType.NumField() {
+		field := structType.Field(index)
+		tag := field.Tag.Get("json")
+
+		if tag == "-" {
+			continue
+		}
+
+		name, _, _ := strings.Cut(tag, ",")
+		if name == "" {
+			if field.Anonymous {
+				collectWireNames(t, field.Type, into)
+
+				continue
 			}
 
-			switch testCase.kind {
-			case asString:
-				if value != raw {
-					t.Errorf("%q = %v in the status payload, want %q as in data-%s", testCase.path, value, raw, testCase.attr)
-				}
-			case asNumber:
-				parsed, err := strconv.ParseFloat(raw, 64)
-				if err != nil {
-					t.Fatalf("data-%s = %q is not a number: %v", testCase.attr, raw, err)
-				}
+			name = field.Name
+		}
 
-				number, ok := value.(float64)
-				if !ok {
-					t.Fatalf("%q is %T in the status payload, want a number as in data-%s", testCase.path, value, testCase.attr)
-				}
+		into[name] = true
+	}
+}
 
-				if number != parsed {
-					t.Errorf("%q = %v in the status payload, want %v as in data-%s", testCase.path, number, parsed, testCase.attr)
-				}
-			case asBool:
-				parsed, err := strconv.ParseBool(raw)
-				if err != nil {
-					t.Fatalf("data-%s = %q is not a boolean: %v", testCase.attr, raw, err)
-				}
+// TestIslandReadModelsMatchTheGoWire is the Go↔TypeScript half of the parity
+// contract. Each row pairs one hand-written read model in web/src with the Go
+// type whose JSON it deserializes.
+//
+// dashboard.tsx's ProgressEventPayload is covered here even though it is a
+// narrow subset of ProgressEvent: the narrowness is the point, not a gap.
+//
+// JobDetail.tsx's JobStatusPayload is likewise a subset of jobStatusResponse
+// and belongs in the table for the same reason. Its three newest fields --
+// refWidth, refHeight and refSize -- are the TypeScript mirror Task 18.1's
+// acceptance check asks for, and this is where a rename on either side fails.
+// Island source files the read-model table names more than once.
+const (
+	islandDashboard = "dashboard.tsx"
+	islandCampaigns = "Campaigns.tsx"
+	islandJobList   = "JobList.tsx"
+	islandJobDetail = "JobDetail.tsx"
+)
 
-				if value != parsed {
-					t.Errorf("%q = %v in the status payload, want %v as in data-%s", testCase.path, value, parsed, testCase.attr)
+func TestIslandReadModelsMatchTheGoWire(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		file string
+		decl string
+		wire any
+	}{
+		{file: "live.ts", decl: "ProgressEvent", wire: ProgressEvent{}},
+		{file: "live.ts", decl: "UIEvent", wire: UIEvent{}},
+
+		{file: islandDashboard, decl: "DashboardResponse", wire: dashboardResponse{}},
+		{file: islandDashboard, decl: "RunningJob", wire: dashboardRunningJob{}},
+		{file: islandDashboard, decl: "DashboardAggregates", wire: dashboardAggregates{}},
+		{file: islandDashboard, decl: "HostFacts", wire: ui.HostFacts{}},
+		{file: islandDashboard, decl: "CampaignSummary", wire: ui.CampaignSummary{}},
+		{file: islandDashboard, decl: "CampaignSeriesPoint", wire: ui.CampaignSeriesPoint{}},
+		{file: islandDashboard, decl: "MetricSample", wire: ui.MetricSample{}},
+		{file: islandDashboard, decl: "ProgressEventPayload", wire: ProgressEvent{}},
+
+		{file: islandCampaigns, decl: "CampaignPoint", wire: ui.CampaignSeriesPoint{}},
+		{file: islandCampaigns, decl: "CampaignSummary", wire: ui.CampaignSummary{}},
+		{file: islandCampaigns, decl: "CampaignList", wire: campaignViewList{}},
+		{file: islandCampaigns, decl: "CampaignStage", wire: ui.CampaignStage{}},
+		{file: islandCampaigns, decl: "CampaignProjection", wire: ui.CampaignProjection{}},
+		{file: islandCampaigns, decl: "Campaign", wire: ui.Campaign{}},
+
+		{file: islandJobList, decl: "JobListItem", wire: ui.JobListItem{}},
+		{file: islandJobList, decl: "JobPage", wire: ui.JobListPage{}},
+		{file: islandJobList, decl: "RawJob", wire: JobSummary{}},
+		{file: islandJobList, decl: "RawJobPage", wire: jobListPage{}},
+
+		{file: islandJobDetail, decl: "JobActions", wire: jobActions{}},
+		{file: islandJobDetail, decl: "JobDetailSeed", wire: ui.JobDetail{}},
+		{file: islandJobDetail, decl: "JobStatusPayload", wire: jobStatusResponse{}},
+		{file: islandJobDetail, decl: "MetricSample", wire: ui.MetricSample{}},
+		{file: islandJobDetail, decl: "CircleParameter", wire: ui.CircleParameter{}},
+
+		{file: "CampaignCostChart.tsx", decl: "CampaignCostChartPoint", wire: ui.CampaignSeriesPoint{}},
+
+		{file: "format.ts", decl: "ProjectionShape", wire: ui.CampaignProjection{}},
+	} {
+		t.Run(testCase.file+"/"+testCase.decl, func(t *testing.T) {
+			t.Parallel()
+
+			wire := goWireNames(t, testCase.wire)
+
+			for name := range tsObjectFields(t, testCase.file, testCase.decl) {
+				if !wire[name] {
+					t.Errorf("%s declares %q, which %T does not serialize; the island would read undefined",
+						testCase.decl, name, testCase.wire)
 				}
 			}
 		})

@@ -1,10 +1,67 @@
 package ui
 
-// CreateJobPage displays the job creation form. project is the slug the job
-// will be created in; it is carried through as a hidden field because the form
-// posts to a bare "/create" action, which discards the query string the page
-// was opened with. Without it every job created from the UI silently lands in
-// the default project. An empty slug means the default project.
+import "strconv"
+
+// CreateJobPageData is the server-side projection for the job creation page.
+//
+// The JSON tags are not decoration: everything except ErrorMessage is seeded
+// into the page through templ.JSONScript and read back by CreateJobIsland
+// (web/src/CreateJob.tsx), which posts POST /api/v1/jobs instead of the form.
+// Limits is what keeps the island from carrying numbers of its own — the same
+// struct writes the fallback form's min/max attributes and the island's, so
+// there is one set of bounds and it is the server's.
+//
+// ErrorMessage is excluded because it belongs to the fallback: it is the
+// message a rejected form POST re-rendered the page with, and it is displayed
+// outside the mount point, above the form the island replaces.
+type CreateJobPageData struct {
+	ErrorMessage string          `json:"-"`
+	Project      string          `json:"project"`
+	Limits       CreateJobLimits `json:"limits"`
+}
+
+// CreateJobLimits carries the bounds the creation form enforces in the browser.
+// Every value is filled from internal/app or from the named constants beside
+// the form handler in internal/server, so the browser never states a limit the
+// server does not; app.Validate remains the authority that decides a request.
+//
+// A limit here is therefore a projection of the server's, not a second copy:
+// an input the browser accepts may still be refused by app.Validate — a
+// polishing active set larger than the circle count, say, whose bound depends
+// on another field — but nothing the browser refuses would have been accepted.
+type CreateJobLimits struct {
+	MaxCircles                 int     `json:"maxCircles"`
+	MaxIterations              int     `json:"maxIterations"`
+	MinPopulation              int     `json:"minPopulation"`
+	MaxPopulation              int     `json:"maxPopulation"`
+	MaxOptimizerEpochs         int     `json:"maxOptimizerEpochs"`
+	MaxBatchSize               int     `json:"maxBatchSize"`
+	MaxPolishingSweeps         int     `json:"maxPolishingSweeps"`
+	MaxConvergencePatience     int     `json:"maxConvergencePatience"`
+	MinConvergenceThreshold    float64 `json:"minConvergenceThreshold"`
+	MaxConvergenceThreshold    float64 `json:"maxConvergenceThreshold"`
+	MinPolishingMinImprovement float64 `json:"minPolishingMinImprovement"`
+	DefaultInitialSigma        float64 `json:"defaultInitialSigma"`
+}
+
+// attrInt and attrFloat render a limit as an HTML attribute value. attrFloat
+// uses 'f' with no exponent because a min="1e-09" is not a valid HTML floating
+// point number and browsers drop the constraint silently.
+func attrInt(value int) string { return strconv.Itoa(value) }
+
+func attrFloat(value float64) string { return strconv.FormatFloat(value, 'f', -1, 64) }
+
+// CreateJobPage displays the job creation form. page.Project is the slug the
+// job will be created in; it is carried through as a hidden field because the
+// form posts to a bare "/create" action, which discards the query string the
+// page was opened with. Without it every job created from the UI silently lands
+// in the default project. An empty slug means the default project.
+//
+// The form is wrapped in a mount point: with the bundle loaded,
+// CreateJobIsland replaces it and posts POST /api/v1/jobs, and without it the
+// form below posts to /create and the page works unchanged. Both admission
+// paths are kept deliberately; see the create-page paragraph in
+// docs/behavior-invariants.md.
 //
 // Each section is a fieldset rather than a div so that the controls inside it
 // are announced as one group, which is what gives the standalone checkboxes
@@ -28,7 +85,7 @@ const createInputStyle = "width: 100%; padding: 0.5rem; border: 1px solid var(--
 
 const createSelectStyle = createInputStyle + " background-color: var(--control-bg);"
 
-templ CreateJobPage(errorMsg, project string) {
+templ CreateJobPage(page CreateJobPageData) {
 	@Layout("Create Job") {
 		<div style="max-width: 800px; margin: 0 auto;">
 			<div style="margin-bottom: 2rem;">
@@ -42,532 +99,542 @@ templ CreateJobPage(errorMsg, project string) {
 					Configure and start a new circle fitting optimization job.
 				</p>
 			</div>
-			if errorMsg != "" {
+			if page.ErrorMessage != "" {
 				// role="alert" because the page is re-rendered after a failed
 				// submission: without it the rejection is a silent change of
 				// content for anyone not looking at the top of the form.
+				//
+				// It sits outside the mount point on purpose. This message is
+				// the fallback POST's rejection, and the island neither
+				// produces nor clears it; leaving it inside would have mounting
+				// erase the reason the page was re-rendered.
 				<div class="card" role="alert" style="background-color: var(--error-bg); border: 1px solid var(--error-border); margin-bottom: 1.5rem;">
 					<h3 style="color: var(--error-text); font-weight: 600; margin-bottom: 0.5rem;">Error</h3>
-					<p style="color: var(--error-text); font-size: 0.875rem;">{ errorMsg }</p>
+					<p style="color: var(--error-text); font-size: 0.875rem;">{ page.ErrorMessage }</p>
 				</div>
 			}
-			<form method="POST" action="/create" enctype="multipart/form-data" class="card">
-				if project != "" {
-					<input type="hidden" name="project" value={ project }/>
-				}
-				<fieldset style={ createSectionStyle }>
-					<legend style="padding: 0;">
-						<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-							Reference Image
-						</h2>
-					</legend>
-					<div style="margin-bottom: 1rem;">
-						<label for="refPath" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-							Image Path
-							@requiredMarker()
-						</label>
-						<input
-							type="text"
-							id="refPath"
-							name="refPath"
-							placeholder="e.g., assets/test.png"
-							required
-							aria-required="true"
-							style={ createInputStyle }
-						/>
-						<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-							Enter the path to your reference image file on the server.
+			// Everything inside the mount point is the fallback; mounting
+			// replaces it with the island's own form.
+			<div data-island="create-job" data-island-label="job creation form">
+				@templ.JSONScript("create-job-page", page)
+				<form method="POST" action="/create" enctype="multipart/form-data" class="card">
+					if page.Project != "" {
+						<input type="hidden" name="project" value={ page.Project }/>
+					}
+					<fieldset style={ createSectionStyle }>
+						<legend style="padding: 0;">
+							<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+								Reference Image
+							</h2>
+						</legend>
+						<div style="margin-bottom: 1rem;">
+							<label for="refPath" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+								Image Path
+								@requiredMarker()
+							</label>
+							<input
+								type="text"
+								id="refPath"
+								name="refPath"
+								placeholder="e.g., assets/test.png"
+								required
+								aria-required="true"
+								style={ createInputStyle }
+							/>
+							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+								Enter the path to your reference image file on the server.
+							</p>
+						</div>
+						<div style="margin-bottom: 1rem;">
+							<label for="canvasPath" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+								Canvas Path (Optional)
+							</label>
+							<input
+								type="text"
+								id="canvasPath"
+								name="canvasPath"
+								placeholder="e.g., output/previous-result.png"
+								style={ createInputStyle }
+							/>
+							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+								Load existing canvas to continue from a previous result. Leave empty for blank canvas.
+							</p>
+						</div>
+					</fieldset>
+					<fieldset style={ createSectionStyle }>
+						<legend style="padding: 0;">
+							<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+								Optimization Parameters
+							</h2>
+						</legend>
+						<div style={ createFieldGridStyle }>
+							<div>
+								<label for="optimizer" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Optimizer
+									@requiredMarker()
+								</label>
+								<select
+									id="optimizer"
+									name="optimizer"
+									required
+									aria-required="true"
+									style={ createSelectStyle }
+								>
+									<option value="mayfly" selected>MayFly</option>
+									<option value="cmaes">CMA-ES</option>
+									<option value="dragonfly">Dragonfly (experimental)</option>
+								</select>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									CMA-ES is configured in the CMA-ES section below. MayFly and Dragonfly ignore that section.
+								</p>
+							</div>
+							<div>
+								<label for="mode" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Mode
+									@requiredMarker()
+								</label>
+								<select
+									id="mode"
+									name="mode"
+									required
+									aria-required="true"
+									style={ createSelectStyle }
+								>
+									<option value="joint" selected>Joint</option>
+									<option value="sequential">Sequential</option>
+									<option value="batch">Batch</option>
+								</select>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									Optimization strategy
+								</p>
+							</div>
+							<div>
+								<label for="circles" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Circles
+									@requiredMarker()
+								</label>
+								<input
+									type="number"
+									id="circles"
+									name="circles"
+									value="10"
+									min="1"
+									max={ attrInt(page.Limits.MaxCircles) }
+									required
+									aria-required="true"
+									style={ createInputStyle }
+								/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									Number of circles (1-3000)
+								</p>
+							</div>
+							<div>
+								<label for="iters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Iterations
+									@requiredMarker()
+								</label>
+								<input
+									type="number"
+									id="iters"
+									name="iters"
+									value="100"
+									min="1"
+									max={ attrInt(page.Limits.MaxIterations) }
+									required
+									aria-required="true"
+									style={ createInputStyle }
+								/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									Max iterations (1-10000)
+								</p>
+							</div>
+							<div>
+								<label for="popSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Population Size
+									@requiredMarker()
+								</label>
+								<input
+									type="number"
+									id="popSize"
+									name="popSize"
+									value="30"
+									min={ attrInt(page.Limits.MinPopulation) }
+									max={ attrInt(page.Limits.MaxPopulation) }
+									required
+									aria-required="true"
+									style={ createInputStyle }
+								/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									Population size (20-4096)
+								</p>
+							</div>
+							<div>
+								<label for="batchSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Batch Size
+								</label>
+								<input
+									type="number"
+									id="batchSize"
+									name="batchSize"
+									value="0"
+									min="0"
+									max={ attrInt(page.Limits.MaxBatchSize) }
+									style={ createInputStyle }
+								/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									Batch mode only. Set equal to Circles to optimize them all together; 0 selects the automatic default.
+								</p>
+							</div>
+							<div>
+								<label for="seed" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Random Seed
+								</label>
+								<input
+									type="number"
+									id="seed"
+									name="seed"
+									value="0"
+									style={ createInputStyle }
+								/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									0 for random, or set for reproducibility
+								</p>
+							</div>
+							<div>
+								<label for="optimizerEpochs" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Optimizer Epochs
+								</label>
+								<input
+									type="number"
+									id="optimizerEpochs"
+									name="optimizerEpochs"
+									value="1"
+									min="1"
+									max={ attrInt(page.Limits.MaxOptimizerEpochs) }
+									style={ createInputStyle }
+								/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									Repeat each optimizer stage, retaining the best and reseeding with fresh diversity (4 × 2000 = 4 epochs at 2000 iterations).
+								</p>
+							</div>
+						</div>
+					</fieldset>
+					<fieldset style={ createSectionStyle }>
+						<legend style="padding: 0;">
+							<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+								CMA-ES
+							</h2>
+						</legend>
+						<p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;">
+							These settings apply only when the optimizer above is CMA-ES. A MayFly or Dragonfly job ignores them, whatever is entered here.
 						</p>
-					</div>
-					<div style="margin-bottom: 1rem;">
-						<label for="canvasPath" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-							Canvas Path (Optional)
-						</label>
-						<input
-							type="text"
-							id="canvasPath"
-							name="canvasPath"
-							placeholder="e.g., output/previous-result.png"
-							style={ createInputStyle }
-						/>
-						<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-							Load existing canvas to continue from a previous result. Leave empty for blank canvas.
-						</p>
-					</div>
-				</fieldset>
-				<fieldset style={ createSectionStyle }>
-					<legend style="padding: 0;">
-						<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-							Optimization Parameters
-						</h2>
-					</legend>
-					<div style={ createFieldGridStyle }>
-						<div>
-							<label for="optimizer" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Optimizer
-								@requiredMarker()
-							</label>
-							<select
-								id="optimizer"
-								name="optimizer"
-								required
-								aria-required="true"
-								style={ createSelectStyle }
-							>
-								<option value="mayfly" selected>MayFly</option>
-								<option value="cmaes">CMA-ES</option>
-								<option value="dragonfly">Dragonfly (experimental)</option>
-							</select>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								CMA-ES is configured in the CMA-ES section below. MayFly and Dragonfly ignore that section.
-							</p>
+						<div style={ createFieldGridStyle }>
+							<div>
+								<label for="initialSigma" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Initial Sigma
+								</label>
+								<input
+									type="number"
+									id="initialSigma"
+									name="initialSigma"
+									value={ attrFloat(page.Limits.DefaultInitialSigma) }
+									step="any"
+									style={ createInputStyle }
+								/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									Initial step size in the normalized [0,1] search box, so it means the same for every circle parameter. Must be finite and positive.
+								</p>
+							</div>
+							<div>
+								<label for="covarianceMode" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Covariance
+								</label>
+								<select
+									id="covarianceMode"
+									name="covarianceMode"
+									style={ createSelectStyle }
+								>
+									<option value="full" selected>Full</option>
+									<option value="separable">Separable</option>
+									<option value="block">Block</option>
+								</select>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									Full covariance supports at most 512 optimizer dimensions and a larger search is refused rather than run. One run searches 7 dimensions per circle: every circle in joint mode, one batch in batch mode, a single circle in sequential mode. That is 73 circles per run at most: in joint mode that caps the whole canvas, while a batch or sequential job stays inside it whatever its total circle count. Choose block or separable above that.
+								</p>
+							</div>
+							<div>
+								<label for="restartStrategy" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Restart Strategy
+								</label>
+								<select
+									id="restartStrategy"
+									name="restartStrategy"
+									style={ createSelectStyle }
+								>
+									<option value="none" selected>None</option>
+									<option value="ipop">IPOP</option>
+									<option value="bipop">BIPOP</option>
+								</select>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									CMA-ES's own restart schedule, spending one stage budget across several runs. IPOP grows the population at each restart; BIPOP alternates large and small ones.
+								</p>
+							</div>
 						</div>
-						<div>
-							<label for="mode" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Mode
-								@requiredMarker()
-							</label>
-							<select
-								id="mode"
-								name="mode"
-								required
-								aria-required="true"
-								style={ createSelectStyle }
-							>
-								<option value="joint" selected>Joint</option>
-								<option value="sequential">Sequential</option>
-								<option value="batch">Batch</option>
-							</select>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								Optimization strategy
-							</p>
-						</div>
-						<div>
-							<label for="circles" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Circles
-								@requiredMarker()
-							</label>
-							<input
-								type="number"
-								id="circles"
-								name="circles"
-								value="10"
-								min="1"
-								max="3000"
-								required
-								aria-required="true"
-								style={ createInputStyle }
-							/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								Number of circles (1-3000)
-							</p>
-						</div>
-						<div>
-							<label for="iters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Iterations
-								@requiredMarker()
-							</label>
-							<input
-								type="number"
-								id="iters"
-								name="iters"
-								value="100"
-								min="1"
-								max="10000"
-								required
-								aria-required="true"
-								style={ createInputStyle }
-							/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								Max iterations (1-10000)
-							</p>
-						</div>
-						<div>
-							<label for="popSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Population Size
-								@requiredMarker()
-							</label>
-							<input
-								type="number"
-								id="popSize"
-								name="popSize"
-								value="30"
-								min="20"
-								max="4096"
-								required
-								aria-required="true"
-								style={ createInputStyle }
-							/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								Population size (20-4096)
-							</p>
-						</div>
-						<div>
-							<label for="batchSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Batch Size
-							</label>
-							<input
-								type="number"
-								id="batchSize"
-								name="batchSize"
-								value="0"
-								min="0"
-								max="100"
-								style={ createInputStyle }
-							/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								Batch mode only. Set equal to Circles to optimize them all together; 0 selects the automatic default.
-							</p>
-						</div>
-						<div>
-							<label for="seed" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Random Seed
-							</label>
-							<input
-								type="number"
-								id="seed"
-								name="seed"
-								value="0"
-								style={ createInputStyle }
-							/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								0 for random, or set for reproducibility
-							</p>
-						</div>
-						<div>
-							<label for="optimizerEpochs" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Optimizer Epochs
-							</label>
-							<input
-								type="number"
-								id="optimizerEpochs"
-								name="optimizerEpochs"
-								value="1"
-								min="1"
-								max="32"
-								style={ createInputStyle }
-							/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								Repeat each optimizer stage, retaining the best and reseeding with fresh diversity (4 × 2000 = 4 epochs at 2000 iterations).
-							</p>
-						</div>
-					</div>
-				</fieldset>
-				<fieldset style={ createSectionStyle }>
-					<legend style="padding: 0;">
-						<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-							CMA-ES
-						</h2>
-					</legend>
-					<p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;">
-						These settings apply only when the optimizer above is CMA-ES. A MayFly or Dragonfly job ignores them, whatever is entered here.
-					</p>
-					<div style={ createFieldGridStyle }>
-						<div>
-							<label for="initialSigma" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Initial Sigma
-							</label>
-							<input
-								type="number"
-								id="initialSigma"
-								name="initialSigma"
-								value="0.3"
-								step="any"
-								style={ createInputStyle }
-							/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								Initial step size in the normalized [0,1] search box, so it means the same for every circle parameter. Must be finite and positive.
-							</p>
-						</div>
-						<div>
-							<label for="covarianceMode" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Covariance
-							</label>
-							<select
-								id="covarianceMode"
-								name="covarianceMode"
-								style={ createSelectStyle }
-							>
-								<option value="full" selected>Full</option>
-								<option value="separable">Separable</option>
-								<option value="block">Block</option>
-							</select>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								Full covariance supports at most 512 optimizer dimensions and a larger search is refused rather than run. One run searches 7 dimensions per circle: every circle in joint mode, one batch in batch mode, a single circle in sequential mode. That is 73 circles per run at most: in joint mode that caps the whole canvas, while a batch or sequential job stays inside it whatever its total circle count. Choose block or separable above that.
-							</p>
-						</div>
-						<div>
-							<label for="restartStrategy" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Restart Strategy
-							</label>
-							<select
-								id="restartStrategy"
-								name="restartStrategy"
-								style={ createSelectStyle }
-							>
-								<option value="none" selected>None</option>
-								<option value="ipop">IPOP</option>
-								<option value="bipop">BIPOP</option>
-							</select>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								CMA-ES's own restart schedule, spending one stage budget across several runs. IPOP grows the population at each restart; BIPOP alternates large and small ones.
-							</p>
-						</div>
-					</div>
-					<label for="activeCMA" style="display: flex; align-items: center; cursor: pointer; margin-top: 1rem;">
-						<input
-							type="checkbox"
-							id="activeCMA"
-							name="activeCMA"
-							checked
-							style="margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;"
-						/>
-						<span style="font-weight: 500;">Active covariance adaptation</span>
-					</label>
-					<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;">
-						Negative rank-mu updates, which also learn from the worst candidates of each generation. Enabled by default.
-					</p>
-				</fieldset>
-				<fieldset style={ createSectionStyle }>
-					<legend style="padding: 0;">
-						<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-							Active-set Polishing
-						</h2>
-					</legend>
-					<label for="polishingEnabled" style="display: flex; align-items: center; cursor: pointer; margin-bottom: 0.5rem;">
-						<input
-							type="checkbox"
-							id="polishingEnabled"
-							name="polishingEnabled"
-							style="margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;"
-						/>
-						<span style="font-weight: 500;">Polish selected circles after the batch run</span>
-					</label>
-					<p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem; margin-left: 1.5rem;">
-						Batch mode only. Every strategy preserves draw order, and a sweep is kept only when the complete image improves.
-					</p>
-					<div style={ createFieldGridStyle }>
-						<div>
-							<label for="polishingStrategy" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Strategy</label>
-							<select id="polishingStrategy" name="polishingStrategy" style={ createSelectStyle }>
-								<option value="replacement" selected>Weakest replacement</option>
-								<option value="hybrid-overlap">Hybrid overlap</option>
-								<option value="residual-region">Residual region</option>
-								<option value="contiguous-window">Contiguous window</option>
-							</select>
-							<dl style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								<dt style="font-weight: 500;">Weakest replacement</dt>
-								<dd style="margin: 0 0 0.25rem 0;">Reseeds the weakest circles from the residual image.</dd>
-								<dt style="font-weight: 500;">Hybrid overlap</dt>
-								<dd style="margin: 0 0 0.25rem 0;">Combines weak circles with the ones that overlap them.</dd>
-								<dt style="font-weight: 500;">Residual region</dt>
-								<dd style="margin: 0 0 0.25rem 0;">Visits distinct high-error tiles and optimizes their influencing circles.</dd>
-								<dt style="font-weight: 500;">Contiguous window</dt>
-								<dd style="margin: 0;">Polishes a consecutive run of slots, so the circles ahead of the window can be baked and each candidate evaluates fewer circles. Cheaper per sweep but selected by position rather than error, so it needs roughly circles / active set size sweeps to reach every circle.</dd>
-							</dl>
-						</div>
-						<div>
-							<label for="polishingActiveSetSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Active Set Size</label>
-							<input type="number" id="polishingActiveSetSize" name="polishingActiveSetSize" value="5" min="1" max="100" style={ createInputStyle }/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Circles optimized together</p>
-						</div>
-						<div>
-							<label for="polishingMaxSweeps" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Maximum Sweeps</label>
-							<input type="number" id="polishingMaxSweeps" name="polishingMaxSweeps" value="8" min="1" max="32" style={ createInputStyle }/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Regional polishing continues to the next tile after a rejection</p>
-						</div>
-						<div>
-							<label for="polishingEpochs" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Epochs per Sweep</label>
-							<input type="number" id="polishingEpochs" name="polishingEpochs" value="2" min="1" max="32" style={ createInputStyle }/>
-						</div>
-						<div>
-							<label for="polishingIters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Iterations per Epoch</label>
-							<input type="number" id="polishingIters" name="polishingIters" value="200" min="1" max="10000" style={ createInputStyle }/>
-						</div>
-						<div>
-							<label for="polishingPopSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Sweep Population</label>
-							<input type="number" id="polishingPopSize" name="polishingPopSize" value="30" min="20" max="4096" style={ createInputStyle }/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Population for the active set, independent of the population size above</p>
-						</div>
-						<div>
-							<label for="polishingStagnationIters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Stagnation Iterations</label>
-							<input type="number" id="polishingStagnationIters" name="polishingStagnationIters" value="100" min="1" max="10000" style={ createInputStyle }/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Must not exceed iterations per epoch</p>
-						</div>
-						<div>
-							<label for="polishingMinImprovement" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Progress Threshold</label>
-							<input type="number" id="polishingMinImprovement" name="polishingMinImprovement" value="0.001" min="0.000000001" step="any" style={ createInputStyle }/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Absolute optimizer cost reduction that resets stagnation</p>
-						</div>
-					</div>
-				</fieldset>
-				<fieldset style={ createSectionStyle }>
-					<legend style="padding: 0;">
-						<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-							Convergence Settings
-						</h2>
-					</legend>
-					<div style="margin-bottom: 1rem;">
-						<label for="convergenceEnabled" style="display: flex; align-items: center; cursor: pointer;">
+						<label for="activeCMA" style="display: flex; align-items: center; cursor: pointer; margin-top: 1rem;">
 							<input
 								type="checkbox"
-								id="convergenceEnabled"
-								name="convergenceEnabled"
+								id="activeCMA"
+								name="activeCMA"
 								checked
 								style="margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;"
 							/>
-							<span style="font-weight: 500;">Enable Convergence Detection</span>
+							<span style="font-weight: 500;">Active covariance adaptation</span>
 						</label>
 						<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;">
-							Stop early when optimizer can't improve further (sequential/batch modes only).
+							Negative rank-mu updates, which also learn from the worst candidates of each generation. Enabled by default.
 						</p>
+					</fieldset>
+					<fieldset style={ createSectionStyle }>
+						<legend style="padding: 0;">
+							<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+								Active-set Polishing
+							</h2>
+						</legend>
+						<label for="polishingEnabled" style="display: flex; align-items: center; cursor: pointer; margin-bottom: 0.5rem;">
+							<input
+								type="checkbox"
+								id="polishingEnabled"
+								name="polishingEnabled"
+								style="margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;"
+							/>
+							<span style="font-weight: 500;">Polish selected circles after the batch run</span>
+						</label>
+						<p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem; margin-left: 1.5rem;">
+							Batch mode only. Every strategy preserves draw order, and a sweep is kept only when the complete image improves.
+						</p>
+						<div style={ createFieldGridStyle }>
+							<div>
+								<label for="polishingStrategy" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Strategy</label>
+								<select id="polishingStrategy" name="polishingStrategy" style={ createSelectStyle }>
+									<option value="replacement" selected>Weakest replacement</option>
+									<option value="hybrid-overlap">Hybrid overlap</option>
+									<option value="residual-region">Residual region</option>
+									<option value="contiguous-window">Contiguous window</option>
+								</select>
+								<dl style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									<dt style="font-weight: 500;">Weakest replacement</dt>
+									<dd style="margin: 0 0 0.25rem 0;">Reseeds the weakest circles from the residual image.</dd>
+									<dt style="font-weight: 500;">Hybrid overlap</dt>
+									<dd style="margin: 0 0 0.25rem 0;">Combines weak circles with the ones that overlap them.</dd>
+									<dt style="font-weight: 500;">Residual region</dt>
+									<dd style="margin: 0 0 0.25rem 0;">Visits distinct high-error tiles and optimizes their influencing circles.</dd>
+									<dt style="font-weight: 500;">Contiguous window</dt>
+									<dd style="margin: 0;">Polishes a consecutive run of slots, so the circles ahead of the window can be baked and each candidate evaluates fewer circles. Cheaper per sweep but selected by position rather than error, so it needs roughly circles / active set size sweeps to reach every circle.</dd>
+								</dl>
+							</div>
+							<div>
+								<label for="polishingActiveSetSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Active Set Size</label>
+								<input type="number" id="polishingActiveSetSize" name="polishingActiveSetSize" value="5" min="1" max={ attrInt(page.Limits.MaxBatchSize) } style={ createInputStyle }/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Circles optimized together</p>
+							</div>
+							<div>
+								<label for="polishingMaxSweeps" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Maximum Sweeps</label>
+								<input type="number" id="polishingMaxSweeps" name="polishingMaxSweeps" value="8" min="1" max={ attrInt(page.Limits.MaxPolishingSweeps) } style={ createInputStyle }/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Regional polishing continues to the next tile after a rejection</p>
+							</div>
+							<div>
+								<label for="polishingEpochs" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Epochs per Sweep</label>
+								<input type="number" id="polishingEpochs" name="polishingEpochs" value="2" min="1" max={ attrInt(page.Limits.MaxOptimizerEpochs) } style={ createInputStyle }/>
+							</div>
+							<div>
+								<label for="polishingIters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Iterations per Epoch</label>
+								<input type="number" id="polishingIters" name="polishingIters" value="200" min="1" max={ attrInt(page.Limits.MaxIterations) } style={ createInputStyle }/>
+							</div>
+							<div>
+								<label for="polishingPopSize" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Sweep Population</label>
+								<input type="number" id="polishingPopSize" name="polishingPopSize" value="30" min={ attrInt(page.Limits.MinPopulation) } max={ attrInt(page.Limits.MaxPopulation) } style={ createInputStyle }/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Population for the active set, independent of the population size above</p>
+							</div>
+							<div>
+								<label for="polishingStagnationIters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Stagnation Iterations</label>
+								<input type="number" id="polishingStagnationIters" name="polishingStagnationIters" value="100" min="1" max={ attrInt(page.Limits.MaxIterations) } style={ createInputStyle }/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Must not exceed iterations per epoch</p>
+							</div>
+							<div>
+								<label for="polishingMinImprovement" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Progress Threshold</label>
+								<input type="number" id="polishingMinImprovement" name="polishingMinImprovement" value="0.001" min={ attrFloat(page.Limits.MinPolishingMinImprovement) } step="any" style={ createInputStyle }/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Absolute optimizer cost reduction that resets stagnation</p>
+							</div>
+						</div>
+					</fieldset>
+					<fieldset style={ createSectionStyle }>
+						<legend style="padding: 0;">
+							<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+								Convergence Settings
+							</h2>
+						</legend>
+						<div style="margin-bottom: 1rem;">
+							<label for="convergenceEnabled" style="display: flex; align-items: center; cursor: pointer;">
+								<input
+									type="checkbox"
+									id="convergenceEnabled"
+									name="convergenceEnabled"
+									checked
+									style="margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;"
+								/>
+								<span style="font-weight: 500;">Enable Convergence Detection</span>
+							</label>
+							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;">
+								Stop early when optimizer can't improve further (sequential/batch modes only).
+							</p>
+						</div>
+						<div style={ createFieldGridStyle }>
+							<div>
+								<label for="convergencePatience" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Patience
+								</label>
+								<input
+									type="number"
+									id="convergencePatience"
+									name="convergencePatience"
+									value="3"
+									min="1"
+									max={ attrInt(page.Limits.MaxConvergencePatience) }
+									style={ createInputStyle }
+								/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									Iterations with no improvement before stopping
+								</p>
+							</div>
+							<div>
+								<label for="convergenceThreshold" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Threshold
+								</label>
+								<input
+									type="number"
+									id="convergenceThreshold"
+									name="convergenceThreshold"
+									value="0.001"
+									min={ attrFloat(page.Limits.MinConvergenceThreshold) }
+									max={ attrFloat(page.Limits.MaxConvergenceThreshold) }
+									step={ attrFloat(page.Limits.MinConvergenceThreshold) }
+									style={ createInputStyle }
+								/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									Minimum relative improvement (0.001 = 0.1%)
+								</p>
+							</div>
+						</div>
+					</fieldset>
+					<fieldset style={ createSectionStyle }>
+						<legend style="padding: 0;">
+							<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+								Early Stopping (Optimizer)
+							</h2>
+						</legend>
+						<p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;">
+							Applied per iteration inside a single optimizer run, in every mode. The
+							convergence settings above instead count whole circles or batches. Leave
+							these empty to disable early stopping and keep runs reproducible.
+						</p>
+						<div style={ createFieldGridStyle }>
+							<div>
+								<label for="stopTargetCost" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Target Cost
+								</label>
+								<input
+									type="number"
+									id="stopTargetCost"
+									name="stopTargetCost"
+									min="0"
+									step="any"
+									placeholder="disabled"
+									style={ createInputStyle }
+								/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									Stop once the best cost reaches this absolute value
+								</p>
+							</div>
+							<div>
+								<label for="stopStagnationIters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Stagnation Iterations
+								</label>
+								<input
+									type="number"
+									id="stopStagnationIters"
+									name="stopStagnationIters"
+									min="0"
+									placeholder="disabled"
+									style={ createInputStyle }
+								/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									Stop after N consecutive iterations without progress
+								</p>
+							</div>
+							<div>
+								<label for="stopMinImprovement" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Minimum Improvement
+								</label>
+								<input
+									type="number"
+									id="stopMinImprovement"
+									name="stopMinImprovement"
+									min="0"
+									step="any"
+									placeholder="any improvement"
+									style={ createInputStyle }
+								/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									ABSOLUTE cost reduction counted as progress; requires stagnation iterations
+								</p>
+							</div>
+							<div>
+								<label for="stopMinIters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Minimum Iterations
+								</label>
+								<input
+									type="number"
+									id="stopMinIters"
+									name="stopMinIters"
+									min="0"
+									placeholder="0"
+									style={ createInputStyle }
+								/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									Iterations completed before any early stop can fire
+								</p>
+							</div>
+						</div>
+					</fieldset>
+					<fieldset style={ createSectionStyle }>
+						<legend style="padding: 0;">
+							<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
+								Advanced Metrics
+							</h2>
+						</legend>
+						<label for="enableSSIM" style="display: flex; align-items: center; cursor: pointer;">
+							<input
+								type="checkbox"
+								id="enableSSIM"
+								name="enableSSIM"
+								style="margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;"
+							/>
+							<span style="font-weight: 500;">Enable SSIM</span>
+						</label>
+						<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;">
+							Track structural similarity during the run. This adds periodic image rendering and metric work.
+						</p>
+					</fieldset>
+					<div class="action-row" style="padding-top: 1rem; border-top: 1px solid var(--border-color);">
+						<a href="/jobs" class="btn" style="background-color: var(--border-color); text-decoration: none;">
+							Cancel
+						</a>
+						<button type="submit" class="btn btn-primary">
+							Create Job
+						</button>
 					</div>
-					<div style={ createFieldGridStyle }>
-						<div>
-							<label for="convergencePatience" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Patience
-							</label>
-							<input
-								type="number"
-								id="convergencePatience"
-								name="convergencePatience"
-								value="3"
-								min="1"
-								max="100"
-								style={ createInputStyle }
-							/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								Iterations with no improvement before stopping
-							</p>
-						</div>
-						<div>
-							<label for="convergenceThreshold" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Threshold
-							</label>
-							<input
-								type="number"
-								id="convergenceThreshold"
-								name="convergenceThreshold"
-								value="0.001"
-								min="0.0001"
-								max="0.1"
-								step="0.0001"
-								style={ createInputStyle }
-							/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								Minimum relative improvement (0.001 = 0.1%)
-							</p>
-						</div>
-					</div>
-				</fieldset>
-				<fieldset style={ createSectionStyle }>
-					<legend style="padding: 0;">
-						<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-							Early Stopping (Optimizer)
-						</h2>
-					</legend>
-					<p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;">
-						Applied per iteration inside a single optimizer run, in every mode. The
-						convergence settings above instead count whole circles or batches. Leave
-						these empty to disable early stopping and keep runs reproducible.
-					</p>
-					<div style={ createFieldGridStyle }>
-						<div>
-							<label for="stopTargetCost" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Target Cost
-							</label>
-							<input
-								type="number"
-								id="stopTargetCost"
-								name="stopTargetCost"
-								min="0"
-								step="any"
-								placeholder="disabled"
-								style={ createInputStyle }
-							/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								Stop once the best cost reaches this absolute value
-							</p>
-						</div>
-						<div>
-							<label for="stopStagnationIters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Stagnation Iterations
-							</label>
-							<input
-								type="number"
-								id="stopStagnationIters"
-								name="stopStagnationIters"
-								min="0"
-								placeholder="disabled"
-								style={ createInputStyle }
-							/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								Stop after N consecutive iterations without progress
-							</p>
-						</div>
-						<div>
-							<label for="stopMinImprovement" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Minimum Improvement
-							</label>
-							<input
-								type="number"
-								id="stopMinImprovement"
-								name="stopMinImprovement"
-								min="0"
-								step="any"
-								placeholder="any improvement"
-								style={ createInputStyle }
-							/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								ABSOLUTE cost reduction counted as progress; requires stagnation iterations
-							</p>
-						</div>
-						<div>
-							<label for="stopMinIters" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
-								Minimum Iterations
-							</label>
-							<input
-								type="number"
-								id="stopMinIters"
-								name="stopMinIters"
-								min="0"
-								placeholder="0"
-								style={ createInputStyle }
-							/>
-							<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-								Iterations completed before any early stop can fire
-							</p>
-						</div>
-					</div>
-				</fieldset>
-				<fieldset style={ createSectionStyle }>
-					<legend style="padding: 0;">
-						<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">
-							Advanced Metrics
-						</h2>
-					</legend>
-					<label for="enableSSIM" style="display: flex; align-items: center; cursor: pointer;">
-						<input
-							type="checkbox"
-							id="enableSSIM"
-							name="enableSSIM"
-							style="margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;"
-						/>
-						<span style="font-weight: 500;">Enable SSIM</span>
-					</label>
-					<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;">
-						Track structural similarity during the run. This adds periodic image rendering and metric work.
-					</p>
-				</fieldset>
-				<div class="action-row" style="padding-top: 1rem; border-top: 1px solid var(--border-color);">
-					<a href="/jobs" class="btn" style="background-color: var(--border-color); text-decoration: none;">
-						Cancel
-					</a>
-					<button type="submit" class="btn btn-primary">
-						Create Job
-					</button>
-				</div>
-			</form>
+				</form>
+			</div>
 			<div class="card" style="margin-top: 1.5rem; background-color: var(--info-bg);">
 				<h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--info-text);">
 					// The emoji is decoration, but it is inside the heading and so

@@ -10,17 +10,101 @@ import (
 	"github.com/cwbudde/mayflycirclefit/internal/ui"
 )
 
+// testCreateLimits stands in for what the server projects from internal/app.
+// The values are deliberately not the production ones: this package must not
+// grow its own copy of them, and a test that asserted the real numbers here
+// would be exactly that copy. What the tests below check is that the page
+// writes whatever it is handed. internal/server owns the check that the numbers
+// handed over are app's; see TestCreateJobLimitsComeFromTheServerBounds.
+func testCreateLimits() ui.CreateJobLimits {
+	return ui.CreateJobLimits{
+		MaxCircles:                 111,
+		MaxIterations:              222,
+		MinPopulation:              33,
+		MaxPopulation:              444,
+		MaxOptimizerEpochs:         55,
+		MaxBatchSize:               66,
+		MaxPolishingSweeps:         77,
+		MaxConvergencePatience:     88,
+		MinConvergenceThreshold:    0.0002,
+		MaxConvergenceThreshold:    0.2,
+		MinPolishingMinImprovement: 1e-9,
+		DefaultInitialSigma:        0.3,
+	}
+}
+
 func renderCreatePage(t *testing.T, errorMsg, project string) string {
 	t.Helper()
 
 	var output bytes.Buffer
 
-	err := ui.CreateJobPage(errorMsg, project).Render(context.Background(), &output)
+	err := ui.CreateJobPage(ui.CreateJobPageData{
+		ErrorMessage: errorMsg,
+		Project:      project,
+		Limits:       testCreateLimits(),
+	}).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render create page: %v", err)
 	}
 
 	return output.String()
+}
+
+// TestCreateJobPageMountsTheIslandOverAWorkingForm is the fallback contract:
+// mounting replaces the mount point's contents, so the complete form that posts
+// to /create has to be inside it, and the seed the island reads has to be there
+// too.
+func TestCreateJobPageMountsTheIslandOverAWorkingForm(t *testing.T) {
+	t.Parallel()
+
+	body := renderCreatePage(t, "", "")
+
+	island := strings.Index(body, `data-island="create-job"`)
+	if island < 0 {
+		t.Fatal("the create page renders no create-job mount point, so the island can never mount")
+	}
+
+	seed := strings.Index(body, `id="create-job-page"`)
+	if seed < island {
+		t.Error("the create-job-page seed is not inside the mount point, where the island reads it")
+	}
+
+	form := strings.Index(body, `<form method="POST" action="/create"`)
+	if form < island {
+		t.Error("the form that posts to /create is outside the mount point, so mounting would leave two forms on the page")
+	}
+
+	if closing := strings.Index(body[form:], "</form>"); closing < 0 {
+		t.Error("the fallback form is not closed")
+	}
+}
+
+// TestCreateJobPageTakesItsBoundsFromTheLimits pins that no bound is written
+// into the markup as a literal. Every one of these numbers is unique to
+// testCreateLimits, so a hard-coded attribute cannot satisfy the check by
+// coincidence.
+func TestCreateJobPageTakesItsBoundsFromTheLimits(t *testing.T) {
+	t.Parallel()
+
+	body := renderCreatePage(t, "", "")
+
+	for _, want := range []string{
+		`max="111"`, // circles
+		`max="222"`, // iterations, polishing iterations, polishing stagnation
+		`min="33"`,  // population, polishing population
+		`max="444"`, // population, polishing population
+		`max="55"`,  // optimizer epochs, polishing epochs
+		`max="66"`,  // batch size, polishing active set
+		`max="77"`,  // polishing sweeps
+		`max="88"`,  // convergence patience
+		`min="0.0002"`,
+		`max="0.2"`,
+		`min="0.000000001"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the create page does not render %s from its limits", want)
+		}
+	}
 }
 
 var (
