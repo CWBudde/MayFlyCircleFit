@@ -111,7 +111,12 @@ fallback tier on hardware that actually reaches it.
 through a function pointer defeats `//go:noescape`, moves the 160-byte constant
 block to the heap, and makes the kernel measure 5–9× *slower* than scalar. The
 compositors are dispatched by direct call behind a build-tagged wrapper;
-`TestCompositeOpaqueSpanDoesNotAllocate` pins the property.
+`TestCompositeOpaqueSpanDoesNotAllocate` pins the property. Hoisting the block to
+once per circle did not relax this: it moved the storage one frame up, into the
+row walkers, where `TestRenderCircleRowsDoesNotAllocate` pins it — the older test
+cannot see that frame. The same rule reaches the benchmarks, which is why
+`benchmarkCompositeOpaqueSpan` takes a flag instead of the compositor as a func
+value.
 
 **FMA contraction on amd64.** Not a rejected optimization so much as a
 prohibition: the exact AVX2 compositor is byte-identical to the scalar path only

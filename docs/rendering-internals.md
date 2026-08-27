@@ -127,13 +127,27 @@ cheap to break silently, so they are stated before the kernels.
 - Every tier has an exact float64 vector span kernel, and all of them are on by
   default because all are byte-identical to `compositeOpaqueSpanScalar`:
   eight-pixel NEON on ARM64 (256-pixel cutoff, measured on Apple M5), two-pixel
-  AVX2 on AMD64 (16-pixel cutoff, measured on a Ryzen 5 4600H), and two-pixel
-  SSE2 on AMD64 (24-pixel cutoff, measured on a host that genuinely lacks AVX2).
-  The cutoffs are not shared and must not be copied between them; the NEON
-  kernel has a much larger setup cost to amortize.
+  AVX2 on AMD64 (6-pixel cutoff, measured on an i7-1255U), and two-pixel SSE2 on
+  AMD64 (24-pixel cutoff, measured on a host that genuinely lacks AVX2). The
+  cutoffs are not shared and must not be copied between them; the NEON kernel has
+  a much larger setup cost to amortize.
+- **The AMD64 constant block is built once per circle, not once per span.**
+  `renderCircleScanlineRowsTracked` and `compositeCircleDirtyRows` construct a
+  `spanBlend` and pass a pointer down to every span of every row. It is why the
+  AVX2 cutoff is 6 and not the 16 it was when the block was rebuilt per span.
+  `spanBlend` carries neither the colour nor the tier: the colour keeps its own
+  route to the scalar fallback, and the tier and cutoff stay read at call time so
+  a circle cannot be pinned to the tier that was current when it began.
+  `TestSpanBlendSurvivesTierChange` pins that. On every architecture but amd64
+  `spanBlend` is an empty struct, which is what keeps the row walkers free of
+  build tags. ARM64 is not hoisted: its crossover constant includes the setup and
+  has not been re-derived.
 - The SSE2 cutoff is 24 rather than the 8 a masked AVX2 machine suggests,
   because dispatch reaches SSE2 only when AVX2 is absent, so the machine that
-  actually runs it sets the constant. It is worth about 1.07x there and roughly
+  actually runs it sets the constant. Since the hoist, 24 is an upper bound
+  rather than a crossover: removing per-span setup can only move a crossover
+  left, so it is still correct and merely conservative, and re-deriving it needs
+  a host that genuinely lacks AVX2. It is worth about 1.07x there and roughly
   1.06x end to end on 256x256 and larger canvases - a real but modest win, and
   the reason it ships is that it is byte-identical and needs no flag.
 - **All exact kernels depend on the Go backend's multiply-add contraction, in
@@ -146,8 +160,10 @@ cheap to break silently, so they are stated before the kernels.
   produces different bytes on the two architectures.
 - `compositeSpanExact` dispatches with a switch, never a function pointer.
   Routing the call indirectly defeats `//go:noescape` and heap-allocates the
-  160-byte constant block once per span, which costs more than either kernel
-  saves. `TestCompositeOpaqueSpanDoesNotAllocate` pins this.
+  160-byte constant block, which costs more than either kernel saves.
+  `TestCompositeOpaqueSpanDoesNotAllocate` pins this at the compositor, and
+  `TestRenderCircleRowsDoesNotAllocate` at the circle row walk that now owns the
+  block - the first cannot see the second's frame.
 - Translucent custom canvases retain the general per-pixel Porter-Duff path.
   Preserve that split, and the byte-exact span tests, when changing renderer
   math.

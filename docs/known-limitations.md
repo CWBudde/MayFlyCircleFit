@@ -156,11 +156,14 @@ behavior is production-ready.
   nothing below its 24-pixel cutoff. Half its instructions are format
   conversion, and SSE2 has neither `PMOVZXBD` nor `PSHUFB` to shorten that. The
   AVX2 kernel at the same job is worth 1.09x to 1.43x.
-- The per-span constant block is rebuilt for every span of every row, though the
-  colour is constant for a whole circle. That setup is the entire difference
-  between the SSE2 kernel's 8-pixel crossover measured directly and the 24-pixel
-  cutoff the dispatcher has to use, and it is why the AVX2 cutoff is 16 rather
-  than around 4.
+- The AMD64 constant block is now built once per circle, which moved the AVX2
+  cutoff from 16 to 6, but `compositeSpanSSE2MinPixels` is still 24. Hoisting can
+  only move a crossover left, so 24 remains correct and is merely conservative -
+  some spans stay on scalar that the SSE2 kernel could now win. Re-deriving it
+  needs a host that genuinely lacks AVX2, because dispatch reaches SSE2 only when
+  AVX2 is absent and masking AVX2 on a machine that has it reproduces the wrong
+  number. ARM64 is not hoisted at all: `compositeOpaqueSpanNEON` still recomputes
+  its blend scalars per span, and its 256-pixel cutoff includes that setup.
 - Both exact vector compositors depend on the Go compiler's multiply-add
   contraction behaviour, in opposite directions on the two architectures. This
   is a real coupling to the toolchain, not a stylistic preference; a Go release

@@ -32,7 +32,19 @@ func init() {
 // before assuming it transfers to a different ARM implementation.
 const compositeSpanNEONMinPixels = 256
 
-func compositeOpaqueSpan(pix []byte, offset, pixels int, r, g, b, alpha float64) {
+// spanBlend is empty on ARM64. The NEON kernel takes the four blend scalars as
+// arguments rather than reading a constant block, and it recomputes them per
+// span, so the same hoist is available here - but compositeSpanNEONMinPixels is
+// a measured crossover that includes that setup, and hoisting without
+// re-deriving it would leave a constant that no longer describes the code. That
+// re-measurement needs ARM64 benchmarking hardware; internal/fit/renderer does
+// not yet run on the ARM64 rows of ci-native-simd.yml. See
+// docs/exact-span-compositors.md.
+type spanBlend struct{}
+
+func newSpanBlend(_, _, _, _ float64) spanBlend { return spanBlend{} }
+
+func compositeOpaqueSpan(_ *spanBlend, pix []byte, offset, pixels int, r, g, b, alpha float64) {
 	if pixels <= 0 {
 		return
 	}
@@ -60,10 +72,15 @@ func compositeOpaqueSpan(pix []byte, offset, pixels int, r, g, b, alpha float64)
 	compositeOpaqueSpanScalar(pix, offset, pixels, r, g, b, alpha)
 }
 
-func compositeOpaqueSpanPair(pix []byte, firstOffset, secondOffset, pixels int, r, g, b, alpha float64) {
+func compositeOpaqueSpanPair(
+	blend *spanBlend,
+	pix []byte,
+	firstOffset, secondOffset, pixels int,
+	r, g, b, alpha float64,
+) {
 	// Retain the measured NEON crossover and exact assembly kernel on ARM64.
-	compositeOpaqueSpan(pix, firstOffset, pixels, r, g, b, alpha)
-	compositeOpaqueSpan(pix, secondOffset, pixels, r, g, b, alpha)
+	compositeOpaqueSpan(blend, pix, firstOffset, pixels, r, g, b, alpha)
+	compositeOpaqueSpan(blend, pix, secondOffset, pixels, r, g, b, alpha)
 }
 
 // compositeOpaqueSpanNEON composites a multiple of eight opaque NRGBA pixels.
