@@ -109,6 +109,41 @@ func TestSettingsFallbackShowsTheDefaults(t *testing.T) {
 	}
 }
 
+// TestSettingsFallbackControlsAreInert pins the second degraded mode. The
+// <noscript> notice covers JavaScript being off, but the fallback is also what
+// a visitor sees when JavaScript runs and the bundle 404s or throws - and there
+// no notice appears. A control that still looked live would accept a change and
+// discard it silently, so every one of them is disabled until SettingsIsland
+// replaces the mount point with controls that are actually wired.
+func TestSettingsFallbackControlsAreInert(t *testing.T) {
+	t.Parallel()
+
+	body := renderSettings(t)
+
+	for _, id := range []string{
+		"settings-image-refresh",
+		"settings-default-view-mode",
+		"settings-default-colormap",
+		"settings-metric-cost",
+		"settings-metric-psnr",
+		"settings-metric-ssim",
+		"settings-metric-cps",
+		"settings-reset",
+	} {
+		idx := strings.Index(body, `id="`+id+`"`)
+		if idx < 0 {
+			t.Errorf("settings fallback is missing the %q control", id)
+
+			continue
+		}
+
+		end := strings.Index(body[idx:], ">")
+		if end < 0 || !strings.Contains(body[idx:idx+end], "disabled") {
+			t.Errorf("settings fallback control %q is not disabled", id)
+		}
+	}
+}
+
 // The 177 lines this page used to carry are the point of the task. Scoped to
 // the page's own markup: the layout still writes the pre-paint theme IIFE, and
 // layout_test guards that one.

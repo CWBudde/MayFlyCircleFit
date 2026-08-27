@@ -75,16 +75,21 @@ templ SettingsPage() {
 				color: var(--text-color);
 			}
 		</style>
-		<!-- Everything inside the mount point is the fallback; mounting replaces it. -->
+		<!-- Everything inside the mount point is the fallback; mounting replaces it.
+		     Every control in it is disabled, because the fallback is shown in two
+		     degraded modes and is inert in both: JavaScript off, and JavaScript on
+		     with the bundle missing or throwing. Only the first raises <noscript>,
+		     so a control that merely looked live would silently discard every
+		     change in the second. SettingsIsland renders enabled controls. -->
 		<div class="card settings-card" data-island="settings" data-island-label="settings">
 			<noscript>
-				<p class="settings-note">These preferences live in this browser's local storage, and reading or writing them needs JavaScript. With JavaScript disabled the controls below show the built-in defaults and changing one has no effect; job pages use those same defaults.</p>
+				<p class="settings-note">These preferences live in this browser's local storage, and reading or writing them needs JavaScript. With JavaScript disabled the controls below are inactive and show the built-in defaults; job pages use those same defaults.</p>
 			</noscript>
 			<div class="setting-group">
 				<h2 style="font-size: 1.125rem; font-weight: 600; margin: 0;">Image refresh</h2>
 				<div class="setting-control">
 					<label for="settings-image-refresh">Auto image refresh</label>
-					<select id="settings-image-refresh" aria-describedby="settings-image-refresh-note">
+					<select id="settings-image-refresh" aria-describedby="settings-image-refresh-note" disabled>
 						<option value="0">SSE-driven (default)</option>
 						<option value="1000">1 second</option>
 						<option value="2000">2 seconds</option>
@@ -99,7 +104,7 @@ templ SettingsPage() {
 				<h2 style="font-size: 1.125rem; font-weight: 600; margin: 0;">Image defaults</h2>
 				<div class="setting-control">
 					<label for="settings-default-view-mode">Default image view mode</label>
-					<select id="settings-default-view-mode" aria-describedby="settings-default-view-mode-note">
+					<select id="settings-default-view-mode" aria-describedby="settings-default-view-mode-note" disabled>
 						<option value="reference">Reference</option>
 						<option value="best">Best</option>
 						<option value="side-by-side" selected>Side-by-Side</option>
@@ -110,7 +115,7 @@ templ SettingsPage() {
 				<p id="settings-default-view-mode-note" class="settings-note">Applies to every job page. Switching modes on a job page updates this value too.</p>
 				<div class="setting-control">
 					<label for="settings-default-colormap">Default difference colormap</label>
-					<select id="settings-default-colormap" aria-describedby="settings-default-colormap-note">
+					<select id="settings-default-colormap" aria-describedby="settings-default-colormap-note" disabled>
 						<option value="turbo">Turbo</option>
 						<option value="magma">Magma</option>
 					</select>
@@ -121,26 +126,26 @@ templ SettingsPage() {
 				<h2 style="font-size: 1.125rem; font-weight: 600; margin: 0;">Metric visibility</h2>
 				<div class="settings-metric-list" id="settings-visible-metrics">
 					<div class="settings-metric-option">
-						<input id="settings-metric-cost" type="checkbox" value="cost" checked/>
+						<input id="settings-metric-cost" type="checkbox" value="cost" checked disabled/>
 						<label for="settings-metric-cost">Cost</label>
 					</div>
 					<div class="settings-metric-option">
-						<input id="settings-metric-psnr" type="checkbox" value="psnr" checked/>
+						<input id="settings-metric-psnr" type="checkbox" value="psnr" checked disabled/>
 						<label for="settings-metric-psnr">PSNR</label>
 					</div>
 					<div class="settings-metric-option">
-						<input id="settings-metric-ssim" type="checkbox" value="ssim" checked/>
+						<input id="settings-metric-ssim" type="checkbox" value="ssim" checked disabled/>
 						<label for="settings-metric-ssim">SSIM</label>
 					</div>
 					<div class="settings-metric-option">
-						<input id="settings-metric-cps" type="checkbox" value="cps" checked/>
+						<input id="settings-metric-cps" type="checkbox" value="cps" checked disabled/>
 						<label for="settings-metric-cps">Throughput (cps)</label>
 					</div>
 				</div>
 				<p id="settings-visible-metrics-note" class="settings-note">Controls which summary metric cards are visible on job detail pages. Clearing every box restores all of them.</p>
 			</div>
 			<div class="settings-actions">
-				<button id="settings-reset" type="button" class="btn" style="background: var(--border-color);">Reset to Defaults</button>
+				<button id="settings-reset" type="button" class="btn" style="background: var(--border-color);" disabled>Reset to Defaults</button>
 				<span id="settings-feedback" aria-live="polite" class="settings-note" role="status"></span>
 			</div>
 		</div>

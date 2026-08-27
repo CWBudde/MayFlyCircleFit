@@ -278,8 +278,16 @@ templ Layout(title string) {
 					cursor: pointer;
 				}
 
-				.theme-option:hover {
+				.theme-option:hover:not(:disabled) {
 					color: var(--text-color);
+				}
+
+				/* The server-rendered fallback is disabled until the island mounts
+				   over it, so it must not offer a pointer or a hover affordance it
+				   cannot honour. */
+				.theme-option:disabled {
+					cursor: default;
+					opacity: 0.5;
 				}
 
 				.theme-option[aria-pressed="true"] {
@@ -867,15 +875,21 @@ templ Layout(title string) {
 							<li><a href="/settings">Settings</a></li>
 							<li><a href="https://github.com/CWBudde/MayFlyCircleFit" target="_blank">GitHub</a></li>
 						</ul>
-						<!-- ThemeToggleIsland replaces these buttons; see its comment. -->
+						<!-- ThemeToggleIsland replaces these buttons; see its comment. The
+						     fallback pair is disabled and carries no aria-pressed: the
+						     handler lives in the bundle, so with the bundle missing or
+						     throwing these buttons do nothing, and the server cannot know
+						     which theme the pre-paint script restored from local storage.
+						     Claiming "Auto" is pressed would be wrong for every visitor
+						     who chose light or dark. The island renders the real state. -->
 						<div class="theme-switch" role="group" aria-label="Color theme" data-island="theme-switch" data-island-label="color theme">
-							<button class="theme-option" type="button" data-theme-value="auto" aria-label="Use system theme" aria-pressed="true" title="Auto theme">
+							<button class="theme-option" type="button" data-theme-value="auto" aria-label="Use system theme" title="Auto theme" disabled>
 								<svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>
 							</button>
-							<button class="theme-option" type="button" data-theme-value="light" aria-label="Use light theme" aria-pressed="false" title="Light theme">
+							<button class="theme-option" type="button" data-theme-value="light" aria-label="Use light theme" title="Light theme" disabled>
 								<svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"></path></svg>
 							</button>
-							<button class="theme-option" type="button" data-theme-value="dark" aria-label="Use dark theme" aria-pressed="false" title="Dark theme">
+							<button class="theme-option" type="button" data-theme-value="dark" aria-label="Use dark theme" title="Dark theme" disabled>
 								<svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
 							</button>
 						</div>

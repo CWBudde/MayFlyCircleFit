@@ -7,6 +7,58 @@ import (
 	"testing"
 )
 
+// TestLayoutThemeFallbackMakesNoClaimItCannotHonour pins the two halves of the
+// degraded-mode contract for the theme switch: the server-rendered buttons are
+// inert until ThemeToggleIsland mounts, so they must be disabled, and the
+// server has no way to read this browser's stored choice, so none of them may
+// announce itself as pressed.
+func TestLayoutThemeFallbackMakesNoClaimItCannotHonour(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	if err := Layout("Theme fallback test").Render(context.Background(), &output); err != nil {
+		t.Fatalf("render layout: %v", err)
+	}
+
+	body := output.String()
+
+	// Scoped to the switch's own markup: the style block legitimately carries
+	// a .theme-option[aria-pressed="true"] rule, which is a selector for the
+	// state the island will set, not a claim the fallback makes.
+	start := strings.Index(body, `data-island="theme-switch"`)
+	if start < 0 {
+		t.Fatal("rendered layout has no theme-switch mount point")
+	}
+
+	end := strings.Index(body[start:], "</div>")
+	if end < 0 {
+		t.Fatal("theme-switch mount point is unterminated")
+	}
+
+	group := body[start : start+end]
+
+	if strings.Contains(group, `aria-pressed`) {
+		t.Error("the theme fallback announces a pressed state the server cannot know")
+	}
+
+	if got := strings.Count(group, `class="theme-option" type="button"`); got != 3 {
+		t.Fatalf("well-formed theme buttons = %d, want 3", got)
+	}
+
+	for _, label := range []string{"Use system theme", "Use light theme", "Use dark theme"} {
+		marker := `aria-label="` + label + `"`
+		idx := strings.Index(group, marker)
+		if idx < 0 {
+			t.Fatalf("rendered layout missing %q", marker)
+		}
+
+		tagEnd := strings.Index(group[idx:], ">")
+		if tagEnd < 0 || !strings.Contains(group[idx:idx+tagEnd], "disabled") {
+			t.Errorf("theme button %q is not disabled in the fallback", label)
+		}
+	}
+}
+
 func TestLayoutIncludesThemeSwitcher(t *testing.T) {
 	var output bytes.Buffer
 
@@ -28,7 +80,13 @@ func TestLayoutIncludesThemeSwitcher(t *testing.T) {
 		// what consumes it, so the handover has to survive in the markup.
 		`window.mayflyTheme = { apply, selected, storageKey }`,
 		`data-island="theme-switch"`,
-		`aria-label="Use system theme" aria-pressed="true"`,
+		// The fallback carries no aria-pressed and every button is disabled:
+		// the handler lives in the bundle, and the server cannot know which
+		// theme the pre-paint script restored from this browser's storage.
+		// ThemeToggleIsland renders the pressed state once it owns the group.
+		`aria-label="Use system theme" title="Auto theme" disabled`,
+		`aria-label="Use light theme" title="Light theme" disabled`,
+		`aria-label="Use dark theme" title="Dark theme" disabled`,
 		`>Dashboard<`,
 		`>Jobs<`,
 		`/jobs`,
