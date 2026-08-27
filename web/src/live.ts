@@ -36,7 +36,7 @@ export type LiveConnectionState = "connecting" | "connected" | "reconnecting";
 type ConnectionNotice =
 	| { kind: "event"; event: UIEvent }
 	| { kind: "open" }
-	| { kind: "error" }
+	| { kind: "error"; state: Exclude<LiveConnectionState, "connected"> }
 	| { kind: "gap" };
 
 type Listener = (notice: ConnectionNotice) => void;
@@ -52,6 +52,9 @@ class LiveEventBus {
 	private listeners = new Set<Listener>();
 	private lastSequence = 0;
 	private state: LiveConnectionState = "connecting";
+	// EventSource reports a failed first connect and a dropped stream through
+	// the same onerror, so the state needs to know which one happened.
+	private hasOpened = false;
 
 	subscribe(listener: Listener): () => void {
 		this.listeners.add(listener);
@@ -61,7 +64,7 @@ class LiveEventBus {
 		// would never take its first authoritative fetch. Replay the settled
 		// state to the newcomer instead.
 		if (this.state !== "connecting") {
-			listener({ kind: this.state === "connected" ? "open" : "error" });
+			listener(this.state === "connected" ? { kind: "open" } : { kind: "error", state: this.state });
 		}
 		return () => {
 			this.listeners.delete(listener);
@@ -70,6 +73,7 @@ class LiveEventBus {
 				this.source = null;
 				this.lastSequence = 0;
 				this.state = "connecting";
+				this.hasOpened = false;
 			}
 		};
 	}
@@ -84,11 +88,16 @@ class LiveEventBus {
 		this.source = source;
 		source.onopen = () => {
 			this.state = "connected";
+			this.hasOpened = true;
 			this.emit({ kind: "open" });
 		};
 		source.onerror = () => {
-			this.state = "reconnecting";
-			this.emit({ kind: "error" });
+			// A stream that has never opened is still connecting. Calling that
+			// "reconnecting" would announce the loss of something the reader
+			// never had, which is the first-paint ambiguity the three-state
+			// type exists to remove.
+			this.state = this.hasOpened ? "reconnecting" : "connecting";
+			this.emit({ kind: "error", state: this.state });
 		};
 		source.onmessage = (message) => {
 			let event: UIEvent;
@@ -220,10 +229,11 @@ export function useLiveResource<T>({ initial, load, reduce }: LiveResourceOption
 					void refresh();
 					break;
 				case "error":
-					// Not back to "connecting": the reader has seen this stream work
-					// at least once in this bus's lifetime, and a drop is the state
-					// worth announcing.
-					setStatus("reconnecting");
+					// The bus decides which of the two failure states this is:
+					// "reconnecting" only once the stream has actually opened in this
+					// bus's lifetime, "connecting" while the first connect is still
+					// being retried.
+					setStatus(notice.state);
 					break;
 				case "gap":
 					void refresh();

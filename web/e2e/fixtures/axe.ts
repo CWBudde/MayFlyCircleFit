@@ -23,6 +23,13 @@ export async function useTheme(page: Page, theme: Theme): Promise<void> {
 	}, theme);
 }
 
+// axe reports a node's target as a selector, or as an array of selectors when
+// the node sits inside frames. Nothing audited here is framed, so joining is
+// only about producing one stable string to match the allowlist against.
+function selectorOf(target: unknown): string {
+	return [target].flat(3).filter((part) => typeof part === "string").join(" ");
+}
+
 export async function runAxe(
 	page: Page,
 	surfaceId: string,
@@ -48,19 +55,42 @@ export async function runAxe(
 	// The known WebKit defect is invisible in light mode, where the colour it
 	// falls back to is close enough to the light palette's own text colour, so
 	// the entry only applies to the dark run.
-	const allowed = new Set(theme === "dark" ? applicable.map((entry) => entry.rule) : []);
+	//
+	// Allowlisting is per node, not per rule: axe groups every failing element
+	// under one violation, so excusing the rule id would discard nodes nobody
+	// triaged and let a fresh contrast regression on the same surface pass for
+	// as long as the known one kept firing.
+	const allowed = new Map<string, Set<string>>();
+	if (theme === "dark") {
+		for (const entry of applicable) {
+			const nodes = allowed.get(entry.rule) ?? new Set<string>();
+			for (const node of entry.nodes) nodes.add(node);
+			allowed.set(entry.rule, nodes);
+		}
+	}
 	const fired = new Set(results.violations.map((violation) => violation.id));
 
-	const unexpected = results.violations.filter((violation) => !allowed.has(violation.id));
+	const unexpected = results.violations.flatMap((violation) => {
+		const nodes = allowed.get(violation.id);
+		if (!nodes) {
+			return [`${violation.id}: ${violation.help} (${violation.nodes.length} nodes)`];
+		}
+		return violation.nodes
+			.filter((node) => !nodes.has(selectorOf(node.target)))
+			.map((node) => `${violation.id} on ${selectorOf(node.target)}: ${violation.help}`);
+	});
 	expect(
-		unexpected.map((violation) => `${violation.id}: ${violation.help} (${violation.nodes.length} nodes)`),
+		unexpected,
 		`unallowlisted WCAG 2.1 AA violations on ${surfaceId} (${theme})`,
 	).toEqual([]);
 
-	// The other half of the ratchet. An allowlist entry that stopped firing is
-	// a fix nobody recorded, and leaving it in place would let the same defect
-	// return unnoticed.
-	const stale = [...allowed].filter((rule) => !fired.has(rule));
+	// The other half of the ratchet, kept at rule granularity. An allowlist
+	// entry that stopped firing is a fix nobody recorded, and leaving it in
+	// place would let the same defect return unnoticed. Per-node staleness is
+	// deliberately not asserted: the defect resolves non-deterministically, so
+	// which of the listed controls axe catches varies between runs, and only
+	// the rule falling silent altogether means it is gone.
+	const stale = [...allowed.keys()].filter((rule) => !fired.has(rule));
 	expect(
 		stale,
 		`these allowlist entries for ${surfaceId} on ${project} no longer fire -- delete them from known-a11y-violations.ts`,

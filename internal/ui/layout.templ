@@ -126,9 +126,14 @@ const themeStyles = `<style>
 // elements, which do inherit; the pages with no island, settings and create,
 // stayed unreadable.
 //
-// A rule appended last in <head> beats both the bare :root block and the
-// system-preference media query without extra specificity, so "auto" is simply
-// the absence of this stylesheet.
+// The override selector is :root:root, and the doubled pseudo-class is load
+// bearing. The system-preference rule is :root:not([data-theme]), which computes
+// to (0,2,0); a bare :root is (0,1,0) and loses to it however late it appears,
+// so on an OS that prefers dark, choosing Light left the dark tokens active
+// while the Light button reported itself pressed. Doubling matches (0,2,0), and
+// this stylesheet is appended while <head> is still being parsed -- after
+// themeStyles, which is emitted just above the script -- so it wins on source
+// order. "auto" is simply the absence of this stylesheet.
 const themePreloadScript = `<script>
 	(() => {
 		const tokens = {
@@ -144,7 +149,7 @@ const themePreloadScript = `<script>
 			}
 			const style = existing || document.createElement("style");
 			style.id = "theme-override";
-			style.textContent = ":root{" + tokens[theme] + "}";
+			style.textContent = ":root:root{" + tokens[theme] + "}";
 			if (!existing) document.head.appendChild(style);
 		};
 		const selected = () => {
@@ -238,6 +243,12 @@ templ Layout(title string) {
 					text-decoration: none;
 					font-weight: 500;
 					transition: color 0.2s;
+					/* An inline anchor is only as tall as its text -- 19px on the
+					   iPhone profile, under the 24px WCAG 2.2 asks of a target and
+					   well under what a thumb hits reliably. The padding is vertical
+					   only, so the row's 2rem gap still sets the spacing. */
+					display: inline-block;
+					padding: 0.375rem 0;
 				}
 
 				.nav-links a:hover {

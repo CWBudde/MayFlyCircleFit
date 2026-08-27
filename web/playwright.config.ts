@@ -26,17 +26,20 @@ export default defineConfig({
 		// ring), which makes stability waits and traces harder to read.
 		reducedMotion: "reduce",
 	},
-	// All four projects share the one webServer below, which is started once per
+	// Every project shares the one webServer below, which is started once per
 	// `playwright test` invocation. Do NOT split CI into per-project steps: each
 	// invocation re-pays the `go run` compile, which dominates the run.
 	projects: [
-		// The authoritative engine. Runs every spec.
+		// The authoritative engine. Runs every spec except the two routed to a
+		// project of their own.
 		{
 			name: "chromium",
 			use: { ...devices["Desktop Chrome"] },
 			// The touch specs need a context with hasTouch, which only the
-			// device profiles below provide.
-			testIgnore: MOBILE,
+			// device profiles below provide. The layout sweeps are excluded too:
+			// the dedicated `layout` project already runs them on this same
+			// engine, and matching them here as well only ran each one twice.
+			testIgnore: [MOBILE, LAYOUT],
 		},
 		// Safari's engine. Behavior, a11y and keyboard only: the layout sweeps
 		// drive their own viewports and learn nothing from a second engine,

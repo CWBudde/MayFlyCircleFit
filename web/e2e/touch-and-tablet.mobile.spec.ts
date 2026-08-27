@@ -39,9 +39,11 @@ test("image view modes can be chosen by tapping", async ({ page, seeded }) => {
 test("primary tap targets are large enough to hit", async ({ page }) => {
 	await page.goto("/");
 
-	// WCAG 2.5.5 is AAA, but 44px is what a thumb actually needs and it is
-	// cheap to hold for the navigation and buttons. Inline links inside prose
-	// are excluded: enlarging those would mean rewriting the copy.
+	// The gate is WCAG 2.2's Target Size (Minimum), 2.5.8: 24x24 CSS pixels.
+	// The 44px of 2.5.5 is AAA and is what a thumb actually prefers, but holding
+	// it would mean a visibly taller navigation on every viewport, so it stays a
+	// goal rather than a gate. Inline links inside prose are excluded: enlarging
+	// those would mean rewriting the copy.
 	const targets = page.locator("nav a, .btn");
 	for (let index = 0; index < (await targets.count()); index += 1) {
 		const target = targets.nth(index);
@@ -49,6 +51,9 @@ test("primary tap targets are large enough to hit", async ({ page }) => {
 		const box = await target.boundingBox();
 		if (!box) continue;
 		const name = (await target.textContent())?.trim().slice(0, 30);
-		expect(Math.max(box.height, box.width), `"${name}" is ${Math.round(box.width)}x${Math.round(box.height)}`).toBeGreaterThanOrEqual(24);
+		// Both dimensions, not the larger one. A navigation link 78px wide and
+		// 19px tall is exactly what this is meant to catch, and Math.max passed
+		// it -- which is how the nav shipped with 19px tap targets.
+		expect(Math.min(box.height, box.width), `"${name}" is ${Math.round(box.width)}x${Math.round(box.height)}`).toBeGreaterThanOrEqual(24);
 	}
 });

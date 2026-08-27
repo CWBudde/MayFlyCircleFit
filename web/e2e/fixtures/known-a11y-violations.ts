@@ -17,6 +17,15 @@ export type KnownViolation = {
 	 * on the engine where it passes.
 	 */
 	engines?: string[];
+	/**
+	 * CSS selectors for the nodes this entry excuses, and only those.
+	 *
+	 * Allowlisting a bare rule id would discard every node axe grouped under
+	 * it, so a fresh contrast failure anywhere on the surface would pass for as
+	 * long as the known one kept firing. A node that is not listed here fails
+	 * the run even when its rule is allowed.
+	 */
+	nodes: string[];
 	/** What it is, and what closing it needs. */
 	why: string;
 };
@@ -58,16 +67,38 @@ const AFFECTED_PROJECTS = ["mobile-safari"];
 // dark-mode check in docs/browser-support.md is what settles it. If Safari is
 // clean, these two entries come out and the WebKit projects keep guarding the
 // rest; if it is not, this becomes a release blocker with a known reproduction.
-const CUSTOM_PROPERTY_INHERITANCE: KnownViolation = {
+// What axe reports is narrower than the mechanism: on both surfaces every
+// flagged node is a <select>, measured at #000000 on #0f172a. Probing the live
+// page shows the mechanism is nonetheless the one described above -- before
+// anything touches it, body itself computes --text-color as the empty string
+// and color as black, and setting any inline style on a single element makes
+// the whole subtree resolve correctly. The selectors below are therefore where
+// the defect surfaces, not the extent of it.
+const customPropertyInheritance = (nodes: string[]): KnownViolation => ({
 	rule: "color-contrast",
 	engines: AFFECTED_PROJECTS,
-	why: "WebKit does not inherit :root custom properties into this document's server-rendered elements on the initial style pass; dark mode therefore renders near-black text. Pages with a React island escape it because mounting replaces the markup. See docs/browser-support.md for the manual Safari check that decides whether this is real.",
-};
+	nodes,
+	why: "WebKit does not inherit :root custom properties into this document's server-rendered elements on the initial style pass; dark mode therefore renders near-black text, which axe catches on the select controls. Pages with a React island escape it because mounting replaces the markup. See docs/browser-support.md for the manual Safari check that decides whether this is real.",
+});
 
 // Keyed by the surface id declared in surfaces.ts.
 export const KNOWN_VIOLATIONS: Record<string, KnownViolation[]> = {
-	settings: [CUSTOM_PROPERTY_INHERITANCE],
-	create: [CUSTOM_PROPERTY_INHERITANCE],
+	settings: [
+		customPropertyInheritance([
+			"#settings-image-refresh",
+			"#settings-default-view-mode",
+			"#settings-default-colormap",
+		]),
+	],
+	create: [
+		customPropertyInheritance([
+			"#optimizer",
+			"#mode",
+			"#covarianceMode",
+			"#restartStrategy",
+			"#polishingStrategy",
+		]),
+	],
 };
 
 // The total number of allowlisted violations across every surface.

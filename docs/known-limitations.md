@@ -343,6 +343,11 @@ behavior is production-ready.
   root's custom properties resolved but inherited by nothing, so body and every
   server-rendered element beneath it fall back to a near-black text colour --
   1.17:1 on the dark surface, against a 4.5:1 AA threshold. Light mode hides it.
+  What the audit actually flags is narrower than the mechanism: on both pages
+  every reported node is a `<select>`. Probing the live page confirms the wider
+  cause anyway -- before anything touches it, `body` itself computes
+  `--text-color` as the empty string, and setting any inline style on a single
+  element makes the whole subtree resolve correctly.
   Every other page mounts a React island, and mounting replaces the markup with
   freshly created elements, which inherit correctly; settings and create have no
   island. It reproduces with scripts stripped and the palette chosen purely by
