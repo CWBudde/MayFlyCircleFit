@@ -12,11 +12,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # only-new-issues diffs against the merge base, which needs history.
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -28,7 +28,7 @@ jobs:
         # reporting. ci-generation.yml is what verifies they are committed.
         run: go tool templ generate
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           # Keep in step with GOLANGCI_VERSION in the justfile.
           version: v2.13.1
