@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchJSON, useLiveResource } from "./live";
 import type { UIEvent } from "./live";
+import { LiveStatus } from "./LiveStatus";
 
 type JobListItem = {
 	id: string;
@@ -138,7 +139,7 @@ function reduceJobs(current: JobPage, event: UIEvent) {
 
 export function JobListIsland({ root }: { root: HTMLElement }) {
 	const initial = useMemo(() => readSeed(root), [root]);
-	const { value, connected, error, update } = useLiveResource({
+	const { value, status, error, update } = useLiveResource({
 		initial,
 		load: async (signal, current) => mergeFirstPage(
 			current,
@@ -197,7 +198,7 @@ export function JobListIsland({ root }: { root: HTMLElement }) {
 	const jobs = value.jobs;
 	return (
 		<div>
-			<div style={{ marginBottom: "2rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+			<div className="row-between" style={{ marginBottom: "2rem" }}>
 				<h1 style={{ fontSize: "2rem", fontWeight: 700 }}>Optimization Jobs</h1>
 				<a href="/create" className="btn btn-primary">+ Create New Job</a>
 			</div>
@@ -214,17 +215,26 @@ export function JobListIsland({ root }: { root: HTMLElement }) {
 			)}
 			<div ref={sentinelRef} style={{ textAlign: "center", padding: value.nextCursor ? "1.5rem" : "0.5rem" }}>
 				{value.nextCursor ? (
-					<button className="btn" type="button" onClick={() => void loadMore()} disabled={loadingMore}>
+					// aria-busy, not just `disabled`: the button keeps its own label
+					// while a page is in flight, so nothing else tells assistive
+					// technology that the press was accepted and is still working.
+					<button
+						className="btn"
+						type="button"
+						onClick={() => void loadMore()}
+						disabled={loadingMore}
+						aria-busy={loadingMore}
+					>
 						{loadingMore ? "Loading more jobs…" : "Load more jobs"}
 					</button>
 				) : jobs.length > 0 ? (
 					<span style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>All {value.total} jobs loaded</span>
 				) : null}
-				{pageError ? <div style={{ color: "var(--error-text)", marginTop: "0.5rem" }}>{pageError}</div> : null}
+				{pageError ? <div role="alert" style={{ color: "var(--error-text)", marginTop: "0.5rem" }}>{pageError}</div> : null}
 			</div>
-			<p style={{ color: "var(--text-muted)", fontSize: "0.875rem", marginTop: "1rem" }}>
-				Showing {jobs.length} of {value.total} · Live updates: {connected ? "connected" : "reconnecting"}{error ? ` · ${error}` : ""}
-			</p>
+			<LiveStatus state={status} error={error} style={{ marginTop: "1rem" }}>
+				Showing {jobs.length} of {value.total} ·{" "}
+			</LiveStatus>
 		</div>
 	);
 }
@@ -232,23 +242,23 @@ export function JobListIsland({ root }: { root: HTMLElement }) {
 function JobCard({ job }: { job: JobListItem }) {
 	const improvement = job.initialCost > 0 ? (1 - job.bestCost / job.initialCost) * 100 : null;
 	return (
-		<a href={`/jobs/${job.id}`} style={{ textDecoration: "none", color: "inherit" }}>
+		<a href={`/jobs/${job.id}`} className="card-link">
 			<div className="card" style={{ cursor: "pointer" }}>
-				<div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", marginBottom: "1rem" }}>
-					<div>
-						<div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
+				<div className="row-between row-between-top" style={{ marginBottom: "1rem" }}>
+					<div style={{ minWidth: 0 }}>
+						<div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
 							<h3 style={{ fontSize: "1.125rem", fontWeight: 600, fontFamily: "monospace" }}>{job.id.slice(0, 8)}…</h3>
 							<StateBadge state={job.state} />
 						</div>
-						<div style={{ display: "flex", gap: "1.5rem", color: "var(--text-muted)", fontSize: "0.875rem" }}>
+						<div className="meta-row" style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
 							<span><strong>Mode:</strong> {job.mode}</span><span><strong>Circles:</strong> {job.circles}</span>
 							<span><strong>Iterations:</strong> {job.iterations}</span>
 						</div>
 					</div>
 					{job.state === "running" || job.state === "completed" ? (
-						<div style={{ textAlign: "right" }}><div style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>Cost</div>
+						<div className="row-end"><div style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>Cost</div>
 							<div style={{ fontSize: "1.25rem", fontWeight: 600 }}>{job.bestCost.toFixed(2)}</div>
-							{improvement !== null ? <div style={{ color: "var(--success-color)", fontSize: "0.75rem" }}>{improvement.toFixed(1)}% improvement</div> : null}
+							{improvement !== null ? <div style={{ color: "var(--success-text-strong)", fontSize: "0.75rem" }}>{improvement.toFixed(1)}% improvement</div> : null}
 						</div>
 					) : null}
 				</div>

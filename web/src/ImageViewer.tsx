@@ -37,6 +37,10 @@ export function ImageViewer({ jobId, revision }: { jobId: string; revision: numb
 
 	useEffect(() => {
 		const chooseByKeyboard = (event: KeyboardEvent) => {
+			// Ctrl/Cmd/Alt + a digit belongs to the browser -- tab switching,
+			// among others -- and a held key should select once, not once per
+			// repeat tick.
+			if (event.ctrlKey || event.altKey || event.metaKey || event.repeat) return;
 			const target = event.target as HTMLElement | null;
 			if (target?.matches("input, select, textarea, button, [contenteditable='true']")) return;
 			const selected = modes[Number(event.key) - 1];
@@ -64,27 +68,33 @@ export function ImageViewer({ jobId, revision }: { jobId: string; revision: numb
 	const showBest = mode === "best" || mode === "side-by-side";
 
 	return <div className="card image-viewer" data-view-mode={mode}>
-		<div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
+		<div className="row-between" style={{ marginBottom: "1rem" }}>
 			<h2>Images</h2>
-			<fieldset aria-label="Image view mode" style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", border: 0 }}>
-				{modes.map((item, index) => <label key={item.value} className="btn" style={mode === item.value ? { borderColor: "var(--primary-color)", background: "var(--info-bg)" } : undefined}>
-					<input type="radio" name="campaign-view-mode" value={item.value} checked={mode === item.value} onChange={() => setMode(item.value)} style={{ position: "absolute", opacity: 0 }} aria-keyshortcuts={String(index + 1)} />
-					{item.label} <kbd>{index + 1}</kbd>
-				</label>)}
+			{/* The class names come from layout.templ, which is also where the
+			    :focus-within rule lives. That rule is the reason they are used
+			    here: the radio is hidden with opacity:0, and an inline style
+			    cannot express a pseudo-class, so keyboard focus on this control
+			    was previously invisible. */}
+			<fieldset className="view-mode-selector">
+				<legend className="sr-only">Image view mode</legend>
+				{modes.map((item, index) => <div key={item.value} className="view-mode-option">
+					<input id={`campaign-view-mode-${item.value}`} type="radio" name="campaign-view-mode" value={item.value} checked={mode === item.value} onChange={() => setMode(item.value)} aria-keyshortcuts={String(index + 1)} />
+					<label htmlFor={`campaign-view-mode-${item.value}`}>{item.label} <kbd className="view-mode-shortcut">{index + 1}</kbd></label>
+				</div>)}
 			</fieldset>
 		</div>
-		<div style={{ display: "grid", gridTemplateColumns: mode === "side-by-side" ? "repeat(auto-fit, minmax(260px, 1fr))" : "minmax(0, 1fr)", gap: "2rem" }}>
+		<div className="image-view-panels">
 			{showReference ? <ImagePanel title="Reference" src={reference} alt="Reference Image" /> : null}
 			{showBest ? <ImagePanel title="Current Best" src={best} alt="Current Best Image" /> : null}
 			{mode === "difference" ? <section>
-				<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "0.75rem" }}><h3>Difference Heatmap</h3>
+				<div className="row-between" style={{ marginBottom: "0.75rem" }}><h3>Difference Heatmap</h3>
 					<label>Colormap <select value={colormap} onChange={(event) => setColormap(event.target.value)}><option value="turbo">Turbo</option><option value="magma">Magma</option></select></label>
 				</div>
 				<ImageFrame src={difference} alt="Difference Heatmap" background="#000" />
-				<div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)", fontSize: "0.75rem", marginTop: "0.5rem" }}><span>Low difference</span><span>High difference</span></div>
+				<div className="row-between" style={{ color: "var(--text-muted)", fontSize: "0.75rem", marginTop: "0.5rem" }}><span>Low difference</span><span>High difference</span></div>
 			</section> : null}
 			{mode === "overlay" ? <section>
-				<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "0.75rem" }}><h3>Overlay Comparison</h3>
+				<div className="row-between" style={{ marginBottom: "0.75rem" }}><h3>Overlay Comparison</h3>
 					<label>Best opacity <input type="range" min="0" max="100" value={opacity} onChange={(event) => setOpacity(Number(event.target.value))} /> <output>{opacity}%</output></label>
 				</div>
 				<div style={{ position: "relative", overflow: "hidden", border: "1px solid var(--border-color)", borderRadius: "0.375rem" }}>

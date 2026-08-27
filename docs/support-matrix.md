@@ -131,6 +131,18 @@ accurate. Non-AMD64 targets have no vector kernel for it and fall back to a
 float32 scalar span, which is slower than the exact float64 span it replaces, so
 enabling it there is a pure loss and startup warns.
 
+## Browsers and viewports
+
+The web UI targets Chromium 111+, WebKit (Safari) 16.4+, and viewport widths
+from 320px up. `ci-web` enforces Chromium and WebKit on desktop plus iPhone and
+iPad viewports, and runs a WCAG 2.1 A/AA sweep over every page in both themes.
+Firefox is expected to work and is deliberately not tested.
+
+[`browser-support.md`](browser-support.md) carries the full table, the layout
+contract each viewport class must hold, and the manual checklist for what a
+Linux CI runner cannot check: real Safari, VoiceOver, printing, downloads, and
+zoom reflow.
+
 ## OpenCL
 
 OpenCL is an experimental, opt-in renderer for all optimization modes:

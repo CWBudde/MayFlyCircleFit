@@ -28,7 +28,7 @@ templ SettingsPage() {
 				align-items: center;
 			}
 			.setting-control > label {
-				min-width: 14rem;
+				min-width: min(14rem, 100%);
 				font-size: 0.875rem;
 				color: var(--text-muted);
 			}
@@ -52,7 +52,7 @@ templ SettingsPage() {
 			}
 			.settings-metric-list {
 				display: grid;
-				grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+				grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
 				gap: 0.5rem;
 			}
 			.settings-metric-option {

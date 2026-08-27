@@ -355,3 +355,191 @@ func TestFormatFileSize(t *testing.T) {
 		}
 	}
 }
+
+// TestJobDetailPageAnnouncesIterationProgress pins both halves of the progress
+// bar. Marking up the track as a progressbar is only half a fix: the live
+// updater moves the fill's width, so an aria-valuenow it never touches would
+// freeze at the server-rendered figure for the rest of the run.
+func TestJobDetailPageAnnouncesIterationProgress(t *testing.T) {
+	t.Parallel()
+
+	job := JobDetail{
+		ID: "12345678-1234-1234-1234-123456789abc", State: "running",
+		StartTime: time.Now(), Iterations: 25, MaxIters: 100,
+	}
+
+	var output bytes.Buffer
+
+	err := JobDetailPage(job).Render(context.Background(), &output)
+	if err != nil {
+		t.Fatalf("render job detail: %v", err)
+	}
+
+	body := output.String()
+	for _, marker := range []string{
+		`id="iteration-progress-track"`,
+		`role="progressbar"`,
+		`aria-label="Optimizer iteration progress"`,
+		`aria-valuemin="0"`,
+		`aria-valuemax="100"`,
+		`aria-valuenow="25.0"`,
+		`track.setAttribute("aria-valuenow", percent.toFixed(1))`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("rendered detail page missing %q", marker)
+		}
+	}
+}
+
+// TestJobDetailPageAccentButtonsCarryTheirForeground guards the contrast fix.
+// Setting only an accent background inline left the theme foreground in place,
+// which inverts in dark mode: --text-color on --warning-color is 1.51:1. The
+// .btn-danger/.btn-warning pairs ship a matching foreground, so the inline
+// accents must not come back.
+const cancelButton = `id="cancel-job" class="btn btn-danger"`
+
+func TestJobDetailPageAccentButtonsCarryTheirForeground(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		state string
+		want  []string
+	}{
+		{state: "running", want: []string{
+			`id="pause-job" class="btn btn-warning"`,
+			cancelButton,
+		}},
+		{state: "paused", want: []string{cancelButton}},
+		{state: "pending", want: []string{cancelButton}},
+		{state: "completed", want: []string{`id="delete-job" class="btn btn-danger"`}},
+	} {
+		t.Run(test.state, func(t *testing.T) {
+			t.Parallel()
+
+			job := JobDetail{
+				ID: "12345678-1234-1234-1234-123456789abc", State: test.state,
+				StartTime: time.Now(),
+			}
+
+			var output bytes.Buffer
+
+			err := JobDetailPage(job).Render(context.Background(), &output)
+			if err != nil {
+				t.Fatalf("render job detail: %v", err)
+			}
+
+			body := output.String()
+			for _, marker := range test.want {
+				if !strings.Contains(body, marker) {
+					t.Errorf("rendered detail page missing %q", marker)
+				}
+			}
+
+			for _, banned := range []string{
+				"background-color: var(--error-color)",
+				"background-color: var(--warning-color)",
+				"margin-left: 0.5rem; background-color",
+			} {
+				if strings.Contains(body, banned) {
+					t.Errorf("rendered detail page still sets an inline accent: %q", banned)
+				}
+			}
+		})
+	}
+}
+
+// TestJobDetailPageSparklineIsKeyboardTraversable pins the keyboard route into
+// the chart. The SVG is focusable and role="img", so before the keydown handler
+// a keyboard reader could land on it and be told nothing at all: the live
+// readout beside it was driven by pointer events alone.
+func TestJobDetailPageSparklineIsKeyboardTraversable(t *testing.T) {
+	t.Parallel()
+
+	psnr := 31.25
+	job := JobDetail{
+		ID: "12345678-1234-1234-1234-123456789abc", State: "running", StartTime: time.Now(),
+		MetricHistory: []MetricSample{{Iteration: 1, Cost: 10, PSNR: &psnr}, {Iteration: 2, Cost: 9, PSNR: &psnr}},
+	}
+
+	var output bytes.Buffer
+
+	err := JobDetailPage(job).Render(context.Background(), &output)
+	if err != nil {
+		t.Fatalf("render job detail: %v", err)
+	}
+
+	body := output.String()
+	for _, marker := range []string{
+		`sparkline.addEventListener("keydown", moveSparklineSelection)`,
+		`function moveSparklineSelection(event)`,
+		`case "ArrowLeft":`, `case "ArrowRight":`, `case "Home":`, `case "End":`,
+		// The keyboard path must drive the same readout the pointer path does,
+		// rather than a second copy that can drift out of step with it.
+		`renderSparklineHover(points[index])`,
+		`positionSparklineTooltip()`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("rendered detail page missing %q", marker)
+		}
+	}
+}
+
+// TestJobDetailPageHidesDecorativeRefreshGlyph keeps the glyph out of the
+// button's accessible name, which would otherwise read "⟳ Refresh".
+func TestJobDetailPageHidesDecorativeRefreshGlyph(t *testing.T) {
+	t.Parallel()
+
+	job := JobDetail{
+		ID: "12345678-1234-1234-1234-123456789abc", State: "completed", StartTime: time.Now(),
+	}
+
+	var output bytes.Buffer
+
+	err := JobDetailPage(job).Render(context.Background(), &output)
+	if err != nil {
+		t.Fatalf("render job detail: %v", err)
+	}
+
+	if !strings.Contains(output.String(), `<span aria-hidden="true">⟳</span> Refresh`) {
+		t.Error("refresh glyph is still part of the button's accessible name")
+	}
+}
+
+// TestJobDetailPageWrapsHeaderRows pins the wrap helpers. Both rows used to be
+// a bare space-between flex with no flex-wrap, so on a narrow viewport the
+// heading and its control cluster overlapped instead of stacking.
+func TestJobDetailPageWrapsHeaderRows(t *testing.T) {
+	t.Parallel()
+
+	job := JobDetail{
+		ID: "12345678-1234-1234-1234-123456789abc", State: "running", StartTime: time.Now(),
+		MetricHistory: []MetricSample{{Iteration: 1, Cost: 10}},
+	}
+
+	var output bytes.Buffer
+
+	err := JobDetailPage(job).Render(context.Background(), &output)
+	if err != nil {
+		t.Fatalf("render job detail: %v", err)
+	}
+
+	body := output.String()
+	if got := strings.Count(body, `class="row-between"`); got < 2 {
+		t.Errorf("row-between headers = %d, want at least 2", got)
+	}
+
+	if !strings.Contains(body, `class="action-row"`) {
+		t.Error("job-controls cluster is not an action-row")
+	}
+
+	// A track wider than its container is what makes a 320px viewport scroll
+	// sideways; min() clamps it.
+	for _, marker := range []string{
+		"repeat(auto-fit, minmax(min(160px, 100%), 1fr))",
+		"repeat(auto-fit, minmax(min(200px, 100%), 1fr))",
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("rendered detail page missing clamped grid %q", marker)
+		}
+	}
+}

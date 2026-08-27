@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchJSON, useLiveResource } from "./live";
 import type { ProgressEvent, UIEvent } from "./live";
+import { LiveStatus } from "./LiveStatus";
 
 type JobActions = { pause: boolean; resume: boolean; cancel: boolean; delete: boolean; polish: boolean };
 type JobStatus = ProgressEvent & {
@@ -67,7 +68,7 @@ function reduceStatus(current: JobStatus, event: UIEvent) {
 
 export function JobControlsIsland({ root }: { root: HTMLElement }) {
 	const initial = useMemo(() => initialStatus(root), [root]);
-	const { value: status, connected, error, refresh } = useLiveResource({
+	const { value: status, status: liveState, error, refresh } = useLiveResource({
 		initial,
 		load: async (signal) => {
 			const [next, metricHistory] = await Promise.all([
@@ -124,23 +125,32 @@ export function JobControlsIsland({ root }: { root: HTMLElement }) {
 		}
 	}
 
-	return <div style={{ textAlign: "right" }}>
+	return <div className="action-row">
 		<StateBadge state={status.state} />
 		{status.actions.pause ? <ActionButton label="Pause job" busy={busy === "pause"} onClick={() => void action("pause")} /> : null}
 		{status.actions.resume ? <ActionButton label="Resume job" busy={busy === "resume"} onClick={() => void action("resume")} primary /> : null}
 		{status.actions.cancel ? <ActionButton label="Cancel job" busy={busy === "cancel"} onClick={() => void action("cancel")} danger /> : null}
 		{status.actions.delete ? <ActionButton label="Delete job" busy={busy === "delete"} onClick={() => void deleteJob()} danger /> : null}
 		{status.actions.polish ? <ActionButton label="Polish weak circles" busy={busy === "polish"} onClick={() => void polish()} primary /> : null}
-		<ActionButton label="⟳ Refresh" busy={false} onClick={() => void refresh()} />
-		<div style={{ color: "var(--text-muted)", fontSize: "0.75rem", marginTop: "0.35rem" }}>
-			Live: {connected ? "connected" : "reconnecting"}{error ? ` · ${error}` : ""}
-		</div>
+		<ActionButton label="Refresh" glyph="\u27f3" busy={false} onClick={() => void refresh()} />
+		<LiveStatus state={liveState} error={error} style={{ fontSize: "0.75rem", marginTop: "0.35rem", flexBasis: "100%", textAlign: "right" }} />
 		{status.error ? <div style={{ color: "var(--error-text)", fontSize: "0.75rem" }}>{status.error}</div> : null}
 	</div>;
 }
 
-function ActionButton({ label, busy, onClick, danger, primary }: { label: string; busy: boolean; onClick: () => void; danger?: boolean; primary?: boolean }) {
-	return <button disabled={busy} onClick={onClick} className={`btn${primary || danger ? " btn-primary" : ""}`} style={{ marginLeft: "0.5rem", ...(danger ? { backgroundColor: "var(--error-color)" } : {}) }}>{busy ? "Working…" : label}</button>;
+function ActionButton({ label, glyph, busy, onClick, danger, primary }: { label: string; glyph?: string; busy: boolean; onClick: () => void; danger?: boolean; primary?: boolean }) {
+	// btn-danger pairs the accent background with its own foreground token.
+	// The previous inline --error-color background kept btn-primary's white
+	// text, which measures 2.3:1 against the dark palette's #f87171.
+	const variant = danger ? " btn-danger" : primary ? " btn-primary" : "";
+	return (
+		<button disabled={busy} aria-busy={busy} onClick={onClick} className={`btn${variant}`}>
+			{/* The glyph is decoration; without aria-hidden it joins the
+			    button's accessible name as "⟳ Refresh". */}
+			{glyph ? <span aria-hidden="true">{glyph} </span> : null}
+			{busy ? "Working…" : label}
+		</button>
+	);
 }
 
 function StateBadge({ state }: { state: string }) {

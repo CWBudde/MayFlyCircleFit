@@ -290,3 +290,82 @@ func TestFormatJobImprovement(t *testing.T) {
 		})
 	}
 }
+
+// TestDashboardRunningJobsTableIsAccessible pins the table's accessibility
+// scaffolding. The seven columns are wider than a phone, so the scroller is a
+// named region with a tab stop rather than a bare overflow div a keyboard
+// cannot reach, and every header declares the column it heads.
+func TestDashboardRunningJobsTableIsAccessible(t *testing.T) {
+	t.Parallel()
+
+	body := renderDashboardPage(t, dashboardPageFixture())
+
+	for _, marker := range []string{
+		`class="table-scroll"`,
+		`role="region"`,
+		`aria-label="Running jobs"`,
+		`tabindex="0"`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("running jobs scroller missing %q", marker)
+		}
+	}
+
+	for _, column := range []string{"Job", "State", "Circles", "Iter", "Best cost", "Gain", "CPS"} {
+		if !strings.Contains(body, `scope="col"`) || !strings.Contains(body, ">"+column+"</th>") {
+			t.Errorf("running jobs table has no scoped header for %q", column)
+		}
+	}
+
+	if got, want := strings.Count(body, `<th scope="col"`), 7; got != want {
+		t.Errorf("scoped headers = %d, want %d", got, want)
+	}
+}
+
+// TestDashboardUsesAccessibleSuccessText guards the contrast fix: the gain
+// column is text, and --success-color as text on the light surface is 2.54:1.
+func TestDashboardUsesAccessibleSuccessText(t *testing.T) {
+	t.Parallel()
+
+	body := renderDashboardPage(t, dashboardPageFixture())
+
+	if !strings.Contains(body, "var(--success-text-strong)") {
+		t.Error("dashboard page does not use --success-text-strong for the gain column")
+	}
+
+	if strings.Contains(body, "color: var(--success-color)") {
+		t.Error("dashboard page still uses --success-color as a text color")
+	}
+}
+
+// TestDashboardRowsWrapOnNarrowViewports keeps the shared wrap vocabulary in
+// place: the summary grid has to collapse below its 220px track, and the
+// section and campaign headers have to wrap instead of colliding.
+func TestDashboardRowsWrapOnNarrowViewports(t *testing.T) {
+	t.Parallel()
+
+	body := renderDashboardPage(t, dashboardPageFixture())
+
+	for _, marker := range []string{
+		`minmax(min(220px, 100%), 1fr)`,
+		`class="row-between"`,
+		`class="row-between row-between-top"`,
+		`class="row-end"`,
+		`class="meta-row"`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("dashboard page missing %q", marker)
+		}
+	}
+
+	// The layout's own stylesheet legitimately declares space-between, so the
+	// negative assertion only covers the markup below it.
+	_, markup, ok := strings.Cut(body, "</style>")
+	if !ok {
+		t.Fatal("rendered dashboard page has no layout stylesheet")
+	}
+
+	if strings.Contains(markup, "justify-content: space-between") {
+		t.Error("dashboard page still lays out a row with an inline space-between instead of .row-between")
+	}
+}

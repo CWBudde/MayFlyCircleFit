@@ -167,14 +167,28 @@ not carried forward as roadmap commitments.
 
 This task also owns the Safari/mobile checks deferred from Phase 7.
 
-- [ ] Validate phone, tablet, and desktop layouts; add or correct breakpoints so
-  images and comparison modes stack cleanly.
-- [ ] Audit WCAG 2.1 AA essentials: alt text, contrast, labels, focus order,
-  keyboard navigation, and a screen-reader pass.
-- [ ] Add missing loading/skeleton and SSE-connecting states.
-- [ ] Exercise supported browser sizes and engines, including Safari on macOS.
-- [ ] Revalidate all live view modes, downloads, reports, metrics, controls, and
-  preferences during the browser pass.
+- [x] Validate phone, tablet, and desktop layouts; add or correct breakpoints so
+  images and comparison modes stack cleanly. Shared wrap/scroll utilities live in
+  `layout.templ`; every auto-fit grid uses `minmax(min(N, 100%), 1fr)` so a track
+  can never exceed its container. A spec asserts no page scrolls sideways at 320,
+  375, 768, 1024 and 1440px.
+- [x] Audit WCAG 2.1 AA essentials: alt text, contrast, labels, focus order,
+  keyboard navigation, and a screen-reader pass. `@axe-core/playwright` sweeps
+  every page in both themes on each engine. Contrast was the substantive finding:
+  the accent tokens stayed light across both palettes while the foreground token
+  flipped, so dark-mode buttons measured 2.54:1 and 1.51:1.
+- [x] Add missing loading/skeleton and SSE-connecting states. `useLiveResource`
+  now reports `connecting`/`connected`/`reconnecting` through one shared
+  `role="status"` region instead of five copies that all claimed "reconnecting"
+  on a healthy first paint.
+- [x] Exercise supported browser sizes and engines, including Safari on macOS.
+  `ci-web` runs Chromium, WebKit, iPhone and iPad. **Safari proper is covered by
+  the manual checklist in `docs/browser-support.md`, not by CI** -- Playwright
+  ships WebKit built for Linux, and one open finding turns on that difference;
+  see `docs/known-limitations.md`.
+- [x] Revalidate all live view modes, downloads, reports, metrics, controls, and
+  preferences during the browser pass. Automated where it can be; the rest --
+  real downloads, printing, VoiceOver, zoom reflow -- is in the manual checklist.
 
 ## Phase 13: Robustness, Docs, and Packaging
 

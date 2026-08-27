@@ -152,3 +152,100 @@ func TestImageViewerClassesAndModeDefaults(t *testing.T) {
 		}
 	})
 }
+
+// TestImageViewerHasNoLocalStyleBlock pins where the viewer's CSS lives.
+//
+// The campaign page renders this component inside the `campaign-detail` island
+// root, and mounting an island calls createRoot(root).render(...), which
+// replaces every child of that root -- a component-local <style> block
+// included. The viewer then painted with no view-mode, frame or focus styling
+// at all on /schedules/{id}. The vocabulary belongs in Layout, outside every
+// island root, so a block reappearing here is the bug coming back.
+func TestImageViewerHasNoLocalStyleBlock(t *testing.T) {
+	t.Parallel()
+
+	body := renderImageViewer(t, ImageViewerData{
+		JobID:       "123e4567-e89b-12d3-a456-426614174000",
+		DefaultMode: "side-by-side",
+	})
+
+	if strings.Contains(body, "<style>") {
+		t.Error("image viewer carries a component-local <style> block again")
+	}
+
+	for _, rule := range []string{".view-mode-selector {", imageFrameRule, ".heatmap-legend {"} {
+		if strings.Contains(body, rule) {
+			t.Errorf("image viewer still declares %q locally", rule)
+		}
+	}
+
+	// The rules did not just disappear: Layout serves them to every page.
+	var layout bytes.Buffer
+
+	err := Layout("Images").Render(context.Background(), &layout)
+	if err != nil {
+		t.Fatalf("render layout: %v", err)
+	}
+
+	for _, rule := range []string{
+		".view-mode-selector {",
+		".view-mode-option input:checked + label {",
+		imageFrameRule,
+		".image-state {",
+		".overlay-best-layer {",
+		".heatmap-legend {",
+		`.image-viewer[data-view-mode="side-by-side"] .image-view-panels {`,
+	} {
+		if !strings.Contains(layout.String(), rule) {
+			t.Errorf("layout does not supply %q", rule)
+		}
+	}
+}
+
+// TestImageViewerAnnouncesStateChanges covers the parts of the viewer a reader
+// only meets through the accessibility tree.
+func TestImageViewerAnnouncesStateChanges(t *testing.T) {
+	t.Parallel()
+
+	body := renderImageViewer(t, ImageViewerData{
+		JobID:       "123e4567-e89b-12d3-a456-426614174000",
+		DefaultMode: "overlay",
+		JobState:    "running",
+	})
+
+	// The fieldset caption uses the shared visually-hidden class rather than a
+	// hand-rolled clip rect that only existed in the deleted style block.
+	if !strings.Contains(body, `<legend class="sr-only">Image view mode</legend>`) {
+		t.Error("view-mode legend is not visually hidden through .sr-only")
+	}
+
+	// The slider writes the percentage into this output; aria-live="off" made
+	// that change silent for a reader who cannot see the number move.
+	opacityReadout := `id="overlay-opacity-value" class="overlay-opacity-value" ` +
+		`for="overlay-opacity" aria-live="polite"`
+	if !strings.Contains(body, opacityReadout) {
+		t.Error("overlay opacity readout does not announce its value")
+	}
+
+	// Each spinner toggles display only, so without a role its appearance and
+	// disappearance are invisible to a reader.
+	for _, id := range []string{"reference-image", "best-image", "diff-image", "overlay-best-image"} {
+		marker := `<div id="` + id + `-loading" class="image-state image-loading" role="status"`
+		if !strings.Contains(body, marker) {
+			t.Errorf("loading state for %s is not announced: missing %q", id, marker)
+		}
+	}
+
+	// Every radio takes a digit shortcut, so every radio has to advertise one.
+	for _, shortcut := range []string{
+		`value="reference" aria-keyshortcuts="1"`,
+		`value="best" aria-keyshortcuts="2"`,
+		`value="side-by-side" aria-keyshortcuts="3"`,
+		`value="difference" aria-keyshortcuts="4"`,
+		`value="overlay" aria-keyshortcuts="5"`,
+	} {
+		if !strings.Contains(body, shortcut) {
+			t.Errorf("view-mode radio missing %q", shortcut)
+		}
+	}
+}
