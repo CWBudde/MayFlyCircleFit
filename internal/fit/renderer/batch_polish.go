@@ -979,7 +979,7 @@ func circleRasterSpan(circle fit.Circle, y, width int) (int, int, bool) {
 
 	dy := float64(y) - circle.Y
 
-	remaining := circle.R*circle.R - dy*dy
+	remaining := float64(circle.R*circle.R) - float64(dy*dy)
 	if remaining < 0 {
 		return 0, 0, false
 	}

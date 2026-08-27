@@ -187,7 +187,7 @@ func (s *polishDirtySession) collectCircleSpans(circle fit.Circle, dirty *dirtyS
 		for y := minY; y < maxY; y++ {
 			dy := float32(y) - centerY
 
-			remaining := radiusSquared32 - dy*dy
+			remaining := radiusSquared32 - float32(dy*dy)
 			if remaining < 0 {
 				continue
 			}
@@ -202,7 +202,7 @@ func (s *polishDirtySession) collectCircleSpans(circle fit.Circle, dirty *dirtyS
 	for y := minY; y < maxY; y++ {
 		dy := float64(y) - circle.Y
 
-		remaining := radiusSquared - dy*dy
+		remaining := radiusSquared - float64(dy*dy)
 		if remaining < 0 {
 			continue
 		}
@@ -298,7 +298,7 @@ func (s *polishDirtySession) compositeCircleDirtyRows(circle fit.Circle, dirty *
 		for y := minY; y < maxY; y++ {
 			dy := float32(y) - centerY
 
-			remaining := radiusSquared32 - dy*dy
+			remaining := radiusSquared32 - float32(dy*dy)
 			if remaining < 0 {
 				continue
 			}
@@ -313,7 +313,7 @@ func (s *polishDirtySession) compositeCircleDirtyRows(circle fit.Circle, dirty *
 	for y := minY; y < maxY; y++ {
 		dy := float64(y) - circle.Y
 
-		remaining := radiusSquared - dy*dy
+		remaining := radiusSquared - float64(dy*dy)
 		if remaining < 0 {
 			continue
 		}

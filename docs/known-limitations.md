@@ -164,10 +164,14 @@ behavior is production-ready.
   AVX2 is absent and masking AVX2 on a machine that has it reproduces the wrong
   number. ARM64 is not hoisted at all: `compositeOpaqueSpanNEON` still recomputes
   its blend scalars per span, and its 256-pixel cutoff includes that setup.
-- Both exact vector compositors depend on the Go compiler's multiply-add
-  contraction behaviour, in opposite directions on the two architectures. This
-  is a real coupling to the toolchain, not a stylistic preference; a Go release
-  that changed it would break byte parity on one of them.
+- The exact compositors no longer depend on the Go compiler's multiply-add
+  contraction behaviour: every multiply-add that has to agree with the
+  correctness oracle is written through an explicit conversion, which the Go
+  spec makes a rounding point contraction may not cross, and the NEON kernel
+  splits its multiply and add for the same reason. The opt-in *fast* path still
+  does depend on it - amd64 leaves `MULSS`/`ADDSS` separate while ARM64
+  contracts to `FMADDS` - which its +/-1 tolerance absorbs. That one remains a
+  real coupling to the toolchain.
 - The SSE2 SSD kernel accumulates a row in int32 lanes, so it accepts rows up to
   11000 pixels wide and hands wider rows to the scalar kernel. That bound is far
   above any canvas size this program produces, but it is a real limit. The SSE2
@@ -211,14 +215,13 @@ behavior is production-ready.
   pixel error, not a perceptual color-space metric.
 - Circle compositing is a raster approximation without an antialiasing quality
   guarantee. Results can differ from vector renderers.
-- On ARM64, the historical pre-optimization renderer oracle differs from the
-  current renderer by one alpha unit for one covered translucent custom-canvas
-  pixel. The cause is multiply-add contraction: the renderer's
-  `uint8(outA*255 + 0.5)` fuses into a single `FMADDD` on ARM64 and so rounds
-  once, while the oracle's `uint8(math.Round(outputAlpha * 255))` cannot fuse and
-  rounds twice. Current single-threaded and parallel rendering agree, and the
-  issue predates the opaque-canvas fast path. Cross-architecture byte identity
-  for this floating-point rounding boundary is not claimed.
+- Cross-architecture byte identity of the CPU renderer *is* now claimed, and
+  gated: `internal/fit/renderer` runs on both ARM64 rows of `ci-native-simd.yml`.
+  It did not hold until the multiply-add contraction described under the CI
+  section below was blocked at every rounding point that the correctness oracle
+  also rounds at. The one exception is the opt-in fast span path, which keeps its
+  documented +/-1 tolerance and its architecture-dependent rounding; see
+  `internal/fit/renderer/composite_span_fast.go`.
 - Evolutionary optimization is expensive and does not guarantee a global
   optimum. Seed, population, iteration count, mode, and image size materially
   affect runtime and quality.
@@ -335,49 +338,74 @@ behavior is production-ready.
   establish actual-GPU performance.
 - Cross-compilation proves that packages compile for a target; it does not test
   runtime behavior on that operating system or architecture.
-- `internal/fit/renderer` has no ARM64 CI coverage. The `native-simd` matrix
-  supplies the only ARM64 runners in the repository and it runs `./internal/fit`
-  alone; every other job is `ubuntu-latest`. Running the renderer package on the
-  Linux ARM64 and macOS ARM64 runners was tried and fails:
+- `internal/fit/renderer` now has ARM64 CI coverage. It did not until the
+  multiply-add contraction below was fixed, and the reason it stayed broken for
+  so long is worth keeping: the entry that used to sit here named the wrong
+  cause and declared it undiagnosable without ARM64 hardware. Both claims were
+  wrong.
+
+  **It reproduces on an amd64 workstation.** `qemu-aarch64-static` plus binfmt
+  runs a cross-compiled test binary directly:
+
+      $ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go test -c -o /tmp/r.test ./internal/fit/renderer
+      $ cd internal/fit/renderer && qemu-aarch64-static /tmp/r.test -test.short
+
+  The emulator reports NEON, so the kernel under test is the real one. Two tests
+  failed, not the one that was recorded:
 
       --- FAIL: TestCPURendererMatchesPreOptimizationBaseline/fractional_overlaps
-          renderer_correctness_test.go:106: pixel (4,11) channel 3 = 205, baseline = 206
+          renderer_correctness_test.go:109: pixel (4,11) channel 3 = 205, baseline = 206
+      --- FAIL: TestPolishCircleBatchPoolWidthParity
 
-  It reproduces at `threads_1` and `threads_4` and does not reproduce on amd64.
-  The case is a 31x23 custom canvas, which is well below the 256-pixel NEON span
-  cutoff, and channel 3 is alpha, which the span compositor never writes, so the
-  NEON span kernel is not the cause. The defect predates the SSE2 work.
+  The second was never mentioned here. Its expected costs are goldens recorded on
+  amd64, so it is a cross-architecture check in everything but name.
 
-  It is **multiply-add contraction**, and it is diagnosable by cross-compiling -
-  an earlier version of this entry said the opposite. Go may fuse `a*b + c`
-  within one expression, and the two architectures decide differently for this
-  package:
+  **The cause is multiply-add contraction, all of it.** Go may fuse `a*b + c`
+  into one operation that rounds once; ARM64 takes that option and amd64 does
+  not. Compiling the *unmodified* tree with contraction suppressed makes the
+  whole ARM64 suite pass, which bounds the cause exactly:
 
-      $ GOOS=linux GOARCH=arm64 go build -gcflags='-S' ./internal/fit/renderer | grep -c FMADDD
-      38
-      $ GOOS=linux GOARCH=amd64 go build -gcflags='-S' ./internal/fit/renderer | grep -cE VFMADD
-      0
+      $ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go test -c \
+          -gcflags=all=-d=fmahash=101010101010101010101010101010101 -o /tmp/nofma.test ./internal/fit/renderer
 
-  `compositeScalarPixel` writes `img.Pix[i+3] = uint8(outA*255 + 0.5)`
-  (`internal/fit/renderer/renderer_cpu.go`), which ARM64 emits as one `FMADDD`
-  and therefore rounds once, where amd64 rounds `outA*255` and then adds. The
-  oracle's `uint8(math.Round(outputAlpha * 255))`
-  (`renderer_correctness_test.go`) cannot fuse at all. At a near-tie the three
-  disagree by one unit, on an alpha channel - exactly the observed failure.
+  `golang.org/x/tools/cmd/bisect` then names the decisive site directly - use
+  `-compile=fma`, not `-compile=fmahash`, or the knob is silently ignored:
 
-  The fix is an explicit conversion, `uint8(float64(outA*255) + 0.5)`, which the
-  Go spec makes a rounding point that contraction may not cross. It is not
-  applied: it changes the scalar composite hot path and costs ARM64 its fusion
-  there, so it wants its own change with `rendererPackage` filled in on both
-  ARM64 rows to validate it. Until then, ARM64 renderer output is unverified.
+      $ bisect -compile=fma ./run-arm64-test.sh
+      internal/fit/renderer/composite_span.go:19:24
 
-  There is a second consequence that is easy to miss. With `rendererPackage`
-  empty, `internal/fit/renderer`'s tests are never *compiled* on ARM64 either, so
-  an architecture-guarded test file can reference a signature that no longer
-  exists and every gate stays green. That happened once already, on the branch
-  that hoisted the span constants. `scripts/check-cross-build.sh` now runs
-  `go vet ./...` for each supported target, which type-checks test files and
-  closes that gap independently of whether the tests can run.
+  That is the *span* compositor, not the alpha store that the previous entry
+  blamed. Blocking the alpha store alone changes nothing, because the oracle
+  computes `outputAlpha` with the same expression shape and fuses with it.
+
+  **Blocking contraction needs care in two places that are easy to get wrong.**
+  An explicit conversion only rounds the value it wraps, so
+  `fgR + float64(bgR*bgBlend)` still fuses if `fgR` is itself a product: the
+  compiler simply fuses the outer add against `r*alpha` instead. The
+  premultiplied foreground has to be rounded too. And the scalar span compositor
+  was deliberately written to fuse so it would match the NEON kernel's `FMLA`,
+  so the kernel had to be unfused with it; that is a 1:1 instruction swap
+  (`VMOV`+`VFMLA` becomes `FMUL`+`FADD`) encoded as `WORD`s, because Go's arm64
+  assembler has no vector `FMUL`/`FADD` mnemonic.
+
+  **Nothing was testing the NEON kernel.** Both ARM64 span tests force the
+  scalar tier, so they compared the scalar path with itself.
+  `TestCompositeSpanNEONMatchesScalar` now compares the kernel against the
+  scalar reference. Its colour distribution is load-bearing: uniformly random
+  float colours found zero mismatches in 51.2 million evaluations against a
+  reference that was genuinely wrong, while the k/255 colours the renderer
+  actually receives expose the same defect in about half a percent of bytes.
+
+  Throughput on ARM64 was not measured. The de-fusing keeps the instruction
+  count identical, and `compositeSpanNEONMinPixels` is unchanged, but neither
+  claim is a benchmark; emulated timings say nothing. Re-deriving that crossover
+  still needs ARM64 hardware.
+- `internal/opt` still fails on ARM64, and always did - this is unrelated to the
+  renderer work above and predates it.
+  `TestMayflyAdapterSeedsResumePopulationAroundBest` and
+  `TestMayflyAdapterMixesIncumbentAndAlternativeSeedPopulations` both fail under
+  the same emulated run, on `main` as well. No CI job runs `./internal/opt` on
+  ARM64, so nothing reports it. It has not been diagnosed.
 - **The dark theme may be unreadable in Safari on any page a React island does
   not repaint.** On WebKit this document finishes its initial style pass with
   the root's custom properties resolved but inherited by nothing, so body and

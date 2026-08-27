@@ -24,15 +24,13 @@ jobs:
             maskedTier: sse2
             # Only amd64 has a tier between the widest one and scalar.
             middleTier: sse2
-            # internal/fit/renderer has no ARM64 coverage yet; see the comment
-            # on the renderer steps below.
             rendererPackage: ./internal/fit/renderer
           - platform: macOS ARM64 / NEON
             runner: macos-15
             tier: neon
             maskedTier: scalar
             middleTier: ""
-            rendererPackage: ""
+            rendererPackage: ./internal/fit/renderer
           - platform: Windows AMD64 / AVX2
             runner: windows-2025
             tier: avx2
@@ -44,7 +42,7 @@ jobs:
             tier: neon
             maskedTier: scalar
             middleTier: ""
-            rendererPackage: ""
+            rendererPackage: ./internal/fit/renderer
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -102,28 +100,21 @@ jobs:
           CIRCLEFIT_REQUIRE_SIMD_TIER: scalar
         run: go test -count=1 ./internal/fit
 
-      # rendererPackage is empty on both ARM64 rows. This matrix supplies the
-      # only ARM64 runners in the repository - every other job is
-      # ubuntu-latest - so internal/fit/renderer has never executed on ARM64
-      # here, and running it fails:
+      # internal/fit/renderer now runs on all four rows, including the two
+      # ARM64 ones. It could not before: the renderer's float64 arithmetic was
+      # written so ARM64 would contract each multiply-add into a single fused
+      # operation, matching the NEON span kernel but matching neither amd64 nor
+      # the correctness oracle, which rounds with math.Round and cannot fuse.
+      # That showed up as
       #
       #   --- FAIL: TestCPURendererMatchesPreOptimizationBaseline/fractional_overlaps
-      #       renderer_correctness_test.go:106: pixel (4,11) channel 3 = 205, baseline = 206
+      #       renderer_correctness_test.go:109: pixel (4,11) channel 3 = 205, baseline = 206
       #
-      # It reproduces at threads_1 and threads_4, does not reproduce on amd64,
-      # and predates this work. The cause is multiply-add contraction, not the
-      # NEON span kernel: the renderer's uint8(outA*255 + 0.5) fuses into a
-      # single FMADDD on ARM64 and rounds once, while the correctness oracle's
-      # uint8(math.Round(...)) cannot fuse. It is diagnosable by cross-compiling
-      # with -gcflags='-S'; an earlier version of this comment said otherwise.
-      # See docs/known-limitations.md for the fix and why it is not applied yet,
-      # and fill in rendererPackage on both ARM64 rows once it is.
-      #
-      # Note what empty rendererPackage also costs: internal/fit/renderer's
-      # tests are not compiled on ARM64 anywhere in CI, so a signature change
-      # can break an //go:build arm64 test file with every gate green. That is
-      # now caught by scripts/check-cross-build.sh, which vets every supported
-      # target, rather than by this matrix.
+      # plus a second failure in TestPolishCircleBatchPoolWidthParity, whose
+      # expected costs were recorded on amd64. The compositors and the NEON
+      # kernel now round at the same points on every target, so both pass.
+      # See docs/known-limitations.md for the analysis and the reproduction
+      # recipe, which needs no ARM64 hardware.
 
       - name: Record native scalar and SIMD throughput
         env:

@@ -4,6 +4,7 @@ package renderer
 
 import (
 	"bytes"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"strings"
@@ -49,6 +50,54 @@ func TestCompositeSpanFollowsForcedTier(t *testing.T) {
 	compositeOpaqueSpanScalar(want, 0, 512, 0.13, 0.57, 0.91, 0.37)
 	if !bytes.Equal(got, want) {
 		t.Fatal("forced-scalar span dispatch differs from the scalar compositor")
+	}
+}
+
+// TestCompositeSpanNEONMatchesScalar is the byte-exactness contract for the
+// NEON kernel itself. Until this test existed nothing compared the kernel's
+// output to compositeOpaqueSpanScalar: the two tests above both force the
+// scalar tier, so they compare the scalar path against itself and would stay
+// green if the kernel drifted arbitrarily.
+//
+// The colour distribution is the whole test. The kernel and the scalar
+// reference differ only when a product lands on a half-integer boundary, and
+// uniformly random float colours essentially never do - an earlier version of
+// this sweep used them and found zero mismatches in 51.2 million evaluations
+// against a reference that was genuinely wrong. Colours the renderer actually
+// receives are k/255, which hit those boundaries often enough that the same
+// defect shows up in a few thousand bytes per run. Keep the k/255 sampling.
+func TestCompositeSpanNEONMatchesScalar(t *testing.T) {
+	if fit.Tier() != fit.TierNEON {
+		t.Skipf("detected tier is %s, so the NEON kernel is not the one under test", fit.Tier())
+	}
+
+	source := rand.New(rand.NewPCG(0x9e37, 0x1234))
+
+	// Above compositeSpanNEONMinPixels, so the kernel handles the whole span
+	// apart from the tail the scalar fallback finishes.
+	const pixels = 512
+
+	for trial := range 512 {
+		got := makeOpaqueSpanFixture(pixels)
+		want := append([]byte(nil), got...)
+
+		r := float64(source.IntN(256)) / 255
+		g := float64(source.IntN(256)) / 255
+		b := float64(source.IntN(256)) / 255
+		alpha := float64(source.IntN(101)) / 100
+
+		blend := newSpanBlend(r, g, b, alpha)
+		compositeOpaqueSpan(&blend, got, 0, pixels, r, g, b, alpha)
+		compositeOpaqueSpanScalar(want, 0, pixels, r, g, b, alpha)
+
+		if !bytes.Equal(got, want) {
+			for i := range got {
+				if got[i] != want[i] {
+					t.Fatalf("trial %d: NEON byte %d = %d, scalar = %d (rgba %g,%g,%g,%g)",
+						trial, i, got[i], want[i], r, g, b, alpha)
+				}
+			}
+		}
 	}
 }
 

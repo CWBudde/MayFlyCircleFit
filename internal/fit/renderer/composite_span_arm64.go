@@ -37,9 +37,9 @@ const compositeSpanNEONMinPixels = 256
 // span, so the same hoist is available here - but compositeSpanNEONMinPixels is
 // a measured crossover that includes that setup, and hoisting without
 // re-deriving it would leave a constant that no longer describes the code. That
-// re-measurement needs ARM64 benchmarking hardware; internal/fit/renderer does
-// not yet run on the ARM64 rows of ci-native-simd.yml. See
-// docs/exact-span-compositors.md.
+// re-measurement needs ARM64 benchmarking hardware. internal/fit/renderer does
+// now run on the ARM64 rows of ci-native-simd.yml, but those cover correctness,
+// not throughput. See docs/exact-span-compositors.md.
 type spanBlend struct{}
 
 func newSpanBlend(_, _, _, _ float64) spanBlend { return spanBlend{} }

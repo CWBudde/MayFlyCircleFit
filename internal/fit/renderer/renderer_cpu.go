@@ -631,7 +631,7 @@ func (r *CPURenderer) renderCircle(img *image.NRGBA, c fit.Circle) {
 			dx := float64(x) - c.X
 
 			dy := float64(y) - c.Y
-			if dx*dx+dy*dy > r2 {
+			if float64(dx*dx)+float64(dy*dy) > r2 {
 				continue
 			}
 
@@ -723,7 +723,7 @@ func (r *CPURenderer) renderCircleScanlineRowsTracked(
 		if r.forceFloat32Geometry {
 			dy := float32(y) - y32
 
-			remaining := radiusSquared32 - dy*dy
+			remaining := radiusSquared32 - float32(dy*dy)
 			if remaining < 0 {
 				continue
 			}
@@ -927,6 +927,14 @@ func (r *CPURenderer) renderCircleHybrid(img *image.NRGBA, c fit.Circle) {
 const inv255 = 1.0 / 255.0 // Reciprocal for fast division
 
 // compositePixel blends a color onto the image at (x,y) using premultiplied alpha.
+//
+// Every float64 conversion below is a rounding barrier, not a redundant cast.
+// Go may contract a multiply-add into one operation that rounds once; the arm64
+// backend does and amd64 does not, so without them this function produces
+// different bytes on the two targets and matches neither the correctness oracle
+// nor compositeOpaqueSpanScalar. compositeOpaqueSpanScalar carries the full
+// explanation, including why the premultiplied foreground has to be rounded as
+// well as the carried background.
 func compositePixel(img *image.NRGBA, x, y int, r, g, b, alpha float64) {
 	// Inline PixOffset calculation (faster than function call)
 	i := y*img.Stride + x*4
@@ -937,18 +945,18 @@ func compositePixel(img *image.NRGBA, x, y int, r, g, b, alpha float64) {
 	bgB := float64(img.Pix[i+2]) * inv255
 
 	// Foreground premultiplied
-	fgR := r * alpha
-	fgG := g * alpha
-	fgB := b * alpha
+	fgR := float64(r * alpha)
+	fgG := float64(g * alpha)
+	fgB := float64(b * alpha)
 
 	// An opaque destination remains opaque under source-over compositing. This
 	// is the common path for the default white canvas and avoids alpha
 	// normalization, the output-alpha reciprocal, and the alpha store.
 	if img.Pix[i+3] == 255 {
 		bgBlend := 1 - alpha
-		img.Pix[i+0] = uint8((fgR+bgR*bgBlend)*255 + 0.5)
-		img.Pix[i+1] = uint8((fgG+bgG*bgBlend)*255 + 0.5)
-		img.Pix[i+2] = uint8((fgB+bgB*bgBlend)*255 + 0.5)
+		img.Pix[i+0] = uint8(float64((fgR+float64(bgR*bgBlend))*255) + 0.5)
+		img.Pix[i+1] = uint8(float64((fgG+float64(bgG*bgBlend))*255) + 0.5)
+		img.Pix[i+2] = uint8(float64((fgB+float64(bgB*bgBlend))*255) + 0.5)
 
 		return
 	}
@@ -957,7 +965,7 @@ func compositePixel(img *image.NRGBA, x, y int, r, g, b, alpha float64) {
 	fgA := alpha
 
 	// Porter-Duff "over" operator
-	outA := fgA + bgA*(1-fgA)
+	outA := fgA + float64(bgA*(1-fgA))
 	if outA == 0 {
 		return // Transparent
 	}
@@ -968,13 +976,13 @@ func compositePixel(img *image.NRGBA, x, y int, r, g, b, alpha float64) {
 	// Precompute common subexpression
 	bgBlend := bgA * (1 - fgA)
 
-	outR := (fgR + bgR*bgBlend) * invOutA
-	outG := (fgG + bgG*bgBlend) * invOutA
-	outB := (fgB + bgB*bgBlend) * invOutA
+	outR := (fgR + float64(bgR*bgBlend)) * invOutA
+	outG := (fgG + float64(bgG*bgBlend)) * invOutA
+	outB := (fgB + float64(bgB*bgBlend)) * invOutA
 
 	// Write back as 8-bit (use int conversion with +0.5 for rounding, faster than math.Round)
-	img.Pix[i+0] = uint8(outR*255 + 0.5)
-	img.Pix[i+1] = uint8(outG*255 + 0.5)
-	img.Pix[i+2] = uint8(outB*255 + 0.5)
-	img.Pix[i+3] = uint8(outA*255 + 0.5)
+	img.Pix[i+0] = uint8(float64(outR*255) + 0.5)
+	img.Pix[i+1] = uint8(float64(outG*255) + 0.5)
+	img.Pix[i+2] = uint8(float64(outB*255) + 0.5)
+	img.Pix[i+3] = uint8(float64(outA*255) + 0.5)
 }

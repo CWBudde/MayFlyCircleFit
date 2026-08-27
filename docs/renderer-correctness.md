@@ -106,5 +106,11 @@ hand-waved:
 
 Everything else on the default path — SSD, delta-SSD, circle span, and the exact
 span compositors on every tier — is byte-identical to its own architecture's
-scalar oracle. Costs from different *architectures* are still different numbers;
-[`schedule-format.md`](schedule-format.md) explains why.
+scalar oracle, and since the compositors stopped depending on multiply-add
+contraction those scalar oracles agree with each other too: a 640x480 scene with
+NEON-length spans renders to the same bytes and the same cost under
+arm64/NEON and amd64/AVX2, and `internal/fit/renderer` is gated on both ARM64
+rows of `ci-native-simd.yml`. That covers the exact renderer path only. The
+opt-in fast compositor is still architecture-dependent by design, and nothing
+here audits the non-default cost metrics or `internal/opt`, which has its own
+unrelated ARM64 failures ([`known-limitations.md`](known-limitations.md)).
