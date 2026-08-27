@@ -160,7 +160,10 @@ func (s *polishDirtySession) collectCircleSpans(circle fit.Circle, dirty *dirtyS
 		return
 	}
 
-	radiusSquared := circle.R * circle.R
+	// Rounded at the assignment, not only where it is used: this is a product,
+	// so leaving it unrounded lets arm64 fuse it straight into the subtraction
+	// below as FNMSUBD and decide a span boundary differently than amd64.
+	radiusSquared := float64(circle.R * circle.R)
 
 	fixed, useFixed := fixedCircleQ16{}, false
 	if !s.forceFloatGeometry && !s.forceFloat32Geometry {
@@ -182,12 +185,12 @@ func (s *polishDirtySession) collectCircleSpans(circle fit.Circle, dirty *dirtyS
 		center := float32(circle.X)
 		centerY := float32(circle.Y)
 		radius := float32(circle.R)
-		radiusSquared32 := radius * radius
+		radiusSquared32 := float32(radius * radius)
 
 		for y := minY; y < maxY; y++ {
 			dy := float32(y) - centerY
 
-			remaining := radiusSquared32 - dy*dy
+			remaining := radiusSquared32 - float32(dy*dy)
 			if remaining < 0 {
 				continue
 			}
@@ -202,7 +205,7 @@ func (s *polishDirtySession) collectCircleSpans(circle fit.Circle, dirty *dirtyS
 	for y := minY; y < maxY; y++ {
 		dy := float64(y) - circle.Y
 
-		remaining := radiusSquared - dy*dy
+		remaining := radiusSquared - float64(dy*dy)
 		if remaining < 0 {
 			continue
 		}
@@ -271,7 +274,10 @@ func (s *polishDirtySession) compositeCircleDirtyRows(circle fit.Circle, dirty *
 	// per dirty sub-span, so a single row could rebuild the block several times.
 	blend := newSpanBlend(circle.CR, circle.CG, circle.CB, circle.Opacity)
 
-	radiusSquared := circle.R * circle.R
+	// Rounded at the assignment, not only where it is used: this is a product,
+	// so leaving it unrounded lets arm64 fuse it straight into the subtraction
+	// below as FNMSUBD and decide a span boundary differently than amd64.
+	radiusSquared := float64(circle.R * circle.R)
 
 	fixed, useFixed := fixedCircleQ16{}, false
 	if !s.forceFloatGeometry && !s.forceFloat32Geometry {
@@ -293,12 +299,12 @@ func (s *polishDirtySession) compositeCircleDirtyRows(circle fit.Circle, dirty *
 		center := float32(circle.X)
 		centerY := float32(circle.Y)
 		radius := float32(circle.R)
-		radiusSquared32 := radius * radius
+		radiusSquared32 := float32(radius * radius)
 
 		for y := minY; y < maxY; y++ {
 			dy := float32(y) - centerY
 
-			remaining := radiusSquared32 - dy*dy
+			remaining := radiusSquared32 - float32(dy*dy)
 			if remaining < 0 {
 				continue
 			}
@@ -313,7 +319,7 @@ func (s *polishDirtySession) compositeCircleDirtyRows(circle fit.Circle, dirty *
 	for y := minY; y < maxY; y++ {
 		dy := float64(y) - circle.Y
 
-		remaining := radiusSquared - dy*dy
+		remaining := radiusSquared - float64(dy*dy)
 		if remaining < 0 {
 			continue
 		}

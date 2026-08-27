@@ -478,11 +478,14 @@ comparable after the fact; treat it as its own baseline.
   among them — not a guarantee the schedule format makes, and a future inexact
   kernel would end it silently. `CIRCLEFIT_SIMD_TIER` forces a tier and
   `CIRCLEFIT_REQUIRE_SIMD_TIER` asserts the detected one.
-- **Architecture — not comparable.** The parity above is each kernel against
-  *its own architecture's* scalar loop, not against the other architecture's.
-  Go's amd64 backend does not contract `a*b+c`, so the blend is MUL+ADD there;
-  the arm64 backend does, so it is an FMA. The two round differently. An amd64
-  cost and an arm64 cost are different numbers for the same fit.
+- **Architecture — comparable on the exact path, and only there.** This used to
+  be a flat "not comparable": Go's amd64 backend does not contract `a*b+c` while
+  the arm64 backend did, so the blend was MUL+ADD on one and an FMA on the
+  other and the two rounded differently. The exact compositors no longer allow
+  that contraction and the NEON kernel was unfused to match, so an amd64 cost
+  and an arm64 cost agree for the same fit on the default path; both ARM64 rows
+  of `ci-native-simd.yml` run `internal/fit/renderer` to keep it that way. With
+  `--fast-compositing` the old warning still stands in full.
 - **Renderer version, where parity was not the contract.** Compositor work is
   safe to compare across, because byte-parity was the acceptance condition for
   each kernel. A change to how the cost itself is accumulated is not covered by

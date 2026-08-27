@@ -96,27 +96,39 @@ research follow-ups, not blockers for the selected production CPU path.
   AVX2 is absent and neither `CIRCLEFIT_SIMD_TIER=sse2` nor
   `GODEBUG=cpu.avx2=off` changes the microarchitecture.
 - [ ] Hoist the ARM64 NEON blend scalars the same way, and re-derive
-  `compositeSpanNEONMinPixels`. Gated on ARM64 benchmarking hardware:
-  `internal/fit/renderer` does not yet run on the ARM64 rows of
-  `ci-native-simd.yml`.
-- [ ] Block multiply-add contraction in `compositeScalarPixel` and fill in
-  `rendererPackage` on both ARM64 rows of `ci-native-simd.yml`. The ARM64
-  correctness failure that keeps those rows empty
-  (`TestCPURendererMatchesPreOptimizationBaseline/fractional_overlaps`, pixel
-  (4,11) channel 3 = 205 against a baseline of 206) is contraction, not the NEON
-  span kernel, and it is diagnosable by cross-compiling rather than needing ARM64
-  hardware: `go build -gcflags='-S' ./internal/fit/renderer` emits 38 `FMADDD`
-  under `GOARCH=arm64` and zero `VFMADD` under `GOARCH=amd64`.
-  `uint8(outA*255 + 0.5)` in `internal/fit/renderer/renderer_cpu.go` fuses on
-  ARM64 and so rounds once, where amd64 rounds the product and then adds, and the
-  oracle's `uint8(math.Round(...))` cannot fuse at all; at a near-tie the three
-  disagree by one alpha unit. The fix is the explicit conversion
-  `uint8(float64(outA*255) + 0.5)`, which the Go spec makes a rounding point
-  contraction may not cross; amd64 output is unchanged by it because amd64 does
-  not fuse today. It is deferred because it touches the scalar composite hot path
-  and costs ARM64 its fusion there, so it wants its own change with the ARM64
-  rows enabled to validate it. Until then ARM64 renderer output is unverified;
-  see [`docs/known-limitations.md`](docs/known-limitations.md).
+  `compositeSpanNEONMinPixels`. Still gated on ARM64 benchmarking hardware.
+  `internal/fit/renderer` now runs on the ARM64 rows of `ci-native-simd.yml`,
+  so correctness is covered there, but those runners establish nothing about
+  throughput and emulation establishes less.
+- [x] Block multiply-add contraction so the CPU renderer is byte-identical on
+  every target, and run `internal/fit/renderer` on both ARM64 rows of
+  `ci-native-simd.yml`. The recorded diagnosis was wrong on three counts, and
+  the corrected one is in
+  [`docs/known-limitations.md`](docs/known-limitations.md). It named
+  `compositeScalarPixel`, which does not exist - the alpha store is in
+  `compositePixel` - and blocking that store changes nothing, because the oracle
+  computes `outputAlpha` with the same expression shape and fuses with it. It
+  claimed ARM64 hardware was needed; `qemu-aarch64-static` plus binfmt runs the
+  cross-compiled test binary directly, reports NEON, and reproduces
+  `pixel (4,11) channel 3 = 205, baseline = 206` exactly. And it recorded one
+  failing test where there are two: `TestPolishCircleBatchPoolWidthParity` also
+  fails, against goldens recorded on amd64. Compiling the *unmodified* tree with
+  `-gcflags=all=-d=fmahash=<pattern>` makes the whole ARM64 suite pass, which
+  bounds the cause to contraction alone, and `bisect -compile=fma` named
+  `composite_span.go:19:24` as the decisive site. Two traps: an explicit
+  conversion rounds only what it wraps, so `fgR + float64(bgR*bgBlend)` still
+  fuses against `r*alpha` unless the premultiplied foreground is rounded too;
+  and the scalar span compositor was deliberately fused to match the NEON
+  kernel, so the kernel was unfused with it - a 1:1 swap of `VMOV`+`VFMLA` for
+  `FMUL`+`FADD`, hand-encoded because Go's arm64 assembler has no vector
+  mnemonic for them. Nothing had ever compared that kernel against its scalar
+  reference: both ARM64 span tests force the scalar tier.
+  `TestCompositeSpanNEONMatchesScalar` now does, and its k/255 colour sampling
+  is load-bearing - uniform random floats found zero mismatches in 51.2 million
+  evaluations against a reference that was wrong, where k/255 colours expose it
+  in about half a percent of bytes. amd64 output is unchanged: it emits no
+  `VFMADD` before or after, and the full amd64 suite passes. ARM64 throughput
+  was not measured and emulated timings would not count.
 
 ## Phase 11: GPU Backends (Research → Prototype)
 

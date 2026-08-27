@@ -150,7 +150,10 @@ func renderPreOptimizationBaseline(width, height int, initial *image.NRGBA, para
 				dx := float64(x) - circle.X
 
 				dy := float64(y) - circle.Y
-				if dx*dx+dy*dy <= radiusSquared {
+				// Rounded for the same reason as the blend below: the arm64
+				// backend would otherwise fuse this into one operation and
+				// decide coverage differently than the renderer does.
+				if float64(dx*dx)+float64(dy*dy) <= radiusSquared {
 					compositePreOptimizationPixel(canvas, x, y, circle)
 				}
 			}
@@ -168,15 +171,34 @@ func compositePreOptimizationPixel(img *image.NRGBA, x, y int, circle fit.Circle
 	backgroundAlpha := float64(img.Pix[offset+3]) / 255
 	foregroundAlpha := circle.Opacity
 
-	outputAlpha := foregroundAlpha + backgroundAlpha*(1-foregroundAlpha)
+	outputAlpha := foregroundAlpha + float64(backgroundAlpha*(1-foregroundAlpha))
 	if outputAlpha == 0 {
 		return
 	}
 
-	img.Pix[offset] = uint8(math.Round((circle.CR*foregroundAlpha + backgroundRed*backgroundAlpha*(1-foregroundAlpha)) / outputAlpha * 255))
-	img.Pix[offset+1] = uint8(math.Round((circle.CG*foregroundAlpha + backgroundGreen*backgroundAlpha*(1-foregroundAlpha)) / outputAlpha * 255))
-	img.Pix[offset+2] = uint8(math.Round((circle.CB*foregroundAlpha + backgroundBlue*backgroundAlpha*(1-foregroundAlpha)) / outputAlpha * 255))
+	img.Pix[offset] = preOptimizationChannel(circle.CR, backgroundRed, foregroundAlpha, backgroundAlpha, outputAlpha)
+	img.Pix[offset+1] = preOptimizationChannel(circle.CG, backgroundGreen, foregroundAlpha, backgroundAlpha, outputAlpha)
+	img.Pix[offset+2] = preOptimizationChannel(circle.CB, backgroundBlue, foregroundAlpha, backgroundAlpha, outputAlpha)
 	img.Pix[offset+3] = uint8(math.Round(outputAlpha * 255))
+}
+
+// preOptimizationChannel is one colour channel of the historical blend, split
+// out of compositePreOptimizationPixel only so the lines fit; the operand order
+// and the association of background * backgroundAlpha * (1 - foregroundAlpha)
+// are part of the contract and must not be regrouped.
+//
+// Both float64 conversions are load-bearing. Go may contract a multiply-add
+// into one operation that rounds once, and the arm64 backend does, so without
+// them this oracle rounds at different points than the renderer it is meant to
+// pin and the two disagree by one unit at a tie. Rounding the premultiplied
+// foreground matters as much as rounding the carried background: it is a
+// product too, so the compiler will otherwise fuse the outer add against it.
+// See docs/known-limitations.md.
+func preOptimizationChannel(colour, background, foregroundAlpha, backgroundAlpha, outputAlpha float64) uint8 {
+	premultiplied := float64(colour * foregroundAlpha)
+	carried := float64(background * backgroundAlpha * (1 - foregroundAlpha))
+
+	return uint8(math.Round((premultiplied + carried) / outputAlpha * 255))
 }
 
 func encodeCircles(circles []fit.Circle) []float64 {

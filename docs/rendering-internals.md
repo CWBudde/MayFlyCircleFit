@@ -150,14 +150,18 @@ cheap to break silently, so they are stated before the kernels.
   a host that genuinely lacks AVX2. It is worth about 1.07x there and roughly
   1.06x end to end on 256x256 and larger canvases - a real but modest win, and
   the reason it ships is that it is byte-identical and needs no flag.
-- **All exact kernels depend on the Go backend's multiply-add contraction, in
-  opposite directions.** arm64 fuses `fg + bg*blend` into FMADDD and the NEON
-  kernel must fuse to match; amd64 does not fuse and the AVX2 and SSE2 kernels
-  must not. Never introduce an FMA into any of them without re-establishing byte
-  parity. `TestCompositeSpanExactFusionContract` pins the amd64 half;
-  `composite_span.go` documents the arm64 half. The float32 kernels inherit the
-  same constraint, which is also why their scalar oracle is not portable: it
-  produces different bytes on the two architectures.
+- **No exact kernel may contract a multiply-add.** This used to cut the other
+  way on arm64, where `fg + bg*blend` was allowed to fuse into FMADDD so the
+  NEON kernel could fuse to match. That made the exact path architecture-
+  dependent and kept `internal/fit/renderer` off the ARM64 CI rows. The scalar
+  compositors now round through explicit conversions, the NEON kernel splits its
+  multiply and add to match, and amd64 was already unfused, so all three agree.
+  Never introduce an FMA into any of them without re-establishing byte parity.
+  `TestCompositeSpanExactFusionContract` pins the amd64 half and
+  `TestCompositeSpanNEONMatchesScalar` pins the arm64 half. The float32 *fast*
+  kernels are the exception and still inherit the old constraint, which is why
+  their scalar oracle is not portable: it produces different bytes on the two
+  architectures, within the ±1 tolerance that path already documents.
 - `compositeSpanExact` dispatches with a switch, never a function pointer.
   Routing the call indirectly defeats `//go:noescape` and heap-allocates the
   160-byte constant block, which costs more than either kernel saves.

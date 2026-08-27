@@ -41,8 +41,12 @@ func fastSpanConstants(r, g, b, alpha float64) (addR, addG, addB, mul float32) {
 // because they are also unfused; folding their VMULPS and VADDPS into
 // VFMADD231PS - the obvious optimisation - would silently break parity, and the
 // symptom would look like a precision artifact rather than a defect. The exact
-// float64 path has the mirror-image dependency and documents it in
-// composite_span.go; TestCompositeSpanExactFusionContract pins the amd64 half.
+// float64 path used to have the mirror-image dependency; it no longer does.
+// composite_span.go is now explicitly rounded so it is architecture-
+// independent, and the NEON kernel was unfused to match it. This opt-in path
+// is the one place where fused and unfused rounding still coexist, which its
+// +/-1 tolerance already allows. TestCompositeSpanExactFusionContract pins the
+// amd64 half.
 func compositeOpaqueSpanFastScalar(pix []byte, offset, pixels int, r, g, b, alpha float64) {
 	addR, addG, addB, mul := fastSpanConstants(r, g, b, alpha)
 

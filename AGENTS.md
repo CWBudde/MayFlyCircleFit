@@ -220,9 +220,17 @@ bash scripts/check-cross-build.sh
 `go build` does not compile `_test.go` files, so none of the build lines above
 says anything about a test file behind a `//go:build arm64` guard. Only
 `check-cross-build.sh` does, by running `go vet ./...` for each supported target.
-Run it whenever a signature crosses an architecture boundary; the ARM64 rows of
-`ci-native-simd.yml` skip `internal/fit/renderer`, so nothing else in CI would
-notice.
+Run it whenever a signature crosses an architecture boundary: it is the only
+*local* gate that type-checks ARM64 test files.
+
+In CI the ARM64 rows of `ci-native-simd.yml` now run `internal/fit/renderer`
+themselves, on Linux ARM64 and macOS ARM64, so an ARM64-only failure is caught
+there too - but at run time and only after the branch is pushed. Two things
+follow. Arithmetic that has to stay byte-identical across architectures must not
+let the compiler contract a multiply-add; see the exact compositors and
+[`docs/known-limitations.md`](docs/known-limitations.md). And the macOS ARM64
+runner has three processors, so a test that hardcodes four threads or workers
+fails there while every amd64 runner passes.
 
 GPU checks require an explicitly prepared runner with OpenCL headers and
 runtime; a CGO-disabled portable build is not GPU validation.
