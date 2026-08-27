@@ -594,3 +594,42 @@ func TestTheDimensionLimitAcceptsEveryPreviouslyValidPopulation(t *testing.T) {
 		)
 	}
 }
+
+// TestOptimizerDimensions pins the vector length one optimizer run searches.
+//
+// The rule is small but it is duplicated on purpose: the job creation island
+// recomputes it in optimizerDimensions in web/src/createJobBody.ts, so it can
+// tell the reader that full covariance will refuse the run before the
+// submission is made. This table and the one in web/src/createJobBody.test.ts
+// name the same cases, so a change to either mirror shows up as a failure
+// rather than as a form that warns about the wrong configuration.
+func TestOptimizerDimensions(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		name      string
+		mode      Mode
+		circles   int
+		batchSize int
+		want      int
+	}{
+		{"joint searches every circle", ModeJoint, 10, 0, 10 * ParametersPerCircle},
+		{"joint ignores a batch size", ModeJoint, 10, 3, 10 * ParametersPerCircle},
+		{"sequential searches one circle", ModeSequential, 40, 8, ParametersPerCircle},
+		{"batch searches one batch", ModeBatch, 40, 8, 8 * ParametersPerCircle},
+		{"an automatic batch searches every circle", ModeBatch, 12, 0, 12 * ParametersPerCircle},
+		{"a batch wider than the canvas searches every circle", ModeBatch, 6, 20, 6 * ParametersPerCircle},
+		{"an unset circle count still searches one", ModeJoint, 0, 0, ParametersPerCircle},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			config := JobConfig{Mode: testCase.mode, Circles: testCase.circles, BatchSize: testCase.batchSize}
+
+			got := config.optimizerDimensions()
+			if got != testCase.want {
+				t.Fatalf("optimizerDimensions() = %d, want %d", got, testCase.want)
+			}
+		})
+	}
+}

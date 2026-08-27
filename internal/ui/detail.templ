@@ -69,6 +69,11 @@ type JobDetail struct {
 	MaxIters      int `json:"maxIterations"`
 	ItersPerEpoch int `json:"itersPerEpoch"`
 	OptimizerEpochs int `json:"optimizerEpochs"`
+	// OptimizerRestarts is the number of independent cold attempts the stage
+	// was run as. It is reported beside the epoch schedule because it
+	// multiplies the same budget, and because a job created from the dashboard
+	// can now set it.
+	OptimizerRestarts int `json:"optimizerRestarts"`
 	PopSize       int `json:"popSize"`
 	PolishingEnabled bool `json:"polishingEnabled"`
 	PolishingOnly bool `json:"polishingOnly"`
@@ -160,6 +165,19 @@ func statusBorderColor(state string) string {
 // mounting would otherwise destroy the rules the mounted markup still uses, and
 // #job-detail-data, because the island reads it and a seed inside the element
 // it seeds is a seed that can be swept away mid-read.
+// optimizerSchedule states the budget one stage actually spent. The restart
+// clause is dropped at a single attempt, which is the default and by far the
+// common case, so an ordinary job does not read as though something extra
+// happened to it.
+func optimizerSchedule(restarts, epochs, itersPerEpoch int) string {
+	schedule := fmt.Sprintf("%d × %d iterations", epochs, itersPerEpoch)
+	if restarts > 1 {
+		return fmt.Sprintf("%d restarts × %s", restarts, schedule)
+	}
+
+	return schedule
+}
+
 templ JobDetailPage(job JobDetail) {
 	@Layout(fmt.Sprintf("Job %s", job.ID[:8])) {
 		<style>
@@ -518,7 +536,7 @@ templ JobDetailPage(job JobDetail) {
 					</div>
 					<div>
 						<div style="font-size: 0.875rem; color: var(--text-muted);">Optimizer Schedule</div>
-						<div style="font-weight: 500;">{ fmt.Sprintf("%d × %d iterations", job.OptimizerEpochs, job.ItersPerEpoch) }</div>
+						<div style="font-weight: 500;">{ optimizerSchedule(job.OptimizerRestarts, job.OptimizerEpochs, job.ItersPerEpoch) }</div>
 					</div>
 					<div>
 						<div style="font-size: 0.875rem; color: var(--text-muted);">Active-set Polishing</div>

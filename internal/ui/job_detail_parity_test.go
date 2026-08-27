@@ -41,6 +41,7 @@ type jobDetailParityExpectation struct {
 	ReferenceDimensions string   `json:"referenceDimensions"`
 	ReferenceFileSize   string   `json:"referenceFileSize"`
 	Termination         string   `json:"termination"`
+	OptimizerSchedule   string   `json:"optimizerSchedule"`
 	Parameters          []string `json:"parameters"`
 }
 
@@ -100,6 +101,11 @@ func TestJobDetailHelpersMatchSharedContract(t *testing.T) {
 				{"psnr", auditedPSNR(job), want.PSNR},
 				{"ssim", auditedSSIM(job), want.SSIM},
 				{"iterations", strconv.Itoa(job.Iterations), want.Iterations},
+				{
+					"optimizer schedule",
+					optimizerSchedule(job.OptimizerRestarts, job.OptimizerEpochs, job.ItersPerEpoch),
+					want.OptimizerSchedule,
+				},
 				{
 					"iteration progress",
 					fmt.Sprintf("%.1f%%", progressPercent(job.Iterations, job.MaxIters)),
@@ -169,7 +175,7 @@ func TestJobDetailPageRendersTheContractValues(t *testing.T) {
 			markers := []string{
 				want.BestCost, want.PSNR, want.IterationProgress, want.Evaluations,
 				want.AverageCPS, want.CurrentCPS, want.ETA, want.CostImprovementRate,
-				want.Elapsed, want.StartTime,
+				want.Elapsed, want.StartTime, want.OptimizerSchedule,
 			}
 			markers = append(markers, want.Parameters...)
 

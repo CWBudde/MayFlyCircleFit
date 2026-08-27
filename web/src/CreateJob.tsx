@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { buildCreateJobBody } from "./createJobBody";
+import { buildCreateJobBody, optimizerDimensions } from "./createJobBody";
 import type { CreateJobFormValues } from "./createJobBody";
 
 // The job creation form, posting POST /api/v1/jobs instead of the server-side
@@ -24,6 +24,9 @@ interface CreateJobLimits {
 	minPopulation: number;
 	maxPopulation: number;
 	maxOptimizerEpochs: number;
+	maxOptimizerRestarts: number;
+	maxCMAESFullDimensions: number;
+	parametersPerCircle: number;
 	maxBatchSize: number;
 	maxPolishingSweeps: number;
 	maxConvergencePatience: number;
@@ -61,6 +64,17 @@ const inputStyle = {
 const selectStyle = { ...inputStyle, backgroundColor: "var(--control-bg)" } as const;
 const labelStyle = { display: "block", fontWeight: 500, marginBottom: "0.5rem" } as const;
 const helpStyle = { fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" } as const;
+const warningStyle = {
+	fontSize: "0.75rem",
+	color: "var(--warning-text)",
+	backgroundColor: "var(--warning-bg)",
+	borderRadius: "0.375rem",
+	marginTop: "0.25rem",
+	padding: "0.375rem 0.5rem",
+	// An empty live region must take no room, or every field it guards is
+	// permanently padded by a message that is not there.
+	display: "block",
+} as const;
 const headingStyle = { fontSize: "1.25rem", fontWeight: 600, marginBottom: "1rem" } as const;
 const checkboxStyle = { marginRight: "0.5rem", width: "1rem", height: "1rem", cursor: "pointer" } as const;
 
@@ -137,6 +151,11 @@ interface FieldProps {
 	label: string;
 	help?: string;
 	required?: boolean;
+	// warning is what the browser can already tell the server will refuse. It
+	// is advisory: the control stays usable and the form stays submittable,
+	// because app.Validate is what decides a request and the page must not
+	// refuse something app would have accepted.
+	warning?: string;
 }
 
 // The red asterisk carries the fact in colour and glyph only, which WCAG 1.3.1
@@ -164,6 +183,64 @@ function Help({ help }: { help?: string }) {
 	return help ? <p style={helpStyle}>{help}</p> : null;
 }
 
+// role="status" rather than role="alert": the message appears while the reader
+// is still typing in a neighbouring field, and an alert would interrupt them
+// mid-edit. aria-live="polite" waits for a pause. The container is always
+// rendered so the live region exists before the text arrives; a region created
+// at the same moment as its content is not reliably announced.
+function Warning({ warning }: { warning?: string }) {
+	return (
+		<p role="status" aria-live="polite" style={warningStyle}>
+			{warning ?? ""}
+		</p>
+	);
+}
+
+// The CMA-ES refusals the browser can anticipate.
+//
+// app.Validate remains the only thing that decides a request; these three
+// compose what the reader is about to be told, from the same seeded limits the
+// controls take their bounds from, so the page states no number of its own.
+
+/** Mirrors cmaesCovarianceNote in internal/ui/create.templ. */
+function covarianceHelp(limits: CreateJobLimits): string {
+	const circles = Math.floor(limits.maxCMAESFullDimensions / limits.parametersPerCircle);
+
+	return `Full covariance supports at most ${limits.maxCMAESFullDimensions} optimizer dimensions and a larger `
+		+ `search is refused rather than run. One run searches ${limits.parametersPerCircle} dimensions per circle: `
+		+ "every circle in joint mode, one batch in batch mode, a single circle in sequential mode. That is "
+		+ `${circles} circles per run at most: in joint mode that caps the whole canvas, while a batch or `
+		+ "sequential job stays inside it whatever its total circle count. Choose block or separable above that.";
+}
+
+/** internal/app/cmaes.go refuses full covariance above the dimension limit. */
+function covarianceWarning(values: CreateJobFormValues, limits: CreateJobLimits): string {
+	// An emptied mode is the omitted key, which resolves to full, so it is
+	// warned about exactly as an explicit full is.
+	const mode = (values.covarianceMode ?? "").trim();
+	if (mode !== "" && mode !== "full") return "";
+
+	const dimensions = optimizerDimensions(values, limits.parametersPerCircle);
+	if (dimensions <= limits.maxCMAESFullDimensions) return "";
+
+	return `This run searches ${dimensions} dimensions, above the ${limits.maxCMAESFullDimensions} full covariance `
+		+ "supports, and will be refused. Choose block or separable, or search fewer circles at a time.";
+}
+
+/** internal/app/cmaes.go requires optimizerRestarts == 1 for IPOP and BIPOP. */
+function restartWarning(values: CreateJobFormValues): string {
+	const strategy = (values.restartStrategy ?? "").trim();
+	if (strategy === "" || strategy === "none") return "";
+
+	// An emptied count is the omitted key, which ApplyDefaults fills with 1 —
+	// the value the strategy requires — so a blank field is not a conflict.
+	const restarts = (values.optimizerRestarts ?? "").trim();
+	if (restarts === "" || Number(restarts) === 1) return "";
+
+	return `${strategy.toUpperCase()} schedules its own restarts inside one budget, so Optimizer Restarts must be 1 `
+		+ "and this job will be refused. Set it to 1, or choose the None strategy to keep independent cold attempts.";
+}
+
 function Text({ form, name, label, help, required }: FieldProps) {
 	return (
 		<div style={{ marginBottom: "1rem" }}>
@@ -183,7 +260,7 @@ function Text({ form, name, label, help, required }: FieldProps) {
 	);
 }
 
-function Num({ form, name, label, help, required, min, max, step, placeholder }: FieldProps & {
+function Num({ form, name, label, help, required, warning, min, max, step, placeholder }: FieldProps & {
 	min?: number;
 	max?: number;
 	step?: string;
@@ -207,11 +284,12 @@ function Num({ form, name, label, help, required, min, max, step, placeholder }:
 				style={inputStyle}
 			/>
 			<Help help={help} />
+			{warning === undefined ? null : <Warning warning={warning} />}
 		</div>
 	);
 }
 
-function Select({ form, name, label, help, required, choices }: FieldProps & { choices: Choice[] }) {
+function Select({ form, name, label, help, required, warning, choices }: FieldProps & { choices: Choice[] }) {
 	return (
 		<div>
 			<FieldLabel name={name} label={label} required={required} />
@@ -227,6 +305,7 @@ function Select({ form, name, label, help, required, choices }: FieldProps & { c
 				{choices.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
 			</select>
 			<Help help={help} />
+			{warning === undefined ? null : <Warning warning={warning} />}
 		</div>
 	);
 }
@@ -419,6 +498,14 @@ export function CreateJobIsland({ root }: { root: HTMLElement }) {
 						max={limits.maxOptimizerEpochs}
 						help="Repeat each optimizer stage, retaining the best and reseeding with fresh diversity."
 					/>
+					<Num
+						form={form}
+						name="optimizerRestarts"
+						label="Optimizer Restarts"
+						min={1}
+						max={limits.maxOptimizerRestarts}
+						help="Independent cold attempts per optimizer run, keeping the best. Each attempt spends the full iteration budget, so the run costs this many times as much."
+					/>
 				</div>
 			</fieldset>
 
@@ -439,14 +526,16 @@ export function CreateJobIsland({ root }: { root: HTMLElement }) {
 							choices={choices("covarianceMode")}
 							name="covarianceMode"
 							label="Covariance"
-							help="Full covariance is limited in the number of optimizer dimensions it supports; choose block or separable above that."
+							help={covarianceHelp(limits)}
+							warning={covarianceWarning(values, limits)}
 						/>
 						<Select
 							form={form}
 							choices={choices("restartStrategy")}
 							name="restartStrategy"
 							label="Restart Strategy"
-							help="CMA-ES's own restart schedule, spending one stage budget across several runs."
+							help="CMA-ES's own restart schedule, spending one stage budget across several runs. IPOP grows the population at each restart; BIPOP alternates large and small ones. Either replaces Optimizer Restarts above rather than multiplying it, so both require it to be 1."
+							warning={restartWarning(values)}
 						/>
 					</div>
 					<Check

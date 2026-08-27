@@ -33,6 +33,7 @@ const REQUIRED_NUMBERS = ["circles", "iters", "popSize", "seed"] as const;
 const DEFAULTED_NUMBERS = [
 	"batchSize",
 	"optimizerEpochs",
+	"optimizerRestarts",
 	"polishingActiveSetSize",
 	"polishingMaxSweeps",
 	"polishingEpochs",
@@ -79,6 +80,35 @@ function toNumber(name: string, raw: string): number {
 	if (!Number.isFinite(value)) throw new Error(`${name} must be a number`);
 
 	return value;
+}
+
+/**
+ * optimizerDimensions reports the length of the vector a single optimizer run
+ * searches, which is not the whole canvas: only a joint run optimizes every
+ * circle at once, a batch run searches one batch and a sequential run one
+ * circle.
+ *
+ * It mirrors optimizerDimensions in internal/app/config.go, which is where the
+ * rule lives; TestOptimizerDimensions pins the same table on the Go side. The
+ * island needs it to say whether the configured run still fits inside full
+ * covariance before the server refuses it, and parametersPerCircle is passed in
+ * from the page's limits so this file states no constant of its own.
+ */
+export function optimizerDimensions(form: CreateJobFormValues, parametersPerCircle: number): number {
+	const circles = Number(text(form, "circles"));
+	const batchSize = Number(text(form, "batchSize"));
+	const mode = text(form, "mode");
+
+	let searched = Number.isFinite(circles) ? circles : 0;
+	if (mode === "sequential") {
+		searched = 1;
+	} else if (mode === "batch" && Number.isFinite(batchSize) && batchSize > 0 && batchSize < searched) {
+		searched = batchSize;
+	}
+
+	if (!(searched >= 1)) searched = 1;
+
+	return searched * parametersPerCircle;
 }
 
 /**

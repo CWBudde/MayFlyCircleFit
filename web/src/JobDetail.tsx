@@ -97,6 +97,7 @@ export type JobDetailSeed = {
 	maxIterations: number;
 	itersPerEpoch: number;
 	optimizerEpochs: number;
+	optimizerRestarts: number;
 	popSize: number;
 	polishingEnabled: boolean;
 	polishingOnly: boolean;
@@ -362,6 +363,18 @@ export function parameterDescription(circle: CircleParameter): string {
 		`${circle.radius.toFixed(2)}) RGB(${colorChannel(circle.red)}, ` +
 		`${colorChannel(circle.green)}, ${colorChannel(circle.blue)}) α=${circle.opacity.toFixed(3)}`
 	);
+}
+
+/**
+ * optimizerSchedule states the budget one stage actually spent. Mirrors
+ * optimizerSchedule in internal/ui/detail.templ, and the pair is pinned by
+ * job-detail-parity.json: the restart clause is dropped at a single attempt so
+ * an ordinary job does not read as though something extra happened to it.
+ */
+export function optimizerSchedule(restarts: number, epochs: number, itersPerEpoch: number): string {
+	const schedule = `${epochs} × ${itersPerEpoch} iterations`;
+
+	return restarts > 1 ? `${restarts} restarts × ${schedule}` : schedule;
 }
 
 export function progressPercent(iterations: number, maximum: number): number {
@@ -1175,7 +1188,10 @@ function ConfigurationCard({ seed, status }: { seed: JobDetailSeed; status: JobS
 				{seed.fastCompositing ? <Fact label="Compositing" value="Fast (+/-1 per channel)" /> : null}
 				<Fact label="Circles" value={String(seed.circles)} />
 				<Fact label="Population Size" value={String(seed.popSize)} />
-				<Fact label="Optimizer Schedule" value={`${seed.optimizerEpochs} × ${seed.itersPerEpoch} iterations`} />
+				<Fact
+					label="Optimizer Schedule"
+					value={optimizerSchedule(seed.optimizerRestarts, seed.optimizerEpochs, seed.itersPerEpoch)}
+				/>
 				<div>
 					<div style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>Active-set Polishing</div>
 					{seed.polishingEnabled ? (

@@ -239,6 +239,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		MaxIters:                 maxIterations,
 		ItersPerEpoch:            job.Config.Iters,
 		OptimizerEpochs:          max(job.Config.OptimizerEpochs, 1),
+		OptimizerRestarts:        max(job.Config.OptimizerRestarts, 1),
 		PopSize:                  job.Config.PopSize,
 		PolishingEnabled:         job.Config.PolishingEnabled,
 		PolishingOnly:            job.Config.PolishingOnly,
@@ -419,6 +420,9 @@ func createJobLimits() ui.CreateJobLimits {
 		MaxConvergenceThreshold:    maxConvergenceThreshold,
 		MinPolishingMinImprovement: minPolishingMinImprovement,
 		DefaultInitialSigma:        app.DefaultCMAESInitialSigma,
+		MaxOptimizerRestarts:       app.MaxOptimizerRestarts,
+		MaxCMAESFullDimensions:     app.MaxCMAESFullDimensions,
+		ParametersPerCircle:        app.ParametersPerCircle,
 	}
 }
 
@@ -487,6 +491,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	itersStr := r.FormValue("iters")
 	popSizeStr := r.FormValue("popSize")
 	optimizerEpochsStr := r.FormValue("optimizerEpochs")
+	optimizerRestartsStr := r.FormValue("optimizerRestarts")
 	batchSizeStr := r.FormValue("batchSize")
 	polishingEnabled := r.FormValue("polishingEnabled") == "on"
 	polishingStrategy := app.PolishingStrategy(r.FormValue("polishingStrategy"))
@@ -541,6 +546,15 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		optimizerEpochs, err = strconv.Atoi(optimizerEpochsStr)
 		if err != nil || optimizerEpochs < 1 || optimizerEpochs > app.MaxOptimizerEpochs {
 			renderCreateJobError(w, r, fmt.Sprintf("Optimizer epochs must be between 1 and %d", app.MaxOptimizerEpochs), formProject)
+			return
+		}
+	}
+
+	optimizerRestarts := 1
+	if optimizerRestartsStr != "" {
+		optimizerRestarts, err = strconv.Atoi(optimizerRestartsStr)
+		if err != nil || optimizerRestarts < 1 || optimizerRestarts > app.MaxOptimizerRestarts {
+			renderCreateJobError(w, r, fmt.Sprintf("Optimizer restarts must be between 1 and %d", app.MaxOptimizerRestarts), formProject)
 			return
 		}
 	}
@@ -674,6 +688,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		Iters:                    iters,
 		PopSize:                  popSize,
 		OptimizerEpochs:          optimizerEpochs,
+		OptimizerRestarts:        optimizerRestarts,
 		BatchSize:                batchSize,
 		PolishingEnabled:         polishingEnabled,
 		PolishingStrategy:        polishingStrategy,
@@ -773,15 +788,17 @@ type cmaesFormValues struct {
 }
 
 // parseCMAESForm reads the four CMA-ES-only settings, but only for a CMA-ES
-// job. The creation form carries no JavaScript, so it always renders and always
+// job. The fallback form carries no JavaScript, so it always renders and always
 // submits those inputs whatever engine is selected; app.Normalize refuses a
 // CMA-ES-only field on a MayFly or Dragonfly job rather than ignoring it, so
-// they have to be dropped here instead of passed along.
+// they have to be dropped here instead of passed along. CreateJobIsland reveals
+// the section only for CMA-ES and drops the keys the same way, which is what
+// keeps the two admission paths storing one configuration.
 //
-// The form deliberately has no optimizerRestarts input, so OptimizerRestarts
-// keeps its default of 1 and the "ipop or bipop needs optimizerRestarts == 1"
-// rejection in app cannot be triggered from this page. Adding such an input
-// later would make that rejection reachable and it would need its own message.
+// The form does carry an optimizerRestarts input, so the "ipop or bipop needs
+// optimizerRestarts == 1" rejection is reachable from this page. It is left to
+// app.Validate rather than repeated here: the island warns before the
+// submission, and the rejection message the reader sees is app's own.
 func parseCMAESForm(r *http.Request, optimizer string) (cmaesFormValues, error) {
 	if app.Optimizer(optimizer) != app.OptimizerCMAES {
 		return cmaesFormValues{}, nil

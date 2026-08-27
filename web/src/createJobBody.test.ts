@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCreateJobBody } from "./createJobBody";
+import { buildCreateJobBody, optimizerDimensions } from "./createJobBody";
 import contract from "./create-job-parity.json";
 
 // The TypeScript half of the create-page parity check. buildCreateJobBody turns
@@ -108,4 +108,28 @@ describe("required numbers reject a blank value", () => {
 	it("still sends an explicitly typed zero seed", () => {
 		expect(buildCreateJobBody(complete).seed).toBe(0);
 	});
+});
+
+// The mirror of TestOptimizerDimensions in internal/app/config_test.go. Both
+// tables name the same cases: the island recomputes the rule so it can warn
+// that full covariance will refuse the run, and a mirror that drifts warns
+// about the wrong configuration rather than failing.
+describe("optimizer dimensions", () => {
+	const PARAMETERS_PER_CIRCLE = 7;
+
+	for (const testCase of [
+		{ name: "joint searches every circle", form: { mode: "joint", circles: "10" }, want: 10 },
+		{ name: "joint ignores a batch size", form: { mode: "joint", circles: "10", batchSize: "3" }, want: 10 },
+		{ name: "sequential searches one circle", form: { mode: "sequential", circles: "40", batchSize: "8" }, want: 1 },
+		{ name: "batch searches one batch", form: { mode: "batch", circles: "40", batchSize: "8" }, want: 8 },
+		{ name: "an automatic batch searches every circle", form: { mode: "batch", circles: "12", batchSize: "0" }, want: 12 },
+		{ name: "a batch wider than the canvas searches every circle", form: { mode: "batch", circles: "6", batchSize: "20" }, want: 6 },
+		{ name: "an unset circle count still searches one", form: { mode: "joint", circles: "" }, want: 1 },
+	]) {
+		it(testCase.name, () => {
+			expect(optimizerDimensions(testCase.form, PARAMETERS_PER_CIRCLE)).toBe(
+				testCase.want * PARAMETERS_PER_CIRCLE,
+			);
+		});
+	}
 });

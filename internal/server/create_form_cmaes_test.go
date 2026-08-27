@@ -16,16 +16,18 @@ import (
 
 // Form field names the CMA-ES section of the creation form submits.
 const (
-	fieldInitialSigma    = "initialSigma"
-	fieldCovarianceMode  = "covarianceMode"
-	fieldActiveCMA       = "activeCMA"
-	fieldRestartStrategy = "restartStrategy"
+	fieldInitialSigma      = "initialSigma"
+	fieldCovarianceMode    = "covarianceMode"
+	fieldActiveCMA         = "activeCMA"
+	fieldRestartStrategy   = "restartStrategy"
+	fieldOptimizerRestarts = "optimizerRestarts"
 )
 
 // cmaesCreateForm is a valid CMA-ES submission of the job creation form. The
 // caller overrides the fields under test. Every input the form renders is
-// always submitted, because the page carries no JavaScript that could hide the
-// CMA-ES section for another engine.
+// always submitted, because the fallback page carries no JavaScript that could
+// hide the CMA-ES section for another engine; the island hides it and drops the
+// same keys, which web/src/create-job-parity.json pins.
 func cmaesCreateForm(reference string) url.Values {
 	return url.Values{
 		fieldRefPath:         {reference},
@@ -288,6 +290,11 @@ func TestCreateFormRejectsInvalidCMAESSettings(t *testing.T) {
 			name: "unknown restart strategy", field: fieldRestartStrategy, value: "nipop",
 			message: fieldRestartStrategy,
 		},
+		{
+			name: "restarts above the form's own bound", field: fieldOptimizerRestarts,
+			value:   strconv.Itoa(app.MaxOptimizerRestarts + 1),
+			message: fmt.Sprintf("Optimizer restarts must be between 1 and %d", app.MaxOptimizerRestarts),
+		},
 	}
 
 	for _, test := range tests {
@@ -312,5 +319,85 @@ func TestCreateFormRejectsInvalidCMAESSettings(t *testing.T) {
 				t.Fatalf("rejected submission created %d job(s)", len(jobs))
 			}
 		})
+	}
+}
+
+// TestCreateFormRoundTripsOptimizerRestarts covers the one restart count the
+// form can express beside a CMA-ES engine: independent cold attempts with the
+// none strategy. It is the shape an evaluation-matched restart arm asks for,
+// and the reason the form carries the input at all.
+func TestCreateFormRoundTripsOptimizerRestarts(t *testing.T) {
+	t.Parallel()
+
+	server, reference := newCreateFormServer(t)
+
+	form := cmaesCreateForm(reference)
+	form.Set(fieldOptimizerRestarts, "16")
+
+	config := createdFormJobConfig(t, server, submitCreateForm(t, server, form))
+	if config.OptimizerRestarts != 16 {
+		t.Fatalf("OptimizerRestarts = %d, want 16", config.OptimizerRestarts)
+	}
+
+	if config.ResolvedCMAESRestartStrategy() != app.CMAESRestartNone {
+		t.Fatalf("restart strategy = %q, want none", config.ResolvedCMAESRestartStrategy())
+	}
+}
+
+// TestCreateFormRefusesRestartsBesideAnInternalSchedule is what the form's own
+// warning anticipates. IPOP and BIPOP spend one budget across their internal
+// runs, so app refuses them beside the consumer's fixed attempts; the browser
+// says so before the submission, and this pins that the submission is still
+// what decides, with app's own message reaching the reader.
+func TestCreateFormRefusesRestartsBesideAnInternalSchedule(t *testing.T) {
+	t.Parallel()
+
+	for _, strategy := range []app.CMAESRestartStrategy{app.CMAESRestartIPOP, app.CMAESRestartBIPOP} {
+		t.Run(string(strategy), func(t *testing.T) {
+			t.Parallel()
+
+			server, reference := newCreateFormServer(t)
+
+			form := cmaesCreateForm(reference)
+			form.Set(fieldRestartStrategy, string(strategy))
+			form.Set(fieldOptimizerRestarts, "2")
+
+			recorder := submitCreateForm(t, server, form)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want the form re-rendered with 200", recorder.Code)
+			}
+
+			const want = "must be 1 when CMA-ES restartStrategy is ipop or bipop"
+			if !containsString(recorder.Body.String(), want) {
+				t.Fatalf("expected %q in the rendered error page, got:\n%s", want, recorder.Body.String())
+			}
+
+			if jobs := server.jobManager.ListJobs(); len(jobs) != 0 {
+				t.Fatalf("rejected submission created %d job(s)", len(jobs))
+			}
+		})
+	}
+}
+
+// TestCreatePageExposesTheRestartControls checks the page offers both halves of
+// the pair the warning is about: the restart count, bounded by app's own
+// maximum, and the strategy that constrains it.
+func TestCreatePageExposesTheRestartControls(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newCreateFormServer(t)
+
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/create", nil)
+	recorder := httptest.NewRecorder()
+	server.handleCreatePageGet(recorder, request)
+
+	body := recorder.Body.String()
+	for _, marker := range []string{
+		`name="` + fieldOptimizerRestarts + `"`,
+		fmt.Sprintf(`max=%q`, strconv.Itoa(app.MaxOptimizerRestarts)),
+	} {
+		if !containsString(body, marker) {
+			t.Fatalf("rendered create page does not carry %q", marker)
+		}
 	}
 }

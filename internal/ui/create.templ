@@ -1,6 +1,9 @@
 package ui
 
-import "strconv"
+import (
+	"fmt"
+	"strconv"
+)
 
 // CreateJobPageData is the server-side projection for the job creation page.
 //
@@ -42,6 +45,13 @@ type CreateJobLimits struct {
 	MaxConvergenceThreshold    float64 `json:"maxConvergenceThreshold"`
 	MinPolishingMinImprovement float64 `json:"minPolishingMinImprovement"`
 	DefaultInitialSigma        float64 `json:"defaultInitialSigma"`
+	MaxOptimizerRestarts       int     `json:"maxOptimizerRestarts"`
+	// MaxCMAESFullDimensions and ParametersPerCircle are carried together
+	// because neither is a control bound: they are what the page needs to say,
+	// and what the island needs to compute, how many dimensions the configured
+	// run actually searches and whether full covariance still covers it.
+	MaxCMAESFullDimensions int `json:"maxCMAESFullDimensions"`
+	ParametersPerCircle    int `json:"parametersPerCircle"`
 }
 
 // attrInt and attrFloat render a limit as an HTML attribute value. attrFloat
@@ -50,6 +60,37 @@ type CreateJobLimits struct {
 func attrInt(value int) string { return strconv.Itoa(value) }
 
 func attrFloat(value float64) string { return strconv.FormatFloat(value, 'f', -1, 64) }
+
+// cmaesCovarianceNote states the full-covariance dimension limit in the terms
+// the reader is configuring in. Every number is composed from the projected
+// limits rather than written out, so the sentence cannot drift from
+// app.MaxCMAESFullDimensions or from the renderer's parameter count, and the
+// island can compose the same sentence from the same seed.
+//
+// The fallback form cannot check the limit against the circle count the reader
+// actually typed, because doing that needs script and this page has none. It
+// states the rule instead; the island, which does have script, warns when the
+// current configuration crosses it.
+func cmaesCovarianceNote(limits CreateJobLimits) string {
+	// A zero parameter count is not reachable through createJobLimits, but this
+	// component is exported and a zero-valued struct must render a page rather
+	// than divide by zero.
+	circles := 0
+	if limits.ParametersPerCircle > 0 {
+		circles = limits.MaxCMAESFullDimensions / limits.ParametersPerCircle
+	}
+
+	return fmt.Sprintf(
+		"Full covariance supports at most %d optimizer dimensions and a larger search is refused rather than run. "+
+			"One run searches %d dimensions per circle: every circle in joint mode, one batch in batch mode, a "+
+			"single circle in sequential mode. That is %d circles per run at most: in joint mode that caps the "+
+			"whole canvas, while a batch or sequential job stays inside it whatever its total circle count. "+
+			"Choose block or separable above that.",
+		limits.MaxCMAESFullDimensions,
+		limits.ParametersPerCircle,
+		circles,
+	)
+}
 
 // CreateJobPage displays the job creation form. page.Project is the slug the
 // job will be created in; it is carried through as a hidden field because the
@@ -317,6 +358,23 @@ templ CreateJobPage(page CreateJobPageData) {
 									Repeat each optimizer stage, retaining the best and reseeding with fresh diversity (4 × 2000 = 4 epochs at 2000 iterations).
 								</p>
 							</div>
+							<div>
+								<label for="optimizerRestarts" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">
+									Optimizer Restarts
+								</label>
+								<input
+									type="number"
+									id="optimizerRestarts"
+									name="optimizerRestarts"
+									value="1"
+									min="1"
+									max={ attrInt(page.Limits.MaxOptimizerRestarts) }
+									style={ createInputStyle }
+								/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+									Independent cold attempts per optimizer run, keeping the best. Each attempt spends the full iteration budget, so the run costs this many times as much. Leave at 1 when the CMA-ES restart strategy below is IPOP or BIPOP, which schedule their own restarts inside one budget and are refused otherwise.
+								</p>
+							</div>
 						</div>
 					</fieldset>
 					<fieldset style={ createSectionStyle }>
@@ -359,7 +417,7 @@ templ CreateJobPage(page CreateJobPageData) {
 									<option value="block">Block</option>
 								</select>
 								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-									Full covariance supports at most 512 optimizer dimensions and a larger search is refused rather than run. One run searches 7 dimensions per circle: every circle in joint mode, one batch in batch mode, a single circle in sequential mode. That is 73 circles per run at most: in joint mode that caps the whole canvas, while a batch or sequential job stays inside it whatever its total circle count. Choose block or separable above that.
+									{ cmaesCovarianceNote(page.Limits) }
 								</p>
 							</div>
 							<div>
@@ -376,7 +434,7 @@ templ CreateJobPage(page CreateJobPageData) {
 									<option value="bipop">BIPOP</option>
 								</select>
 								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-									CMA-ES's own restart schedule, spending one stage budget across several runs. IPOP grows the population at each restart; BIPOP alternates large and small ones.
+									CMA-ES's own restart schedule, spending one stage budget across several runs. IPOP grows the population at each restart; BIPOP alternates large and small ones. Either replaces the Optimizer Restarts above rather than multiplying it, so both require it to be 1.
 								</p>
 							</div>
 						</div>
