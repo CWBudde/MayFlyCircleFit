@@ -1,7 +1,8 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures/seed";
 
-// The two CMA-ES refusals the creation form anticipates.
+// The refusals the creation form anticipates: two CMA-ES ones and the polishing
+// engine restriction, which covers Dragonfly as well.
 //
 // internal/server/create_form_cmaes_test.go proves the server refuses these
 // configurations, and the Go and unit halves prove the strings are composed
@@ -15,6 +16,10 @@ import { expect, test } from "./fixtures/seed";
 
 const COVARIANCE = /searches \d+ dimensions, above the \d+ full covariance supports/;
 const RESTARTS = /schedules its own restarts inside one budget/;
+// Deliberately not the "runs its own MayFly population" clause: the checkbox's
+// help text carries that sentence too, and matching it would pass whether or
+// not the warning ever appeared.
+const POLISHING = /unavailable under \w+ and this job will be refused/;
 
 async function openCMAESForm(page: Page) {
 	await page.goto("/create");
@@ -96,4 +101,30 @@ test("a warning advises without disabling the submission", async ({ page }) => {
 	// app.Validate is the only thing that decides a request. The page must not
 	// refuse something app would have accepted, so the control stays live.
 	await expect(page.getByRole("button", { name: "Create Job" })).toBeEnabled();
+});
+
+// Polishing is the one anticipated refusal that is not CMA-ES-specific: a sweep
+// runs its own MayFly population whatever engine the job names, so Dragonfly is
+// refused for the same reason and the note has to name whichever engine is
+// selected. See "Polishing is MayFly-only" in docs/behavior-invariants.md.
+test("polishing warns under an engine that cannot polish, and names it", async ({ page }) => {
+	await openCMAESForm(page);
+
+	const warning = page.getByText(POLISHING);
+	// The engine alone is not a conflict; nothing has asked for a polish yet.
+	await expect(warning).toHaveCount(0);
+
+	await page.locator("#polishingEnabled").check();
+	await expect(warning).toBeVisible();
+	await expect(page.getByText(/unavailable under cmaes/)).toBeVisible();
+
+	// Either way out clears it: the engine that can polish, or no polish.
+	await page.locator("#optimizer").selectOption("mayfly");
+	await expect(warning).toHaveCount(0);
+
+	await page.locator("#optimizer").selectOption("dragonfly");
+	await expect(page.getByText(/unavailable under dragonfly/)).toBeVisible();
+
+	await page.locator("#polishingEnabled").uncheck();
+	await expect(warning).toHaveCount(0);
 });

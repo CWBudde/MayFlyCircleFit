@@ -289,3 +289,83 @@ func postEngineJob(t *testing.T, server *Server, body map[string]any) *httptest.
 
 	return response
 }
+
+// TestPolishEndpointExplainsTheEngineRestriction covers the one polishing
+// request no form can warn about beforehand. The detail page hides the polish
+// control for a job whose engine is not MayFly, but the endpoint is reachable
+// directly, and it inherits the completed job's configuration -- so a CMA-ES
+// parent arrives at app.Validate with polishing enabled and no way to turn it
+// off. The envelope has to carry the validation message, or a recorded
+// decision is reported as an unexplained bad request.
+func TestPolishEndpointExplainsTheEngineRestriction(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "ref.png")
+	createSimpleTestImage(t, imgPath)
+
+	fsStore, err := store.NewFSStore(filepath.Join(tmpDir, "data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := NewServerWithOptions(":0", fsStore, ServerOptions{InputRoots: []string{tmpDir}})
+	shutdownTestServer(t, server)
+
+	config, err := app.Normalize(JobConfig{
+		RefPath: imgPath, Mode: app.ModeBatch, Circles: 1, BatchSize: 1, Iters: 2,
+		PopSize: 20, Threads: 1, Seed: 42, Optimizer: app.OptimizerCMAES,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	source := server.jobManager.CreateJob(app.DefaultProject, config)
+	params := []float64{1, 1, 1, 1, 0, 0, 1}
+
+	err = server.jobManager.StartJob(source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = server.jobManager.CompleteJob(source.ID, 8000, 900000, params, 600, 1000, "completed")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checkpoint := store.NewCheckpoint(source.ID, params, 600, 1000, 8000, config)
+
+	err = fsStore.SaveCheckpoint(source.ID, checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequestWithContext(t.Context(),
+		http.MethodPost, "/api/v1/jobs/"+source.ID+"/polish", strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("polish status = %d, want 400: %s", response.Code, response.Body.String())
+	}
+
+	var decoded apiErrorResponse
+
+	err = json.Unmarshal(response.Body.Bytes(), &decoded)
+	if err != nil {
+		t.Fatalf("response %q is not the API error envelope: %v", response.Body.String(), err)
+	}
+
+	if decoded.Error.Code != codeInvalidConfig {
+		t.Errorf("error code = %q, want %q", decoded.Error.Code, codeInvalidConfig)
+	}
+
+	wants := []string{"polishingEnabled", "own MayFly population", optimizerCMAES}
+	for _, want := range wants {
+		if !strings.Contains(decoded.Error.Message, want) {
+			t.Errorf("error message = %q, want it to contain %q", decoded.Error.Message, want)
+		}
+	}
+}

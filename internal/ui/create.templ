@@ -473,7 +473,7 @@ templ CreateJobPage(page CreateJobPageData) {
 							<span style="font-weight: 500;">Polish selected circles after the batch run</span>
 						</label>
 						<p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem; margin-left: 1.5rem;">
-							Batch mode only. Every strategy preserves draw order, and a sweep is kept only when the complete image improves.
+							Batch mode only, and MayFly only: a polishing sweep runs its own MayFly population, so a CMA-ES or Dragonfly job asking for one is refused. Every strategy preserves draw order, and a sweep is kept only when the complete image improves.
 						</p>
 						<div style={ createFieldGridStyle }>
 							<div>

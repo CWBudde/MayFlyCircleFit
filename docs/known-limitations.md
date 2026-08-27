@@ -124,7 +124,12 @@ behavior is production-ready.
   most `iters * popSize` evaluations across their internal runs and require
   `optimizerRestarts=1`; fixed attempts remain available with
   `restartStrategy: "none"`. Polishing remains MayFly-only and is rejected,
-  not ignored, for CMA-ES jobs and schedules.
+  not ignored, for CMA-ES jobs and schedules -- including the `/polish`
+  endpoint, which inherits its parent's engine, so a completed CMA-ES job
+  cannot be continued as a polish. That is a recorded decision rather than an
+  unfinished seam; see "Polishing is MayFly-only" in
+  [`docs/behavior-invariants.md`](behavior-invariants.md) for what a sweep
+  actually runs and what would reopen the question.
 
 - CPU and OpenCL support joint, sequential, and batch pipelines; only CPU
   supports custom base canvases. Staged OpenCL modes replay all retained circles

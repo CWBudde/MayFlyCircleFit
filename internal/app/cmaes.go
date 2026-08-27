@@ -73,17 +73,17 @@ func (c JobConfig) ResolvedCMAESRestartStrategy() CMAESRestartStrategy {
 
 func (c JobConfig) cmaesOnlyFields() []engineOnlyField {
 	return []engineOnlyField{
-		{"initialSigma", c.InitialSigma != nil},
-		{"covarianceMode", c.CovarianceMode != ""},
-		{"activeCMA", c.ActiveCMA != nil},
-		{"restartStrategy", c.RestartStrategy != ""},
+		{field: "initialSigma", set: c.InitialSigma != nil},
+		{field: "covarianceMode", set: c.CovarianceMode != ""},
+		{field: "activeCMA", set: c.ActiveCMA != nil},
+		{field: "restartStrategy", set: c.RestartStrategy != ""},
 	}
 }
 
 func (c JobConfig) refuseCMAESOnlyFields() error {
 	for _, field := range c.cmaesOnlyFields() {
 		if field.set {
-			return engineOnlyFieldError(field.field, OptimizerCMAES, c.ResolvedOptimizer())
+			return engineOnlyFieldError(field, OptimizerCMAES, c.ResolvedOptimizer())
 		}
 	}
 

@@ -131,6 +131,59 @@ func TestValidateRefusesMayflyOnlyFieldsUnderDragonfly(t *testing.T) {
 	}
 }
 
+// TestPolishingRefusalExplainsTheRestriction pins the second half of the
+// polishing message. Naming the owner is the whole story for a variant, which
+// exists only inside MayFly; polishing is a stage any engine could plausibly
+// grow, so an owner alone reads as wiring nobody has got to yet. The refusal
+// has to say that a sweep runs its own MayFly population and what to do
+// instead, or the decision recorded in docs/behavior-invariants.md is invisible
+// at the one place it is enforced.
+func TestPolishingRefusalExplainsTheRestriction(t *testing.T) {
+	t.Parallel()
+
+	for _, engine := range []app.Optimizer{app.OptimizerCMAES, app.OptimizerDragonfly} {
+		t.Run(string(engine), func(t *testing.T) {
+			t.Parallel()
+
+			config := engineBaseConfig(t, engine)
+			config.Mode = app.ModeBatch
+			config.PolishingEnabled = true
+
+			err := config.Validate()
+			assertInvalidField(t, err, fieldPolishingEnabled)
+
+			wants := []string{
+				"own MayFly population",
+				"decision rather than a missing feature",
+				string(engine),
+			}
+			for _, want := range wants {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not contain %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+// TestEngineOnlyRefusalsWithoutPolishingStayBrief is the counterweight to the
+// test above: only polishing carries an explanation. Every other engine-only
+// field is refused by naming its owner and stopping, so the detail cannot leak
+// onto refusals it does not describe.
+func TestEngineOnlyRefusalsWithoutPolishingStayBrief(t *testing.T) {
+	t.Parallel()
+
+	config := dragonflyBaseConfig(t)
+	config.Variant = app.VariantDESMA
+
+	err := config.Validate()
+	assertInvalidField(t, err, fieldVariant)
+
+	if strings.Contains(err.Error(), ";") {
+		t.Errorf("error %q carries an explanation, want the owning engine alone", err)
+	}
+}
+
 // TestValidateAcceptsParallelEvaluationUnderDragonfly guards the one knob that
 // is not MayFly-only: the adapter implements concurrent evaluation, so a
 // campaign can be configured the same way for both engines.
@@ -180,7 +233,15 @@ func TestSupportedOptimizersListsEveryConstantOnce(t *testing.T) {
 func dragonflyBaseConfig(t *testing.T) app.JobConfig {
 	t.Helper()
 
-	config := app.JobConfig{RefPath: referenceImage, Optimizer: app.OptimizerDragonfly}
+	return engineBaseConfig(t, app.OptimizerDragonfly)
+}
+
+// engineBaseConfig is a valid configuration for the named engine with defaults
+// applied, so a test can set exactly the one field it is about.
+func engineBaseConfig(t *testing.T, engine app.Optimizer) app.JobConfig {
+	t.Helper()
+
+	config := app.JobConfig{RefPath: referenceImage, Optimizer: engine}
 
 	err := config.ApplyDefaults()
 	if err != nil {
