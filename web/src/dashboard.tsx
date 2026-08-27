@@ -14,6 +14,7 @@ import {
 	stateClass,
 	stateLabel,
 } from "./format";
+import { CreateJobIsland } from "./CreateJob";
 import { mountIslands } from "./islands";
 import { SettingsIsland } from "./Settings";
 import { ThemeToggleIsland } from "./ThemeToggle";
@@ -741,6 +742,7 @@ function CampaignCard({ campaign, palette }: { campaign: CampaignSummary; palett
 
 mountIslands({
 	dashboard: DashboardIsland,
+	"create-job": CreateJobIsland,
 	"job-list": JobListIsland,
 	"campaign-list": CampaignListIsland,
 	"campaign-detail": CampaignDetailIsland,

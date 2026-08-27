@@ -208,6 +208,22 @@ changes, and updates each Chart.js instance in place rather than reallocating a
 canvas for every event. The job and campaign pages share one image-viewer
 component, so reference/best/difference/overlay behavior has one contract.
 
+Job creation has two admission paths, and both are kept. `POST /create` accepts
+the templ form and is the no-JavaScript path; `POST /api/v1/jobs` accepts the
+JSON `CreateJobIsland` builds and is what a browser with the bundle uses. The
+alternative — deleting the form handler once the island existed — was rejected
+because it would leave the page unusable without JavaScript, which the templ
+fallback contract does not allow. The two paths differ in one place that
+matters: the form resolves an empty field against the defaults before a
+configuration exists, while the JSON path reads the raw body and refuses a value
+the defaults would replace, so the island omits what the user left blank instead
+of sending zeros. `web/src/create-job-parity.json` is the contract that keeps
+them equivalent, checked from Go in `internal/server/create_job_parity_test.go`
+and from TypeScript in `web/src/createJobBody.test.ts`. The page's bounds are a
+single `ui.CreateJobLimits` projected from `internal/app`: the fallback's
+`min`/`max` attributes and the island's are written from it, so the browser
+carries no limits of its own.
+
 The frontend build has two distinct phases:
 
 1. npm supplies TypeScript dependency files and tests during development/CI;

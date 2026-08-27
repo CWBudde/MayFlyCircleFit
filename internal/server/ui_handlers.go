@@ -340,6 +340,47 @@ func (s *Server) handleCreatePage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Bounds the creation form enforces that internal/app does not name as a
+// constant of its own. Each one is the number the form handler below checks, so
+// the browser and the handler cannot disagree; app.Validate still decides the
+// request, and each of these is at least as strict as what it accepts.
+const (
+	// maxConvergencePatience mirrors the bound app.Validate spells out inline
+	// for convergencePatience.
+	maxConvergencePatience = 100
+	// The convergence threshold is a relative improvement ratio. app.Validate
+	// accepts anything finite in [0,1]; the form has always offered the useful
+	// part of that range, and 0.0001 doubles as the step so the control's
+	// arrows land on values it accepts.
+	minConvergenceThreshold = 0.0001
+	maxConvergenceThreshold = 0.1
+	// app.Validate asks only that polishingMinImprovement be finite and
+	// positive, which no HTML min attribute can express; this is the smallest
+	// value the control offers.
+	minPolishingMinImprovement = 1e-9
+)
+
+// createJobLimits projects the server's bounds onto the creation page. The
+// fallback form writes its min/max attributes from this value and the page
+// seeds CreateJobIsland with the same one, so neither the markup nor the
+// TypeScript carries a limit of its own.
+func createJobLimits() ui.CreateJobLimits {
+	return ui.CreateJobLimits{
+		MaxCircles:                 app.MaxCircles,
+		MaxIterations:              app.MaxIterations,
+		MinPopulation:              app.MinPopulation,
+		MaxPopulation:              app.MaxPopulation,
+		MaxOptimizerEpochs:         app.MaxOptimizerEpochs,
+		MaxBatchSize:               app.MaxBatchSize,
+		MaxPolishingSweeps:         app.MaxPolishingSweeps,
+		MaxConvergencePatience:     maxConvergencePatience,
+		MinConvergenceThreshold:    minConvergenceThreshold,
+		MaxConvergenceThreshold:    maxConvergenceThreshold,
+		MinPolishingMinImprovement: minPolishingMinImprovement,
+		DefaultInitialSigma:        app.DefaultCMAESInitialSigma,
+	}
+}
+
 // handleCreatePageGet renders the job creation form.
 func (s *Server) handleCreatePageGet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -349,7 +390,10 @@ func (s *Server) handleCreatePageGet(w http.ResponseWriter, r *http.Request) {
 	requestedProject := strings.TrimSpace(r.URL.Query().Get("project"))
 
 	// Render the create job page with no error message
-	err := ui.CreateJobPage("", requestedProject).Render(r.Context(), w)
+	err := ui.CreateJobPage(ui.CreateJobPageData{
+		Project: requestedProject,
+		Limits:  createJobLimits(),
+	}).Render(r.Context(), w)
 	if err != nil {
 		http.Error(w, "Failed to render page", http.StatusInternalServerError)
 		return
@@ -368,7 +412,11 @@ func (s *Server) handleCreatePageGet(w http.ResponseWriter, r *http.Request) {
 func renderCreateJobError(w http.ResponseWriter, r *http.Request, message, project string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	err := ui.CreateJobPage(message, project).Render(r.Context(), w)
+	err := ui.CreateJobPage(ui.CreateJobPageData{
+		ErrorMessage: message,
+		Project:      project,
+		Limits:       createJobLimits(),
+	}).Render(r.Context(), w)
 	if err != nil {
 		slog.Error("Failed to render the job creation form", "error", err, "path", r.URL.Path)
 	}
@@ -433,8 +481,8 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	iters, err := strconv.Atoi(itersStr)
-	if err != nil || iters < 1 || iters > 10000 {
-		renderCreateJobError(w, r, "Iterations must be between 1 and 10000", formProject)
+	if err != nil || iters < 1 || iters > app.MaxIterations {
+		renderCreateJobError(w, r, fmt.Sprintf("Iterations must be between 1 and %d", app.MaxIterations), formProject)
 		return
 	}
 
@@ -518,8 +566,11 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	convergencePatience := 3 // default
 	if convergencePatienceStr != "" {
 		convergencePatience, err = strconv.Atoi(convergencePatienceStr)
-		if err != nil || convergencePatience < 1 || convergencePatience > 100 {
-			renderCreateJobError(w, r, "Convergence patience must be between 1 and 100", formProject)
+		if err != nil || convergencePatience < 1 || convergencePatience > maxConvergencePatience {
+			renderCreateJobError(w, r, fmt.Sprintf(
+				"Convergence patience must be between 1 and %d", maxConvergencePatience,
+			), formProject)
+
 			return
 		}
 	}
@@ -527,8 +578,11 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	convergenceThreshold := 0.001 // default
 	if convergenceThresholdStr != "" {
 		convergenceThreshold, err = strconv.ParseFloat(convergenceThresholdStr, 64)
-		if err != nil || convergenceThreshold < 0.0001 || convergenceThreshold > 0.1 {
-			renderCreateJobError(w, r, "Convergence threshold must be between 0.0001 and 0.1", formProject)
+		if err != nil || convergenceThreshold < minConvergenceThreshold || convergenceThreshold > maxConvergenceThreshold {
+			renderCreateJobError(w, r, fmt.Sprintf(
+				"Convergence threshold must be between %g and %g", minConvergenceThreshold, maxConvergenceThreshold,
+			), formProject)
+
 			return
 		}
 	}
