@@ -38,36 +38,18 @@ func TestJobDetailPageViewModes(t *testing.T) {
 	body := output.String()
 
 	for _, marker := range []string{
+		// The viewer is an island now: the page ships the side-by-side fallback
+		// and the props the island mounts with, not five modes of inert markup.
 		`data-view-mode="side-by-side"`,
+		`data-island="image-viewer"`,
+		`data-default-mode="side-by-side"`,
+		`data-colormap="turbo"`,
 		`data-best-revision="7"`,
 		`data-circle-count="64"`,
 		`const circleCount = Number.parseInt(imageViewer.dataset.circleCount, 10) || 0;`,
-		`name="view-mode" value="reference" aria-keyshortcuts="1"`,
-		`name="view-mode" value="best" aria-keyshortcuts="2"`,
-		`name="view-mode" value="side-by-side" aria-keyshortcuts="3" checked`,
-		`name="view-mode" value="difference" aria-keyshortcuts="4"`,
-		`name="view-mode" value="overlay" aria-keyshortcuts="5"`,
 		`data-view-panel="reference"`,
 		`data-view-panel="best"`,
-		`data-view-panel="difference"`,
-		`data-view-panel="overlay"`,
-		`mayflycirclefit.viewMode`,
-		`mayflycirclefit.overlayOpacity`,
-		`initializeImageState(`,
-		`initializeOverlayOpacity()`,
-		`id="best-image-error"`,
-		`id="diff-image-error"`,
-		`id="overlay-best-image-error"`,
-		`id="overlay-opacity"`,
-		`id="overlay-best-layer" class="overlay-best-layer" style="opacity: 0.5;"`,
-		`id="overlay-best-image"`,
 		`best.png?v=7`,
-		`id="heatmap-colormap"`,
-		`<option value="turbo" selected>Turbo</option>`,
-		`<option value="magma">Magma</option>`,
-		`diff.png?colormap=turbo&amp;v=7`,
-		`id="heatmap-legend-gradient"`,
-		`Mean absolute RGB error per pixel`,
 		`selectedHeatmapColormap()`,
 		`let lastRenderedBestRevision =`,
 		`data-island="job-controls"`,
@@ -277,7 +259,9 @@ func TestJobDetailPageParameterViewerCircleCounts(t *testing.T) {
 				`params.json`, `refreshParameterViewer()`, `formatParameter(circle)`,
 				`Best PNG`, `Parameters JSON`, `Difference PNG`,
 				`id="download-report"`, `Generating report…`, `URL.createObjectURL(blob)`,
-				`syncArtifactDownloadColormap()`, `role="status" aria-live="polite"`,
+				// The colormap now travels on the viewer element the island keeps
+				// current; the report render reads it there at click time.
+				`imageViewer.dataset.colormap`, `role="status" aria-live="polite"`,
 			} {
 				if !strings.Contains(body, marker) {
 					t.Errorf("rendered detail page missing %q", marker)

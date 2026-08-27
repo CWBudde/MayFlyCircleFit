@@ -73,6 +73,59 @@ function readRaw(storage: PreferenceStorage | null, key: string): string | null 
 	}
 }
 
+// readPreference is readRaw under an exported name. The image viewer needs one
+// entry at a time rather than the whole editor bundle: it reads the view mode
+// before it knows whether the server default or the stored value wins, and it
+// reads the refresh interval without caring what the metric checkboxes say.
+export function readPreference(storage: PreferenceStorage | null, key: string): string | null {
+	return readRaw(storage, key);
+}
+
+// writePreference stores one entry and leaves the rest alone. writePreferences
+// writes all four keys at once, which is right for the editor and wrong for a
+// job page: switching the view mode there must not also materialize defaults
+// for keys the reader has never touched, because an absent key and a key
+// holding the default are deliberately indistinguishable to every reader.
+export function writePreference(
+	key: string,
+	value: string,
+	storage: PreferenceStorage | null,
+): boolean {
+	if (!storage) return false;
+
+	try {
+		storage.setItem(key, value);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+// The image viewer's overlay blend, as a whole percentage. It sits outside
+// PREFERENCE_KEYS on purpose: the settings editor does not offer it, so it is
+// not part of the set that editor writes or that its reset button clears. The
+// key name and the decimal-integer shape are still a compatibility contract --
+// the inline viewer script stored them under exactly this name before any of
+// this was TypeScript.
+export const OVERLAY_OPACITY_KEY = "mayflycirclefit.overlayOpacity";
+export const DEFAULT_OVERLAY_OPACITY = 50;
+
+// normalizeOverlayOpacity parses with parseInt rather than Number, matching the
+// inline script it replaces: a stored "50.7" is 50, not 51.
+export function normalizeOverlayOpacity(raw: string | number | null): number {
+	const parsed = typeof raw === "number" ? raw : Number.parseInt(raw ?? "", 10);
+	if (!Number.isFinite(parsed)) return DEFAULT_OVERLAY_OPACITY;
+	return Math.min(100, Math.max(0, Math.round(parsed)));
+}
+
+export function readOverlayOpacity(storage: PreferenceStorage | null): number {
+	return normalizeOverlayOpacity(readRaw(storage, OVERLAY_OPACITY_KEY));
+}
+
+export function writeOverlayOpacity(percent: number, storage: PreferenceStorage | null): boolean {
+	return writePreference(OVERLAY_OPACITY_KEY, String(normalizeOverlayOpacity(percent)), storage);
+}
+
 export function normalizeAutoRefresh(raw: string | null): number {
 	const parsed = Number.parseInt(raw ?? "", 10);
 	return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_PREFERENCES.autoRefresh;

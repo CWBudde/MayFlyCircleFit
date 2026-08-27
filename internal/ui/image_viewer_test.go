@@ -7,96 +7,170 @@ import (
 	"testing"
 )
 
-func TestImageViewerSupportsAllModes(t *testing.T) {
-	views := []struct {
-		name      string
-		mode      string
-		inputID   string
-		shortcuts string
-		heading   string
-	}{
-		{name: "reference", mode: "reference", inputID: "view-mode-reference", shortcuts: `aria-keyshortcuts="1"`, heading: "Reference"},
-		{name: "best", mode: "best", inputID: "view-mode-best", shortcuts: `aria-keyshortcuts="2"`, heading: "Current Best"},
-		{name: "side-by-side", mode: "side-by-side", inputID: "view-mode-side-by-side", shortcuts: `aria-keyshortcuts="3"`, heading: ""},
-		{name: "difference", mode: "difference", inputID: "view-mode-difference", shortcuts: `aria-keyshortcuts="4"`, heading: "Difference Heatmap"},
-		{name: "overlay", mode: "overlay", inputID: "view-mode-overlay", shortcuts: `aria-keyshortcuts="5"`, heading: "Best over Reference"},
+const viewerJobID = "123e4567-e89b-12d3-a456-426614174000"
+
+func fixtureViewerData(mode string) ImageViewerData {
+	return ImageViewerData{
+		JobID:             viewerJobID,
+		DefaultMode:       mode,
+		BestRevision:      7,
+		ReferenceImageURL: "/api/v1/jobs/" + viewerJobID + "/ref.png",
+		BestImageURL:      "/api/v1/jobs/" + viewerJobID + "/best.png",
+		DiffImageURL:      "/api/v1/jobs/" + viewerJobID + "/diff.png",
+		JobState:          "running",
+		MaxIterations:     500,
+		CircleCount:       64,
+		ReferenceWidth:    64,
+		ReferenceHeight:   64,
+		ReferenceSize:     1024,
+		ShowMetadata:      true,
+		ExtraClass:        "fixture-viewer",
+		MountIsland:       true,
+	}
+}
+
+// TestImageViewerFallbackNeedsNoScript is the acceptance check for the port:
+// what the server renders has to be a complete, readable side-by-side view with
+// no script behind it. The five comparison modes now live in one place,
+// web/src/ImageViewer.tsx, and every control that needs them went with it --
+// leaving an inert radio or an inert slider on the page would tell a reader
+// without JavaScript that something is available when it is not.
+func TestImageViewerFallbackNeedsNoScript(t *testing.T) {
+	t.Parallel()
+
+	body := renderImageViewer(t, fixtureViewerData("side-by-side"))
+
+	if strings.Contains(body, "<script") {
+		t.Error("image viewer carries an inline script again")
 	}
 
-	for _, view := range views {
-		t.Run(view.name, func(t *testing.T) {
-			body := renderImageViewer(t, ImageViewerData{
-				JobID:             "123e4567-e89b-12d3-a456-426614174000",
-				DefaultMode:       view.mode,
-				BestRevision:      7,
-				ReferenceImageURL: "/api/v1/jobs/123e4567-e89b-12d3-a456-426614174000/ref.png",
-				BestImageURL:      "/api/v1/jobs/123e4567-e89b-12d3-a456-426614174000/best.png",
-				DiffImageURL:      "/api/v1/jobs/123e4567-e89b-12d3-a456-426614174000/diff.png",
-				JobState:          "running",
-				MaxIterations:     500,
-				ReferenceWidth:    64,
-				ReferenceHeight:   64,
-				ReferenceSize:     1024,
-				ShowMetadata:      true,
-				ExtraClass:        "fixture-viewer",
-			})
+	for _, present := range []string{
+		`data-view-mode="side-by-side"`,
+		`data-view-panel="reference"`,
+		`data-view-panel="best"`,
+		`alt="Reference Image"`,
+		`alt="Current Best Image"`,
+		"/best.png?v=7",
+		"<noscript>",
+	} {
+		if !strings.Contains(body, present) {
+			t.Errorf("no-JavaScript fallback is missing %q", present)
+		}
+	}
 
-			if !strings.Contains(body, `data-view-mode="`+view.mode+`"`) {
-				t.Fatalf("missing default mode marker for %s", view.mode)
+	// Controls the fallback cannot operate, and panels it cannot reach.
+	for _, absent := range []string{
+		`name="view-mode"`,
+		`aria-keyshortcuts=`,
+		`data-view-panel="difference"`,
+		`data-view-panel="overlay"`,
+		`id="overlay-opacity"`,
+		`id="heatmap-colormap"`,
+		"heatmap-legend",
+		"overlay-best-layer",
+		"image-loading",
+	} {
+		if strings.Contains(body, absent) {
+			t.Errorf("no-JavaScript fallback still renders the inert control %q", absent)
+		}
+	}
+}
+
+// TestImageViewerFallbackIgnoresTheCallerMode pins the reason DefaultMode no
+// longer reaches data-view-mode. The fallback has only the reference and best
+// panels, and the panel CSS keys off data-view-mode, so a caller asking for
+// "overlay" without JavaScript would otherwise get a card with no image in it.
+func TestImageViewerFallbackIgnoresTheCallerMode(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []string{"reference", "best", "side-by-side", "difference", "overlay", "nonsense"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+
+			body := renderImageViewer(t, fixtureViewerData(mode))
+			if !strings.Contains(body, `data-view-mode="side-by-side"`) {
+				t.Errorf("fallback for %q does not show the side-by-side pair", mode)
 			}
-
-			if !strings.Contains(body, view.shortcuts) {
-				t.Fatalf("missing shortcut for mode %s", view.mode)
-			}
-
-			if !strings.Contains(body, `id="`+view.inputID+`"`) {
-				t.Fatalf("missing radio input for %s", view.mode)
-			}
-
-			if !strings.Contains(body, `value="`+view.mode+`"`) {
-				t.Fatalf("missing mode value for %s", view.mode)
-			}
-
-			switch view.mode {
-			case "reference", "best", "difference", "overlay":
-				if !strings.Contains(body, `data-view-panel="`+view.mode+`"`) {
-					t.Fatalf("missing view panel for %s", view.mode)
-				}
-			case "side-by-side":
-				if !strings.Contains(body, `data-view-panel="reference"`) || !strings.Contains(body, `data-view-panel="best"`) {
-					t.Fatal("side-by-side mode did not expose reference and best panels")
-				}
-			}
-
-			if view.heading != "" && !strings.Contains(body, view.heading) {
-				t.Fatalf("missing heading for %s", view.mode)
-			}
-
-			inputStart := strings.Index(body, `id="`+view.inputID+`"`)
-			if inputStart < 0 {
-				t.Fatalf("could not find %s input", view.inputID)
-			}
-
-			inputEnd := strings.Index(body[inputStart:], ">")
-			if inputEnd < 0 {
-				t.Fatal("radio input was truncated")
-			}
-
-			inputTag := body[inputStart : inputStart+inputEnd+2]
-			if !strings.Contains(inputTag, "checked") {
-				t.Fatalf("expected checked marker for %s, got %q", view.mode, inputTag)
-			}
-
-			for _, scriptMarker := range []string{
-				"initializeViewMode();",
-				"initializeImageState(\"reference-image\", \"reference-image-loading\", \"reference-image-error\")",
-				"initializeHeatmapColormap();",
-				"initializeOverlayOpacity();",
-			} {
-				if !strings.Contains(body, scriptMarker) {
-					t.Fatalf("missing viewer script marker %q", scriptMarker)
-				}
+			if !strings.Contains(body, `data-default-mode="`+imageViewerMode(mode)+`"`) {
+				t.Errorf("island default mode for %q was not published", mode)
 			}
 		})
+	}
+}
+
+// TestImageViewerPublishesIslandProps covers the other half of the mount point:
+// the island reads every prop it needs off this element, so an attribute that
+// goes missing is a viewer that mounts with the wrong job, the wrong images or
+// no metadata at all.
+func TestImageViewerPublishesIslandProps(t *testing.T) {
+	t.Parallel()
+
+	body := renderImageViewer(t, fixtureViewerData("difference"))
+
+	for _, marker := range []string{
+		`data-island="image-viewer"`,
+		`data-island-label="image viewer"`,
+		`data-job-id="` + viewerJobID + `"`,
+		`data-job-state="running"`,
+		`data-max-iters="500"`,
+		`data-circle-count="64"`,
+		`data-best-revision="7"`,
+		`data-colormap="turbo"`,
+		`data-reference-url="/api/v1/jobs/` + viewerJobID + `/ref.png"`,
+		`data-best-url="/api/v1/jobs/` + viewerJobID + `/best.png"`,
+		`data-diff-url="/api/v1/jobs/` + viewerJobID + `/diff.png"`,
+		`data-show-metadata="true"`,
+		`data-ref-dimensions="64 × 64 px"`,
+		`data-ref-filesize="1.0 KiB"`,
+		`data-ref-bytes="1024 bytes"`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("viewer mount point missing %q", marker)
+		}
+	}
+}
+
+// TestImageViewerMountsOnlyWhereItOwnsItsSubtree is the "one viewer
+// implementation" check on the Go side. The campaign page renders this
+// component inside the campaign-detail island root, and mounting an island
+// replaces every child of that root; advertising a second mount point in there
+// would start a React root over a node that is on its way out. That page
+// reaches the same component through Campaigns.tsx instead.
+func TestImageViewerMountsOnlyWhereItOwnsItsSubtree(t *testing.T) {
+	t.Parallel()
+
+	data := fixtureViewerData("side-by-side")
+	data.MountIsland = false
+
+	body := renderImageViewer(t, data)
+	if strings.Contains(body, "data-island") {
+		t.Error("viewer advertises a mount point inside another island's root")
+	}
+
+	// The element itself is unchanged otherwise: same card, same props.
+	if !strings.Contains(body, `data-job-id="`+viewerJobID+`"`) {
+		t.Error("viewer dropped its props along with the mount point")
+	}
+}
+
+// TestJobDetailPageMountsExactlyOneViewer pins the count. The component owns
+// the fixed id "image-viewer" and the detail script reads that element's
+// dataset, so a second instance would shadow the first one's data channel.
+func TestJobDetailPageMountsExactlyOneViewer(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+
+	err := JobDetailPage(JobDetail{ID: viewerJobID, State: "running"}).Render(context.Background(), &output)
+	if err != nil {
+		t.Fatalf("render job detail: %v", err)
+	}
+
+	if got := strings.Count(output.String(), `data-island="image-viewer"`); got != 1 {
+		t.Errorf("job detail page has %d image-viewer mount points, want 1", got)
+	}
+	if got := strings.Count(output.String(), `id="image-viewer"`); got != 1 {
+		t.Errorf("job detail page has %d elements with id image-viewer, want 1", got)
 	}
 }
 
@@ -136,7 +210,7 @@ func TestImageViewerClassesAndModeDefaults(t *testing.T) {
 		body := renderImageViewer(t, ImageViewerData{
 			ExtraClass:  "card dashboard",
 			DefaultMode: "reference",
-			JobID:       "123e4567-e89b-12d3-a456-426614174000",
+			JobID:       viewerJobID,
 		})
 		if !strings.Contains(body, `class="card image-viewer card dashboard"`) {
 			t.Fatalf("missing extra class composition: %s", body)
@@ -144,11 +218,63 @@ func TestImageViewerClassesAndModeDefaults(t *testing.T) {
 	})
 	t.Run("defaults side-by-side", func(t *testing.T) {
 		body := renderImageViewer(t, ImageViewerData{
-			JobID:       "123e4567-e89b-12d3-a456-426614174000",
+			JobID:       viewerJobID,
 			DefaultMode: "",
 		})
-		if !strings.Contains(body, `data-view-mode="side-by-side"`) {
+		if !strings.Contains(body, `data-default-mode="side-by-side"`) {
 			t.Fatal("empty default mode did not fall back to side-by-side")
+		}
+	})
+}
+
+// TestImageViewerMetadataStringsTravelPreFormatted covers the three attributes
+// that exist so formatFileSize does not need a TypeScript twin.
+func TestImageViewerMetadataStringsTravelPreFormatted(t *testing.T) {
+	t.Parallel()
+
+	t.Run("present", func(t *testing.T) {
+		t.Parallel()
+
+		body := renderImageViewer(t, ImageViewerData{
+			JobID: viewerJobID, ShowMetadata: true,
+			ReferenceWidth: 640, ReferenceHeight: 480, ReferenceSize: 2048,
+		})
+		for _, marker := range []string{
+			`data-ref-dimensions="640 × 480 px"`,
+			`data-ref-filesize="2.0 KiB"`,
+			`data-ref-bytes="2048 bytes"`,
+			`<span>640 × 480 px</span>`,
+			`<span title="2048 bytes">2.0 KiB</span>`,
+		} {
+			if !strings.Contains(body, marker) {
+				t.Errorf("metadata rendering missing %q", marker)
+			}
+		}
+	})
+
+	t.Run("absent", func(t *testing.T) {
+		t.Parallel()
+
+		body := renderImageViewer(t, ImageViewerData{JobID: viewerJobID, ShowMetadata: true})
+		if !strings.Contains(body, "Metadata unavailable") {
+			t.Error("a viewer with no reference facts does not say so")
+		}
+		for _, marker := range []string{`data-ref-dimensions=""`, `data-ref-filesize=""`, `data-ref-bytes=""`} {
+			if !strings.Contains(body, marker) {
+				t.Errorf("empty metadata attribute missing: %q", marker)
+			}
+		}
+	})
+
+	t.Run("suppressed", func(t *testing.T) {
+		t.Parallel()
+
+		body := renderImageViewer(t, ImageViewerData{JobID: viewerJobID, ReferenceWidth: 8, ReferenceHeight: 8})
+		if !strings.Contains(body, `data-show-metadata="false"`) {
+			t.Error("ShowMetadata=false was not published to the island")
+		}
+		if strings.Contains(body, "image-metadata") {
+			t.Error("metadata row rendered although the caller suppressed it")
 		}
 	})
 }
@@ -165,7 +291,7 @@ func TestImageViewerHasNoLocalStyleBlock(t *testing.T) {
 	t.Parallel()
 
 	body := renderImageViewer(t, ImageViewerData{
-		JobID:       "123e4567-e89b-12d3-a456-426614174000",
+		JobID:       viewerJobID,
 		DefaultMode: "side-by-side",
 	})
 
@@ -179,7 +305,8 @@ func TestImageViewerHasNoLocalStyleBlock(t *testing.T) {
 		}
 	}
 
-	// The rules did not just disappear: Layout serves them to every page.
+	// The rules did not just disappear: Layout serves them to every page, and
+	// they are now the island's styling as much as the fallback's.
 	var layout bytes.Buffer
 
 	err := Layout("Images").Render(context.Background(), &layout)
@@ -200,52 +327,10 @@ func TestImageViewerHasNoLocalStyleBlock(t *testing.T) {
 			t.Errorf("layout does not supply %q", rule)
 		}
 	}
-}
 
-// TestImageViewerAnnouncesStateChanges covers the parts of the viewer a reader
-// only meets through the accessibility tree.
-func TestImageViewerAnnouncesStateChanges(t *testing.T) {
-	t.Parallel()
-
-	body := renderImageViewer(t, ImageViewerData{
-		JobID:       "123e4567-e89b-12d3-a456-426614174000",
-		DefaultMode: "overlay",
-		JobState:    "running",
-	})
-
-	// The fieldset caption uses the shared visually-hidden class rather than a
-	// hand-rolled clip rect that only existed in the deleted style block.
-	if !strings.Contains(body, `<legend class="sr-only">Image view mode</legend>`) {
-		t.Error("view-mode legend is not visually hidden through .sr-only")
-	}
-
-	// The slider writes the percentage into this output; aria-live="off" made
-	// that change silent for a reader who cannot see the number move.
-	opacityReadout := `id="overlay-opacity-value" class="overlay-opacity-value" ` +
-		`for="overlay-opacity" aria-live="polite"`
-	if !strings.Contains(body, opacityReadout) {
-		t.Error("overlay opacity readout does not announce its value")
-	}
-
-	// Each spinner toggles display only, so without a role its appearance and
-	// disappearance are invisible to a reader.
-	for _, id := range []string{"reference-image", "best-image", "diff-image", "overlay-best-image"} {
-		marker := `<div id="` + id + `-loading" class="image-state image-loading" role="status"`
-		if !strings.Contains(body, marker) {
-			t.Errorf("loading state for %s is not announced: missing %q", id, marker)
-		}
-	}
-
-	// Every radio takes a digit shortcut, so every radio has to advertise one.
-	for _, shortcut := range []string{
-		`value="reference" aria-keyshortcuts="1"`,
-		`value="best" aria-keyshortcuts="2"`,
-		`value="side-by-side" aria-keyshortcuts="3"`,
-		`value="difference" aria-keyshortcuts="4"`,
-		`value="overlay" aria-keyshortcuts="5"`,
-	} {
-		if !strings.Contains(body, shortcut) {
-			t.Errorf("view-mode radio missing %q", shortcut)
-		}
+	// The legend's own clip-rect block was a second .sr-only. Both renderings of
+	// the fieldset use the shared class, so the duplicate is gone.
+	if strings.Contains(layout.String(), ".view-mode-selector legend {") {
+		t.Error("layout still hand-rolls a clip rect for the view-mode legend")
 	}
 }

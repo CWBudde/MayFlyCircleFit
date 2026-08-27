@@ -607,17 +607,6 @@ templ Layout(title string) {
 					gap: 0.5rem;
 					border: 0;
 				}
-				.view-mode-selector legend {
-					position: absolute;
-					width: 1px;
-					height: 1px;
-					padding: 0;
-					margin: -1px;
-					overflow: hidden;
-					clip: rect(0, 0, 0, 0);
-					white-space: nowrap;
-					border: 0;
-				}
 				.view-mode-option {
 					position: relative;
 				}
@@ -740,8 +729,11 @@ templ Layout(title string) {
 					display: block;
 					transition: opacity 0.3s ease;
 				}
+				/* Rendered only when it applies. It used to be display:none here
+				   and toggled by the viewer's inline script, which kept four
+				   spinners and four placeholders in every job page's DOM at all
+				   times; the island renders the one that is true instead. */
 				.image-state {
-					display: none;
 					padding: 2rem;
 					text-align: center;
 					color: var(--text-muted);

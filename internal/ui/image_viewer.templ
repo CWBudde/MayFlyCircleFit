@@ -7,16 +7,17 @@ import (
 
 // ImageViewerData drives ImageViewer.
 //
-// One instance per page. The component owns the fixed ids "image-viewer",
-// "view-mode-*", "overlay-opacity" and the rest, and its script reaches them
-// through document.getElementById, so a second instance on the same page would
-// silently drive the first one's controls. Both callers today — the job detail
-// page and the campaign page's latest completed stage — render exactly one.
+// One instance per page. The component owns the fixed id "image-viewer", and
+// the job detail page's script still reads that element's dataset, so a second
+// instance on the same page would shadow the first one's data channel. Both
+// callers today -- the job detail page and the campaign page's latest completed
+// stage -- render exactly one.
 type ImageViewerData struct {
 	JobID string
 
-	// DefaultMode sets the startup value for the panel selector and persists in localStorage
-	// unless the viewer has an earlier user preference.
+	// DefaultMode is the mode the island starts in unless the browser already
+	// holds a view-mode preference. It does not change what the no-JavaScript
+	// fallback shows, which is always the side-by-side pair.
 	DefaultMode string
 
 	// BestRevision is appended to best and difference image URLs so a cache is always fresh.
@@ -37,6 +38,16 @@ type ImageViewerData struct {
 
 	ShowMetadata bool
 	ExtraClass   string
+
+	// MountIsland marks this element as the image-viewer island's mount point.
+	//
+	// It is false on the campaign page on purpose. There the viewer is rendered
+	// inside the campaign-detail island root, and mounting an island replaces
+	// every child of its root -- so this markup is destroyed and Campaigns.tsx
+	// renders the same React component in its place. Advertising a mount point
+	// inside a subtree another island is about to discard would start a second
+	// React root over a node that is on its way out.
+	MountIsland bool
 }
 
 func imageViewerSrc(path string, revision uint64) string {
@@ -50,44 +61,50 @@ func imageViewerSrc(path string, revision uint64) string {
 	return path + sep + fmt.Sprintf("v=%d", revision)
 }
 
-// ImageViewer renders the reference/best/difference/overlay panels.
+// ImageViewer renders the reference/best/difference/overlay card.
+//
+// What is emitted here is the no-JavaScript fallback: the reference and the
+// current best render, side by side, with no control that needs a script to do
+// anything. The five comparison modes, the overlay blend, the difference
+// heatmap and the 1-5 shortcuts all belong to web/src/ImageViewer.tsx, which is
+// also what the campaign page renders. There is one implementation of this
+// component, and the props it needs travel on this element's data attributes.
 //
 // It carries no <style> of its own. The campaign page renders it inside the
 // `campaign-detail` island root, and mounting an island calls
-// createRoot(root).render(...), which replaces every child of that root — a
+// createRoot(root).render(...), which replaces every child of that root -- a
 // component-local <style> block included. So on /schedules/{id} the viewer used
 // to paint with no view-mode, frame or focus styling at all. The whole
 // vocabulary now lives in Layout, outside every island root; see the
 // image-viewer section of layout.templ.
 templ ImageViewer(data ImageViewerData) {
-	<div id="image-viewer" class={ imageViewerClasses(data) } data-view-mode={ imageViewerMode(data.DefaultMode) } data-job-id={ data.JobID } data-job-state={ data.JobState } data-max-iters={ fmt.Sprintf("%d", data.MaxIterations) } data-circle-count={ fmt.Sprintf("%d", data.CircleCount) } data-best-revision={ fmt.Sprintf("%d", data.BestRevision) }>
-		<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+	<div
+		id="image-viewer"
+		class={ imageViewerClasses(data) }
+		if data.MountIsland {
+			data-island="image-viewer"
+			data-island-label="image viewer"
+		}
+		data-view-mode="side-by-side"
+		data-default-mode={ imageViewerMode(data.DefaultMode) }
+		data-job-id={ data.JobID }
+		data-job-state={ data.JobState }
+		data-max-iters={ fmt.Sprintf("%d", data.MaxIterations) }
+		data-circle-count={ fmt.Sprintf("%d", data.CircleCount) }
+		data-best-revision={ fmt.Sprintf("%d", data.BestRevision) }
+		data-colormap="turbo"
+		data-reference-url={ data.ReferenceImageURL }
+		data-best-url={ data.BestImageURL }
+		data-diff-url={ data.DiffImageURL }
+		data-show-metadata={ fmt.Sprintf("%t", data.ShowMetadata) }
+		data-ref-dimensions={ imageViewerDimensions(data) }
+		data-ref-filesize={ imageViewerFileSize(data) }
+		data-ref-bytes={ imageViewerBytes(data) }
+	>
+		<div class="row-between" style="margin-bottom: 1rem;">
 			<h2 style="font-size: 1.25rem; font-weight: 600;">
 				Images
 			</h2>
-			<fieldset class="view-mode-selector" aria-label="Image view mode">
-				<legend class="sr-only">Image view mode</legend>
-				<div class="view-mode-option">
-					<input type="radio" id="view-mode-reference" name="view-mode" value="reference" aria-keyshortcuts="1" if imageViewerMode(data.DefaultMode) == "reference" { checked }/>
-					<label for="view-mode-reference">Reference <span class="view-mode-shortcut" aria-hidden="true">1</span></label>
-				</div>
-				<div class="view-mode-option">
-					<input type="radio" id="view-mode-best" name="view-mode" value="best" aria-keyshortcuts="2" if imageViewerMode(data.DefaultMode) == "best" { checked }/>
-					<label for="view-mode-best">Best <span class="view-mode-shortcut" aria-hidden="true">2</span></label>
-				</div>
-				<div class="view-mode-option">
-					<input type="radio" id="view-mode-side-by-side" name="view-mode" value="side-by-side" aria-keyshortcuts="3" if imageViewerMode(data.DefaultMode) == "side-by-side" { checked }/>
-					<label for="view-mode-side-by-side">Side-by-Side <span class="view-mode-shortcut" aria-hidden="true">3</span></label>
-				</div>
-				<div class="view-mode-option">
-					<input type="radio" id="view-mode-difference" name="view-mode" value="difference" aria-keyshortcuts="4" if imageViewerMode(data.DefaultMode) == "difference" { checked }/>
-					<label for="view-mode-difference">Difference <span class="view-mode-shortcut" aria-hidden="true">4</span></label>
-				</div>
-				<div class="view-mode-option">
-					<input type="radio" id="view-mode-overlay" name="view-mode" value="overlay" aria-keyshortcuts="5" if imageViewerMode(data.DefaultMode) == "overlay" { checked }/>
-					<label for="view-mode-overlay">Overlay <span class="view-mode-shortcut" aria-hidden="true">5</span></label>
-				</div>
-			</fieldset>
 		</div>
 		<div class="image-view-panels">
 			<div class="image-view-panel" data-view-panel="reference">
@@ -96,27 +113,19 @@ templ ImageViewer(data ImageViewerData) {
 				</h3>
 				<div class="image-frame">
 					<img
-						id="reference-image"
 						src={ templ.SafeURL(data.ReferenceImageURL) }
 						alt="Reference Image"
 					/>
-					<div id="reference-image-loading" class="image-state image-loading" role="status">
-						<div class="spinner"></div>
-						<p style="margin-top: 0.5rem; font-size: 0.875rem;">Loading...</p>
-					</div>
-					<div id="reference-image-error" class="image-state">
-						Reference image not available
-					</div>
 				</div>
 				if data.ShowMetadata {
 					<div class="image-metadata" aria-label="Reference image metadata">
-						if data.ReferenceWidth > 0 && data.ReferenceHeight > 0 {
-							<span>{ fmt.Sprintf("%d × %d px", data.ReferenceWidth, data.ReferenceHeight) }</span>
+						if imageViewerDimensions(data) != "" {
+							<span>{ imageViewerDimensions(data) }</span>
 						}
-						if data.ReferenceSize > 0 {
-							<span title={ fmt.Sprintf("%d bytes", data.ReferenceSize) }>{ formatFileSize(data.ReferenceSize) }</span>
+						if imageViewerFileSize(data) != "" {
+							<span title={ imageViewerBytes(data) }>{ imageViewerFileSize(data) }</span>
 						}
-						if data.ReferenceWidth <= 0 && data.ReferenceHeight <= 0 && data.ReferenceSize <= 0 {
+						if imageViewerDimensions(data) == "" && imageViewerFileSize(data) == "" {
 							<span>Metadata unavailable</span>
 						}
 					</div>
@@ -128,554 +137,18 @@ templ ImageViewer(data ImageViewerData) {
 				</h3>
 				<div class="image-frame">
 					<img
-						id="best-image"
 						src={ templ.SafeURL(imageViewerSrc(data.BestImageURL, data.BestRevision)) }
 						alt="Current Best Image"
 					/>
-					<div id="best-image-loading" class="image-state image-loading" role="status">
-						<div class="spinner"></div>
-						<p style="margin-top: 0.5rem; font-size: 0.875rem;">Loading...</p>
-					</div>
-					<div id="best-image-error" class="image-state">
-						if data.JobState == "pending" {
-							Optimization not started yet
-						} else {
-							No results yet
-						}
-					</div>
 				</div>
-			</div>
-			<div class="image-view-panel" data-view-panel="difference">
-				<div class="heatmap-heading">
-					<h3 style="font-size: 1rem; font-weight: 600; color: var(--text-muted);">
-						Difference Heatmap
-					</h3>
-					<label class="heatmap-colormap-control" for="heatmap-colormap">
-						Colormap
-						<select id="heatmap-colormap">
-							<option value="turbo" selected>Turbo</option>
-							<option value="magma">Magma</option>
-						</select>
-					</label>
-				</div>
-				<div class="image-frame image-frame-difference">
-					<img
-						id="diff-image"
-						src={ templ.SafeURL(imageViewerSrc(data.DiffImageURL+"?colormap=turbo", data.BestRevision)) }
-						alt="False-color difference heatmap"
-					/>
-					<div id="diff-image-loading" class="image-state image-loading" role="status" style="color: #cccccc;">
-						<div class="spinner"></div>
-						<p style="margin-top: 0.5rem; font-size: 0.875rem;">Loading...</p>
-					</div>
-					<div id="diff-image-error" class="image-state" style="color: #cccccc;">
-						if data.JobState == "pending" {
-							Not available yet
-						} else {
-							No results yet
-						}
-					</div>
-				</div>
-				<div class="heatmap-legend" role="img" aria-label="Mean absolute RGB error scale from 0 to 255">
-					<span>0</span>
-					<div id="heatmap-legend-gradient" class="heatmap-legend-gradient"></div>
-					<span>255</span>
-					<span class="heatmap-legend-description">Mean absolute RGB error per pixel</span>
-				</div>
-			</div>
-			<div class="image-view-panel" data-view-panel="overlay">
-				<div class="overlay-heading">
-					<h3 style="font-size: 1rem; font-weight: 600; color: var(--text-muted);">
-						Best over Reference
-					</h3>
-					<div class="overlay-opacity-control">
-						<label for="overlay-opacity">Best opacity</label>
-						<input
-							type="range"
-							id="overlay-opacity"
-							min="0"
-							max="100"
-							step="1"
-							value="50"
-							aria-label="Best image opacity in percent"
-						/>
-						<output id="overlay-opacity-value" class="overlay-opacity-value" for="overlay-opacity" aria-live="polite">50%</output>
-					</div>
-				</div>
-				<div class="image-frame image-frame-overlay">
-					<img
-						id="overlay-reference-image"
-						src={ templ.SafeURL(data.ReferenceImageURL) }
-						alt="Reference image underlay"
-					/>
-					<div id="overlay-best-layer" class="overlay-best-layer" style="opacity: 0.5;">
-						<img
-							id="overlay-best-image"
-							src={ templ.SafeURL(imageViewerSrc(data.BestImageURL, data.BestRevision)) }
-							alt="Current best image blended over the reference"
-						/>
-					</div>
-					<div id="overlay-best-image-loading" class="image-state image-loading" role="status">
-						<div class="spinner"></div>
-						<p style="margin-top: 0.5rem; font-size: 0.875rem;">Loading...</p>
-					</div>
-					<div id="overlay-best-image-error" class="image-state">
-						if data.JobState == "pending" {
-							Optimization not started yet
-						} else {
-							No results yet
-						}
-					</div>
-				</div>
-				<p style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-muted);">
-					Drag the slider to blend the current best render over the reference. 0% shows the reference alone, 100% the best render alone.
-				</p>
 			</div>
 		</div>
+		<noscript>
+			<p style="margin-top: 1rem; font-size: 0.8125rem; color: var(--text-muted);">
+				The comparison modes, the difference heatmap and the overlay blend need JavaScript. Without it this card shows the reference and the current best render side by side.
+			</p>
+		</noscript>
 	</div>
-
-	<script>
-		function initializeViewMode() {
-			const viewer = document.getElementById("image-viewer");
-			const controls = viewer ? viewer.querySelectorAll('input[name="view-mode"]') : [];
-			const viewModes = [
-				"reference",
-				"best",
-				"side-by-side",
-				"difference",
-				"overlay",
-			];
-			const shortcutViews = {
-				1: "reference",
-				2: "best",
-				3: "side-by-side",
-				4: "difference",
-				5: "overlay",
-			};
-			const viewStorageKey = "mayflycirclefit.viewMode";
-			if (!viewer) {
-				return;
-			}
-			controls.forEach(function (control) {
-				control.addEventListener("change", function () {
-					if (control.checked) {
-						applyViewMode(control.value, true);
-					}
-				});
-			});
-
-			let initialMode = viewer.dataset.viewMode;
-			if (viewModes.indexOf(initialMode) < 0) {
-				initialMode = "side-by-side";
-			}
-			try {
-				const storedMode = window.localStorage.getItem(viewStorageKey);
-				if (viewModes.includes(storedMode)) {
-					initialMode = storedMode;
-				}
-			} catch (err) {
-				// Storage can be unavailable in privacy-restricted browser contexts.
-			}
-			applyViewMode(initialMode, false);
-
-			document.addEventListener("keydown", function (event) {
-				if (
-					event.defaultPrevented ||
-					event.altKey ||
-					event.ctrlKey ||
-					event.metaKey ||
-					event.shiftKey
-				) {
-					return;
-				}
-				const target = event.target;
-				if (
-					target &&
-					(target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName))
-				) {
-					return;
-				}
-				const mode = shortcutViews[event.key];
-				if (!mode) {
-					return;
-				}
-				event.preventDefault();
-				applyViewMode(mode, true);
-			});
-		}
-
-		function applyViewMode(mode, persist) {
-			const viewer = document.getElementById("image-viewer");
-			if (!viewer) {
-				return;
-			}
-			const viewModes = ["reference", "best", "side-by-side", "difference", "overlay"];
-			if (!viewModes.includes(mode)) {
-				mode = "side-by-side";
-			}
-			viewer.dataset.viewMode = mode;
-			const control = viewer.querySelector(
-				'input[name="view-mode"][value="' + mode + '"]',
-			);
-			if (control) {
-				control.checked = true;
-			}
-			if (!persist) {
-				return;
-			}
-			try {
-				window.localStorage.setItem("mayflycirclefit.viewMode", mode);
-			} catch (err) {
-				// The selected view still applies for the current page.
-			}
-		}
-
-		function initializeImageState(imgId, loadingId, errorId) {
-			const img = document.getElementById(imgId);
-			const loading = document.getElementById(loadingId);
-			const error = document.getElementById(errorId);
-			if (!img) {
-				return;
-			}
-			img.addEventListener("load", function () {
-				img.style.display = "block";
-				img.style.opacity = "1";
-				if (loading) loading.style.display = "none";
-				if (error) error.style.display = "none";
-			});
-			img.addEventListener("error", function () {
-				if (loading) loading.style.display = "none";
-				showImageError(img, error);
-			});
-			if (img.complete) {
-				if (img.naturalWidth > 0) {
-					img.style.display = "block";
-					if (error) error.style.display = "none";
-				} else {
-					showImageError(img, error);
-				}
-			}
-		}
-
-		function showImageError(img, error) {
-			img.style.display = "none";
-			if (error) {
-				error.style.display = "block";
-			}
-		}
-
-		const heatmapColormapStorageKey = "mayflycirclefit.diffColormap";
-
-		function initializeHeatmapColormap() {
-			const select = document.getElementById("heatmap-colormap");
-			const colormapStorageKey = heatmapColormapStorageKey;
-			if (!select) {
-				return;
-			}
-
-			const renderedColormap = normalizeColormap(select.value);
-			let preferredColormap = renderedColormap;
-			try {
-				const stored = window.localStorage.getItem(colormapStorageKey);
-				if (stored === "turbo" || stored === "magma") {
-					preferredColormap = stored;
-				}
-			} catch (err) {
-				// The selected colormap still applies for this page.
-			}
-			applyHeatmapColormap(preferredColormap, false, preferredColormap !== renderedColormap);
-
-			select.addEventListener("change", function () {
-				applyHeatmapColormap(normalizeColormap(select.value), true, true);
-			});
-		}
-
-		function selectedHeatmapColormap() {
-			const select = document.getElementById("heatmap-colormap");
-			return select ? select.value : "turbo";
-		}
-
-		function syncArtifactDownloadColormap() {
-			const differenceLink = document.getElementById("download-difference");
-			if (!differenceLink) {
-				return;
-			}
-			const viewer = document.getElementById("image-viewer");
-			if (!viewer) {
-				return;
-			}
-			const jobId = viewer.dataset.jobId || "";
-			if (!jobId) {
-				return;
-			}
-			differenceLink.href =
-					"/api/v1/jobs/" +
-					encodeURIComponent(jobId) +
-					"/diff.png?colormap=" +
-					encodeURIComponent(selectedHeatmapColormap()) +
-					"&download=1";
-		}
-
-		function normalizeColormap(raw) {
-			return raw === "magma" ? "magma" : "turbo";
-		}
-
-		function applyHeatmapColormap(raw, persist, reloadImage) {
-			const select = document.getElementById("heatmap-colormap");
-			const viewer = document.getElementById("image-viewer");
-			const jobId = viewer ? viewer.dataset.jobId : "";
-			const revision = viewer ? Number.parseInt(viewer.dataset.bestRevision, 10) || 0 : 0;
-			const colormap = normalizeColormap(raw);
-
-			if (select) {
-				select.value = colormap;
-				updateHeatmapLegend(colormap);
-			}
-			syncArtifactDownloadColormap();
-			if (jobId && reloadImage) {
-				refreshImage(
-					"diff-image",
-					"diff-image-loading",
-					jobId,
-					"diff.png",
-					revision,
-					colormap,
-				);
-			}
-			if (!persist) {
-				return;
-			}
-			try {
-				window.localStorage.setItem(heatmapColormapStorageKey, colormap);
-			} catch (err) {
-				// The colormap selection still applies for the current page.
-			}
-		}
-
-		function initializeOverlayOpacity() {
-			const slider = document.getElementById("overlay-opacity");
-			const layer = document.getElementById("overlay-best-layer");
-			const readout = document.getElementById("overlay-opacity-value");
-			if (!slider || !layer) {
-				return;
-			}
-
-			let initialPercent = clampOverlayPercent(Number.parseInt(slider.value, 10));
-			try {
-				const stored = window.localStorage.getItem("mayflycirclefit.overlayOpacity");
-				if (stored !== null) {
-					const parsed = Number.parseInt(stored, 10);
-					if (Number.isFinite(parsed)) {
-						initialPercent = clampOverlayPercent(parsed);
-					}
-				}
-			} catch (err) {
-				// The selected opacity still applies for the current page.
-			}
-			applyOverlayOpacity(initialPercent, false);
-
-			slider.addEventListener("input", function () {
-				applyOverlayOpacity(clampOverlayPercent(Number.parseInt(slider.value, 10)), true);
-			});
-
-			function applyOverlayOpacity(percent, persist) {
-				slider.value = String(percent);
-				layer.style.opacity = String(percent / 100);
-				if (readout) {
-					readout.textContent = percent + "%";
-				}
-				if (!persist) {
-					return;
-				}
-				try {
-					window.localStorage.setItem("mayflycirclefit.overlayOpacity", String(percent));
-				} catch (err) {
-					// The chosen blend still applies for the current page.
-				}
-			}
-		}
-
-		function clampOverlayPercent(percent) {
-			if (!Number.isFinite(percent)) {
-				return 50;
-			}
-			return Math.min(100, Math.max(0, Math.round(percent)));
-		}
-
-		function refreshImage(imgId, loadingId, jobId, filename, revision, colormap) {
-			const img = document.getElementById(imgId);
-			const loading = document.getElementById(loadingId);
-			const error = document.getElementById(imgId + "-error");
-
-			if (!img || !filename || !jobId) return;
-
-			if (loading) {
-				loading.style.display = "block";
-			}
-			if (img.naturalWidth > 0) {
-				img.style.display = "block";
-				img.style.opacity = "0.5";
-			}
-
-			const newImg = new Image();
-			newImg.onload = function () {
-				img.src = newImg.src;
-				img.style.display = "block";
-				img.style.opacity = "1";
-				if (loading) {
-					loading.style.display = "none";
-				}
-				if (error) {
-					error.style.display = "none";
-				}
-			};
-			newImg.onerror = function () {
-				img.style.opacity = "1";
-				if (loading) {
-					loading.style.display = "none";
-				}
-				if (img.naturalWidth === 0) {
-					showImageError(img, error);
-				}
-			};
-			let imageURL = "/api/v1/jobs/" + encodeURIComponent(jobId) + "/" + filename;
-			if (imageURL.indexOf("?") < 0) {
-				if (colormap) {
-					imageURL += "?colormap=" + encodeURIComponent(colormap);
-				}
-			} else if (colormap) {
-				imageURL += "&colormap=" + encodeURIComponent(colormap);
-			}
-			if (Number.isFinite(revision) && revision > 0) {
-				imageURL += imageURL.indexOf("?") < 0 ? "?" : "&";
-				imageURL += "v=" + revision;
-			}
-			newImg.src = imageURL;
-		}
-
-		function initializeImageRefreshPolling() {
-			const viewer = document.getElementById("image-viewer");
-			if (!viewer) {
-				return;
-			}
-			const jobId = viewer.dataset.jobId;
-			if (!jobId) {
-				return;
-			}
-			let lastRevision = Number.parseInt(viewer.dataset.bestRevision, 10) || 0;
-			let timer = null;
-			let inFlight = false;
-
-			function stopPolling() {
-				if (timer) {
-					window.clearInterval(timer);
-					timer = null;
-				}
-			}
-
-			// One request at a time: a slow network must not let ticks pile up into
-			// overlapping fetches that apply their updates out of order.
-			function applyImageStatus(status) {
-				if (!status) return;
-				const nextRevision = Number.parseInt(status.bestRevision, 10);
-				if (Number.isFinite(nextRevision) && nextRevision > lastRevision) {
-					lastRevision = nextRevision;
-					viewer.dataset.bestRevision = String(nextRevision);
-					const colormap = selectedHeatmapColormap();
-					refreshImage("best-image", "best-image-loading", jobId, "best.png", nextRevision);
-					refreshImage("overlay-best-image", "overlay-best-image-loading", jobId, "best.png", nextRevision);
-					refreshImage("diff-image", "diff-image-loading", jobId, "diff.png", nextRevision, colormap);
-				}
-				if (status.state) viewer.dataset.jobState = status.state;
-			}
-
-			document.addEventListener("mayflycirclefit:job-status", function (event) {
-				applyImageStatus(event.detail);
-			});
-
-			async function checkImageRevision() {
-				if (inFlight) {
-					return;
-				}
-				inFlight = true;
-				try {
-					const response = await fetch(
-						"/api/v1/jobs/" + encodeURIComponent(jobId) + "/status",
-						{ cache: "no-store" },
-					);
-					if (!response.ok) {
-						return;
-					}
-					const status = await response.json();
-					// Republish for the job detail page, which owns the metric panel.
-					document.dispatchEvent(
-						new CustomEvent("mayflycirclefit:job-status", { detail: status }),
-					);
-					applyImageStatus(status);
-					if (
-						status.state === "completed" ||
-						status.state === "failed" ||
-						status.state === "cancelled"
-					) {
-						stopPolling();
-						viewer.dataset.jobState = status.state;
-					}
-				} catch (_err) {
-					// Keep polling and let errors self-recover.
-				} finally {
-					inFlight = false;
-				}
-			}
-
-			const jobState = viewer.dataset.jobState;
-			const intervalMs = readImageRefreshInterval();
-			if (
-				(jobState === "running" || jobState === "pending" || jobState === "paused") &&
-				Number.isFinite(intervalMs) && intervalMs > 0
-			) {
-				timer = window.setInterval(checkImageRevision, intervalMs);
-				checkImageRevision();
-			}
-			window.addEventListener("pagehide", stopPolling);
-		}
-
-		function readImageRefreshInterval() {
-			const storageKey = "mayflycirclefit.imageRefreshInterval";
-			let stored = "0";
-			try {
-				stored = window.localStorage.getItem(storageKey);
-			} catch (_err) {
-				return 0;
-			}
-			const parsed = Number.parseInt(stored, 10);
-			return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-		}
-
-		function updateHeatmapLegend(colormap) {
-			const gradient = document.getElementById("heatmap-legend-gradient");
-			if (!gradient) {
-				return;
-			}
-			if (colormap === "magma") {
-				gradient.style.background =
-					"linear-gradient(90deg, #000004, #180f3d, #3d0f70, #65156e, #8c2961, #b7374b, #de492f, #f67019, #fda50a, #f9dc5c, #fcfdbf)";
-			} else {
-				gradient.style.background =
-					"linear-gradient(90deg, #23171b, #4145ab, #2aa7d6, #49df75, #d5e21a, #f68513, #900c00)";
-			}
-		}
-
-		(function () {
-			initializeViewMode();
-			initializeImageState("reference-image", "reference-image-loading", "reference-image-error");
-			initializeImageState("best-image", "best-image-loading", "best-image-error");
-			initializeImageState("diff-image", "diff-image-loading", "diff-image-error");
-			initializeImageState("overlay-best-image", "overlay-best-image-loading", "overlay-best-image-error");
-			initializeHeatmapColormap();
-			initializeImageRefreshPolling();
-			initializeOverlayOpacity();
-		})();
-	</script>
 }
 
 func imageViewerClasses(data ImageViewerData) string {
@@ -686,10 +159,10 @@ func imageViewerClasses(data ImageViewerData) string {
 	return classes
 }
 
-// imageViewerMode clamps DefaultMode to a mode the markup actually has. The
-// panel CSS keys off data-view-mode, so an unrecognized value would match no
-// selector and the no-JS view would show no image at all — a caller's typo has
-// to degrade to the default view, not to a blank card.
+// imageViewerMode clamps DefaultMode to a mode the island actually has, so a
+// caller's typo degrades to the default view rather than to a blank card. It no
+// longer decides what the server renders: the fallback is always the
+// side-by-side pair, because those are the only two panels that need no script.
 func imageViewerMode(defaultMode string) string {
 	switch defaultMode {
 	case "reference", "best", "side-by-side", "difference", "overlay":
@@ -697,4 +170,28 @@ func imageViewerMode(defaultMode string) string {
 	default:
 		return "side-by-side"
 	}
+}
+
+// The three metadata strings travel to the island pre-formatted. formatFileSize
+// is Go, and shipping a second implementation of it to the browser to render
+// three spans would be one more Go/TypeScript pair to keep in step for nothing.
+func imageViewerDimensions(data ImageViewerData) string {
+	if data.ReferenceWidth <= 0 || data.ReferenceHeight <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d × %d px", data.ReferenceWidth, data.ReferenceHeight)
+}
+
+func imageViewerFileSize(data ImageViewerData) string {
+	if data.ReferenceSize <= 0 {
+		return ""
+	}
+	return formatFileSize(data.ReferenceSize)
+}
+
+func imageViewerBytes(data ImageViewerData) string {
+	if data.ReferenceSize <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d bytes", data.ReferenceSize)
 }

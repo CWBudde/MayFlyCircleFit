@@ -152,7 +152,7 @@ export function CampaignDetailIsland({ root }: { root: HTMLElement }) {
 		{campaign.warnings && campaign.warnings.length > 0 ? <CampaignWarnings warnings={campaign.warnings} /> : null}
 		<div className="card"><h2>Cost against circle count</h2><CampaignCostChart points={points} palette={palette} variant="full" /></div>
 		{campaign.projection ? <CampaignProjectionCard projection={campaign.projection} /> : null}
-		{latest ? <ImageViewer jobId={latest.jobId} revision={latest.iterations} /> : <div className="card">No completed stage has produced image artifacts yet.</div>}
+		{latest ? <ImageViewer jobId={latest.jobId} revision={latest.iterations} jobState={latest.state} /> : <div className="card">No completed stage has produced image artifacts yet.</div>}
 		<div className="card"><h2>Stages</h2>
 			{/* Focusable named region: the nine columns scroll sideways on a phone,
 			    and a keyboard has no other way to reach the ones off-screen. */}

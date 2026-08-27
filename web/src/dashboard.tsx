@@ -20,6 +20,7 @@ import { SettingsIsland } from "./Settings";
 import { ThemeToggleIsland } from "./ThemeToggle";
 import { JobListIsland } from "./JobList";
 import { CampaignDetailIsland, CampaignListIsland } from "./Campaigns";
+import { ImageViewerIsland } from "./ImageViewer";
 import { JobControlsIsland } from "./JobControls";
 import { fetchJSON, useLiveResource } from "./live";
 import type { UIEvent } from "./live";
@@ -747,6 +748,9 @@ mountIslands({
 	"campaign-list": CampaignListIsland,
 	"campaign-detail": CampaignDetailIsland,
 	"job-controls": JobControlsIsland,
+	// One viewer implementation, two pages: the campaign page reaches the same
+	// component through Campaigns.tsx, inside the campaign-detail island.
+	"image-viewer": ImageViewerIsland,
 	settings: SettingsIsland,
 	// Rendered by the layout on every page, so this one mounts everywhere.
 	"theme-switch": ThemeToggleIsland,

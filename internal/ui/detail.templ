@@ -622,6 +622,7 @@ templ JobDetailPage(job JobDetail) {
 			ReferenceSize:     job.RefSize,
 			ShowMetadata:      true,
 			ExtraClass:        "detail-images",
+			MountIsland:       true,
 		})
 
 			<!-- Metric history, immediately after the images -->
@@ -686,7 +687,6 @@ templ JobDetailPage(job JobDetail) {
 				const maxIters = Number.parseInt(imageViewer.dataset.maxIters, 10) || 0;
 				const circleCount = Number.parseInt(imageViewer.dataset.circleCount, 10) || 0;
 				const visibleMetricStorageKey = "mayflycirclefit.visibleMetrics";
-				const imageRefreshIntervalMs = readImageRefreshInterval();
 				const initialCPS = Number.parseFloat(
 					document.querySelector('[data-metric="cps"]')?.dataset.rawCps || "0",
 				) || 0;
@@ -1094,7 +1094,16 @@ templ JobDetailPage(job JobDetail) {
 					if (reportButton) {
 						reportButton.addEventListener("click", downloadReport);
 					}
-					syncArtifactDownloadColormap();
+				}
+
+				// The heatmap colormap belongs to the image-viewer island, which
+				// publishes the mode on screen onto the viewer element and keeps
+				// #download-difference's href in step by itself. The report render
+				// needs the same value at click time, and this is the read side of
+				// that channel: no bundle means the attribute the server wrote,
+				// which is the same turbo the download links already carry.
+				function selectedHeatmapColormap() {
+					return imageViewer.dataset.colormap === "magma" ? "magma" : "turbo";
 				}
 
 				async function downloadReport() {
