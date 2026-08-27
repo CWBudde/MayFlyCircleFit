@@ -145,17 +145,25 @@ func TestParallelEvaluationIsPixelExact(t *testing.T) {
 // TestEvaluationPoolReportsEveryEvaluation guards the atomic counter that
 // replaced the shared increment.
 func TestEvaluationPoolReportsEveryEvaluation(t *testing.T) {
+	// Both setters clamp to GOMAXPROCS, so a hard 4 is a hidden requirement for
+	// a four-processor machine. The macOS ARM64 runner has three, which is how
+	// this surfaced once internal/fit/renderer started running there.
+	workers := min(4, runtime.GOMAXPROCS(0))
+	if workers < 2 {
+		t.Skip("needs at least two processors to exercise a pool wider than one")
+	}
+
 	ref := gradientReference(16, 16)
 	base := NewCPURenderer(ref, 2)
-	base.SetParallelEvaluationWorkers(4)
+	base.SetParallelEvaluationWorkers(workers)
 
 	pool := newEvaluationPool(base, nil, evaluationWorkers(base), func() (Renderer, func(), error) {
 		return base.newSession(2)
 	})
 	defer pool.close()
 
-	if pool.width() != 4 {
-		t.Fatalf("pool width = %d, want 4", pool.width())
+	if pool.width() != workers {
+		t.Fatalf("pool width = %d, want %d", pool.width(), workers)
 	}
 	const evaluations = 200
 	var group sync.WaitGroup
@@ -205,9 +213,13 @@ func TestEvaluationPoolFallsBackToPrimary(t *testing.T) {
 // disable the row-band fan-out inside a pooled session: with many evaluations
 // in flight it only oversubscribes the machine.
 func TestPooledSessionsRenderSingleThreaded(t *testing.T) {
+	// Clamped to GOMAXPROCS, as in TestEvaluationPoolReportsEveryEvaluation.
+	threads := min(4, runtime.GOMAXPROCS(0))
+	workers := min(3, runtime.GOMAXPROCS(0))
+
 	base := NewCPURenderer(gradientReference(64, 64), 2)
-	base.SetThreads(4)
-	base.SetParallelEvaluationWorkers(3)
+	base.SetThreads(threads)
+	base.SetParallelEvaluationWorkers(workers)
 
 	pool := newEvaluationPool(base, nil, evaluationWorkers(base), func() (Renderer, func(), error) {
 		return base.newSession(2)
@@ -228,8 +240,8 @@ func TestPooledSessionsRenderSingleThreaded(t *testing.T) {
 		}
 	}
 
-	if base.Threads() != 4 {
-		t.Fatalf("base renderer threads = %d, want the caller's 4", base.Threads())
+	if base.Threads() != threads {
+		t.Fatalf("base renderer threads = %d, want the caller's %d", base.Threads(), threads)
 	}
 }
 
@@ -351,8 +363,9 @@ func TestConfigureCPUParallelismLeavesEvaluationWidthOptIn(t *testing.T) {
 		t.Fatalf("ParallelEvaluationWorkers() = %d, want 1 without the opt-in", got)
 	}
 
-	if got := base.Threads(); got != 2 {
-		t.Fatalf("Threads() = %d, want 2", got)
+	// Clamped to GOMAXPROCS, like the worker count asserted below.
+	if got, want := base.Threads(), min(2, runtime.GOMAXPROCS(0)); got != want {
+		t.Fatalf("Threads() = %d, want %d", got, want)
 	}
 
 	ConfigureCPUParallelism(base, 2, 4, true)
