@@ -805,7 +805,7 @@ remains under it.
 - [ ] Job detail, campaign charts, and the trace download return the same series
       as before for a terminal job whose history is no longer resident.
 
-## Phase 18: Frontend Island Transition
+## Phase 18: Frontend Island Transition ✅
 
 Phase 17 established the island pipeline and stopped after the pages it needed.
 A 2026-08-22 audit of the frontend found the transition half-finished: five
@@ -841,7 +841,38 @@ scheduled.
 
 Estimated 1.5–3 weeks. Tasks are listed in dependency order.
 
-### Task 18.1: Port the Job Detail Page to an Island (P1)
+### Completed Tasks 18.1–18.7 ✅
+
+Delivered. Every `.templ` file outside `layout.templ` is script-free, and
+`layout.templ` carries only the pre-paint theme IIFE and the bodyless bundle
+link; four tests in `internal/ui/inline_script_gate_test.go` hold that line,
+allowlisting the exception by position rather than by filename. The islands are
+`dashboard`, `job-list`, `job-detail`, `create-job`, `campaign-list`,
+`campaign-detail`, `settings`, and `theme-switch`: `job-controls` and
+`image-viewer` were absorbed rather than kept beside their pages, and one
+`ImageViewer` component now serves the detail and campaign pages.
+
+Three contracts are pinned as language-neutral fixtures that Go and TypeScript
+each check themselves against, rather than against each other:
+`web/src/state-badge-parity.json`, `web/src/create-job-parity.json`, and
+`web/src/job-detail-parity.json`. Task 18.6 evaluated generating the read models
+against a real `tygo` run and rejected it; see
+[`docs/typescript-read-model-generation.md`](docs/typescript-read-model-generation.md).
+Task 18.4 kept the server-side form POST as the create page's fallback, recorded
+in `docs/behavior-invariants.md` and `docs/architecture.md`.
+
+The fallback invariant is now asserted in both of its degraded modes —
+JavaScript disabled, and the bundle present but 404ing or throwing — by 22
+Playwright cases. The page without JavaScript is better than before the phase:
+cost improvement rate, average and current CPS, and the ETA are computed in Go
+now, because the before/after-mount equivalence test required it.
+
+Regenerating the committed bundle in Task 18.7 exposed two defects no earlier
+task could have seen, both fixed there: the job-detail island threw on every
+load and left `<main>` empty, and the metric canvas drove a runaway Chart.js
+resize loop. The shadcn SPA rewrite below stays a deferred alternative.
+
+### Task 18.1: Port the Job Detail Page to an Island (P1) ✅
 
 The largest single piece: 816 lines at `internal/ui/detail.templ:633-1448`
 covering metric history, a hand-rolled SVG sparkline with hover and tooltip,
@@ -849,30 +880,30 @@ the parameter viewer, ETA/throughput arithmetic, and report download. The
 existing `job-controls` island (`internal/ui/detail.templ:147`) is absorbed by
 the new one rather than kept beside it.
 
-- [ ] Add a `JobDetailIsland` that mounts over the server-rendered detail body
+- [x] Add a `JobDetailIsland` that mounts over the server-rendered detail body
       and reads job `/status` and `/metrics` through the existing
       `web/src/live.ts` refetch loop.
-- [ ] Reuse `web/src/charts.ts` for the sparkline instead of porting the
+- [x] Reuse `web/src/charts.ts` for the sparkline instead of porting the
       hand-rolled SVG; keep hover and tooltip behavior.
-- [ ] Expose `refWidth`/`refHeight`/`refSize` on an API response. They exist
+- [x] Expose `refWidth`/`refHeight`/`refSize` on an API response. They exist
       only as view-model fields today
       (`internal/server/ui_handlers.go:168`, `:234`) and no JSON endpoint
       carries them, so the island cannot render the reference-image facts.
-- [ ] Fold `job-controls` into the detail island and drop the separate mount
+- [x] Fold `job-controls` into the detail island and drop the separate mount
       point and its registry entry.
-- [ ] Delete the inline script and confirm the templ fallback still renders a
+- [x] Delete the inline script and confirm the templ fallback still renders a
       complete, readable page with JavaScript disabled.
 
 **Acceptance Checks:**
 
-- [ ] A server test asserts the new reference-image fields are present and
+- [x] A server test asserts the new reference-image fields are present and
       typed on the job resource, and a TypeScript type mirrors them.
-- [ ] The detail page renders identical metric, ETA, throughput, and parameter
+- [x] The detail page renders identical metric, ETA, throughput, and parameter
       values before and after mount for a running and a terminal job.
-- [ ] With JavaScript disabled the detail page still shows state, metrics,
+- [x] With JavaScript disabled the detail page still shows state, metrics,
       images, parameters, and the report link.
 
-### Task 18.2: Unify the Image Viewer in One Island (P1)
+### Task 18.2: Unify the Image Viewer in One Island (P1) ✅
 
 `internal/ui/image_viewer.templ` is 903 lines carrying a 442-line inline
 script (`:440-881`), while `web/src/ImageViewer.tsx` (107 lines) already
@@ -880,43 +911,43 @@ implements the same five-mode viewer for the campaign pages. Two
 implementations of one component is the duplication this phase exists to
 remove.
 
-- [ ] Extend `web/src/ImageViewer.tsx` to cover everything the inline script
+- [x] Extend `web/src/ImageViewer.tsx` to cover everything the inline script
       does — all five comparison modes, overlay opacity, difference heatmaps,
       and the `1`–`5` shortcuts — and mount it as an island from the templ
       partial.
-- [ ] Keep the templ markup as the no-JavaScript fallback: a static
+- [x] Keep the templ markup as the no-JavaScript fallback: a static
       side-by-side view that needs no script.
-- [ ] Delete the inline script and the now-duplicated mode-switching CSS.
+- [x] Delete the inline script and the now-duplicated mode-switching CSS.
 
 **Acceptance Checks:**
 
-- [ ] The detail page and the campaign pages resolve to the same component;
+- [x] The detail page and the campaign pages resolve to the same component;
       a test asserts one viewer implementation is registered.
-- [ ] All five modes, overlay opacity, and shortcuts `1`–`5` behave identically
+- [x] All five modes, overlay opacity, and shortcuts `1`–`5` behave identically
       on both pages (this overlaps Task 17.11's browser pass; record it once).
 
-### Task 18.3: Port the Settings Page to an Island (P2)
+### Task 18.3: Port the Settings Page to an Island (P2) ✅
 
 `internal/ui/settings.templ:136-312` is 177 lines of self-contained
 `localStorage` handling with no server involvement, which makes it the lowest
 risk port in the phase.
 
-- [ ] Add a `SettingsIsland` owning the preference reads and writes.
-- [ ] Move the theme-toggle handler at `internal/ui/layout.templ:393-426` into
+- [x] Add a `SettingsIsland` owning the preference reads and writes.
+- [x] Move the theme-toggle handler at `internal/ui/layout.templ:393-426` into
       a small shared island or module so the page chrome stops carrying script.
       The pre-paint IIFE at `:60-71` stays inline by design — it must run
       before first paint, ahead of the bundle.
-- [ ] Cover the preference read/write helpers with vitest cases beside
+- [x] Cover the preference read/write helpers with vitest cases beside
       `web/src/format.test.ts`.
 
 **Acceptance Checks:**
 
-- [ ] Preferences set before the port are still honored after it; the storage
+- [x] Preferences set before the port are still honored after it; the storage
       keys and value shapes are unchanged.
-- [ ] With JavaScript disabled the settings page still renders and explains
+- [x] With JavaScript disabled the settings page still renders and explains
       that preferences require JavaScript.
 
-### Task 18.4: Port the Create Page to an Island (P2)
+### Task 18.4: Port the Create Page to an Island (P2) ✅
 
 `internal/ui/create.templ` posts a form today. An island would post
 `POST /api/v1/jobs` instead, and the two paths do not agree on defaults.
@@ -927,25 +958,25 @@ while the form path defaults empty strings through helpers such as
 `formIntOrDefault` (`internal/server/ui_handlers.go:591`). The behavior is
 documented at `docs/behavior-invariants.md:234` and must not drift.
 
-- [ ] Decide and record whether the server-side form POST handler stays as the
+- [x] Decide and record whether the server-side form POST handler stays as the
       no-JavaScript fallback. Keeping it means keeping two admission paths with
       different omitted-versus-zero semantics; removing it means the create
       page stops working without JavaScript, which the fallback invariant
       currently forbids.
-- [ ] Add a `CreateJobIsland` that builds the JSON body explicitly, omitting
+- [x] Add a `CreateJobIsland` that builds the JSON body explicitly, omitting
       fields the user left blank rather than sending zeros.
-- [ ] Keep client-side validation aligned with the server's typed validation;
+- [x] Keep client-side validation aligned with the server's typed validation;
       do not introduce a second set of limits.
 
 **Acceptance Checks:**
 
-- [ ] A test asserts a job created through the island and the same job created
+- [x] A test asserts a job created through the island and the same job created
       through the form produce identical stored configuration, including for
       fields left blank and fields set explicitly to zero.
-- [ ] The recorded fallback decision is reflected in
+- [x] The recorded fallback decision is reflected in
       `docs/behavior-invariants.md` and `docs/architecture.md`.
 
-### Task 18.5: Consolidate the Five State-Badge Implementations (P2)
+### Task 18.5: Consolidate the Five State-Badge Implementations (P2) ✅
 
 There are five independent renderings of a job or stage state badge, and they
 disagree on three axes — the fallthrough class (`""` versus `badge-info`),
@@ -960,56 +991,56 @@ label casing, and `skipped`, which only the schedule variant handles:
 | `StateBadge` | `internal/ui/list.templ:136` |
 | `ScheduleStateBadge` | `internal/ui/schedule.templ:330` |
 
-- [ ] Pick one behavior per axis, including what an unknown state renders as,
+- [x] Pick one behavior per axis, including what an unknown state renders as,
       and state it in the shared helper's doc comment.
-- [ ] Reduce the TypeScript side to the single `web/src/format.ts` pair and
+- [x] Reduce the TypeScript side to the single `web/src/format.ts` pair and
       have every island use it.
-- [ ] Reduce the templ side to one `StateBadge` covering the schedule states,
+- [x] Reduce the templ side to one `StateBadge` covering the schedule states,
       including `skipped`.
-- [ ] Extend `web/src/format.test.ts` and the templ tests to assert the Go and
+- [x] Extend `web/src/format.test.ts` and the templ tests to assert the Go and
       TypeScript renderings agree for every state, including the unknown case.
 
 **Acceptance Checks:**
 
-- [ ] A parity test enumerates the known states and asserts the templ badge and
+- [x] A parity test enumerates the known states and asserts the templ badge and
       the TypeScript helper produce the same class and label for each.
 
-### Task 18.6: Decide Whether to Generate the TypeScript Read Models (P2)
+### Task 18.6: Decide Whether to Generate the TypeScript Read Models (P2) ✅
 
 Roughly 25 Go↔TypeScript type and formatter pairs are kept in sync by
 convention. The seed and endpoint parity tests added in the preceding cleanup
 catch drift after the fact; generation would prevent it.
 
-- [ ] Evaluate generating the read-model interfaces from the Go structs against
+- [x] Evaluate generating the read-model interfaces from the Go structs against
       the constraint that `go build ./...` must never need node or npm
       (`internal/ui/static.go:18-20`) and that generated output would be
       committed, as `internal/ui/*_templ.go` and the bundle already are.
-- [ ] If adopted, add the generator as a Go tool and a drift gate alongside
+- [x] If adopted, add the generator as a Go tool and a drift gate alongside
       `templ-check` and `bundle-check` in `just check`.
-- [ ] If not adopted, record the decision and keep the parity tests as the
+- [x] If not adopted, record the decision and keep the parity tests as the
       contract.
 
-### Task 18.7: Retire the Inline-Script Surface (P1)
+### Task 18.7: Retire the Inline-Script Surface (P1) ✅
 
 The phase's closing gate. After Tasks 18.1–18.4, only `report.templ` (a
 self-contained download artifact, deliberately script-free and asset-free) and
 `layout.templ` (the shell) should remain pure templ.
 
-- [ ] Add a test or lint step asserting no `.templ` file outside
+- [x] Add a test or lint step asserting no `.templ` file outside
       `layout.templ`'s pre-paint IIFE contains a `<script>` body.
-- [ ] Consolidate the CSS the deleted scripts depended on; remove rules no
+- [x] Consolidate the CSS the deleted scripts depended on; remove rules no
       longer reachable.
-- [ ] Update `docs/architecture.md`'s frontend data-flow section and the
+- [x] Update `docs/architecture.md`'s frontend data-flow section and the
       island list in `AGENTS.md` to match the finished set.
 
 **Acceptance Checks:**
 
-- [ ] Zero hand-written inline JavaScript remains in `internal/ui/*.templ`
+- [x] Zero hand-written inline JavaScript remains in `internal/ui/*.templ`
       except `layout.templ:60-71`.
-- [ ] Every templ page still renders complete and readable with JavaScript
+- [x] Every templ page still renders complete and readable with JavaScript
       disabled and with the bundle deliberately broken, as
       `docs/behavior-invariants.md:280-287` requires.
-- [ ] The committed bundle is regenerated and the bundle drift gate observed
+- [x] The committed bundle is regenerated and the bundle drift gate observed
       passing.
 
 ### Deferred alternative: a shadcn SPA rewrite (not scheduled)
@@ -1305,9 +1336,9 @@ Current open work, in priority order:
    are exactly the campaigns that should be started from the dashboard. Then
    Tasks 22.2–22.4.
 6. **Dashboard sign-off (P1):** Task 17.11.
-7. **Frontend island transition (P1/P2):** Tasks 18.1, 18.2, and 18.7, then
-   18.3–18.6. The shadcn SPA rewrite is recorded as a deferred alternative at
-   the end of Phase 18, not as scheduled work.
+7. ~~**Frontend island transition (P1/P2):** Tasks 18.1–18.7.~~ Phase 18 is
+   complete. The shadcn SPA rewrite remains a deferred alternative at the end
+   of that phase, not scheduled work.
 8. **Server memory (P2):** Task 17.12.
 9. **UX and supporting documentation (P2/P3):** Tasks 12.9 and 13.15.
 10. **Experimental backends/research:** Tasks 11.9–11.13 and 10.20.
