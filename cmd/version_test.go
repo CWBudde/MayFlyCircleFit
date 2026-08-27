@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/server"
+	"github.com/cwbudde/circlefit/internal/server"
 )
 
 func TestVersionInfo(t *testing.T) {
@@ -44,7 +44,9 @@ func TestVersionCommandWritesConfiguredOutput(t *testing.T) {
 		t.Fatalf("runVersion: %v", err)
 	}
 
-	if got := strings.TrimSpace(output.String()); got != "mayflycirclefit version 2.0.0 (commit abc123, built 2026-08-11T10:00:00Z)" {
+	const want = "circlefit version 2.0.0 (commit abc123, built 2026-08-11T10:00:00Z)"
+
+	if got := strings.TrimSpace(output.String()); got != want {
 		t.Fatalf("version output = %q", got)
 	}
 }

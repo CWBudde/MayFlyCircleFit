@@ -136,7 +136,7 @@ go test -run '^$' \
   -bench '^BenchmarkSingleCircleExtendWall$' \
   -benchmem -benchtime=1x -count=1 -timeout=10m ./internal/server
 
-MAYFLY_EXTEND_CHECKPOINT=/path/to/jobs/UUID/checkpoint.json \
+CIRCLEFIT_EXTEND_CHECKPOINT=/path/to/jobs/UUID/checkpoint.json \
 go test -run '^$' \
   -bench '^BenchmarkSingleCircleExtendProductionCheckpoint$' \
   -benchmem -benchtime=1x -count=1 -timeout=10m ./internal/server

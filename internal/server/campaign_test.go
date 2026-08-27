@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/store"
-	"github.com/cwbudde/mayflycirclefit/internal/ui"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/ui"
 )
 
 // The 96-circle chain that PLAN.md named as the acceptance fixture no longer

@@ -9,8 +9,8 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/store"
 )
 
 // projectsDirName is the container for per-project stores. The legacy layout

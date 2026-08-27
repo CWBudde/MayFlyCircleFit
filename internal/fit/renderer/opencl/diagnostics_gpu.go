@@ -2,7 +2,7 @@
 
 package opencl
 
-import "github.com/cwbudde/mayflycirclefit/internal/fit/gpu"
+import "github.com/cwbudde/circlefit/internal/fit/gpu"
 
 // The accessors below expose the renderer's caching and degradation state.
 // They exist because the renderer package owns the backend wiring and its

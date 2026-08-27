@@ -15,7 +15,7 @@ const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 export async function useTheme(page: Page, theme: Theme): Promise<void> {
 	await page.addInitScript((value) => {
 		try {
-			window.localStorage.setItem("mayflycirclefit.theme", value as string);
+			window.localStorage.setItem("circlefit.theme", value as string);
 		} catch {
 			// Storage is unavailable in some privacy contexts; the run is still
 			// meaningful, it just audits whatever theme the browser defaults to.

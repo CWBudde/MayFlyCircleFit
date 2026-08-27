@@ -29,7 +29,7 @@ CMA-ES was configured in full-covariance active mode with normalized initial
 sigma 0.3; its single arm used no restart and its IPOP arm shared one cap across
 restarts.
 
-The identified binary was built from MayFlyCircleFit commit
+The identified binary was built from CircleFit commit
 `dd1fce31ee4fd00fbc9c96c1689027f7de908bc2` with Go 1.26.0. It pinned Mayfly
 v0.7.1 and go-cma-es
 `v0.0.0-20260825143954-e528faf326bf`. That pseudo-version is code-identical to

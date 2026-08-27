@@ -3,8 +3,8 @@ package cmd
 import (
 	"errors"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/fit/renderer"
 )
 
 func parseBackendFlag(raw string) (app.Backend, error) {

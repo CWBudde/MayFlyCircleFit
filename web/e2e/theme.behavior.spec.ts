@@ -24,7 +24,7 @@ test("the theme switch applies, persists, and returns to auto", async ({ page })
 
 	await page.getByRole("button", { name: "Use system theme" }).click();
 	await expect(page.getByRole("button", { name: "Use system theme" })).toHaveAttribute("aria-pressed", "true");
-	expect(await page.evaluate(() => localStorage.getItem("mayflycirclefit.theme"))).toBeNull();
+	expect(await page.evaluate(() => localStorage.getItem("circlefit.theme"))).toBeNull();
 });
 
 // The premise this test was written on -- "create has no island, so nothing

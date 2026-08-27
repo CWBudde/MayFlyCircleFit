@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/app"
 )
 
 // createJobRequest is the wire shape of POST /api/v1/jobs. JobConfig is

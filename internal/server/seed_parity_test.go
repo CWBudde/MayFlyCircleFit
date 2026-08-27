@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/ui"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/ui"
 )
 
 // The tests below extend TestDashboardPageSeedMatchesEndpointShape to the rest

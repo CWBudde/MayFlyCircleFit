@@ -7,8 +7,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 func TestIncrementalCostBoundaryParity(t *testing.T) {

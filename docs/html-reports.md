@@ -1,6 +1,6 @@
 # HTML job reports
 
-MayFlyCircleFit can download the current result of a server job as a portable,
+CircleFit can download the current result of a server job as a portable,
 self-contained HTML report. Use **Download Report** on the job detail page, or
 request it directly:
 

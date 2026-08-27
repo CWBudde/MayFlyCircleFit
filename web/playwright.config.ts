@@ -67,7 +67,7 @@ export default defineConfig({
 		},
 	],
 	webServer: {
-		command: "env GOCACHE=/tmp/mayfly-playwright-go-cache go run . serve --addr 127.0.0.1 --port 19091 --input-root . --data-root /tmp/mayflycirclefit-playwright-data",
+		command: "env GOCACHE=/tmp/circlefit-playwright-go-cache go run . serve --addr 127.0.0.1 --port 19091 --input-root . --data-root /tmp/circlefit-playwright-data",
 		cwd: "..",
 		url: "http://127.0.0.1:19091/",
 		reuseExistingServer: !process.env.CI,

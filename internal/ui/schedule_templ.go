@@ -284,7 +284,7 @@ func CampaignListPage(schedules []CampaignSummary, chains []CampaignSummary, una
 					return templ_7745c5c3_Err
 				}
 				if len(schedules) == 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"card\" style=\"color: var(--text-muted);\">No schedules yet. Create one with <code>POST /api/v1/schedules</code> or <code>mayflycirclefit schedule create</code>.</div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"card\" style=\"color: var(--text-muted);\">No schedules yet. Create one with <code>POST /api/v1/schedules</code> or <code>circlefit schedule create</code>.</div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}

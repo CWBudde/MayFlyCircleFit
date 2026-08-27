@@ -7,7 +7,7 @@ func detectTier() SIMDTier {
 	return TierScalar
 }
 
-// tierSupported accepts only the scalar tier, so MAYFLY_SIMD_TIER=avx2 fails
+// tierSupported accepts only the scalar tier, so CIRCLEFIT_SIMD_TIER=avx2 fails
 // loudly on a 386 or wasm build instead of appearing to succeed.
 func tierSupported(tier SIMDTier) bool {
 	return tier == TierScalar

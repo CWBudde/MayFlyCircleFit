@@ -2,7 +2,7 @@
 
 package renderer
 
-import "github.com/cwbudde/mayflycirclefit/internal/fit"
+import "github.com/cwbudde/circlefit/internal/fit"
 
 // compositeSpanKernel is the tier whose exact span compositor is installed, and
 // compositeSpanMinPixels is that kernel's measured crossover against the scalar

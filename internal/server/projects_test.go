@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/store"
 )
 
 // writeLegacyCheckpoint plants a job in the pre-project `<root>/jobs` layout.

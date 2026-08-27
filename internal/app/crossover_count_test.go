@@ -3,7 +3,7 @@ package app_test
 import (
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/app"
 )
 
 // crossoverRefPath is the reference image every case in this file normalizes

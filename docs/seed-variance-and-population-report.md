@@ -207,7 +207,7 @@ selectable from a configuration.
 ## Reproducing
 
 ```sh
-mayflycirclefit schedule create --dry-run example/campaigns/mayfly-3000-v2.json
+circlefit schedule create --dry-run example/campaigns/mayfly-3000-v2.json
 ```
 
 expands to 3007 stages and 6,359,040 nominal iterations, with the barrier

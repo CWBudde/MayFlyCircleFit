@@ -4,8 +4,8 @@ package cmd
 import (
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 // Adapter type names the engine-selection table compares against.

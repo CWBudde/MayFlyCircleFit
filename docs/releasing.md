@@ -1,6 +1,6 @@
 # Releasing
 
-MayFlyCircleFit uses Semantic Versioning tags and publishes portable CPU builds.
+CircleFit uses Semantic Versioning tags and publishes portable CPU builds.
 The repository's `CI` workflow (`.github/workflows/ci.yml`) is the authoritative
 automated release path; its `release` job cannot run until every required CI
 dependency succeeds for the tagged commit. The gates themselves live in reusable
@@ -81,8 +81,8 @@ archive from their download directory before extracting it:
 
 ```sh
 sha256sum --check --ignore-missing SHA256SUMS
-tar -xzf mayflycirclefit_0.2.0_linux_amd64.tar.gz
-./mayflycirclefit_0.2.0_linux_amd64/mayflycirclefit --version
+tar -xzf circlefit_0.2.0_linux_amd64.tar.gz
+./circlefit_0.2.0_linux_amd64/circlefit --version
 ```
 
 Use `unzip` for the Windows archive. Move the binary to a directory on `PATH`

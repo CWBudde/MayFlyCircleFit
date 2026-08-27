@@ -2,7 +2,7 @@
 
 package renderer
 
-import "github.com/cwbudde/mayflycirclefit/internal/fit"
+import "github.com/cwbudde/circlefit/internal/fit"
 
 // deltaSSDVectorized reports whether the staged incremental cost path has a
 // vectorized delta-SSD kernel behind it that is fast enough to pay for the

@@ -2,7 +2,7 @@
 
 package renderer
 
-import "github.com/cwbudde/mayflycirclefit/internal/fit"
+import "github.com/cwbudde/circlefit/internal/fit"
 
 // fastCompositeKernel is a constant here because no non-amd64 target has a
 // float32 span kernel. On those targets the fast path is the float32 scalar

@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/server"
-	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/server"
+	"github.com/cwbudde/circlefit/internal/store"
 )
 
 // Task 16.7: a campaign of the size the schedule format allows has to be

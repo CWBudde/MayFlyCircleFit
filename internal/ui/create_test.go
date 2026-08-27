@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/ui"
+	"github.com/cwbudde/circlefit/internal/ui"
 )
 
 // testCreateLimits stands in for what the server projects from internal/app.

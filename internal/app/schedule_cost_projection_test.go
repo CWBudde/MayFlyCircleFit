@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/app"
 )
 
 // The fixture is the 512x512 growth campaign of 2026-08-19/20, sampled at its

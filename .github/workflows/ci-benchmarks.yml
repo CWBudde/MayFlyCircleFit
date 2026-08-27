@@ -38,7 +38,7 @@ jobs:
             exit 0
           fi
 
-          base_dir="${RUNNER_TEMP}/mayfly-benchmark-base"
+          base_dir="${RUNNER_TEMP}/circlefit-benchmark-base"
           git worktree add --detach "$base_dir" "$BASE_SHA"
           trap 'git worktree remove --force "$base_dir" >/dev/null 2>&1 || true' EXIT
           (

@@ -6,8 +6,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
-	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/store"
 )
 
 func qualitySample(iteration int, cost float64, ssim *float64, timestamp time.Time) MetricSample {

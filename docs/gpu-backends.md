@@ -161,14 +161,14 @@ hardware performance claims.
 Reproduce the focused correctness and transfer-sensitive benchmarks with:
 
 ```sh
-MAYFLY_REQUIRE_OPENCL=1 go test -tags gpu -count=1 \
+CIRCLEFIT_REQUIRE_OPENCL=1 go test -tags gpu -count=1 \
   ./internal/fit/renderer/... -run '^TestOpenCL'
-MAYFLY_REQUIRE_OPENCL=1 go test -tags gpu -run '^$' \
+CIRCLEFIT_REQUIRE_OPENCL=1 go test -tags gpu -run '^$' \
   -bench '^BenchmarkOpenCL(ParameterPackAndUpload|ResidentImageReadback)$' \
   -benchmem -benchtime=2s -count=5 ./internal/fit/renderer/opencl
 go test -tags gpu -run '^$' -bench '^BenchmarkRenderer(Cost|CostThenRender)$' \
   -benchmem -benchtime=2s -count=5 ./internal/fit/renderer
-MAYFLY_REQUIRE_OPENCL=1 go test -tags gpu -run '^$' \
+CIRCLEFIT_REQUIRE_OPENCL=1 go test -tags gpu -run '^$' \
   -bench '^BenchmarkOptimizePipelineBackends$' \
   -benchmem -benchtime=5x -count=5 ./internal/fit/renderer
 ```

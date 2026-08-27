@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit"
 )
 
 func TestComputeDiffImageUsesNormalizedAbsoluteRGBError(t *testing.T) {

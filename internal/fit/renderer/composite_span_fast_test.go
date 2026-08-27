@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit"
 )
 
 // fastSpanSizes deliberately starts at 1. A zero-pixel entry was a tautology in

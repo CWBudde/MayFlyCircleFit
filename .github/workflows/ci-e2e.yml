@@ -19,5 +19,5 @@ jobs:
           cache: true
       - name: Run release lifecycle E2E test
         env:
-          MAYFLY_RUN_E2E: "1"
+          CIRCLEFIT_RUN_E2E: "1"
         run: go test -count=1 -timeout=3m ./tests/e2e

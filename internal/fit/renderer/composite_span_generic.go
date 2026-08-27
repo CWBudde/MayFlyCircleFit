@@ -2,7 +2,7 @@
 
 package renderer
 
-import "github.com/cwbudde/mayflycirclefit/internal/fit"
+import "github.com/cwbudde/circlefit/internal/fit"
 
 // compositeSpanKernel is a constant here because only ARM64 and amd64 have
 // vector span compositors. Everything else composites scalar.

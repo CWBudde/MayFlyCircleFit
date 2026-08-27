@@ -1,6 +1,6 @@
 # Profiling Scripts
 
-Helper scripts for profiling MayFlyCircleFit performance and identifying optimization opportunities.
+Helper scripts for profiling CircleFit performance and identifying optimization opportunities.
 
 The repository pins `github.com/google/pprof` as a Go tool. Use
 `go tool pprof`; this works even with Go installations that do not bundle
@@ -44,7 +44,7 @@ Capture live profiling data from a running server.
 **Usage:**
 ```bash
 # Start server first
-./bin/mayflycirclefit serve --port 8080
+./bin/circlefit serve --port 8080
 
 # In another terminal, capture profiles
 ./scripts/profiling/profile-server.sh [port] [duration]
@@ -128,7 +128,7 @@ Profile the server under realistic load:
 
 ```bash
 # Terminal 1: Start server
-./bin/mayflycirclefit serve --port 8080
+./bin/circlefit serve --port 8080
 
 # Terminal 2: Create several jobs to generate load
 curl -X POST http://localhost:8080/api/v1/jobs \

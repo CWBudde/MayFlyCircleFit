@@ -7,7 +7,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 type pipelineBenchmarkOptimizer struct {

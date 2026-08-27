@@ -10,7 +10,7 @@ single-threaded renderer and needs no per-pixel locking.
 Local runs accept `--threads`:
 
 ```sh
-./mayflycirclefit run --ref assets/test.png --threads 4
+./circlefit run --ref assets/test.png --threads 4
 ```
 
 The default is `runtime.GOMAXPROCS(0)`. The effective worker count is capped at

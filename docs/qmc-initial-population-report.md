@@ -180,7 +180,7 @@ Campaign and analysis scripts are not committed; the campaign is a submit loop
 against a `serve` instance, and the checkpoints hold everything needed:
 
 ```sh
-mayflycirclefit serve --port 8084 --data-root ./data-qmc --max-jobs 8 \
+circlefit serve --port 8084 --data-root ./data-qmc --max-jobs 8 \
     --queue-size 100 --input-root .
 ```
 

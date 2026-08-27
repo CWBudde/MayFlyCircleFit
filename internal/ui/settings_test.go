@@ -160,10 +160,10 @@ func TestSettingsPageCarriesNoInlineScript(t *testing.T) {
 	}
 
 	for _, key := range []string{
-		"mayflycirclefit.imageRefreshInterval",
-		"mayflycirclefit.viewMode",
-		"mayflycirclefit.diffColormap",
-		"mayflycirclefit.visibleMetrics",
+		"circlefit.imageRefreshInterval",
+		"circlefit.viewMode",
+		"circlefit.diffColormap",
+		"circlefit.visibleMetrics",
 	} {
 		if strings.Contains(page, key) {
 			t.Errorf("settings page names the storage key %q; web/src/prefs.ts owns those now", key)

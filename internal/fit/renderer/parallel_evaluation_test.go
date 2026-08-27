@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 // gradientReference builds a deterministic non-uniform image. A solid image

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 func TestTraceWriter_WriteAndRead(t *testing.T) {

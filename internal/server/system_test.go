@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit/gpu"
-	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
+	"github.com/cwbudde/circlefit/internal/fit/gpu"
+	"github.com/cwbudde/circlefit/internal/fit/renderer"
 )
 
 // stubPlatformDiscovery swaps the OpenCL probe for the duration of the test.

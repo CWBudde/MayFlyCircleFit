@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/app"
 )
 
 // Artifact identifies a store-owned job artifact. The closed set prevents

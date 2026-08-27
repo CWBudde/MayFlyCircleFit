@@ -100,7 +100,7 @@ for target in "${targets[@]}"; do
 		;;
 	esac
 
-	output="$build_work/mayflycirclefit-${target_os}-${target_arch}"
+	output="$build_work/circlefit-${target_os}-${target_arch}"
 	if [[ "$target_os" == windows ]]; then
 		output+=".exe"
 	fi

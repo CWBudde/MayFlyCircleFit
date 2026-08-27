@@ -93,14 +93,14 @@ other Go targets may compile but are not claimed as supported until they are
 added to the matrix and exercised.
 
 The native gate distinguishes two things that were previously conflated.
-`MAYFLY_REQUIRE_SIMD_TIER` asserts which tier detection selected and never sets
-one; `MAYFLY_SIMD_TIER` pins a tier and is therefore useless as an assertion
+`CIRCLEFIT_REQUIRE_SIMD_TIER` asserts which tier detection selected and never sets
+one; `CIRCLEFIT_SIMD_TIER` pins a tier and is therefore useless as an assertion
 target. Each step pairs exactly one of them with the assertion.
 
 The AMD64 native gate runs five steps: natively for AVX2, under
 `GODEBUG=cpu.all=off` asserting that feature masking demotes to SSE2, with the
 SSE2 tier pinned, with the scalar tier pinned, and once through the legacy
-`MAYFLY_DISABLE_SIMD=1` alias. `GODEBUG` cannot mask SSE2 on AMD64 because
+`CIRCLEFIT_DISABLE_SIMD=1` alias. `GODEBUG` cannot mask SSE2 on AMD64 because
 `golang.org/x/sys/cpu` marks it as required there, so pinning is the only way to
 reach the scalar tier on that architecture. The ARM64 gates run natively for
 NEON, under `GODEBUG=cpu.all=off` for scalar, with the scalar tier pinned, and

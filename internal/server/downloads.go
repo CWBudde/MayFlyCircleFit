@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
-	"github.com/cwbudde/mayflycirclefit/internal/ui"
+	"github.com/cwbudde/circlefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/ui"
 )
 
 func downloadRequested(r *http.Request) bool {

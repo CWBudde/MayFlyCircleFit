@@ -10,11 +10,11 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit"
 	"golang.org/x/sys/cpu"
 )
 
-const compositeNEONDisabledHelper = "MAYFLY_TEST_COMPOSITE_NEON_DISABLED"
+const compositeNEONDisabledHelper = "CIRCLEFIT_TEST_COMPOSITE_NEON_DISABLED"
 
 func TestCompositeSpanARM64DispatchMatchesCPUFeatures(t *testing.T) {
 	// The environment overrides outrank the feature check: ASIMD is mandatory

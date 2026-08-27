@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/cwbudde/mayflycirclefit/internal/server"
+	"github.com/cwbudde/circlefit/internal/server"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +28,7 @@ var versionCmd = &cobra.Command{
 
 func init() {
 	rootCmd.Version = versionInfo()
-	rootCmd.SetVersionTemplate("mayflycirclefit version {{.Version}}\n")
+	rootCmd.SetVersionTemplate("circlefit version {{.Version}}\n")
 	versionCmd.Flags().BoolVar(&versionVerbose, "verbose", false, "Print host and build details")
 	rootCmd.AddCommand(versionCmd)
 }
@@ -49,7 +49,7 @@ func runVersion(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "mayflycirclefit version %s\n", versionInfo())
+	fmt.Fprintf(cmd.OutOrStdout(), "circlefit version %s\n", versionInfo())
 
 	return nil
 }

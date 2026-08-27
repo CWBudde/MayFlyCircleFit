@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/a-h/templ"
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/store"
-	"github.com/cwbudde/mayflycirclefit/internal/ui"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/ui"
 	"github.com/google/uuid"
 )
 

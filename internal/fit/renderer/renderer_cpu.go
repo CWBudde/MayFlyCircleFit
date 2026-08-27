@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit"
 )
 
 // CPURenderer implements software rendering of circles.

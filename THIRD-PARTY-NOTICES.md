@@ -10,7 +10,7 @@ The bundler keeps each package's own `@license` banner in the bundle
 licence texts those banners refer to. Regenerate it whenever
 `web/package-lock.json` changes.
 
-The licence of MayFlyCircleFit itself is in `LICENSE` and is unaffected by
+The licence of CircleFit itself is in `LICENSE` and is unaffected by
 anything below.
 
 Packages covered, at the versions pinned in `web/package-lock.json`:

@@ -19,12 +19,12 @@ release_output="$repo_root/dist"
 release_work="$(mktemp -d)"
 trap 'rm -rf -- "$release_work"' EXIT
 
-release_commit="${MAYFLY_RELEASE_COMMIT:-}"
+release_commit="${CIRCLEFIT_RELEASE_COMMIT:-}"
 if [[ -z "$release_commit" ]]; then
 	release_commit="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || printf unknown)"
 fi
 
-release_build_date="${MAYFLY_RELEASE_BUILD_DATE:-}"
+release_build_date="${CIRCLEFIT_RELEASE_BUILD_DATE:-}"
 if [[ -z "$release_build_date" ]]; then
 	release_build_date="$(git -C "$repo_root" show -s --format=%cI HEAD 2>/dev/null || printf unknown)"
 fi
@@ -66,13 +66,13 @@ platforms=(
 	"windows amd64"
 )
 
-ldflags="-s -w -X github.com/cwbudde/mayflycirclefit/cmd.version=$release_version -X github.com/cwbudde/mayflycirclefit/cmd.commit=$release_commit -X github.com/cwbudde/mayflycirclefit/cmd.buildDate=$release_build_date"
+ldflags="-s -w -X github.com/cwbudde/circlefit/cmd.version=$release_version -X github.com/cwbudde/circlefit/cmd.commit=$release_commit -X github.com/cwbudde/circlefit/cmd.buildDate=$release_build_date"
 
 for platform in "${platforms[@]}"; do
 	read -r release_os release_arch <<<"$platform"
-	archive_name="mayflycirclefit_${release_version}_${release_os}_${release_arch}"
+	archive_name="circlefit_${release_version}_${release_os}_${release_arch}"
 	stage_dir="$release_work/$archive_name"
-	binary_name="mayflycirclefit"
+	binary_name="circlefit"
 	if [[ "$release_os" == "windows" ]]; then
 		binary_name+=".exe"
 	fi

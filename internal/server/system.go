@@ -5,9 +5,9 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
-	"github.com/cwbudde/mayflycirclefit/internal/fit/gpu"
-	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
+	"github.com/cwbudde/circlefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit/gpu"
+	"github.com/cwbudde/circlefit/internal/fit/renderer"
 )
 
 // platformDiscovery reports OpenCL platforms visible to the process. It is a

@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	ssdDetectedTierHelper = "MAYFLY_TEST_SSD_DETECTED_TIER"
-	ssdForcedTierHelper   = "MAYFLY_TEST_SSD_FORCED_TIER"
+	ssdDetectedTierHelper = "CIRCLEFIT_TEST_SSD_DETECTED_TIER"
+	ssdForcedTierHelper   = "CIRCLEFIT_TEST_SSD_FORCED_TIER"
 )
 
 // TestSSDKernelPerForcedTier is the in-process replacement for what used to
@@ -90,7 +90,7 @@ func TestSSDDetectedTierWithoutAVX2(t *testing.T) {
 }
 
 // TestSSDTierEnvForcesScalar verifies the operator lever end to end, in the one
-// place where it cannot be checked in-process: MAYFLY_SIMD_TIER is read during
+// place where it cannot be checked in-process: CIRCLEFIT_SIMD_TIER is read during
 // package initialization.
 //
 // GODEBUG=cpu.all=off cannot express this on amd64, because x/sys/cpu marks

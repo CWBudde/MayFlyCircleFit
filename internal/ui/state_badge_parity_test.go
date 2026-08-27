@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/store"
-	"github.com/cwbudde/mayflycirclefit/internal/ui"
+	"github.com/cwbudde/circlefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/ui"
 )
 
 // This file is the Go half of the state-badge parity check. ui.StateBadge and

@@ -14,9 +14,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "mayflycirclefit",
-	Short: "High-performance circle fitting with mayfly optimization",
-	Long: `MayFlyCircleFit uses evolutionary algorithms to approximate images
+	Use:   "circlefit",
+	Short: "High-performance circle fitting with evolutionary optimization",
+	Long: `CircleFit uses evolutionary algorithms to approximate images
 with colored circles, featuring CPU/GPU backends and live visualization.`,
 	// CLI output should be normalized in main for consistent user-facing messages
 	// and explicit exit status handling.

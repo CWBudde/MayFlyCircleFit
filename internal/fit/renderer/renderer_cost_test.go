@@ -5,7 +5,7 @@ import (
 	"image"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit"
 )
 
 func TestCPURenderer_DefaultCostMatchesMSE(t *testing.T) {

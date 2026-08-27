@@ -1,6 +1,6 @@
 # Known limitations
 
-MayFlyCircleFit is still completing its production-readiness remediation. The
+CircleFit is still completing its production-readiness remediation. The
 items below are current operational constraints, not a promise that all other
 behavior is production-ready.
 
@@ -170,13 +170,13 @@ behavior is production-ready.
   above any canvas size this program produces, but it is a real limit. The SSE2
   delta-SSD kernel uses the same accumulator strategy but its wrapper splits
   long spans instead, so it has no equivalent cliff.
-- `MAYFLY_SIMD_TIER` pins a tier and rejects an unreachable one with a panic at
+- `CIRCLEFIT_SIMD_TIER` pins a tier and rejects an unreachable one with a panic at
   initialization. That is deliberate: quietly substituting the detected tier
   would let a CI gate asking for SSE2 pass while measuring AVX2.
 - `GODEBUG=cpu.all=off` does not produce scalar execution on AMD64.
   `golang.org/x/sys/cpu` marks sse2 as required on that architecture and ORs the
-  requirement back in, so detection lands on SSE2. Use `MAYFLY_SIMD_TIER=scalar`
-  (or its alias `MAYFLY_DISABLE_SIMD=1`) to force the scalar tier on every
+  requirement back in, so detection lands on SSE2. Use `CIRCLEFIT_SIMD_TIER=scalar`
+  (or its alias `CIRCLEFIT_DISABLE_SIMD=1`) to force the scalar tier on every
   kernel and architecture.
 - Circle-span geometry stays scalar without AVX2, in both of its forms. The
   Q16.16 vector form compares Q32.32 products with `VPCMPGTQ`, SSE2 has no

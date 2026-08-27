@@ -2,7 +2,7 @@
 
 package renderer
 
-import "github.com/cwbudde/mayflycirclefit/internal/fit"
+import "github.com/cwbudde/circlefit/internal/fit"
 
 // deltaSSDKernel is the tier whose kernels deltaSSDSpan may use. See the amd64
 // twin; the two files deliberately share the variable name and dispatch shape.

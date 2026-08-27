@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/app"
 )
 
 // ScheduleRecordSchemaVersion is the persisted schedule format written by this

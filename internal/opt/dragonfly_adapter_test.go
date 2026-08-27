@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 // dragonflySphere is f(x) = sum(x_i^2), minimized at the origin.

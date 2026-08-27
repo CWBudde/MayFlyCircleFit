@@ -15,11 +15,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
-	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
-	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit/renderer"
+	"github.com/cwbudde/circlefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -41,10 +41,10 @@ Supports two modes:
 
 Examples:
   # Resume via server
-  mayflycirclefit resume abc123 --server-url http://localhost:8080
+  circlefit resume abc123 --server-url http://localhost:8080
 
   # Resume locally
-  mayflycirclefit resume abc123 --local --output ./results`,
+  circlefit resume abc123 --local --output ./results`,
 	Args: cobra.ExactArgs(1),
 	RunE: runResume,
 }
@@ -127,7 +127,7 @@ func runResumeServer(ctx context.Context, output io.Writer, jobID string) error 
 		fmt.Fprintf(output, "  Message: %s\n", result.Message)
 	}
 
-	fmt.Fprintf(output, "\nUse 'mayflycirclefit status %s' to monitor progress\n", result.JobID)
+	fmt.Fprintf(output, "\nUse 'circlefit status %s' to monitor progress\n", result.JobID)
 
 	return nil
 }

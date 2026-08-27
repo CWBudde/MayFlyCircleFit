@@ -41,7 +41,7 @@ fi
 PROFILE_DIR="profiles/$(date +%Y%m%d_%H%M%S)_${MODE}_c${CIRCLES}_i${ITERS}"
 mkdir -p "$PROFILE_DIR"
 
-echo "=== MayFlyCircleFit Profiling Run ==="
+echo "=== CircleFit Profiling Run ==="
 echo "Reference: $REF_IMAGE"
 echo "Mode: $MODE"
 echo "Circles: $CIRCLES"
@@ -50,14 +50,14 @@ echo "Output directory: $PROFILE_DIR"
 echo ""
 
 # Build if needed
-if [ ! -f ./bin/mayflycirclefit ]; then
+if [ ! -f ./bin/circlefit ]; then
     echo "Building binary..."
     just build
 fi
 
 # Run optimization with profiling
 echo "Running optimization with profiling..."
-./bin/mayflycirclefit run \
+./bin/circlefit run \
     --ref "$REF_IMAGE" \
     --mode "$MODE" \
     --circles "$CIRCLES" \

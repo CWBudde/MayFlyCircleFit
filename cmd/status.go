@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/app"
 	"github.com/spf13/cobra"
 )
 

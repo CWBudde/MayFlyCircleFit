@@ -225,7 +225,7 @@ templ CampaignListPage(schedules []CampaignSummary, chains []CampaignSummary, un
 			<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.75rem;">Schedules</h2>
 			if len(schedules) == 0 {
 				<div class="card" style="color: var(--text-muted);">
-					No schedules yet. Create one with <code>POST /api/v1/schedules</code> or <code>mayflycirclefit schedule create</code>.
+					No schedules yet. Create one with <code>POST /api/v1/schedules</code> or <code>circlefit schedule create</code>.
 				</div>
 			} else {
 				<div style="display: grid; gap: 1rem; margin-bottom: 2rem;">

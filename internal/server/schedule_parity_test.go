@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/store"
 )
 
 // This file holds the Task 16.6 parity check: driving a campaign through the

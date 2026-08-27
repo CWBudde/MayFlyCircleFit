@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/app"
 )
 
 func TestArtifactDownloadHeaders(t *testing.T) {
@@ -85,7 +85,7 @@ func TestServerReportIsSelfContained(t *testing.T) {
 
 	body := recorder.Body.String()
 	for _, marker := range []string{
-		"<!doctype html>", "MayFlyCircleFit Report", jobID, "Metrics", "Parameters",
+		"<!doctype html>", "CircleFit Report", jobID, "Metrics", "Parameters",
 		"Circle", "magma", "12.500000", "0.8765", `class="metrics-table"`,
 		"Elapsed time", "page-break-before: always", "Self-contained report generated",
 	} {

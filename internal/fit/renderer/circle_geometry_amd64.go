@@ -5,7 +5,7 @@ package renderer
 import (
 	"math"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit"
 )
 
 // circleSpanFloat32Kernel is the tier whose float32 span kernel is installed,

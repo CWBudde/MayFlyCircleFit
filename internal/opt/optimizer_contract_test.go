@@ -5,8 +5,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 // TestEveryConfigurableOptimizerOptimizes is the engine-level sibling of

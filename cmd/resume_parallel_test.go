@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
+	"github.com/cwbudde/circlefit/internal/fit/renderer"
 )
 
 // resumeGradientReference builds a deterministic non-uniform image. A solid

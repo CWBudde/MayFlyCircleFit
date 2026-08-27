@@ -8,7 +8,7 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/cwbudde/mayflycirclefit/cmd"
+	"github.com/cwbudde/circlefit/cmd"
 )
 
 // Exit statuses: 0 on success, 1 when a command failed at its work, and 2 when
@@ -51,7 +51,7 @@ func printCLIError(writer io.Writer, exitCode int, err error) {
 
 	if exitCode == exitUsage {
 		fmt.Fprintf(writer, "Usage error: %v\n", err)
-		fmt.Fprintf(writer, "Tip: run `mayflycirclefit --help` to see available commands.\n")
+		fmt.Fprintf(writer, "Tip: run `circlefit --help` to see available commands.\n")
 
 		return
 	}
@@ -115,10 +115,11 @@ func suggestNetworkFix(err error) string {
 
 	switch {
 	case errors.Is(err, syscall.ECONNREFUSED):
-		return "no server is listening there; start one with `mayflycirclefit serve`, or point the server flag (--server for `status`, --server-url for `resume`) at the right address."
+		return "no server is listening there; start one with `circlefit serve`, or point the " +
+			"server flag (--server for `status`, --server-url for `resume`) at the right address."
 	case urlError.Timeout():
 		return "the request timed out while contacting the server or reading its response; check that the address is right and that the server is running and not blocked on a long request."
 	default:
-		return "check that the server address is reachable and that `mayflycirclefit serve` is running."
+		return "check that the server address is reachable and that `circlefit serve` is running."
 	}
 }

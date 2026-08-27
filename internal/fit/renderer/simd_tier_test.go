@@ -4,14 +4,14 @@ import (
 	"os"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit"
 )
 
 // requiredTierEnv duplicates the constant in internal/fit rather than exporting
 // it, because it is a CI contract rather than an API. Both packages must honor
 // it: a gate that sets it and runs only one of them proves nothing about the
 // other, which is precisely how the SSE2 renderer dispatch went unasserted.
-const requiredTierEnv = "MAYFLY_REQUIRE_SIMD_TIER"
+const requiredTierEnv = "CIRCLEFIT_REQUIRE_SIMD_TIER"
 
 // TestRequiredSIMDTier is the renderer-side half of the CI assertion.
 func TestRequiredSIMDTier(t *testing.T) {

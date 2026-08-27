@@ -57,7 +57,7 @@ func TestClassifyExecuteError(t *testing.T) {
 		err  error
 		want bool
 	}{
-		{name: "unknown command", err: errors.New(`unknown command "renderr" for "mayflycirclefit"`), want: true},
+		{name: "unknown command", err: errors.New(`unknown command "renderr" for "circlefit"`), want: true},
 		{name: "arg count", err: errors.New("accepts 1 arg(s), received 3"), want: true},
 		{name: "minimum args", err: errors.New("requires at least 1 arg(s), only received 0"), want: true},
 		{name: "already typed", err: NewUsageError(errors.New("unknown flag")), want: true},

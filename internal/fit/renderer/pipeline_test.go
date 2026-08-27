@@ -9,8 +9,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 type optimizerFunc func(eval func([]float64) float64, lower, upper []float64, dim int) ([]float64, float64)

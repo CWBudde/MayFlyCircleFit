@@ -11,10 +11,10 @@ Build one identified binary and keep it for the whole campaign:
 ```sh
 commit=$(git rev-parse HEAD)
 go build -trimpath \
-  -ldflags "-X github.com/cwbudde/mayflycirclefit/cmd.commit=$commit" \
-  -o ./data/cmaes-phase11/mayflycirclefit .
+  -ldflags "-X github.com/cwbudde/circlefit/cmd.commit=$commit" \
+  -o ./data/cmaes-phase11/circlefit .
 
-./data/cmaes-phase11/mayflycirclefit serve \
+./data/cmaes-phase11/circlefit serve \
   --port 8085 \
   --data-root ./data/cmaes-phase11 \
   --max-jobs 1 \
