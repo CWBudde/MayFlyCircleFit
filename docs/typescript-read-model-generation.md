@@ -41,11 +41,13 @@ and every TypeScript function that reimplements a Go helper.
 | `JobList.tsx` `JobPage` | `ui.JobListPage` | yes |
 | `JobList.tsx` `RawJob` | `server.JobSummary` | no — declares `config.ref`, which no Go field has, as a legacy-key fallback |
 | `JobList.tsx` `RawJobPage` | `server.jobListPage` | yes |
-| `JobControls.tsx` `JobActions` | `server.jobActions` | yes |
-| `JobControls.tsx` `JobStatus` | `server.jobStatusResponse` | no — an intersection with `ProgressEvent` whose `jobId` and `timestamp` the island synthesizes |
-| `JobControls.tsx` `metricHistory` element | `ui.MetricSample` | near — Go also carries `optimizerDiagnostics` |
-| `JobControls.tsx` polish response | `map[string]any`, `server.go:1901` | no — untyped on the Go side, so ungeneratable |
-| `JobControls.tsx` error envelope | `server.apiErrorResponse` | no — drops `error.code` |
+| `JobDetail.tsx` `JobActions` | `server.jobActions` | yes |
+| `JobDetail.tsx` `JobDetailSeed` | `ui.JobDetail` | yes |
+| `JobDetail.tsx` `JobStatusPayload` | `server.jobStatusResponse` | no — an honest subset, narrowed to what the detail panel reads |
+| `JobDetail.tsx` `MetricSample` | `ui.MetricSample` | near — Go also carries `optimizerDiagnostics` |
+| `JobDetail.tsx` `CircleParameter` | `ui.CircleParameter` | yes |
+| `JobDetail.tsx` polish response | `map[string]any`, `server.go:1901` | no — untyped on the Go side, so ungeneratable |
+| `JobDetail.tsx` error envelope | `server.apiErrorResponse` | no — drops `error.code` |
 | `CampaignCostChart.tsx` `CampaignCostChartPoint` | `ui.CampaignSeriesPoint` | yes |
 | `format.ts` `ProjectionShape` | `ui.CampaignProjection` | no — a structural clone minus 3 fields, existing to break an import cycle |
 
@@ -70,7 +72,8 @@ the same input rather than against what the TypeScript happens to return.
 The badge trio is the worked example of the pattern this decision endorses, and
 of how the same problem is solved without a generator. It used to be four
 independent maps — `format.ts` plus one apiece in `JobList.tsx`,
-`JobControls.tsx` and `Campaigns.tsx` — that disagreed in corners: one rendered
+`JobControls.tsx` (since folded into `JobDetail.tsx`) and `Campaigns.tsx` — that
+disagreed in corners: one rendered
 the raw state where the others title-cased it, and one printed `undefined` for
 an empty state where another printed `Unknown`. Phase 18 collapsed them onto the
 single `format.ts` trio and pinned the mapping in `web/src/state-badge-parity.json`,
@@ -195,11 +198,11 @@ The decision only stands if the tests carry the weight generation would have
 carried. Task 18.6 therefore added the missing direction:
 `TestIslandReadModelsMatchTheGoWire` in `internal/server/seed_parity_test.go`
 reads the hand-written declarations straight out of `web/src` and asserts that
-every field they declare exists on the Go type serving it. It covers 23
+every field they declare exists on the Go type serving it. It covers 27
 pairings across `live.ts`, `dashboard.tsx`, `Campaigns.tsx`, `JobList.tsx`,
-`JobControls.tsx`, `CampaignCostChart.tsx` and `format.ts`, reading tags by
+`JobDetail.tsx`, `CampaignCostChart.tsx` and `format.ts`, reading tags by
 reflection rather than marshalling a fixture, so an `omitempty` field is
-compared even when its zero value would drop it from the wire. All 23 pass, and
+compared even when its zero value would drop it from the wire. All 27 pass, and
 the check was confirmed to fail when a declaration is pointed at the wrong Go
 type.
 
@@ -225,9 +228,6 @@ Still uncovered, and named here so nobody assumes otherwise:
 - **Types, not names.** The tests compare field names, not widths or
   nullability. `int64` versus `number` and `*float64` versus `number | null` are
   on the reader.
-- **`JobControls.tsx` `JobStatus`**, excluded from the table because it is an
-  intersection whose `jobId` and `timestamp` the island synthesizes rather than
-  reads. A subset assertion would fail on fields that are correct.
 - **The four untyped `map[string]any` responses** (`resume`, `polish`,
   `extend`). Nothing can pin a shape that has no type.
 - **The duplicated helpers outside `format.ts`**, listed above. Moving them into

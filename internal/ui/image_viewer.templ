@@ -7,11 +7,13 @@ import (
 
 // ImageViewerData drives ImageViewer.
 //
-// One instance per page. The component owns the fixed id "image-viewer", and
-// the job detail page's script still reads that element's dataset, so a second
-// instance on the same page would shadow the first one's data channel. Both
-// callers today -- the job detail page and the campaign page's latest completed
-// stage -- render exactly one.
+// One instance per page: the component owns the fixed id "image-viewer", so a
+// second instance would duplicate it. Both callers today -- the job detail page
+// and the campaign page's latest completed stage -- render exactly one, and on
+// both of them this markup sits inside an island root. Mounting that island
+// replaces every child of the root, so what is written here is the
+// no-JavaScript fallback and the props the React viewer is handed, never a live
+// view of its own.
 type ImageViewerData struct {
 	JobID string
 
@@ -38,16 +40,6 @@ type ImageViewerData struct {
 
 	ShowMetadata bool
 	ExtraClass   string
-
-	// MountIsland marks this element as the image-viewer island's mount point.
-	//
-	// It is false on the campaign page on purpose. There the viewer is rendered
-	// inside the campaign-detail island root, and mounting an island replaces
-	// every child of its root -- so this markup is destroyed and Campaigns.tsx
-	// renders the same React component in its place. Advertising a mount point
-	// inside a subtree another island is about to discard would start a second
-	// React root over a node that is on its way out.
-	MountIsland bool
 }
 
 func imageViewerSrc(path string, revision uint64) string {
@@ -67,24 +59,20 @@ func imageViewerSrc(path string, revision uint64) string {
 // current best render, side by side, with no control that needs a script to do
 // anything. The five comparison modes, the overlay blend, the difference
 // heatmap and the 1-5 shortcuts all belong to web/src/ImageViewer.tsx, which is
-// also what the campaign page renders. There is one implementation of this
-// component, and the props it needs travel on this element's data attributes.
+// what both pages render: the campaign page from Campaigns.tsx and the job
+// detail page from JobDetail.tsx. There is one implementation of this
+// component, and it is not this file.
 //
-// It carries no <style> of its own. The campaign page renders it inside the
-// `campaign-detail` island root, and mounting an island calls
-// createRoot(root).render(...), which replaces every child of that root -- a
-// component-local <style> block included. So on /schedules/{id} the viewer used
-// to paint with no view-mode, frame or focus styling at all. The whole
-// vocabulary now lives in Layout, outside every island root; see the
-// image-viewer section of layout.templ.
+// It carries no <style> of its own. Both callers render it inside an island
+// root, and mounting an island calls createRoot(root).render(...), which
+// replaces every child of that root -- a component-local <style> block
+// included. So the viewer would paint with no view-mode, frame or focus styling
+// at all. The whole vocabulary lives in Layout, outside every island root; see
+// the image-viewer section of layout.templ.
 templ ImageViewer(data ImageViewerData) {
 	<div
 		id="image-viewer"
 		class={ imageViewerClasses(data) }
-		if data.MountIsland {
-			data-island="image-viewer"
-			data-island-label="image viewer"
-		}
 		data-view-mode="side-by-side"
 		data-default-mode={ imageViewerMode(data.DefaultMode) }
 		data-job-id={ data.JobID }

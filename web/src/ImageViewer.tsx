@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
 	browserStorage,
 	COLORMAPS,
-	normalizeAutoRefresh,
 	normalizeColormap,
 	normalizeOverlayOpacity,
 	normalizeViewMode,
@@ -16,11 +15,18 @@ import {
 import type { Colormap, ViewMode } from "./prefs";
 
 // The one image viewer. Both pages that show reference/best/difference/overlay
-// panels resolve here: the job detail page mounts ImageViewerIsland over the
-// server-rendered card, and the campaign page renders ImageViewer directly from
-// Campaigns.tsx, inside the campaign-detail island that owns that whole subtree.
+// panels resolve here, and neither mounts it as an island of its own: the job
+// detail page renders it from JobDetail.tsx and the campaign page from
+// Campaigns.tsx, in both cases inside the island that owns that whole subtree.
 // There is deliberately no second implementation -- ImageViewer.island.test.ts
 // fails if one reappears.
+//
+// The island wrapper this file used to carry is gone with the job detail port.
+// Everything it did belongs to the page around the viewer rather than to the
+// viewer: the monotonic best revision, the opt-in image polling, and keeping
+// the difference download link in step with the heatmap on screen. All three
+// are in JobDetail.tsx now, which is also what removed the custom DOM event the
+// two islands used to talk through.
 //
 // The class names and the data-view-mode contract come from layout.templ, which
 // is also where the CSS lives: mounting an island replaces every child of its
@@ -49,9 +55,6 @@ const GRADIENTS: Record<Colormap, string> = {
 		"#de492f, #f67019, #fda50a, #f9dc5c, #fcfdbf)",
 };
 
-// States a job can still leave, which is what makes an image worth re-fetching.
-const ACTIVE_STATES = ["running", "pending", "paused"];
-
 export type ReferenceMetadata = {
 	/** Pre-formatted "W × H px", or "" when the server has no dimensions. */
 	dimensions: string;
@@ -73,14 +76,7 @@ export type ImageViewerProps = {
 	bestURL?: string;
 	diffURL?: string;
 	metadata?: ReferenceMetadata;
-	/**
-	 * The island mount point, when there is one. The templ partial renders the
-	 * `.image-viewer` card itself and keeps the ids and data attributes the job
-	 * detail script still reads, so mounting has to fill that element rather
-	 * than nest a second card inside it.
-	 */
-	root?: HTMLElement;
-	/** Extra classes for the standalone wrapper; ignored when `root` is set. */
+	/** Extra classes for the card this component renders. */
 	extraClass?: string;
 	/** Fires with the resolved colormap on mount and on every change. */
 	onColormap?: (colormap: Colormap) => void;
@@ -149,7 +145,6 @@ export function ImageViewer(props: ImageViewerProps) {
 		jobState,
 		defaultMode,
 		metadata,
-		root,
 		extraClass,
 		onColormap,
 	} = props;
@@ -169,15 +164,6 @@ export function ImageViewer(props: ImageViewerProps) {
 	const referenceURL = props.referenceURL ?? `${base}/ref.png`;
 	const bestURL = props.bestURL ?? `${base}/best.png`;
 	const diffURL = props.diffURL ?? `${base}/diff.png`;
-
-	// The panels are hidden and shown by CSS keyed on this attribute, so on the
-	// island path it has to land on the mount point rather than on an element
-	// this component renders. A layout effect keeps that from being visible: it
-	// runs after the children are committed and before the browser paints, so
-	// there is no frame where the markup says one mode and the root says another.
-	useLayoutEffect(() => {
-		if (root) root.dataset.viewMode = mode;
-	}, [root, mode]);
 
 	// Persisted on change, never on mount. Resolving a preference is not the
 	// reader choosing one: writing the resolved value here would materialize a
@@ -338,7 +324,9 @@ export function ImageViewer(props: ImageViewerProps) {
 		</>
 	);
 
-	if (root) return body;
+	// One wrapper, always this component's own: the panels are hidden and shown
+	// by CSS keyed on data-view-mode, and both callers render this card inside
+	// their own island root rather than over a server-rendered one.
 	return (
 		<div className={["card", "image-viewer", extraClass].filter(Boolean).join(" ")} data-view-mode={mode}>
 			{body}
@@ -485,135 +473,5 @@ function ImageFrameStates({
 			<div className="spinner" />
 			<p style={{ marginTop: "0.5rem", fontSize: "0.875rem" }}>Loading...</p>
 		</div>
-	);
-}
-
-type JobStatus = { state?: string; bestRevision?: number | string };
-
-// ImageViewerIsland adapts the shared component to the job detail page: it
-// reads its props off the mount point's data attributes, keeps that element's
-// dataset current for the detail script that still reads it, refreshes the
-// images when the best revision advances, and owns the difference-artifact
-// download link's colormap.
-export function ImageViewerIsland({ root }: { root: HTMLElement }) {
-	const data = root.dataset;
-	const jobId = data.jobId ?? "";
-	const [revision, setRevision] = useState(() => Number.parseInt(data.bestRevision ?? "", 10) || 0);
-	const [jobState, setJobState] = useState(data.jobState ?? "");
-
-	const apply = useCallback((status: JobStatus | null) => {
-		if (!status) return;
-		const next = Number.parseInt(String(status.bestRevision ?? ""), 10);
-		// Monotonic: two producers publish this status -- the job-controls
-		// island's live stream and the poll below -- and a slow response must
-		// not walk the images back to an older render.
-		if (Number.isFinite(next)) setRevision((current) => (next > current ? next : current));
-		if (status.state) setJobState(status.state);
-	}, []);
-
-	useEffect(() => {
-		const onStatus = (event: Event) => apply((event as CustomEvent<JobStatus>).detail);
-		document.addEventListener("mayflycirclefit:job-status", onStatus);
-		return () => document.removeEventListener("mayflycirclefit:job-status", onStatus);
-	}, [apply]);
-
-	// The detail page reads these off the same element. Writing them back keeps
-	// that channel exactly as the inline script left it.
-	useEffect(() => {
-		root.dataset.bestRevision = String(revision);
-		root.dataset.jobState = jobState;
-	}, [root, revision, jobState]);
-
-	const onColormap = useCallback(
-		(colormap: Colormap) => {
-			root.dataset.colormap = colormap;
-			// The download link lives in the detail page's Downloads card, outside
-			// this island. The inline script reached for it the same way; the
-			// alternative is a second copy of the colormap preference over there.
-			const link = document.getElementById("download-difference");
-			if (link instanceof HTMLAnchorElement && jobId) {
-				link.href =
-					`/api/v1/jobs/${encodeURIComponent(jobId)}/diff.png` +
-					`?colormap=${encodeURIComponent(colormap)}&download=1`;
-			}
-		},
-		[root, jobId],
-	);
-
-	// Opt-in polling, for a reader whose event stream is blocked by a buffering
-	// proxy. Zero -- the default -- leaves the images on the live stream alone.
-	// A terminal state re-runs this effect and takes the early return, which is
-	// how the loop stops.
-	useEffect(() => {
-		if (!jobId || !ACTIVE_STATES.includes(jobState)) return;
-		const interval = normalizeAutoRefresh(
-			readPreference(browserStorage(), PREFERENCE_KEYS.autoRefresh),
-		);
-		if (interval <= 0) return;
-
-		let inFlight = false;
-		let stopped = false;
-		// One request at a time: a slow network must not let ticks pile up into
-		// overlapping fetches that apply their updates out of order.
-		const tick = async () => {
-			if (inFlight || stopped) return;
-			inFlight = true;
-			try {
-				const response = await fetch(`/api/v1/jobs/${encodeURIComponent(jobId)}/status`, {
-					cache: "no-store",
-				});
-				if (!response.ok) return;
-				const status = (await response.json()) as JobStatus;
-				if (stopped) return;
-				// Republish for the job detail page, which owns the metric panel.
-				document.dispatchEvent(
-					new CustomEvent("mayflycirclefit:job-status", { detail: status }),
-				);
-				apply(status);
-			} catch {
-				// Keep polling and let errors self-recover.
-			} finally {
-				inFlight = false;
-			}
-		};
-
-		const timer = window.setInterval(() => void tick(), interval);
-		void tick();
-		const stop = () => {
-			stopped = true;
-			window.clearInterval(timer);
-		};
-		window.addEventListener("pagehide", stop);
-		return () => {
-			stop();
-			window.removeEventListener("pagehide", stop);
-		};
-	}, [jobId, jobState, apply]);
-
-	return (
-		<ImageViewer
-			root={root}
-			jobId={jobId}
-			revision={revision}
-			jobState={jobState}
-			// data-view-mode is what the fallback shows -- always the
-			// side-by-side pair, because those are the only two panels that need
-			// no script. The mode this island should open in is its own
-			// attribute, and a stored preference outranks both.
-			defaultMode={data.defaultMode}
-			referenceURL={data.referenceUrl}
-			bestURL={data.bestUrl}
-			diffURL={data.diffUrl}
-			metadata={
-				data.showMetadata === "true"
-					? {
-						dimensions: data.refDimensions ?? "",
-						fileSize: data.refFilesize ?? "",
-						bytes: data.refBytes ?? "",
-					}
-					: undefined
-			}
-			onColormap={onColormap}
-		/>
 	);
 }

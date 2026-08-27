@@ -3,11 +3,11 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -231,9 +231,9 @@ func TestCampaignDetailSeedMatchesEndpointShape(t *testing.T) {
 	)
 }
 
-// jobControlsDataAttrs renders the job detail page and returns the data-*
-// attributes of the job-controls island root, keyed by attribute name.
-func jobControlsDataAttrs(t *testing.T, job ui.JobDetail) map[string]string {
+// jobDetailSeed renders the job detail page and returns the JSON blob it seeds
+// its island with, decoded to leaf paths.
+func jobDetailSeed(t *testing.T, job ui.JobDetail) map[string]any {
 	t.Helper()
 
 	var rendered bytes.Buffer
@@ -243,134 +243,118 @@ func jobControlsDataAttrs(t *testing.T, job ui.JobDetail) map[string]string {
 		t.Fatalf("render job detail page: %v", err)
 	}
 
-	body := rendered.String()
-
-	start := strings.Index(body, `data-island="job-controls"`)
-	if start < 0 {
-		t.Fatalf("the job detail page has no job-controls island root")
-	}
-	// Walk back to the opening angle bracket, then forward to the tag's end.
-	open := strings.LastIndex(body[:start], "<")
-
-	end := strings.Index(body[start:], ">")
-	if open < 0 || end < 0 {
-		t.Fatalf("the job-controls island root is not a well-formed tag")
+	match := regexp.MustCompile(`(?s)<script id="job-detail-data"[^>]*>(.*?)</script>`).
+		FindStringSubmatch(rendered.String())
+	if match == nil {
+		t.Fatal("the job detail page renders no #job-detail-data seed")
 	}
 
-	tag := body[open : start+end]
-
-	attrs := make(map[string]string)
-	for _, match := range regexp.MustCompile(`data-([a-z0-9-]+)="([^"]*)"`).FindAllStringSubmatch(tag, -1) {
-		attrs[match[1]] = match[2]
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(match[1]), &decoded); err != nil {
+		t.Fatalf("decode the job detail seed: %v", err)
 	}
 
-	return attrs
+	return decoded
 }
 
-// TestJobDetailDataSeedMatchesStatusEndpoint covers the fifth pairing. The job
-// detail page seeds its island through data-* attributes rather than a
-// JSONScript, so jsonLeafKeys cannot compare the two sides directly: every
-// attribute is a formatted string and the names are kebab-case, not JSON tags.
-// What is testable, and what actually breaks the island, is the mapping the
-// island performs in initialStatus (web/src/JobControls.tsx): each attribute it
-// reads must exist in the /status payload under the name it refetches, holding
-// the same value. Each row below is one of those reads.
-func TestJobDetailDataSeedMatchesStatusEndpoint(t *testing.T) {
+// TestJobDetailSeedMatchesStatusEndpoint covers the fifth pairing. Task 18.1
+// replaced the job detail page's twelve data-* attributes with one JSON seed,
+// which makes this comparison the same shape as the other four: the island
+// renders the seed on its first paint and then refetches
+// GET /api/v1/jobs/{id}/status, so every field it reads from both has to be
+// named the same on both. The rows below are that overlap, and refWidth,
+// refHeight and refSize are on it because Task 18.1 put them on the endpoint --
+// before that they were view-model fields no JSON response carried, and the
+// island had no way to describe the reference image after a refetch.
+//
+// Fields that exist only on the seed are not listed and are not a gap: the
+// configuration block is seeded once and never refetched, because /status
+// carries the raw JobConfig whose resolved forms are Go functions the island
+// must not reimplement.
+func TestJobDetailSeedMatchesStatusEndpoint(t *testing.T) {
 	start := time.Date(2026, time.August, 13, 9, 0, 0, 0, time.UTC)
+	psnr, ssim, candidate := 31.25, 0.9123, 11.5
 	job := ui.JobDetail{
-		ID:           "88888888-8888-8888-8888-888888888888",
-		State:        string(StateCompleted),
-		Circles:      64,
-		Iterations:   25,
-		Evaluations:  12345,
-		MaxIters:     100,
-		BestCost:     12.5,
-		InitialCost:  40.5,
-		BestRevision: 7,
-		CPS:          2.5,
-		CanPolish:    true,
-		StartTime:    start,
+		ID:                    "88888888-8888-8888-8888-888888888888",
+		State:                 string(StateCompleted),
+		Circles:               64,
+		Iterations:            25,
+		Evaluations:           12345,
+		MaxIters:              100,
+		BestCost:              12.5,
+		InitialCost:           40.5,
+		BestRevision:          7,
+		CandidateCost:         &candidate,
+		CandidatePSNR:         &psnr,
+		CandidatePSNRInfinite: true,
+		PSNR:                  &psnr,
+		PSNRInfinite:          true,
+		SSIM:                  &ssim,
+		CPS:                   2.5,
+		ElapsedSec:            95.5,
+		EvaluationWorkers:     4,
+		Termination:           "budget exhausted",
+		Error:                 "",
+		RefWidth:              640,
+		RefHeight:             480,
+		RefSize:               2048,
+		CanPolish:             true,
+		StartTime:             start,
 	}
 	payload := jobStatusResponse{
-		ID:            job.ID,
-		Project:       app.DefaultProject,
-		State:         JobState(job.State),
-		BestCost:      job.BestCost,
-		BestRevision:  job.BestRevision,
-		InitialCost:   job.InitialCost,
-		Iterations:    job.Iterations,
-		Evaluations:   job.Evaluations,
-		MaxIterations: job.MaxIters,
-		Actions:       &jobActions{Polish: job.CanPolish},
-		CPS:           job.CPS,
-		StartTime:     start,
+		ID:                    job.ID,
+		Project:               app.DefaultProject,
+		State:                 JobState(job.State),
+		BestCost:              job.BestCost,
+		BestRevision:          job.BestRevision,
+		CandidateCost:         job.CandidateCost,
+		CandidatePSNR:         job.CandidatePSNR,
+		CandidatePSNRInfinite: job.CandidatePSNRInfinite,
+		InitialCost:           job.InitialCost,
+		PSNR:                  job.PSNR,
+		PSNRInfinite:          job.PSNRInfinite,
+		SSIM:                  job.SSIM,
+		Iterations:            job.Iterations,
+		Evaluations:           job.Evaluations,
+		MaxIterations:         job.MaxIters,
+		EvaluationWidth:       job.EvaluationWorkers,
+		Termination:           job.Termination,
+		Elapsed:               job.ElapsedSec,
+		CPS:                   job.CPS,
+		RefWidth:              job.RefWidth,
+		RefHeight:             job.RefHeight,
+		RefSize:               job.RefSize,
+		Actions:               &jobActions{Polish: job.CanPolish},
+		StartTime:             start,
 	}
 
-	attrs := jobControlsDataAttrs(t, job)
+	seed := jobDetailSeed(t, job)
 	endpointKeys := jsonLeafKeys(t, payload)
 
-	const (
-		asString = "string"
-		asNumber = "number"
-		asBool   = "bool"
-	)
-	for _, testCase := range []struct {
-		attr string
-		path string
-		kind string
-	}{
-		{attr: "job-id", path: "id", kind: asString},
-		{attr: "job-state", path: "state", kind: asString},
-		{attr: "best-revision", path: "bestRevision", kind: asNumber},
-		{attr: "max-iterations", path: "maxIterations", kind: asNumber},
-		{attr: "iterations", path: "iterations", kind: asNumber},
-		{attr: "evaluations", path: "evaluations", kind: asNumber},
-		{attr: "best-cost", path: "bestCost", kind: asNumber},
-		{attr: "initial-cost", path: "initialCost", kind: asNumber},
-		{attr: "cps", path: "cps", kind: asNumber},
-		{attr: "can-polish", path: "actions.polish", kind: asBool},
+	shared := map[string]any{}
+	for _, name := range []string{
+		"id", "state", "bestCost", "bestRevision", "candidateCost", "candidatePsnr",
+		"candidatePsnrInfinite", "initialCost", "psnr", "psnrInfinite", "ssim",
+		"iterations", "evaluations", "maxIterations", "evaluationWidth",
+		"termination", "elapsed", "cps", "startTime", "refWidth", "refHeight", "refSize",
 	} {
-		t.Run(testCase.attr, func(t *testing.T) {
-			raw, ok := attrs[testCase.attr]
-			if !ok {
-				t.Fatalf("the job detail page no longer seeds data-%s, which the island reads", testCase.attr)
-			}
+		value, ok := seed[name]
+		if !ok {
+			t.Errorf("the job detail seed no longer carries %q, which the island reads", name)
+			continue
+		}
 
-			value, ok := endpointKeys[testCase.path]
-			if !ok {
-				t.Fatalf("the status payload has no %q, which the island refetches for data-%s", testCase.path, testCase.attr)
-			}
+		shared[name] = value
+	}
 
-			switch testCase.kind {
-			case asString:
-				if value != raw {
-					t.Errorf("%q = %v in the status payload, want %q as in data-%s", testCase.path, value, raw, testCase.attr)
-				}
-			case asNumber:
-				parsed, err := strconv.ParseFloat(raw, 64)
-				if err != nil {
-					t.Fatalf("data-%s = %q is not a number: %v", testCase.attr, raw, err)
-				}
+	assertSeedSubset(t, "job detail", shared, endpointKeys, nil)
 
-				number, ok := value.(float64)
-				if !ok {
-					t.Fatalf("%q is %T in the status payload, want a number as in data-%s", testCase.path, value, testCase.attr)
-				}
-
-				if number != parsed {
-					t.Errorf("%q = %v in the status payload, want %v as in data-%s", testCase.path, number, parsed, testCase.attr)
-				}
-			case asBool:
-				parsed, err := strconv.ParseBool(raw)
-				if err != nil {
-					t.Fatalf("data-%s = %q is not a boolean: %v", testCase.attr, raw, err)
-				}
-
-				if value != parsed {
-					t.Errorf("%q = %v in the status payload, want %v as in data-%s", testCase.path, value, parsed, testCase.attr)
-				}
-			}
-		})
+	// canPolish is the one field the two spell differently: the seed states it
+	// flat because the page renders one button from it, and the endpoint nests
+	// it with the other four actions.
+	if seed["canPolish"] != endpointKeys["actions.polish"] {
+		t.Errorf("seed canPolish = %v but the endpoint's actions.polish = %v",
+			seed["canPolish"], endpointKeys["actions.polish"])
 	}
 }
 
@@ -571,12 +555,13 @@ func collectWireNames(t *testing.T, structType reflect.Type, into map[string]boo
 // contract. Each row pairs one hand-written read model in web/src with the Go
 // type whose JSON it deserializes.
 //
-// Two read models are deliberately absent. JobControls' JobStatus is an
-// intersection with live.ts's ProgressEvent whose jobId and timestamp the
-// island synthesizes from data-* attributes and stream frames rather than
-// reading from /status, so a subset assertion would fail on fields that are
-// correct. dashboard.tsx's ProgressEventPayload is covered here because it is
-// an honest subset; its narrowness is the point, not a gap.
+// dashboard.tsx's ProgressEventPayload is covered here even though it is a
+// narrow subset of ProgressEvent: the narrowness is the point, not a gap.
+//
+// JobDetail.tsx's JobStatusPayload is likewise a subset of jobStatusResponse
+// and belongs in the table for the same reason. Its three newest fields --
+// refWidth, refHeight and refSize -- are the TypeScript mirror Task 18.1's
+// acceptance check asks for, and this is where a rename on either side fails.
 func TestIslandReadModelsMatchTheGoWire(t *testing.T) {
 	for _, testCase := range []struct {
 		file string
@@ -607,7 +592,11 @@ func TestIslandReadModelsMatchTheGoWire(t *testing.T) {
 		{file: "JobList.tsx", decl: "RawJob", wire: JobSummary{}},
 		{file: "JobList.tsx", decl: "RawJobPage", wire: jobListPage{}},
 
-		{file: "JobControls.tsx", decl: "JobActions", wire: jobActions{}},
+		{file: "JobDetail.tsx", decl: "JobActions", wire: jobActions{}},
+		{file: "JobDetail.tsx", decl: "JobDetailSeed", wire: ui.JobDetail{}},
+		{file: "JobDetail.tsx", decl: "JobStatusPayload", wire: jobStatusResponse{}},
+		{file: "JobDetail.tsx", decl: "MetricSample", wire: ui.MetricSample{}},
+		{file: "JobDetail.tsx", decl: "CircleParameter", wire: ui.CircleParameter{}},
 
 		{file: "CampaignCostChart.tsx", decl: "CampaignCostChartPoint", wire: ui.CampaignSeriesPoint{}},
 

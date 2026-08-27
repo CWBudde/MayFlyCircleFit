@@ -20,8 +20,7 @@ import { SettingsIsland } from "./Settings";
 import { ThemeToggleIsland } from "./ThemeToggle";
 import { JobListIsland } from "./JobList";
 import { CampaignDetailIsland, CampaignListIsland } from "./Campaigns";
-import { ImageViewerIsland } from "./ImageViewer";
-import { JobControlsIsland } from "./JobControls";
+import { JobDetailIsland } from "./JobDetail";
 import { fetchJSON, useLiveResource } from "./live";
 import type { UIEvent } from "./live";
 import { LiveStatus } from "./LiveStatus";
@@ -747,10 +746,11 @@ mountIslands({
 	"job-list": JobListIsland,
 	"campaign-list": CampaignListIsland,
 	"campaign-detail": CampaignDetailIsland,
-	"job-controls": JobControlsIsland,
-	// One viewer implementation, two pages: the campaign page reaches the same
-	// component through Campaigns.tsx, inside the campaign-detail island.
-	"image-viewer": ImageViewerIsland,
+	// One island for the whole job detail body, which is why there is no
+	// separate job-controls or image-viewer entry any more: the action row and
+	// the viewer are both inside this island's root, and a mount point inside
+	// another island's root is a React root over a node on its way out.
+	"job-detail": JobDetailIsland,
 	settings: SettingsIsland,
 	// Rendered by the layout on every page, so this one mounts everywhere.
 	"theme-switch": ThemeToggleIsland,

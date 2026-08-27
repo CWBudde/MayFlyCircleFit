@@ -25,7 +25,6 @@ func fixtureViewerData(mode string) ImageViewerData {
 		ReferenceSize:     1024,
 		ShowMetadata:      true,
 		ExtraClass:        "fixture-viewer",
-		MountIsland:       true,
 	}
 }
 
@@ -98,18 +97,16 @@ func TestImageViewerFallbackIgnoresTheCallerMode(t *testing.T) {
 	}
 }
 
-// TestImageViewerPublishesIslandProps covers the other half of the mount point:
-// the island reads every prop it needs off this element, so an attribute that
-// goes missing is a viewer that mounts with the wrong job, the wrong images or
-// no metadata at all.
+// TestImageViewerPublishesIslandProps covers the other half of the card: the
+// props the React viewer is rendered with all travel on this element, so an
+// attribute that goes missing is a viewer that mounts with the wrong job, the
+// wrong images or no metadata at all.
 func TestImageViewerPublishesIslandProps(t *testing.T) {
 	t.Parallel()
 
 	body := renderImageViewer(t, fixtureViewerData("difference"))
 
 	for _, marker := range []string{
-		`data-island="image-viewer"`,
-		`data-island-label="image viewer"`,
 		`data-job-id="` + viewerJobID + `"`,
 		`data-job-state="running"`,
 		`data-max-iters="500"`,
@@ -130,19 +127,17 @@ func TestImageViewerPublishesIslandProps(t *testing.T) {
 	}
 }
 
-// TestImageViewerMountsOnlyWhereItOwnsItsSubtree is the "one viewer
-// implementation" check on the Go side. The campaign page renders this
-// component inside the campaign-detail island root, and mounting an island
-// replaces every child of that root; advertising a second mount point in there
-// would start a React root over a node that is on its way out. That page
-// reaches the same component through Campaigns.tsx instead.
-func TestImageViewerMountsOnlyWhereItOwnsItsSubtree(t *testing.T) {
+// TestImageViewerNeverMountsItself is the "one viewer implementation" check on
+// the Go side. Both pages that render this card render it inside an island root
+// that owns the whole subtree -- campaign-detail on /schedules/{id}, job-detail
+// on /jobs/{id} -- and mounting an island replaces every child of its root. A
+// mount point of the viewer's own would therefore be a React root over a node
+// on its way out; both pages reach the same React component from their own
+// island instead.
+func TestImageViewerNeverMountsItself(t *testing.T) {
 	t.Parallel()
 
-	data := fixtureViewerData("side-by-side")
-	data.MountIsland = false
-
-	body := renderImageViewer(t, data)
+	body := renderImageViewer(t, fixtureViewerData("side-by-side"))
 	if strings.Contains(body, "data-island") {
 		t.Error("viewer advertises a mount point inside another island's root")
 	}
@@ -153,10 +148,9 @@ func TestImageViewerMountsOnlyWhereItOwnsItsSubtree(t *testing.T) {
 	}
 }
 
-// TestJobDetailPageMountsExactlyOneViewer pins the count. The component owns
-// the fixed id "image-viewer" and the detail script reads that element's
-// dataset, so a second instance would shadow the first one's data channel.
-func TestJobDetailPageMountsExactlyOneViewer(t *testing.T) {
+// TestJobDetailPageRendersExactlyOneViewer pins the count. The component owns
+// the fixed id "image-viewer", so a second instance would duplicate an id.
+func TestJobDetailPageRendersExactlyOneViewer(t *testing.T) {
 	t.Parallel()
 
 	var output bytes.Buffer
@@ -166,9 +160,6 @@ func TestJobDetailPageMountsExactlyOneViewer(t *testing.T) {
 		t.Fatalf("render job detail: %v", err)
 	}
 
-	if got := strings.Count(output.String(), `data-island="image-viewer"`); got != 1 {
-		t.Errorf("job detail page has %d image-viewer mount points, want 1", got)
-	}
 	if got := strings.Count(output.String(), `id="image-viewer"`); got != 1 {
 		t.Errorf("job detail page has %d elements with id image-viewer, want 1", got)
 	}

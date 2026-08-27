@@ -206,7 +206,21 @@ reconstructing it from DOM text. Shared chart code resolves colors from CSS
 custom properties, listens for both explicit theme changes and system-theme
 changes, and updates each Chart.js instance in place rather than reallocating a
 canvas for every event. The job and campaign pages share one image-viewer
-component, so reference/best/difference/overlay behavior has one contract.
+component, so reference/best/difference/overlay behavior has one contract; it
+mounts no island of its own on either page, because on both it sits inside an
+island root that owns the whole subtree.
+
+The job detail page is one island over its entire body — state badge, actions,
+metrics, configuration, downloads, parameters, images and the metric chart. It
+is seeded by the `#job-detail-data` blob the page renders beside its root and
+refetches `GET /api/v1/jobs/{id}/status` and `/metrics`. Configuration is read
+from the seed and never refetched, because `/status` carries the raw
+`JobConfig` whose resolved forms are Go functions the island must not
+reimplement. The four derived figures the panel shows — the cost-change rate,
+the average and instantaneous throughput, and the ETA — are computed on both
+sides from the same recorded history, so the fallback carries them too;
+`web/src/job-detail-parity.json` is the contract both languages are tested
+against.
 
 Job creation has two admission paths, and both are kept. `POST /create` accepts
 the templ form and is the no-JavaScript path; `POST /api/v1/jobs` accepts the

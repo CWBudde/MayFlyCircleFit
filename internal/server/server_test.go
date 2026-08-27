@@ -1044,6 +1044,110 @@ func TestReferenceImageMetadataUnavailable(t *testing.T) {
 	}
 }
 
+func TestJobStatusCarriesReferenceImageFacts(t *testing.T) {
+	t.Run("present and typed for a readable image", func(t *testing.T) {
+		imgPath := filepath.Join(t.TempDir(), "reference.png")
+		createSimpleTestImage(t, imgPath)
+
+		server := NewServer(":8080", nil)
+		job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: imgPath, Circles: 2})
+
+		recorder := httptest.NewRecorder()
+		server.handleGetJobStatus(
+			recorder,
+			httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+job.ID+"/status", nil),
+			job.ID,
+		)
+
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", recorder.Code)
+		}
+
+		body := recorder.Body.Bytes()
+
+		var raw map[string]any
+
+		err := json.Unmarshal(body, &raw)
+		if err != nil {
+			t.Fatalf("decode raw status: %v", err)
+		}
+
+		for _, key := range []string{"refWidth", "refHeight", "refSize"} {
+			value, ok := raw[key]
+			if !ok {
+				t.Fatalf("status JSON is missing %q", key)
+			}
+
+			if _, ok := value.(float64); !ok {
+				t.Fatalf("status JSON %q = %T, want a JSON number", key, value)
+			}
+		}
+
+		wantWidth, wantHeight, wantSize, err := referenceImageMetadata(imgPath)
+		if err != nil {
+			t.Fatalf("referenceImageMetadata() error = %v", err)
+		}
+
+		info, err := os.Stat(imgPath)
+		if err != nil {
+			t.Fatalf("stat reference image: %v", err)
+		}
+
+		if wantSize != info.Size() {
+			t.Fatalf("fixture size = %d, want %d", wantSize, info.Size())
+		}
+
+		var response jobStatusResponse
+
+		err = json.Unmarshal(body, &response)
+		if err != nil {
+			t.Fatalf("decode status: %v", err)
+		}
+
+		if response.RefWidth != wantWidth || response.RefHeight != wantHeight {
+			t.Fatalf(
+				"reference dimensions = %dx%d, want %dx%d",
+				response.RefWidth, response.RefHeight, wantWidth, wantHeight,
+			)
+		}
+
+		if response.RefSize != info.Size() {
+			t.Fatalf("reference size = %d, want %d", response.RefSize, info.Size())
+		}
+	})
+
+	t.Run("omitted for an unreadable image", func(t *testing.T) {
+		missing := filepath.Join(t.TempDir(), "missing.png")
+
+		server := NewServer(":8080", nil)
+		job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: missing, Circles: 2})
+
+		recorder := httptest.NewRecorder()
+		server.handleGetJobStatus(
+			recorder,
+			httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+job.ID+"/status", nil),
+			job.ID,
+		)
+
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", recorder.Code)
+		}
+
+		var raw map[string]any
+
+		err := json.Unmarshal(recorder.Body.Bytes(), &raw)
+		if err != nil {
+			t.Fatalf("decode raw status: %v", err)
+		}
+
+		for _, key := range []string{"refWidth", "refHeight", "refSize"} {
+			if value, ok := raw[key]; ok {
+				t.Fatalf("status JSON has %q = %v for an unreadable image, want it omitted", key, value)
+			}
+		}
+	})
+}
+
 func TestServer_JobDetailPage_NotFound(t *testing.T) {
 	s := NewServer(":8080", nil)
 

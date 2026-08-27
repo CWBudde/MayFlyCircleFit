@@ -144,6 +144,91 @@ export function formatDurationSeconds(seconds: number): string {
 	return `${rest}s`;
 }
 
+// The five formatters below mirror the Go helpers of the same shape in
+// internal/ui/detail.templ, which the job detail page renders as its
+// no-JavaScript fallback and the job detail island then re-renders in place.
+// Because both languages draw the same panel, the two have to agree character
+// for character: web/src/job-detail-parity.json is the contract they are each
+// tested against, and neither side is the source of truth.
+
+// goFixed rounds the way Go's fmt does and JavaScript's toFixed does not: to
+// nearest, ties to even. The two differ on exactly one input in ten thousand,
+// which is precisely the kind of divergence a mirror is supposed to not have --
+// Go prints 2.5 as "2" and toFixed(0) prints it as "3".
+function goFixed(value: number, decimals: number): string {
+	const factor = 10 ** decimals;
+	const scaled = value * factor;
+	const floor = Math.floor(scaled);
+	const remainder = scaled - floor;
+
+	let rounded = floor;
+	if (remainder > 0.5) rounded = floor + 1;
+	else if (remainder === 0.5) rounded = floor % 2 === 0 ? floor : floor + 1;
+
+	return (rounded / factor).toFixed(decimals);
+}
+
+// formatCompactNumber mirrors formatNumber and formatCompactNumber in
+// detail.templ: thousands and millions carry a suffix, and the precision
+// defaults to the one the Go helper hard-codes.
+export function formatCompactNumber(value: number, decimals?: number): string {
+	if (!Number.isFinite(value)) return "—";
+	if (value >= 1_000_000) return `${goFixed(value / 1_000_000, decimals ?? 1)}M`;
+	if (value >= 1_000) return `${goFixed(value / 1_000, decimals ?? 1)}K`;
+	return goFixed(value, decimals ?? 0);
+}
+
+// formatElapsedDuration mirrors formatDuration in detail.templ, which is not
+// formatDurationSeconds above: this one keeps a millisecond and a decimal
+// second, because an elapsed time under a minute is the one case where the
+// fraction is the interesting part.
+export function formatElapsedDuration(seconds: number): string {
+	if (seconds < 1) return `${goFixed(seconds * 1000, 0)}ms`;
+	if (seconds < 60) return `${goFixed(seconds, 1)}s`;
+	if (seconds < 3600) return `${Math.trunc(seconds / 60)}m ${Math.trunc(seconds) % 60}s`;
+	return `${Math.trunc(seconds / 3600)}h ${Math.trunc(seconds / 60) % 60}m`;
+}
+
+// formatFileSize mirrors formatFileSize in detail.templ, binary units and all.
+export function formatFileSize(size: number): string {
+	if (size < 1024) return `${Math.trunc(size)} B`;
+	if (size < 1024 * 1024) return `${goFixed(size / 1024, 1)} KiB`;
+	if (size < 1024 * 1024 * 1024) return `${goFixed(size / (1024 * 1024), 1)} MiB`;
+	return `${goFixed(size / (1024 * 1024 * 1024), 1)} GiB`;
+}
+
+// formatReferenceDimensions mirrors imageViewerDimensions in image_viewer.templ.
+// An unprobeable reference image has no dimensions at all rather than 0 x 0,
+// and the empty string is what the viewer reads as "say nothing here".
+export function formatReferenceDimensions(width: number, height: number): string {
+	if (width <= 0 || height <= 0) return "";
+	return `${width} × ${height} px`;
+}
+
+// formatWallClock mirrors formatTimestamp in detail.templ, which formats a
+// time.Time in its own location. The RFC 3339 string Go marshals already *is*
+// that wall clock -- the offset it carries is the location's -- so the fields
+// are read straight out of the text. Parsing it into a Date would re-render it
+// in the reader's zone instead, and a job started at 09:00 would read 11:00 to
+// anyone two zones east of the server.
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const RFC3339 = /^(\d{4})-(\d{2})-(\d{2})[Tt ](\d{2}):(\d{2})/;
+
+export function formatWallClock(timestamp: string | null | undefined): string {
+	const match = RFC3339.exec(timestamp ?? "");
+	if (!match) return "—";
+
+	const [, year, month, day, hour, minute] = match;
+	const monthName = MONTH_NAMES[Number.parseInt(month, 10) - 1];
+	if (!monthName) return "—";
+
+	const hours24 = Number.parseInt(hour, 10);
+	const suffix = hours24 < 12 ? "AM" : "PM";
+	const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+
+	return `${monthName} ${Number.parseInt(day, 10)}, ${year} ${hours12}:${minute} ${suffix}`;
+}
+
 // formatElapsed mirrors formatCampaignElapsed.
 export function formatElapsed(stage: { hasElapsed: boolean; elapsedSec: number }): string {
 	return stage.hasElapsed ? formatDurationSeconds(stage.elapsedSec) : "—";
