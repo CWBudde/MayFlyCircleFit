@@ -8,7 +8,7 @@ import type { ThemeChoice } from "./theme";
 // this island takes it over so the chrome itself stops carrying a script.
 //
 // It does not own the palette. The pre-paint script in <head> applies the
-// stored theme before the first paint and publishes window.mayflyTheme; this
+// stored theme before the first paint and publishes window.circlefitTheme; this
 // only wires the buttons to it, so a click swaps one stylesheet rather than
 // mutating <html>. Everything below the mount point is server-rendered first,
 // so a page without the bundle still shows the three buttons -- inert, exactly

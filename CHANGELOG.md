@@ -169,6 +169,33 @@ release is declared by this file.
 
 ### Changed
 
+- **The project is named CircleFit.** It was named for one of the three
+  optimizer engines it now hosts, and MayFly, CMA-ES, and Dragonfly have been
+  peers in configuration, validation, persistence, the CLI, and the dashboard
+  since the engine seam landed. The module path is now
+  `github.com/cwbudde/circlefit`, the binary and the Cobra root command are
+  `circlefit`, and release archives are `circlefit_<version>_<os>_<arch>`. No
+  tag existed under the old path, locally or on `origin`, so nothing that was
+  ever published moves. The pinned libraries `cwbudde/mayfly`,
+  `CWBudde/go-cma-es` and `CWBudde/dragonfly` are separate projects and keep
+  their names, as do the `mayfly` optimizer wire value that every checkpoint
+  records, the MayFly variant names, and the mayfly photograph the `example/`
+  campaigns fit.
+- **Breaking: the operator environment variables lost their `MAYFLY_` prefix.**
+  `MAYFLY_SIMD_TIER`, `MAYFLY_DISABLE_SIMD`, `MAYFLY_REQUIRE_SIMD_TIER`,
+  `MAYFLY_REQUIRE_OPENCL`, `MAYFLY_RUN_E2E`, `MAYFLY_EXTEND_CHECKPOINT` and
+  `MAYFLY_RELEASE_COMMIT`/`_BUILD_DATE` are now spelled `CIRCLEFIT_*`. There is
+  no deprecation alias, and an unset tier variable is not an error, so a script
+  or CI step still setting an old name gets autodetection rather than the tier
+  it asked for — exactly the substitution `CIRCLEFIT_REQUIRE_SIMD_TIER` exists
+  to catch. Update every caller in the same pass as the upgrade.
+- **Breaking: the dashboard's browser preferences moved from the
+  `mayflycirclefit.` key prefix to `circlefit.`,** without a migration. Theme,
+  view mode, difference colormap, overlay opacity, refresh interval, and the
+  visible metric cards each fall back to their default once, on the first load
+  after the upgrade; nothing server-side is affected. The pre-paint theme
+  script and the bundle moved together, so there is no window in which the two
+  disagree.
 - The CMA-ES pin is `github.com/CWBudde/go-cma-es v0.1.0`, the library's first
   tagged release, instead of the pseudo-version
   `v0.0.0-20260825143954-e528faf326bf`. The tag is that revision plus a

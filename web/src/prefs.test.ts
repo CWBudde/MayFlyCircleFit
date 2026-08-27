@@ -58,10 +58,10 @@ const throwingStorage: PreferenceStorage = {
 describe("the storage contract", () => {
 	it("pins the key names", () => {
 		expect(PREFERENCE_KEYS).toEqual({
-			autoRefresh: "mayflycirclefit.imageRefreshInterval",
-			viewMode: "mayflycirclefit.viewMode",
-			colormap: "mayflycirclefit.diffColormap",
-			visibleMetrics: "mayflycirclefit.visibleMetrics",
+			autoRefresh: "circlefit.imageRefreshInterval",
+			viewMode: "circlefit.viewMode",
+			colormap: "circlefit.diffColormap",
+			visibleMetrics: "circlefit.visibleMetrics",
 		});
 	});
 
@@ -74,21 +74,21 @@ describe("the storage contract", () => {
 		)).toBe(true);
 
 		expect(Object.fromEntries(storage.entries)).toEqual({
-			"mayflycirclefit.imageRefreshInterval": "5000",
-			"mayflycirclefit.viewMode": "difference",
-			"mayflycirclefit.diffColormap": "magma",
+			"circlefit.imageRefreshInterval": "5000",
+			"circlefit.viewMode": "difference",
+			"circlefit.diffColormap": "magma",
 			// Canonical order, not the order the boxes were ticked in.
-			"mayflycirclefit.visibleMetrics": '["cost","psnr"]',
+			"circlefit.visibleMetrics": '["cost","psnr"]',
 		});
 	});
 
 	it("reads back what an older build wrote", () => {
 		// Written by the inline script this island replaced, verbatim.
 		const storage = new FakeStorage({
-			"mayflycirclefit.imageRefreshInterval": "2000",
-			"mayflycirclefit.viewMode": "overlay",
-			"mayflycirclefit.diffColormap": "magma",
-			"mayflycirclefit.visibleMetrics": '["cost","ssim"]',
+			"circlefit.imageRefreshInterval": "2000",
+			"circlefit.viewMode": "overlay",
+			"circlefit.diffColormap": "magma",
+			"circlefit.visibleMetrics": '["cost","ssim"]',
 		});
 
 		expect(readPreferences(storage)).toEqual({
@@ -211,20 +211,20 @@ describe("writePreferences", () => {
 describe("resetPreferences", () => {
 	it("removes exactly the four keys it owns", () => {
 		const storage = new FakeStorage({
-			"mayflycirclefit.imageRefreshInterval": "5000",
-			"mayflycirclefit.viewMode": "overlay",
-			"mayflycirclefit.diffColormap": "magma",
-			"mayflycirclefit.visibleMetrics": '["cost"]',
+			"circlefit.imageRefreshInterval": "5000",
+			"circlefit.viewMode": "overlay",
+			"circlefit.diffColormap": "magma",
+			"circlefit.visibleMetrics": '["cost"]',
 			// Owned by the layout's pre-paint script, and not this page's to clear.
-			"mayflycirclefit.theme": "dark",
+			"circlefit.theme": "dark",
 			// Owned by the image viewer.
-			"mayflycirclefit.overlayOpacity": "70",
+			"circlefit.overlayOpacity": "70",
 		});
 
 		expect(resetPreferences(storage)).toBe(true);
 		expect([...storage.entries.keys()]).toEqual([
-			"mayflycirclefit.theme",
-			"mayflycirclefit.overlayOpacity",
+			"circlefit.theme",
+			"circlefit.overlayOpacity",
 		]);
 		expect(readPreferences(storage)).toEqual(DEFAULT_PREFERENCES);
 	});

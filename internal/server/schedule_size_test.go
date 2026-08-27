@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/store"
 )
 
 // Task 16.7: a campaign the schedule format allows must be readable from the

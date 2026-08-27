@@ -142,7 +142,7 @@ const themePreloadScript = `<script>
 			light: ` + "`" + lightThemeTokens + "`" + `,
 			dark: ` + "`" + darkThemeTokens + "`" + `,
 		};
-		const storageKey = "mayflycirclefit.theme";
+		const storageKey = "circlefit.theme";
 		const apply = (theme) => {
 			const existing = document.getElementById("theme-override");
 			if (theme !== "light" && theme !== "dark") {
@@ -164,7 +164,7 @@ const themePreloadScript = `<script>
 			}
 		};
 		apply(selected());
-		window.mayflyTheme = { apply, selected, storageKey };
+		window.circlefitTheme = { apply, selected, storageKey };
 	})();
 </script>`
 
@@ -174,8 +174,8 @@ templ Layout(title string) {
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-			<meta name="description" content="MayFlyCircleFit - High-performance circle fitting optimization"/>
-			<title>{ title } - MayFlyCircleFit</title>
+			<meta name="description" content="CircleFit - High-performance circle fitting optimization"/>
+			<title>{ title } - CircleFit</title>
 			<style>
 				/* Reset and base styles */
 				* {
@@ -864,7 +864,7 @@ templ Layout(title string) {
 							<circle cx="12" cy="12" r="6"></circle>
 							<circle cx="12" cy="12" r="2"></circle>
 						</svg>
-						MayFlyCircleFit
+						CircleFit
 					</a>
 					<div class="nav-actions">
 						<ul class="nav-links">
@@ -873,7 +873,7 @@ templ Layout(title string) {
 							<li><a href="/schedules">Campaigns</a></li>
 							<li><a href="/create">Create Job</a></li>
 							<li><a href="/settings">Settings</a></li>
-							<li><a href="https://github.com/CWBudde/MayFlyCircleFit" target="_blank">GitHub</a></li>
+							<li><a href="https://github.com/CWBudde/CircleFit" target="_blank">GitHub</a></li>
 						</ul>
 						<!-- ThemeToggleIsland replaces these buttons; see its comment. The
 						     fallback pair is disabled and carries no aria-pressed: the

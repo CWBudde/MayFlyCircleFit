@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 // CircleData represents a single optimized circle with its parameters and metadata.

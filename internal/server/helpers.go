@@ -7,8 +7,8 @@ import (
 	_ "image/jpeg"
 	"os"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/fit"
 )
 
 // loadReferenceImage loads and converts an image to NRGBA.

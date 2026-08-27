@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit"
 )
 
 func TestCPURendererWhiteCanvas(t *testing.T) {

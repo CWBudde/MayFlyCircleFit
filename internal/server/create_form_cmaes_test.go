@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/app"
 )
 
 // Form field names the CMA-ES section of the creation form submits.

@@ -3,7 +3,7 @@ package renderer
 import (
 	"sync/atomic"
 
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 // parallelEvaluationRenderer reports how many concurrent cost evaluations a

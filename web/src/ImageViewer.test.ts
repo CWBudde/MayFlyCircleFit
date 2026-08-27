@@ -163,7 +163,7 @@ describe("heatmapGradient", () => {
 // compatibility contract with the inline script that wrote them first.
 describe("the overlay opacity preference", () => {
 	it("pins the key", () => {
-		expect(OVERLAY_OPACITY_KEY).toBe("mayflycirclefit.overlayOpacity");
+		expect(OVERLAY_OPACITY_KEY).toBe("circlefit.overlayOpacity");
 	});
 
 	it("clamps to the slider's range", () => {
@@ -203,11 +203,11 @@ describe("the overlay opacity preference", () => {
 // indistinguishable to every reader.
 describe("writePreference", () => {
 	it("leaves the other entries alone", () => {
-		const storage = new FakeStorage({ "mayflycirclefit.viewMode": "overlay" });
-		expect(writePreference("mayflycirclefit.diffColormap", "magma", storage)).toBe(true);
+		const storage = new FakeStorage({ "circlefit.viewMode": "overlay" });
+		expect(writePreference("circlefit.diffColormap", "magma", storage)).toBe(true);
 		expect(Object.fromEntries(storage.entries)).toEqual({
-			"mayflycirclefit.viewMode": "overlay",
-			"mayflycirclefit.diffColormap": "magma",
+			"circlefit.viewMode": "overlay",
+			"circlefit.diffColormap": "magma",
 		});
 	});
 

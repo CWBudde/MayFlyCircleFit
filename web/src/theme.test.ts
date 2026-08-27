@@ -44,7 +44,7 @@ const throwingStorage: PreferenceStorage = {
 // leave the toggle writing somewhere the first paint never looks, which shows
 // up as a theme that flashes back on every navigation.
 it("pins the key the pre-paint script reads", () => {
-	expect(THEME_STORAGE_KEY).toBe("mayflycirclefit.theme");
+	expect(THEME_STORAGE_KEY).toBe("circlefit.theme");
 });
 
 describe("normalizeThemeChoice", () => {
@@ -62,7 +62,7 @@ describe("normalizeThemeChoice", () => {
 
 describe("readThemeChoice", () => {
 	it("returns the stored choice", () => {
-		expect(readThemeChoice(new FakeStorage({ "mayflycirclefit.theme": "dark" }))).toBe("dark");
+		expect(readThemeChoice(new FakeStorage({ "circlefit.theme": "dark" }))).toBe("dark");
 	});
 
 	it("returns auto for an empty storage", () => {
@@ -85,7 +85,7 @@ describe("storeThemeChoice", () => {
 	// auto is the absence of the key, not the word: the e2e spec asserts
 	// localStorage.getItem returns null after choosing the system theme.
 	it("removes the key for auto", () => {
-		const storage = new FakeStorage({ "mayflycirclefit.theme": "dark" });
+		const storage = new FakeStorage({ "circlefit.theme": "dark" });
 		storeThemeChoice("auto", storage);
 		expect(storage.getItem(THEME_STORAGE_KEY)).toBeNull();
 	});

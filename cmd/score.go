@@ -8,9 +8,9 @@ import (
 	"math"
 	"os"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
-	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit/renderer"
 	"github.com/spf13/cobra"
 )
 

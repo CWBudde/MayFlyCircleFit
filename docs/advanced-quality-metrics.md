@@ -1,6 +1,6 @@
 # Advanced Quality Metrics
 
-MayFlyCircleFit reports peak signal-to-noise ratio (PSNR) for every server job
+CircleFit reports peak signal-to-noise ratio (PSNR) for every server job
 and CLI run. Structural similarity (SSIM) is available as an opt-in metric when
 perceptual structure matters more than raw pixel error.
 
@@ -36,7 +36,7 @@ SSIM(x,y) = ((2*muX*muY + C1) * (2*sigmaXY + C2)) /
             ((muX^2 + muY^2 + C1) * (sigmaX^2 + sigmaY^2 + C2))
 ```
 
-MayFlyCircleFit uses an 11×11 Gaussian window with sigma 1.5, reflected image
+CircleFit uses an 11×11 Gaussian window with sigma 1.5, reflected image
 borders, `K1=0.01`, `K2=0.03`, and an 8-bit dynamic range of 255. SSIM is
 calculated independently over R, G, and B and then averaged; alpha is ignored.
 Results normally range from 0 to 1, with 1 indicating identical RGB images.
@@ -46,7 +46,7 @@ SSIM requires rendering and filtering the current best image, so it is disabled
 by default. Enable it for a local CLI run with:
 
 ```sh
-mayflycirclefit run --ref assets/reference.png --enable-ssim
+circlefit run --ref assets/reference.png --enable-ssim
 ```
 
 For server jobs, send `"enableSSIM": true` in the job configuration or select

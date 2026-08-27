@@ -173,7 +173,7 @@ its cost, and the polish steps that follow do the work.
 Score an arrangement before committing it to a campaign:
 
 ```sh
-mayflycirclefit score --ref example/Christian_after.jpeg \
+circlefit score --ref example/Christian_after.jpeg \
     --circles example/christian-16-handcrafted-v6.json --out preview.png
 ```
 
@@ -358,7 +358,7 @@ failing a stage hours in — so point `base.refPath` at your own reference first
 `schedule create --dry-run` expands it without opening a socket:
 
 ```
-$ mayflycirclefit schedule create --dry-run docs/examples/512-circle-campaign.json
+$ circlefit schedule create --dry-run docs/examples/512-circle-campaign.json
 Dry run of docs/examples/512-circle-campaign.json — nothing was submitted and no schedule was created.
 Name: 512-circle campaign
 Seed: 4242
@@ -476,8 +476,8 @@ comparable after the fact; treat it as its own baseline.
   SSE2 for scalar on one machine does not move a cost. That is a property the current
   kernels hold and parity tests pin — `TestCompositeSpanExactFusionContract`
   among them — not a guarantee the schedule format makes, and a future inexact
-  kernel would end it silently. `MAYFLY_SIMD_TIER` forces a tier and
-  `MAYFLY_REQUIRE_SIMD_TIER` asserts the detected one.
+  kernel would end it silently. `CIRCLEFIT_SIMD_TIER` forces a tier and
+  `CIRCLEFIT_REQUIRE_SIMD_TIER` asserts the detected one.
 - **Architecture — not comparable.** The parity above is each kernel against
   *its own architecture's* scalar loop, not against the other architecture's.
   Go's amd64 backend does not contract `a*b+c`, so the blend is MUL+ADD there;

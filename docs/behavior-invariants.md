@@ -23,8 +23,8 @@ Rendering-side invariants live in
   runtime CPU-feature check; ARM64 SSD dispatch requires ASIMD before selecting
   NEON. Unsupported architectures use the scalar kernel. SAD remains scalar on
   ARM64 and on amd64 hosts without AVX2.
-- `MAYFLY_SIMD_TIER` forces any reachable tier for every kernel on every
-  architecture, and `MAYFLY_DISABLE_SIMD=1` remains its scalar alias. A forced
+- `CIRCLEFIT_SIMD_TIER` forces any reachable tier for every kernel on every
+  architecture, and `CIRCLEFIT_DISABLE_SIMD=1` remains its scalar alias. A forced
   tier is honored by dispatch but never by detection: `Tier()` reports what was
   asked for, and the tests that check detection strip both variables.
 
@@ -615,7 +615,7 @@ document format itself is [`schedule-format.md`](schedule-format.md).
 
 ## Plan estimates
 
-`mayflycirclefit schedule create --dry-run` prints what a document would run,
+`circlefit schedule create --dry-run` prints what a document would run,
 and `schedule status` projects when a running campaign will finish. Both are
 read-only, and both refuse to state anything they cannot derive.
 
@@ -660,7 +660,7 @@ read-only, and both refuse to state anything they cannot derive.
 
 ## Campaign views
 
-`/schedules` lists campaigns, `/schedules/:id` shows one, and `mayflycirclefit
+`/schedules` lists campaigns, `/schedules/:id` shows one, and `circlefit
 schedule` mirrors the same endpoints from a terminal. A campaign view is a read
 model: it stores nothing, so it cannot drift from the stage records.
 

@@ -2,7 +2,7 @@
 
 package renderer
 
-import "github.com/cwbudde/mayflycirclefit/internal/fit"
+import "github.com/cwbudde/circlefit/internal/fit"
 
 // fastCompositeKernel is the tier whose fast span kernel is installed.
 var fastCompositeKernel = fit.TierScalar

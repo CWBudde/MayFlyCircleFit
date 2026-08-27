@@ -10,8 +10,8 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 // BatchPolishOptions controls transactional active-set polishing after a

@@ -2,7 +2,7 @@
 
 package renderer
 
-import "github.com/cwbudde/mayflycirclefit/internal/fit"
+import "github.com/cwbudde/circlefit/internal/fit"
 
 // deltaSSDKernel is a constant here because these architectures have no vector
 // delta-SSD kernel to install.

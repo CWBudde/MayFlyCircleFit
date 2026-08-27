@@ -1,6 +1,6 @@
 # Troubleshooting
 
-How MayFlyCircleFit reports failures, and what the common ones mean.
+How CircleFit reports failures, and what the common ones mean.
 
 ## CLI exit status
 
@@ -30,9 +30,9 @@ open, a `Suggestion:` line follows with the concrete next step.
 | `open assets/…: no such file or directory` | The reference image path is wrong. Paths are relative to the working directory, not to the binary. | Run from the repository root, or pass an absolute path. |
 | `open …: permission denied` | The reference image or the output directory is not readable/writable by the current user. | Check the permissions on the path named in the `Suggestion:` line. |
 | `invalid log level "…": use debug, info, warn, or error` | `--log-level` got a value outside the accepted set. | Use one of the four listed levels. |
-| `unknown command "…"` / `unknown flag: --…` | Typo in the invocation. | `mayflycirclefit --help`, or `mayflycirclefit <command> --help`. |
+| `unknown command "…"` / `unknown flag: --…` | Typo in the invocation. | `circlefit --help`, or `circlefit <command> --help`. |
 | `max-jobs must be between 1 and 16`, `queue-size must be between 1 and 100`, `invalid backend: …`, `invalid configuration: …` | A flag value is outside its accepted range or set. | Correct the flag; the message names the bound or the accepted values. |
-| `server response exceeds 1048576 bytes` | The CLI refuses to decode an unbounded response. The stage listing and the chain view are projections sized to stay under it for any campaign a document may expand to, so this now means a different endpoint, or a server older than the projection. | Compare versions with `mayflycirclefit version`; a campaign's per-stage configuration is read one stage at a time from `/api/v1/schedules/:id/stages/:index`. |
+| `server response exceeds 1048576 bytes` | The CLI refuses to decode an unbounded response. The stage listing and the chain view are projections sized to stay under it for any campaign a document may expand to, so this now means a different endpoint, or a server older than the projection. | Compare versions with `circlefit version`; a campaign's per-stage configuration is read one stage at a time from `/api/v1/schedules/:id/stages/:index`. |
 | `invalid configuration: circles must be between 1 and 1000` from a flag you set to `0` | A flag always carries a value, so a zero is a value you asked for, not an omission. | Drop the flag to get the default; the defaults only fill flags and fields you leave out. |
 | OpenCL device errors, or a GPU request falling back to the CPU | The `gpu` build tag, the OpenCL runtime, or a usable device is missing. | See [`gpu-backends.md`](gpu-backends.md) and [`support-matrix.md`](support-matrix.md). A CGO-disabled build has no GPU backend at all. |
 
@@ -145,7 +145,7 @@ connection means nothing is listening:
 ```
 Error: connect to server: Get "http://localhost:8080/api/v1/jobs": dial tcp
 127.0.0.1:8080: connect: connection refused
-Suggestion: no server is listening there; start one with `mayflycirclefit
+Suggestion: no server is listening there; start one with `circlefit
 serve`, or point the server flag (--server for `status`, --server-url for
 `resume`) at the right address.
 ```
@@ -174,7 +174,7 @@ For a long-lived server, also set Go's soft heap limit below the memory the host
 can spare. For example, on a machine where the server may use at most 8 GiB:
 
 ```sh
-GOMEMLIMIT=8GiB ./mayflycirclefit serve --data-root ./data
+GOMEMLIMIT=8GiB ./circlefit serve --data-root ./data
 ```
 
 `GOMEMLIMIT` makes the runtime collect more aggressively as the heap approaches

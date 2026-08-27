@@ -99,13 +99,13 @@ func TestReleaseLifecycle(t *testing.T) {
 		t.Skip("release E2E test is not part of the short suite")
 	}
 
-	if os.Getenv("MAYFLY_RUN_E2E") != "1" {
-		t.Skip("set MAYFLY_RUN_E2E=1 to run the release E2E test")
+	if os.Getenv("CIRCLEFIT_RUN_E2E") != "1" {
+		t.Skip("set CIRCLEFIT_RUN_E2E=1 to run the release E2E test")
 	}
 
 	tempDir := t.TempDir()
 	repoRoot := findRepositoryRoot(t)
-	binaryPath := filepath.Join(tempDir, "mayflycirclefit")
+	binaryPath := filepath.Join(tempDir, "circlefit")
 	buildBinary(t, repoRoot, binaryPath)
 
 	inputRoot := filepath.Join(tempDir, "input")

@@ -1,4 +1,4 @@
-# MayFlyCircleFit Implementation Plan
+# CircleFit Implementation Plan
 
 > **For Claude:** Use `${SUPERPOWERS_SKILLS_ROOT}/skills/collaboration/executing-plans/SKILL.md` to implement this plan task-by-task.
 
@@ -748,7 +748,7 @@ documentation work can remain compact.
   and prove it rejects a stale committed bundle.
 - [ ] Verify the dashboard shows correct stat tiles, ordered campaign cards,
   running jobs, and an architecture badge matching a forced
-  `MAYFLY_SIMD_TIER`.
+  `CIRCLEFIT_SIMD_TIER`.
 - [ ] Start a campaign and observe its card move to running with a ticking chart.
 - [ ] Check chart legibility in auto, forced-light, and forced-dark themes.
 - [ ] Exercise all five campaign image modes, overlay opacity, and shortcuts
@@ -1391,17 +1391,76 @@ whether or not CMA-ES wins; a ranking decides which engine is the *default*, not
 whether the project should be named after one of them. Rename on that argument,
 before the first tag, and leave the default-engine question with Phase 21.
 
-- [ ] Confirm the name, then rename the GitHub repository and rewrite the module
+- [x] Confirm the name, then rename the GitHub repository and rewrite the module
       path, imports, binary name, Cobra `Use`, version template, error hints,
       `justfile` recipes, CI workflow references, and documentation in one
-      commit that changes nothing else.
-- [ ] Leave the pinned library names untouched: `cwbudde/mayfly`,
+      commit that changes nothing else. **Confirmed as `CircleFit`.** The module
+      is `github.com/cwbudde/circlefit` (245 occurrences across 150 `.go` and
+      `.templ` files, plus `go.mod`, `scripts/build-release.sh`, and the
+      measurement driver's README), the binary and Cobra `Use` are `circlefit`,
+      and release archives are `circlefit_<version>_<os>_<arch>`. `cmd/root.go`'s
+      `Short` also lost "with mayfly optimization", which the engine seam had
+      already made wrong. Three surfaces the task list did not name turned out to
+      carry the identity and moved with it:
+      - The six `localStorage` keys, from `mayflycirclefit.` to `circlefit.`,
+        **deliberately without a migration** — decided rather than overlooked, so
+        each preference falls back to its default once. `web/src/prefs.ts`'s
+        header comment recorded a standing "renaming a key needs a migration"
+        policy; it now records this one break and restates the rule for the next.
+        The key is duplicated in `layout.templ`'s pre-paint IIFE, and
+        `window.mayflyTheme` — a contract between the inline script and the
+        bundle — became `window.circlefitTheme`; both sides moved together.
+      - The `MAYFLY_*` operator environment variables, **as a hard cut** to
+        `CIRCLEFIT_*`, with no alias. Verified directly and stated as the cost:
+        `CIRCLEFIT_SIMD_TIER=scalar` reports `"simd": "scalar"`, while
+        `MAYFLY_SIMD_TIER=scalar` now reports `"simd": "avx2"` — silently
+        inert, which is the substitution `CIRCLEFIT_REQUIRE_SIMD_TIER` exists to
+        catch. `simd_tier.go`'s comment no longer claims the old lever is "kept
+        because CI steps and operator notes already use it"; it says the old
+        spellings are inert.
+      - `${RUNNER_TEMP}/mayfly-benchmark-base` and the Playwright temp roots.
+- [x] Leave the pinned library names untouched: `cwbudde/mayfly`,
       `CWBudde/go-cma-es`, and `CWBudde/dragonfly` are separate projects, and
       their spellings are load-bearing in `go.mod` and in the resume guard's
-      per-library allowlist.
-- [ ] Verify with `go build ./...`, `go test -short ./...`, the cross-build, and
+      per-library allowlist. Untouched, along with everything else that is the
+      library rather than the project: the `mayfly` optimizer wire value every
+      checkpoint records, `optimizerVersion`, the variant names,
+      `MayflyAdapter` and `mayfly_adapter.go`, the `"MayFly"` engine display
+      string, and `dragonfly_adapter.go`'s `mayflyLogger`. Also untouched, as
+      records rather than identity: `example/MayFly*.png` and the campaign
+      documents that fit the photographed mayfly, the two Phase 9 flamegraphs
+      whose embedded symbols name the run as it happened, and the historical
+      `CHANGELOG.md` entries and four code comments that mention the
+      already-removed `MAYFLY_REQUIRE_SSD_BACKEND`. Those are the complete
+      residue of both old spellings in the tree.
+- [x] Verify with `go build ./...`, `go test -short ./...`, the cross-build, and
       a fresh clone at the new path; confirm no artifact, checkpoint, or trace
-      field carried the old name.
+      field carried the old name. **No persisted field carries it**, and this
+      was measured rather than read: a job run on a binary built from
+      `origin/main` (129885a) wrote `checkpoint.json`, `checkpoint-info.json`
+      and `trace.jsonl`, and the only occurrence of the old spelling in any of
+      them is the operator's own absolute `refPath`, which is the working
+      directory's name and not a field the program composes. That checkpoint
+      then resumed under the renamed binary, reporting `optimizer=mayfly`,
+      `optimizerVersion=v0.7.1` and an improvement from 178.5268 to 157.7391 —
+      the resume guard and the engine wire value survived intact.
+
+Observed on this revision: `go tool templ generate` and `bash
+scripts/bundle-web.sh` are both no-ops on a second run (the generated `*_templ.go`
+and `internal/ui/static/dashboard.js` hash identically), `gofmt -s -l .` empty,
+`go vet ./...`, `go build ./...`, `go test -short ./...` (exit 0, 11 packages),
+`go test -race -short ./internal/... ./cmd/... .` (exit 0, 9 packages), the
+`CGO_ENABLED=0 linux/arm64` cross-build, `golangci-lint run --config
+./.golangci.toml --new-from-merge-base=origin/main` with the pinned v2.13.1 (0
+issues; the rename tripped `lll` on `main.go:118` and `cmd/version_test.go:47`,
+both wrapped), `npm run typecheck`, the 254-case `npm run test:unit`, and the
+full Playwright matrix (`npm run test:e2e`, 182 passed). End to end:
+`./bin/circlefit --version` prints `circlefit version dev`,
+`scripts/build-release.sh 0.0.0-test` produces five
+`circlefit_0.0.0-test_*` archives whose extracted `circlefit` binary reports
+`circlefit version 0.0.0-test`, and a running `serve` returns
+`<title>Dashboard - CircleFit</title>` with `circlefit.theme` in the pre-paint
+script and all six `circlefit.*` keys in the served bundle.
 
 **Rationale:** The engine seam is done, and the remaining asymmetry is
 presentational rather than architectural — which is precisely why it is worth a
@@ -1430,13 +1489,16 @@ Current open work, in priority order:
    [`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md).
 4. **CMA-ES measurement (P1):** compare evaluation-matched MayFly and CMA-ES
    arms, including IPOP and separable covariance.
-5. **CMA-ES surface parity (P2):** Task 22.4. Task 22.1 is complete: the
-   creation form now configures every CMA-ES knob, carries the restart count
-   Phase 21's arms need, and warns before the refusals it can anticipate.
-   Task 22.2 is complete: the README now has an "Optimizer engines" section
-   documenting all three engines, the CMA-ES flags, and the absence of a
-   ranking. Task 22.3 is complete: polishing stays MayFly-only as a recorded
-   decision, and every path that refuses it now says why.
+5. ~~**CMA-ES surface parity and project identity (P2):** Tasks 22.1–22.4.~~
+   Phase 22 is complete. The creation form configures every CMA-ES knob, carries
+   the restart count Phase 21's arms need, and warns before the refusals it can
+   anticipate (22.1). The README has an "Optimizer engines" section documenting
+   all three engines, the CMA-ES flags, and the absence of a ranking (22.2).
+   Polishing stays MayFly-only as a recorded decision, and every path that
+   refuses it says why (22.3). The project is `CircleFit`, on
+   `github.com/cwbudde/circlefit`, renamed before the first tag (22.4). The
+   default-engine question stays with Phase 21, which the rename deliberately
+   did not wait for.
 6. **Dashboard sign-off (P1):** Task 17.11.
 7. ~~**Frontend island transition (P1/P2):** Tasks 18.1–18.7.~~ Phase 18 is
    complete. The shadcn SPA rewrite remains a deferred alternative at the end

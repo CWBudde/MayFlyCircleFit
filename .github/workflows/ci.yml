@@ -118,9 +118,9 @@ jobs:
       - name: Build and verify release archives
         shell: bash
         env:
-          MAYFLY_RELEASE_COMMIT: ${{ github.sha }}
+          CIRCLEFIT_RELEASE_COMMIT: ${{ github.sha }}
         run: |
-          export MAYFLY_RELEASE_BUILD_DATE="$(git show -s --format=%cI "$GITHUB_SHA")"
+          export CIRCLEFIT_RELEASE_BUILD_DATE="$(git show -s --format=%cI "$GITHUB_SHA")"
           bash scripts/build-release.sh "${GITHUB_REF_NAME#v}"
           cd dist
           sha256sum --check SHA256SUMS

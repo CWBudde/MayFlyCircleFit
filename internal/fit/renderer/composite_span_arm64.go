@@ -5,7 +5,7 @@ package renderer
 import (
 	"unsafe"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit"
 )
 
 // compositeSpanKernel is the tier whose span compositor is installed.

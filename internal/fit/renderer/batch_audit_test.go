@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit"
 )
 
 func TestAuditCircleBatchDistinguishesIntroducedAndFinalVisibility(t *testing.T) {

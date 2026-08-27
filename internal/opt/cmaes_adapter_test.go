@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 func cmaesSphere(params []float64) float64 {

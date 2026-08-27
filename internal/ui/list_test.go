@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/ui"
+	"github.com/cwbudde/circlefit/internal/ui"
 )
 
 func jobListPageFixture() ui.JobListPage {

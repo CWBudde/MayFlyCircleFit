@@ -17,7 +17,7 @@ DURATION="${2:-30}"
 PROFILE_DIR="profiles/server_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$PROFILE_DIR"
 
-echo "=== MayFlyCircleFit Server Profiling ==="
+echo "=== CircleFit Server Profiling ==="
 echo "Server: http://localhost:$PORT"
 echo "Profile duration: ${DURATION}s"
 echo "Output directory: $PROFILE_DIR"
@@ -26,7 +26,7 @@ echo ""
 # Check if server is running
 if ! curl -s -f "http://localhost:$PORT/debug/pprof/" > /dev/null 2>&1; then
     echo "Error: Server not running on port $PORT"
-    echo "Start server with: ./bin/mayflycirclefit serve --port $PORT"
+    echo "Start server with: ./bin/circlefit serve --port $PORT"
     exit 1
 fi
 

@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sys/cpu"
 )
 
-const ssdNEONDisabledHelper = "MAYFLY_TEST_SSD_NEON_DISABLED"
+const ssdNEONDisabledHelper = "CIRCLEFIT_TEST_SSD_NEON_DISABLED"
 
 func TestARM64SIMDDispatchMatchesCPUFeatures(t *testing.T) {
 	// The environment overrides outrank the feature check: ASIMD is mandatory

@@ -2,14 +2,14 @@
 //
 // The palette itself is owned by the pre-paint script in internal/ui/layout.templ,
 // which has to run before the first paint and therefore stays inline, ahead of
-// this bundle. It publishes window.mayflyTheme, and everything here is either
+// this bundle. It publishes window.circlefitTheme, and everything here is either
 // storage (which the toggle needs and the pre-paint script only reads) or a
 // typed view of that controller.
 
 import type { PreferenceStorage } from "./prefs";
 
 /** The key the pre-paint script reads before the first paint. */
-export const THEME_STORAGE_KEY = "mayflycirclefit.theme";
+export const THEME_STORAGE_KEY = "circlefit.theme";
 
 // "auto" is the absence of the key rather than a stored word: the pre-paint
 // script treats anything that is not "light" or "dark" as auto, so writing
@@ -29,13 +29,13 @@ export interface ThemeController {
 
 declare global {
 	interface Window {
-		mayflyTheme?: ThemeController;
+		circlefitTheme?: ThemeController;
 	}
 }
 
 export function themeController(): ThemeController | null {
 	if (typeof window === "undefined") return null;
-	return window.mayflyTheme ?? null;
+	return window.circlefitTheme ?? null;
 }
 
 export function normalizeThemeChoice(value: string | null | undefined): ThemeChoice {

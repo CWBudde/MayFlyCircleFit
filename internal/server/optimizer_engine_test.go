@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
-	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/store"
 )
 
 // Field names and values this file writes into request bodies more than once.

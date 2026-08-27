@@ -70,7 +70,7 @@ Batch mode is a hybrid: optimizes circles in **batches** (e.g., 5 at a time). Pr
 **Basic usage:**
 ```bash
 just build
-./bin/mayflycirclefit run \
+./bin/circlefit run \
   --ref example/Ref.png \
   --mode sequential \
   --circles 10 \
@@ -82,7 +82,7 @@ just build
 
 **Continue from existing canvas:**
 ```bash
-./bin/mayflycirclefit run \
+./bin/circlefit run \
   --ref example/Ref.png \
   --canvas example/Canvas.png \
   --mode sequential \
@@ -99,7 +99,7 @@ The optimization starts with a white background (or loads Canvas.png if specifie
 **Start the server:**
 ```bash
 just build
-./bin/mayflycirclefit serve --port 8080
+./bin/circlefit serve --port 8080
 ```
 
 **Create a job via web UI:**
@@ -219,7 +219,7 @@ through the shirt, and the cream V-neck collar:
 Score them without running anything:
 
 ```sh
-mayflycirclefit score --ref example/Christian_after.jpeg \
+circlefit score --ref example/Christian_after.jpeg \
     --circles example/christian-16-handcrafted-v6.json --out handcrafted.png
 ```
 
@@ -237,8 +237,8 @@ Fourteen stages follow the usual shape: four polish sweeps over the eight, `+4`
 to twelve, three sweeps, `+4` to sixteen, four more sweeps.
 
 ```sh
-mayflycirclefit schedule create --dry-run example/christian-16-handcrafted-v6.json
-mayflycirclefit schedule create example/christian-16-handcrafted-v6.json
+circlefit schedule create --dry-run example/christian-16-handcrafted-v6.json
+circlefit schedule create example/christian-16-handcrafted-v6.json
 ```
 
 The point of the experiment is the comparison: how much of the final cost is
@@ -289,7 +289,7 @@ Circle 5 is clipped at the lower edge and circle 6 has its centre below the
 canvas so only its cap shows — the rock and the water are edges, not discs.
 
 ```sh
-mayflycirclefit score --ref example/MayFly-512.png \
+circlefit score --ref example/MayFly-512.png \
     --circles example/mayfly-3000-campaign.json --out example/MayFly-seed.png
 ```
 
@@ -346,8 +346,8 @@ advance which of the three is the last useful one.
 tier B, 8.9 h for tier C, and about 12 minutes of polishing.
 
 ```sh
-mayflycirclefit schedule create --dry-run example/mayfly-3000-campaign.json
-mayflycirclefit schedule create example/mayfly-3000-campaign.json
+circlefit schedule create --dry-run example/mayfly-3000-campaign.json
+circlefit schedule create example/mayfly-3000-campaign.json
 ```
 
 ### Why the base stage searches

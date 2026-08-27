@@ -1,6 +1,6 @@
 # Contributing
 
-Contributions are welcome while MayFlyCircleFit works through the active
+Contributions are welcome while CircleFit works through the active
 production-readiness plan. Keep changes focused, preserve observable behavior
 unless the change deliberately updates its tests and documentation, and link the
 relevant `PLAN.md` task or issue.

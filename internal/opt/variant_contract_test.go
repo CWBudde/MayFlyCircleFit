@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/app"
 )
 
 // app.SupportedVariants duplicates this package's supportedVariants because app

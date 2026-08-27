@@ -52,8 +52,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # MAYFLY_REQUIRE_SIMD_TIER asserts which tier was detected; it never sets
-      # one. MAYFLY_SIMD_TIER, used further down, is the opposite: it pins the
+      # CIRCLEFIT_REQUIRE_SIMD_TIER asserts which tier was detected; it never sets
+      # one. CIRCLEFIT_SIMD_TIER, used further down, is the opposite: it pins the
       # tier, so asserting against it would be a tautology. Every step below
       # pairs exactly one of the two with the assertion.
       #
@@ -63,7 +63,7 @@ jobs:
       - name: Detected tier on native hardware
         env:
           CGO_ENABLED: "0"
-          MAYFLY_REQUIRE_SIMD_TIER: ${{ matrix.tier }}
+          CIRCLEFIT_REQUIRE_SIMD_TIER: ${{ matrix.tier }}
         run: go test -count=1 ./internal/fit ${{ matrix.rendererPackage }}
 
       # This is a detection check, not a dispatch check: it proves that masking
@@ -74,32 +74,32 @@ jobs:
         env:
           CGO_ENABLED: "0"
           GODEBUG: cpu.all=off
-          MAYFLY_REQUIRE_SIMD_TIER: ${{ matrix.maskedTier }}
+          CIRCLEFIT_REQUIRE_SIMD_TIER: ${{ matrix.maskedTier }}
         run: go test -count=1 ./internal/fit
 
       - name: Middle tier pinned
         if: matrix.middleTier != ''
         env:
           CGO_ENABLED: "0"
-          MAYFLY_SIMD_TIER: ${{ matrix.middleTier }}
-          MAYFLY_REQUIRE_SIMD_TIER: ${{ matrix.middleTier }}
+          CIRCLEFIT_SIMD_TIER: ${{ matrix.middleTier }}
+          CIRCLEFIT_REQUIRE_SIMD_TIER: ${{ matrix.middleTier }}
         run: go test -count=1 ./internal/fit ${{ matrix.rendererPackage }}
 
       - name: Scalar tier pinned
         env:
           CGO_ENABLED: "0"
-          MAYFLY_SIMD_TIER: scalar
-          MAYFLY_REQUIRE_SIMD_TIER: scalar
+          CIRCLEFIT_SIMD_TIER: scalar
+          CIRCLEFIT_REQUIRE_SIMD_TIER: scalar
         run: go test -count=1 ./internal/fit ${{ matrix.rendererPackage }}
 
-      # MAYFLY_DISABLE_SIMD is the older lever and now means exactly
-      # MAYFLY_SIMD_TIER=scalar. It is kept working, and kept gated, because
+      # CIRCLEFIT_DISABLE_SIMD is the older lever and now means exactly
+      # CIRCLEFIT_SIMD_TIER=scalar. It is kept working, and kept gated, because
       # operator notes and external scripts already use it.
       - name: Legacy scalar opt-out still reaches the scalar tier
         env:
           CGO_ENABLED: "0"
-          MAYFLY_DISABLE_SIMD: "1"
-          MAYFLY_REQUIRE_SIMD_TIER: scalar
+          CIRCLEFIT_DISABLE_SIMD: "1"
+          CIRCLEFIT_REQUIRE_SIMD_TIER: scalar
         run: go test -count=1 ./internal/fit
 
       # rendererPackage is empty on both ARM64 rows. This matrix supplies the
@@ -121,5 +121,5 @@ jobs:
       - name: Record native scalar and SIMD throughput
         env:
           CGO_ENABLED: "0"
-          MAYFLY_REQUIRE_SIMD_TIER: ${{ matrix.tier }}
+          CIRCLEFIT_REQUIRE_SIMD_TIER: ${{ matrix.tier }}
         run: go test -run '^$' -bench '^BenchmarkFastSSD_Comparison$' -benchtime=200ms -count=1 ./internal/fit

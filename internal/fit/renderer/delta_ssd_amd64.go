@@ -5,7 +5,7 @@ package renderer
 import (
 	"unsafe"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit"
 )
 
 // deltaSSDKernel is the tier whose kernels deltaSSDSpan may use. It is set from

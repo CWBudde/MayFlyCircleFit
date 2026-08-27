@@ -7,7 +7,7 @@ aggregate cost.
 
 ## Error scale
 
-For each pixel, MayFlyCircleFit computes the mean absolute error across the red,
+For each pixel, CircleFit computes the mean absolute error across the red,
 green, and blue channels:
 
 ```text

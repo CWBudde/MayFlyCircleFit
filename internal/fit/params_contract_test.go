@@ -3,7 +3,7 @@ package fit
 import (
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/app"
 )
 
 // app.ParametersPerCircle duplicates this package's paramsPerCircle because

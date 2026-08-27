@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/store"
 )
 
 func TestSelectCheckpointsForDeletion_ByAge(t *testing.T) {

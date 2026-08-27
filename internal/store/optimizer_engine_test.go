@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
-	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/store"
 )
 
 // TestNewCheckpointRecordsTheEngineAndItsVersion pins that a checkpoint says

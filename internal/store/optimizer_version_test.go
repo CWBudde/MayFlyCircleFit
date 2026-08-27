@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 func optimizerVersionTestConfig() JobConfig {

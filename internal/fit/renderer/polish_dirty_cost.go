@@ -5,7 +5,7 @@ import (
 	"math"
 	"sync"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit"
 )
 
 // polishDirtyMaxFraction stays conservatively below the measured

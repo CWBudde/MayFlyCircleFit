@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 func knobRastrigin(x []float64) float64 {

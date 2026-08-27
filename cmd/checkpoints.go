@@ -9,7 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/store"
 	"github.com/spf13/cobra"
 )
 

@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/store"
 )
 
 const (

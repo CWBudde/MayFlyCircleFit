@@ -2,21 +2,26 @@
 //
 // The settings island owns the editor, but the keys and the serialized shapes
 // below are a compatibility contract rather than an implementation detail: the
-// job detail page and the image viewer read the same entries, and a preference
-// a reader stored before any of this was TypeScript has to keep working. The
+// job detail page and the image viewer read the same entries. The serialized
 // values were carried over verbatim from the inline script that used to live in
-// internal/ui/settings.templ; renaming a key or changing how a value is
-// serialized needs a migration, not an edit here.
+// internal/ui/settings.templ; changing how one is serialized needs a migration,
+// not an edit here.
+//
+// The prefix was renamed once, from mayflycirclefit. to circlefit., when the
+// project was renamed, and deliberately without a migration: a reader who had
+// stored preferences under the old prefix falls back to the defaults the first
+// time afterwards. That is the only key rename this file has taken, and the
+// rule above stands for the next one.
 
 export const PREFERENCE_KEYS = {
 	/** Milliseconds between forced image refreshes, decimal; "0" is SSE-driven. */
-	autoRefresh: "mayflycirclefit.imageRefreshInterval",
+	autoRefresh: "circlefit.imageRefreshInterval",
 	/** One member of VIEW_MODES, stored verbatim. */
-	viewMode: "mayflycirclefit.viewMode",
+	viewMode: "circlefit.viewMode",
 	/** One member of COLORMAPS, stored verbatim. */
-	colormap: "mayflycirclefit.diffColormap",
+	colormap: "circlefit.diffColormap",
 	/** A JSON array of METRIC_IDS members, in METRIC_IDS order. */
-	visibleMetrics: "mayflycirclefit.visibleMetrics",
+	visibleMetrics: "circlefit.visibleMetrics",
 } as const;
 
 export const VIEW_MODES = ["reference", "best", "side-by-side", "difference", "overlay"] as const;
@@ -107,7 +112,7 @@ export function writePreference(
 // key name and the decimal-integer shape are still a compatibility contract --
 // the inline viewer script stored them under exactly this name before any of
 // this was TypeScript.
-export const OVERLAY_OPACITY_KEY = "mayflycirclefit.overlayOpacity";
+export const OVERLAY_OPACITY_KEY = "circlefit.overlayOpacity";
 export const DEFAULT_OVERLAY_OPACITY = 50;
 
 // normalizeOverlayOpacity parses with parseInt rather than Number, matching the

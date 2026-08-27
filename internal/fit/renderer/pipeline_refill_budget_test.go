@@ -6,8 +6,8 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/fit/renderer"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 // paramsPerCircle mirrors the renderer's own stride: X, Y, R, CR, CG, CB,

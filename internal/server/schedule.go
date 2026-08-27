@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/store"
 	"github.com/google/uuid"
 )
 

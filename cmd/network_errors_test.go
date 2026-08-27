@@ -18,7 +18,7 @@ import (
 //
 // The error has to reach the entry point as a *url.Error wrapping
 // ECONNREFUSED, because that is what turns into the "start one with
-// mayflycirclefit serve" suggestion rather than a bare transport dump.
+// circlefit serve" suggestion rather than a bare transport dump.
 func TestRequestCLIReportsARefusedConnection(t *testing.T) {
 	// Bind and immediately release a port so the address is well-formed and
 	// routable but has nothing behind it.

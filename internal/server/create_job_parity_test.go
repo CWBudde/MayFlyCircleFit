@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/ui"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/ui"
 )
 
 // The Go half of the create-page parity check.

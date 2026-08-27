@@ -73,7 +73,7 @@ func newOpenCLBenchmarkRenderer(b *testing.B, ref *image.NRGBA, circles int) (*R
 	b.Helper()
 	r, cleanup, err := New(ref, circles, newStubFallback)
 	if err != nil {
-		if os.Getenv("MAYFLY_REQUIRE_OPENCL") == "1" {
+		if os.Getenv("CIRCLEFIT_REQUIRE_OPENCL") == "1" {
 			b.Fatalf("required OpenCL backend unavailable: %v", err)
 		}
 		b.Skipf("OpenCL backend unavailable: %v", err)

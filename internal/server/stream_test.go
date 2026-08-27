@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/app"
 )
 
 type safeResponseRecorder struct {

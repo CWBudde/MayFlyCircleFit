@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/cmd"
+	"github.com/cwbudde/circlefit/cmd"
 )
 
 func TestExitCode(t *testing.T) {
@@ -91,7 +91,7 @@ func TestPrintCLIError(t *testing.T) {
 				URL: "http://localhost:8080/api/v1/jobs",
 				Err: &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED},
 			}),
-			want: []string{"Suggestion: no server is listening there", "mayflycirclefit serve"},
+			want: []string{"Suggestion: no server is listening there", "circlefit serve"},
 		},
 		{
 			name: "timed out request stays neutral about where the deadline was hit",

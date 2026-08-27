@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
-	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
-	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit/renderer"
+	"github.com/cwbudde/circlefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/store"
 )
 
 const (
@@ -351,13 +351,13 @@ func BenchmarkSingleCircleExtendWall(b *testing.B) {
 // and potentially private fixture part of the repository. The source store is
 // read-only; each benchmark case copies best.png into its own temporary store.
 //
-//	MAYFLY_EXTEND_CHECKPOINT=/path/to/jobs/<uuid>/checkpoint.json \
+//	CIRCLEFIT_EXTEND_CHECKPOINT=/path/to/jobs/<uuid>/checkpoint.json \
 //	  go test -run '^$' -bench '^BenchmarkSingleCircleExtendProductionCheckpoint$' \
 //	  -benchtime=1x -count=1 ./internal/server
 func BenchmarkSingleCircleExtendProductionCheckpoint(b *testing.B) {
-	checkpointPath := os.Getenv("MAYFLY_EXTEND_CHECKPOINT")
+	checkpointPath := os.Getenv("CIRCLEFIT_EXTEND_CHECKPOINT")
 	if checkpointPath == "" {
-		b.Skip("set MAYFLY_EXTEND_CHECKPOINT to a production checkpoint.json")
+		b.Skip("set CIRCLEFIT_EXTEND_CHECKPOINT to a production checkpoint.json")
 	}
 
 	data, err := os.ReadFile(checkpointPath)

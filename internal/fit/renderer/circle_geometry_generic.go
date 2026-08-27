@@ -2,7 +2,7 @@
 
 package renderer
 
-import "github.com/cwbudde/mayflycirclefit/internal/fit"
+import "github.com/cwbudde/circlefit/internal/fit"
 
 const circleSpanFloat32Kernel = fit.TierScalar
 

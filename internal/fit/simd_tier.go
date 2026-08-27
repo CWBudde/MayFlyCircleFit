@@ -62,16 +62,18 @@ func ParseSIMDTier(name string) (SIMDTier, bool) {
 
 const (
 	// simdTierEnv pins the tier for the whole process. It replaces the
-	// GODEBUG-plus-MAYFLY_DISABLE_SIMD pair that could only express "off" and
+	// GODEBUG-plus-CIRCLEFIT_DISABLE_SIMD pair that could only express "off" and
 	// "whatever cpu.avx2=off happens to leave behind": golang.org/x/sys/cpu
 	// registers sse2 with Required on amd64 and ORs that requirement back in,
 	// so GODEBUG can neither reach the scalar tier there nor name a tier
 	// directly.
-	simdTierEnv = "MAYFLY_SIMD_TIER"
+	simdTierEnv = "CIRCLEFIT_SIMD_TIER"
 
-	// simdDisableEnv is the older scalar-only lever, kept because CI steps and
-	// operator notes already use it. It means exactly MAYFLY_SIMD_TIER=scalar.
-	simdDisableEnv = "MAYFLY_DISABLE_SIMD"
+	// simdDisableEnv is the older scalar-only lever. It means exactly
+	// CIRCLEFIT_SIMD_TIER=scalar. Both names carried a MAYFLY_ prefix until the
+	// project was renamed; the old spellings are inert now rather than
+	// deprecated, so a script still setting one silently gets autodetection.
+	simdDisableEnv = "CIRCLEFIT_DISABLE_SIMD"
 )
 
 var (

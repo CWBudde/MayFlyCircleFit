@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/ui"
+	"github.com/cwbudde/circlefit/internal/ui"
 )
 
 // This file is Task 18.7's gate. Phase 18 moved every piece of hand-written
@@ -31,7 +31,7 @@ import (
 // after first paint. Only a blocking, inline script in <head> runs early
 // enough. So themePreloadScript (layout.templ) stays, it stays inline, it stays
 // in <head> ahead of the bundle, and it does nothing but apply the stored
-// preference and publish window.mayflyTheme for ThemeToggleIsland to reuse.
+// preference and publish window.circlefitTheme for ThemeToggleIsland to reuse.
 //
 // Everything else that used to live in a templ <script> is an island. See
 // mountIslands(...) at the bottom of web/src/dashboard.tsx for the registry.
@@ -251,7 +251,7 @@ func TestThemePreloadScriptRunsBeforeTheBundle(t *testing.T) {
 
 	body := output.String()
 
-	preload := strings.Index(body, "window.mayflyTheme")
+	preload := strings.Index(body, "window.circlefitTheme")
 	if preload < 0 {
 		t.Fatal("layout renders no pre-paint theme script")
 	}

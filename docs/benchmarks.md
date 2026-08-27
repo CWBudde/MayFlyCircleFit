@@ -119,7 +119,7 @@ go test -run '^$' -bench '^BenchmarkFastSSD_Comparison$' \
 ```
 
 On AMD64 the runtime-selected kernel is AVX2, SSE2, or scalar. Prefix the same
-command with `MAYFLY_SIMD_TIER=sse2` or `MAYFLY_SIMD_TIER=scalar` to measure a
+command with `CIRCLEFIT_SIMD_TIER=sse2` or `CIRCLEFIT_SIMD_TIER=scalar` to measure a
 narrower tier; the variable pins every kernel in the process, and an unreachable
 tier fails loudly rather than falling back. `GODEBUG=cpu.all=off` does not reach
 the scalar kernel on AMD64, because `golang.org/x/sys/cpu` marks sse2 as

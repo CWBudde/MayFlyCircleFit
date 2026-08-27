@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 // parallelEvaluationBenchmarkSink retains benchmark results so the optimizer

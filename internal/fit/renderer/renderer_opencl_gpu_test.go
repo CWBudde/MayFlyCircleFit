@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
-	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer/opencl"
+	"github.com/cwbudde/circlefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit/renderer/opencl"
 )
 
 const (
@@ -292,7 +292,7 @@ func newOpenCLTestRenderer(t *testing.T, ref *image.NRGBA, circles int) (openCLA
 	t.Helper()
 	renderer, cleanup, err := NewOpenCLRenderer(ref, circles)
 	if err != nil {
-		if os.Getenv("MAYFLY_REQUIRE_OPENCL") == "1" {
+		if os.Getenv("CIRCLEFIT_REQUIRE_OPENCL") == "1" {
 			t.Fatalf("required GPU backend unavailable: %v", err)
 		}
 		t.Skipf("GPU backend unavailable: %v", err)

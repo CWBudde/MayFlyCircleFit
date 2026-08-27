@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 // crossoverRastrigin is a local multimodal objective. It is deliberately not

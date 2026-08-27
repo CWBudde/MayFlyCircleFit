@@ -416,9 +416,9 @@ func TestFastSSD_PaddedStride(t *testing.T) {
 // on. It is deliberately a different variable from simdTierEnv: that one
 // *forces* a tier, so asserting against it would be a tautology. This one
 // asserts, which is what makes a step like GODEBUG=cpu.avx2=off plus
-// MAYFLY_REQUIRE_SIMD_TIER=sse2 a real check that feature masking still demotes
+// CIRCLEFIT_REQUIRE_SIMD_TIER=sse2 a real check that feature masking still demotes
 // the way the documentation claims.
-const requiredTierEnv = "MAYFLY_REQUIRE_SIMD_TIER"
+const requiredTierEnv = "CIRCLEFIT_REQUIRE_SIMD_TIER"
 
 // TestRequiredSIMDTier is the CI-facing assertion. It replaces
 // MAYFLY_REQUIRE_SSD_BACKEND, which only ever described one kernel in one

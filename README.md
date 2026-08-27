@@ -1,6 +1,6 @@
-# MayFlyCircleFit
+# CircleFit
 
-MayFlyCircleFit approximates a reference image with colored circles. The
+CircleFit approximates a reference image with colored circles. The
 [MayFly](https://github.com/cwbudde/mayfly) optimizer is the default; CMA-ES and
 an experimental Dragonfly adapter are selectable with `--optimizer`, and
 [Optimizer engines](#optimizer-engines) says which settings belong to which. The
@@ -30,10 +30,10 @@ separate templ installation. MayFly is pinned to `v0.7.1`.
 Build and run a small deterministic CPU job:
 
 ```sh
-git clone https://github.com/CWBudde/MayFlyCircleFit.git
-cd MayFlyCircleFit
-go build -o mayflycirclefit .
-./mayflycirclefit run \
+git clone https://github.com/CWBudde/CircleFit.git
+cd CircleFit
+go build -o circlefit .
+./circlefit run \
   --ref assets/test.png \
   --out out.png \
   --mode joint \
@@ -72,7 +72,7 @@ because there is no repository metadata to stamp into the binary.
 - `version` and the root `--version` flag print version, commit, and build-date
   metadata. Source builds identify themselves as development builds.
 
-Use `./mayflycirclefit <command> --help` for the complete flag set.
+Use `./circlefit <command> --help` for the complete flag set.
 
 CPU rendering shards the image into horizontal scanline bands. `run --threads`
 controls the worker count and defaults to `GOMAXPROCS`; the effective value is
@@ -90,7 +90,7 @@ Server mode is designed for a trusted local machine. It has no authentication
 or TLS and must not be exposed directly to an untrusted network.
 
 ```sh
-GOMEMLIMIT=8GiB ./mayflycirclefit serve \
+GOMEMLIMIT=8GiB ./circlefit serve \
   --addr localhost \
   --port 8080 \
   --input-root ./assets \
@@ -203,8 +203,8 @@ performance-characterized on vendor GPUs. See [GPU backend
 notes](docs/gpu-backends.md) for setup details.
 
 ```sh
-CGO_ENABLED=1 go build -tags gpu -o mayflycirclefit .
-./mayflycirclefit run --ref assets/test.png --backend opencl --mode sequential
+CGO_ENABLED=1 go build -tags gpu -o circlefit .
+./circlefit run --ref assets/test.png --backend opencl --mode sequential
 ```
 
 ## Early stopping
@@ -222,11 +222,11 @@ reproducible for a given seed:
 
 ```sh
 # Stop once the optimizer stalls for 25 iterations, but never before iteration 50.
-./mayflycirclefit run --ref assets/test.png --iters 500 \
+./circlefit run --ref assets/test.png --iters 500 \
   --stop-stagnation-iters 25 --stop-min-iters 50
 
 # Stop as soon as the cost reaches a known-good value.
-./mayflycirclefit run --ref assets/test.png --stop-target-cost 1200
+./circlefit run --ref assets/test.png --stop-target-cost 1200
 ```
 
 `--stop-target-cost` and `--stop-min-improvement` use the same cost units shown

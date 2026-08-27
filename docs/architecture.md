@@ -1,6 +1,6 @@
 # Architecture
 
-MayFlyCircleFit is one Go program with three user-facing workflows: a direct
+CircleFit is one Go program with three user-facing workflows: a direct
 CLI run, a trusted-local HTTP server, and durable multi-stage schedules. They
 share the same typed configuration, renderer/optimizer contracts, pipeline
 implementations, and filesystem persistence.
@@ -228,7 +228,7 @@ part of the job-detail island for the same reason; they were a separate
 the bundle unconditionally and is the only place that does. No page opts in.
 The palette itself is not the island's: the pre-paint script in `layout.templ`
 applies the stored theme before the first paint and publishes
-`window.mayflyTheme`, and the island only wires the buttons to it. That script
+`window.circlefitTheme`, and the island only wires the buttons to it. That script
 is the one hand-written inline script left anywhere in `internal/ui/*.templ`,
 because a deferred module cannot run before the first paint;
 `internal/ui/inline_script_gate_test.go` fails the build on any other.

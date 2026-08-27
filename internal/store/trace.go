@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 // TraceEntry represents a single entry in the cost history trace.

@@ -69,7 +69,7 @@ rather than an assertion.
 ## Manual checklist
 
 Run against a release candidate, with the server started as
-`./bin/mayflycirclefit serve --addr 127.0.0.1 --port 8080`.
+`./bin/circlefit serve --addr 127.0.0.1 --port 8080`.
 
 ### Results
 

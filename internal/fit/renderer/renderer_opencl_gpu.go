@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"image"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer/opencl"
+	"github.com/cwbudde/circlefit/internal/fit/renderer/opencl"
 )
 
 // openCLAdapter wires the OpenCL renderer into this package.

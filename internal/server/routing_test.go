@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/app"
 )
 
 func TestRouting_RootIsDashboard(t *testing.T) {

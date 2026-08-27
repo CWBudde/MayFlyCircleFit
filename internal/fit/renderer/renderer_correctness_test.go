@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit"
 )
 
 // TestCPURendererMatchesPreOptimizationBaseline protects the rendering

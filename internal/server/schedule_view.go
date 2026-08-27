@@ -6,9 +6,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/store"
-	"github.com/cwbudde/mayflycirclefit/internal/ui"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/ui"
 )
 
 // A campaign view is a read model, not a second source of truth. It is built

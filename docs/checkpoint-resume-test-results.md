@@ -85,7 +85,7 @@ holds it is marked inline.
 
 **Evidence:**
 ```bash
-$ ./bin/mayflycirclefit checkpoints list
+$ ./bin/circlefit checkpoints list
 JOB ID           TIMESTAMP            ITERATION  BEST COST   SIZE
 ------           ---------            ---------  ---------   ----
 test-checkpo...  2025-10-26 23:00:00  50         500.500000  470 B
@@ -203,10 +203,10 @@ return initialParams, initialCost  // Never worse than checkpoint
 
 **Evidence:**
 ```bash
-$ ./bin/mayflycirclefit resume test-sequential-checkpoint --local
+$ ./bin/circlefit resume test-sequential-checkpoint --local
 Error: resume not yet supported for mode: sequential
 
-$ ./bin/mayflycirclefit resume test-batch-checkpoint --local
+$ ./bin/circlefit resume test-batch-checkpoint --local
 Error: resume not yet supported for mode: batch
 ```
 

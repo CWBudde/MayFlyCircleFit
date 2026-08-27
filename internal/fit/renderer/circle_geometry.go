@@ -3,7 +3,7 @@ package renderer
 import (
 	"math"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit"
 )
 
 const (

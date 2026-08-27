@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/store"
-	"github.com/cwbudde/mayflycirclefit/internal/ui"
+	"github.com/cwbudde/circlefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/ui"
 )
 
 // TestStaticRouteServesTheIslandBundle pins the route wiring rather than the

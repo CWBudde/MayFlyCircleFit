@@ -19,10 +19,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/mayflycirclefit/internal/app"
-	"github.com/cwbudde/mayflycirclefit/internal/fit/renderer"
-	"github.com/cwbudde/mayflycirclefit/internal/opt"
-	"github.com/cwbudde/mayflycirclefit/internal/store"
+	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/fit/renderer"
+	"github.com/cwbudde/circlefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/store"
 	"github.com/google/uuid"
 )
 

@@ -1,8 +1,8 @@
 {
-  "name": "mayflycirclefit-web",
+  "name": "circlefit-web",
   "version": "0.0.0",
   "private": true,
-  "description": "React islands for the MayFlyCircleFit dashboard. npm only fetches dependencies; bundling is done by esbuild, which is a Go tool (see go.mod).",
+  "description": "React islands for the CircleFit dashboard. npm only fetches dependencies; bundling is done by esbuild, which is a Go tool (see go.mod).",
   "license": "MIT",
   "scripts": {
     "typecheck": "tsc --noEmit --pretty false",

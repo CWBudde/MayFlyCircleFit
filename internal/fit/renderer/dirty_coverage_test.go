@@ -8,7 +8,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit"
 )
 
 type dirtyTestSpan struct {

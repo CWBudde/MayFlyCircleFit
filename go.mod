@@ -1,4 +1,4 @@
-module github.com/cwbudde/mayflycirclefit
+module github.com/cwbudde/circlefit
 
 go 1.24.0
 

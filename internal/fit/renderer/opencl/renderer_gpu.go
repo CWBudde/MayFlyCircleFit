@@ -49,8 +49,8 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/cwbudde/mayflycirclefit/internal/fit"
-	"github.com/cwbudde/mayflycirclefit/internal/fit/gpu"
+	"github.com/cwbudde/circlefit/internal/fit"
+	"github.com/cwbudde/circlefit/internal/fit/gpu"
 )
 
 // paramsPerCircle mirrors the renderer parameter layout. It is duplicated here

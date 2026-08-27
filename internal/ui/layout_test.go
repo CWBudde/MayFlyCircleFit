@@ -78,10 +78,10 @@ func TestLayoutIncludesThemeSwitcher(t *testing.T) {
 		`data-theme-value="auto"`,
 		`data-theme-value="light"`,
 		`data-theme-value="dark"`,
-		`mayflycirclefit.theme`,
+		`circlefit.theme`,
 		// The pre-paint script publishes the controller; the toggle island is
 		// what consumes it, so the handover has to survive in the markup.
-		`window.mayflyTheme = { apply, selected, storageKey }`,
+		`window.circlefitTheme = { apply, selected, storageKey }`,
 		`data-island="theme-switch"`,
 		// The fallback carries no aria-pressed and every button is disabled:
 		// the handler lives in the bundle, and the server cannot know which
@@ -238,7 +238,7 @@ func TestLayoutCarriesOnlyThePrePaintScript(t *testing.T) {
 
 		inline++
 
-		if !strings.Contains(body, "window.mayflyTheme") {
+		if !strings.Contains(body, "window.circlefitTheme") {
 			t.Errorf("layout writes an inline script that is not the pre-paint theme IIFE: %.80s", body)
 		}
 	}

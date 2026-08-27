@@ -218,14 +218,14 @@ do not bundle it; use `go tool pprof` for profile analysis.
 - `just cross-build` verifies the selected source set and compiles the CLI and
   the `internal/fit` test binary for every supported CPU target with
   `CGO_ENABLED=0`.
-- `MAYFLY_SIMD_TIER=avx2|sse2|neon|scalar` pins the tier for a process, and an
+- `CIRCLEFIT_SIMD_TIER=avx2|sse2|neon|scalar` pins the tier for a process, and an
   unparseable or unreachable value panics at init rather than falling back — a
   gate that asks for SSE2 must not pass while measuring AVX2.
-  `MAYFLY_DISABLE_SIMD=1` is kept as an alias for `scalar`.
-- `MAYFLY_REQUIRE_SIMD_TIER` is the opposite lever: it asserts the detected tier
+  `CIRCLEFIT_DISABLE_SIMD=1` is kept as an alias for `scalar`.
+- `CIRCLEFIT_REQUIRE_SIMD_TIER` is the opposite lever: it asserts the detected tier
   without setting it, which is what makes `GODEBUG=cpu.avx2=off` plus
-  `MAYFLY_REQUIRE_SIMD_TIER=sse2` a real check. Never pair `MAYFLY_SIMD_TIER=x`
-  with `MAYFLY_REQUIRE_SIMD_TIER=x` and call it detection coverage; that
+  `CIRCLEFIT_REQUIRE_SIMD_TIER=sse2` a real check. Never pair `CIRCLEFIT_SIMD_TIER=x`
+  with `CIRCLEFIT_REQUIRE_SIMD_TIER=x` and call it detection coverage; that
   combination only checks that dispatch honored the pin.
 - `GODEBUG=cpu.all=off` still cannot reach the scalar tier on amd64: `x/sys/cpu`
   registers sse2 with `Required: runtime.GOARCH == "amd64"` and `processOptions`
