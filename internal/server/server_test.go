@@ -2640,3 +2640,70 @@ func TestServer_BackendDefaults_AllEntryPoints(t *testing.T) {
 		}
 	})
 }
+
+// TestReferenceImageFactsAreMemoizedAndRevalidated pins both halves of the memo
+// the polled status endpoint depends on. The cache is proven by corrupting the
+// file's contents while keeping its size and modification time: a call that
+// still answers correctly cannot have decoded the header again. Invalidation is
+// proven by writing a genuinely different image, which changes both.
+func TestReferenceImageFactsAreMemoizedAndRevalidated(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reference.png")
+	createSimpleTestImage(t, path)
+
+	srv := &Server{}
+
+	width, height, size, err := srv.referenceImageFactsFor(path)
+	if err != nil {
+		t.Fatalf("referenceImageFactsFor() error = %v", err)
+	}
+
+	if width != 50 || height != 50 {
+		t.Fatalf("referenceImageFactsFor() dimensions = %dx%d, want 50x50", width, height)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat reference image: %v", err)
+	}
+
+	// Same length, same timestamps, unreadable as an image. Only a cache hit
+	// can answer this correctly.
+	if err := os.WriteFile(path, bytes.Repeat([]byte{0}, int(size)), 0o600); err != nil {
+		t.Fatalf("corrupt reference image: %v", err)
+	}
+
+	if err := os.Chtimes(path, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatalf("restore modification time: %v", err)
+	}
+
+	cachedWidth, cachedHeight, cachedSize, err := srv.referenceImageFactsFor(path)
+	if err != nil {
+		t.Fatalf("referenceImageFactsFor() decoded again instead of using the memo: %v", err)
+	}
+
+	if cachedWidth != width || cachedHeight != height || cachedSize != size {
+		t.Errorf("memoized facts = %dx%d/%d, want %dx%d/%d", cachedWidth, cachedHeight, cachedSize, width, height, size)
+	}
+
+	// A different image changes size and modification time, so the memo has to
+	// stand aside rather than serve the previous answer.
+	replaced := image.NewNRGBA(image.Rect(0, 0, 12, 34))
+
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, replaced); err != nil {
+		t.Fatalf("encode replacement image: %v", err)
+	}
+
+	if err := os.WriteFile(path, encoded.Bytes(), 0o600); err != nil {
+		t.Fatalf("replace reference image: %v", err)
+	}
+
+	freshWidth, freshHeight, _, err := srv.referenceImageFactsFor(path)
+	if err != nil {
+		t.Fatalf("referenceImageFactsFor() error after replacement = %v", err)
+	}
+
+	if freshWidth != 12 || freshHeight != 34 {
+		t.Errorf("facts after replacement = %dx%d, want 12x34; the memo was served stale", freshWidth, freshHeight)
+	}
+}

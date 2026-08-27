@@ -63,6 +63,24 @@ type Server struct {
 	chainCacheMu    sync.Mutex
 	chainCache      []discoveredChain
 	chainCacheValid bool
+
+	// refImageMu guards refImageCache, which memoizes the reference-image
+	// facts per path. The status endpoint is polled, and decoding an image
+	// header on every poll is work the answer never changes for; see
+	// (*Server).referenceImageFacts.
+	refImageMu    sync.Mutex
+	refImageCache map[string]referenceImageFacts
+}
+
+// referenceImageFacts is one memoized answer from referenceImageMetadata,
+// together with what it was true of. modTime and size identify the file the
+// dimensions were read from, so a reference image replaced under a running
+// server is picked up rather than served stale.
+type referenceImageFacts struct {
+	width   int
+	height  int
+	size    int64
+	modTime time.Time
 }
 
 // ServerOptions configures the trusted-local HTTP boundary.
@@ -1240,7 +1258,7 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 	// it: the reference image is a display fact, not a job fact, so a missing
 	// or unreadable file leaves the three fields at zero (and so unserialized)
 	// instead of failing a status request that is otherwise answerable.
-	refWidth, refHeight, refSize, _ := referenceImageMetadata(job.Config.RefPath)
+	refWidth, refHeight, refSize, _ := s.referenceImageFactsFor(job.Config.RefPath)
 
 	response := jobStatusResponse{
 		ID: job.ID, Project: app.NormalizeProject(job.Project), State: job.State, Config: job.Config,

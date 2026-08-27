@@ -181,7 +181,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	elapsed := jobElapsed(job)
 	cps := circlesPerSecond(job, elapsed)
 
-	refWidth, refHeight, refSize, _ := referenceImageMetadata(job.Config.RefPath)
+	refWidth, refHeight, refSize, _ := s.referenceImageFactsFor(job.Config.RefPath)
 
 	psnr, psnrInfinite := cloneFloat(job.PSNR), job.PSNRInfinite
 	if len(job.BestParams) > 0 {
@@ -326,6 +326,47 @@ func referenceImageMetadata(path string) (width, height int, size int64, err err
 	}
 
 	return config.Width, config.Height, info.Size(), nil
+}
+
+// referenceImageFactsFor answers the same question referenceImageMetadata does,
+// but memoized per path. The job status endpoint is polled - by the detail
+// island, and by however many clients are watching - and each call otherwise
+// opened the reference image and decoded its header to learn dimensions that do
+// not change while a job runs.
+//
+// The memo is validated rather than trusted: one Stat per call still happens,
+// and a differing size or modification time re-reads the header. That keeps a
+// reference image replaced under a running server from being served stale,
+// while removing the decode from the hot path. Errors are not cached, so a file
+// that appears later is picked up on the next request.
+func (s *Server) referenceImageFactsFor(path string) (width, height int, size int64, err error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	s.refImageMu.Lock()
+	cached, ok := s.refImageCache[path]
+	s.refImageMu.Unlock()
+
+	if ok && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
+		return cached.width, cached.height, cached.size, nil
+	}
+
+	width, height, size, err = referenceImageMetadata(path)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	s.refImageMu.Lock()
+	if s.refImageCache == nil {
+		s.refImageCache = make(map[string]referenceImageFacts)
+	}
+
+	s.refImageCache[path] = referenceImageFacts{width: width, height: height, size: size, modTime: info.ModTime()}
+	s.refImageMu.Unlock()
+
+	return width, height, size, nil
 }
 
 // handleCreatePage handles GET /create and POST /create.
