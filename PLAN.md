@@ -99,6 +99,24 @@ research follow-ups, not blockers for the selected production CPU path.
   `compositeSpanNEONMinPixels`. Gated on ARM64 benchmarking hardware:
   `internal/fit/renderer` does not yet run on the ARM64 rows of
   `ci-native-simd.yml`.
+- [ ] Block multiply-add contraction in `compositeScalarPixel` and fill in
+  `rendererPackage` on both ARM64 rows of `ci-native-simd.yml`. The ARM64
+  correctness failure that keeps those rows empty
+  (`TestCPURendererMatchesPreOptimizationBaseline/fractional_overlaps`, pixel
+  (4,11) channel 3 = 205 against a baseline of 206) is contraction, not the NEON
+  span kernel, and it is diagnosable by cross-compiling rather than needing ARM64
+  hardware: `go build -gcflags='-S' ./internal/fit/renderer` emits 38 `FMADDD`
+  under `GOARCH=arm64` and zero `VFMADD` under `GOARCH=amd64`.
+  `uint8(outA*255 + 0.5)` in `internal/fit/renderer/renderer_cpu.go` fuses on
+  ARM64 and so rounds once, where amd64 rounds the product and then adds, and the
+  oracle's `uint8(math.Round(...))` cannot fuse at all; at a near-tie the three
+  disagree by one alpha unit. The fix is the explicit conversion
+  `uint8(float64(outA*255) + 0.5)`, which the Go spec makes a rounding point
+  contraction may not cross; amd64 output is unchanged by it because amd64 does
+  not fuse today. It is deferred because it touches the scalar composite hot path
+  and costs ARM64 its fusion there, so it wants its own change with the ARM64
+  rows enabled to validate it. Until then ARM64 renderer output is unverified;
+  see [`docs/known-limitations.md`](docs/known-limitations.md).
 
 ## Phase 11: GPU Backends (Research → Prototype)
 

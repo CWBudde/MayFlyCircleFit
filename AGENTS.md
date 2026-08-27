@@ -214,7 +214,15 @@ go test -short ./...
 go test -race -short ./...
 go build ./...
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...
+bash scripts/check-cross-build.sh
 ```
+
+`go build` does not compile `_test.go` files, so none of the build lines above
+says anything about a test file behind a `//go:build arm64` guard. Only
+`check-cross-build.sh` does, by running `go vet ./...` for each supported target.
+Run it whenever a signature crosses an architecture boundary; the ARM64 rows of
+`ci-native-simd.yml` skip `internal/fit/renderer`, so nothing else in CI would
+notice.
 
 GPU checks require an explicitly prepared runner with OpenCL headers and
 runtime; a CGO-disabled portable build is not GPU validation.

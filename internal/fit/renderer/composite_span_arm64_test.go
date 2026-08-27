@@ -44,7 +44,8 @@ func TestCompositeSpanFollowsForcedTier(t *testing.T) {
 	// have taken the NEON path here.
 	got := makeOpaqueSpanFixture(512)
 	want := append([]byte(nil), got...)
-	compositeOpaqueSpan(got, 0, 512, 0.13, 0.57, 0.91, 0.37)
+	blend := newSpanBlend(0.13, 0.57, 0.91, 0.37)
+	compositeOpaqueSpan(&blend, got, 0, 512, 0.13, 0.57, 0.91, 0.37)
 	compositeOpaqueSpanScalar(want, 0, 512, 0.13, 0.57, 0.91, 0.37)
 	if !bytes.Equal(got, want) {
 		t.Fatal("forced-scalar span dispatch differs from the scalar compositor")
@@ -61,7 +62,8 @@ func TestCompositeSpanNEONDisabledFallback(t *testing.T) {
 		}
 		got := makeOpaqueSpanFixture(256)
 		want := append([]byte(nil), got...)
-		compositeOpaqueSpan(got, 0, 256, 0.13, 0.57, 0.91, 0.37)
+		blend := newSpanBlend(0.13, 0.57, 0.91, 0.37)
+		compositeOpaqueSpan(&blend, got, 0, 256, 0.13, 0.57, 0.91, 0.37)
 		compositeOpaqueSpanScalar(want, 0, 256, 0.13, 0.57, 0.91, 0.37)
 		if !bytes.Equal(got, want) {
 			t.Fatal("disabled NEON dispatch differs from scalar")

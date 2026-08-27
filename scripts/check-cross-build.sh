@@ -108,6 +108,14 @@ for target in "${targets[@]}"; do
 		cd "$repo_root"
 		CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" \
 			go build -buildvcs=false -o "$output" .
+		# go vet type-checks _test.go files, which go build never does. That is
+		# the point of running it here: an architecture-guarded test file can
+		# otherwise reference a signature that no longer exists and every gate
+		# stays green, because the only ARM64 runners in the repository skip
+		# internal/fit/renderer. A failure here may therefore be an ordinary
+		# analyzer finding rather than a compile error - read the message.
+		CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" \
+			go vet ./...
 		CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" \
 			go test -c -o "$build_work/fit-${target_os}-${target_arch}.test" ./internal/fit
 	)
