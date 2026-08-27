@@ -17,7 +17,7 @@ func fixtureViewerData(mode string) ImageViewerData {
 		ReferenceImageURL: "/api/v1/jobs/" + viewerJobID + "/ref.png",
 		BestImageURL:      "/api/v1/jobs/" + viewerJobID + "/best.png",
 		DiffImageURL:      "/api/v1/jobs/" + viewerJobID + "/diff.png",
-		JobState:          "running",
+		JobState:          stateRunning,
 		MaxIterations:     500,
 		CircleCount:       64,
 		ReferenceWidth:    64,
@@ -90,6 +90,7 @@ func TestImageViewerFallbackIgnoresTheCallerMode(t *testing.T) {
 			if !strings.Contains(body, `data-view-mode="side-by-side"`) {
 				t.Errorf("fallback for %q does not show the side-by-side pair", mode)
 			}
+
 			if !strings.Contains(body, `data-default-mode="`+imageViewerMode(mode)+`"`) {
 				t.Errorf("island default mode for %q was not published", mode)
 			}
@@ -155,7 +156,7 @@ func TestJobDetailPageRendersExactlyOneViewer(t *testing.T) {
 
 	var output bytes.Buffer
 
-	err := JobDetailPage(JobDetail{ID: viewerJobID, State: "running"}).Render(context.Background(), &output)
+	err := JobDetailPage(JobDetail{ID: viewerJobID, State: stateRunning}).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render job detail: %v", err)
 	}
@@ -250,6 +251,7 @@ func TestImageViewerMetadataStringsTravelPreFormatted(t *testing.T) {
 		if !strings.Contains(body, "Metadata unavailable") {
 			t.Error("a viewer with no reference facts does not say so")
 		}
+
 		for _, marker := range []string{`data-ref-dimensions=""`, `data-ref-filesize=""`, `data-ref-bytes=""`} {
 			if !strings.Contains(body, marker) {
 				t.Errorf("empty metadata attribute missing: %q", marker)
@@ -264,6 +266,7 @@ func TestImageViewerMetadataStringsTravelPreFormatted(t *testing.T) {
 		if !strings.Contains(body, `data-show-metadata="false"`) {
 			t.Error("ShowMetadata=false was not published to the island")
 		}
+
 		if strings.Contains(body, "image-metadata") {
 			t.Error("metadata row rendered although the caller suppressed it")
 		}

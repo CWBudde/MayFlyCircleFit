@@ -339,10 +339,10 @@ func referenceImageMetadata(path string) (width, height int, size int64, err err
 // reference image replaced under a running server from being served stale,
 // while removing the decode from the hot path. Errors are not cached, so a file
 // that appears later is picked up on the next request.
-func (s *Server) referenceImageFactsFor(path string) (width, height int, size int64, err error) {
+func (s *Server) referenceImageFactsFor(path string) (int, int, int64, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, 0, fmt.Errorf("stat reference image %q: %w", path, err)
 	}
 
 	s.refImageMu.Lock()
@@ -353,7 +353,7 @@ func (s *Server) referenceImageFactsFor(path string) (width, height int, size in
 		return cached.width, cached.height, cached.size, nil
 	}
 
-	width, height, size, err = referenceImageMetadata(path)
+	width, height, size, err := referenceImageMetadata(path)
 	if err != nil {
 		return 0, 0, 0, err
 	}

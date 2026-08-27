@@ -1,3 +1,4 @@
+//nolint:testpackage // checks the unexported view helpers the templ output calls
 package ui
 
 import (
@@ -7,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -64,7 +66,8 @@ func loadJobDetailParity(t *testing.T) []jobDetailParityCase {
 		Cases []jobDetailParityCase `json:"cases"`
 	}
 
-	if err := json.Unmarshal(raw, &contract); err != nil {
+	err = json.Unmarshal(raw, &contract)
+	if err != nil {
 		t.Fatalf("parse job-detail-parity.json: %v", err)
 	}
 
@@ -96,8 +99,12 @@ func TestJobDetailHelpersMatchSharedContract(t *testing.T) {
 				{"best cost", fmt.Sprintf("%.4f", job.BestCost), want.BestCost},
 				{"psnr", auditedPSNR(job), want.PSNR},
 				{"ssim", auditedSSIM(job), want.SSIM},
-				{"iterations", fmt.Sprintf("%d", job.Iterations), want.Iterations},
-				{"iteration progress", fmt.Sprintf("%.1f%%", progressPercent(job.Iterations, job.MaxIters)), want.IterationProgress},
+				{"iterations", strconv.Itoa(job.Iterations), want.Iterations},
+				{
+					"iteration progress",
+					fmt.Sprintf("%.1f%%", progressPercent(job.Iterations, job.MaxIters)),
+					want.IterationProgress,
+				},
 				{"evaluations", formatNumber(float64(job.Evaluations)), want.Evaluations},
 				{"average cps", formatNumber(averageCPS(job.MetricHistory, job.CPS)), want.AverageCPS},
 				{"current cps", formatNumber(currentCPS(job.MetricHistory, job.Circles, job.CPS)), want.CurrentCPS},
@@ -151,7 +158,8 @@ func TestJobDetailPageRendersTheContractValues(t *testing.T) {
 
 			var output bytes.Buffer
 
-			if err := JobDetailPage(testCase.Job).Render(context.Background(), &output); err != nil {
+			err := JobDetailPage(testCase.Job).Render(context.Background(), &output)
+			if err != nil {
 				t.Fatalf("render job detail: %v", err)
 			}
 
@@ -272,6 +280,8 @@ func TestDerivedThroughputFallsBackToTheJobFigure(t *testing.T) {
 		{name: "no history", history: nil, circles: 64, want: 42},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := currentCPS(test.history, test.circles, 42); got != test.want {
 				t.Errorf("currentCPS = %v, want %v", got, test.want)
 			}
@@ -315,6 +325,8 @@ func TestETALabelWithoutABasis(t *testing.T) {
 		{name: "projected", history: history, maximum: 40, want: "2s"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := etaLabel(test.history, test.maximum); got != test.want {
 				t.Errorf("etaLabel = %q, want %q", got, test.want)
 			}
@@ -337,6 +349,8 @@ func TestCostImprovementRateDistinguishesStalledFromUnmeasurable(t *testing.T) {
 		{name: "worsening", history: []MetricSample{at(0, 0, 4, 0, 0), at(10, 0, 5, 0, 1)}, want: "↑ 0.1000 / iter"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := costImprovementRate(test.history); got != test.want {
 				t.Errorf("costImprovementRate = %q, want %q", got, test.want)
 			}

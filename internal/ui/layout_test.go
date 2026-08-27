@@ -16,7 +16,9 @@ func TestLayoutThemeFallbackMakesNoClaimItCannotHonour(t *testing.T) {
 	t.Parallel()
 
 	var output bytes.Buffer
-	if err := Layout("Theme fallback test").Render(context.Background(), &output); err != nil {
+
+	err := Layout("Theme fallback test").Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render layout: %v", err)
 	}
 
@@ -47,6 +49,7 @@ func TestLayoutThemeFallbackMakesNoClaimItCannotHonour(t *testing.T) {
 
 	for _, label := range []string{"Use system theme", "Use light theme", "Use dark theme"} {
 		marker := `aria-label="` + label + `"`
+
 		idx := strings.Index(group, marker)
 		if idx < 0 {
 			t.Fatalf("rendered layout missing %q", marker)

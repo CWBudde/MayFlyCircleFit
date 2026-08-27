@@ -250,7 +250,9 @@ func jobDetailSeed(t *testing.T, job ui.JobDetail) map[string]any {
 	}
 
 	var decoded map[string]any
-	if err := json.Unmarshal([]byte(match[1]), &decoded); err != nil {
+
+	err = json.Unmarshal([]byte(match[1]), &decoded)
+	if err != nil {
 		t.Fatalf("decode the job detail seed: %v", err)
 	}
 
@@ -272,6 +274,8 @@ func jobDetailSeed(t *testing.T, job ui.JobDetail) map[string]any {
 // carries the raw JobConfig whose resolved forms are Go functions the island
 // must not reimplement.
 func TestJobDetailSeedMatchesStatusEndpoint(t *testing.T) {
+	t.Parallel()
+
 	start := time.Date(2026, time.August, 13, 9, 0, 0, 0, time.UTC)
 	psnr, ssim, candidate := 31.25, 0.9123, 11.5
 	job := ui.JobDetail{
@@ -332,6 +336,7 @@ func TestJobDetailSeedMatchesStatusEndpoint(t *testing.T) {
 	endpointKeys := jsonLeafKeys(t, payload)
 
 	shared := map[string]any{}
+
 	for _, name := range []string{
 		"id", "state", "bestCost", "bestRevision", "candidateCost", "candidatePsnr",
 		"candidatePsnrInfinite", "initialCost", "psnr", "psnrInfinite", "ssim",
@@ -436,6 +441,7 @@ func tsDeclarationBody(t *testing.T, source, file, decl string) string {
 	}
 
 	depth := 0
+
 	for index, char := range rest[open:] {
 		switch char {
 		case '{':
@@ -475,7 +481,7 @@ func splitTSFields(body string, depth *int) []string {
 		startedAt = *depth
 	}
 
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		if comment := strings.Index(line, "//"); comment >= 0 {
 			line = line[:comment]
 		}
@@ -562,7 +568,17 @@ func collectWireNames(t *testing.T, structType reflect.Type, into map[string]boo
 // and belongs in the table for the same reason. Its three newest fields --
 // refWidth, refHeight and refSize -- are the TypeScript mirror Task 18.1's
 // acceptance check asks for, and this is where a rename on either side fails.
+// Island source files the read-model table names more than once.
+const (
+	islandDashboard = "dashboard.tsx"
+	islandCampaigns = "Campaigns.tsx"
+	islandJobList   = "JobList.tsx"
+	islandJobDetail = "JobDetail.tsx"
+)
+
 func TestIslandReadModelsMatchTheGoWire(t *testing.T) {
+	t.Parallel()
+
 	for _, testCase := range []struct {
 		file string
 		decl string
@@ -571,38 +587,40 @@ func TestIslandReadModelsMatchTheGoWire(t *testing.T) {
 		{file: "live.ts", decl: "ProgressEvent", wire: ProgressEvent{}},
 		{file: "live.ts", decl: "UIEvent", wire: UIEvent{}},
 
-		{file: "dashboard.tsx", decl: "DashboardResponse", wire: dashboardResponse{}},
-		{file: "dashboard.tsx", decl: "RunningJob", wire: dashboardRunningJob{}},
-		{file: "dashboard.tsx", decl: "DashboardAggregates", wire: dashboardAggregates{}},
-		{file: "dashboard.tsx", decl: "HostFacts", wire: ui.HostFacts{}},
-		{file: "dashboard.tsx", decl: "CampaignSummary", wire: ui.CampaignSummary{}},
-		{file: "dashboard.tsx", decl: "CampaignSeriesPoint", wire: ui.CampaignSeriesPoint{}},
-		{file: "dashboard.tsx", decl: "MetricSample", wire: ui.MetricSample{}},
-		{file: "dashboard.tsx", decl: "ProgressEventPayload", wire: ProgressEvent{}},
+		{file: islandDashboard, decl: "DashboardResponse", wire: dashboardResponse{}},
+		{file: islandDashboard, decl: "RunningJob", wire: dashboardRunningJob{}},
+		{file: islandDashboard, decl: "DashboardAggregates", wire: dashboardAggregates{}},
+		{file: islandDashboard, decl: "HostFacts", wire: ui.HostFacts{}},
+		{file: islandDashboard, decl: "CampaignSummary", wire: ui.CampaignSummary{}},
+		{file: islandDashboard, decl: "CampaignSeriesPoint", wire: ui.CampaignSeriesPoint{}},
+		{file: islandDashboard, decl: "MetricSample", wire: ui.MetricSample{}},
+		{file: islandDashboard, decl: "ProgressEventPayload", wire: ProgressEvent{}},
 
-		{file: "Campaigns.tsx", decl: "CampaignPoint", wire: ui.CampaignSeriesPoint{}},
-		{file: "Campaigns.tsx", decl: "CampaignSummary", wire: ui.CampaignSummary{}},
-		{file: "Campaigns.tsx", decl: "CampaignList", wire: campaignViewList{}},
-		{file: "Campaigns.tsx", decl: "CampaignStage", wire: ui.CampaignStage{}},
-		{file: "Campaigns.tsx", decl: "CampaignProjection", wire: ui.CampaignProjection{}},
-		{file: "Campaigns.tsx", decl: "Campaign", wire: ui.Campaign{}},
+		{file: islandCampaigns, decl: "CampaignPoint", wire: ui.CampaignSeriesPoint{}},
+		{file: islandCampaigns, decl: "CampaignSummary", wire: ui.CampaignSummary{}},
+		{file: islandCampaigns, decl: "CampaignList", wire: campaignViewList{}},
+		{file: islandCampaigns, decl: "CampaignStage", wire: ui.CampaignStage{}},
+		{file: islandCampaigns, decl: "CampaignProjection", wire: ui.CampaignProjection{}},
+		{file: islandCampaigns, decl: "Campaign", wire: ui.Campaign{}},
 
-		{file: "JobList.tsx", decl: "JobListItem", wire: ui.JobListItem{}},
-		{file: "JobList.tsx", decl: "JobPage", wire: ui.JobListPage{}},
-		{file: "JobList.tsx", decl: "RawJob", wire: JobSummary{}},
-		{file: "JobList.tsx", decl: "RawJobPage", wire: jobListPage{}},
+		{file: islandJobList, decl: "JobListItem", wire: ui.JobListItem{}},
+		{file: islandJobList, decl: "JobPage", wire: ui.JobListPage{}},
+		{file: islandJobList, decl: "RawJob", wire: JobSummary{}},
+		{file: islandJobList, decl: "RawJobPage", wire: jobListPage{}},
 
-		{file: "JobDetail.tsx", decl: "JobActions", wire: jobActions{}},
-		{file: "JobDetail.tsx", decl: "JobDetailSeed", wire: ui.JobDetail{}},
-		{file: "JobDetail.tsx", decl: "JobStatusPayload", wire: jobStatusResponse{}},
-		{file: "JobDetail.tsx", decl: "MetricSample", wire: ui.MetricSample{}},
-		{file: "JobDetail.tsx", decl: "CircleParameter", wire: ui.CircleParameter{}},
+		{file: islandJobDetail, decl: "JobActions", wire: jobActions{}},
+		{file: islandJobDetail, decl: "JobDetailSeed", wire: ui.JobDetail{}},
+		{file: islandJobDetail, decl: "JobStatusPayload", wire: jobStatusResponse{}},
+		{file: islandJobDetail, decl: "MetricSample", wire: ui.MetricSample{}},
+		{file: islandJobDetail, decl: "CircleParameter", wire: ui.CircleParameter{}},
 
 		{file: "CampaignCostChart.tsx", decl: "CampaignCostChartPoint", wire: ui.CampaignSeriesPoint{}},
 
 		{file: "format.ts", decl: "ProjectionShape", wire: ui.CampaignProjection{}},
 	} {
 		t.Run(testCase.file+"/"+testCase.decl, func(t *testing.T) {
+			t.Parallel()
+
 			wire := goWireNames(t, testCase.wire)
 
 			for name := range tsObjectFields(t, testCase.file, testCase.decl) {

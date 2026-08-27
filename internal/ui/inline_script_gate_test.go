@@ -1,4 +1,4 @@
-package ui
+package ui_test
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/cwbudde/mayflycirclefit/internal/ui"
 )
 
 // This file is Task 18.7's gate. Phase 18 moved every piece of hand-written
@@ -71,15 +73,18 @@ func uiSourceFiles(t *testing.T) []string {
 	t.Helper()
 
 	var files []string
+
 	for _, pattern := range []string{"*.templ", "*.go"} {
 		matched, err := filepath.Glob(pattern)
 		if err != nil {
 			t.Fatalf("glob %s: %v", pattern, err)
 		}
+
 		for _, name := range matched {
 			if strings.HasSuffix(name, "_templ.go") || strings.HasSuffix(name, "_test.go") {
 				continue
 			}
+
 			files = append(files, name)
 		}
 	}
@@ -99,6 +104,7 @@ func findScriptBodies(file, source string) []scriptBody {
 
 	for _, open := range scriptOpenTag.FindAllStringIndex(source, -1) {
 		rest := source[open[1]:]
+
 		end := strings.Index(strings.ToLower(rest), "</script>")
 		if end < 0 {
 			// An unterminated <script> is reported as a body of its own
@@ -132,6 +138,7 @@ func isThemePreloadException(file, source string, offset int) bool {
 	}
 
 	opening := "const " + theExceptionConst + " = `"
+
 	start := strings.Index(source, opening)
 	if start < 0 {
 		return false
@@ -173,6 +180,7 @@ func TestNoTemplSourceCarriesAnInlineScript(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", file, err)
 		}
+
 		source := blankCommentLines(string(content))
 
 		for _, found := range findScriptBodies(file, source) {
@@ -195,7 +203,8 @@ func TestNoTemplSourceCarriesAnInlineScript(t *testing.T) {
 	// silently regain the flash of the wrong palette this file exists to
 	// explain.
 	if exceptions != 1 {
-		t.Errorf("found %d permitted inline scripts, want exactly 1 (%s in %s)", exceptions, theExceptionConst, theExceptionFile)
+		t.Errorf("found %d permitted inline scripts, want exactly 1 (%s in %s)",
+			exceptions, theExceptionConst, theExceptionFile)
 	}
 }
 
@@ -212,6 +221,7 @@ func TestNoTemplSourceCarriesAnInlineEventHandler(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", file, err)
 		}
+
 		source := blankCommentLines(string(content))
 
 		for _, match := range inlineHandlerAttr.FindAllStringIndex(source, -1) {
@@ -233,9 +243,12 @@ func TestThemePreloadScriptRunsBeforeTheBundle(t *testing.T) {
 	t.Parallel()
 
 	var output bytes.Buffer
-	if err := Layout("Gate").Render(context.Background(), &output); err != nil {
+
+	err := ui.Layout("Gate").Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render layout: %v", err)
 	}
+
 	body := output.String()
 
 	preload := strings.Index(body, "window.mayflyTheme")
@@ -243,13 +256,14 @@ func TestThemePreloadScriptRunsBeforeTheBundle(t *testing.T) {
 		t.Fatal("layout renders no pre-paint theme script")
 	}
 
-	bundle := strings.Index(body, BundleURL())
+	bundle := strings.Index(body, ui.BundleURL())
 	if bundle < 0 {
 		t.Fatal("layout does not link the island bundle")
 	}
 
 	if preload > bundle {
-		t.Errorf("the pre-paint theme script is emitted after the bundle (%d > %d); it has to run before first paint", preload, bundle)
+		t.Errorf("the pre-paint theme script is emitted after the bundle (%d > %d); it has to run before first paint",
+			preload, bundle)
 	}
 
 	// The bundle is a deferred module script, which is exactly why it cannot

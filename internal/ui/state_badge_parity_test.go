@@ -57,7 +57,9 @@ func loadStateBadgeFixture(t *testing.T) stateBadgeFixture {
 	}
 
 	var fixture stateBadgeFixture
-	if err := json.Unmarshal(raw, &fixture); err != nil {
+
+	err = json.Unmarshal(raw, &fixture)
+	if err != nil {
 		t.Fatalf("decode %s: %v", stateBadgeParityPath, err)
 	}
 
@@ -73,13 +75,18 @@ func loadStateBadgeFixture(t *testing.T) stateBadgeFixture {
 // assembled from the same three fields the TypeScript side reads, so the two
 // tests cannot agree with the fixture and disagree with each other.
 func TestStateBadgeMatchesSharedContract(t *testing.T) {
+	t.Parallel()
+
 	fixture := loadStateBadgeFixture(t)
 
 	for _, badge := range fixture.Badges {
 		t.Run(fmt.Sprintf("state=%q", badge.State), func(t *testing.T) {
+			t.Parallel()
+
 			var output bytes.Buffer
 
-			if err := ui.StateBadge(badge.State).Render(context.Background(), &output); err != nil {
+			err := ui.StateBadge(badge.State).Render(context.Background(), &output)
+			if err != nil {
 				t.Fatalf("render the badge for %q: %v", badge.State, err)
 			}
 
@@ -107,6 +114,8 @@ func TestStateBadgeMatchesSharedContract(t *testing.T) {
 // it imports this package, and the six JobState constants it declares are the
 // same six strings.
 func TestStateBadgeCoversEveryState(t *testing.T) {
+	t.Parallel()
+
 	fixture := loadStateBadgeFixture(t)
 
 	covered := make(map[string]bool, len(fixture.Badges))

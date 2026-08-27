@@ -1045,7 +1045,15 @@ func TestReferenceImageMetadataUnavailable(t *testing.T) {
 }
 
 func TestJobStatusCarriesReferenceImageFacts(t *testing.T) {
+	t.Parallel()
+
+	// The three keys the reference image contributes to the status payload.
+	// Both halves below check the same set, from opposite directions.
+	refKeys := []string{"refWidth", "refHeight", "refSize"}
+
 	t.Run("present and typed for a readable image", func(t *testing.T) {
+		t.Parallel()
+
 		imgPath := filepath.Join(t.TempDir(), "reference.png")
 		createSimpleTestImage(t, imgPath)
 
@@ -1055,7 +1063,7 @@ func TestJobStatusCarriesReferenceImageFacts(t *testing.T) {
 		recorder := httptest.NewRecorder()
 		server.handleGetJobStatus(
 			recorder,
-			httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+job.ID+"/status", nil),
+			httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/jobs/"+job.ID+"/status", nil),
 			job.ID,
 		)
 
@@ -1072,7 +1080,7 @@ func TestJobStatusCarriesReferenceImageFacts(t *testing.T) {
 			t.Fatalf("decode raw status: %v", err)
 		}
 
-		for _, key := range []string{"refWidth", "refHeight", "refSize"} {
+		for _, key := range refKeys {
 			value, ok := raw[key]
 			if !ok {
 				t.Fatalf("status JSON is missing %q", key)
@@ -1117,6 +1125,8 @@ func TestJobStatusCarriesReferenceImageFacts(t *testing.T) {
 	})
 
 	t.Run("omitted for an unreadable image", func(t *testing.T) {
+		t.Parallel()
+
 		missing := filepath.Join(t.TempDir(), "missing.png")
 
 		server := NewServer(":8080", nil)
@@ -1125,7 +1135,7 @@ func TestJobStatusCarriesReferenceImageFacts(t *testing.T) {
 		recorder := httptest.NewRecorder()
 		server.handleGetJobStatus(
 			recorder,
-			httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+job.ID+"/status", nil),
+			httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/jobs/"+job.ID+"/status", nil),
 			job.ID,
 		)
 
@@ -1140,7 +1150,7 @@ func TestJobStatusCarriesReferenceImageFacts(t *testing.T) {
 			t.Fatalf("decode raw status: %v", err)
 		}
 
-		for _, key := range []string{"refWidth", "refHeight", "refSize"} {
+		for _, key := range refKeys {
 			if value, ok := raw[key]; ok {
 				t.Fatalf("status JSON has %q = %v for an unreadable image, want it omitted", key, value)
 			}
@@ -2647,6 +2657,8 @@ func TestServer_BackendDefaults_AllEntryPoints(t *testing.T) {
 // still answers correctly cannot have decoded the header again. Invalidation is
 // proven by writing a genuinely different image, which changes both.
 func TestReferenceImageFactsAreMemoizedAndRevalidated(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "reference.png")
 	createSimpleTestImage(t, path)
 
@@ -2668,11 +2680,13 @@ func TestReferenceImageFactsAreMemoizedAndRevalidated(t *testing.T) {
 
 	// Same length, same timestamps, unreadable as an image. Only a cache hit
 	// can answer this correctly.
-	if err := os.WriteFile(path, bytes.Repeat([]byte{0}, int(size)), 0o600); err != nil {
+	err = os.WriteFile(path, bytes.Repeat([]byte{0}, int(size)), 0o600)
+	if err != nil {
 		t.Fatalf("corrupt reference image: %v", err)
 	}
 
-	if err := os.Chtimes(path, info.ModTime(), info.ModTime()); err != nil {
+	err = os.Chtimes(path, info.ModTime(), info.ModTime())
+	if err != nil {
 		t.Fatalf("restore modification time: %v", err)
 	}
 
@@ -2690,11 +2704,14 @@ func TestReferenceImageFactsAreMemoizedAndRevalidated(t *testing.T) {
 	replaced := image.NewNRGBA(image.Rect(0, 0, 12, 34))
 
 	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, replaced); err != nil {
+
+	err = png.Encode(&encoded, replaced)
+	if err != nil {
 		t.Fatalf("encode replacement image: %v", err)
 	}
 
-	if err := os.WriteFile(path, encoded.Bytes(), 0o600); err != nil {
+	err = os.WriteFile(path, encoded.Bytes(), 0o600)
+	if err != nil {
 		t.Fatalf("replace reference image: %v", err)
 	}
 

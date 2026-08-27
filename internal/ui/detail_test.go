@@ -10,12 +10,19 @@ import (
 	"time"
 )
 
+// Fixture values this package's job-detail tests repeat.
+const (
+	stateRunning     = "running"
+	referenceRefPath = "assets/reference.png"
+)
+
 func renderJobDetail(t *testing.T, job JobDetail) string {
 	t.Helper()
 
 	var output bytes.Buffer
 
-	if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+	err := JobDetailPage(job).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render job detail: %v", err)
 	}
 
@@ -93,7 +100,7 @@ func TestJobDetailPageCarriesNoInlineScript(t *testing.T) {
 	t.Parallel()
 
 	page := renderJobDetail(t, JobDetail{
-		ID: "12345678-1234-1234-1234-123456789abc", State: "running", StartTime: time.Now(),
+		ID: "12345678-1234-1234-1234-123456789abc", State: stateRunning, StartTime: time.Now(),
 		MetricHistory: []MetricSample{{Iteration: 1, Cost: 10}},
 		Parameters:    []CircleParameter{{Number: 1}},
 	})
@@ -132,7 +139,7 @@ func TestJobDetailPageMountsOneIslandOverTheBody(t *testing.T) {
 	t.Parallel()
 
 	body := renderJobDetail(t, JobDetail{
-		ID: "12345678-1234-1234-1234-123456789abc", State: "running", StartTime: time.Now(),
+		ID: "12345678-1234-1234-1234-123456789abc", State: stateRunning, StartTime: time.Now(),
 	})
 
 	for _, gone := range []string{`data-island="job-controls"`, `data-island="image-viewer"`} {
@@ -148,7 +155,9 @@ func TestJobDetailPageMountsOneIslandOverTheBody(t *testing.T) {
 	root := strings.Index(body, `data-island="job-detail"`)
 	seed := strings.Index(body, `id="job-detail-data"`)
 
-	for _, inside := range []string{`class="action-row"`, `class="detail-stack"`, `id="image-viewer"`, `id="parameter-viewer"`} {
+	for _, inside := range []string{
+		`class="action-row"`, `class="detail-stack"`, `id="image-viewer"`, `id="parameter-viewer"`,
+	} {
 		at := strings.Index(body, inside)
 		if at < root {
 			t.Errorf("%s is rendered before the island root and would survive mounting", inside)
@@ -175,7 +184,7 @@ func TestJobDetailPageSeedsTheIsland(t *testing.T) {
 
 	psnr := 31.25
 	job := JobDetail{
-		ID: "12345678-1234-1234-1234-123456789abc", State: "running", StartTime: time.Now(),
+		ID: "12345678-1234-1234-1234-123456789abc", State: stateRunning, StartTime: time.Now(),
 		Circles: 64, Iterations: 25, MaxIters: 100, Evaluations: 12_345,
 		BestCost: 12.5, InitialCost: 40.5, BestRevision: 7, CPS: 2.5, CanPolish: true,
 		SSIMEnabled: true, PSNR: &psnr, RefWidth: 640, RefHeight: 480, RefSize: 2048,
@@ -184,7 +193,9 @@ func TestJobDetailPageSeedsTheIsland(t *testing.T) {
 	}
 
 	seed := map[string]any{}
-	if err := json.Unmarshal([]byte(jobDetailSeedJSON(t, renderJobDetail(t, job))), &seed); err != nil {
+
+	err := json.Unmarshal([]byte(jobDetailSeedJSON(t, renderJobDetail(t, job))), &seed)
+	if err != nil {
 		t.Fatalf("parse the island seed: %v", err)
 	}
 
@@ -220,9 +231,11 @@ func jobDetailSeedJSON(t *testing.T, body string) string {
 }
 
 func TestJobDetailPageDistinguishesCandidateFromAuditedBest(t *testing.T) {
+	t.Parallel()
+
 	candidate := 95.25
 	body := renderJobDetail(t, JobDetail{
-		ID: "12345678-1234-1234-1234-123456789abc", State: "running", StartTime: time.Now(),
+		ID: "12345678-1234-1234-1234-123456789abc", State: stateRunning, StartTime: time.Now(),
 		BestCost: 100, CandidateCost: &candidate,
 	})
 
@@ -290,8 +303,8 @@ func TestJobDetailFallbackMutationsAreDisabled(t *testing.T) {
 		state  string
 		button string
 	}{
-		{"running", "pause-job"},
-		{"running", "cancel-job"},
+		{stateRunning, "pause-job"},
+		{stateRunning, "cancel-job"},
 		{"paused", "resume-job"},
 		{"completed", "delete-job"},
 		// The report is assembled in the browser from a blob, so unlike the
@@ -329,13 +342,16 @@ func TestJobDetailFallbackIsCompleteWithoutScript(t *testing.T) {
 	body := renderJobDetail(t, JobDetail{
 		ID: "12345678-1234-1234-1234-123456789abc", State: "completed",
 		StartTime: time.Date(2026, time.August, 13, 9, 0, 0, 0, time.UTC),
-		Mode:      "batch", Optimizer: "mayfly", Variant: "standard", RefPath: "assets/reference.png",
+		Mode:      "batch", Optimizer: "mayfly", Variant: "standard", RefPath: referenceRefPath,
 		Circles: 64, PopSize: 40, Iterations: 100, MaxIters: 100, Evaluations: 4000,
 		BestCost: 12.5, InitialCost: 40.5, PSNR: &psnr, ElapsedSec: 95.5, CPS: 2500,
 		RefWidth: 640, RefHeight: 480, RefSize: 2048,
 		MetricHistory: []MetricSample{
 			{Iteration: 50, Cost: 20, PSNR: &psnr, CPS: 2400, Timestamp: time.Date(2026, time.August, 13, 9, 1, 0, 0, time.UTC)},
-			{Iteration: 100, Cost: 12.5, PSNR: &psnr, CPS: 2500, Timestamp: time.Date(2026, time.August, 13, 9, 1, 20, 0, time.UTC)},
+			{
+				Iteration: 100, Cost: 12.5, PSNR: &psnr, CPS: 2500,
+				Timestamp: time.Date(2026, time.August, 13, 9, 1, 20, 0, time.UTC),
+			},
 		},
 		Parameters: []CircleParameter{{Number: 1, X: 12.345, Y: 67.891, Radius: 4.567, Red: 1, Green: 0.5, Opacity: 0.75}},
 	})
@@ -352,7 +368,7 @@ func TestJobDetailFallbackIsCompleteWithoutScript(t *testing.T) {
 		// Metric history, as a table rather than as an empty canvas.
 		`id="metric-history-table"`, "Iteration", "Cost", "PSNR",
 		// Configuration and parameters.
-		"assets/reference.png", "Circle 1: (12.35, 67.89, 4.57) RGB(255, 128, 0) α=0.750",
+		referenceRefPath, "Circle 1: (12.35, 67.89, 4.57) RGB(255, 128, 0) α=0.750",
 		// Artifact links, which are plain hrefs and work with no script at all.
 		"/best.png?download=1", "/params.json", "/diff.png?colormap=turbo&amp;download=1",
 		"Download params.json",
@@ -492,7 +508,7 @@ func TestJobDetailPageAnnouncesIterationProgress(t *testing.T) {
 	t.Parallel()
 
 	body := renderJobDetail(t, JobDetail{
-		ID: "12345678-1234-1234-1234-123456789abc", State: "running",
+		ID: "12345678-1234-1234-1234-123456789abc", State: stateRunning,
 		StartTime: time.Now(), Iterations: 25, MaxIters: 100,
 	})
 
@@ -524,7 +540,7 @@ func TestJobDetailPageAccentButtonsCarryTheirForeground(t *testing.T) {
 		state string
 		want  []string
 	}{
-		{state: "running", want: []string{
+		{state: stateRunning, want: []string{
 			`id="pause-job" class="btn btn-warning"`,
 			cancelButton,
 		}},
@@ -580,7 +596,7 @@ func TestJobDetailPageWrapsHeaderRows(t *testing.T) {
 	t.Parallel()
 
 	body := renderJobDetail(t, JobDetail{
-		ID: "12345678-1234-1234-1234-123456789abc", State: "running", StartTime: time.Now(),
+		ID: "12345678-1234-1234-1234-123456789abc", State: stateRunning, StartTime: time.Now(),
 		MetricHistory: []MetricSample{{Iteration: 1, Cost: 10}},
 	})
 

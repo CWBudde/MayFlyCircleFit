@@ -38,6 +38,13 @@ import (
 // imports it directly.
 const createJobParityPath = "../../web/src/create-job-parity.json"
 
+// Optional numeric fields whose explicit zero the contract distinguishes from
+// an omitted value; named here because more than one check spells them.
+const (
+	fieldStopMinIters        = "stopMinIters"
+	fieldStopStagnationIters = "stopStagnationIters"
+)
+
 type createJobContract struct {
 	Note                 string          `json:"note"`
 	ReferencePlaceholder string          `json:"referencePlaceholder"`
@@ -66,7 +73,9 @@ func loadCreateJobContract(t *testing.T) createJobContract {
 	}
 
 	var contract createJobContract
-	if err := json.Unmarshal(raw, &contract); err != nil {
+
+	err = json.Unmarshal(raw, &contract)
+	if err != nil {
 		t.Fatalf("decode the shared create-job contract: %v", err)
 	}
 
@@ -96,7 +105,8 @@ func submitCreateJobAPI(t *testing.T, server *Server, body []byte) string {
 		ID string `json:"id"`
 	}
 
-	if err := json.Unmarshal(recorder.Body.Bytes(), &created); err != nil {
+	err := json.Unmarshal(recorder.Body.Bytes(), &created)
+	if err != nil {
 		t.Fatalf("decode the created job: %v", err)
 	}
 
@@ -204,7 +214,7 @@ func TestCreateJobContractCoversTheHazard(t *testing.T) {
 			omittedZero = true
 		}
 
-		for _, name := range []string{"seed", "stopMinIters", "stopStagnationIters"} {
+		for _, name := range []string{fieldSeed, fieldStopMinIters, fieldStopStagnationIters} {
 			if testCase.Form[name] != "0" {
 				continue
 			}

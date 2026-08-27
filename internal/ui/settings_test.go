@@ -1,3 +1,4 @@
+//nolint:testpackage // shares bodyWithoutLayout with the other in-package view tests
 package ui
 
 import (
@@ -12,7 +13,8 @@ func renderSettings(t *testing.T) string {
 
 	var output bytes.Buffer
 
-	if err := SettingsPage().Render(context.Background(), &output); err != nil {
+	err := SettingsPage().Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render settings page: %v", err)
 	}
 
@@ -67,6 +69,7 @@ func TestSettingsPageExplainsThatPreferencesNeedJavaScript(t *testing.T) {
 	body := renderSettings(t)
 
 	start := strings.Index(body, "<noscript>")
+
 	end := strings.Index(body, "</noscript>")
 	if start < 0 || end < 0 {
 		t.Fatal("settings page has no <noscript> explanation")

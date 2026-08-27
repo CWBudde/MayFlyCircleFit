@@ -164,6 +164,8 @@ func TestIslandBundleLoadsTheVersionedBundle(t *testing.T) {
 // leftover per-page call sites that Task 18.3 had left in place. There is one
 // link, and it is in the shell; see TestOnlyTheLayoutLinksTheIslandBundle.
 func TestLayoutLoadsTheIslandBundle(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 
 	err := Layout("Bundle test").Render(context.Background(), &output)
