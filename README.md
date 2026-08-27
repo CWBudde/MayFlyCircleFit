@@ -1,7 +1,7 @@
 # MayFlyCircleFit
 
 MayFlyCircleFit approximates a reference image with colored circles. The
-[Mayfly](https://github.com/cwbudde/mayfly) optimizer is the default; CMA-ES and
+[MayFly](https://github.com/cwbudde/mayfly) optimizer is the default; CMA-ES and
 an experimental Dragonfly adapter are selectable with `--optimizer`, and
 [Optimizer engines](#optimizer-engines) says which settings belong to which. The
 default CPU renderer supports joint, sequential, and batch optimization. An
@@ -242,8 +242,8 @@ CMA-ES reports `convergence`, for its own distribution-aware criteria.
 `dragonfly`. The same choice is available as the `optimizer` field of a JSON job
 payload, of a schedule document's `base` configuration, and of the web creation
 form. An absent field means `mayfly`, which is what every configuration and
-checkpoint written before the field existed carries. A resumed run keeps the
-engine its checkpoint names rather than the one a flag asks for, so an optimizer
+checkpoint written before the field existed carries. A resume runs the engine
+recorded in the checkpoint, whatever `--optimizer` asks for, so an optimizer
 cannot change silently across a resume.
 
 Most run flags are engine-agnostic. `--circles`, `--iters`, `--pop`, `--seed`,
@@ -263,17 +263,18 @@ reached the optimizer would otherwise be persisted into the checkpoint and
 reported back unchanged, which makes every cost it produced impossible to
 compare.
 
-**No engine ranking is established on this problem.** The only head-to-head
-measurement, [`docs/cmaes-preliminary-report.md`](docs/cmaes-preliminary-report.md),
-is a single paired seed block from a campaign that was stopped by operator
-request, and it reports descriptive observations only -- no means, no variance,
-no test. In that block full-covariance CMA-ES reached a lower cost than both
-MayFly arms while spending 22% of the shared evaluation cap, and an IPOP run was
-lower still when it was interrupted. One block cannot estimate seed variance,
-the IPOP figure is right-censored, and no separable-covariance arm ran at all.
-Treat it as a reason to measure, not as a default to change. Dragonfly is the
-one engine that *has* been settled: it loses every one of twelve blocks to
-MayFly `standard` (see below).
+**No engine ranking is established on this problem.** The only measurement that
+puts CMA-ES against MayFly,
+[`docs/cmaes-preliminary-report.md`](docs/cmaes-preliminary-report.md), is a
+single paired seed block from a campaign that was stopped by operator request,
+and it reports descriptive observations only -- no means, no variance, no test.
+In that block full-covariance CMA-ES reached a lower cost than both MayFly arms
+while spending 22% of the shared evaluation cap, and an IPOP run was lower still
+when it was interrupted. One block cannot estimate seed variance, the IPOP
+figure is right-censored, and no separable-covariance arm ran at all. Treat it
+as a reason to measure, not as a default to change. Dragonfly is the one engine
+that *has* been settled: twelve blocks against MayFly `standard`, all lost (see
+below).
 
 ### MayFly
 
@@ -304,8 +305,8 @@ which halves whatever the even-coverage argument is worth here.
 **This is an expert knob with no measurement on circle fitting.** MayFly's own
 benchmark study finds a chance-level effect, and the mechanism is weakest in
 the regime this project usually runs: what an even sample buys is largest when
-the population is small relative to the dimension, and a `--pop-size` of 1024
-over a 56-dimension batch stage is the opposite of that. Where it is worth
+the population is small relative to the dimension, and a `--pop` of 1024 over a
+56-dimension batch stage is the opposite of that. Where it is worth
 trying is a small population on a short restart. Do not read a single campaign
 as evidence for it, and see
 [`docs/known-limitations.md`](docs/known-limitations.md).
@@ -484,7 +485,7 @@ seed deterministically rather than drawing fresh entropy.
 ## Checkpoints and restart-from-best
 
 Checkpoint files record the best candidate and measured progress. Resume does
-not restore the Mayfly algorithm's entire internal state. It starts a new,
+not restore the MayFly algorithm's entire internal state. It starts a new,
 deterministically seeded population containing the saved best and nearby
 variations, and keeps the historical best if the new run is worse. This is a
 restart-from-best operation, not bit-for-bit continuation. Server resume of
@@ -521,7 +522,7 @@ cmd/                    CLI commands
 internal/app/           Shared configuration and validation
 internal/fit/           Rendering and cost functions
 internal/fit/renderer/  Optimization pipelines and renderer backends
-internal/opt/           Mayfly adapter and lifecycle contract
+internal/opt/           MayFly adapter and lifecycle contract
 internal/server/        Trusted-local HTTP server, jobs, and SSE
 internal/store/         Checkpoints, traces, and artifacts
 internal/ui/            templ source and committed generated Go
