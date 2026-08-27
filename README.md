@@ -1,9 +1,12 @@
 # MayFlyCircleFit
 
-MayFlyCircleFit approximates a reference image with colored circles using the
-[Mayfly](https://github.com/cwbudde/mayfly) optimizer. The default CPU renderer
-supports joint, sequential, and batch optimization. An experimental OpenCL
-renderer is available for all three modes in GPU-tagged builds.
+MayFlyCircleFit approximates a reference image with colored circles. The
+[MayFly](https://github.com/cwbudde/mayfly) optimizer is the default; CMA-ES and
+an experimental Dragonfly adapter are selectable with `--optimizer`, and
+[Optimizer engines](#optimizer-engines) says which settings belong to which. The
+default CPU renderer supports joint, sequential, and batch optimization. An
+experimental OpenCL renderer is available for all three modes in GPU-tagged
+builds.
 
 The project is under active production-readiness remediation. Read the
 [support matrix](docs/support-matrix.md) and
@@ -233,10 +236,57 @@ to each stage, so they can shorten stages without ending the run. `status` and
 `target_cost`, `stagnation`, `convergence`, or `stage_convergence`. Only
 CMA-ES reports `convergence`, for its own distribution-aware criteria.
 
+## Optimizer engines
+
+`--optimizer` selects the search algorithm: `mayfly` (the default), `cmaes`, or
+`dragonfly`. The same choice is available as the `optimizer` field of a JSON job
+payload, of a schedule document's `base` configuration, and of the web creation
+form. An absent field means `mayfly`, which is what every configuration and
+checkpoint written before the field existed carries. A resume runs the engine
+recorded in the checkpoint, whatever `--optimizer` asks for, so an optimizer
+cannot change silently across a resume.
+
+Most run flags are engine-agnostic. `--circles`, `--iters`, `--pop`, `--seed`,
+`--mode`, `--backend`, `--batch-size`, the `--stop-*` family, `--restarts`,
+`--optimizer-epochs`, and `--parallel-evaluation` mean the same thing for all
+three. The rest belong to one engine:
+
+| Flags | Engine |
+| --- | --- |
+| `--variant`, `--qmc-init`, `--crossover-count`, `--dance-damp`, `--aquila-weight`, `--opposition-probability`, `--polishing` | MayFly only |
+| `--initial-sigma`, `--covariance-mode`, `--active-cma`, `--restart-strategy` | CMA-ES only |
+
+Naming one of them alongside a different engine is refused at validation rather
+than accepted and ignored: a usage error from the CLI, an `invalid_config`
+envelope from the API, and a rejected schedule document. A setting that never
+reached the optimizer would otherwise be persisted into the checkpoint and
+reported back unchanged, which makes every cost it produced impossible to
+compare.
+
+**No engine ranking is established on this problem.** The only measurement that
+puts CMA-ES against MayFly,
+[`docs/cmaes-preliminary-report.md`](docs/cmaes-preliminary-report.md), is a
+single paired seed block from a campaign that was stopped by operator request,
+and it reports descriptive observations only -- no means, no variance, no test.
+In that block full-covariance CMA-ES reached a lower cost than both MayFly arms
+while spending 22% of the shared evaluation cap, and an IPOP run was lower still
+when it was interrupted. One block cannot estimate seed variance, the IPOP
+figure is right-censored, and no separable-covariance arm ran at all. Treat it
+as a reason to measure, not as a default to change. Dragonfly is the one engine
+that *has* been settled: twelve blocks against MayFly `standard`, all lost (see
+below).
+
+### MayFly
+
+The default, [`github.com/cwbudde/mayfly`](https://github.com/cwbudde/mayfly)
+pinned to v0.7.1, and the engine every measurement report in `docs/` was taken
+under. Everything in this section is MayFly-only, as is polishing, which runs
+its own MayFly population by construction.
+
 Use `--variant` to select the MayFly algorithm variant: `standard`, `desma`,
 `olce`, `eobbma`, `gsasma`, `mpma`, or `aoblmoa`.
 
-### Initial population
+#### Initial population
 
 `--qmc-init` selects how a MayFly run draws its first generation: `uniform`
 (the default), `sobol`, or `halton`. Uniform takes every coordinate as an
@@ -255,8 +305,8 @@ which halves whatever the even-coverage argument is worth here.
 **This is an expert knob with no measurement on circle fitting.** MayFly's own
 benchmark study finds a chance-level effect, and the mechanism is weakest in
 the regime this project usually runs: what an even sample buys is largest when
-the population is small relative to the dimension, and a `--pop-size` of 1024
-over a 56-dimension batch stage is the opposite of that. Where it is worth
+the population is small relative to the dimension, and a `--pop` of 1024 over a
+56-dimension batch stage is the opposite of that. Where it is worth
 trying is a small population on a short restart. Do not read a single campaign
 as evidence for it, and see
 [`docs/known-limitations.md`](docs/known-limitations.md).
@@ -268,27 +318,7 @@ starting population consumes the generator differently from the first
 iteration onwards. Pair strategies across seeds rather than assuming a shared
 trajectory.
 
-### Restarts
-
-`--restarts N` runs each optimizer invocation as N independent cold attempts
-and keeps the best. It is not `--optimizer-epochs`: an epoch reseeds the next
-run from the best candidate found so far and therefore inherits that
-candidate's basin, while a restart draws a fresh population and explores
-independently. Both can be combined -- restarts wrap epochs, so one attempt is
-a whole epoch chain.
-
-Restarts multiply the work, so `--restarts 4` costs four times a single
-attempt at the same `--iters`. To hold a budget fixed, divide `--iters` by the
-restart count. On the eight-circle base stage that trade is strongly
-favourable: the same budget spent as several short attempts beat one long run
-by about 160 cost points, and four attempts beat a single run of sixteen times
-their length while using 15% of its compute. See
-[`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md) for the
-measurement, its limits, and the population-collapse behaviour behind it.
-
-A restarted run stays reproducible for a fixed `--seed`; the attempts vary the
-seed deterministically rather than drawing fresh entropy.
-### Crossover count
+#### Crossover count
 
 `--crossover-count N` sets how many crossover offspring MayFly produces per
 iteration. Zero, the default, leaves the library's own scaling alone, which is
@@ -307,7 +337,7 @@ recombination. And an odd count yields one fewer offspring, because the library
 mates pairs. The setting applies to the optimizer stages only, not to polishing
 sweeps, which run their own smaller population.
 
-### Advanced MayFly parameters
+#### Advanced MayFly parameters
 
 Three further knobs reach parameters the MayFly library normally keeps to
 itself. They are worth knowing about and are not worth changing casually: the
@@ -361,11 +391,101 @@ instead of running silently and being persisted into a checkpoint.
 Like `--crossover-count`, all three apply to the optimizer stages only, not to
 polishing sweeps, which run their own smaller standard-variant population.
 
+### CMA-ES
+
+`--optimizer cmaes` runs covariance matrix adaptation evolution strategy from
+[`github.com/CWBudde/go-cma-es`](https://github.com/CWBudde/go-cma-es), pinned
+to v0.1.0. It carries a sampling distribution rather than a population of
+candidates, so `--pop` sets the generation size and `--iters` the generation
+cap. It also brings its own distribution-aware convergence criteria and can stop
+well below that cap; that is the only case in which `status` reports
+`convergence`.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--initial-sigma` | 0.3 | Initial step size, in the adapter's normalized [0,1] search box, so it means the same thing for every circle parameter. Must be finite and positive. |
+| `--covariance-mode` | `full` | `full`, `separable`, or `block`. |
+| `--active-cma` | `true` | Negative rank-mu adaptation: the worst samples of a generation actively shrink the covariance along their own directions. |
+| `--restart-strategy` | `none` | `none`, `ipop`, or `bipop`. |
+
+`full` learns every pairwise coordinate correlation, at quadratic storage and a
+cubic eigendecomposition, so it is refused above **512 optimizer dimensions**.
+That bound counts the dimensions of one search, not of the whole picture: a
+joint run searches every circle at once at seven coordinates each and so reaches
+the limit at 73 circles, a sequential run searches seven dimensions whatever the
+circle count, and a batch run searches one batch -- `--batch-size` circles, or
+every circle when the batch is wider than the picture. The bound is checked
+against the configuration the defaults produce, so an automatic `--batch-size 0`
+is resolved to the default batch before it is applied. Above the limit, `block`
+gives each circle its own seven-coordinate block and learns no correlation
+between circles, and `separable` learns one variance per coordinate and no
+correlation at all. Both are linear in the dimension.
+
+`ipop` and `bipop` are the published restart schedules. On a convergence
+criterion the search restarts: IPOP doubles the population each time, and BIPOP
+alternates those doubling runs with shorter randomized small-population ones,
+always advancing whichever regime has spent fewer evaluations. They run *inside*
+one optimizer invocation and share a single budget of `--iters` x `--pop`
+evaluations across all of their internal runs, which is what separates them from
+`--restarts`: a restart is a whole fresh invocation at the full budget. That is
+why `--restarts` has to stay at 1 when either is selected, and a configuration
+setting both is refused rather than silently multiplied. For fixed independent
+attempts instead, keep `--restart-strategy none` and use `--restarts`.
+
+CMA-ES honours `--optimizer-epochs`, parallel evaluation, the `--stop-*` family,
+and continuation profiles, whose seeded fraction, perturbation sigma, coordinate
+rate, and initial sigma it reads. A continuation profile's `maxVelocity` has no
+CMA-ES analogue and is not applied. Polishing is MayFly-only, and a CMA-ES job
+that asks for it is rejected rather than quietly left unpolished.
+
+### Dragonfly
+
+`--optimizer dragonfly` runs a proof-of-concept adapter over
+[`github.com/CWBudde/dragonfly`](https://github.com/CWBudde/dragonfly) v0.1.0,
+continuous DA. It supports the shared lifecycle, continuation, progress, epoch
+and parallel-evaluation contracts, and nothing else: every MayFly-only and
+CMA-ES-only flag above is refused alongside it, polishing included.
+
+Its published behaviour is to explore well and exploit poorly -- the convergence
+factor reaches zero at the halfway point of a run -- so a worse fit than MayFly
+is the expected outcome, and it is now the measured one. On the eight-circle
+base stage it loses all twelve blocks in every arm, by 431.68 cost points
+(`t = -16.81`), even when handed more evaluations than the MayFly baseline; see
+[`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md). It stays in the
+tree as an expert-only alternative for further experiments, not as a candidate
+default.
+
+## Restarts and epochs
+
+`--restarts N` runs each optimizer invocation as N independent cold attempts
+and keeps the best. It is not `--optimizer-epochs`: an epoch reseeds the next
+run from the best candidate found so far and therefore inherits that
+candidate's basin, while a restart draws a fresh population and explores
+independently. Both can be combined -- restarts wrap epochs, so one attempt is
+a whole epoch chain.
+
+Both are engine-agnostic; the measurement below is MayFly's. CMA-ES has a
+second, different notion of restarting -- `--restart-strategy ipop`/`bipop`
+restarts inside one invocation and shares a single evaluation budget across the
+attempts -- and requires `--restarts 1` when either is selected. See
+[CMA-ES](#cma-es).
+
+Restarts multiply the work, so `--restarts 4` costs four times a single
+attempt at the same `--iters`. To hold a budget fixed, divide `--iters` by the
+restart count. On the eight-circle base stage that trade is strongly
+favourable: the same budget spent as several short attempts beat one long run
+by about 160 cost points, and four attempts beat a single run of sixteen times
+their length while using 15% of its compute. See
+[`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md) for the
+measurement, its limits, and the population-collapse behaviour behind it.
+
+A restarted run stays reproducible for a fixed `--seed`; the attempts vary the
+seed deterministically rather than drawing fresh entropy.
 
 ## Checkpoints and restart-from-best
 
 Checkpoint files record the best candidate and measured progress. Resume does
-not restore the Mayfly algorithm's entire internal state. It starts a new,
+not restore the MayFly algorithm's entire internal state. It starts a new,
 deterministically seeded population containing the saved best and nearby
 variations, and keeps the historical best if the new run is worse. This is a
 restart-from-best operation, not bit-for-bit continuation. Server resume of
@@ -402,7 +522,7 @@ cmd/                    CLI commands
 internal/app/           Shared configuration and validation
 internal/fit/           Rendering and cost functions
 internal/fit/renderer/  Optimization pipelines and renderer backends
-internal/opt/           Mayfly adapter and lifecycle contract
+internal/opt/           MayFly adapter and lifecycle contract
 internal/server/        Trusted-local HTTP server, jobs, and SSE
 internal/store/         Checkpoints, traces, and artifacts
 internal/ui/            templ source and committed generated Go
