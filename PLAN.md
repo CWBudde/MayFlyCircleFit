@@ -1269,23 +1269,46 @@ store 16 and both report `16 restarts × 1 × 2 iterations`, while
 `restartStrategy=ipop` beside `optimizerRestarts=2` is refused with app's own
 message.
 
-### Task 22.2: Document the optimizer engines in the README (P2)
+### Task 22.2: Document the optimizer engines in the README (P2) — complete
 
-The README has no optimizer-engine section. `--optimizer` appears once in
-passing (`README.md:246`), CMA-ES once (`README.md:234`), and
-`--initial-sigma`, `--covariance-mode`, `--active-cma`, and
-`--restart-strategy` only in `--help`. The surrounding sections — variants,
-initial population, restarts, crossover count, advanced parameters — are all
-MayFly's, and nothing says so.
+The README had no optimizer-engine section. `--optimizer` appeared once in
+passing, CMA-ES once, and `--initial-sigma`, `--covariance-mode`, `--active-cma`
+and `--restart-strategy` only in `--help`. The surrounding sections — variants,
+initial population, restarts, crossover count, advanced parameters — were all
+MayFly's, and nothing said so.
 
-- [ ] Add an "Optimizer engines" section covering the three engines, what
+- [x] Add an "Optimizer engines" section covering the three engines, what
       selects each, and which knobs belong to which; nest the MayFly-specific
       sections under it so `--variant` and `--qmc-init` stop reading as global.
-- [ ] Document the four CMA-ES flags with their defaults, the 512-dimension
+      `## Optimizer engines` now opens with what `--optimizer` selects, the four
+      admission paths that carry it, a two-row table splitting the MayFly-only
+      from the CMA-ES-only flags, and the rule that naming one alongside another
+      engine is refused rather than ignored. `### MayFly` nests the variant
+      sentence and the former `### Initial population`, `### Crossover count`
+      and `### Advanced MayFly parameters` sections, now `####`.
+- [x] Document the four CMA-ES flags with their defaults, the 512-dimension
       full-covariance limit, and the shared IPOP/BIPOP evaluation budget.
-- [ ] State plainly that no engine ranking is established, linking
+      `### CMA-ES` tabulates the four flags with their resolved defaults (0.3,
+      `full`, `true`, `none`), states the 512-dimension refusal as a per-search
+      bound with the 73-circle joint figure and the batch/sequential cases, and
+      separates the shared `iters * popSize` IPOP/BIPOP budget from
+      `--restarts`, including why the two cannot be combined.
+- [x] State plainly that no engine ranking is established, linking
       [`docs/cmaes-preliminary-report.md`](docs/cmaes-preliminary-report.md) for
-      what the stopped campaign does and does not support.
+      what the stopped campaign does and does not support. The engines section
+      says so in bold, names the one block, the operator stop, the censored IPOP
+      figure and the missing separable arm, and contrasts it with the settled
+      Dragonfly result.
+
+`--restarts` and `--optimizer-epochs` are engine-agnostic, so the former
+`### Restarts` section was promoted to a top-level `## Restarts and epochs`
+rather than nested under MayFly, carrying a pointer to the different thing
+`--restart-strategy` means for CMA-ES. Every claim was read out of the tree
+rather than from an earlier report: the flag defaults from `cmd/run.go`, the
+refusal rules from `internal/app/optimizer.go` and `internal/app/cmaes.go`, the
+per-search dimension count from `JobConfig.optimizerDimensions`, and the
+IPOP/BIPOP schedule semantics from the pinned `go-cma-es` v0.1.0 source.
+Documentation only: no Go, templ, or TypeScript source changed.
 
 ### Task 22.3: Settle CMA-ES polishing as a decision, not a gap (P2)
 
@@ -1366,9 +1389,12 @@ Current open work, in priority order:
    [`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md).
 4. **CMA-ES measurement (P1):** compare evaluation-matched MayFly and CMA-ES
    arms, including IPOP and separable covariance.
-5. **CMA-ES surface parity (P2):** Tasks 22.2–22.4. Task 22.1 is complete: the
+5. **CMA-ES surface parity (P2):** Tasks 22.3–22.4. Task 22.1 is complete: the
    creation form now configures every CMA-ES knob, carries the restart count
    Phase 21's arms need, and warns before the two refusals it can anticipate.
+   Task 22.2 is complete: the README now has an "Optimizer engines" section
+   documenting all three engines, the CMA-ES flags, and the absence of a
+   ranking.
 6. **Dashboard sign-off (P1):** Task 17.11.
 7. ~~**Frontend island transition (P1/P2):** Tasks 18.1–18.7.~~ Phase 18 is
    complete. The shadcn SPA rewrite remains a deferred alternative at the end
