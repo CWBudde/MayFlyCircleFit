@@ -3,6 +3,9 @@ package server
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -365,6 +368,258 @@ func TestJobDetailDataSeedMatchesStatusEndpoint(t *testing.T) {
 
 				if value != parsed {
 					t.Errorf("%q = %v in the status payload, want %v as in data-%s", testCase.path, value, parsed, testCase.attr)
+				}
+			}
+		})
+	}
+}
+
+// The tests above compare two Go payloads with each other. Nothing in them
+// looks at the TypeScript that actually consumes those payloads, so the second
+// half of the contract — that the hand-written read models in web/src name the
+// same wire fields the Go structs emit — was checked by nobody. Task 18.6
+// evaluated generating those read models from the Go structs and decided
+// against it (docs/typescript-read-model-generation.md); this test is the
+// cheaper half of what generation would have bought, and the decision names it
+// as the contract that replaces generation.
+//
+// It reads the declarations straight out of web/src and asserts that every
+// field they declare exists on the Go type serving them. That is deliberately
+// one-directional: a Go struct may carry fields the island ignores (it usually
+// does), but an island field with no Go field behind it is always undefined at
+// runtime, and TypeScript cannot see that because every payload enters through
+// `fetchJSON<T>`'s unchecked `as T` cast.
+
+// webSourceDir is web/src as seen from this package's test working directory.
+const webSourceDir = "../../web/src"
+
+// tsFieldNamePattern matches one field of a TypeScript object type literal.
+// Only the name and its optional marker matter here; the declared type is not
+// compared, because Go and TypeScript disagree about number widths by design.
+var tsFieldNamePattern = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)(\??):`)
+
+// tsObjectFields returns the field names a hand-written read model declares,
+// mapped to whether the declaration marks them optional. It reads the object
+// type literal of `type <decl> = ... { ... }`, which covers both a plain
+// object type and the `A & { ... }` intersections two islands use — the named
+// half of an intersection is checked as its own row of the table below.
+//
+// Only fields at the literal's own brace depth are returned. A nested literal
+// (HostFacts.gpu, RawJob.config) contributes its own name and stops there,
+// which is what the Go side has a single struct field for.
+func tsObjectFields(t *testing.T, file, decl string) map[string]bool {
+	t.Helper()
+
+	source, err := os.ReadFile(filepath.Join(webSourceDir, file))
+	if err != nil {
+		t.Fatalf("read %s: %v", file, err)
+	}
+
+	body := tsDeclarationBody(t, string(source), file, decl)
+	fields := make(map[string]bool)
+	depth := 0
+
+	for _, fragment := range splitTSFields(body, &depth) {
+		if match := tsFieldNamePattern.FindStringSubmatch(fragment); match != nil {
+			fields[match[1]] = match[2] == "?"
+		}
+	}
+
+	if len(fields) == 0 {
+		t.Fatalf("%s: read no fields out of `type %s`; the declaration style changed", file, decl)
+	}
+
+	return fields
+}
+
+// tsDeclarationBody returns the contents of the first brace-balanced object
+// literal belonging to `type <decl> =`.
+func tsDeclarationBody(t *testing.T, source, file, decl string) string {
+	t.Helper()
+
+	header := regexp.MustCompile(`(?m)^(?:export )?type ` + regexp.QuoteMeta(decl) + `\b[^=]*=`)
+
+	loc := header.FindStringIndex(source)
+	if loc == nil {
+		t.Fatalf("%s declares no `type %s`; the read model was renamed or moved", file, decl)
+	}
+
+	rest := source[loc[1]:]
+
+	open := strings.Index(rest, "{")
+	if open < 0 {
+		t.Fatalf("%s: `type %s` is not an object type", file, decl)
+	}
+
+	depth := 0
+	for index, char := range rest[open:] {
+		switch char {
+		case '{':
+			depth++
+		case '}':
+			depth--
+
+			if depth == 0 {
+				return rest[open+1 : open+index]
+			}
+		}
+	}
+
+	t.Fatalf("%s: `type %s` has no balanced closing brace", file, decl)
+
+	return ""
+}
+
+// splitTSFields cuts an object literal body into one fragment per field. It
+// splits on `;` and on newlines, skips `//` comments, and reports only
+// fragments that begin at the literal's own depth so a nested literal's fields
+// are not mistaken for the outer type's.
+func splitTSFields(body string, depth *int) []string {
+	var (
+		fragments []string
+		current   strings.Builder
+		startedAt = *depth
+	)
+
+	flush := func() {
+		if text := strings.TrimSpace(current.String()); text != "" && startedAt == 0 {
+			fragments = append(fragments, text)
+		}
+
+		current.Reset()
+
+		startedAt = *depth
+	}
+
+	for _, line := range strings.Split(body, "\n") {
+		if comment := strings.Index(line, "//"); comment >= 0 {
+			line = line[:comment]
+		}
+
+		for _, char := range line {
+			switch char {
+			case '{', '<':
+				*depth++
+			case '}', '>':
+				*depth--
+			case ';':
+				flush()
+
+				continue
+			}
+
+			current.WriteRune(char)
+		}
+
+		flush()
+	}
+
+	flush()
+
+	return fragments
+}
+
+// goWireNames returns the JSON names a struct type serializes, read from the
+// tags rather than from a marshalled value so that an omitempty field is
+// reported even when its zero value would drop it from the wire. Embedded
+// structs without a tag of their own are flattened, exactly as encoding/json
+// flattens them.
+func goWireNames(t *testing.T, value any) map[string]bool {
+	t.Helper()
+
+	names := make(map[string]bool)
+	collectWireNames(t, reflect.TypeOf(value), names)
+
+	return names
+}
+
+func collectWireNames(t *testing.T, structType reflect.Type, into map[string]bool) {
+	t.Helper()
+
+	for structType.Kind() == reflect.Pointer {
+		structType = structType.Elem()
+	}
+
+	if structType.Kind() != reflect.Struct {
+		t.Fatalf("goWireNames wants a struct, got %s", structType.Kind())
+	}
+
+	for index := range structType.NumField() {
+		field := structType.Field(index)
+		tag := field.Tag.Get("json")
+
+		if tag == "-" {
+			continue
+		}
+
+		name, _, _ := strings.Cut(tag, ",")
+		if name == "" {
+			if field.Anonymous {
+				collectWireNames(t, field.Type, into)
+
+				continue
+			}
+
+			name = field.Name
+		}
+
+		into[name] = true
+	}
+}
+
+// TestIslandReadModelsMatchTheGoWire is the Go↔TypeScript half of the parity
+// contract. Each row pairs one hand-written read model in web/src with the Go
+// type whose JSON it deserializes.
+//
+// Two read models are deliberately absent. JobControls' JobStatus is an
+// intersection with live.ts's ProgressEvent whose jobId and timestamp the
+// island synthesizes from data-* attributes and stream frames rather than
+// reading from /status, so a subset assertion would fail on fields that are
+// correct. dashboard.tsx's ProgressEventPayload is covered here because it is
+// an honest subset; its narrowness is the point, not a gap.
+func TestIslandReadModelsMatchTheGoWire(t *testing.T) {
+	for _, testCase := range []struct {
+		file string
+		decl string
+		wire any
+	}{
+		{file: "live.ts", decl: "ProgressEvent", wire: ProgressEvent{}},
+		{file: "live.ts", decl: "UIEvent", wire: UIEvent{}},
+
+		{file: "dashboard.tsx", decl: "DashboardResponse", wire: dashboardResponse{}},
+		{file: "dashboard.tsx", decl: "RunningJob", wire: dashboardRunningJob{}},
+		{file: "dashboard.tsx", decl: "DashboardAggregates", wire: dashboardAggregates{}},
+		{file: "dashboard.tsx", decl: "HostFacts", wire: ui.HostFacts{}},
+		{file: "dashboard.tsx", decl: "CampaignSummary", wire: ui.CampaignSummary{}},
+		{file: "dashboard.tsx", decl: "CampaignSeriesPoint", wire: ui.CampaignSeriesPoint{}},
+		{file: "dashboard.tsx", decl: "MetricSample", wire: ui.MetricSample{}},
+		{file: "dashboard.tsx", decl: "ProgressEventPayload", wire: ProgressEvent{}},
+
+		{file: "Campaigns.tsx", decl: "CampaignPoint", wire: ui.CampaignSeriesPoint{}},
+		{file: "Campaigns.tsx", decl: "CampaignSummary", wire: ui.CampaignSummary{}},
+		{file: "Campaigns.tsx", decl: "CampaignList", wire: campaignViewList{}},
+		{file: "Campaigns.tsx", decl: "CampaignStage", wire: ui.CampaignStage{}},
+		{file: "Campaigns.tsx", decl: "CampaignProjection", wire: ui.CampaignProjection{}},
+		{file: "Campaigns.tsx", decl: "Campaign", wire: ui.Campaign{}},
+
+		{file: "JobList.tsx", decl: "JobListItem", wire: ui.JobListItem{}},
+		{file: "JobList.tsx", decl: "JobPage", wire: ui.JobListPage{}},
+		{file: "JobList.tsx", decl: "RawJob", wire: JobSummary{}},
+		{file: "JobList.tsx", decl: "RawJobPage", wire: jobListPage{}},
+
+		{file: "JobControls.tsx", decl: "JobActions", wire: jobActions{}},
+
+		{file: "CampaignCostChart.tsx", decl: "CampaignCostChartPoint", wire: ui.CampaignSeriesPoint{}},
+
+		{file: "format.ts", decl: "ProjectionShape", wire: ui.CampaignProjection{}},
+	} {
+		t.Run(testCase.file+"/"+testCase.decl, func(t *testing.T) {
+			wire := goWireNames(t, testCase.wire)
+
+			for name := range tsObjectFields(t, testCase.file, testCase.decl) {
+				if !wire[name] {
+					t.Errorf("%s declares %q, which %T does not serialize; the island would read undefined",
+						testCase.decl, name, testCase.wire)
 				}
 			}
 		})
