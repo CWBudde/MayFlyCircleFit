@@ -20,6 +20,7 @@ import {
 	latestHistorySample,
 	metricBounds,
 	normalizeHistorySample,
+	optimizerSchedule,
 	parameterDescription,
 	parseSampleInstant,
 	previousHistorySample,
@@ -59,6 +60,9 @@ describe("job detail parity", () => {
 					want.iterationProgress,
 				);
 				expect(formatCompactNumber(job.evaluations)).toBe(want.evaluations);
+				expect(optimizerSchedule(job.optimizerRestarts, job.optimizerEpochs, job.itersPerEpoch)).toBe(
+					want.optimizerSchedule,
+				);
 			});
 
 			it("derives the same throughput and ETA", () => {

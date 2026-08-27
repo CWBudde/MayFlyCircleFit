@@ -4,7 +4,7 @@
   "cases": [
     {
       "name": "form defaults",
-      "note": "Every control at the value the templ fallback ships, nothing touched. It covers both halves of the hazard at once: batchSize is rendered as 0 meaning 'decide for me', so the island has to omit it or the API would refuse a request the form accepts, while seed is rendered as 0 meaning 'draw one', which ApplyDefaults leaves alone and so travels as an explicit zero. The four early-stopping fields are blank and disabled, and the CMA-ES section is submitted by the fallback whatever engine is selected, so a MayFly job has to drop it exactly as parseCMAESForm does.",
+      "note": "Every control at the value the templ fallback ships, nothing touched. It covers both halves of the hazard at once: batchSize is rendered as 0 meaning 'decide for me', so the island has to omit it or the API would refuse a request the form accepts, while seed is rendered as 0 meaning 'draw one', which ApplyDefaults leaves alone and so travels as an explicit zero. The four early-stopping fields are blank and disabled, and the CMA-ES section is submitted by the fallback whatever engine is selected, so a MayFly job has to drop it exactly as parseCMAESForm does. optimizerRestarts is rendered as 1, which ApplyDefaults leaves alone, so it travels as written rather than being omitted the way a defaulted zero is.",
       "form": {
         "refPath": "__REFERENCE_IMAGE__",
         "canvasPath": "",
@@ -16,6 +16,7 @@
         "batchSize": "0",
         "seed": "0",
         "optimizerEpochs": "1",
+        "optimizerRestarts": "1",
         "initialSigma": "0.3",
         "covarianceMode": "full",
         "restartStrategy": "none",
@@ -44,6 +45,7 @@
         "iters": 100,
         "popSize": 30,
         "optimizerEpochs": 1,
+        "optimizerRestarts": 1,
         "seed": 0,
         "polishingEnabled": false,
         "polishingStrategy": "replacement",
@@ -64,7 +66,7 @@
     },
     {
       "name": "batch run with polishing and early stopping",
-      "note": "A fully specified batch job. Convergence detection is switched off, which the form can only express by omitting the checkbox, so the body has to carry disableConvergence beside a false convergenceEnabled -- sending the false alone would be defaulted straight back to true. stopMinIters is an explicit zero the API accepts as written, because ApplyDefaults never fills the early-stopping fields.",
+      "note": "A fully specified batch job. Convergence detection is switched off, which the form can only express by omitting the checkbox, so the body has to carry disableConvergence beside a false convergenceEnabled -- sending the false alone would be defaulted straight back to true. stopMinIters is an explicit zero the API accepts as written, because ApplyDefaults never fills the early-stopping fields. optimizerRestarts is above its default here, which is what multiplies the projected cost.",
       "form": {
         "refPath": "__REFERENCE_IMAGE__",
         "canvasPath": "",
@@ -76,6 +78,7 @@
         "batchSize": "12",
         "seed": "4242",
         "optimizerEpochs": "2",
+        "optimizerRestarts": "4",
         "initialSigma": "0.3",
         "covarianceMode": "block",
         "restartStrategy": "ipop",
@@ -107,6 +110,7 @@
         "batchSize": 12,
         "seed": 4242,
         "optimizerEpochs": 2,
+        "optimizerRestarts": 4,
         "polishingEnabled": true,
         "polishingStrategy": "residual-region",
         "polishingActiveSetSize": 4,
@@ -129,7 +133,7 @@
     },
     {
       "name": "cmaes with an emptied initial sigma",
-      "note": "The CMA-ES section travels only for a CMA-ES job. An emptied step size is the interesting one: the form handler substitutes the CMA-ES default before it builds the configuration, and the island omits the key so ApplyDefaults substitutes the same number. An unchecked active-adaptation box is the only way either path can express a disabled negative rank-mu update, so the body sends false rather than omitting it.",
+      "note": "The CMA-ES section travels only for a CMA-ES job. An emptied step size is the interesting one: the form handler substitutes the CMA-ES default before it builds the configuration, and the island omits the key so ApplyDefaults substitutes the same number. An unchecked active-adaptation box is the only way either path can express a disabled negative rank-mu update, so the body sends false rather than omitting it. It also carries the one CMA-ES combination of restarts and restart strategy app accepts: sixteen independent cold attempts with the none strategy, which is what an evaluation-matched restart arm asks for. IPOP or BIPOP beside a restart count other than one is refused, so it cannot appear here.",
       "form": {
         "refPath": "__REFERENCE_IMAGE__",
         "canvasPath": "",
@@ -141,6 +145,7 @@
         "batchSize": "0",
         "seed": "7",
         "optimizerEpochs": "1",
+        "optimizerRestarts": "16",
         "initialSigma": "",
         "covarianceMode": "separable",
         "restartStrategy": "none",
@@ -168,6 +173,7 @@
         "iters": 50,
         "popSize": 20,
         "optimizerEpochs": 1,
+        "optimizerRestarts": 16,
         "seed": 7,
         "activeCMA": false,
         "covarianceMode": "separable",
@@ -190,7 +196,7 @@
     },
     {
       "name": "dragonfly with a canvas path",
-      "note": "A second engine that reads none of the CMA-ES section, so the island has to drop all four fields there too rather than special-casing CMA-ES's absence; app.Validate refuses a CMA-ES-only field on a Dragonfly job instead of ignoring it. The canvas path is filled in here, and an emptied optimizer epochs field stands for the omit-the-blank rule on a control the fallback ships with a value.",
+      "note": "A second engine that reads none of the CMA-ES section, so the island has to drop all four fields there too rather than special-casing CMA-ES's absence; app.Validate refuses a CMA-ES-only field on a Dragonfly job instead of ignoring it. The canvas path is filled in here, and an emptied optimizer epochs field, and an emptied restart count beside it, stand for the omit-the-blank rule on controls the fallback ships with a value.",
       "form": {
         "refPath": "__REFERENCE_IMAGE__",
         "canvasPath": "__REFERENCE_IMAGE__",
@@ -202,6 +208,7 @@
         "batchSize": "",
         "seed": "11",
         "optimizerEpochs": "",
+        "optimizerRestarts": "",
         "initialSigma": "0.42",
         "covarianceMode": "block",
         "restartStrategy": "bipop",

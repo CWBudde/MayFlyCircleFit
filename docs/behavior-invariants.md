@@ -430,6 +430,21 @@ bounded. pprof is off by default and `--enable-pprof` requires a loopback bind.
   and `max` attributes and the island's are written from one
   `ui.CreateJobLimits` projected from `internal/app`, and `app.Validate` remains
   what decides a request.
+- **The creation form anticipates a refusal; it never makes one.** Two CMA-ES
+  configurations are rejected by a combination of fields rather than by any one
+  of them: full covariance above `MaxCMAESFullDimensions`, and a
+  `restartStrategy` other than `none` beside an `optimizerRestarts` other than
+  1. Discovering either by submitting is a poor way to find out, so the island
+  warns as soon as the current values cross them, recomputing the searched
+  dimension count the way `optimizerDimensions` does. The warning is advisory
+  and is deliberately not a block: the control stays usable and the form stays
+  submittable, because `app.Validate` is what decides a request and the page
+  must not refuse something `app` would have accepted. The fallback has no
+  script and therefore no live check; it states both rules in prose instead,
+  composed from the same projected limits. `web/e2e/cmaes-warnings.behavior.spec.ts`
+  pins the appearing, the clearing and the still-enabled submit button;
+  `internal/server/create_form_cmaes_test.go` pins that the submission is still
+  what refuses, carrying `app`'s own message.
 - **A CLI flag is never omitted, so its value is never defaulted.** A flag
   carries either its own default or what the operator typed, so `run` keeps the
   typed value and validates it: `--circles 0` fails instead of fitting ten. The

@@ -30,6 +30,12 @@ func testCreateLimits() ui.CreateJobLimits {
 		MaxConvergenceThreshold:    0.2,
 		MinPolishingMinImprovement: 1e-9,
 		DefaultInitialSigma:        0.3,
+		MaxOptimizerRestarts:       44,
+		// Deliberately not the real 512 and 7: the page must state whatever it
+		// is handed, and 99/9 makes the quotient it derives checkable at 11.
+		MaxCMAESFullDimensions: 99,
+		ParametersPerCircle:    9,
+		DefaultBatchSize:       4,
 	}
 }
 

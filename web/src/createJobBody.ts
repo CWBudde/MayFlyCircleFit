@@ -33,6 +33,7 @@ const REQUIRED_NUMBERS = ["circles", "iters", "popSize", "seed"] as const;
 const DEFAULTED_NUMBERS = [
 	"batchSize",
 	"optimizerEpochs",
+	"optimizerRestarts",
 	"polishingActiveSetSize",
 	"polishingMaxSweeps",
 	"polishingEpochs",
@@ -79,6 +80,55 @@ function toNumber(name: string, raw: string): number {
 	if (!Number.isFinite(value)) throw new Error(`${name} must be a number`);
 
 	return value;
+}
+
+/**
+ * optimizerDimensions reports the length of the vector a single optimizer run
+ * searches, which is not the whole canvas: only a joint run optimizes every
+ * circle at once, a batch run searches one batch and a sequential run one
+ * circle.
+ *
+ * It predicts what internal/app will compute for this submission, and that is
+ * two steps rather than one. Validate reads the *normalized* configuration, so
+ * the batch size it measures is the one ApplyDefaults produced, not the zero
+ * the form renders as "decide for me": a batch job submitted with batchSize 0
+ * searches min(defaultBatchSize, circles) circles, not all of them. Resolving
+ * that here is what keeps the warning from telling a reader to change a
+ * configuration the server accepts. The circle count needs no such resolution —
+ * the control is required with a minimum of one, so a blank cannot be
+ * submitted — and is only clamped the way optimizerDimensions clamps it.
+ *
+ * The rule lives in internal/app/config.go; TestOptimizerDimensions pins the
+ * same table on the Go side, against configurations put through ApplyDefaults
+ * exactly as a submission is.
+ */
+export function optimizerDimensions(
+	form: CreateJobFormValues,
+	parametersPerCircle: number,
+	defaultBatchSize: number,
+): number {
+	const circles = Number(text(form, "circles"));
+	const mode = text(form, "mode");
+
+	let searched = Number.isFinite(circles) ? circles : 0;
+	if (!(searched >= 1)) searched = 1;
+
+	if (mode === "sequential") return parametersPerCircle;
+
+	if (mode === "batch") {
+		const batchSize = resolvedBatchSize(text(form, "batchSize"), searched, defaultBatchSize);
+		if (batchSize > 0 && batchSize < searched) searched = batchSize;
+	}
+
+	return searched * parametersPerCircle;
+}
+
+/** Mirrors the batchSize branch of ApplyDefaults in internal/app/config.go. */
+function resolvedBatchSize(raw: string, circles: number, defaultBatchSize: number): number {
+	const batchSize = Number(raw);
+	if (Number.isFinite(batchSize) && batchSize !== 0) return batchSize;
+
+	return defaultBatchSize > circles ? circles : defaultBatchSize;
 }
 
 /**

@@ -250,6 +250,51 @@ request yourself (`gh pr create`) instead of pushing to `main`. If a commit
 already sits on local `main`, move it to a branch and reset `main` back to
 `origin/main` before pushing.
 
+### Checking a pull request
+
+`just check` is not the whole gate. Two things it does not cover fail pull
+requests regularly, so run both before pushing:
+
+- **golangci-lint.** `just lint` only runs `go vet` and a gofmt check, and
+  `just check` does not lint at all, so neither says anything about the gate.
+  `.golangci.toml` is `default = all`, and `lll` at 120 columns is the rule a
+  new line trips most often. `.github/workflows/ci-lint.yml` runs with
+  `only-new-issues: true` while the backlog is worked down, so what it reports
+  is exactly the lines the branch adds. `just golangci` lints the whole tree and
+  buries those in the backlog; ask it the same question CI asks instead:
+
+  ```sh
+  golangci-lint run --config ./.golangci.toml --new-from-merge-base=origin/main
+  ```
+
+  Use the pinned binary — `just golangci-install`, kept in step with
+  `GOLANGCI_VERSION` in the `justfile` and with `ci-lint.yml`. An older one
+  reads the same config differently and can miss what CI sees.
+- **The browser matrix.** `just check` does not run Playwright. Run
+  `npm run test:e2e` in `web/` when the change touches `internal/ui`, `web/`, or
+  a handler that renders a page.
+
+The gates are reusable workflows called from `.github/workflows/ci.yml`, so a
+failure names the file to edit: a check reported as `lint / golangci-lint` comes
+from `ci-lint.yml`, never from `ci.yml`.
+
+Watch the run rather than assuming it passed, and read the job log rather than
+the summary — the failing assertion is in the log:
+
+```sh
+gh run watch                       # or: gh run list --branch "$(git branch --show-current)"
+gh api repos/{owner}/{repo}/actions/runs/RUN_ID/jobs --jq '.jobs[] | select(.conclusion=="failure") | .id'
+gh api repos/{owner}/{repo}/actions/jobs/JOB_ID/logs
+```
+
+Keep the pinned action versions current when a run warns about them. Every
+action has to run on a Node runtime GitHub still supports, and the deprecation
+arrives as a warning on a *passing* run, which is easy to miss: as of the Node
+20 retirement that means `actions/checkout@v5`, `actions/setup-go@v6`,
+`actions/setup-node@v5`, `actions/upload-artifact@v6` (v5 is still Node 20) and
+`golangci/golangci-lint-action@v9`. Bump every workflow file together — a single
+lagging file keeps the warning on the run.
+
 ## Long-running experiments
 
 Anything larger than a single quick run — a seed sweep, a parameter sweep, a

@@ -1208,31 +1208,66 @@ Already at parity, and not to be redone here:
   because `Validate` expands the plan (`internal/app/schedule.go:359`), not
   part-way through a campaign.
 
-### Task 22.1: Expose the CMA-ES knobs in the creation form (P1)
+### Task 22.1: Expose the CMA-ES knobs in the creation form (P1) ✅
 
-`internal/ui/create.templ:86` offers the engine and then admits the gap at
-`:90`: "CMA-ES uses its default full covariance, active adaptation, and no
-internal restart schedule here." All four settings reach the CLI, JSON job
-payloads, and a schedule `base`; none reaches the form. The detail page renders
-them read-only (`internal/ui/detail.templ:387`), so the dashboard reports a
-configuration it cannot produce.
+When this task was written the form offered the engine and then admitted the
+gap: "CMA-ES uses its default full covariance, active adaptation, and no
+internal restart schedule here." All four settings reached the CLI, JSON job
+payloads, and a schedule `base`; none reached the form, while the detail page
+rendered them read-only — so the dashboard reported a configuration it could not
+produce.
 
-This matters more than a missing input usually would. `AGENTS.md` requires long
+That mattered more than a missing input usually would. `AGENTS.md` requires long
 experiments to be offered through `serve` so they stay watchable, and Phase 21's
-open blocks are exactly such experiments; today a `separable` or `bipop`
-campaign has to be submitted as JSON.
+open blocks are exactly such experiments; a `separable` or `bipop` campaign had
+to be submitted as JSON.
 
-- [ ] Add `initialSigma`, `covarianceMode`, `activeCMA`, and `restartStrategy`
+- [x] Add `initialSigma`, `covarianceMode`, `activeCMA`, and `restartStrategy`
       to the creation form, revealed when `optimizer` is `cmaes` and omitted
       otherwise, so a MayFly submission still sends no CMA-ES-only field and
-      keeps passing `refuseCMAESOnlyFields`.
-- [ ] Surface the two configuration-level refusals in the form rather than only
+      keeps passing `refuseCMAESOnlyFields`. Landed as the CMA-ES fieldset and
+      `parseCMAESForm` in `508dbe3` (#83); `7c07216` (#85) then gave the island
+      the reveal, which the fallback deliberately does not have — it carries no
+      script, so it renders the section for every engine and the handler drops
+      it. `web/src/createJobBody.ts` drops the same keys.
+- [x] Surface the two configuration-level refusals in the form rather than only
       as a rejected submission: full covariance above `MaxCMAESFullDimensions`,
       and a `restartStrategy` other than `none` with `optimizerRestarts != 1`.
-- [ ] Cover the round trip with a server test asserting that a submission naming
+      The second was unreachable until now because the form had no
+      `optimizerRestarts` input at all; it has one, bounded by
+      `app.MaxOptimizerRestarts`, which also makes Phase 21's `r16` arm
+      startable from the dashboard. Both warnings are advisory `role="status"`
+      regions in the island, composed from `ui.CreateJobLimits`; the fallback
+      states both rules in prose from the same projection. `app.Validate` still
+      decides the request.
+- [x] Cover the round trip with a server test asserting that a submission naming
       each covariance mode and restart strategy reaches `JobConfig` intact,
-      mirroring `internal/server/optimizer_engine_test.go:121`.
-- [ ] Regenerate `internal/ui/*_templ.go` and observe the generation gate.
+      mirroring `internal/server/optimizer_engine_test.go:121`. Landed in
+      `508dbe3` as `TestCreateFormRoundTripsCMAESSettings`; extended here with
+      `TestCreateFormRoundTripsOptimizerRestarts` and
+      `TestCreateFormRefusesRestartsBesideAnInternalSchedule`.
+- [x] Regenerate `internal/ui/*_templ.go` and observe the generation gate.
+
+The detail page reports the restart count it can now be given, so the dashboard
+does not gain a configuration it cannot read back: `optimizerSchedule` renders
+`16 restarts × 2 × 500 iterations` and drops the clause at a single attempt, in
+both renderers, pinned by `web/src/job-detail-parity.json`. The dimension rule
+is duplicated in `web/src/createJobBody.ts` so the browser can anticipate the
+covariance refusal, and the two copies are pinned by matching tables in
+`internal/app/config_test.go` and `web/src/createJobBody.test.ts`.
+
+Observed on this revision: `go tool templ generate` with no drift,
+`gofmt -s -l .`, `go vet ./...`, `go build ./...`, `go test -short ./...`,
+`go test -race -short ./internal/server/... ./internal/ui/... ./internal/app/...`,
+the `CGO_ENABLED=0 linux/arm64` cross-build, `just bundle`, `npm run typecheck`,
+the 251-case `npm run test:unit` suite, and Playwright chromium over
+`e2e/cmaes-warnings.behavior.spec.ts` (3 passed) plus
+`e2e/accessibility.a11y.spec.ts` and `e2e/fallback.behavior.spec.ts`
+(38 passed). End to end against a running `serve`: a fallback-form MayFly
+submission with `optimizerRestarts=16` and the equivalent JSON submission both
+store 16 and both report `16 restarts × 1 × 2 iterations`, while
+`restartStrategy=ipop` beside `optimizerRestarts=2` is refused with app's own
+message.
 
 ### Task 22.2: Document the optimizer engines in the README (P2)
 
@@ -1331,10 +1366,9 @@ Current open work, in priority order:
    [`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md).
 4. **CMA-ES measurement (P1):** compare evaluation-matched MayFly and CMA-ES
    arms, including IPOP and separable covariance.
-5. **CMA-ES surface parity (P1):** Task 22.1 — the creation form cannot
-   configure an engine the CLI and schedules can, and Phase 21's open blocks
-   are exactly the campaigns that should be started from the dashboard. Then
-   Tasks 22.2–22.4.
+5. **CMA-ES surface parity (P2):** Tasks 22.2–22.4. Task 22.1 is complete: the
+   creation form now configures every CMA-ES knob, carries the restart count
+   Phase 21's arms need, and warns before the two refusals it can anticipate.
 6. **Dashboard sign-off (P1):** Task 17.11.
 7. ~~**Frontend island transition (P1/P2):** Tasks 18.1–18.7.~~ Phase 18 is
    complete. The shadcn SPA rewrite remains a deferred alternative at the end

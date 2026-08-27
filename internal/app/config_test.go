@@ -594,3 +594,78 @@ func TestTheDimensionLimitAcceptsEveryPreviouslyValidPopulation(t *testing.T) {
 		)
 	}
 }
+
+// TestOptimizerDimensions pins the vector length one optimizer run searches.
+//
+// Every case is put through ApplyDefaults first, because that is the only shape
+// the rule is ever applied to: Validate normalizes before it measures, so a
+// batch job submitted with batchSize 0 searches the batch size the defaults
+// produced rather than the whole canvas.
+//
+// The rule is small but it is duplicated on purpose: the job creation island
+// recomputes it in optimizerDimensions in web/src/createJobBody.ts, so it can
+// tell the reader that full covariance will refuse the run before the
+// submission is made. This table and the one in web/src/createJobBody.test.ts
+// name the same cases, so a change to either mirror shows up as a failure
+// rather than as a form that warns about the wrong configuration.
+func TestOptimizerDimensions(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		name      string
+		mode      Mode
+		circles   int
+		batchSize int
+		want      int
+	}{
+		{"joint searches every circle", ModeJoint, 10, 0, 10 * ParametersPerCircle},
+		{"joint ignores a batch size", ModeJoint, 10, 3, 10 * ParametersPerCircle},
+		{"joint above the full covariance limit", ModeJoint, 100, 0, 100 * ParametersPerCircle},
+		{"sequential searches one circle", ModeSequential, 40, 8, ParametersPerCircle},
+		{"batch searches one batch", ModeBatch, 40, 8, 8 * ParametersPerCircle},
+		{"an automatic batch searches the default batch", ModeBatch, 100, 0, 5 * ParametersPerCircle},
+		{"an automatic batch narrower than the default searches every circle", ModeBatch, 3, 0, 3 * ParametersPerCircle},
+		{"a wide batch searches every circle", ModeBatch, 80, 100, 80 * ParametersPerCircle},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			config := JobConfig{
+				RefPath:   "reference.png",
+				Mode:      testCase.mode,
+				Circles:   testCase.circles,
+				BatchSize: testCase.batchSize,
+			}
+
+			err := config.ApplyDefaults()
+			if err != nil {
+				t.Fatalf("ApplyDefaults: %v", err)
+			}
+
+			got := config.optimizerDimensions()
+			if got != testCase.want {
+				t.Fatalf("optimizerDimensions() = %d, want %d", got, testCase.want)
+			}
+		})
+	}
+}
+
+// TestDefaultBatchSizeIsWhatTheCreationPageProjects guards the number the
+// browser resolves a blank batch size to. createJobLimits sends
+// DefaultConfig().BatchSize to the page, and the island's mirror of the
+// defaulting rule is only correct while that is the value ApplyDefaults uses.
+func TestDefaultBatchSizeIsWhatTheCreationPageProjects(t *testing.T) {
+	t.Parallel()
+
+	config := JobConfig{RefPath: "reference.png", Circles: 100, Mode: ModeBatch}
+
+	err := config.ApplyDefaults()
+	if err != nil {
+		t.Fatalf("ApplyDefaults: %v", err)
+	}
+
+	if config.BatchSize != DefaultConfig().BatchSize {
+		t.Fatalf("ApplyDefaults used batch size %d, but the page is sent %d",
+			config.BatchSize, DefaultConfig().BatchSize)
+	}
+}
