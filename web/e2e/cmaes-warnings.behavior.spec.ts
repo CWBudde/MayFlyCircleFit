@@ -50,6 +50,27 @@ test("full covariance warns once the run outgrows it, and clears again", async (
 	await expect(warning).toHaveCount(0);
 });
 
+// The batch case is the one the browser can get wrong in the direction that
+// matters: telling a reader to change a configuration the server accepts. A
+// batch job leaving Batch Size at its automatic 0 searches the *default* batch,
+// not the whole canvas, because Validate reads the normalized configuration.
+test("an automatic batch size is resolved before the warning is decided", async ({ page }) => {
+	await openCMAESForm(page);
+
+	const warning = page.getByText(COVARIANCE);
+	await page.locator("#circles").fill("100");
+	await expect(warning).toBeVisible();
+
+	// Same hundred circles, but one batch at a time and no batch size given.
+	await page.locator("#mode").selectOption("batch");
+	await expect(warning).toHaveCount(0);
+
+	// A batch that is actually wide enough does cross the limit, so the mode is
+	// not simply exempt.
+	await page.locator("#batchSize").fill("100");
+	await expect(warning).toBeVisible();
+});
+
 test("an internal restart schedule warns beside a fixed attempt count", async ({ page }) => {
 	await openCMAESForm(page);
 

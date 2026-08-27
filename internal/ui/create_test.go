@@ -35,6 +35,7 @@ func testCreateLimits() ui.CreateJobLimits {
 		// is handed, and 99/9 makes the quotient it derives checkable at 11.
 		MaxCMAESFullDimensions: 99,
 		ParametersPerCircle:    9,
+		DefaultBatchSize:       4,
 	}
 }
 

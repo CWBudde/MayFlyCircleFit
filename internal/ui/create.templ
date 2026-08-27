@@ -52,6 +52,11 @@ type CreateJobLimits struct {
 	// run actually searches and whether full covariance still covers it.
 	MaxCMAESFullDimensions int `json:"maxCMAESFullDimensions"`
 	ParametersPerCircle    int `json:"parametersPerCircle"`
+	// DefaultBatchSize is what ApplyDefaults substitutes for the batch size the
+	// form renders as 0. The island has to resolve it before it can say how many
+	// dimensions a batch run searches, because validation reads the batch size
+	// the defaults produced, not the zero that was submitted.
+	DefaultBatchSize int `json:"defaultBatchSize"`
 }
 
 // attrInt and attrFloat render a limit as an HTML attribute value. attrFloat
@@ -83,9 +88,9 @@ func cmaesCovarianceNote(limits CreateJobLimits) string {
 	return fmt.Sprintf(
 		"Full covariance supports at most %d optimizer dimensions and a larger search is refused rather than run. "+
 			"One run searches %d dimensions per circle: every circle in joint mode, one batch in batch mode, a "+
-			"single circle in sequential mode. That is %d circles per run at most: in joint mode that caps the "+
-			"whole canvas, while a batch or sequential job stays inside it whatever its total circle count. "+
-			"Choose block or separable above that.",
+			"single circle in sequential mode. That is %d circles per run at most, so in joint mode it caps the "+
+			"whole canvas and in batch mode it caps the batch size, whatever the total circle count; a "+
+			"sequential job is always inside it. Choose block or separable above that.",
 		limits.MaxCMAESFullDimensions,
 		limits.ParametersPerCircle,
 		circles,

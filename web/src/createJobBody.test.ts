@@ -111,25 +111,47 @@ describe("required numbers reject a blank value", () => {
 });
 
 // The mirror of TestOptimizerDimensions in internal/app/config_test.go. Both
-// tables name the same cases: the island recomputes the rule so it can warn
-// that full covariance will refuse the run, and a mirror that drifts warns
-// about the wrong configuration rather than failing.
+// tables name the same cases, against the configuration ApplyDefaults produces
+// rather than the one submitted: the island recomputes the rule so it can warn
+// that full covariance will refuse the run, and a mirror that drifts warns about
+// the wrong configuration rather than failing.
 describe("optimizer dimensions", () => {
 	const PARAMETERS_PER_CIRCLE = 7;
+	const DEFAULT_BATCH_SIZE = 5;
 
 	for (const testCase of [
 		{ name: "joint searches every circle", form: { mode: "joint", circles: "10" }, want: 10 },
 		{ name: "joint ignores a batch size", form: { mode: "joint", circles: "10", batchSize: "3" }, want: 10 },
+		{ name: "joint above the full covariance limit", form: { mode: "joint", circles: "100" }, want: 100 },
 		{ name: "sequential searches one circle", form: { mode: "sequential", circles: "40", batchSize: "8" }, want: 1 },
 		{ name: "batch searches one batch", form: { mode: "batch", circles: "40", batchSize: "8" }, want: 8 },
-		{ name: "an automatic batch searches every circle", form: { mode: "batch", circles: "12", batchSize: "0" }, want: 12 },
-		{ name: "a batch wider than the canvas searches every circle", form: { mode: "batch", circles: "6", batchSize: "20" }, want: 6 },
-		{ name: "an unset circle count still searches one", form: { mode: "joint", circles: "" }, want: 1 },
+		{
+			name: "an automatic batch searches the default batch",
+			form: { mode: "batch", circles: "100", batchSize: "0" },
+			want: DEFAULT_BATCH_SIZE,
+		},
+		{
+			name: "an automatic batch narrower than the default searches every circle",
+			form: { mode: "batch", circles: "3", batchSize: "0" },
+			want: 3,
+		},
+		{ name: "a wide batch searches every circle", form: { mode: "batch", circles: "80", batchSize: "100" }, want: 80 },
 	]) {
 		it(testCase.name, () => {
-			expect(optimizerDimensions(testCase.form, PARAMETERS_PER_CIRCLE)).toBe(
+			expect(optimizerDimensions(testCase.form, PARAMETERS_PER_CIRCLE, DEFAULT_BATCH_SIZE)).toBe(
 				testCase.want * PARAMETERS_PER_CIRCLE,
 			);
 		});
 	}
+
+	// Only reachable from a programmatic caller: the control is required with a
+	// minimum of one, so the browser will not submit a blank, and an emptied
+	// batch size reads exactly as the automatic zero the form ships.
+	it("an emptied batch size resolves like the automatic one", () => {
+		expect(optimizerDimensions({ mode: "batch", circles: "100", batchSize: "" }, 7, 5)).toBe(35);
+	});
+
+	it("an unset circle count still searches one", () => {
+		expect(optimizerDimensions({ mode: "joint", circles: "" }, 7, 5)).toBe(7);
+	});
 });

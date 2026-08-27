@@ -27,6 +27,7 @@ interface CreateJobLimits {
 	maxOptimizerRestarts: number;
 	maxCMAESFullDimensions: number;
 	parametersPerCircle: number;
+	defaultBatchSize: number;
 	maxBatchSize: number;
 	maxPolishingSweeps: number;
 	maxConvergencePatience: number;
@@ -71,10 +72,14 @@ const warningStyle = {
 	borderRadius: "0.375rem",
 	marginTop: "0.25rem",
 	padding: "0.375rem 0.5rem",
-	// An empty live region must take no room, or every field it guards is
-	// permanently padded by a message that is not there.
-	display: "block",
 } as const;
+
+// The live region stays mounted whether or not it has anything to say, because
+// a region created at the same moment as its content is not reliably announced.
+// Empty, it must also take no room: with the styles above it would render a
+// permanent coloured bar under every field it guards, so nothing but the bare
+// element is left in that state.
+const emptyWarningStyle = { margin: 0, padding: 0 } as const;
 const headingStyle = { fontSize: "1.25rem", fontWeight: 600, marginBottom: "1rem" } as const;
 const checkboxStyle = { marginRight: "0.5rem", width: "1rem", height: "1rem", cursor: "pointer" } as const;
 
@@ -185,13 +190,13 @@ function Help({ help }: { help?: string }) {
 
 // role="status" rather than role="alert": the message appears while the reader
 // is still typing in a neighbouring field, and an alert would interrupt them
-// mid-edit. aria-live="polite" waits for a pause. The container is always
-// rendered so the live region exists before the text arrives; a region created
-// at the same moment as its content is not reliably announced.
+// mid-edit. aria-live="polite" waits for a pause.
 function Warning({ warning }: { warning?: string }) {
+	const text = warning ?? "";
+
 	return (
-		<p role="status" aria-live="polite" style={warningStyle}>
-			{warning ?? ""}
+		<p role="status" aria-live="polite" style={text === "" ? emptyWarningStyle : warningStyle}>
+			{text}
 		</p>
 	);
 }
@@ -209,8 +214,9 @@ function covarianceHelp(limits: CreateJobLimits): string {
 	return `Full covariance supports at most ${limits.maxCMAESFullDimensions} optimizer dimensions and a larger `
 		+ `search is refused rather than run. One run searches ${limits.parametersPerCircle} dimensions per circle: `
 		+ "every circle in joint mode, one batch in batch mode, a single circle in sequential mode. That is "
-		+ `${circles} circles per run at most: in joint mode that caps the whole canvas, while a batch or `
-		+ "sequential job stays inside it whatever its total circle count. Choose block or separable above that.";
+		+ `${circles} circles per run at most, so in joint mode it caps the whole canvas and in batch mode it caps `
+		+ "the batch size, whatever the total circle count; a sequential job is always inside it. Choose block or "
+		+ "separable above that.";
 }
 
 /** internal/app/cmaes.go refuses full covariance above the dimension limit. */
@@ -220,7 +226,7 @@ function covarianceWarning(values: CreateJobFormValues, limits: CreateJobLimits)
 	const mode = (values.covarianceMode ?? "").trim();
 	if (mode !== "" && mode !== "full") return "";
 
-	const dimensions = optimizerDimensions(values, limits.parametersPerCircle);
+	const dimensions = optimizerDimensions(values, limits.parametersPerCircle, limits.defaultBatchSize);
 	if (dimensions <= limits.maxCMAESFullDimensions) return "";
 
 	return `This run searches ${dimensions} dimensions, above the ${limits.maxCMAESFullDimensions} full covariance `

@@ -423,6 +423,7 @@ func createJobLimits() ui.CreateJobLimits {
 		MaxOptimizerRestarts:       app.MaxOptimizerRestarts,
 		MaxCMAESFullDimensions:     app.MaxCMAESFullDimensions,
 		ParametersPerCircle:        app.ParametersPerCircle,
+		DefaultBatchSize:           app.DefaultConfig().BatchSize,
 	}
 }
 

@@ -265,6 +265,7 @@ func TestCreateJobLimitsComeFromTheServerBounds(t *testing.T) {
 		MaxOptimizerRestarts:       app.MaxOptimizerRestarts,
 		MaxCMAESFullDimensions:     app.MaxCMAESFullDimensions,
 		ParametersPerCircle:        app.ParametersPerCircle,
+		DefaultBatchSize:           app.DefaultConfig().BatchSize,
 	}
 
 	if got := createJobLimits(); got != want {
