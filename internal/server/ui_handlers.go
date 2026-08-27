@@ -546,7 +546,10 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	if optimizerEpochsStr != "" {
 		optimizerEpochs, err = strconv.Atoi(optimizerEpochsStr)
 		if err != nil || optimizerEpochs < 1 || optimizerEpochs > app.MaxOptimizerEpochs {
-			renderCreateJobError(w, r, fmt.Sprintf("Optimizer epochs must be between 1 and %d", app.MaxOptimizerEpochs), formProject)
+			renderCreateJobError(w, r, fmt.Sprintf(
+				"Optimizer epochs must be between 1 and %d", app.MaxOptimizerEpochs,
+			), formProject)
+
 			return
 		}
 	}
@@ -555,7 +558,10 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	if optimizerRestartsStr != "" {
 		optimizerRestarts, err = strconv.Atoi(optimizerRestartsStr)
 		if err != nil || optimizerRestarts < 1 || optimizerRestarts > app.MaxOptimizerRestarts {
-			renderCreateJobError(w, r, fmt.Sprintf("Optimizer restarts must be between 1 and %d", app.MaxOptimizerRestarts), formProject)
+			renderCreateJobError(w, r, fmt.Sprintf(
+				"Optimizer restarts must be between 1 and %d", app.MaxOptimizerRestarts,
+			), formProject)
+
 			return
 		}
 	}
