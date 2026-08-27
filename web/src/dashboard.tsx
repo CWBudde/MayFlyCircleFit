@@ -10,10 +10,13 @@ import {
 	formatCostGain,
 	formatJobCircles,
 	shortID,
+	stateBadgeStyle,
 	stateClass,
 	stateLabel,
 } from "./format";
 import { mountIslands } from "./islands";
+import { SettingsIsland } from "./Settings";
+import { ThemeToggleIsland } from "./ThemeToggle";
 import { JobListIsland } from "./JobList";
 import { CampaignDetailIsland, CampaignListIsland } from "./Campaigns";
 import { JobControlsIsland } from "./JobControls";
@@ -624,7 +627,7 @@ function JobRow({ job, palette }: { job: RunningJob; palette: Palette }) {
 				<div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{job.project}</div>
 			</td>
 			<td style={{ padding: "0.75rem 0.5rem" }}>
-				<span className={`badge ${stateClass(job.state)}`}>{stateLabel(job.state)}</span>
+				<span className={stateClass(job.state)} style={stateBadgeStyle(job.state)}>{stateLabel(job.state)}</span>
 			</td>
 			<td style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>{formatJobCircles(job.circles, job.requestedCircles)}</td>
 			<td style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>{formatInteger(job.iterations)}</td>
@@ -682,7 +685,7 @@ function CampaignCard({ campaign, palette }: { campaign: CampaignSummary; palett
 							<h3 style={{ fontSize: "1.125rem", fontWeight: 600, fontFamily: "monospace" }}>{shortID(campaign.id)}</h3>
 						</a>
 						{campaign.name ? <span style={{ color: "var(--text-muted)" }}>{campaign.name}</span> : null}
-						{campaign.state ? <span className={`badge ${stateClass(campaign.state)}`}>{stateLabel(campaign.state)}</span> : null}
+						{campaign.state ? <span className={stateClass(campaign.state)} style={stateBadgeStyle(campaign.state)}>{stateLabel(campaign.state)}</span> : null}
 					</div>
 					<div className="meta-row" style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
 						<span><strong>Stages:</strong> {campaignStageCount(campaign)}</span>
@@ -742,4 +745,7 @@ mountIslands({
 	"campaign-list": CampaignListIsland,
 	"campaign-detail": CampaignDetailIsland,
 	"job-controls": JobControlsIsland,
+	settings: SettingsIsland,
+	// Rendered by the layout on every page, so this one mounts everywhere.
+	"theme-switch": ThemeToggleIsland,
 });

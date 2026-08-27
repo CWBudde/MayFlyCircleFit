@@ -11,6 +11,8 @@ import templruntime "github.com/a-h/templ/runtime"
 import (
 	"fmt"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // JobListItem represents a job in the list view
@@ -149,7 +151,7 @@ func JobCard(job JobListItem) templ.Component {
 		var templ_7745c5c3_Var4 templ.SafeURL
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/jobs/%s", job.ID)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 75, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 77, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -162,7 +164,7 @@ func JobCard(job JobListItem) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(job.ID[:8])
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 81, Col: 18}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 83, Col: 18}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -183,7 +185,7 @@ func JobCard(job JobListItem) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(job.Mode)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 89, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 91, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -196,7 +198,7 @@ func JobCard(job JobListItem) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", job.Circles))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 93, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 95, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -209,7 +211,7 @@ func JobCard(job JobListItem) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", job.Iterations))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 97, Col: 89}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 99, Col: 89}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -227,7 +229,7 @@ func JobCard(job JobListItem) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2f", job.BestCost))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 107, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 109, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -245,7 +247,7 @@ func JobCard(job JobListItem) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%% improvement", (1-job.BestCost/job.InitialCost)*100))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 111, Col: 80}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 113, Col: 80}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -264,7 +266,7 @@ func JobCard(job JobListItem) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(job.RefPath)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 120, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 122, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -277,7 +279,7 @@ func JobCard(job JobListItem) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(formatTime(job.StartTime))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 123, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 125, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -295,7 +297,7 @@ func JobCard(job JobListItem) templ.Component {
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(job.Error)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 129, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 131, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -314,7 +316,34 @@ func JobCard(job JobListItem) templ.Component {
 	})
 }
 
-// StateBadge displays a badge for job state
+// StateBadge renders one state as a badge. It is the only state badge in the
+// UI: job states, schedule states and stage states share a vocabulary (see
+// store.ScheduleState), so they share a rendering, and the schedule-only
+// ScheduleStateBadge it replaced is gone.
+//
+// stateClass, stateLabel and stateBadgeStyle in web/src/format.ts are the
+// TypeScript mirror an island swaps in, and
+// web/src/state-badge-parity.json is the contract both sides are tested
+// against — changing a mapping here without changing it there fails on both
+// sides at once.
+//
+// The three axes the five superseded implementations disagreed on, decided
+// once:
+//
+//   - Fallthrough class. A state neither side enumerates gets no modifier —
+//     `badge` alone, plus the neutral chip colors — never `badge-info`.
+//     badge-info is the color of a job that is pending or running, and painting
+//     an unrecognized value with it claims the UI understands a state it does
+//     not.
+//   - Label casing. The state with its first letter capitalized, so a badge
+//     never prints a bare lowercase identifier beside capitalized ones. The
+//     rule applies to unknown states too ("nonsense" reads "Nonsense"); only an
+//     empty state has no word of its own, and it reads "Unknown" rather than
+//     leaving an empty chip the way this badge used to.
+//   - skipped. A first-class state, not a fallthrough: it is a planned stage
+//     the campaign's policy declined to run, which is neither a failure nor a
+//     run. It carries the neutral chip so it reads as an absence of a result,
+//     and the label says which absence.
 func StateBadge(state string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -336,58 +365,141 @@ func StateBadge(state string) templ.Component {
 			templ_7745c5c3_Var14 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		switch state {
-		case "pending":
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<span class=\"badge badge-info\">Pending</span>")
+		style := stateBadgeStyle(state)
+		if style == "" {
+			var templ_7745c5c3_Var15 = []any{stateBadgeClass(state)}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var15...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		case "running":
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<span class=\"badge badge-info\" style=\"animation: pulse 2s ease-in-out infinite;\">Running</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<span class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		case "completed":
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<span class=\"badge badge-success\">Completed</span>")
+			var templ_7745c5c3_Var16 string
+			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var15).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		case "failed":
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<span class=\"badge badge-error\">Failed</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		case "paused":
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<span class=\"badge badge-warning\">Paused</span>")
+			var templ_7745c5c3_Var17 string
+			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(stateBadgeLabel(state))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 169, Col: 65}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		case "cancelled":
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<span class=\"badge badge-warning\">Cancelled</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		default:
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<span class=\"badge\" style=\"background-color: var(--border-color); color: var(--text-color);\">")
+		} else {
+			var templ_7745c5c3_Var18 = []any{stateBadgeClass(state)}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var18...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var15 string
-			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(state)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 155, Col: 11}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<span class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</span>")
+			var templ_7745c5c3_Var19 string
+			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var18).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var20 string
+			templ_7745c5c3_Var20, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(style)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 171, Col: 54}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var21 string
+			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(stateBadgeLabel(state))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/list.templ`, Line: 171, Col: 81}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		return nil
 	})
+}
+
+// stateBadgeClass is the badge's complete class attribute, the neutral
+// fallthrough included. It is the whole attribute rather than the modifier
+// alone because that is the string the TypeScript stateClass returns, and a
+// parity test that compares halves of an attribute proves less than one that
+// compares the attribute.
+func stateBadgeClass(state string) string {
+	switch state {
+	case "pending", "running":
+		return "badge badge-info"
+	case "completed":
+		return "badge badge-success"
+	case "failed":
+		return "badge badge-error"
+	case "paused", "cancelled":
+		return "badge badge-warning"
+	default:
+		return "badge"
+	}
+}
+
+// stateBadgeLabel capitalizes the state, and names the empty one.
+func stateBadgeLabel(state string) string {
+	if state == "" {
+		return "Unknown"
+	}
+
+	first, width := utf8.DecodeRuneInString(state)
+
+	return string(unicode.ToUpper(first)) + state[width:]
+}
+
+// stateBadgeStyle carries the two decorations that have no class of their own:
+// the running badge's pulse, which says the row is still moving, and the
+// neutral chip that skipped and unrecognized states wear in place of a color.
+// An empty return means the badge is written without a style attribute.
+func stateBadgeStyle(state string) string {
+	switch state {
+	case "running":
+		return "animation: pulse 2s ease-in-out infinite;"
+	case "pending", "completed", "failed", "paused", "cancelled":
+		return ""
+	default:
+		return "background-color: var(--border-color); color: var(--text-color);"
+	}
 }
 
 // Helper function to format time

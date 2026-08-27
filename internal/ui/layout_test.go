@@ -24,7 +24,10 @@ func TestLayoutIncludesThemeSwitcher(t *testing.T) {
 		`data-theme-value="light"`,
 		`data-theme-value="dark"`,
 		`mayflycirclefit.theme`,
-		`localStorage.removeItem(theme.storageKey)`,
+		// The pre-paint script publishes the controller; the toggle island is
+		// what consumes it, so the handover has to survive in the markup.
+		`window.mayflyTheme = { apply, selected, storageKey }`,
+		`data-island="theme-switch"`,
 		`aria-label="Use system theme" aria-pressed="true"`,
 		`>Dashboard<`,
 		`>Jobs<`,
@@ -142,5 +145,44 @@ func TestLayoutPairsEveryAccentBackgroundWithItsOwnForeground(t *testing.T) {
 		if !strings.Contains(body, pairing) {
 			t.Errorf("rendered layout missing %q", pairing)
 		}
+	}
+}
+
+// TestLayoutCarriesOnlyThePrePaintScript is Task 18.7's gate applied to the
+// shell early. The theme toggle's handler moved into ThemeToggleIsland, so the
+// one script the layout may still write inline is the pre-paint IIFE, which has
+// to run before the first paint and therefore cannot wait for a module. Every
+// other script tag it emits must be a src= reference to an embedded asset.
+func TestLayoutCarriesOnlyThePrePaintScript(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+
+	err := Layout("Inline script").Render(context.Background(), &output)
+	if err != nil {
+		t.Fatalf("render layout: %v", err)
+	}
+
+	var inline int
+
+	for _, fragment := range strings.Split(output.String(), "<script")[1:] {
+		tag, body, ok := strings.Cut(fragment, ">")
+		if !ok {
+			t.Fatal("layout emits an unterminated script tag")
+		}
+
+		if strings.Contains(tag, "src=") {
+			continue
+		}
+
+		inline++
+
+		if !strings.Contains(body, "window.mayflyTheme") {
+			t.Errorf("layout writes an inline script that is not the pre-paint theme IIFE: %.80s", body)
+		}
+	}
+
+	if inline != 1 {
+		t.Errorf("layout writes %d inline scripts, want exactly 1 (the pre-paint theme IIFE)", inline)
 	}
 }

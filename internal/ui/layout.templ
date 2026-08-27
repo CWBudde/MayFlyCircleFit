@@ -123,8 +123,8 @@ const themeStyles = `<style>
 // rendered the dark theme as black text on the dark surface -- measured at
 // 1.17:1 against a 4.5:1 threshold. It looked survivable on the dashboard and
 // job pages only because a React island replaces their markup with fresh
-// elements, which do inherit; the pages with no island, settings and create,
-// stayed unreadable.
+// elements, which do inherit; the pages with no island -- create, and settings
+// until it became one -- stayed unreadable.
 //
 // The override selector is :root:root, and the doubled pseudo-class is load
 // bearing. The system-preference rule is :root:not([data-theme]), which computes
@@ -894,7 +894,8 @@ templ Layout(title string) {
 							<li><a href="/settings">Settings</a></li>
 							<li><a href="https://github.com/CWBudde/MayFlyCircleFit" target="_blank">GitHub</a></li>
 						</ul>
-						<div class="theme-switch" role="group" aria-label="Color theme">
+						<!-- ThemeToggleIsland replaces these buttons; see its comment. -->
+						<div class="theme-switch" role="group" aria-label="Color theme" data-island="theme-switch" data-island-label="color theme">
 							<button class="theme-option" type="button" data-theme-value="auto" aria-label="Use system theme" aria-pressed="true" title="Auto theme">
 								<svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>
 							</button>
@@ -911,45 +912,17 @@ templ Layout(title string) {
 			<main id="main-content" tabindex="-1">
 				{ children... }
 			</main>
-			<script>
-				(() => {
-					// The palette itself is owned by the preload script in
-					// <head>; this only wires the buttons to it, so the toggle
-					// swaps one stylesheet rather than mutating <html>.
-					const theme = window.mayflyTheme;
-					const buttons = document.querySelectorAll("[data-theme-value]");
-					const updateButtons = () => {
-						const current = theme.selected();
-						buttons.forEach((button) => {
-							button.setAttribute("aria-pressed", String(button.dataset.themeValue === current));
-						});
-					};
-					const setTheme = (next) => {
-						theme.apply(next);
-						try {
-							if (next === "auto") {
-								localStorage.removeItem(theme.storageKey);
-							} else {
-								localStorage.setItem(theme.storageKey, next);
-							}
-						} catch (_) {
-							// The choice still applies to this page without storage.
-						}
-						updateButtons();
-					};
-					buttons.forEach((button) => {
-						button.addEventListener("click", () => setTheme(button.dataset.themeValue));
-					});
-					updateButtons();
-				})();
-			</script>
+			@IslandBundle()
 		</body>
 	</html>
 }
 
-// IslandBundle links the React island bundle. Only pages that actually render
-// a data-island element should call it: the bundle is large, and on a page
-// with no island it would download and parse just to run an empty query.
+// IslandBundle links the React island bundle. Layout calls it for every page,
+// because every page now renders one island: the theme switch in the navigation
+// is chrome, and moving its handler out of the shell is what stopped the shell
+// carrying a script. Pages that mount an island of their own still call it too;
+// a second <script type="module"> with the same src resolves to the same entry
+// in the module map and is not evaluated twice.
 //
 // The bundle is committed and embedded, so this binary serves it rather than
 // fetching it from a network the host may not have. Module scripts are

@@ -120,7 +120,11 @@ func TestRouting_SettingsPage(t *testing.T) {
 		"settings-default-colormap",
 		"settings-visible-metrics",
 		"settings-reset",
-		"mayflycirclefit.visibleMetrics",
+		// The storage keys moved into web/src/prefs.ts with the island; what
+		// the served page has to carry is the mount point and the bundle that
+		// fills it. internal/ui/settings_test.go pins the fallback markup.
+		`data-island="settings"`,
+		"<noscript>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("settings page missing %q, got %q", want, body)

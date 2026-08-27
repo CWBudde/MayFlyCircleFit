@@ -17,6 +17,9 @@ import {
 	formatCost,
 	formatElapsed,
 	formatPsnr,
+	stateBadgeStyle,
+	stateClass,
+	stateLabel,
 } from "./format";
 import { fetchJSON, useLiveResource } from "./live";
 import type { UIEvent } from "./live";
@@ -103,7 +106,7 @@ function CampaignCard({ item }: { item: CampaignSummary }) {
 	const href = item.source === "chain" ? `/chains/${item.id}` : `/schedules/${item.id}`;
 	return <a href={href} className="card-link"><div className="card">
 		<div className="row-between row-between-top"><div style={{ minWidth: 0 }}>
-			<div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}><h3 style={{ fontFamily: "monospace" }}>{item.id.slice(0, 8)}</h3><Badge state={item.state} />{item.name ? <span>{item.name}</span> : null}</div>
+			<div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}><h3 style={{ fontFamily: "monospace" }}>{item.id.slice(0, 8)}</h3><span className={stateClass(item.state)} style={stateBadgeStyle(item.state)}>{stateLabel(item.state)}</span>{item.name ? <span>{item.name}</span> : null}</div>
 			<div style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}><strong>Stages:</strong> {item.recordedStages}{item.plannedStages ? ` / ${item.plannedStages}` : ""} · <strong>Circles:</strong> {item.circles}</div>
 		</div>{item.hasBestCost ? <div className="row-end"><small>Best cost</small><div style={{ fontSize: "1.25rem", fontWeight: 600 }}>{item.bestCost.toFixed(2)}</div></div> : null}</div>
 	</div></a>;
@@ -143,7 +146,7 @@ export function CampaignDetailIsland({ root }: { root: HTMLElement }) {
 	const points = campaign.stages.map(({ index, kind, circles, bestCost, hasBestCost }) => ({ index, kind, circles, bestCost, hasBestCost }));
 	const latest = [...campaign.stages].reverse().find((stage) => stage.state === "completed" && stage.jobId);
 	return <div>
-		<div style={{ marginBottom: "1.5rem" }}><div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}><h1>{campaignTitle(campaign)}</h1><Badge state={campaign.state} /></div><code style={{ overflowWrap: "anywhere" }}>{campaign.id}</code>
+		<div style={{ marginBottom: "1.5rem" }}><div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}><h1>{campaignTitle(campaign)}</h1><span className={stateClass(campaign.state)} style={stateBadgeStyle(campaign.state)}>{stateLabel(campaign.state)}</span></div><code style={{ overflowWrap: "anywhere" }}>{campaign.id}</code>
 			<div style={{ color: "var(--text-muted)", fontSize: "0.875rem", marginTop: "0.25rem" }}>{campaignProvenance(campaign)}</div></div>
 		{campaign.error ? <div className="card" style={{ color: "var(--error-text)" }}>{campaign.error}</div> : null}
 		{campaign.warnings && campaign.warnings.length > 0 ? <CampaignWarnings warnings={campaign.warnings} /> : null}
@@ -155,7 +158,7 @@ export function CampaignDetailIsland({ root }: { root: HTMLElement }) {
 			    and a keyboard has no other way to reach the ones off-screen. */}
 			<div className="table-scroll" role="region" aria-label="Campaign stages" tabIndex={0}><table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><th scope="col">#</th><th scope="col">Stage</th><th scope="col">State</th><th scope="col">Circles</th><th scope="col">Cost</th><th scope="col">PSNR</th><th scope="col">Elapsed</th><th scope="col" title="Accepted polishing sweeps">Accepted</th><th scope="col">Job</th></tr></thead><tbody>
 			{campaign.stages.map((stage) => <Fragment key={stage.index}>
-				<tr style={{ borderTop: "1px solid var(--border-color)" }}><td>{stage.index}</td><td>{stage.kind}</td><td><Badge state={stage.state} /></td><td>{stage.circles}</td><td>{formatCost(stage)}</td><td>{formatPsnr(stage)}</td><td title={stage.elapsedAbsent}>{formatElapsed(stage)}</td><td title={acceptedSweepsTitle(stage)}>{formatAcceptedSweeps(stage)}</td><td>{stage.jobId ? <a href={`/jobs/${stage.jobId}`}>{stage.jobId.slice(0, 8)}</a> : "—"}</td></tr>
+				<tr style={{ borderTop: "1px solid var(--border-color)" }}><td>{stage.index}</td><td>{stage.kind}</td><td><span className={stateClass(stage.state)} style={stateBadgeStyle(stage.state)}>{stateLabel(stage.state)}</span></td><td>{stage.circles}</td><td>{formatCost(stage)}</td><td>{formatPsnr(stage)}</td><td title={stage.elapsedAbsent}>{formatElapsed(stage)}</td><td title={acceptedSweepsTitle(stage)}>{formatAcceptedSweeps(stage)}</td><td>{stage.jobId ? <a href={`/jobs/${stage.jobId}`}>{stage.jobId.slice(0, 8)}</a> : "—"}</td></tr>
 				{stage.note ? <tr><td colSpan={9} style={{ color: "var(--text-muted)", fontSize: "0.8125rem" }}>{stage.note}</td></tr> : null}
 			</Fragment>)}
 		</tbody></table></div></div>
@@ -204,9 +207,4 @@ function ProjectionRow({ label, value }: { label: string; value: string }) {
 	return <div style={{ display: "flex", gap: "0.75rem", fontSize: "0.875rem", marginBottom: "0.25rem" }}>
 		<span style={{ color: "var(--text-muted)", minWidth: "5.5rem" }}>{label}</span><span>{value}</span>
 	</div>;
-}
-
-function Badge({ state }: { state: string }) {
-	const kind = state === "completed" ? "badge-success" : state === "failed" ? "badge-error" : state === "paused" || state === "cancelled" ? "badge-warning" : "badge-info";
-	return <span className={`badge ${kind}`}>{state}</span>;
 }

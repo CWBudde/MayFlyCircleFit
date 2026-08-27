@@ -131,8 +131,8 @@ const themeStyles = `<style>
 // rendered the dark theme as black text on the dark surface -- measured at
 // 1.17:1 against a 4.5:1 threshold. It looked survivable on the dashboard and
 // job pages only because a React island replaces their markup with fresh
-// elements, which do inherit; the pages with no island, settings and create,
-// stayed unreadable.
+// elements, which do inherit; the pages with no island -- create, and settings
+// until it became one -- stayed unreadable.
 //
 // The override selector is :root:root, and the doubled pseudo-class is load
 // bearing. The system-preference rule is :root:not([data-theme]), which computes
@@ -220,7 +220,7 @@ func Layout(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</head><body><a class=\"skip-link\" href=\"#main-content\">Skip to main content</a><nav aria-label=\"Primary\"><div class=\"nav-container\"><a href=\"/\" class=\"nav-brand\"><svg aria-hidden=\"true\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"10\"></circle> <circle cx=\"12\" cy=\"12\" r=\"6\"></circle> <circle cx=\"12\" cy=\"12\" r=\"2\"></circle></svg> MayFlyCircleFit</a><div class=\"nav-actions\"><ul class=\"nav-links\"><li><a href=\"/\">Dashboard</a></li><li><a href=\"/jobs\">Jobs</a></li><li><a href=\"/schedules\">Campaigns</a></li><li><a href=\"/create\">Create Job</a></li><li><a href=\"/settings\">Settings</a></li><li><a href=\"https://github.com/CWBudde/MayFlyCircleFit\" target=\"_blank\">GitHub</a></li></ul><div class=\"theme-switch\" role=\"group\" aria-label=\"Color theme\"><button class=\"theme-option\" type=\"button\" data-theme-value=\"auto\" aria-label=\"Use system theme\" aria-pressed=\"true\" title=\"Auto theme\"><svg aria-hidden=\"true\" width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"13\" rx=\"2\"></rect><path d=\"M8 21h8M12 17v4\"></path></svg></button> <button class=\"theme-option\" type=\"button\" data-theme-value=\"light\" aria-label=\"Use light theme\" aria-pressed=\"false\" title=\"Light theme\"><svg aria-hidden=\"true\" width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"4\"></circle><path d=\"M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41\"></path></svg></button> <button class=\"theme-option\" type=\"button\" data-theme-value=\"dark\" aria-label=\"Use dark theme\" aria-pressed=\"false\" title=\"Dark theme\"><svg aria-hidden=\"true\" width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z\"></path></svg></button></div></div></div></nav><main id=\"main-content\" tabindex=\"-1\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</head><body><a class=\"skip-link\" href=\"#main-content\">Skip to main content</a><nav aria-label=\"Primary\"><div class=\"nav-container\"><a href=\"/\" class=\"nav-brand\"><svg aria-hidden=\"true\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"10\"></circle> <circle cx=\"12\" cy=\"12\" r=\"6\"></circle> <circle cx=\"12\" cy=\"12\" r=\"2\"></circle></svg> MayFlyCircleFit</a><div class=\"nav-actions\"><ul class=\"nav-links\"><li><a href=\"/\">Dashboard</a></li><li><a href=\"/jobs\">Jobs</a></li><li><a href=\"/schedules\">Campaigns</a></li><li><a href=\"/create\">Create Job</a></li><li><a href=\"/settings\">Settings</a></li><li><a href=\"https://github.com/CWBudde/MayFlyCircleFit\" target=\"_blank\">GitHub</a></li></ul><!-- ThemeToggleIsland replaces these buttons; see its comment. --><div class=\"theme-switch\" role=\"group\" aria-label=\"Color theme\" data-island=\"theme-switch\" data-island-label=\"color theme\"><button class=\"theme-option\" type=\"button\" data-theme-value=\"auto\" aria-label=\"Use system theme\" aria-pressed=\"true\" title=\"Auto theme\"><svg aria-hidden=\"true\" width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"13\" rx=\"2\"></rect><path d=\"M8 21h8M12 17v4\"></path></svg></button> <button class=\"theme-option\" type=\"button\" data-theme-value=\"light\" aria-label=\"Use light theme\" aria-pressed=\"false\" title=\"Light theme\"><svg aria-hidden=\"true\" width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"4\"></circle><path d=\"M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41\"></path></svg></button> <button class=\"theme-option\" type=\"button\" data-theme-value=\"dark\" aria-label=\"Use dark theme\" aria-pressed=\"false\" title=\"Dark theme\"><svg aria-hidden=\"true\" width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z\"></path></svg></button></div></div></div></nav><main id=\"main-content\" tabindex=\"-1\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -228,7 +228,15 @@ func Layout(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</main><script>\n\t\t\t\t(() => {\n\t\t\t\t\t// The palette itself is owned by the preload script in\n\t\t\t\t\t// <head>; this only wires the buttons to it, so the toggle\n\t\t\t\t\t// swaps one stylesheet rather than mutating <html>.\n\t\t\t\t\tconst theme = window.mayflyTheme;\n\t\t\t\t\tconst buttons = document.querySelectorAll(\"[data-theme-value]\");\n\t\t\t\t\tconst updateButtons = () => {\n\t\t\t\t\t\tconst current = theme.selected();\n\t\t\t\t\t\tbuttons.forEach((button) => {\n\t\t\t\t\t\t\tbutton.setAttribute(\"aria-pressed\", String(button.dataset.themeValue === current));\n\t\t\t\t\t\t});\n\t\t\t\t\t};\n\t\t\t\t\tconst setTheme = (next) => {\n\t\t\t\t\t\ttheme.apply(next);\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tif (next === \"auto\") {\n\t\t\t\t\t\t\t\tlocalStorage.removeItem(theme.storageKey);\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tlocalStorage.setItem(theme.storageKey, next);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} catch (_) {\n\t\t\t\t\t\t\t// The choice still applies to this page without storage.\n\t\t\t\t\t\t}\n\t\t\t\t\t\tupdateButtons();\n\t\t\t\t\t};\n\t\t\t\t\tbuttons.forEach((button) => {\n\t\t\t\t\t\tbutton.addEventListener(\"click\", () => setTheme(button.dataset.themeValue));\n\t\t\t\t\t});\n\t\t\t\t\tupdateButtons();\n\t\t\t\t})();\n\t\t\t</script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</main>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = IslandBundle().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -236,9 +244,12 @@ func Layout(title string) templ.Component {
 	})
 }
 
-// IslandBundle links the React island bundle. Only pages that actually render
-// a data-island element should call it: the bundle is large, and on a page
-// with no island it would download and parse just to run an empty query.
+// IslandBundle links the React island bundle. Layout calls it for every page,
+// because every page now renders one island: the theme switch in the navigation
+// is chrome, and moving its handler out of the shell is what stopped the shell
+// carrying a script. Pages that mount an island of their own still call it too;
+// a second <script type="module"> with the same src resolves to the same entry
+// in the module map and is not evaluated twice.
 //
 // The bundle is committed and embedded, so this binary serves it rather than
 // fetching it from a network the host may not have. Module scripts are
@@ -265,20 +276,20 @@ func IslandBundle() templ.Component {
 			templ_7745c5c3_Var3 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<script type=\"module\" src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<script type=\"module\" src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(BundleURL())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/layout.templ`, Line: 959, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/layout.templ`, Line: 932, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\"></script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\"></script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

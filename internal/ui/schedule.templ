@@ -268,7 +268,7 @@ templ campaignCard(summary CampaignSummary, href string) {
 						<h3 style="font-size: 1.125rem; font-weight: 600; font-family: monospace;">
 							{ shortID(summary.ID) }
 						</h3>
-						@ScheduleStateBadge(summary.State)
+						@StateBadge(summary.State)
 						if summary.Name != "" {
 							<span style="color: var(--text-muted);">{ summary.Name }</span>
 						}
@@ -301,7 +301,7 @@ templ CampaignPage(campaign Campaign) {
 		<div style="margin-bottom: 1.5rem;">
 			<div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
 				<h1 style="font-size: 1.75rem; font-weight: 700;">{ campaignTitle(campaign) }</h1>
-				@ScheduleStateBadge(campaign.State)
+				@StateBadge(campaign.State)
 			</div>
 			<div style="color: var(--text-muted); font-family: monospace; font-size: 0.875rem;">{ campaign.ID }</div>
 			<div style="color: var(--text-muted); font-size: 0.875rem; margin-top: 0.25rem;">
@@ -382,7 +382,7 @@ templ CampaignPage(campaign Campaign) {
 								<tr style="border-bottom: 1px solid var(--border-color);">
 									<td style="padding: 0.5rem 0.75rem; color: var(--text-muted);">{ fmt.Sprintf("%d", stage.Index) }</td>
 									<td style="padding: 0.5rem 0.75rem;">{ stage.Kind }</td>
-									<td style="padding: 0.5rem 0.75rem;">@ScheduleStateBadge(stage.State)</td>
+									<td style="padding: 0.5rem 0.75rem;">@StateBadge(stage.State)</td>
 									<td style="padding: 0.5rem 0.75rem; text-align: right;">{ fmt.Sprintf("%d", stage.Circles) }</td>
 									<td style="padding: 0.5rem 0.75rem; text-align: right;">{ formatCampaignCost(stage) }</td>
 									<td style="padding: 0.5rem 0.75rem; text-align: right;">{ formatCampaignPSNR(stage) }</td>
@@ -495,19 +495,6 @@ templ CampaignNotFound(id string, detail string) {
 			}
 			<p style="margin-top: 1.5rem;"><a class="btn btn-primary" href="/schedules">Back to campaigns</a></p>
 		</div>
-	}
-}
-
-// ScheduleStateBadge covers the schedule and stage states, which share a
-// vocabulary with job states but add paused and skipped.
-templ ScheduleStateBadge(state string) {
-	switch state {
-		case "paused":
-			<span class="badge badge-warning">Paused</span>
-		case "skipped":
-			<span class="badge" style="background-color: var(--border-color); color: var(--text-color);">Skipped</span>
-		default:
-			@StateBadge(state)
 	}
 }
 

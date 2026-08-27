@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { stateBadgeStyle, stateClass, stateLabel } from "./format";
 import { fetchJSON, useLiveResource } from "./live";
 import type { ProgressEvent, UIEvent } from "./live";
 import { LiveStatus } from "./LiveStatus";
@@ -126,7 +127,7 @@ export function JobControlsIsland({ root }: { root: HTMLElement }) {
 	}
 
 	return <div className="action-row">
-		<StateBadge state={status.state} />
+		<span className={stateClass(status.state)} style={stateBadgeStyle(status.state)}>{stateLabel(status.state)}</span>
 		{status.actions.pause ? <ActionButton label="Pause job" busy={busy === "pause"} onClick={() => void action("pause")} /> : null}
 		{status.actions.resume ? <ActionButton label="Resume job" busy={busy === "resume"} onClick={() => void action("resume")} primary /> : null}
 		{status.actions.cancel ? <ActionButton label="Cancel job" busy={busy === "cancel"} onClick={() => void action("cancel")} danger /> : null}
@@ -151,11 +152,6 @@ function ActionButton({ label, glyph, busy, onClick, danger, primary }: { label:
 			{busy ? "Working…" : label}
 		</button>
 	);
-}
-
-function StateBadge({ state }: { state: string }) {
-	const kind = state === "completed" ? "badge-success" : state === "failed" ? "badge-error" : state === "paused" || state === "cancelled" ? "badge-warning" : "badge-info";
-	return <span className={`badge ${kind}`}>{state[0]?.toUpperCase() + state.slice(1)}</span>;
 }
 
 async function post(url: string): Promise<void> {

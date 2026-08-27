@@ -190,7 +190,7 @@ templ dashboardCampaignCard(summary CampaignSummary) {
 				</div>
 				<div class="row-end">
 					if summary.State != "" {
-						@ScheduleStateBadge(summary.State)
+						@StateBadge(summary.State)
 					}
 					if summary.HasBestCost {
 						<div style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.5rem;">Best cost</div>

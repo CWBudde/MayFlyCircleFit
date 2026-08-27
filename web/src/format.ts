@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { Palette } from "./charts";
 
 // This module holds the pure formatters the islands share. They live here
@@ -10,31 +11,75 @@ import type { Palette } from "./charts";
 // payload type satisfies them without this module having to import it back,
 // which would close an import cycle.
 
-// stateClass mirrors ui.StateBadge in internal/ui/list.templ. The island
-// replaces server-rendered rows, so a different mapping here would recolor
-// every badge on mount.
+// stateClass, stateLabel and stateBadgeStyle are the one state badge the
+// TypeScript side renders. Every island composes its badge from them:
+//
+//     <span className={stateClass(s)} style={stateBadgeStyle(s)}>{stateLabel(s)}</span>
+//
+// ui.StateBadge in internal/ui/list.templ is their Go mirror, and it covers the
+// same vocabulary — the six job states (pending, running, paused, completed,
+// failed, cancelled) plus the two the schedule adds (paused at campaign level,
+// skipped at stage level). web/src/state-badge-parity.json is the contract both
+// sides are tested against; changing a mapping here without changing it there
+// fails on both sides at once.
+//
+// The three axes the five superseded implementations disagreed on, decided once:
+//
+//   - Fallthrough class. A state neither side enumerates gets no modifier —
+//     `badge` alone, plus the neutral chip colors below — never `badge-info`.
+//     badge-info is the color of a job that is pending or running, and painting
+//     an unrecognized value with it claims the UI understands a state it does
+//     not.
+//   - Label casing. The state with its first letter capitalized, so a badge
+//     never prints a bare lowercase identifier beside capitalized ones. The
+//     rule applies to unknown states too ("nonsense" reads "Nonsense"); only an
+//     empty state has no word of its own, and it reads "Unknown".
+//   - skipped. A first-class state, not a fallthrough: it is a planned stage
+//     the campaign's policy declined to run, which is neither a failure nor a
+//     run. It carries the neutral chip so it reads as an absence of a result,
+//     and the label says which absence.
 export function stateClass(state: string): string {
 	switch (state) {
 		case "pending":
 		case "running":
-			return "badge-info";
+			return "badge badge-info";
 		case "completed":
-			return "badge-success";
+			return "badge badge-success";
 		case "failed":
-			return "badge-error";
+			return "badge badge-error";
 		case "paused":
 		case "cancelled":
-			return "badge-warning";
+			return "badge badge-warning";
 		default:
-			return "";
+			return "badge";
 	}
 }
 
 export function stateLabel(state: string): string {
 	if (!state) {
-		return "unknown";
+		return "Unknown";
 	}
 	return state.charAt(0).toUpperCase() + state.slice(1);
+}
+
+// stateBadgeStyle carries the two decorations that have no class of their own:
+// the running badge's pulse, which says the row is still moving, and the
+// neutral chip that skipped and unrecognized states wear in place of a color.
+// Both mirror the inline styles ui.StateBadge writes; without them a mounted
+// island would drop the pulse and leave those two badges as unpainted text.
+export function stateBadgeStyle(state: string): CSSProperties | undefined {
+	switch (state) {
+		case "running":
+			return { animation: "pulse 2s ease-in-out infinite" };
+		case "pending":
+		case "completed":
+		case "failed":
+		case "paused":
+		case "cancelled":
+			return undefined;
+		default:
+			return { backgroundColor: "var(--border-color)", color: "var(--text-color)" };
+	}
 }
 
 // formatCostGain mirrors formatJobImprovement on the Go side.
