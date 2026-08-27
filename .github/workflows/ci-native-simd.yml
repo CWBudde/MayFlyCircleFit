@@ -111,12 +111,19 @@ jobs:
       #       renderer_correctness_test.go:106: pixel (4,11) channel 3 = 205, baseline = 206
       #
       # It reproduces at threads_1 and threads_4, does not reproduce on amd64,
-      # and predates this work. The case is a 31x23 custom canvas, well below
-      # the NEON span cutoff, and channel 3 is alpha, which the span compositor
-      # never writes - so the gated NEON span is unlikely to be the cause. It
-      # needs real ARM64 hardware to diagnose and is not reproducible by
-      # cross-compiling. See docs/known-limitations.md; fill in rendererPackage
-      # on the ARM64 rows once it is fixed.
+      # and predates this work. The cause is multiply-add contraction, not the
+      # NEON span kernel: the renderer's uint8(outA*255 + 0.5) fuses into a
+      # single FMADDD on ARM64 and rounds once, while the correctness oracle's
+      # uint8(math.Round(...)) cannot fuse. It is diagnosable by cross-compiling
+      # with -gcflags='-S'; an earlier version of this comment said otherwise.
+      # See docs/known-limitations.md for the fix and why it is not applied yet,
+      # and fill in rendererPackage on both ARM64 rows once it is.
+      #
+      # Note what empty rendererPackage also costs: internal/fit/renderer's
+      # tests are not compiled on ARM64 anywhere in CI, so a signature change
+      # can break an //go:build arm64 test file with every gate green. That is
+      # now caught by scripts/check-cross-build.sh, which vets every supported
+      # target, rather than by this matrix.
 
       - name: Record native scalar and SIMD throughput
         env:

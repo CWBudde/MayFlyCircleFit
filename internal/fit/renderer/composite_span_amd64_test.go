@@ -5,6 +5,7 @@ package renderer
 import (
 	"bytes"
 	"fmt"
+	"image"
 	"math"
 	"math/rand"
 	"strconv"
@@ -256,12 +257,16 @@ func TestCompositeSpanExactFusionContract(t *testing.T) {
 func TestCompositeOpaqueSpanDispatchMatchesScalar(t *testing.T) {
 	source := rand.New(rand.NewSource(99))
 
-	for _, pixels := range []int{1, 2, 3, 5, 7, 15, 16, 17, 33, 129, 1023} {
+	// 4, 6 and 8 straddle compositeSpanAVX2MinPixels; 24 and 25 straddle the
+	// SSE2 one, so both boundaries are crossed whichever tier this host runs.
+	//
+	//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
+	for _, pixels := range []int{1, 2, 3, 4, 5, 6, 7, 8, 15, 16, 17, 23, 24, 25, 33, 129, 1023} {
 		t.Run(strconv.Itoa(pixels), func(t *testing.T) {
 			got := exactSpanFixture(pixels, source)
 			want := append([]byte(nil), got...)
 
-			compositeOpaqueSpan(got, 8, pixels, 0.2, 0.6, 0.9, 0.37)
+			compositeOpaqueSpanColor(got, 8, pixels, 0.2, 0.6, 0.9, 0.37)
 			compositeOpaqueSpanScalar(want, 8, pixels, 0.2, 0.6, 0.9, 0.37)
 
 			if !bytes.Equal(got, want) {
@@ -291,7 +296,8 @@ func TestCompositeOpaqueSpanPairDispatchMatchesScalar(t *testing.T) {
 
 			want := append([]byte(nil), got...)
 
-			compositeOpaqueSpanPair(got, 8, stride+8, pixels, 0.2, 0.6, 0.9, 0.37)
+			blend := newSpanBlend(0.2, 0.6, 0.9, 0.37)
+			compositeOpaqueSpanPair(&blend, got, 8, stride+8, pixels, 0.2, 0.6, 0.9, 0.37)
 			compositeOpaqueSpanPairScalar(want, 8, stride+8, pixels, 0.2, 0.6, 0.9, 0.37)
 
 			if !bytes.Equal(got, want) {
@@ -341,7 +347,7 @@ func TestCompositeSpanFollowsForcedTier(t *testing.T) {
 			for _, pixels := range []int{1, 2, 3, 15, 16, 17, 33, 512} {
 				got := exactSpanFixture(pixels, source)
 				want := append([]byte(nil), got...)
-				compositeOpaqueSpan(got, 8, pixels, 0.13, 0.57, 0.91, 0.37)
+				compositeOpaqueSpanColor(got, 8, pixels, 0.13, 0.57, 0.91, 0.37)
 				compositeOpaqueSpanScalar(want, 8, pixels, 0.13, 0.57, 0.91, 0.37)
 
 				if !bytes.Equal(got, want) {
@@ -352,9 +358,15 @@ func TestCompositeSpanFollowsForcedTier(t *testing.T) {
 	}
 }
 
-// BenchmarkCompositeSpanExactCutoff measures the quantity the cutoff constants
-// are actually about: the vector kernel plus the per-span constant setup the
-// dispatcher pays for it, against the scalar span at the same length.
+// BenchmarkCompositeSpanExactCutoff measures the vector kernel plus a per-span
+// rebuild of the constant block, against the scalar span at the same length.
+//
+// That was the dispatcher's real cost before the block was hoisted to once per
+// circle, and the shipped cutoffs were derived from it. It is kept as the
+// record of the cost that hoisting removed: subtract
+// BenchmarkCompositeSpanExactHoistedCutoff from it, length by length, and the
+// difference is the setup. BenchmarkCompositeSpanExactHoistedCutoff is the one
+// that now describes production.
 //
 // It bypasses compositeOpaqueSpan's own cutoff on purpose - benchmarking
 // through the dispatcher would only confirm that the current constant does what
@@ -402,9 +414,14 @@ func TestCompositeOpaqueSpanDoesNotAllocate(t *testing.T) {
 
 			pix := exactSpanFixture(512, rand.New(rand.NewSource(3)))
 
+			// One blend across both entry points, which is the shape production
+			// uses: the caller builds it per circle and every span of every row
+			// reads the same block.
+			blend := newSpanBlend(0.13, 0.57, 0.91, 0.37)
+
 			allocs := testing.AllocsPerRun(200, func() {
-				compositeOpaqueSpan(pix, 8, 512, 0.13, 0.57, 0.91, 0.37)
-				compositeOpaqueSpanPair(pix, 8, 8, 200, 0.13, 0.57, 0.91, 0.37)
+				compositeOpaqueSpan(&blend, pix, 8, 512, 0.13, 0.57, 0.91, 0.37)
+				compositeOpaqueSpanPair(&blend, pix, 8, 8, 200, 0.13, 0.57, 0.91, 0.37)
 			})
 			if allocs != 0 {
 				t.Fatalf("span dispatch allocated %.1f times per call at the %s tier, want 0", allocs, tc.tier)
@@ -413,9 +430,19 @@ func TestCompositeOpaqueSpanDoesNotAllocate(t *testing.T) {
 	}
 }
 
+// exactSpanCutoffSizes is the ladder both cutoff benchmarks walk. It is finer
+// than exactSpanSizes because a crossover is a question about where a curve
+// crosses, not about parity at representative lengths, and it starts at 1 so the
+// sub-batch region below the two-pixel vector body stays visible. At an odd
+// length the kernel columns composite one pixel fewer than the scalar column,
+// and at length 1 they composite nothing at all, because pairs is pixels/2 -
+// which is also what the dispatcher does with the odd tail, so the rows are
+// honest about the kernel and not comparable across columns.
+var exactSpanCutoffSizes = []int{1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20, 24, 32, 48, 64}
+
 func BenchmarkCompositeSpanExactCutoff(b *testing.B) {
 	source := rand.New(rand.NewSource(17))
-	for _, pixels := range []int{2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 32, 48, 64} {
+	for _, pixels := range exactSpanCutoffSizes {
 		pix := exactSpanFixture(pixels, source)
 
 		b.Run(fmt.Sprintf("scalar/%d", pixels), func(b *testing.B) {
@@ -475,5 +502,226 @@ func BenchmarkCompositeSpanExactDirect(b *testing.B) {
 				}
 			})
 		}
+	}
+}
+
+// TestRenderCircleRowsDoesNotAllocate pins the compositor's constant block to
+// the render goroutine's stack, one call level above where
+// TestCompositeOpaqueSpanDoesNotAllocate looks.
+//
+// That test only enters compositeOpaqueSpan directly, so it sees the frames in
+// composite_span_amd64.go and nothing else. Once the block is built by the
+// per-circle caller in renderer_cpu.go, the frame that owns it is not on that
+// test's call path at all, and a block that escaped there would cost one heap
+// allocation per circle per shard while every existing guard still passed.
+//
+// Not parallel, and neither are its siblings: they force the process-global SIMD
+// tier, so concurrent subtests would race fit.SetForcedTier against every other
+// dispatch site.
+//
+//nolint:paralleltest // forces the process-global SIMD tier
+func TestRenderCircleRowsDoesNotAllocate(t *testing.T) {
+	defer fit.ResetTierDetection()
+
+	const (
+		width  = 129
+		height = 97
+	)
+
+	for _, forced := range []struct {
+		tier      fit.SIMDTier
+		reachable bool
+	}{
+		{fit.TierScalar, true},
+		{fit.TierSSE2, true},
+		{fit.TierAVX2, cpu.X86.HasAVX2},
+	} {
+		t.Run(forced.tier.String(), func(t *testing.T) {
+			if !forced.reachable {
+				t.Skipf("host CPU cannot execute the %s tier", forced.tier)
+			}
+
+			fit.SetForcedTier(forced.tier)
+
+			reference := image.NewNRGBA(image.Rect(0, 0, width, height))
+			renderer := NewCPURenderer(reference, 1)
+
+			if !renderer.opaqueCanvas {
+				t.Fatal("default canvas is not opaque, so the exact span path is unreachable")
+			}
+
+			canvas := image.NewNRGBA(image.Rect(0, 0, width, height))
+			circle := fit.Circle{X: 64.25, Y: 48.75, R: 40.5, CR: 0.13, CG: 0.57, CB: 0.91, Opacity: 0.37}
+
+			allocs := testing.AllocsPerRun(200, func() {
+				renderer.renderCircleScanlineRowsTracked(canvas, circle, 0, height, nil)
+			})
+			if allocs != 0 {
+				t.Fatalf("circle row walk allocated %.1f times per call at the %s tier, want 0", allocs, forced.tier)
+			}
+		})
+	}
+}
+
+// TestSpanBlendSurvivesTierChange pins spanBlend as tier-independent state.
+//
+// The block is twenty float64s that AVX2 reads as five four-lane vectors and
+// SSE2 as ten two-lane ones, so one block legitimately feeds either kernel, and
+// production reuses a single block for a whole circle. The failure this guards
+// is the adjacent change nothing else would catch: caching compositeSpanKernel
+// or compositeSpanMinPixels into the blend when it is built. Both
+// TestCompositeSpanFollowsForcedTier and TestRendererKernelsFollowForcedTier
+// inspect the package variables, so a stale copy inside a blend would pass them
+// while silently pinning one circle to the tier that was current when it began.
+//
+//nolint:paralleltest // forces the process-global SIMD tier
+func TestSpanBlendSurvivesTierChange(t *testing.T) {
+	defer fit.ResetTierDetection()
+
+	const (
+		r     = 0.13
+		g     = 0.57
+		blue  = 0.91
+		alpha = 0.37
+	)
+
+	source := rand.New(rand.NewSource(4242)) //nolint:gosec // a reproducible fixture, not a security context
+
+	// Byte parity alone cannot catch a cached tier, because every exact kernel
+	// is byte-identical to the scalar span - that is the whole premise of
+	// docs/exact-span-compositors.md. So assert the structural property first:
+	// two blends for the same colour, built under different forced tiers, must
+	// be identical. A tier or a cutoff smuggled into the struct makes them
+	// differ, and spanBlend is comparable precisely so this can be checked.
+	fit.SetForcedTier(fit.TierScalar)
+
+	blend := newSpanBlend(r, g, blue, alpha)
+
+	if cpu.X86.HasAVX2 {
+		fit.SetForcedTier(fit.TierAVX2)
+
+		if avx2Blend := newSpanBlend(r, g, blue, alpha); avx2Blend != blend {
+			t.Fatal("spanBlend depends on the tier that was current when it was built")
+		}
+	}
+
+	for _, forced := range []struct {
+		tier      fit.SIMDTier
+		reachable bool
+	}{
+		{fit.TierScalar, true},
+		{fit.TierSSE2, true},
+		{fit.TierAVX2, cpu.X86.HasAVX2},
+		{fit.TierScalar, true},
+	} {
+		if !forced.reachable {
+			continue
+		}
+
+		fit.SetForcedTier(forced.tier)
+
+		if compositeSpanKernel != forced.tier {
+			t.Fatalf("composite span kernel = %s after forcing %s", compositeSpanKernel, forced.tier)
+		}
+
+		for _, pixels := range exactSpanSizes {
+			got := exactSpanFixture(pixels, source)
+			want := append([]byte(nil), got...)
+
+			compositeOpaqueSpan(&blend, got, 8, pixels, r, g, blue, alpha)
+			compositeOpaqueSpanScalar(want, 8, pixels, r, g, blue, alpha)
+
+			if !bytes.Equal(got, want) {
+				t.Fatalf("reused blend differs from scalar at the %s tier, %d pixels", forced.tier, pixels)
+			}
+		}
+	}
+}
+
+// BenchmarkCompositeSpanExactHoistedCutoff is BenchmarkCompositeSpanExactCutoff
+// with the constant block built once, outside the timed loop.
+//
+// That is what the dispatcher does now: the block is a pure function of the
+// circle's colour, so renderCircleScanlineRowsTracked and compositeCircleDirtyRows
+// build it per circle and every span of every row reads the same twenty
+// float64s. This benchmark therefore measures the quantity
+// compositeSpanAVX2MinPixels and compositeSpanSSE2MinPixels are now about, and
+// the previous one measures what they used to be about.
+//
+// Same rules as its predecessor: kernels called by name, never through a func
+// value, and b.ReportAllocs so a stray heap allocation cannot masquerade as a
+// slow kernel.
+func BenchmarkCompositeSpanExactHoistedCutoff(b *testing.B) {
+	source := rand.New(rand.NewSource(17)) //nolint:gosec // a reproducible fixture, not a security context
+	for _, pixels := range exactSpanCutoffSizes {
+		pix := exactSpanFixture(pixels, source)
+		constants := exactSpanConstants(0.13, 0.57, 0.91, 0.37)
+
+		b.Run(fmt.Sprintf("scalar/%d", pixels), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(pixels * 4))
+
+			for range b.N {
+				compositeOpaqueSpanScalar(pix, 8, pixels, 0.13, 0.57, 0.91, 0.37)
+			}
+		})
+		b.Run(fmt.Sprintf("sse2/%d", pixels), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(pixels * 4))
+
+			for range b.N {
+				compositeSpanExactSSE2(&pix[8], pixels/2, &constants[0])
+			}
+		})
+
+		if !cpu.X86.HasAVX2 {
+			continue
+		}
+
+		b.Run(fmt.Sprintf("avx2/%d", pixels), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(pixels * 4))
+
+			for range b.N {
+				compositeSpanExactAVX2(&pix[8], pixels/2, &constants[0])
+			}
+		})
+	}
+}
+
+// BenchmarkCompositeOpaqueSpanBlend goes through the real dispatcher with a
+// hoisted blend, so it confirms a cutoff rather than deriving one: the branch
+// under test is inside the function being timed. Run it after setting a
+// constant, to check that no length lost against scalar.
+func BenchmarkCompositeOpaqueSpanBlend(b *testing.B) {
+	const (
+		r     = 0.13
+		g     = 0.57
+		blue  = 0.91
+		alpha = 0.37
+	)
+
+	source := rand.New(rand.NewSource(17)) //nolint:gosec // a reproducible fixture, not a security context
+	blend := newSpanBlend(r, g, blue, alpha)
+
+	for _, pixels := range exactSpanCutoffSizes {
+		pix := exactSpanFixture(pixels, source)
+
+		b.Run(fmt.Sprintf("scalar/%d", pixels), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(pixels * 4))
+
+			for range b.N {
+				compositeOpaqueSpanScalar(pix, 8, pixels, r, g, blue, alpha)
+			}
+		})
+		b.Run(fmt.Sprintf("dispatched_%s/%d", compositeSpanKernel, pixels), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(pixels * 4))
+
+			for range b.N {
+				compositeOpaqueSpan(&blend, pix, 8, pixels, r, g, blue, alpha)
+			}
+		})
 	}
 }

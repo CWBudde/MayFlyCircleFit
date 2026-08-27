@@ -681,6 +681,22 @@ func (r *CPURenderer) renderCircleScanlineRowsTracked(
 
 			int(maxYf+1), r.height), rowEnd)
 
+	// Every worker visits every circle, so a circle confined to one row band
+	// still reaches this function once per shard and clamps to an empty range in
+	// all the others. Return before any per-circle setup, the way
+	// polishDirtySession.circleVerticalBounds already does: the row loops below
+	// would do nothing anyway, and the setup is O(circles x threads).
+	if minY >= maxY {
+		return
+	}
+
+	// The exact span compositor's constant block depends only on the circle's
+	// colour and opacity, so it is built once here and passed down to every span
+	// of every row. It is built after the early rejects so a transparent or
+	// off-canvas circle pays nothing, and inside this function rather than above
+	// the row-shard goroutines so it stays on the stack that composites with it.
+	blend := newSpanBlend(c.CR, c.CG, c.CB, c.Opacity)
+
 	r2 := c.R * c.R
 	var fixedGeometry fixedCircleQ16
 
@@ -699,7 +715,7 @@ func (r *CPURenderer) renderCircleScanlineRowsTracked(
 
 	// Scanline algorithm: for each row, compute horizontal span
 	if useFixedGeometry {
-		r.renderFixedCircleRowsTracked(img, c, fixedGeometry, minY, maxY, dirty)
+		r.renderFixedCircleRowsTracked(img, c, &blend, fixedGeometry, minY, maxY, dirty)
 		return
 	}
 
@@ -721,7 +737,7 @@ func (r *CPURenderer) renderCircleScanlineRowsTracked(
 				dirty.add(y, xStart, xEnd)
 			}
 
-			r.compositeCircleSpan(img, c, y, xStart, xEnd)
+			r.compositeCircleSpan(img, c, &blend, y, xStart, xEnd)
 
 			continue
 		}
@@ -746,13 +762,14 @@ func (r *CPURenderer) renderCircleScanlineRowsTracked(
 			dirty.add(y, xStart, xEnd)
 		}
 
-		r.compositeCircleSpan(img, c, y, xStart, xEnd)
+		r.compositeCircleSpan(img, c, &blend, y, xStart, xEnd)
 	}
 }
 
 func (r *CPURenderer) renderFixedCircleRowsTracked(
 	img *image.NRGBA,
 	c fit.Circle,
+	blend *spanBlend,
 	geometry fixedCircleQ16,
 	minY, maxY int,
 	dirty *dirtySpanSet,
@@ -771,7 +788,7 @@ func (r *CPURenderer) renderFixedCircleRowsTracked(
 				dirty.add(y, xStart, xEnd)
 			}
 
-			r.compositeCircleSpan(img, c, y, xStart, xEnd)
+			r.compositeCircleSpan(img, c, blend, y, xStart, xEnd)
 		}
 
 		return
@@ -786,10 +803,10 @@ func (r *CPURenderer) renderFixedCircleRowsTracked(
 		mirrorY := rowSum - topY
 		switch {
 		case mirrorY > bottomY:
-			r.renderFixedCircleRowTracked(img, c, geometry, topY, dirty)
+			r.renderFixedCircleRowTracked(img, c, blend, geometry, topY, dirty)
 			topY++
 		case mirrorY < bottomY:
-			r.renderFixedCircleRowTracked(img, c, geometry, bottomY, dirty)
+			r.renderFixedCircleRowTracked(img, c, blend, geometry, bottomY, dirty)
 			bottomY--
 		default:
 			xStart, xEnd, intersects := geometry.span(topY, r.width)
@@ -799,9 +816,9 @@ func (r *CPURenderer) renderFixedCircleRowsTracked(
 				}
 
 				if bottomY != topY {
-					r.compositeCircleSpanPair(img, c, topY, bottomY, xStart, xEnd)
+					r.compositeCircleSpanPair(img, c, blend, topY, bottomY, xStart, xEnd)
 				} else {
-					r.compositeCircleSpan(img, c, topY, xStart, xEnd)
+					r.compositeCircleSpan(img, c, blend, topY, xStart, xEnd)
 				}
 
 				if bottomY != topY {
@@ -820,6 +837,7 @@ func (r *CPURenderer) renderFixedCircleRowsTracked(
 func (r *CPURenderer) renderFixedCircleRowTracked(
 	img *image.NRGBA,
 	c fit.Circle,
+	blend *spanBlend,
 	geometry fixedCircleQ16,
 	y int,
 	dirty *dirtySpanSet,
@@ -833,55 +851,64 @@ func (r *CPURenderer) renderFixedCircleRowTracked(
 		dirty.add(y, xStart, xEnd)
 	}
 
-	r.compositeCircleSpan(img, c, y, xStart, xEnd)
+	r.compositeCircleSpan(img, c, blend, y, xStart, xEnd)
 }
 
-func (r *CPURenderer) compositeCircleSpan(img *image.NRGBA, c fit.Circle, y, xStart, xEnd int) {
+func (r *CPURenderer) compositeCircleSpan(img *image.NRGBA, circle fit.Circle, blend *spanBlend, y, xStart, xEnd int) {
 	// Opaque canvases remain opaque under source-over compositing, so their
 	// spans can use the runtime-dispatched SIMD implementation.
 	if r.opaqueCanvas {
 		if r.fastCompositing {
-			compositeOpaqueSpanFast(img.Pix, y*img.Stride+xStart*4, xEnd-xStart, c.CR, c.CG, c.CB, c.Opacity)
+			compositeOpaqueSpanFast(img.Pix, y*img.Stride+xStart*4, xEnd-xStart, circle.CR, circle.CG, circle.CB, circle.Opacity)
 			return
 		}
 
-		compositeOpaqueSpan(img.Pix, y*img.Stride+xStart*4, xEnd-xStart, c.CR, c.CG, c.CB, c.Opacity)
-
-		return
-	}
-
-	for x := xStart; x < xEnd; x++ {
-		compositePixel(img, x, y, c.CR, c.CG, c.CB, c.Opacity)
-	}
-}
-
-func (r *CPURenderer) compositeCircleSpanPair(img *image.NRGBA, c fit.Circle, firstY, secondY, xStart, xEnd int) {
-	if r.opaqueCanvas {
-		if r.fastCompositing {
-			// The float32 kernel has no paired variant; two vector spans keep the
-			// same crossover behaviour as the single-span path.
-			r.compositeCircleSpan(img, c, firstY, xStart, xEnd)
-			r.compositeCircleSpan(img, c, secondY, xStart, xEnd)
-
-			return
-		}
-
-		compositeOpaqueSpanPair(
-			img.Pix,
-			firstY*img.Stride+xStart*4,
-			secondY*img.Stride+xStart*4,
-			xEnd-xStart,
-			c.CR,
-			c.CG,
-			c.CB,
-			c.Opacity,
+		compositeOpaqueSpan(
+			blend, img.Pix, y*img.Stride+xStart*4, xEnd-xStart,
+			circle.CR, circle.CG, circle.CB, circle.Opacity,
 		)
 
 		return
 	}
 
-	r.compositeCircleSpan(img, c, firstY, xStart, xEnd)
-	r.compositeCircleSpan(img, c, secondY, xStart, xEnd)
+	for x := xStart; x < xEnd; x++ {
+		compositePixel(img, x, y, circle.CR, circle.CG, circle.CB, circle.Opacity)
+	}
+}
+
+func (r *CPURenderer) compositeCircleSpanPair(
+	img *image.NRGBA,
+	circle fit.Circle,
+	blend *spanBlend,
+	firstY, secondY, xStart, xEnd int,
+) {
+	if r.opaqueCanvas {
+		if r.fastCompositing {
+			// The float32 kernel has no paired variant; two vector spans keep the
+			// same crossover behaviour as the single-span path.
+			r.compositeCircleSpan(img, circle, blend, firstY, xStart, xEnd)
+			r.compositeCircleSpan(img, circle, blend, secondY, xStart, xEnd)
+
+			return
+		}
+
+		compositeOpaqueSpanPair(
+			blend,
+			img.Pix,
+			firstY*img.Stride+xStart*4,
+			secondY*img.Stride+xStart*4,
+			xEnd-xStart,
+			circle.CR,
+			circle.CG,
+			circle.CB,
+			circle.Opacity,
+		)
+
+		return
+	}
+
+	r.compositeCircleSpan(img, circle, blend, firstY, xStart, xEnd)
+	r.compositeCircleSpan(img, circle, blend, secondY, xStart, xEnd)
 }
 
 // renderCircleHybrid uses bounding box for small circles and scanline for large ones

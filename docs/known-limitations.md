@@ -156,11 +156,14 @@ behavior is production-ready.
   nothing below its 24-pixel cutoff. Half its instructions are format
   conversion, and SSE2 has neither `PMOVZXBD` nor `PSHUFB` to shorten that. The
   AVX2 kernel at the same job is worth 1.09x to 1.43x.
-- The per-span constant block is rebuilt for every span of every row, though the
-  colour is constant for a whole circle. That setup is the entire difference
-  between the SSE2 kernel's 8-pixel crossover measured directly and the 24-pixel
-  cutoff the dispatcher has to use, and it is why the AVX2 cutoff is 16 rather
-  than around 4.
+- The AMD64 constant block is now built once per circle, which moved the AVX2
+  cutoff from 16 to 6, but `compositeSpanSSE2MinPixels` is still 24. Hoisting can
+  only move a crossover left, so 24 remains correct and is merely conservative -
+  some spans stay on scalar that the SSE2 kernel could now win. Re-deriving it
+  needs a host that genuinely lacks AVX2, because dispatch reaches SSE2 only when
+  AVX2 is absent and masking AVX2 on a machine that has it reproduces the wrong
+  number. ARM64 is not hoisted at all: `compositeOpaqueSpanNEON` still recomputes
+  its blend scalars per span, and its 256-pixel cutoff includes that setup.
 - Both exact vector compositors depend on the Go compiler's multiply-add
   contraction behaviour, in opposite directions on the two architectures. This
   is a real coupling to the toolchain, not a stylistic preference; a Go release
@@ -210,9 +213,12 @@ behavior is production-ready.
   guarantee. Results can differ from vector renderers.
 - On ARM64, the historical pre-optimization renderer oracle differs from the
   current renderer by one alpha unit for one covered translucent custom-canvas
-  pixel. Current single-threaded and parallel rendering agree, and the issue
-  predates the opaque-canvas fast path. Cross-architecture byte identity for
-  this floating-point rounding boundary is not claimed.
+  pixel. The cause is multiply-add contraction: the renderer's
+  `uint8(outA*255 + 0.5)` fuses into a single `FMADDD` on ARM64 and so rounds
+  once, while the oracle's `uint8(math.Round(outputAlpha * 255))` cannot fuse and
+  rounds twice. Current single-threaded and parallel rendering agree, and the
+  issue predates the opaque-canvas fast path. Cross-architecture byte identity
+  for this floating-point rounding boundary is not claimed.
 - Evolutionary optimization is expensive and does not guarantee a global
   optimum. Seed, population, iteration count, mode, and image size materially
   affect runtime and quality.
@@ -340,9 +346,38 @@ behavior is production-ready.
   It reproduces at `threads_1` and `threads_4` and does not reproduce on amd64.
   The case is a 31x23 custom canvas, which is well below the 256-pixel NEON span
   cutoff, and channel 3 is alpha, which the span compositor never writes, so the
-  gated NEON span kernel is unlikely to be the cause. The defect predates the
-  SSE2 work and needs real ARM64 hardware to diagnose; it is not reproducible by
-  cross-compiling. Until it is fixed, ARM64 renderer output is unverified.
+  NEON span kernel is not the cause. The defect predates the SSE2 work.
+
+  It is **multiply-add contraction**, and it is diagnosable by cross-compiling -
+  an earlier version of this entry said the opposite. Go may fuse `a*b + c`
+  within one expression, and the two architectures decide differently for this
+  package:
+
+      $ GOOS=linux GOARCH=arm64 go build -gcflags='-S' ./internal/fit/renderer | grep -c FMADDD
+      38
+      $ GOOS=linux GOARCH=amd64 go build -gcflags='-S' ./internal/fit/renderer | grep -cE VFMADD
+      0
+
+  `compositeScalarPixel` writes `img.Pix[i+3] = uint8(outA*255 + 0.5)`
+  (`internal/fit/renderer/renderer_cpu.go`), which ARM64 emits as one `FMADDD`
+  and therefore rounds once, where amd64 rounds `outA*255` and then adds. The
+  oracle's `uint8(math.Round(outputAlpha * 255))`
+  (`renderer_correctness_test.go`) cannot fuse at all. At a near-tie the three
+  disagree by one unit, on an alpha channel - exactly the observed failure.
+
+  The fix is an explicit conversion, `uint8(float64(outA*255) + 0.5)`, which the
+  Go spec makes a rounding point that contraction may not cross. It is not
+  applied: it changes the scalar composite hot path and costs ARM64 its fusion
+  there, so it wants its own change with `rendererPackage` filled in on both
+  ARM64 rows to validate it. Until then, ARM64 renderer output is unverified.
+
+  There is a second consequence that is easy to miss. With `rendererPackage`
+  empty, `internal/fit/renderer`'s tests are never *compiled* on ARM64 either, so
+  an architecture-guarded test file can reference a signature that no longer
+  exists and every gate stays green. That happened once already, on the branch
+  that hoisted the span constants. `scripts/check-cross-build.sh` now runs
+  `go vet ./...` for each supported target, which type-checks test files and
+  closes that gap independently of whether the tests can run.
 - **The dark theme may be unreadable in Safari on any page a React island does
   not repaint.** On WebKit this document finishes its initial style pass with
   the root's custom properties resolved but inherited by nothing, so body and

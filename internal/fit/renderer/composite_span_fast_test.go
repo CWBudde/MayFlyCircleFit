@@ -299,11 +299,13 @@ func BenchmarkCompositeOpaqueSpanFast(b *testing.B) {
 		// against scalar float64 overstates its value wherever an exact vector
 		// kernel exists, which on amd64 it now does.
 		b.Run("exact_"+compositeSpanKernel.String()+"/"+strconv.Itoa(pixels), func(b *testing.B) {
+			blend := newSpanBlend(0.3, 0.6, 0.9, 0.45)
+
 			b.ReportAllocs()
 			b.SetBytes(int64(pixels * 4))
 
 			for b.Loop() {
-				compositeOpaqueSpan(pix, 4, pixels, 0.3, 0.6, 0.9, 0.45)
+				compositeOpaqueSpan(&blend, pix, 4, pixels, 0.3, 0.6, 0.9, 0.45)
 			}
 		})
 

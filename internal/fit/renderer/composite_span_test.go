@@ -38,7 +38,7 @@ func TestCompositeOpaqueSpanMatchesPixelPath(t *testing.T) {
 					compositePixel(wantImage, x, 0, test.r, test.g, test.b, test.alpha)
 				}
 
-				compositeOpaqueSpan(got, offset, pixels, test.r, test.g, test.b, test.alpha)
+				compositeOpaqueSpanColor(got, offset, pixels, test.r, test.g, test.b, test.alpha)
 
 				if !bytes.Equal(got, want) {
 					for i := range got {
@@ -73,7 +73,7 @@ func TestCompositeOpaqueSpanRandomMatchesPixelPath(t *testing.T) {
 			compositePixel(wantImage, x, 0, r, g, b, alpha)
 		}
 
-		compositeOpaqueSpan(got, 0, pixels, r, g, b, alpha)
+		compositeOpaqueSpanColor(got, 0, pixels, r, g, b, alpha)
 
 		if !bytes.Equal(got, want) {
 			for i := range got {
@@ -105,10 +105,11 @@ func TestCompositeOpaqueSpanPairMatchesSeparateSpans(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			got := makeOpaqueSpanFixture(rowPixels * 2)
 			want := append([]byte(nil), got...)
-			compositeOpaqueSpan(want, firstOffset, spanPixels, test.r, test.g, test.b, test.alpha)
-			compositeOpaqueSpan(want, secondOffset, spanPixels, test.r, test.g, test.b, test.alpha)
+			compositeOpaqueSpanColor(want, firstOffset, spanPixels, test.r, test.g, test.b, test.alpha)
+			compositeOpaqueSpanColor(want, secondOffset, spanPixels, test.r, test.g, test.b, test.alpha)
 
-			compositeOpaqueSpanPair(got, firstOffset, secondOffset, spanPixels, test.r, test.g, test.b, test.alpha)
+			blend := newSpanBlend(test.r, test.g, test.b, test.alpha)
+			compositeOpaqueSpanPair(&blend, got, firstOffset, secondOffset, spanPixels, test.r, test.g, test.b, test.alpha)
 
 			if !bytes.Equal(got, want) {
 				t.Fatal("paired span compositor differs from two ordinary spans")
@@ -153,10 +154,10 @@ func TestCPURendererDetectsOpaqueCanvas(t *testing.T) {
 func BenchmarkCompositeOpaqueSpan(b *testing.B) {
 	for _, pixels := range []int{8, 16, 64, 256} {
 		b.Run(fmt.Sprintf("scalar/%d", pixels), func(b *testing.B) {
-			benchmarkCompositeOpaqueSpan(b, pixels, compositeOpaqueSpanScalar)
+			benchmarkCompositeOpaqueSpan(b, pixels, false)
 		})
 		b.Run(fmt.Sprintf("auto_%s/%d", compositeSpanKernel, pixels), func(b *testing.B) {
-			benchmarkCompositeOpaqueSpan(b, pixels, compositeOpaqueSpan)
+			benchmarkCompositeOpaqueSpan(b, pixels, true)
 		})
 	}
 }
@@ -195,16 +196,55 @@ func BenchmarkCPURendererOpaqueSpan(b *testing.B) {
 	}
 }
 
-func benchmarkCompositeOpaqueSpan(b *testing.B, pixels int, composite func([]byte, int, int, float64, float64, float64, float64)) {
+// benchmarkCompositeOpaqueSpan times one span length, dispatched or scalar.
+//
+// It takes a flag rather than the compositor as a func value on purpose. A func
+// parameter forces the blend to be reached through an indirect call, which
+// defeats //go:noescape and moves the constant block to the heap - the mistake
+// docs/exact-span-compositors.md records as making the kernel measure five to
+// nine times slower than scalar. The blend is built here, outside the timed
+// loop, because that is where production builds it: once per circle, not once
+// per span.
+func benchmarkCompositeOpaqueSpan(b *testing.B, pixels int, dispatched bool) {
+	b.Helper()
+
+	const (
+		r     = 0.13
+		g     = 0.57
+		blue  = 0.91
+		alpha = 0.37
+	)
+
 	pix := makeOpaqueSpanFixture(pixels)
+	blend := newSpanBlend(r, g, blue, alpha)
 
 	b.ReportAllocs()
 	b.SetBytes(int64(pixels * 4))
 	b.ResetTimer()
 
-	for range b.N {
-		composite(pix, 0, pixels, 0.13, 0.57, 0.91, 0.37)
+	if dispatched {
+		for range b.N {
+			compositeOpaqueSpan(&blend, pix, 0, pixels, r, g, blue, alpha)
+		}
+
+		return
 	}
+
+	for range b.N {
+		compositeOpaqueSpanScalar(pix, 0, pixels, r, g, blue, alpha)
+	}
+}
+
+// compositeOpaqueSpanColor builds the per-circle blend for a single span.
+//
+// Production builds it once per circle and reuses it for every row; a parity
+// test composites one span at a time and has no circle to hang it on. The block
+// is a pure function of the colour, so building it per call is arithmetically
+// identical - it is only wasteful, which is what the tests do not measure.
+// Benchmarks must not use this shim.
+func compositeOpaqueSpanColor(pix []byte, offset, pixels int, r, g, b, alpha float64) {
+	blend := newSpanBlend(r, g, b, alpha)
+	compositeOpaqueSpan(&blend, pix, offset, pixels, r, g, b, alpha)
 }
 
 func makeOpaqueSpanFixture(pixels int) []byte {

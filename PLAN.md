@@ -65,8 +65,58 @@ research follow-ups, not blockers for the selected production CPU path.
 - [ ] If the original Pascal/Delphi source becomes available, document its
   exact cost arithmetic and numeric/SIMD representations; until then,
   `docs/incremental-cost.md` remains the Go contract.
-- [ ] Hoist the exact compositor's per-span constant block to once per circle
+- [x] Hoist the exact compositor's per-span constant block to once per circle
   and remeasure the SSE2/AVX2 crossover before changing production dispatch.
+  The block is built by `renderCircleScanlineRowsTracked` and
+  `compositeCircleDirtyRows` and threaded down as a `*spanBlend`, which carries
+  neither the colour nor the tier; it is an empty struct off amd64, so the row
+  walkers need no build tags. `compositeSpanAVX2MinPixels` moves 16 -> 6.
+  Measured on an i7-1255U (Alder Lake-P, hybrid), pinned with `taskset` at
+  `GOMAXPROCS=1`, median of nine 500 ms runs on both a P-core and an E-core,
+  zero allocations per operation on every arm:
+  `BenchmarkCompositeSpanExactHoistedCutoff` against
+  `BenchmarkCompositeSpanExactCutoff` puts the removed setup at 6-9 ns per AVX2
+  span and 3-8 ns per SSE2 span; 4 pixels still loses on the P-core (0.97x) and
+  6 wins on both (1.26x P, 1.40x E), so 6 is the larger of the two core types'
+  answers. `BenchmarkCompositeOpaqueSpanBlend` confirms every length from 6
+  upward through the real dispatcher. End to end, `BenchmarkFit` against base
+  `e32b907`, six interleaved rounds of `-count=2 -benchtime=300ms` pinned at
+  `GOMAXPROCS=1`: `Render/64x64/K4` -25.9% and `Render/128x128/K20` -22.1%
+  (both p = 0.000), the two larger canvases -5.5% and -6.1%, against a `Cost`
+  control whose noisiest arm moved 6.8%. Output stays byte-identical
+  (`TestCPURendererMatchesPreOptimizationBaseline`), and
+  `TestRenderCircleRowsDoesNotAllocate` and `TestSpanBlendSurvivesTierChange`
+  are new guards for the frame that now owns the block and for the tier not
+  being cached into it. Full write-up in
+  [`docs/exact-span-compositors.md`](docs/exact-span-compositors.md).
+- [ ] Re-derive `compositeSpanSSE2MinPixels` on a host that genuinely lacks
+  AVX2. 24 is the pre-hoist crossover and is now an upper bound: hoisting can
+  only move a crossover left, so it stays correct and merely leaves some spans
+  on scalar. It cannot be measured here, because dispatch selects SSE2 only when
+  AVX2 is absent and neither `CIRCLEFIT_SIMD_TIER=sse2` nor
+  `GODEBUG=cpu.avx2=off` changes the microarchitecture.
+- [ ] Hoist the ARM64 NEON blend scalars the same way, and re-derive
+  `compositeSpanNEONMinPixels`. Gated on ARM64 benchmarking hardware:
+  `internal/fit/renderer` does not yet run on the ARM64 rows of
+  `ci-native-simd.yml`.
+- [ ] Block multiply-add contraction in `compositeScalarPixel` and fill in
+  `rendererPackage` on both ARM64 rows of `ci-native-simd.yml`. The ARM64
+  correctness failure that keeps those rows empty
+  (`TestCPURendererMatchesPreOptimizationBaseline/fractional_overlaps`, pixel
+  (4,11) channel 3 = 205 against a baseline of 206) is contraction, not the NEON
+  span kernel, and it is diagnosable by cross-compiling rather than needing ARM64
+  hardware: `go build -gcflags='-S' ./internal/fit/renderer` emits 38 `FMADDD`
+  under `GOARCH=arm64` and zero `VFMADD` under `GOARCH=amd64`.
+  `uint8(outA*255 + 0.5)` in `internal/fit/renderer/renderer_cpu.go` fuses on
+  ARM64 and so rounds once, where amd64 rounds the product and then adds, and the
+  oracle's `uint8(math.Round(...))` cannot fuse at all; at a near-tie the three
+  disagree by one alpha unit. The fix is the explicit conversion
+  `uint8(float64(outA*255) + 0.5)`, which the Go spec makes a rounding point
+  contraction may not cross; amd64 output is unchanged by it because amd64 does
+  not fuse today. It is deferred because it touches the scalar composite hot path
+  and costs ARM64 its fusion there, so it wants its own change with the ARM64
+  rows enabled to validate it. Until then ARM64 renderer output is unverified;
+  see [`docs/known-limitations.md`](docs/known-limitations.md).
 
 ## Phase 11: GPU Backends (Research → Prototype)
 

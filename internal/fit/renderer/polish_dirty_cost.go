@@ -266,6 +266,11 @@ func (s *polishDirtySession) compositeCircleDirtyRows(circle fit.Circle, dirty *
 		return
 	}
 
+	// Built once per circle for the same reason as in renderCircleScanlineRowsTracked,
+	// and it matters more here: compositeDirtySpan reaches compositeCircleSpan once
+	// per dirty sub-span, so a single row could rebuild the block several times.
+	blend := newSpanBlend(circle.CR, circle.CG, circle.CB, circle.Opacity)
+
 	radiusSquared := circle.R * circle.R
 
 	fixed, useFixed := fixedCircleQ16{}, false
@@ -277,7 +282,7 @@ func (s *polishDirtySession) compositeCircleDirtyRows(circle fit.Circle, dirty *
 		for y := minY; y < maxY; y++ {
 			start, end, intersects := fixed.span(y, s.width)
 			if intersects {
-				s.compositeDirtySpan(circle, dirty, y, start, end)
+				s.compositeDirtySpan(circle, &blend, dirty, y, start, end)
 			}
 		}
 
@@ -299,7 +304,7 @@ func (s *polishDirtySession) compositeCircleDirtyRows(circle fit.Circle, dirty *
 			}
 
 			start, end := circleSpanFloat32Selected(center, remaining, s.width)
-			s.compositeDirtySpan(circle, dirty, y, max(0, start), end)
+			s.compositeDirtySpan(circle, &blend, dirty, y, max(0, start), end)
 		}
 
 		return
@@ -314,11 +319,16 @@ func (s *polishDirtySession) compositeCircleDirtyRows(circle fit.Circle, dirty *
 		}
 
 		start, end := circleSpanFloat64(circle.X, remaining, s.width)
-		s.compositeDirtySpan(circle, dirty, y, max(0, start), end)
+		s.compositeDirtySpan(circle, &blend, dirty, y, max(0, start), end)
 	}
 }
 
-func (s *polishDirtySession) compositeDirtySpan(circle fit.Circle, dirty *dirtySpanSet, y, start, end int) {
+func (s *polishDirtySession) compositeDirtySpan(
+	circle fit.Circle,
+	blend *spanBlend,
+	dirty *dirtySpanSet,
+	y, start, end int,
+) {
 	for _, affected := range dirty.row(y) {
 		if affected.end <= start {
 			continue
@@ -328,7 +338,7 @@ func (s *polishDirtySession) compositeDirtySpan(circle fit.Circle, dirty *dirtyS
 			break
 		}
 
-		s.compositeCircleSpan(s.canvas, circle, y, max(start, affected.start), min(end, affected.end))
+		s.compositeCircleSpan(s.canvas, circle, blend, y, max(start, affected.start), min(end, affected.end))
 	}
 }
 
