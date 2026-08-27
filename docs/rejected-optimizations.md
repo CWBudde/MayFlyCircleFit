@@ -58,8 +58,9 @@ only, so the vector form needs shuffles that cost more than the scalar
 finite-difference walk it replaces.
 
 **Signed Q24.8 and normalized Q8.24 span geometry.** Q24.8's only advantage is
-coordinate range Q16.16 already covers 60× over, and the eight fraction bits it
-gives up cost 58× the span disagreement rate against an exact rational oracle
+coordinate range Q16.16 already covers 40× over — its limit is a 21845-pixel
+canvas — and the eight fraction bits it gives up cost 58× the span
+disagreement rate against an exact rational oracle
 (58 of 17751 rows against 1 of 17748) at no throughput gain — 1.01×–1.08× on
 both core types of an i7-1255U, inside that host's noise. Normalized Q8.24
 cannot represent a radius of 128 or more at any center, which is 50.7% of

@@ -42,10 +42,10 @@ asserted.
 | Q24.8 | 8 | 3.91e-03 px | ±8388608 | 5592405² | none |
 | Q8.24, normalized | 24 | 5.96e-08 px | ±128 | 127² | every radius ≥ 128 |
 
-Q16.16 already covers a 21845-pixel canvas, which is around 60× larger than
-anything this program is run on, so **Q24.8's entire advantage is range nobody
-needs.** It buys that range by giving up eight fraction bits, and the rest of
-this document is what those eight bits cost.
+Q16.16 already covers a 21845-pixel canvas: more than 40× the largest canvas
+this repository benchmarks (512×512) and 400× the bundled fixture. So **Q24.8's
+entire advantage is range nobody needs.** It buys that range by giving up eight
+fraction bits, and the rest of this document is what those eight bits cost.
 
 ### What Q8.24 has to be normalized *into*
 
@@ -314,7 +314,8 @@ Q16.16 stays, for one reason per alternate:
 
 - **Q24.8 loses 58× accuracy and buys nothing.** Its only advantage is
   coordinate range — a 5.6-million-pixel canvas against Q16.16's 21845 — and
-  nothing this program runs is within two orders of magnitude of needing it. It
+  nothing this program runs is within a factor of 40 of needing even the
+  smaller one. It
   is not faster (1.01×–1.08×, within noise, on both core types), and it changes
   rendered output on 24–32 bytes per corpus with channel deltas up to 82.
 - **Q8.24 cannot represent the problem.** A radius of 128 or more is
