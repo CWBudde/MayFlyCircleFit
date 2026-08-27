@@ -432,6 +432,15 @@ why `--restarts` has to stay at 1 when either is selected, and a configuration
 setting both is refused rather than silently multiplied. For fixed independent
 attempts instead, keep `--restart-strategy none` and use `--restarts`.
 
+Polishing is not available under CMA-ES, and that is a decision rather than a
+gap: a polishing sweep is a fixed local search that runs its own MayFly
+population whatever engine the job names, so a CMA-ES sweep would be a different
+search under the same name. `--polishing` is refused for a CMA-ES job, as is a
+polish step in a CMA-ES schedule and `/polish` on a completed CMA-ES job. See
+"Polishing is MayFly-only" in
+[`docs/behavior-invariants.md`](docs/behavior-invariants.md) for what would
+reopen the question.
+
 CMA-ES honours `--optimizer-epochs`, parallel evaluation, the `--stop-*` family,
 and continuation profiles, whose seeded fraction, perturbation sigma, coordinate
 rate, and initial sigma it reads. A continuation profile's `maxVelocity` has no

@@ -233,6 +233,22 @@ function covarianceWarning(values: CreateJobFormValues, limits: CreateJobLimits)
 		+ "supports, and will be refused. Choose block or separable, or search fewer circles at a time.";
 }
 
+// internal/app/optimizer.go refuses polishingEnabled outside MayFly, and the
+// refusal is a decision rather than an unfinished seam: a sweep runs its own
+// MayFly population whatever engine the job names. See "Polishing is
+// MayFly-only" in docs/behavior-invariants.md. Unlike the two CMA-ES notes this
+// one covers Dragonfly as well, so it names whichever engine is selected.
+function polishingWarning(values: CreateJobFormValues): string {
+	if ((values.polishingEnabled ?? "") !== "on") return "";
+
+	// An emptied engine is the omitted key, which resolves to MayFly.
+	const optimizer = (values.optimizer ?? "").trim();
+	if (optimizer === "" || optimizer === "mayfly") return "";
+
+	return `A polishing sweep runs its own MayFly population, so it is unavailable under ${optimizer} and this job `
+		+ "will be refused. Run the base stage with MayFly, or leave polishing off.";
+}
+
 /** internal/app/cmaes.go requires optimizerRestarts == 1 for IPOP and BIPOP. */
 function restartWarning(values: CreateJobFormValues): string {
 	const strategy = (values.restartStrategy ?? "").trim();
@@ -316,7 +332,7 @@ function Select({ form, name, label, help, required, warning, choices }: FieldPr
 	);
 }
 
-function Check({ form, name, label, help }: FieldProps) {
+function Check({ form, name, label, help, warning }: FieldProps) {
 	return (
 		<div style={{ marginBottom: "0.5rem" }}>
 			<label htmlFor={name} style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
@@ -331,6 +347,7 @@ function Check({ form, name, label, help }: FieldProps) {
 				<span style={{ fontWeight: 500 }}>{label}</span>
 			</label>
 			{help ? <p style={{ ...helpStyle, marginLeft: "1.5rem" }}>{help}</p> : null}
+			{warning === undefined ? null : <Warning warning={warning} />}
 		</div>
 	);
 }
@@ -559,7 +576,8 @@ export function CreateJobIsland({ root }: { root: HTMLElement }) {
 					form={form}
 					name="polishingEnabled"
 					label="Polish selected circles after the batch run"
-					help="Batch mode only. Every strategy preserves draw order, and a sweep is kept only when the complete image improves."
+					help="Batch mode only, and MayFly only: a polishing sweep runs its own MayFly population, so a CMA-ES or Dragonfly job asking for one is refused. Every strategy preserves draw order, and a sweep is kept only when the complete image improves."
+					warning={polishingWarning(values)}
 				/>
 				<div style={gridStyle}>
 					<Select form={form} choices={choices("polishingStrategy")} name="polishingStrategy" label="Strategy" />

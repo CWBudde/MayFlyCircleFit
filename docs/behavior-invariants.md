@@ -311,9 +311,35 @@ Rendering-side invariants live in
   defaults true and preserves an explicit false. Continuation-profile sigma
   controls the seeded first internal run; configured sigma remains the cold-run
   value for later IPOP/BIPOP restarts.
-- **Polishing is MayFly-only.** A CMA-ES or Dragonfly job that enables
-  polishing, or a schedule for either engine containing a polish step, is
-  rejected during configuration validation. No stage silently switches engine.
+- **Polishing is MayFly-only, by decision rather than by omission.** A CMA-ES
+  or Dragonfly job that enables polishing, or a schedule for either engine
+  containing a polish step, is rejected during configuration validation, and
+  the refusal explains the restriction instead of only naming the engine that
+  owns the field. No stage silently switches engine.
+
+  A sweep is not the job's optimizer applied to a subset of the circles. It is
+  a fixed local search around the incumbent: every sweep hands the optimizer
+  the same continuation profile -- `LocalFraction` 1, `Sigma` 0.02,
+  `CoordinateRate` 0.2, `MaxVelocity` 0.02 -- and runs a `standard`-variant
+  MayFly population with its own size, iteration budget, epoch count and
+  stagnation window, whatever variant or engine the job names. `MaxVelocity`
+  has no CMA-ES analogue and is not applied, so a CMA-ES polisher would be a
+  different local search under an unchanged name, and the figures in
+  [`polishing-budget-report.md`](polishing-budget-report.md) and
+  [`contiguous-window-polish-report.md`](contiguous-window-polish-report.md)
+  would stop describing the stage that ran.
+
+  This is not a claim that CMA-ES could not polish. `PolishCircleBatchContext`
+  accepts any `opt.Optimizer`, and its session-pool check reads the renderer
+  and the configured evaluation width rather than the engine, so a CMA-ES
+  polisher would pass it on exactly the terms the MayFly one does. What is
+  missing is a reason to build one: no engine ranking is established on this
+  problem (see [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md)),
+  so a second polishing engine would add a configuration surface, a cost
+  projection and a checkpoint field for a stage nothing has shown needs them.
+  The condition for reopening it is a measurement, not a request: a CMA-ES base
+  stage that beats MayFly at an equal evaluation budget. Until then the answer
+  is no rather than not yet.
 - **Restarted progress stays monotonic.** Optimizer progress is best-so-far. A
   fresh attempt's early costs are worse than what an earlier attempt already
   reached, so only improvements are forwarded, and an epoch boundary carries

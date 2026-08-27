@@ -1310,7 +1310,7 @@ per-search dimension count from `JobConfig.optimizerDimensions`, and the
 IPOP/BIPOP schedule semantics from the pinned `go-cma-es` v0.1.0 source.
 Documentation only: no Go, templ, or TypeScript source changed.
 
-### Task 22.3: Settle CMA-ES polishing as a decision, not a gap (P2)
+### Task 22.3: Settle CMA-ES polishing as a decision, not a gap (P2) — complete
 
 Polishing is MayFly-only by construction, so a CMA-ES campaign cannot take the
 base/extend/polish shape a MayFly campaign can, and `MaxVelocity` in a
@@ -1318,13 +1318,54 @@ continuation profile has no CMA-ES analogue and is silently not applied
 (`docs/known-limitations.md:116`). Both are recorded; neither is recorded as
 permanent.
 
-- [ ] Decide and record one of: polishing stays MayFly-only, with the reason
+- [x] Decide and record one of: polishing stays MayFly-only, with the reason
       stated in [`docs/behavior-invariants.md`](docs/behavior-invariants.md), or
       a CMA-ES polishing stage is scoped as its own phase. Do not leave it
-      implicit.
-- [ ] Either way, make a CMA-ES job requesting polishing explain the
+      implicit. **Decided: polishing stays MayFly-only.** The invariant now
+      carries the reason rather than only the rule. A sweep is not the job's
+      optimizer applied to a subset of the circles: every sweep hands the
+      optimizer one fixed continuation profile (`LocalFraction` 1, `Sigma`
+      0.02, `CoordinateRate` 0.2, `MaxVelocity` 0.02,
+      `internal/fit/renderer/batch_polish.go:425`) and runs a
+      `standard`-variant MayFly population with its own size, iteration budget,
+      epoch count and stagnation window whatever the job names
+      (`internal/server/worker.go:653`, `cmd/run.go:605`). `MaxVelocity` has no
+      CMA-ES analogue, so a CMA-ES polisher would be a different local search
+      under an unchanged name and the polishing reports would stop describing
+      the stage that ran. The invariant also records what is *not* claimed --
+      `PolishCircleBatchContext` takes any `opt.Optimizer` and its session-pool
+      check reads the renderer and the evaluation width rather than the engine
+      -- and names
+      the condition for reopening it: a CMA-ES base stage measured to beat
+      MayFly at an equal evaluation budget, which Phase 21 does not yet have.
+- [x] Either way, make a CMA-ES job requesting polishing explain the
       restriction in its rejection, rather than reporting only that the field
-      belongs to another engine.
+      belongs to another engine. `engineOnlyField` gained an optional `detail`
+      that only `polishingEnabled` carries, so its refusal continues into "a
+      polishing sweep runs its own MayFly population whatever engine the job
+      names, so this is a decision rather than a missing feature: run the base
+      stage under `mayfly`, or leave polishing off", while every other
+      engine-only refusal stays as brief as it was. The `/polish` endpoint was
+      the path that hid it worst: it inherits the completed job's engine, so a
+      CMA-ES parent always fails `app.Normalize`, and the handler reported a
+      fixed `invalid_request: "invalid polishing configuration"`. It now
+      returns the validation message under `invalid_config`, the same
+      disclosure job creation already makes at the same trust boundary.
+
+Two surfaces were made to say it before the refusal rather than after. The
+creation form warns when the polishing box is ticked under a non-MayFly engine,
+reusing the advisory `Warning` component Task 22.1 added -- advisory in the same
+sense, since `app.Validate` still decides the request -- and it names whichever
+engine is selected, because Dragonfly is refused for the same reason. The templ
+fallback and the island now carry the same help text, stating the restriction
+where the checkbox is. The job detail page needed nothing: `canPolish` already
+required `ResolvedOptimizer() == OptimizerMayfly`
+(`internal/server/ui_handlers.go:216`), so the control was never offered.
+
+Tests: `TestPolishingRefusalExplainsTheRestriction` (both non-MayFly engines)
+and `TestEngineOnlyRefusalsWithoutPolishingStayBrief` in `internal/app`,
+`TestPolishEndpointExplainsTheEngineRestriction` in `internal/server`, and a
+fifth case in `web/e2e/cmaes-warnings.behavior.spec.ts`.
 
 ### Task 22.4: Rename the project (P2)
 
@@ -1389,12 +1430,13 @@ Current open work, in priority order:
    [`docs/restart-vs-budget-report.md`](docs/restart-vs-budget-report.md).
 4. **CMA-ES measurement (P1):** compare evaluation-matched MayFly and CMA-ES
    arms, including IPOP and separable covariance.
-5. **CMA-ES surface parity (P2):** Tasks 22.3–22.4. Task 22.1 is complete: the
+5. **CMA-ES surface parity (P2):** Task 22.4. Task 22.1 is complete: the
    creation form now configures every CMA-ES knob, carries the restart count
-   Phase 21's arms need, and warns before the two refusals it can anticipate.
+   Phase 21's arms need, and warns before the refusals it can anticipate.
    Task 22.2 is complete: the README now has an "Optimizer engines" section
    documenting all three engines, the CMA-ES flags, and the absence of a
-   ranking.
+   ranking. Task 22.3 is complete: polishing stays MayFly-only as a recorded
+   decision, and every path that refuses it now says why.
 6. **Dashboard sign-off (P1):** Task 17.11.
 7. ~~**Frontend island transition (P1/P2):** Tasks 18.1–18.7.~~ Phase 18 is
    complete. The shadcn SPA rewrite remains a deferred alternative at the end

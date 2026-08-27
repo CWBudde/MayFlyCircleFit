@@ -1918,7 +1918,13 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 
 	config, err := app.Normalize(config)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid polishing configuration")
+		// The parent's engine is the failure this endpoint sees in practice: a
+		// completed CMA-ES job inherits its optimizer into the continuation,
+		// polishing is MayFly-only, and a fixed envelope would report a
+		// deliberate restriction as an unexplained bad request. Validation
+		// messages name their field, so this is the same disclosure the job
+		// creation endpoint already makes at the same trust boundary.
+		writeAPIError(w, http.StatusBadRequest, "invalid_config", err.Error())
 		return
 	}
 

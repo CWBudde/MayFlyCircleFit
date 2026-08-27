@@ -61,7 +61,12 @@ func (c JobConfig) ResolvedOptimizer() Optimizer {
 // cmaesOnlyFields build such a list; the type names the shape, not the engine.
 type engineOnlyField struct {
 	field string
-	set   bool
+	// detail explains a restriction naming the owning engine does not, and is
+	// appended to the refusal. It stays empty where the owner is the whole
+	// explanation: a variant belongs to MayFly because only MayFly has
+	// variants, and a reader who is told that knows what to do about it.
+	detail string
+	set    bool
 }
 
 // mayflyOnlyFields lists the settings only the MayFly engine reads, in a fixed
@@ -75,17 +80,31 @@ type engineOnlyField struct {
 // reject configurations nobody wrote.
 func (c JobConfig) mayflyOnlyFields() []engineOnlyField {
 	fields := []engineOnlyField{
-		{"variant", c.Variant != ""},
-		{"qmcInit", c.QMCInit != ""},
-		{"crossoverCount", c.CrossoverCount != 0},
+		{field: "variant", set: c.Variant != ""},
+		{field: "qmcInit", set: c.QMCInit != ""},
+		{field: "crossoverCount", set: c.CrossoverCount != 0},
 	}
 
 	for _, knob := range c.advancedKnobs() {
-		fields = append(fields, engineOnlyField{knob.field, knob.value != nil})
+		fields = append(fields, engineOnlyField{field: knob.field, set: knob.value != nil})
 	}
 
-	return append(fields, engineOnlyField{"polishingEnabled", c.PolishingEnabled})
+	return append(fields, engineOnlyField{
+		field:  "polishingEnabled",
+		detail: polishingEngineDetail,
+		set:    c.PolishingEnabled,
+	})
 }
+
+// polishingEngineDetail is the second half of the polishing refusal. Without
+// it the message reads like a wiring gap -- the field belongs to another
+// engine, so presumably someone will connect it -- when it is a recorded
+// decision: a sweep is a fixed local search around the incumbent, and it runs
+// its own standard-variant MayFly population whatever engine the job names.
+// See docs/behavior-invariants.md, "Polishing is MayFly-only".
+const polishingEngineDetail = "a polishing sweep runs its own MayFly population whatever engine the job " +
+	"names, so this is a decision rather than a missing feature: run the base stage under " +
+	`"mayfly", or leave polishing off`
 
 // validateOptimizerEngine rejects an unknown engine, and refuses the settings
 // an engine other than MayFly cannot honor.
@@ -120,7 +139,7 @@ func (c JobConfig) validateOptimizerEngine() error {
 			continue
 		}
 
-		return engineOnlyFieldError(field.field, OptimizerMayfly, c.ResolvedOptimizer())
+		return engineOnlyFieldError(field, OptimizerMayfly, c.ResolvedOptimizer())
 	}
 
 	if c.ResolvedOptimizer() == OptimizerCMAES {
@@ -130,9 +149,13 @@ func (c JobConfig) validateOptimizerEngine() error {
 	return c.refuseCMAESOnlyFields()
 }
 
-func engineOnlyFieldError(field string, owner, running Optimizer) error {
-	return invalid(field, fmt.Sprintf(
-		"is read only by the %q optimizer, but this job runs %q", owner, running))
+func engineOnlyFieldError(field engineOnlyField, owner, running Optimizer) error {
+	reason := fmt.Sprintf("is read only by the %q optimizer, but this job runs %q", owner, running)
+	if field.detail != "" {
+		reason += "; " + field.detail
+	}
+
+	return invalid(field.field, reason)
 }
 
 // validateVariant enforces the MayFly variant set. It runs only for MayFly
