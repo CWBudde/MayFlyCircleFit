@@ -361,6 +361,8 @@ func TestFormatFileSize(t *testing.T) {
 // updater moves the fill's width, so an aria-valuenow it never touches would
 // freeze at the server-rendered figure for the rest of the run.
 func TestJobDetailPageAnnouncesIterationProgress(t *testing.T) {
+	t.Parallel()
+
 	job := JobDetail{
 		ID: "12345678-1234-1234-1234-123456789abc", State: "running",
 		StartTime: time.Now(), Iterations: 25, MaxIters: 100,
@@ -368,7 +370,8 @@ func TestJobDetailPageAnnouncesIterationProgress(t *testing.T) {
 
 	var output bytes.Buffer
 
-	if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+	err := JobDetailPage(job).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render job detail: %v", err)
 	}
 
@@ -393,20 +396,26 @@ func TestJobDetailPageAnnouncesIterationProgress(t *testing.T) {
 // which inverts in dark mode: --text-color on --warning-color is 1.51:1. The
 // .btn-danger/.btn-warning pairs ship a matching foreground, so the inline
 // accents must not come back.
+const cancelButton = `id="cancel-job" class="btn btn-danger"`
+
 func TestJobDetailPageAccentButtonsCarryTheirForeground(t *testing.T) {
+	t.Parallel()
+
 	for _, test := range []struct {
 		state string
 		want  []string
 	}{
 		{state: "running", want: []string{
 			`id="pause-job" class="btn btn-warning"`,
-			`id="cancel-job" class="btn btn-danger"`,
+			cancelButton,
 		}},
-		{state: "paused", want: []string{`id="cancel-job" class="btn btn-danger"`}},
-		{state: "pending", want: []string{`id="cancel-job" class="btn btn-danger"`}},
+		{state: "paused", want: []string{cancelButton}},
+		{state: "pending", want: []string{cancelButton}},
 		{state: "completed", want: []string{`id="delete-job" class="btn btn-danger"`}},
 	} {
 		t.Run(test.state, func(t *testing.T) {
+			t.Parallel()
+
 			job := JobDetail{
 				ID: "12345678-1234-1234-1234-123456789abc", State: test.state,
 				StartTime: time.Now(),
@@ -414,7 +423,8 @@ func TestJobDetailPageAccentButtonsCarryTheirForeground(t *testing.T) {
 
 			var output bytes.Buffer
 
-			if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+			err := JobDetailPage(job).Render(context.Background(), &output)
+			if err != nil {
 				t.Fatalf("render job detail: %v", err)
 			}
 
@@ -443,6 +453,8 @@ func TestJobDetailPageAccentButtonsCarryTheirForeground(t *testing.T) {
 // a keyboard reader could land on it and be told nothing at all: the live
 // readout beside it was driven by pointer events alone.
 func TestJobDetailPageSparklineIsKeyboardTraversable(t *testing.T) {
+	t.Parallel()
+
 	psnr := 31.25
 	job := JobDetail{
 		ID: "12345678-1234-1234-1234-123456789abc", State: "running", StartTime: time.Now(),
@@ -451,7 +463,8 @@ func TestJobDetailPageSparklineIsKeyboardTraversable(t *testing.T) {
 
 	var output bytes.Buffer
 
-	if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+	err := JobDetailPage(job).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render job detail: %v", err)
 	}
 
@@ -474,13 +487,16 @@ func TestJobDetailPageSparklineIsKeyboardTraversable(t *testing.T) {
 // TestJobDetailPageHidesDecorativeRefreshGlyph keeps the glyph out of the
 // button's accessible name, which would otherwise read "⟳ Refresh".
 func TestJobDetailPageHidesDecorativeRefreshGlyph(t *testing.T) {
+	t.Parallel()
+
 	job := JobDetail{
 		ID: "12345678-1234-1234-1234-123456789abc", State: "completed", StartTime: time.Now(),
 	}
 
 	var output bytes.Buffer
 
-	if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+	err := JobDetailPage(job).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render job detail: %v", err)
 	}
 
@@ -493,6 +509,8 @@ func TestJobDetailPageHidesDecorativeRefreshGlyph(t *testing.T) {
 // a bare space-between flex with no flex-wrap, so on a narrow viewport the
 // heading and its control cluster overlapped instead of stacking.
 func TestJobDetailPageWrapsHeaderRows(t *testing.T) {
+	t.Parallel()
+
 	job := JobDetail{
 		ID: "12345678-1234-1234-1234-123456789abc", State: "running", StartTime: time.Now(),
 		MetricHistory: []MetricSample{{Iteration: 1, Cost: 10}},
@@ -500,7 +518,8 @@ func TestJobDetailPageWrapsHeaderRows(t *testing.T) {
 
 	var output bytes.Buffer
 
-	if err := JobDetailPage(job).Render(context.Background(), &output); err != nil {
+	err := JobDetailPage(job).Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render job detail: %v", err)
 	}
 

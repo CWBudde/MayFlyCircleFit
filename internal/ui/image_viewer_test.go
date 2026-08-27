@@ -162,6 +162,8 @@ func TestImageViewerClassesAndModeDefaults(t *testing.T) {
 // at all on /schedules/{id}. The vocabulary belongs in Layout, outside every
 // island root, so a block reappearing here is the bug coming back.
 func TestImageViewerHasNoLocalStyleBlock(t *testing.T) {
+	t.Parallel()
+
 	body := renderImageViewer(t, ImageViewerData{
 		JobID:       "123e4567-e89b-12d3-a456-426614174000",
 		DefaultMode: "side-by-side",
@@ -171,7 +173,7 @@ func TestImageViewerHasNoLocalStyleBlock(t *testing.T) {
 		t.Error("image viewer carries a component-local <style> block again")
 	}
 
-	for _, rule := range []string{".view-mode-selector {", ".image-frame {", ".heatmap-legend {"} {
+	for _, rule := range []string{".view-mode-selector {", imageFrameRule, ".heatmap-legend {"} {
 		if strings.Contains(body, rule) {
 			t.Errorf("image viewer still declares %q locally", rule)
 		}
@@ -179,14 +181,16 @@ func TestImageViewerHasNoLocalStyleBlock(t *testing.T) {
 
 	// The rules did not just disappear: Layout serves them to every page.
 	var layout bytes.Buffer
-	if err := Layout("Images").Render(context.Background(), &layout); err != nil {
+
+	err := Layout("Images").Render(context.Background(), &layout)
+	if err != nil {
 		t.Fatalf("render layout: %v", err)
 	}
 
 	for _, rule := range []string{
 		".view-mode-selector {",
 		".view-mode-option input:checked + label {",
-		".image-frame {",
+		imageFrameRule,
 		".image-state {",
 		".overlay-best-layer {",
 		".heatmap-legend {",
@@ -201,6 +205,8 @@ func TestImageViewerHasNoLocalStyleBlock(t *testing.T) {
 // TestImageViewerAnnouncesStateChanges covers the parts of the viewer a reader
 // only meets through the accessibility tree.
 func TestImageViewerAnnouncesStateChanges(t *testing.T) {
+	t.Parallel()
+
 	body := renderImageViewer(t, ImageViewerData{
 		JobID:       "123e4567-e89b-12d3-a456-426614174000",
 		DefaultMode: "overlay",
@@ -215,7 +221,9 @@ func TestImageViewerAnnouncesStateChanges(t *testing.T) {
 
 	// The slider writes the percentage into this output; aria-live="off" made
 	// that change silent for a reader who cannot see the number move.
-	if !strings.Contains(body, `id="overlay-opacity-value" class="overlay-opacity-value" for="overlay-opacity" aria-live="polite"`) {
+	opacityReadout := `id="overlay-opacity-value" class="overlay-opacity-value" ` +
+		`for="overlay-opacity" aria-live="polite"`
+	if !strings.Contains(body, opacityReadout) {
 		t.Error("overlay opacity readout does not announce its value")
 	}
 
@@ -229,7 +237,13 @@ func TestImageViewerAnnouncesStateChanges(t *testing.T) {
 	}
 
 	// Every radio takes a digit shortcut, so every radio has to advertise one.
-	for _, shortcut := range []string{`value="reference" aria-keyshortcuts="1"`, `value="best" aria-keyshortcuts="2"`, `value="side-by-side" aria-keyshortcuts="3"`, `value="difference" aria-keyshortcuts="4"`, `value="overlay" aria-keyshortcuts="5"`} {
+	for _, shortcut := range []string{
+		`value="reference" aria-keyshortcuts="1"`,
+		`value="best" aria-keyshortcuts="2"`,
+		`value="side-by-side" aria-keyshortcuts="3"`,
+		`value="difference" aria-keyshortcuts="4"`,
+		`value="overlay" aria-keyshortcuts="5"`,
+	} {
 		if !strings.Contains(body, shortcut) {
 			t.Errorf("view-mode radio missing %q", shortcut)
 		}

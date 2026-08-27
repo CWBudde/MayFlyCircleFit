@@ -296,6 +296,8 @@ func TestFormatJobImprovement(t *testing.T) {
 // named region with a tab stop rather than a bare overflow div a keyboard
 // cannot reach, and every header declares the column it heads.
 func TestDashboardRunningJobsTableIsAccessible(t *testing.T) {
+	t.Parallel()
+
 	body := renderDashboardPage(t, dashboardPageFixture())
 
 	for _, marker := range []string{
@@ -323,6 +325,8 @@ func TestDashboardRunningJobsTableIsAccessible(t *testing.T) {
 // TestDashboardUsesAccessibleSuccessText guards the contrast fix: the gain
 // column is text, and --success-color as text on the light surface is 2.54:1.
 func TestDashboardUsesAccessibleSuccessText(t *testing.T) {
+	t.Parallel()
+
 	body := renderDashboardPage(t, dashboardPageFixture())
 
 	if !strings.Contains(body, "var(--success-text-strong)") {
@@ -338,6 +342,8 @@ func TestDashboardUsesAccessibleSuccessText(t *testing.T) {
 // place: the summary grid has to collapse below its 220px track, and the
 // section and campaign headers have to wrap instead of colliding.
 func TestDashboardRowsWrapOnNarrowViewports(t *testing.T) {
+	t.Parallel()
+
 	body := renderDashboardPage(t, dashboardPageFixture())
 
 	for _, marker := range []string{

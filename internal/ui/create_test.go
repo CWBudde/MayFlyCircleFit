@@ -1,4 +1,4 @@
-package ui
+package ui_test
 
 import (
 	"bytes"
@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/cwbudde/mayflycirclefit/internal/ui"
 )
 
 func renderCreatePage(t *testing.T, errorMsg, project string) string {
@@ -13,7 +15,7 @@ func renderCreatePage(t *testing.T, errorMsg, project string) string {
 
 	var output bytes.Buffer
 
-	err := CreateJobPage(errorMsg, project).Render(context.Background(), &output)
+	err := ui.CreateJobPage(errorMsg, project).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render create page: %v", err)
 	}
@@ -33,6 +35,8 @@ var (
 // would name them, but they carry a matching for= as well so that this check can
 // stay a single mechanical rule over the whole form.
 func TestCreateJobPageLabelsEveryControl(t *testing.T) {
+	t.Parallel()
+
 	body := renderCreatePage(t, "", "")
 
 	labelled := map[string]bool{}
@@ -65,6 +69,8 @@ func TestCreateJobPageLabelsEveryControl(t *testing.T) {
 // the red asterisk conveys "required" through colour and a glyph alone, so the
 // fact has to reach the accessibility tree by another route.
 func TestCreateJobPageMarksRequiredFieldsWithoutRelyingOnColor(t *testing.T) {
+	t.Parallel()
+
 	body := renderCreatePage(t, "", "")
 
 	for _, id := range []string{"refPath", "optimizer", "mode", "circles", "iters", "popSize"} {
@@ -93,6 +99,8 @@ func TestCreateJobPageMarksRequiredFieldsWithoutRelyingOnColor(t *testing.T) {
 // than it, so `minmax(200px, 1fr)` pushes the page sideways at 320px however
 // many columns fit.
 func TestCreateJobPageGridsClampToTheContainer(t *testing.T) {
+	t.Parallel()
+
 	body := renderCreatePage(t, "", "")
 
 	grids := strings.Count(body, "minmax(min(200px, 100%), 1fr)")
@@ -109,6 +117,8 @@ func TestCreateJobPageGridsClampToTheContainer(t *testing.T) {
 // checkboxes are announced with the section they belong to. "Enable SSIM" says
 // nothing on its own about which run it applies to.
 func TestCreateJobPageGroupsControlsInFieldsets(t *testing.T) {
+	t.Parallel()
+
 	body := renderCreatePage(t, "", "")
 
 	if fieldsets := strings.Count(body, "<fieldset"); fieldsets != 7 {
@@ -133,6 +143,8 @@ func TestCreateJobPageGroupsControlsInFieldsets(t *testing.T) {
 // the server re-renders the whole page, so without a live region the rejection
 // is a silent change of content.
 func TestCreateJobPageAnnouncesValidationErrors(t *testing.T) {
+	t.Parallel()
+
 	body := renderCreatePage(t, "circles must be at least 1", "")
 	if !strings.Contains(body, `role="alert"`) {
 		t.Error("validation error is not announced as an alert")
@@ -150,6 +162,8 @@ func TestCreateJobPageAnnouncesValidationErrors(t *testing.T) {
 // TestCreateJobPageHidesDecorativeEmoji keeps the tips heading's accessible name
 // to the word it is about.
 func TestCreateJobPageHidesDecorativeEmoji(t *testing.T) {
+	t.Parallel()
+
 	body := renderCreatePage(t, "", "")
 	if !strings.Contains(body, `<span aria-hidden="true">💡</span>`) {
 		t.Error("the tips heading emoji is part of the heading's accessible name")
@@ -159,6 +173,8 @@ func TestCreateJobPageHidesDecorativeEmoji(t *testing.T) {
 // TestCreateJobPageKeepsTheProjectSlug is the behavior the hidden field exists
 // for, re-asserted here because the section markup around it changed.
 func TestCreateJobPageKeepsTheProjectSlug(t *testing.T) {
+	t.Parallel()
+
 	body := renderCreatePage(t, "", "experiments")
 	if !strings.Contains(body, `<input type="hidden" name="project" value="experiments">`) {
 		t.Error("the project slug is not carried through the form")

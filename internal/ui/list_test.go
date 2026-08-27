@@ -1,4 +1,4 @@
-package ui
+package ui_test
 
 import (
 	"bytes"
@@ -6,11 +6,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cwbudde/mayflycirclefit/internal/ui"
 )
 
-func jobListPageFixture() JobListPage {
-	return JobListPage{
-		Jobs: []JobListItem{
+func jobListPageFixture() ui.JobListPage {
+	return ui.JobListPage{
+		Jobs: []ui.JobListItem{
 			{
 				ID:          "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
 				State:       "completed",
@@ -37,12 +39,12 @@ func jobListPageFixture() JobListPage {
 	}
 }
 
-func renderJobListPage(t *testing.T, page JobListPage) string {
+func renderJobListPage(t *testing.T, page ui.JobListPage) string {
 	t.Helper()
 
 	var output bytes.Buffer
 
-	err := JobList(page).Render(context.Background(), &output)
+	err := ui.JobList(page).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render job list page: %v", err)
 	}
@@ -52,12 +54,12 @@ func renderJobListPage(t *testing.T, page JobListPage) string {
 
 // renderJobCard renders one card without the layout, so an assertion about
 // what the card does *not* contain cannot be satisfied by the page chrome.
-func renderJobCard(t *testing.T, job JobListItem) string {
+func renderJobCard(t *testing.T, job ui.JobListItem) string {
 	t.Helper()
 
 	var output bytes.Buffer
 
-	err := JobCard(job).Render(context.Background(), &output)
+	err := ui.JobCard(job).Render(context.Background(), &output)
 	if err != nil {
 		t.Fatalf("render job card: %v", err)
 	}
@@ -66,6 +68,8 @@ func renderJobCard(t *testing.T, job JobListItem) string {
 }
 
 func TestJobListPageRenders(t *testing.T) {
+	t.Parallel()
+
 	body := renderJobListPage(t, jobListPageFixture())
 
 	for _, marker := range []string{
@@ -86,6 +90,8 @@ func TestJobListPageRenders(t *testing.T) {
 // row replaced here was a space-between flex row with no flex-wrap, which
 // collided with itself well before a phone's width.
 func TestJobListRowsWrapOnNarrowViewports(t *testing.T) {
+	t.Parallel()
+
 	if !strings.Contains(renderJobListPage(t, jobListPageFixture()), `class="row-between"`) {
 		t.Error("job list page header does not wrap")
 	}
@@ -118,6 +124,8 @@ func TestJobListRowsWrapOnNarrowViewports(t *testing.T) {
 // handlers responded to a mouse only, so a card reached by keyboard got no
 // feedback at all.
 func TestJobCardLiftIsCSSNotInlineJS(t *testing.T) {
+	t.Parallel()
+
 	body := renderJobCard(t, jobListPageFixture().Jobs[0])
 
 	if !strings.Contains(body, `class="card-link"`) {
@@ -135,6 +143,8 @@ func TestJobCardLiftIsCSSNotInlineJS(t *testing.T) {
 // title attributes, which no touch device shows and no screen reader promises
 // to announce.
 func TestJobCardMetadataIsNamedForAssistiveTech(t *testing.T) {
+	t.Parallel()
+
 	body := renderJobCard(t, jobListPageFixture().Jobs[0])
 
 	for _, label := range []string{
@@ -163,7 +173,9 @@ func TestJobCardMetadataIsNamedForAssistiveTech(t *testing.T) {
 // TestJobListEmptyStateHidesDecorativeGlyph keeps the placeholder icon out of
 // the accessibility tree; it carries no information the heading below it lacks.
 func TestJobListEmptyStateHidesDecorativeGlyph(t *testing.T) {
-	body := renderJobListPage(t, JobListPage{})
+	t.Parallel()
+
+	body := renderJobListPage(t, ui.JobListPage{})
 
 	if !strings.Contains(body, "No jobs yet") {
 		t.Fatal("empty job list page does not render its empty state")
@@ -177,6 +189,8 @@ func TestJobListEmptyStateHidesDecorativeGlyph(t *testing.T) {
 // TestJobCardUsesAccessibleSuccessText guards the contrast fix: the improvement
 // line is text, and --success-color as text on the light surface is 2.54:1.
 func TestJobCardUsesAccessibleSuccessText(t *testing.T) {
+	t.Parallel()
+
 	body := renderJobCard(t, jobListPageFixture().Jobs[0])
 
 	if !strings.Contains(body, "var(--success-text-strong)") {

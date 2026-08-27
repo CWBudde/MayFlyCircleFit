@@ -38,14 +38,21 @@ func TestLayoutIncludesThemeSwitcher(t *testing.T) {
 	}
 }
 
+// imageFrameRule is the marker two files assert on: layout_test checks Layout
+// supplies it, image_viewer_test checks the viewer no longer declares it.
+const imageFrameRule = ".image-frame {"
+
 // TestLayoutCarriesTheAccessibilityContract pins the shared vocabulary every
 // other page and every React island builds on. These are markers rather than a
 // golden file on purpose: the point is that a named utility keeps existing, not
 // that the stylesheet stays byte-identical.
 func TestLayoutCarriesTheAccessibilityContract(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 
-	if err := Layout("Contract").Render(context.Background(), &output); err != nil {
+	err := Layout("Contract").Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render layout: %v", err)
 	}
 
@@ -70,7 +77,7 @@ func TestLayoutCarriesTheAccessibilityContract(t *testing.T) {
 		`.card-link {`,
 		// Image-viewer vocabulary has to live outside every island root.
 		`.view-mode-option label {`,
-		`.image-frame {`,
+		imageFrameRule,
 		`grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));`,
 		`@media (prefers-reduced-motion: reduce) {`,
 		`@media (max-width: 480px) {`,
@@ -93,9 +100,12 @@ func TestLayoutCarriesTheAccessibilityContract(t *testing.T) {
 // 1.51:1 (--text-color on #fbbf24) in dark mode. Every accent background now
 // has a matching foreground token, declared in both palettes.
 func TestLayoutPairsEveryAccentBackgroundWithItsOwnForeground(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 
-	if err := Layout("Contrast").Render(context.Background(), &output); err != nil {
+	err := Layout("Contrast").Render(context.Background(), &output)
+	if err != nil {
 		t.Fatalf("render layout: %v", err)
 	}
 
@@ -116,7 +126,8 @@ func TestLayoutPairsEveryAccentBackgroundWithItsOwnForeground(t *testing.T) {
 		// the preload script, which emits whichever one was stored before the
 		// first paint.
 		if got := strings.Count(body, token); got != 5 {
-			t.Errorf("token %q declared %d times, want 5 (light, explicit dark, system dark, and both preload palettes)", token, got)
+			t.Errorf("token %q declared %d times, want 5 (light, explicit dark, system dark, both preload)",
+				token, got)
 		}
 	}
 
