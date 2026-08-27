@@ -65,9 +65,19 @@ function checked(form: CreateJobFormValues, name: string): boolean {
 	return text(form, name) === "on";
 }
 
+// Blank is rejected rather than parsed, because Number("") is 0 and a silent
+// zero is not a harmless default here: for seed it is an explicit choice the
+// server honours, while the form path would have defaulted the blank instead.
+// Only REQUIRED_NUMBERS reaches this with a possibly-blank value - the
+// defaulted and optional loops both skip blanks before calling it - so failing
+// fast turns contract drift into an error at the call site rather than a job
+// stored with configuration nobody asked for.
 function toNumber(name: string, raw: string): number {
+	if (raw === "") throw new Error(`${name} is required and was left blank`);
+
 	const value = Number(raw);
 	if (!Number.isFinite(value)) throw new Error(`${name} must be a number`);
+
 	return value;
 }
 
@@ -75,9 +85,10 @@ function toNumber(name: string, raw: string): number {
  * buildCreateJobBody translates one form submission into the JSON body that
  * produces the same stored configuration as posting the form to /create.
  *
- * It throws when a number does not parse; the form's own `type="number"`
- * controls make that unreachable from the island, which submits only after the
- * browser's constraint validation has passed.
+ * It throws when a required number is blank or does not parse; the form's own
+ * `required` and `type="number"` controls make both unreachable from the
+ * island, which submits only after the browser's constraint validation has
+ * passed. A programmatic caller gets an error instead of a silent zero.
  */
 export function buildCreateJobBody(form: CreateJobFormValues): CreateJobBody {
 	const body: CreateJobBody = {};

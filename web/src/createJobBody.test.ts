@@ -74,3 +74,38 @@ describe("buildCreateJobBody", () => {
 			.toThrow(/circles/);
 	});
 });
+
+// Number("") is 0, so a blank required field would otherwise be sent as an
+// explicit zero. That is not a harmless default: the server honours an explicit
+// seed of 0, while the form path defaults a blank one, so the two admission
+// paths would store different configurations for the same submission.
+describe("required numbers reject a blank value", () => {
+	const complete = {
+		refPath: "assets/ref.png",
+		circles: "8",
+		iters: "100",
+		popSize: "30",
+		seed: "0",
+	};
+
+	for (const name of ["circles", "iters", "popSize", "seed"]) {
+		it(`throws when ${name} is blank rather than sending 0`, () => {
+			expect(() => buildCreateJobBody({ ...complete, [name]: "" })).toThrow(
+				`${name} is required and was left blank`,
+			);
+		});
+
+		it(`throws when ${name} is absent rather than sending 0`, () => {
+			const partial = { ...complete };
+			delete (partial as Record<string, string>)[name];
+
+			expect(() => buildCreateJobBody(partial)).toThrow(
+				`${name} is required and was left blank`,
+			);
+		});
+	}
+
+	it("still sends an explicitly typed zero seed", () => {
+		expect(buildCreateJobBody(complete).seed).toBe(0);
+	});
+});
