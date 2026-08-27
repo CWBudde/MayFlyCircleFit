@@ -681,6 +681,15 @@ func (r *CPURenderer) renderCircleScanlineRowsTracked(
 
 			int(maxYf+1), r.height), rowEnd)
 
+	// Every worker visits every circle, so a circle confined to one row band
+	// still reaches this function once per shard and clamps to an empty range in
+	// all the others. Return before any per-circle setup, the way
+	// polishDirtySession.circleVerticalBounds already does: the row loops below
+	// would do nothing anyway, and the setup is O(circles x threads).
+	if minY >= maxY {
+		return
+	}
+
 	// The exact span compositor's constant block depends only on the circle's
 	// colour and opacity, so it is built once here and passed down to every span
 	// of every row. It is built after the early rejects so a transparent or
