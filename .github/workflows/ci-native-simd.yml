@@ -115,6 +115,20 @@ jobs:
       # kernel now round at the same points on every target, so both pass.
       # See docs/known-limitations.md for the analysis and the reproduction
       # recipe, which needs no ARM64 hardware.
+      #
+      # Those same steps are what turns the cross-platform precision matrix
+      # into a gate. internal/fit/renderer/precision_boundaries_test.go records
+      # a SHA-256 of the pixel buffer and the exact cost of every boundary
+      # scene, measured on amd64; "Detected tier on native hardware" and
+      # "Scalar tier pinned" assert the identical constants on the two ARM64
+      # rows, at NEON and at scalar. That is the only place the
+      # cross-architecture half of the contract can be checked -- a single
+      # binary can walk every tier by itself, but not every architecture.
+      #
+      # No extra step is needed, because the tests live in the package those
+      # steps already run. Note that none of them passes -short, so it is the
+      # full 512-draw randomized sweep and the 200,000-circle span-coverage
+      # sweep that run here. See docs/renderer-precision-measurements.md.
 
       - name: Record native scalar and SIMD throughput
         env:

@@ -47,6 +47,12 @@ Everything in `docs/`, grouped by what you came here to do. Start from
   span compositing. **The reference for anyone touching renderer math.**
 - [`renderer-correctness.md`](renderer-correctness.md) — the byte-exact parity
   contract, its oracle and matrix, and the standing tradeoffs.
+- [`renderer-precision-measurements.md`](renderer-precision-measurements.md) —
+  the boundary half of that contract, measured on amd64 and on ARM64 under
+  emulation at every SIMD tier: fractional and tangent boundaries, radius
+  extremes, clipping, batch boundaries, randomized circles, and row sharding.
+  Also the one rasterization rule the matrix caught that nobody had written
+  down. **No timing in it, and none may be inferred from it.**
 - [`exact-span-compositors.md`](exact-span-compositors.md) — the exact vector
   span kernels, their parity requirements, and why `--fast-compositing` exists.
 - [`incremental-cost.md`](incremental-cost.md) — the dirty-span cost contract,
