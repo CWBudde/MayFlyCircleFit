@@ -160,9 +160,9 @@ func TestIslandBundleLoadsTheVersionedBundle(t *testing.T) {
 // not fetch and parse it. Task 18.3 ended that distinction rather than relaxing
 // it: the theme switch in the navigation is an island now, the layout renders it
 // on every page, and a page whose chrome does not mount has a dead control in
-// it. So the layout loads the bundle itself, and the pages that mount an island
-// of their own keep calling IslandBundle harmlessly -- one module URL is
-// evaluated once however many script tags name it.
+// it. So the layout loads the bundle itself, and Task 18.7 deleted the five
+// leftover per-page call sites that Task 18.3 had left in place. There is one
+// link, and it is in the shell; see TestOnlyTheLayoutLinksTheIslandBundle.
 func TestLayoutLoadsTheIslandBundle(t *testing.T) {
 	var output bytes.Buffer
 

@@ -857,7 +857,7 @@ function JobActionRow({
 			<span className={stateClass(state)} style={stateBadgeStyle(state)}>
 				{stateLabel(state)}
 			</span>
-			{actions.pause ? <ActionButton label="Pause job" busy={busy === "pause"} onClick={() => void action("pause")} /> : null}
+			{actions.pause ? <ActionButton label="Pause job" busy={busy === "pause"} onClick={() => void action("pause")} warning /> : null}
 			{actions.resume ? <ActionButton label="Resume job" busy={busy === "resume"} onClick={() => void action("resume")} primary /> : null}
 			{actions.cancel ? <ActionButton label="Cancel job" busy={busy === "cancel"} onClick={() => void action("cancel")} danger /> : null}
 			{actions.delete ? <ActionButton label="Delete job" busy={busy === "delete"} onClick={() => void deleteJob()} danger /> : null}
@@ -879,6 +879,7 @@ function ActionButton({
 	busy,
 	onClick,
 	danger,
+	warning,
 	primary,
 }: {
 	label: string;
@@ -886,12 +887,19 @@ function ActionButton({
 	busy: boolean;
 	onClick: () => void;
 	danger?: boolean;
+	warning?: boolean;
 	primary?: boolean;
 }) {
-	// btn-danger pairs the accent background with its own foreground token. An
-	// inline --error-color background keeps btn-primary's white text, which
-	// measures 2.3:1 against the dark palette's #f87171.
-	const variant = danger ? " btn-danger" : primary ? " btn-primary" : "";
+	// btn-danger and btn-warning pair the accent background with their own
+	// foreground token. An inline --error-color background keeps btn-primary's
+	// white text, which measures 2.3:1 against the dark palette's #f87171.
+	//
+	// The three variants are the ones the templ fallback uses for the same four
+	// buttons (internal/ui/detail.templ), and they have to stay the same three:
+	// the fallback is what a reader sees until this island mounts, and a Pause
+	// button that is amber before mount and grey after it is a flicker with no
+	// meaning behind it.
+	const variant = danger ? " btn-danger" : warning ? " btn-warning" : primary ? " btn-primary" : "";
 	return (
 		<button disabled={busy} aria-busy={busy} onClick={onClick} className={`btn${variant}`}>
 			{/* The glyph is decoration; without aria-hidden it joins the button's
@@ -1685,6 +1693,16 @@ function MetricChart({
 			// Chart.js types a scale as the union of every registered scale, so
 			// the three fields this chart drives are reached through one narrow
 			// cast rather than by asserting the whole scale is linear.
+			// Every write below sets one leaf property. Replacing `ticks` or
+			// `title` wholesale with a spread of its current value looks
+			// equivalent and is not: after the first update chart.options is a
+			// resolved proxy chain, so the spread copies Chart.js's own nested
+			// option proxies (ticks.minor, ticks.major) back into the raw
+			// config. Chart.js then re-resolves those copies, reads the
+			// descriptor key _scriptable off one of them, finds a function,
+			// and calls it as if it were a scriptable option -- "name.startsWith
+			// is not a function", thrown during render, which unmounts the whole
+			// island and leaves the page blank.
 			const y = chart.options.scales?.y as
 				| { min?: number; max?: number; ticks?: Record<string, unknown>; title?: Record<string, unknown> }
 				| undefined;
@@ -1692,14 +1710,29 @@ function MetricChart({
 				const bounds = metricBounds(current);
 				y.min = bounds?.min;
 				y.max = bounds?.max;
-				y.title = { ...y.title, display: true, text: AXIS_TITLES[series] };
-				y.ticks = { ...y.ticks, callback: (value: unknown) => formatAxisValue(series, Number(value)) };
+				if (y.title) {
+					y.title.display = true;
+					y.title.text = AXIS_TITLES[series];
+				}
+				if (y.ticks) {
+					y.ticks.callback = (value: unknown) => formatAxisValue(series, Number(value));
+				}
 			}
 			applyAxisTheme(chart, palette);
 
 			// The selection is pushed into the chart rather than left to the
 			// pointer, so the arrow keys and the pointer light up the same point.
-			const elements = active === null ? [] : [{ datasetIndex: 0, index: active }];
+			//
+			// It is guarded on the element existing because useLineChart calls
+			// this before its first chart.update(): the dataset has data by then
+			// but the controller has not built the point elements yet, and
+			// setActiveElements reaches straight into them
+			// ("Cannot set properties of undefined (setting 'active')", thrown
+			// from an effect, which unmounts the island). The deps effect runs
+			// again immediately after that first update, and that pass has the
+			// elements and sets the selection.
+			const drawn = chart.getDatasetMeta(0)?.data ?? [];
+			const elements = active === null || !drawn[active] ? [] : [{ datasetIndex: 0, index: active }];
 			chart.setActiveElements(elements);
 			chart.tooltip?.setActiveElements(elements, { x: 0, y: 0 });
 		},
@@ -1745,18 +1778,30 @@ function MetricChart({
 
 	return (
 		<>
-			<canvas
-				id="cost-sparkline"
-				ref={canvasRef}
-				className="metric-chart-canvas"
-				role="img"
-				tabIndex={0}
-				aria-label="Metric history chart"
-				aria-describedby={descriptionId}
-				onKeyDown={moveSelection}
-				onFocus={() => setSelected(points.length - 1)}
-				onPointerLeave={() => setSelected(null)}
-			/>
+			{/* The frame carries the size, not the canvas. A responsive Chart.js
+			    chart writes its own inline width and height onto the canvas
+			    every time it resizes, so a canvas that is also sized from CSS
+			    (width: 100%; height: 280px) resizes the element that its own
+			    ResizeObserver is watching: the chart re-measured, redrew and
+			    re-measured for as long as the page was open, which cost roughly
+			    a third of the main thread and made the page slower the longer
+			    it stayed open. Sizing a positioned parent instead is the
+			    library's documented arrangement, and it is what the dashboard
+			    and campaign charts already did. */}
+			<div className="metric-chart-frame">
+				<canvas
+					id="cost-sparkline"
+					ref={canvasRef}
+					className="metric-chart-canvas"
+					role="img"
+					tabIndex={0}
+					aria-label="Metric history chart"
+					aria-describedby={descriptionId}
+					onKeyDown={moveSelection}
+					onFocus={() => setSelected(points.length - 1)}
+					onPointerLeave={() => setSelected(null)}
+				/>
+			</div>
 			<div
 				style={{
 					display: "flex",

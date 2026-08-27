@@ -195,20 +195,50 @@ response size. Full stage configuration is retrieved one stage at a time. See
 
 ## Web UI
 
-templ renders complete HTML for the dashboard, jobs, campaigns, and detail
-pages. That markup is both the no-JavaScript fallback and the hydration seed.
-React islands add charts, live actions, pagination, and reconciliation; they do
-not create a second server-side state model.
+templ renders complete HTML for every page — dashboard, job list, job detail,
+campaign list, campaign detail, job creation, and settings. That markup is both
+the no-JavaScript fallback and the hydration seed. React islands add charts,
+live actions, pagination, and reconciliation; they do not create a second
+server-side state model.
+
+There are eight islands, and they are registered in one place, the
+`mountIslands({...})` call at the bottom of `web/src/dashboard.tsx`:
+
+| Island | Mount point | What it owns |
+| --- | --- | --- |
+| `dashboard` | `dashboard.templ` | aggregates, running jobs, campaign cards |
+| `job-list` | `list.templ` | the job list and its infinite scroll |
+| `job-detail` | `detail.templ` | the whole job detail body |
+| `campaign-list` | `schedule.templ` | campaign and chain summaries |
+| `campaign-detail` | `schedule.templ` | one campaign's stages and cost chart |
+| `create-job` | `create.templ` | the creation form, posting JSON |
+| `settings` | `settings.templ` | the browser-local preference editor |
+| `theme-switch` | `layout.templ` | the color-theme buttons in the navigation |
+
+Two things are deliberately *not* in that list. The image viewer is one shared
+component (`web/src/ImageViewer.tsx`) rendered as an ordinary React child by
+both the job-detail and campaign-detail islands, so
+reference/best/difference/overlay behavior has one contract and no mount point
+of its own — a second React root over a node an outer island is about to
+replace would be a root over a node on its way out. The job action buttons are
+part of the job-detail island for the same reason; they were a separate
+`job-controls` island until Phase 18 folded them in.
+
+`theme-switch` is chrome the layout renders on every page, so `Layout` links
+the bundle unconditionally and is the only place that does. No page opts in.
+The palette itself is not the island's: the pre-paint script in `layout.templ`
+applies the stored theme before the first paint and publishes
+`window.mayflyTheme`, and the island only wires the buttons to it. That script
+is the one hand-written inline script left anywhere in `internal/ui/*.templ`,
+because a deferred module cannot run before the first paint;
+`internal/ui/inline_script_gate_test.go` fails the build on any other.
 
 The JSON embedded in a page and the corresponding REST response use the same
 projection shape. After mount, an island updates the existing state rather than
 reconstructing it from DOM text. Shared chart code resolves colors from CSS
-custom properties, listens for both explicit theme changes and system-theme
-changes, and updates each Chart.js instance in place rather than reallocating a
-canvas for every event. The job and campaign pages share one image-viewer
-component, so reference/best/difference/overlay behavior has one contract; it
-mounts no island of its own on either page, because on both it sits inside an
-island root that owns the whole subtree.
+custom properties, refreshes them when the theme stylesheet is swapped or the
+system preference changes, and updates each Chart.js instance in place rather
+than reallocating a canvas for every event.
 
 The job detail page is one island over its entire body — state badge, actions,
 metrics, configuration, downloads, parameters, images and the metric chart. It

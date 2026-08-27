@@ -281,7 +281,10 @@ func TestJobDetailPageShowsPolishingSchedule(t *testing.T) {
 // the server-rendered copies are what a reader sees only when the bundle fails
 // to load or JavaScript is off. They mutate a job over the JSON API and have
 // never worked without script, so they must not look clickable. Refresh is
-// deliberately excluded: its inline handler works whenever script runs at all.
+// deliberately excluded, and Task 18.7 is why: it used to be a button with an
+// inline onclick, which worked only when script ran, and it is now a plain link
+// back to this page. It is the one control in the row that works with no script
+// at all, so it is the one control that may still look clickable.
 func TestJobDetailFallbackMutationsAreDisabled(t *testing.T) {
 	for _, tc := range []struct {
 		state  string

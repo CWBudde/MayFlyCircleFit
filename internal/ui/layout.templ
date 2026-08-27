@@ -123,8 +123,10 @@ const themeStyles = `<style>
 // rendered the dark theme as black text on the dark surface -- measured at
 // 1.17:1 against a 4.5:1 threshold. It looked survivable on the dashboard and
 // job pages only because a React island replaces their markup with fresh
-// elements, which do inherit; the pages with no island -- create, and settings
-// until it became one -- stayed unreadable.
+// elements, which do inherit; the pages that had no island at the time --
+// create and settings, both islands since Phase 18 -- stayed unreadable. That
+// is an escape, not a fix: a control painted outside every island root brings
+// the defect back.
 //
 // The override selector is :root:root, and the doubled pseudo-class is load
 // bearing. The system-preference rule is :root:not([data-theme]), which computes
@@ -301,12 +303,6 @@ templ Layout(title string) {
 				}
 
 				/* Utility classes */
-				.container {
-					max-width: 1200px;
-					margin: 0 auto;
-					padding: 0 1rem;
-				}
-
 				.card {
 					background-color: var(--surface-color);
 					border-radius: 0.5rem;
@@ -576,21 +572,6 @@ templ Layout(title string) {
 					animation: spin 1s linear infinite;
 					margin: 0 auto;
 				}
-
-				/* Fade transitions */
-				@keyframes fadeIn {
-					from {
-						opacity: 0;
-					}
-					to {
-						opacity: 1;
-					}
-				}
-
-				.fade-in {
-					animation: fadeIn 0.3s ease-in;
-				}
-
 
 				/* Image-viewer vocabulary.
 				   This lives in the layout rather than in image_viewer.templ
@@ -909,12 +890,17 @@ templ Layout(title string) {
 	</html>
 }
 
-// IslandBundle links the React island bundle. Layout calls it for every page,
-// because every page now renders one island: the theme switch in the navigation
-// is chrome, and moving its handler out of the shell is what stopped the shell
-// carrying a script. Pages that mount an island of their own still call it too;
-// a second <script type="module"> with the same src resolves to the same entry
-// in the module map and is not evaluated twice.
+// IslandBundle links the React island bundle. Layout is the only caller, and
+// it calls it for every page, because every page renders at least one island:
+// the theme switch in the navigation is chrome, and moving its handler out of
+// the shell is what stopped the shell carrying a script.
+//
+// The bundle used to be opt-in per page. Task 18.3 ended that and left five
+// pages calling this template a second time from inside their own body; the
+// duplicate was inert -- one module URL resolves to one entry in the module map
+// however many script tags name it -- but it invited the reader to believe the
+// opt-in rule still held. Task 18.7 removed those call sites.
+// TestOnlyTheLayoutLinksTheIslandBundle keeps them removed.
 //
 // The bundle is committed and embedded, so this binary serves it rather than
 // fetching it from a network the host may not have. Module scripts are

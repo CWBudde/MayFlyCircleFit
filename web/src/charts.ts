@@ -51,27 +51,47 @@ function readThemePalette(): Palette {
 // a CSS variable alone would leave a mounted chart painted for the old theme;
 // the components that consume this palette call chart.update() when it changes.
 //
-// Both triggers are needed: the theme switcher stamps data-theme on the root
-// element, and the "auto" setting has no attribute at all, so only the media
-// query reports a system theme change.
+// Both triggers are needed, and the first one watches <head> rather than the
+// root element. The theme controller (the pre-paint script in
+// internal/ui/layout.templ) deliberately never sets an attribute on <html> --
+// WebKit then fails to inherit the custom properties into elements already
+// parsed -- so an explicit choice appears as the #theme-override stylesheet
+// being appended, having its text replaced, or being removed. A
+// MutationObserver on documentElement filtered to data-theme, which is what
+// this used to be, saw none of those and never fired. The "auto" setting adds
+// no stylesheet at all, so only the media query reports a system theme change.
 export function useChartTheme(): Palette {
 	const [palette, setPalette] = useState<Palette>(readThemePalette);
 
 	useEffect(() => {
-		const refresh = () => setPalette(readThemePalette());
+		// The observer below watches all of <head>, so it can fire for reasons
+		// that are not a theme change. readThemePalette allocates a fresh
+		// object every call, and handing React a new object it would compare by
+		// identity means a re-render, a new `palette` dependency, and a
+		// chart.update() for every one of them. Only a changed token counts.
+		const refresh = () =>
+			setPalette((current) => {
+				const next = readThemePalette();
+				const changed = (Object.keys(next) as Array<keyof Palette>).some((key) => next[key] !== current[key]);
+				return changed ? next : current;
+			});
 		refresh();
 
-		const themeObserver = new MutationObserver(refresh);
-		themeObserver.observe(document.documentElement, {
-			attributes: true,
-			attributeFilter: ["data-theme"],
+		// subtree and characterData are both load bearing: apply() reuses the
+		// existing <style> and assigns textContent, which replaces its child
+		// text node rather than touching <head> itself.
+		const overrideObserver = new MutationObserver(refresh);
+		overrideObserver.observe(document.head, {
+			childList: true,
+			subtree: true,
+			characterData: true,
 		});
 
 		const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 		mediaQuery.addEventListener("change", refresh);
 
 		return () => {
-			themeObserver.disconnect();
+			overrideObserver.disconnect();
 			mediaQuery.removeEventListener("change", refresh);
 		};
 	}, []);
@@ -125,6 +145,16 @@ export function useLineChart(
 }
 
 // applyAxisTheme repaints every configured scale in the current palette.
+//
+// It assigns leaf properties and never replaces `ticks`, `grid` or `title` with
+// a spread of its current value. The two read the same on the page and are not
+// the same: from the first update onward chart.options is a chain of resolved
+// Chart.js proxies, so `{ ...scale.ticks }` copies nested option proxies
+// (ticks.minor, ticks.major) into the raw config. Chart.js re-resolves those
+// copies on the next pass, finds its own descriptor key `_scriptable` on one of
+// them, and calls that function as though it were a scriptable option value --
+// "name.startsWith is not a function". Thrown from a render, it takes the whole
+// island down and leaves the page blank.
 export function applyAxisTheme(
 	chart: ChartInstance,
 	palette: Palette,
@@ -134,11 +164,22 @@ export function applyAxisTheme(
 		if (!scale) {
 			continue;
 		}
-		scale.ticks = { ...scale.ticks, color: palette.textMuted, ...(name === "x" ? extra?.xTicks : {}) };
-		scale.grid = { ...scale.grid, color: palette.grid };
-		const titledScale = scale as typeof scale & { title?: Record<string, unknown> };
-		if (titledScale.title) {
-			titledScale.title = { ...titledScale.title, color: palette.textMuted };
+		const themed = scale as typeof scale & {
+			ticks?: Record<string, unknown>;
+			grid?: Record<string, unknown>;
+			title?: Record<string, unknown>;
+		};
+		if (themed.ticks) {
+			themed.ticks.color = palette.textMuted;
+			if (name === "x" && extra?.xTicks) {
+				Object.assign(themed.ticks, extra.xTicks);
+			}
+		}
+		if (themed.grid) {
+			themed.grid.color = palette.grid;
+		}
+		if (themed.title) {
+			themed.title.color = palette.textMuted;
 		}
 	}
 }
