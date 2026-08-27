@@ -4,6 +4,8 @@ package renderer
 
 import (
 	"bytes"
+	"fmt"
+	"image"
 	"math/rand/v2"
 	"os"
 	"os/exec"
@@ -178,4 +180,196 @@ func compositeNEONDisabledEnv(environ []string) []string {
 		env = append(env, entry)
 	}
 	return append(env, "GODEBUG="+godebug, compositeNEONDisabledHelper+"=1")
+}
+
+// TestRenderCircleRowsDoesNotAllocate pins the compositor's blend scalars to
+// the render goroutine's stack, one call level above where
+// TestCompositeOpaqueSpanDoesNotAllocate looks.
+//
+// It is the ARM64 half of the guard the amd64 hoist added. That test only
+// enters compositeOpaqueSpan directly, so it sees the frames in
+// composite_span_arm64.go and nothing else. Now that the blend is built by the
+// per-circle caller in renderer_cpu.go, the frame that owns it is not on that
+// test's call path at all, and a blend that escaped there would cost one heap
+// allocation per circle per shard while every existing guard still passed.
+//
+// Not parallel: it forces the process-global SIMD tier, so concurrent subtests
+// would race fit.SetForcedTier against every other dispatch site.
+//
+//nolint:paralleltest // forces the process-global SIMD tier
+func TestRenderCircleRowsDoesNotAllocate(t *testing.T) {
+	defer fit.ResetTierDetection()
+
+	const (
+		width  = 129
+		height = 97
+	)
+
+	for _, forced := range []struct {
+		tier      fit.SIMDTier
+		reachable bool
+	}{
+		{fit.TierScalar, true},
+		{fit.TierNEON, cpu.ARM64.HasASIMD},
+	} {
+		t.Run(forced.tier.String(), func(t *testing.T) {
+			if !forced.reachable {
+				t.Skipf("host CPU cannot execute the %s tier", forced.tier)
+			}
+
+			fit.SetForcedTier(forced.tier)
+
+			reference := image.NewNRGBA(image.Rect(0, 0, width, height))
+			renderer := NewCPURenderer(reference, 1)
+
+			if !renderer.opaqueCanvas {
+				t.Fatal("default canvas is not opaque, so the exact span path is unreachable")
+			}
+
+			canvas := image.NewNRGBA(image.Rect(0, 0, width, height))
+			circle := fit.Circle{X: 64.25, Y: 48.75, R: 40.5, CR: 0.13, CG: 0.57, CB: 0.91, Opacity: 0.37}
+
+			allocs := testing.AllocsPerRun(200, func() {
+				renderer.renderCircleScanlineRowsTracked(canvas, circle, 0, height, nil)
+			})
+			if allocs != 0 {
+				t.Fatalf("circle row walk allocated %.1f times per call at the %s tier, want 0", allocs, forced.tier)
+			}
+		})
+	}
+}
+
+// TestSpanBlendSurvivesTierChange pins spanBlend as tier-independent state, the
+// ARM64 half of the amd64 guard of the same name.
+//
+// The blend is four float64s the NEON kernel takes as arguments, and production
+// reuses one blend for a whole circle. The failure this guards is the adjacent
+// change nothing else would catch: caching compositeSpanKernel or the cutoff
+// into the blend when it is built. TestCompositeSpanFollowsForcedTier and
+// TestRendererKernelsFollowForcedTier both inspect the package variables, so a
+// stale copy inside a blend would pass them while silently pinning one circle to
+// the tier that was current when it began.
+//
+//nolint:paralleltest // forces the process-global SIMD tier
+func TestSpanBlendSurvivesTierChange(t *testing.T) {
+	defer fit.ResetTierDetection()
+
+	const (
+		r     = 0.13
+		g     = 0.57
+		blue  = 0.91
+		alpha = 0.37
+	)
+
+	// Byte parity alone cannot catch a cached tier, because the NEON kernel is
+	// byte-identical to the scalar span by construction - that is the whole
+	// premise of docs/exact-span-compositors.md. So assert the structural
+	// property first: two blends for the same colour, built under different
+	// forced tiers, must be identical. A tier or a cutoff smuggled into the
+	// struct makes them differ, and spanBlend is comparable precisely so this
+	// can be checked.
+	fit.SetForcedTier(fit.TierScalar)
+
+	blend := newSpanBlend(r, g, blue, alpha)
+
+	if cpu.ARM64.HasASIMD {
+		fit.SetForcedTier(fit.TierNEON)
+
+		if neonBlend := newSpanBlend(r, g, blue, alpha); neonBlend != blend {
+			t.Fatal("spanBlend depends on the tier that was current when it was built")
+		}
+	}
+
+	// 512 is above compositeSpanNEONMinPixels and 300 leaves a tail the scalar
+	// fallback finishes, so both halves of the dispatch read the reused blend.
+	for _, forced := range []struct {
+		tier      fit.SIMDTier
+		reachable bool
+	}{
+		{fit.TierScalar, true},
+		{fit.TierNEON, cpu.ARM64.HasASIMD},
+		{fit.TierScalar, true},
+	} {
+		if !forced.reachable {
+			continue
+		}
+
+		fit.SetForcedTier(forced.tier)
+
+		if compositeSpanKernel != forced.tier {
+			t.Fatalf("composite span kernel = %s after forcing %s", compositeSpanKernel, forced.tier)
+		}
+
+		for _, pixels := range []int{8, 255, 256, 300, 512} {
+			got := makeOpaqueSpanFixture(pixels)
+			want := append([]byte(nil), got...)
+
+			compositeOpaqueSpan(&blend, got, 0, pixels, r, g, blue, alpha)
+			compositeOpaqueSpanScalar(want, 0, pixels, r, g, blue, alpha)
+
+			if !bytes.Equal(got, want) {
+				t.Fatalf("reused blend differs from scalar at the %s tier, %d pixels", forced.tier, pixels)
+			}
+		}
+	}
+}
+
+// BenchmarkCompositeOpaqueSpanNEONCutoff is the command that re-derives
+// compositeSpanNEONMinPixels on ARM64 benchmarking hardware.
+//
+// The `hoisted` arm is what the dispatcher pays for now - the four blend
+// scalars are built once per circle and every span of every row reads them - and
+// `rebuilt` is what 256 was measured against, so the difference between them is
+// the per-span setup the hoist removed. `scalar` is the reference each has to
+// beat. The kernel is called by name rather than through a func value, because
+// an indirect call defeats //go:noescape; docs/exact-span-compositors.md records
+// that mistake making a kernel measure five to nine times slower than scalar.
+//
+// Emulated timings do not count. Run it on real ARM64 silicon, pinned, at
+// GOMAXPROCS=1, and take the median of several runs.
+func BenchmarkCompositeOpaqueSpanNEONCutoff(b *testing.B) {
+	if !cpu.ARM64.HasASIMD {
+		b.Skip("NEON unavailable")
+	}
+
+	const (
+		r     = 0.13
+		g     = 0.57
+		blue  = 0.91
+		alpha = 0.37
+	)
+
+	for _, pixels := range []int{8, 16, 24, 32, 64, 128, 192, 256, 512} {
+		pix := makeOpaqueSpanFixture(pixels)
+		blend := newSpanBlend(r, g, blue, alpha)
+
+		b.Run(fmt.Sprintf("scalar/%d", pixels), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(pixels * 4))
+
+			for range b.N {
+				compositeOpaqueSpanScalar(pix, 0, pixels, r, g, blue, alpha)
+			}
+		})
+		b.Run(fmt.Sprintf("neon_hoisted/%d", pixels), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(pixels * 4))
+
+			for range b.N {
+				compositeOpaqueSpanNEON(
+					unsafe.Pointer(&pix[0]), pixels, blend.fgR, blend.fgG, blend.fgB, blend.bgBlend)
+			}
+		})
+		b.Run(fmt.Sprintf("neon_rebuilt/%d", pixels), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(pixels * 4))
+
+			for range b.N {
+				perSpan := newSpanBlend(r, g, blue, alpha)
+				compositeOpaqueSpanNEON(
+					unsafe.Pointer(&pix[0]), pixels,
+					perSpan.fgR, perSpan.fgG, perSpan.fgB, perSpan.bgBlend)
+			}
+		})
+	}
 }

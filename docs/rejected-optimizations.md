@@ -101,6 +101,60 @@ and the symbol is 2.80% of the no-AVX2 profile while even the *AVX2* version is
 and then removed before merge: do not add a kernel to a path production cannot
 enter.
 
+**A NEON kernel for Q16.16 span geometry.** Not written, and the ceiling is why.
+The eight-pixel batched probe and the finite-difference tail that make up
+`fixedCircleQ16.span` are 12.25–15.67% of flat samples on an i7-1255U
+(`BenchmarkFit/Render`, `GOMAXPROCS=1`, pinned to a P-core, 10 s profiles: 13.41%
+at 64×64/K4, 15.67% at 256×256/K50, 12.25% at 512×512/K100). Forcing the scalar
+compositor — the shape ARM64 has below its 256-pixel cutoff — moves 256×256/K50
+to 10.01%, because the share shrinks as compositing grows. So an *infinitely
+fast* span-edge kernel buys at most 12–16% of render time on this host and less
+on ARM64, where the exact compositor is already recorded at 65.01% of an Apple M5
+profile.
+
+Against that ceiling, the amd64 sibling is a measured loss, and it was
+re-measured here rather than cited: `BenchmarkCircleSpanQ16AVX2Direct`, median of
+nine pinned 500 ms runs at `GOMAXPROCS=1`, puts the AVX2 kernel at
+7.65/19.09/52.75/116.60 ns against 7.24/8.23/19.74/39.82 ns for the scalar span
+at radii 5.25/25.25/100.25/256.25 — 1.06× to 2.93× **slower**, worsening with
+radius, and 1.06× to 3.73× slower on an E-core. `spanAVX2` has no production
+call site at all; every renderer and polish path calls `span`, which is why the
+profiles above name `fixedCircleQ16.span` and never the kernel.
+
+**NEON is genuinely better suited to the arithmetic than either amd64 tier, and
+it does not matter.** `SMULL`/`SMULL2` give the full signed 32×32→64 widening
+multiply whose absence (`VPMULDQ` covers even lanes only) forced the shuffles
+that made the AVX2 kernel slow, and `CMGT` on `.2D` gives the 64-bit signed
+compare SSE2 lacks. But a 128-bit register holds two Q32.32 products where AVX2
+holds four, and the shape of the loss is not the multiply: the scalar walk
+already spends *one* multiply and one compare per eight pixels, because monotonic
+eight-pixel batching already extracted that win, and the tail runs on int64
+finite differences with no multiply at all. A vector kernel computes eight
+independent squared distances where the scalar code computes one, then pays a
+vector-to-general-register reduction to make a branch decision the scalar code
+makes with a single `CMP`. Halving the lane count against a kernel already
+1.06× to 2.93× behind does not recover that.
+
+**The portable geometry layout is not the obstacle, and would not have to
+change.** `fixedCircleQ16` already stores `xQ` as `int32`, which is the operand
+form `SMULL` wants, `radiusSquared` as `int64` for the row prologue, and
+`centerX` as the search origin; `remaining` broadcasts with one `DUP` per row.
+`spanAVX2` is written against that struct and adds no field, which is the
+existence proof. What *would* compromise the layout is amortizing vector setup
+across rows by storing a broadcast or a candidate ramp in the struct — bytes the
+portable and amd64 paths pay for and never read — or re-scaling to Q24.8 to keep
+candidates in 32 bits without the range guard, which changes quantization for
+every path. Neither is needed, so the portable-layout constraint is satisfied
+trivially and settles nothing about whether to build it.
+
+Finally, geometry parity is weaker than compositor parity and would be harder to
+police: Q16.16 is a quantified approximation that already changes about 0.00074%
+of row spans against the float64 oracle, so a divergent NEON kernel would not be
+caught by a byte-identity test the way a divergent compositor is. Adding one
+would mean a permanent correctness surface on a path production does not enter,
+for at most a fraction of a 12–16% ceiling. Do not build it without a *new*
+measurement showing span-edge derivation dominating an ARM64 profile.
+
 **Tuning a fallback tier's constants on masked hardware.** The exact SSE2 span
 compositor crosses over against scalar at 8 pixels on a Zen 2 with AVX2 masked
 off, and at 24 pixels on a host that genuinely lacks AVX2. Only the second kind

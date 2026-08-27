@@ -57,8 +57,34 @@ research follow-ups, not blockers for the selected production CPU path.
 
 - [ ] Compare signed Q24.8 and normalized Q8.24 geometry with Q16.16, including
   coordinate range, adversarial boundaries, and full-render results.
-- [ ] Assess a corresponding ARM64 NEON span-edge implementation without
-  compromising the portable geometry layout.
+- [x] Assess a corresponding ARM64 NEON span-edge implementation without
+  compromising the portable geometry layout. **Not worth building, and the
+  ceiling is the reason.** The portable layout is not the obstacle and would not
+  have to change: `fixedCircleQ16` already stores `xQ` as `int32` (the operand
+  form `SMULL` wants), `radiusSquared` as `int64`, and `centerX` as the search
+  origin, and `spanAVX2` is written against that struct without adding a field.
+  NEON is also better suited to the arithmetic than either amd64 tier —
+  `SMULL`/`SMULL2` supply the full signed 32×32→64 widening multiply whose
+  absence forced the AVX2 kernel's shuffles, and `CMGT` on `.2D` supplies the
+  64-bit signed compare SSE2 lacks. The payoff is what fails. `fixedCircleQ16.span`
+  is 13.41%/15.67%/12.25% of flat samples at `BenchmarkFit/Render` 64×64/K4,
+  256×256/K50 and 512×512/K100 on an i7-1255U, `GOMAXPROCS=1`, pinned to `cpu0`,
+  10 s `-cpuprofile` captures; forcing the scalar compositor — the shape ARM64
+  has below its 256-pixel cutoff — moves 256×256/K50 to 10.01%, so the share
+  shrinks exactly where ARM64 sits. An infinitely fast kernel therefore buys at
+  most 12–16% of render time. Against that, `BenchmarkCircleSpanQ16AVX2Direct`
+  re-measured on this host (median of nine pinned 500 ms runs at `GOMAXPROCS=1`)
+  puts the AVX2 kernel at 7.65/19.09/52.75/116.60 ns against 7.24/8.23/19.74/39.82
+  ns scalar at radii 5.25/25.25/100.25/256.25 — 1.06× to 2.93× **slower**, and
+  1.06× to 3.73× slower on `cpu4`. Halving the lane count does not recover that,
+  because the scalar walk already spends one multiply per eight pixels through
+  monotonic eight-pixel batching and runs its tail on int64 finite differences,
+  while a vector kernel would compute eight independent distances and then pay a
+  vector-to-GPR reduction for a decision the scalar code makes with one `CMP`.
+  `spanAVX2` has no production call site either, so a NEON sibling would be dead
+  on arrival on a path whose parity is only quantified, not byte-exact. Full
+  write-up in
+  [`docs/rejected-optimizations.md`](docs/rejected-optimizations.md).
 - [ ] Complete native cross-platform precision measurements for fractional and
   tangent boundaries, radii 1 and maximum radius, clipping, batch boundaries,
   randomized circles, and row sharding.
@@ -95,11 +121,30 @@ research follow-ups, not blockers for the selected production CPU path.
   on scalar. It cannot be measured here, because dispatch selects SSE2 only when
   AVX2 is absent and neither `CIRCLEFIT_SIMD_TIER=sse2` nor
   `GODEBUG=cpu.avx2=off` changes the microarchitecture.
-- [ ] Hoist the ARM64 NEON blend scalars the same way, and re-derive
-  `compositeSpanNEONMinPixels`. Still gated on ARM64 benchmarking hardware.
-  `internal/fit/renderer` now runs on the ARM64 rows of `ci-native-simd.yml`,
-  so correctness is covered there, but those runners establish nothing about
-  throughput and emulation establishes less.
+- [x] Hoist the ARM64 NEON blend scalars the same way. `spanBlend` on ARM64 is
+  no longer an empty struct: it carries `fgR`, `fgG`, `fgB` and `bgBlend`, built
+  once per circle by the same two frames that build the amd64 constant block
+  (`renderCircleScanlineRowsTracked` and `compositeCircleDirtyRows`) and threaded
+  down as a `*spanBlend`, so `compositeOpaqueSpan` reads them instead of
+  recomputing three multiplies and a subtract per span. It carries neither the
+  colour nor the tier, for the same two reasons amd64's does not.
+  `composite_span_arm64.s` is unchanged — the hoist is entirely in Go because the
+  kernel already took the four scalars as arguments — so the deliberately
+  *unfused* `FMUL`+`FADD` pairs that keep it byte-identical to
+  `compositeOpaqueSpanScalar` are untouched. `TestRenderCircleRowsDoesNotAllocate`
+  and `TestSpanBlendSurvivesTierChange` now exist on ARM64 too, over the scalar
+  and NEON tiers, and the whole `internal/fit/renderer` short suite passes on a
+  cross-compiled binary under `qemu-aarch64-static`, which reports NEON and runs
+  the kernel; `TestCompositeSpanNEONMatchesScalar` did not skip. amd64 is
+  untouched and its full suite passes. **No ARM64 timing was measured and an
+  emulated one would not count.**
+- [ ] Re-derive `compositeSpanNEONMinPixels` on ARM64 benchmarking hardware. 256
+  is the pre-hoist crossover, measured on an Apple M5, and is now an upper bound:
+  hoisting can only move a crossover left, so it stays correct and merely leaves
+  some spans on scalar. `BenchmarkCompositeOpaqueSpanNEONCutoff` is the command —
+  `scalar`, `neon_hoisted` and `neon_rebuilt` arms at nine lengths, so one run
+  yields both the new crossover and the setup the hoist removed. The ARM64 rows
+  of `ci-native-simd.yml` cover correctness only, and emulation covers less.
 - [x] Block multiply-add contraction so the CPU renderer is byte-identical on
   every target, and run `internal/fit/renderer` on both ARM64 rows of
   `ci-native-simd.yml`. The recorded diagnosis was wrong on three counts, and
