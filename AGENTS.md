@@ -45,6 +45,16 @@ ones that will change what you propose:
   result as a single long run, while spending 31% more evaluations per
   iteration. Read before proposing it as a default or re-running a variant
   screen that includes it.
+- [`docs/cmaes-report.md`](docs/cmaes-report.md) — the complete twelve-block
+  CMA-ES campaign. Separable CMA-ES with IPOP restarts beats MayFly's long run
+  in 12/12 blocks (`+210.97`, `t = +5.04`) and its r16 arm in 11/12 (`+90.24`,
+  `t = +4.87`), while full-covariance CMA-ES without restarts merely ties r16
+  (`t = +0.18`) using 27% of the cap. It also confirms restarts-over-budget on
+  the v0.7.1 pin for the first time. **Do not read it as licence to change a
+  default:** every IPOP run diverges its step size past any usable value and
+  wastes about 40% of its budget, the winning arm confounds covariance mode
+  with restart strategy, and `lambda` is pinned to `popSize` and ran at 1024
+  against Hansen's default of 16. Phase 23 of `PLAN.md` carries all three.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more

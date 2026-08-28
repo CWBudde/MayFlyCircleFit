@@ -1647,11 +1647,11 @@ restart report.
 - [x] Add an observable server-driven campaign/collector for twelve paired
       blocks, disjoint seed pools, a shared within-block seed prefix, and the
       five required arms.
-- [ ] Re-establish the Mayfly v0.7.1 single-run and r16 baseline on the
+- [x] Re-establish the Mayfly v0.7.1 single-run and r16 baseline on the
       eight-circle 512x512 workload.
-- [ ] Complete the full, separable, single-run, and IPOP CMA-ES arms under the
+- [x] Complete the full, separable, single-run, and IPOP CMA-ES arms under the
       same 6,502,400-evaluation cap.
-- [ ] Commit the raw costs and mechanism trajectories; report paired t-tests
+- [x] Commit the raw costs and mechanism trajectories; report paired t-tests
       (`df=11`), blocks won, and explicit limitations.
 - [x] Preserve and report the operator-stopped preliminary subset offline:
       three completed jobs and one interrupted job from block 1, with raw
@@ -1662,8 +1662,23 @@ step-size adaptation change the measured collapse, not merely if one seed ends
 well. The raw paired blocks and opt-in distribution traces make both claims
 auditable. The first campaign was intentionally stopped on 2026-08-25 after its
 several-day runtime became clear; its one-block descriptive result is recorded
-in [`docs/cmaes-preliminary-report.md`](docs/cmaes-preliminary-report.md), while
-the three twelve-block requirements above remain open.
+in [`docs/cmaes-preliminary-report.md`](docs/cmaes-preliminary-report.md). The
+campaign was re-run to completion on a 64-core host on 2026-08-28 and all
+sixty jobs finished; see [`docs/cmaes-report.md`](docs/cmaes-report.md).
+
+Separable CMA-ES with IPOP restarts beat the MayFly control in twelve of twelve
+blocks (`+210.97`, `t = +5.04`) and the r16 arm in eleven (`+90.24`,
+`t = +4.87`); full-covariance CMA-ES without restarts ties r16 (`t = +0.18`)
+while using 27% of the cap. The restart-over-budget finding is confirmed on the
+v0.7.1 pin for the first time (`+120.73`, `t = +2.42`).
+
+Two findings from the campaign open work rather than closing it, and are carried
+by Phase 23 rather than reopening the boxes above: every IPOP run diverges its
+step size past any usable value in a normalized box, wasting about 40% of its
+budget while `TolXUp` fails to stop it; and the design has no
+separable-without-restarts arm, so the winning configuration confounds
+covariance mode with restart strategy. `lambda` is pinned to `popSize` and ran
+at 1024 against Hansen's default of 16 for this dimensionality.
 
 ---
 
@@ -1955,6 +1970,86 @@ knob reachable only by hand-written JSON is a knob the dashboard cannot make
 observable, and Phase 21's open blocks are the campaigns that need it. The
 rename is grouped here because it has the same cause: the project outgrew the
 assumption that one library is the project.
+
+---
+
+## Phase 23: CMA-ES Step-Size Divergence and the Lambda Question
+
+**Goal:** Repair the defect the complete Phase 21 campaign exposed, and close
+the two questions its design could not answer, before any default changes.
+
+[`docs/cmaes-report.md`](docs/cmaes-report.md) is the evidence for all four
+tasks below. Read it first; the numbers here are not repeated there.
+
+### Task 23.1: Stop a diverged CMA-ES restart from burning the budget (P1)
+
+Every IPOP run in the campaign drove sigma past any value that describes a
+search in a normalized unit box — median 4.0e4 for full covariance, 1.3e23 for
+separable, up to 4.2e43 — while the incumbent stayed flat. The divergence is
+monotone within a run, not a restart artefact. It cost the two IPOP arms 46% and
+41% of their evaluation budgets; the non-diverging `cmaes-single` arm's
+comparable figure is 21%.
+
+go-cma-es defines `TolXUp` (default 1e4) to stop exactly this and it did not
+fire. The likely mechanism is Hansen's flat-fitness pathology: once boundary
+repair maps every sample to the same point the objective is constant, selection
+is random, and cumulative step-size adaptation inflates sigma without bound.
+
+- [ ] Establish whether the guard is disabled by this repository's adapter
+      (`internal/opt/cmaes_adapter.go`, `buildCMAESConfig`) or is not reached
+      inside the library's IPOP restart loop, and fix it in whichever place is
+      responsible.
+- [ ] Persist the per-restart `TerminationReason`. All sixty campaign jobs
+      recorded `completed`, so nothing in a checkpoint showed the divergence;
+      only the opt-in trajectory trace did.
+- [ ] Add a regression test that fails if a run in a normalized box reaches a
+      step size the box cannot contain.
+
+### Task 23.2: Separate covariance mode from restart strategy (P1)
+
+`sep-cmaes-ipop` won the campaign, but it varies covariance mode *and* restart
+strategy against `cmaes-single`. The registered design has no
+separable-without-restarts arm, so nothing attributes the +90.24 to either.
+
+- [ ] Add a `sep-cmaes-single` arm and run it on the same twelve seed prefixes,
+      so the existing rows stay comparable and only the missing cell is bought.
+
+### Task 23.3: Screen `lambda` (P2)
+
+`internal/opt/cmaes_adapter.go` sets `Lambda = popSize` and `Mu = popSize/2`, so
+every campaign arm ran `lambda = 1024`. Hansen's default for this 56-dimension
+problem is `4 + floor(3 ln 56)` = 16, sixty-four times smaller, and a smaller
+`lambda` converts the same evaluation budget into far more generations of metric
+learning. CMA-ES won at 64x its own recommended population; whether it wins by
+more at a sane one is the campaign's most promising untested knob.
+
+Two limits currently make the screen inexpressible, and both are request-
+validation guards rather than modelling statements:
+
+- `app.MinPopulation` is 20, so `lambda = 16` cannot be requested at all.
+- `app.MaxIterations` is 10000, but the shared 6,502,400-evaluation cap needs
+  325,120 generations at `lambda = 20` and 406,400 at 16.
+
+- [ ] Raise `app.MaxIterations` so a small `lambda` can reach the cap,
+      documenting the reason in the constant's comment the way `MaxCircles` and
+      `MaxPopulation` already do.
+- [ ] Decide whether `app.MinPopulation` should reach 16. It has no rationale
+      comment, unlike its neighbours, and lowering it touches the MayFly path
+      with no evidence behind it.
+- [ ] Screen `lambda` crossed with covariance mode, not under full covariance
+      alone — the winning configuration is separable.
+
+### Task 23.4: A second fixture (P3)
+
+- [ ] Only after 23.1–23.3: repeat on a second reference image and a different
+      circle count. Everything measured so far is eight circles on one 512x512
+      reference.
+
+**Rationale:** The campaign produced this project's strongest optimizer result
+and a defect that bounds it, in the same data. Changing a default on the result
+while the defect stands would ship a recommendation whose measured gain is
+known to be a floor and whose winner confounds two variables. The order above is
+the order in which each piece of work makes the next one interpretable.
 
 ---
 

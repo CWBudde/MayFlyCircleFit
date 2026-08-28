@@ -611,7 +611,7 @@ func analyze(path string) error {
 
 	fmt.Println("| arm | mean | sd | median | best | gain vs Mayfly single | t (df=11) | blocks won |")
 	fmt.Println("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
-	for _, name := range order {
+	for index, name := range order {
 		current := byArm[name]
 		if len(current) != 12 {
 			return fmt.Errorf("arm %s has %d blocks, want 12", name, len(current))
@@ -619,9 +619,14 @@ func analyze(path string) error {
 		slices.SortFunc(current, func(a, b resultRow) int { return a.Block - b.Block })
 		values := costs(current)
 		mean, sd := meanSD(values)
-		gain, statistic, wins := pairedImprovement(baseline, current)
-		fmt.Printf("| `%s` | %.2f | %.2f | %.2f | %.2f | %+.2f | %+.2f | %d/12 |\n",
-			name, mean, sd, median(values), slices.Min(values), gain, statistic, wins)
+		summary := "control | control | control"
+		if index > 0 {
+			gain, statistic, wins := pairedImprovement(baseline, current)
+			summary = fmt.Sprintf("%+.2f | %+.2f | %d/12", gain, statistic, wins)
+		}
+
+		fmt.Printf("| `%s` | %.2f | %.2f | %.2f | %.2f | %s |\n",
+			name, mean, sd, median(values), slices.Min(values), summary)
 	}
 
 	fmt.Println("\nAgainst Mayfly r16:")
