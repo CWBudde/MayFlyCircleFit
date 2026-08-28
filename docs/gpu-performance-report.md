@@ -566,37 +566,47 @@ microseconds.
 
 | Size | D | cpu_accumulated | cpu_replay | opencl_replay | opencl ÷ cpu_accum |
 |-----:|--:|----------------:|-----------:|--------------:|-------------------:|
-| 128² | 8 | 33.6 | 99.3 | 37.1 | 1.11x |
-| 128² | 32 | 52.4 | 163.0 | 51.4 | 0.98x |
-| 128² | 128 | 41.3 | 595.6 | 94.3 | 2.28x |
-| 128² | 512 | 30.8 | 1639.4 | 466.9 | **15.14x** |
-| 512² | 8 | 254.4 | 923.4 | 163.5 | 0.64x |
-| 512² | 32 | 452.7 | 1426.5 | 232.5 | 0.51x |
-| 512² | 128 | 227.4 | 3370.9 | 713.7 | 3.14x |
-| 512² | 512 | 244.4 | 10793.7 | 2909.8 | **11.91x** |
+| 128² | 8 | 39.9 | 95.6 | 30.0 | 0.75x |
+| 128² | 32 | 60.5 | 165.2 | 32.7 | 0.54x |
+| 128² | 128 | 30.7 | 559.2 | 66.0 | **2.15x** |
+| 128² | 512 | 32.0 | 1541.1 | 216.2 | **6.76x** |
+| 512² | 8 | 252.7 | 941.4 | 93.0 | 0.37x |
+| 512² | 32 | 444.4 | 1598.3 | 153.2 | 0.34x |
+| 512² | 128 | 255.9 | 3496.4 | 437.7 | 1.71x |
+| 512² | 512 | 218.6 | 10820.5 | 1764.6 | **8.07x** |
 
 Three things are visible at once, and they are the whole argument:
 
-- **`cpu_accumulated` is flat in D.** 30.8–52.4 µs across a 64-fold change in
-  retained depth at 128², 227.4–452.7 µs at 512². That is the property an
+- **`cpu_accumulated` is flat in D.** 30.7–60.5 µs across a 64-fold change in
+  retained depth at 128², 218.6–444.4 µs at 512². That is the property an
   accumulated canvas has and the OpenCL renderer lacks.
 - **Both replay arms grow with D**, roughly linearly, as replaying D circles
   must.
 - **The GPU is not the problem; the technique is.** At 512², D=512 the GPU
-  beats the CPU 3.7x on the *same* replay work (2909.8 against 10793.7 µs) and
-  still loses to the CPU's accumulated canvas by 11.9x.
+  beats the CPU 6.1x on the *same* replay work (1764.6 against 10820.5 µs) and
+  still loses to the CPU's accumulated canvas by 8.1x.
 
-The two D=512 rows are separated — every `cpu_accumulated` sample beats every
-`opencl_replay` sample. The intermediate rows overlap and are not decided by
-this host; the crossover lies between D=32 and D=128 at both sizes, which is
-where the growing replay term passes the CPU's flat one.
+Three rows separate: 128² at D=128 and D=512, and 512² at D=512, each with
+every `cpu_accumulated` sample beating every `opencl_replay` sample. The rest
+overlap and are not decided by this host. The crossover lies between D=32 and
+D=128 at both sizes, which is where the growing replay term passes the CPU's
+flat one.
 
 Extrapolating the fitted marginal cost, an accumulated OpenCL session would
 evaluate one circle over a retained canvas for about the floor plus one circle —
 roughly 65 µs at 512², plus one image-sized read for the base canvas — against
-the 2909.8 µs it pays at D=512 today, and against the CPU's 244.4 µs. That
+the 1764.6 µs it pays at D=512 today, and against the CPU's 218.6 µs. That
 figure is a projection from Table A, not a measurement, and stays a projection
 until the implementation exists.
+
+An earlier revision of this table read 35–54% high in the `opencl_replay`
+column, because `benchmarkDepthCost` did not stop the timer before the arm's
+deferred OpenCL teardown — the same contamination this report documents for
+`BenchmarkOpenCLSessionCreation`, reintroduced in the instrument built to study
+it. Review caught it. The benchmark now registers teardown with `b.Cleanup` and
+stops the timer before the post-loop device check, and the figures above are
+from the corrected instrument. The direction of the conclusion did not change;
+the size of the gap did, from 11.9x to 8.1x at 512²/D=512.
 
 ### C. Why no existing benchmark showed this
 

@@ -598,10 +598,10 @@ argument is not the old ratio; it is that the CPU renderer implements
 grows with the circle count while staged OpenCL work grows with its square.
 `BenchmarkStagedEvaluationAtDepth` measures one evaluation that appends a circle
 to D retained ones, in three arms so that backend is separated from technique.
-The CPU's accumulated arm is flat in D (30.8-52.4 us at 128 square, 227.4-452.7
+The CPU's accumulated arm is flat in D (30.7-60.5 us at 128 square, 218.6-444.4
 us at 512 square, across a 64-fold change in depth); both replay arms grow
-linearly. At 512 square, D=512 the GPU beats the CPU by 3.7x on the *same*
-replay work and still loses to the CPU's accumulated canvas by 11.9x, separated.
+linearly. At 512 square, D=512 the GPU beats the CPU by 6.1x on the *same*
+replay work and still loses to the CPU's accumulated canvas by 8.1x, separated.
 The crossover sits between D=32 and D=128. Campaigns in
 [`docs/schedule-format.md`](docs/schedule-format.md) run to 1000-3000 circles
 with `additionalCircles: 1`, which is exactly the deep-prefix, one-new-circle

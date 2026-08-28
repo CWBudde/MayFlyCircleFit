@@ -160,8 +160,8 @@ func BenchmarkOptimizeStagedGrowth(b *testing.B) {
 						},
 					} {
 						b.Run(mode.name, func(b *testing.B) {
-							for _, backend := range []string{"cpu", "opencl"} {
-								b.Run(backend, func(b *testing.B) {
+							for _, backend := range benchmarkBackends {
+								b.Run(string(backend), func(b *testing.B) {
 									benchmarkStagedGrowth(b, backend, ref, circles, mode.run)
 								})
 							}
@@ -175,20 +175,30 @@ func BenchmarkOptimizeStagedGrowth(b *testing.B) {
 
 func benchmarkStagedGrowth(
 	b *testing.B,
-	backend string,
+	backend Backend,
 	ref *image.NRGBA,
 	circles int,
 	run func(Renderer, *pipelineComparisonOptimizer, int) (*OptimizationResult, error),
 ) {
 	b.Helper()
 
-	r, cleanup, err := NewRendererForBackend(backend, ref, circles)
+	r, cleanup, err := NewRendererForBackend(string(backend), ref, circles)
 	if err != nil {
+		// A reproduction run asks for OpenCL explicitly, so an unavailable
+		// backend has to fail rather than leave the sweep silently half empty.
+		if backend == BackendOpenCL && requireOpenCLBenchmarks() {
+			b.Fatalf("required %s backend unavailable: %v", backend, err)
+		}
+
 		b.Skipf("%s backend unavailable: %v", backend, err)
 	}
-	defer cleanup()
+
+	// Registered rather than deferred: a deferred release runs inside the
+	// measured region, and it also has to run when an assertion below fails.
+	b.Cleanup(cleanup)
 
 	requireBenchmarkGPUDevice(b, r)
+	requireLiveDevice(b, r, backend, "before")
 
 	optimizer := &pipelineComparisonOptimizer{evaluations: pipelineComparisonEvaluations}
 
@@ -205,6 +215,11 @@ func benchmarkStagedGrowth(
 	}
 
 	b.StopTimer()
+
+	// Cost and Render have no error return, so a device lost mid-loop degrades
+	// the renderer to its CPU fallback and every later answer is a CPU answer
+	// under an OpenCL label.
+	requireLiveDevice(b, r, backend, "after")
 
 	if result != nil {
 		b.ReportMetric(float64(result.Evaluations), "evaluations/pipeline")

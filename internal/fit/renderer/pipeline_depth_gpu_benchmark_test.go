@@ -49,24 +49,40 @@ func BenchmarkStagedEvaluationAtDepth(b *testing.B) {
 						if err != nil {
 							b.Fatal(err)
 						}
-						defer cleanup()
 
-						benchmarkDepthCost(b, session, appended[depth*paramsPerCircle:])
+						b.Cleanup(cleanup)
+
+						benchmarkDepthCost(b, BackendCPU, session, appended[depth*paramsPerCircle:])
 					})
 
 					b.Run("cpu_replay", func(b *testing.B) {
-						benchmarkDepthCost(b, NewCPURenderer(ref, depth+1), appended)
+						benchmarkDepthCost(b, BackendCPU, NewCPURenderer(ref, depth+1), appended)
 					})
 
 					b.Run("opencl_replay", func(b *testing.B) {
-						r, cleanup, err := NewRendererForBackend("opencl", ref, depth+1)
+						r, cleanup, err := NewRendererForBackend(string(BackendOpenCL), ref, depth+1)
 						if err != nil {
+							// A reproduction run asks for OpenCL explicitly. Skipping
+							// there would let go test report success with every OpenCL
+							// cell missing, and publish a profile with a hole in it.
+							if requireOpenCLBenchmarks() {
+								b.Fatalf("required opencl backend unavailable: %v", err)
+							}
+
 							b.Skipf("opencl backend unavailable: %v", err)
 						}
-						defer cleanup()
+
+						// Registered rather than deferred. A deferred release runs
+						// before the benchmark function returns, which is inside the
+						// measured region: the fixed tens-of-milliseconds OpenCL
+						// teardown would be divided by b.N and reported as
+						// per-evaluation cost. That is the defect this branch corrects
+						// in BenchmarkOpenCLSessionCreation. b.Cleanup also runs after
+						// a Fatalf, so the device is released on the failure paths too.
+						b.Cleanup(cleanup)
 
 						requireBenchmarkGPUDevice(b, r)
-						benchmarkDepthCost(b, r, appended)
+						benchmarkDepthCost(b, BackendOpenCL, r, appended)
 					})
 				})
 			}
@@ -82,12 +98,14 @@ func retainedCanvas(b *testing.B, ref *image.NRGBA, params []float64, depth int)
 	return cloneNRGBA(NewCPURenderer(ref, depth).Render(params))
 }
 
-func benchmarkDepthCost(b *testing.B, r Renderer, params []float64) {
+func benchmarkDepthCost(b *testing.B, backend Backend, r Renderer, params []float64) {
 	b.Helper()
 
 	working := append([]float64(nil), params...)
 	baseX := working[0]
 	_ = r.Cost(working)
+
+	requireLiveDevice(b, r, backend, "before")
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -98,4 +116,11 @@ func benchmarkDepthCost(b *testing.B, r Renderer, params []float64) {
 		working[0] = baseX + float64(i%32+1)*0.03125
 		_ = r.Cost(working)
 	}
+
+	// Stop before checking, so the check is not itself measured -- and check at
+	// all because Cost has no error return: a device lost mid-loop degrades the
+	// renderer permanently and silently to its CPU fallback, and the remaining
+	// iterations would be published as an OpenCL time.
+	b.StopTimer()
+	requireLiveDevice(b, r, backend, "after")
 }
