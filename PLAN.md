@@ -2089,6 +2089,11 @@ separable-without-restarts arm, so nothing attributes the +90.24 to either.
 
 - [ ] Add a `sep-cmaes-single` arm and run it on the same twelve seed prefixes,
       so the existing rows stay comparable and only the missing cell is bought.
+      The arm exists: it is a cell of the `-design lambda` screen in
+      `scripts/cmaes-measurement`, which runs it at the same seed prefixes and
+      also repeats `cmaes-single`, `cmaes-ipop` and `sep-cmaes-ipop` so
+      cross-campaign drift is measured rather than assumed. Submitted
+      2026-08-29; tick this box when the screen is collected and reported.
 
 ### Task 23.3: Screen `lambda` (P2)
 
@@ -2120,7 +2125,13 @@ validation guards rather than modelling statements:
       comment, unlike its neighbours, and lowering it touches the MayFly path
       with no evidence behind it.
 - [ ] Screen `lambda` crossed with covariance mode, not under full covariance
-      alone — the winning configuration is separable.
+      alone — the winning configuration is separable. Registered as
+      `-design lambda`: both covariance modes crossed with `lambda` 1024, 64 and
+      20 under IPOP, plus the two no-restart cells, 8 arms x 12 blocks = 96
+      jobs, every arm evaluation-matched by construction at 6,502,400. Submitted
+      2026-08-29 on the 64-core host at seven concurrent jobs. Calibration from
+      block 1: `lambda` 64 runs at 0.67x and `lambda` 20 at 0.61x the evaluation
+      rate of `lambda` 1024, because a generation is a synchronisation barrier.
 
 ### Task 23.4: A second fixture (P3)
 
