@@ -63,13 +63,21 @@ const paramsPerCircle = 7
 // noopCleanup is returned alongside errors so callers can defer unconditionally.
 var noopCleanup = func() {}
 
-// Validation sentinels for NewSessionWithCanvas. They are package-level so a
-// caller can match them, and because the linter refuses dynamic errors.
+// ErrInvalidSessionInput reports arguments NewSession or NewSessionWithCanvas
+// cannot accept. It is exported because it is the one error class a caller has
+// to tell apart from a device failure: a rejected canvas is the caller's
+// mistake and no fallback fixes it, while an unavailable device may warrant
+// one. The adapter in the renderer package classifies on it.
+var ErrInvalidSessionInput = errors.New("invalid session input")
+
+// The individual reasons stay unexported -- callers outside this package match
+// the class, not the case -- and they are sentinels rather than inline
+// errors.New because the linter refuses dynamic errors.
 var (
-	errNilCanvas        = errors.New("canvas cannot be nil")
-	errNegativeCircles  = errors.New("circle count cannot be negative")
-	errCanvasDimensions = errors.New("canvas dimensions must match reference image")
-	errTranslucentBase  = errors.New("base canvas must be fully opaque")
+	errNilCanvas        = fmt.Errorf("%w: canvas cannot be nil", ErrInvalidSessionInput)
+	errNegativeCircles  = fmt.Errorf("%w: circle count cannot be negative", ErrInvalidSessionInput)
+	errCanvasDimensions = fmt.Errorf("%w: canvas dimensions must match reference image", ErrInvalidSessionInput)
+	errTranslucentBase  = fmt.Errorf("%w: base canvas must be fully opaque", ErrInvalidSessionInput)
 )
 
 // Fallback is the CPU renderer the GPU path degrades to. Callers inject it so
@@ -576,7 +584,7 @@ func (r *Renderer) Cost(params []float64) float64 {
 // depends on the circle count that changed.
 func (r *Renderer) NewSession(circleCount int) (*Renderer, func(), error) {
 	if circleCount < 0 {
-		return nil, noopCleanup, fmt.Errorf("circle count cannot be negative")
+		return nil, noopCleanup, errNegativeCircles
 	}
 
 	return newRendererOnEngine(r.engine, r.reference, nil, circleCount, r.newFallback, r.degraded)

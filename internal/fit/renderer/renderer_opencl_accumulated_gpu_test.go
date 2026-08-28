@@ -4,6 +4,7 @@ package renderer //nolint:testpackage // uses the unexported newSessionWithCanva
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"math"
@@ -147,7 +148,35 @@ func TestOpenCLSessionWithCanvasRejectsBadCanvas(t *testing.T) {
 				cleanup()
 				t.Fatalf("newSessionWithCanvas(%s) succeeded, want an error (session %T)", tt.name, session)
 			}
+
+			assertInvalidInputNotBackendFailure(t, err)
 		})
+	}
+
+	// The same classification applies to a plain session, which shares the
+	// adapter's error handling.
+	_, cleanup, err := base.newSession(-1)
+	if err == nil {
+		cleanup()
+		t.Fatal("newSession(-1) succeeded, want an error")
+	}
+
+	assertInvalidInputNotBackendFailure(t, err)
+}
+
+// assertInvalidInputNotBackendFailure pins the distinction the adapter draws.
+// A rejected argument reported as an unavailable backend sends the reader after
+// a driver problem -- the server renders that class to a client as "renderer
+// backend unavailable" -- and no fallback fixes a canvas the caller got wrong.
+func assertInvalidInputNotBackendFailure(t *testing.T, err error) {
+	t.Helper()
+
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
+		t.Errorf("error %v is not ErrInvalidOptimizationInput", err)
+	}
+
+	if errors.Is(err, ErrBackendUnavailable) {
+		t.Errorf("error %v is reported as an unavailable backend, but the device is fine", err)
 	}
 }
 

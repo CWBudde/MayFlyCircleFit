@@ -3,6 +3,7 @@
 package renderer
 
 import (
+	"errors"
 	"fmt"
 	"image"
 
@@ -23,12 +24,32 @@ type openCLAdapter struct {
 func (a openCLAdapter) newSession(circleCount int) (Renderer, func(), error) {
 	session, cleanup, err := a.Renderer.NewSession(circleCount)
 	if err != nil {
-		// Sessions allocate device resources of their own, so they fail the same
-		// ways construction does. Normalise here too, or a staged or parallel stage
-		// would report a device failure that errors.Is cannot recognise.
-		return nil, cleanup, fmt.Errorf("%w: %w", ErrBackendUnavailable, err)
+		return nil, cleanup, classifySessionError(err)
 	}
 	return openCLAdapter{session}, cleanup, nil
+}
+
+// classifySessionError normalises a session failure onto this package's error
+// vocabulary, and the distinction it draws is not cosmetic.
+//
+// Sessions allocate device resources of their own, so they fail the same ways
+// construction does, and a device failure has to arrive as ErrBackendUnavailable
+// or a staged or parallel stage reports something errors.Is cannot recognise.
+// But a rejected argument is not a device failure. Reporting one as an
+// unavailable backend sends the reader after a driver problem -- the server
+// renders it to a client as "renderer backend unavailable: base canvas must be
+// fully opaque" -- and no fallback fixes a canvas the caller got wrong.
+//
+// ErrInvalidOptimizationInput is the right class because the pipelines already
+// use it for exactly this mistake: OptimizeBatchAppendFromCanvasContext rejects
+// a mismatched retained canvas with it before any session exists, so the two
+// backends now report the same class for the same error.
+func classifySessionError(err error) error {
+	if errors.Is(err, opencl.ErrInvalidSessionInput) {
+		return fmt.Errorf("%w: %w", ErrInvalidOptimizationInput, err)
+	}
+
+	return fmt.Errorf("%w: %w", ErrBackendUnavailable, err)
 }
 
 // newSessionWithCanvas and initialCanvas complete accumulatedSessionFactory.
@@ -42,7 +63,7 @@ func (a openCLAdapter) newSession(circleCount int) (Renderer, func(), error) {
 func (a openCLAdapter) newSessionWithCanvas(canvas *image.NRGBA, circleCount int) (Renderer, func(), error) {
 	session, cleanup, err := a.NewSessionWithCanvas(canvas, circleCount)
 	if err != nil {
-		return nil, cleanup, fmt.Errorf("%w: %w", ErrBackendUnavailable, err)
+		return nil, cleanup, classifySessionError(err)
 	}
 
 	return openCLAdapter{session}, cleanup, nil
