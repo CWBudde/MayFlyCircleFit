@@ -42,6 +42,7 @@ import "C"
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"image"
@@ -583,8 +584,9 @@ func (r *Renderer) Cost(params []float64) float64 {
 // NewSession creates an OpenCL renderer over the same reference and the same
 // device engine, allocating only the kernel pair and the buffers its own circle
 // count needs. Sequential and batch optimization use these sessions with an
-// increasing circle count, replaying retained circles because OpenCL does not
-// yet support an accumulated base canvas.
+// increasing circle count. Sequential and batch use NewSessionWithCanvas
+// instead, which starts a stage from the retained canvas rather than replaying
+// the circles behind it.
 //
 // It shares rather than rebuilds because the rebuild was the staged path's
 // whole cost: a session used to re-enumerate every platform and device, create
@@ -596,6 +598,81 @@ func (r *Renderer) NewSession(circleCount int) (*Renderer, func(), error) {
 	}
 
 	return newRendererOnEngine(r.engine, r.reference, nil, circleCount, r.newFallback, r.degraded)
+}
+
+// NewSessionWithCanvas creates a session that composites circleCount new
+// circles onto an already-retained canvas instead of replaying the circles that
+// produced it. The canvas is uploaded once and never touched again, so the
+// session's per-evaluation work depends on circleCount alone rather than on the
+// depth of the prefix behind it.
+//
+// The canvas must be opaque, and that is enforced rather than handled. The
+// kernel composites premultiplied and writes an opaque image back, and the CPU
+// renderer takes a different compositing path for a canvas that is not opaque,
+// so the two agree only on opaque canvases. Every canvas the pipelines can hand
+// in comes from Render, which writes alpha 255 unconditionally, so a
+// translucent one is a bug -- and an error is better than silently wrong
+// pixels.
+func (r *Renderer) NewSessionWithCanvas(canvas *image.NRGBA, circleCount int) (*Renderer, func(), error) {
+	if canvas == nil {
+		return nil, noopCleanup, errors.New("canvas cannot be nil")
+	}
+
+	if circleCount < 0 {
+		return nil, noopCleanup, errors.New("circle count cannot be negative")
+	}
+
+	if canvas.Bounds().Dx() != r.width || canvas.Bounds().Dy() != r.height {
+		return nil, noopCleanup, errors.New("canvas dimensions must match reference image")
+	}
+
+	if !canvasIsOpaque(canvas) {
+		return nil, noopCleanup, errors.New("base canvas must be fully opaque")
+	}
+
+	return newRendererOnEngine(r.engine, r.reference, canvas, circleCount, r.newFallback, r.degraded)
+}
+
+// InitialCanvas returns an independent snapshot of the canvas this renderer
+// starts every render from: the retained canvas of an accumulated session, or
+// opaque white for every other renderer.
+//
+// It returns nil for a zero-pixel image, which is what makes the staged
+// accumulator fall back to replaying instead of carrying an empty canvas.
+func (r *Renderer) InitialCanvas() *image.NRGBA {
+	if r.pixelCount == 0 {
+		return nil
+	}
+
+	canvas := image.NewNRGBA(image.Rect(0, 0, r.width, r.height))
+	if r.baseCanvas != nil {
+		copy(canvas.Pix, packReferenceNRGBA(r.baseCanvas))
+
+		return canvas
+	}
+
+	for i := range canvas.Pix {
+		canvas.Pix[i] = 0xFF
+	}
+
+	return canvas
+}
+
+// canvasIsOpaque reports whether every pixel has alpha 255. It walks the image
+// through PixOffset rather than Pix directly, because a sub-image's rows are
+// not contiguous.
+func canvasIsOpaque(canvas *image.NRGBA) bool {
+	bounds := canvas.Bounds()
+	for y := range bounds.Dy() {
+		row := canvas.PixOffset(bounds.Min.X, bounds.Min.Y+y)
+		for x := range bounds.Dx() {
+			if canvas.Pix[row+x*4+3] != 0xFF {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 func (r *Renderer) ensure(params []float64) error {

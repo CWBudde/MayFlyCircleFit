@@ -31,6 +31,27 @@ func (a openCLAdapter) newSession(circleCount int) (Renderer, func(), error) {
 	return openCLAdapter{session}, cleanup, nil
 }
 
+// newSessionWithCanvas and initialCanvas complete accumulatedSessionFactory.
+// Like newSession they exist here because the interface is unexported and no
+// other package can implement it.
+//
+// Satisfying that interface is what moves the staged pipelines off replaying
+// the retained prefix on every evaluation, and it also switches on the retained
+// canvas in finishStagedResult, the baked-prefix sessions in polishing, and
+// OptimizeBatchAppendFromCanvasContext, which previously refused this backend.
+func (a openCLAdapter) newSessionWithCanvas(canvas *image.NRGBA, circleCount int) (Renderer, func(), error) {
+	session, cleanup, err := a.Renderer.NewSessionWithCanvas(canvas, circleCount)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("%w: %w", ErrBackendUnavailable, err)
+	}
+
+	return openCLAdapter{session}, cleanup, nil
+}
+
+func (a openCLAdapter) initialCanvas() *image.NRGBA {
+	return a.Renderer.InitialCanvas()
+}
+
 // NewOpenCLRenderer creates an OpenCL GPU-based renderer
 func NewOpenCLRenderer(reference *image.NRGBA, k int) (Renderer, func(), error) {
 	newFallback := func(ref, canvas *image.NRGBA, circles int) opencl.Fallback {

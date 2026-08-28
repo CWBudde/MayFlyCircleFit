@@ -200,7 +200,11 @@ func TestOpenCLOptimizationPipelines(t *testing.T) {
 			circles:     3,
 			wantStages:  3,
 			wantCircles: 1, // stages two and three add nothing and are pruned
-			wantSession: 5, // baseline, three stages, and final replay
+			// Baseline plus three stages. There used to be a fifth, a final
+			// replay session that re-rendered the whole draw order to produce
+			// BestImage; with an accumulated canvas finishStagedResult returns
+			// the retained canvas directly and never opens it.
+			wantSession: 4,
 			run: func(r Renderer) (*OptimizationResult, error) {
 				return OptimizeSequential(r, opaqueBlackOptimizer(), 3, DisabledConvergenceConfig(), nil)
 			},
@@ -210,7 +214,7 @@ func TestOpenCLOptimizationPipelines(t *testing.T) {
 			circles:     5,
 			wantStages:  6, // 2+2+1 stages plus MaxExtraBatchStages refill attempts
 			wantCircles: 2, // the whole first batch, redundant second circle included
-			wantSession: 9,
+			wantSession: 8, // one fewer than before: the final replay session, as above
 			run: func(r Renderer) (*OptimizationResult, error) {
 				return OptimizeBatch(r, opaqueBlackOptimizer(), 5, 2, DisabledConvergenceConfig())
 			},
@@ -296,12 +300,30 @@ func (r *trackingOpenCLFactory) newSession(circleCount int) (Renderer, func(), e
 		return nil, cleanup, err
 	}
 
+	return r.track(session), cleanup, nil
+}
+
+// newSessionWithCanvas has to be tracked too. The embedded adapter supplies one
+// already, so leaving this out would compile and silently count zero sessions
+// for the accumulated staged path -- which is the only path the pipelines take
+// now.
+func (r *trackingOpenCLFactory) newSessionWithCanvas(canvas *image.NRGBA, circleCount int) (Renderer, func(), error) {
+	session, cleanup, err := r.openCLAdapter.Renderer.NewSessionWithCanvas(canvas, circleCount)
+	if err != nil {
+		return nil, cleanup, err
+	}
+
+	return r.track(session), cleanup, nil
+}
+
+func (r *trackingOpenCLFactory) track(session *opencl.Renderer) Renderer {
 	r.sessions = append(r.sessions, trackedOpenCLSession{
 		Renderer:          session,
 		sharedBaseRuntime: session.Runtime() == r.Runtime(),
 		programBuilds:     session.ProgramBuilds(),
 	})
-	return openCLAdapter{session}, cleanup, nil
+
+	return openCLAdapter{session}
 }
 
 func assertOpenCLParity(t *testing.T, ref *image.NRGBA, params []float64) {
