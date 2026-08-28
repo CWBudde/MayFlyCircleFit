@@ -218,7 +218,8 @@ func assertPixelsEqual(t *testing.T, got, want []byte, width int, context string
 	}
 }
 
-// precisionDigests records what every named scene renders to. Each value is
+// precisionDigests records what every named scene renders to, including the
+// row-shard sweep's own scene at the end of the map. Each value is
 // the SHA-256 of the scene's pixel buffer followed by the eight bytes of its
 // exact cost, and each is an architecture- and tier-independent constant: the
 // values below were measured on amd64 and are asserted unchanged by the ARM64
@@ -269,6 +270,12 @@ var precisionDigests = map[string]string{
 	"batch/min_square_inclusive_edge":       "3845c66b800dd271a5bfadb60c1c6b30394a8b28102eb3374b59fbea4c7e877e",
 	"batch/min_square_inclusive_edge_below": "a6595fa5288a8efc82363f9462a99d7fc6cba25298f27d6328f2fdc50e9bfe66",
 	"batch/min_square_inclusive_edge_above": "3845c66b800dd271a5bfadb60c1c6b30394a8b28102eb3374b59fbea4c7e877e",
+
+	// The row-shard sweep's scene. It is not part of precisionScenes(), but its
+	// single-threaded render is the oracle every shard count is compared
+	// against, so it is anchored here for the same reason and by the same
+	// mechanism as the scenes above.
+	"sharding": "7544292a538b3fd517cc8cc3f438ae2bc8e82e957ea0ff923bddd06bb773b0a7",
 }
 
 // precisionScenes is the named half of the matrix. Every case the plan item
@@ -735,8 +742,16 @@ func TestRendererPrecisionRandomizedCircles(t *testing.T) {
 	}
 }
 
-// TestRendererPrecisionRowSharding pins the property the row walk is built on:
-// workers own disjoint bands, so the number of bands cannot change a pixel.
+// TestRendererPrecisionRowSharding asserts both halves of the contract on one
+// twelve-circle scene.
+//
+// Within the process it pins the property the row walk is built on: workers own
+// disjoint bands, so the number of bands cannot change a pixel. Across
+// processes, the single-threaded render that serves as this sweep's oracle is
+// itself pinned to a recorded digest, exactly as every named scene is. Without
+// that anchor the sweep would only prove internal consistency, and a scene that
+// rendered differently on ARM64 while staying shard-invariant there would still
+// pass on both architectures.
 //
 // GOMAXPROCS is raised for the duration because SetThreads caps at it, and a
 // three-processor runner would otherwise reduce every shard count in the sweep
@@ -761,6 +776,17 @@ func TestRendererPrecisionRowSharding(t *testing.T) {
 	}
 
 	want, wantCost := precisionRender(scene, 1)
+
+	// The cross-architecture anchor, asserted before this buffer is used as the
+	// oracle below.
+	recorded, ok := precisionDigests[scene.name]
+	if !ok {
+		t.Fatalf("scene has no recorded digest; measured %q", precisionDigest(want, wantCost))
+	}
+
+	if got := precisionDigest(want, wantCost); got != recorded {
+		t.Errorf("digest = %q, recorded %q (cost %v)", got, recorded, wantCost)
+	}
 
 	// Every band count from one to one row per worker, plus the values that
 	// exercise a band boundary landing on a circle's extreme row.

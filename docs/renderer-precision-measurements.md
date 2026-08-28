@@ -48,11 +48,17 @@ registered dispatch site, so one process walks the whole ladder without a
 subprocess.
 
 **Across processes** — they may not depend on the architecture either, and no
-single binary can check that. Each named case therefore carries a recorded
-SHA-256 of its pixel buffer followed by the eight bytes of its exact cost, in
-`precisionDigests`. The values were measured on amd64 and are asserted unchanged
-on ARM64. Including the cost is deliberate: it routes through the tier-dispatched
+single binary can check that. Every case therefore carries a recorded SHA-256 of
+its pixel buffer followed by the eight bytes of its exact cost: the named scenes
+and the row-shard scene in `precisionDigests`, the randomized sweep in its own
+two constants. The values were measured on amd64 and are asserted unchanged on
+ARM64. Including the cost is deliberate: it routes through the tier-dispatched
 SSD kernels, so the digest covers those as well as the compositors.
+
+Both halves are needed together, and neither substitutes for the other. A
+within-process sweep alone would pass a scene that renders one way on amd64 and
+another on ARM64 as long as it stayed self-consistent on each; a digest alone
+would say nothing about tiers or shard counts.
 
 Two supporting decisions:
 
@@ -93,7 +99,11 @@ Plus three sweeps that are not scene-shaped:
   digests are recorded.
 - **Row sharding.** `TestRendererPrecisionRowSharding` renders a twelve-circle
   scene at 13 shard counts from one to one worker past the image height, at every
-  tier, all compared against the single-threaded walk.
+  tier, all compared against the single-threaded walk. That single-threaded walk
+  is itself pinned to a recorded digest in `precisionDigests`, under the key
+  `sharding`, before it is used as the oracle — otherwise the sweep would prove
+  only that the scene is internally consistent, and a scene rendering differently
+  on ARM64 while staying shard-invariant there would pass on both architectures.
 - **Batch pipeline.** `TestRendererPrecisionBatchPipelineBoundaries` runs
   `AuditCircleBatch` over `minAuditChunkCircles * auditChunksPerWorker * 2`
   circles at one thread, where `planAudit` stays serial, and again multi-threaded,
