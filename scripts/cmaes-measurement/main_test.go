@@ -47,6 +47,84 @@ func TestPairedImprovement(t *testing.T) {
 	}
 }
 
+func TestStudentTTwoSided(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		statistic float64
+		degrees   int
+		want      float64
+	}{
+		{statistic: 0, degrees: 11, want: 1},
+		{statistic: 2.201096, degrees: 11, want: 0.05},
+		{statistic: 2.42, degrees: 11, want: 0.034007},
+		{statistic: 5.04, degrees: 11, want: 0.000378},
+		{statistic: -5.04, degrees: 11, want: 0.000378},
+		{statistic: 12.7062, degrees: 1, want: 0.05},
+	}
+	for _, current := range cases {
+		got := studentTTwoSided(current.statistic, current.degrees)
+		if math.Abs(got-current.want) > 1e-5 {
+			t.Errorf("studentTTwoSided(%v, %d) = %v, want %v",
+				current.statistic, current.degrees, got, current.want)
+		}
+	}
+
+	if got := studentTTwoSided(math.Inf(1), 11); got != 0 {
+		t.Errorf("studentTTwoSided(+Inf, 11) = %v, want 0", got)
+	}
+}
+
+func TestStudentTCritical(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		alpha   float64
+		degrees int
+		want    float64
+	}{
+		{alpha: 0.05, degrees: 11, want: 2.200985},
+		{alpha: 0.05 / 7, degrees: 11, want: 3.294859},
+	}
+	for _, current := range cases {
+		got := studentTCritical(current.alpha, current.degrees)
+		if math.Abs(got-current.want) > 1e-5 {
+			t.Errorf("studentTCritical(%v, %d) = %v, want %v",
+				current.alpha, current.degrees, got, current.want)
+		}
+	}
+}
+
+func TestHolmRejectStopsAtTheFirstRetainedContrast(t *testing.T) {
+	t.Parallel()
+
+	// The campaign's seven p-values: the three smallest clear their step-down
+	// thresholds and every larger one retains, including 0.03385, which would
+	// have cleared an uncorrected 0.05.
+	contrasts := []contrast{
+		{candidate: "mayfly-r16", pValue: 0.03385},
+		{candidate: "cmaes-single", pValue: 0.06960},
+		{candidate: "cmaes-ipop", pValue: 0.00716},
+		{candidate: "sep-cmaes-ipop", pValue: 0.00038},
+		{candidate: "cmaes-single-r16", pValue: 0.85909},
+		{candidate: "cmaes-ipop-r16", pValue: 0.03546},
+		{candidate: "sep-cmaes-ipop-r16", pValue: 0.00049},
+	}
+	holmReject(contrasts, 0.05)
+
+	want := map[string]bool{
+		"mayfly-r16": false, "cmaes-single": false, "cmaes-ipop": true,
+		"sep-cmaes-ipop": true, "cmaes-single-r16": false,
+		"cmaes-ipop-r16": false, "sep-cmaes-ipop-r16": true,
+	}
+	for _, current := range contrasts {
+		if current.rejected != want[current.candidate] {
+			t.Errorf("holmReject() %s rejected = %v, want %v",
+				current.candidate, current.rejected, want[current.candidate])
+		}
+	}
+}
+
 func TestCollectPreliminaryUsesPersistedJobsOnly(t *testing.T) {
 	t.Parallel()
 

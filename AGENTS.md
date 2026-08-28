@@ -49,15 +49,19 @@ ones that will change what you propose:
   CMA-ES campaign. Separable CMA-ES with IPOP restarts beats MayFly's long run
   in 12/12 blocks (`+210.97`, `t = +5.04`) and its r16 arm in 11/12 (`+90.24`,
   `t = +4.87`), while full-covariance CMA-ES without restarts merely ties r16
-  (`t = +0.18`) using 27% of the cap. It also confirms restarts-over-budget on
-  the v0.7.1 pin for the first time. **Do not read it as licence to change a
-  default:** both IPOP arms spent about 40% of their budget after their last
-  improvement because no stagnation criterion was set, the winning arm
-  confounds covariance mode with restart strategy, and `lambda` is pinned to
-  `popSize` and ran at 1024 against Hansen's default of 16. Phase 23 of
-  `PLAN.md` carries all three. The report's sigma column is **not** evidence of
-  a diverged search — sigma alone is gauge-dependent and the identifiable
-  `sigma * max(D)` was never recorded; do not cite it.
+  (`t = +0.18`) using 27% of the cap. The report makes seven paired contrasts
+  and corrects them together (Holm, family-wise α = 0.05), so only three
+  survive: both separable ones and `cmaes-ipop` against the long run.
+  Restarts-over-budget reappears on the v0.7.1 pin with the expected sign and
+  size (`+120.73`, `t = +2.42`), but at p = 0.034 it does not survive that
+  correction — quote it as support, not as confirmation. **Do not read any of it
+  as licence to change a default:** both IPOP arms spent about 40% of their
+  budget after their last improvement because no stagnation criterion was set,
+  the winning arm confounds covariance mode with restart strategy, and `lambda`
+  is pinned to `popSize` and ran at 1024 against Hansen's default of 16. Phase
+  23 of `PLAN.md` carries all three. The report's sigma column is **not**
+  evidence of a diverged search — sigma alone is gauge-dependent and the
+  identifiable `sigma * max(D)` was never recorded; do not cite it.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more

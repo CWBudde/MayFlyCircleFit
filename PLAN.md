@@ -1669,16 +1669,23 @@ sixty jobs finished; see [`docs/cmaes-report.md`](docs/cmaes-report.md).
 Separable CMA-ES with IPOP restarts beat the MayFly control in twelve of twelve
 blocks (`+210.97`, `t = +5.04`) and the r16 arm in eleven (`+90.24`,
 `t = +4.87`); full-covariance CMA-ES without restarts ties r16 (`t = +0.18`)
-while using 27% of the cap. The restart-over-budget finding is confirmed on the
-v0.7.1 pin for the first time (`+120.73`, `t = +2.42`).
+while using 27% of the cap. The seven paired contrasts are corrected together
+(Holm, family-wise `alpha = 0.05`) and three survive: both separable ones and
+`cmaes-ipop` against the control. The restart-over-budget finding reappears on
+the v0.7.1 pin with the expected sign and size (`+120.73`, `t = +2.42`) but at
+p = 0.034 does not survive that correction, so it is supported rather than
+confirmed.
 
-Two findings from the campaign open work rather than closing it, and are carried
-by Phase 23 rather than reopening the boxes above: both IPOP arms spent about
-40% of their budget after their last improvement, for want of a stagnation
-criterion the design never set; and the design has no
+Three findings from the campaign open work rather than closing it, and are
+carried by Phase 23 rather than reopening the boxes above: both IPOP arms spent
+about 40% of their budget after their last improvement, for want of a stagnation
+criterion the design never set; the design has no
 separable-without-restarts arm, so the winning configuration confounds
-covariance mode with restart strategy. `lambda` is pinned to `popSize` and ran
-at 1024 against Hansen's default of 16 for this dimensionality.
+covariance mode with restart strategy; and the design registered paired t-tests
+without naming a primary contrast, so all seven are corrected together and the
+two marginal ones are spent. A follow-up should preregister the contrast it
+exists to settle. `lambda` is pinned to `popSize` and ran at 1024 against
+Hansen's default of 16 for this dimensionality.
 
 ---
 

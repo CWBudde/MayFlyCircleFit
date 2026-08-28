@@ -8,8 +8,10 @@ conclusions does not survive twelve blocks, and it is worth knowing which.
 
 The headline: **separable CMA-ES with IPOP restarts beat MayFly's single long
 run in all twelve blocks and MayFly's sixteen-restart arm in eleven**, by 210.97
-and 90.24 cost units respectively, both far past the `t = 2.20` the design
-registered. Lower cost is better throughout.
+and 90.24 cost units respectively. Both clear the `t = 2.20` the design
+registered, and both still clear it once corrected for the seven contrasts this
+report makes — a correction only one other contrast survives. Lower cost is
+better throughout.
 
 The result comes with a caveat attached. Roughly 40% of each IPOP arm's budget
 produced no improvement, because no stagnation criterion was configured and a
@@ -45,7 +47,16 @@ score ignores everything past it.
 Block `b` uses seed prefix `111000 + b` in all five arms; the twelve prefixes are
 disjoint and each restart implementation derives its attempt seeds from only that
 block's prefix. Submission is block-major. The driver refuses any block count
-other than twelve, so the paired test always has `df = 11` and `t_crit = 2.20`.
+other than twelve, so every paired test has `df = 11` and an uncorrected
+two-sided `t_crit = 2.20`.
+
+**That threshold is per contrast, and this report makes seven.** The design
+registered paired t-tests but did not name a primary contrast, so nothing here
+is entitled to spend α = 0.05 seven times over. Every contrast below is
+therefore reported with its two-sided p-value and with the decision Holm's
+step-down procedure reaches at a family-wise α = 0.05 across all seven. Holm is
+the correction the analysis script applies; for orientation, plain Bonferroni
+would put the threshold at `t = 3.29`.
 
 Binary built from CircleFit commit `0257b04`, MayFly `v0.7.1`, go-cma-es
 `v0.1.0`; all sixty rows record those versions. Host was a 64-core Linux x86-64
@@ -61,45 +72,62 @@ byte-identical.
 
 ## Result
 
-| arm | mean | sd | median | best | gain vs `mayfly-single` | t (df=11) | blocks won |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `mayfly-single` | 1082.10 | 164.08 | 1100.31 | 864.57 | control | control | control |
-| `mayfly-r16` | 961.37 | 30.62 | 959.43 | 923.97 | +120.73 | +2.42 | 8/12 |
-| `cmaes-single` | 955.24 | 113.92 | 911.31 | 853.24 | +126.86 | +2.01 | 9/12 |
-| `cmaes-ipop` | 892.39 | 95.65 | 875.09 | 774.65 | +189.71 | +3.29 | 11/12 |
-| `sep-cmaes-ipop` | 871.13 | 48.39 | 858.81 | 825.28 | **+210.97** | **+5.04** | **12/12** |
+| arm | mean | sd | median | best | gain vs `mayfly-single` | t (df=11) | p | Holm | blocks won |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |
+| `mayfly-single` | 1082.10 | 164.08 | 1100.31 | 864.57 | control | control | control | control | control |
+| `mayfly-r16` | 961.37 | 30.62 | 959.43 | 923.97 | +120.73 | +2.42 | 0.03385 | retain | 8/12 |
+| `cmaes-single` | 955.24 | 113.92 | 911.31 | 853.24 | +126.86 | +2.01 | 0.06960 | retain | 9/12 |
+| `cmaes-ipop` | 892.39 | 95.65 | 875.09 | 774.65 | +189.71 | +3.29 | 0.00716 | **reject** | 11/12 |
+| `sep-cmaes-ipop` | 871.13 | 48.39 | 858.81 | 825.28 | **+210.97** | **+5.04** | **0.00038** | **reject** | **12/12** |
 
 Against `mayfly-r16`, the stronger of the two MayFly allocations:
 
-| arm | gain vs `mayfly-r16` | t (df=11) | blocks won | clears t_crit 2.20 |
-| --- | ---: | ---: | ---: | --- |
-| `cmaes-single` | +6.13 | +0.18 | 9/12 | no |
-| `cmaes-ipop` | +68.98 | +2.40 | 10/12 | yes |
-| `sep-cmaes-ipop` | +90.24 | +4.87 | 11/12 | yes |
+| arm | gain vs `mayfly-r16` | t (df=11) | p | Holm | blocks won |
+| --- | ---: | ---: | ---: | --- | ---: |
+| `cmaes-single` | +6.13 | +0.18 | 0.85909 | retain | 9/12 |
+| `cmaes-ipop` | +68.98 | +2.40 | 0.03546 | retain | 10/12 |
+| `sep-cmaes-ipop` | +90.24 | +4.87 | 0.00049 | **reject** | 11/12 |
+
+`Holm` is the decision over all seven contrasts jointly at a family-wise
+α = 0.05: `reject` rejects the null, so the arm's advantage stands under the
+correction, and `retain` leaves the null in place. Three of the seven reject —
+both `sep-cmaes-ipop` contrasts and `cmaes-ipop` against the control — and four
+retain. Two of those four clear the uncorrected 2.20 first and lose it to the
+correction, `mayfly-r16` at p = 0.034 and `cmaes-ipop` against r16 at p = 0.035;
+both are flagged below wherever they are read.
 
 Four readings, in decreasing order of confidence.
 
 **Separable CMA-ES with IPOP is the best configuration measured on this
 problem.** Twelve of twelve against the control and eleven of twelve against
-r16, at `t` values no plausible reading of twelve blocks overturns. It also has
-the second-lowest spread in the table (sd 48.39 against the control's 164.08),
-so it is both better and steadier.
+r16, at `t` values no plausible reading of twelve blocks overturns: it is the
+only arm whose two contrasts both survive the seven-way correction, and it
+survives with an order of magnitude to spare (p = 0.00038 and 0.00049 against a
+step-down threshold of 0.00714 and 0.00833). It also has the second-lowest
+spread in the table (sd 48.39 against the control's 164.08), so it is both
+better and steadier.
 
 **`cmaes-single` is a tie with `mayfly-r16`, not a win.** Its `t = +2.01`
-against the control falls short of 2.20, and against r16 it is `+0.18` — noise.
-Reading its 9/12 as a win would be exactly the error the paired test exists to
-prevent. What it *does* establish is efficiency: it stopped itself on `TolFun`
+against the control falls short of even the uncorrected 2.20, and against r16 it
+is `+0.18` — noise. Reading its 9/12 as a win would be exactly the error the
+paired test exists to prevent. What it *does* establish is efficiency: it stopped itself on `TolFun`
 after a mean 1,783,384 evaluations, **27.4% of the cap**, and 1.94 hours against
 r16's 7.76. Equal quality for a quarter of the work is a real result even though
 equal quality is a null one.
 
-**Restarts still beat one long run for MayFly, now confirmed on the current
-pin.** `mayfly-r16` gains +120.73 at `t = +2.42`.
-[`restart-vs-budget-report.md`](restart-vs-budget-report.md) established that
-under MayFly v0.5.1 and it has never been re-measured since; v0.7.0 changed
-results for every variant, so that conclusion had been carrying an open version
-caveat. It no longer is. Its variance claim replicates too: sd falls 164.08 to
-30.62.
+**Restarts still beat one long run for MayFly — supported on the current pin,
+but not confirmed at this report's own standard.** `mayfly-r16` gains +120.73 at
+`t = +2.42`, p = 0.034. That clears the uncorrected 2.20 and does not survive
+the seven-way correction, whose step-down threshold for it is 0.0125, so it is a
+directionally consistent result rather than a family-wise significant one.
+[`restart-vs-budget-report.md`](restart-vs-budget-report.md) established the
+finding under MayFly v0.5.1 and it has never been re-measured since; v0.7.0
+changed results for every variant, so that conclusion had been carrying an open
+version caveat. This campaign narrows the caveat rather than closing it: the
+effect reappears on v0.7.1 with the same sign and a comparable magnitude, and a
+design aimed at *that* question — one preregistered contrast rather than seven —
+would settle it. Its variance claim replicates independently of any threshold:
+sd falls 164.08 to 30.62.
 
 **Predictability and quality rank differently.** `mayfly-r16` has the *lowest*
 spread of any arm, 30.62, while sitting 90 cost units behind on the mean. It is
@@ -132,13 +160,30 @@ deviation comes from. And in blocks 2, 5, 9 and 11 `cmaes-ipop` scores exactly
 what `cmaes-single` scores — a third of the time IPOP's restarts never improved
 on what the first run already had.
 
-**Lowest cost recorded: 774.65**, `cmaes-ipop` block 8. That is below the 781.86
-recorded in [`restart-vs-budget-report.md`](restart-vs-budget-report.md) as this
-fixture's best base-stage eight-circle cost. The comparison crosses optimizer
-versions, but the objective did not change: today's blank-canvas cost,
-38732.12245178223, is the 38732.12 both older reports quote, so the two figures
-score the same function. It remains well above the 752.92 that report reached
-*with* polishing at roughly sixteen times the compute.
+**Lowest cost recorded: 774.65**, `cmaes-ipop` block 8. For scale, the two
+figures [`restart-vs-budget-report.md`](restart-vs-budget-report.md) records for
+this fixture are 781.86 for a base stage and 752.92 with polishing at roughly
+sixteen times the compute. Read that as scale and not as a result, because the
+comparison is only as good as the assumption that both numbers score the same
+function, and that assumption is verified in part:
+
+- **Verified.** The reference, canvas and cost kernel agree. Today's
+  blank-canvas cost is 38732.12245178223, which is the 38732.12 the older
+  reports quote.
+- **Not verified.** A blank canvas exercises no compositing, so that figure says
+  nothing about the circle rendering that actually turns a parameter vector into
+  a 774.65 or a 781.86. The byte-exact parity contract in
+  [`renderer-correctness.md`](renderer-correctness.md) is what is supposed to
+  keep that path fixed across every change since v0.5.1, and a contract is not a
+  measurement. No v0.5.1-era configuration was re-run on the current pin, and
+  this campaign's own reproduction check reaches back only to the stopped
+  preliminary campaign, not to that report.
+
+So this is not a record claim, and it is emphatically not a comparison of
+optimizer versions — AGENTS.md forbids that reading of any pre-v0.7 figure and
+it is the right prohibition. Establishing that 774.65 is the best cost this
+project has reached needs the old configuration re-run on the current pin, which
+this campaign did not do.
 
 ## Mechanism
 
@@ -277,6 +322,17 @@ opt-in trajectory trace was the only reason any of this was visible.
   restarts are independent attempts that happened not to win. For a diverged
   IPOP restart it is budget spent on a distribution that cannot win. The two
   numbers look alike and mean opposite things.
+- **Seven contrasts, no preregistered primary one.** The design registered
+  paired t-tests without naming which contrast the campaign existed to settle,
+  so every one of them is corrected together and each carries a step-down
+  threshold well inside 0.05. That is the conservative choice and it costs two
+  results, `mayfly-r16` and `cmaes-ipop`-against-r16, both of which are
+  directionally clear and neither of which this design is entitled to call
+  significant. A follow-up should name its primary contrast in advance.
+- **No comparison to a pre-v0.7 figure survives.** See the record paragraph
+  above: the objective's blank-canvas cost is unchanged, the compositing path is
+  covered by a contract rather than a re-measurement, and nothing here re-ran an
+  older configuration.
 - **Trace diagnostics add observation overhead.** The recorded intervals are
   operational records, not throughput benchmarks.
 
@@ -285,7 +341,8 @@ opt-in trajectory trace was the only reason any of this was visible.
 For an eight-circle 512x512 base stage on the current pins, **separable CMA-ES
 with IPOP restarts is the configuration to use**, and the evidence for that is
 as strong as this project has produced for any optimizer choice: twelve blocks,
-twelve wins, `t = +5.04`.
+twelve wins, `t = +5.04`, and the only contrasts in the campaign that survive
+its correction for seven comparisons.
 
 That is not yet an argument for changing any default. The result is one fixture,
 the winning arm confounds two variables, and every restart arm ran without the
