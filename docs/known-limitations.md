@@ -162,8 +162,13 @@ behavior is production-ready.
   some spans stay on scalar that the SSE2 kernel could now win. Re-deriving it
   needs a host that genuinely lacks AVX2, because dispatch reaches SSE2 only when
   AVX2 is absent and masking AVX2 on a machine that has it reproduces the wrong
-  number. ARM64 is not hoisted at all: `compositeOpaqueSpanNEON` still recomputes
-  its blend scalars per span, and its 256-pixel cutoff includes that setup.
+  number. ARM64 is hoisted the same way — `spanBlend` there carries the four
+  scalars `compositeOpaqueSpanNEON` takes as arguments — and
+  `compositeSpanNEONMinPixels` is in the same position as the SSE2 constant: 256
+  was measured on an Apple M5 with those scalars rebuilt per span, so it is now a
+  correct upper bound rather than the crossover. Re-deriving it needs ARM64
+  benchmarking hardware; the ARM64 CI rows and `qemu-aarch64-static` establish
+  correctness only.
 - The exact compositors no longer depend on the Go compiler's multiply-add
   contraction behaviour: every multiply-add that has to agree with the
   correctness oracle is written through an explicit conversion, which the Go

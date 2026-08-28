@@ -72,6 +72,14 @@ cheap to break silently, so they are stated before the kernels.
   production path; both were measured and rejected. The AVX2 kernels remain
   reachable for measurement only. See
   [`rejected-optimizations.md`](rejected-optimizations.md).
+- **There is no ARM64 span-edge kernel and none is planned.** ARM64 walks the
+  same portable Q16.16 span. NEON has the instructions AVX2 and SSE2 lack
+  (`SMULL`/`SMULL2`, `CMGT` on `.2D`) and the portable layout would need no
+  change to feed them, but `fixedCircleQ16.span` is only 12–16% of a measured
+  render profile and less where compositing is scalar, and the AVX2 sibling is
+  1.06×–2.93× slower than the scalar walk it would replace. The assessment and
+  its numbers are in
+  [`rejected-optimizations.md`](rejected-optimizations.md).
 
 ## SSD kernels
 
@@ -131,17 +139,20 @@ cheap to break silently, so they are stated before the kernels.
   AMD64 (24-pixel cutoff, measured on a host that genuinely lacks AVX2). The
   cutoffs are not shared and must not be copied between them; the NEON kernel has
   a much larger setup cost to amortize.
-- **The AMD64 constant block is built once per circle, not once per span.**
+- **The blend state is built once per circle, not once per span.**
   `renderCircleScanlineRowsTracked` and `compositeCircleDirtyRows` construct a
-  `spanBlend` and pass a pointer down to every span of every row. It is why the
-  AVX2 cutoff is 6 and not the 16 it was when the block was rebuilt per span.
+  `spanBlend` and pass a pointer down to every span of every row. On AMD64 it is
+  the twenty-float64 constant block, and it is why the AVX2 cutoff is 6 and not
+  the 16 it was when the block was rebuilt per span; on ARM64 it is the four
+  scalars `compositeOpaqueSpanNEON` takes as arguments. Elsewhere it is an empty
+  struct, which is what lets the row walkers stay free of build tags.
   `spanBlend` carries neither the colour nor the tier: the colour keeps its own
   route to the scalar fallback, and the tier and cutoff stay read at call time so
-  a circle cannot be pinned to the tier that was current when it began.
-  `TestSpanBlendSurvivesTierChange` pins that. On every architecture but amd64
-  `spanBlend` is an empty struct, which is what keeps the row walkers free of
-  build tags. ARM64 is not hoisted: its crossover constant includes the setup and
-  has not been re-derived.
+  a circle cannot be pinned to the tier that was current when it began;
+  `TestSpanBlendSurvivesTierChange` pins that, on ARM64 as well as on amd64. The
+  NEON cutoff of 256 predates its hoist and is therefore an upper bound, not the
+  crossover; re-deriving it needs ARM64 benchmarking hardware. See
+  [`exact-span-compositors.md`](exact-span-compositors.md).
 - The SSE2 cutoff is 24 rather than the 8 a masked AVX2 machine suggests,
   because dispatch reaches SSE2 only when AVX2 is absent, so the machine that
   actually runs it sets the constant. Since the hoist, 24 is an upper bound

@@ -42,11 +42,11 @@ kernel has a different setup cost to amortize: the NEON kernel deinterleaves
 with `LD4` and widens in three stages, and the AMD64 kernels each pay a
 different price for widening bytes into float64 lanes and narrowing back.
 
-The AMD64 kernels used to build their twenty float64 constants once per span as
-well. They no longer do — see [Hoisting the constant
-block](#hoisting-the-constant-block), which is why the AVX2 cutoff is 6 and not
-the 16 the tables further down were measured against. The SSE2 cutoff is
-unchanged at 24 and is now an upper bound rather than a crossover.
+Every kernel used to build its blend state once per span. None does now — see
+[Hoisting the constant block](#hoisting-the-constant-block), which is why the
+AVX2 cutoff is 6 and not the 16 the tables further down were measured against.
+The SSE2 cutoff is unchanged at 24 and the NEON cutoff at 256; both are now
+upper bounds rather than crossovers.
 
 ## The two details that carry byte-parity
 
@@ -60,8 +60,15 @@ read as a harmless precision artifact rather than as a defect.
 if the backend ever starts contracting, it fails with an explanation instead of
 the parity tests failing mysteriously.
 
-ARM64 has the mirror-image dependency: its NEON kernel *needs* the fusion that
-Go's arm64 backend does perform. `composite_span.go` documents that half.
+ARM64 used to have the mirror-image arrangement, and it was the wrong way round:
+the scalar span was written to fuse so it would match the NEON kernel's `FMLA`,
+which made the two agree with each other and with neither amd64 nor the
+float64 oracle. The kernel is now *unfused* to match the scalar function — a 1:1
+swap of `VMOV`+`VFMLA` for `FMUL`+`FADD`, hand-encoded because Go's arm64
+assembler has no vector mnemonic for them. **Do not reintroduce a fused
+multiply-add there.** `composite_span.go` documents the scalar half and
+`TestCompositeSpanNEONMatchesScalar` is what would catch it; see
+[`known-limitations.md`](known-limitations.md).
 
 **Alpha.** Lane 3 carries identity constants (`inv255=1, bgBlend=1, fg=0,
 scale=1, half=0.5`), so the chain evaluates to `a + 0.5` and truncates back to
@@ -190,8 +197,53 @@ would survive a tier change every dispatch site is required to follow.
 `TestSpanBlendSurvivesTierChange` pins that by requiring two blends for the same
 colour, built under different forced tiers, to be identical — byte parity alone
 cannot catch a cached tier, because every exact kernel is byte-identical to
-scalar by construction. On arm64 and every other architecture `spanBlend` is an
-empty struct, which is what lets the row walkers stay free of build tags.
+scalar by construction. On every architecture without an exact vector span
+compositor `spanBlend` is an empty struct, which is what lets the row walkers
+stay free of build tags.
+
+### ARM64
+
+ARM64 is hoisted the same way, and by the same frames. Its `spanBlend` carries
+four float64s rather than twenty, because `compositeOpaqueSpanNEON` takes
+`fgR`, `fgG`, `fgB` and `bgBlend` as arguments instead of reading a constant
+block, and `compositeOpaqueSpan` recomputed all four on every span. The
+arithmetic is unchanged: `newSpanBlend` evaluates the same three products and
+the same subtract the scalar span does, in the same expression shape, so the
+kernel and its reference still start from bit-identical foregrounds. Nothing in
+`composite_span_arm64.s` changed — in particular the deliberately *unfused*
+`FMUL`+`FADD` pairs that keep the kernel byte-identical to the scalar span are
+untouched, and reintroducing a fused multiply-add there would break parity; see
+[`known-limitations.md`](known-limitations.md).
+
+`TestRenderCircleRowsDoesNotAllocate` and `TestSpanBlendSurvivesTierChange` now
+exist on ARM64 as well, walking the scalar and NEON tiers instead of scalar,
+SSE2 and AVX2. Both, and the whole `internal/fit/renderer` short suite, were
+observed passing on a cross-compiled ARM64 test binary under
+`qemu-aarch64-static`, which reports NEON and runs the kernel. That is a
+correctness result and nothing else: **no timing in this document was measured
+on ARM64 by this change, and an emulated timing would not count.**
+
+`compositeSpanNEONMinPixels` stays at 256, which is now an upper bound rather
+than the crossover, by the same argument that keeps `compositeSpanSSE2MinPixels`
+at 24. 256 was measured on an Apple M5 with the four scalars rebuilt per span.
+Hoisting only removes cost from the vector path, so a post-hoist crossover can
+only move left: 256 stays correct and merely conservative, leaving some spans on
+scalar that the kernel could now win, and regressing nothing. Re-deriving it
+needs ARM64 benchmarking hardware — the Apple M5 that produced 256, or another
+ARM implementation with its own recorded provenance. The ARM64 rows of
+`ci-native-simd.yml` do run this package now, but they establish correctness,
+not throughput. `BenchmarkCompositeOpaqueSpanNEONCutoff` is the command that
+re-derives it: it reports a `scalar`, a `neon_hoisted` and a `neon_rebuilt` arm
+at nine span lengths, so the same run yields both the new crossover and the
+per-span setup the hoist removed.
+
+What the hoist removes per span on ARM64 is three multiplies and a subtract,
+against the twenty stores it removes on AMD64, so the shift should be smaller in
+absolute terms than the 6-9 ns and 3-8 ns recorded above. It is not necessarily
+smaller in *pixels*: the NEON kernel's own floor is set by `VLD4` and three
+widening stages, and where that floor sits relative to the scalar span decides
+how many pixels the removed setup is worth. That is a hypothesis for the right
+hardware, not a number.
 
 ### What it cost per span
 
@@ -344,6 +396,14 @@ made the opposite choice and were skipped everywhere CI runs.
 - Tier-independence of `spanBlend`, so nobody caches the tier or the cutoff into
   it.
 
+The last three exist on ARM64 as well, over the scalar and NEON tiers, and
+`TestCompositeSpanNEONMatchesScalar` is the kernel's own parity contract. Its
+k/255 colour sampling is load-bearing and must not be replaced with uniform
+random floats: the kernel and the scalar reference diverge only where a product
+lands on a half-integer boundary, and uniform floats essentially never do — an
+earlier sweep found zero mismatches in 51.2 million evaluations against a
+reference that was genuinely wrong.
+
 ## `--fast-compositing`
 
 The flag survives, and the reason it survives is the comparison the exact
@@ -403,12 +463,9 @@ compositors, so a log is enough to tell whether two runs are comparable.
   correct but no longer tight; see [Hoisting the constant
   block](#hoisting-the-constant-block). It needs a host that genuinely lacks
   AVX2.
-- **ARM64 is not hoisted.** `compositeOpaqueSpanNEON` recomputes `fgR/fgG/fgB/
-  bgBlend` per span, and the same hoist applies, but `compositeSpanNEONMinPixels
-  = 256` is a measured crossover that includes that setup. Hoisting without
-  re-deriving it would leave a constant that no longer describes the code, and
-  re-deriving needs ARM64 benchmarking hardware — `internal/fit/renderer` does
-  not yet run on the ARM64 rows of `ci-native-simd.yml`.
+- **The NEON cutoff has not been re-derived after the hoist.** 256 is still
+  correct but no longer tight; see [ARM64](#arm64). It needs ARM64 benchmarking
+  hardware, and `BenchmarkCompositeOpaqueSpanNEONCutoff` is the command.
 - **The SSE2 kernel is conversion-bound and was not optimised further.** About
   half its instructions widen and narrow, and the alpha lane consumes a quarter
   of both for an arithmetic identity. Skipping alpha needs a deinterleave and
