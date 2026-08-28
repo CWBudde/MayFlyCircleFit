@@ -90,6 +90,8 @@ export type JobDetailSeed = {
 	activeCMA: boolean;
 	restartStrategy: string;
 	evaluationWidth?: number;
+	effectiveBackend?: string;
+	backendDegraded?: boolean;
 	fastCompositing: boolean;
 	circles: number;
 	iterations: number;
@@ -156,6 +158,8 @@ export type JobStatusPayload = {
 	maxIterations?: number;
 	actions?: JobActions;
 	evaluationWidth?: number;
+	effectiveBackend?: string;
+	backendDegraded?: boolean;
 	refWidth?: number;
 	refHeight?: number;
 	refSize?: number;
@@ -518,6 +522,8 @@ function statusFromSeed(seed: JobDetailSeed): JobStatusPayload {
 		maxIterations: seed.maxIterations,
 		actions: seedActions(seed),
 		evaluationWidth: seed.evaluationWidth,
+		effectiveBackend: seed.effectiveBackend,
+		backendDegraded: seed.backendDegraded,
 		refWidth: seed.refWidth,
 		refHeight: seed.refHeight,
 		refSize: seed.refSize,
@@ -1163,6 +1169,11 @@ function ConfigurationCard({ seed, status }: { seed: JobDetailSeed; status: JobS
 	// measured from the renderer while the job runs and so is the one
 	// configuration figure a refetch can improve.
 	const workers = status.evaluationWidth ?? seed.evaluationWidth ?? 0;
+	// The backend is measured the same way and for a sharper reason: a degraded
+	// run finished on the CPU, and OpenCL costs are not comparable with CPU
+	// costs, so the label has to say which arithmetic produced the number.
+	const backend = status.effectiveBackend ?? seed.effectiveBackend ?? "";
+	const degraded = status.backendDegraded ?? seed.backendDegraded ?? false;
 	return (
 		<div className="card detail-configuration" style={{ marginBottom: "1.5rem" }}>
 			<h2 style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "1rem" }}>Configuration</h2>
@@ -1185,6 +1196,7 @@ function ConfigurationCard({ seed, status }: { seed: JobDetailSeed; status: JobS
 					</>
 				) : null}
 				{workers > 1 ? <Fact label="Parallel Evaluation" value={`${workers} workers`} /> : null}
+				{backend ? <Fact label="Backend" value={degraded ? `${backend} (degraded to CPU)` : backend} /> : null}
 				{seed.fastCompositing ? <Fact label="Compositing" value="Fast (+/-1 per channel)" /> : null}
 				<Fact label="Circles" value={String(seed.circles)} />
 				<Fact label="Population Size" value={String(seed.popSize)} />

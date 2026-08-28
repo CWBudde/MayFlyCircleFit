@@ -164,7 +164,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		return err
 	}
 
-	rend, cleanup, err := rendererForJob(job.Config, ref, job.Config.Circles)
+	rend, effectiveBackend, cleanup, err := rendererForJob(job.Config, ref, job.Config.Circles)
 	if err != nil {
 		markJobFailed(jm, jobID, err)
 		return err
@@ -173,11 +173,17 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	// Record what the renderer will actually do, not what the configuration
 	// asked for. This is the only point where the backend's decision and the
 	// GOMAXPROCS clamp have both been applied.
-	if width := renderer.EvaluationWidth(rend); width > 1 {
-		err := jm.UpdateJob(jobID, func(j *Job) { j.EvaluationWidth = width })
-		if err != nil {
-			return err
+	width := renderer.EvaluationWidth(rend)
+
+	err = jm.UpdateJob(jobID, func(j *Job) {
+		j.EffectiveBackend = effectiveBackend
+
+		if width > 1 {
+			j.EvaluationWidth = width
 		}
+	})
+	if err != nil {
+		return err
 	}
 
 	seed := job.Config.EffectiveSeed
@@ -237,7 +243,7 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 
 		metricCleanup := func() {}
 		if len(metricParams) != rend.Dim() {
-			metricRenderer, metricCleanup, err = rendererForJob(job.Config, ref, len(metricParams)/7)
+			metricRenderer, _, metricCleanup, err = rendererForJob(job.Config, ref, len(metricParams)/7)
 			if err != nil {
 				markJobFailed(jm, jobID, err)
 				return err
@@ -293,7 +299,28 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		nextCheckpoint = start.Add(time.Duration(job.Config.CheckpointInterval) * time.Second)
 	}
 
+	// A device that fails mid-run leaves the OpenCL renderer answering from its
+	// CPU fallback and returning no error, so nothing else in this loop would
+	// notice. The renderer degrades permanently once it degrades at all, which
+	// is why one bool is enough: after the first report this costs a type
+	// assertion per progress callback and writes nothing.
+	backendDegradationRecorded := false
+	noteBackendDegradation := func() {
+		if backendDegradationRecorded || !renderer.Degraded(rend) {
+			return
+		}
+
+		backendDegradationRecorded = true
+
+		slog.Warn("Renderer degraded to its CPU fallback mid-run",
+			"job_id", jobID, "backend", effectiveBackend)
+
+		_ = jm.UpdateJob(jobID, func(j *Job) { j.BackendDegraded = true })
+	}
+
 	observer := func(progress opt.Progress) {
+		noteBackendDegradation()
+
 		iterations := baseIterations + progress.Iterations
 
 		evaluations := baseEvaluations + progress.Evaluations
@@ -529,6 +556,10 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	default:
 		err = errors.New("unknown mode")
 	}
+
+	// The observer stops firing before the last evaluations are made, and a run
+	// short enough to have no progress callback at all never fired it once.
+	noteBackendDegradation()
 
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -1017,25 +1048,23 @@ func initialCircleParams(config store.JobConfig, ref *image.NRGBA) ([]float64, e
 // a rejected value can say which one it was.
 var initialCircleFields = [app.ParamsPerCircle]string{"x", "y", "r", "color.r", "color.g", "color.b", "opacity"}
 
-func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (renderer.Renderer, func(), error) {
+var (
+	// errCanvasRequiresCPU and errCanvasDimensionMismatch are the two ways a
+	// supplied base canvas is refused. Only the CPU renderer accumulates one.
+	errCanvasRequiresCPU       = errors.New("custom canvas requires CPU backend")
+	errCanvasDimensionMismatch = errors.New("canvas dimensions do not match reference")
+)
+
+// rendererForJob builds the renderer a job will run on and reports the backend
+// it actually got. The two differ when BackendFallback is set and the requested
+// backend cannot be constructed, which is why the backend is returned rather
+// than read back off config: nothing on the Renderer interface says which
+// implementation answered.
+func rendererForJob(
+	config store.JobConfig, ref *image.NRGBA, circleCount int,
+) (renderer.Renderer, app.Backend, func(), error) {
 	if config.CanvasPath != "" {
-		if config.Backend != "" && config.Backend != app.BackendCPU {
-			return nil, func() {}, errors.New("custom canvas requires CPU backend")
-		}
-
-		canvas, err := loadReferenceImage(config.CanvasPath)
-		if err != nil {
-			return nil, func() {}, fmt.Errorf("load canvas: %w", err)
-		}
-
-		if canvas.Bounds().Dx() != ref.Bounds().Dx() || canvas.Bounds().Dy() != ref.Bounds().Dy() {
-			return nil, func() {}, errors.New("canvas dimensions do not match reference")
-		}
-
-		cpu := renderer.NewCPURendererWithCanvas(ref, canvas, circleCount)
-		configureJobCPURenderer(cpu, config)
-
-		return cpu, func() {}, nil
+		return canvasRendererForJob(config, ref, circleCount)
 	}
 
 	backend := config.Backend
@@ -1044,13 +1073,62 @@ func rendererForJob(config store.JobConfig, ref *image.NRGBA, circleCount int) (
 	}
 
 	if backend == app.BackendCPU {
-		cpu := renderer.NewCPURenderer(ref, circleCount)
-		configureJobCPURenderer(cpu, config)
-
-		return cpu, func() {}, nil
+		return newJobCPURenderer(config, ref, circleCount), app.BackendCPU, func() {}, nil
 	}
 
-	return renderer.NewRendererForBackend(string(backend), ref, circleCount)
+	rend, cleanup, err := renderer.NewRendererForBackend(string(backend), ref, circleCount)
+	if err == nil {
+		return rend, backend, cleanup, nil
+	}
+
+	// Only an unavailable backend falls back. A misspelled name is a client
+	// mistake and silently running it on the CPU would hide that, and an error
+	// from a backend that did start is a device problem the run should report.
+	if config.BackendFallback != app.BackendCPU || !errors.Is(err, renderer.ErrBackendUnavailable) {
+		// Deliberately unwrapped: safeJobError trims the sentinel's own prefix
+		// off this message to build the client-facing one, and a wrapper in
+		// between would leave the sentinel printed twice.
+		return nil, "", cleanup, err //nolint:wrapcheck // safeJobError formats this error by trimming its sentinel prefix
+	}
+
+	cleanup()
+	slog.Warn("Requested backend unavailable, falling back to cpu",
+		"backend", backend, "fallback", app.BackendCPU, "reason", err)
+
+	return newJobCPURenderer(config, ref, circleCount), app.BackendCPU, func() {}, nil
+}
+
+// canvasRendererForJob builds the renderer for a job that starts from a
+// supplied base canvas, which only the CPU backend accumulates.
+func canvasRendererForJob(
+	config store.JobConfig, ref *image.NRGBA, circleCount int,
+) (renderer.Renderer, app.Backend, func(), error) {
+	if config.Backend != "" && config.Backend != app.BackendCPU {
+		return nil, "", func() {}, errCanvasRequiresCPU
+	}
+
+	canvas, err := loadReferenceImage(config.CanvasPath)
+	if err != nil {
+		return nil, "", func() {}, fmt.Errorf("load canvas: %w", err)
+	}
+
+	if canvas.Bounds().Dx() != ref.Bounds().Dx() || canvas.Bounds().Dy() != ref.Bounds().Dy() {
+		return nil, "", func() {}, errCanvasDimensionMismatch
+	}
+
+	cpu := renderer.NewCPURendererWithCanvas(ref, canvas, circleCount)
+	configureJobCPURenderer(cpu, config)
+
+	return cpu, app.BackendCPU, func() {}, nil
+}
+
+// newJobCPURenderer builds the CPU renderer a job runs on, configured from its
+// parallelism and compositing settings.
+func newJobCPURenderer(config store.JobConfig, ref *image.NRGBA, circleCount int) *renderer.CPURenderer {
+	cpu := renderer.NewCPURenderer(ref, circleCount)
+	configureJobCPURenderer(cpu, config)
+
+	return cpu
 }
 
 // configureJobCPURenderer applies a job's parallelism settings and records the
@@ -1180,7 +1258,7 @@ func saveCheckpointArtifacts(checkpointStore store.Store, rend renderer.Renderer
 
 	best := bestImage
 	if best == nil {
-		snapshotRenderer, cleanup, err := rendererForJob(config, ref, len(bestParams)/7)
+		snapshotRenderer, _, cleanup, err := rendererForJob(config, ref, len(bestParams)/7)
 		if err != nil {
 			return fmt.Errorf("create artifact renderer: %w", err)
 		}

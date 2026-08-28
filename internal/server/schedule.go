@@ -517,7 +517,11 @@ func (s *Server) runScheduleStage(
 // this one unless policy skipped some in between.
 func (s *Server) scheduleStageConfig(stage app.ScheduleStage, plan []app.ScheduleStage, parentJobID string, parentIndex int) (JobConfig, *continuationSource, error) {
 	config := stage.Config
-	s.applyDefaultBackend(&config)
+
+	err := s.applyDefaultBackend(&config)
+	if err != nil {
+		return config, nil, fmt.Errorf("stage %d configuration: %w", stage.Index, err)
+	}
 
 	if parentJobID == "" {
 		failure := s.resolveConfigPaths(&config, "schedule")

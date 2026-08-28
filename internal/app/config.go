@@ -263,6 +263,23 @@ type JobConfig struct {
 	CanvasPath string  `json:"canvasPath,omitempty"`
 	Mode       Mode    `json:"mode"`
 	Backend    Backend `json:"backend,omitempty"`
+	// BackendFallback names the backend to use when Backend cannot be
+	// constructed at all -- no gpu build tag, no OpenCL runtime, no usable
+	// device. Empty is the default and means the job fails instead.
+	//
+	// Failing is the right default for a measurement. A cost recorded under one
+	// backend is not a baseline for the other, because the device computes in
+	// float32 against a float64 CPU path, so quietly producing CPU numbers
+	// under a GPU label would be worse than producing none. Set it to cpu when
+	// finishing the run matters more than which device finished it; the job
+	// then records the backend it actually ran on rather than the one it asked
+	// for.
+	//
+	// It has nothing to say about a device that fails mid-run. The renderer
+	// already degrades to its CPU fallback there, and that is reported
+	// separately because it is a different event: the run has already spent
+	// part of its budget on the device.
+	BackendFallback Backend `json:"backendFallback,omitempty"`
 	// Optimizer names the optimization library the job runs with. Empty means
 	// mayfly, so every configuration and checkpoint written before this field
 	// existed keeps its behavior. Read it through ResolvedOptimizer.
@@ -698,6 +715,15 @@ func (c JobConfig) Validate() error {
 	case BackendCPU, BackendOpenCL:
 	default:
 		return invalid("backend", "must be cpu or opencl")
+	}
+
+	// Only cpu is accepted, and deliberately not "whatever is available": a
+	// fallback exists to make the outcome predictable, and one that could
+	// resolve to a different backend on a different host would not.
+	switch c.BackendFallback {
+	case "", BackendCPU:
+	default:
+		return invalid("backendFallback", "must be empty or cpu")
 	}
 
 	// The engine check owns the variant check, because which variants are

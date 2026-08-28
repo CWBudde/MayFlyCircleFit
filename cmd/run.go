@@ -25,6 +25,7 @@ var (
 	outPath                  string
 	mode                     string
 	backendName              string
+	backendFallbackName      string
 	variantName              string
 	qmcInitName              string
 	circles                  int
@@ -82,6 +83,8 @@ func init() {
 	runCmd.Flags().StringVar(&outPath, "out", "out.png", "Output image path")
 	runCmd.Flags().StringVar(&mode, "mode", "joint", "Optimization mode: joint, sequential, batch")
 	runCmd.Flags().StringVar(&backendName, "backend", "cpu", "Renderer backend to use (cpu, opencl; aliases: gpu, cl)")
+	runCmd.Flags().StringVar(&backendFallbackName, "backend-fallback", "",
+		"Backend to fall back to when --backend cannot start (only cpu; default: fail the run)")
 	runCmd.Flags().StringVar(&variantName, "variant", "standard",
 		"MayFly algorithm variant: standard, desma, olce, eobbma, gsasma, mpma, aoblmoa (MayFly only)")
 	// The default is empty rather than "uniform" so an unnamed flag reaches a
@@ -356,11 +359,17 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		return NewUsageError(fmt.Errorf("invalid backend: %w", err))
 	}
 
+	backendFallback, err := parseBackendFallbackFlag(backendFallbackName)
+	if err != nil {
+		return NewUsageError(fmt.Errorf("invalid backend-fallback: %w", err))
+	}
+
 	config, err := app.Normalize(app.JobConfig{
 		RefPath:                  refPath,
 		CanvasPath:               canvasPath,
 		Mode:                     app.Mode(mode),
 		Backend:                  backend,
+		BackendFallback:          backendFallback,
 		Optimizer:                app.Optimizer(optimizerName),
 		Variant:                  variantFlag(cmd, optimizerName, variantName),
 		InitialSigma:             floatFlag(cmd, "initial-sigma", initialSigma),
@@ -561,7 +570,24 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 
 		rend, cleanup, err = renderer.NewRendererForBackend(string(config.Backend), ref, config.Circles)
 		if err != nil {
-			return fmt.Errorf("failed to create renderer: %w", err)
+			// Only an unavailable backend falls back, and only when the run
+			// asked for one. Anything else is a device or input problem the
+			// run should report rather than paper over.
+			if config.BackendFallback != app.BackendCPU || !errors.Is(err, renderer.ErrBackendUnavailable) {
+				return fmt.Errorf("failed to create renderer: %w", err)
+			}
+
+			cleanup()
+			slog.Warn("Requested backend unavailable, falling back to cpu",
+				"backend", config.Backend, "fallback", app.BackendCPU, "reason", err)
+
+			cpuRenderer := renderer.NewCPURenderer(ref, config.Circles)
+			renderer.ConfigureCPUParallelism(
+				cpuRenderer, config.Threads, config.EvaluationWorkers, config.ParallelEvaluation)
+			renderer.ConfigureCPUCompositing(cpuRenderer, config.FastCompositing)
+			renderer.LogCPURendererConfiguration(cpuRenderer)
+
+			rend, cleanup = cpuRenderer, func() {}
 		}
 	}
 
