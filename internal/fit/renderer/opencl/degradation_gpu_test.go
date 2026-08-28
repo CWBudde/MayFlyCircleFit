@@ -23,7 +23,7 @@ import (
 // fault-injection hook in the cgo path or a card that fails on demand -- so
 // these tests set the shared record directly and assert that it is shared. That
 // is the part the reporting depends on.
-func TestDegradationIsSharedBetweenARendererAndItsSessions(t *testing.T) {
+func TestOpenCLDegradationIsSharedBetweenARendererAndItsSessions(t *testing.T) {
 	base, cleanup := newOpenCLTestRenderer(t, 4)
 	defer cleanup()
 
