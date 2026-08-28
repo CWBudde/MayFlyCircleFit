@@ -40,8 +40,13 @@ const (
 // TestOpenCLDeviceReportsAPreparedDevice pins what Task 11.10 means by a
 // prepared OpenCL runner. Initialization succeeding is not enough: InitOpenCL
 // falls back to a CPU device, so a machine with only PoCL installed passes
-// every parity test in this file while measuring nothing about a GPU. Under
-// CIRCLEFIT_REQUIRE_OPENCL=1 the selected device therefore has to be one.
+// every parity test in this file while measuring nothing about a GPU.
+//
+// That demand is deliberately a *second* switch. CIRCLEFIT_REQUIRE_OPENCL=1
+// means "OpenCL has to work here, do not skip", which is what the PoCL CI job
+// wants while running on a CPU device on purpose. Only
+// CIRCLEFIT_REQUIRE_GPU_DEVICE=1 additionally demands a vendor GPU, so a run
+// that claims to be GPU validation cannot quietly be anything else.
 func TestOpenCLDeviceReportsAPreparedDevice(t *testing.T) {
 	ref := patternedReference(image.Rect(0, 0, 8, 8))
 
@@ -71,7 +76,7 @@ func TestOpenCLDeviceReportsAPreparedDevice(t *testing.T) {
 	}
 
 	if device.Type != gpu.DeviceTypeGPU {
-		if requireOpenCLTests() {
+		if requireVendorGPUDevice() {
 			t.Fatalf("device type = %s, want %s; this run is not vendor-GPU validation",
 				device.Type, gpu.DeviceTypeGPU)
 		}
@@ -451,6 +456,9 @@ func maxChannelDeviation(a, b *image.NRGBA) int {
 	return worst
 }
 
-func requireOpenCLTests() bool {
-	return os.Getenv("CIRCLEFIT_REQUIRE_OPENCL") == "1"
+// requireVendorGPUDevice reports whether this run has declared itself to be
+// vendor-GPU validation. It is separate from CIRCLEFIT_REQUIRE_OPENCL, which
+// only forbids skipping when no OpenCL device is present at all.
+func requireVendorGPUDevice() bool {
+	return os.Getenv("CIRCLEFIT_REQUIRE_GPU_DEVICE") == "1"
 }

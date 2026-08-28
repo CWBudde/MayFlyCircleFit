@@ -138,8 +138,19 @@ Two things that suite is built to prevent:
   back to a CPU device, so on a machine with only PoCL installed every parity
   test passes while measuring nothing about a GPU.
   `TestOpenCLDeviceReportsAPreparedDevice` fails under
-  `CIRCLEFIT_REQUIRE_OPENCL=1` unless the selected device is of type GPU, and
-  logs the platform, device, driver version, and compute units either way.
+  `CIRCLEFIT_REQUIRE_GPU_DEVICE=1` unless the selected device is of type GPU,
+  and logs the platform, device, driver version, and compute units either way.
+
+  The two switches are deliberately separate. `CIRCLEFIT_REQUIRE_OPENCL=1`
+  means "OpenCL has to work here, do not skip" and is what `ci-gpu-compile.yml`
+  sets while running on PoCL's CPU device on purpose;
+  `CIRCLEFIT_REQUIRE_GPU_DEVICE=1` additionally demands a vendor GPU. Set both
+  when a run is meant to be GPU validation:
+
+  ```sh
+  CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
+      go test -tags gpu -count=1 ./internal/fit/renderer/... -run '^TestOpenCL'
+  ```
 - **A tolerance hiding a structural mismatch.** The suite found one: the kernel
   implemented a different rasterization rule from the CPU renderer, wrong by up
   to 226 of 255 on a small number of pixels and by a factor of two in cost on a

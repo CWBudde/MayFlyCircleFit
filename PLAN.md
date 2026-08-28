@@ -342,7 +342,11 @@ re-measures and reports both numbers on every run.
 `TestOpenCLDeviceReportsAPreparedDevice` is what makes "prepared runner" mean
 something: `InitOpenCL` falls back to a CPU device, so a PoCL-only machine
 passes every parity test while validating no GPU at all. It fails under
-`CIRCLEFIT_REQUIRE_OPENCL=1` unless the selected device is of type GPU.
+`CIRCLEFIT_REQUIRE_GPU_DEVICE=1` unless the selected device is of type GPU.
+That is deliberately a second switch: `CIRCLEFIT_REQUIRE_OPENCL=1` only means
+"do not skip", and `ci-gpu-compile.yml` sets it while running on PoCL's CPU
+device on purpose. Overloading the one flag made that CI job fail, which is
+exactly the confusion the split now prevents.
 
 Validated on an NVIDIA T550 (driver 580.178.04, OpenCL 3.0 CUDA). AMD and Intel
 remain unmeasured, for parity as well as throughput.
