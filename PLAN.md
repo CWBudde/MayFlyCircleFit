@@ -61,7 +61,7 @@ research follow-ups, not blockers for the selected production CPU path.
   test-only harness `internal/fit/renderer/circle_geometry_formats_test.go`,
   which implements both alternates next to the production path and decides every
   precision question with a `big.Rat` oracle rather than another float. Q24.8's
-  only advantage is range Q16.16 already covers 60x over - a binary search over
+  only advantage is range Q16.16 already covers 40x over - a binary search over
   the `fit.NewBounds` box puts the fully representable square canvas at 21845
   for Q16.16, 5592405 for Q24.8 and 127 for Q8.24 - and the eight fraction bits
   it gives up cost 58x the disagreement rate against the oracle (58 of 17751
