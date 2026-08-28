@@ -58,6 +58,16 @@ type JobDetail struct {
 	// because a wrong number here is worse than none -- the value exists so two
 	// runs can be told apart.
 	EvaluationWorkers int `json:"evaluationWidth,omitempty"`
+	// EffectiveBackend is the backend the run's renderer was built on, and
+	// BackendDegraded says the device gave up mid-run and the CPU fallback
+	// finished the work. Neither is the requested backend: a fallback can
+	// resolve an unavailable one, and a degraded run spent part of its budget
+	// on each. They belong beside FastCompositing for the same reason -- two
+	// runs that differ in them are not cost-comparable, because the device
+	// computes in float32 against a float64 CPU path. Empty renders nothing, so
+	// a job restored from a checkpoint says nothing rather than guessing.
+	EffectiveBackend string `json:"effectiveBackend,omitempty"`
+	BackendDegraded  bool   `json:"backendDegraded,omitempty"`
 	// FastCompositing records that the job ran the reduced-precision span
 	// compositor. It belongs next to the seed, not with the tuning knobs: two
 	// runs that differ in it are not pixel-comparable, so a completed job has to
@@ -518,6 +528,16 @@ templ JobDetailPage(job JobDetail) {
 						<div>
 							<div style="font-size: 0.875rem; color: var(--text-muted);">Parallel Evaluation</div>
 							<div style="font-weight: 500;">{ fmt.Sprintf("%d workers", job.EvaluationWorkers) }</div>
+						</div>
+					}
+					if job.EffectiveBackend != "" {
+						<div>
+							<div style="font-size: 0.875rem; color: var(--text-muted);">Backend</div>
+							if job.BackendDegraded {
+								<div style="font-weight: 500;">{ job.EffectiveBackend } (degraded to CPU mid-run)</div>
+							} else {
+								<div style="font-weight: 500;">{ job.EffectiveBackend }</div>
+							}
 						</div>
 					}
 					if job.FastCompositing {

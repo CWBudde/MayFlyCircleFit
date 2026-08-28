@@ -60,6 +60,24 @@ type Job struct {
 	// built a renderer in this process -- and readers must show nothing rather
 	// than guess, because the clamp depends on the machine that ran the job.
 	EvaluationWidth int `json:"evaluationWidth,omitempty"`
+	// EffectiveBackend is the backend this job's renderer was actually built
+	// on, recorded at the same point as EvaluationWidth. It differs from
+	// Config.Backend when BackendFallback resolved an unavailable backend to
+	// the CPU, and it exists for the same reason FastCompositing does: two runs
+	// that differ in it are not cost-comparable, so a completed job has to be
+	// able to say which one it was.
+	//
+	// BackendDegraded records that the backend started and then gave up
+	// mid-run, which is a different event: the run spent part of its budget on
+	// the device before falling back, so its best-so-far spans two arithmetics.
+	// The OpenCL renderer degrades permanently once it has degraded at all, so
+	// this only ever goes from false to true.
+	//
+	// Both are empty for a job restored from a checkpoint, which built no
+	// renderer in this process. Neither is persisted -- like EvaluationWidth,
+	// they describe this process's run, not the configuration that produced it.
+	EffectiveBackend app.Backend `json:"effectiveBackend,omitempty"`
+	BackendDegraded  bool        `json:"backendDegraded,omitempty"`
 	// InheritedEvaluations is what Evaluations already stood at when this job
 	// started running. A continuation is seeded from its parent's checkpoint so
 	// the campaign total stays readable, but its wall clock starts at this
@@ -119,6 +137,8 @@ type JobSummary struct {
 	Iterations       int              `json:"iterations"`
 	Evaluations      int              `json:"evaluations"`
 	EvaluationWidth  int              `json:"evaluationWidth,omitempty"`
+	EffectiveBackend app.Backend      `json:"effectiveBackend,omitempty"`
+	BackendDegraded  bool             `json:"backendDegraded,omitempty"`
 	CandidateCost    *float64         `json:"candidateCost,omitempty"`
 	ExtendedFrom     string           `json:"extendedFrom,omitempty"`
 	PolishedFrom     string           `json:"polishedFrom,omitempty"`
@@ -292,7 +312,8 @@ func (jm *JobManager) ListJobSummaries() []JobSummary {
 			RequestedCircles: job.RequestedCircles, ActualCircles: job.ActualCircles,
 			BestCost: job.BestCost, InitialCost: job.InitialCost,
 			Iterations: job.Iterations, Evaluations: job.Evaluations,
-			EvaluationWidth: job.EvaluationWidth, ExtendedFrom: job.ExtendedFrom,
+			EvaluationWidth: job.EvaluationWidth, EffectiveBackend: job.EffectiveBackend,
+			BackendDegraded: job.BackendDegraded, ExtendedFrom: job.ExtendedFrom,
 			PolishedFrom: job.PolishedFrom, ScheduleID: job.ScheduleID,
 			Termination: job.Termination, StartTime: job.StartTime, Error: job.Error,
 		}

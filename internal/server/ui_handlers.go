@@ -232,6 +232,8 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		ActiveCMA:                job.Config.ResolvedCMAESActive(),
 		RestartStrategy:          string(job.Config.ResolvedCMAESRestartStrategy()),
 		EvaluationWorkers:        job.EvaluationWidth,
+		EffectiveBackend:         string(job.EffectiveBackend),
+		BackendDegraded:          job.BackendDegraded,
 		FastCompositing:          job.Config.FastCompositing,
 		Circles:                  job.Config.Circles,
 		Iterations:               job.Iterations,
@@ -717,7 +719,12 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		StopStagnationIters:      stopStagnationIters,
 		StopMinIters:             stopMinIters,
 	}
-	s.applyDefaultBackend(&requestedConfig)
+
+	err = s.applyDefaultBackend(&requestedConfig)
+	if err != nil {
+		renderCreateJobError(w, r, err.Error(), formProject)
+		return
+	}
 
 	config, err := app.Normalize(requestedConfig)
 	if err != nil {

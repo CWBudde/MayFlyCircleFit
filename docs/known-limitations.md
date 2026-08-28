@@ -139,8 +139,25 @@ behavior is production-ready.
   a driver, and a usable device. It is excluded from the standard portable
   matrix; a dedicated CI job exercises it through the PoCL CPU runtime.
 - The experimental OpenCL renderer contains a CPU compatibility degradation path
-  for runtime rendering/cost errors. Inspect warning logs and device-specific
-  parity tests when GPU execution matters.
+  for runtime rendering/cost errors. A run that takes it is recorded on the job
+  as `backendDegraded`, alongside the `effectiveBackend` it was built on, and
+  both appear in the CLI status output and on the job detail page. Two limits
+  follow. Neither field is persisted to a checkpoint -- like `evaluationWidth`
+  they describe one process's run -- so a job restored from a checkpoint reports
+  nothing rather than a stale value. And the flag says only *that* the run
+  degraded, not when: its cost mixes device and CPU arithmetic in an unrecorded
+  proportion, so it is not comparable with either a clean GPU run or a clean CPU
+  one.
+- Degradation is permanent and is shared by a renderer and every session
+  derived from it, so a lost device is discovered once per run rather than once
+  per stage, and a staged run reports it even though every evaluation happened
+  on a session. What the flag still cannot say is which stages ran on the
+  device.
+- There is no automated test for a device failing mid-run. Inducing one would
+  need a fault-injection hook in the cgo path or a card that can be made to fail
+  on demand, so what is covered is the accessor (`renderer.Degraded`) and the
+  reporting path, not the device event that triggers them. The build-level
+  unavailable case is covered without a GPU, in the `!gpu` tests.
 - ARM64 uses NEON for SSD when ASIMD is available, with a scalar fallback. SAD
   remains scalar because it has no native ARM64 kernel.
 - AMD64 dispatch is tiered: AVX2 when the CPU reports it, otherwise SSE2,

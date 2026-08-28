@@ -27,7 +27,7 @@ import (
 func TestRendererForJobConfiguresThreads(t *testing.T) {
 	ref := image.NewNRGBA(image.Rect(0, 0, 32, 32))
 
-	rend, cleanup, err := rendererForJob(JobConfig{Backend: "cpu", Threads: 1}, ref, 2)
+	rend, _, cleanup, err := rendererForJob(JobConfig{Backend: app.BackendCPU, Threads: 1}, ref, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1266,7 +1266,7 @@ func TestEvaluationWidthReportsWhatRanNotWhatWasAsked(t *testing.T) {
 	ref := image.NewNRGBA(image.Rect(0, 0, 32, 32))
 	oversized := runtime.GOMAXPROCS(0) * 100
 
-	rend, cleanup, err := rendererForJob(JobConfig{
+	rend, _, cleanup, err := rendererForJob(JobConfig{
 		Backend:            "cpu",
 		Threads:            1,
 		ParallelEvaluation: true,
@@ -1294,7 +1294,7 @@ func TestEvaluationWidthReportsWhatRanNotWhatWasAsked(t *testing.T) {
 func TestEvaluationWidthIsZeroWithoutParallelEvaluation(t *testing.T) {
 	ref := image.NewNRGBA(image.Rect(0, 0, 32, 32))
 
-	rend, cleanup, err := rendererForJob(JobConfig{
+	rend, _, cleanup, err := rendererForJob(JobConfig{
 		Backend:           "cpu",
 		Threads:           2,
 		EvaluationWorkers: 8,

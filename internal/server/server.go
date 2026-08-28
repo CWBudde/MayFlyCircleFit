@@ -206,20 +206,6 @@ func normalizeServerBackend(raw app.Backend) app.Backend {
 	}
 }
 
-// applyDefaultBackend fills in the server-wide default for a configuration that
-// names no backend and canonicalizes whatever remains. Every job entry point
-// runs through it, so a dashboard or schedule job honours `serve --backend` the
-// same way an API request does. A whitespace-only value counts as omission,
-// because NormalizeBackend trims before matching and would otherwise resolve it
-// to CPU behind the default's back.
-func (s *Server) applyDefaultBackend(config *JobConfig) {
-	if strings.TrimSpace(string(config.Backend)) == "" {
-		config.Backend = s.options.DefaultBackend
-	}
-
-	config.Backend = app.Backend(renderer.NormalizeBackend(string(config.Backend)))
-}
-
 // Start starts the HTTP server.
 func (s *Server) Start() error {
 	if s.options.EnablePprof && !isLoopbackAddress(s.addr) {
@@ -384,6 +370,47 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	case <-ctx.Done():
 		return fmt.Errorf("wait for optimization workers: %w", ctx.Err())
 	}
+}
+
+// applyDefaultBackend fills in the server-wide default for a configuration that
+// names no backend and canonicalizes whatever remains. Every job entry point
+// runs through it, so a dashboard or schedule job honours `serve --backend` the
+// same way an API request does. A whitespace-only value counts as omission,
+// because NormalizeBackend trims before matching and would otherwise resolve it
+// to CPU behind the default's back.
+func (s *Server) applyDefaultBackend(config *JobConfig) error {
+	requested := strings.TrimSpace(string(config.Backend))
+	if requested == "" {
+		config.Backend = s.options.DefaultBackend
+	}
+
+	config.Backend = app.Backend(renderer.NormalizeBackend(string(config.Backend)))
+
+	// Only a backend the caller asked for by name is refused, and only when
+	// this build cannot construct it. Two exemptions, both deliberate.
+	//
+	// A backend inherited from the server default is not the caller's doing.
+	// `serve` refuses an unavailable --backend before the listener opens, so
+	// the operator has already been told; failing every submitted job for it
+	// would report the same fact to the wrong person.
+	//
+	// A configured fallback is exactly the statement that this backend is not
+	// required, so refusing the job would defeat the field.
+	if requested == "" || config.BackendFallback != "" {
+		return nil
+	}
+
+	// This lives here rather than in app.JobConfig.Validate because what a
+	// binary carries is a property of the binary, not of the configuration, and
+	// validation has to stay reproducible: a checkpoint written on a GPU host
+	// must still resume there. Refusing at submit turns a job that would have
+	// failed on a worker minutes later into an immediate, explained rejection.
+	err := renderer.BackendAvailable(renderer.Backend(config.Backend))
+	if err != nil {
+		return fmt.Errorf("requested backend: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Server) ensureWorkers() {
@@ -867,7 +894,11 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.applyDefaultBackend(&request.JobConfig)
+	err = s.applyDefaultBackend(&request.JobConfig)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_config", err.Error())
+		return
+	}
 
 	config, err := app.NormalizeRequest(body, request.JobConfig)
 	if err != nil {
@@ -1205,6 +1236,14 @@ type jobStatusResponse struct {
 	// only the request, which differs whenever the backend declined it or the
 	// GOMAXPROCS clamp applied, so clients comparing two runs must read this.
 	EvaluationWidth int `json:"evaluationWidth,omitempty"`
+	// EffectiveBackend is the backend the run's renderer was built on and
+	// BackendDegraded says it gave up mid-run and finished on the CPU. Config
+	// carries only the request, which differs when a fallback resolved an
+	// unavailable backend. Clients comparing costs must read these: the OpenCL
+	// path computes in float32 against a float64 CPU path, so a cost recorded
+	// under one backend is not a baseline for the other.
+	EffectiveBackend app.Backend `json:"effectiveBackend,omitempty"`
+	BackendDegraded  bool        `json:"backendDegraded,omitempty"`
 	// RefWidth, RefHeight and RefSize describe the reference image file itself,
 	// not the canvas the run evaluates against. They are omitted rather than
 	// zeroed when the file cannot be probed, because a client that received
@@ -1267,10 +1306,12 @@ func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request, jobI
 		CandidateCost: cloneFloat(job.CandidateCost), InitialCost: job.InitialCost,
 		PSNR: psnr, PSNRInfinite: psnrInfinite, SSIM: cloneFloat(job.SSIM),
 		Iterations: job.Iterations, Evaluations: job.Evaluations,
-		MaxIterations:   plannedOptimizerIterations(job.Config),
-		Actions:         &actions,
-		EvaluationWidth: job.EvaluationWidth,
-		RefWidth:        refWidth, RefHeight: refHeight, RefSize: refSize,
+		MaxIterations:    plannedOptimizerIterations(job.Config),
+		Actions:          &actions,
+		EvaluationWidth:  job.EvaluationWidth,
+		EffectiveBackend: job.EffectiveBackend,
+		BackendDegraded:  job.BackendDegraded,
+		RefWidth:         refWidth, RefHeight: refHeight, RefSize: refSize,
 		Termination: job.Termination, Elapsed: elapsed.Seconds(), CPS: cps,
 		StartTime: job.StartTime, EndTime: job.EndTime, Error: job.Error,
 	}
@@ -1477,7 +1518,7 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 func renderBestSnapshot(job *Job, ref *image.NRGBA) (*image.NRGBA, func(), error) {
 	actualCircles := len(job.BestParams) / 7
 
-	rend, cleanup, err := rendererForJob(job.Config, ref, actualCircles)
+	rend, _, cleanup, err := rendererForJob(job.Config, ref, actualCircles)
 	if err != nil {
 		return nil, func() {}, err
 	}

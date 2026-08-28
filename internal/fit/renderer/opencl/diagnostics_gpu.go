@@ -11,8 +11,11 @@ import "github.com/cwbudde/circlefit/internal/fit/gpu"
 // Runtime returns the OpenCL platform and device this renderer runs on.
 func (r *Renderer) Runtime() *gpu.Runtime { return r.runtime }
 
-// Degraded reports whether the renderer has permanently fallen back to the CPU.
-func (r *Renderer) Degraded() bool { return r.degraded }
+// Degraded reports whether this renderer, the renderer it was derived from, or
+// any session sharing their device has permanently fallen back to the CPU. The
+// answer is about the run rather than one Renderer value, because the staged
+// pipelines evaluate through independent sessions.
+func (r *Renderer) Degraded() bool { return r.degraded.Load() }
 
 // Evaluations returns the number of device evaluations performed so far.
 func (r *Renderer) Evaluations() uint64 { return r.evaluations }

@@ -267,11 +267,84 @@ remainders were moved into Tasks 11.10 and 11.12.
 - [ ] Document any differences or limitations
 
 ### Task 11.11: Handle GPU Errors and Fallback
-- [ ] Add graceful error handling for GPU initialization failures
-- [ ] Provide automatic fallback to CPU if GPU unavailable
-- [ ] Add logging for GPU-related errors
-- [ ] Test error scenarios (no GPU, driver issues, out of memory)
-- [ ] Document common GPU issues and solutions
+- [x] Add graceful error handling for GPU initialization failures
+- [x] Provide fallback to CPU if GPU unavailable (opt-in, not automatic)
+- [x] Add logging for GPU-related errors
+- [x] Test error scenarios (no GPU, driver issues, out of memory)
+- [x] Document common GPU issues and solutions
+
+**"Automatic fallback to CPU" was the one item that had to change, and the
+reason is Task 11.10's result.** The device computes in float32 against a
+float64 CPU path, so a cost recorded under one backend is not a baseline for the
+other. A fallback that fired by default would answer a `--backend opencl` run
+with CPU numbers under a GPU label, which is worse than answering with nothing.
+So the default stays "the job fails", and `backendFallback` — accepted only as
+`cpu`, unset by default, so every configuration and checkpoint written before it
+existed keeps failing loudly — is how a caller says the run matters more than
+the device. When it fires, the job records `effectiveBackend`, so the
+substitution is in the record rather than only in a log line.
+
+Three failures were conflated before and are now separate, because callers
+answer them differently. *Not built*: no `gpu` tag, decided from the build
+alone. *Not available*: built, but no runtime, no device, or a context that
+would not initialise. *Failed mid-run*: the device started and then stopped
+working.
+
+The first is now refused before it costs anything. `SupportedBackends` is
+build-tag aware, so a portable binary stops advertising `opencl` in
+`GET /api/v1/system`; `serve --backend opencl` refuses to start rather than
+failing every job that names no backend of its own; and a job naming the backend
+explicitly is rejected at submit instead of on a worker minutes later. The check
+is `renderer.BackendAvailable`, which reads the build and deliberately probes no
+device: `app.JobConfig.Validate` still accepts `opencl` everywhere, so a
+checkpoint written on a GPU host resumes there. Two exemptions, both deliberate
+— a backend inherited from the server default is not the submitter's doing and
+the operator was already told at startup, and a configured fallback is exactly
+the statement that this backend is not required.
+
+**The mid-run case is the one that was actually invisible, and it is the reason
+this task was worth doing.** `Cost` and `Render` have no error return, so on a
+device error the OpenCL renderer sets `degraded`, logs one warning, and answers
+everything afterwards from its CPU fallback. `Degraded()` existed but was called
+only by tests and benchmarks — it reached no DTO, no trace, no UI — so a run
+that degraded was reported as a normal OpenCL run. It now surfaces through
+`renderer.Degraded`, a free function in the shape of `EvaluationWidth` that
+returns false for any backend that cannot degrade, and lands on the job as
+`backendDegraded` beside `effectiveBackend`, in the CLI status output and on the
+job detail page. That matters more than a label usually would: the run spent
+part of its budget on each backend, so its best-so-far spans two arithmetics and
+the cost is comparable with neither a clean GPU run nor a clean CPU one.
+
+Neither field is persisted, matching `EvaluationWidth`. They describe one
+process's run, so a job restored from a checkpoint reports nothing rather than a
+stale value.
+
+What the tests do not cover is honest to state: there is no automated mid-run
+device failure. Inducing one needs a fault-injection hook in the cgo path or a
+card that can be made to fail on demand, so what is tested is the accessor and
+the whole reporting path, while the device event that triggers them is not. Out
+of memory is documented rather than tested, because a test would have to
+allocate gigabytes on the developer's machine to provoke it. The build-level
+unavailable case *is* tested, and without a GPU: the `!gpu` suites pin that
+`SupportedBackends` omits OpenCL, that `BackendAvailable` separates "not built"
+from "unknown name", that an unavailable backend fails by default and falls back
+only when asked, that a misspelled backend never falls back, and that a job
+which fell back records `cpu` while keeping `opencl` as its request.
+
+Review caught the one thing the first cut got wrong, and it was the part that
+mattered. `NewSession` builds a fresh renderer, so a per-renderer `degraded`
+flag meant a sequential or batch run -- where every circle is costed on an
+independent session and the base renderer may never evaluate at all -- reported
+a clean device no matter what happened. The flag is now one record shared by a
+renderer and every session derived from it. Joint mode was never affected:
+OpenCL withholds the concurrent-evaluation marker, so joint evaluates on the
+base renderer itself and creates no sessions.
+
+Sharing it runs both ways, which removes what would otherwise have been a
+residual for Task 11.13: a session created after the device is gone starts
+degraded instead of rediscovering it, so a lost device costs one timeout for the
+run rather than one per stage. The `engine.poison()` that tranche was going to
+need is no longer required for this.
 
 ### Task 11.12: Documentation and Examples
 - [ ] Document the macOS Metal/WebGPU gap and driver quirks found during vendor-GPU validation.
