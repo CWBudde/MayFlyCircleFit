@@ -16,6 +16,35 @@ Rendering-side invariants live in
   runtime and device. Staged modes create same-backend sessions and replay the
   retained prefix because OpenCL does not support an accumulated custom canvas;
   they must never silently fall back to a CPU staged renderer.
+- **A backend that cannot start fails the job.** There is no automatic
+  substitution. `backendFallback` is the only way to get one, it accepts only
+  `cpu`, and it is unset by default, so every configuration written before it
+  existed keeps failing loudly. The reason is arithmetic, not taste: the OpenCL
+  path computes in float32 against a float64 CPU path, so a cost recorded under
+  one backend is not a baseline for the other, and quietly producing CPU numbers
+  under a GPU label would be worse than producing none. A fallback that did fire
+  is recorded, not merely logged.
+- **A backend that started and then failed keeps running, on the CPU, and says
+  so.** The OpenCL renderer degrades permanently to its CPU fallback on a device
+  error, because `Cost` and `Render` have no error return and cannot report one.
+  That degradation must reach the job as `backendDegraded`, not only the log:
+  the run has already spent part of its budget on the device, so its best-so-far
+  spans both arithmetics and no reader can tell without being told. `Degraded`
+  in `internal/fit/renderer` is the single accessor for this, in the same shape
+  as `EvaluationWidth`, and reports false for every backend that cannot degrade.
+- **A job records the backend it ran on, not the one it requested.**
+  `effectiveBackend` is written once, where the renderer is built, and is the
+  only value a comparison between two runs may use. Neither it nor
+  `backendDegraded` is persisted to a checkpoint: they describe one process's
+  run, so a restored job reports nothing rather than guessing.
+- **What a build carries is not part of a configuration's validity.**
+  `app.JobConfig.Validate` accepts `opencl` on every build, so a checkpoint
+  written on a GPU host still resumes there. Availability is decided separately,
+  from the build alone and without probing a device, by
+  `renderer.BackendAvailable`: `serve` refuses an unavailable `--backend` before
+  it listens, and a submitted job naming one explicitly is refused at submit.
+  A backend inherited from the server default is not refused, because the
+  operator was already told at startup, and neither is one that has a fallback.
 
 ## SIMD dispatch
 

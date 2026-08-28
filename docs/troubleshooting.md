@@ -193,6 +193,50 @@ would not initialise. See [`gpu-backends.md`](gpu-backends.md) and
 [`support-matrix.md`](support-matrix.md). A CGO-disabled portable build has no
 GPU backend at all, so `--backend gpu` there is always this error.
 
+A build without the `gpu` tag now says this earlier rather than at run time. It
+does not advertise `opencl` in `GET /api/v1/system`, `serve --backend opencl`
+refuses to start, and a job that names the backend explicitly is rejected at
+submit. Set `backendFallback: "cpu"` (`--backend-fallback cpu`) when you would
+rather the run happened on the CPU than not at all; the job then records
+`effectiveBackend: "cpu"` and a warning names the reason. Leave it unset — the
+default — when the point of the run is to measure the device.
+
+### GPU errors during a run
+
+A device that fails after the renderer has started is a different problem. The
+OpenCL renderer cannot report it: `Cost` and `Render` have no error return, so
+it degrades permanently to its CPU fallback and logs
+
+```
+WARN OpenCL renderer degraded to CPU reason=...
+```
+
+once, followed by a server-side line naming the job:
+
+```
+WARN Renderer degraded to its CPU fallback mid-run job_id=... backend=opencl
+```
+
+The job carries `backendDegraded: true` from that point, the CLI prints
+`Backend: opencl (degraded to CPU mid-run)`, and the job detail page shows the
+same. **Treat the run's cost as unusable for comparison.** The device
+accumulates the SSD in float32 and the CPU in float64, so the objective changed
+scale partway through and the best-so-far spans both.
+
+Common causes, in the order worth checking:
+
+- **Out of device memory.** A large canvas, a large circle count, or another
+  process holding the card. `clinfo` reports the global memory size; the
+  renderer needs roughly `W*H*4` bytes twice plus the reduction partials.
+- **A driver reset.** A long kernel can trip the display driver's watchdog on a
+  card that is also driving a desktop. The system log records it; the OpenCL
+  error is usually `CL_OUT_OF_RESOURCES` or `CL_DEVICE_NOT_AVAILABLE`.
+- **The device disappeared.** A suspend/resume cycle or a driver upgrade under a
+  running process. Restart the run.
+
+Degradation is per renderer and permanent, so a staged run can pay one device
+timeout per stage before every session has given up.
+
 ### Optimizer failures
 
 An optimizer that fails does not return a partial fit. Every pipeline — joint,
