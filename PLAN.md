@@ -2062,10 +2062,14 @@ The campaign's own block-1 trace shows the incumbent still improving while
 sigma rises 242-fold. **The identifiable quantity was never recorded**, so that
 account is inference; recording it is what turns it into a measurement.
 
-- [ ] Record `max(D)` — or `sigma * max(D)` directly — in `SearchDiagnostics`.
-      `cmaes_adapter.go` takes Sigma and ConditionNumber from the distribution
-      snapshot and drops its eigenvalues, so the extent of the sampling
-      distribution cannot be recovered from any trace this project has written.
+- [x] Record `max(D)` — or `sigma * max(D)` directly — in `SearchDiagnostics`.
+      `cmaes_adapter.go` took Sigma and ConditionNumber from the distribution
+      snapshot and dropped its eigenvalues, so the extent of the sampling
+      distribution could not be recovered from any trace this project had
+      written. `SearchDiagnostics.DistributionExtent` now carries
+      `sigma * max(D)`, folding the dense and per-block representations, and
+      the campaign driver emits it as a `distributionExtent` column. Traces
+      written before this carry an empty cell rather than a zero.
 - [ ] Persist each restart's `TerminationReason`. The library records one per
       restart and the adapter discards it, then maps the schedule-level reason,
       which the restart driver overwrites with max-evaluations whenever the

@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/cwbudde/circlefit/internal/opt"
 	"github.com/cwbudde/circlefit/internal/store"
 )
 
@@ -538,7 +539,7 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 	defer file.Close()
 
 	writer := csv.NewWriter(file)
-	if err := writer.Write([]string{"arm", "block", "seed", "iteration", "evaluations", "bestCost", "populationSpread", "sigma", "conditionNumber"}); err != nil {
+	if err := writer.Write([]string{"arm", "block", "seed", "iteration", "evaluations", "bestCost", "populationSpread", "sigma", "conditionNumber", "distributionExtent"}); err != nil {
 		return err
 	}
 
@@ -567,14 +568,12 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 			}
 			lastBucket = bucket
 			diagnostic := entry.OptimizerDiagnostics
-			populationSpread, sigma, conditionNumber := formatDiagnostics(
-				diagnostic.PopulationSpread, diagnostic.Sigma, diagnostic.ConditionNumber,
-			)
+			populationSpread, sigma, conditionNumber, extent := formatDiagnostics(diagnostic)
 			record := []string{
 				record.Arm, strconv.Itoa(record.Block), strconv.FormatInt(record.Seed, 10),
 				strconv.Itoa(entry.Iteration), strconv.Itoa(entry.Evaluations),
 				strconv.FormatFloat(entry.Cost, 'g', 17, 64),
-				populationSpread, sigma, conditionNumber,
+				populationSpread, sigma, conditionNumber, extent,
 			}
 			if err := writer.Write(record); err != nil {
 				return err
@@ -586,12 +585,29 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 	return writer.Error()
 }
 
-func formatDiagnostics(spread, sigma, conditionNumber float64) (string, string, string) {
-	if sigma == 0 && conditionNumber == 0 {
-		return strconv.FormatFloat(spread, 'g', 17, 64), "", ""
+// formatDiagnostics splits one trace entry's optimizer diagnostics into the
+// Mayfly column and the three CMA-ES columns, leaving the other engine's cells
+// empty. distributionExtent stays empty for a trace written before the adapter
+// recorded it, which is every trace behind docs/cmaes-report.md; an empty cell
+// says "not measured" where a zero would say "the distribution had no width".
+func formatDiagnostics(diagnostic *opt.SearchDiagnostics) (string, string, string, string) {
+	if diagnostic == nil {
+		return "", "", "", ""
 	}
 
-	return "", strconv.FormatFloat(sigma, 'g', 17, 64), strconv.FormatFloat(conditionNumber, 'g', 17, 64)
+	if diagnostic.Sigma == 0 && diagnostic.ConditionNumber == 0 {
+		return strconv.FormatFloat(diagnostic.PopulationSpread, 'g', 17, 64), "", "", ""
+	}
+
+	extent := ""
+	if diagnostic.DistributionExtent != 0 {
+		extent = strconv.FormatFloat(diagnostic.DistributionExtent, 'g', 17, 64)
+	}
+
+	return "",
+		strconv.FormatFloat(diagnostic.Sigma, 'g', 17, 64),
+		strconv.FormatFloat(diagnostic.ConditionNumber, 'g', 17, 64),
+		extent
 }
 
 // familyAlpha is the family-wise error rate the campaign's seven paired
