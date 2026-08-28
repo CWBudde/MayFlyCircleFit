@@ -88,9 +88,16 @@ recurring host-to-device payload is `28*K` bytes, at most 28 KB under the curren
 input limit, while every evaluation already has to wait for a four-byte reduced
 cost. An OpenCL pinned buffer would add map/unmap synchronization, lifetime and
 cgo ownership complexity, and vendor-dependent behavior. Packing the large
-image buffers removes 75% of the material transfer without those costs. Revisit
-pinned staging only if event profiling on a supported discrete GPU shows that
-parameter upload is a meaningful share of evaluation time.
+image buffers removes 75% of the material transfer without those costs.
+
+Vendor-GPU measurement has since settled half of this and reopened the other
+half. Parameter upload is flat at about 10 µs from K=1 to K=100, so it is
+latency-bound and pinning it would buy nothing: **that decision stands.** The
+condition above named the wrong transfer, though. The image readback runs at
+0.5-0.7 GB/s and costs 5.9 ms at 1024², more than three times a complete
+evaluation at that size, and it is the only regime in which the CPU renderer
+beats the GPU. Pinned staging is worth evaluating **for the readback**; see
+[`gpu-performance-report.md`](gpu-performance-report.md).
 
 ## Validation
 
@@ -110,7 +117,64 @@ go test -tags gpu ./internal/fit/renderer -bench '^BenchmarkRenderer'
 Performance claims require benchmarks on actual GPU hardware. PoCL executes on
 the CI runner CPU and is used for correctness and lifecycle coverage only.
 
+### Correctness against the CPU renderer
+
+`renderer_opencl_correctness_gpu_test.go` is the parity suite: a circle-count ×
+canvas-size matrix, degenerate canvases (1×1, single row, single column), a
+named catalog of edge cases — circles outside each bound, straddling each edge
+and the corner, zero and negative radius, zero opacity, a canvas-covering
+radius, concentric and coincident stacks, a subpixel centre walk — a
+compositing-order check, and a randomized deviation sweep. The CPU render is the
+golden image throughout; there is no committed PNG, because a checked-in
+baseline would only duplicate the oracle and then go stale against it. When a
+scene fails, the CPU render, the GPU render, and an amplified difference map are
+written to `$CIRCLEFIT_GPU_ARTIFACTS` (default: a `circlefit-gpu-mismatch`
+directory under the system temp directory), because a coordinate and two channel
+values do not show what a rasterizer got wrong.
+
+Two things that suite is built to prevent:
+
+- **A CPU device passing as validation.** `InitOpenCL` prefers a GPU but falls
+  back to a CPU device, so on a machine with only PoCL installed every parity
+  test passes while measuring nothing about a GPU.
+  `TestOpenCLDeviceReportsAPreparedDevice` fails under
+  `CIRCLEFIT_REQUIRE_GPU_DEVICE=1` unless the selected device is of type GPU,
+  and logs the platform, device, driver version, and compute units either way.
+
+  The two switches are deliberately separate. `CIRCLEFIT_REQUIRE_OPENCL=1`
+  means "OpenCL has to work here, do not skip" and is what `ci-gpu-compile.yml`
+  sets while running on PoCL's CPU device on purpose;
+  `CIRCLEFIT_REQUIRE_GPU_DEVICE=1` additionally demands a vendor GPU. Set both
+  when a run is meant to be GPU validation:
+
+  ```sh
+  CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
+      go test -tags gpu -count=1 ./internal/fit/renderer/... -run '^TestOpenCL'
+  ```
+- **A tolerance hiding a structural mismatch.** The suite found one: the kernel
+  implemented a different rasterization rule from the CPU renderer, wrong by up
+  to 226 of 255 on a small number of pixels and by a factor of two in cost on a
+  sparse scene. It is fixed, and the whole account is in
+  [`renderer-correctness.md`](renderer-correctness.md).
+
+What remains is arithmetic. The device is float32 end to end against a float64
+CPU path, so parity is a budget — ±2 per channel and 1% relative cost — and not
+byte-identity. Measured on an NVIDIA T550 the worst case is 1 channel and 0.021%
+of cost. The cost bound is the one that binds: it comes from accumulating the
+SSD in float32 across the canvas, so it grows with pixel count while the channel
+deviation does not. **Do not compare a GPU cost against a CPU cost as if they
+were the same number** — within a run they are consistent, but a recorded
+figure from one backend is not a baseline for the other.
+
+Validated on one vendor GPU (NVIDIA T550, driver 580.178.04, OpenCL 3.0 CUDA).
+AMD and Intel remain unmeasured for both parity and throughput.
+
 ### Local PoCL transfer baseline
+
+**Superseded for performance by
+[`gpu-performance-report.md`](gpu-performance-report.md).** PoCL runs on the
+host CPU. The section is kept because its method and its shape conclusions
+still hold; its numbers describe a CPU pretending to be a device.
 
 The local development baseline uses PoCL on `cpu-haswell-AMD Ryzen 5 4600H with
 Radeon Graphics` (12 compute units). The prototype materialization path read 16
@@ -136,6 +200,11 @@ was noisy, including an inverted 256x256 `Cost`/`CostThenRender` result, so it i
 not used for a before/after speedup claim.
 
 ### Local CPU/PoCL pipeline comparison
+
+**Superseded for performance by
+[`gpu-performance-report.md`](gpu-performance-report.md).** PoCL runs on the
+host CPU. The section is kept because its method and its shape conclusions
+still hold; its numbers describe a CPU pretending to be a device.
 
 The backend pipeline benchmark uses a 64x64 reference, 12 circles, and eight
 distinct (uncached) optimizer evaluations per stage. It includes stage-session
@@ -173,7 +242,7 @@ CIRCLEFIT_REQUIRE_OPENCL=1 go test -tags gpu -run '^$' \
   -benchmem -benchtime=5x -count=5 ./internal/fit/renderer
 ```
 
-Record the OpenCL device name/vendor with every result. Task 11.9 remains open
-until the full circle-count and image-size matrix is measured on supported
-vendor GPUs; those measurements, not this PoCL baseline, determine crossover
-points and whether pinned memory should be reconsidered.
+Record the OpenCL device name/vendor with every result. The matrix has now been
+measured on an NVIDIA T550: see
+[`gpu-performance-report.md`](gpu-performance-report.md), which supersedes every
+PoCL timing on this page. AMD and Intel devices remain unmeasured.

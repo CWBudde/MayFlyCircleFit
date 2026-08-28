@@ -108,6 +108,18 @@ hand-waved:
   cost comparability outright. See
   [`exact-span-compositors.md`](exact-span-compositors.md) and
   [`schedule-format.md`](schedule-format.md).
+- **The OpenCL renderer** computes in float32 throughout — geometry, blending,
+  and the SSD reduction — against a float64 CPU path, so it is held to a
+  measured budget instead: **±2 per channel and 1% relative cost**. Measured on
+  an NVIDIA T550 across canvases from 32² to 256² and one to twenty-four
+  circles, the worst case is 1 channel and 0.021% of cost, so both budgets hold
+  with room. `TestOpenCLDeviationBudget` re-measures and reports it on every
+  run, so these figures can be checked rather than trusted. Note which way the
+  two bounds bind: the largest cost error comes from summing a million float32
+  residuals on the device, not from geometry, and it grows with the canvas.
+
+  This budget is a statement about arithmetic, and it only became one after the
+  kernel stopped disagreeing about *rasterization*. See below.
 
 And one place where it was not the contract and nobody had said so. The span
 search starts at `int(centerX+0.5)` and walks outward without ever testing that
@@ -121,6 +133,42 @@ and it is pinned by `TestSpanSearchAlwaysCoversNearestSample` and
 `TestSpanSearchOverCoverageRate` rather than changed, because changing it would
 move every recorded cost in `docs/`. The measurement and the argument are in
 [`renderer-precision-measurements.md`](renderer-precision-measurements.md).
+
+**The OpenCL kernel did not implement that rule, and this is what an undocumented
+invariant costs.** It tested `dx*dx + dy*dy > radius*radius` per pixel — the
+pre-optimization disc test — so it dropped exactly the samples the span search
+paints unconditionally: both tangent rows of every circle. The rule had been
+written down here only after the CPU renderer was measured, and nothing carried
+it across to the kernel.
+
+The failure was rare and total rather than small and widespread, which is why
+tolerance-based parity tests had not caught it. On a patterned reference it
+touched around 0.0005% of pixels, but each one was wrong by up to 226 of 255 —
+a completely different colour, not a rounding difference. Its effect on cost
+depended entirely on the scene: 0.01% on a busy reference, where a handful of
+pixels is lost in the total, and **a factor of two** on a sparse one, where the
+circle *is* the cost. A single black circle of radius 1 at `(10.5, 10)` on a
+24×24 white canvas cost 451.5625 on the CPU and 225.78125 on the device.
+
+The kernel now applies the CPU predicate exactly:
+
+```
+painted(x, y)  ⟺  dy² ≤ r²  ∧  ( x == int(centerX + 0.5)  ∨  dx² + dy² ≤ r² )
+```
+
+Both CPU geometry paths agree on it — the float64 oracle in `circleSpanFloat64`
+and the production Q16.16 path both start the walk at `int(centerX + 0.5)` and
+never test that pixel — so matching it is matching the renderer, not one of its
+two implementations. On the same randomized catalog the worst channel deviation
+went from 73 to 1. `TestOpenCLPaintsEveryIntersectingRowsNearestSample` pins the
+tangent case byte-exactly, with tolerance zero, and
+`TestOpenCLDeviationBudget` fails on the old kernel.
+
+Two smaller divergences went with it. The kernel skipped any circle with
+`opacity < 0.001`, where the CPU skips only exact zero; both now skip only exact
+zero. And rows are now rejected before columns, as the CPU scanline loop does,
+which is what makes a zero radius agree: it paints one pixel at an integer
+centre and nothing at a fractional one, on both backends.
 
 Everything else on the default path — SSD, delta-SSD, circle span, and the exact
 span compositors on every tier — is byte-identical to its own architecture's

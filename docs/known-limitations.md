@@ -158,6 +158,15 @@ behavior is production-ready.
   on demand, so what is covered is the accessor (`renderer.Degraded`) and the
   reporting path, not the device event that triggers them. The build-level
   unavailable case is covered without a GPU, in the `!gpu` tests.
+- OpenCL costs are not byte-comparable with CPU costs. The device computes in
+  float32 throughout, so it is held to a measured budget -- +/-2 per channel and
+  1% relative cost, worst case 1 channel and 0.021% on an NVIDIA T550 -- rather
+  than to the byte-exact contract in
+  [`renderer-correctness.md`](renderer-correctness.md). The cost bound comes
+  from accumulating the SSD in float32 and therefore grows with canvas size. A
+  cost recorded under one backend is not a baseline for the other; re-measure
+  after switching. Parity itself is validated on one vendor GPU only (NVIDIA
+  T550); AMD and Intel are unmeasured.
 - ARM64 uses NEON for SSD when ASIMD is available, with a scalar fallback. SAD
   remains scalar because it has no native ARM64 kernel.
 - AMD64 dispatch is tiered: AVX2 when the CPU reports it, otherwise SSE2,

@@ -107,13 +107,30 @@ __kernel void render_cost(
             const float cb = params[base + 5];
             const float opacity = params[base + 6];
 
-            if (opacity < 0.001f || radius < 0.0f) {
+            // The CPU renderer skips a circle only when it is exactly
+            // transparent, and a negative radius leaves it an empty row range.
+            if (opacity == 0.0f || radius < 0.0f) {
                 continue;
             }
 
             const float dx = (float)x - cx;
             const float dy = (float)y - cy;
-            if (dx * dx + dy * dy > radius * radius) {
+            const float radiusSquared = radius * radius;
+            const float dy2 = dy * dy;
+
+            // Rows are selected before columns, exactly as the CPU scanline
+            // loop does: a row the disc does not reach paints nothing.
+            if (dy2 > radiusSquared) {
+                continue;
+            }
+
+            // Every row the disc *does* reach paints its nearest sample, even
+            // where the disc test rejects it. The CPU span search starts at
+            // int(centerX+0.5) and walks outward without ever testing that
+            // pixel, so it is painted unconditionally; a plain dx*dx+dy*dy
+            // test drops both tangent rows of a small circle and moves the
+            // cost by a factor of two. See docs/renderer-correctness.md.
+            if (dx * dx + dy2 > radiusSquared && x != (int)(cx + 0.5f)) {
                 continue;
             }
 

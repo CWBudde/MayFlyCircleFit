@@ -5,6 +5,7 @@ package opencl
 import (
 	"image"
 	"image/color"
+	"log/slog"
 	"math"
 	"math/rand"
 	"os"
@@ -12,7 +13,21 @@ import (
 	"testing"
 )
 
+// silenceOpenCLBenchmarkLogs keeps renderer construction's INFO lines out of the
+// benchmark output. Every session logs one, and interleaved they split a result
+// line from its name, which leaves the output unparseable by benchstat.
+func silenceOpenCLBenchmarkLogs(b *testing.B) {
+	b.Helper()
+
+	previous := slog.Default()
+
+	slog.SetDefault(slog.New(slog.DiscardHandler))
+	b.Cleanup(func() { slog.SetDefault(previous) })
+}
+
 func BenchmarkOpenCLParameterPackAndUpload(b *testing.B) {
+	silenceOpenCLBenchmarkLogs(b)
+
 	for _, circles := range []int{1, 10, 50, 100} {
 		b.Run("K="+strconv.Itoa(circles), func(b *testing.B) {
 			ref := patternedReference(image.Rect(0, 0, 1, 1))
@@ -38,6 +53,8 @@ func BenchmarkOpenCLParameterPackAndUpload(b *testing.B) {
 }
 
 func BenchmarkOpenCLResidentImageReadback(b *testing.B) {
+	silenceOpenCLBenchmarkLogs(b)
+
 	for _, size := range []int{64, 256, 512, 1024} {
 		b.Run(strconv.Itoa(size), func(b *testing.B) {
 			ref := patternedReference(image.Rect(0, 0, size, size))
