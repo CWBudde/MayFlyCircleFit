@@ -78,6 +78,11 @@ re-measure instead.
   Q24.8 and normalized Q8.24 span geometry measured against production Q16.16
   on range, adversarial boundaries, full renders, and throughput. Q16.16 stays;
   read before proposing another fixed-point format.
+- [`gpu-performance-report.md`](gpu-performance-report.md) — the OpenCL
+  renderer measured on an NVIDIA GPU: the circle-count and image-size matrix,
+  the transfer boundaries, and the staged pipelines. The evaluation path wins
+  by 6-14x; the image readback and the per-stage session rebuild are what
+  costs. **Supersedes every PoCL timing in `gpu-backends.md`.**
 
 **Polishing**
 

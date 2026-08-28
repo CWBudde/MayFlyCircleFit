@@ -88,9 +88,16 @@ recurring host-to-device payload is `28*K` bytes, at most 28 KB under the curren
 input limit, while every evaluation already has to wait for a four-byte reduced
 cost. An OpenCL pinned buffer would add map/unmap synchronization, lifetime and
 cgo ownership complexity, and vendor-dependent behavior. Packing the large
-image buffers removes 75% of the material transfer without those costs. Revisit
-pinned staging only if event profiling on a supported discrete GPU shows that
-parameter upload is a meaningful share of evaluation time.
+image buffers removes 75% of the material transfer without those costs.
+
+Vendor-GPU measurement has since settled half of this and reopened the other
+half. Parameter upload is flat at about 10 µs from K=1 to K=100, so it is
+latency-bound and pinning it would buy nothing: **that decision stands.** The
+condition above named the wrong transfer, though. The image readback runs at
+0.5-0.7 GB/s and costs 5.9 ms at 1024², more than three times a complete
+evaluation at that size, and it is the only regime in which the CPU renderer
+beats the GPU. Pinned staging is worth evaluating **for the readback**; see
+[`gpu-performance-report.md`](gpu-performance-report.md).
 
 ## Validation
 
@@ -111,6 +118,11 @@ Performance claims require benchmarks on actual GPU hardware. PoCL executes on
 the CI runner CPU and is used for correctness and lifecycle coverage only.
 
 ### Local PoCL transfer baseline
+
+**Superseded for performance by
+[`gpu-performance-report.md`](gpu-performance-report.md).** PoCL runs on the
+host CPU. The section is kept because its method and its shape conclusions
+still hold; its numbers describe a CPU pretending to be a device.
 
 The local development baseline uses PoCL on `cpu-haswell-AMD Ryzen 5 4600H with
 Radeon Graphics` (12 compute units). The prototype materialization path read 16
@@ -136,6 +148,11 @@ was noisy, including an inverted 256x256 `Cost`/`CostThenRender` result, so it i
 not used for a before/after speedup claim.
 
 ### Local CPU/PoCL pipeline comparison
+
+**Superseded for performance by
+[`gpu-performance-report.md`](gpu-performance-report.md).** PoCL runs on the
+host CPU. The section is kept because its method and its shape conclusions
+still hold; its numbers describe a CPU pretending to be a device.
 
 The backend pipeline benchmark uses a 64x64 reference, 12 circles, and eight
 distinct (uncached) optimizer evaluations per stage. It includes stage-session
@@ -173,7 +190,7 @@ CIRCLEFIT_REQUIRE_OPENCL=1 go test -tags gpu -run '^$' \
   -benchmem -benchtime=5x -count=5 ./internal/fit/renderer
 ```
 
-Record the OpenCL device name/vendor with every result. Task 11.9 remains open
-until the full circle-count and image-size matrix is measured on supported
-vendor GPUs; those measurements, not this PoCL baseline, determine crossover
-points and whether pinned memory should be reconsidered.
+Record the OpenCL device name/vendor with every result. The matrix has now been
+measured on an NVIDIA T550: see
+[`gpu-performance-report.md`](gpu-performance-report.md), which supersedes every
+PoCL timing on this page. AMD and Intel devices remain unmeasured.

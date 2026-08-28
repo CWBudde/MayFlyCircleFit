@@ -248,12 +248,49 @@ and documentation remain below. The former setup and visual-validation
 remainders were moved into Tasks 11.10 and 11.12.
 
 ### Task 11.9: Create GPU Performance Benchmarks
-- [ ] Benchmark GPU rendering for various K values (1, 10, 50, 100)
-- [ ] Benchmark GPU rendering for various W×H sizes (64x64, 256x256, 512x512, 1024x1024)
-- [ ] Benchmark GPU cost computation separately
-- [ ] Compare GPU vs CPU performance across scenarios
-- [ ] Identify crossover points where GPU becomes beneficial
-- [ ] Document performance characteristics
+- [x] Benchmark GPU rendering for various K values (1, 10, 50, 100)
+- [x] Benchmark GPU rendering for various W×H sizes (64x64, 256x256, 512x512, 1024x1024)
+- [x] Benchmark GPU cost computation separately
+- [x] Compare GPU vs CPU performance across scenarios
+- [x] Identify crossover points where GPU becomes beneficial
+- [x] Document performance characteristics
+
+`BenchmarkRendererBackendMatrix` crosses all four circle counts with all four
+image sizes in a `cost` and a `cost_then_render` arm, measured on an NVIDIA T550
+in [`docs/gpu-performance-report.md`](docs/gpu-performance-report.md). These are
+the first vendor-GPU numbers; every PoCL timing on this path is superseded.
+
+The evaluation path is a clear GPU win — 6-14x from 256² upward, with twenty of
+thirty-two cells separated in the GPU's favour by disjoint sample ranges — and the `cost` arm has no
+crossover anywhere in the measured range. The one regime the GPU loses is
+materializing an image per evaluation at low K: at 512² and 1024² alike the CPU
+is separated ahead at K=1, the two are indistinguishable at K=10, and the GPU is
+separated ahead from K=50. That is a transfer, not a compute, result. Parameter upload is flat at about 10 µs
+from K=1 to K=100, so pinning it would buy nothing, but the image readback runs
+at 0.5-0.7 GB/s and costs 5.9 ms at 1024², over three times a complete
+evaluation there. The pinned-memory condition recorded in `gpu-backends.md`
+named the wrong transfer; reconsider pinning for the readback, not the
+parameters.
+
+Two things the measurement cost more than the result did. The host is a
+contended interactive desktop under `powersave`, so only disjoint ranges support
+a verdict and ten cells stay undecided; absolute times are depressed and belong
+to this machine alone. And Go runs a cell's `-count` repetitions back-to-back,
+which on such a host let one burst of load corrupt every sample of a single cell
+— the first attempt reported K=50 slower than K=100. Eight separate passes of
+the whole matrix at `-count=1` removed the inversions. Use passes, not `-count`,
+on any machine you are also using.
+
+The benchmark fails rather than skips under `CIRCLEFIT_REQUIRE_OPENCL=1` and
+asserts either side of the measured loop that the renderer has not degraded to
+its CPU fallback, because a degraded OpenCL renderer answers silently from the
+CPU and would publish CPU timings under a GPU label.
+
+The staged pipelines were measured on the same device and are the vendor-GPU
+evidence Task 11.13 was waiting for: joint is 1.3x *faster* on the GPU, while
+sequential is 26x and batch 84x slower, all three separated. Joint is also the
+only pipeline that creates one session. PoCL had reported 190x and 120x; the
+ratios moved and the conclusion did not.
 
 ### Task 11.10: Test GPU Correctness and Edge Cases
 - [ ] Test GPU detection and initialization on a prepared OpenCL runner.
