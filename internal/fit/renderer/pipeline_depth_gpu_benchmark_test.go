@@ -20,12 +20,15 @@ var stagedDepths = []int{8, 32, 128, 512}
 // A stage appends one circle to D retained ones. The CPU renderer implements
 // accumulatedSessionFactory, so its session rasterizes one circle over a
 // retained canvas and its per-evaluation cost is independent of D. The OpenCL
-// renderer does not, so its session rebuilds all D+1 circles from white on
-// every evaluation and its cost grows with D.
+// renderer now does too, so both accumulated arms should be independent of D
+// while both replay arms grow with it.
 //
-// The three arms separate backend from technique. "cpu_replay" is the CPU
-// paying the same replay the GPU pays, which is what makes "cpu_accumulated"
-// attributable to the accumulated canvas rather than to the CPU being faster.
+// The four arms separate backend from technique. "cpu_replay" is the CPU paying
+// the same replay the GPU pays, which is what makes "cpu_accumulated"
+// attributable to the accumulated canvas rather than to the CPU being faster;
+// "opencl_accumulated" is the same technique on the device, so the pair of
+// accumulated arms is a backend comparison and the pair of OpenCL arms is a
+// technique comparison.
 //
 // The pipeline benchmarks cannot see this. They run eight evaluations per
 // stage, where per-stage setup dominates, while a real stage runs hundreds.
@@ -83,6 +86,34 @@ func BenchmarkStagedEvaluationAtDepth(b *testing.B) {
 
 						requireBenchmarkGPUDevice(b, r)
 						benchmarkDepthCost(b, BackendOpenCL, r, appended)
+					})
+
+					b.Run("opencl_accumulated", func(b *testing.B) {
+						base, cleanup, err := NewRendererForBackend(string(BackendOpenCL), ref, depth)
+						if err != nil {
+							if requireOpenCLBenchmarks() {
+								b.Fatalf("required opencl backend unavailable: %v", err)
+							}
+
+							b.Skipf("opencl backend unavailable: %v", err)
+						}
+
+						b.Cleanup(cleanup)
+						requireBenchmarkGPUDevice(b, base)
+
+						factory, ok := base.(accumulatedSessionFactory)
+						if !ok {
+							b.Fatalf("%T does not implement accumulatedSessionFactory", base)
+						}
+
+						session, sessionCleanup, err := factory.newSessionWithCanvas(canvas, 1)
+						if err != nil {
+							b.Fatalf("newSessionWithCanvas: %v", err)
+						}
+
+						b.Cleanup(sessionCleanup)
+
+						benchmarkDepthCost(b, BackendOpenCL, session, appended[depth*paramsPerCircle:])
 					})
 				})
 			}
