@@ -43,8 +43,8 @@ while the optimizer scores candidates:
   session and passes the usefulness gate before commit;
 - a parallel optimizer is rejected unless the backend can create independent
   sessions *and* advertises concurrent evaluation. OpenCL can create staged
-  sessions but has not validated concurrent device evaluation, so it remains
-  serial.
+  sessions, but they share one in-order command queue and concurrent device
+  evaluation has not been validated, so it remains serial.
 
 This separation is important: making candidate evaluation concurrent does not
 make acceptance concurrent and does not weaken the all-or-nothing sweep.

@@ -261,12 +261,17 @@ stage.
 
 ### An OpenCL run is slower than the CPU
 
-Usually not a fault. On measured hardware only joint mode is faster on the GPU;
-sequential and batch are 26x and 84x *slower*, because every stage builds its
-own OpenCL context, queue and compiled program, and that setup dominates the
-stage. Use `--mode joint` on the GPU and the CPU backend for the staged modes
-until device resources are shared. A second, narrower case: materializing an
-image on every evaluation at a single circle on a large canvas, where the
+Usually not a fault, but the expected shape has changed. Sequential and batch
+used to be 26x and 84x *slower* than the CPU, because every stage built its own
+OpenCL context, queue and compiled program and that setup dominated the stage. A
+renderer and its sessions now share one device engine, and the two modes measure
+83.8x and 85.9x faster than they did. On the measured host neither of them
+separates from the CPU renderer any more, so expect a staged GPU run to cost
+about what the same run costs on the CPU: `--backend cpu` is no longer the
+obvious choice for them, and neither is the GPU. A staged OpenCL run that is
+still many times slower than the CPU is worth reporting as a fault rather than
+accepting as the known cost it once was. A second, narrower case: materializing
+an image on every evaluation at a single circle on a large canvas, where the
 readback is a fixed per-pixel cost the GPU pays and the CPU does not.
 
 Rule out the two ways a run is not on the device at all before concluding

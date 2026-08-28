@@ -132,11 +132,20 @@ visible from the package list:
   device failure degrades the renderer permanently and silently to its CPU
   fallback. `effectiveBackend` and `backendDegraded` on the job are what say what
   ran; both are per-process and are not persisted to a checkpoint.
-- **The staged pipelines are much slower than the CPU, on real hardware.** Joint
-  mode wins, at 0.8x the CPU's time; sequential and batch lose by 26x and 84x
-  because every stage rebuilds a context, queue and compiled program. Task 11.13
-  tranche 1 is the fix. Measured on one NVIDIA T550; AMD and Intel are unmeasured
-  for both parity and throughput.
+- **The staged pipelines no longer rebuild the device, and are no longer far
+  behind the CPU — but they do not beat it either.** A renderer and every session
+  derived from it share one device engine: runtime, context, queue, compiled
+  program, reference buffer and reduction workgroup size, so a stage no longer
+  calls `gpu.InitOpenCL` and builds the program again. That is Task 11.13
+  tranche 1, and it made sequential and batch 83.8x and 85.9x faster than the
+  per-stage rebuild they replaced, moving them from a separated 26x and 84x loss
+  to indistinguishable from the CPU. No staged measurement separates in either
+  direction now, so a proposal may claim the modes are usable on the GPU and may
+  not claim the GPU is the faster place to run them. The same host cannot
+  separate joint either, which leaves the older joint advantage neither confirmed
+  nor contradicted; the device-side accumulated base canvas is the remaining
+  staged-path work. Measured on one NVIDIA T550; AMD and Intel are unmeasured for
+  both parity and throughput.
 
 [`docs/gpu-backends.md`](docs/gpu-backends.md) carries setup, example commands,
 the when-to-use-which table, the macOS decision, and the device quirks that make

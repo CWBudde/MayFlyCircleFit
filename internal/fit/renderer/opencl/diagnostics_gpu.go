@@ -32,3 +32,17 @@ func (r *Renderer) ImageValid() bool { return r.imageValid }
 
 // LocalSize returns the reduction workgroup size selected for this device.
 func (r *Renderer) LocalSize() int { return r.localSize }
+
+// ProgramBuilds returns how many times the kernel source has been compiled on
+// the engine backing this renderer. Compiling it was the dominant part of
+// per-session setup, so the count is the direct evidence that a renderer and
+// every session derived from it share one engine and compile once, rather than
+// each rebuilding the program for its own circle count. It reports zero once
+// the renderer has been torn down and no longer holds an engine.
+func (r *Renderer) ProgramBuilds() uint64 {
+	if r.engine == nil {
+		return 0
+	}
+
+	return r.engine.builds
+}

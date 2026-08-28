@@ -6,7 +6,8 @@ an experimental Dragonfly adapter are selectable with `--optimizer`, and
 [Optimizer engines](#optimizer-engines) says which settings belong to which. The
 default CPU renderer supports joint, sequential, and batch optimization. An
 experimental OpenCL renderer is available for all three modes in GPU-tagged
-builds, although only joint mode is currently faster there than on the CPU.
+builds; joint mode is the one with a measured win there, and the staged modes
+now cost about what they cost on the CPU.
 
 The project is under active production-readiness remediation. Read the
 [support matrix](docs/support-matrix.md) and
@@ -204,15 +205,19 @@ CGO_ENABLED=1 go build -tags gpu -o circlefit .
 ./circlefit run --ref assets/test.png --backend opencl --mode joint
 ```
 
-**Joint mode is the one pipeline worth running on the GPU.** Measured on an
+**Joint mode is the pipeline with a measured win on the GPU.** Measured on an
 NVIDIA T550 it evaluates the objective 6-14x faster than the multi-threaded CPU
-renderer from 256² upward, while sequential and batch are 26x and 84x *slower*,
-because each stage rebuilds its own OpenCL context and program. Two more things
-before you use a GPU number: the device computes in float32 against a float64
-CPU path, so a cost recorded under one backend is not a baseline for the other;
-and a device that fails mid-run degrades silently to the CPU, so read
-`effectiveBackend` and `backendDegraded` off the job rather than the backend you
-asked for.
+renderer from 256² upward. Sequential and batch were once 26x and 84x *slower*
+as whole pipelines, because each stage rebuilt its own OpenCL context and
+program; a renderer and its sessions now share one device engine, which made
+those two modes 83.8x and 85.9x faster than they were. Neither separates from
+the CPU renderer any more, in either direction, so the reason to keep them off
+the GPU is gone — which is not the same as a reason to move them onto it. Two
+more things before you use a GPU number: the device computes in float32
+against a float64 CPU path, so a cost recorded under one backend is not a
+baseline for the other; and a device that fails mid-run degrades silently to
+the CPU, so read `effectiveBackend` and `backendDegraded` off the job rather
+than the backend you asked for.
 
 An unavailable backend fails the run by default. Add `--backend-fallback cpu`
 when you would rather the run happened than not:

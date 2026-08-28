@@ -173,9 +173,9 @@ the ratios are one device on one contended host.
 
 | Workload | Use | Why |
 |---|---|---|
-| Joint mode, any canvas from 256² up | **GPU** | The objective evaluation is 6-14x faster, and separated at every measured cell from 256² upward except K=1 at 256². Joint creates one session, so the setup cost is paid once. |
+| Joint mode, any canvas from 256² up | **GPU** | The objective evaluation is 6-14x faster, and separated at every measured cell from 256² upward except K=1 at 256². |
 | Joint mode at 64² | Either | The GPU leads, but by too little to separate from noise. Not worth a build-tag dependency on its own. |
-| Sequential or batch mode | **CPU** | 26x and 84x slower respectively on the T550. Each stage builds its own context, queue and compiled program, and that dominates everything else the stage does. Task 11.13 tranche 1 is the fix; until it lands this is not a close call. |
+| Sequential or batch mode | **Either** | No longer disqualified. Task 11.13 tranche 1 made a session share its parent's device engine instead of rebuilding one, which moved sequential 83.8x and batch 85.9x, both separated. Against the CPU they now measure 1.12x and 1.08x with neither cell separated — indistinguishable on this host, not a win. Pick on the other rows. |
 | An image materialized on every evaluation, at K=1 on a large canvas | **CPU** | The readback is a fixed per-pixel cost the GPU pays regardless of circle count — 5.9 ms at 1024², more than three times a complete evaluation there — while the CPU composites only what one circle covers. This is the only regime where the CPU is separated ahead. |
 | The same, from K=50 up | **GPU** | Circle count buys the readback back: 1024² runs 0.6x, 1.1x, 2.1x, 8.3x as K goes 1, 10, 50, 100. |
 | A custom base canvas | **CPU** | OpenCL does not support one; the job is refused. |
@@ -193,7 +193,8 @@ Two constraints that are not about speed:
   arithmetics. The backend you asked for says nothing about what ran.
 
 In practice the honest summary today is: OpenCL is worth it for joint-mode
-evaluation on a canvas of 256² or larger, and for nothing else yet.
+evaluation on a canvas of 256² or larger. The staged modes are no longer a
+reason to avoid it, but nothing yet measures them ahead of the CPU either.
 
 ## macOS has no GPU backend, by decision
 
@@ -211,13 +212,18 @@ What settles it:
   its own float32 parity budget to measure against the float64 CPU path, its own
   CI runner — for a platform where no measurement exists to say the GPU would
   win. WebGPU would additionally mean shipping Dawn or wgpu native libraries.
-- The one pipeline OpenCL currently wins is joint mode, and the staged modes are
-  26-84x slower than the CPU. Porting that state to a second API buys a second
-  copy of the same problem.
+- Joint mode is the one pipeline measured ahead of the CPU, on one device; the
+  staged modes are no longer behind it but are not ahead either. Porting that
+  state to a second API buys a second copy of a question this project has
+  answered for exactly one GPU.
 
 Revisit only when both hold: Task 11.13 has made the staged path competitive on
 hardware that already exists, and there is an Apple Silicon runner able to gate
-parity. Neither is true.
+parity. The first is now arguably true — tranche 1 moved the staged modes from a
+separated 26-84x loss to indistinguishable from the CPU — so the decision rests
+on the second alone. That one has not moved at all: it means a CI runner this
+project does not have, gating a float32 parity budget against the float64 CPU
+path, for a third renderer implementation.
 
 ## Device and driver quirks found during validation
 
@@ -257,11 +263,16 @@ Things that cost time on the T550 and will cost it again on the next device:
 ## Why this is still experimental
 
 Parity and throughput are established on **one** vendor GPU. AMD and Intel are
-unmeasured for both, there is no required real-device CI runner — the GPU gate
-runs PoCL on a CPU — and the staged pipelines are 26-84x slower than the CPU
-renderer they are supposed to accelerate. Any one of those would be enough on
-its own. OpenCL stays experimental until Task 11.13 makes the staged path
-usable and a second vendor has been measured.
+unmeasured for both, and there is no required real-device CI runner — the GPU
+gate runs PoCL on a CPU. Either would be enough on its own.
+
+This verdict used to rest on a fourth reason, that the staged pipelines were
+26-84x slower than the renderer they are supposed to accelerate. Task 11.13
+tranche 1 removed it: they now measure within noise of the CPU. That changes
+what "experimental" means here rather than whether it applies — the remaining
+reasons are about coverage, not speed, and no amount of optimization answers
+them. OpenCL stays experimental until a second vendor has been measured and a
+real device gates CI.
 
 ## Baseline Constraints
 - The renderer contract lives in `internal/fit/renderer/renderer.go` and expects `Render`, `Cost`, and `Reference`.
@@ -320,7 +331,7 @@ The OpenGL fragment-shader fallback proposed here for macOS and integrated GPUs 
 - Cost and image caching are separate. `Cost` leaves the rendered output resident; `Render` reads the full image only when requested and can reuse output from a matching cost evaluation without dispatching the kernels again.
 - The kernel quantizes composited channels to NRGBA semantics before scoring, so the reduced cost describes the image returned by `Render`. CPU/OpenCL parity tests allow a 1% cost tolerance and two channel values for float32 geometry and edge-coverage differences.
 - CLI exposes `--backend` (default `cpu`) and reports the selected backend during runs. GPU mode renders and scores joint, sequential, and batch pipelines via OpenCL when compiled with `-tags gpu`.
-- Sequential and batch optimization create independent OpenCL sessions as the active circle count grows. These modes replay retained parameters instead of accumulating a device-side base canvas. That preserves pipeline semantics, and it has now been benchmarked on a vendor GPU: 26x and 84x slower than the CPU renderer, because each stage rebuilds a context, a queue and a compiled program. See [`gpu-performance-report.md`](gpu-performance-report.md); Task 11.13 tranche 1 is the fix.
+- Sequential and batch optimization create same-backend OpenCL sessions as the active circle count grows. A session shares its parent renderer's device engine — the runtime, the context and command queue, the compiled program and the reference buffer — and allocates only its own kernel pair and the buffers its circle count needs; that is Task 11.13 tranche 1. These modes still replay retained parameters instead of accumulating a device-side base canvas, which preserves pipeline semantics and is what tranche 2 addresses. Before that sharing they measured 26x and 84x slower than the CPU renderer; they now run 83.8x and 85.9x faster than they did and neither separates from it. See [`gpu-performance-report.md`](gpu-performance-report.md).
 
 ## Memory Layout and Transfers
 
