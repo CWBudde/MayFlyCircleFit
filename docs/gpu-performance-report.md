@@ -1,11 +1,17 @@
-# GPU Performance Report (Task 11.9)
+# GPU Performance Report
 
-The first measurements of the OpenCL renderer on a vendor GPU. Every earlier
-figure in [`gpu-backends.md`](gpu-backends.md) came from PoCL executing on the
-host CPU, which is a correctness and lifecycle vehicle and says nothing about
-device throughput. This report supersedes those figures.
+Measurements of the OpenCL renderer on a vendor GPU. Every earlier figure in
+[`gpu-backends.md`](gpu-backends.md) came from PoCL executing on the host CPU,
+which is a correctness and lifecycle vehicle and says nothing about device
+throughput. This report supersedes those figures.
 
-Three findings, in descending order of confidence:
+Two runs live here. Task 11.9's is the body of the document and is a dated
+record of revision `3d50800`. Task 11.13 tranche 1's is the section at the end,
+and it retired the third finding below. Their absolute times are **not**
+comparable with each other: the host was loaded differently, and only
+same-sitting comparisons are valid.
+
+Task 11.9's three findings, in descending order of confidence:
 
 1. **On the per-evaluation path the GPU wins, and not narrowly.** From 256²
    upward it is 6-14x faster than the multi-threaded SIMD CPU renderer, and
@@ -15,10 +21,14 @@ Three findings, in descending order of confidence:
    Parameters move in about 10 µs regardless of circle count; reading the
    rendered image back runs at 0.5-0.7 GB/s and reaches 5.9 ms at 1024², which
    is three times a complete 1024² evaluation.
-3. **The staged pipelines lose badly, on real hardware and not just under
-   PoCL.** Sequential is 26x slower than the CPU and batch 84x, because each
-   stage builds its own OpenCL context and program. This is the vendor-GPU
-   evidence Task 11.13 was waiting for.
+3. **The staged pipelines lost badly, on real hardware and not just under
+   PoCL.** Sequential measured 26x slower than the CPU and batch 84x, because
+   each stage built its own OpenCL context and program. This was the vendor-GPU
+   evidence Task 11.13 was waiting for, and it has since been acted on: a
+   renderer and its sessions now share one device engine, and neither staged
+   mode separates from the CPU any more. **This finding no longer describes the
+   code** — see [Task 11.13 tranche 1](#task-1113-tranche-1--sessions-share-a-device-engine)
+   at the end of this document.
 
 ## Hardware and conditions
 
@@ -192,13 +202,18 @@ materialization are included.
 | Sequential | 121 | 216.2 ms [207.9–257.3] | 5623.8 ms [2559.3–9098.2] | 26x slower | CPU |
 | Batch (four circles/stage) | 31 | 18.5 ms [16.2–19.3] | 1553.0 ms [1530.6–5337.0] | 84x slower | CPU |
 
-Joint is the one pipeline that creates a single session, and it is the one the
-GPU wins. The staged modes create one OpenCL context, queue and compiled
-program per stage, and that setup dominates everything else they do. PoCL
-reported 190x and 120x for these two modes; a real GPU reports 26x and 84x. The
-ratios moved, the conclusion did not, and it is now backed by vendor hardware:
-**the staged OpenCL path is not usable until sessions share compiled
-resources.** That is the first tranche of Task 11.13.
+Joint was the one pipeline that created a single session, and it was the one the
+GPU won. The staged modes created one OpenCL context, queue and compiled program
+per stage, and that setup dominated everything else they did. PoCL reported 190x
+and 120x for these two modes; a real GPU reported 26x and 84x. The ratios moved,
+the conclusion did not, and vendor hardware now backed it: **the staged OpenCL
+path was not usable until sessions shared compiled resources.** That was the
+first tranche of Task 11.13.
+
+That tranche has since been implemented and measured. The table above is a
+dated record of the code as it stood at `3d50800` and does not describe the
+renderer as it is now; the "Task 11.13 tranche 1" section at the end of this
+report records what replaced it.
 
 ## What this does not establish
 
@@ -237,3 +252,196 @@ CIRCLEFIT_REQUIRE_OPENCL=1 go test -tags gpu -run '^$' \
 
 Record the device name and vendor with every result; the matrix logs them once
 per run. Report a cell as decided only when the ranges are disjoint.
+
+## Task 11.13 tranche 1 — sessions share a device engine
+
+Tranche 1 of Task 11.13 gives a renderer and every session it creates one shared
+device engine — a single OpenCL context, queue and compiled program — in place
+of the per-session rebuild the staged-pipeline table above measured. This
+section records the before/after measurement of that change.
+
+**No absolute time in this section is comparable with the Task 11.9 tables
+above.** It is the same laptop under different contention: 11.9 measured
+sequential/cpu at 216.2 ms, this run measures it at 51.94 ms. What this section
+claims is the before/after ratio taken from a single interleaved sitting, and
+nothing else.
+
+### Hardware and conditions
+
+| | |
+|---|---|
+| GPU | NVIDIA T550 Laptop GPU, 16 compute units, driver 580.178.04 |
+| OpenCL platform | NVIDIA CUDA |
+| CPU | 12th Gen Intel Core i7-1255U, 12 threads, `powersave` governor |
+| Go | 1.26.5, linux/amd64 |
+| Revisions | before `0257b04` (main, Task 11.12), after `114b1ad` (this branch) |
+
+The host was again a contended interactive desktop; the load average had reached
+17.8 by the end of the run. Only `nvidia.icd` is installed, and both switches
+were set (`CIRCLEFIT_REQUIRE_OPENCL=1`, `CIRCLEFIT_REQUIRE_GPU_DEVICE=1`), so no
+run could have landed on a CPU OpenCL device and published CPU timings under a
+GPU label.
+
+### Method, and why it differs from the 11.9 method
+
+The 11.9 matrix was run as eight separate passes at `-count=1` because Go runs a
+cell's repetitions back to back, so on a contended host a single burst of
+background load corrupts every sample of one cell and none of its neighbour's.
+That problem is still here, and this run has a second one on top of it: it
+compares two *revisions*, which live in two working trees. Run as two sittings —
+all of "before", then all of "after" — every baseline sample would carry one set
+of host conditions and every branch sample another, and host drift over the
+intervening minutes would be indistinguishable from the effect of the change.
+
+The pipeline comparison was therefore run as **alternating single passes between
+two git worktrees**: one baseline pass and one branch pass per round, five
+rounds, `-benchtime=5x -count=1`, with the build cache warmed in both trees
+first so that round one does not time a compile. Drift then falls on both arms
+equally.
+
+```sh
+before=…/worktrees/task-11.12   # 0257b04
+after=…/worktrees/task-11.13    # 114b1ad
+export CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1
+
+# Warm the build cache in both trees before the first timed round.
+for dir in "$before" "$after"; do
+  (cd "$dir" && go test -tags gpu -run '^$' -bench '^$' ./internal/fit/renderer)
+done
+
+for round in $(seq 1 5); do
+  for dir in "$before" "$after"; do
+    (cd "$dir" && go test -tags gpu -run '^$' \
+      -bench '^BenchmarkOptimizePipelineBackends$' \
+      -benchmem -benchtime=5x -count=1 ./internal/fit/renderer)
+  done
+done
+```
+
+"Separated" means below what it means above: the two ranges are disjoint, every
+sample of one arm beating every sample of the other. Cells whose ranges overlap
+are marked "no" and are not decided by this host; their median ratio is printed
+as an indication only.
+
+### A. Session creation
+
+`BenchmarkOpenCLSessionCreation`, `-benchtime=20x -count=1`, one pass per
+revision. This is the direct instrument. The `session` arm times `NewSession`
+over a base renderer built outside the timed loop, which is exactly what tranche
+1 changes; the `new` arm times a full construction, which it does not.
+
+| Cell | Before | After |
+|------|-------:|------:|
+| 64/new | 654.19 ms | 309.31 ms |
+| 64/session | 362.73 ms | **4.38 ms** |
+| 512/new | 478.00 ms | 277.38 ms |
+| 512/session | 512.44 ms | **4.04 ms** |
+
+Creating a session used to be the same order of cost as constructing a whole
+renderer. It is now under 5 ms at both canvas sizes, and the 512² session —
+whose reference image is sixty-four times the 64² one — is no more expensive
+than the small one, which is what a shared engine predicts and a per-session
+rebuild does not. The allocation profile moves with it: `session` drops from 48
+to 12 allocs/op at both sizes, and its bytes per op halve, 36032 to 18584 at
+64² and 2100421 to 1050782 at 512². The `new` arm goes from 49 to 55 allocs/op,
+and its before/after time difference is within this host's run-to-run spread; it
+is not a claim.
+
+### B. Pipelines, before and after
+
+`BenchmarkOptimizePipelineBackends`, the interleaved run described above: five
+rounds, alternating worktrees, `-benchtime=5x -count=1`. Both backends were
+measured in every pass, so the CPU rows are a control on the OpenCL rows.
+Nothing in tranche 1 touches the CPU path, and if the CPU arms had moved between
+the worktrees the sitting would have been measuring host drift rather than the
+change.
+
+| Cell | Before median [min–max] | After median [min–max] | Ratio | Separated |
+|------|------------------------:|-----------------------:|------:|:----------|
+| sequential/opencl | 3065.09 ms [2994.4–4266.1] | 36.58 ms [29.0–52.4] | 83.8x | **yes** |
+| batch/opencl | 1904.22 ms [1728.9–2280.1] | 22.17 ms [16.9–28.6] | 85.9x | **yes** |
+| joint/opencl | 6.00 ms [1.6–6.8] | 1.70 ms [1.7–2.5] | 3.5x | no |
+| sequential/cpu | 51.94 ms [39.1–61.9] | 53.13 ms [33.0–67.3] | 0.98x | no (control) |
+| batch/cpu | 16.44 ms [9.5–29.0] | 23.72 ms [10.2–26.6] | 0.69x | no (control) |
+| joint/cpu | 6.00 ms [4.8–6.8] | 6.09 ms [2.0–6.2] | 0.98x | no (control) |
+
+The three CPU arms did not move in any way this sitting can detect. None of
+them separates, and the widest excursion — batch/cpu at 0.69x — is a factor of
+one and a half on a cell whose own before-range already spans threefold, 9.5 to
+29.0 ms. That is the size of this host's noise, and it bounds what drift could
+have contributed to the OpenCL rows. Against that background the two staged
+OpenCL rows are the change and not the host: 83.8x and 85.9x, both separated,
+with every "after" sample faster than every "before" sample. joint/opencl
+improved too, but its two ranges touch, so this sitting does not decide it.
+
+The allocation counts agree: sequential/opencl 1815 → 1311, batch/opencl 1612 →
+1329, both CPU arms flat to within 7 allocs. Evaluation counts are identical
+across the revisions (joint 11, sequential 121, batch 31), and so are the
+pipelines' session counts (0 / 5 / 9). The pipelines do the same work and create
+the same number of sessions; what changed is what a session costs.
+
+### C. CPU against OpenCL after the change
+
+Eight separate passes on the branch, `-benchtime=5x -count=1`. Interleaving is
+not needed here because there is only one revision in the comparison, so this
+follows the 11.9 method exactly.
+
+| Mode | CPU median [min–max] | OpenCL median [min–max] | OpenCL/CPU | Separated |
+|------|---------------------:|------------------------:|-----------:|:----------|
+| joint | 3.44 ms [2.14–6.60] | 3.42 ms [1.89–7.17] | 1.00x | **no** |
+| sequential | 37.88 ms [25.16–65.35] | 42.39 ms [31.21–58.91] | 1.12x | **no** |
+| batch | 14.77 ms [13.57–26.63] | 15.95 ms [14.12–23.33] | 1.08x | **no** |
+
+### What the tranche buys, and what it does not
+
+The staged modes went from a separated 26x and 84x loss against the CPU to
+statistically indistinguishable from it. That is the finding, and its shape
+matters: **no cell in table C separates.** This is a disqualification removed,
+not a win. The staged OpenCL pipelines are no longer ruled out on throughput;
+that is not the same as the GPU beating the CPU at sequential or batch, and this
+host does not show that it does.
+
+The same caution runs the other way for joint. This run cannot separate joint
+either — 1.00x, with the ranges overlapping — so it neither confirms nor
+contradicts the 0.8x recorded under Task 11.9. Do not restate that 0.8x as a
+current figure on the strength of this run.
+
+### What this does not establish
+
+- Nothing about any other vendor. This is still one NVIDIA laptop GPU; AMD and
+  Intel OpenCL devices remain unmeasured, for throughput as for parity.
+- Nothing about a quiet machine. The host was contended throughout, under the
+  `powersave` governor, at a load average of 17.8 by the end.
+- Nothing beyond one workload point. `BenchmarkOptimizePipelineBackends` runs a
+  64² reference at K=12; whether these ratios hold at larger canvases or circle
+  counts is unmeasured.
+- No comparison of absolute times against the Task 11.9 tables above, in either
+  direction.
+- Nothing about correctness, which the parity tests own and no benchmark here
+  asserts.
+
+### Reproducing the tranche 1 measurement
+
+```sh
+# Correctness first: a degraded renderer would otherwise be benchmarked as a GPU.
+CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
+  go test -tags gpu -count=1 ./internal/fit/renderer/... -run '^TestOpenCL'
+
+# A. Session creation, one pass per revision.
+CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
+  go test -tags gpu -run '^$' -bench '^BenchmarkOpenCLSessionCreation$' \
+  -benchmem -benchtime=20x -count=1 ./internal/fit/renderer/opencl
+
+# B. The interleaved before/after: the two-worktree loop under Method above.
+
+# C. CPU against OpenCL on one revision, as eight separate passes.
+for rep in $(seq 1 8); do
+  CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
+    go test -tags gpu -run '^$' -bench '^BenchmarkOptimizePipelineBackends$' \
+    -benchmem -benchtime=5x -count=1 ./internal/fit/renderer
+done
+```
+
+Set `CIRCLEFIT_REQUIRE_GPU_DEVICE=1` alongside `CIRCLEFIT_REQUIRE_OPENCL=1` on
+any host that also has a CPU OpenCL runtime installed. Without it a pass can
+land on PoCL, which satisfies the first switch while measuring the CPU.

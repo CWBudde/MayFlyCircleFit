@@ -287,10 +287,12 @@ its CPU fallback, because a degraded OpenCL renderer answers silently from the
 CPU and would publish CPU timings under a GPU label.
 
 The staged pipelines were measured on the same device and are the vendor-GPU
-evidence Task 11.13 was waiting for: joint is 1.3x *faster* on the GPU, while
-sequential is 26x and batch 84x slower, all three separated. Joint is also the
-only pipeline that creates one session. PoCL had reported 190x and 120x; the
-ratios moved and the conclusion did not.
+evidence Task 11.13 was waiting for: joint measured 1.3x *faster* on the GPU --
+0.8x its time -- while sequential was 26x and batch 84x slower, all three
+separated. Joint was also the only pipeline that did not create a session per
+stage. PoCL had reported 190x and 120x; the ratios moved and the conclusion did
+not. Task 11.13 tranche 1 has since acted on this evidence and the two staged
+figures no longer hold; the record above is what it measured at the time.
 
 ### Task 11.10: Test GPU Correctness and Edge Cases
 - [x] Test GPU detection and initialization on a prepared OpenCL runner.
@@ -472,6 +474,10 @@ GPU gate runs PoCL on a CPU; and the staged pipelines are 26x and 84x slower tha
 the renderer they are meant to accelerate. `support-matrix.md` now says that in
 one place rather than leaving "experimental" to be inferred.
 
+That fourth reason did not survive Task 11.13 tranche 1, which is recorded
+below. The verdict did: the other three are about coverage rather than speed,
+and no optimization answers them.
+
 The rest is documentation of what 11.9-11.11 established. `gpu-backends.md`
 gained the operational half it never had -- requirements split into the three
 things that fail differently (the build tag, the headers and loader, the device),
@@ -517,15 +523,15 @@ something untried.
 
 ### Task 11.13: Optimize OpenCL/PoCL Pipeline Performance
 
-Measured baseline, on an NVIDIA T550 (`docs/gpu-performance-report.md`): the uncached 64x64, K=12 pipeline benchmark reports joint at 0.8x the CPU's time -- the GPU wins -- while sequential is 26x and batch 84x slower, all three separated. Joint creates no session; sequential creates 5 and batch 9. `BenchmarkOpenCLSessionCreation` prices one at 0.36-0.65 s, three orders of magnitude above any per-evaluation cost in the package, and the arms do not separate `NewSession` from a cold `New` -- which is what `NewSession` calling `newRenderer` verbatim predicts. Repeated context and program initialization is therefore the whole of the staged loss.
+Measured baseline this task started from, on an NVIDIA T550 (`docs/gpu-performance-report.md`); tranche 1 has since moved the two staged figures, and what they became is recorded after the bullets. The uncached 64x64, K=12 pipeline benchmark reported joint at 0.8x the CPU's time -- the GPU winning -- while sequential was 26x and batch 84x slower, all three separated. Joint creates no session; sequential creates 5 and batch 9. `BenchmarkOpenCLSessionCreation` priced one at 0.36-0.65 s, three orders of magnitude above any per-evaluation cost in the package, and the arms did not separate `NewSession` from a cold `New` -- which is what `NewSession` calling `newRenderer` verbatim predicts. Repeated context and program initialization was therefore the whole of the staged loss, and removing it is what tranche 1 did.
 
 This paragraph previously carried the PoCL figures (3x / 190x / 120x, 14 and 5 sessions, ~45 ms/session). Those were superseded by Task 11.9 and are kept as a dated record in `docs/gpu-backends.md`; they describe a CPU pretending to be a device and must not be compared against a run made today.
 
-- [ ] Share OpenCL resources across renderer sessions
-  - [ ] Introduce an owned shared device engine for the selected device, context, queue, compiled program, reference buffer, and workgroup configuration
-  - [ ] Make staged sessions allocate only their mutable kernels/buffers instead of calling `InitOpenCL` and `clBuildProgram` again
-  - [ ] Define safe shared-resource ownership and cleanup for normal completion, partial initialization, and CPU degradation
-  - [ ] Add an isolated session-creation benchmark and verify that kernel compilation occurs once per base renderer
+- [x] Share OpenCL resources across renderer sessions
+  - [x] Introduce an owned shared device engine for the selected device, context, queue, compiled program, reference buffer, and workgroup configuration
+  - [x] Make staged sessions allocate only their mutable kernels/buffers instead of calling `InitOpenCL` and `clBuildProgram` again
+  - [x] Define safe shared-resource ownership and cleanup for normal completion, partial initialization, and CPU degradation
+  - [x] Add an isolated session-creation benchmark and verify that kernel compilation occurs once per base renderer
 - [ ] Add accumulated-canvas support to the OpenCL staged pipeline
   - [ ] Implement `newSessionWithCanvas` and `initialCanvas` so sequential and batch stages evaluate only newly added circles
   - [ ] Accept a packed `uchar4` base-canvas buffer in the render/cost kernel instead of assuming white
@@ -546,6 +552,50 @@ This paragraph previously carried the PoCL figures (3x / 190x / 120x, 14 and 5 s
   - [ ] Record vendor-GPU before/after medians, allocations, session counts, and evaluation counts, as interleaved single passes rather than `-count=N`; PoCL only for lifecycle and allocation deltas
   - [ ] Run the same benchmark on supported AMD, Intel, and NVIDIA OpenCL devices where available
   - [ ] Document crossover points and retain optimizations only when profiling demonstrates a benefit
+
+**Tranche 1 is done, and it did what it was supposed to do.** `engine` owns the
+runtime, context, queue, compiled program, reference buffer and reduction
+workgroup size; `NewSession` takes a reference to its parent's engine instead of
+calling `InitOpenCL` and `clBuildProgram` again, and allocates only its own
+kernel pair and the buffers its circle count needs. Session creation went from
+362.7 ms to 4.38 ms at 64x64 and 512.4 ms to 4.04 ms at 512x512, at 48 to 12
+allocations. Measured before and after as alternating single passes between two
+worktrees, sequential moved 83.8x and batch 85.9x, both separated; the CPU
+control arms moved 0.98x and 0.69x, which is what makes the OpenCL arms
+believable. Session counts are unchanged at 0/5/9. See
+[`docs/gpu-performance-report.md`](docs/gpu-performance-report.md).
+
+**What it did not do is make the GPU win.** Eight further passes put sequential
+at 1.12x the CPU and batch at 1.08x, with no cell separated -- the staged path
+went from a decisive, separated loss to indistinguishable, which removes a
+disqualification rather than establishing an advantage. This host cannot
+separate joint either (1.00x), so the run neither confirms nor contradicts the
+0.8x recorded under Task 11.9. Do not quote either number as a current win.
+
+**That settles the remaining tranches, and mostly against doing them.** They
+were justified by a 26x/84x gap that no longer exists, so each now needs its own
+measurement rather than an inherited one. Two are already answered and should be
+closed rather than built: the pinned parameter-staging investigation, because
+parameter upload is flat at about 10 microseconds from K=1 to K=100 and is
+latency-bound; and the `engine.poison()` the design anticipated, because Task
+11.11's shared degradation record already discovers a lost device once per run.
+Tranche 2, the accumulated canvas, is the only one with a standing rationale --
+the staged modes still replay every retained circle, so sequential runs 121
+evaluations to the CPU's 121 while rendering strictly more per evaluation -- but
+it should be opened by a profile of where the remaining time goes, not by the
+old ratio.
+
+**Two defects surfaced that the benchmark would never have shown.** Sharing a
+queue means a session waits on a handle it does not own, so `releaseOwn` needed
+a `clFinish` -- the first in the package -- and clearing the borrowed handles
+afterwards, without which a second teardown called `clFinish` on a released
+queue and died with `rip 0x0`. And `ProgramBuilds() == 1` is not by itself
+evidence of a single compile: a per-session engine has its own counter and also
+reports 1. It is evidence only alongside the runtime-pointer identity check, and
+both are now asserted, in the unit test and end to end through the pipelines.
+Separately, the GPU gate selects tests by name, and the one test asserting a
+cross-session invariant did not match the selector and had never run; a new step
+now fails the build if any gpu-tagged test name falls outside it.
 
 Phase 11 is complete only when Tasks 11.9–11.13 establish vendor-GPU
 performance and parity, deliberate fallback behavior, and accurate operational

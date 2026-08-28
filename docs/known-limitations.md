@@ -134,9 +134,13 @@ behavior is production-ready.
 - CPU and OpenCL support joint, sequential, and batch pipelines; only CPU
   supports custom base canvases. Staged OpenCL modes replay all retained circles
   in sessions that share one device engine. Their performance is characterized,
-  on one vendor GPU only: an NVIDIA T550, where sequential and batch measure 26x
-  and 84x slower than the CPU renderer while joint measures 0.8x. AMD and Intel
-  remain unmeasured. See
+  on one vendor GPU only: an NVIDIA T550, where sharing that engine made
+  sequential and batch 83.8x and 85.9x faster than the per-stage device rebuild
+  they replaced, which had them 26x and 84x slower than the CPU renderer.
+  Neither staged mode separates from the CPU renderer now, in either direction,
+  and neither does joint on that host, so none of the three is measurably faster
+  on the GPU as a whole pipeline and the earlier joint advantage is neither
+  confirmed nor contradicted. AMD and Intel remain unmeasured. See
   [`gpu-performance-report.md`](gpu-performance-report.md).
 - OpenCL is experimental, CGO-dependent, and requires local headers, a loader,
   a driver, and a usable device. It is excluded from the standard portable
