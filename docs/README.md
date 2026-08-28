@@ -101,9 +101,10 @@ re-measure instead.
 
 - [`cmaes-report.md`](cmaes-report.md) — the complete twelve-block CMA-ES
   campaign. Separable CMA-ES with IPOP restarts wins 12/12 blocks against
-  MayFly's long run and 11/12 against its restart arm, while every IPOP run
-  diverges its step size and burns about 40% of its budget. Read before
-  proposing a CMA-ES default, and for the `lambda` question it leaves open.
+  MayFly's long run and 11/12 against its restart arm, while both IPOP arms
+  spend about 40% of their budget after their last improvement. Read before
+  proposing a CMA-ES default, for the `lambda` question it leaves open, and for
+  why a large recorded sigma is not evidence of a diverged search.
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by

@@ -11,10 +11,11 @@ run in all twelve blocks and MayFly's sixteen-restart arm in eleven**, by 210.97
 and 90.24 cost units respectively, both far past the `t = 2.20` the design
 registered. Lower cost is better throughout.
 
-The result comes with a defect attached. Every IPOP run drove its step size to
-values that make the search degenerate, and roughly 40% of those arms' budgets
-produced nothing. The measured gain is therefore real but is a **lower bound on
-a correctly terminating IPOP**, not a clean reading of one.
+The result comes with a caveat attached. Roughly 40% of each IPOP arm's budget
+produced no improvement, because no stagnation criterion was configured and a
+restart schedule without one cannot end a dead run and reallocate its budget.
+The measured gain is therefore real but is a **lower bound on a properly
+configured IPOP**, not a clean reading of one.
 
 ## What was run
 
@@ -172,10 +173,30 @@ distribution while keeping its step size adaptive. Full-covariance single runs
 stop themselves on `TolFun` at 1,408 to 2,471 generations, having peaked at
 modest step sizes — max sigma per block 1.46 to 161.
 
-## The step-size divergence
+## Where the IPOP budget went
 
-This is the campaign's most consequential finding and it is a defect, not a
-result.
+Both IPOP arms reach their best score around the middle of their run and
+improve on it never again. The two arms peak at a mean 3,502,762 and 3,828,309
+evaluations of the 6,502,400 available: **46% and 41% of those runs produced no
+further improvement.** The comparable figure for `cmaes-single`, which stops
+itself on `TolFun`, is 21%.
+
+**No stagnation criterion was configured**, and that is the mechanism. The
+campaign set none of the `stop*` fields, so `Stop.enabled()` is false and
+`config.Convergence.StagnationIterations` is never armed. A restart schedule
+without a stagnation guard has no way to end a run that has stopped making
+progress, so a dead run holds the shared budget until it is spent instead of
+handing it to the next restart. `cmaes-single` does not have this problem
+because a single run that reaches `MaxIterations` simply ends.
+
+That is a configuration finding, not a library defect, and it is cheap to act
+on: setting `stopStagnationIters` on a restart arm converts wasted budget into
+additional restarts.
+
+### What the recorded sigma does and does not show
+
+The trajectories record a striking number, and it is worth writing down why it
+is *not* the finding, because the obvious reading of it is wrong.
 
 | arm | max sigma per block | blocks with max sigma > 1e3 |
 | --- | --- | ---: |
@@ -183,40 +204,45 @@ result.
 | `cmaes-ipop` | 2.3e3 – 4.1e7 (median 4.0e4) | 12/12 |
 | `sep-cmaes-ipop` | 4.3e16 – 4.2e43 (median 1.3e23) | 12/12 |
 
-The search space is the normalized unit box. A step size of 1e23 in a
-[0,1] domain does not describe a search; every sample lands outside the box and
-is repaired to the boundary. The divergence is monotone within a run rather than
-an artefact of restarts resetting: in block 10 of `sep-cmaes-ipop`, sigma climbs
-3.4e21 to 8.9e22 over recorded generations 2804 to 2847 while the incumbent
-sits unchanged at 883.92 for the entire tail.
+A step size of 1e23 in a normalized unit box looks like a diverged search. It
+is not, and the campaign's own data says so: in the block-1 `cmaes-ipop` trace,
+sigma rises 242-fold across one restart (0.346 to 83.8) **while the incumbent
+improves**, 911.22 to 875.63. A sampling radius that had genuinely grown
+242-fold in a unit box could not still be refining a fraction-of-a-percent
+improvement.
 
-The cost is measurable. The IPOP arms reach their best score at a mean
-3,502,762 and 3,828,309 evaluations of the 6,502,400 available: **46% and 41% of
-those runs produced no further improvement.** The comparable figure for
-`cmaes-single`, which never diverges, is 21%.
+The reason is that **sigma alone is not an identifiable quantity.** CMA-ES
+identifies only `sigma^2 * C`; the split between the scalar and the matrix is a
+gauge freedom, and go-cma-es does not renormalize `C`. Sigma can therefore
+inflate by many orders of magnitude while the distribution's axis lengths
+deflate by the same factor, leaving the actual sampling extent unchanged.
+That is exactly what the library's `TolXUp` guard measures — `sigma * max(D)`,
+not sigma — which is why it never fired and was right not to.
 
-Three consequences for how this report should be read:
+Separable mode drifts furthest because it has the least to stop it. Every
+Hansen criterion here is gauge-invariant except the condition-number bound, and
+in separable mode the diagonal *is* the whole covariance, so a uniform shrink
+leaves the condition number at 1 and passes unseen. In full covariance the same
+drift instead spreads the eigenspectrum, which the spectrum-sensitive criteria
+eventually catch — which is why full-covariance sigma tops out around 1e7 and
+separable reaches 1e43.
 
-- The IPOP gains are a **floor**. Both arms won decisively while wasting
-  something like 40% of their budget on a degenerate distribution. What a
-  correctly terminating IPOP scores here is unmeasured and can only be higher.
-- Separable mode's 19-orders-of-magnitude worse divergence is not a reason to
-  prefer full covariance. Separable still won the campaign; it diverges further
-  and wins anyway, which says the winning work happens in the earlier restarts.
-- The recorded job termination — `completed`, for all sixty — masks this
-  entirely. The per-restart termination reason is not persisted, so nothing in
-  the checkpoint would have shown it. The trajectory trace is the only reason it
-  was seen at all, which is an argument for keeping the diagnostics opt-in but
-  available.
+**The identifiable quantity was not recorded, so this account is inference, not
+measurement.** `SearchDiagnostics` keeps sigma and the condition number and
+drops the distribution's eigenvalues, so `sigma * max(D)` cannot be recovered
+from these traces. Recording it is the first thing the follow-up work should
+do; until then, a large recorded sigma on this problem should be read as an
+unmeasured gauge, not as evidence of anything.
 
-The likely mechanism is Hansen's flat-fitness pathology: once boundary repair
-maps every sample to the same point, the objective is constant, selection is
-random, and cumulative step-size adaptation inflates sigma without bound. The
-library defines `TolXUp` (default 1e4) precisely to stop that, and it did not.
-Whether the guard is being disabled by this repository's adapter or is not
-reached inside the IPOP restart loop is tracked separately; it is a defect to
-fix, and until it is, an IPOP run on this problem should be assumed to stop
-improving well before its budget ends.
+### Termination is uninformative for the restart arms
+
+All sixty jobs record `completed`. For an IPOP arm that is structurally
+guaranteed rather than observed: the library's restart driver overwrites the
+schedule-level reason with its max-evaluations reason whenever the budget is
+spent, and the adapter maps that to `completed`. Per-restart termination
+reasons exist in the library and are discarded by the adapter, so nothing in a
+checkpoint distinguishes a run that converged from one that stagnated. The
+opt-in trajectory trace was the only reason any of this was visible.
 
 ## What this does not establish
 
@@ -237,7 +263,14 @@ improving well before its budget ends.
   sane one is unmeasured, and a smaller `lambda` converts the same budget into
   far more generations of metric learning. This is the single most promising
   untested knob.
-- **The divergence bounds everything above.** See the previous section.
+- **The IPOP arms were under-configured.** Both won decisively while roughly
+  40% of their budget produced nothing, for want of a stagnation criterion the
+  design never set. What a properly configured IPOP scores here is unmeasured
+  and can only be higher, so the gains above are a floor.
+- **The recorded sigma establishes nothing.** Sigma alone is gauge-dependent
+  and the identifiable quantity, `sigma * max(D)`, was not recorded. Do not
+  cite the sigma column of `cmaes-trajectories.csv` as evidence of anything
+  until the diagnostics carry the eigenvalues.
 - **The IPOP arms and the MayFly arms do not fail the same way.** `mayfly-r16`
   also reaches its best score early — a mean 1,903,641 evaluations, 71% of the
   run following it. For r16 that is the design working as intended: the later
@@ -255,18 +288,22 @@ as strong as this project has produced for any optimizer choice: twelve blocks,
 twelve wins, `t = +5.04`.
 
 That is not yet an argument for changing any default. The result is one fixture,
-the winning arm confounds two variables, and the winner is running with a broken
-step-size guard. The order of work that would turn it into one:
+the winning arm confounds two variables, and every restart arm ran without the
+stagnation criterion that would let it use its whole budget. The order of work
+that would turn it into one:
 
-1. Fix the step-size divergence, so an IPOP arm's budget is spent or released
-   rather than burned.
-2. Add the `sep-cmaes-single` arm the design is missing, and separate
+1. Record `sigma * max(D)` and the per-restart termination reason, so the
+   distribution's actual extent and the reason each restart ended are
+   measurable rather than inferred.
+2. Re-run the IPOP arms with a stagnation criterion set, so a dead run
+   releases its budget to the next restart instead of holding it.
+3. Add the `sep-cmaes-single` arm the design is missing, and separate
    covariance mode from restart strategy.
-3. Screen `lambda` — the campaign's 1024 against values near Hansen's 16.
+4. Screen `lambda` — the campaign's 1024 against values near Hansen's 16.
    `app.MinPopulation` is 20, so 16 itself is currently unreachable, and
-   `app.MaxIterations` bounds the generation count a small `lambda` needs to
-   reach the cap.
-4. Only then, a second fixture.
+   `app.MaxIterations` has to admit the generation count a small `lambda` needs
+   to reach the cap.
+5. Only then, a second fixture.
 
 ## Reproduction and raw data
 

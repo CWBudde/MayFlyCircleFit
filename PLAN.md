@@ -1673,9 +1673,9 @@ while using 27% of the cap. The restart-over-budget finding is confirmed on the
 v0.7.1 pin for the first time (`+120.73`, `t = +2.42`).
 
 Two findings from the campaign open work rather than closing it, and are carried
-by Phase 23 rather than reopening the boxes above: every IPOP run diverges its
-step size past any usable value in a normalized box, wasting about 40% of its
-budget while `TolXUp` fails to stop it; and the design has no
+by Phase 23 rather than reopening the boxes above: both IPOP arms spent about
+40% of their budget after their last improvement, for want of a stagnation
+criterion the design never set; and the design has no
 separable-without-restarts arm, so the winning configuration confounds
 covariance mode with restart strategy. `lambda` is pinned to `popSize` and ran
 at 1024 against Hansen's default of 16 for this dimensionality.
@@ -1981,29 +1981,38 @@ the two questions its design could not answer, before any default changes.
 [`docs/cmaes-report.md`](docs/cmaes-report.md) is the evidence for all four
 tasks below. Read it first; the numbers here are not repeated there.
 
-### Task 23.1: Stop a diverged CMA-ES restart from burning the budget (P1)
+### Task 23.1: Make the CMA-ES restart arms measurable and end dead runs (P1)
 
-Every IPOP run in the campaign drove sigma past any value that describes a
-search in a normalized unit box — median 4.0e4 for full covariance, 1.3e23 for
-separable, up to 4.2e43 — while the incumbent stayed flat. The divergence is
-monotone within a run, not a restart artefact. It cost the two IPOP arms 46% and
-41% of their evaluation budgets; the non-diverging `cmaes-single` arm's
-comparable figure is 21%.
+Both IPOP arms in the campaign reached their best score around the middle of
+their run and never improved on it: 46% and 41% of those budgets produced
+nothing, against 21% for the non-restarting `cmaes-single`. The cause is
+configuration, not a library defect — the campaign set none of the `stop*`
+fields, so `Stop.enabled()` is false, `config.Convergence.StagnationIterations`
+is never armed, and a restart schedule has no way to end a run that has stopped
+progressing and hand its budget to the next restart.
 
-go-cma-es defines `TolXUp` (default 1e4) to stop exactly this and it did not
-fire. The likely mechanism is Hansen's flat-fitness pathology: once boundary
-repair maps every sample to the same point the objective is constant, selection
-is random, and cumulative step-size adaptation inflates sigma without bound.
+The trajectories also record sigma reaching 1e43 in separable mode, which looks
+like a diverged search and is not one. Sigma alone is gauge-dependent: CMA-ES
+identifies only `sigma^2 * C`, go-cma-es does not renormalize `C`, and the
+library's `TolXUp` guard correctly measures `sigma * max(D)` rather than sigma.
+The campaign's own block-1 trace shows the incumbent still improving while
+sigma rises 242-fold. **The identifiable quantity was never recorded**, so that
+account is inference; recording it is what turns it into a measurement.
 
-- [ ] Establish whether the guard is disabled by this repository's adapter
-      (`internal/opt/cmaes_adapter.go`, `buildCMAESConfig`) or is not reached
-      inside the library's IPOP restart loop, and fix it in whichever place is
-      responsible.
-- [ ] Persist the per-restart `TerminationReason`. All sixty campaign jobs
-      recorded `completed`, so nothing in a checkpoint showed the divergence;
-      only the opt-in trajectory trace did.
-- [ ] Add a regression test that fails if a run in a normalized box reaches a
-      step size the box cannot contain.
+- [ ] Record `max(D)` — or `sigma * max(D)` directly — in `SearchDiagnostics`.
+      `cmaes_adapter.go` takes Sigma and ConditionNumber from the distribution
+      snapshot and drops its eigenvalues, so the extent of the sampling
+      distribution cannot be recovered from any trace this project has written.
+- [ ] Persist each restart's `TerminationReason`. The library records one per
+      restart and the adapter discards it, then maps the schedule-level reason,
+      which the restart driver overwrites with max-evaluations whenever the
+      budget is spent. `completed` on all sixty campaign jobs is structurally
+      guaranteed for a restart arm and carries no information.
+- [ ] Decide whether a restart strategy should arm a default stagnation
+      criterion when the caller sets none. It is the change that would have
+      reclaimed 40% of two arms' budgets, and it is a behaviour change for
+      every existing CMA-ES restart configuration, so it wants its own
+      measurement rather than being folded into the observability work.
 
 ### Task 23.2: Separate covariance mode from restart strategy (P1)
 

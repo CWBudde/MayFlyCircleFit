@@ -51,10 +51,13 @@ ones that will change what you propose:
   `t = +4.87`), while full-covariance CMA-ES without restarts merely ties r16
   (`t = +0.18`) using 27% of the cap. It also confirms restarts-over-budget on
   the v0.7.1 pin for the first time. **Do not read it as licence to change a
-  default:** every IPOP run diverges its step size past any usable value and
-  wastes about 40% of its budget, the winning arm confounds covariance mode
-  with restart strategy, and `lambda` is pinned to `popSize` and ran at 1024
-  against Hansen's default of 16. Phase 23 of `PLAN.md` carries all three.
+  default:** both IPOP arms spent about 40% of their budget after their last
+  improvement because no stagnation criterion was set, the winning arm
+  confounds covariance mode with restart strategy, and `lambda` is pinned to
+  `popSize` and ran at 1024 against Hansen's default of 16. Phase 23 of
+  `PLAN.md` carries all three. The report's sigma column is **not** evidence of
+  a diverged search — sigma alone is gauge-dependent and the identifiable
+  `sigma * max(D)` was never recorded; do not cite it.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more
