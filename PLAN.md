@@ -492,6 +492,24 @@ against float64, a budget rather than byte-equality, and the bound grows with
 canvas size), and **the requested backend is not the record** -- `effectiveBackend`
 and `backendDegraded` are.
 
+Review found two places where the documentation described a guarantee the code
+did not provide, and both were fixed in the code rather than softened in the
+prose.
+
+`CIRCLEFIT_REQUIRE_GPU_DEVICE` was inert in exactly the command this page tells
+you to run. Only `TestOpenCLDeviceReportsAPreparedDevice` read it, and a
+benchmark invocation passes `-run '^$'`, so it executes no test: the documented
+measurement loop could complete on a PoCL-only host and publish CPU OpenCL
+timings as a GPU measurement. The benchmarks now read the switch themselves.
+
+And a one-shot CLI run had no provenance at all. `effectiveBackend` and
+`backendDegraded` are fields on a *job*; `circlefit run` creates none, logged
+only a fallback warning at startup, and never consulted `renderer.Degraded` on
+completion -- so the entry point most likely to be used for a quick GPU
+comparison was the one that could not say which backend produced the number.
+`run` now names the backend that actually ran, and says why the cost is not
+comparable, whenever that is not the backend that was asked for.
+
 Deliberately not done: no per-vendor setup instructions beyond naming the ICD
 packages, because only two combinations have actually been run here (Ubuntu CI on
 PoCL, and Linux on an NVIDIA T550) and anything else would be documentation of

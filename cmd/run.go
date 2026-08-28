@@ -540,6 +540,12 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	var rend renderer.Renderer
 	var cleanup func()
 
+	// What the run asked for is not what it got if the fallback fires or the
+	// device fails, and the two backends do not produce comparable costs. A
+	// server job records this as effectiveBackend/backendDegraded; a one-shot
+	// CLI run has no job resource, so the completion line has to carry it.
+	effectiveBackend := config.Backend
+
 	if config.Backend == app.BackendCPU {
 		// CPU renderer supports canvas
 		if canvas != nil {
@@ -588,6 +594,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 			renderer.LogCPURendererConfiguration(cpuRenderer)
 
 			rend, cleanup = cpuRenderer, func() {}
+			effectiveBackend = app.BackendCPU
 		}
 	}
 
@@ -712,6 +719,16 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		"termination", result.Termination,
 		"circles_per_second", fmt.Sprintf("%.0f", cps),
 		"psnr_db", psnr,
+		"backend", effectiveBackend,
+	}
+
+	// Cost and Render have no error return, so a device that failed mid-run left
+	// the renderer answering from its CPU fallback and said nothing further. The
+	// resulting best-so-far spans float32 and float64 arithmetic, which makes it
+	// comparable with neither a clean GPU run nor a clean CPU one.
+	backendDegraded := renderer.Degraded(rend)
+	if backendDegraded {
+		logAttrs = append(logAttrs, "backend_degraded", true)
 	}
 	if ssim != nil {
 		logAttrs = append(logAttrs, "ssim", *ssim)
@@ -734,6 +751,10 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Printf("Wrote %s (cost: %.2f -> %.2f%s, %d circles, %.0f circles/sec)\n",
 			outPath, result.InitialCost, result.BestCost, qualitySummary, actualCircles, cps)
+	}
+
+	if note := backendProvenanceNote(config.Backend, effectiveBackend, backendDegraded); note != "" {
+		fmt.Fprintln(cmd.OutOrStdout(), note)
 	}
 
 	// Write memory profile if requested

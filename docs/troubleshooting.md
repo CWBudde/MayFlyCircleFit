@@ -236,9 +236,10 @@ once, followed by a server-side line naming the job:
 WARN Renderer degraded to its CPU fallback mid-run job_id=... backend=opencl
 ```
 
-The job carries `backendDegraded: true` from that point, the CLI prints
-`Backend: opencl (degraded to CPU mid-run)`, and the job detail page shows the
-same. **Treat the run's cost as unusable for comparison.** The device
+The job carries `backendDegraded: true` from that point, `circlefit status`
+prints `Backend: opencl (degraded to CPU mid-run)`, and the job detail page shows
+the same. A one-shot `circlefit run` has no job resource, so it prints that line
+itself on completion, together with the reason the cost cannot be compared. **Treat the run's cost as unusable for comparison.** The device
 accumulates the SSD in float32 and the CPU in float64, so the objective changed
 scale partway through and the best-so-far spans both.
 

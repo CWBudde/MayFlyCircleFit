@@ -111,9 +111,18 @@ Run it, but do not fail if the device is missing:
 ```
 
 `--backend-fallback` accepts only `cpu` and is unset by default, so an
-unavailable backend fails the run unless you say otherwise. When it fires, the
-job records `effectiveBackend: cpu` and a warning names the reason — the
-substitution is in the record, not only in the log.
+unavailable backend fails the run unless you say otherwise. When it fires, a
+warning names the reason and the run's own output names the backend that
+actually ran:
+
+```
+Backend: cpu (requested opencl, unavailable) - this cost is not comparable with a opencl run
+```
+
+A run whose device failed part-way prints the other form,
+`Backend: opencl (degraded to CPU mid-run)`. A server job records the same two
+facts as `effectiveBackend` and `backendDegraded`; a one-shot CLI run has no job
+resource, so this line is the record. A clean run prints nothing extra.
 
 Serve with OpenCL as the default backend for jobs that name none:
 
@@ -141,7 +150,11 @@ Then read `effectiveBackend` and `backendDegraded` back off the job — not the
 `backend` you asked for — before comparing its cost with anything.
 
 Measure the device on your own hardware, as separate passes rather than
-`-count=N` (see [the quirks below](#device-and-driver-quirks-found-during-validation)):
+`-count=N` (see [the quirks below](#device-and-driver-quirks-found-during-validation)).
+The benchmark reads both switches itself, so it fails rather than measuring a
+CPU OpenCL device — a `-run '^$'` invocation executes no test, which would
+otherwise leave `CIRCLEFIT_REQUIRE_GPU_DEVICE` inert exactly where a number is
+being taken:
 
 ```sh
 for i in $(seq 8); do
@@ -212,8 +225,10 @@ Things that cost time on the T550 and will cost it again on the next device:
 
 - **A CPU device passes every parity test.** `InitOpenCL` falls back to one, so
   a machine with only PoCL installed validates nothing about a GPU while
-  reporting complete success. `CIRCLEFIT_REQUIRE_GPU_DEVICE=1` is the guard;
-  set it, and record the device name the test logs.
+  reporting complete success. `CIRCLEFIT_REQUIRE_GPU_DEVICE=1` is the guard, and
+  both the parity suite and the benchmarks read it — the benchmarks separately,
+  because a benchmark invocation runs no test. Set it, and record the device name
+  the run logs.
 - **A degraded renderer benchmarks as a GPU, and passes a parity test.** `Cost`
   and `Render` have no error return, so a device error leaves the renderer
   answering silently from its CPU fallback. A benchmark then publishes CPU
