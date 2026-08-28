@@ -54,13 +54,20 @@ type jobResponse struct {
 	// EvaluationWidth is the concurrency the run actually used, which the server
 	// records from the renderer. Config.EvaluationWorkers is only the request,
 	// and differs from it whenever the backend declined or the clamp applied.
-	EvaluationWidth *int       `json:"evaluationWidth,omitempty"`
-	Termination     string     `json:"termination,omitempty"`
-	Elapsed         *float64   `json:"elapsed,omitempty"`
-	CPS             *float64   `json:"cps,omitempty"`
-	StartTime       *time.Time `json:"startTime"`
-	EndTime         *time.Time `json:"endTime,omitempty"`
-	Error           string     `json:"error,omitempty"`
+	EvaluationWidth *int `json:"evaluationWidth,omitempty"`
+	// EffectiveBackend is the backend the run was actually built on and
+	// BackendDegraded says the device gave up mid-run. Config.Backend is only
+	// the request. This matters more than the width does: OpenCL computes in
+	// float32 against a float64 CPU path, so a cost from one backend is not a
+	// baseline for the other.
+	EffectiveBackend app.Backend `json:"effectiveBackend,omitempty"`
+	BackendDegraded  bool        `json:"backendDegraded,omitempty"`
+	Termination      string      `json:"termination,omitempty"`
+	Elapsed          *float64    `json:"elapsed,omitempty"`
+	CPS              *float64    `json:"cps,omitempty"`
+	StartTime        *time.Time  `json:"startTime"`
+	EndTime          *time.Time  `json:"endTime,omitempty"`
+	Error            string      `json:"error,omitempty"`
 }
 
 type jobListPageResponse struct {
@@ -304,6 +311,16 @@ func getJobStatus(ctx context.Context, output io.Writer, endpoint, jobID string)
 	// falling back to the request, because a wrong width is worse than none.
 	if status.EvaluationWidth != nil && *status.EvaluationWidth > 1 {
 		fmt.Fprintf(output, "  Parallel evaluation: %d workers\n", *status.EvaluationWidth)
+	}
+
+	// Same rule as the width: report what ran, and print nothing at all when the
+	// server did not record it rather than reprinting the request.
+	if status.EffectiveBackend != "" {
+		if status.BackendDegraded {
+			fmt.Fprintf(output, "  Backend: %s (degraded to CPU mid-run)\n", status.EffectiveBackend)
+		} else {
+			fmt.Fprintf(output, "  Backend: %s\n", status.EffectiveBackend)
+		}
 	}
 
 	fmt.Fprintln(output)

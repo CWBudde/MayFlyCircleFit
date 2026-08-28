@@ -163,7 +163,18 @@ there is still no required real-device GPU runner, vendor-driver compatibility
 gate, or GPU performance threshold. Runtime OpenCL failures may cause the
 experimental renderer to degrade individual rendering/cost work to its CPU
 compatibility path and emit a warning; callers must not interpret the backend
-label alone as proof that every evaluation ran on the GPU.
+label alone as proof that every evaluation ran on the GPU. Read
+`effectiveBackend` and `backendDegraded` on the job instead — they record what
+the renderer was built on and whether it gave up mid-run, and they are the only
+values a comparison between two runs may use.
+
+A build without the `gpu` tag does not list `opencl` in its supported backends,
+refuses `serve --backend opencl` at startup, and rejects a job that names the
+backend explicitly at submit rather than failing it on a worker. Configuration
+validity is deliberately unaffected: `app.JobConfig` accepts `opencl` on every
+build, so a checkpoint written on a GPU host resumes there. A job that would
+rather run than wait for a device can set `backendFallback: "cpu"`; it is unset
+by default, and an unavailable backend otherwise fails the job.
 
 ## Server deployment
 

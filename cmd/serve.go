@@ -72,6 +72,14 @@ func runServer(cmd *cobra.Command, args []string) error {
 		return NewUsageError(fmt.Errorf("invalid backend: %w", err))
 	}
 
+	// The server default is the backend every job that names none of its own
+	// runs on, so a default this build cannot construct would fail all of them
+	// one worker at a time. Say so before the listener opens.
+	err = requireAvailableBackend(backend)
+	if err != nil {
+		return NewUsageError(err)
+	}
+
 	if servePprof && serverAddr != "localhost" && serverAddr != "127.0.0.1" && serverAddr != "::1" {
 		return NewUsageError(errors.New("pprof requires a trusted loopback bind address"))
 	}

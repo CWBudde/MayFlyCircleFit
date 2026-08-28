@@ -89,6 +89,8 @@ func TestValidateBoundaries(t *testing.T) {
 	}{
 		{"mode", func(c *JobConfig) { c.Mode = "invalid" }, "mode"},
 		{"backend", func(c *JobConfig) { c.Backend = "invalid" }, "backend"},
+		{"backend fallback name", func(c *JobConfig) { c.BackendFallback = "invalid" }, "backendFallback"},
+		{"backend fallback to a device", func(c *JobConfig) { c.BackendFallback = BackendOpenCL }, "backendFallback"},
 		{"circles low", func(c *JobConfig) { c.Circles = -1 }, "circles"},
 		{"circles high", func(c *JobConfig) { c.Circles = MaxCircles + 1 }, "circles"},
 		{"iterations", func(c *JobConfig) { c.Iters = MaxIterations + 1 }, "iters"},
@@ -667,5 +669,46 @@ func TestDefaultBatchSizeIsWhatTheCreationPageProjects(t *testing.T) {
 	if config.BatchSize != DefaultConfig().BatchSize {
 		t.Fatalf("ApplyDefaults used batch size %d, but the page is sent %d",
 			config.BatchSize, DefaultConfig().BatchSize)
+	}
+}
+
+// The fallback has to stay off unless a configuration asks for it. A default
+// that silently substituted the CPU would make every recorded cost ambiguous:
+// the device computes in float32 against a float64 CPU path, so a run cannot
+// be compared with another unless it says which one produced its numbers.
+func TestBackendFallbackDefaultsToNoFallback(t *testing.T) {
+	t.Parallel()
+
+	if got := DefaultConfig().BackendFallback; got != "" {
+		t.Fatalf("DefaultConfig().BackendFallback = %q, want empty so an unavailable backend fails the run", got)
+	}
+
+	config := DefaultConfig()
+	config.RefPath = "reference.png"
+	config.EffectiveSeed = 1
+	config.Backend = BackendOpenCL
+
+	err := config.ApplyDefaults()
+	if err != nil {
+		t.Fatalf("ApplyDefaults() = %v", err)
+	}
+
+	if got := config.BackendFallback; got != "" {
+		t.Fatalf("BackendFallback after ApplyDefaults = %q, want it left empty", got)
+	}
+}
+
+func TestBackendFallbackAcceptsCPU(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultConfig()
+	config.RefPath = "reference.png"
+	config.EffectiveSeed = 1
+	config.Backend = BackendOpenCL
+	config.BackendFallback = BackendCPU
+
+	err := config.Validate()
+	if err != nil {
+		t.Fatalf("Validate() = %v, want a cpu fallback accepted", err)
 	}
 }
