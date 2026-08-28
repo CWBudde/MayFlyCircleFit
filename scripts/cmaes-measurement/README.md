@@ -35,6 +35,13 @@ writes `docs/cmaes-measurement.csv`, writes the downsampled optimizer mechanism
 data to `docs/cmaes-trajectories.csv`, and prints Markdown statistics. Use
 `-action analyze` to reproduce the result table from the first CSV alone.
 
+The campaign was run to completion on 2026-08-28 on a 64-core host, six jobs
+at a time, in 4.9 hours of wall clock. Its result is
+[`docs/cmaes-report.md`](../../docs/cmaes-report.md) and its raw data is
+committed as `docs/cmaes-measurement.csv` and `docs/cmaes-trajectories.csv`.
+Re-running `submit` against a fresh data root would produce a second campaign,
+not an extension of that one.
+
 The first campaign was stopped by operator request after three completed jobs
 and one interrupted job because the calibrated queue duration was several days.
 Do not restart its server unless resuming that work is intentional. Its

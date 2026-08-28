@@ -7,6 +7,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/csv"
 	"encoding/json"
@@ -593,6 +594,24 @@ func formatDiagnostics(spread, sigma, conditionNumber float64) (string, string, 
 	return "", strconv.FormatFloat(sigma, 'g', 17, 64), strconv.FormatFloat(conditionNumber, 'g', 17, 64)
 }
 
+// familyAlpha is the family-wise error rate the campaign's seven paired
+// contrasts are held to together. Holm's step-down procedure spends it across
+// the whole family, so a contrast that clears the uncorrected 0.05 can still
+// retain its null here.
+const familyAlpha = 0.05
+
+// contrast is one paired comparison of a candidate arm against a control arm,
+// carried far enough to be corrected for multiplicity before it is printed.
+type contrast struct {
+	control   string
+	candidate string
+	gain      float64
+	statistic float64
+	pValue    float64
+	wins      int
+	rejected  bool
+}
+
 func analyze(path string) error {
 	rows, err := readResults(path)
 	if err != nil {
@@ -604,34 +623,191 @@ func analyze(path string) error {
 		byArm[row.Arm] = append(byArm[row.Arm], row)
 	}
 	order := []string{"mayfly-single", "mayfly-r16", "cmaes-single", "cmaes-ipop", "sep-cmaes-ipop"}
-	baseline := byArm[order[0]]
-	if len(baseline) != 12 {
-		return fmt.Errorf("baseline has %d blocks, want 12", len(baseline))
-	}
-
-	fmt.Println("| arm | mean | sd | median | best | gain vs Mayfly single | t (df=11) | blocks won |")
-	fmt.Println("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
 	for _, name := range order {
 		current := byArm[name]
 		if len(current) != 12 {
 			return fmt.Errorf("arm %s has %d blocks, want 12", name, len(current))
 		}
 		slices.SortFunc(current, func(a, b resultRow) int { return a.Block - b.Block })
-		values := costs(current)
+	}
+
+	contrasts := make([]contrast, 0, 7)
+	for _, control := range []string{"mayfly-single", "mayfly-r16"} {
+		for _, candidate := range order[1:] {
+			if candidate == control {
+				continue
+			}
+			gain, statistic, wins := pairedImprovement(byArm[control], byArm[candidate])
+			contrasts = append(contrasts, contrast{
+				control:   control,
+				candidate: candidate,
+				gain:      gain,
+				statistic: statistic,
+				pValue:    studentTTwoSided(statistic, 11),
+				wins:      wins,
+			})
+		}
+	}
+	holmReject(contrasts, familyAlpha)
+
+	fmt.Println("| arm | mean | sd | median | best | gain vs Mayfly single | t (df=11) | p | Holm | blocks won |")
+	fmt.Println("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |")
+	for index, name := range order {
+		values := costs(byArm[name])
 		mean, sd := meanSD(values)
-		gain, statistic, wins := pairedImprovement(baseline, current)
-		fmt.Printf("| `%s` | %.2f | %.2f | %.2f | %.2f | %+.2f | %+.2f | %d/12 |\n",
-			name, mean, sd, median(values), slices.Min(values), gain, statistic, wins)
+		summary := "control | control | control | control | control"
+		if index > 0 {
+			summary = summarize(contrasts, "mayfly-single", name)
+		}
+
+		fmt.Printf("| `%s` | %.2f | %.2f | %.2f | %.2f | %s |\n",
+			name, mean, sd, median(values), slices.Min(values), summary)
 	}
 
 	fmt.Println("\nAgainst Mayfly r16:")
-	r16 := byArm["mayfly-r16"]
+	fmt.Println("| arm | gain vs Mayfly r16 | t (df=11) | p | Holm | blocks won |")
+	fmt.Println("| --- | ---: | ---: | ---: | --- | ---: |")
 	for _, name := range []string{"cmaes-single", "cmaes-ipop", "sep-cmaes-ipop"} {
-		gain, statistic, wins := pairedImprovement(r16, byArm[name])
-		fmt.Printf("- `%s`: gain %+.2f, t=%+.2f, blocks won %d/12\n", name, gain, statistic, wins)
+		fmt.Printf("| `%s` | %s |\n", name, summarize(contrasts, "mayfly-r16", name))
 	}
 
+	fmt.Printf("\nHolm step-down over all %d paired contrasts at a family-wise alpha of %.2f;\n",
+		len(contrasts), familyAlpha)
+	fmt.Printf("the uncorrected two-sided threshold at df=11 is t=%.2f and the Bonferroni one is t=%.2f.\n",
+		studentTCritical(familyAlpha, 11), studentTCritical(familyAlpha/float64(len(contrasts)), 11))
+
 	return nil
+}
+
+// summarize renders one contrast's cells for the Markdown tables above.
+func summarize(contrasts []contrast, control, candidate string) string {
+	for _, current := range contrasts {
+		if current.control != control || current.candidate != candidate {
+			continue
+		}
+		decision := "retain"
+		if current.rejected {
+			decision = "reject"
+		}
+
+		return fmt.Sprintf("%+.2f | %+.2f | %.5f | %s | %d/12",
+			current.gain, current.statistic, current.pValue, decision, current.wins)
+	}
+
+	return "n/a | n/a | n/a | n/a | n/a"
+}
+
+// holmReject marks the contrasts whose null hypotheses Holm's step-down
+// procedure rejects at the given family-wise alpha. It stops at the first
+// contrast that fails its threshold, so every larger p-value retains too.
+func holmReject(contrasts []contrast, alpha float64) {
+	order := make([]int, len(contrasts))
+	for index := range order {
+		order[index] = index
+	}
+	slices.SortFunc(order, func(a, b int) int {
+		return cmp.Compare(contrasts[a].pValue, contrasts[b].pValue)
+	})
+
+	for rank, index := range order {
+		if contrasts[index].pValue >= alpha/float64(len(contrasts)-rank) {
+			return
+		}
+		contrasts[index].rejected = true
+	}
+}
+
+// studentTTwoSided returns the two-sided p-value of a t statistic on the given
+// degrees of freedom. An infinite statistic comes from a zero-variance paired
+// difference and is reported as p=0.
+func studentTTwoSided(statistic float64, degrees int) float64 {
+	if math.IsInf(statistic, 0) {
+		return 0
+	}
+	freedom := float64(degrees)
+
+	return regularizedIncompleteBeta(freedom/(freedom+statistic*statistic), freedom/2, 0.5)
+}
+
+// studentTCritical inverts studentTTwoSided by bisection, returning the
+// two-sided critical t for the given alpha and degrees of freedom.
+func studentTCritical(alpha float64, degrees int) float64 {
+	low, high := 0.0, 1e3
+	for range 200 {
+		middle := (low + high) / 2
+		if studentTTwoSided(middle, degrees) > alpha {
+			low = middle
+		} else {
+			high = middle
+		}
+	}
+
+	return (low + high) / 2
+}
+
+// regularizedIncompleteBeta evaluates I_x(a, b) by the continued fraction of
+// Numerical Recipes section 6.4, switching branches where it converges fastest.
+func regularizedIncompleteBeta(x, a, b float64) float64 {
+	switch {
+	case x <= 0:
+		return 0
+	case x >= 1:
+		return 1
+	}
+
+	logA, _ := math.Lgamma(a)
+	logB, _ := math.Lgamma(b)
+	logSum, _ := math.Lgamma(a + b)
+	front := math.Exp(logSum - logA - logB + a*math.Log(x) + b*math.Log1p(-x))
+	if x < (a+1)/(a+b+2) {
+		return front * betaContinuedFraction(x, a, b) / a
+	}
+
+	return 1 - front*betaContinuedFraction(1-x, b, a)/b
+}
+
+// betaContinuedFraction evaluates the continued fraction of the incomplete beta
+// function by the modified Lentz algorithm.
+func betaContinuedFraction(x, a, b float64) float64 {
+	const (
+		maxIterations = 300
+		epsilon       = 1e-15
+		tiny          = 1e-300
+	)
+
+	guard := func(value float64) float64 {
+		if math.Abs(value) < tiny {
+			return tiny
+		}
+
+		return value
+	}
+
+	sum, plus, minus := a+b, a+1, a-1
+	numerator := 1.0
+	denominator := 1 / guard(1-sum*x/plus)
+	fraction := denominator
+	for step := 1; step <= maxIterations; step++ {
+		index := float64(step)
+		doubled := 2 * index
+
+		term := index * (b - index) * x / ((minus + doubled) * (a + doubled))
+		denominator = 1 / guard(1+term*denominator)
+		numerator = guard(1 + term/numerator)
+		fraction *= denominator * numerator
+
+		term = -(a + index) * (sum + index) * x / ((a + doubled) * (plus + doubled))
+		denominator = 1 / guard(1+term*denominator)
+		numerator = guard(1 + term/numerator)
+		delta := denominator * numerator
+		fraction *= delta
+
+		if math.Abs(delta-1) < epsilon {
+			break
+		}
+	}
+
+	return fraction
 }
 
 func readResults(path string) ([]resultRow, error) {
