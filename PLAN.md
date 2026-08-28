@@ -2062,10 +2062,14 @@ The campaign's own block-1 trace shows the incumbent still improving while
 sigma rises 242-fold. **The identifiable quantity was never recorded**, so that
 account is inference; recording it is what turns it into a measurement.
 
-- [ ] Record `max(D)` — or `sigma * max(D)` directly — in `SearchDiagnostics`.
-      `cmaes_adapter.go` takes Sigma and ConditionNumber from the distribution
-      snapshot and drops its eigenvalues, so the extent of the sampling
-      distribution cannot be recovered from any trace this project has written.
+- [x] Record `max(D)` — or `sigma * max(D)` directly — in `SearchDiagnostics`.
+      `cmaes_adapter.go` took Sigma and ConditionNumber from the distribution
+      snapshot and dropped its eigenvalues, so the extent of the sampling
+      distribution could not be recovered from any trace this project had
+      written. `SearchDiagnostics.DistributionExtent` now carries
+      `sigma * max(D)`, folding the dense and per-block representations, and
+      the campaign driver emits it as a `distributionExtent` column. Traces
+      written before this carry an empty cell rather than a zero.
 - [ ] Persist each restart's `TerminationReason`. The library records one per
       restart and the adapter discards it, then maps the schedule-level reason,
       which the restart driver overwrites with max-evaluations whenever the
@@ -2085,6 +2089,11 @@ separable-without-restarts arm, so nothing attributes the +90.24 to either.
 
 - [ ] Add a `sep-cmaes-single` arm and run it on the same twelve seed prefixes,
       so the existing rows stay comparable and only the missing cell is bought.
+      The arm exists: it is a cell of the `-design lambda` screen in
+      `scripts/cmaes-measurement`, which runs it at the same seed prefixes and
+      also repeats `cmaes-single`, `cmaes-ipop` and `sep-cmaes-ipop` so
+      cross-campaign drift is measured rather than assumed. Submitted
+      2026-08-29; tick this box when the screen is collected and reported.
 
 ### Task 23.3: Screen `lambda` (P2)
 
@@ -2102,14 +2111,27 @@ validation guards rather than modelling statements:
 - `app.MaxIterations` is 10000, but the shared 6,502,400-evaluation cap needs
   325,120 generations at `lambda = 20` and 406,400 at 16.
 
-- [ ] Raise `app.MaxIterations` so a small `lambda` can reach the cap,
+- [x] Raise `app.MaxIterations` so a small `lambda` can reach the cap,
       documenting the reason in the constant's comment the way `MaxCircles` and
-      `MaxPopulation` already do.
+      `MaxPopulation` already do. Raised to 1,000,000. The blocker was not the
+      constant: `trace.jsonl` was written once per iteration with no throttle,
+      and `restoreJobTrace` reads it whole into `MetricHistory` at startup while
+      the job-detail page seeds its island with that history, so a
+      million-iteration trace was an out-of-memory restart rather than a large
+      file. `server.traceSampleStride` now holds one run to the record count the
+      previous cap allowed, and records every improvement whatever the stride so
+      evaluation-capped scoring is unaffected.
 - [ ] Decide whether `app.MinPopulation` should reach 16. It has no rationale
       comment, unlike its neighbours, and lowering it touches the MayFly path
       with no evidence behind it.
 - [ ] Screen `lambda` crossed with covariance mode, not under full covariance
-      alone — the winning configuration is separable.
+      alone — the winning configuration is separable. Registered as
+      `-design lambda`: both covariance modes crossed with `lambda` 1024, 64 and
+      20 under IPOP, plus the two no-restart cells, 8 arms x 12 blocks = 96
+      jobs, every arm evaluation-matched by construction at 6,502,400. Submitted
+      2026-08-29 on the 64-core host at seven concurrent jobs. Calibration from
+      block 1: `lambda` 64 runs at 0.67x and `lambda` 20 at 0.61x the evaluation
+      rate of `lambda` 1024, because a generation is a synchronisation barrier.
 
 ### Task 23.4: A second fixture (P3)
 

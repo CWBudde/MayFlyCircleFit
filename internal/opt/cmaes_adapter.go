@@ -526,7 +526,9 @@ func (adapter *CMAESAdapter) cmaesRunOptions(
 
 			reported := *pendingProgress
 			reported.Diagnostics = &SearchDiagnostics{
-				Sigma: snapshot.Sigma, ConditionNumber: snapshot.ConditionNumber,
+				Sigma:              snapshot.Sigma,
+				ConditionNumber:    snapshot.ConditionNumber,
+				DistributionExtent: snapshot.Sigma * maxAxisScale(snapshot),
 			}
 			pendingProgress = nil
 
@@ -535,6 +537,33 @@ func (adapter *CMAESAdapter) cmaesRunOptions(
 	}
 
 	return runOptions
+}
+
+// maxAxisScale returns max(D) from a distribution snapshot: the largest
+// standard deviation among the sampling ellipse's axes. Eigenvalues already
+// holds D rather than C's eigenvalues, so no square root is taken, which
+// matches how the library's own TolXUp criterion reads it.
+//
+// The library documents Eigenvalues as carrying D in every covariance mode:
+// block covariance drops the dense Eigenvectors matrix and reports the sparse
+// per-block form alongside, but it still fills Eigenvalues with the flat axis
+// scales. Both representations are folded here rather than at the call site, so
+// the reading does not depend on which one a snapshot populates. A snapshot
+// carrying neither returns zero, which leaves DistributionExtent absent from
+// the trace instead of asserting a false one.
+func maxAxisScale(snapshot cmaes.DistributionSnapshot) float64 {
+	largest := 0.0
+	for _, scale := range snapshot.Eigenvalues {
+		largest = max(largest, scale)
+	}
+
+	for _, block := range snapshot.Blocks {
+		for _, scale := range block.Eigenvalues {
+			largest = max(largest, scale)
+		}
+	}
+
+	return largest
 }
 
 type cmaesProgressTotals struct {

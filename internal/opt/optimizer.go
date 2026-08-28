@@ -35,13 +35,31 @@ type Progress struct {
 
 // SearchDiagnostics records optimizer-specific distribution state at the
 // same iteration boundary as Progress. Fields that do not apply to an engine
-// remain zero: Mayfly reports PopulationSpread, while CMA-ES reports Sigma and
-// ConditionNumber. Diagnostics are opt-in because observing Mayfly's complete
-// population requires a deep copy of every individual.
+// remain zero: Mayfly reports PopulationSpread, while CMA-ES reports Sigma,
+// ConditionNumber and DistributionExtent. Diagnostics are opt-in because
+// observing Mayfly's complete population requires a deep copy of every
+// individual.
 type SearchDiagnostics struct {
 	PopulationSpread float64 `json:"populationSpread,omitempty"`
 	Sigma            float64 `json:"sigma,omitempty"`
 	ConditionNumber  float64 `json:"conditionNumber,omitempty"`
+	// DistributionExtent is sigma * max(D), the largest axis of the CMA-ES
+	// sampling ellipse in the normalized search box.
+	//
+	// It is recorded because Sigma on its own answers no question. CMA-ES
+	// identifies only sigma^2 * C, so the split between the scalar step size
+	// and the covariance matrix is a gauge freedom, and the pinned library
+	// does not renormalize C. Sigma can therefore inflate by many orders of
+	// magnitude while the axis lengths deflate by the same factor, leaving the
+	// distribution exactly where it was. The twelve-block campaign in
+	// docs/cmaes-report.md recorded sigma reaching 1e43 in separable mode
+	// while the run was still improving its incumbent, and could not tell the
+	// two readings apart because this field did not exist.
+	//
+	// This is the quantity the library's own TolXUp criterion compares against
+	// its initial value, so a run whose extent is flat is a run whose sampling
+	// distribution has not moved, whatever its sigma column says.
+	DistributionExtent float64 `json:"distributionExtent,omitempty"`
 }
 
 // Observer consumes synchronous best-so-far snapshots.

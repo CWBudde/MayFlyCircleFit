@@ -202,3 +202,107 @@ func readCSVFixture(t *testing.T, path string) [][]string {
 
 	return records
 }
+
+func TestLambdaScreenArmsAreEvaluationMatched(t *testing.T) {
+	t.Parallel()
+
+	arms, err := lambdaScreenArms(defaultBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Two covariance modes crossed with one no-restart shape plus one IPOP
+	// shape per lambda level.
+	if want := 2 * (1 + len(lambdaLevels())); len(arms) != want {
+		t.Fatalf("arms = %d, want %d", len(arms), want)
+	}
+
+	seen := make(map[string]bool, len(arms))
+	for _, current := range arms {
+		if seen[current.name] {
+			t.Errorf("duplicate arm name %q", current.name)
+		}
+
+		seen[current.name] = true
+
+		if current.optimizer != "cmaes" {
+			t.Errorf("%s optimizer = %q, want cmaes", current.name, current.optimizer)
+		}
+		// The whole screen rests on every arm spending the same number of
+		// evaluations; an arm that does not is not comparable to the rest.
+		if got := current.iters * current.popSize; got != defaultBudget {
+			t.Errorf("%s budget = %d (%d iters x lambda %d), want %d",
+				current.name, got, current.iters, current.popSize, defaultBudget)
+		}
+	}
+
+	// Three cells have to repeat Phase 21 exactly, because the report reads a
+	// difference against those rows as cross-campaign drift rather than noise.
+	for _, name := range []string{"cmaes-single", "cmaes-ipop", "sep-cmaes-ipop"} {
+		if !seen[name] {
+			t.Errorf("lambda screen is missing the Phase 21 replication arm %q", name)
+		}
+	}
+	// And this is the cell Phase 21 never ran (Task 23.2).
+	if !seen["sep-cmaes-single"] {
+		t.Error("lambda screen is missing sep-cmaes-single")
+	}
+}
+
+func TestLambdaScreenRejectsAnIndivisibleBudget(t *testing.T) {
+	t.Parallel()
+
+	// 20 does not divide this budget, so the lambda-20 arms could not be
+	// evaluation-matched and the screen must refuse rather than round.
+	_, err := lambdaScreenArms(defaultPop * 3)
+	if err == nil {
+		t.Fatal("lambdaScreenArms accepted a budget no lambda level divides")
+	}
+}
+
+func TestCampaignDesignsAreNamedAndClosed(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"phase21", "lambda"} {
+		plan, err := campaignDesign(name, defaultBudget)
+		if err != nil {
+			t.Fatalf("design %s: %v", name, err)
+		}
+
+		names := make(map[string]bool, len(plan.arms))
+		for _, current := range plan.arms {
+			names[current.name] = true
+		}
+		// Both controls have to be arms the design actually runs, or analyze
+		// would silently compare against an empty slice.
+		if !names[plan.baseline] {
+			t.Errorf("design %s baseline %q is not one of its arms", name, plan.baseline)
+		}
+
+		if !names[plan.secondaryControl] {
+			t.Errorf("design %s secondary control %q is not one of its arms", name, plan.secondaryControl)
+		}
+	}
+
+	_, unregistered := campaignDesign("bogus", defaultBudget)
+	if unregistered == nil {
+		t.Fatal("campaignDesign accepted an unregistered design")
+	}
+}
+
+func TestPhase21ArmsAllUseTheDefaultPopulation(t *testing.T) {
+	t.Parallel()
+
+	// The registered Phase 21 design predates per-arm populations; pinning this
+	// keeps the refactor from quietly changing what that campaign submits.
+	arms, err := campaignArms(defaultBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, current := range arms {
+		if current.popSize != defaultPop {
+			t.Errorf("%s popSize = %d, want %d", current.name, current.popSize, defaultPop)
+		}
+	}
+}

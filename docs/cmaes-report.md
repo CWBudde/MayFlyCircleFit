@@ -273,11 +273,13 @@ eventually catch — which is why full-covariance sigma tops out around 1e7 and
 separable reaches 1e43.
 
 **The identifiable quantity was not recorded, so this account is inference, not
-measurement.** `SearchDiagnostics` keeps sigma and the condition number and
-drops the distribution's eigenvalues, so `sigma * max(D)` cannot be recovered
-from these traces. Recording it is the first thing the follow-up work should
-do; until then, a large recorded sigma on this problem should be read as an
-unmeasured gauge, not as evidence of anything.
+measurement.** When this campaign ran, `SearchDiagnostics` kept sigma and the
+condition number and dropped the distribution's eigenvalues, so
+`sigma * max(D)` cannot be recovered from these traces. It is recorded now, as
+`distributionExtent`, which is why this report can pose the question and not
+answer it. Until a campaign runs with that column, a large recorded sigma on
+this problem should be read as an unmeasured gauge, not as evidence of
+anything.
 
 ### Termination is uninformative for the restart arms
 
@@ -369,7 +371,9 @@ that would turn it into one:
   final evaluation counts, iterations, elapsed seconds.
 - [`cmaes-trajectories.csv`](cmaes-trajectories.csv) — downsampled mechanism
   traces to the common cap: population spread for the MayFly arms, sigma and
-  condition number for the CMA-ES arms.
+  condition number for the CMA-ES arms. The driver now also emits a
+  `distributionExtent` column; this file predates it and does not carry one,
+  which is the whole of why the sigma question above is open.
 
 The result table reproduces from the first CSV alone, with no server and no
 access to the campaign host:

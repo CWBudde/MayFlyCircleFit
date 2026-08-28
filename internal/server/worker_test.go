@@ -1308,3 +1308,94 @@ func TestEvaluationWidthIsZeroWithoutParallelEvaluation(t *testing.T) {
 		t.Fatalf("effective width = %d, want 1 without the opt-in", width)
 	}
 }
+
+// TestTraceSampleStrideLeavesPreviousCapUntouched pins the property that makes
+// raising app.MaxIterations safe: every iteration count that was requestable
+// before the raise still traces every iteration, so no recorded measurement
+// changes shape. Past that point the stride decimates against the share of the
+// budget forcedTraceSampleBudget leaves free, so the stride's samples and the
+// forced improvement records together stay inside maxTraceSamplesPerRun. The
+// two entries a traced job writes for its starting state and its result sit
+// outside this count.
+func TestTraceSampleStrideLeavesPreviousCapUntouched(t *testing.T) {
+	t.Parallel()
+
+	strideTarget := maxTraceSamplesPerRun - forcedTraceSampleBudget
+
+	cases := []struct {
+		name  string
+		iters int
+		want  int
+	}{
+		{"single iteration", 1, 1},
+		{"campaign control", 2048, 1},
+		{"previous cap", maxTraceSamplesPerRun, 1},
+		{"one past the previous cap", maxTraceSamplesPerRun + 1, 3},
+		{"exact multiple of the stride target", 5 * strideTarget, 5},
+		{"rounds up rather than overshooting", 5*strideTarget + 1, 6},
+		{"lambda screen at the current cap", app.MaxIterations, 200},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			stride := traceSampleStride(testCase.iters)
+			if stride != testCase.want {
+				t.Fatalf("traceSampleStride(%d) = %d, want %d", testCase.iters, stride, testCase.want)
+			}
+
+			samples := (testCase.iters + stride - 1) / stride
+
+			forced := 0
+			if stride > 1 {
+				forced = forcedTraceSampleBudget
+			}
+
+			if samples+forced > maxTraceSamplesPerRun {
+				t.Fatalf("stride %d leaves %d samples plus %d forced records, above the %d bound",
+					stride, samples, forced, maxTraceSamplesPerRun)
+			}
+		})
+	}
+}
+
+// TestTraceStrideForJobCountsThePolishingBudget pins that the stride is sized
+// from every iteration the job plans to run. Polishing reports through the same
+// observer as the base stage, so a job that fits under the previous cap on Iters
+// alone still has to be decimated when its polishing budget does not.
+func TestTraceStrideForJobCountsThePolishingBudget(t *testing.T) {
+	t.Parallel()
+
+	base := JobConfig{
+		Mode:              app.ModeBatch,
+		Circles:           8,
+		BatchSize:         8,
+		Iters:             2048,
+		OptimizerEpochs:   1,
+		OptimizerRestarts: 1,
+	}
+
+	if stride := traceStrideForJob(base); stride != 1 {
+		t.Fatalf("traceStrideForJob(base) = %d, want 1 for a budget under the previous cap", stride)
+	}
+
+	polished := base
+	polished.PolishingEnabled = true
+	polished.PolishingMaxSweeps = 4
+	polished.PolishingEpochs = 4
+	polished.PolishingIters = 100000
+
+	stride := traceStrideForJob(polished)
+	if stride <= 1 {
+		t.Fatalf("traceStrideForJob(polished) = %d, want a decimating stride", stride)
+	}
+
+	planned := plannedOptimizerIterations(polished)
+
+	samples := (planned + stride - 1) / stride
+	if samples+forcedTraceSampleBudget > maxTraceSamplesPerRun {
+		t.Fatalf("stride %d leaves %d samples plus %d forced records for %d planned iterations, above the %d bound",
+			stride, samples, forcedTraceSampleBudget, planned, maxTraceSamplesPerRun)
+	}
+}

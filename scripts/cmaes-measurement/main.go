@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/cwbudde/circlefit/internal/opt"
 	"github.com/cwbudde/circlefit/internal/store"
 )
 
@@ -30,6 +31,8 @@ const (
 	defaultBudget  = 6_502_400
 	defaultProject = "cmaes-phase11"
 	defaultPop     = 1024
+	// campaignBlocks is the registered paired-block count; every design uses it.
+	campaignBlocks = 12
 	// resultColumns is the width of the header writeResults emits.
 	resultColumns = 12
 )
@@ -40,7 +43,19 @@ type arm struct {
 	covariance        string
 	restartStrategy   string
 	iters             int
+	popSize           int
 	optimizerRestarts int
+}
+
+// design is one registered campaign: a fixed arm set, the arm every paired
+// comparison is taken against, and an optional second control reported
+// underneath. Designs are named and enumerated rather than assembled from
+// flags so a campaign cannot silently differ from the one that was registered.
+type design struct {
+	name             string
+	baseline         string
+	secondaryControl string
+	arms             []arm
 }
 
 type manifestRow struct {
@@ -92,6 +107,7 @@ type settings struct {
 	trajectory   string
 	project      string
 	action       string
+	design       string
 	blocks       int
 	budget       int
 	workers      int
@@ -110,9 +126,11 @@ func main() {
 	case "preliminary":
 		err = collectPreliminary(config)
 	case "analyze":
-		err = analyze(config.resultsPath)
+		err = analyzeDesign(config)
+	case "plan":
+		err = printPlan(config)
 	default:
-		err = fmt.Errorf("unknown action %q (want submit, collect, preliminary, or analyze)", config.action)
+		err = fmt.Errorf("unknown action %q (want plan, submit, collect, preliminary, or analyze)", config.action)
 	}
 
 	if err != nil {
@@ -123,7 +141,8 @@ func main() {
 
 func parseFlags() settings {
 	var config settings
-	flag.StringVar(&config.action, "action", "collect", "submit, collect, preliminary, or analyze")
+	flag.StringVar(&config.action, "action", "collect", "plan, submit, collect, preliminary, or analyze")
+	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21 or lambda")
 	flag.StringVar(&config.server, "server", "http://localhost:8085", "serve base URL")
 	flag.StringVar(&config.dataRoot, "data-root", "./data/cmaes-phase11", "serve data root")
 	flag.StringVar(&config.reference, "ref", "example/MayFly-512.png", "reference image")
@@ -131,13 +150,79 @@ func parseFlags() settings {
 	flag.StringVar(&config.resultsPath, "results", "docs/cmaes-measurement.csv", "collected result CSV")
 	flag.StringVar(&config.trajectory, "trajectories", "docs/cmaes-trajectories.csv", "diagnostic trajectory CSV")
 	flag.StringVar(&config.project, "project", defaultProject, "server project")
-	flag.IntVar(&config.blocks, "blocks", 12, "paired blocks")
+	flag.IntVar(&config.blocks, "blocks", campaignBlocks, "paired blocks")
 	flag.IntVar(&config.budget, "budget", defaultBudget, "optimizer evaluation cap")
 	flag.IntVar(&config.workers, "workers", 8, "parallel evaluation workers")
 	flag.Int64Var(&config.seedBase, "seed-base", 111_000, "first block seed prefix")
 	flag.Parse()
 
 	return config
+}
+
+// lambdaLevels are the initial CMA-ES population sizes the lambda screen
+// visits. 1024 is what every earlier measurement used; 20 is the smallest
+// population app.MinPopulation permits and the closest this repository can get
+// to Hansen's default of 4+floor(3*ln(n)) = 16 for the 56-dimension search; 64
+// sits between them. Every level has to divide the budget exactly so all arms
+// are evaluation-matched by construction rather than by post-hoc truncation.
+func lambdaLevels() []int { return []int{1024, 64, 20} }
+
+func campaignDesign(name string, budget int) (design, error) {
+	arms, err := campaignArms(budget)
+	if err != nil {
+		return design{}, err
+	}
+
+	switch name {
+	case "phase21":
+		return design{
+			name: name, baseline: "mayfly-single", secondaryControl: "mayfly-r16", arms: arms,
+		}, nil
+	case "lambda":
+		screen, screenErr := lambdaScreenArms(budget)
+		if screenErr != nil {
+			return design{}, screenErr
+		}
+
+		return design{
+			name: name, baseline: "cmaes-single", secondaryControl: "cmaes-ipop", arms: screen,
+		}, nil
+	default:
+		return design{}, fmt.Errorf("unknown design %q (want phase21 or lambda)", name)
+	}
+}
+
+// lambdaScreenArms crosses the two covariance modes with four restart-and-
+// population shapes. Three of its cells -- cmaes-single, cmaes-ipop and
+// sep-cmaes-ipop -- repeat Phase 21 exactly, at the same seeds, so a
+// cross-campaign difference shows up as a measured discrepancy instead of
+// being assumed away; sep-cmaes-single is the cell Phase 21 never ran, and it
+// is the one that separates covariance mode from restart strategy.
+func lambdaScreenArms(budget int) ([]arm, error) {
+	modes := []struct{ prefix, covariance string }{{"", "full"}, {"sep-", "separable"}}
+	levels := lambdaLevels()
+	arms := make([]arm, 0, len(modes)*(1+len(levels)))
+	for _, mode := range modes {
+		arms = append(arms, arm{
+			name: mode.prefix + "cmaes-single", optimizer: "cmaes", covariance: mode.covariance,
+			restartStrategy: "none", iters: budget / defaultPop, popSize: defaultPop, optimizerRestarts: 1,
+		})
+		for _, lambda := range levels {
+			if budget%lambda != 0 {
+				return nil, fmt.Errorf("budget %d is not divisible by lambda %d; the arms would not be evaluation-matched", budget, lambda)
+			}
+			name := mode.prefix + "cmaes-ipop"
+			if lambda != defaultPop {
+				name = fmt.Sprintf("%s-l%d", name, lambda)
+			}
+			arms = append(arms, arm{
+				name: name, optimizer: "cmaes", covariance: mode.covariance,
+				restartStrategy: "ipop", iters: budget / lambda, popSize: lambda, optimizerRestarts: 1,
+			})
+		}
+	}
+
+	return arms, nil
 }
 
 func campaignArms(budget int) ([]arm, error) {
@@ -158,22 +243,24 @@ func campaignArms(budget int) ([]arm, error) {
 	}
 
 	return []arm{
-		{name: "mayfly-single", optimizer: "mayfly", iters: 2048, optimizerRestarts: 1},
-		{name: "mayfly-r16", optimizer: "mayfly", iters: 128, optimizerRestarts: 16},
-		{name: "cmaes-single", optimizer: "cmaes", covariance: "full", restartStrategy: "none", iters: budget / defaultPop, optimizerRestarts: 1},
-		{name: "cmaes-ipop", optimizer: "cmaes", covariance: "full", restartStrategy: "ipop", iters: budget / defaultPop, optimizerRestarts: 1},
-		{name: "sep-cmaes-ipop", optimizer: "cmaes", covariance: "separable", restartStrategy: "ipop", iters: budget / defaultPop, optimizerRestarts: 1},
+		{name: "mayfly-single", optimizer: "mayfly", iters: 2048, popSize: defaultPop, optimizerRestarts: 1},
+		{name: "mayfly-r16", optimizer: "mayfly", iters: 128, popSize: defaultPop, optimizerRestarts: 16},
+		{name: "cmaes-single", optimizer: "cmaes", covariance: "full", restartStrategy: "none", iters: budget / defaultPop, popSize: defaultPop, optimizerRestarts: 1},
+		{name: "cmaes-ipop", optimizer: "cmaes", covariance: "full", restartStrategy: "ipop", iters: budget / defaultPop, popSize: defaultPop, optimizerRestarts: 1},
+		{name: "sep-cmaes-ipop", optimizer: "cmaes", covariance: "separable", restartStrategy: "ipop", iters: budget / defaultPop, popSize: defaultPop, optimizerRestarts: 1},
 	}, nil
 }
 
 func submit(config settings) error {
-	arms, err := campaignArms(config.budget)
+	plan, err := campaignDesign(config.design, config.budget)
 	if err != nil {
 		return err
 	}
+	arms := plan.arms
 
-	if config.blocks != 12 {
-		return fmt.Errorf("phase 11 requires exactly 12 paired blocks, got %d", config.blocks)
+	if config.blocks != campaignBlocks {
+		return fmt.Errorf("design %s requires exactly %d paired blocks, got %d",
+			plan.name, campaignBlocks, config.blocks)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(config.manifestPath), 0o755); err != nil {
@@ -220,7 +307,7 @@ func submitJob(client *http.Client, config settings, current arm, seed int64) (s
 	payload := map[string]any{
 		"project": config.project, "refPath": config.reference,
 		"mode": "batch", "backend": "cpu", "optimizer": current.optimizer,
-		"circles": 8, "batchSize": 8, "iters": current.iters, "popSize": defaultPop,
+		"circles": 8, "batchSize": 8, "iters": current.iters, "popSize": current.popSize,
 		"optimizerEpochs": 1, "optimizerRestarts": current.optimizerRestarts,
 		"seed": seed, "threads": 1, "parallelEvaluation": true,
 		"evaluationWorkers": config.workers, "disableConvergence": true,
@@ -319,7 +406,55 @@ func collect(config settings) error {
 		return err
 	}
 
-	return analyze(config.resultsPath)
+	return analyzeDesign(config)
+}
+
+// printPlan reports exactly what submit would create, without creating it.
+// A campaign is expensive and a manifest may only be written once, so the arm
+// shapes are worth reading before 12 blocks of them are queued.
+func printPlan(config settings) error {
+	plan, err := campaignDesign(config.design, config.budget)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("design %s: %d arms x %d blocks = %d jobs, budget %d evaluations, seeds %d..%d\n",
+		plan.name, len(plan.arms), config.blocks, len(plan.arms)*config.blocks, config.budget,
+		config.seedBase+1, config.seedBase+int64(config.blocks))
+	fmt.Println("| arm | optimizer | covariance | restarts | popSize (lambda) | iters | evaluations |")
+	fmt.Println("| --- | --- | --- | --- | ---: | ---: | ---: |")
+	for _, current := range plan.arms {
+		covariance, restarts := current.covariance, current.restartStrategy
+		// Only CMA-ES spends exactly lambda evaluations per iteration, so only
+		// there is iters*popSize the evaluation count. Mayfly evaluates its
+		// population several times per iteration, and its arms are matched to
+		// the budget by campaign shape rather than by that product; printing it
+		// as an evaluation count would invite the comparison the campaign
+		// deliberately makes post-hoc from the trace.
+		evaluations := strconv.FormatInt(int64(current.iters)*int64(current.popSize), 10)
+		if current.optimizer == "mayfly" {
+			covariance = "-"
+			restarts = fmt.Sprintf("%d cold run(s)", current.optimizerRestarts)
+			evaluations = "scored from trace"
+		}
+		fmt.Printf("| `%s` | %s | %s | %s | %d | %d | %s |\n",
+			current.name, current.optimizer, covariance, restarts,
+			current.popSize, current.iters, evaluations)
+	}
+	fmt.Printf("\nbaseline `%s`, secondary control `%s`\n", plan.baseline, plan.secondaryControl)
+
+	return nil
+}
+
+// analyzeDesign resolves the named design before reporting, so the arm set,
+// the controls and the expected job count all come from one place.
+func analyzeDesign(config settings) error {
+	plan, err := campaignDesign(config.design, config.budget)
+	if err != nil {
+		return err
+	}
+
+	return analyze(config.resultsPath, plan)
 }
 
 func collectPreliminary(config settings) error {
@@ -538,7 +673,7 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 	defer file.Close()
 
 	writer := csv.NewWriter(file)
-	if err := writer.Write([]string{"arm", "block", "seed", "iteration", "evaluations", "bestCost", "populationSpread", "sigma", "conditionNumber"}); err != nil {
+	if err := writer.Write([]string{"arm", "block", "seed", "iteration", "evaluations", "bestCost", "populationSpread", "sigma", "conditionNumber", "distributionExtent"}); err != nil {
 		return err
 	}
 
@@ -567,14 +702,12 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 			}
 			lastBucket = bucket
 			diagnostic := entry.OptimizerDiagnostics
-			populationSpread, sigma, conditionNumber := formatDiagnostics(
-				diagnostic.PopulationSpread, diagnostic.Sigma, diagnostic.ConditionNumber,
-			)
+			populationSpread, sigma, conditionNumber, extent := formatDiagnostics(diagnostic)
 			record := []string{
 				record.Arm, strconv.Itoa(record.Block), strconv.FormatInt(record.Seed, 10),
 				strconv.Itoa(entry.Iteration), strconv.Itoa(entry.Evaluations),
 				strconv.FormatFloat(entry.Cost, 'g', 17, 64),
-				populationSpread, sigma, conditionNumber,
+				populationSpread, sigma, conditionNumber, extent,
 			}
 			if err := writer.Write(record); err != nil {
 				return err
@@ -586,16 +719,33 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 	return writer.Error()
 }
 
-func formatDiagnostics(spread, sigma, conditionNumber float64) (string, string, string) {
-	if sigma == 0 && conditionNumber == 0 {
-		return strconv.FormatFloat(spread, 'g', 17, 64), "", ""
+// formatDiagnostics splits one trace entry's optimizer diagnostics into the
+// Mayfly column and the three CMA-ES columns, leaving the other engine's cells
+// empty. distributionExtent stays empty for a trace written before the adapter
+// recorded it, which is every trace behind docs/cmaes-report.md; an empty cell
+// says "not measured" where a zero would say "the distribution had no width".
+func formatDiagnostics(diagnostic *opt.SearchDiagnostics) (string, string, string, string) {
+	if diagnostic == nil {
+		return "", "", "", ""
 	}
 
-	return "", strconv.FormatFloat(sigma, 'g', 17, 64), strconv.FormatFloat(conditionNumber, 'g', 17, 64)
+	if diagnostic.Sigma == 0 && diagnostic.ConditionNumber == 0 {
+		return strconv.FormatFloat(diagnostic.PopulationSpread, 'g', 17, 64), "", "", ""
+	}
+
+	extent := ""
+	if diagnostic.DistributionExtent != 0 {
+		extent = strconv.FormatFloat(diagnostic.DistributionExtent, 'g', 17, 64)
+	}
+
+	return "",
+		strconv.FormatFloat(diagnostic.Sigma, 'g', 17, 64),
+		strconv.FormatFloat(diagnostic.ConditionNumber, 'g', 17, 64),
+		extent
 }
 
-// familyAlpha is the family-wise error rate the campaign's seven paired
-// contrasts are held to together. Holm's step-down procedure spends it across
+// familyAlpha is the family-wise error rate a design's paired contrasts are
+// held to together. Holm's step-down procedure spends it across
 // the whole family, so a contrast that clears the uncorrected 0.05 can still
 // retain its null here.
 const familyAlpha = 0.05
@@ -612,8 +762,8 @@ type contrast struct {
 	rejected  bool
 }
 
-func analyze(path string) error {
-	rows, err := readResults(path)
+func analyze(path string, plan design) error {
+	rows, err := readResults(path, len(plan.arms)*campaignBlocks)
 	if err != nil {
 		return err
 	}
@@ -622,19 +772,66 @@ func analyze(path string) error {
 	for _, row := range rows {
 		byArm[row.Arm] = append(byArm[row.Arm], row)
 	}
-	order := []string{"mayfly-single", "mayfly-r16", "cmaes-single", "cmaes-ipop", "sep-cmaes-ipop"}
-	for _, name := range order {
-		current := byArm[name]
-		if len(current) != 12 {
-			return fmt.Errorf("arm %s has %d blocks, want 12", name, len(current))
+
+	names := make([]string, 0, len(plan.arms))
+	for _, current := range plan.arms {
+		rows := byArm[current.name]
+		if len(rows) != campaignBlocks {
+			return fmt.Errorf("arm %s has %d blocks, want %d", current.name, len(rows), campaignBlocks)
 		}
-		slices.SortFunc(current, func(a, b resultRow) int { return a.Block - b.Block })
+		slices.SortFunc(rows, func(a, b resultRow) int { return a.Block - b.Block })
+		names = append(names, current.name)
 	}
 
-	contrasts := make([]contrast, 0, 7)
-	for _, control := range []string{"mayfly-single", "mayfly-r16"} {
-		for _, candidate := range order[1:] {
-			if candidate == control {
+	contrasts := buildContrasts(plan, names, byArm)
+	holmReject(contrasts, familyAlpha)
+
+	fmt.Printf("| arm | mean | sd | median | best | gain vs %s | t (df=%d) | p | Holm | blocks won |\n",
+		plan.baseline, campaignBlocks-1)
+	fmt.Println("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |")
+	for _, name := range names {
+		values := costs(byArm[name])
+		mean, sd := meanSD(values)
+		summary := "control | control | control | control | control"
+		if name != plan.baseline {
+			summary = summarize(contrasts, plan.baseline, name)
+		}
+
+		fmt.Printf("| `%s` | %.2f | %.2f | %.2f | %.2f | %s |\n",
+			name, mean, sd, median(values), slices.Min(values), summary)
+	}
+
+	fmt.Printf("\nAgainst %s:\n", plan.secondaryControl)
+	fmt.Printf("| arm | gain vs %s | t (df=%d) | p | Holm | blocks won |\n",
+		plan.secondaryControl, campaignBlocks-1)
+	fmt.Println("| --- | ---: | ---: | ---: | --- | ---: |")
+	for _, name := range names {
+		if name == plan.baseline || name == plan.secondaryControl {
+			continue
+		}
+		fmt.Printf("| `%s` | %s |\n", name, summarize(contrasts, plan.secondaryControl, name))
+	}
+
+	fmt.Printf("\nHolm step-down over all %d paired contrasts at a family-wise alpha of %.2f;\n",
+		len(contrasts), familyAlpha)
+	fmt.Printf("the uncorrected two-sided threshold at df=%d is t=%.2f and the Bonferroni one is t=%.2f.\n",
+		campaignBlocks-1, studentTCritical(familyAlpha, campaignBlocks-1),
+		studentTCritical(familyAlpha/float64(len(contrasts)), campaignBlocks-1))
+
+	return nil
+}
+
+// buildContrasts pairs every candidate arm against both of a design's
+// controls. All of them belong to one family, so they are built together and
+// corrected together: a design with more arms buys more contrasts and
+// therefore a stricter threshold, which is the point of correcting rather than
+// reading each control column on its own.
+func buildContrasts(plan design, names []string, byArm map[string][]resultRow) []contrast {
+	controls := []string{plan.baseline, plan.secondaryControl}
+	contrasts := make([]contrast, 0, len(controls)*(len(names)-1))
+	for _, control := range controls {
+		for _, candidate := range names {
+			if candidate == control || candidate == plan.baseline {
 				continue
 			}
 			gain, statistic, wins := pairedImprovement(byArm[control], byArm[candidate])
@@ -643,40 +840,13 @@ func analyze(path string) error {
 				candidate: candidate,
 				gain:      gain,
 				statistic: statistic,
-				pValue:    studentTTwoSided(statistic, 11),
+				pValue:    studentTTwoSided(statistic, campaignBlocks-1),
 				wins:      wins,
 			})
 		}
 	}
-	holmReject(contrasts, familyAlpha)
 
-	fmt.Println("| arm | mean | sd | median | best | gain vs Mayfly single | t (df=11) | p | Holm | blocks won |")
-	fmt.Println("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |")
-	for index, name := range order {
-		values := costs(byArm[name])
-		mean, sd := meanSD(values)
-		summary := "control | control | control | control | control"
-		if index > 0 {
-			summary = summarize(contrasts, "mayfly-single", name)
-		}
-
-		fmt.Printf("| `%s` | %.2f | %.2f | %.2f | %.2f | %s |\n",
-			name, mean, sd, median(values), slices.Min(values), summary)
-	}
-
-	fmt.Println("\nAgainst Mayfly r16:")
-	fmt.Println("| arm | gain vs Mayfly r16 | t (df=11) | p | Holm | blocks won |")
-	fmt.Println("| --- | ---: | ---: | ---: | --- | ---: |")
-	for _, name := range []string{"cmaes-single", "cmaes-ipop", "sep-cmaes-ipop"} {
-		fmt.Printf("| `%s` | %s |\n", name, summarize(contrasts, "mayfly-r16", name))
-	}
-
-	fmt.Printf("\nHolm step-down over all %d paired contrasts at a family-wise alpha of %.2f;\n",
-		len(contrasts), familyAlpha)
-	fmt.Printf("the uncorrected two-sided threshold at df=11 is t=%.2f and the Bonferroni one is t=%.2f.\n",
-		studentTCritical(familyAlpha, 11), studentTCritical(familyAlpha/float64(len(contrasts)), 11))
-
-	return nil
+	return contrasts
 }
 
 // summarize renders one contrast's cells for the Markdown tables above.
@@ -810,7 +980,7 @@ func betaContinuedFraction(x, a, b float64) float64 {
 	return fraction
 }
 
-func readResults(path string) ([]resultRow, error) {
+func readResults(path string, wantJobs int) ([]resultRow, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -822,11 +992,11 @@ func readResults(path string) ([]resultRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(records) != 61 {
-		return nil, fmt.Errorf("results contain %d jobs, want 60", len(records)-1)
+	if len(records) != wantJobs+1 {
+		return nil, fmt.Errorf("results contain %d jobs, want %d", len(records)-1, wantJobs)
 	}
 
-	rows := make([]resultRow, 0, 60)
+	rows := make([]resultRow, 0, wantJobs)
 	for index, record := range records[1:] {
 		line := index + 2
 		if len(record) != resultColumns {
