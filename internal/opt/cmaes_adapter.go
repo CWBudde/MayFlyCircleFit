@@ -544,10 +544,13 @@ func (adapter *CMAESAdapter) cmaesRunOptions(
 // holds D rather than C's eigenvalues, so no square root is taken, which
 // matches how the library's own TolXUp criterion reads it.
 //
-// Block covariance reports no dense Eigenvalues and carries the axes per block
-// instead, so both representations are folded here rather than at the call
-// site. A snapshot carrying neither returns zero, which leaves
-// DistributionExtent absent from the trace instead of asserting a false one.
+// The library documents Eigenvalues as carrying D in every covariance mode:
+// block covariance drops the dense Eigenvectors matrix and reports the sparse
+// per-block form alongside, but it still fills Eigenvalues with the flat axis
+// scales. Both representations are folded here rather than at the call site, so
+// the reading does not depend on which one a snapshot populates. A snapshot
+// carrying neither returns zero, which leaves DistributionExtent absent from
+// the trace instead of asserting a false one.
 func maxAxisScale(snapshot cmaes.DistributionSnapshot) float64 {
 	largest := 0.0
 	for _, scale := range snapshot.Eigenvalues {
