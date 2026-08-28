@@ -253,7 +253,7 @@ type Renderer struct {
 	// degraded is shared with every session derived from this renderer, and
 	// with the renderer a session was derived from. Degradation is a fact about
 	// the device, not about one Renderer value: the staged pipelines evaluate
-	// through independent sessions, so a per-renderer flag would leave a
+	// through a separate session per stage, so a per-renderer flag would leave a
 	// sequential or batch run reporting a clean device while every circle after
 	// the failure was costed on the CPU. Sharing it also stops a lost device
 	// being rediscovered once per stage.

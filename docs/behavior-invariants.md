@@ -34,12 +34,12 @@ Rendering-side invariants live in
   as `EvaluationWidth`, and reports false for every backend that cannot degrade.
 - **Degradation belongs to the run, not to one renderer value.** The OpenCL
   renderer and every session derived from it share one degradation record. This
-  is load-bearing: the staged pipelines evaluate each stage through an
-  independent session, so a per-renderer flag would let a sequential or batch
-  run report a clean device while everything after the failure was costed on the
-  CPU. Sharing also runs the other way, so a session created after the device is
-  gone does not rediscover it, and a lost device costs one timeout per run
-  rather than one per stage.
+  is load-bearing: the staged pipelines evaluate each stage through a session of
+  its own, so a per-renderer flag would let a sequential or batch run report a
+  clean device while everything after the failure was costed on the CPU.
+  Sharing also runs the other way, so a session created after the device is gone
+  does not rediscover it, and a lost device costs one timeout per run rather
+  than one per stage.
 - **A job records the backend it ran on, not the one it requested.**
   `effectiveBackend` is written once, where the renderer is built, and is the
   only value a comparison between two runs may use. Neither it nor
@@ -108,12 +108,12 @@ Rendering-side invariants live in
   serial sweep it replaced. `PolishCircleBatchContext` still rejects an
   optimizer reporting a width above one unless the backend both hands out
   independent sessions and advertises concurrent evaluation. Both are required:
-  OpenCL can create sessions, but each carries its own device state and several
-  of them evaluating at once has never been validated, so it withholds the
-  parallel marker and is refused. Polishing errors rather than degrading
-  to one slot when the pool comes up short, because the optimizer would still
-  call the evaluator from every goroutine. The epoch and progress wrappers
-  forward the width so neither check can be bypassed.
+  OpenCL can create sessions, but they share one device engine and one in-order
+  command queue, and several of them evaluating at once has never been
+  validated, so it withholds the parallel marker and is refused. Polishing
+  errors rather than degrading to one slot when the pool comes up short, because
+  the optimizer would still call the evaluator from every goroutine. The epoch
+  and progress wrappers forward the width so neither check can be bypassed.
 - Acceptance stays serial: a sweep is committed only after the merged candidate
   is re-evaluated on the full session and `sweepKeepsCirclesUseful` clears it.
   Pooling applies to candidate evaluation only.

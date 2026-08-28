@@ -15,7 +15,7 @@ import (
 )
 
 // Degradation is a fact about the device, not about one Renderer value. The
-// staged pipelines evaluate every circle through an independent session, so a
+// staged pipelines evaluate every circle through a separate session, so a
 // per-renderer flag left a sequential or batch run reporting a clean device
 // while everything after the failure was costed on the CPU.
 //

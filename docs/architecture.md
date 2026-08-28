@@ -122,9 +122,10 @@ evaluation.
 
 Vendor-GPU characterization is no longer open: the backend has been measured on
 an NVIDIA T550, where joint mode beats the CPU renderer and the two staged modes
-lose to it by 26x and 84x, because each stage rebuilds its own context, queue
-and compiled program. Device-resource sharing is the remaining work and is what
-those ratios are waiting on. The measurements are in
+lose to it by 26x and 84x, because each stage rebuilt its own context, queue
+and compiled program. A renderer and its sessions now share one device engine,
+so that rebuild is gone; the accumulated base canvas is the remaining
+staged-path work. The measurements are in
 [`gpu-performance-report.md`](gpu-performance-report.md), the operational
 consequences in [`gpu-backends.md`](gpu-backends.md).
 

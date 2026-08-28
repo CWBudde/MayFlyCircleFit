@@ -133,9 +133,9 @@ behavior is production-ready.
 
 - CPU and OpenCL support joint, sequential, and batch pipelines; only CPU
   supports custom base canvases. Staged OpenCL modes replay all retained circles
-  in independent device sessions. Their performance is characterized, on one
-  vendor GPU only: an NVIDIA T550, where sequential and batch measure 26x and
-  84x slower than the CPU renderer while joint measures 0.8x. AMD and Intel
+  in sessions that share one device engine. Their performance is characterized,
+  on one vendor GPU only: an NVIDIA T550, where sequential and batch measure 26x
+  and 84x slower than the CPU renderer while joint measures 0.8x. AMD and Intel
   remain unmeasured. See
   [`gpu-performance-report.md`](gpu-performance-report.md).
 - OpenCL is experimental, CGO-dependent, and requires local headers, a loader,
@@ -291,11 +291,11 @@ behavior is production-ready.
   workers. See [parallel-evaluation-report.md](parallel-evaluation-report.md).
   Do not assume the flag is a speedup without measuring the intended workload.
 - Backends that do not advertise safe concurrent evaluation -- OpenCL today --
-  cannot serve parallel evaluation. OpenCL can create independent staged
-  sessions, but simultaneous device evaluation has not been validated. A
-  request is declined with a warning and the run evaluates serially, rather
-  than paying for an altered search trajectory without a validated throughput
-  gain.
+  cannot serve parallel evaluation. OpenCL can create staged sessions, but they
+  share one in-order command queue and simultaneous device evaluation has not
+  been validated. A request is declined with a warning and the run evaluates
+  serially, rather than paying for an altered search trajectory without a
+  validated throughput gain.
 - Parallel evaluation is reproducible *and*, since the MayFly v0.7.0 pin,
   equivalent to a serial run of the same seed. Evaluation order does not leak
   into the result: MayFly advances its RNG only from serial phase code and

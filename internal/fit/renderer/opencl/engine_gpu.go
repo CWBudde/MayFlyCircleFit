@@ -36,10 +36,10 @@ var (
 //
 // It is reference counted rather than owned outright because a Renderer and the
 // sessions derived from it are separate values with separate lifetimes: the
-// engine has to outlive whichever of them is torn down first. Today the count
-// never exceeds one holder per engine -- NewSession still builds its own -- so
-// the counting is inert; it exists so that sharing an engine between sessions
-// becomes a change to who calls retain, not a rewrite of teardown.
+// engine has to outlive whichever of them is torn down first. NewSession hands
+// its parent's engine to the session rather than building one, so a staged run
+// accumulates holders as it grows the circle count, and the device state is
+// freed exactly when the last of them is gone.
 type engine struct {
 	runtime *gpu.Runtime
 

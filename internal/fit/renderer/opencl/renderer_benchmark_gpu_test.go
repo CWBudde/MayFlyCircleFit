@@ -86,12 +86,12 @@ func BenchmarkOpenCLResidentImageReadback(b *testing.B) {
 	}
 }
 
-// BenchmarkOpenCLSessionCreation measures the device setup a session pays for
-// today. Renderer.NewSession rebuilds the whole stack per session: a fresh
+// BenchmarkOpenCLSessionCreation measures the device setup a session pays for.
+// Renderer.NewSession used to rebuild the whole stack per session: a fresh
 // gpu.InitOpenCL, clCreateProgramWithSource, clBuildProgram, the device info
-// queries, and a re-upload of the reference image. Task 11.13 tranche 1 makes
-// sessions share one engine, so this is the "before" figure it is measured
-// against.
+// queries, and a re-upload of the reference image. Task 11.13 tranche 1 made
+// sessions share one engine instead, so this benchmark is the pair of figures
+// that change is measured by.
 //
 // The two arms separate the fixed setup term from what a session adds on top:
 // "new" times a full New construction, "session" times a NewSession over a base
