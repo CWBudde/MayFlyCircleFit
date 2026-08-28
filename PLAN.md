@@ -517,7 +517,9 @@ something untried.
 
 ### Task 11.13: Optimize OpenCL/PoCL Pipeline Performance
 
-Measured baseline: the uncached 64x64, K=12 pipeline benchmark reports PoCL approximately 3x slower than CPU for joint mode, 190x slower for sequential mode, and 120x slower for batch mode. Sequential creates 14 OpenCL sessions and batch creates 5; their approximately 45 ms/session cost shows that repeated context/program initialization dominates staged execution. These PoCL CPU measurements guide implementation but do not replace vendor-GPU validation.
+Measured baseline, on an NVIDIA T550 (`docs/gpu-performance-report.md`): the uncached 64x64, K=12 pipeline benchmark reports joint at 0.8x the CPU's time -- the GPU wins -- while sequential is 26x and batch 84x slower, all three separated. Joint creates no session; sequential creates 5 and batch 9. `BenchmarkOpenCLSessionCreation` prices one at 0.36-0.65 s, three orders of magnitude above any per-evaluation cost in the package, and the arms do not separate `NewSession` from a cold `New` -- which is what `NewSession` calling `newRenderer` verbatim predicts. Repeated context and program initialization is therefore the whole of the staged loss.
+
+This paragraph previously carried the PoCL figures (3x / 190x / 120x, 14 and 5 sessions, ~45 ms/session). Those were superseded by Task 11.9 and are kept as a dated record in `docs/gpu-backends.md`; they describe a CPU pretending to be a device and must not be compared against a run made today.
 
 - [ ] Share OpenCL resources across renderer sessions
   - [ ] Introduce an owned shared device engine for the selected device, context, queue, compiled program, reference buffer, and workgroup configuration
@@ -541,7 +543,7 @@ Measured baseline: the uncached 64x64, K=12 pipeline benchmark reports PoCL appr
   - [ ] Extend CPU/OpenCL parity tests across joint, sequential, and batch modes after each optimization
   - [ ] Verify cache invalidation, lazy image materialization, cleanup, and permanent CPU degradation paths
 - [ ] Re-run the complete backend pipeline benchmark after each tranche
-  - [ ] Record PoCL before/after medians, allocations, session counts, and evaluation counts
+  - [ ] Record vendor-GPU before/after medians, allocations, session counts, and evaluation counts, as interleaved single passes rather than `-count=N`; PoCL only for lifecycle and allocation deltas
   - [ ] Run the same benchmark on supported AMD, Intel, and NVIDIA OpenCL devices where available
   - [ ] Document crossover points and retain optimizations only when profiling demonstrates a benefit
 

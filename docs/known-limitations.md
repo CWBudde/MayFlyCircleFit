@@ -133,8 +133,11 @@ behavior is production-ready.
 
 - CPU and OpenCL support joint, sequential, and batch pipelines; only CPU
   supports custom base canvases. Staged OpenCL modes replay all retained circles
-  in independent device sessions, so their performance remains uncharacterized
-  on vendor GPUs.
+  in independent device sessions. Their performance is characterized, on one
+  vendor GPU only: an NVIDIA T550, where sequential and batch measure 26x and
+  84x slower than the CPU renderer while joint measures 0.8x. AMD and Intel
+  remain unmeasured. See
+  [`gpu-performance-report.md`](gpu-performance-report.md).
 - OpenCL is experimental, CGO-dependent, and requires local headers, a loader,
   a driver, and a usable device. It is excluded from the standard portable
   matrix; a dedicated CI job exercises it through the PoCL CPU runtime.
