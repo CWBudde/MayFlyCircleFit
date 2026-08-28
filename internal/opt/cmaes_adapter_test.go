@@ -712,3 +712,154 @@ func TestCMAESRejectsInvalidConfigurationOptions(t *testing.T) {
 		})
 	}
 }
+
+// TestCMAESRestartScheduleRecordsEveryRunsTermination covers the reason a
+// restart arm's job-level Termination carries no information: the schedule
+// overwrites it with its budget-exhausted reason whenever the shared budget is
+// spent. Only the per-run records say how each individual run actually ended.
+func TestCMAESRestartScheduleRecordsEveryRunsTermination(t *testing.T) {
+	t.Parallel()
+
+	for _, strategy := range []string{"ipop", "bipop"} {
+		t.Run(strategy, func(t *testing.T) {
+			t.Parallel()
+
+			// A budget large enough that the first run converges well before
+			// it, which is the only shape in which a restart schedule restarts
+			// at all: a run that can consume the whole shared budget on its own
+			// leaves nothing for a second.
+			result, err := cmaesLifecycle(t, opt.NewCMAES(
+				300, 8, 123,
+				opt.WithCMAESRestartStrategy(strategy),
+			)).RunContext(context.Background(), opt.Problem{
+				Eval:  sphereCost,
+				Lower: []float64{-5, -5, -5}, Upper: []float64{5, 5, 5}, Dim: 3,
+			}, opt.RunOptions{})
+			if err != nil {
+				t.Fatalf("RunContext() error = %v", err)
+			}
+
+			// The whole schedule reports the budget-exhausted reason, which is
+			// what makes it useless as a description of the individual runs.
+			if result.Termination != opt.TerminationCompleted {
+				t.Errorf("Termination = %q, want the uninformative schedule-level reason",
+					result.Termination)
+			}
+
+			if len(result.Restarts) < 2 {
+				t.Fatalf("Restarts = %d runs, want a schedule of at least two", len(result.Restarts))
+			}
+
+			iterations, evaluations := 0, 0
+
+			for index, run := range result.Restarts {
+				if run.Restart != index {
+					t.Errorf("run %d has Restart = %d, want consecutive indices", index, run.Restart)
+				}
+
+				if run.Termination == "" {
+					t.Errorf("run %d has no termination reason", index)
+				}
+
+				if run.Regime == "" {
+					t.Errorf("run %d has no regime", index)
+				}
+
+				if run.Population <= 0 {
+					t.Errorf("run %d has Population = %d, want positive", index, run.Population)
+				}
+
+				iterations += run.Iterations
+				evaluations += run.Evaluations
+			}
+
+			// The records have to account for the whole run, or a report built
+			// on them would silently describe part of the budget.
+			if iterations != result.Iterations {
+				t.Errorf("run iterations sum to %d, want the result's %d", iterations, result.Iterations)
+			}
+
+			if evaluations != result.Evaluations {
+				t.Errorf("run evaluations sum to %d, want the result's %d", evaluations, result.Evaluations)
+			}
+		})
+	}
+}
+
+// TestCMAESWithoutARestartScheduleRecordsNoRuns keeps the records an opt-in
+// artifact of a restart strategy: a caller persisting them writes nothing for
+// an ordinary single run.
+func TestCMAESWithoutARestartScheduleRecordsNoRuns(t *testing.T) {
+	t.Parallel()
+
+	result, err := cmaesLifecycle(t, opt.NewCMAES(5, 8, 123)).RunContext(
+		context.Background(), opt.Problem{
+			Eval:  func([]float64) float64 { return 1 },
+			Lower: []float64{0, 0, 0}, Upper: []float64{1, 1, 1}, Dim: 3,
+		}, opt.RunOptions{})
+	if err != nil {
+		t.Fatalf("RunContext() error = %v", err)
+	}
+
+	if result.Restarts != nil {
+		t.Errorf("Restarts = %v, want nil for a single run", result.Restarts)
+	}
+}
+
+// TestCMAESDiagnosticsAttributeEachSampleToItsRestart covers the join between
+// the trace and the per-run records. Cumulative iteration and evaluation
+// counts run straight through a restart boundary, so without this index a
+// trace cannot say which run produced a sample and the evaluations a run spent
+// after its last improvement cannot be recovered.
+func TestCMAESDiagnosticsAttributeEachSampleToItsRestart(t *testing.T) {
+	t.Parallel()
+
+	var observed []int
+
+	result, err := cmaesLifecycle(t, opt.NewCMAES(
+		300, 8, 123,
+		opt.WithCMAESRestartStrategy("ipop"),
+		opt.WithCMAESSearchDiagnostics(),
+	)).RunContext(context.Background(), opt.Problem{
+		Eval:  sphereCost,
+		Lower: []float64{-5, -5, -5}, Upper: []float64{5, 5, 5}, Dim: 3,
+	}, opt.RunOptions{Observer: func(progress opt.Progress) {
+		if progress.Diagnostics != nil {
+			observed = append(observed, progress.Diagnostics.Restart)
+		}
+	}})
+	if err != nil {
+		t.Fatalf("RunContext() error = %v", err)
+	}
+
+	if len(observed) == 0 {
+		t.Fatal("no diagnostics observed")
+	}
+
+	if observed[0] != 0 {
+		t.Errorf("first sample has Restart = %d, want the initial run", observed[0])
+	}
+
+	for index := 1; index < len(observed); index++ {
+		if observed[index] < observed[index-1] {
+			t.Fatalf("restart index went backwards at %d: %d then %d",
+				index, observed[index-1], observed[index])
+		}
+	}
+
+	if last := observed[len(observed)-1]; last != len(result.Restarts)-1 {
+		t.Errorf("last sample has Restart = %d, want the schedule's final run %d",
+			last, len(result.Restarts)-1)
+	}
+}
+
+// sphereCost is a minimum-at-the-origin objective that CMA-ES converges on
+// quickly, so a restart schedule given a generous budget actually restarts.
+func sphereCost(params []float64) float64 {
+	total := 0.0
+	for _, value := range params {
+		total += value * value
+	}
+
+	return total
+}

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 func TestCampaignArmsAreEvaluationMatched(t *testing.T) {
@@ -304,5 +306,61 @@ func TestPhase21ArmsAllUseTheDefaultPopulation(t *testing.T) {
 		if current.popSize != defaultPop {
 			t.Errorf("%s popSize = %d, want %d", current.name, current.popSize, defaultPop)
 		}
+	}
+}
+
+// TestWriteRestartsRecordsOneRowPerRun covers the artifact that makes a
+// restart arm measurable. The result CSV holds one row per job and its
+// termination column is the schedule's budget-exhausted reason, so this file
+// is the only place a run's own reason survives.
+func TestWriteRestartsRecordsOneRowPerRun(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "restarts.csv")
+	results := []resultRow{
+		{
+			manifestRow: manifestRow{Arm: "cmaes-ipop", Block: 1, Seed: 111001},
+			Restarts: []opt.RestartRun{
+				{
+					Termination: "tol_fun", Regime: "large", Stage: 0, Restart: 0,
+					Population: 1024, Iterations: 106, Evaluations: 848, BestCost: 900,
+				},
+				{
+					Termination: "maximum_evaluations", Regime: "large", Stage: 0, Restart: 1,
+					Population: 2048, Iterations: 11, Evaluations: 352, BestCost: 950,
+				},
+			},
+		},
+		// A non-restart arm contributes no rows at all, which is what keeps
+		// the file a record of restart schedules rather than of jobs.
+		{manifestRow: manifestRow{Arm: "cmaes-single", Block: 1, Seed: 111001}},
+	}
+
+	err := writeRestarts(settings{restartsPath: path}, results)
+	if err != nil {
+		t.Fatalf("writeRestarts() error = %v", err)
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	rows, err := csv.NewReader(file).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(rows) != 3 {
+		t.Fatalf("rows = %d, want a header and two runs", len(rows))
+	}
+
+	if rows[1][0] != "cmaes-ipop" || rows[1][4] != "0" || rows[1][10] != "tol_fun" {
+		t.Errorf("first run = %v, want the initial run's own reason", rows[1])
+	}
+
+	if rows[2][4] != "1" || rows[2][6] != "2048" || rows[2][10] != "maximum_evaluations" {
+		t.Errorf("second run = %v, want the doubled population that spent the budget", rows[2])
 	}
 }

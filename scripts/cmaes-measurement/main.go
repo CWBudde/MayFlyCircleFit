@@ -85,10 +85,16 @@ type resultRow struct {
 	FinalEvaluations  int
 	Iterations        int
 	ElapsedSeconds    float64
+	// Restarts is the collected checkpoint's per-run record. It is populated
+	// only by collectJob, which reads the checkpoint; a row parsed back out of
+	// the result CSV by readResults leaves it empty, because the result CSV is
+	// one row per job and these are one row per run.
+	Restarts []opt.RestartRun
 }
 
 type checkpoint struct {
-	OptimizerVersion string `json:"optimizerVersion"`
+	OptimizerVersion string           `json:"optimizerVersion"`
+	Restarts         []opt.RestartRun `json:"restarts"`
 }
 
 type checkpointInfo struct {
@@ -105,6 +111,7 @@ type settings struct {
 	manifestPath string
 	resultsPath  string
 	trajectory   string
+	restartsPath string
 	project      string
 	action       string
 	design       string
@@ -149,6 +156,7 @@ func parseFlags() settings {
 	flag.StringVar(&config.manifestPath, "manifest", "./data/cmaes-phase11/manifest.csv", "job manifest")
 	flag.StringVar(&config.resultsPath, "results", "docs/cmaes-measurement.csv", "collected result CSV")
 	flag.StringVar(&config.trajectory, "trajectories", "docs/cmaes-trajectories.csv", "diagnostic trajectory CSV")
+	flag.StringVar(&config.restartsPath, "restarts", "docs/cmaes-restarts.csv", "per-restart outcome CSV")
 	flag.StringVar(&config.project, "project", defaultProject, "server project")
 	flag.IntVar(&config.blocks, "blocks", campaignBlocks, "paired blocks")
 	flag.IntVar(&config.budget, "budget", defaultBudget, "optimizer evaluation cap")
@@ -405,6 +413,9 @@ func collect(config settings) error {
 	if err := writeTrajectories(config, manifest); err != nil {
 		return err
 	}
+	if err := writeRestarts(config, results); err != nil {
+		return err
+	}
 
 	return analyzeDesign(config)
 }
@@ -574,6 +585,7 @@ func collectJob(config settings, record manifestRow, status jobStatus) (resultRo
 		OptimizerVersion: saved.OptimizerVersion, Score: score,
 		ScoredEvaluations: scoredEvaluations, FinalEvaluations: status.Evaluations,
 		Iterations: status.Iterations, ElapsedSeconds: status.Elapsed,
+		Restarts: saved.Restarts,
 	}, nil
 }
 
@@ -673,7 +685,7 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 	defer file.Close()
 
 	writer := csv.NewWriter(file)
-	if err := writer.Write([]string{"arm", "block", "seed", "iteration", "evaluations", "bestCost", "populationSpread", "sigma", "conditionNumber", "distributionExtent"}); err != nil {
+	if err := writer.Write([]string{"arm", "block", "seed", "iteration", "evaluations", "bestCost", "populationSpread", "sigma", "conditionNumber", "distributionExtent", "restart"}); err != nil {
 		return err
 	}
 
@@ -708,6 +720,7 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 				strconv.Itoa(entry.Iteration), strconv.Itoa(entry.Evaluations),
 				strconv.FormatFloat(entry.Cost, 'g', 17, 64),
 				populationSpread, sigma, conditionNumber, extent,
+				strconv.Itoa(diagnostic.Restart),
 			}
 			if err := writer.Write(record); err != nil {
 				return err
@@ -724,6 +737,56 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 // empty. distributionExtent stays empty for a trace written before the adapter
 // recorded it, which is every trace behind docs/cmaes-report.md; an empty cell
 // says "not measured" where a zero would say "the distribution had no width".
+// writeRestarts records one row per independent run of every restart schedule
+// in the campaign. It is the only place a restart arm's per-run outcome
+// survives: the job-level termination a restart schedule reports is its
+// budget-exhausted reason whenever the shared budget is spent, which for an
+// arm sized to consume its budget is always, so every restart arm records
+// "completed" however its individual runs actually ended.
+//
+// The file is written even when it holds nothing but a header. A campaign
+// whose checkpoints predate the adapter recording these produces exactly that,
+// and an empty file says "this campaign has no per-run record" where a missing
+// one would be indistinguishable from a collection that failed.
+func writeRestarts(config settings, results []resultRow) error {
+	if err := os.MkdirAll(filepath.Dir(config.restartsPath), 0o755); err != nil {
+		return err
+	}
+	file, err := os.Create(config.restartsPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	header := []string{
+		"arm", "block", "seed", "stage", "restart", "regime",
+		"population", "iterations", "evaluations", "bestCost", "termination",
+	}
+	if err := writer.Write(header); err != nil {
+		return err
+	}
+
+	for _, result := range results {
+		for _, run := range result.Restarts {
+			record := []string{
+				result.Arm, strconv.Itoa(result.Block), strconv.FormatInt(result.Seed, 10),
+				strconv.Itoa(run.Stage), strconv.Itoa(run.Restart), run.Regime,
+				strconv.Itoa(run.Population), strconv.Itoa(run.Iterations),
+				strconv.Itoa(run.Evaluations),
+				strconv.FormatFloat(run.BestCost, 'g', 17, 64),
+				run.Termination,
+			}
+			if err := writer.Write(record); err != nil {
+				return err
+			}
+		}
+	}
+	writer.Flush()
+
+	return writer.Error()
+}
+
 func formatDiagnostics(diagnostic *opt.SearchDiagnostics) (string, string, string, string) {
 	if diagnostic == nil {
 		return "", "", "", ""

@@ -111,6 +111,23 @@ type Checkpoint struct {
 	// converged, cancelled, or failed). In-progress checkpoints use unknown.
 	Termination string `json:"termination"`
 
+	// Restarts records each independent run of every restart schedule the job
+	// ran, in pipeline-stage then restart order. It is empty for a job whose
+	// optimizer had no restart schedule, which is every Mayfly and Dragonfly
+	// run and every CMA-ES run configured with restartStrategy none.
+	//
+	// It exists because Termination cannot answer anything about a restart
+	// arm: the schedule reports its budget-exhausted reason whenever the
+	// shared evaluation budget is spent, so an arm sized to consume its budget
+	// records "completed" however its individual runs ended. Only these
+	// records say whether the schedule was harvesting converged runs or paying
+	// for runs that had stopped progressing.
+	//
+	// It is additive and optional, like OptimizerVersion: a checkpoint written
+	// before the field existed decodes with it empty, which is also what a
+	// non-restart job records, so the schema version does not move.
+	Restarts []opt.RestartRun `json:"restarts,omitempty"`
+
 	// Iteration is a deprecated in-memory alias retained for source
 	// compatibility. Version 2 JSON uses Iterations.
 	Iteration int `json:"-"`
@@ -464,6 +481,7 @@ func (c *Checkpoint) UnmarshalJSON(data []byte) error {
 		Iterations:       iterations,
 		Evaluations:      wire.Evaluations,
 		Termination:      wire.Termination,
+		Restarts:         append([]opt.RestartRun(nil), wire.Restarts...),
 		Iteration:        iterations,
 		Timestamp:        wire.Timestamp,
 		ExtendedFrom:     wire.ExtendedFrom,
@@ -490,26 +508,27 @@ func (c *Checkpoint) UnmarshalJSON(data []byte) error {
 }
 
 type checkpointWire struct {
-	SchemaVersion    int       `json:"schemaVersion"`
-	JobID            string    `json:"jobId"`
-	BestParams       []float64 `json:"bestParams"`
-	BestCost         float64   `json:"bestCost"`
-	InitialCost      float64   `json:"initialCost"`
-	RequestedCircles int       `json:"requestedCircles"`
-	ActualCircles    int       `json:"actualCircles"`
-	EffectiveSeed    int64     `json:"effectiveSeed"`
-	ResumeCount      int       `json:"resumeCount"`
-	Iterations       int       `json:"iterations"`
-	Evaluations      int64     `json:"evaluations"`
-	Termination      string    `json:"termination"`
-	Iteration        int       `json:"iteration,omitempty"`
-	Timestamp        time.Time `json:"timestamp"`
-	ExtendedFrom     string    `json:"extendedFrom,omitempty"`
-	PolishedFrom     string    `json:"polishedFrom,omitempty"`
-	ScheduleID       string    `json:"scheduleId,omitempty"`
-	StageIndex       *int      `json:"stageIndex,omitempty"`
-	OptimizerVersion string    `json:"optimizerVersion,omitempty"`
-	Config           JobConfig `json:"config"`
+	SchemaVersion    int              `json:"schemaVersion"`
+	JobID            string           `json:"jobId"`
+	BestParams       []float64        `json:"bestParams"`
+	BestCost         float64          `json:"bestCost"`
+	InitialCost      float64          `json:"initialCost"`
+	RequestedCircles int              `json:"requestedCircles"`
+	ActualCircles    int              `json:"actualCircles"`
+	EffectiveSeed    int64            `json:"effectiveSeed"`
+	ResumeCount      int              `json:"resumeCount"`
+	Iterations       int              `json:"iterations"`
+	Evaluations      int64            `json:"evaluations"`
+	Termination      string           `json:"termination"`
+	Restarts         []opt.RestartRun `json:"restarts,omitempty"`
+	Iteration        int              `json:"iteration,omitempty"`
+	Timestamp        time.Time        `json:"timestamp"`
+	ExtendedFrom     string           `json:"extendedFrom,omitempty"`
+	PolishedFrom     string           `json:"polishedFrom,omitempty"`
+	ScheduleID       string           `json:"scheduleId,omitempty"`
+	StageIndex       *int             `json:"stageIndex,omitempty"`
+	OptimizerVersion string           `json:"optimizerVersion,omitempty"`
+	Config           JobConfig        `json:"config"`
 }
 
 func checkpointWireFrom(c Checkpoint) checkpointWire {
@@ -526,6 +545,7 @@ func checkpointWireFrom(c Checkpoint) checkpointWire {
 		Iterations:       c.Iterations,
 		Evaluations:      c.Evaluations,
 		Termination:      c.Termination,
+		Restarts:         c.Restarts,
 		Timestamp:        c.Timestamp,
 		ExtendedFrom:     c.ExtendedFrom,
 		PolishedFrom:     c.PolishedFrom,

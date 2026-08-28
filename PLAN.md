@@ -2070,16 +2070,39 @@ account is inference; recording it is what turns it into a measurement.
       `sigma * max(D)`, folding the dense and per-block representations, and
       the campaign driver emits it as a `distributionExtent` column. Traces
       written before this carry an empty cell rather than a zero.
-- [ ] Persist each restart's `TerminationReason`. The library records one per
+- [x] Persist each restart's `TerminationReason`. The library records one per
       restart and the adapter discards it, then maps the schedule-level reason,
       which the restart driver overwrites with max-evaluations whenever the
       budget is spent. `completed` on all sixty campaign jobs is structurally
       guaranteed for a restart arm and carries no information.
+      `opt.RestartRun` now carries each run's own reason verbatim — `tol_fun`
+      and `condition_number` rather than the `TerminationConvergence` that
+      folds six criteria into one — with its regime, population, iteration and
+      evaluation counts and its own best cost. The pipeline stamps the stage
+      index onto them, because a sequential or batch run drives an independent
+      schedule per circle or per batch and their records would otherwise pool
+      into one undifferentiated list. They reach `checkpoint.json` as an
+      additive optional field, so a checkpoint written before it decodes
+      empty — as does every job whose optimizer had no restart schedule — and
+      the schema version does not move. `trace.jsonl` gains the matching
+      `restart` index on each sample's optimizer diagnostics, which is the join
+      key: cumulative iteration and evaluation counts run straight through a
+      restart boundary, so without it a trace cannot say which run produced a
+      sample and the evaluations a run spent after its last improvement cannot
+      be recovered. The campaign driver writes both, as a `restart` trajectory
+      column and a new `-restarts` CSV of one row per run.
 - [ ] Decide whether a restart strategy should arm a default stagnation
       criterion when the caller sets none. It is the change that would have
       reclaimed 40% of two arms' budgets, and it is a behaviour change for
       every existing CMA-ES restart configuration, so it wants its own
-      measurement rather than being folded into the observability work.
+      measurement rather than being folded into the observability work. The
+      records above are what that measurement needs and did not have: the
+      per-run reasons say whether a schedule is harvesting converged runs or
+      paying for runs that stopped progressing, and the trace's restart index
+      prices the waste per run rather than per job. Neither the Phase 21
+      campaign nor the lambda screen carries them — both were run before the
+      adapter recorded them — so the arm this decision rests on has to be
+      re-run, not re-read.
 
 ### Task 23.2: Separate covariance mode from restart strategy (P1)
 

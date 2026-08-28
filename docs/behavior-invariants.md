@@ -302,6 +302,21 @@ Rendering-side invariants live in
   to jobs, checkpoints, `status`, and `checkpoints list`. The checkpoint
   `termination` field is free-form, so new reasons need no schema bump, and
   readers reject a version above 2.
+- **A restart schedule's job-level termination describes the schedule, not its
+  runs, and cannot be read as if it did.** The library ends the schedule with
+  its budget-exhausted reason whenever the shared evaluation budget is spent,
+  so a job sized to consume its budget records `completed` however its
+  individual runs ended. The per-run record is separate and additive: each
+  independent run's own reason --- verbatim from the library, so `tol_fun` and
+  `condition_number` stay distinct rather than folding into
+  `TerminationConvergence` --- with its regime, population, local iteration and
+  evaluation counts and its own best cost, tagged with the pipeline stage that
+  drove it, reaching `checkpoint.json` as an optional `restarts` field. It is
+  absent for every optimizer without a restart schedule and for every
+  checkpoint written before the field existed, which is why the schema version
+  does not move. Each trace sample's optimizer diagnostics carry the matching
+  `restart` index: cumulative counts run straight through a restart boundary,
+  so that index is the only thing that says which run produced a sample.
 - **A batch run spends the iterations its configuration asked for, and no
   more.** Every stage is a full optimizer run, refills included, so an
   unbudgeted refill is a silent doubling of a run's compute. Two things keep it

@@ -3,8 +3,12 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/cwbudde/circlefit/internal/opt"
 )
 
 func TestCheckpoint_JSONSerialization(t *testing.T) {
@@ -633,5 +637,77 @@ func TestOldCheckpointLoadsWithoutEarlyStopFields(t *testing.T) {
 				t.Fatal("old checkpoint resumes with early stopping enabled")
 			}
 		})
+	}
+}
+
+// TestCheckpointRoundTripsRestartRecords covers the persistence half of a
+// restart arm's only informative record. A schedule's job-level termination is
+// its budget-exhausted reason whenever the shared budget is spent, so without
+// these the checkpoint says nothing about how the individual runs ended.
+func TestCheckpointRoundTripsRestartRecords(t *testing.T) {
+	t.Parallel()
+
+	checkpoint := NewCheckpoint(
+		testJobID(7), []float64{1, 2, 3, 0.1, 0.2, 0.3, 0.4}, 0.1, 1, 42,
+		optimizerVersionTestConfig(),
+	)
+	checkpoint.Restarts = []opt.RestartRun{
+		{
+			Termination: "tol_fun", Regime: "large", Stage: 0, Restart: 0,
+			Population: 8, Iterations: 106, Evaluations: 848, BestCost: 2.5,
+		},
+		{
+			Termination: "maximum_evaluations", Regime: "large", Stage: 0, Restart: 1,
+			Population: 16, Iterations: 11, Evaluations: 352, BestCost: 4,
+		},
+	}
+
+	data, err := json.Marshal(checkpoint)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	var decoded Checkpoint
+
+	err = json.Unmarshal(data, &decoded)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if !reflect.DeepEqual(decoded.Restarts, checkpoint.Restarts) {
+		t.Fatalf("Restarts = %+v, want %+v", decoded.Restarts, checkpoint.Restarts)
+	}
+}
+
+// TestCheckpointWithoutRestartRecordsStaysSilent keeps the field additive: a
+// job whose optimizer had no restart schedule writes no key at all, which is
+// also what every checkpoint written before the field existed decodes to, so
+// the schema version does not move.
+func TestCheckpointWithoutRestartRecordsStaysSilent(t *testing.T) {
+	t.Parallel()
+
+	checkpoint := NewCheckpoint(
+		testJobID(8), []float64{1, 2, 3, 0.1, 0.2, 0.3, 0.4}, 0.1, 1, 42,
+		optimizerVersionTestConfig(),
+	)
+
+	data, err := json.Marshal(checkpoint)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	if strings.Contains(string(data), "restarts") {
+		t.Fatalf("checkpoint JSON = %s, want no restarts key", data)
+	}
+
+	var decoded Checkpoint
+
+	err = json.Unmarshal(data, &decoded)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if decoded.Restarts != nil {
+		t.Fatalf("Restarts = %+v, want nil", decoded.Restarts)
 	}
 }

@@ -375,6 +375,7 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	)
 	updatedCheckpoint.Evaluations = checkpoint.Evaluations + int64(optimization.Evaluations)
 	updatedCheckpoint.Termination = string(optimization.Termination)
+	updatedCheckpoint.Restarts = optimization.Restarts
 
 	if err := checkpointStore.SaveCheckpoint(jobID, updatedCheckpoint); err != nil {
 		slog.Warn("Failed to update checkpoint", "error", err)

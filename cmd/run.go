@@ -717,6 +717,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		"seed", config.EffectiveSeed,
 		"evaluations", result.Evaluations,
 		"termination", result.Termination,
+		"restart_runs", len(result.Restarts),
 		"circles_per_second", fmt.Sprintf("%.0f", cps),
 		"psnr_db", psnr,
 		"backend", effectiveBackend,
