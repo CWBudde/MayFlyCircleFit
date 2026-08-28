@@ -578,11 +578,27 @@ func TestCMAESSearchDiagnosticsMatchProgress(t *testing.T) {
 // sigma alone cannot. CMA-ES identifies only sigma^2 * C and the library does
 // not renormalize C, so the two numbers are free to move in opposite
 // directions.
+//
+// All three covariance modes are exercised because each represents the ellipse
+// differently: full and separable report a dense Eigenvectors matrix, while
+// block reports the sparse per-block form instead. D itself is documented to
+// reach the observer through Eigenvalues in every mode, and the block subtest
+// is what holds the library to that. A block size of two against the
+// three-dimensional problem partitions the coordinates into two unequal blocks.
 func TestCMAESDistributionExtentTracksTheSamplingEllipse(t *testing.T) {
 	t.Parallel()
 
-	for _, mode := range []string{"full", "separable"} {
-		t.Run(mode, func(t *testing.T) {
+	modes := []struct {
+		mode      string
+		blockSize int
+	}{
+		{mode: "full"},
+		{mode: "separable"},
+		{mode: "block", blockSize: 2},
+	}
+
+	for _, covariance := range modes {
+		t.Run(covariance.mode, func(t *testing.T) {
 			t.Parallel()
 
 			var updates []opt.Progress
@@ -590,7 +606,7 @@ func TestCMAESDistributionExtentTracksTheSamplingEllipse(t *testing.T) {
 			_, err := cmaesLifecycle(t, opt.NewCMAES(
 				12, 16, 4242,
 				opt.WithCMAESSearchDiagnostics(),
-				opt.WithCMAESCovarianceMode(mode, 0),
+				opt.WithCMAESCovarianceMode(covariance.mode, covariance.blockSize),
 			)).RunContext(context.Background(), cmaesProblem(), opt.RunOptions{
 				Observer: func(progress opt.Progress) { updates = append(updates, progress) },
 			})
