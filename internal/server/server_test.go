@@ -1751,7 +1751,7 @@ func TestServer_CreatePagePost_ValidationErrors(t *testing.T) {
 				"popSize": "30",
 				"seed":    "0",
 			},
-			errMsg: "Iterations must be between 1 and 10000",
+			errMsg: fmt.Sprintf("Iterations must be between 1 and %d", app.MaxIterations),
 		},
 		{
 			name: "invalid popSize",

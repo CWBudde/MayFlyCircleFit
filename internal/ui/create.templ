@@ -271,7 +271,7 @@ templ CreateJobPage(page CreateJobPageData) {
 									style={ createInputStyle }
 								/>
 								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-									Number of circles (1-3000)
+									Number of circles (1-{ attrInt(page.Limits.MaxCircles) })
 								</p>
 							</div>
 							<div>
@@ -291,7 +291,7 @@ templ CreateJobPage(page CreateJobPageData) {
 									style={ createInputStyle }
 								/>
 								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-									Max iterations (1-10000)
+									Max iterations (1-{ attrInt(page.Limits.MaxIterations) })
 								</p>
 							</div>
 							<div>
@@ -311,7 +311,7 @@ templ CreateJobPage(page CreateJobPageData) {
 									style={ createInputStyle }
 								/>
 								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-									Population size (20-4096)
+									Population size ({ attrInt(page.Limits.MinPopulation) }-{ attrInt(page.Limits.MaxPopulation) })
 								</p>
 							</div>
 							<div>

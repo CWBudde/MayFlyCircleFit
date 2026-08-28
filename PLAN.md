@@ -2046,9 +2046,16 @@ validation guards rather than modelling statements:
 - `app.MaxIterations` is 10000, but the shared 6,502,400-evaluation cap needs
   325,120 generations at `lambda = 20` and 406,400 at 16.
 
-- [ ] Raise `app.MaxIterations` so a small `lambda` can reach the cap,
+- [x] Raise `app.MaxIterations` so a small `lambda` can reach the cap,
       documenting the reason in the constant's comment the way `MaxCircles` and
-      `MaxPopulation` already do.
+      `MaxPopulation` already do. Raised to 1,000,000. The blocker was not the
+      constant: `trace.jsonl` was written once per iteration with no throttle,
+      and `restoreJobTrace` reads it whole into `MetricHistory` at startup while
+      the job-detail page seeds its island with that history, so a
+      million-iteration trace was an out-of-memory restart rather than a large
+      file. `server.traceSampleStride` now holds one run to the record count the
+      previous cap allowed, and records every improvement whatever the stride so
+      evaluation-capped scoring is unaffected.
 - [ ] Decide whether `app.MinPopulation` should reach 16. It has no rationale
       comment, unlike its neighbours, and lowering it touches the MayFly path
       with no evidence behind it.
