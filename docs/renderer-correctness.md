@@ -8,13 +8,18 @@ and exact equality between the production `FastMSECost` and the scalar `MSECost`
 for every rendered case. Every optimization since — AABB rejection, the reusable
 canvas, strength reduction, scanline sharding, span compositing, the SIMD tiers,
 incremental cost — holds that line or does not ship. A short list of paths is
-*deliberately* outside it, Q16.16 span geometry among them; they are named at the
-end and are not covered by the sentence above.
+*deliberately* outside it, Q16.16 span geometry among them, and one row-span
+rule turned out to be outside it without anyone having said so; all of them are
+named at the end and none is covered by the sentence above.
 
 Read this before changing renderer math, adding a kernel, or relaxing a
 tolerance. The mechanism of the current code is in
 [`rendering-internals.md`](rendering-internals.md); the exceptions that are
-*deliberately* not byte-identical are named at the end.
+*deliberately* not byte-identical are named at the end. The boundary cases —
+fractional and tangent rows, radius extremes, clipping, batch strides,
+randomized circles, row sharding — are measured across architectures and SIMD
+tiers in
+[`renderer-precision-measurements.md`](renderer-precision-measurements.md).
 
 ## The oracle
 
@@ -103,6 +108,19 @@ hand-waved:
   cost comparability outright. See
   [`exact-span-compositors.md`](exact-span-compositors.md) and
   [`schedule-format.md`](schedule-format.md).
+
+And one place where it was not the contract and nobody had said so. The span
+search starts at `int(centerX+0.5)` and walks outward without ever testing that
+pixel, so **every row the disc touches paints its nearest sample**, including a
+tangent row where the pre-optimization rasterizer's `dx*dx + dy*dy <= r*r` test
+paints nothing. A center of `(10.5, 10)` with radius `1` reproduces it on row 11.
+This is a property of the center-out search, not of Q16.16: forcing the float64
+geometry does the same thing, and so does every architecture and every tier. It
+fires on 1,110 of 12,466,238 intersecting rows (0.0089%), it never *under*-covers,
+and it is pinned by `TestSpanSearchAlwaysCoversNearestSample` and
+`TestSpanSearchOverCoverageRate` rather than changed, because changing it would
+move every recorded cost in `docs/`. The measurement and the argument are in
+[`renderer-precision-measurements.md`](renderer-precision-measurements.md).
 
 Everything else on the default path — SSD, delta-SSD, circle span, and the exact
 span compositors on every tier — is byte-identical to its own architecture's

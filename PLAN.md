@@ -85,9 +85,43 @@ research follow-ups, not blockers for the selected production CPU path.
   on arrival on a path whose parity is only quantified, not byte-exact. Full
   write-up in
   [`docs/rejected-optimizations.md`](docs/rejected-optimizations.md).
-- [ ] Complete native cross-platform precision measurements for fractional and
+- [x] Complete native cross-platform precision measurements for fractional and
   tangent boundaries, radii 1 and maximum radius, clipping, batch boundaries,
   randomized circles, and row sharding.
+  `internal/fit/renderer/precision_boundaries_test.go` carries the matrix: 35
+  named scenes as individual subtests (6 fractional, including coordinates whose
+  Q16.16 conversion lands exactly on a `.5` tie in both signs; 5 tangent, an
+  integer radius and one Q16.16 unit either side of it; 7 radius, from
+  `fit.MinCircleRadius` through the `max(width, height)` bound to the first
+  radius and the first center past the signed Q16.16 range, which take the
+  float64 fallback; 9 clipping, partly and wholly beyond each edge plus one
+  circle larger than the canvas in both dimensions; 8 batch, the three widths
+  that straddle the `xEnd+7 < width` stride guard and `circleBatchMinSquare`
+  reached exactly at a quarter- and at a half-pixel center), plus a 512-draw
+  randomized sweep over the full `fit.NewBounds` range from seed
+  `0x5150_1020_5EED`, a 13-count row-shard sweep, and a batch-pipeline case
+  comparing the serial `AuditCircleBatch` against the chunked parallel plan and
+  `compositeParams` prefixes against a full render. The oracle is both halves of
+  the byte-exact contract: within a process every case is re-rendered at every
+  tier `fit.SupportedTiers()` (new) reports and at every shard count and
+  compared byte for byte; across processes each case carries a recorded SHA-256
+  of its pixel buffer plus its exact cost, generated from a local SplitMix64 so
+  the constants depend on nothing outside the file. No test names a worker
+  count. Measured pass at amd64 scalar/SSE2/AVX2 and at arm64 scalar/NEON, the
+  latter cross-built and run under `qemu-aarch64-static` 8.2.2 on the same host,
+  which reports `neon` and executes the real kernels; every digest is identical
+  on both architectures and the whole package exits 0 there. Emulation
+  establishes arithmetic only — no timing in this item is a measurement, and
+  ARM64 crossovers still need hardware. One finding: the center-out span search
+  starts at `int(centerX+0.5)` and never tests that pixel, so every row the disc
+  touches paints its nearest sample even where the pre-optimization rasterizer
+  paints nothing — 1,110 of 12,466,238 intersecting rows (0.0089%), identical on
+  both architectures, never under-covering. It is a property of the search, not
+  of Q16.16 or of any architecture, so it is pinned by
+  `TestSpanSearchAlwaysCoversNearestSample` and `TestSpanSearchOverCoverageRate`
+  rather than changed; changing it would move every recorded cost in `docs/`.
+  Full write-up in
+  [`docs/renderer-precision-measurements.md`](docs/renderer-precision-measurements.md).
 - [ ] If the original Pascal/Delphi source becomes available, document its
   exact cost arithmetic and numeric/SIMD representations; until then,
   `docs/incremental-cost.md` remains the Go contract.

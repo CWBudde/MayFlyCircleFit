@@ -187,14 +187,30 @@ func notifyTierConsumers(tier SIMDTier) {
 	}
 }
 
+// SupportedTiers lists every tier this build and this CPU can execute,
+// narrowest first. SetForcedTier accepts exactly these and panics on anything
+// else, so it is also the safe iteration order for a test that wants to walk
+// the whole ladder.
+//
+// It exists because the alternative is an architecture table in the test, and
+// such a table is wrong the moment it is copied: a renderer parity test that
+// hard-codes {scalar, sse2, avx2} compiles on arm64 and covers nothing there.
+func SupportedTiers() []SIMDTier {
+	tiers := make([]SIMDTier, 0, 4)
+
+	for _, tier := range []SIMDTier{TierScalar, TierSSE2, TierAVX2, TierNEON} {
+		if tierSupported(tier) {
+			tiers = append(tiers, tier)
+		}
+	}
+
+	return tiers
+}
+
 func supportedTierNames() string {
 	names := ""
 
-	for _, tier := range []SIMDTier{TierScalar, TierSSE2, TierAVX2, TierNEON} {
-		if !tierSupported(tier) {
-			continue
-		}
-
+	for _, tier := range SupportedTiers() {
 		if names != "" {
 			names += ", "
 		}
