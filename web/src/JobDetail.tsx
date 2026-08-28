@@ -1622,6 +1622,28 @@ const selectStyle = {
 	background: "var(--control-bg)",
 } as const;
 
+// clampSelection maps a selected index onto the points currently drawn. A
+// selection that no longer exists reads as the newest sample rather than as a
+// selection, which is what an empty chart and a pointer that has left both do.
+export function clampSelection(selected: number | null, count: number): number | null {
+	if (count === 0) return null;
+	if (selected === null || selected < 0 || selected >= count) return count - 1;
+	return selected;
+}
+
+// metricReadout is the live region under the chart: the newest sample when
+// nothing is selected -- or when the selection no longer exists -- and the
+// selected sample otherwise. It takes the raw selection rather than the
+// clamped one so that a dropped selection reads as a latest, not as a pick the
+// user never made.
+export function metricReadout(points: ChartPoint[], selected: number | null, series: Series): string {
+	const active = clampSelection(selected, points.length);
+	const point = active === null ? undefined : points[active];
+	if (!point) return "No samples available";
+	const body = `${point.iteration.toLocaleString()} · ${formatMetricValue(series, point.value)}`;
+	return active === selected ? `Iteration ${body}` : `Latest: iteration ${body}`;
+}
+
 // MetricChart is the sparkline, drawn by Chart.js instead of by hand. The
 // hand-rolled SVG it replaces built its own scales, ticks, hover line, tooltip
 // and keyboard selection out of createElementNS calls; all of that except the
@@ -1659,7 +1681,12 @@ function MetricChart({
 		setSelected(points.length > 0 ? points.length - 1 : null);
 	}, [points]);
 
-	const active = selected ?? (points.length > 0 ? points.length - 1 : null);
+	// A selection made against a longer series survives into the render that
+	// shortens it -- switching the metric drops the samples that have no value
+	// for it, and narrowing the window cuts the head off -- because the effect
+	// above only re-selects afterwards. Clamping here is what keeps that render
+	// from indexing past the end.
+	const active = clampSelection(selected, points.length);
 
 	useLineChart(
 		canvasRef,
@@ -1771,7 +1798,7 @@ function MetricChart({
 		if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
 		if (points.length === 0) return;
 		const last = points.length - 1;
-		let index = selected ?? last;
+		let index = clampSelection(selected, points.length) ?? last;
 		switch (event.key) {
 			case "ArrowLeft":
 				index = Math.max(0, index - 1);
@@ -1792,11 +1819,7 @@ function MetricChart({
 		setSelected(index);
 	}
 
-	const readoutPoint = points[active ?? points.length - 1];
-	const readout =
-		selected === null
-			? `Latest: iteration ${readoutPoint.iteration.toLocaleString()} · ${formatMetricValue(series, readoutPoint.value)}`
-			: `Iteration ${readoutPoint.iteration.toLocaleString()} · ${formatMetricValue(series, readoutPoint.value)}`;
+	const readout = metricReadout(points, selected, series);
 	const first = points[0];
 	const last = points[points.length - 1];
 	const bestValue = points.reduce(
