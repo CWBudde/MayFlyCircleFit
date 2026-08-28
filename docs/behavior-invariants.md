@@ -39,7 +39,11 @@ Rendering-side invariants live in
   clean device while everything after the failure was costed on the CPU.
   Sharing also runs the other way, so a session created after the device is gone
   does not rediscover it, and a lost device costs one timeout per run rather
-  than one per stage.
+  than one per stage. That requires such a session to do no device work at all,
+  not merely to report the degradation: it is built with no kernels, no buffers
+  and no engine reference, because the creation of those is what fails once the
+  device is gone, and a failure there would abort the staged run instead of
+  letting it finish on the CPU.
 - **A job records the backend it ran on, not the one it requested.**
   `effectiveBackend` is written once, where the renderer is built, and is the
   only value a comparison between two runs may use. Neither it nor

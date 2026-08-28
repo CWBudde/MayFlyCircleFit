@@ -304,6 +304,10 @@ func newRendererOnEngine(
 	newFallback NewFallback,
 	degraded *atomic.Bool,
 ) (*Renderer, func(), error) {
+	if degraded.Load() {
+		return newDegradedRenderer(reference, circleCount, newFallback, degraded)
+	}
+
 	eng.retain()
 
 	r := &Renderer{
@@ -515,6 +519,15 @@ func (r *Renderer) ensure(params []float64) error {
 		return fmt.Errorf("parameter count %d does not match renderer dimension %d", len(params), r.Dim())
 	}
 
+	// A renderer built without an engine has no device to reach. Cost and Render
+	// route to the fallback before they get here, because such a renderer is
+	// only ever built when the degradation record is already set and degradation
+	// is permanent -- so this is unreachable, and it returns an error rather
+	// than dereferencing nil if that ever stops being true.
+	if r.engine == nil {
+		return errNoContext
+	}
+
 	// Everything from here on is a chain of commands on a queue this renderer
 	// shares with its siblings, and the chain has to reach the blocking read at
 	// the end without another renderer's chain interleaved. The cache hit above
@@ -643,6 +656,12 @@ func (r *Renderer) materializeImage(hash uint64) error {
 	}
 	if !r.deviceValid || r.deviceHash != hash {
 		return fmt.Errorf("OpenCL output is not available for requested parameters")
+	}
+
+	// Unreachable for the same reason as the guard in ensure, and cheap for the
+	// same reason.
+	if r.engine == nil {
+		return errNoContext
 	}
 
 	// The readback is one command on the shared queue; the guard above reads
@@ -775,6 +794,41 @@ func (r *Renderer) releaseOwn() {
 	r.context = nil
 	r.queue = nil
 	r.device = nil
+}
+
+// newDegradedRenderer builds a session that never touches the device, for the
+// case where the degradation record already says there is nothing to touch.
+//
+// Degradation is permanent, so such a session would route every Cost and Render
+// to its CPU fallback no matter what it allocated. Allocating anyway is not
+// merely wasted: on a real device loss the kernel and buffer creation in init
+// is what fails, and a failure there makes NewSession return an error and the
+// staged pipeline abort -- the run stops instead of finishing on the CPU, which
+// is the opposite of what the shared record exists to achieve. The invariant
+// that a lost device costs one timeout per run rather than one per stage is
+// only true if a session created after the loss does no device work at all.
+//
+// It holds no engine reference, because it uses nothing the engine owns.
+func newDegradedRenderer(
+	reference *image.NRGBA, circleCount int, newFallback NewFallback, degraded *atomic.Bool,
+) (*Renderer, func(), error) {
+	width := reference.Bounds().Dx()
+	height := reference.Bounds().Dy()
+
+	r := &Renderer{
+		fallback:      newFallback(reference, circleCount),
+		newFallback:   newFallback,
+		reference:     reference,
+		bounds:        fit.NewBounds(circleCount, width, height),
+		width:         width,
+		height:        height,
+		pixelCount:    width * height,
+		paramsScratch: make([]float32, circleCount*paramsPerCircle),
+		renderImage:   image.NewNRGBA(image.Rect(0, 0, width, height)),
+		degraded:      degraded,
+	}
+
+	return r, func() { r.close() }, nil
 }
 
 func hashParams(params []float64) uint64 {
