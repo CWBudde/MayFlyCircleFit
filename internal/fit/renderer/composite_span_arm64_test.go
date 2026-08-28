@@ -314,6 +314,26 @@ func TestSpanBlendSurvivesTierChange(t *testing.T) {
 	}
 }
 
+// benchSpanR, benchSpanG, benchSpanB and benchSpanAlpha are the colour
+// BenchmarkCompositeOpaqueSpanNEONCutoff composites with.
+//
+// They are package-level vars, and that is load-bearing rather than stylistic.
+// As untyped constants the compiler folds r*alpha, g*alpha, b*alpha and 1-alpha
+// at compile time - newSpanBlend is small enough to inline - so the
+// `neon_rebuilt` arm would enter the kernel with four ready-made float64 loads
+// and measure exactly what `neon_hoisted` measures, leaving the difference
+// between the two arms as noise instead of the per-span setup they exist to
+// price. Read from a var inside the timed loop, across a call to an assembly
+// kernel the compiler cannot see through, the four loads and the arithmetic
+// have to be re-executed every iteration and cannot be lifted out as
+// loop-invariant.
+var (
+	benchSpanR     = 0.13
+	benchSpanG     = 0.57
+	benchSpanB     = 0.91
+	benchSpanAlpha = 0.37
+)
+
 // BenchmarkCompositeOpaqueSpanNEONCutoff is the command that re-derives
 // compositeSpanNEONMinPixels on ARM64 benchmarking hardware.
 //
@@ -325,6 +345,11 @@ func TestSpanBlendSurvivesTierChange(t *testing.T) {
 // an indirect call defeats //go:noescape; docs/exact-span-compositors.md records
 // that mistake making a kernel measure five to nine times slower than scalar.
 //
+// Only `hoisted` reads its scalars from outside the loop. The other two arms
+// read benchSpanR and friends inside it, so their arithmetic is executed per
+// iteration rather than folded away at compile time; see the comment on those
+// vars for why they are not constants.
+//
 // Emulated timings do not count. Run it on real ARM64 silicon, pinned, at
 // GOMAXPROCS=1, and take the median of several runs.
 func BenchmarkCompositeOpaqueSpanNEONCutoff(b *testing.B) {
@@ -332,23 +357,16 @@ func BenchmarkCompositeOpaqueSpanNEONCutoff(b *testing.B) {
 		b.Skip("NEON unavailable")
 	}
 
-	const (
-		r     = 0.13
-		g     = 0.57
-		blue  = 0.91
-		alpha = 0.37
-	)
-
 	for _, pixels := range []int{8, 16, 24, 32, 64, 128, 192, 256, 512} {
 		pix := makeOpaqueSpanFixture(pixels)
-		blend := newSpanBlend(r, g, blue, alpha)
+		blend := newSpanBlend(benchSpanR, benchSpanG, benchSpanB, benchSpanAlpha)
 
 		b.Run(fmt.Sprintf("scalar/%d", pixels), func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(pixels * 4))
 
 			for range b.N {
-				compositeOpaqueSpanScalar(pix, 0, pixels, r, g, blue, alpha)
+				compositeOpaqueSpanScalar(pix, 0, pixels, benchSpanR, benchSpanG, benchSpanB, benchSpanAlpha)
 			}
 		})
 		b.Run(fmt.Sprintf("neon_hoisted/%d", pixels), func(b *testing.B) {
@@ -365,7 +383,7 @@ func BenchmarkCompositeOpaqueSpanNEONCutoff(b *testing.B) {
 			b.SetBytes(int64(pixels * 4))
 
 			for range b.N {
-				perSpan := newSpanBlend(r, g, blue, alpha)
+				perSpan := newSpanBlend(benchSpanR, benchSpanG, benchSpanB, benchSpanAlpha)
 				compositeOpaqueSpanNEON(
 					unsafe.Pointer(&pix[0]), pixels,
 					perSpan.fgR, perSpan.fgG, perSpan.fgB, perSpan.bgBlend)
