@@ -141,7 +141,7 @@ func main() {
 
 func parseFlags() settings {
 	var config settings
-	flag.StringVar(&config.action, "action", "collect", "submit, collect, preliminary, or analyze")
+	flag.StringVar(&config.action, "action", "collect", "plan, submit, collect, preliminary, or analyze")
 	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21 or lambda")
 	flag.StringVar(&config.server, "server", "http://localhost:8085", "serve base URL")
 	flag.StringVar(&config.dataRoot, "data-root", "./data/cmaes-phase11", "serve data root")
@@ -150,7 +150,7 @@ func parseFlags() settings {
 	flag.StringVar(&config.resultsPath, "results", "docs/cmaes-measurement.csv", "collected result CSV")
 	flag.StringVar(&config.trajectory, "trajectories", "docs/cmaes-trajectories.csv", "diagnostic trajectory CSV")
 	flag.StringVar(&config.project, "project", defaultProject, "server project")
-	flag.IntVar(&config.blocks, "blocks", 12, "paired blocks")
+	flag.IntVar(&config.blocks, "blocks", campaignBlocks, "paired blocks")
 	flag.IntVar(&config.budget, "budget", defaultBudget, "optimizer evaluation cap")
 	flag.IntVar(&config.workers, "workers", 8, "parallel evaluation workers")
 	flag.Int64Var(&config.seedBase, "seed-base", 111_000, "first block seed prefix")
@@ -258,8 +258,9 @@ func submit(config settings) error {
 	}
 	arms := plan.arms
 
-	if config.blocks != 12 {
-		return fmt.Errorf("design %s requires exactly 12 paired blocks, got %d", plan.name, config.blocks)
+	if config.blocks != campaignBlocks {
+		return fmt.Errorf("design %s requires exactly %d paired blocks, got %d",
+			plan.name, campaignBlocks, config.blocks)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(config.manifestPath), 0o755); err != nil {
@@ -430,7 +431,7 @@ func printPlan(config settings) error {
 		// the budget by campaign shape rather than by that product; printing it
 		// as an evaluation count would invite the comparison the campaign
 		// deliberately makes post-hoc from the trace.
-		evaluations := strconv.Itoa(current.iters * current.popSize)
+		evaluations := strconv.FormatInt(int64(current.iters)*int64(current.popSize), 10)
 		if current.optimizer == "mayfly" {
 			covariance = "-"
 			restarts = fmt.Sprintf("%d cold run(s)", current.optimizerRestarts)
