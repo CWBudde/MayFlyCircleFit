@@ -116,7 +116,7 @@ warning names the reason and the run's own output names the backend that
 actually ran:
 
 ```
-Backend: cpu (requested opencl, unavailable) - this cost is not comparable with a opencl run
+Backend: cpu (requested opencl, unavailable) - this cost is not comparable with opencl runs
 ```
 
 A run whose device failed part-way prints the other form,

@@ -745,16 +745,21 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		qualitySummary += fmt.Sprintf(", SSIM %.4f", *ssim)
 	}
 
+	// One writer for the whole result. The provenance note explains the cost on
+	// the line above it, so a redirected command must not split them across two
+	// destinations.
+	out := cmd.OutOrStdout()
+
 	if actualCircles < config.Circles {
-		fmt.Printf("Wrote %s (cost: %.2f -> %.2f%s, %d/%d circles, %.0f circles/sec) - Converged early!\n",
+		fmt.Fprintf(out, "Wrote %s (cost: %.2f -> %.2f%s, %d/%d circles, %.0f circles/sec) - Converged early!\n",
 			outPath, result.InitialCost, result.BestCost, qualitySummary, actualCircles, config.Circles, cps)
 	} else {
-		fmt.Printf("Wrote %s (cost: %.2f -> %.2f%s, %d circles, %.0f circles/sec)\n",
+		fmt.Fprintf(out, "Wrote %s (cost: %.2f -> %.2f%s, %d circles, %.0f circles/sec)\n",
 			outPath, result.InitialCost, result.BestCost, qualitySummary, actualCircles, cps)
 	}
 
 	if note := backendProvenanceNote(config.Backend, effectiveBackend, backendDegraded); note != "" {
-		fmt.Fprintln(cmd.OutOrStdout(), note)
+		fmt.Fprintln(out, note)
 	}
 
 	// Write memory profile if requested

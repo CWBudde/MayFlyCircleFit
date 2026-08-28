@@ -61,7 +61,7 @@ func backendProvenanceNote(requested, effective app.Backend, degraded bool) stri
 			"CPU arithmetic and is comparable with neither backend", effective)
 	case effective != requested:
 		return fmt.Sprintf("Backend: %s (requested %s, unavailable) - this cost is not "+
-			"comparable with a %s run", effective, requested, requested)
+			"comparable with %s runs", effective, requested, requested)
 	default:
 		return ""
 	}

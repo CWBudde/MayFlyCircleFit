@@ -122,6 +122,12 @@ func TestBackendProvenanceNote(t *testing.T) {
 			if !strings.Contains(got, "comparable") {
 				t.Fatalf("note = %q, want it to say the cost is not comparable", got)
 			}
+
+			// Both backend names are substituted into the sentence, so an
+			// article in front of one of them is wrong for the other.
+			if strings.Contains(got, " a opencl") || strings.Contains(got, " a cpu") {
+				t.Fatalf("note = %q, want no article before a backend name", got)
+			}
 		})
 	}
 }
