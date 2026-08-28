@@ -51,6 +51,13 @@ type engine struct {
 	referenceBuffer C.cl_mem
 	localSize       int
 
+	// emptyCanvasBuffer is bound to the render kernel's base-canvas argument by
+	// every renderer that has no base canvas. OpenCL requires every argument to
+	// be set before an enqueue, and the kernel's hasBase flag keeps this one
+	// from ever being dereferenced, so four bytes is enough and one placeholder
+	// serves every renderer on this engine.
+	emptyCanvasBuffer C.cl_mem
+
 	// builds counts clBuildProgram calls against this engine. Compiling the
 	// kernel source is the dominant part of per-session setup, so the count is
 	// the direct evidence that a shared engine compiles once rather than once
@@ -135,7 +142,33 @@ func (e *engine) build(reference *image.NRGBA) error {
 		return err
 	}
 
-	return e.uploadReference(reference)
+	err = e.uploadReference(reference)
+	if err != nil {
+		return err
+	}
+
+	return e.createEmptyCanvasBuffer()
+}
+
+// createEmptyCanvasBuffer allocates the placeholder the render kernel's
+// base-canvas argument is bound to when a renderer starts from white.
+func (e *engine) createEmptyCanvasBuffer() error {
+	var status C.cl_int
+
+	placeholder := make([]byte, 4)
+
+	e.emptyCanvasBuffer = C.clCreateBuffer(
+		e.context,
+		C.CL_MEM_READ_ONLY|C.CL_MEM_COPY_HOST_PTR|C.CL_MEM_HOST_NO_ACCESS,
+		C.size_t(len(placeholder)),
+		unsafe.Pointer(&placeholder[0]),
+		&status,
+	)
+	if status != C.CL_SUCCESS {
+		return clError("clCreateBuffer(emptyCanvas)", status)
+	}
+
+	return nil
 }
 
 // buildProgram compiles the kernel source for this device once.
@@ -341,6 +374,11 @@ func (e *engine) release() {
 // free releases the device state in the reverse of the order it was acquired.
 // The caller holds e.mu.
 func (e *engine) free() {
+	if e.emptyCanvasBuffer != nil {
+		C.clReleaseMemObject(e.emptyCanvasBuffer)
+		e.emptyCanvasBuffer = nil
+	}
+
 	if e.referenceBuffer != nil {
 		C.clReleaseMemObject(e.referenceBuffer)
 		e.referenceBuffer = nil

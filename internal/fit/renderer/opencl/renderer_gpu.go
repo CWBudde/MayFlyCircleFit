@@ -83,7 +83,9 @@ __kernel void render_cost(
     __global const uchar4 *reference,
     __global uchar4 *outImage,
     __global float *partialSums,
-    __local float *scratch) {
+    __local float *scratch,
+    __global const uchar4 *baseCanvas,
+    const int hasBase) {
 
     const int idx = get_global_id(0);
     const int localID = get_local_id(0);
@@ -95,7 +97,19 @@ __kernel void render_cost(
         const int x = idx % width;
         const int y = idx / width;
 
+        // A staged session starts from the canvas its retained circles already
+        // produced instead of from white. hasBase is uniform across the whole
+        // dispatch, so a renderer without a base canvas issues no load at all
+        // and joint -- the one pipeline the GPU wins -- pays nothing for this.
+        //
+        // The loop below composites premultiplied, while NRGBA stores straight
+        // alpha, so the base is premultiplied on the way in. Every canvas this
+        // path can receive is opaque, where that multiply is the identity.
         float4 color = (float4)(1.0f, 1.0f, 1.0f, 1.0f);
+        if (hasBase) {
+            const float4 retained = convert_float4(baseCanvas[idx]) / 255.0f;
+            color = (float4)(retained.xyz * retained.w, retained.w);
+        }
 
         for (int i = 0; i < circleCount; ++i) {
             const int base = i * 7;
@@ -238,6 +252,15 @@ type Renderer struct {
 	outputBuffer   C.cl_mem
 	partialBufferA C.cl_mem
 	partialBufferB C.cl_mem
+
+	// baseCanvas is the retained canvas a staged session composites onto, and
+	// baseBuffer is its packed device copy. Both are nil for a renderer that
+	// starts from white, which is every renderer outside an accumulated staged
+	// session. The canvas is fixed for the session's whole life, so it is
+	// uploaded once in init and never touched again -- which is why the cost
+	// cache can go on hashing the parameters alone.
+	baseCanvas *image.NRGBA
+	baseBuffer C.cl_mem
 
 	paramsScratch []float32
 
@@ -382,7 +405,41 @@ func (r *Renderer) init() error {
 		return r.clError("clCreateBuffer(params)", status)
 	}
 
+	err = r.uploadBaseCanvas()
+	if err != nil {
+		return err
+	}
+
 	return r.setStaticKernelArgs()
+}
+
+// uploadBaseCanvas packs the retained canvas and copies it to the device once.
+// A renderer that starts from white has none, and binds the engine's
+// placeholder instead.
+func (r *Renderer) uploadBaseCanvas() error {
+	if r.baseCanvas == nil || r.pixelCount == 0 {
+		return nil
+	}
+
+	packed := packReferenceNRGBA(r.baseCanvas)
+	if len(packed) == 0 {
+		return nil
+	}
+
+	var status C.cl_int
+
+	r.baseBuffer = C.clCreateBuffer(
+		r.context,
+		C.CL_MEM_READ_ONLY|C.CL_MEM_COPY_HOST_PTR|C.CL_MEM_HOST_NO_ACCESS,
+		C.size_t(len(packed)),
+		unsafe.Pointer(&packed[0]),
+		&status,
+	)
+	if status != C.CL_SUCCESS {
+		return r.clError("clCreateBuffer(baseCanvas)", status)
+	}
+
+	return nil
 }
 
 func (r *Renderer) setStaticKernelArgs() error {
@@ -419,6 +476,30 @@ func (r *Renderer) setStaticKernelArgs() error {
 	status = C.clSetKernelArg(r.renderKernel, 6, C.size_t(unsafe.Sizeof(r.partialBufferA)), unsafe.Pointer(&r.partialBufferA))
 	if status != C.CL_SUCCESS {
 		return r.clError("clSetKernelArg(partialSums)", status)
+	}
+
+	// Argument 7 is the local scratch, whose size depends on the dispatch and is
+	// set in ensure. Arguments 8 and 9 are the base canvas and the flag that
+	// says whether to read it. A renderer without one still has to bind a valid
+	// buffer, because OpenCL requires every argument set before an enqueue; the
+	// engine's four-byte placeholder is never dereferenced, because hasBase is
+	// zero for exactly the renderers that bind it.
+	baseCanvas := r.engine.emptyCanvasBuffer
+	hasBase := C.cl_int(0)
+
+	if r.baseBuffer != nil {
+		baseCanvas = r.baseBuffer
+		hasBase = 1
+	}
+
+	status = C.clSetKernelArg(r.renderKernel, 8, C.size_t(unsafe.Sizeof(baseCanvas)), unsafe.Pointer(&baseCanvas))
+	if status != C.CL_SUCCESS {
+		return r.clError("clSetKernelArg(baseCanvas)", status)
+	}
+
+	status = C.clSetKernelArg(r.renderKernel, 9, C.size_t(unsafe.Sizeof(hasBase)), unsafe.Pointer(&hasBase))
+	if status != C.CL_SUCCESS {
+		return r.clError("clSetKernelArg(hasBase)", status)
 	}
 
 	return nil
@@ -759,6 +840,11 @@ func (r *Renderer) releaseOwn() {
 	if r.paramsBuffer != nil {
 		C.clReleaseMemObject(r.paramsBuffer)
 		r.paramsBuffer = nil
+	}
+
+	if r.baseBuffer != nil {
+		C.clReleaseMemObject(r.baseBuffer)
+		r.baseBuffer = nil
 	}
 
 	if r.outputBuffer != nil {
