@@ -13,9 +13,11 @@ Rendering-side invariants live in
   canvas.
 - OpenCL is experimental and supports joint, sequential, and batch modes. It
   requires a `gpu` build tag, CGO, OpenCL development headers, and a usable
-  runtime and device. Staged modes create same-backend sessions and replay the
-  retained prefix because OpenCL does not support an accumulated custom canvas;
-  they must never silently fall back to a CPU staged renderer.
+  runtime and device. Staged modes create same-backend sessions that composite
+  onto the retained canvas rather than replaying the prefix, and they must never
+  silently fall back to a CPU staged renderer. That accumulated canvas is
+  internal to a run and must stay opaque; a *job-level* base canvas
+  (`canvasPath`) is still CPU-only and a job that asks for both is refused.
 - **A backend that cannot start fails the job.** There is no automatic
   substitution. `backendFallback` is the only way to get one, it accepts only
   `cpu`, and it is unset by default, so every configuration written before it

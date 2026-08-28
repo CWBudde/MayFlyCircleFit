@@ -132,15 +132,20 @@ behavior is production-ready.
   actually runs and what would reopen the question.
 
 - CPU and OpenCL support joint, sequential, and batch pipelines; only CPU
-  supports custom base canvases. Staged OpenCL modes replay all retained circles
-  in sessions that share one device engine. Their performance is characterized,
-  on one vendor GPU only: an NVIDIA T550, where sharing that engine made
-  sequential and batch 83.8x and 85.9x faster than the per-stage device rebuild
-  they replaced, which had them 26x and 84x slower than the CPU renderer.
-  Neither staged mode separates from the CPU renderer now, in either direction,
-  and neither does joint on that host, so none of the three is measurably faster
-  on the GPU as a whole pipeline and the earlier joint advantage is neither
-  confirmed nor contradicted. AMD and Intel remain unmeasured. See
+  supports a job-level custom base canvas (`canvasPath`). Staged OpenCL sessions
+  share one device engine and composite onto the canvas the retained circles
+  produced, which is an internal accumulated canvas and a different thing from
+  that job-level one. Performance is characterized on one vendor GPU only, an
+  NVIDIA T550. Sharing the engine made sequential and batch 83.8x and 85.9x
+  faster than the per-stage device rebuild they replaced, which had them 26x and
+  84x slower than the CPU. The accumulated canvas then made one staged
+  evaluation flat in retained depth, 2.5-4.8x faster than the CPU's accumulated
+  canvas at 512² and separated at every measured depth; at 128² nothing
+  separates. **Whole-pipeline benchmarks show none of this** — they fix K at 12
+  and run eight evaluations per stage where a real stage runs hundreds — so no
+  staged pipeline measurement separates in either direction, and the earlier
+  joint advantage is neither confirmed nor contradicted on that host. AMD and
+  Intel remain unmeasured. See
   [`gpu-performance-report.md`](gpu-performance-report.md).
 - OpenCL is experimental, CGO-dependent, and requires local headers, a loader,
   a driver, and a usable device. It is excluded from the standard portable

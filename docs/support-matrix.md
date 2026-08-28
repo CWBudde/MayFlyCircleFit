@@ -11,8 +11,10 @@ certify a release or substitute for the CI result for a particular revision.
 | OpenCL (`gpu` tag) | Experimental | Experimental | Experimental | Unsupported |
 
 Sequential and batch are staged pipelines. OpenCL creates same-backend sessions
-that share one device engine and replays retained circles at each stage; it does
-not silently replace the staged pipeline with CPU. A backend that cannot create
+that share one device engine and composite onto the canvas the retained circles
+produced, rather than replaying them; it does not silently replace the staged
+pipeline with CPU. "Custom canvas" above is the *job-level* `canvasPath`, which
+remains CPU-only and is a different thing from that internal staged canvas. A backend that cannot create
 staged sessions returns `ErrStagedOptimizationUnsupported`. Batch mode accepts a
 requested total and batch size, including a smaller final batch, so result
 cardinality matches the total.
