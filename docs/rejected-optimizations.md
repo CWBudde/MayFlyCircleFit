@@ -57,6 +57,21 @@ AVX2 has no packed eight-lane 32×32→64 multiply; `VPMULDQ` covers even lanes
 only, so the vector form needs shuffles that cost more than the scalar
 finite-difference walk it replaces.
 
+**Signed Q24.8 and normalized Q8.24 span geometry.** Q24.8's only advantage is
+coordinate range Q16.16 already covers 40× over — its limit is a 21845-pixel
+canvas — and the eight fraction bits it gives up cost 58× the span
+disagreement rate against an exact rational oracle
+(58 of 17751 rows against 1 of 17748) at no throughput gain — 1.01×–1.08× on
+both core types of an i7-1255U, inside that host's noise. Normalized Q8.24
+cannot represent a radius of 128 or more at any center, which is 50.7% of
+bounds-legal circles on a 256×256 canvas and 76.0% on a 512×512 one; where it
+does apply it is more accurate but not exact — it fails at its own 2⁻²⁴
+boundary the way Q16.16 fails at 2⁻¹⁶ — and more accurate means *different
+bytes*, so adopting it is a migration cost rather than a gain. Both alternates and the rational oracle stay
+in tree as a test-only harness,
+`internal/fit/renderer/circle_geometry_formats_test.go`. See
+[`fixed-point-geometry-formats.md`](fixed-point-geometry-formats.md).
+
 **AVX2 float32 span geometry as the production path.** Competitive at small
 radii and loses at large ones, where the span walk matters most. Production is
 scalar Q16.16 with an exact float64 fallback for geometry Q16.16 cannot

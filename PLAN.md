@@ -55,8 +55,32 @@ measurements, and caveats live in the linked documentation and git history.
 These items were moved out of otherwise completed tasks. They are bounded
 research follow-ups, not blockers for the selected production CPU path.
 
-- [ ] Compare signed Q24.8 and normalized Q8.24 geometry with Q16.16, including
-  coordinate range, adversarial boundaries, and full-render results.
+- [x] Compare signed Q24.8 and normalized Q8.24 geometry with Q16.16, including
+  coordinate range, adversarial boundaries, and full-render results. Q16.16
+  stays; production geometry is unchanged and the comparison lives in the
+  test-only harness `internal/fit/renderer/circle_geometry_formats_test.go`,
+  which implements both alternates next to the production path and decides every
+  precision question with a `big.Rat` oracle rather than another float. Q24.8's
+  only advantage is range Q16.16 already covers 40x over - a binary search over
+  the `fit.NewBounds` box puts the fully representable square canvas at 21845
+  for Q16.16, 5592405 for Q24.8 and 127 for Q8.24 - and the eight fraction bits
+  it gives up cost 58x the disagreement rate against the oracle (58 of 17751
+  rows against 1 of 17748, 400 circles on 513x389, seed 20260828) and 24-32
+  differing bytes per rendered corpus with channel deltas up to 82, because a
+  displaced edge decides a whole compositing step rather than perturbing a
+  pixel. Normalized Q8.24 stores the center as an offset from an integer anchor,
+  which frees the center range but not the radius: it cannot represent r >= 128
+  at any center, 50.7% of bounds-legal circles on 256x256 and 76.0% on 512x512,
+  and where it does apply it is more accurate but not exact - it fails at its own
+  2^-24 boundary the way Q16.16 fails at 2^-16 - which under the byte-parity
+  contract is a migration cost rather than a gain. No throughput case for either: i7-1255U,
+  `GOMAXPROCS=1`, pinned with `taskset`, median of nine 500 ms runs on a P-core
+  and an E-core, zero allocations per operation on every arm, Q24.8 at
+  1.01x-1.08x and Q8.24 at 0.85x-1.02x against Q16.16 - the same integer
+  sequence with different constants. Full write-up in
+  [`docs/fixed-point-geometry-formats.md`](docs/fixed-point-geometry-formats.md),
+  with the decision recorded in
+  [`docs/rejected-optimizations.md`](docs/rejected-optimizations.md).
 - [x] Assess a corresponding ARM64 NEON span-edge implementation without
   compromising the portable geometry layout. **Not worth building, and the
   ceiling is the reason.** The portable layout is not the obstacle and would not

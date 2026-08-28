@@ -74,6 +74,10 @@ re-measure instead.
   evaluation parallelism.
 - [`single-circle-extend-report.md`](single-circle-extend-report.md) — starting
   a batch from a verified rendered prefix.
+- [`fixed-point-geometry-formats.md`](fixed-point-geometry-formats.md) — signed
+  Q24.8 and normalized Q8.24 span geometry measured against production Q16.16
+  on range, adversarial boundaries, full renders, and throughput. Q16.16 stays;
+  read before proposing another fixed-point format.
 
 **Polishing**
 
