@@ -271,8 +271,9 @@ func New(reference *image.NRGBA, k int, newFallback NewFallback) (*Renderer, fun
 	return newRenderer(reference, k, newFallback, &atomic.Bool{})
 }
 
-// newRenderer builds a renderer over an existing degradation record. A base
-// renderer starts a fresh one; a session inherits its parent's.
+// newRenderer brings up a device of its own and builds a renderer on it. Only
+// a base renderer takes this path; a session shares its parent's engine through
+// newRendererOnEngine.
 func newRenderer(
 	reference *image.NRGBA, circleCount int, newFallback NewFallback, degraded *atomic.Bool,
 ) (*Renderer, func(), error) {
@@ -283,11 +284,26 @@ func newRenderer(
 
 	// newEngine hands back the constructing reference, which belongs to this
 	// call and not to the Renderer. Dropping it on every exit path -- while the
-	// Renderer holds one of its own -- means the two are undone independently:
-	// a failed init releases the Renderer's reference and the deferred release
-	// frees the engine, while a successful one leaves exactly the Renderer
-	// holding it.
+	// Renderer takes one of its own inside newRendererOnEngine -- means the two
+	// are undone independently: a failed build releases the Renderer's
+	// reference and the deferred release frees the engine, while a successful
+	// one leaves exactly the Renderer holding it.
 	defer eng.release()
+
+	return newRendererOnEngine(eng, reference, circleCount, newFallback, degraded)
+}
+
+// newRendererOnEngine builds a renderer over an engine that already exists and
+// over an existing degradation record. It takes its own reference to the
+// engine, which cleanup gives back, so the engine outlives whichever of its
+// holders is torn down first.
+func newRendererOnEngine(
+	eng *engine,
+	reference *image.NRGBA,
+	circleCount int,
+	newFallback NewFallback,
+	degraded *atomic.Bool,
+) (*Renderer, func(), error) {
 	eng.retain()
 
 	r := &Renderer{
@@ -471,15 +487,22 @@ func (r *Renderer) Cost(params []float64) float64 {
 	return r.lastCost
 }
 
-// NewSession creates an independent OpenCL renderer over the same reference.
-// Sequential and batch optimization use these sessions with an increasing
-// circle count, replaying retained circles because OpenCL does not yet support
-// an accumulated base canvas.
+// NewSession creates an OpenCL renderer over the same reference and the same
+// device engine, allocating only the kernel pair and the buffers its own circle
+// count needs. Sequential and batch optimization use these sessions with an
+// increasing circle count, replaying retained circles because OpenCL does not
+// yet support an accumulated base canvas.
+//
+// It shares rather than rebuilds because the rebuild was the staged path's
+// whole cost: a session used to re-enumerate every platform and device, create
+// a context and queue, and compile the kernel source again, none of which
+// depends on the circle count that changed.
 func (r *Renderer) NewSession(circleCount int) (*Renderer, func(), error) {
 	if circleCount < 0 {
 		return nil, noopCleanup, fmt.Errorf("circle count cannot be negative")
 	}
-	return newRenderer(r.reference, circleCount, r.newFallback, r.degraded)
+
+	return newRendererOnEngine(r.engine, r.reference, circleCount, r.newFallback, r.degraded)
 }
 
 func (r *Renderer) ensure(params []float64) error {
@@ -491,6 +514,13 @@ func (r *Renderer) ensure(params []float64) error {
 	if len(params) != r.Dim() {
 		return fmt.Errorf("parameter count %d does not match renderer dimension %d", len(params), r.Dim())
 	}
+
+	// Everything from here on is a chain of commands on a queue this renderer
+	// shares with its siblings, and the chain has to reach the blocking read at
+	// the end without another renderer's chain interleaved. The cache hit above
+	// is deliberately outside the lock: it touches no device.
+	r.engine.queueMu.Lock()
+	defer r.engine.queueMu.Unlock()
 
 	circleCount := len(params) / paramsPerCircle
 	if circleCount*paramsPerCircle > len(r.paramsScratch) {
@@ -615,6 +645,11 @@ func (r *Renderer) materializeImage(hash uint64) error {
 		return fmt.Errorf("OpenCL output is not available for requested parameters")
 	}
 
+	// The readback is one command on the shared queue; the guard above reads
+	// only this renderer's cache state.
+	r.engine.queueMu.Lock()
+	defer r.engine.queueMu.Unlock()
+
 	bytePixels := C.size_t(r.pixelCount * 4)
 	status := C.clEnqueueReadBuffer(
 		r.queue,
@@ -692,8 +727,14 @@ func (r *Renderer) releaseOwn() {
 	// shared, that implicit barrier no longer runs when a single session goes
 	// away. The blocking wait is therefore a requirement of sharing the queue,
 	// not a defensive extra.
-	if r.queue != nil {
+	if r.engine != nil && r.queue != nil {
+		// Teardown participates in the same serialization: the wait must not
+		// start while a sibling is still issuing its chain, or it would drain a
+		// half-issued sequence and return before that sibling's remaining
+		// commands were even enqueued.
+		r.engine.queueMu.Lock()
 		C.clFinish(r.queue)
+		r.engine.queueMu.Unlock()
 	}
 
 	if r.paramsBuffer != nil {

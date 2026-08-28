@@ -61,6 +61,21 @@ type engine struct {
 	// newEngine returns and are freed exactly when refs reaches zero.
 	mu   sync.Mutex
 	refs int
+
+	// queueMu serializes whole command sequences on the shared queue. A single
+	// evaluation is a chain -- a blocking write, a dispatch, a reduction loop,
+	// a blocking read -- and the queue is in-order, so two renderers issuing
+	// their chains at once would interleave them.
+	//
+	// It is uncontended by construction today: the adapter withholds the
+	// concurrent-evaluation marker, so evaluationWorkers reports one and the
+	// pipelines drive sessions one at a time. That is exactly why it belongs
+	// here -- it makes a property the code relied on by convention into one the
+	// type enforces, now that a queue outlives the renderer that used it.
+	//
+	// It does NOT make OpenCL a parallel-evaluation backend. Simultaneous
+	// device evaluation is still unvalidated, and the marker stays withheld.
+	queueMu sync.Mutex
 }
 
 // newEngine brings up a device, compiles the kernel source, and uploads the
