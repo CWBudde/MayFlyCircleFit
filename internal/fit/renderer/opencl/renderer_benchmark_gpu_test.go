@@ -86,6 +86,81 @@ func BenchmarkOpenCLResidentImageReadback(b *testing.B) {
 	}
 }
 
+// BenchmarkOpenCLSessionCreation measures the device setup a session pays for
+// today. Renderer.NewSession rebuilds the whole stack per session: a fresh
+// gpu.InitOpenCL, clCreateProgramWithSource, clBuildProgram, the device info
+// queries, and a re-upload of the reference image. Task 11.13 tranche 1 makes
+// sessions share one engine, so this is the "before" figure it is measured
+// against.
+//
+// The two arms separate the fixed setup term from what a session adds on top:
+// "new" times a full New construction, "session" times a NewSession over a base
+// renderer built outside the timed loop. Sweeping the image size separates the
+// terms a second way, because the reference upload scales with the canvas while
+// the program build does not.
+func BenchmarkOpenCLSessionCreation(b *testing.B) {
+	silenceOpenCLBenchmarkLogs(b)
+
+	// Matches BenchmarkOptimizePipelineBackends. It stays small deliberately:
+	// the circle count only sizes the parameter scratch, so a large one would
+	// add noise without touching the setup cost this benchmark is about.
+	const circles = 12
+
+	for _, size := range []int{64, 512} {
+		b.Run(strconv.Itoa(size), func(b *testing.B) {
+			ref := patternedReference(image.Rect(0, 0, size, size))
+
+			b.Run("new", func(b *testing.B) {
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for range b.N {
+					// Both the construction and its cleanup are timed. Releasing
+					// the context, program, kernels and buffers is part of the
+					// per-session lifecycle tranche 1 removes, so it belongs in
+					// the measurement; and every iteration has to release, or the
+					// benchmark leaks an OpenCL context per iteration until the
+					// driver refuses to create another.
+					r, cleanup, err := New(ref, circles, newStubFallback)
+					if err != nil {
+						if os.Getenv("CIRCLEFIT_REQUIRE_OPENCL") == "1" {
+							b.Fatalf("required OpenCL backend unavailable: %v", err)
+						}
+
+						b.Skipf("OpenCL backend unavailable: %v", err)
+					}
+
+					if r.Degraded() {
+						cleanup()
+						b.Skip("OpenCL backend degraded to the fallback renderer")
+					}
+
+					cleanup()
+				}
+			})
+
+			b.Run("session", func(b *testing.B) {
+				base, release := newOpenCLBenchmarkRenderer(b, ref, circles)
+				defer release()
+
+				reportOpenCLBenchmarkDevice(b, base)
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for range b.N {
+					// Timed together for the same reason as the "new" arm above.
+					_, cleanup, err := base.NewSession(circles)
+					if err != nil {
+						b.Fatalf("create session: %v", err)
+					}
+
+					cleanup()
+				}
+			})
+		})
+	}
+}
+
 func newOpenCLBenchmarkRenderer(b *testing.B, ref *image.NRGBA, circles int) (*Renderer, func()) {
 	b.Helper()
 	r, cleanup, err := New(ref, circles, newStubFallback)
