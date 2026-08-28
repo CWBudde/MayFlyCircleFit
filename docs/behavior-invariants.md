@@ -32,6 +32,14 @@ Rendering-side invariants live in
   spans both arithmetics and no reader can tell without being told. `Degraded`
   in `internal/fit/renderer` is the single accessor for this, in the same shape
   as `EvaluationWidth`, and reports false for every backend that cannot degrade.
+- **Degradation belongs to the run, not to one renderer value.** The OpenCL
+  renderer and every session derived from it share one degradation record. This
+  is load-bearing: the staged pipelines evaluate each stage through an
+  independent session, so a per-renderer flag would let a sequential or batch
+  run report a clean device while everything after the failure was costed on the
+  CPU. Sharing also runs the other way, so a session created after the device is
+  gone does not rediscover it, and a lost device costs one timeout per run
+  rather than one per stage.
 - **A job records the backend it ran on, not the one it requested.**
   `effectiveBackend` is written once, where the renderer is built, and is the
   only value a comparison between two runs may use. Neither it nor

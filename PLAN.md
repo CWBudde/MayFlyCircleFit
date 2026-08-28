@@ -331,11 +331,20 @@ from "unknown name", that an unavailable backend fails by default and falls back
 only when asked, that a misspelled backend never falls back, and that a job
 which fell back records `cpu` while keeping `opencl` as its request.
 
-One residual: degradation is per renderer and the staged pipelines build one
-renderer per stage, so a device that has genuinely gone away is rediscovered
-once per stage. A sequential run can pay a device timeout up to fourteen times
-before finishing on the CPU. Poisoning the shared engine on first degradation
-would fix it and belongs with Task 11.13, which introduces the engine.
+Review caught the one thing the first cut got wrong, and it was the part that
+mattered. `NewSession` builds a fresh renderer, so a per-renderer `degraded`
+flag meant a sequential or batch run -- where every circle is costed on an
+independent session and the base renderer may never evaluate at all -- reported
+a clean device no matter what happened. The flag is now one record shared by a
+renderer and every session derived from it. Joint mode was never affected:
+OpenCL withholds the concurrent-evaluation marker, so joint evaluates on the
+base renderer itself and creates no sessions.
+
+Sharing it runs both ways, which removes what would otherwise have been a
+residual for Task 11.13: a session created after the device is gone starts
+degraded instead of rediscovering it, so a lost device costs one timeout for the
+run rather than one per stage. The `engine.poison()` that tranche was going to
+need is no longer required for this.
 
 ### Task 11.12: Documentation and Examples
 - [ ] Document the macOS Metal/WebGPU gap and driver quirks found during vendor-GPU validation.

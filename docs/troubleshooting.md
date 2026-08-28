@@ -234,8 +234,10 @@ Common causes, in the order worth checking:
 - **The device disappeared.** A suspend/resume cycle or a driver upgrade under a
   running process. Restart the run.
 
-Degradation is per renderer and permanent, so a staged run can pay one device
-timeout per stage before every session has given up.
+Degradation is permanent and shared by a renderer and every session derived
+from it, so a staged run reports it even though each stage evaluates through its
+own session, and a lost device costs one timeout for the run rather than one per
+stage.
 
 ### Optimizer failures
 

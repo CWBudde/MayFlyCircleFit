@@ -148,10 +148,11 @@ behavior is production-ready.
   degraded, not when: its cost mixes device and CPU arithmetic in an unrecorded
   proportion, so it is not comparable with either a clean GPU run or a clean CPU
   one.
-- Degradation is per renderer and permanent, and the staged pipelines build one
-  renderer per stage. A device that has genuinely gone away is therefore
-  rediscovered once per stage rather than once per run, so a sequential run can
-  pay a device timeout up to fourteen times before finishing on the CPU.
+- Degradation is permanent and is shared by a renderer and every session
+  derived from it, so a lost device is discovered once per run rather than once
+  per stage, and a staged run reports it even though every evaluation happened
+  on a session. What the flag still cannot say is which stages ran on the
+  device.
 - There is no automated test for a device failing mid-run. Inducing one would
   need a fault-injection hook in the cgo path or a card that can be made to fail
   on demand, so what is covered is the accessor (`renderer.Degraded`) and the

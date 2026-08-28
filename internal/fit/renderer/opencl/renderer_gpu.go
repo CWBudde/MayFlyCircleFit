@@ -47,6 +47,7 @@ import (
 	"image"
 	"log/slog"
 	"math"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/cwbudde/circlefit/internal/fit"
@@ -224,13 +225,32 @@ type Renderer struct {
 	imageValid  bool
 	evaluations uint64
 
-	degraded bool
+	// degraded is shared with every session derived from this renderer, and
+	// with the renderer a session was derived from. Degradation is a fact about
+	// the device, not about one Renderer value: the staged pipelines evaluate
+	// through independent sessions, so a per-renderer flag would leave a
+	// sequential or batch run reporting a clean device while every circle after
+	// the failure was costed on the CPU. Sharing it also stops a lost device
+	// being rediscovered once per stage.
+	//
+	// It is atomic because it is now reachable from more than one Renderer.
+	// OpenCL still evaluates serially -- it withholds the concurrent-evaluation
+	// marker -- so this removes a hazard rather than enabling concurrency.
+	degraded *atomic.Bool
 }
 
 // New creates an OpenCL GPU-based renderer. The fallback renderer serves every
 // request the device cannot, so callers must supply a working CPU renderer
 // factory.
 func New(reference *image.NRGBA, k int, newFallback NewFallback) (*Renderer, func(), error) {
+	return newRenderer(reference, k, newFallback, &atomic.Bool{})
+}
+
+// newRenderer builds a renderer over an existing degradation record. A base
+// renderer starts a fresh one; a session inherits its parent's.
+func newRenderer(
+	reference *image.NRGBA, circleCount int, newFallback NewFallback, degraded *atomic.Bool,
+) (*Renderer, func(), error) {
 	rt, err := gpu.InitOpenCL()
 	if err != nil {
 		return nil, noopCleanup, err
@@ -238,15 +258,16 @@ func New(reference *image.NRGBA, k int, newFallback NewFallback) (*Renderer, fun
 
 	r := &Renderer{
 		runtime:       rt,
-		fallback:      newFallback(reference, k),
+		fallback:      newFallback(reference, circleCount),
 		newFallback:   newFallback,
 		reference:     reference,
-		bounds:        fit.NewBounds(k, reference.Bounds().Dx(), reference.Bounds().Dy()),
+		bounds:        fit.NewBounds(circleCount, reference.Bounds().Dx(), reference.Bounds().Dy()),
 		width:         reference.Bounds().Dx(),
 		height:        reference.Bounds().Dy(),
 		pixelCount:    reference.Bounds().Dx() * reference.Bounds().Dy(),
-		paramsScratch: make([]float32, k*paramsPerCircle),
+		paramsScratch: make([]float32, circleCount*paramsPerCircle),
 		renderImage:   image.NewNRGBA(image.Rect(0, 0, reference.Bounds().Dx(), reference.Bounds().Dy())),
+		degraded:      degraded,
 	}
 
 	if err := r.init(); err != nil {
@@ -487,19 +508,19 @@ func (r *Renderer) Render(params []float64) *image.NRGBA {
 	if len(params) != r.Dim() || r.pixelCount == 0 {
 		return r.fallback.Render(params)
 	}
-	if r.degraded {
+	if r.degraded.Load() {
 		return r.fallback.Render(params)
 	}
 
 	if err := r.ensure(params); err != nil {
 		slog.Warn("OpenCL renderer degraded to CPU", "reason", err)
-		r.degraded = true
+		r.degraded.Store(true)
 		return r.fallback.Render(params)
 	}
 
 	if err := r.materializeImage(r.deviceHash); err != nil {
 		slog.Warn("OpenCL renderer degraded to CPU", "reason", err)
-		r.degraded = true
+		r.degraded.Store(true)
 		return r.fallback.Render(params)
 	}
 
@@ -510,13 +531,13 @@ func (r *Renderer) Cost(params []float64) float64 {
 	if len(params) != r.Dim() || r.pixelCount == 0 {
 		return r.fallback.Cost(params)
 	}
-	if r.degraded {
+	if r.degraded.Load() {
 		return r.fallback.Cost(params)
 	}
 
 	if err := r.ensure(params); err != nil {
 		slog.Warn("OpenCL renderer degraded to CPU", "reason", err)
-		r.degraded = true
+		r.degraded.Store(true)
 		return r.fallback.Cost(params)
 	}
 
@@ -531,7 +552,7 @@ func (r *Renderer) NewSession(circleCount int) (*Renderer, func(), error) {
 	if circleCount < 0 {
 		return nil, noopCleanup, fmt.Errorf("circle count cannot be negative")
 	}
-	return New(r.reference, circleCount, r.newFallback)
+	return newRenderer(r.reference, circleCount, r.newFallback, r.degraded)
 }
 
 func (r *Renderer) ensure(params []float64) error {
