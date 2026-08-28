@@ -63,6 +63,15 @@ const paramsPerCircle = 7
 // noopCleanup is returned alongside errors so callers can defer unconditionally.
 var noopCleanup = func() {}
 
+// Validation sentinels for NewSessionWithCanvas. They are package-level so a
+// caller can match them, and because the linter refuses dynamic errors.
+var (
+	errNilCanvas        = errors.New("canvas cannot be nil")
+	errNegativeCircles  = errors.New("circle count cannot be negative")
+	errCanvasDimensions = errors.New("canvas dimensions must match reference image")
+	errTranslucentBase  = errors.New("base canvas must be fully opaque")
+)
+
 // Fallback is the CPU renderer the GPU path degrades to. Callers inject it so
 // this package does not depend on the renderer package.
 type Fallback interface {
@@ -422,35 +431,6 @@ func (r *Renderer) init() error {
 	return r.setStaticKernelArgs()
 }
 
-// uploadBaseCanvas packs the retained canvas and copies it to the device once.
-// A renderer that starts from white has none, and binds the engine's
-// placeholder instead.
-func (r *Renderer) uploadBaseCanvas() error {
-	if r.baseCanvas == nil || r.pixelCount == 0 {
-		return nil
-	}
-
-	packed := packReferenceNRGBA(r.baseCanvas)
-	if len(packed) == 0 {
-		return nil
-	}
-
-	var status C.cl_int
-
-	r.baseBuffer = C.clCreateBuffer(
-		r.context,
-		C.CL_MEM_READ_ONLY|C.CL_MEM_COPY_HOST_PTR|C.CL_MEM_HOST_NO_ACCESS,
-		C.size_t(len(packed)),
-		unsafe.Pointer(&packed[0]),
-		&status,
-	)
-	if status != C.CL_SUCCESS {
-		return r.clError("clCreateBuffer(baseCanvas)", status)
-	}
-
-	return nil
-}
-
 func (r *Renderer) setStaticKernelArgs() error {
 	var status C.cl_int
 
@@ -487,12 +467,12 @@ func (r *Renderer) setStaticKernelArgs() error {
 		return r.clError("clSetKernelArg(partialSums)", status)
 	}
 
-	// Argument 7 is the local scratch, whose size depends on the dispatch and is
-	// set in ensure. Arguments 8 and 9 are the base canvas and the flag that
-	// says whether to read it. A renderer without one still has to bind a valid
-	// buffer, because OpenCL requires every argument set before an enqueue; the
-	// engine's four-byte placeholder is never dereferenced, because hasBase is
-	// zero for exactly the renderers that bind it.
+	// Argument 7 is the local scratch, sized per dispatch in ensure. Arguments
+	// 8 and 9 are the base canvas and the flag that says whether to read it. A
+	// renderer without one still has to bind a valid buffer, because OpenCL
+	// requires every argument set before an enqueue; the engine's four-byte
+	// placeholder is never dereferenced, because hasBase is zero for exactly
+	// the renderers that bind it.
 	baseCanvas := r.engine.emptyCanvasBuffer
 	hasBase := C.cl_int(0)
 
@@ -501,11 +481,13 @@ func (r *Renderer) setStaticKernelArgs() error {
 		hasBase = 1
 	}
 
+	//nolint:gocritic // dupSubExpr fires on cgo's generated pointer-check guard.
 	status = C.clSetKernelArg(r.renderKernel, 8, C.size_t(unsafe.Sizeof(baseCanvas)), unsafe.Pointer(&baseCanvas))
 	if status != C.CL_SUCCESS {
 		return r.clError("clSetKernelArg(baseCanvas)", status)
 	}
 
+	//nolint:gocritic // dupSubExpr fires on cgo's generated pointer-check guard.
 	status = C.clSetKernelArg(r.renderKernel, 9, C.size_t(unsafe.Sizeof(hasBase)), unsafe.Pointer(&hasBase))
 	if status != C.CL_SUCCESS {
 		return r.clError("clSetKernelArg(hasBase)", status)
@@ -615,19 +597,19 @@ func (r *Renderer) NewSession(circleCount int) (*Renderer, func(), error) {
 // pixels.
 func (r *Renderer) NewSessionWithCanvas(canvas *image.NRGBA, circleCount int) (*Renderer, func(), error) {
 	if canvas == nil {
-		return nil, noopCleanup, errors.New("canvas cannot be nil")
+		return nil, noopCleanup, errNilCanvas
 	}
 
 	if circleCount < 0 {
-		return nil, noopCleanup, errors.New("circle count cannot be negative")
+		return nil, noopCleanup, errNegativeCircles
 	}
 
 	if canvas.Bounds().Dx() != r.width || canvas.Bounds().Dy() != r.height {
-		return nil, noopCleanup, errors.New("canvas dimensions must match reference image")
+		return nil, noopCleanup, errCanvasDimensions
 	}
 
 	if !canvasIsOpaque(canvas) {
-		return nil, noopCleanup, errors.New("base canvas must be fully opaque")
+		return nil, noopCleanup, errTranslucentBase
 	}
 
 	return newRendererOnEngine(r.engine, r.reference, canvas, circleCount, r.newFallback, r.degraded)
@@ -882,6 +864,35 @@ func (r *Renderer) Bounds() (lower, upper []float64) {
 
 func (r *Renderer) Reference() *image.NRGBA {
 	return r.reference
+}
+
+// uploadBaseCanvas packs the retained canvas and copies it to the device once.
+// A renderer that starts from white has none, and binds the engine's
+// placeholder instead.
+func (r *Renderer) uploadBaseCanvas() error {
+	if r.baseCanvas == nil || r.pixelCount == 0 {
+		return nil
+	}
+
+	packed := packReferenceNRGBA(r.baseCanvas)
+	if len(packed) == 0 {
+		return nil
+	}
+
+	var status C.cl_int
+
+	r.baseBuffer = C.clCreateBuffer(
+		r.context,
+		C.CL_MEM_READ_ONLY|C.CL_MEM_COPY_HOST_PTR|C.CL_MEM_HOST_NO_ACCESS,
+		C.size_t(len(packed)),
+		unsafe.Pointer(&packed[0]),
+		&status,
+	)
+	if status != C.CL_SUCCESS {
+		return r.clError("clCreateBuffer(baseCanvas)", status)
+	}
+
+	return nil
 }
 
 func (*Renderer) clError(prefix string, status C.cl_int) error {

@@ -40,7 +40,7 @@ func (a openCLAdapter) newSession(circleCount int) (Renderer, func(), error) {
 // canvas in finishStagedResult, the baked-prefix sessions in polishing, and
 // OptimizeBatchAppendFromCanvasContext, which previously refused this backend.
 func (a openCLAdapter) newSessionWithCanvas(canvas *image.NRGBA, circleCount int) (Renderer, func(), error) {
-	session, cleanup, err := a.Renderer.NewSessionWithCanvas(canvas, circleCount)
+	session, cleanup, err := a.NewSessionWithCanvas(canvas, circleCount)
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("%w: %w", ErrBackendUnavailable, err)
 	}
@@ -49,7 +49,7 @@ func (a openCLAdapter) newSessionWithCanvas(canvas *image.NRGBA, circleCount int
 }
 
 func (a openCLAdapter) initialCanvas() *image.NRGBA {
-	return a.Renderer.InitialCanvas()
+	return a.InitialCanvas()
 }
 
 // NewOpenCLRenderer creates an OpenCL GPU-based renderer

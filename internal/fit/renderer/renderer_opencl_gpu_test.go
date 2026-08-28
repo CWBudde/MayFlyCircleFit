@@ -308,7 +308,7 @@ func (r *trackingOpenCLFactory) newSession(circleCount int) (Renderer, func(), e
 // for the accumulated staged path -- which is the only path the pipelines take
 // now.
 func (r *trackingOpenCLFactory) newSessionWithCanvas(canvas *image.NRGBA, circleCount int) (Renderer, func(), error) {
-	session, cleanup, err := r.openCLAdapter.Renderer.NewSessionWithCanvas(canvas, circleCount)
+	session, cleanup, err := r.NewSessionWithCanvas(canvas, circleCount)
 	if err != nil {
 		return nil, cleanup, err
 	}

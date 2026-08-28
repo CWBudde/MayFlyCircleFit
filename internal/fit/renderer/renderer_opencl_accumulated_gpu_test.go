@@ -1,6 +1,6 @@
 //go:build gpu
 
-package renderer
+package renderer //nolint:testpackage // uses the unexported newSessionWithCanvas hook
 
 import (
 	"context"
@@ -37,6 +37,7 @@ func TestOpenCLAccumulatedCanvasMatchesReplay(t *testing.T) {
 
 		for _, depth := range accumulatedDepths {
 			t.Run(sizeAndDepthName(size, depth), func(t *testing.T) {
+				//nolint:gosec // a reproducible fixture, not a security context
 				rng := rand.New(rand.NewSource(int64(depth*1000 + size.X*31 + size.Y)))
 				params := randomCircles(t, rng, depth+1, size)
 				prefix := params[:depth*paramsPerCircle]
@@ -57,6 +58,7 @@ func TestOpenCLAccumulatedCanvasMatchesReplay(t *testing.T) {
 				defer releaseReplay()
 
 				wantCost := replay.Cost(params)
+
 				gotCost := session.Cost(appended)
 				if wantCost != gotCost {
 					t.Fatalf("accumulated cost %v, replay cost %v: the two disagree at depth %d",
@@ -80,6 +82,7 @@ func TestOpenCLAccumulatedCanvasMatchesCPU(t *testing.T) {
 
 	for _, depth := range accumulatedDepths {
 		t.Run(sizeAndDepthName(size, depth), func(t *testing.T) {
+			//nolint:gosec // a reproducible fixture, not a security context
 			rng := rand.New(rand.NewSource(int64(depth) + 4242))
 			params := randomCircles(t, rng, depth+1, size)
 			prefix := params[:depth*paramsPerCircle]
@@ -131,7 +134,7 @@ func TestOpenCLSessionWithCanvasRejectsBadCanvas(t *testing.T) {
 		canvas  *image.NRGBA
 		circles int
 	}{
-		{name: "nil canvas", canvas: nil, circles: 1},
+		{name: "nil", canvas: nil, circles: 1},
 		{name: "wrong dimensions", canvas: image.NewNRGBA(image.Rect(0, 0, 8, 12)), circles: 1},
 		{name: "negative circle count", canvas: base.initialCanvas(), circles: -1},
 		{name: "translucent canvas", canvas: translucent, circles: 1},

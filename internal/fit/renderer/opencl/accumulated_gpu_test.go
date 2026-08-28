@@ -1,6 +1,6 @@
 //go:build gpu
 
-package opencl
+package opencl //nolint:testpackage // sets the unexported degradation record on one serial device
 
 import (
 	"image"
@@ -59,14 +59,19 @@ func TestOpenCLAccumulatedFallbackStartsFromTheRetainedCanvas(t *testing.T) {
 			"a device lost mid-stage would answer with the cost of a different image")
 	}
 
-	if plain, plainCleanup, plainErr := base.NewSession(1); plainErr == nil {
-		defer plainCleanup()
+	plain, plainCleanup, plainErr := base.NewSession(1)
+	if plainErr != nil {
+		t.Fatalf("NewSession() = %v", plainErr)
+	}
 
-		if got := recorder.last(); got != nil {
-			t.Fatalf("a plain session's fallback was built over a canvas %v, want nil (white)", got.Bounds())
-		}
+	defer plainCleanup()
 
-		_ = plain
+	if got := recorder.last(); got != nil {
+		t.Fatalf("a plain session's fallback was built over a canvas %v, want nil (white)", got.Bounds())
+	}
+
+	if plain.Degraded() {
+		t.Fatal("a plain session degraded unexpectedly")
 	}
 
 	// The already-degraded path builds no device state at all, so it is a
