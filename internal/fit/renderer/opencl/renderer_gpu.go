@@ -207,7 +207,21 @@ __kernel void reduce_sum(
 `
 
 type Renderer struct {
-	runtime     *gpu.Runtime
+	// engine owns everything derived from the device and the reference image:
+	// the runtime, the compiled program, and the reference buffer. This Renderer
+	// holds one reference to it and gives that reference back in close.
+	engine *engine
+
+	// runtime, context, queue, device and localSize are borrowed copies of the
+	// engine's values. They are cached here because they are read on nearly
+	// every line of the dispatch path, and this Renderer never releases any of
+	// them: engine.release frees them when the last holder is gone.
+	runtime   *gpu.Runtime
+	context   C.cl_context
+	queue     C.cl_command_queue
+	device    C.cl_device_id
+	localSize int
+
 	fallback    Fallback
 	newFallback NewFallback
 
@@ -217,19 +231,13 @@ type Renderer struct {
 	height     int
 	pixelCount int
 
-	context      C.cl_context
-	queue        C.cl_command_queue
-	device       C.cl_device_id
-	program      C.cl_program
 	renderKernel C.cl_kernel
 	reduceKernel C.cl_kernel
-	localSize    int
 
-	paramsBuffer    C.cl_mem
-	referenceBuffer C.cl_mem
-	outputBuffer    C.cl_mem
-	partialBufferA  C.cl_mem
-	partialBufferB  C.cl_mem
+	paramsBuffer   C.cl_mem
+	outputBuffer   C.cl_mem
+	partialBufferA C.cl_mem
+	partialBufferB C.cl_mem
 
 	paramsScratch []float32
 
@@ -268,13 +276,27 @@ func New(reference *image.NRGBA, k int, newFallback NewFallback) (*Renderer, fun
 func newRenderer(
 	reference *image.NRGBA, circleCount int, newFallback NewFallback, degraded *atomic.Bool,
 ) (*Renderer, func(), error) {
-	rt, err := gpu.InitOpenCL()
+	eng, err := newEngine(reference)
 	if err != nil {
 		return nil, noopCleanup, err
 	}
 
+	// newEngine hands back the constructing reference, which belongs to this
+	// call and not to the Renderer. Dropping it on every exit path -- while the
+	// Renderer holds one of its own -- means the two are undone independently:
+	// a failed init releases the Renderer's reference and the deferred release
+	// frees the engine, while a successful one leaves exactly the Renderer
+	// holding it.
+	defer eng.release()
+	eng.retain()
+
 	r := &Renderer{
-		runtime:       rt,
+		engine:        eng,
+		runtime:       eng.runtime,
+		context:       eng.context,
+		queue:         eng.queue,
+		device:        eng.device,
+		localSize:     eng.localSize,
 		fallback:      newFallback(reference, circleCount),
 		newFallback:   newFallback,
 		reference:     reference,
@@ -288,60 +310,30 @@ func newRenderer(
 	}
 
 	if err := r.init(); err != nil {
-		r.release()
+		r.close()
 		return nil, noopCleanup, err
 	}
 
 	cleanup := func() {
-		r.release()
+		r.close()
 	}
 
 	return r, cleanup, nil
 }
 
+// init creates the per-Renderer half of the OpenCL state: a kernel pair of its
+// own and the buffers sized from this Renderer's circle count and from the
+// engine's reduction workgroup size.
 func (r *Renderer) init() error {
-	r.context = C.cl_context(r.runtime.ContextPtr())
-	r.queue = C.cl_command_queue(r.runtime.QueuePtr())
-	r.device = C.cl_device_id(r.runtime.DevicePtr())
-
-	if r.context == nil || r.queue == nil {
-		return fmt.Errorf("failed to access OpenCL context/queue")
-	}
-
-	source := C.CString(openclKernelSource)
-	defer C.free(unsafe.Pointer(source))
-
-	var status C.cl_int
-	r.program = C.clCreateProgramWithSource(r.context, 1, &source, nil, &status)
-	if status != C.CL_SUCCESS {
-		return r.clError("clCreateProgramWithSource", status)
-	}
-
-	status = C.clBuildProgram(r.program, 1, &r.device, nil, nil, nil)
-	if status != C.CL_SUCCESS {
-		r.dumpBuildLog()
-		return r.clError("clBuildProgram", status)
-	}
-
-	renderKernelName := C.CString("render_cost")
-	defer C.free(unsafe.Pointer(renderKernelName))
-	r.renderKernel = C.clCreateKernel(r.program, renderKernelName, &status)
-	if status != C.CL_SUCCESS {
-		return r.clError("clCreateKernel(render_cost)", status)
-	}
-
-	reduceKernelName := C.CString("reduce_sum")
-	defer C.free(unsafe.Pointer(reduceKernelName))
-	r.reduceKernel = C.clCreateKernel(r.program, reduceKernelName, &status)
-	if status != C.CL_SUCCESS {
-		return r.clError("clCreateKernel(reduce_sum)", status)
-	}
-
-	localSize, err := r.selectLocalSize()
+	renderKernel, reduceKernel, err := r.engine.newKernels()
 	if err != nil {
 		return err
 	}
-	r.localSize = localSize
+
+	r.renderKernel = renderKernel
+	r.reduceKernel = reduceKernel
+
+	var status C.cl_int
 
 	bufferPixels := max(1, r.pixelCount)
 	bufferParams := max(1, len(r.paramsScratch))
@@ -370,28 +362,7 @@ func (r *Renderer) init() error {
 		return r.clError("clCreateBuffer(params)", status)
 	}
 
-	refBytes := packReferenceNRGBA(r.reference)
-	if len(refBytes) == 0 {
-		refBytes = make([]byte, 4)
-	}
-
-	r.referenceBuffer = C.clCreateBuffer(r.context, C.CL_MEM_READ_ONLY|C.CL_MEM_COPY_HOST_PTR|C.CL_MEM_HOST_NO_ACCESS, bytePixels, unsafe.Pointer(&refBytes[0]), &status)
-	if status != C.CL_SUCCESS {
-		return r.clError("clCreateBuffer(reference)", status)
-	}
-
-	if err := r.setStaticKernelArgs(); err != nil {
-		return err
-	}
-
-	slog.Info("OpenCL backend initialised",
-		"device", r.runtime.Device.Name,
-		"vendor", r.runtime.Device.Vendor,
-		"compute_units", r.runtime.Device.MaxComputeUnits,
-		"reduction_local_size", r.localSize,
-	)
-
-	return nil
+	return r.setStaticKernelArgs()
 }
 
 func (r *Renderer) setStaticKernelArgs() error {
@@ -410,7 +381,12 @@ func (r *Renderer) setStaticKernelArgs() error {
 		return r.clError("clSetKernelArg(height)", status)
 	}
 
-	status = C.clSetKernelArg(r.renderKernel, 4, C.size_t(unsafe.Sizeof(r.referenceBuffer)), unsafe.Pointer(&r.referenceBuffer))
+	// The reference buffer belongs to the engine; this is a borrowed handle, and
+	// clSetKernelArg copies the value the pointer refers to.
+	reference := r.engine.referenceBuffer
+	referenceArg := unsafe.Pointer(&reference)
+
+	status = C.clSetKernelArg(r.renderKernel, 4, C.size_t(unsafe.Sizeof(reference)), referenceArg)
 	if status != C.CL_SUCCESS {
 		return r.clError("clSetKernelArg(reference)", status)
 	}
@@ -426,54 +402,6 @@ func (r *Renderer) setStaticKernelArgs() error {
 	}
 
 	return nil
-}
-
-func (r *Renderer) selectLocalSize() (int, error) {
-	var renderLimit C.size_t
-	status := C.clGetKernelWorkGroupInfo(
-		r.renderKernel,
-		r.device,
-		C.CL_KERNEL_WORK_GROUP_SIZE,
-		C.size_t(unsafe.Sizeof(renderLimit)),
-		unsafe.Pointer(&renderLimit),
-		nil,
-	)
-	if status != C.CL_SUCCESS {
-		return 0, r.clError("clGetKernelWorkGroupInfo(render_cost)", status)
-	}
-
-	var reduceLimit C.size_t
-	status = C.clGetKernelWorkGroupInfo(
-		r.reduceKernel,
-		r.device,
-		C.CL_KERNEL_WORK_GROUP_SIZE,
-		C.size_t(unsafe.Sizeof(reduceLimit)),
-		unsafe.Pointer(&reduceLimit),
-		nil,
-	)
-	if status != C.CL_SUCCESS {
-		return 0, r.clError("clGetKernelWorkGroupInfo(reduce_sum)", status)
-	}
-
-	var localMemory C.cl_ulong
-	status = C.clGetDeviceInfo(
-		r.device,
-		C.CL_DEVICE_LOCAL_MEM_SIZE,
-		C.size_t(unsafe.Sizeof(localMemory)),
-		unsafe.Pointer(&localMemory),
-		nil,
-	)
-	if status != C.CL_SUCCESS {
-		return 0, r.clError("clGetDeviceInfo(local memory)", status)
-	}
-
-	limit := min(256, int(renderLimit), int(reduceLimit), int(localMemory)/int(unsafe.Sizeof(float32(0))))
-	localSize := largestPowerOfTwo(limit)
-	if localSize == 0 {
-		return 0, fmt.Errorf("OpenCL device has no usable reduction workgroup size")
-	}
-
-	return localSize, nil
 }
 
 func largestPowerOfTwo(limit int) int {
@@ -494,31 +422,13 @@ func ceilDiv(value, divisor int) int {
 	return 1 + (value-1)/divisor
 }
 
-func (r *Renderer) clError(prefix string, status C.cl_int) error {
+// clError formats an OpenCL status code. The engine reports the same failures,
+// and the C helper this calls is defined in this file's cgo preamble -- a
+// static function in one file's preamble is invisible to another's -- so the
+// implementation is a package-level function and Renderer.clError forwards to
+// it.
+func clError(prefix string, status C.cl_int) error {
 	return fmt.Errorf("%s: %s (%d)", prefix, C.GoString(C.mayfly_gpu_renderer_error_string(status)), int(status))
-}
-
-func (r *Renderer) dumpBuildLog() {
-	if r.program == nil || r.device == nil {
-		return
-	}
-
-	var logSize C.size_t
-	if status := C.clGetProgramBuildInfo(r.program, r.device, C.CL_PROGRAM_BUILD_LOG, 0, nil, &logSize); status != C.CL_SUCCESS {
-		slog.Error("OpenCL: failed to fetch build log size", "err", status)
-		return
-	}
-	if logSize == 0 {
-		return
-	}
-
-	buf := make([]byte, int(logSize))
-	if status := C.clGetProgramBuildInfo(r.program, r.device, C.CL_PROGRAM_BUILD_LOG, logSize, unsafe.Pointer(&buf[0]), nil); status != C.CL_SUCCESS {
-		slog.Error("OpenCL: failed to fetch build log", "err", status)
-		return
-	}
-
-	slog.Error("OpenCL build log", "log", string(buf))
 }
 
 func (r *Renderer) Render(params []float64) *image.NRGBA {
@@ -754,15 +664,43 @@ func (r *Renderer) Reference() *image.NRGBA {
 	return r.reference
 }
 
-func (r *Renderer) release() {
+func (*Renderer) clError(prefix string, status C.cl_int) error {
+	return clError(prefix, status)
+}
+
+// close gives back everything this Renderer holds: its own kernels and buffers
+// first, then its reference to the engine. That order matters, because
+// releaseOwn waits on the engine's queue and the engine may free it.
+//
+// Calling it twice is a no-op. releaseOwn clears every handle it used and
+// engine.release ignores an engine that has already reached zero, which is what
+// keeps a doubled teardown from releasing another holder's device state.
+func (r *Renderer) close() {
+	r.releaseOwn()
+	r.engine.release()
+	r.engine = nil
+}
+
+// releaseOwn frees only what this Renderer created. The program, the reference
+// buffer and the runtime belong to the engine and are deliberately untouched
+// here.
+func (r *Renderer) releaseOwn() {
+	// Both kernel dispatches are enqueued without events, so nothing orders
+	// them against these releases except the in-order queue. Today teardown
+	// gets away with that only because clReleaseCommandQueue, inside
+	// Runtime.Close, waits for the queue to drain -- and once an engine is
+	// shared, that implicit barrier no longer runs when a single session goes
+	// away. The blocking wait is therefore a requirement of sharing the queue,
+	// not a defensive extra.
+	if r.queue != nil {
+		C.clFinish(r.queue)
+	}
+
 	if r.paramsBuffer != nil {
 		C.clReleaseMemObject(r.paramsBuffer)
 		r.paramsBuffer = nil
 	}
-	if r.referenceBuffer != nil {
-		C.clReleaseMemObject(r.referenceBuffer)
-		r.referenceBuffer = nil
-	}
+
 	if r.outputBuffer != nil {
 		C.clReleaseMemObject(r.outputBuffer)
 		r.outputBuffer = nil
@@ -771,26 +709,31 @@ func (r *Renderer) release() {
 		C.clReleaseMemObject(r.partialBufferA)
 		r.partialBufferA = nil
 	}
+
 	if r.partialBufferB != nil {
 		C.clReleaseMemObject(r.partialBufferB)
 		r.partialBufferB = nil
 	}
+
 	if r.renderKernel != nil {
 		C.clReleaseKernel(r.renderKernel)
 		r.renderKernel = nil
 	}
+
 	if r.reduceKernel != nil {
 		C.clReleaseKernel(r.reduceKernel)
 		r.reduceKernel = nil
 	}
-	if r.program != nil {
-		C.clReleaseProgram(r.program)
-		r.program = nil
-	}
-	if r.runtime != nil {
-		r.runtime.Close()
-		r.runtime = nil
-	}
+
+	// The borrowed handles are cleared last. They are copies of state the engine
+	// may free the moment this Renderer gives its reference back, so leaving
+	// them set would let a second teardown wait on a command queue that no
+	// longer exists -- the one operation above that reads a handle it does not
+	// own.
+	r.runtime = nil
+	r.context = nil
+	r.queue = nil
+	r.device = nil
 }
 
 func hashParams(params []float64) uint64 {
