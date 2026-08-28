@@ -121,6 +121,24 @@ hand-waved:
   This budget is a statement about arithmetic, and it only became one after the
   kernel stopped disagreeing about *rasterization*. See below.
 
+- **An OpenCL staged session over a retained canvas** is held to that same
+  budget against the CPU, and to a *stricter* rule against itself: compositing
+  one circle onto a canvas the device produced must be **byte-identical** to
+  replaying the whole draw order from white. That is not a tolerance choice, it
+  is a property of the kernel. The circle loop quantizes to eight bits after
+  every layer to mirror the CPU's NRGBA round-trip, so the colour state after
+  `D` circles is already an exact eight-bit value and reading it back as
+  `byte / 255` recovers the identical `float32`. There is no stage-boundary
+  error to absorb, so any difference at all is a defect.
+  `TestOpenCLAccumulatedCanvasMatchesReplay` asserts it at tolerance zero.
+
+  The base canvas must be **opaque**, and `NewSessionWithCanvas` refuses one
+  that is not. The kernel composites premultiplied and writes an opaque image
+  back, while the CPU renderer takes a different compositing path for a canvas
+  that is not opaque, so the two are only known to agree on opaque canvases.
+  Every canvas the pipelines can supply comes from `Render`, which writes alpha
+  255 unconditionally, so a translucent one is a bug rather than a use case.
+
 And one place where it was not the contract and nobody had said so. The span
 search starts at `int(centerX+0.5)` and walks outward without ever testing that
 pixel, so **every row the disc touches paints its nearest sample**, including a

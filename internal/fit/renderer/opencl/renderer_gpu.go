@@ -42,6 +42,7 @@ import "C"
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"image"
@@ -62,6 +63,23 @@ const paramsPerCircle = 7
 // noopCleanup is returned alongside errors so callers can defer unconditionally.
 var noopCleanup = func() {}
 
+// ErrInvalidSessionInput reports arguments NewSession or NewSessionWithCanvas
+// cannot accept. It is exported because it is the one error class a caller has
+// to tell apart from a device failure: a rejected canvas is the caller's
+// mistake and no fallback fixes it, while an unavailable device may warrant
+// one. The adapter in the renderer package classifies on it.
+var ErrInvalidSessionInput = errors.New("invalid session input")
+
+// The individual reasons stay unexported -- callers outside this package match
+// the class, not the case -- and they are sentinels rather than inline
+// errors.New because the linter refuses dynamic errors.
+var (
+	errNilCanvas        = fmt.Errorf("%w: canvas cannot be nil", ErrInvalidSessionInput)
+	errNegativeCircles  = fmt.Errorf("%w: circle count cannot be negative", ErrInvalidSessionInput)
+	errCanvasDimensions = fmt.Errorf("%w: canvas dimensions must match reference image", ErrInvalidSessionInput)
+	errTranslucentBase  = fmt.Errorf("%w: base canvas must be fully opaque", ErrInvalidSessionInput)
+)
+
 // Fallback is the CPU renderer the GPU path degrades to. Callers inject it so
 // this package does not depend on the renderer package.
 type Fallback interface {
@@ -69,10 +87,16 @@ type Fallback interface {
 	Cost(params []float64) float64
 }
 
-// NewFallback builds a fallback renderer for a given reference and circle
-// count. Sessions call it again so each one gets a fallback sized to its own
-// circle count, matching the pre-split behavior.
-type NewFallback func(reference *image.NRGBA, circles int) Fallback
+// NewFallback builds a fallback renderer for a given reference, base canvas and
+// circle count. Sessions call it again so each one gets a fallback sized to its
+// own circle count, matching the pre-split behavior.
+//
+// A nil canvas means the renderer starts from white. The parameter is not
+// optional decoration: Cost and Render have no error return, so a device lost
+// inside an accumulated staged session degrades silently, and a fallback that
+// started from white instead of the retained canvas would publish costs for a
+// completely different image.
+type NewFallback func(reference, canvas *image.NRGBA, circles int) Fallback
 
 const openclKernelSource = `
 __kernel void render_cost(
@@ -83,7 +107,9 @@ __kernel void render_cost(
     __global const uchar4 *reference,
     __global uchar4 *outImage,
     __global float *partialSums,
-    __local float *scratch) {
+    __local float *scratch,
+    __global const uchar4 *baseCanvas,
+    const int hasBase) {
 
     const int idx = get_global_id(0);
     const int localID = get_local_id(0);
@@ -95,7 +121,19 @@ __kernel void render_cost(
         const int x = idx % width;
         const int y = idx / width;
 
+        // A staged session starts from the canvas its retained circles already
+        // produced instead of from white. hasBase is uniform across the whole
+        // dispatch, so a renderer without a base canvas issues no load at all
+        // and joint -- the one pipeline the GPU wins -- pays nothing for this.
+        //
+        // The loop below composites premultiplied, while NRGBA stores straight
+        // alpha, so the base is premultiplied on the way in. Every canvas this
+        // path can receive is opaque, where that multiply is the identity.
         float4 color = (float4)(1.0f, 1.0f, 1.0f, 1.0f);
+        if (hasBase) {
+            const float4 retained = convert_float4(baseCanvas[idx]) / 255.0f;
+            color = (float4)(retained.xyz * retained.w, retained.w);
+        }
 
         for (int i = 0; i < circleCount; ++i) {
             const int base = i * 7;
@@ -239,6 +277,15 @@ type Renderer struct {
 	partialBufferA C.cl_mem
 	partialBufferB C.cl_mem
 
+	// baseCanvas is the retained canvas a staged session composites onto, and
+	// baseBuffer is its packed device copy. Both are nil for a renderer that
+	// starts from white, which is every renderer outside an accumulated staged
+	// session. The canvas is fixed for the session's whole life, so it is
+	// uploaded once in init and never touched again -- which is why the cost
+	// cache can go on hashing the parameters alone.
+	baseCanvas *image.NRGBA
+	baseBuffer C.cl_mem
+
 	paramsScratch []float32
 
 	renderImage *image.NRGBA
@@ -290,7 +337,7 @@ func newRenderer(
 	// one leaves exactly the Renderer holding it.
 	defer eng.release()
 
-	return newRendererOnEngine(eng, reference, circleCount, newFallback, degraded)
+	return newRendererOnEngine(eng, reference, nil, circleCount, newFallback, degraded)
 }
 
 // newRendererOnEngine builds a renderer over an engine that already exists and
@@ -300,12 +347,13 @@ func newRenderer(
 func newRendererOnEngine(
 	eng *engine,
 	reference *image.NRGBA,
+	baseCanvas *image.NRGBA,
 	circleCount int,
 	newFallback NewFallback,
 	degraded *atomic.Bool,
 ) (*Renderer, func(), error) {
 	if degraded.Load() {
-		return newDegradedRenderer(reference, circleCount, newFallback, degraded)
+		return newDegradedRenderer(reference, baseCanvas, circleCount, newFallback, degraded)
 	}
 
 	eng.retain()
@@ -317,9 +365,10 @@ func newRendererOnEngine(
 		queue:         eng.queue,
 		device:        eng.device,
 		localSize:     eng.localSize,
-		fallback:      newFallback(reference, circleCount),
+		fallback:      newFallback(reference, baseCanvas, circleCount),
 		newFallback:   newFallback,
 		reference:     reference,
+		baseCanvas:    baseCanvas,
 		bounds:        fit.NewBounds(circleCount, reference.Bounds().Dx(), reference.Bounds().Dy()),
 		width:         reference.Bounds().Dx(),
 		height:        reference.Bounds().Dy(),
@@ -382,6 +431,11 @@ func (r *Renderer) init() error {
 		return r.clError("clCreateBuffer(params)", status)
 	}
 
+	err = r.uploadBaseCanvas()
+	if err != nil {
+		return err
+	}
+
 	return r.setStaticKernelArgs()
 }
 
@@ -419,6 +473,32 @@ func (r *Renderer) setStaticKernelArgs() error {
 	status = C.clSetKernelArg(r.renderKernel, 6, C.size_t(unsafe.Sizeof(r.partialBufferA)), unsafe.Pointer(&r.partialBufferA))
 	if status != C.CL_SUCCESS {
 		return r.clError("clSetKernelArg(partialSums)", status)
+	}
+
+	// Argument 7 is the local scratch, sized per dispatch in ensure. Arguments
+	// 8 and 9 are the base canvas and the flag that says whether to read it. A
+	// renderer without one still has to bind a valid buffer, because OpenCL
+	// requires every argument set before an enqueue; the engine's four-byte
+	// placeholder is never dereferenced, because hasBase is zero for exactly
+	// the renderers that bind it.
+	baseCanvas := r.engine.emptyCanvasBuffer
+	hasBase := C.cl_int(0)
+
+	if r.baseBuffer != nil {
+		baseCanvas = r.baseBuffer
+		hasBase = 1
+	}
+
+	//nolint:gocritic // dupSubExpr fires on cgo's generated pointer-check guard.
+	status = C.clSetKernelArg(r.renderKernel, 8, C.size_t(unsafe.Sizeof(baseCanvas)), unsafe.Pointer(&baseCanvas))
+	if status != C.CL_SUCCESS {
+		return r.clError("clSetKernelArg(baseCanvas)", status)
+	}
+
+	//nolint:gocritic // dupSubExpr fires on cgo's generated pointer-check guard.
+	status = C.clSetKernelArg(r.renderKernel, 9, C.size_t(unsafe.Sizeof(hasBase)), unsafe.Pointer(&hasBase))
+	if status != C.CL_SUCCESS {
+		return r.clError("clSetKernelArg(hasBase)", status)
 	}
 
 	return nil
@@ -494,8 +574,9 @@ func (r *Renderer) Cost(params []float64) float64 {
 // NewSession creates an OpenCL renderer over the same reference and the same
 // device engine, allocating only the kernel pair and the buffers its own circle
 // count needs. Sequential and batch optimization use these sessions with an
-// increasing circle count, replaying retained circles because OpenCL does not
-// yet support an accumulated base canvas.
+// increasing circle count. Sequential and batch use NewSessionWithCanvas
+// instead, which starts a stage from the retained canvas rather than replaying
+// the circles behind it.
 //
 // It shares rather than rebuilds because the rebuild was the staged path's
 // whole cost: a session used to re-enumerate every platform and device, create
@@ -503,10 +584,85 @@ func (r *Renderer) Cost(params []float64) float64 {
 // depends on the circle count that changed.
 func (r *Renderer) NewSession(circleCount int) (*Renderer, func(), error) {
 	if circleCount < 0 {
-		return nil, noopCleanup, fmt.Errorf("circle count cannot be negative")
+		return nil, noopCleanup, errNegativeCircles
 	}
 
-	return newRendererOnEngine(r.engine, r.reference, circleCount, r.newFallback, r.degraded)
+	return newRendererOnEngine(r.engine, r.reference, nil, circleCount, r.newFallback, r.degraded)
+}
+
+// NewSessionWithCanvas creates a session that composites circleCount new
+// circles onto an already-retained canvas instead of replaying the circles that
+// produced it. The canvas is uploaded once and never touched again, so the
+// session's per-evaluation work depends on circleCount alone rather than on the
+// depth of the prefix behind it.
+//
+// The canvas must be opaque, and that is enforced rather than handled. The
+// kernel composites premultiplied and writes an opaque image back, and the CPU
+// renderer takes a different compositing path for a canvas that is not opaque,
+// so the two agree only on opaque canvases. Every canvas the pipelines can hand
+// in comes from Render, which writes alpha 255 unconditionally, so a
+// translucent one is a bug -- and an error is better than silently wrong
+// pixels.
+func (r *Renderer) NewSessionWithCanvas(canvas *image.NRGBA, circleCount int) (*Renderer, func(), error) {
+	if canvas == nil {
+		return nil, noopCleanup, errNilCanvas
+	}
+
+	if circleCount < 0 {
+		return nil, noopCleanup, errNegativeCircles
+	}
+
+	if canvas.Bounds().Dx() != r.width || canvas.Bounds().Dy() != r.height {
+		return nil, noopCleanup, errCanvasDimensions
+	}
+
+	if !canvasIsOpaque(canvas) {
+		return nil, noopCleanup, errTranslucentBase
+	}
+
+	return newRendererOnEngine(r.engine, r.reference, canvas, circleCount, r.newFallback, r.degraded)
+}
+
+// InitialCanvas returns an independent snapshot of the canvas this renderer
+// starts every render from: the retained canvas of an accumulated session, or
+// opaque white for every other renderer.
+//
+// It returns nil for a zero-pixel image, which is what makes the staged
+// accumulator fall back to replaying instead of carrying an empty canvas.
+func (r *Renderer) InitialCanvas() *image.NRGBA {
+	if r.pixelCount == 0 {
+		return nil
+	}
+
+	canvas := image.NewNRGBA(image.Rect(0, 0, r.width, r.height))
+	if r.baseCanvas != nil {
+		copy(canvas.Pix, packReferenceNRGBA(r.baseCanvas))
+
+		return canvas
+	}
+
+	for i := range canvas.Pix {
+		canvas.Pix[i] = 0xFF
+	}
+
+	return canvas
+}
+
+// canvasIsOpaque reports whether every pixel has alpha 255. It walks the image
+// through PixOffset rather than Pix directly, because a sub-image's rows are
+// not contiguous.
+func canvasIsOpaque(canvas *image.NRGBA) bool {
+	bounds := canvas.Bounds()
+	for y := range bounds.Dy() {
+		row := canvas.PixOffset(bounds.Min.X, bounds.Min.Y+y)
+		for x := range bounds.Dx() {
+			if canvas.Pix[row+x*4+3] != 0xFF {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 func (r *Renderer) ensure(params []float64) error {
@@ -718,6 +874,35 @@ func (r *Renderer) Reference() *image.NRGBA {
 	return r.reference
 }
 
+// uploadBaseCanvas packs the retained canvas and copies it to the device once.
+// A renderer that starts from white has none, and binds the engine's
+// placeholder instead.
+func (r *Renderer) uploadBaseCanvas() error {
+	if r.baseCanvas == nil || r.pixelCount == 0 {
+		return nil
+	}
+
+	packed := packReferenceNRGBA(r.baseCanvas)
+	if len(packed) == 0 {
+		return nil
+	}
+
+	var status C.cl_int
+
+	r.baseBuffer = C.clCreateBuffer(
+		r.context,
+		C.CL_MEM_READ_ONLY|C.CL_MEM_COPY_HOST_PTR|C.CL_MEM_HOST_NO_ACCESS,
+		C.size_t(len(packed)),
+		unsafe.Pointer(&packed[0]),
+		&status,
+	)
+	if status != C.CL_SUCCESS {
+		return r.clError("clCreateBuffer(baseCanvas)", status)
+	}
+
+	return nil
+}
+
 func (*Renderer) clError(prefix string, status C.cl_int) error {
 	return clError(prefix, status)
 }
@@ -759,6 +944,11 @@ func (r *Renderer) releaseOwn() {
 	if r.paramsBuffer != nil {
 		C.clReleaseMemObject(r.paramsBuffer)
 		r.paramsBuffer = nil
+	}
+
+	if r.baseBuffer != nil {
+		C.clReleaseMemObject(r.baseBuffer)
+		r.baseBuffer = nil
 	}
 
 	if r.outputBuffer != nil {
@@ -810,15 +1000,16 @@ func (r *Renderer) releaseOwn() {
 //
 // It holds no engine reference, because it uses nothing the engine owns.
 func newDegradedRenderer(
-	reference *image.NRGBA, circleCount int, newFallback NewFallback, degraded *atomic.Bool,
+	reference, baseCanvas *image.NRGBA, circleCount int, newFallback NewFallback, degraded *atomic.Bool,
 ) (*Renderer, func(), error) {
 	width := reference.Bounds().Dx()
 	height := reference.Bounds().Dy()
 
 	r := &Renderer{
-		fallback:      newFallback(reference, circleCount),
+		fallback:      newFallback(reference, baseCanvas, circleCount),
 		newFallback:   newFallback,
 		reference:     reference,
+		baseCanvas:    baseCanvas,
 		bounds:        fit.NewBounds(circleCount, width, height),
 		width:         width,
 		height:        height,

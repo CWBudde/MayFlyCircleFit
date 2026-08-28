@@ -132,20 +132,23 @@ visible from the package list:
   device failure degrades the renderer permanently and silently to its CPU
   fallback. `effectiveBackend` and `backendDegraded` on the job are what say what
   ran; both are per-process and are not persisted to a checkpoint.
-- **The staged pipelines no longer rebuild the device, and are no longer far
-  behind the CPU — but they do not beat it either.** A renderer and every session
-  derived from it share one device engine: runtime, context, queue, compiled
-  program, reference buffer and reduction workgroup size, so a stage no longer
-  calls `gpu.InitOpenCL` and builds the program again. That is Task 11.13
-  tranche 1, and it made sequential and batch 83.8x and 85.9x faster than the
-  per-stage rebuild they replaced, moving them from a separated 26x and 84x loss
-  to indistinguishable from the CPU. No staged measurement separates in either
-  direction now, so a proposal may claim the modes are usable on the GPU and may
-  not claim the GPU is the faster place to run them. The same host cannot
-  separate joint either, which leaves the older joint advantage neither confirmed
-  nor contradicted; the device-side accumulated base canvas is the remaining
-  staged-path work. Measured on one NVIDIA T550; AMD and Intel are unmeasured for
-  both parity and throughput.
+- **The staged pipelines are now the faster place to run, on a large enough
+  canvas.** Two changes did it. Task 11.13 tranche 1 gave a renderer and every
+  session derived from it one shared device engine — runtime, context, queue,
+  compiled program, reference buffer and reduction workgroup size — so a stage
+  no longer calls `gpu.InitOpenCL` and builds the program again; that moved
+  sequential and batch 83.8x and 85.9x, from a separated 26x and 84x loss to
+  indistinguishable from the CPU. Tranche 2 then gave staged sessions an
+  accumulated canvas, so a stage composites its new circles onto the retained
+  canvas instead of replaying every circle behind it. One such evaluation is
+  flat in retained depth — 70-74 µs at 512² across a 64-fold depth change —
+  which is 2.5-4.8x faster than the CPU's accumulated canvas, separated at every
+  measured depth, and up to 22x faster than the replay it replaced. At 128²
+  nothing separates: the canvas is small enough that the device is bounded by
+  launch latency. Whole-pipeline benchmarks still cannot see any of this,
+  because they fix K at 12 and run eight evaluations per stage where a real
+  stage runs hundreds. Measured on one NVIDIA T550; AMD and Intel are unmeasured
+  for both parity and throughput.
 
 [`docs/gpu-backends.md`](docs/gpu-backends.md) carries setup, example commands,
 the when-to-use-which table, the macOS decision, and the device quirks that make

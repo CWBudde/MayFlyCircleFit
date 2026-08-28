@@ -666,3 +666,187 @@ CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
   go test -tags gpu -run '^$' -bench '^BenchmarkOptimizeStagedGrowth$' \
   -benchmem -benchtime=1x -count=1 ./internal/fit/renderer
 ```
+
+## Task 11.13 tranche 2 — the accumulated canvas, built and measured
+
+Tranche 2 is implemented: the render kernel takes a packed `uchar4` base canvas
+and a uniform `hasBase` flag, `NewSessionWithCanvas` uploads the retained canvas
+once per session, and the OpenCL adapter now satisfies `accumulatedSessionFactory`.
+A sequential or batch stage composites its new circles onto the canvas the
+retained ones produced instead of replaying them on every evaluation.
+
+The profile above projected "roughly 65 µs at 512²" for such a session. The
+measurement is 70–74 µs, and it is flat in depth.
+
+### Hardware and conditions
+
+NVIDIA T550 Laptop GPU, driver 580.178.04, 16 compute units, reduction
+workgroup size 256. 12th Gen Intel Core i7-1255U. Linux, `powersave`.
+`/etc/OpenCL/vendors/` holds only `nvidia.icd`, so no run here can land on a CPU
+device, and both benchmark arms fail rather than skip under
+`CIRCLEFIT_REQUIRE_OPENCL=1`.
+
+**The host was busy and the run waited for it.** An unrelated workload held the
+load average above 16 for the first attempt, which reported `cpu_accumulated` at
+128²/D=32 as 1266 µs against the 60.5 µs the profile above recorded — it was
+measuring the other job. That attempt was discarded. The published run blocked
+until the one-minute load average fell below 3 and then took five separate
+passes at `-count=1`; the passes are timestamped in order with the load average
+each started at (2.4–2.9, which is the benchmark itself). Residual load from the
+first minutes still shows in the upper ends of the observed ranges, which makes
+the disjointness test *harder* to pass, not easier — so every separation below
+is conservative.
+
+### A. One evaluation at campaign depth, four arms
+
+`BenchmarkStagedEvaluationAtDepth`, five separate passes, `-benchtime=300ms
+-count=1`. A stage appends one circle to D retained ones. The arms separate
+backend from technique in both directions: the two accumulated arms are a
+backend comparison, and the two OpenCL arms are a technique comparison. Medians
+in microseconds, observed range in brackets.
+
+| Size | D | cpu_accumulated | cpu_replay | opencl_replay | **opencl_accumulated** |
+|-----:|--:|----------------:|-----------:|--------------:|-----------------------:|
+| 128² | 8 | 30.4 [25–34] | 79.5 [79–89] | 28.1 [26–36] | **26.1 [25–43]** |
+| 128² | 32 | 43.2 [40–183] | 151.6 [146–742] | 32.6 [28–128] | **25.9 [25–102]** |
+| 128² | 128 | 33.4 [31–166] | 537.9 [520–1886] | 66.1 [61–298] | **25.4 [25–138]** |
+| 128² | 512 | 27.7 [25–157] | 1521.8 [1422–5943] | 205.4 [193–689] | **26.8 [27–108]** |
+| 512² | 8 | 175.8 [162–1068] | 817.1 [771–3067] | 91.2 [85–150] | **70.2 [66–130]** |
+| 512² | 32 | 345.2 [323–1605] | 1357.7 [1315–4331] | 151.6 [151–233] | **71.9 [69–128]** |
+| 512² | 128 | 194.0 [172–902] | 3079.6 [2482–10143] | 438.3 [432–724] | **73.6 [70–128]** |
+| 512² | 512 | 180.5 [156–818] | 9686.8 [9450–36417] | 1596.5 [1549–1926] | **72.1 [70–130]** |
+
+Allocations are unchanged from the replay arm: 47 B/op and 6 allocs/op for both
+OpenCL arms at every cell, against 817–825 B/op and 11 allocs/op for both CPU
+arms. The base canvas is uploaded once at session construction and never
+touched again, so it costs nothing per evaluation.
+
+**The three control arms reproduce the profile**, which is what makes the fourth
+believable: `cpu_accumulated` at 512²/D=512 measured 218.6 µs there and 180.5 µs
+here, `opencl_replay` 1764.6 µs and 1596.5 µs, and both replay arms still grow
+roughly linearly in D while `cpu_accumulated` stays flat.
+
+**`opencl_accumulated` is flat in D too, which is the whole point.** 25.4–26.8 µs
+at 128² and 70.2–73.6 µs at 512², across a 64-fold change in retained depth. The
+quadratic term is gone.
+
+Separation, by disjoint observed ranges:
+
+| Size | D | vs `opencl_replay` | vs `cpu_accumulated` |
+|-----:|--:|--------------------|----------------------|
+| 128² | 8 | 1.08x — | 1.16x — |
+| 128² | 32 | 1.26x — | 1.67x — |
+| 128² | 128 | 2.61x — | 1.31x — |
+| 128² | 512 | **7.67x separated** | 1.03x — |
+| 512² | 8 | 1.30x — | **2.50x separated** |
+| 512² | 32 | **2.11x separated** | **4.80x separated** |
+| 512² | 128 | **5.96x separated** | **2.64x separated** |
+| 512² | 512 | **22.14x separated** | **2.50x separated** |
+
+Two readings, and they are different claims:
+
+- **Against its own replay**, the accumulated session wins by 22x at 512²/D=512
+  and the margin grows with depth exactly as a removed linear term should. Four
+  cells separate; the shallow ones do not, because at D=8 there is barely any
+  replay to remove.
+- **Against the CPU's accumulated canvas** — the arm that was 8.1x ahead in the
+  profile — the GPU is now 2.5–4.8x faster at 512², separated at every depth
+  including D=8. At 128² nothing separates: that canvas is small enough that
+  both accumulated arms sit at 25–43 µs and the GPU is bounded by launch
+  latency rather than by work.
+
+So this is the first staged result on this host where the GPU is not merely
+usable but measurably the faster place to run, and the qualification is a canvas
+size rather than a circle count.
+
+### B. The white path did not pay for it
+
+The kernel gained two arguments for every renderer, including the ones that
+start from white. The design intends that to cost nothing: `hasBase` is uniform
+across the whole dispatch, so a renderer without a base canvas never executes
+the load. Two benchmarks were run against `e401c68` to check it, alternating
+revisions pass by pass between two worktrees.
+
+`BenchmarkRendererBackendMatrix`, OpenCL `cost` arm, eight interleaved passes
+each, `-benchtime=500ms -count=1`. This is the sharper of the two instruments,
+because it measures one evaluation rather than a whole pipeline. Medians in
+microseconds:
+
+| Size | K | before (`e401c68`) | after | ratio |
+|-----:|--:|-------------------:|------:|------:|
+| 256² | 10 | 41.6 [35.4–142.2] | 40.8 [35.2–136.3] | 0.98x |
+| 256² | 100 | 142.0 [123.1–295.9] | 126.8 [124.6–471.0] | 0.89x |
+| 512² | 10 | 119.6 [91.9–192.1] | 96.8 [93.5–102.1] | 0.81x |
+| 512² | 100 | 429.5 [364.6–513.8] | 385.5 [371.6–403.0] | 0.90x |
+| 1024² | 10 | 317.6 [270.0–364.7] | 282.4 [272.3–302.0] | 0.89x |
+| 1024² | 100 | 1513.4 [1371.8–1553.5] | 1379.4 [1340.5–1518.2] | 0.91x |
+
+**Not one of the sixteen cells separates**, so this does not *prove* the white
+path is unchanged. What it does say is the useful half: at the canvas sizes
+where an extra per-pixel read would show up most — 512² and 1024², which are
+also the least noisy cells — the after distribution lies at or below the before
+one at every K, 0.81–0.92x. The two cells that look like a regression, 64² at
+K=10 and K=50, are the noisiest in the table (ranges reaching 148 and 224 µs
+against medians near 28 and 38) and are first-pass load, not signal.
+
+Read together with the design — the flag is uniform, so the load is not
+executed — the fair statement is that the measurement is consistent with the
+white path costing nothing and cannot separate a change from zero. Nothing here
+supports a claim in either direction beyond that.
+
+`BenchmarkOptimizePipelineBackends`, six interleaved passes each, `-benchtime=5x`,
+decided nothing at all: every cell overlaps, joint included (2.53 ms before,
+2.86 ms after, ranges [1.65–3.28] and [1.47–4.65]). That is the dilution this
+report already documents — K fixed at 12 and eight evaluations per stage, where
+per-stage setup dominates — and it is why the depth benchmark exists.
+
+### What tranche 2 buys, and what it does not
+
+It buys the removal of a term that grew without bound. `docs/schedule-format.md`
+describes campaigns run to 1000–3000 circles with `additionalCircles: 1`, which
+is exactly the deep-prefix, one-new-circle shape Table A measures, and the shape
+where the OpenCL staged path was furthest behind. At 512² that shape is now
+2.5x faster than the CPU rather than 8.1x slower, and the margin against the old
+replay path grows with depth.
+
+It does not buy a faster pipeline on any benchmark in this repository, because
+none of them runs a stage long enough to show it. It does not buy anything at
+128². And it changes one observable: `finishStagedResult` now returns the
+retained canvas instead of opening a final replay session, so sequential creates
+four OpenCL sessions instead of five and batch eight instead of nine.
+
+### What this does not establish
+
+One device, one vendor, one driver. AMD and Intel remain unmeasured for both
+parity and throughput. The 128² cells are undecided rather than equal. The
+white-path check separates nothing, so it bounds a regression loosely rather
+than excluding one. And the whole comparison is per-evaluation: no measurement
+here says a complete campaign finishes faster, only that the evaluation it
+repeats hundreds of times per stage does.
+
+### Reproducing the tranche 2 measurement
+
+```sh
+# Correctness first, including the tolerance-zero accumulated parity test.
+CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
+  go test -tags gpu -count=1 ./internal/fit/renderer/... -run '^TestOpenCL'
+
+# A. One evaluation at campaign depth, four arms, five separate passes.
+# Wait for a quiet host first; a run under load measures the other workload.
+for rep in $(seq 1 5); do
+  CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
+    go test -tags gpu -run '^$' -bench '^BenchmarkStagedEvaluationAtDepth$' \
+    -benchmem -benchtime=300ms -count=1 ./internal/fit/renderer
+done
+
+# B. White-path regression, alternating revisions between two worktrees.
+git worktree add /tmp/before e401c68
+for rep in $(seq 1 8); do
+  for dir in /tmp/before .; do
+    ( cd "$dir" && CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
+      go test -tags gpu -run '^$' \
+      -bench '^BenchmarkRendererBackendMatrix$/.*/.*/^cost$/^opencl$' \
+      -benchmem -benchtime=500ms -count=1 ./internal/fit/renderer )
+  done
+done
+```

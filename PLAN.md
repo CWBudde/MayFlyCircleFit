@@ -465,7 +465,10 @@ CPU path, and its own CI runner, for a platform where no measurement says the GP
 would win; and the one pipeline OpenCL currently wins is joint mode, so porting
 this state to a second API buys a second copy of the same problem. The condition
 to revisit is written down: Task 11.13 has made the staged path competitive on
-hardware that already exists, *and* an Apple Silicon runner can gate parity.
+hardware that already exists, *and* an Apple Silicon runner can gate parity. The
+first half is now satisfied -- tranche 2 put a staged evaluation 2.5-4.8x ahead
+of the CPU at 512 square -- so the decision rests entirely on the runner, which
+has not moved.
 
 **OpenCL stays experimental, and the reason is now specific rather than a
 posture.** Parity and throughput are established on one vendor GPU; AMD and Intel
@@ -532,11 +535,11 @@ This paragraph previously carried the PoCL figures (3x / 190x / 120x, 14 and 5 s
   - [x] Make staged sessions allocate only their mutable kernels/buffers instead of calling `InitOpenCL` and `clBuildProgram` again
   - [x] Define safe shared-resource ownership and cleanup for normal completion, partial initialization, and CPU degradation
   - [x] Add an isolated session-creation benchmark and verify that kernel compilation occurs once per base renderer
-- [ ] Add accumulated-canvas support to the OpenCL staged pipeline
-  - [ ] Implement `newSessionWithCanvas` and `initialCanvas` so sequential and batch stages evaluate only newly added circles
-  - [ ] Accept a packed `uchar4` base-canvas buffer in the render/cost kernel instead of assuming white
-  - [ ] Upload the retained canvas at most once per stage as the first implementation
-  - [ ] Investigate a device-resident retained-canvas handoff to eliminate stage-boundary readback/upload
+- [x] Add accumulated-canvas support to the OpenCL staged pipeline
+  - [x] Implement `newSessionWithCanvas` and `initialCanvas` so sequential and batch stages evaluate only newly added circles
+  - [x] Accept a packed `uchar4` base-canvas buffer in the render/cost kernel instead of assuming white
+  - [x] Upload the retained canvas at most once per stage as the first implementation
+  - [x] Investigate a device-resident retained-canvas handoff to eliminate stage-boundary readback/upload — investigated and closed without building; see below
 - [ ] Reduce per-evaluation synchronization and memory traffic
   - [ ] Add a cost-only execution path that omits full output-buffer writes during optimizer evaluations and materializes the final/best image on demand
   - [ ] Profile a C/OpenCL-owned asynchronous parameter staging path; retain blocking writes unless measurements justify the added ownership complexity
@@ -614,12 +617,65 @@ pipelines to K=128 and still reports a flat 1.3-1.4x, because its stages run
 eight evaluations each and per-stage setup dominates them; a real stage runs
 hundreds. So tranche 1's "staged OpenCL is indistinguishable from the CPU" is a
 statement about K=12 and does not survive to campaign depths. It is not
-withdrawn -- it is bounded.
+withdrawn -- it is bounded. The same bound now applies in the other direction:
+tranche 2 made the GPU the faster staged backend at 512 square without moving
+any whole-pipeline benchmark at all.
 
 One observation from the same profile, recorded and not proposed: what remains
 in a 512 square session is a 1,050,778-byte eager `image.NewNRGBA` for
 `renderImage`, not device work, which a phase breakdown puts at about 14 us of
 the 220.6 us. A session only needs that image if something calls `Render`.
+
+**Tranche 2 is done, and it did more than remove the disadvantage.** The render
+kernel takes a packed `uchar4` base canvas and a `hasBase` flag,
+`NewSessionWithCanvas` uploads the retained canvas once per session, and the
+adapter satisfies `accumulatedSessionFactory`, so a stage composites its new
+circles onto the retained canvas instead of replaying it.
+`BenchmarkStagedEvaluationAtDepth` gained a fourth arm and the result is the one
+the profile projected: `opencl_accumulated` is flat in retained depth at
+70.2-73.6 us at 512 square and 25.4-26.8 us at 128 square, across a 64-fold
+change in depth. The profile projected "roughly 65 us"; it measured 70-74.
+Against the replay it replaces that is 22.1x at 512 square, D=512, and the
+margin grows with depth as a removed linear term should. Against the CPU's
+accumulated canvas -- the arm that was 8.1x ahead in the profile -- it is now
+2.5-4.8x *faster*, separated at all four measured depths. So this is the first
+staged result on this host where the GPU is measurably the better place to run,
+and the qualification is a canvas size rather than a circle count: at 128 square
+nothing separates, because both accumulated arms sit at 25-43 us and the device
+is bounded by launch latency. Allocations are unchanged at 47 B/op and 6
+allocs/op. The three control arms reproduced the profile, which is what makes
+the fourth believable.
+
+**Two things the tranche-2 measurement does not say.** No whole-pipeline
+benchmark moved: `BenchmarkOptimizePipelineBackends` decided nothing over six
+interleaved passes per revision, joint included, exactly as the K=12 dilution
+predicts. And the white-path regression check separates nothing either -- none
+of sixteen cells -- so it bounds a regression loosely rather than excluding one.
+What it does say is that at 512 and 1024 square, the least noisy cells and the
+ones where an extra per-pixel read would show most, the after distribution lies
+at or below the before one at every K, 0.81-0.92x. Together with the design --
+`hasBase` is uniform across the dispatch, so a white renderer never executes the
+load -- the fair claim is that the white path is consistent with costing
+nothing, not that it provably costs nothing.
+
+**The fourth sub-bullet is answered rather than built.** A device-resident
+retained-canvas handoff cannot remove the stage-boundary readback, because the
+host needs that canvas on every boundary regardless: `currentStageCanvas` feeds
+`SeedParamsFromResidual`, and `finishStagedResult` returns it as `BestImage`.
+Only the *upload* could be avoided, and that is one image copy per stage against
+the hundreds of evaluations a stage runs -- the term this tranche just made
+flat. It is closed the way pinned parameter staging and `engine.poison()` were.
+
+**Implementing the interface switched on three things beyond the two staged
+pipelines**, because it is a type assertion. `finishStagedResult` returns the
+retained canvas instead of opening a final replay session, which is observable:
+sequential now creates four OpenCL sessions rather than five, and batch eight
+rather than nine. Polishing bakes its fixed prefix once per sweep instead of
+replaying it per evaluation. And `OptimizeBatchAppendFromCanvasContext` -- the
+retained-prefix entry point a completed checkpoint uses to extend by one circle
+without redrawing thousands of immutable ones -- stops refusing this backend; it
+is the one caller that cannot fall back to replaying, because it has a canvas
+and no parameters to replay from.
 
 **Two defects surfaced that the benchmark would never have shown.** Sharing a
 queue means a session waits on a handle it does not own, so `releaseOwn` needed

@@ -175,10 +175,11 @@ the ratios are one device on one contended host.
 |---|---|---|
 | Joint mode, any canvas from 256² up | **GPU** | The objective evaluation is 6-14x faster, and separated at every measured cell from 256² upward except K=1 at 256². |
 | Joint mode at 64² | Either | The GPU leads, but by too little to separate from noise. Not worth a build-tag dependency on its own. |
-| Sequential or batch mode | **Either** | No longer disqualified. Task 11.13 tranche 1 made a session share its parent's device engine instead of rebuilding one, which moved sequential 83.8x and batch 85.9x, both separated. Against the CPU they now measure 1.12x and 1.08x with neither cell separated — indistinguishable on this host, not a win. Pick on the other rows. |
+| Sequential or batch mode, canvas 512² | **GPU** | Task 11.13 tranche 2 gave staged sessions an accumulated canvas, so a stage composites its new circles onto the retained one instead of replaying it. One such evaluation is flat in retained depth at 70-74 µs across a 64-fold depth change, 2.5-4.8x faster than the CPU's accumulated canvas and separated at every measured depth, and up to 22x faster than the replay it replaced. |
+| Sequential or batch mode at 128² | Either | Both accumulated arms sit at 25-43 µs and nothing separates: the canvas is small enough that the GPU is bounded by launch latency rather than by work. |
 | An image materialized on every evaluation, at K=1 on a large canvas | **CPU** | The readback is a fixed per-pixel cost the GPU pays regardless of circle count — 5.9 ms at 1024², more than three times a complete evaluation there — while the CPU composites only what one circle covers. This is the only regime where the CPU is separated ahead. |
 | The same, from K=50 up | **GPU** | Circle count buys the readback back: 1024² runs 0.6x, 1.1x, 2.1x, 8.3x as K goes 1, 10, 50, 100. |
-| A custom base canvas | **CPU** | OpenCL does not support one; the job is refused. |
+| A job-level custom base canvas (`canvasPath`) | **CPU** | OpenCL has no constructor for one; the job is refused. This is *not* the same thing as the accumulated staged canvas above, which is internal to a run and works on both backends. |
 | Anything whose cost you will compare against a recorded CPU figure | **CPU** | The two backends do not produce the same number. See below. |
 
 Two constraints that are not about speed:
@@ -192,9 +193,11 @@ Two constraints that are not about speed:
   device failed mid-way continues on the CPU and its best-so-far spans two
   arithmetics. The backend you asked for says nothing about what ran.
 
-In practice the honest summary today is: OpenCL is worth it for joint-mode
-evaluation on a canvas of 256² or larger. The staged modes are no longer a
-reason to avoid it, but nothing yet measures them ahead of the CPU either.
+In practice the honest summary today is: OpenCL is worth it on a canvas of 256²
+or larger, for joint mode and — since tranche 2 — for the staged modes too,
+where at 512² it is the faster backend at every retained depth measured. Below
+that the canvas is too small for the device to separate from the CPU on
+anything but joint.
 
 ## macOS has no GPU backend, by decision
 
@@ -212,16 +215,15 @@ What settles it:
   its own float32 parity budget to measure against the float64 CPU path, its own
   CI runner — for a platform where no measurement exists to say the GPU would
   win. WebGPU would additionally mean shipping Dawn or wgpu native libraries.
-- Joint mode is the one pipeline measured ahead of the CPU, on one device; the
-  staged modes are no longer behind it but are not ahead either. Porting that
-  state to a second API buys a second copy of a question this project has
-  answered for exactly one GPU.
+- Joint mode and, since tranche 2, the staged modes are measured ahead of the
+  CPU — on one device, at one canvas size. Porting that to a second API buys a
+  second copy of a question this project has answered for exactly one GPU.
 
 Revisit only when both hold: Task 11.13 has made the staged path competitive on
 hardware that already exists, and there is an Apple Silicon runner able to gate
-parity. The first is now arguably true — tranche 1 moved the staged modes from a
-separated 26-84x loss to indistinguishable from the CPU — so the decision rests
-on the second alone. That one has not moved at all: it means a CI runner this
+parity. The first is now true rather than arguable — tranche 1 removed the
+26-84x loss and tranche 2 put the staged modes ahead of the CPU at 512² — so the
+decision rests on the second alone. That one has not moved at all: it means a CI runner this
 project does not have, gating a float32 parity budget against the float64 CPU
 path, for a third renderer implementation.
 
@@ -494,12 +496,13 @@ five samples of five complete pipelines (`-benchtime=5x -count=5`):
 
 PoCL ran on the host CPU, so these numbers compare the complete backend paths
 on one machine rather than CPU rendering with a physical GPU. They show that
-the current staged OpenCL path is not suitable for PoCL: each stage constructs
-an independent runtime and program and replays retained circles, whereas the
-CPU renderer accumulates a base canvas. Sharing compiled OpenCL resources and
-adding a device-side accumulated canvas are the likely next staged-path
-optimizations, but vendor-GPU measurements are still required before making
-hardware performance claims.
+the staged OpenCL path *as it stood then* was not suitable for PoCL: each stage
+constructed an independent runtime and program and replayed retained circles,
+whereas the CPU renderer accumulated a base canvas. Both of those are now fixed
+-- Task 11.13 tranche 1 shares the engine and tranche 2 accumulates the canvas
+-- so this row describes a code path that no longer exists as well as a device
+that is not a GPU. It is kept as a dated record and must not be re-measured
+against.
 
 Reproduce the focused correctness and transfer-sensitive benchmarks with:
 
