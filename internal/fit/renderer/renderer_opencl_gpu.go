@@ -33,8 +33,16 @@ func (a openCLAdapter) newSession(circleCount int) (Renderer, func(), error) {
 
 // NewOpenCLRenderer creates an OpenCL GPU-based renderer
 func NewOpenCLRenderer(reference *image.NRGBA, k int) (Renderer, func(), error) {
-	newFallback := func(ref *image.NRGBA, circles int) opencl.Fallback {
-		return NewCPURenderer(ref, circles)
+	newFallback := func(ref, canvas *image.NRGBA, circles int) opencl.Fallback {
+		// A nil canvas means white. An accumulated staged session passes the
+		// retained canvas, and the fallback has to start from it: degradation is
+		// silent, so a white fallback there would answer with costs for a
+		// different image and nothing would say so.
+		if canvas == nil {
+			return NewCPURenderer(ref, circles)
+		}
+
+		return NewCPURendererWithCanvas(ref, canvas, circles)
 	}
 
 	r, cleanup, err := opencl.New(reference, k, newFallback)

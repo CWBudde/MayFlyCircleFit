@@ -205,7 +205,7 @@ type stubFallback struct {
 	reference *image.NRGBA
 }
 
-func newStubFallback(reference *image.NRGBA, _ int) Fallback {
+func newStubFallback(reference, _ *image.NRGBA, _ int) Fallback {
 	return stubFallback{reference: reference}
 }
 

@@ -69,10 +69,16 @@ type Fallback interface {
 	Cost(params []float64) float64
 }
 
-// NewFallback builds a fallback renderer for a given reference and circle
-// count. Sessions call it again so each one gets a fallback sized to its own
-// circle count, matching the pre-split behavior.
-type NewFallback func(reference *image.NRGBA, circles int) Fallback
+// NewFallback builds a fallback renderer for a given reference, base canvas and
+// circle count. Sessions call it again so each one gets a fallback sized to its
+// own circle count, matching the pre-split behavior.
+//
+// A nil canvas means the renderer starts from white. The parameter is not
+// optional decoration: Cost and Render have no error return, so a device lost
+// inside an accumulated staged session degrades silently, and a fallback that
+// started from white instead of the retained canvas would publish costs for a
+// completely different image.
+type NewFallback func(reference, canvas *image.NRGBA, circles int) Fallback
 
 const openclKernelSource = `
 __kernel void render_cost(
@@ -313,7 +319,7 @@ func newRenderer(
 	// one leaves exactly the Renderer holding it.
 	defer eng.release()
 
-	return newRendererOnEngine(eng, reference, circleCount, newFallback, degraded)
+	return newRendererOnEngine(eng, reference, nil, circleCount, newFallback, degraded)
 }
 
 // newRendererOnEngine builds a renderer over an engine that already exists and
@@ -323,12 +329,13 @@ func newRenderer(
 func newRendererOnEngine(
 	eng *engine,
 	reference *image.NRGBA,
+	baseCanvas *image.NRGBA,
 	circleCount int,
 	newFallback NewFallback,
 	degraded *atomic.Bool,
 ) (*Renderer, func(), error) {
 	if degraded.Load() {
-		return newDegradedRenderer(reference, circleCount, newFallback, degraded)
+		return newDegradedRenderer(reference, baseCanvas, circleCount, newFallback, degraded)
 	}
 
 	eng.retain()
@@ -340,9 +347,10 @@ func newRendererOnEngine(
 		queue:         eng.queue,
 		device:        eng.device,
 		localSize:     eng.localSize,
-		fallback:      newFallback(reference, circleCount),
+		fallback:      newFallback(reference, baseCanvas, circleCount),
 		newFallback:   newFallback,
 		reference:     reference,
+		baseCanvas:    baseCanvas,
 		bounds:        fit.NewBounds(circleCount, reference.Bounds().Dx(), reference.Bounds().Dy()),
 		width:         reference.Bounds().Dx(),
 		height:        reference.Bounds().Dy(),
@@ -587,7 +595,7 @@ func (r *Renderer) NewSession(circleCount int) (*Renderer, func(), error) {
 		return nil, noopCleanup, fmt.Errorf("circle count cannot be negative")
 	}
 
-	return newRendererOnEngine(r.engine, r.reference, circleCount, r.newFallback, r.degraded)
+	return newRendererOnEngine(r.engine, r.reference, nil, circleCount, r.newFallback, r.degraded)
 }
 
 func (r *Renderer) ensure(params []float64) error {
@@ -896,15 +904,16 @@ func (r *Renderer) releaseOwn() {
 //
 // It holds no engine reference, because it uses nothing the engine owns.
 func newDegradedRenderer(
-	reference *image.NRGBA, circleCount int, newFallback NewFallback, degraded *atomic.Bool,
+	reference, baseCanvas *image.NRGBA, circleCount int, newFallback NewFallback, degraded *atomic.Bool,
 ) (*Renderer, func(), error) {
 	width := reference.Bounds().Dx()
 	height := reference.Bounds().Dy()
 
 	r := &Renderer{
-		fallback:      newFallback(reference, circleCount),
+		fallback:      newFallback(reference, baseCanvas, circleCount),
 		newFallback:   newFallback,
 		reference:     reference,
+		baseCanvas:    baseCanvas,
 		bounds:        fit.NewBounds(circleCount, width, height),
 		width:         width,
 		height:        height,
