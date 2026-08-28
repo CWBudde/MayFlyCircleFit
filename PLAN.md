@@ -441,13 +441,61 @@ run rather than one per stage. The `engine.poison()` that tranche was going to
 need is no longer required for this.
 
 ### Task 11.12: Documentation and Examples
-- [ ] Document the macOS Metal/WebGPU gap and driver quirks found during vendor-GPU validation.
-- [ ] Update CLAUDE.md with GPU architecture
-- [ ] Document GPU requirements and setup
-- [ ] Add example commands using GPU backend
-- [ ] Document performance comparisons
-- [ ] Add troubleshooting section for GPU issues
-- [ ] Document when to use GPU vs CPU
+- [x] Document the macOS Metal/WebGPU gap and driver quirks found during vendor-GPU validation.
+- [x] Update CLAUDE.md with GPU architecture
+- [x] Document GPU requirements and setup
+- [x] Add example commands using GPU backend
+- [x] Document performance comparisons
+- [x] Add troubleshooting section for GPU issues
+- [x] Document when to use GPU vs CPU
+
+Two of these bullets were decisions rather than write-ups, and they are the part
+worth recording.
+
+**macOS is now a decision, not a gap.** `gpu-backends.md` had framed the missing
+macOS path as pending a Metal or WebGPU backend, and its recommendation section
+still asked for an OpenGL fragment-shader fallback that was never built. Both are
+now recorded as closed: **there is no GPU backend on macOS and none is planned.**
+Apple deprecated OpenCL and Apple Silicon ships no implementation without a
+third-party ICD, so there is nothing to target; a Metal backend would be a third
+renderer with its own kernels, its own float32 parity budget against the float64
+CPU path, and its own CI runner, for a platform where no measurement says the GPU
+would win; and the one pipeline OpenCL currently wins is joint mode, so porting
+this state to a second API buys a second copy of the same problem. The condition
+to revisit is written down: Task 11.13 has made the staged path competitive on
+hardware that already exists, *and* an Apple Silicon runner can gate parity.
+
+**OpenCL stays experimental, and the reason is now specific rather than a
+posture.** Parity and throughput are established on one vendor GPU; AMD and Intel
+are unmeasured for both; there is no required real-device CI runner, because the
+GPU gate runs PoCL on a CPU; and the staged pipelines are 26x and 84x slower than
+the renderer they are meant to accelerate. `support-matrix.md` now says that in
+one place rather than leaving "experimental" to be inferred.
+
+The rest is documentation of what 11.9-11.11 established. `gpu-backends.md`
+gained the operational half it never had -- requirements split into the three
+things that fail differently (the build tag, the headers and loader, the device),
+per-platform setup, worked commands for the CLI, `serve`, the API and a
+benchmark, and a when-to-use-which table driven by the measured report. Its
+design sections are now explicitly the selection record rather than the reading
+order. `AGENTS.md` gained a GPU architecture section stating the four things that
+change what a proposal should say and are invisible from the package list; both
+it and `architecture.md` had claims that vendor-GPU characterization was still
+open, which stopped being true with Task 11.9. `troubleshooting.md` gained the
+build-failure case and the "it is slower than the CPU" case, which is usually not
+a fault but a staged-mode run. `benchmarks.md` says it is the CPU suite and where
+the GPU benchmarks are.
+
+Two rules are now stated wherever a reader could form a wrong comparison, because
+each has already been got wrong once: **a GPU cost is not a CPU cost** (float32
+against float64, a budget rather than byte-equality, and the bound grows with
+canvas size), and **the requested backend is not the record** -- `effectiveBackend`
+and `backendDegraded` are.
+
+Deliberately not done: no per-vendor setup instructions beyond naming the ICD
+packages, because only two combinations have actually been run here (Ubuntu CI on
+PoCL, and Linux on an NVIDIA T550) and anything else would be documentation of
+something untried.
 
 ### Task 11.13: Optimize OpenCL/PoCL Pipeline Performance
 

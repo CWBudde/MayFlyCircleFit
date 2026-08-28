@@ -184,6 +184,25 @@ Checkpoint and job collection endpoints are metadata projections, so opening a
 dashboard does not deserialize or clone historical parameter vectors and trace
 histories.
 
+### A GPU build will not compile
+
+`go build -tags gpu` failing before any test runs is a toolchain problem, not a
+device one. The tag turns on cgo, so three things have to be present that an
+ordinary CPU build never needs: `CGO_ENABLED=1`, a working C compiler, and the
+OpenCL headers plus an ICD loader (`ocl-icd-opencl-dev` on Debian and Ubuntu;
+the vendor SDK on Windows, where cgo also needs mingw-w64). A missing
+`CL/cl.h` is the headers; a link error naming `clGetPlatformIDs` is the loader.
+
+No ICD is needed to *build* — that is a run-time dependency, and its absence
+produces `renderer backend unavailable` below rather than a compile error. Check
+what the machine actually has with `clinfo` before changing anything else;
+`clinfo` reporting no platform is the same failure the renderer will report, and
+it says so faster. [`gpu-backends.md`](gpu-backends.md) has the per-platform
+list.
+
+macOS has no GPU backend at all, by decision rather than by omission, so a
+GPU-tagged build is not something to get working there.
+
 ### GPU unavailable
 
 A backend that cannot start reports `renderer backend unavailable` with the
@@ -238,6 +257,33 @@ Degradation is permanent and shared by a renderer and every session derived
 from it, so a staged run reports it even though each stage evaluates through its
 own session, and a lost device costs one timeout for the run rather than one per
 stage.
+
+### An OpenCL run is slower than the CPU
+
+Usually not a fault. On measured hardware only joint mode is faster on the GPU;
+sequential and batch are 26x and 84x *slower*, because every stage builds its
+own OpenCL context, queue and compiled program, and that setup dominates the
+stage. Use `--mode joint` on the GPU and the CPU backend for the staged modes
+until device resources are shared. A second, narrower case: materializing an
+image on every evaluation at a single circle on a large canvas, where the
+readback is a fixed per-pixel cost the GPU pays and the CPU does not.
+
+Rule out the two ways a run is not on the device at all before concluding
+anything about speed. `backendDegraded` on the job means it fell back to the
+CPU mid-run. And `InitOpenCL` accepts a CPU OpenCL device when that is all the
+platform offers — a PoCL-only machine runs everything "on OpenCL" while
+executing on the host CPU — so confirm the device with
+
+```sh
+CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
+    go test -tags gpu -count=1 ./internal/fit/renderer/... \
+    -run '^TestOpenCLDeviceReportsAPreparedDevice' -v
+```
+
+which fails unless the selected device is a GPU and logs the platform, device,
+driver version and compute-unit count either way. See
+[`gpu-performance-report.md`](gpu-performance-report.md) for the measurements
+and [`gpu-backends.md`](gpu-backends.md) for which workload belongs where.
 
 ### Optimizer failures
 

@@ -155,6 +155,19 @@ OpenCL is an experimental, opt-in renderer for all optimization modes:
 - expect device/driver-specific behavior;
 - validate CPU/OpenCL parity on the actual target device.
 
+[`gpu-backends.md`](gpu-backends.md) carries the per-platform setup, worked
+example commands, and the table of which workloads belong on which backend.
+macOS has no GPU backend and none is planned; that is a decision, recorded
+there, not a gap awaiting a Metal or WebGPU port.
+
+**It stays experimental, and the reason is specific.** Parity and throughput are
+established on one vendor GPU (NVIDIA T550, driver 580.178.04, OpenCL 3.0 CUDA);
+AMD and Intel are unmeasured for both; there is no required real-device CI
+runner; and the staged pipelines measure 26x (sequential) and 84x (batch) slower
+than the CPU renderer, because every stage rebuilds its own context, queue and
+compiled program. Joint mode is the one pipeline that wins, at 0.8x the CPU's
+time. See [`gpu-performance-report.md`](gpu-performance-report.md).
+
 The ordinary and cross-build CI jobs intentionally exclude OpenCL. A separate
 Ubuntu job installs the OpenCL headers and PoCL CPU runtime, verifies platform
 discovery, compiles all GPU-tagged packages, and gates focused OpenCL runtime

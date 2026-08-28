@@ -1,5 +1,253 @@
 # GPU Backend Design and Status
 
+## Status, and where to start
+
+OpenCL is **experimental and opt-in**, available only in a `-tags gpu` build,
+and validated on exactly one vendor GPU. Read
+[`gpu-performance-report.md`](gpu-performance-report.md) for what it is worth on
+that device and [`renderer-correctness.md`](renderer-correctness.md) for the
+parity contract it does *not* hold.
+
+| You came here to | Read |
+|---|---|
+| Build and run it | [Requirements and setup](#requirements-and-setup), [Example commands](#example-commands) |
+| Decide whether to use it | [When to use the GPU](#when-to-use-the-gpu) |
+| Understand a bad number | [`gpu-performance-report.md`](gpu-performance-report.md), [Device and driver quirks](#device-and-driver-quirks-found-during-validation) |
+| Fix a failing run | [`troubleshooting.md`](troubleshooting.md#gpu-unavailable) |
+| Know why macOS has no GPU path | [macOS has no GPU backend, by decision](#macos-has-no-gpu-backend-by-decision) |
+| Know why it is still experimental | [Why this is still experimental](#why-this-is-still-experimental) |
+
+The design sections from [Baseline Constraints](#baseline-constraints) onward are
+the selection record — why OpenCL and not OpenGL, Vulkan, or WebGPU — plus the
+memory layout and the validation method. They are still accurate; they are not
+what you need to run a job.
+
+## Requirements and setup
+
+Three separate things have to be present, and they fail differently:
+
+| | Needed for | Missing means |
+|---|---|---|
+| The `gpu` build tag and `CGO_ENABLED=1` | Compiling the OpenCL renderer into the binary | The binary has no OpenCL backend at all. It does not advertise `opencl`, refuses `serve --backend opencl` at startup, and rejects a job naming it at submit. |
+| OpenCL headers and an ICD loader | Building | `go build -tags gpu` fails in cgo. |
+| A vendor ICD and a working device | Running | `renderer backend unavailable`, with the runtime's reason appended. |
+
+Build:
+
+```sh
+CGO_ENABLED=1 go build -tags gpu -o circlefit .
+```
+
+The published portable builds are CGO-disabled and therefore have no GPU
+backend; a GPU binary has to be built on, and for, the target platform.
+
+**Linux.** Install the loader and headers, then whichever ICD matches the
+device. On Debian and Ubuntu the loader/headers are `ocl-icd-opencl-dev`; the
+ICD is the vendor's (`nvidia-driver-*` ships the NVIDIA ICD, `intel-opencl-icd`
+is Intel's NEO, ROCm or `amdgpu-pro` is AMD's), or `pocl-opencl-icd` for the
+PoCL CPU implementation. Verify with `clinfo` before building anything —
+`clinfo` listing no platform is the same failure the renderer will report, and
+it is faster to read.
+
+**Windows.** The vendor driver installs the ICD; headers come from the vendor
+SDK. cgo needs a working C toolchain (mingw-w64) that the ordinary CPU build
+does not.
+
+**macOS.** Not supported — see
+[the decision below](#macos-has-no-gpu-backend-by-decision). Use the CPU
+renderer.
+
+Exactly two combinations have actually been run in this repository, and nothing
+else should be described as working:
+
+- **Ubuntu CI**, `ocl-icd-opencl-dev` plus `pocl-opencl-icd`, executing on a CPU
+  device. This is correctness and lifecycle coverage; PoCL is not a GPU.
+- **Linux with an NVIDIA T550**, driver 580.178.04, platform NVIDIA CUDA,
+  OpenCL 3.0. This is the only device any performance or parity figure in these
+  documents describes.
+
+AMD and Intel devices are untried here for both parity and throughput.
+
+### Confirming you are actually on a GPU
+
+`InitOpenCL` prefers a GPU device but falls back to a CPU device when that is
+all the platform offers. That is deliberate — it is what lets CI exercise the
+path on PoCL — and it is the single easiest way to publish a CPU measurement
+under a GPU label. Two environment switches separate the cases, and they are
+independent:
+
+| Switch | Means |
+|---|---|
+| `CIRCLEFIT_REQUIRE_OPENCL=1` | OpenCL must work here; fail rather than skip. What `ci-gpu-compile.yml` sets while running on PoCL on purpose. |
+| `CIRCLEFIT_REQUIRE_GPU_DEVICE=1` | The selected device must additionally be of type GPU. |
+
+Set both whenever a run is meant to be GPU validation:
+
+```sh
+CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
+    go test -tags gpu -count=1 ./internal/fit/renderer/... -run '^TestOpenCL'
+```
+
+`TestOpenCLDeviceReportsAPreparedDevice` logs the platform, device, driver
+version and compute-unit count either way, so its output is what to paste into a
+measurement record.
+
+## Example commands
+
+A GPU-tagged binary, joint mode — the pipeline the GPU actually wins:
+
+```sh
+./circlefit run --ref assets/test.png --out out.png \
+  --mode joint --backend opencl --circles 50 --iters 200 --seed 42
+```
+
+The staged modes work and hold the same parity budget, but they are much slower
+than the CPU on real hardware; see [When to use the GPU](#when-to-use-the-gpu).
+
+Run it, but do not fail if the device is missing:
+
+```sh
+./circlefit run --ref assets/test.png --backend opencl --backend-fallback cpu ...
+```
+
+`--backend-fallback` accepts only `cpu` and is unset by default, so an
+unavailable backend fails the run unless you say otherwise. When it fires, the
+job records `effectiveBackend: cpu` and a warning names the reason — the
+substitution is in the record, not only in the log.
+
+Serve with OpenCL as the default backend for jobs that name none:
+
+```sh
+./circlefit serve --backend opencl --addr localhost:8080
+```
+
+A build without the tag refuses this at startup rather than failing every job
+later. Ask a running server what it can actually do:
+
+```sh
+curl -s localhost:8080/api/v1/system | jq .supportedBackends
+```
+
+A portable build answers `["cpu"]`; a GPU build answers `["cpu","opencl"]`.
+Submit a job against it:
+
+```sh
+curl -s -X POST localhost:8080/api/v1/jobs -H 'Content-Type: application/json' \
+  --data '{"refPath":"assets/test.png","mode":"joint","backend":"opencl",
+           "backendFallback":"cpu","circles":50,"iters":200,"seed":42}'
+```
+
+Then read `effectiveBackend` and `backendDegraded` back off the job — not the
+`backend` you asked for — before comparing its cost with anything.
+
+Measure the device on your own hardware, as separate passes rather than
+`-count=N` (see [the quirks below](#device-and-driver-quirks-found-during-validation)):
+
+```sh
+for i in $(seq 8); do
+  CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
+    go test -tags gpu -run '^$' -bench '^BenchmarkRendererBackendMatrix$' \
+    -benchmem -benchtime=500ms -count=1 ./internal/fit/renderer
+done
+```
+
+## When to use the GPU
+
+Measured on an NVIDIA T550; see
+[`gpu-performance-report.md`](gpu-performance-report.md) for the tables, the
+separation criterion, and the conditions. The shapes below are what generalizes;
+the ratios are one device on one contended host.
+
+| Workload | Use | Why |
+|---|---|---|
+| Joint mode, any canvas from 256² up | **GPU** | The objective evaluation is 6-14x faster, and separated at every measured cell from 256² upward except K=1 at 256². Joint creates one session, so the setup cost is paid once. |
+| Joint mode at 64² | Either | The GPU leads, but by too little to separate from noise. Not worth a build-tag dependency on its own. |
+| Sequential or batch mode | **CPU** | 26x and 84x slower respectively on the T550. Each stage builds its own context, queue and compiled program, and that dominates everything else the stage does. Task 11.13 tranche 1 is the fix; until it lands this is not a close call. |
+| An image materialized on every evaluation, at K=1 on a large canvas | **CPU** | The readback is a fixed per-pixel cost the GPU pays regardless of circle count — 5.9 ms at 1024², more than three times a complete evaluation there — while the CPU composites only what one circle covers. This is the only regime where the CPU is separated ahead. |
+| The same, from K=50 up | **GPU** | Circle count buys the readback back: 1024² runs 0.6x, 1.1x, 2.1x, 8.3x as K goes 1, 10, 50, 100. |
+| A custom base canvas | **CPU** | OpenCL does not support one; the job is refused. |
+| Anything whose cost you will compare against a recorded CPU figure | **CPU** | The two backends do not produce the same number. See below. |
+
+Two constraints that are not about speed:
+
+- **A GPU cost is not a CPU cost.** The device computes in float32 end to end
+  against a float64 CPU path, so parity is a budget — ±2 per channel and 1%
+  relative cost — and the cost bound grows with canvas size because the SSD
+  accumulates in float32. Within one run the numbers are consistent; across
+  backends they are not a baseline for each other.
+- **Read `effectiveBackend` and `backendDegraded`, not the label.** A run whose
+  device failed mid-way continues on the CPU and its best-so-far spans two
+  arithmetics. The backend you asked for says nothing about what ran.
+
+In practice the honest summary today is: OpenCL is worth it for joint-mode
+evaluation on a canvas of 256² or larger, and for nothing else yet.
+
+## macOS has no GPU backend, by decision
+
+Earlier revisions of this document framed macOS as a gap to be closed by a Metal
+or WebGPU backend. It is now a decision: **CircleFit has no GPU backend on
+macOS, and none is planned.** The CPU renderer is the supported path there, and
+[`support-matrix.md`](support-matrix.md) lists macOS OpenCL as Unsupported
+rather than Experimental.
+
+What settles it:
+
+- Apple deprecated OpenCL, and Apple Silicon ships no OpenCL implementation at
+  all without a third-party ICD. There is nothing to target.
+- A Metal backend would be a third renderer implementation — its own kernels,
+  its own float32 parity budget to measure against the float64 CPU path, its own
+  CI runner — for a platform where no measurement exists to say the GPU would
+  win. WebGPU would additionally mean shipping Dawn or wgpu native libraries.
+- The one pipeline OpenCL currently wins is joint mode, and the staged modes are
+  26-84x slower than the CPU. Porting that state to a second API buys a second
+  copy of the same problem.
+
+Revisit only when both hold: Task 11.13 has made the staged path competitive on
+hardware that already exists, and there is an Apple Silicon runner able to gate
+parity. Neither is true.
+
+## Device and driver quirks found during validation
+
+Things that cost time on the T550 and will cost it again on the next device:
+
+- **A CPU device passes every parity test.** `InitOpenCL` falls back to one, so
+  a machine with only PoCL installed validates nothing about a GPU while
+  reporting complete success. `CIRCLEFIT_REQUIRE_GPU_DEVICE=1` is the guard;
+  set it, and record the device name the test logs.
+- **A degraded renderer benchmarks as a GPU, and passes a parity test.** `Cost`
+  and `Render` have no error return, so a device error leaves the renderer
+  answering silently from its CPU fallback. A benchmark then publishes CPU
+  timings under a GPU label, and a parity assertion compares the CPU oracle
+  against the CPU fallback and passes while exercising no device at all. The
+  matrix benchmark asserts `Degraded()` is false before *and* after its measured
+  loop, and `newOpenCLTestRenderer` fails any test whose renderer ended up
+  degraded. Any GPU measurement taken without that assertion is unreliable.
+- **A laptop GPU idles down between dispatches.** The T550 sat at P8/300 MHz
+  between benchmark cells. Absolute times on such a host are depressed and are
+  not comparable with anything taken elsewhere.
+- **`-count=N` is the wrong way to sample on a machine you are also using.** Go
+  runs a cell's repetitions back to back, so one burst of background load
+  corrupts every sample of one cell and none of its neighbour. A `-count=6`
+  attempt produced 50-320% spreads and orderings that are impossible for this
+  workload — K=50 slower than K=100, K=1 slower than K=10. Eight separate
+  passes of the whole matrix removed the inversions. Use separate passes.
+- **The renderer's single-slot parameter cache will answer a benchmark.**
+  Repeated identical evaluations are served from the cached device result, which
+  measures nothing. Perturb a coordinate per iteration.
+- **A long kernel can trip the display driver watchdog** on a card that is also
+  driving a desktop, usually surfacing as `CL_OUT_OF_RESOURCES` or
+  `CL_DEVICE_NOT_AVAILABLE`. [`troubleshooting.md`](troubleshooting.md) has the
+  rest of the mid-run failure catalog.
+
+## Why this is still experimental
+
+Parity and throughput are established on **one** vendor GPU. AMD and Intel are
+unmeasured for both, there is no required real-device CI runner — the GPU gate
+runs PoCL on a CPU — and the staged pipelines are 26-84x slower than the CPU
+renderer they are supposed to accelerate. Any one of those would be enough on
+its own. OpenCL stays experimental until Task 11.13 makes the staged path
+usable and a second vendor has been measured.
+
 ## Baseline Constraints
 - The renderer contract lives in `internal/fit/renderer/renderer.go` and expects `Render`, `Cost`, and `Reference`.
 - Current CPU path composites circles in Go and computes SSD via SIMD kernels; GPU path must match float32/64 semantics within tolerance.
@@ -46,9 +294,9 @@ Start with **OpenCL** as the primary GPU backend:
 - Compute-centric API matches our need to combine rendering and SSD reduction without extra passes.
 - Headless execution is straightforward and avoids OpenGL context quirks in CLI mode.
 - Existing Go binding is ergonomic enough for kernel compilation, buffer management, and queue submission.
-- Works on NVIDIA, AMD, and Intel GPUs out of the box; document macOS Apple Silicon fallback (rely on CPU renderer until Metal/WebGPU option is ready).
+- Works on NVIDIA, AMD, and Intel GPUs out of the box; macOS falls back to the CPU renderer. That fallback was written here as a temporary state pending Metal or WebGPU; it is now the decision, and [macOS has no GPU backend, by decision](#macos-has-no-gpu-backend-by-decision) records why.
 
-Parallel to the OpenCL prototype, scope an **OpenGL fragment-shader fallback** for macOS or integrated GPUs where OpenCL is unavailable, reusing the same parameter packing logic.
+The OpenGL fragment-shader fallback proposed here for macOS and integrated GPUs was never built and is not planned. The reasoning is the same as for Metal: a second GPU implementation would need its own kernels, its own parity budget and its own runner, and the one OpenCL pipeline that currently beats the CPU is joint mode.
 
 ## Implementation Status
 - `internal/fit/renderer/backend.go` centralises backend selection and normalises CLI input.
@@ -57,7 +305,7 @@ Parallel to the OpenCL prototype, scope an **OpenGL fragment-shader fallback** f
 - Cost and image caching are separate. `Cost` leaves the rendered output resident; `Render` reads the full image only when requested and can reuse output from a matching cost evaluation without dispatching the kernels again.
 - The kernel quantizes composited channels to NRGBA semantics before scoring, so the reduced cost describes the image returned by `Render`. CPU/OpenCL parity tests allow a 1% cost tolerance and two channel values for float32 geometry and edge-coverage differences.
 - CLI exposes `--backend` (default `cpu`) and reports the selected backend during runs. GPU mode renders and scores joint, sequential, and batch pipelines via OpenCL when compiled with `-tags gpu`.
-- Sequential and batch optimization create independent OpenCL sessions as the active circle count grows. These modes replay retained parameters instead of accumulating a device-side base canvas; this preserves pipeline semantics but needs vendor-GPU benchmarking before performance claims.
+- Sequential and batch optimization create independent OpenCL sessions as the active circle count grows. These modes replay retained parameters instead of accumulating a device-side base canvas. That preserves pipeline semantics, and it has now been benchmarked on a vendor GPU: 26x and 84x slower than the CPU renderer, because each stage rebuilds a context, a queue and a compiled program. See [`gpu-performance-report.md`](gpu-performance-report.md); Task 11.13 tranche 1 is the fix.
 
 ## Memory Layout and Transfers
 

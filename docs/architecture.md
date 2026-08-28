@@ -118,8 +118,23 @@ private session interface that another package cannot name.
 OpenCL is experimental. It supports joint, sequential, and batch execution by
 creating same-backend sessions and replaying retained circles, but it does not
 support a custom accumulated canvas and does not advertise concurrent
-evaluation. Device-resource sharing and vendor-GPU characterization remain
-open work.
+evaluation.
+
+Vendor-GPU characterization is no longer open: the backend has been measured on
+an NVIDIA T550, where joint mode beats the CPU renderer and the two staged modes
+lose to it by 26x and 84x, because each stage rebuilds its own context, queue
+and compiled program. Device-resource sharing is the remaining work and is what
+those ratios are waiting on. The measurements are in
+[`gpu-performance-report.md`](gpu-performance-report.md), the operational
+consequences in [`gpu-backends.md`](gpu-backends.md).
+
+Two facts about this boundary belong in any data-flow reasoning. The device
+computes in float32 against a float64 CPU path, so an OpenCL cost is held to a
+measured budget rather than to byte-equality and is not a baseline for a CPU
+cost. And `Cost` and `Render` have no error return, so a device failure degrades
+the renderer to its CPU fallback for the rest of the run; the job records that as
+`backendDegraded` beside `effectiveBackend`, and those two fields — not the
+requested backend — are what a later comparison may read.
 
 ## Server lifecycle
 
