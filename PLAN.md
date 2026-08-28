@@ -348,6 +348,15 @@ That is deliberately a second switch: `CIRCLEFIT_REQUIRE_OPENCL=1` only means
 device on purpose. Overloading the one flag made that CI job fail, which is
 exactly the confusion the split now prevents.
 
+Review found the second way this suite could report success while testing
+nothing, and it is the mirror of the first. A device that fails *after*
+initialization degrades the renderer permanently and silently, so a parity
+assertion made afterwards compares the CPU oracle against the CPU fallback and
+passes. `newOpenCLTestRenderer` now fails the test at teardown if the renderer
+it handed out ended up degraded, which covers every test built through it rather
+than the ones that remembered to ask -- the same guard the matrix benchmark
+already applied around its measured loop.
+
 Validated on an NVIDIA T550 (driver 580.178.04, OpenCL 3.0 CUDA). AMD and Intel
 remain unmeasured, for parity as well as throughput.
 

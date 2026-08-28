@@ -302,7 +302,21 @@ func newOpenCLTestRenderer(t *testing.T, ref *image.NRGBA, circles int) (openCLA
 		cleanup()
 		t.Fatalf("NewOpenCLRenderer returned %T, want openCLAdapter", renderer)
 	}
-	return r, cleanup
+
+	// A device error after initialization degrades the renderer permanently and
+	// silently -- Cost and Render have no error return -- and every later answer
+	// comes from the CPU fallback. A parity assertion would then compare the CPU
+	// oracle against the CPU fallback and pass while exercising no device at
+	// all, which is the one outcome a run under CIRCLEFIT_REQUIRE_OPENCL must
+	// never produce. Checking at teardown guards every test built through this
+	// helper, rather than the ones that remembered to ask.
+	return r, func() {
+		if r.Degraded() {
+			t.Errorf("OpenCL renderer degraded to its CPU fallback: this result exercised no device")
+		}
+
+		cleanup()
+	}
 }
 
 func assertCostWithin(t *testing.T, want, got float64) {
