@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"reflect"
 	"slices"
 	"strings"
@@ -564,6 +565,67 @@ func TestCMAESSearchDiagnosticsMatchProgress(t *testing.T) {
 			update.Diagnostics.ConditionNumber < 1 {
 			t.Fatalf("diagnostic update = %+v, want positive sigma and condition >= 1", update)
 		}
+
+		if update.Diagnostics.DistributionExtent <= 0 {
+			t.Fatalf("diagnostic update = %+v, want a positive distribution extent", update)
+		}
+	}
+}
+
+// TestCMAESDistributionExtentTracksTheSamplingEllipse pins the property that
+// makes the extent worth recording alongside sigma: it is sigma scaled by the
+// distribution's largest axis, so it answers "how wide is the search" where
+// sigma alone cannot. CMA-ES identifies only sigma^2 * C and the library does
+// not renormalize C, so the two numbers are free to move in opposite
+// directions.
+func TestCMAESDistributionExtentTracksTheSamplingEllipse(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []string{"full", "separable"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+
+			var updates []opt.Progress
+
+			_, err := cmaesLifecycle(t, opt.NewCMAES(
+				12, 16, 4242,
+				opt.WithCMAESSearchDiagnostics(),
+				opt.WithCMAESCovarianceMode(mode, 0),
+			)).RunContext(context.Background(), cmaesProblem(), opt.RunOptions{
+				Observer: func(progress opt.Progress) { updates = append(updates, progress) },
+			})
+			if err != nil {
+				t.Fatalf("RunContext() error = %v", err)
+			}
+
+			if len(updates) == 0 {
+				t.Fatal("no diagnostic updates observed")
+			}
+
+			// An isotropic start has every axis at 1, so the first extent is
+			// the initial sigma itself. Anything else means max(D) was read
+			// from the wrong representation — the separable and block modes
+			// carry their axes differently from full covariance.
+			first := updates[0].Diagnostics
+			if ratio := first.DistributionExtent / first.Sigma; ratio < 0.5 || ratio > 2 {
+				t.Fatalf("first extent/sigma = %g, want the ellipse near isotropic at the start", ratio)
+			}
+
+			for _, update := range updates {
+				diagnostics := update.Diagnostics
+				if diagnostics.DistributionExtent <= 0 {
+					t.Fatalf("extent = %g, want positive", diagnostics.DistributionExtent)
+				}
+
+				// max(D) is a standard deviation, so the extent is bounded by
+				// sigma times the square root of the condition number relative
+				// to the smallest axis. The weaker invariant that always holds
+				// is that a finite sigma yields a finite extent.
+				if math.IsInf(diagnostics.DistributionExtent, 0) || math.IsNaN(diagnostics.DistributionExtent) {
+					t.Fatalf("extent = %g, want finite", diagnostics.DistributionExtent)
+				}
+			}
+		})
 	}
 }
 
