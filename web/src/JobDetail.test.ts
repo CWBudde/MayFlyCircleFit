@@ -13,10 +13,12 @@ import {
 	costImprovementRate,
 	currentCPS,
 	etaLabel,
+	clampSelection,
 	formatAxisValue,
 	formatETA,
 	formatMetricValue,
 	iterationRate,
+	metricReadout,
 	latestHistorySample,
 	metricBounds,
 	normalizeHistorySample,
@@ -243,6 +245,25 @@ describe("chart series selection", () => {
 			{ iteration: 1, value: 0 },
 			{ iteration: 2, value: 100 },
 		])).toEqual({ min: -5, max: 105 });
+	});
+
+	it("holds a selection inside the points still drawn", () => {
+		// Switching the metric or narrowing the window shortens the series
+		// under a selection made against the longer one; the stale index used
+		// to be read straight out of the array.
+		expect(clampSelection(99, 3)).toBe(2);
+		expect(clampSelection(null, 3)).toBe(2);
+		expect(clampSelection(-1, 3)).toBe(2);
+		expect(clampSelection(1, 3)).toBe(1);
+		expect(clampSelection(0, 0)).toBeNull();
+	});
+
+	it("reads a dropped selection out as the latest sample", () => {
+		const points = selectMetricPoints(history, "psnr", "all").points;
+		expect(metricReadout(points, 99, "psnr")).toBe("Latest: iteration 3 · 22.00 dB");
+		expect(metricReadout(points, null, "psnr")).toBe("Latest: iteration 3 · 22.00 dB");
+		expect(metricReadout(points, 0, "psnr")).toBe("Iteration 1 · 20.00 dB");
+		expect(metricReadout([], 0, "psnr")).toBe("No samples available");
 	});
 
 	it("labels a value by what the series means", () => {
