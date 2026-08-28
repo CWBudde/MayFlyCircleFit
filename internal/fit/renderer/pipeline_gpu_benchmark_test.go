@@ -3,7 +3,9 @@
 package renderer
 
 import (
+	"image"
 	"math"
+	"strconv"
 	"testing"
 )
 
@@ -113,5 +115,98 @@ func BenchmarkOptimizePipelineBackends(b *testing.B) {
 				})
 			}
 		})
+	}
+}
+
+// stagedGrowthCircles is the circle-count sweep. It exists because every other
+// pipeline benchmark in this package fixes K at 12, which is the one regime
+// where the backends' staged costs cannot diverge: the CPU renderer implements
+// accumulatedSessionFactory and evaluates only a stage's new circles over a
+// retained canvas, while the OpenCL renderer does not and replays every
+// retained circle on every evaluation. That makes CPU staged work grow with K
+// and OpenCL staged work grow with K squared, so the two only separate once K
+// is large enough for the quadratic term to matter. Campaigns in
+// docs/schedule-format.md run to 1000-3000 circles.
+var stagedGrowthCircles = []int{8, 32, 128}
+
+// BenchmarkOptimizeStagedGrowth measures how staged pipeline cost scales with
+// circle count on each backend. The absolute times matter less than the shape:
+// a backend that replays retained circles bends upward against one that does
+// not.
+func BenchmarkOptimizeStagedGrowth(b *testing.B) {
+	silencePipelineBenchmarkLogs(b)
+
+	for _, size := range []int{128, 256} {
+		ref := benchmarkPipelineReference(size, size)
+
+		b.Run(strconv.Itoa(size), func(b *testing.B) {
+			for _, circles := range stagedGrowthCircles {
+				b.Run("K="+strconv.Itoa(circles), func(b *testing.B) {
+					for _, mode := range []struct {
+						name string
+						run  func(Renderer, *pipelineComparisonOptimizer, int) (*OptimizationResult, error)
+					}{
+						{
+							name: "sequential",
+							run: func(r Renderer, o *pipelineComparisonOptimizer, k int) (*OptimizationResult, error) {
+								return OptimizeSequential(r, o, k, DisabledConvergenceConfig(), nil)
+							},
+						},
+						{
+							name: "batch",
+							run: func(r Renderer, o *pipelineComparisonOptimizer, k int) (*OptimizationResult, error) {
+								return OptimizeBatch(r, o, k, 8, DisabledConvergenceConfig())
+							},
+						},
+					} {
+						b.Run(mode.name, func(b *testing.B) {
+							for _, backend := range []string{"cpu", "opencl"} {
+								b.Run(backend, func(b *testing.B) {
+									benchmarkStagedGrowth(b, backend, ref, circles, mode.run)
+								})
+							}
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
+func benchmarkStagedGrowth(
+	b *testing.B,
+	backend string,
+	ref *image.NRGBA,
+	circles int,
+	run func(Renderer, *pipelineComparisonOptimizer, int) (*OptimizationResult, error),
+) {
+	b.Helper()
+
+	r, cleanup, err := NewRendererForBackend(backend, ref, circles)
+	if err != nil {
+		b.Skipf("%s backend unavailable: %v", backend, err)
+	}
+	defer cleanup()
+
+	requireBenchmarkGPUDevice(b, r)
+
+	optimizer := &pipelineComparisonOptimizer{evaluations: pipelineComparisonEvaluations}
+
+	var result *OptimizationResult
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for range b.N {
+		result, err = run(r, optimizer, circles)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.StopTimer()
+
+	if result != nil {
+		b.ReportMetric(float64(result.Evaluations), "evaluations/pipeline")
 	}
 }

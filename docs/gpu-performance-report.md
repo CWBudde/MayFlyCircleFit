@@ -333,19 +333,60 @@ over a base renderer built outside the timed loop, which is exactly what tranche
 | Cell | Before | After |
 |------|-------:|------:|
 | 64/new | 654.19 ms | 309.31 ms |
-| 64/session | 362.73 ms | **4.38 ms** |
+| 64/session | 362.73 ms | ~~4.38 ms~~ — **withdrawn, see below** |
 | 512/new | 478.00 ms | 277.38 ms |
-| 512/session | 512.44 ms | **4.04 ms** |
+| 512/session | 512.44 ms | ~~4.04 ms~~ — **withdrawn, see below** |
 
 Creating a session used to be the same order of cost as constructing a whole
-renderer. It is now under 5 ms at both canvas sizes, and the 512² session —
-whose reference image is sixty-four times the 64² one — is no more expensive
-than the small one, which is what a shared engine predicts and a per-session
-rebuild does not. The allocation profile moves with it: `session` drops from 48
-to 12 allocs/op at both sizes, and its bytes per op halve, 36032 to 18584 at
-64² and 2100421 to 1050782 at 512². The `new` arm goes from 49 to 55 allocs/op,
-and its before/after time difference is within this host's run-to-run spread; it
-is not a claim.
+renderer, and it no longer is. The allocation profile is measured correctly and
+stands: `session` drops from 48 to 12 allocs/op at both sizes, and its bytes per
+op halve, 36032 to 18584 at 64² and 2100421 to 1050782 at 512². The `new` arm
+goes from 49 to 55 allocs/op, and its before/after time difference is within
+this host's run-to-run spread; it is not a claim.
+
+#### The two `session` times above are wrong, and both were too high
+
+The `session` arm held the base renderer with `defer release()`. A deferred call
+runs before the benchmark function returns, so releasing the program, context,
+queue and runtime — tens to hundreds of milliseconds, and a cost belonging to no
+iteration — sat *inside* the measured region, where the framework divided it by
+`b.N`. At `-benchtime=20x` that one-time term was essentially the entire
+reported figure.
+
+The signature is that the arm's answer depended on `b.N` alone. Measured on the
+tranche 1 tip before the fix: 4.13 ms/op at `20x`, 699 µs at `100x`, 125 µs at
+`1000x`, 33.5 µs at `10000x` — a 123x spread over a workload that did not
+change. Total wall time stayed near 70-80 ms across the small counts, which is
+what a fixed cost divided by a varying `b.N` looks like.
+
+The arm now calls `b.StopTimer()` before releasing the base. It is stable across
+`b.N` afterwards: 34.8 µs at `20x` against 35.6 µs at `1000x`.
+
+Re-measured with the corrected benchmark, three passes per cell,
+`-benchtime=20x -count=1`, both revisions on the host in the Task 11.13 tranche
+1 conditions below. The "before" worktree is `0257b04` with the corrected
+benchmark file copied in, because the benchmark did not exist before tranche 1
+added it:
+
+| Cell | Before median [min–max] | After median [min–max] | Ratio |
+|------|-----------------------:|----------------------:|------:|
+| 64/session | 182.8 ms [177.7–187.6] | **12.1 µs** [9.0–13.6] | ~15,000x |
+| 512/session | 213.9 ms [200.8–238.6] | **220.6 µs** [183.7–233.1] | ~970x |
+
+Every "before" sample beats every "after" sample by more than three orders of
+magnitude, so both cells separate trivially. **Tranche 1's conclusion is
+unchanged and its effect is far larger than was recorded** — the withdrawn
+figures understated it by roughly two orders of magnitude, in the conservative
+direction. Nothing else in this report rests on them: sections B and C measure
+whole pipelines and are unaffected.
+
+What remains in a 512² session is not device work. A phase breakdown — kernel
+pair, the four buffers, and `clFinish` on an idle queue, each timed on its own —
+accounts for about 14 µs of the 220 µs. The rest is the eager
+`image.NewNRGBA` for `renderImage`, which is the 1,050,778 B/op the arm reports
+and which a session only needs if something calls `Render`. Allocating it lazily
+would remove most of what is left; it is not worth doing for the time alone, and
+is recorded here as an observation rather than a proposal.
 
 ### B. Pipelines, before and after
 
@@ -445,3 +486,173 @@ done
 Set `CIRCLEFIT_REQUIRE_GPU_DEVICE=1` alongside `CIRCLEFIT_REQUIRE_OPENCL=1` on
 any host that also has a CPU OpenCL runtime installed. Without it a pass can
 land on PoCL, which satisfies the first switch while measuring the CPU.
+
+## Task 11.13 tranche 2 — the profile that decides the accumulated canvas
+
+Tranche 1's write-up left the remaining tranches to be re-justified by a profile
+of where the staged time goes, rather than by the 26x/84x gap it had removed.
+This is that profile. It answers tranche 2, the accumulated canvas, and answers
+it **yes** — for a reason none of the pipeline benchmarks could see.
+
+### Hardware and conditions
+
+Same host as tranche 1: NVIDIA T550 Laptop GPU, driver 580.178.04, 16 compute
+units; `/etc/OpenCL/vendors/` holds only `nvidia.icd`. 12th Gen Intel Core
+i7-1255U, Linux 6.8.0-138-generic, Go 1.24. Every pass ran under
+`CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1`.
+
+### The asymmetry being measured
+
+`CPURenderer` implements `accumulatedSessionFactory`: a staged session it
+creates rasterizes only the stage's new circles over the canvas the previous
+stages retained, so its per-evaluation cost does not depend on how many circles
+came before. The OpenCL renderer implements only `rendererSessionFactory`, so
+`newStagedAccumulator` returns nil for it and every evaluation rebuilds the
+whole draw order from white.
+
+That makes staged CPU work grow with the circle count and staged OpenCL work
+grow with its square. The two therefore cannot separate at small K — and every
+pipeline benchmark in the package fixes K at 12.
+
+### A. Per-evaluation cost against circle count
+
+`BenchmarkRendererBackendMatrix`, `cost` arm, eight separate passes,
+`-benchtime=500ms -count=1`. Times are microseconds; ranges are over the eight
+passes.
+
+| Size | K | CPU median | OpenCL median [min–max] | Ratio |
+|-----:|--:|-----------:|------------------------:|------:|
+| 64² | 1 | 29.5 | 23.9 [23–24] | 1.24x |
+| 64² | 10 | 67.9 | 30.7 [27–34] | 2.21x |
+| 64² | 50 | 138.3 | 44.7 [44–46] | 3.09x |
+| 64² | 100 | 233.0 | 63.8 [51–77] | 3.65x |
+| 256² | 1 | 122.3 | 35.3 [31–40] | 3.47x |
+| 256² | 10 | 343.7 | 44.8 [42–47] | 7.68x |
+| 256² | 50 | 810.2 | 88.7 [86–91] | 9.14x |
+| 256² | 100 | 997.4 | 134.9 [126–144] | 7.39x |
+| 512² | 1 | 579.7 | 61.0 [58–64] | 9.50x |
+| 512² | 10 | 1106.6 | 99.2 [96–103] | 11.16x |
+| 512² | 50 | 2228.3 | 228.0 [227–229] | 9.77x |
+| 512² | 100 | 3004.7 | 383.3 [369–397] | 7.84x |
+| 1024² | 1 | 3045.7 | 161.5 [160–163] | 18.86x |
+| 1024² | 10 | 3694.9 | 273.3 [266–280] | 13.52x |
+| 1024² | 50 | 7827.5 | 776.4 [764–788] | 10.08x |
+| 1024² | 100 | 9499.8 | 1407.9 [1391–1425] | 6.75x |
+
+A least-squares fit over the four circle counts splits each OpenCL row into a
+fixed per-evaluation floor and a marginal cost per circle:
+
+| Size | Floor | Per circle | Circle work at K=100 |
+|-----:|------:|-----------:|---------------------:|
+| 64² | 25.1 µs | 0.389 µs | 38.9 µs (61% of the evaluation) |
+| 256² | 35.2 µs | 1.011 µs | 101.1 µs (74%) |
+| 512² | 63.1 µs | 3.224 µs | 322.4 µs (84%) |
+| 1024² | 147.9 µs | 12.594 µs | 1259.4 µs (90%) |
+
+The marginal term is what an accumulated canvas removes, and it is the majority
+of an evaluation everywhere except the smallest canvas at the smallest circle
+counts. This host has GPU-ahead medians in all sixteen cells, so the earlier
+statement that the `cost` arm has no crossover in the measured range still
+holds.
+
+### B. One evaluation at campaign depth — the decisive instrument
+
+`BenchmarkStagedEvaluationAtDepth`, five separate passes, `-benchtime=300ms
+-count=1`. A stage appends one circle to D retained ones. Three arms, so backend
+is separated from technique: `cpu_accumulated` is the CPU with its retained
+canvas, `cpu_replay` is the CPU paying the same replay the GPU pays, and
+`opencl_replay` is what the OpenCL renderer does today. Medians in
+microseconds.
+
+| Size | D | cpu_accumulated | cpu_replay | opencl_replay | opencl ÷ cpu_accum |
+|-----:|--:|----------------:|-----------:|--------------:|-------------------:|
+| 128² | 8 | 33.6 | 99.3 | 37.1 | 1.11x |
+| 128² | 32 | 52.4 | 163.0 | 51.4 | 0.98x |
+| 128² | 128 | 41.3 | 595.6 | 94.3 | 2.28x |
+| 128² | 512 | 30.8 | 1639.4 | 466.9 | **15.14x** |
+| 512² | 8 | 254.4 | 923.4 | 163.5 | 0.64x |
+| 512² | 32 | 452.7 | 1426.5 | 232.5 | 0.51x |
+| 512² | 128 | 227.4 | 3370.9 | 713.7 | 3.14x |
+| 512² | 512 | 244.4 | 10793.7 | 2909.8 | **11.91x** |
+
+Three things are visible at once, and they are the whole argument:
+
+- **`cpu_accumulated` is flat in D.** 30.8–52.4 µs across a 64-fold change in
+  retained depth at 128², 227.4–452.7 µs at 512². That is the property an
+  accumulated canvas has and the OpenCL renderer lacks.
+- **Both replay arms grow with D**, roughly linearly, as replaying D circles
+  must.
+- **The GPU is not the problem; the technique is.** At 512², D=512 the GPU
+  beats the CPU 3.7x on the *same* replay work (2909.8 against 10793.7 µs) and
+  still loses to the CPU's accumulated canvas by 11.9x.
+
+The two D=512 rows are separated — every `cpu_accumulated` sample beats every
+`opencl_replay` sample. The intermediate rows overlap and are not decided by
+this host; the crossover lies between D=32 and D=128 at both sizes, which is
+where the growing replay term passes the CPU's flat one.
+
+Extrapolating the fitted marginal cost, an accumulated OpenCL session would
+evaluate one circle over a retained canvas for about the floor plus one circle —
+roughly 65 µs at 512², plus one image-sized read for the base canvas — against
+the 2909.8 µs it pays at D=512 today, and against the CPU's 244.4 µs. That
+figure is a projection from Table A, not a measurement, and stays a projection
+until the implementation exists.
+
+### C. Why no existing benchmark showed this
+
+`BenchmarkOptimizeStagedGrowth` runs whole sequential and batch pipelines at
+K = 8, 32, 128 on both backends. Its CPU-to-OpenCL ratio stays near 1.3–1.4x
+and does not diverge, because a stage in these benchmarks runs eight
+evaluations, and at eight evaluations per stage the per-stage setup — session
+creation, residual seeding, canvas handling — dominates the evaluations
+entirely. A stage in a real campaign runs hundreds.
+
+That is why the benchmark is kept and why it is *not* the instrument for this
+decision: it measures a pipeline whose evaluation term has been diluted by two
+orders of magnitude relative to production. It does usefully bound the claim in
+tranche 1's write-up, which was measured at K=12 — that "staged OpenCL is
+indistinguishable from the CPU" is a statement about K=12 and does not survive
+to campaign depths.
+
+### What this decides
+
+**Tranche 2 is justified and should be built.** Not by the old 26x/84x ratio,
+which tranche 1 removed, but by a loss that grows without bound in the circle
+count: `docs/schedule-format.md` describes campaigns run to 1000–3000 circles
+with `additionalCircles: 1`, which is precisely the deepest-retained-prefix,
+one-new-circle shape that Table B measures, and the shape where the OpenCL
+staged path is furthest behind.
+
+**What this does not establish.** One device, one vendor, one driver; AMD and
+Intel are unmeasured. Table B's intermediate depths are undecided on this host.
+The projected accumulated-canvas cost is arithmetic from Table A, and the cost
+of the base-canvas upload and the extra per-pixel read the kernel would need is
+estimated, not measured. Nothing here says the accumulated canvas is free.
+
+### Reproducing the tranche 2 profile
+
+```sh
+# Correctness first: a degraded renderer would otherwise be benchmarked as a GPU.
+CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
+  go test -tags gpu -count=1 ./internal/fit/renderer/... -run '^TestOpenCL'
+
+# A. Per-evaluation cost against circle count, eight separate passes.
+for rep in $(seq 1 8); do
+  CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
+    go test -tags gpu -run '^$' \
+    -bench '^BenchmarkRendererBackendMatrix$/.*/.*/^cost$/' \
+    -benchmem -benchtime=500ms -count=1 ./internal/fit/renderer
+done
+
+# B. One evaluation at campaign depth, five separate passes.
+for rep in $(seq 1 5); do
+  CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
+    go test -tags gpu -run '^$' -bench '^BenchmarkStagedEvaluationAtDepth$' \
+    -benchmem -benchtime=300ms -count=1 ./internal/fit/renderer
+done
+
+# C. Whole staged pipelines, for the dilution argument.
+CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 \
+  go test -tags gpu -run '^$' -bench '^BenchmarkOptimizeStagedGrowth$' \
+  -benchmem -benchtime=1x -count=1 ./internal/fit/renderer
+```
