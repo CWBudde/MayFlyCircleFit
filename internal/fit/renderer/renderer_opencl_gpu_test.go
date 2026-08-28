@@ -252,6 +252,21 @@ func TestOpenCLOptimizationPipelines(t *testing.T) {
 				if session.Evaluations() == 0 {
 					t.Fatalf("OpenCL session %d performed no device evaluations", i)
 				}
+				// Every stage above ran on the base renderer's engine rather
+				// than on one of its own. TestOpenCLEngineIsSharedAcrossSessions
+				// asserts the same thing about NewSession directly; this is the
+				// end-to-end version, because it is the pipelines that create
+				// the sessions and the pipelines whose per-stage rebuild the
+				// sharing was meant to remove.
+				if !session.sharedBaseRuntime {
+					t.Fatalf("OpenCL session %d did not run on the base renderer's runtime: "+
+						"the stage brought up a device of its own", i)
+				}
+
+				if session.programBuilds != 1 {
+					t.Fatalf("OpenCL session %d saw %d program builds, want 1: the stage recompiled the kernel source",
+						i, session.programBuilds)
+				}
 			}
 		})
 	}
@@ -259,7 +274,20 @@ func TestOpenCLOptimizationPipelines(t *testing.T) {
 
 type trackingOpenCLFactory struct {
 	openCLAdapter
-	sessions []*opencl.Renderer
+	sessions []trackedOpenCLSession
+}
+
+// trackedOpenCLSession is a session plus the two engine facts that have to be
+// read while it is alive. A pipeline releases each session as its stage ends,
+// and teardown clears the borrowed runtime handle and gives the engine
+// reference back, so Runtime() and ProgramBuilds() both answer zero afterwards.
+// Degraded() and Evaluations() survive teardown and are still read from the
+// session itself.
+type trackedOpenCLSession struct {
+	*opencl.Renderer
+
+	sharedBaseRuntime bool
+	programBuilds     uint64
 }
 
 func (r *trackingOpenCLFactory) newSession(circleCount int) (Renderer, func(), error) {
@@ -267,7 +295,12 @@ func (r *trackingOpenCLFactory) newSession(circleCount int) (Renderer, func(), e
 	if err != nil {
 		return nil, cleanup, err
 	}
-	r.sessions = append(r.sessions, session)
+
+	r.sessions = append(r.sessions, trackedOpenCLSession{
+		Renderer:          session,
+		sharedBaseRuntime: session.Runtime() == r.Runtime(),
+		programBuilds:     session.ProgramBuilds(),
+	})
 	return openCLAdapter{session}, cleanup, nil
 }
 
