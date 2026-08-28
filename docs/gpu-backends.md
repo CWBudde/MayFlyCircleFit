@@ -117,6 +117,47 @@ go test -tags gpu ./internal/fit/renderer -bench '^BenchmarkRenderer'
 Performance claims require benchmarks on actual GPU hardware. PoCL executes on
 the CI runner CPU and is used for correctness and lifecycle coverage only.
 
+### Correctness against the CPU renderer
+
+`renderer_opencl_correctness_gpu_test.go` is the parity suite: a circle-count ×
+canvas-size matrix, degenerate canvases (1×1, single row, single column), a
+named catalog of edge cases — circles outside each bound, straddling each edge
+and the corner, zero and negative radius, zero opacity, a canvas-covering
+radius, concentric and coincident stacks, a subpixel centre walk — a
+compositing-order check, and a randomized deviation sweep. The CPU render is the
+golden image throughout; there is no committed PNG, because a checked-in
+baseline would only duplicate the oracle and then go stale against it. When a
+scene fails, the CPU render, the GPU render, and an amplified difference map are
+written to `$CIRCLEFIT_GPU_ARTIFACTS` (default: a `circlefit-gpu-mismatch`
+directory under the system temp directory), because a coordinate and two channel
+values do not show what a rasterizer got wrong.
+
+Two things that suite is built to prevent:
+
+- **A CPU device passing as validation.** `InitOpenCL` prefers a GPU but falls
+  back to a CPU device, so on a machine with only PoCL installed every parity
+  test passes while measuring nothing about a GPU.
+  `TestOpenCLDeviceReportsAPreparedDevice` fails under
+  `CIRCLEFIT_REQUIRE_OPENCL=1` unless the selected device is of type GPU, and
+  logs the platform, device, driver version, and compute units either way.
+- **A tolerance hiding a structural mismatch.** The suite found one: the kernel
+  implemented a different rasterization rule from the CPU renderer, wrong by up
+  to 226 of 255 on a small number of pixels and by a factor of two in cost on a
+  sparse scene. It is fixed, and the whole account is in
+  [`renderer-correctness.md`](renderer-correctness.md).
+
+What remains is arithmetic. The device is float32 end to end against a float64
+CPU path, so parity is a budget — ±2 per channel and 1% relative cost — and not
+byte-identity. Measured on an NVIDIA T550 the worst case is 1 channel and 0.021%
+of cost. The cost bound is the one that binds: it comes from accumulating the
+SSD in float32 across the canvas, so it grows with pixel count while the channel
+deviation does not. **Do not compare a GPU cost against a CPU cost as if they
+were the same number** — within a run they are consistent, but a recorded
+figure from one backend is not a baseline for the other.
+
+Validated on one vendor GPU (NVIDIA T550, driver 580.178.04, OpenCL 3.0 CUDA).
+AMD and Intel remain unmeasured for both parity and throughput.
+
 ### Local PoCL transfer baseline
 
 **Superseded for performance by

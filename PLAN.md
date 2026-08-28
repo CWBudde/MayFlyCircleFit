@@ -293,15 +293,59 @@ only pipeline that creates one session. PoCL had reported 190x and 120x; the
 ratios moved and the conclusion did not.
 
 ### Task 11.10: Test GPU Correctness and Edge Cases
-- [ ] Test GPU detection and initialization on a prepared OpenCL runner.
-- [ ] Add golden-image visual comparisons against the CPU renderer.
-- [ ] Verify pixel-exact equivalence to CPU (within float tolerance)
-- [ ] Test with various circle counts and sizes
-- [ ] Test with overlapping circles
-- [ ] Test with edge cases (circles outside bounds, zero opacity)
-- [ ] Test with different image sizes
-- [ ] Validate cost computation accuracy
-- [ ] Document any differences or limitations
+- [x] Test GPU detection and initialization on a prepared OpenCL runner.
+- [x] Add golden-image visual comparisons against the CPU renderer.
+- [x] Verify pixel-exact equivalence to CPU (within float tolerance)
+- [x] Test with various circle counts and sizes
+- [x] Test with overlapping circles
+- [x] Test with edge cases (circles outside bounds, zero opacity)
+- [x] Test with different image sizes
+- [x] Validate cost computation accuracy
+- [x] Document any differences or limitations
+
+`renderer_opencl_correctness_gpu_test.go` holds the suite: a circle-count ×
+canvas-size matrix, degenerate canvases, a named edge-case catalog (outside each
+bound, straddling each edge and the corner, zero and negative radius, zero
+opacity, canvas-covering radius, concentric and coincident stacks, a subpixel
+centre walk), a compositing-order check, and a randomized deviation sweep. The
+CPU render is the golden image; a committed PNG would only duplicate the oracle
+and go stale against it, so a failing scene instead writes the CPU render, the
+GPU render, and an amplified difference map to `$CIRCLEFIT_GPU_ARTIFACTS`.
+
+**It found a real bug, and the bug is the interesting part.** The kernel tested
+`dx*dx + dy*dy > radius*radius` per pixel — the pre-optimization disc test —
+while the CPU span search starts at `int(centerX+0.5)` and never tests that
+pixel, so every row the disc touches paints its nearest sample. The kernel
+therefore dropped both tangent rows of every circle. That rule was written down
+in `renderer-correctness.md` only after the CPU renderer was measured, and
+nothing carried it to the kernel.
+
+It had survived because it is rare and total rather than small and widespread,
+which is the shape a tolerance-based parity test is worst at catching: about
+0.0005% of pixels, each wrong by up to 226 of 255. Its cost effect is entirely
+scene-dependent — 0.01% on a patterned reference, **a factor of two** on a
+sparse one (a radius-1 black circle at `(10.5, 10)` on a 24×24 white canvas:
+451.5625 on the CPU, 225.78125 on the device). The kernel now applies the CPU
+predicate exactly, and both CPU geometry paths agree on it, so this matches the
+renderer rather than one of its implementations. On the same catalog the worst
+channel deviation went from **73 to 1**. Two smaller divergences went with it:
+the kernel skipped `opacity < 0.001` where the CPU skips only exact zero, and it
+did not reject rows before columns, which is what makes a zero radius agree.
+
+What is left is arithmetic. The device is float32 end to end against a float64
+CPU path, so parity is a budget — ±2 per channel, 1% relative cost — measured at
+1 channel and 0.021% on the T550. The cost bound is the binding one and grows
+with canvas size, because the SSD is accumulated in float32; a GPU cost is
+therefore not comparable with a recorded CPU cost. `TestOpenCLDeviationBudget`
+re-measures and reports both numbers on every run.
+
+`TestOpenCLDeviceReportsAPreparedDevice` is what makes "prepared runner" mean
+something: `InitOpenCL` falls back to a CPU device, so a PoCL-only machine
+passes every parity test while validating no GPU at all. It fails under
+`CIRCLEFIT_REQUIRE_OPENCL=1` unless the selected device is of type GPU.
+
+Validated on an NVIDIA T550 (driver 580.178.04, OpenCL 3.0 CUDA). AMD and Intel
+remain unmeasured, for parity as well as throughput.
 
 ### Task 11.11: Handle GPU Errors and Fallback
 - [ ] Add graceful error handling for GPU initialization failures
