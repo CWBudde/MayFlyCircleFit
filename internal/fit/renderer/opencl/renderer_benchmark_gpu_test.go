@@ -141,7 +141,14 @@ func BenchmarkOpenCLSessionCreation(b *testing.B) {
 
 			b.Run("session", func(b *testing.B) {
 				base, release := newOpenCLBenchmarkRenderer(b, ref, circles)
-				defer release()
+
+				// Registered rather than deferred, for two reasons. A deferred
+				// call runs before the benchmark function returns, which is
+				// inside the measured region; and a Fatalf in the loop would
+				// skip it entirely and leak an OpenCL context into every later
+				// benchmark. b.Cleanup runs after the framework stops the timer,
+				// and it runs on the failure paths too.
+				b.Cleanup(release)
 
 				reportOpenCLBenchmarkDevice(b, base)
 				b.ReportAllocs()

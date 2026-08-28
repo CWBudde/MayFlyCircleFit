@@ -558,11 +558,18 @@ runtime, context, queue, compiled program, reference buffer and reduction
 workgroup size; `NewSession` takes a reference to its parent's engine instead of
 calling `InitOpenCL` and `clBuildProgram` again, and allocates only its own
 kernel pair and the buffers its circle count needs. Session creation went from
-362.7 ms to 4.38 ms at 64x64 and 512.4 ms to 4.04 ms at 512x512, at 48 to 12
-allocations. Measured before and after as alternating single passes between two
-worktrees, sequential moved 83.8x and batch 85.9x, both separated; the CPU
-control arms moved 0.98x and 0.69x, which is what makes the OpenCL arms
-believable. Session counts are unchanged at 0/5/9. See
+182.8 ms to 12.1 us at 64x64 and from 213.9 ms to 220.6 us at 512x512, at 48 to
+12 allocations. **Those are corrected figures.** The originally recorded 4.38 ms
+and 4.04 ms were a benchmark defect, not a measurement: the arm held the base
+renderer with `defer release()`, so tearing down the program, context, queue and
+runtime ran inside the timed region and `-benchtime=20x` divided that one-time
+cost by twenty and reported it as per-session. The arm now stops the timer
+first, and is stable across `b.N`. The correction runs in the conservative
+direction -- tranche 1 was roughly two orders of magnitude better than claimed.
+Measured before and after as alternating single passes between two worktrees,
+sequential moved 83.8x and batch 85.9x, both separated; the CPU control arms
+moved 0.98x and 0.69x, which is what makes the OpenCL arms believable. Session
+counts are unchanged at 0/5/9. See
 [`docs/gpu-performance-report.md`](docs/gpu-performance-report.md).
 
 **What it did not do is make the GPU win.** Eight further passes put sequential
@@ -584,6 +591,35 @@ the staged modes still replay every retained circle, so sequential runs 121
 evaluations to the CPU's 121 while rendering strictly more per evaluation -- but
 it should be opened by a profile of where the remaining time goes, not by the
 old ratio.
+
+**That profile has now been taken, and it justifies tranche 2 decisively.** The
+argument is not the old ratio; it is that the CPU renderer implements
+`accumulatedSessionFactory` and the OpenCL renderer does not, so staged CPU work
+grows with the circle count while staged OpenCL work grows with its square.
+`BenchmarkStagedEvaluationAtDepth` measures one evaluation that appends a circle
+to D retained ones, in three arms so that backend is separated from technique.
+The CPU's accumulated arm is flat in D (30.7-60.5 us at 128 square, 218.6-444.4
+us at 512 square, across a 64-fold change in depth); both replay arms grow
+linearly. At 512 square, D=512 the GPU beats the CPU by 6.1x on the *same*
+replay work and still loses to the CPU's accumulated canvas by 8.1x, separated.
+The crossover sits between D=32 and D=128. Campaigns in
+[`docs/schedule-format.md`](docs/schedule-format.md) run to 1000-3000 circles
+with `additionalCircles: 1`, which is exactly the deep-prefix, one-new-circle
+shape that is furthest behind.
+
+**No existing benchmark could have shown this, and that is itself a finding.**
+Every pipeline benchmark in the package fixes K at 12, the one regime where the
+two growth rates cannot separate. `BenchmarkOptimizeStagedGrowth` sweeps whole
+pipelines to K=128 and still reports a flat 1.3-1.4x, because its stages run
+eight evaluations each and per-stage setup dominates them; a real stage runs
+hundreds. So tranche 1's "staged OpenCL is indistinguishable from the CPU" is a
+statement about K=12 and does not survive to campaign depths. It is not
+withdrawn -- it is bounded.
+
+One observation from the same profile, recorded and not proposed: what remains
+in a 512 square session is a 1,050,778-byte eager `image.NewNRGBA` for
+`renderImage`, not device work, which a phase breakdown puts at about 14 us of
+the 220.6 us. A session only needs that image if something calls `Render`.
 
 **Two defects surfaced that the benchmark would never have shown.** Sharing a
 queue means a session waits on a handle it does not own, so `releaseOwn` needed
