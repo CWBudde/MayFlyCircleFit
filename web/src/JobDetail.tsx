@@ -1196,7 +1196,7 @@ function ConfigurationCard({ seed, status }: { seed: JobDetailSeed; status: JobS
 					</>
 				) : null}
 				{workers > 1 ? <Fact label="Parallel Evaluation" value={`${workers} workers`} /> : null}
-				{backend ? <Fact label="Backend" value={degraded ? `${backend} (degraded to CPU)` : backend} /> : null}
+				{backend ? <Fact label="Backend" value={degraded ? `${backend} (degraded to CPU mid-run)` : backend} /> : null}
 				{seed.fastCompositing ? <Fact label="Compositing" value="Fast (+/-1 per channel)" /> : null}
 				<Fact label="Circles" value={String(seed.circles)} />
 				<Fact label="Population Size" value={String(seed.popSize)} />

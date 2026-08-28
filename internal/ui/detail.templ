@@ -534,7 +534,7 @@ templ JobDetailPage(job JobDetail) {
 						<div>
 							<div style="font-size: 0.875rem; color: var(--text-muted);">Backend</div>
 							if job.BackendDegraded {
-								<div style="font-weight: 500;">{ job.EffectiveBackend } (degraded to CPU)</div>
+								<div style="font-weight: 500;">{ job.EffectiveBackend } (degraded to CPU mid-run)</div>
 							} else {
 								<div style="font-weight: 500;">{ job.EffectiveBackend }</div>
 							}
