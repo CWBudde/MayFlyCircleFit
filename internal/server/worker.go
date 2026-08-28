@@ -19,6 +19,28 @@ import (
 	"github.com/cwbudde/circlefit/internal/store"
 )
 
+// maxTraceSamplesPerRun bounds how many progress records one optimizer run
+// contributes to trace.jsonl. It is the largest iteration count that was
+// requestable before app.MaxIterations was raised, so the worst-case trace an
+// epoch-and-restart campaign can produce is exactly what it was then.
+const maxTraceSamplesPerRun = 10000
+
+// traceSampleStride returns the iteration stride that keeps one run's trace at
+// or below maxTraceSamplesPerRun records. It is 1 whenever the run fits, which
+// is why raising the iteration cap changes no trace that was already valid.
+func traceSampleStride(iters int) int {
+	if iters <= maxTraceSamplesPerRun {
+		return 1
+	}
+
+	stride := iters / maxTraceSamplesPerRun
+	if iters%maxTraceSamplesPerRun != 0 {
+		stride++
+	}
+
+	return stride
+}
+
 // buildEarlyStop maps the optimizer-level stopping fields onto the adapter's
 // option. A configuration that sets none of them yields a zero Stop, which
 // leaves the optimizer unchanged.
@@ -304,6 +326,17 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	// notice. The renderer degrades permanently once it degrades at all, which
 	// is why one bool is enough: after the first report this costs a type
 	// assertion per progress callback and writes nothing.
+	// trace.jsonl is written once per completed optimizer iteration, so its size
+	// is proportional to the iteration budget rather than to wall clock. That is
+	// affordable at a few thousand iterations and is not affordable at a
+	// million, because restoreJobTrace reads the whole file back into
+	// MetricHistory at startup and the job-detail page seeds the island with it.
+	// The stride bounds one run to maxTraceSamplesPerRun records; it is 1 for
+	// every configuration that was expressible before app.MaxIterations was
+	// raised, so no existing job's trace changes.
+	traceStride := traceSampleStride(job.Config.Iters)
+	lastTracedCost := math.Inf(1)
+
 	backendDegradationRecorded := false
 	noteBackendDegradation := func() {
 		if backendDegradationRecorded || !renderer.Degraded(rend) {
@@ -348,7 +381,18 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		sample.OptimizerDiagnostics = progress.Diagnostics
 
 		sample.CPS = throughputCPS(progress.Evaluations, job.Config.Circles, now.Sub(start).Seconds())
-		if traceWriter != nil {
+
+		// Every improvement is recorded whatever the stride, because a trace is
+		// scored by scanning it for the lowest cost at or below an evaluation
+		// cap. Decimating improvements would move the evaluation count a
+		// measurement attributes that cost to.
+		traceSample := progress.Iterations%traceStride == 0
+		if progress.BestCost < lastTracedCost {
+			lastTracedCost = progress.BestCost
+			traceSample = true
+		}
+
+		if traceWriter != nil && traceSample {
 			_ = traceWriter.Write(traceEntry(sample))
 		}
 

@@ -34,6 +34,24 @@ behavior is production-ready.
 - Checkpoints are progress snapshots, not transactional snapshots of an entire
   process. Abrupt power loss and filesystem failures still require validation of
   available artifacts after restart.
+- **`trace.jsonl` is decimated above 10,000 iterations per optimizer run.** A
+  run at or below that count records every iteration, which is every
+  configuration that was requestable before `app.MaxIterations` was raised to
+  one million, so no earlier measurement changes. Above it, the server writes
+  every *n*-th iteration — plus every improvement in the incumbent, whatever the
+  stride, so an evaluation-capped score still attributes a cost to the exact
+  evaluation count at which it first appeared. What a long run loses is
+  resolution in the mechanism columns (population spread, sigma, condition
+  number) between improvements. The bound exists because `restoreJobTrace`
+  reads the whole file back into `MetricHistory` at startup and the job-detail
+  page seeds its island with that history, so an untrimmed million-iteration
+  trace would be an out-of-memory restart and an unservable page rather than
+  merely a large file.
+- `plannedOptimizerIterations` computes the progress-bar denominator as
+  `iters x epochs x restarts x stages` in a plain `int`. On `linux/386`, a
+  portability-only target, that product can overflow and show a wrong progress
+  fraction; the raised iteration cap makes it reachable from more modest
+  configurations than before. Nothing but the displayed fraction depends on it.
 
 ## Rendering and optimization
 

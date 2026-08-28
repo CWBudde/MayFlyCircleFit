@@ -24,8 +24,30 @@ const (
 	// units, more than any polishing pass returns above 200 circles. It bounds request validation at the trusted-local boundary, so
 	// it is a memory and wall-clock guard, not a modelling statement: circle
 	// parameters cost 28*K bytes and per-circle fit time grows with K.
-	MaxCircles    = 3000
-	MaxIterations = 10000
+	MaxCircles = 3000
+	// MaxIterations was 10000 until the CMA-ES measurement campaign needed a
+	// generation count the cap could not express. The two optimizers spend an
+	// iteration differently: MayFly evaluates several times its population per
+	// iteration, while CMA-ES evaluates exactly lambda, and the adapter sets
+	// lambda from popSize. So the same 6,502,400-evaluation budget that the
+	// campaign's 2048-iteration MayFly control consumes needs 6,350 CMA-ES
+	// generations at popSize 1024 and 325,120 at popSize 20 — and the
+	// interesting population for a 56-dimension search is the small one, since
+	// Hansen's default for that dimensionality is 16. At 10000 no population
+	// below 651 could reach the cap, which made the population screen
+	// inexpressible rather than merely expensive. See
+	// docs/cmaes-report.md.
+	//
+	// Like MaxCircles and MaxPopulation it bounds request validation at the
+	// trusted-local boundary, so it is a wall-clock guard, not a modelling
+	// statement. The cost it guards is time and disk rather than memory: this
+	// package allocates nothing per iteration, but both pinned optimizer
+	// libraries preallocate their convergence history from it (32 bytes per
+	// iteration for CMA-ES, 8 for MayFly, per run), and the server writes one
+	// trace record per iteration. The trace is the binding constraint and is
+	// bounded separately by server.traceSampleStride, which holds one run's
+	// trace to the number of records the previous cap allowed.
+	MaxIterations = 1_000_000
 	MinPopulation = 20
 	// MaxPopulation was 200 until a campaign wanted to spend a very large
 	// population on a very small parameter vector. The two are not the same

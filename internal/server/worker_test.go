@@ -1308,3 +1308,41 @@ func TestEvaluationWidthIsZeroWithoutParallelEvaluation(t *testing.T) {
 		t.Fatalf("effective width = %d, want 1 without the opt-in", width)
 	}
 }
+
+// TestTraceSampleStrideLeavesPreviousCapUntouched pins the property that makes
+// raising app.MaxIterations safe: every iteration count that was requestable
+// before the raise still traces every iteration, so no recorded measurement
+// changes shape, while a larger budget is decimated to the same record count.
+func TestTraceSampleStrideLeavesPreviousCapUntouched(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		iters int
+		want  int
+	}{
+		{"single iteration", 1, 1},
+		{"campaign control", 2048, 1},
+		{"previous cap", maxTraceSamplesPerRun, 1},
+		{"one past the previous cap", maxTraceSamplesPerRun + 1, 2},
+		{"exact multiple", 5 * maxTraceSamplesPerRun, 5},
+		{"rounds up rather than overshooting", 5*maxTraceSamplesPerRun + 1, 6},
+		{"lambda screen at the current cap", app.MaxIterations, 100},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			stride := traceSampleStride(testCase.iters)
+			if stride != testCase.want {
+				t.Fatalf("traceSampleStride(%d) = %d, want %d", testCase.iters, stride, testCase.want)
+			}
+
+			if samples := (testCase.iters + stride - 1) / stride; samples > maxTraceSamplesPerRun {
+				t.Fatalf("stride %d leaves %d samples, above the %d bound",
+					stride, samples, maxTraceSamplesPerRun)
+			}
+		})
+	}
+}
