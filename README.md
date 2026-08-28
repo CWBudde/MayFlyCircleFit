@@ -6,7 +6,7 @@ an experimental Dragonfly adapter are selectable with `--optimizer`, and
 [Optimizer engines](#optimizer-engines) says which settings belong to which. The
 default CPU renderer supports joint, sequential, and batch optimization. An
 experimental OpenCL renderer is available for all three modes in GPU-tagged
-builds.
+builds, although only joint mode is currently faster there than on the CPU.
 
 The project is under active production-readiness remediation. Read the
 [support matrix](docs/support-matrix.md) and
@@ -197,15 +197,34 @@ second one.
 | CPU | Supported | Supported | Supported | Custom base canvases are supported |
 | OpenCL | Experimental | Experimental | Experimental | Requires `-tags gpu`, CGO, OpenCL headers and a runtime; no custom base canvas |
 
-Sequential and batch OpenCL runs create independent device sessions and replay
-retained circles at each stage. They remain experimental and have not been
-performance-characterized on vendor GPUs. See [GPU backend
-notes](docs/gpu-backends.md) for setup details.
+OpenCL is opt-in and needs a GPU-tagged build:
 
 ```sh
 CGO_ENABLED=1 go build -tags gpu -o circlefit .
-./circlefit run --ref assets/test.png --backend opencl --mode sequential
+./circlefit run --ref assets/test.png --backend opencl --mode joint
 ```
+
+**Joint mode is the one pipeline worth running on the GPU.** Measured on an
+NVIDIA T550 it evaluates the objective 6-14x faster than the multi-threaded CPU
+renderer from 256² upward, while sequential and batch are 26x and 84x *slower*,
+because each stage rebuilds its own OpenCL context and program. Two more things
+before you use a GPU number: the device computes in float32 against a float64
+CPU path, so a cost recorded under one backend is not a baseline for the other;
+and a device that fails mid-run degrades silently to the CPU, so read
+`effectiveBackend` and `backendDegraded` off the job rather than the backend you
+asked for.
+
+An unavailable backend fails the run by default. Add `--backend-fallback cpu`
+when you would rather the run happened than not:
+
+```sh
+./circlefit run --ref assets/test.png --backend opencl --backend-fallback cpu
+```
+
+See [GPU backend notes](docs/gpu-backends.md) for setup, examples, and the
+when-to-use-which table, and the [GPU performance
+report](docs/gpu-performance-report.md) for the measurements. macOS has no GPU
+backend and none is planned.
 
 ## Early stopping
 

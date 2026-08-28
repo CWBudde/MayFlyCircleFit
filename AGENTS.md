@@ -80,7 +80,11 @@ ones that will change what you propose:
   joint/sequential/batch pipelines.
 - `internal/fit/renderer/opencl`: the cgo OpenCL renderer (`gpu` tag). It is a
   separate package because Go forbids Plan 9 assembly in a package that uses
-  cgo; it must never import `internal/fit/renderer`.
+  cgo; it must never import `internal/fit/renderer`. `internal/fit/gpu`
+  enumerates platforms and devices and bootstraps the context;
+  `internal/fit/renderer/renderer_opencl_gpu.go` is the gpu-tagged adapter that
+  injects the CPU fallback and supplies the unexported session hook, so the
+  dependency runs adapter -> opencl -> gpu and never back.
 - `internal/opt`: optimizer interfaces; the MayFly v0.7.1 adapter, a
   proof-of-concept Dragonfly v0.1.0 adapter, and the pinned CMA-ES adapter.
   `JobConfig.optimizer` selects MayFly, Dragonfly, or CMA-ES from the CLI,
@@ -107,6 +111,38 @@ ones that will change what you propose:
 Assets, fixtures, and notes live in `assets/`, `data/`, `docs/`, and
 `profiles/`. Keep dependencies flowing toward the lower-level packages; do not
 reintroduce application configuration into the store package.
+
+### The GPU backend
+
+Four things about OpenCL change what a proposal should say, and none of them is
+visible from the package list:
+
+- **It is experimental, opt-in, and absent from an ordinary build.** Only a
+  `-tags gpu`, `CGO_ENABLED=1` binary has it. Without the tag `SupportedBackends`
+  omits `opencl`, `serve --backend opencl` refuses to start, and a job naming it
+  is rejected at submit — but `app.JobConfig.Validate` still accepts it on every
+  build, deliberately, so a checkpoint written on a GPU host resumes there.
+- **A GPU cost is not a CPU cost.** The device computes in float32 end to end
+  against a float64 CPU path, so it is held to a measured budget (±2 per channel,
+  1% relative cost) instead of the byte-exact contract in
+  [`docs/renderer-correctness.md`](docs/renderer-correctness.md), and the cost
+  bound grows with canvas size because the SSD accumulates in float32. Never
+  compare a figure recorded under one backend against the other.
+- **The label is not the record.** `Cost` and `Render` have no error return, so a
+  device failure degrades the renderer permanently and silently to its CPU
+  fallback. `effectiveBackend` and `backendDegraded` on the job are what say what
+  ran; both are per-process and are not persisted to a checkpoint.
+- **The staged pipelines are much slower than the CPU, on real hardware.** Joint
+  mode wins, at 0.8x the CPU's time; sequential and batch lose by 26x and 84x
+  because every stage rebuilds a context, queue and compiled program. Task 11.13
+  tranche 1 is the fix. Measured on one NVIDIA T550; AMD and Intel are unmeasured
+  for both parity and throughput.
+
+[`docs/gpu-backends.md`](docs/gpu-backends.md) carries setup, example commands,
+the when-to-use-which table, the macOS decision, and the device quirks that make
+a GPU measurement wrong;
+[`docs/gpu-performance-report.md`](docs/gpu-performance-report.md) is the
+measurement itself.
 
 ## Toolchain
 
@@ -328,6 +364,8 @@ forward and quoting the local URL, for example
 ## Runtime notes
 
 The CLI reads reference imagery from `assets/`; pass relative paths in scripts
-and docs. GPU acceleration is optional — note hardware assumptions and fallbacks
-when updating those paths. Generated artifacts (`coverage.html`, resume
+and docs. GPU acceleration is optional and off by default — note hardware
+assumptions and fallbacks when updating those paths, and remember that CPU
+fallback is opt-in (`--backend-fallback cpu`), so an unavailable device fails the
+run unless the caller asked otherwise. Generated artifacts (`coverage.html`, resume
 snapshots, `out*.png`) stay untracked; clean them before publishing branches.

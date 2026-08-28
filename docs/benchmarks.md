@@ -4,6 +4,16 @@ The canonical, deterministic benchmark suite lives in
 `internal/fit/bench_test.go`. Its stable `BenchmarkFit` name lets local and CI
 runs compare the same cases across revisions.
 
+This page is the CPU suite. The GPU benchmarks are separate, live behind
+`-tags gpu`, and are not part of CI's timing comparison:
+`BenchmarkRendererBackendMatrix` and `BenchmarkOptimizePipelineBackends` in
+`internal/fit/renderer`, plus the transfer-boundary benchmarks in
+`internal/fit/renderer/opencl`. Run them as repeated `-count=1` passes rather
+than one `-count=N` pass, and assert the renderer did not degrade first; see
+[`gpu-backends.md`](gpu-backends.md) and
+[`gpu-performance-report.md`](gpu-performance-report.md) for why both of those
+matter and what a device measurement has to record.
+
 ## Workloads
 
 The suite covers three layers:

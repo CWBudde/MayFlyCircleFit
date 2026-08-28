@@ -46,3 +46,23 @@ func requireAvailableBackend(backend app.Backend) error {
 
 	return nil
 }
+
+// backendProvenanceNote reports what actually ran when that is not what the run
+// asked for, and returns an empty string when the two agree. A server job
+// carries this as effectiveBackend and backendDegraded; a one-shot CLI run has
+// no job resource, and the two backends do not produce comparable costs -- the
+// device accumulates the SSD in float32 against a float64 CPU path -- so a
+// substitution recorded only in a log line would leave the printed cost
+// unexplained.
+func backendProvenanceNote(requested, effective app.Backend, degraded bool) string {
+	switch {
+	case degraded:
+		return fmt.Sprintf("Backend: %s (degraded to CPU mid-run) - this cost mixes device and "+
+			"CPU arithmetic and is comparable with neither backend", effective)
+	case effective != requested:
+		return fmt.Sprintf("Backend: %s (requested %s, unavailable) - this cost is not "+
+			"comparable with %s runs", effective, requested, requested)
+	default:
+		return ""
+	}
+}

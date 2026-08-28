@@ -18,7 +18,10 @@ Everything in `docs/`, grouped by what you came here to do. Start from
 - [`releasing.md`](releasing.md) — local packaging, artifacts, and the tag-gated
   release job.
 - [`gpu-backends.md`](gpu-backends.md) — the experimental OpenCL renderer:
-  setup, fallbacks, and hardware assumptions.
+  requirements and per-platform setup, example commands, which workloads belong
+  on the GPU and which do not, why macOS has no GPU backend, the device quirks
+  that make a GPU measurement wrong, and the design record behind the choice of
+  OpenCL.
 - [`cpu-rendering-threads.md`](cpu-rendering-threads.md) — how many render
   threads to give a workload, and when one is right.
 - [`schedule-format.md`](schedule-format.md) — the declarative campaign

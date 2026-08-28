@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+
+	"github.com/cwbudde/circlefit/internal/fit/gpu"
 )
 
 // backendMatrixSizes and backendMatrixCircles are the Task 11.9 sweep. Every
@@ -121,6 +123,7 @@ func benchmarkRendererEvaluation(
 	defer cleanup()
 
 	reportBenchmarkDeviceOnce(b, r)
+	requireBenchmarkGPUDevice(b, r)
 	requireLiveDevice(b, r, backend, "before")
 
 	working := append([]float64(nil), params...)
@@ -149,6 +152,39 @@ func benchmarkRendererEvaluation(
 	// A degraded OpenCL renderer silently answers from the CPU fallback, which
 	// would publish CPU timings under a GPU label.
 	requireLiveDevice(b, r, backend, "after")
+}
+
+// requireBenchmarkGPUDevice fails a measurement that claims to be vendor-GPU
+// validation but selected a CPU OpenCL device. InitOpenCL falls back to one, so
+// on a PoCL-only host every OpenCL cell here would otherwise publish CPU timings
+// under an OpenCL label.
+//
+// The parity suite makes the same demand through
+// TestOpenCLDeviceReportsAPreparedDevice, but a benchmark invocation runs with
+// -run '^$' and therefore executes no test at all. CIRCLEFIT_REQUIRE_GPU_DEVICE
+// has to be read here too, or it is inert exactly where a measurement is being
+// taken.
+func requireBenchmarkGPUDevice(b *testing.B, r Renderer) {
+	b.Helper()
+
+	if !requireVendorGPUDevice() {
+		return
+	}
+
+	adapter, ok := r.(openCLAdapter)
+	if !ok {
+		return
+	}
+
+	runtime := adapter.Runtime()
+	if runtime == nil {
+		b.Fatal("initialised OpenCL renderer reports no runtime")
+	}
+
+	if runtime.Device.Type != gpu.DeviceTypeGPU {
+		b.Fatalf("OpenCL device type = %s, want %s; this run is not vendor-GPU validation",
+			runtime.Device.Type, gpu.DeviceTypeGPU)
+	}
 }
 
 // requireLiveDevice fails when an OpenCL renderer has fallen back to its CPU

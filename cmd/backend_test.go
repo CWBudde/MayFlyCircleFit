@@ -61,3 +61,73 @@ func TestParseBackendFlag(t *testing.T) {
 		}
 	})
 }
+
+// TestBackendProvenanceNote pins what a one-shot run prints when the backend it
+// got is not the backend it asked for. A CLI run has no job resource, so this
+// line is the only place the substitution is recorded.
+func TestBackendProvenanceNote(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		requested app.Backend
+		effective app.Backend
+		degraded  bool
+		want      string
+	}{
+		{
+			name:      "clean run says nothing",
+			requested: app.BackendOpenCL,
+			effective: app.BackendOpenCL,
+			want:      "",
+		},
+		{
+			name:      "cpu run says nothing",
+			requested: app.BackendCPU,
+			effective: app.BackendCPU,
+			want:      "",
+		},
+		{
+			name:      "fallback names the request it could not honour",
+			requested: app.BackendOpenCL,
+			effective: app.BackendCPU,
+			want:      "Backend: cpu (requested opencl, unavailable)",
+		},
+		{
+			name:      "degradation outranks a matching backend",
+			requested: app.BackendOpenCL,
+			effective: app.BackendOpenCL,
+			degraded:  true,
+			want:      "Backend: opencl (degraded to CPU mid-run)",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := backendProvenanceNote(testCase.requested, testCase.effective, testCase.degraded)
+			if testCase.want == "" {
+				if got != "" {
+					t.Fatalf("note = %q, want empty", got)
+				}
+
+				return
+			}
+
+			if !strings.HasPrefix(got, testCase.want) {
+				t.Fatalf("note = %q, want prefix %q", got, testCase.want)
+			}
+
+			if !strings.Contains(got, "comparable") {
+				t.Fatalf("note = %q, want it to say the cost is not comparable", got)
+			}
+
+			// Both backend names are substituted into the sentence, so an
+			// article in front of one of them is wrong for the other.
+			if strings.Contains(got, " a opencl") || strings.Contains(got, " a cpu") {
+				t.Fatalf("note = %q, want no article before a backend name", got)
+			}
+		})
+	}
+}
