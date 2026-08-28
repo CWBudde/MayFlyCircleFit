@@ -66,6 +66,36 @@ jobs:
           grep -q 'Device #' <<<"$platforms"
       - name: Compile GPU-tagged packages and tests
         run: go test -tags gpu -run '^$' ./...
+      - name: Check every gpu-tagged test is reachable by the focused selector
+        # The step below selects by name, which is a silent failure mode: a
+        # gpu-tagged test whose name does not match simply never runs, and
+        # nothing reports it. That is not hypothetical --
+        # TestDegradationIsSharedBetweenARendererAndItsSessions sat unrun until
+        # it was renamed, and it was the only test asserting an invariant shared
+        # across sessions.
+        #
+        # The file list comes from the build constraint rather than a filename
+        # pattern, because *_gpu_test.go is a convention too.
+        shell: bash
+        run: |
+          selector='^TestOpenCL|^TestPackReferenceNRGBA'
+          files="$(grep -rl '^//go:build gpu' internal/fit/renderer --include='*_test.go')"
+          if [ -z "$files" ]; then
+            echo "no gpu-tagged test files found: the check is looking in the wrong place" >&2
+            exit 1
+          fi
+          # Piped into xargs rather than expanded as $files, so the check cannot
+          # pass vacuously if the list is ever handled as a single word.
+          unreachable="$(printf '%s\n' "$files" \
+            | xargs grep -hoE '^func Test[A-Za-z0-9_]*' \
+            | awk '{print $2}' | grep -Ev "$selector" || true)"
+          if [ -n "$unreachable" ]; then
+            echo "these gpu-tagged tests do not match the focused selector and would never run:" >&2
+            printf '%s\n' "$unreachable" >&2
+            echo "rename them to start with TestOpenCL, or widen the selector deliberately." >&2
+            exit 1
+          fi
+          echo "every gpu-tagged test matches ${selector}"
       - name: Run focused OpenCL runtime tests
         env:
           CIRCLEFIT_REQUIRE_OPENCL: "1"
