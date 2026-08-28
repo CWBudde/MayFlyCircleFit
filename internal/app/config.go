@@ -43,10 +43,12 @@ const (
 	// statement. The cost it guards is time and disk rather than memory: this
 	// package allocates nothing per iteration, but both pinned optimizer
 	// libraries preallocate their convergence history from it (32 bytes per
-	// iteration for CMA-ES, 8 for MayFly, per run), and the server writes one
-	// trace record per iteration. The trace is the binding constraint and is
-	// bounded separately by server.traceSampleStride, which holds one run's
-	// trace to the number of records the previous cap allowed.
+	// iteration for CMA-ES, 8 for MayFly, per run), and the server traces one
+	// record per iteration until its sampling stride starts decimating. The
+	// trace is the binding constraint and is bounded separately by
+	// server.traceSampleStride and its forced-sample budget, which together
+	// hold one job to the number of progress records the previous cap allowed,
+	// plus the entries for the state it started from and its result.
 	MaxIterations = 1_000_000
 	MinPopulation = 20
 	// MaxPopulation was 200 until a campaign wanted to spend a very large
