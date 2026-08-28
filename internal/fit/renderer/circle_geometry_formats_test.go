@@ -761,15 +761,18 @@ func TestFixedPointGeometryFormatAdversarialBoundaries(t *testing.T) {
 		height = 97
 	)
 
-	// The two epsilon cases are the precision ladder made explicit. Both radii
-	// are a hair below a value whose span edge lands exactly on a pixel:
-	// 2^-20 is below every format's resolution but Q8.24's, and 2^-12 is below
-	// Q24.8's but not Q16.16's.
+	// The three epsilon cases are the precision ladder made explicit. Each
+	// radius is a hair below a value whose span edge lands exactly on a pixel,
+	// with one rung per format's own resolution: 2^-12 is below Q24.8's,
+	// 2^-20 is below Q16.16's as well, and 2^-28 is below Q8.24's too. No
+	// format is exact below its own resolution, so the third rung is the one
+	// that shows Q8.24 failing the same way the other two already do.
 	tests := []struct {
 		name        string
 		circle      fit.Circle
 		wantQ16     int
 		wantQ24     int
+		wantQ8      int
 		wantFloat64 int
 	}{
 		{name: "integer_center_integer_radius", circle: fit.Circle{X: 64, Y: 48, R: 20}},
@@ -792,6 +795,13 @@ func TestFixedPointGeometryFormatAdversarialBoundaries(t *testing.T) {
 			circle:  fit.Circle{X: 64, Y: 48, R: 20 - 1.0/4096},
 			wantQ24: 7,
 		},
+		{
+			name:    "radius_one_ulp_below_q8_boundary",
+			circle:  fit.Circle{X: 64, Y: 48, R: 20 - 1.0/268435456},
+			wantQ16: 7,
+			wantQ24: 7,
+			wantQ8:  7,
+		},
 	}
 
 	for _, test := range tests {
@@ -801,7 +811,7 @@ func TestFixedPointGeometryFormatAdversarialBoundaries(t *testing.T) {
 			want := map[string]int{
 				formatQ16:     test.wantQ16,
 				formatQ24:     test.wantQ24,
-				formatQ8:      0,
+				formatQ8:      test.wantQ8,
 				formatFloat64: test.wantFloat64,
 			}
 

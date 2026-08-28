@@ -71,8 +71,9 @@ research follow-ups, not blockers for the selected production CPU path.
   pixel. Normalized Q8.24 stores the center as an offset from an integer anchor,
   which frees the center range but not the radius: it cannot represent r >= 128
   at any center, 50.7% of bounds-legal circles on 256x256 and 76.0% on 512x512,
-  and where it does apply it is *exact*, which under the byte-parity contract is
-  a migration cost rather than a gain. No throughput case for either: i7-1255U,
+  and where it does apply it is more accurate but not exact - it fails at its own
+  2^-24 boundary the way Q16.16 fails at 2^-16 - which under the byte-parity
+  contract is a migration cost rather than a gain. No throughput case for either: i7-1255U,
   `GOMAXPROCS=1`, pinned with `taskset`, median of nine 500 ms runs on a P-core
   and an E-core, zero allocations per operation on every arm, Q24.8 at
   1.01x-1.08x and Q8.24 at 0.85x-1.02x against Q16.16 - the same integer

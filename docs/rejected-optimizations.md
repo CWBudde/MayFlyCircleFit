@@ -65,8 +65,9 @@ disagreement rate against an exact rational oracle
 both core types of an i7-1255U, inside that host's noise. Normalized Q8.24
 cannot represent a radius of 128 or more at any center, which is 50.7% of
 bounds-legal circles on a 256×256 canvas and 76.0% on a 512×512 one; where it
-does apply it is exact, and exact means *different bytes*, so adopting it is a
-migration cost rather than a gain. Both alternates and the rational oracle stay
+does apply it is more accurate but not exact — it fails at its own 2⁻²⁴
+boundary the way Q16.16 fails at 2⁻¹⁶ — and more accurate means *different
+bytes*, so adopting it is a migration cost rather than a gain. Both alternates and the rational oracle stay
 in tree as a test-only harness,
 `internal/fit/renderer/circle_geometry_formats_test.go`. See
 [`fixed-point-geometry-formats.md`](fixed-point-geometry-formats.md).

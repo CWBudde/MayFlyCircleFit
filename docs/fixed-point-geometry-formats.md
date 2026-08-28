@@ -7,10 +7,13 @@ the measurement that answers it.
 
 **Q16.16 stays.** Neither alternate is better on any axis that matters, and both
 are worse on at least one: Q24.8 is 58× less accurate against an exact oracle
-for no throughput gain, and Q8.24 cannot represent a radius of 128 or more,
-which is most of the legal parameter box on any canvas above 128 pixels. The
-question is closed; the sections below record why, so it does not have to be
-re-run.
+for no throughput gain, and Q8.24 cannot represent a radius of 128 or more —
+0.0% of the bounds-legal circles on a 128×128 canvas, but 50.7% on 256×256 and
+76.0% on 512×512, so on the canvas sizes this repository actually renders it
+hands most of its work to the fallback. And none of the three is *exact*: each
+is exact only above its own resolution, and the adversarial ladder below shows
+all three failing at their own boundary. The question is closed; the sections
+below record why, so it does not have to be re-run.
 
 The harness that produced every number is committed as
 `internal/fit/renderer/circle_geometry_formats_test.go`. It implements both
@@ -157,23 +160,28 @@ row appear or vanish and a whole span is gained or lost.
 | tangent rows, half-pixel center | (64.5, 48.5, r=20.5) | 0 | 0 | 0 | 0 |
 | radius one ulp below a Q16.16 boundary | (64, 48, r = 20 − 2⁻²⁰) | **7** | **7** | 0 | 0 |
 | radius one ulp below a Q24.8 boundary | (64, 48, r = 20 − 2⁻¹²) | 0 | **7** | 0 | 0 |
+| radius one ulp below a Q8.24 boundary | (64, 48, r = 20 − 2⁻²⁸) | **7** | **7** | **7** | 0 |
 
 The structural cases are all clean, for every format — including the exact
 pixel-boundary case, where `dx² == remaining` exactly and the inclusive rule
 decides it identically in all four representations. **Precision only shows up
 where a radius sits between two representable values**, which is what the last
-two rows construct.
+three rows construct.
 
-Both epsilon radii are one ulp below `20`, where the span edge lands exactly on
-pixels 44 and 84. `2⁻²⁰` is below Q16.16's resolution and below Q24.8's, so both
-round the radius up to exactly 20 and grow the circle: 7 rows change, 2 of them
-intersect flips. `2⁻¹²` is *representable* in Q16.16 and not in Q24.8, so Q16.16
-is exact there and Q24.8 makes the same 7-row mistake. Q8.24 represents both
-exactly and is right in every case it can hold.
+All three epsilon radii are one ulp below `20`, where the span edge lands
+exactly on pixels 44 and 84, and each sits below a different format's own
+resolution. `2⁻¹²` is *representable* in Q16.16 and in Q8.24 but not in Q24.8,
+so Q24.8 alone rounds the radius up to exactly 20 and grows the circle: 7 rows
+change, 2 of them intersect flips. `2⁻²⁰` is below Q16.16's resolution as well,
+so Q16.16 makes the same 7-row mistake there. `2⁻²⁸` is below Q8.24's own
+5.96e-08 resolution, and Q8.24 then makes it too — 7 rows, 2 intersect flips,
+one pixel of worst-case edge displacement, the identical failure one rung
+further down. Only float64 is clean on all three, because `20 − 2⁻²⁸` is
+exactly representable in it.
 
-That ladder is the whole comparison in miniature: each format is exact until the
-input needs a bit it does not have, and Q24.8 runs out of bits 256× sooner than
-Q16.16 does.
+That ladder is the whole comparison in miniature: **no fixed-point format here
+is exact — each is exact only above its own resolution** — and Q24.8 runs out of
+bits 256× sooner than Q16.16 does, which runs out 256× sooner than Q8.24.
 
 ## Randomized rows
 
@@ -195,9 +203,13 @@ this corpus is not the one behind the 0.00074% recorded in
 float64 span rather than a rational oracle. What the two agree on is that
 Q16.16's error is at the edge of measurability, and Q24.8's is not.
 
-Q8.24 and the float64 path both matched the exact oracle on all 17748 rows.
-Neither is an argument for a change: see the next section for why an exact
-alternate is a migration rather than an improvement.
+Q8.24 and the float64 path both matched the exact oracle on all 17748 rows of
+this corpus. That is a statement about the corpus and not about the format: the
+radii are drawn at random, so none of them lands within Q8.24's own 5.96e-08
+resolution of a pixel boundary, which is the case the ladder above had to be
+constructed to hit. Neither column is an argument for a change: see the next
+section for why a more accurate alternate is a migration rather than an
+improvement.
 
 ## Full render
 
@@ -227,15 +239,17 @@ byte *rate* being small says nothing about how visible a single instance is.
 circles have a radius of 128 or more and take the float64 fallback. Q8.24's
 single mismatch is at byte 502942 — the same byte, with the same delta of 1, as
 the float64 column, which the test logs so the inheritance is visible rather
-than argued. Everywhere Q8.24 actually ran, it reproduced production output.
+than argued. Everywhere Q8.24 actually ran in this corpus, it reproduced production output.
 
 **Byte-identical is the bar, and only Q16.16 clears it by construction.** That
 is not a coincidence: production output *is* Q16.16's answer. Which makes the
 next point the decisive one.
 
-## An exact alternate is a migration, not an improvement
+## A more accurate alternate is a migration, not an improvement
 
-Q8.24 agrees with the exact oracle everywhere Q16.16 disagrees with it. Under
+Q8.24 agrees with the exact oracle on every corpus here where Q16.16 disagrees
+with it — not because it is exact, but because its resolution is 256× finer;
+one rung below that, at `20 − 2⁻²⁸`, it fails exactly as Q16.16 does. Under
 [`renderer-correctness.md`](renderer-correctness.md) that is a **breaking
 change, not a fix**: rendered output is a contract,
 `TestCPURendererMatchesPreOptimizationBaseline` pins it, and a more accurate
@@ -320,9 +334,11 @@ Q16.16 stays, for one reason per alternate:
   rendered output on 24–32 bytes per corpus with channel deltas up to 82.
 - **Q8.24 cannot represent the problem.** A radius of 128 or more is
   unrepresentable at any center, which is 50.7% of bounds-legal circles on a
-  256×256 canvas and 76.0% on a 512×512 one. Where it does apply it is exact,
-  and exact is a *migration cost* under the byte-parity contract, not a gain. It
-  is also the slowest of the three at radius 25 and above.
+  256×256 canvas and 76.0% on a 512×512 one. Where it does apply it is more
+  accurate — not exact; it fails at its own 2⁻²⁴ boundary the way the other two
+  fail at theirs — and more accurate is a *migration cost* under the byte-parity
+  contract, not a gain. It is also the slowest of the three at radius 25 and
+  above.
 
 Neither result depends on the harness being clever: the Q16.16 arm of the render
 comparison is byte-identical to `CPURenderer.Render`, and every precision
@@ -338,7 +354,7 @@ Only a changed constraint, and there are exactly two that would do it:
   output baseline — is priced above.
 - **The byte-parity contract being deliberately rebased**, for some unrelated
   reason. If a new baseline is being taken anyway, normalized Q8.24 would be
-  worth re-examining for the sub-128-radius majority of circles, with the
+  worth re-examining for the circles below radius 128, with the
   float64 fallback for the rest — but only if the profile still shows the span
   search mattering, and today it does not: a measured no-AVX2 profile attributes
   2.80% of flat samples to `fixedCircleQ16.span`.
