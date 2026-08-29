@@ -45,6 +45,11 @@ evaluation workers, CPU backend with the exact AVX2 compositor, ordinary stage
 convergence disabled, trace and optimizer diagnostics on. Identical to the
 Phase 21 campaign in every respect except the arm set.
 
+**Pins:** MayFly `v0.7.1` and go-cma-es `v0.1.0`, the same as
+[`cmaes-report.md`](cmaes-report.md) — which is what lets the three replication
+arms below reproduce its cells bit for bit, and what makes both campaigns'
+numbers comparable with a run made today.
+
 | Arm | Covariance | Restarts | `lambda` | Iterations at cap |
 | --- | --- | --- | ---: | ---: |
 | `cmaes-single` | full | none | 1024 | 6350 |

@@ -28,11 +28,17 @@ ones that will change what you propose:
   long run, and which interventions did **not** delay population collapse
   (population size, `NC`, `DanceDamp`, variant choice, longer budgets). Read
   before proposing a search-quality change.
-- **Every measurement report in `docs/` except the QMC screen was taken under
-  MayFly v0.6.0 or earlier. The pin is now v0.7.1, and v0.7.0 changed results
-  for every variant, so none of their numbers is comparable to a run made
-  today.** Read them for method and for what was ruled out; re-measure before
-  citing a figure. See the Toolchain section.
+- **Most measurement reports in `docs/` were taken under MayFly v0.6.0 or
+  earlier, and v0.7.0 changed results for every variant, so none of their
+  numbers is comparable to a run made today.** Read those for method and for
+  what was ruled out; re-measure before citing a figure. See the Toolchain
+  section. Five reports are on the current pins and may be cited directly: the
+  QMC screen, and the four CMA-ES ones — `cmaes-report.md`,
+  `cmaes-lambda-report.md`, `cmaes-stagnation-pilot-report.md` and
+  `cmaes-preliminary-report.md`, all run in 2026-08 on MayFly v0.7.1 and
+  go-cma-es v0.1.0 — the preliminary one on the code-identical pseudo-version
+  that preceded that tag. Each states its own pins; trust that line over this
+  one.
 - [`docs/qmc-initial-population-report.md`](docs/qmc-initial-population-report.md)
   — `qmcInit` measured on the eight-circle batch stage at three population
   sizes. All six comparisons are null and the data bound any effect to about

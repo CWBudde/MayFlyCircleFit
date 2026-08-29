@@ -3,6 +3,14 @@
 **Ran 2026-08-29** on the 64-core campaign host, driver
 `scripts/cmaes-measurement -design stagnation-pilot`.
 
+**Pins:** `github.com/CWBudde/go-cma-es v0.1.0` and `github.com/cwbudde/mayfly
+v0.7.1` — the current tree, not a superseded one. Every arm is separable CMA-ES
+with IPOP restarts, so no MayFly code runs in this design and the v0.7.0 result
+change does not reach it. These rows are comparable with
+[`cmaes-report.md`](cmaes-report.md) and
+[`cmaes-lambda-report.md`](cmaes-lambda-report.md), which ran on the same pins,
+and with a run made today.
+
 [`cmaes-report.md`](cmaes-report.md) found that both IPOP arms of the Phase 21
 campaign spent about 40% of their evaluation budget after their last
 improvement, because the campaign set none of the `stop*` fields and a restart
@@ -113,11 +121,40 @@ merely a longer final run. Submitted 2026-08-29; open work is Task 2 in
 
 ## Reproducing
 
+Both designs submit through a running server, so the queue and every active job
+stay visible on the dashboard — 27 jobs for the pilot and 48 for the campaign.
+`-action` defaults to `collect`, so naming a design alone collects rather than
+runs it. Build one identified binary and keep it for the whole campaign:
+
 ```sh
-go run ./scripts/cmaes-measurement -design stagnation-pilot   # 9 arms x 3 blocks
-go run ./scripts/cmaes-measurement -design stagnation         # 4 arms x 12 blocks
+commit=$(git rev-parse HEAD)
+go build -trimpath \
+  -ldflags "-X github.com/cwbudde/circlefit/cmd.commit=$commit" \
+  -o ./data/cmaes-phase11/circlefit .
+
+./data/cmaes-phase11/circlefit serve \
+  --port 8085 --data-root ./data/cmaes-phase11 \
+  --max-jobs 1 --queue-size 100 --input-root .
 ```
+
+The dashboard is then at <http://localhost:8085/>. In another shell, read the
+design before queueing it — a manifest may only be written once:
+
+```sh
+go run ./scripts/cmaes-measurement -action plan     -design stagnation-pilot
+go run ./scripts/cmaes-measurement -action submit   -design stagnation-pilot
+go run ./scripts/cmaes-measurement -action collect  -design stagnation-pilot
+go run ./scripts/cmaes-measurement -action analyze  -design stagnation-pilot
+```
+
+`collect` is safe to repeat while the queue runs; it prints state counts and
+writes its CSVs only once every job in the design has completed. `analyze`
+reproduces the tables from the collected CSV alone, and refuses to print a
+statistic for the pilot, which is registered as descriptive. Substitute
+`-design stagnation` for the twelve-block campaign.
 
 The arm table, the Hansen anchor, and the block and seed bases are in
 `scripts/cmaes-measurement/main.go`; `main_test.go` pins the registered shape of
-both designs.
+both designs, and
+[`scripts/cmaes-measurement/README.md`](../scripts/cmaes-measurement/README.md)
+carries the driver's full operating notes.
