@@ -129,6 +129,7 @@ func TestWithRestartsGivesEachAttemptADistinctSeedOffset(t *testing.T) {
 	}
 
 	offsets := map[int]bool{}
+
 	for i, options := range base.seen {
 		if options.ResumeCount != 2 {
 			t.Fatalf("attempt %d changed ResumeCount to %d; restarts vary SeedOffset so nested "+
@@ -320,6 +321,7 @@ func TestWithRestartsForwardsNestedEpochBoundaries(t *testing.T) {
 	}
 
 	wantCosts := []float64{9, 8, 7, 6}
+
 	for i, boundary := range boundaries {
 		if boundary.Epoch != i+1 {
 			t.Fatalf("boundary %d numbered %d; the count runs across attempts and must not restart",

@@ -2102,7 +2102,33 @@ account is inference; recording it is what turns it into a measurement.
       prices the waste per run rather than per job. Neither the Phase 21
       campaign nor the lambda screen carries them — both were run before the
       adapter recorded them — so the arm this decision rests on has to be
-      re-run, not re-read.
+      re-run, not re-read. The lambda screen widened the quantity at stake:
+      **six IPOP arms across three `lambda` levels spend 30-57% of their
+      budget after their last improvement**, against 16-21% for the
+      non-restarting arms that stop early on `TolFun`, so the ~40% Phase 21
+      reported was not a two-arm accident. No adapter or app change is needed
+      to measure the fix: `stopStagnationIters` already reaches
+      `config.Convergence.StagnationIterations` through `buildEarlyStop` and
+      `WithCMAESEarlyStop`, applied per run inside
+      `OptimizeWithRestartsContext`. Two things about the shape of the answer
+      were settled while designing it. A default has to be **window-only**
+      (`stopMinImprovement` = 0), because that field is an absolute cost
+      threshold and cannot transfer to a reference image whose costs differ in
+      scale — which is also why Task 23.4 cannot simply be folded in. And the
+      window must be selected on mechanism rather than on cost, or the
+      campaign that later tests cost is selecting on its own outcome.
+      Registered as `-design stagnation-pilot`: nine separable-IPOP arms over
+      three blocks at seeds 112001-112003, `lambda` 20 and 1024, each with its
+      own no-criterion baseline and windows at half, one and four times
+      Hansen's `120 + 30n/lambda` anchor. It is marked descriptive, so
+      `analyze` reports costs and budget waste and refuses to print a
+      statistic. Selection rule, fixed before the data existed: take the
+      window that reclaims the most budget while still completing at least two
+      restarts, ties broken toward the anchor. Submitted 2026-08-29. The
+      registered campaign — `sep-ipop-l20` and `sep-ipop` with and without the
+      selected window, 4 arms x 12 blocks at seeds 111013-111024, primary
+      contrast at `lambda` 20 — lands as a separate design once the pilot
+      names the window.
 
 ### Task 23.2: Separate covariance mode from restart strategy (P1)
 

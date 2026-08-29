@@ -425,6 +425,7 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 	result.Termination = termination
 	result.StagesStoppedEarly = stagesStoppedEarly
 	result.Restarts = restartRuns
+
 	slog.Info("Sequential optimization complete",
 		"stages", stages,
 		"stages_stopped_early", stagesStoppedEarly,
@@ -797,6 +798,7 @@ func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	result.Termination = termination
 	result.StagesStoppedEarly = stagesStoppedEarly
 	result.Restarts = restartRuns
+
 	slog.Info("Batch optimization complete",
 		"stages", stages,
 		"stages_stopped_early", stagesStoppedEarly,

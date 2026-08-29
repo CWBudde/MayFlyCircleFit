@@ -731,6 +731,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	if backendDegraded {
 		logAttrs = append(logAttrs, "backend_degraded", true)
 	}
+
 	if ssim != nil {
 		logAttrs = append(logAttrs, "ssim", *ssim)
 	}
