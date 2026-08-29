@@ -874,19 +874,23 @@ func TestReadResultsAcceptsBothColumnWidths(t *testing.T) {
 }
 
 // TestBackendProvenanceDistinguishesUnknownFromCPU pins the distinction the
-// column exists to make. A job whose server had no record is not a CPU job:
-// the fields are per-process, so a job collected after a server restart
-// genuinely does not know, and reporting cpu there would launder a gap into a
-// measurement.
+// column exists to make, and the checkpoint fallback that keeps it from being
+// vacuous. A run nothing recorded is not a CPU run, and reporting cpu there
+// would launder a gap into a measurement -- but -action preliminary
+// synthesizes its jobStatus from checkpoint-info.json, which carries no
+// provenance at all, so without the checkpoint fallback every preliminary row
+// would take that unknown branch even for a job that recorded its backend
+// perfectly well.
 func TestBackendProvenanceDistinguishesUnknownFromCPU(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
 		name   string
 		status jobStatus
+		saved  checkpoint
 		want   string
 	}{
-		{name: "no record", status: jobStatus{}, want: "unknown"},
+		{name: "no record", want: "unknown"},
 		{
 			name:   provenanceBackendCPU,
 			status: jobStatus{EffectiveBackend: provenanceBackendCPU},
@@ -902,13 +906,32 @@ func TestBackendProvenanceDistinguishesUnknownFromCPU(t *testing.T) {
 			status: jobStatus{EffectiveBackend: provenanceBackendOpenCL, BackendDegraded: true},
 			want:   provenanceBackendFellBack,
 		},
+		{
+			name:  "preliminary reads the checkpoint",
+			saved: checkpoint{EffectiveBackend: provenanceBackendOpenCL},
+			want:  provenanceBackendOpenCL,
+		},
+		{
+			name:  "preliminary keeps the degraded suffix",
+			saved: checkpoint{EffectiveBackend: provenanceBackendOpenCL, BackendDegraded: true},
+			want:  provenanceBackendFellBack,
+		},
+		{
+			// The live status wins where both have one, so a job that fell back
+			// in this process is not overwritten by an earlier run's record.
+			name:   "status wins over the checkpoint",
+			status: jobStatus{EffectiveBackend: provenanceBackendOpenCL, BackendDegraded: true},
+			saved:  checkpoint{EffectiveBackend: provenanceBackendCPU},
+			want:   provenanceBackendFellBack,
+		},
 	}
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := backendProvenance(testCase.status); got != testCase.want {
+			got := backendProvenance(testCase.status, testCase.saved)
+			if got != testCase.want {
 				t.Errorf("backendProvenance() = %q, want %q", got, testCase.want)
 			}
 		})

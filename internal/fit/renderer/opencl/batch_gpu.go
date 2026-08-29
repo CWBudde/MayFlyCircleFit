@@ -66,6 +66,10 @@ type batchEvaluator struct {
 	width      int
 	dimension  int
 	stagingLen int
+
+	// retained records that a drain failed and commands may still hold staging
+	// and costs. close honours it by leaking them; see drainQueuedTransfers.
+	retained bool
 }
 
 // batchSlot is the per-candidate device state a pipelined generation needs.
@@ -165,15 +169,49 @@ func (b *batchEvaluator) close() {
 
 	b.slots = nil
 
+	// The mem objects are safe to release with commands still in flight --
+	// OpenCL keeps them alive until those complete -- but the host pointers are
+	// not, and a failed drain is the one case where nothing guarantees they are
+	// free. Leak them there rather than hand the device freed memory.
 	if b.staging != nil {
-		C.free(unsafe.Pointer(b.staging))
+		if !b.retained {
+			C.free(unsafe.Pointer(b.staging))
+		}
+
 		b.staging = nil
 	}
 
 	if b.costs != nil {
-		C.free(unsafe.Pointer(b.costs))
+		if !b.retained {
+			C.free(unsafe.Pointer(b.costs))
+		}
+
 		b.costs = nil
 	}
+}
+
+// drainQueuedTransfers waits for whatever enqueueGeneration managed to issue
+// before its caller is allowed to release the host buffers. The pipelined
+// writes and cost readbacks are non-blocking, so OpenCL retains b.staging and
+// b.costs until each command completes; returning an enqueue error straight to
+// a caller that then runs the evaluator's cleanup would free them out from
+// under the device, during the very device failure being reported.
+//
+// A drain that itself fails leaves commands that may never complete, and there
+// is then no later moment at which freeing becomes safe. The buffers are
+// deliberately leaked in that case and the renderer stops being trusted: a few
+// kilobytes held for the life of the process is the cheaper of the two
+// outcomes.
+func (b *batchEvaluator) drainQueuedTransfers(cause error) error {
+	status := C.clFinish(b.renderer.queue)
+	if status == C.CL_SUCCESS {
+		return cause
+	}
+
+	b.retained = true
+	b.renderer.degraded.Store(true)
+
+	return errors.Join(cause, b.renderer.clError("clFinish(batch drain)", status))
 }
 
 // costSerial evaluates a generation the way the optimizer does today: one
@@ -242,7 +280,9 @@ func (b *batchEvaluator) costPipelined(paramSets [][]float64) ([]float64, error)
 
 	err := b.enqueueGeneration(paramSets)
 	if err != nil {
-		return nil, err
+		// Some of the generation's non-blocking transfers may already have been
+		// accepted, and they hold b.staging and b.costs until they complete.
+		return nil, b.drainQueuedTransfers(err)
 	}
 
 	status := C.clFinish(renderer.queue)

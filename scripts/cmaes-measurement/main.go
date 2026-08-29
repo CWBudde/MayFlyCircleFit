@@ -190,9 +190,11 @@ type jobStatus struct {
 	// what submitJob asked for. The server has always sent them and this driver
 	// used to drop them, which left the CSV unable to distinguish a CPU run from
 	// an OpenCL run that fell back -- and a fallback changes the arithmetic from
-	// float64 to float32 and back mid-run. Neither field survives a server
-	// restart, so a job collected from a restarted server reports empty rather
-	// than wrong.
+	// float64 to float32 and back mid-run. Both are now written to the
+	// checkpoint and restored from it, so a restarted server still reports them;
+	// they are empty only for a checkpoint written before the fields existed, or
+	// for a run whose process never built a renderer. The checkpoint is the
+	// fallback either way, which is what collectPreliminary reads.
 	EffectiveBackend string `json:"effectiveBackend"`
 	BackendDegraded  bool   `json:"backendDegraded"`
 }
@@ -225,6 +227,13 @@ type resultRow struct {
 type checkpoint struct {
 	OptimizerVersion string           `json:"optimizerVersion"`
 	Restarts         []opt.RestartRun `json:"restarts"`
+	// EffectiveBackend and BackendDegraded mirror the server's own fields. The
+	// checkpoint is the only place -action preliminary can learn them: it
+	// synthesizes its jobStatus from checkpoint-info.json, which carries no
+	// provenance, so without these the CSV would report unknown for every row
+	// of a campaign still in flight.
+	EffectiveBackend string `json:"effectiveBackend"`
+	BackendDegraded  bool   `json:"backendDegraded"`
 }
 
 type checkpointInfo struct {
@@ -1159,26 +1168,37 @@ func collectJob(config settings, record manifestRow, status jobStatus) (resultRo
 		OptimizerVersion: saved.OptimizerVersion, Score: score,
 		ScoredEvaluations: scoredEvaluations, FinalEvaluations: status.Evaluations,
 		Iterations: status.Iterations, ElapsedSeconds: status.Elapsed,
-		Backend:  backendProvenance(status),
+		Backend:  backendProvenance(status, saved),
 		Restarts: saved.Restarts,
 	}, nil
 }
 
-// backendProvenance renders what ran into one CSV cell. An empty effective
-// backend is reported as unknown rather than assumed to be cpu: it means the
-// server had no record, which happens for a job restored from a checkpoint,
-// and a campaign that silently substitutes a guess there is exactly the failure
-// this column exists to prevent.
-func backendProvenance(status jobStatus) string {
-	if status.EffectiveBackend == "" {
+// backendProvenance renders what ran into one CSV cell, preferring the live
+// status and falling back to what the checkpoint persisted. The fallback is not
+// belt and braces: -action preliminary builds its jobStatus from
+// checkpoint-info.json, which has no provenance at all, so the checkpoint is
+// the only record there.
+//
+// An empty effective backend in both is still reported as unknown rather than
+// assumed to be cpu. It means nothing recorded what ran -- a checkpoint written
+// before the fields existed, or a process that never built a renderer -- and a
+// campaign that silently substitutes a guess there is exactly the failure this
+// column exists to prevent.
+func backendProvenance(status jobStatus, saved checkpoint) string {
+	backend, degraded := status.EffectiveBackend, status.BackendDegraded
+	if backend == "" {
+		backend, degraded = saved.EffectiveBackend, saved.BackendDegraded
+	}
+
+	if backend == "" {
 		return "unknown"
 	}
 
-	if status.BackendDegraded {
-		return status.EffectiveBackend + "(degraded)"
+	if degraded {
+		return backend + "(degraded)"
 	}
 
-	return status.EffectiveBackend
+	return backend
 }
 
 func readTrace(path string) ([]store.TraceEntry, error) {

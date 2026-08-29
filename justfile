@@ -50,8 +50,11 @@ build-gpu: templ
 	CGO_ENABLED=1 go build -tags gpu -buildvcs=false -o {{BUILD_DIR}}/{{BINARY_NAME}}-gpu .
 
 # CIRCLEFIT_REQUIRE_OPENCL turns the "no device" skip into a failure, so an
-# unavailable ICD reports instead of passing vacuously.
-# Run the focused OpenCL suite against a real device
+# unavailable ICD reports instead of passing vacuously. It does not demand a
+# vendor GPU: this suite is meant to run on a CPU ICD such as PoCL too, which is
+# what ci-gpu-compile.yml does. Add CIRCLEFIT_REQUIRE_GPU_DEVICE=1 when the
+# point is to validate a real GPU. See docs/gpu-backends.md.
+# Run the focused OpenCL suite against whatever device is present
 test-gpu:
 	CIRCLEFIT_REQUIRE_OPENCL=1 CGO_ENABLED=1 go test -tags gpu -count=1 \
 		./internal/fit/renderer/... -run '^TestOpenCL|^TestPackReferenceNRGBA'
