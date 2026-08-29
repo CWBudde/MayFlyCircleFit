@@ -146,7 +146,8 @@ jobs and eight evaluation workers, lambda 64 ran at 0.67x and lambda 20 at
 
 ## The stagnation pilot
 
-`stagnation-pilot` answers the open box of Task 23.1: should a restart strategy
+`stagnation-pilot` answers the open stagnation question, Task 2 of `PLAN.md`:
+should a restart strategy
 arm a default stagnation criterion when the caller sets none? Six IPOP arms
 across three `lambda` levels spend **30-57%** of their budget after their last
 improvement, because no criterion is configured, `Stop.enabled()` is false, and
@@ -277,7 +278,7 @@ sample's optimizer diagnostics. It is the join key. Cumulative iteration and
 evaluation counts run straight through a restart boundary, so without it a
 trace cannot say which run produced a sample, and the evaluations a run spent
 after its last improvement — the 40% of two Phase 21 arms' budgets that
-motivated Task 23.1 — cannot be attributed to a run at all.
+motivated the stagnation question — cannot be attributed to a run at all.
 
 Both are empty for a campaign whose checkpoints predate the adapter recording
 them, which includes the Phase 21 campaign and the lambda screen. The restarts

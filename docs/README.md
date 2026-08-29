@@ -114,6 +114,13 @@ re-measure instead.
   `app.MinPopulation`, and for the measurement that retires the sigma question —
   `sigma * max(D)` never exceeds 1.52 while sigma spans fifty-two orders of
   magnitude. Also records that thirty-six cells reproduce Phase 21 bit for bit.
+- [`cmaes-stagnation-pilot-report.md`](cmaes-stagnation-pilot-report.md) — the
+  three-block pilot that selects the stagnation window a restart schedule should
+  arm, on mechanism rather than on cost: half Hansen's anchor at both `lambda`
+  levels, reclaiming 19.7 and 25.6 percentage points of wasted budget. Records
+  what the adapter now writes per restart, and why an absolute
+  `stopMinImprovement` threshold is retired. Descriptive only — it moved budget
+  without moving cost.
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by
@@ -142,6 +149,11 @@ re-measure instead.
   rendering optimization.**
 - [`simd-design.md`](simd-design.md) — why the kernels are hand-written Plan 9
   assembly, and what the original design got wrong.
+- [`frontend-spa-rewrite-decision.md`](frontend-spa-rewrite-decision.md) — why
+  the frontend is React islands over templ rather than a Vite/shadcn single-page
+  application, and the five constraints such a rewrite would have to pay for.
+  **Read before proposing an SPA rewrite**; Tailwind and shadcn are already
+  adoptable inside an island.
 - [`typescript-read-model-generation.md`](typescript-read-model-generation.md) —
   why the `web/src` read models are not generated from the Go structs, measured
   against `tygo`, and which parity tests are the contract instead. **Read before

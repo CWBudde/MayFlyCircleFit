@@ -45,6 +45,11 @@ evaluation workers, CPU backend with the exact AVX2 compositor, ordinary stage
 convergence disabled, trace and optimizer diagnostics on. Identical to the
 Phase 21 campaign in every respect except the arm set.
 
+**Pins:** MayFly `v0.7.1` and go-cma-es `v0.1.0`, the same as
+[`cmaes-report.md`](cmaes-report.md) — which is what lets the three replication
+arms below reproduce its cells bit for bit, and what makes both campaigns'
+numbers comparable with a run made today.
+
 | Arm | Covariance | Restarts | `lambda` | Iterations at cap |
 | --- | --- | --- | ---: | ---: |
 | `cmaes-single` | full | none | 1024 | 6350 |
@@ -233,7 +238,8 @@ screen is also the most wasteful one.
 
 The non-restarting arms stop early on `TolFun` — at 27.4% and 16.1% of cap — and
 their waste is correspondingly small. The contrast is the whole of the argument
-for the open box of Task 23.1: a restart schedule with no stagnation criterion
+for the open stagnation question, Task 2 of [`../PLAN.md`](../PLAN.md): a
+restart schedule with no stagnation criterion
 cannot end a run that has stopped progressing and hand its budget to the next
 restart, so it holds the budget open and spends it on nothing. Neither this
 screen nor Phase 21 carries the per-restart records that would price that waste
@@ -287,7 +293,8 @@ columns is a representation difference, not a stability difference. Cite
   pre-declared test, and it should be confirmed by a design that registers one
   before it is treated as a result.
 - **One fixture.** Eight circles on one 512x512 reference, as with everything
-  else measured on this problem. Task 23.4 remains open.
+  else measured on this problem. A second fixture, Task 10 of
+  [`../PLAN.md`](../PLAN.md), remains open.
 - **MayFly is not in this screen.** Its baseline is `cmaes-single`. Nothing here
   revises the Phase 21 comparison against MayFly in either direction.
 

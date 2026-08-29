@@ -84,6 +84,22 @@ per candidate, giving recorded break-even points of about 13 candidates at
 width 8 and 90 at width 48. Those figures explain why a real sweep amortizes
 the pool while a tiny synthetic sweep may not.
 
+### The shipped default is the core count, not this measurement
+
+`EvaluationWorkers` resolves to `Threads` when it is zero
+(`internal/app/config.go`) and `effectiveEvaluationWorkers`
+(`internal/fit/renderer/renderer_cpu.go`) clamps that to `GOMAXPROCS`, so a
+default configuration runs as many concurrent evaluations as the machine has
+hardware threads. The table above disagrees with that on the one host where it
+was measured, at both circle counts, on two revisions, and for medians and
+minima alike: one evaluation goroutine per hardware thread leaves nothing for
+the runtime and saturates memory bandwidth, and it costs 26% more memory.
+
+One data point on one 12-thread box is not enough to pick a formula — whether
+the rule is a fraction of `GOMAXPROCS`, a fixed headroom below it, or something
+image-size dependent is unmeasured. Task 6 in [`../PLAN.md`](../PLAN.md)
+carries it. An explicitly configured width stays authoritative either way.
+
 ## Active-set selection
 
 After candidate evaluation widened, `residual-region` selection became the
@@ -155,8 +171,9 @@ performs a full render, changed-pixel scans, and full-image SSD work for each
 omitted circle. A dirty-region audit could correct the incumbent SSD only over
 the removed circle's raster, but it must preserve the exact integer semantics
 of `fit.FastMSECost`; a last-bit float change would reorder circles and break
-selection determinism. This is tracked as Task 15.7 rather than being folded
-into the completed selection change.
+selection determinism. It was tracked as the dirty-region work rather than
+being folded into the completed selection change; the evaluator has since
+shipped, and what remains of it is Task 4 in [`../PLAN.md`](../PLAN.md).
 
 ## Reproducing
 

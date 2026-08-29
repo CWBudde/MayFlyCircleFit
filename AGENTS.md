@@ -28,11 +28,17 @@ ones that will change what you propose:
   long run, and which interventions did **not** delay population collapse
   (population size, `NC`, `DanceDamp`, variant choice, longer budgets). Read
   before proposing a search-quality change.
-- **Every measurement report in `docs/` except the QMC screen was taken under
-  MayFly v0.6.0 or earlier. The pin is now v0.7.1, and v0.7.0 changed results
-  for every variant, so none of their numbers is comparable to a run made
-  today.** Read them for method and for what was ruled out; re-measure before
-  citing a figure. See the Toolchain section.
+- **Most measurement reports in `docs/` were taken under MayFly v0.6.0 or
+  earlier, and v0.7.0 changed results for every variant, so none of their
+  numbers is comparable to a run made today.** Read those for method and for
+  what was ruled out; re-measure before citing a figure. See the Toolchain
+  section. Five reports are on the current pins and may be cited directly: the
+  QMC screen, and the four CMA-ES ones — `cmaes-report.md`,
+  `cmaes-lambda-report.md`, `cmaes-stagnation-pilot-report.md` and
+  `cmaes-preliminary-report.md`, all run in 2026-08 on MayFly v0.7.1 and
+  go-cma-es v0.1.0 — the preliminary one on the code-identical pseudo-version
+  that preceded that tag. Each states its own pins; trust that line over this
+  one.
 - [`docs/qmc-initial-population-report.md`](docs/qmc-initial-population-report.md)
   — `qmcInit` measured on the eight-circle batch stage at three population
   sizes. All six comparisons are null and the data bound any effect to about
@@ -58,8 +64,9 @@ ones that will change what you propose:
   as licence to change a default:** both IPOP arms spent about 40% of their
   budget after their last improvement because no stagnation criterion was set,
   the winning arm confounds covariance mode with restart strategy, and `lambda`
-  is pinned to `popSize` and ran at 1024 against Hansen's default of 16. Phase
-  23 of `PLAN.md` carries all three. The report's sigma column is **not**
+  is pinned to `popSize` and ran at 1024 against Hansen's default of 16. The
+  `lambda` screen below answers the last two with nulls; the stagnation
+  criterion is Task 2 of `PLAN.md`. The report's sigma column is **not**
   evidence of a diverged search — sigma alone is gauge-dependent and the
   identifiable `sigma * max(D)` was never recorded; do not cite it.
 - [`docs/cmaes-lambda-report.md`](docs/cmaes-lambda-report.md) — the twelve-block
@@ -79,6 +86,16 @@ ones that will change what you propose:
   three replication arms reproduce all thirty-six Phase 21 cells bit for bit
   across a different binary and a different concurrency setting, which is what
   licenses comparing the two campaigns' rows directly.
+- [`docs/cmaes-stagnation-pilot-report.md`](docs/cmaes-stagnation-pilot-report.md)
+  — the three-block pilot that selects the stagnation window a CMA-ES restart
+  schedule should arm: half Hansen's `120 + 30n/lambda` anchor at both `lambda`
+  levels, reclaiming 19.7 and 25.6 percentage points of the budget spent after
+  the last improvement. It also records what the adapter now writes per restart
+  — `TerminationReason`, `DistributionExtent`, and the trace `restart` index —
+  which no earlier campaign carries, so an arm this question rests on must be
+  re-run rather than re-read. **It moved budget without moving cost**, so do not
+  quote it as a quality result; the twelve-block campaign that tests cost is
+  open.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more
@@ -98,8 +115,8 @@ ones that will change what you propose:
 - [`docs/support-matrix.md`](docs/support-matrix.md),
   [`docs/known-limitations.md`](docs/known-limitations.md),
   [`docs/troubleshooting.md`](docs/troubleshooting.md) — supported targets, CLI
-  exit statuses, and the JSON API error envelope — and the active Phase 14
-  section of `PLAN.md`.
+  exit statuses, and the JSON API error envelope — and the release-verification
+  task (Task 1) of `PLAN.md`.
 
 ## Architecture
 
