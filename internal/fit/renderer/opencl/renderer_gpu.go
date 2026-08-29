@@ -735,22 +735,11 @@ func (r *Renderer) ensure(params []float64) error {
 		global = C.size_t(nextCount * r.localSize)
 		count := C.cl_int(partialCount)
 
-		status = C.clSetKernelArg(r.reduceKernel, 0, C.size_t(unsafe.Sizeof(input)), unsafe.Pointer(&input))
-		if status != C.CL_SUCCESS {
-			return r.clError("clSetKernelArg(reduce input)", status)
+		err := r.setReduceArgs(input, output, count, localBytes)
+		if err != nil {
+			return err
 		}
-		status = C.clSetKernelArg(r.reduceKernel, 1, C.size_t(unsafe.Sizeof(output)), unsafe.Pointer(&output))
-		if status != C.CL_SUCCESS {
-			return r.clError("clSetKernelArg(reduce output)", status)
-		}
-		status = C.clSetKernelArg(r.reduceKernel, 2, C.size_t(unsafe.Sizeof(count)), unsafe.Pointer(&count))
-		if status != C.CL_SUCCESS {
-			return r.clError("clSetKernelArg(reduce count)", status)
-		}
-		status = C.clSetKernelArg(r.reduceKernel, 3, localBytes, nil)
-		if status != C.CL_SUCCESS {
-			return r.clError("clSetKernelArg(reduce scratch)", status)
-		}
+
 		status = C.clEnqueueNDRangeKernel(r.queue, r.reduceKernel, 1, nil, &global, &local, 0, nil, nil)
 		if status != C.CL_SUCCESS {
 			return r.clError("clEnqueueNDRangeKernel(reduce_sum)", status)

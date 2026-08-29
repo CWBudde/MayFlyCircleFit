@@ -195,13 +195,15 @@ behavior is production-ready.
 - The experimental OpenCL renderer contains a CPU compatibility degradation path
   for runtime rendering/cost errors. A run that takes it is recorded on the job
   as `backendDegraded`, alongside the `effectiveBackend` it was built on, and
-  both appear in the CLI status output and on the job detail page. Two limits
-  follow. Neither field is persisted to a checkpoint -- like `evaluationWidth`
-  they describe one process's run -- so a job restored from a checkpoint reports
-  nothing rather than a stale value. And the flag says only *that* the run
-  degraded, not when: its cost mixes device and CPU arithmetic in an unrecorded
-  proportion, so it is not comparable with either a clean GPU run or a clean CPU
-  one.
+  both appear in the CLI status output and on the job detail page. Both are now
+  persisted to the checkpoint and restored from it, so a job read back from disk
+  reports the backend that produced its cost instead of nothing; a checkpoint
+  saved by a process that built no renderer keeps the stored value rather than
+  clearing it, and a checkpoint written before the fields existed decodes as
+  unknown rather than as `cpu`. One limit remains: the flag says only *that* the
+  run degraded, not when: its cost mixes device and CPU arithmetic in an
+  unrecorded proportion, so it is not comparable with either a clean GPU run or
+  a clean CPU one.
 - Degradation is permanent and is shared by a renderer and every session
   derived from it, so a lost device is discovered once per run rather than once
   per stage, and a staged run reports it even though every evaluation happened

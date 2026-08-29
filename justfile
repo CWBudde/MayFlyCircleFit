@@ -42,6 +42,32 @@ benchmark-compare baseline candidate:
 test-e2e:
 	CIRCLEFIT_RUN_E2E=1 go test -count=1 -timeout=3m ./tests/e2e
 
+# Needs cgo and OpenCL headers, so it is deliberately not what `just build`
+# produces; the name differs so a GPU binary is never mistaken for the portable
+# one.
+# Build the experimental OpenCL binary
+build-gpu: templ
+	CGO_ENABLED=1 go build -tags gpu -buildvcs=false -o {{BUILD_DIR}}/{{BINARY_NAME}}-gpu .
+
+# CIRCLEFIT_REQUIRE_OPENCL turns the "no device" skip into a failure, so an
+# unavailable ICD reports instead of passing vacuously. It does not demand a
+# vendor GPU: this suite is meant to run on a CPU ICD such as PoCL too, which is
+# what ci-gpu-compile.yml does. Add CIRCLEFIT_REQUIRE_GPU_DEVICE=1 when the
+# point is to validate a real GPU. See docs/gpu-backends.md.
+# Run the focused OpenCL suite against whatever device is present
+test-gpu:
+	CIRCLEFIT_REQUIRE_OPENCL=1 CGO_ENABLED=1 go test -tags gpu -count=1 \
+		./internal/fit/renderer/... -run '^TestOpenCL|^TestPackReferenceNRGBA'
+
+# No -count here on purpose: a -count=6 attempt produced 50-320% spreads and
+# orderings that are impossible for this workload, so the method is several
+# separate passes compared by hand. See docs/gpu-backends.md.
+# Run one GPU benchmark pass
+bench-gpu bench='^BenchmarkOpenCL':
+	CIRCLEFIT_REQUIRE_OPENCL=1 CIRCLEFIT_REQUIRE_GPU_DEVICE=1 CGO_ENABLED=1 \
+		go test -tags gpu -run '^$' -bench '{{bench}}' -benchmem \
+		./internal/fit/renderer/...
+
 # Run tests with coverage
 test-coverage: templ
 	go test -v -coverprofile=coverage.out ./...

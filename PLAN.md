@@ -305,6 +305,19 @@ retained-canvas handoff (the host needs the canvas on every stage boundary
 regardless, so only the upload could be avoided — one image copy per stage
 against the term the second tranche made flat).
 
+A fourth was answered by building the instrument but not the feature: the
+batched objective interface. A pipelined generation — every candidate its own
+buffers, one host synchronization instead of λ — measures **1.1-1.4x slower**
+than one blocking `Cost` per candidate, in all eight cells over two passes,
+because the queue is in-order and the driver pays more for λ×3 resident buffers
+than the host round trips cost. Measuring the launch floor directly then bounded
+every possible batching scheme: at 512² the floor is ~32.6 µs of an 88.8 µs
+evaluation, so a batch that removed **all** of it would win 1.58x at the renderer
+level and less end to end. See
+[`docs/gpu-performance-report.md`](docs/gpu-performance-report.md). This also
+retires the reading that tranche 2's 63.1 µs fixed floor was overhead waiting to
+be amortized — about half of it is per-pixel work.
+
 Note before benchmarking any of this: whole-pipeline benchmarks fix K at 12 and
 run eight evaluations per stage where a real stage runs hundreds, so they cannot
 see the effects that matter. Use `BenchmarkStagedEvaluationAtDepth`.
@@ -315,8 +328,12 @@ see the effects that matter. Use `BenchmarkStagedEvaluationAtDepth`.
         demand. A 512² session still holds a 1,050,778-byte eager
         `image.NewNRGBA` for `renderImage` — about 14 µs of 220.6 µs — that only
         a `Render` caller needs.
-  - [ ] Design a batched objective interface so optimizer populations can share
-        kernel launches and scalar synchronization.
+  - [x] Design a batched objective interface so optimizer populations can share
+        kernel launches and scalar synchronization. **Declined on measurement**,
+        not built: bounded at 1.58x at best and measured slower in the one scheme
+        built. The unexported `batchEvaluator` and its two benchmarks stay in
+        `internal/fit/renderer/opencl` as the instrument, since the answer is
+        device-specific.
 - [ ] Optimize the render kernel based on profiling
   - [ ] Precompute radius squared, premultiplied color, opacity, and inverse
         opacity into aligned circle records.

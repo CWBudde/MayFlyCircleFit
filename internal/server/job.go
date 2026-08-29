@@ -73,9 +73,12 @@ type Job struct {
 	// The OpenCL renderer degrades permanently once it has degraded at all, so
 	// this only ever goes from false to true.
 	//
-	// Both are empty for a job restored from a checkpoint, which built no
-	// renderer in this process. Neither is persisted -- like EvaluationWidth,
-	// they describe this process's run, not the configuration that produced it.
+	// Both are persisted to the checkpoint and restored from it, so a job read
+	// back from disk reports the backend that produced its cost rather than
+	// nothing. They still describe a run rather than a configuration -- unlike
+	// EvaluationWidth, which is not persisted -- so a checkpoint saved by a
+	// process that built no renderer keeps the stored value instead of clearing
+	// it. Both are empty only when no run has ever recorded one.
 	EffectiveBackend app.Backend `json:"effectiveBackend,omitempty"`
 	BackendDegraded  bool        `json:"backendDegraded,omitempty"`
 	// InheritedEvaluations is what Evaluations already stood at when this job

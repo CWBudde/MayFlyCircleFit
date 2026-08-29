@@ -170,6 +170,27 @@ type Checkpoint struct {
 	// as a mismatch, so the schema version does not move.
 	OptimizerVersion string `json:"optimizerVersion,omitempty"`
 
+	// EffectiveBackend is the backend that actually produced BestCost, and
+	// BackendDegraded reports whether the device was lost mid-run and the
+	// remainder was costed on the CPU.
+	//
+	// Config.Backend records what was asked for, which is a different question:
+	// a job may name opencl and run on the CPU because the binary lacks the tag
+	// and a fallback was configured, or start on the device and finish on the
+	// CPU because Cost has no error return and degradation is silent and
+	// permanent. A GPU cost is held to a measured budget rather than the
+	// byte-exact CPU contract, so a run that mixes the two mixes float32 and
+	// float64 arithmetic in a proportion nothing else records.
+	//
+	// Both are additive and optional, like OptimizerVersion and Restarts: a
+	// checkpoint written before they existed decodes with them empty, which is
+	// reported as unknown rather than as cpu, so the schema version does not
+	// move. They describe the process that ran, so a checkpoint saved by a
+	// process that built no renderer keeps whatever the last run recorded rather
+	// than overwriting it with nothing.
+	EffectiveBackend app.Backend `json:"effectiveBackend,omitempty"`
+	BackendDegraded  bool        `json:"backendDegraded,omitempty"`
+
 	// Config holds the job configuration, needed for validation during resume.
 	// We ensure that resumed jobs use compatible settings (same image, mode, etc.)
 	Config JobConfig `json:"config"`
@@ -448,6 +469,8 @@ func (c *Checkpoint) UnmarshalJSON(data []byte) error {
 		ScheduleID:       wire.ScheduleID,
 		StageIndex:       wire.StageIndex,
 		OptimizerVersion: wire.OptimizerVersion,
+		EffectiveBackend: wire.EffectiveBackend,
+		BackendDegraded:  wire.BackendDegraded,
 		Config:           wire.Config,
 	}
 	legacy := wire.SchemaVersion == 0 || wire.SchemaVersion == 1
@@ -487,6 +510,8 @@ type checkpointWire struct {
 	ScheduleID       string           `json:"scheduleId,omitempty"`
 	StageIndex       *int             `json:"stageIndex,omitempty"`
 	OptimizerVersion string           `json:"optimizerVersion,omitempty"`
+	EffectiveBackend app.Backend      `json:"effectiveBackend,omitempty"`
+	BackendDegraded  bool             `json:"backendDegraded,omitempty"`
 	Config           JobConfig        `json:"config"`
 }
 
@@ -511,6 +536,8 @@ func checkpointWireFrom(c Checkpoint) checkpointWire {
 		ScheduleID:       c.ScheduleID,
 		StageIndex:       c.StageIndex,
 		OptimizerVersion: c.OptimizerVersion,
+		EffectiveBackend: c.EffectiveBackend,
+		BackendDegraded:  c.BackendDegraded,
 		Config:           c.Config,
 	}
 }

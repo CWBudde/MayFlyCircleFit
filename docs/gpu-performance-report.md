@@ -850,3 +850,161 @@ for rep in $(seq 1 8); do
   done
 done
 ```
+
+## Task 11 — the batched objective, measured and declined
+
+`PLAN.md` Task 11 carried "Design a batched objective interface so optimizer
+populations can share kernel launches and scalar synchronization", and its own
+framing required a measurement before building: *everything below was justified
+by that gap, so each item now needs its own measurement rather than an inherited
+one.* This is that measurement, and it says **do not build it.**
+
+### Hardware and conditions
+
+| | |
+|---|---|
+| GPU | NVIDIA T550 Laptop GPU, 16 compute units, 4 GiB, driver 580.178.04 |
+| OpenCL platform | NVIDIA CUDA (the only ICD installed on this host) |
+| Reduction local size | 256, probed |
+| CPU | 12th Gen Intel Core i7-1255U, 12 threads |
+| Go | 1.26.5, linux/amd64 |
+| Revision | `68a9509` plus this branch's batch evaluator and benchmarks |
+
+Taken on a contended interactive desktop, and this laptop throttles: an
+end-to-end run of identical work varied 25.8–47.0 s in the same sitting. Every
+figure below is the ordinary `-benchtime=1s` default over **two separate
+passes**, never `-count`, for the reason recorded under
+[Reproducing](#reproducing).
+
+### What prompted it
+
+An end-to-end campaign-shaped run (512², 8 circles in one batch stage, separable
+CMA-ES with IPOP, 204,803 evaluations, three seeds) measured the same
+per-evaluation cost at both population sizes the campaign uses:
+
+| λ | iterations | CPU, 8 workers | OpenCL | ms/eval CPU | ms/eval GPU |
+|---:|---:|---:|---:|---:|---:|
+| 20 | 10240 | 109.1 s | 39.1 s | 0.533 | 0.191 |
+| 1024 | 200 | 106.5 s | 39.8 s | 0.520 | 0.194 |
+
+Flat across a 51-fold change in generation size is what "nothing amortizes"
+looks like from outside the renderer. `--evaluation-workers 1` and `8` produced
+bit-identical costs and no speedup in the same run, which is the documented
+decline path in [`known-limitations.md`](known-limitations.md) behaving as
+specified: OpenCL withholds the concurrent-evaluation marker.
+
+### A. Removing the per-candidate host synchronization
+
+`BenchmarkOpenCLGenerationEvaluation`, 512², 8 circles. The `serial` arm is one
+`Renderer.Cost` per candidate — today's path, each with its own blocking round
+trip. The `pipelined` arm gives every candidate its own parameter and partial
+buffers, issues all λ chains with non-blocking transfers, and synchronizes
+**once** per generation instead of λ times. The kernels are unchanged. Both arms
+are pinned bit-exact against each other by `TestOpenCLCostBatchMatchesSerial`.
+
+Microseconds per evaluation, two passes:
+
+| λ | serial | pipelined | pipelined ÷ serial |
+|---:|---:|---:|---:|
+| 20 | 90.34 / 88.47 | 109.2 / 113.3 | 1.24x / 1.28x |
+| 64 | 99.36 / 91.30 | 110.2 / 111.3 | 1.11x / 1.22x |
+| 256 | 88.80 / 91.00 | 114.3 / 118.2 | 1.29x / 1.30x |
+| 1024 | 93.38 / 95.36 | 120.0 / 131.6 | 1.29x / 1.38x |
+
+**Pipelining is slower, in all eight cells, on both passes.** The serial column
+is also flat from λ=20 to λ=1024, reproducing the end-to-end observation inside
+the renderer where nothing else can explain it.
+
+The direction is not mysterious once stated: the engine's command queue is
+in-order, so queueing λ chains ahead does not let any two of them overlap. It
+buys only the host round trip at the end of each chain — and it pays for that
+with an extra `clSetKernelArg` per candidate and with λ×3 distinct buffers the
+driver must make resident instead of three hot ones. On this device the second
+term is the larger one.
+
+### B. How much of an evaluation is removable at all
+
+If removing the host synchronization makes a generation *slower*, the question
+becomes whether a true batched kernel — one dispatch over a candidate dimension —
+has anything left to win. `BenchmarkOpenCLEvaluationFloorBySize` sweeps the
+canvas at 8 circles and λ=64 on the serial path. A tiny canvas does almost no
+per-pixel work, so its per-evaluation figure is very nearly the launch-and-
+synchronize floor on its own.
+
+| Canvas | µs/eval, pass 1 | pass 2 |
+|---:|---:|---:|
+| 8² | 30.74 | 35.23 |
+| 64² | 34.55 | 32.76 |
+| 128² | 30.65 | 31.41 |
+| 256² | 44.12 | 42.09 |
+| 512² | 89.37 | 88.18 |
+
+The floor is **~32.6 µs** and is flat from 8² to 128², which is the same fact
+tranche 2 recorded from the other side ("at 128² nothing separates: the canvas
+is small enough that the device is bounded by launch latency"), now measured
+directly rather than inferred.
+
+At 512² an evaluation costs 88.8 µs, so the floor is **37%** of it and per-pixel
+work is the other 63%. A batched kernel can only attack the floor: every
+candidate still has to touch every pixel. So even a batch that removed **100%**
+of the per-candidate floor — which is impossible, since it still needs its own
+dispatch, its own reduction and λ times the partial-sum traffic — would win
+
+    88.8 / (88.8 − 32.6) = 1.58x
+
+and the achievable figure is below that. Note this is a *renderer-level* bound;
+the end-to-end campaign figure above is 191 µs per evaluation, so more than half
+of a real evaluation is already outside the device and would not move at all.
+
+### What this decides
+
+**The batched objective interface is not worth building on this device, and the
+`PLAN.md` item is closed by measurement rather than by code.** One scheme was
+built and measured 1.1-1.4x *slower*; the best conceivable scheme is bounded at
+1.58x at the renderer level and less end to end. That is far short of what
+justifies a `BatchObjectiveFunc` upstream in `go-cma-es`, a new pin, a new entry
+in the measured-pairs allowlist in `internal/opt/resume_guard.go`, and the same
+again for MayFly.
+
+It also retires the reading that the 63.1 µs fixed floor fitted under tranche 2
+was overhead waiting to be amortized. It is not: about half of it is per-pixel
+work that does not depend on circle count, and only ~32.6 µs is launch and
+synchronization.
+
+The `batchEvaluator` stays in the tree, unexported and reached only from these
+benchmarks and the parity test, because it is the instrument that produced this
+answer and the answer is device-specific — an AMD or Intel device, or an
+out-of-order queue, could reach a different one.
+
+### What this does not establish
+
+**Nothing about another vendor.** One NVIDIA T550, one driver, one in-order
+queue. The pipelined arm's loss in particular is a property of how this driver
+handles buffer residency, and the floor is a property of this device's launch
+latency; both are exactly the kind of figure that moves between vendors.
+
+**Nothing about an out-of-order queue.** The engine creates an in-order queue,
+so the pipelined arm could never overlap two candidates' dispatches. Whether an
+out-of-order queue plus events would change the answer is unmeasured — but it
+would not change the floor analysis in section B, which is what bounds the win.
+
+**Nothing about a larger canvas.** At 1024² the per-pixel term grows faster than
+the floor, so the ceiling for batching is *lower* there, not higher. The
+measurement was taken at the campaign's own canvas.
+
+**Nothing about the image readback.** `Cost` defers it, so it never appears in
+these numbers. Pinned staging for the readback remains open and unmeasured, and
+it is a `Render` concern — once per job, not once per evaluation.
+
+### Reproducing
+
+```sh
+# Parity first. Both arms are the same float32 device arithmetic, so this is an
+# exact-equality test, not a deviation budget.
+just test-gpu
+
+# A and B, two separate passes each. No -count: a -count=6 attempt on this
+# device produced 50-320% spreads and impossible orderings.
+for rep in 1 2; do just bench-gpu '^BenchmarkOpenCLGenerationEvaluation'; done
+for rep in 1 2; do just bench-gpu '^BenchmarkOpenCLEvaluationFloorBySize'; done
+```

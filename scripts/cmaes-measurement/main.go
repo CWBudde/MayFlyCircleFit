@@ -56,7 +56,12 @@ const (
 	// fixture. A design on another circle count must not reuse it.
 	searchDimensions = 56
 	// resultColumns is the width of the header writeResults emits.
-	resultColumns = 12
+	resultColumns = 13
+	// legacyResultColumns is the width every result CSV committed under docs/
+	// still has, from before the backend provenance column existed. readResults
+	// accepts it so a recorded campaign can still be re-analysed, rather than
+	// the archive being rewritten to add a column nobody measured at the time.
+	legacyResultColumns = 12
 )
 
 type arm struct {
@@ -181,6 +186,17 @@ type jobStatus struct {
 	Elapsed     float64 `json:"elapsed"`
 	Iterations  int     `json:"iterations"`
 	Evaluations int     `json:"evaluations"`
+	// EffectiveBackend and BackendDegraded are what actually ran, as opposed to
+	// what submitJob asked for. The server has always sent them and this driver
+	// used to drop them, which left the CSV unable to distinguish a CPU run from
+	// an OpenCL run that fell back -- and a fallback changes the arithmetic from
+	// float64 to float32 and back mid-run. Both are now written to the
+	// checkpoint and restored from it, so a restarted server still reports them;
+	// they are empty only for a checkpoint written before the fields existed, or
+	// for a run whose process never built a renderer. The checkpoint is the
+	// fallback either way, which is what collectPreliminary reads.
+	EffectiveBackend string `json:"effectiveBackend"`
+	BackendDegraded  bool   `json:"backendDegraded"`
 }
 
 type resultRow struct {
@@ -193,6 +209,14 @@ type resultRow struct {
 	FinalEvaluations  int
 	Iterations        int
 	ElapsedSeconds    float64
+	// Backend is the backend that actually produced this row's costs, with a
+	// "(degraded)" suffix when the device was lost mid-run. It is empty for a
+	// row read back from a campaign recorded before the column existed, which is
+	// every CSV committed under docs/ -- those are all CPU runs, because
+	// submitJob has always named cpu explicitly and a named backend always beats
+	// the server default, but they say so nowhere in the file and this driver
+	// does not put words in their mouth.
+	Backend string
 	// Restarts is the collected checkpoint's per-run record. It is populated
 	// only by collectJob, which reads the checkpoint; a row parsed back out of
 	// the result CSV by readResults leaves it empty, because the result CSV is
@@ -203,6 +227,13 @@ type resultRow struct {
 type checkpoint struct {
 	OptimizerVersion string           `json:"optimizerVersion"`
 	Restarts         []opt.RestartRun `json:"restarts"`
+	// EffectiveBackend and BackendDegraded mirror the server's own fields. The
+	// checkpoint is the only place -action preliminary can learn them: it
+	// synthesizes its jobStatus from checkpoint-info.json, which carries no
+	// provenance, so without these the CSV would report unknown for every row
+	// of a campaign still in flight.
+	EffectiveBackend string `json:"effectiveBackend"`
+	BackendDegraded  bool   `json:"backendDegraded"`
 }
 
 type checkpointInfo struct {
@@ -1137,8 +1168,37 @@ func collectJob(config settings, record manifestRow, status jobStatus) (resultRo
 		OptimizerVersion: saved.OptimizerVersion, Score: score,
 		ScoredEvaluations: scoredEvaluations, FinalEvaluations: status.Evaluations,
 		Iterations: status.Iterations, ElapsedSeconds: status.Elapsed,
+		Backend:  backendProvenance(status, saved),
 		Restarts: saved.Restarts,
 	}, nil
+}
+
+// backendProvenance renders what ran into one CSV cell, preferring the live
+// status and falling back to what the checkpoint persisted. The fallback is not
+// belt and braces: -action preliminary builds its jobStatus from
+// checkpoint-info.json, which has no provenance at all, so the checkpoint is
+// the only record there.
+//
+// An empty effective backend in both is still reported as unknown rather than
+// assumed to be cpu. It means nothing recorded what ran -- a checkpoint written
+// before the fields existed, or a process that never built a renderer -- and a
+// campaign that silently substitutes a guess there is exactly the failure this
+// column exists to prevent.
+func backendProvenance(status jobStatus, saved checkpoint) string {
+	backend, degraded := status.EffectiveBackend, status.BackendDegraded
+	if backend == "" {
+		backend, degraded = saved.EffectiveBackend, saved.BackendDegraded
+	}
+
+	if backend == "" {
+		return "unknown"
+	}
+
+	if degraded {
+		return backend + "(degraded)"
+	}
+
+	return backend
 }
 
 func readTrace(path string) ([]store.TraceEntry, error) {
@@ -1214,7 +1274,7 @@ func writeResults(path string, results []resultRow) error {
 
 	writer := csv.NewWriter(file)
 
-	header := []string{"arm", "block", "seed", "jobId", "state", "termination", "optimizerVersion", "bestCost", "scoredEvaluations", "finalEvaluations", "iterations", "elapsedSeconds"}
+	header := []string{"arm", "block", "seed", "jobId", "state", "termination", "optimizerVersion", "bestCost", "scoredEvaluations", "finalEvaluations", "iterations", "elapsedSeconds", "backend"}
 	if err := writer.Write(header); err != nil {
 		return err
 	}
@@ -1225,7 +1285,7 @@ func writeResults(path string, results []resultRow) error {
 			result.State, result.Termination, result.OptimizerVersion,
 			strconv.FormatFloat(result.Score, 'g', 17, 64), strconv.Itoa(result.ScoredEvaluations),
 			strconv.Itoa(result.FinalEvaluations), strconv.Itoa(result.Iterations),
-			strconv.FormatFloat(result.ElapsedSeconds, 'f', 6, 64),
+			strconv.FormatFloat(result.ElapsedSeconds, 'f', 6, 64), result.Backend,
 		}
 		if err := writer.Write(record); err != nil {
 			return err
@@ -1731,8 +1791,11 @@ func readResults(path string, wantJobs int) ([]resultRow, error) {
 
 	for index, record := range records[1:] {
 		line := index + 2
-		if len(record) != resultColumns {
-			return nil, fmt.Errorf("results line %d has %d columns, want %d", line, len(record), resultColumns)
+		if len(record) != resultColumns && len(record) != legacyResultColumns {
+			return nil, fmt.Errorf(
+				"results line %d has %d columns, want %d or %d",
+				line, len(record), resultColumns, legacyResultColumns,
+			)
 		}
 
 		parser := rowParser{record: record, line: line}
@@ -1747,6 +1810,9 @@ func readResults(path string, wantJobs int) ([]resultRow, error) {
 			FinalEvaluations:  parser.integer(9),
 			Iterations:        parser.integer(10),
 			ElapsedSeconds:    parser.float(11),
+		}
+		if len(record) == resultColumns {
+			row.Backend = record[12]
 		}
 		if parser.err != nil {
 			return nil, parser.err

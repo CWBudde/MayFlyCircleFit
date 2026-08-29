@@ -187,7 +187,18 @@ visible from the package list:
 - **The label is not the record.** `Cost` and `Render` have no error return, so a
   device failure degrades the renderer permanently and silently to its CPU
   fallback. `effectiveBackend` and `backendDegraded` on the job are what say what
-  ran; both are per-process and are not persisted to a checkpoint.
+  ran; both are now persisted to the checkpoint and restored from it, so a job
+  read back from disk still says which backend produced its cost.
+- **Batching a population into one launch was measured and declined.** A
+  pipelined generation — every candidate its own buffers, one host
+  synchronization instead of λ — is 1.1-1.4x *slower* than one blocking `Cost`
+  per candidate, because the queue is in-order and the driver pays more for the
+  extra resident buffers than the host round trips cost. The launch floor was
+  then measured directly and bounds every possible scheme: ~32.6 µs of an 88.8 µs
+  evaluation at 512², so a perfect batch would win 1.58x at the renderer level
+  and less end to end. Do not propose a `BatchObjectiveFunc` without a device
+  that measures differently; the instrument to re-measure with is
+  `BenchmarkOpenCLGenerationEvaluation`.
 - **The staged pipelines are now the faster place to run, on a large enough
   canvas.** Two changes did it. Task 11.13 tranche 1 gave a renderer and every
   session derived from it one shared device engine — runtime, context, queue,
