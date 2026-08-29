@@ -1,11 +1,12 @@
 # CMA-ES stagnation criterion: the pilot and the campaign
 
-**Arming a stagnation criterion on a CMA-ES restart schedule does not improve
-the fit.** Both registered contrasts of the twelve-block campaign retain their
-null under Holm, the primary at `t = -0.34` with six blocks won out of twelve.
-The criterion fires as designed and reshuffles where a restart ladder spends
-its budget; it does not change how much useful work the ladder does. **Do not
-arm one by default.**
+**Arming a stagnation criterion on a separable IPOP restart schedule does not
+improve the fit.** Both registered contrasts of the twelve-block campaign
+retain their null under Holm, the primary at `t = -0.34` with six blocks won
+out of twelve. The criterion fires as designed and reshuffles where a restart
+ladder spends its budget; it does not change how much useful work the ladder
+does. **Do not arm one by default.** Every arm here is IPOP; `bipop` is exposed
+to callers too and this campaign says nothing about it either way.
 
 **Ran 2026-08-29** on the 64-core campaign host, driver
 `scripts/cmaes-measurement`, designs `stagnation-pilot` (27 jobs, 3 blocks) and
@@ -235,9 +236,16 @@ not renormalize `C`.
 ## Recommendation
 
 **Do not arm a default stagnation criterion for restart strategies.** The
-behaviour change is real — it would stop 68 runs out of 98 at `lambda` 20 — and
-it buys nothing measurable, so it is cost without benefit for every existing
-CMA-ES restart configuration.
+behaviour change is real — it stopped 68 of the treatment arm's 106 runs at
+`lambda` 20 — and it buys nothing measurable, so it is cost without benefit on
+the configurations tested.
+
+Those are separable IPOP at `lambda` 20 and at `lambda` 1024, and nothing else.
+`bipop` is equally available to a caller and follows a different restart
+schedule — it halves the population as readily as it doubles it, so a criterion
+that merely feeds a runaway IPOP ladder there might not — and it was not in the
+design. The no-default decision stands for want of any measured case, not
+because BIPOP was tested and found null.
 
 `stopStagnationIters` remains available and unchanged for a caller who wants
 it; nothing here argues against setting one deliberately. What has no measured
@@ -249,8 +257,8 @@ question worth asking next is what is.
 
 ## Raw data
 
-Both designs' records are committed, and `-action analyze` reproduces every
-table above from them without a server:
+Both designs' records are committed, and every table above is reproducible from
+them without a server:
 
 | design | costs | trajectories | per-restart records |
 | --- | --- | --- | --- |
@@ -261,6 +269,40 @@ These are the first campaigns in this repository whose restart files are not
 empty. Every earlier one — Phase 21 and the `lambda` screen — ran before the
 adapter recorded per-run terminations, so their restart CSVs carry a header and
 nothing else.
+
+**`-action analyze` reads the measurement CSV alone.** It prints the arm table
+with its contrasts, Holm decisions and blocks won — for the pilot, the
+descriptive table instead — and it opens neither the trajectory nor the restart
+file. The three remaining tables come from those two files directly, and each is
+one command:
+
+```sh
+# the per-block table: costs by arm and block
+LC_ALL=C awk -F, 'NR>1 {printf "%s block %s: %.2f\n", $1, $2, $8}' \
+  docs/cmaes-stagnation-measurement.csv
+
+# runs per block and per-run terminations
+LC_ALL=C awk -F, 'NR>1 {runs[$1]++; term[$1" "$11]++}
+  END {for (a in runs) printf "%s: %d runs, %.1f/block\n", a, runs[a], runs[a]/12
+       for (k in term) print k, term[k]}' docs/cmaes-stagnation-restarts.csv
+
+# budget spent after the last improvement, as a ratio of totals
+LC_ALL=C awk -F, 'NR>1 {final[$1] += $10; wasted[$1] += $10 - $9}
+  END {for (a in final) printf "%s: %.1f%%\n", a, wasted[a]/final[a]*100}' \
+  docs/cmaes-stagnation-measurement.csv
+
+# the sigma reading: sample count, max distributionExtent, sigma range
+LC_ALL=C awk -F, 'NR>1 {n++; e=$10+0; s=$8+0; if (e>x) x=e
+    if (lo=="" || s<lo) lo=s; if (s>hi) hi=s}
+  END {printf "%d samples, max extent %.3f, sigma %g..%g\n", n, x, lo, hi}' \
+  docs/cmaes-stagnation-trajectories.csv
+```
+
+`LC_ALL=C` is not decoration: under a comma decimal locale `awk` truncates
+these fields at the separator and the extent maximum silently reads 7 instead
+of 1.451. The waste shares are ratios of totals rather than means of per-job
+ratios, matching what the driver computes for a descriptive design — averaging
+per-job fractions would weight a short run like a long one.
 
 ## Reproducing
 
@@ -292,9 +334,11 @@ go run ./scripts/cmaes-measurement -action analyze  -design stagnation-pilot
 
 `collect` is safe to repeat while the queue runs; it prints state counts and
 writes its CSVs only once every job in the design has completed. `analyze`
-reproduces the tables from the collected CSV alone, and refuses to print a
-statistic for the pilot, which is registered as descriptive. Substitute
-`-design stagnation` for the twelve-block campaign.
+prints the arm table from the collected measurement CSV alone, and refuses to
+print a statistic for the pilot, which is registered as descriptive; the block,
+termination and sigma tables come from the restart and trajectory CSVs by the
+commands under [Raw data](#raw-data). Substitute `-design stagnation` for the
+twelve-block campaign.
 
 The arm table, the Hansen anchor, and the block and seed bases are in
 `scripts/cmaes-measurement/main.go`; `main_test.go` pins the registered shape of

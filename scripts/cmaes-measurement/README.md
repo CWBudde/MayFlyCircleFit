@@ -224,7 +224,7 @@ would have cost four contrasts for the same two answers.
 **It returned that null.** Both contrasts retain under Holm, the primary at
 `t` = -0.34 with six blocks won of twelve; see
 [`docs/cmaes-stagnation-report.md`](../../docs/cmaes-stagnation-report.md). The
-criterion stops 68 runs of 98 at `lambda` 20 and buys almost nothing: at
+criterion stops 68 runs of 106 at `lambda` 20 and buys almost nothing: at
 `lambda` 1024 the ladder is capped at three runs either way, and at `lambda` 20
 the wasted share rose rather than fell — reversing the pilot's own reclaim
 figure, which three blocks were too few to measure.

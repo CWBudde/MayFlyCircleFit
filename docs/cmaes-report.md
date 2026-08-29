@@ -239,7 +239,7 @@ acting on**, which this campaign could not have known:
 [`cmaes-stagnation-report.md`](cmaes-stagnation-report.md) armed
 `stopStagnationIters` over twelve paired blocks and both registered contrasts
 retain their null, the primary at `t = -0.34` with six blocks won of twelve.
-The criterion does stop dead runs — 68 of 98 at `lambda` 20 — and it does not
+The criterion does stop dead runs — 68 of 106 at `lambda` 20 — and it does not
 improve the fit. Read the waste figures above as a description of where the
 budget goes, never as an available gain.
 

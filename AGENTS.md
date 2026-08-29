@@ -88,11 +88,12 @@ ones that will change what you propose:
   licenses comparing the two campaigns' rows directly.
 - [`docs/cmaes-stagnation-report.md`](docs/cmaes-stagnation-report.md)
   — the window-selection pilot and the twelve-block campaign that tested it.
-  **Arming a stagnation criterion on a CMA-ES restart schedule does not improve
-  the fit.** Both registered contrasts retain their null under Holm; the primary
-  is `t = -0.34` with six blocks won of twelve, and the secondary's positive
-  mean comes from a single outlying control block while it wins only four. The
-  criterion fires — 68 stopped runs of 98 at `lambda` 20 — and buys almost
+  **Arming a stagnation criterion on a separable IPOP schedule does not improve
+  the fit** — `bipop` was not in the design and is unmeasured either way. Both
+  registered contrasts retain their null under Holm; the primary is `t = -0.34`
+  with six blocks won of twelve, and the secondary's positive mean comes from a
+  single outlying control block while it wins only four. The
+  criterion fires — 68 stopped runs of 106 at `lambda` 20 — and buys almost
   nothing: at `lambda` 1024 the ladder is budget-capped at three runs either
   way, and at `lambda` 20 the wasted share *rose*. **Read before proposing that
   a restart strategy arm one by default; the 30-57% waste the earlier reports
