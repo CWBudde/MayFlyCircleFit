@@ -62,6 +62,22 @@ ones that will change what you propose:
   23 of `PLAN.md` carries all three. The report's sigma column is **not**
   evidence of a diverged search — sigma alone is gauge-dependent and the
   identifiable `sigma * max(D)` was never recorded; do not cite it.
+- [`docs/cmaes-lambda-report.md`](docs/cmaes-lambda-report.md) — the twelve-block
+  `lambda` x covariance screen that answers two of those three carried
+  questions, and answers both with a null. Eight arms, ninety-six jobs,
+  evaluation-matched by construction; all thirteen paired contrasts retain their
+  null under Holm. `lambda` at 20, 64 and 1024 is indistinguishable on the mean
+  (`lambda` 64 against 1024 is `t` = -0.04), and separable covariance *without*
+  restarts is a null against full (`t` = +0.10), so Phase 21's winner is not
+  explained by its covariance mode alone. **Read before proposing a `lambda`
+  default or lowering `app.MinPopulation` to Hansen's 16; neither has a measured
+  case.** Two by-products matter beyond the screen. Its `distributionExtent`
+  column settles the sigma question by measurement rather than inference —
+  `sigma * max(D)` never exceeds 1.52 across 17,593 samples while sigma spans
+  fifty-two orders of magnitude — so cite that column and never sigma. And its
+  three replication arms reproduce all thirty-six Phase 21 cells bit for bit
+  across a different binary and a different concurrency setting, which is what
+  licenses comparing the two campaigns' rows directly.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more

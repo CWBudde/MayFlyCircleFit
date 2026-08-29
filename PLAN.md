@@ -2110,13 +2110,21 @@ account is inference; recording it is what turns it into a measurement.
 strategy against `cmaes-single`. The registered design has no
 separable-without-restarts arm, so nothing attributes the +90.24 to either.
 
-- [ ] Add a `sep-cmaes-single` arm and run it on the same twelve seed prefixes,
+- [x] Add a `sep-cmaes-single` arm and run it on the same twelve seed prefixes,
       so the existing rows stay comparable and only the missing cell is bought.
-      The arm exists: it is a cell of the `-design lambda` screen in
-      `scripts/cmaes-measurement`, which runs it at the same seed prefixes and
-      also repeats `cmaes-single`, `cmaes-ipop` and `sep-cmaes-ipop` so
-      cross-campaign drift is measured rather than assumed. Submitted
-      2026-08-29; tick this box when the screen is collected and reported.
+      Run as a cell of the `-design lambda` screen, collected 2026-08-29 and
+      reported in
+      [`docs/cmaes-lambda-report.md`](docs/cmaes-lambda-report.md).
+      **The answer is a null: separable covariance on its own does nothing.**
+      `sep-cmaes-single` beats `cmaes-single` by 3.97 cost units, `t` = +0.10,
+      `p` = 0.92, 6/12 blocks — and loses to `cmaes-ipop` by 58.88. So the
+      +90.24 is not attributable to the covariance mode independently of the
+      restart strategy, and `sep-*` must not be recommended as a covariance
+      default on the strength of Phase 21. The screen's other purpose also
+      succeeded: `cmaes-single`, `cmaes-ipop` and `sep-cmaes-ipop` reproduce all
+      thirty-six committed Phase 21 cells bit for bit, across a different binary
+      and a different concurrency setting, so cross-campaign drift is measured
+      at exactly zero rather than assumed.
 
 ### Task 23.3: Screen `lambda` (P2)
 
@@ -2144,17 +2152,39 @@ validation guards rather than modelling statements:
       file. `server.traceSampleStride` now holds one run to the record count the
       previous cap allowed, and records every improvement whatever the stride so
       evaluation-capped scoring is unaffected.
-- [ ] Decide whether `app.MinPopulation` should reach 16. It has no rationale
-      comment, unlike its neighbours, and lowering it touches the MayFly path
-      with no evidence behind it.
-- [ ] Screen `lambda` crossed with covariance mode, not under full covariance
+- [x] Decide whether `app.MinPopulation` should reach 16. **Decision: no, leave
+      it at 20.** The screen below finds no measured effect of `lambda` on the
+      mean anywhere between 20 and 1024, so 16 has no case that 20 does not
+      already fail to make. The limit stays as it is, and lowering it would
+      touch the MayFly path to buy a difference that was looked for and not
+      found.
+- [x] Screen `lambda` crossed with covariance mode, not under full covariance
       alone — the winning configuration is separable. Registered as
       `-design lambda`: both covariance modes crossed with `lambda` 1024, 64 and
       20 under IPOP, plus the two no-restart cells, 8 arms x 12 blocks = 96
-      jobs, every arm evaluation-matched by construction at 6,502,400. Submitted
-      2026-08-29 on the 64-core host at seven concurrent jobs. Calibration from
-      block 1: `lambda` 64 runs at 0.67x and `lambda` 20 at 0.61x the evaluation
-      rate of `lambda` 1024, because a generation is a synchronisation barrier.
+      jobs, every arm evaluation-matched by construction at 6,502,400. Run
+      2026-08-29 00:00-06:11 CEST on the 64-core host at seven concurrent jobs,
+      all ninety-six completing; reported in
+      [`docs/cmaes-lambda-report.md`](docs/cmaes-lambda-report.md) with
+      [`docs/cmaes-lambda-measurement.csv`](docs/cmaes-lambda-measurement.csv)
+      and
+      [`docs/cmaes-lambda-trajectories.csv`](docs/cmaes-lambda-trajectories.csv).
+      **The answer is a null, and it retires the hypothesis that motivated the
+      task.** All thirteen paired contrasts retain their null under Holm at a
+      family-wise `alpha` = 0.05: the best arm reaches `p` = 0.00557 against a
+      first gate of 0.05/13 = 0.00385, so the step-down stops immediately.
+      `lambda` = 64 scores 1.07 *worse* than `lambda` = 1024 (`t` = -0.04) and
+      `lambda` = 20 scores 11.97 better (`t` = +0.33). CMA-ES was not winning
+      *despite* a population sixty-four times its recommended one; the
+      population was not doing anything measurable either way. Leave `Lambda`
+      pinned to `popSize`; decoupling them is defensible as surface
+      completeness but has no measured gain behind it. Two findings sit outside
+      the registered design and are reported as exploratory: `lambda` acts on
+      **variance** rather than the mean (ratios 2.4x-10.6x against `lambda`
+      = 1024, all four in the same direction, no registered spread test), and
+      six IPOP arms across three `lambda` levels spend 30-57% of their budget
+      after their last improvement, widening Phase 21's ~40% figure and making
+      the open box of Task 23.1 the highest-value question left in this phase.
 
 ### Task 23.4: A second fixture (P3)
 
