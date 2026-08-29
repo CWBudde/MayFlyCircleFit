@@ -10,6 +10,7 @@ import (
 	"github.com/cwbudde/circlefit/internal/server"
 )
 
+//nolint:paralleltest // mutates the package-level version strings and command output, shared by every test here.
 func TestVersionInfo(t *testing.T) {
 	originalVersion, originalCommit, originalBuildDate := version, commit, buildDate
 
@@ -27,6 +28,7 @@ func TestVersionInfo(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // mutates the package-level version strings and command output, shared by every test here.
 func TestVersionCommandWritesConfiguredOutput(t *testing.T) {
 	originalVersion, originalCommit, originalBuildDate := version, commit, buildDate
 
@@ -51,6 +53,7 @@ func TestVersionCommandWritesConfiguredOutput(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // mutates the package-level version strings and command output, shared by every test here.
 func TestVersionCommandVerboseOutput(t *testing.T) {
 	originalVersion, originalCommit, originalBuildDate := version, commit, buildDate
 	originalVerbose := versionVerbose

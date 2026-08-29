@@ -9,6 +9,7 @@ import (
 	"github.com/cwbudde/circlefit/internal/app"
 )
 
+//nolint:paralleltest // reads the package-level command flags, which every test in this package mutates.
 func TestRunThreadsFlagDefaultsToGOMAXPROCS(t *testing.T) {
 	flag := runCmd.Flags().Lookup("threads")
 	if flag == nil {
@@ -23,6 +24,8 @@ func TestRunThreadsFlagDefaultsToGOMAXPROCS(t *testing.T) {
 // TestRunEarlyStopFlagsDefaultToDisabled pins that optimizer-level stopping is
 // opt-in, and that the stage-level flags keep their own distinct defaults. The
 // two mechanisms are separate on purpose and must not be unified.
+//
+//nolint:paralleltest // reads the package-level command flags, which every test in this package mutates.
 func TestRunEarlyStopFlagsDefaultToDisabled(t *testing.T) {
 	tests := map[string]string{
 		"stop-target-cost":      "0",
@@ -33,6 +36,7 @@ func TestRunEarlyStopFlagsDefaultToDisabled(t *testing.T) {
 		"threshold":             "0.001",
 	}
 
+	//nolint:paralleltest // reads the package-level command flags, which every test in this package mutates.
 	for name, want := range tests {
 		t.Run(name, func(t *testing.T) {
 			flag := runCmd.Flags().Lookup(name)
@@ -47,6 +51,7 @@ func TestRunEarlyStopFlagsDefaultToDisabled(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // reads the package-level command flags, which every test in this package mutates.
 func TestRunVariantFlagDefaultsToStandard(t *testing.T) {
 	flag := runCmd.Flags().Lookup("variant")
 	if flag == nil {
@@ -58,6 +63,7 @@ func TestRunVariantFlagDefaultsToStandard(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // reads the package-level command flags, which every test in this package mutates.
 func TestRunBackendFlagDefaultsToCPU(t *testing.T) {
 	flag := runCmd.Flags().Lookup("backend")
 	if flag == nil {
@@ -73,6 +79,7 @@ func TestRunBackendFlagDefaultsToCPU(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // reads the package-level command flags, which every test in this package mutates.
 func TestRunSSIMFlagDefaultsToDisabled(t *testing.T) {
 	flag := runCmd.Flags().Lookup("enable-ssim")
 	if flag == nil {
@@ -84,6 +91,7 @@ func TestRunSSIMFlagDefaultsToDisabled(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // reads the package-level command flags, which every test in this package mutates.
 func TestRunBatchSizeFlagDefaultsToAutomatic(t *testing.T) {
 	flag := runCmd.Flags().Lookup("batch-size")
 	if flag == nil || flag.DefValue != "0" {
@@ -91,6 +99,7 @@ func TestRunBatchSizeFlagDefaultsToAutomatic(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // reads the package-level command flags, which every test in this package mutates.
 func TestRunPolishingFlagDefaults(t *testing.T) {
 	tests := map[string]string{
 		"polishing":                  "false",
@@ -115,6 +124,8 @@ func TestRunPolishingFlagDefaults(t *testing.T) {
 // configuration default from drifting apart. --polishing-pop is the only way to
 // see the population a polish runs at from the command line, so a flag default
 // that disagreed with DefaultConfig would misreport every unconfigured run.
+//
+//nolint:paralleltest // reads the package-level command flags, which every test in this package mutates.
 func TestRunPolishingPopulationFlagMatchesConfigDefault(t *testing.T) {
 	flag := runCmd.Flags().Lookup("polishing-pop")
 	if flag == nil {

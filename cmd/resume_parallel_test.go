@@ -100,6 +100,8 @@ func resumeEvaluationCosts(t *testing.T, workers int, circles int) []float64 {
 // a garbage output image, and a corrupted follow-on checkpoint, with no error.
 // Under -race the old code also reports a data race in render.
 func TestResumeJointProblemIsConcurrencySafe(t *testing.T) {
+	t.Parallel()
+
 	serial := resumeEvaluationCosts(t, 1, 3)
 
 	parallel := resumeEvaluationCosts(t, 4, 3)
@@ -116,6 +118,8 @@ func TestResumeJointProblemIsConcurrencySafe(t *testing.T) {
 // only its observable effect: with parallel evaluation configured, the resume
 // objective must lease sessions instead of reusing the caller's renderer.
 func TestResumeJointProblemUsesPooledSessions(t *testing.T) {
+	t.Parallel()
+
 	ref := resumeGradientReference(16, 12)
 	rend := renderer.NewCPURenderer(ref, 2)
 	rend.SetParallelEvaluationWorkers(4)

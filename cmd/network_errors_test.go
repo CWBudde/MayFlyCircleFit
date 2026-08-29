@@ -20,6 +20,8 @@ import (
 // ECONNREFUSED, because that is what turns into the "start one with
 // circlefit serve" suggestion rather than a bare transport dump.
 func TestRequestCLIReportsARefusedConnection(t *testing.T) {
+	t.Parallel()
+
 	// Bind and immediately release a port so the address is well-formed and
 	// routable but has nothing behind it.
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -57,6 +59,8 @@ func TestRequestCLIReportsARefusedConnection(t *testing.T) {
 // the body is being read, which is what a server crash or a dropped link looks
 // like from here. A partial body must not be decoded as if it were complete.
 func TestRequestCLIReportsATruncatedResponse(t *testing.T) {
+	t.Parallel()
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Length", "4096")
@@ -95,6 +99,8 @@ func TestRequestCLIReportsATruncatedResponse(t *testing.T) {
 // TestRequestCLIHonoursADeadline covers a server that accepts the connection
 // and then never answers. The CLI must give up on its own rather than hang.
 func TestRequestCLIHonoursADeadline(t *testing.T) {
+	t.Parallel()
+
 	blocked := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-blocked

@@ -8,6 +8,8 @@ import (
 )
 
 func TestIsUsageError(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		err  error
@@ -20,6 +22,8 @@ func TestIsUsageError(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := IsUsageError(test.err); got != test.want {
 				t.Fatalf("IsUsageError(%v) = %v, want %v", test.err, got, test.want)
 			}
@@ -28,6 +32,8 @@ func TestIsUsageError(t *testing.T) {
 }
 
 func TestNewUsageErrorPassesNilThrough(t *testing.T) {
+	t.Parallel()
+
 	err := NewUsageError(nil)
 	if err != nil {
 		t.Fatalf("NewUsageError(nil) = %v, want nil", err)
@@ -35,6 +41,8 @@ func TestNewUsageErrorPassesNilThrough(t *testing.T) {
 }
 
 func TestUsageErrorUnwrapsCause(t *testing.T) {
+	t.Parallel()
+
 	cause := errors.New("unknown flag: --nope")
 
 	err := NewUsageError(cause)
@@ -52,6 +60,8 @@ func TestUsageErrorUnwrapsCause(t *testing.T) {
 }
 
 func TestClassifyExecuteError(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		err  error
@@ -67,6 +77,8 @@ func TestClassifyExecuteError(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := IsUsageError(classifyExecuteError(test.err)); got != test.want {
 				t.Fatalf("classifyExecuteError(%v) usage = %v, want %v", test.err, got, test.want)
 			}
@@ -76,6 +88,8 @@ func TestClassifyExecuteError(t *testing.T) {
 
 // TestExecuteClassifiesRealInvocations drives the actual root command so the
 // classification is checked against the errors Cobra and pflag really produce.
+//
+//nolint:paralleltest // mutates the package-level root command and its flag targets, shared by every test here.
 func TestExecuteClassifiesRealInvocations(t *testing.T) {
 	tests := []struct {
 		name string
@@ -91,6 +105,7 @@ func TestExecuteClassifiesRealInvocations(t *testing.T) {
 		{name: "out of range queue-size", args: []string{"serve", "--queue-size", "0"}, want: true},
 		{name: "unknown backend", args: []string{"serve", "--backend", "definitely-not-a-backend"}, want: true},
 	}
+	//nolint:paralleltest // mutates the package-level root command and its flag targets, shared by every test here.
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Cleanup(resetRootCommand(t))

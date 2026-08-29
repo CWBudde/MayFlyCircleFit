@@ -54,6 +54,7 @@ func withScoreFlags(t *testing.T, ref, circles, out string) {
 	})
 }
 
+//nolint:paralleltest // mutates the package-level score flags, which every test in this package shares.
 func TestScoreReadsABareCircleArrayAndASchedule(t *testing.T) {
 	dir := t.TempDir()
 	refPath := filepath.Join(dir, "ref.png")
@@ -104,6 +105,7 @@ func TestScoreReadsABareCircleArrayAndASchedule(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // mutates the package-level score flags, which every test in this package shares.
 func TestScoreRefusesACircleOutsideTheCanvas(t *testing.T) {
 	dir := t.TempDir()
 	refPath := filepath.Join(dir, "ref.png")
@@ -125,6 +127,7 @@ func TestScoreRefusesACircleOutsideTheCanvas(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // mutates the package-level score flags, which every test in this package shares.
 func TestScoreRejectsAnUnparseableColour(t *testing.T) {
 	dir := t.TempDir()
 	refPath := filepath.Join(dir, "ref.png")
@@ -152,6 +155,8 @@ func TestScoreRejectsAnUnparseableColour(t *testing.T) {
 // answers impossible to confuse -- the canvas is the reference itself, and the
 // one circle is white on an already-white corner, so the faithful cost is zero
 // while the same arrangement on white still carries the whole red square.
+//
+//nolint:paralleltest // mutates the package-level score flags, which every test in this package shares.
 func TestScoreHonorsTheScheduleCanvas(t *testing.T) {
 	dir := t.TempDir()
 	refPath := filepath.Join(dir, "ref.png")
@@ -231,6 +236,8 @@ func TestScoreHonorsTheScheduleCanvas(t *testing.T) {
 // TestScoreRejectsACanvasOfTheWrongSize keeps a mismatch an error: the renderer
 // constructor panics on it, and a path the operator typed is an input.
 func TestScoreRejectsACanvasOfTheWrongSize(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	refPath := filepath.Join(dir, "ref.png")
 	writeScoreFixture(t, refPath)

@@ -92,6 +92,7 @@ func scheduleDetailFixture() map[string]any {
 	}
 }
 
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleStatusRendersTheStageTable(t *testing.T) {
 	_, stub := newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(writer).Encode(scheduleDetailFixture())
@@ -124,6 +125,7 @@ func TestScheduleStatusRendersTheStageTable(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleCreateValidatesBeforePosting(t *testing.T) {
 	_, stub := newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusCreated)
@@ -164,6 +166,8 @@ func TestScheduleCreateValidatesBeforePosting(t *testing.T) {
 
 // TestScheduleCreateRefusesAnInvalidDocumentLocally keeps a typo from costing a
 // round trip, and makes the CLI report the field the server would have named.
+//
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleCreateRefusesAnInvalidDocumentLocally(t *testing.T) {
 	_, stub := newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
 		t.Error("an invalid document reached the server")
@@ -195,7 +199,9 @@ func TestScheduleCreateRefusesAnInvalidDocumentLocally(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleActionsPostToTheirVerb(t *testing.T) {
+	//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 	for _, action := range []string{"cancel", "pause", "resume"} {
 		t.Run(action, func(t *testing.T) {
 			_, stub := newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
@@ -221,6 +227,7 @@ func TestScheduleActionsPostToTheirVerb(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleImportRendersTheChain(t *testing.T) {
 	const leaf = "44444444-4444-4444-8444-444444444444"
 	_, stub := newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
@@ -266,6 +273,8 @@ func TestScheduleImportRendersTheChain(t *testing.T) {
 // The seed is read from the campaign, not from a stage: a persisted schedule
 // has a resolved seed by construction, and every stage inherits that one seed,
 // so a per-stage copy would be the same number on every row of the listing.
+//
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleSeedIsNeverReportedAsZero(t *testing.T) {
 	started := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 	detail := scheduleDetailResponse{}
@@ -300,6 +309,7 @@ func TestScheduleSeedIsNeverReportedAsZero(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleListReportsAnEmptyServer(t *testing.T) {
 	_, _ = newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
 		_, _ = writer.Write([]byte("[]"))
@@ -378,6 +388,8 @@ func dryRun(t *testing.T, path string) string {
 // internal/app.TestReferenceCampaignPlanMatchesTheHandComputation, which writes
 // the arithmetic out; this test checks the command prints that same figure over
 // the whole stage list.
+//
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleDryRunListsTheReferenceCampaign(t *testing.T) {
 	_, stub := newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
 		t.Error("a dry run reached the server")
@@ -424,6 +436,8 @@ func TestScheduleDryRunListsTheReferenceCampaign(t *testing.T) {
 // not create a schedule directory, a stage file, or a job. The positive control
 // writes one schedule through the store afterwards, so the comparison is known
 // to be able to see a write.
+//
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleDryRunTouchesNoStore(t *testing.T) {
 	_, _ = newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
 		t.Error("a dry run reached the server")
@@ -540,6 +554,8 @@ func projectionDetailFixture(completedExtends int, extendElapsed []time.Duration
 // from the recorded wall clock and from nothing else: two extends at 2 and 4
 // minutes make the one remaining extend 3 minutes.
 func TestScheduleStatusProjectsFromMeasuredStages(t *testing.T) {
+	t.Parallel()
+
 	fixture := projectionDetailFixture(2, []time.Duration{2 * time.Minute, 4 * time.Minute})
 	var detail scheduleDetailResponse
 	decodeFixture(t, fixture, &detail)
@@ -565,6 +581,8 @@ func TestScheduleStatusProjectsFromMeasuredStages(t *testing.T) {
 // TestScheduleStatusRefusesToProjectFromOneStage is the honesty requirement: a
 // single sample is reported as insufficient rather than extrapolated.
 func TestScheduleStatusRefusesToProjectFromOneStage(t *testing.T) {
+	t.Parallel()
+
 	fixture := projectionDetailFixture(1, []time.Duration{2 * time.Minute})
 	var detail scheduleDetailResponse
 	decodeFixture(t, fixture, &detail)
@@ -591,8 +609,12 @@ func TestScheduleStatusRefusesToProjectFromOneStage(t *testing.T) {
 // finding: the projection anchors at the current clock, so a campaign the
 // server will never advance must not be handed a future finish time.
 func TestScheduleStatusGivesNoFinishTimeToATerminalCampaign(t *testing.T) {
+	t.Parallel()
+
 	for _, state := range []string{"failed", "cancelled", "completed"} {
 		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+
 			fixture := projectionDetailFixture(2, []time.Duration{2 * time.Minute, 4 * time.Minute})
 			fixture["state"] = state
 			var detail scheduleDetailResponse
@@ -617,6 +639,8 @@ func TestScheduleStatusGivesNoFinishTimeToATerminalCampaign(t *testing.T) {
 // visible for a paused campaign while refusing the one thing that would be a
 // guess: when it starts again.
 func TestScheduleStatusProjectsAPausedCampaignWithoutATimestamp(t *testing.T) {
+	t.Parallel()
+
 	fixture := projectionDetailFixture(2, []time.Duration{2 * time.Minute, 4 * time.Minute})
 	fixture["state"] = "paused"
 	var detail scheduleDetailResponse
@@ -638,6 +662,8 @@ func TestScheduleStatusProjectsAPausedCampaignWithoutATimestamp(t *testing.T) {
 // TestScheduleDryRunReportsAnOmittedSeedAsAutomatic pins the other review
 // finding: the document carries zero and every expansion draws a different
 // throwaway seed, so neither is a truthful thing to print.
+//
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleDryRunReportsAnOmittedSeedAsAutomatic(t *testing.T) {
 	_, _ = newScheduleStub(t, func(writer http.ResponseWriter, _ *http.Request) {
 		t.Error("a dry run reached the server")

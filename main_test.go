@@ -16,6 +16,8 @@ import (
 )
 
 func TestExitCode(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		err  error
@@ -28,6 +30,8 @@ func TestExitCode(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := exitCode(test.err); got != test.want {
 				t.Fatalf("exitCode(%v) = %d, want %d", test.err, got, test.want)
 			}
@@ -36,6 +40,8 @@ func TestExitCode(t *testing.T) {
 }
 
 func TestPrintCLIError(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		code    int
@@ -131,6 +137,8 @@ func TestPrintCLIError(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			var out bytes.Buffer
 			printCLIError(&out, test.code, test.err)
 
@@ -156,6 +164,8 @@ func TestPrintCLIError(t *testing.T) {
 }
 
 func TestPrintCLIErrorIgnoresNil(t *testing.T) {
+	t.Parallel()
+
 	var out bytes.Buffer
 	printCLIError(&out, exitOK, nil)
 

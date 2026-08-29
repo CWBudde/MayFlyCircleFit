@@ -8,7 +8,11 @@ import (
 )
 
 func TestParseBackendFlag(t *testing.T) {
+	t.Parallel()
+
 	t.Run("canonical", func(t *testing.T) {
+		t.Parallel()
+
 		backend, err := parseBackendFlag("opencl")
 		if err != nil {
 			t.Fatalf("parseBackendFlag() error = %v", err)
@@ -19,6 +23,8 @@ func TestParseBackendFlag(t *testing.T) {
 		}
 	})
 	t.Run("alias", func(t *testing.T) {
+		t.Parallel()
+
 		for _, raw := range []string{"gpu", "cl", "GPU", "OPENCL"} {
 			backend, err := parseBackendFlag(raw)
 			if err != nil {
@@ -31,6 +37,8 @@ func TestParseBackendFlag(t *testing.T) {
 		}
 	})
 	t.Run("cpu", func(t *testing.T) {
+		t.Parallel()
+
 		backend, err := parseBackendFlag("cpu")
 		if err != nil {
 			t.Fatalf("parseBackendFlag() error = %v", err)
@@ -41,6 +49,8 @@ func TestParseBackendFlag(t *testing.T) {
 		}
 	})
 	t.Run("empty_is_cpu", func(t *testing.T) {
+		t.Parallel()
+
 		backend, err := parseBackendFlag("")
 		if err != nil {
 			t.Fatalf("parseBackendFlag() error = %v", err)
@@ -51,6 +61,8 @@ func TestParseBackendFlag(t *testing.T) {
 		}
 	})
 	t.Run("invalid", func(t *testing.T) {
+		t.Parallel()
+
 		backend, err := parseBackendFlag("quantum")
 		if err == nil {
 			t.Fatalf("parseBackendFlag() = %q, want error", backend)

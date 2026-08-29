@@ -104,6 +104,8 @@ func stageLimitDetail(t *testing.T) scheduleDetailResponse {
 // TestScheduleStatusPrintsACampaignAtTheStageLimit is the Task 16.7 acceptance
 // check: the stage table and the projection are printed for a campaign at
 // MaxScheduleStages, and the response the command read is measured.
+//
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleStatusPrintsACampaignAtTheStageLimit(t *testing.T) {
 	detail := stageLimitDetail(t)
 
@@ -157,6 +159,8 @@ func TestScheduleStatusPrintsACampaignAtTheStageLimit(t *testing.T) {
 
 // TestScheduleImportPrintsAChainAtTheStageLimit is the same check for
 // `schedule import`, whose chain view is on the same curve.
+//
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleImportPrintsAChainAtTheStageLimit(t *testing.T) {
 	detail := chainDetailResponse{
 		LeafJobID: fmt.Sprintf("00000000-0000-4000-8000-%012d", app.MaxScheduleStages-1),
@@ -221,6 +225,8 @@ func TestScheduleImportPrintsAChainAtTheStageLimit(t *testing.T) {
 // endpoint produces rather than ones this test wrote, and compares the
 // projection derived from them with the projection derived from the stage
 // records on disk, field by field.
+//
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestProjectionIsUnchangedByTheSummaryProjection(t *testing.T) {
 	root := t.TempDir()
 

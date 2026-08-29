@@ -53,6 +53,8 @@ func validJobResponse(t *testing.T, id string) jobResponse {
 }
 
 func TestJobResponseAcceptsCompactCollectionConfig(t *testing.T) {
+	t.Parallel()
+
 	response := validJobResponse(t, "job-1")
 
 	response.Config = &app.JobConfig{RefPath: "assets/reference.png", Mode: app.ModeBatch, Circles: 8}
@@ -76,6 +78,7 @@ func testCommand(ctx context.Context, output io.Writer) *cobra.Command {
 	return command
 }
 
+//nolint:paralleltest // swaps the package-level serverURL, as every test here does.
 func TestRunStatusEscapesJobIDAndUsesTypedResponse(t *testing.T) {
 	jobID := "job/with ?#"
 	response := validJobResponse(t, jobID)
@@ -115,6 +118,8 @@ func TestRunStatusEscapesJobIDAndUsesTypedResponse(t *testing.T) {
 }
 
 func TestListJobsRejectsMalformedOrSkewedResponses(t *testing.T) {
+	t.Parallel()
+
 	valid, err := json.Marshal([]jobResponse{validJobResponse(t, "job-1")})
 	if err != nil {
 		t.Fatalf("marshal valid response: %v", err)
@@ -135,6 +140,8 @@ func TestListJobsRejectsMalformedOrSkewedResponses(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 				_, _ = io.WriteString(writer, testCase.body)
 			}))
@@ -151,6 +158,8 @@ func TestListJobsRejectsMalformedOrSkewedResponses(t *testing.T) {
 }
 
 func TestListJobsEmptyAndValidResponses(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		response   any
@@ -162,6 +171,8 @@ func TestListJobsEmptyAndValidResponses(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 				err := json.NewEncoder(writer).Encode(testCase.response)
 				if err != nil {
@@ -185,6 +196,8 @@ func TestListJobsEmptyAndValidResponses(t *testing.T) {
 }
 
 func TestListJobsReadsBoundedPages(t *testing.T) {
+	t.Parallel()
+
 	first := validJobResponse(t, "job-1")
 	second := validJobResponse(t, "job-2")
 	total := 2
@@ -231,6 +244,8 @@ func TestListJobsReadsBoundedPages(t *testing.T) {
 }
 
 func TestGetJobStatusRejectsMissingMetricsAndMismatchedID(t *testing.T) {
+	t.Parallel()
+
 	response, err := json.Marshal(validJobResponse(t, "job-1"))
 	if err != nil {
 		t.Fatalf("marshal valid response: %v", err)
@@ -247,6 +262,8 @@ func TestGetJobStatusRejectsMissingMetricsAndMismatchedID(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 				_, _ = io.WriteString(writer, testCase.body)
 			}))
@@ -261,6 +278,8 @@ func TestGetJobStatusRejectsMissingMetricsAndMismatchedID(t *testing.T) {
 }
 
 func TestCLIRequestsHandleStructuredLegacyAndPlainErrors(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		body string
@@ -273,6 +292,8 @@ func TestCLIRequestsHandleStructuredLegacyAndPlainErrors(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 				writer.WriteHeader(http.StatusBadRequest)
 				_, _ = io.WriteString(writer, testCase.body)
@@ -293,6 +314,8 @@ func TestCLIRequestsHandleStructuredLegacyAndPlainErrors(t *testing.T) {
 }
 
 func TestCLIRequestRejectsOversizedResponse(t *testing.T) {
+	t.Parallel()
+
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(writer, strings.Repeat("x", maxCLIResponseBytes+1))
 	}))
@@ -304,6 +327,7 @@ func TestCLIRequestRejectsOversizedResponse(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // swaps the package-level serverURL, as every test here does.
 func TestRunStatusUsesCommandContext(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
 		<-request.Context().Done()
@@ -324,6 +348,7 @@ func TestRunStatusUsesCommandContext(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // swaps the package-level resumeServerURL, as every test here does.
 func TestRunResumeServerEscapesIDAndValidatesResponse(t *testing.T) {
 	jobID := "checkpoint/with ?#"
 	requestDetails := make(chan string, 1)
@@ -356,6 +381,7 @@ func TestRunResumeServerEscapesIDAndValidatesResponse(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // swaps the package-level resumeServerURL, as every test here does.
 func TestRunResumeServerRejectsMalformedResponses(t *testing.T) {
 	tests := []struct {
 		name string
@@ -370,6 +396,7 @@ func TestRunResumeServerRejectsMalformedResponses(t *testing.T) {
 		{name: "wrong type", body: `{"jobId":3,"resumedFrom":"source","state":"pending","previousCost":2,"previousIters":1}`},
 	}
 
+	//nolint:paralleltest // swaps the package-level resumeServerURL, as every test here does.
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
@@ -390,6 +417,7 @@ func TestRunResumeServerRejectsMalformedResponses(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // swaps the package-level resumeServerURL, as every test here does.
 func TestRunResumeServerReportsCheckpointNotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusNotFound)
@@ -409,6 +437,8 @@ func TestRunResumeServerReportsCheckpointNotFound(t *testing.T) {
 }
 
 func TestCLIHTTPClientHasBoundedTimeout(t *testing.T) {
+	t.Parallel()
+
 	if cliHTTPClient.Timeout != 10*time.Second {
 		t.Errorf("CLI HTTP timeout = %s, want 10s", cliHTTPClient.Timeout)
 	}
@@ -418,6 +448,8 @@ func TestCLIHTTPClientHasBoundedTimeout(t *testing.T) {
 // the server reports the optimizer's actual termination instead of a hardcoded
 // "completed".
 func TestGetJobStatusPrintsTermination(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		termination string
@@ -432,6 +464,8 @@ func TestGetJobStatusPrintsTermination(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			response := validJobResponse(t, "job-1")
 			response.Termination = testCase.termination
 

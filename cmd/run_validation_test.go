@@ -202,6 +202,7 @@ func createSimpleRunImage(t *testing.T, path string) {
 	}
 }
 
+//nolint:paralleltest // mutates the package-level command flags, which every test in this package shares.
 func TestRunOptimizationRejectsInvalidInputs(t *testing.T) {
 	tmpDir := t.TempDir()
 	validRefPath := filepath.Join(tmpDir, "reference.png")
@@ -264,6 +265,7 @@ func TestRunOptimizationRejectsInvalidInputs(t *testing.T) {
 		},
 	}
 
+	//nolint:paralleltest // mutates the package-level command flags, which every test in this package shares.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			setRunValidationDefaults(validRefPath)
