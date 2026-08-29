@@ -678,3 +678,30 @@ func TestStagnationCampaignRegistersOnePairPerPopulation(t *testing.T) {
 		t.Error("the stagnation campaign registers no primary contrast")
 	}
 }
+
+func TestStagnationDesignsRejectABudgetShorterThanTheirWindow(t *testing.T) {
+	t.Parallel()
+
+	// 5120 stays divisible by both populations, so the evaluation-matching
+	// check passes it, but it leaves lambda 1024 five iterations against a
+	// 60-generation window. app.JobConfig.Validate refuses that, and it would
+	// refuse it at submit -- after the earlier arms are queued and the
+	// manifest is already written. The design has to reject it first.
+	const tooSmall = 5120
+
+	for _, name := range []string{designPilot, designStag} {
+		_, err := campaignDesign(name, tooSmall)
+		if err == nil {
+			t.Errorf("design %s accepted budget %d, which cannot reach its stagnation window",
+				name, tooSmall)
+		}
+	}
+
+	// The full budget still builds, so the guard rejects only what it must.
+	for _, name := range []string{designPilot, designStag} {
+		_, err := campaignDesign(name, defaultBudget)
+		if err != nil {
+			t.Errorf("design %s at the default budget: %v", name, err)
+		}
+	}
+}

@@ -397,6 +397,10 @@ func stagnationPilotArms(budget int) ([]arm, error) {
 
 		anchor := hansenStagnationWindow(lambda)
 		for _, window := range []int{anchor / 2, anchor, anchor * 4} {
+			if err := checkStagnationWindow(lambda, budget, window); err != nil {
+				return nil, err
+			}
+
 			arms = append(arms, stagnationArm(stagnationArmName(lambda, window), lambda, budget, window, 0))
 		}
 
@@ -407,6 +411,23 @@ func stagnationPilotArms(budget int) ([]arm, error) {
 	}
 
 	return arms, nil
+}
+
+// checkStagnationWindow rejects a window a run at this level could never
+// reach. app.JobConfig.Validate refuses a stopStagnationIters larger than
+// iters, so a budget too small for a level's window fails at submit -- after
+// the preceding arms are already queued, and the manifest is written with
+// O_EXCL, so the campaign cannot simply be resubmitted. Catch it here, while
+// the design is still being built and nothing has been queued.
+func checkStagnationWindow(lambda, budget, window int) error {
+	iters := budget / lambda
+	if window > iters {
+		return fmt.Errorf(
+			"budget %d leaves lambda %d only %d iterations, shorter than its %d-generation stagnation window",
+			budget, lambda, iters, window)
+	}
+
+	return nil
 }
 
 // stagnationArms is the registered campaign the pilot selected. Two pairs, one
@@ -438,6 +459,9 @@ func stagnationArms(budget int) ([]arm, error) {
 		}
 
 		window := hansenStagnationWindow(lambda) / 2
+		if err := checkStagnationWindow(lambda, budget, window); err != nil {
+			return nil, err
+		}
 
 		arms = append(arms,
 			stagnationArm(stagnationArmName(lambda, 0), lambda, budget, 0, 0),
