@@ -33,11 +33,12 @@ func (h *captureHandler) WithGroup(string) slog.Handler      { return h }
 
 // countEvent returns how many captured records carry the given event name, and
 // how many of those were emitted at the given level.
-func (h *captureHandler) countEvent(event string) (total int, byLevel map[slog.Level]int) {
+func (h *captureHandler) countEvent(event string) (int, map[slog.Level]int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	byLevel = map[slog.Level]int{}
+	total := 0
+	byLevel := map[slog.Level]int{}
 
 	for _, record := range h.records {
 		record.Attrs(func(attr slog.Attr) bool {

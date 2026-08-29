@@ -314,7 +314,8 @@ func plannedOptimizerIterations(config JobConfig) int {
 	return total
 }
 
-func referenceImageMetadata(path string) (width, height int, size int64, err error) {
+// The results are the image's width and height in pixels and its size in bytes.
+func referenceImageMetadata(path string) (int, int, int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return 0, 0, 0, err

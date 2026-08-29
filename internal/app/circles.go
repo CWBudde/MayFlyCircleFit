@@ -100,7 +100,8 @@ func (s CircleSpecs) ToParams() ([]float64, error) {
 
 // parseHexColor converts "#rrggbb" to three channels in [0,1]. The leading hash
 // is optional so a colour copied out of an editor pastes either way.
-func parseHexColor(value string) (red, green, blue float64, err error) {
+// The three floats are the red, green and blue channels, in that order.
+func parseHexColor(value string) (float64, float64, float64, error) {
 	digits := strings.TrimPrefix(strings.TrimSpace(value), "#")
 	if len(digits) != 6 {
 		return 0, 0, 0, errors.New("must be a six digit hex colour such as #4a3226")
