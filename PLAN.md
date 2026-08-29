@@ -146,6 +146,20 @@ anything new against its figures.
 - [ ] Measure whether extend and polish stages benefit. They start from a fitted
       vector rather than a cold population, so the collapse dynamics there are
       unmeasured.
+- [ ] Settle which restart *shape* a CMA-ES default would name. The budget-split
+      screen established that splitting a CMA-ES budget beats not splitting it
+      but could not order the three mechanisms, and it found the IPOP ladder
+      budget-capped at two or three runs with the last always truncated.
+      **Registered 2026-08-30 as `-design restart-ladder`**: six rungs holding
+      `lambda * restarts` at 2048 on the shared eight-circle fixture, plus
+      `sep-ipop`, `sep-ipop-w60` and the first `bipop` arm this project has
+      measured. It runs on the stagnation campaign's seeds so its two IPOP arms
+      have to reproduce that campaign bit for bit, and so the best recorded
+      eight-circle cost — 752.52 at seed 111018 — is inside the design. Primary
+      contrast `sep-r32-l64` against `sep-ipop`; secondary `sep-bipop-w60`
+      against `sep-ipop-w60`. **The design is frozen at the commit the campaign
+      is submitted from**, which is the procedural lesson the budget-split
+      report had to record.
 
 ### Task 4: Close the dirty-region evaluator's end-to-end check (P1)
 
