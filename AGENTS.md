@@ -58,8 +58,9 @@ ones that will change what you propose:
   as licence to change a default:** both IPOP arms spent about 40% of their
   budget after their last improvement because no stagnation criterion was set,
   the winning arm confounds covariance mode with restart strategy, and `lambda`
-  is pinned to `popSize` and ran at 1024 against Hansen's default of 16. Phase
-  23 of `PLAN.md` carries all three. The report's sigma column is **not**
+  is pinned to `popSize` and ran at 1024 against Hansen's default of 16. The
+  `lambda` screen below answers the last two with nulls; the stagnation
+  criterion is Task 23.1 of `PLAN.md`. The report's sigma column is **not**
   evidence of a diverged search — sigma alone is gauge-dependent and the
   identifiable `sigma * max(D)` was never recorded; do not cite it.
 - [`docs/cmaes-lambda-report.md`](docs/cmaes-lambda-report.md) — the twelve-block
@@ -79,6 +80,16 @@ ones that will change what you propose:
   three replication arms reproduce all thirty-six Phase 21 cells bit for bit
   across a different binary and a different concurrency setting, which is what
   licenses comparing the two campaigns' rows directly.
+- [`docs/cmaes-stagnation-pilot-report.md`](docs/cmaes-stagnation-pilot-report.md)
+  — the three-block pilot that selects the stagnation window a CMA-ES restart
+  schedule should arm: half Hansen's `120 + 30n/lambda` anchor at both `lambda`
+  levels, reclaiming 19.7 and 25.6 percentage points of the budget spent after
+  the last improvement. It also records what the adapter now writes per restart
+  — `TerminationReason`, `DistributionExtent`, and the trace `restart` index —
+  which no earlier campaign carries, so an arm this question rests on must be
+  re-run rather than re-read. **It moved budget without moving cost**, so do not
+  quote it as a quality result; the twelve-block campaign that tests cost is
+  open.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more

@@ -19,6 +19,30 @@ behavior is production-ready.
 - Jobs are held in memory. Checkpoints and artifacts are persisted, but the
   server is not a durable distributed queue and has no multi-process ownership
   protocol.
+- **The resident set is proportional to all history, not to what is being
+  served.** `restorePersistedJobs` (`internal/server/restore.go`) loads every job
+  on disk at startup and keeps it for the process lifetime: `LoadCheckpoint`
+  pulls in the full `BestParams` vector per job, and `restoreJobTrace` rebuilds
+  `MetricHistory` from every line of every `trace.jsonl`. The collection
+  endpoints no longer do this per request — the `checkpoint-info.json` sidecar
+  projects a listing without touching parameters — but the restore path was not
+  part of that change.
+
+  Measured 2026-08-21 on the 3,000-circle demo campaign's data root
+  (4,358 jobs, 900 MB of checkpoints, 697 MB of traces):
+
+  | | value |
+  |---|---|
+  | Startup to `Restored persisted jobs` | ~135 s (incl. one-off sidecar backfill) |
+  | Resident baseline, idle | 1.34 GB |
+  | Resident after 10 min of a running polish stage | 1.50 GB |
+  | `GET /` | 5.3 s |
+
+  The earlier OOM kill on this data root was caused by per-request re-parsing
+  and is fixed; this is the floor that remains under it. Bounding it is Task
+  17.12 in [`../PLAN.md`](../PLAN.md). A long campaign on one data root is the
+  case to watch: prune or move terminal jobs if startup time or resident set
+  becomes a problem before then.
 
 ## Resume and persistence
 
@@ -525,4 +549,4 @@ behavior is production-ready.
   corruption but is not a substitute for signature verification.
 
 Track remaining work in the active
-[Phase 14 release gate](../PLAN.md#phase-14-production-readiness-remediation--release-gate).
+[Phase 14 release gate](../PLAN.md#phase-14-production-readiness--release-gate).

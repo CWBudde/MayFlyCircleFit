@@ -238,6 +238,12 @@ That is a configuration finding, not a library defect, and it is cheap to act
 on: setting `stopStagnationIters` on a restart arm converts wasted budget into
 additional restarts.
 
+Which window to set is measured in
+[`cmaes-stagnation-pilot-report.md`](cmaes-stagnation-pilot-report.md) — half
+Hansen's anchor at both `lambda` levels — along with the per-restart records
+this campaign could not have written, and the warning that reclaimed budget has
+not yet been shown to buy quality.
+
 ### What the recorded sigma does and does not show
 
 The trajectories record a striking number, and it is worth writing down why it

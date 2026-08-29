@@ -536,4 +536,5 @@ they could be. Treat them as history, and cite them as such.
   measured ±1-per-channel bound and why the flag breaks reproducibility.
 - [`architecture.md`](architecture.md) — how schedules, ordinary jobs,
   persistence, and campaign read models fit together.
-- `PLAN.md` Phase 16 — current schedule follow-up work.
+- [`../PLAN.md`](../PLAN.md) — open work. Schedules themselves are
+  complete; the estimator advice above is what a campaign should follow.
