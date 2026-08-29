@@ -262,10 +262,18 @@ func TestLambdaScreenRejectsAnIndivisibleBudget(t *testing.T) {
 	}
 }
 
+// The registered design names, so a test that enumerates them cannot drift
+// from the names campaignDesign accepts.
+const (
+	designPhase21 = "phase21"
+	designLambda  = "lambda"
+	designPilot   = "stagnation-pilot"
+)
+
 func TestCampaignDesignsAreNamedAndClosed(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{"phase21", "lambda"} {
+	for _, name := range []string{designPhase21, designLambda, designPilot} {
 		plan, err := campaignDesign(name, defaultBudget)
 		if err != nil {
 			t.Fatalf("design %s: %v", name, err)
@@ -281,8 +289,35 @@ func TestCampaignDesignsAreNamedAndClosed(t *testing.T) {
 			t.Errorf("design %s baseline %q is not one of its arms", name, plan.baseline)
 		}
 
-		if !names[plan.secondaryControl] {
+		if plan.secondaryControl != "" && !names[plan.secondaryControl] {
 			t.Errorf("design %s secondary control %q is not one of its arms", name, plan.secondaryControl)
+		}
+
+		if plan.blocks < 1 {
+			t.Errorf("design %s registers %d blocks", name, plan.blocks)
+		}
+
+		if plan.seedBase < 1 {
+			t.Errorf("design %s registers seed base %d", name, plan.seedBase)
+		}
+
+		// Every contrast must name arms the design runs, or buildContrasts
+		// would take a paired difference against nothing.
+		primaries := 0
+
+		for _, current := range plan.contrasts {
+			if !names[current.control] || !names[current.candidate] {
+				t.Errorf("design %s contrast %s vs %s names an arm it does not run",
+					name, current.candidate, current.control)
+			}
+
+			if current.primary {
+				primaries++
+			}
+		}
+
+		if primaries > 1 {
+			t.Errorf("design %s registers %d primary contrasts, want at most one", name, primaries)
 		}
 	}
 
@@ -362,5 +397,167 @@ func TestWriteRestartsRecordsOneRowPerRun(t *testing.T) {
 
 	if rows[2][4] != "1" || rows[2][6] != "2048" || rows[2][10] != "maximum_evaluations" {
 		t.Errorf("second run = %v, want the doubled population that spent the budget", rows[2])
+	}
+}
+
+func TestRegisteredDesignsUseDisjointSeedPrefixes(t *testing.T) {
+	t.Parallel()
+
+	// Two campaigns that share a seed prefix are not independent, and the
+	// overlap would be invisible in the result CSVs. Reserve the ranges here so
+	// a new design has to pick a free one.
+	used := make(map[int64]string)
+
+	for _, name := range []string{designPhase21, designLambda, designPilot} {
+		plan, err := campaignDesign(name, defaultBudget)
+		if err != nil {
+			t.Fatalf("design %s: %v", name, err)
+		}
+
+		for block := 1; block <= plan.blocks; block++ {
+			seed := plan.seedBase + int64(block)
+			// phase21 and lambda deliberately share seeds: three lambda arms
+			// repeat Phase 21 so cross-campaign drift is measured.
+			if owner, taken := used[seed]; taken && (owner != designPhase21 || name != designLambda) {
+				t.Errorf("designs %s and %s both use seed %d", owner, name, seed)
+			}
+
+			used[seed] = name
+		}
+	}
+}
+
+func TestStagnationPilotArmsPairEveryWindowWithABaseline(t *testing.T) {
+	t.Parallel()
+
+	arms, err := stagnationPilotArms(defaultBudget)
+	if err != nil {
+		t.Fatalf("stagnationPilotArms: %v", err)
+	}
+
+	byName := make(map[string]arm, len(arms))
+	for _, current := range arms {
+		if _, duplicate := byName[current.name]; duplicate {
+			t.Fatalf("duplicate arm %s", current.name)
+		}
+
+		byName[current.name] = current
+
+		// Every arm is evaluation-matched by construction, criterion or not,
+		// so a window that ends runs early cannot also change the budget.
+		if current.iters*current.popSize != defaultBudget {
+			t.Errorf("arm %s spends %d evaluations, want %d",
+				current.name, current.iters*current.popSize, defaultBudget)
+		}
+
+		if current.covariance != "separable" || current.restartStrategy != "ipop" {
+			t.Errorf("arm %s is %s/%s, want separable/ipop",
+				current.name, current.covariance, current.restartStrategy)
+		}
+	}
+
+	// Each population level needs its own no-criterion baseline, or reclaimed
+	// budget could only be read against another campaign's seeds.
+	for _, lambda := range []int{20, 1024} {
+		baseline := stagnationArmName(lambda, 0)
+		if _, ok := byName[baseline]; !ok {
+			t.Errorf("missing no-criterion baseline %s", baseline)
+		}
+
+		if window := byName[baseline].stopStagnationIters; window != 0 {
+			t.Errorf("baseline %s configures a %d-iteration window", baseline, window)
+		}
+
+		anchor := hansenStagnationWindow(lambda)
+		for _, want := range []int{anchor / 2, anchor, anchor * 4} {
+			name := stagnationArmName(lambda, want)
+			if byName[name].stopStagnationIters != want {
+				t.Errorf("arm %s configures window %d, want %d",
+					name, byName[name].stopStagnationIters, want)
+			}
+		}
+	}
+
+	// The absolute-threshold cell stays a single exploratory arm: a cost-unit
+	// threshold cannot transfer to a reference image of a different scale, so
+	// it must not be the shape the registered campaign inherits.
+	probes := 0
+
+	for _, current := range arms {
+		if current.stopMinImprovement > 0 {
+			probes++
+
+			if current.stopStagnationIters == 0 {
+				t.Errorf("arm %s sets stopMinImprovement without a window; app.JobConfig rejects that",
+					current.name)
+			}
+		}
+	}
+
+	if probes != 1 {
+		t.Errorf("pilot carries %d min-improvement arms, want exactly 1", probes)
+	}
+}
+
+func TestHansenStagnationWindow(t *testing.T) {
+	t.Parallel()
+
+	// 120 + 30*n/lambda at n = 56, the dimensionality of an eight-circle batch.
+	for _, testCase := range []struct {
+		lambda int
+		want   int
+	}{
+		{lambda: 20, want: 204},
+		{lambda: 64, want: 146},
+		{lambda: 1024, want: 121},
+	} {
+		if got := hansenStagnationWindow(testCase.lambda); got != testCase.want {
+			t.Errorf("hansenStagnationWindow(%d) = %d, want %d", testCase.lambda, got, testCase.want)
+		}
+	}
+}
+
+func TestAssertDesignShapeRejectsAContradictingFlag(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designPilot, defaultBudget)
+	if err != nil {
+		t.Fatalf("campaignDesign: %v", err)
+	}
+
+	err = assertDesignShape(settings{}, plan)
+	if err != nil {
+		t.Errorf("unset flags should adopt the design: %v", err)
+	}
+
+	err = assertDesignShape(settings{blocks: plan.blocks, seedBase: plan.seedBase}, plan)
+	if err != nil {
+		t.Errorf("matching flags should be accepted: %v", err)
+	}
+
+	err = assertDesignShape(settings{blocks: plan.blocks + 1}, plan)
+	if err == nil {
+		t.Error("a contradicting -blocks was accepted")
+	}
+
+	err = assertDesignShape(settings{seedBase: plan.seedBase + 1}, plan)
+	if err == nil {
+		t.Error("a contradicting -seed-base was accepted")
+	}
+}
+
+func TestDerivedContrastsMatchTheLambdaScreenFamily(t *testing.T) {
+	t.Parallel()
+
+	// The lambda report quotes "thirteen paired contrasts" and its committed
+	// CSV must keep reproducing that family, so the derivation is pinned here
+	// rather than left to whatever the arm count happens to be.
+	plan, err := campaignDesign("lambda", defaultBudget)
+	if err != nil {
+		t.Fatalf("campaignDesign: %v", err)
+	}
+
+	if len(plan.contrasts) != 13 {
+		t.Errorf("lambda design registers %d contrasts, want 13", len(plan.contrasts))
 	}
 }

@@ -1,7 +1,7 @@
 // Command cmaes-measurement submits and collects the evaluation-matched
 // campaign described by go-cma-es PLAN.md Phase 11.
 //
-//nolint:cyclop,embeddedstructfieldcheck,err113,forbidigo,goconst,lll,noinlineerr,wrapcheck,wsl_v5 // A standalone campaign driver reports contextual CLI errors and Markdown to stdout.
+//nolint:cyclop,embeddedstructfieldcheck,err113,forbidigo,goconst,lll,noinlineerr,wrapcheck // A standalone campaign driver reports contextual CLI errors and Markdown to stdout.
 package main
 
 import (
@@ -31,8 +31,14 @@ const (
 	defaultBudget  = 6_502_400
 	defaultProject = "cmaes-phase11"
 	defaultPop     = 1024
-	// campaignBlocks is the registered paired-block count; every design uses it.
+	// campaignBlocks is the paired-block count the phase21 and lambda designs
+	// registered. It is no longer universal: a design carries its own count, so
+	// a descriptive pilot can buy three blocks and an inferential campaign
+	// twelve, and df follows the design rather than this constant.
 	campaignBlocks = 12
+	// searchDimensions is the dimensionality every campaign here searches:
+	// eight circles of seven parameters, fitted in one batch.
+	searchDimensions = 56
 	// resultColumns is the width of the header writeResults emits.
 	resultColumns = 12
 )
@@ -45,6 +51,31 @@ type arm struct {
 	iters             int
 	popSize           int
 	optimizerRestarts int
+	// stopStagnationIters ends an individual run after this many iterations
+	// without sufficient progress, which is what lets a restart schedule
+	// reclaim the budget of a run that has stopped improving. Zero is the
+	// behaviour every campaign before this one measured: no criterion is
+	// configured, Stop.enabled() is false, and a dead run holds its budget to
+	// the cap.
+	stopStagnationIters int
+	// stopMinImprovement is the absolute cost reduction that counts as
+	// progress. Zero accepts any improvement and is the only setting that can
+	// become a shipped default, because a threshold in cost units does not
+	// transfer between reference images whose costs differ in scale.
+	stopMinImprovement float64
+}
+
+// plannedContrast is one paired comparison a design registers before it runs.
+// Naming them is what bounds multiplicity: the lambda screen crossed two
+// factors and thereby manufactured thirteen contrasts out of eight arms, and
+// the resulting Holm threshold retained a p of 0.0056. A design that declares
+// the comparisons it intends pays for those and no others.
+type plannedContrast struct {
+	control   string
+	candidate string
+	// primary marks the single comparison the campaign exists to make. A
+	// design may register at most one.
+	primary bool
 }
 
 // design is one registered campaign: a fixed arm set, the arm every paired
@@ -55,7 +86,36 @@ type design struct {
 	name             string
 	baseline         string
 	secondaryControl string
-	arms             []arm
+	// blocks is the design's paired-block count and the source of df. It is
+	// per design rather than global so a descriptive pilot and an inferential
+	// campaign can live in the same driver without either borrowing the
+	// other's degrees of freedom.
+	blocks int
+	// seedBase is the design's first block seed prefix. It belongs to the
+	// design, not to a flag, so two campaigns cannot silently share seeds and
+	// a replication cannot silently fail to.
+	seedBase int64
+	arms     []arm
+	// contrasts is the family every paired test is corrected over. phase21 and
+	// lambda derive theirs from the two controls, which is how their committed
+	// reports were produced and must stay reproducible; a design that fills
+	// this in itself is corrected over exactly the comparisons it names.
+	contrasts []plannedContrast
+	// descriptive marks a design that buys mechanism rather than inference.
+	// It has too few blocks for a paired test, so the report prints arm
+	// summaries and refuses to print a statistic.
+	descriptive bool
+}
+
+// primaryContrast returns the design's registered primary comparison.
+func (d design) primaryContrast() (plannedContrast, bool) {
+	for _, current := range d.contrasts {
+		if current.primary {
+			return current, true
+		}
+	}
+
+	return plannedContrast{}, false
 }
 
 type manifestRow struct {
@@ -149,7 +209,7 @@ func main() {
 func parseFlags() settings {
 	var config settings
 	flag.StringVar(&config.action, "action", "collect", "plan, submit, collect, preliminary, or analyze")
-	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21 or lambda")
+	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21, lambda or stagnation-pilot")
 	flag.StringVar(&config.server, "server", "http://localhost:8085", "serve base URL")
 	flag.StringVar(&config.dataRoot, "data-root", "./data/cmaes-phase11", "serve data root")
 	flag.StringVar(&config.reference, "ref", "example/MayFly-512.png", "reference image")
@@ -158,10 +218,10 @@ func parseFlags() settings {
 	flag.StringVar(&config.trajectory, "trajectories", "docs/cmaes-trajectories.csv", "diagnostic trajectory CSV")
 	flag.StringVar(&config.restartsPath, "restarts", "docs/cmaes-restarts.csv", "per-restart outcome CSV")
 	flag.StringVar(&config.project, "project", defaultProject, "server project")
-	flag.IntVar(&config.blocks, "blocks", campaignBlocks, "paired blocks")
+	flag.IntVar(&config.blocks, "blocks", 0, "assert the design's paired block count (0 uses it)")
 	flag.IntVar(&config.budget, "budget", defaultBudget, "optimizer evaluation cap")
 	flag.IntVar(&config.workers, "workers", 8, "parallel evaluation workers")
-	flag.Int64Var(&config.seedBase, "seed-base", 111_000, "first block seed prefix")
+	flag.Int64Var(&config.seedBase, "seed-base", 0, "assert the design's first block seed prefix (0 uses it)")
 	flag.Parse()
 
 	return config
@@ -183,20 +243,134 @@ func campaignDesign(name string, budget int) (design, error) {
 
 	switch name {
 	case "phase21":
-		return design{
-			name: name, baseline: "mayfly-single", secondaryControl: "mayfly-r16", arms: arms,
-		}, nil
+		return withDerivedContrasts(design{
+			name: name, baseline: "mayfly-single", secondaryControl: "mayfly-r16",
+			blocks: campaignBlocks, seedBase: 111_000, arms: arms,
+		}), nil
 	case "lambda":
 		screen, screenErr := lambdaScreenArms(budget)
 		if screenErr != nil {
 			return design{}, screenErr
 		}
 
+		return withDerivedContrasts(design{
+			name: name, baseline: "cmaes-single", secondaryControl: "cmaes-ipop",
+			blocks: campaignBlocks, seedBase: 111_000, arms: screen,
+		}), nil
+	case "stagnation-pilot":
+		pilot, pilotErr := stagnationPilotArms(budget)
+		if pilotErr != nil {
+			return design{}, pilotErr
+		}
+
 		return design{
-			name: name, baseline: "cmaes-single", secondaryControl: "cmaes-ipop", arms: screen,
+			name: name, baseline: "sep-ipop-l20",
+			blocks: stagnationPilotBlocks, seedBase: 112_000, arms: pilot,
+			descriptive: true,
 		}, nil
 	default:
-		return design{}, fmt.Errorf("unknown design %q (want phase21 or lambda)", name)
+		return design{}, fmt.Errorf("unknown design %q (want phase21, lambda or stagnation-pilot)", name)
+	}
+}
+
+// withDerivedContrasts fills in the family a design gets when it does not name
+// one: every arm against each control, controls outer. It reproduces exactly
+// what buildContrasts used to compute inline, so the phase21 and lambda
+// reports stay reproducible from their committed CSVs.
+func withDerivedContrasts(plan design) design {
+	controls := []string{plan.baseline, plan.secondaryControl}
+
+	plan.contrasts = make([]plannedContrast, 0, len(controls)*(len(plan.arms)-1))
+	for _, control := range controls {
+		for _, current := range plan.arms {
+			if current.name == control || current.name == plan.baseline {
+				continue
+			}
+
+			plan.contrasts = append(plan.contrasts, plannedContrast{control: control, candidate: current.name})
+		}
+	}
+
+	return plan
+}
+
+// stagnationPilotBlocks is deliberately far too few blocks for a paired test.
+// The pilot exists to measure a mechanism -- how many restarts a window buys
+// and how much budget it reclaims -- and to select the window the registered
+// campaign will then test on cost. Selecting it on cost and afterwards testing
+// cost would be selecting on the outcome.
+const stagnationPilotBlocks = 3
+
+// hansenStagnationWindow is Hansen's stagnation length, 120 + 30*n/lambda, for
+// the dimensionality this campaign searches. It is an a-priori anchor for the
+// window and not a claim of fidelity: go-cma-es stops a run after N iterations
+// without sufficient progress, while Hansen's criterion tests a median of
+// fitness histories across that span.
+func hansenStagnationWindow(lambda int) int { return 120 + 30*searchDimensions/lambda }
+
+// stagnationPilotArms measures what a stagnation criterion does to a restart
+// schedule, at the two population sizes the registered campaign will use. Both
+// are separable IPOP, the shape the lambda screen left standing; lambda 20 is
+// where the measured waste is worst (56.7%) and where an IPOP ladder stays
+// inside the population range that screen found unremarkable, and lambda 1024
+// is the shape Phase 21 actually ran.
+//
+// Each level contributes its own no-criterion baseline, so reclaimed budget is
+// read within the pilot's own three blocks rather than against the lambda
+// screen's different seeds. Windows are half, one and four times the Hansen
+// anchor. One extra cell raises stopMinImprovement off zero at lambda 20's
+// anchor: the committed lambda traces show 30.9% of that arm's recorded
+// improvements are smaller than 0.1 cost units and the smallest is 2.7e-05, so
+// whether trivial improvements keep resetting the counter is worth one arm --
+// but it stays exploratory, because an absolute cost threshold cannot become a
+// default that holds on a reference image of a different scale.
+func stagnationPilotArms(budget int) ([]arm, error) {
+	levels := []int{20, 1024}
+
+	arms := make([]arm, 0, len(levels)*4+1)
+	for _, lambda := range levels {
+		if budget%lambda != 0 {
+			return nil, fmt.Errorf("budget %d is not divisible by lambda %d; the arms would not be evaluation-matched", budget, lambda)
+		}
+
+		base := stagnationArm(stagnationArmName(lambda, 0), lambda, budget, 0, 0)
+		arms = append(arms, base)
+
+		anchor := hansenStagnationWindow(lambda)
+		for _, window := range []int{anchor / 2, anchor, anchor * 4} {
+			arms = append(arms, stagnationArm(stagnationArmName(lambda, window), lambda, budget, window, 0))
+		}
+
+		if lambda == 20 {
+			arms = append(arms, stagnationArm(
+				stagnationArmName(lambda, anchor)+"-min01", lambda, budget, anchor, 0.1))
+		}
+	}
+
+	return arms, nil
+}
+
+// stagnationArmName keeps the lambda level and the window in the arm name, so
+// a result CSV row says what it ran without a lookup. Window zero is the
+// no-criterion baseline.
+func stagnationArmName(lambda, window int) string {
+	name := "sep-ipop"
+	if lambda != defaultPop {
+		name = fmt.Sprintf("%s-l%d", name, lambda)
+	}
+
+	if window > 0 {
+		name = fmt.Sprintf("%s-w%d", name, window)
+	}
+
+	return name
+}
+
+func stagnationArm(name string, lambda, budget, window int, minImprovement float64) arm {
+	return arm{
+		name: name, optimizer: "cmaes", covariance: "separable", restartStrategy: "ipop",
+		iters: budget / lambda, popSize: lambda, optimizerRestarts: 1,
+		stopStagnationIters: window, stopMinImprovement: minImprovement,
 	}
 }
 
@@ -209,6 +383,7 @@ func campaignDesign(name string, budget int) (design, error) {
 func lambdaScreenArms(budget int) ([]arm, error) {
 	modes := []struct{ prefix, covariance string }{{"", "full"}, {"sep-", "separable"}}
 	levels := lambdaLevels()
+
 	arms := make([]arm, 0, len(modes)*(1+len(levels)))
 	for _, mode := range modes {
 		arms = append(arms, arm{
@@ -219,10 +394,12 @@ func lambdaScreenArms(budget int) ([]arm, error) {
 			if budget%lambda != 0 {
 				return nil, fmt.Errorf("budget %d is not divisible by lambda %d; the arms would not be evaluation-matched", budget, lambda)
 			}
+
 			name := mode.prefix + "cmaes-ipop"
 			if lambda != defaultPop {
 				name = fmt.Sprintf("%s-l%d", name, lambda)
 			}
+
 			arms = append(arms, arm{
 				name: name, optimizer: "cmaes", covariance: mode.covariance,
 				restartStrategy: "ipop", iters: budget / lambda, popSize: lambda, optimizerRestarts: 1,
@@ -259,16 +436,35 @@ func campaignArms(budget int) ([]arm, error) {
 	}, nil
 }
 
+// assertDesignShape refuses a -blocks or -seed-base that contradicts the
+// registered design. Both are the design's to choose, so the flags are an
+// assertion a caller can make rather than a way to alter a campaign: a
+// mistyped seed base would silently reuse another campaign's seeds, and a
+// mistyped block count would change df after the fact.
+func assertDesignShape(config settings, plan design) error {
+	if config.blocks != 0 && config.blocks != plan.blocks {
+		return fmt.Errorf("design %s registers %d paired blocks, got -blocks %d",
+			plan.name, plan.blocks, config.blocks)
+	}
+
+	if config.seedBase != 0 && config.seedBase != plan.seedBase {
+		return fmt.Errorf("design %s registers seed base %d, got -seed-base %d",
+			plan.name, plan.seedBase, config.seedBase)
+	}
+
+	return nil
+}
+
 func submit(config settings) error {
 	plan, err := campaignDesign(config.design, config.budget)
 	if err != nil {
 		return err
 	}
+
 	arms := plan.arms
 
-	if config.blocks != campaignBlocks {
-		return fmt.Errorf("design %s requires exactly %d paired blocks, got %d",
-			plan.name, campaignBlocks, config.blocks)
+	if err := assertDesignShape(config, plan); err != nil {
+		return err
 	}
 
 	if err := os.MkdirAll(filepath.Dir(config.manifestPath), 0o755); err != nil {
@@ -285,11 +481,13 @@ func submit(config settings) error {
 	if err := writer.Write([]string{"arm", "block", "seed", "jobId"}); err != nil {
 		return err
 	}
+
 	writer.Flush()
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	for block := 1; block <= config.blocks; block++ {
-		seed := config.seedBase + int64(block)
+
+	for block := 1; block <= plan.blocks; block++ {
+		seed := plan.seedBase + int64(block)
 		for _, current := range arms {
 			jobID, submitErr := submitJob(client, config, current, seed)
 			if submitErr != nil {
@@ -300,10 +498,13 @@ func submit(config settings) error {
 			if err := writer.Write(record); err != nil {
 				return fmt.Errorf("record submitted job: %w", err)
 			}
+
 			writer.Flush()
+
 			if err := writer.Error(); err != nil {
 				return fmt.Errorf("flush manifest: %w", err)
 			}
+
 			fmt.Printf("submitted block %02d %-16s %s\n", block, current.name, jobID)
 		}
 	}
@@ -327,6 +528,16 @@ func submitJob(client *http.Client, config settings, current arm, seed int64) (s
 		payload["covarianceMode"] = current.covariance
 		payload["restartStrategy"] = current.restartStrategy
 	}
+	// Only send the stop fields when a window is configured. app.JobConfig
+	// rejects stopMinImprovement without stopStagnationIters, and an arm that
+	// sets neither has to reach the server as the untouched configuration every
+	// earlier campaign ran.
+	if current.stopStagnationIters > 0 {
+		payload["stopStagnationIters"] = current.stopStagnationIters
+		if current.stopMinImprovement > 0 {
+			payload["stopMinImprovement"] = current.stopMinImprovement
+		}
+	}
 
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -339,6 +550,7 @@ func submitJob(client *http.Client, config settings, current arm, seed int64) (s
 	if err != nil {
 		return "", fmt.Errorf("build create request: %w", err)
 	}
+
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := client.Do(request)
@@ -351,6 +563,7 @@ func submitJob(client *http.Client, config settings, current arm, seed int64) (s
 	if err != nil {
 		return "", err
 	}
+
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return "", fmt.Errorf("server returned %s: %s", response.Status, responseBody)
 	}
@@ -361,6 +574,7 @@ func submitJob(client *http.Client, config settings, current arm, seed int64) (s
 	if err := json.Unmarshal(responseBody, &created); err != nil {
 		return "", err
 	}
+
 	if created.ID == "" {
 		return "", errors.New("create response has no job id")
 	}
@@ -383,6 +597,7 @@ func collect(config settings) error {
 		if statusErr != nil {
 			return fmt.Errorf("status %s: %w", record.JobID, statusErr)
 		}
+
 		counts[status.State]++
 		if status.State != "completed" {
 			continue
@@ -392,15 +607,18 @@ func collect(config settings) error {
 		if collectErr != nil {
 			return collectErr
 		}
+
 		results = append(results, result)
 	}
 
 	fmt.Printf("campaign status:")
+
 	for _, state := range []string{"pending", "running", "completed", "failed", "cancelled"} {
 		if counts[state] > 0 {
 			fmt.Printf(" %s=%d", state, counts[state])
 		}
 	}
+
 	fmt.Println()
 
 	if len(results) != len(manifest) {
@@ -410,9 +628,11 @@ func collect(config settings) error {
 	if err := writeResults(config.resultsPath, results); err != nil {
 		return err
 	}
+
 	if err := writeTrajectories(config, manifest); err != nil {
 		return err
 	}
+
 	if err := writeRestarts(config, results); err != nil {
 		return err
 	}
@@ -429,11 +649,16 @@ func printPlan(config settings) error {
 		return err
 	}
 
+	if err := assertDesignShape(config, plan); err != nil {
+		return err
+	}
+
 	fmt.Printf("design %s: %d arms x %d blocks = %d jobs, budget %d evaluations, seeds %d..%d\n",
-		plan.name, len(plan.arms), config.blocks, len(plan.arms)*config.blocks, config.budget,
-		config.seedBase+1, config.seedBase+int64(config.blocks))
-	fmt.Println("| arm | optimizer | covariance | restarts | popSize (lambda) | iters | evaluations |")
-	fmt.Println("| --- | --- | --- | --- | ---: | ---: | ---: |")
+		plan.name, len(plan.arms), plan.blocks, len(plan.arms)*plan.blocks, config.budget,
+		plan.seedBase+1, plan.seedBase+int64(plan.blocks))
+	fmt.Println("| arm | optimizer | covariance | restarts | popSize (lambda) | iters | stagnation | evaluations |")
+	fmt.Println("| --- | --- | --- | --- | ---: | ---: | --- | ---: |")
+
 	for _, current := range plan.arms {
 		covariance, restarts := current.covariance, current.restartStrategy
 		// Only CMA-ES spends exactly lambda evaluations per iteration, so only
@@ -448,13 +673,47 @@ func printPlan(config settings) error {
 			restarts = fmt.Sprintf("%d cold run(s)", current.optimizerRestarts)
 			evaluations = "scored from trace"
 		}
-		fmt.Printf("| `%s` | %s | %s | %s | %d | %d | %s |\n",
+
+		fmt.Printf("| `%s` | %s | %s | %s | %d | %d | %s | %s |\n",
 			current.name, current.optimizer, covariance, restarts,
-			current.popSize, current.iters, evaluations)
+			current.popSize, current.iters, describeStagnation(current), evaluations)
 	}
-	fmt.Printf("\nbaseline `%s`, secondary control `%s`\n", plan.baseline, plan.secondaryControl)
+
+	if plan.secondaryControl != "" {
+		fmt.Printf("\nbaseline `%s`, secondary control `%s`\n", plan.baseline, plan.secondaryControl)
+	} else {
+		fmt.Printf("\nbaseline `%s`\n", plan.baseline)
+	}
+
+	if plan.descriptive {
+		fmt.Println("descriptive design: mechanism only, too few blocks for a paired test")
+	}
+
+	for _, current := range plan.contrasts {
+		role := "registered"
+		if current.primary {
+			role = "PRIMARY"
+		}
+
+		fmt.Printf("%s contrast: `%s` against `%s`\n", role, current.candidate, current.control)
+	}
 
 	return nil
+}
+
+// describeStagnation renders an arm's stopping configuration for the plan
+// table. "none" is the configuration every campaign before this one ran, and
+// naming it explicitly is the point of the column.
+func describeStagnation(current arm) string {
+	if current.stopStagnationIters == 0 {
+		return "none"
+	}
+
+	if current.stopMinImprovement > 0 {
+		return fmt.Sprintf("%d iters, min %.3g", current.stopStagnationIters, current.stopMinImprovement)
+	}
+
+	return fmt.Sprintf("%d iters", current.stopStagnationIters)
 }
 
 // analyzeDesign resolves the named design before reporting, so the arm set,
@@ -475,13 +734,16 @@ func collectPreliminary(config settings) error {
 	}
 
 	results := make([]resultRow, 0, len(manifest))
+
 	available := make([]manifestRow, 0, len(manifest))
 	for _, record := range manifest {
 		jobDir := filepath.Join(config.dataRoot, "projects", config.project, "jobs", record.JobID)
+
 		body, readErr := os.ReadFile(filepath.Join(jobDir, "checkpoint-info.json"))
 		if errors.Is(readErr, os.ErrNotExist) {
 			continue
 		}
+
 		if readErr != nil {
 			return fmt.Errorf("read %s checkpoint info: %w", record.JobID, readErr)
 		}
@@ -490,22 +752,27 @@ func collectPreliminary(config settings) error {
 		if err := json.Unmarshal(body, &saved); err != nil {
 			return fmt.Errorf("decode %s checkpoint info: %w", record.JobID, err)
 		}
+
 		state := "interrupted"
 		if saved.Termination == "completed" {
 			state = "completed"
 		}
+
 		status := jobStatus{
 			State: state, Termination: saved.Termination,
 			Iterations: saved.Iteration, Evaluations: saved.Evaluations,
 		}
+
 		result, collectErr := collectJob(config, record, status)
 		if collectErr != nil {
 			return collectErr
 		}
+
 		result.OptimizerVersion = saved.OptimizerVersion
 		results = append(results, result)
 		available = append(available, record)
 	}
+
 	if len(results) == 0 {
 		return errors.New("campaign has no persisted job results")
 	}
@@ -513,6 +780,7 @@ func collectPreliminary(config settings) error {
 	if err := writeResults(config.resultsPath, results); err != nil {
 		return err
 	}
+
 	if err := writeTrajectories(config, available); err != nil {
 		return err
 	}
@@ -551,6 +819,7 @@ func fetchStatus(client *http.Client, server, jobID string) (jobStatus, error) {
 
 func collectJob(config settings, record manifestRow, status jobStatus) (resultRow, error) {
 	jobDir := filepath.Join(config.dataRoot, "projects", config.project, "jobs", record.JobID)
+
 	trace, err := readTrace(filepath.Join(jobDir, "trace.jsonl"))
 	if err != nil {
 		return resultRow{}, fmt.Errorf("read %s trace: %w", record.JobID, err)
@@ -558,24 +827,29 @@ func collectJob(config settings, record manifestRow, status jobStatus) (resultRo
 
 	score := math.Inf(1)
 	scoredEvaluations := 0
+
 	for _, entry := range trace {
 		if entry.Evaluations <= config.budget && entry.Cost < score {
 			score = entry.Cost
 			scoredEvaluations = entry.Evaluations
 		}
 	}
+
 	if math.IsInf(score, 1) {
 		return resultRow{}, fmt.Errorf("job %s has no trace sample within budget", record.JobID)
 	}
+
 	if status.Elapsed == 0 && len(trace) > 1 {
 		status.Elapsed = trace[len(trace)-1].Timestamp.Sub(trace[0].Timestamp).Seconds()
 	}
 
 	var saved checkpoint
+
 	checkpointBody, err := os.ReadFile(filepath.Join(jobDir, "checkpoint.json"))
 	if err != nil {
 		return resultRow{}, fmt.Errorf("read %s checkpoint: %w", record.JobID, err)
 	}
+
 	if err := json.Unmarshal(checkpointBody, &saved); err != nil {
 		return resultRow{}, fmt.Errorf("decode %s checkpoint: %w", record.JobID, err)
 	}
@@ -599,11 +873,13 @@ func readTrace(path string) ([]store.TraceEntry, error) {
 	var entries []store.TraceEntry
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 4<<20)
+
 	for scanner.Scan() {
 		var entry store.TraceEntry
 		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
 			return nil, err
 		}
+
 		entries = append(entries, entry)
 	}
 
@@ -618,10 +894,12 @@ func readManifest(path string) ([]manifestRow, error) {
 	defer file.Close()
 
 	reader := csv.NewReader(file)
+
 	records, err := reader.ReadAll()
 	if err != nil {
 		return nil, err
 	}
+
 	if len(records) < 2 || !slices.Equal(records[0], []string{"arm", "block", "seed", "jobId"}) {
 		return nil, errors.New("manifest has an unexpected header or no jobs")
 	}
@@ -631,11 +909,14 @@ func readManifest(path string) ([]manifestRow, error) {
 		if len(record) != 4 {
 			return nil, fmt.Errorf("invalid manifest row %q", record)
 		}
+
 		block, blockErr := strconv.Atoi(record[1])
+
 		seed, seedErr := strconv.ParseInt(record[2], 10, 64)
 		if blockErr != nil || seedErr != nil {
 			return nil, fmt.Errorf("invalid manifest row %q", record)
 		}
+
 		rows = append(rows, manifestRow{Arm: record[0], Block: block, Seed: seed, JobID: record[3]})
 	}
 
@@ -646,6 +927,7 @@ func writeResults(path string, results []resultRow) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+
 	file, err := os.Create(path)
 	if err != nil {
 		return err
@@ -653,10 +935,12 @@ func writeResults(path string, results []resultRow) error {
 	defer file.Close()
 
 	writer := csv.NewWriter(file)
+
 	header := []string{"arm", "block", "seed", "jobId", "state", "termination", "optimizerVersion", "bestCost", "scoredEvaluations", "finalEvaluations", "iterations", "elapsedSeconds"}
 	if err := writer.Write(header); err != nil {
 		return err
 	}
+
 	for _, result := range results {
 		record := []string{
 			result.Arm, strconv.Itoa(result.Block), strconv.FormatInt(result.Seed, 10), result.JobID,
@@ -669,6 +953,7 @@ func writeResults(path string, results []resultRow) error {
 			return err
 		}
 	}
+
 	writer.Flush()
 
 	return writer.Error()
@@ -678,6 +963,7 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 	if err := os.MkdirAll(filepath.Dir(config.trajectory), 0o755); err != nil {
 		return err
 	}
+
 	file, err := os.Create(config.trajectory)
 	if err != nil {
 		return err
@@ -690,31 +976,41 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 	}
 
 	early := map[int]bool{1: true, 5: true, 10: true, 20: true, 40: true, 80: true, 160: true, 255: true}
+
 	for _, record := range manifest {
 		jobDir := filepath.Join(config.dataRoot, "projects", config.project, "jobs", record.JobID)
+
 		entries, readErr := readTrace(filepath.Join(jobDir, "trace.jsonl"))
 		if readErr != nil {
 			return readErr
 		}
+
 		lastEligible := -1
+
 		for index, entry := range entries {
 			if entry.OptimizerDiagnostics != nil && entry.Evaluations <= config.budget {
 				lastEligible = index
 			}
 		}
+
 		lastBucket := -1
+
 		for index, entry := range entries {
 			if entry.OptimizerDiagnostics == nil || entry.Evaluations > config.budget {
 				continue
 			}
+
 			bucket := entry.Evaluations * 256 / config.budget
+
 			isLast := index == lastEligible
 			if !isLast && !early[entry.Iteration] && bucket == lastBucket {
 				continue
 			}
+
 			lastBucket = bucket
 			diagnostic := entry.OptimizerDiagnostics
 			populationSpread, sigma, conditionNumber, extent := formatDiagnostics(diagnostic)
+
 			record := []string{
 				record.Arm, strconv.Itoa(record.Block), strconv.FormatInt(record.Seed, 10),
 				strconv.Itoa(entry.Iteration), strconv.Itoa(entry.Evaluations),
@@ -727,6 +1023,7 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 			}
 		}
 	}
+
 	writer.Flush()
 
 	return writer.Error()
@@ -752,6 +1049,7 @@ func writeRestarts(config settings, results []resultRow) error {
 	if err := os.MkdirAll(filepath.Dir(config.restartsPath), 0o755); err != nil {
 		return err
 	}
+
 	file, err := os.Create(config.restartsPath)
 	if err != nil {
 		return err
@@ -759,6 +1057,7 @@ func writeRestarts(config settings, results []resultRow) error {
 	defer file.Close()
 
 	writer := csv.NewWriter(file)
+
 	header := []string{
 		"arm", "block", "seed", "stage", "restart", "regime",
 		"population", "iterations", "evaluations", "bestCost", "termination",
@@ -782,6 +1081,7 @@ func writeRestarts(config settings, results []resultRow) error {
 			}
 		}
 	}
+
 	writer.Flush()
 
 	return writer.Error()
@@ -826,7 +1126,7 @@ type contrast struct {
 }
 
 func analyze(path string, plan design) error {
-	rows, err := readResults(path, len(plan.arms)*campaignBlocks)
+	rows, err := readResults(path, len(plan.arms)*plan.blocks)
 	if err != nil {
 		return err
 	}
@@ -839,25 +1139,33 @@ func analyze(path string, plan design) error {
 	names := make([]string, 0, len(plan.arms))
 	for _, current := range plan.arms {
 		rows := byArm[current.name]
-		if len(rows) != campaignBlocks {
-			return fmt.Errorf("arm %s has %d blocks, want %d", current.name, len(rows), campaignBlocks)
+		if len(rows) != plan.blocks {
+			return fmt.Errorf("arm %s has %d blocks, want %d", current.name, len(rows), plan.blocks)
 		}
+
 		slices.SortFunc(rows, func(a, b resultRow) int { return a.Block - b.Block })
+
 		names = append(names, current.name)
 	}
 
-	contrasts := buildContrasts(plan, names, byArm)
+	if plan.descriptive {
+		return reportDescriptive(plan, names, byArm)
+	}
+
+	contrasts := buildContrasts(plan, byArm)
 	holmReject(contrasts, familyAlpha)
 
 	fmt.Printf("| arm | mean | sd | median | best | gain vs %s | t (df=%d) | p | Holm | blocks won |\n",
-		plan.baseline, campaignBlocks-1)
+		plan.baseline, plan.blocks-1)
 	fmt.Println("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |")
+
 	for _, name := range names {
 		values := costs(byArm[name])
 		mean, sd := meanSD(values)
+
 		summary := "control | control | control | control | control"
 		if name != plan.baseline {
-			summary = summarize(contrasts, plan.baseline, name)
+			summary = summarize(contrasts, plan.baseline, name, plan.blocks)
 		}
 
 		fmt.Printf("| `%s` | %.2f | %.2f | %.2f | %.2f | %s |\n",
@@ -866,65 +1174,104 @@ func analyze(path string, plan design) error {
 
 	fmt.Printf("\nAgainst %s:\n", plan.secondaryControl)
 	fmt.Printf("| arm | gain vs %s | t (df=%d) | p | Holm | blocks won |\n",
-		plan.secondaryControl, campaignBlocks-1)
+		plan.secondaryControl, plan.blocks-1)
 	fmt.Println("| --- | ---: | ---: | ---: | --- | ---: |")
+
 	for _, name := range names {
 		if name == plan.baseline || name == plan.secondaryControl {
 			continue
 		}
-		fmt.Printf("| `%s` | %s |\n", name, summarize(contrasts, plan.secondaryControl, name))
+
+		fmt.Printf("| `%s` | %s |\n", name, summarize(contrasts, plan.secondaryControl, name, plan.blocks))
 	}
 
 	fmt.Printf("\nHolm step-down over all %d paired contrasts at a family-wise alpha of %.2f;\n",
 		len(contrasts), familyAlpha)
 	fmt.Printf("the uncorrected two-sided threshold at df=%d is t=%.2f and the Bonferroni one is t=%.2f.\n",
-		campaignBlocks-1, studentTCritical(familyAlpha, campaignBlocks-1),
-		studentTCritical(familyAlpha/float64(len(contrasts)), campaignBlocks-1))
+		plan.blocks-1, studentTCritical(familyAlpha, plan.blocks-1),
+		studentTCritical(familyAlpha/float64(len(contrasts)), plan.blocks-1))
+
+	if primary, ok := plan.primaryContrast(); ok {
+		fmt.Printf("the registered primary contrast is `%s` against `%s`.\n",
+			primary.candidate, primary.control)
+	}
 
 	return nil
 }
 
-// buildContrasts pairs every candidate arm against both of a design's
-// controls. All of them belong to one family, so they are built together and
-// corrected together: a design with more arms buys more contrasts and
-// therefore a stricter threshold, which is the point of correcting rather than
-// reading each control column on its own.
-func buildContrasts(plan design, names []string, byArm map[string][]resultRow) []contrast {
-	controls := []string{plan.baseline, plan.secondaryControl}
-	contrasts := make([]contrast, 0, len(controls)*(len(names)-1))
-	for _, control := range controls {
-		for _, candidate := range names {
-			if candidate == control || candidate == plan.baseline {
-				continue
+// reportDescriptive is the output for a design that buys mechanism instead of
+// inference. It prints what each arm cost and what its budget did, and no
+// statistic at all: three blocks cannot support a paired test, and printing a
+// t on them would invite exactly the reading the design was built to avoid.
+func reportDescriptive(plan design, names []string, byArm map[string][]resultRow) error {
+	fmt.Printf("design %s: descriptive only, %d blocks, no inferential statistics\n\n",
+		plan.name, plan.blocks)
+	fmt.Println("| arm | mean | best | worst | mean evaluations | % of cap | % spent after last improvement |")
+	fmt.Println("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+
+	for _, name := range names {
+		rows := byArm[name]
+		values := costs(rows)
+		mean, _ := meanSD(values)
+
+		var final, wasted float64
+		for _, row := range rows {
+			final += float64(row.FinalEvaluations)
+			if row.FinalEvaluations > 0 {
+				wasted += float64(row.FinalEvaluations-row.ScoredEvaluations) / float64(row.FinalEvaluations)
 			}
-			gain, statistic, wins := pairedImprovement(byArm[control], byArm[candidate])
-			contrasts = append(contrasts, contrast{
-				control:   control,
-				candidate: candidate,
-				gain:      gain,
-				statistic: statistic,
-				pValue:    studentTTwoSided(statistic, campaignBlocks-1),
-				wins:      wins,
-			})
 		}
+
+		final /= float64(len(rows))
+		wasted /= float64(len(rows))
+
+		fmt.Printf("| `%s` | %.2f | %.2f | %.2f | %.0f | %.1f%% | %.1f%% |\n",
+			name, mean, slices.Min(values), slices.Max(values),
+			final, final/float64(defaultBudget)*100, wasted*100)
+	}
+
+	fmt.Println("\nRestart counts and per-run termination reasons are in the -restarts CSV;")
+	fmt.Println("they, not the costs above, are what selects the window for the registered campaign.")
+
+	return nil
+}
+
+// buildContrasts evaluates the family the design registered. All of them are
+// one family and are corrected together, so the number of contrasts a design
+// declares is the multiplicity it pays for -- which is why declaring them is
+// now the design's job rather than a consequence of how many arms it happens
+// to run.
+func buildContrasts(plan design, byArm map[string][]resultRow) []contrast {
+	contrasts := make([]contrast, 0, len(plan.contrasts))
+	for _, planned := range plan.contrasts {
+		gain, statistic, wins := pairedImprovement(byArm[planned.control], byArm[planned.candidate])
+		contrasts = append(contrasts, contrast{
+			control:   planned.control,
+			candidate: planned.candidate,
+			gain:      gain,
+			statistic: statistic,
+			pValue:    studentTTwoSided(statistic, plan.blocks-1),
+			wins:      wins,
+		})
 	}
 
 	return contrasts
 }
 
 // summarize renders one contrast's cells for the Markdown tables above.
-func summarize(contrasts []contrast, control, candidate string) string {
+func summarize(contrasts []contrast, control, candidate string, blocks int) string {
 	for _, current := range contrasts {
 		if current.control != control || current.candidate != candidate {
 			continue
 		}
+
 		decision := "retain"
 		if current.rejected {
 			decision = "reject"
 		}
 
-		return fmt.Sprintf("%+.2f | %+.2f | %.5f | %s | %d/12",
-			current.gain, current.statistic, current.pValue, decision, current.wins)
+		return fmt.Sprintf("%+.2f | %+.2f | %.5f | %s | %d/%d",
+			current.gain, current.statistic, current.pValue, decision, current.wins, blocks)
 	}
 
 	return "n/a | n/a | n/a | n/a | n/a"
@@ -938,6 +1285,7 @@ func holmReject(contrasts []contrast, alpha float64) {
 	for index := range order {
 		order[index] = index
 	}
+
 	slices.SortFunc(order, func(a, b int) int {
 		return cmp.Compare(contrasts[a].pValue, contrasts[b].pValue)
 	})
@@ -946,6 +1294,7 @@ func holmReject(contrasts []contrast, alpha float64) {
 		if contrasts[index].pValue >= alpha/float64(len(contrasts)-rank) {
 			return
 		}
+
 		contrasts[index].rejected = true
 	}
 }
@@ -957,6 +1306,7 @@ func studentTTwoSided(statistic float64, degrees int) float64 {
 	if math.IsInf(statistic, 0) {
 		return 0
 	}
+
 	freedom := float64(degrees)
 
 	return regularizedIncompleteBeta(freedom/(freedom+statistic*statistic), freedom/2, 0.5)
@@ -991,6 +1341,7 @@ func regularizedIncompleteBeta(x, a, b float64) float64 {
 	logA, _ := math.Lgamma(a)
 	logB, _ := math.Lgamma(b)
 	logSum, _ := math.Lgamma(a + b)
+
 	front := math.Exp(logSum - logA - logB + a*math.Log(x) + b*math.Log1p(-x))
 	if x < (a+1)/(a+b+2) {
 		return front * betaContinuedFraction(x, a, b) / a
@@ -1020,6 +1371,7 @@ func betaContinuedFraction(x, a, b float64) float64 {
 	numerator := 1.0
 	denominator := 1 / guard(1-sum*x/plus)
 	fraction := denominator
+
 	for step := 1; step <= maxIterations; step++ {
 		index := float64(step)
 		doubled := 2 * index
@@ -1051,15 +1403,18 @@ func readResults(path string, wantJobs int) ([]resultRow, error) {
 	defer file.Close()
 
 	reader := csv.NewReader(file)
+
 	records, err := reader.ReadAll()
 	if err != nil {
 		return nil, err
 	}
+
 	if len(records) != wantJobs+1 {
 		return nil, fmt.Errorf("results contain %d jobs, want %d", len(records)-1, wantJobs)
 	}
 
 	rows := make([]resultRow, 0, wantJobs)
+
 	for index, record := range records[1:] {
 		line := index + 2
 		if len(record) != resultColumns {
@@ -1067,6 +1422,7 @@ func readResults(path string, wantJobs int) ([]resultRow, error) {
 		}
 
 		parser := rowParser{record: record, line: line}
+
 		row := resultRow{
 			manifestRow: manifestRow{
 				Arm: record[0], Block: parser.integer(1), Seed: parser.integer64(2), JobID: record[3],
@@ -1145,13 +1501,16 @@ func meanSD(values []float64) (float64, float64) {
 	for _, value := range values {
 		mean += value
 	}
+
 	mean /= float64(len(values))
 
 	variance := 0.0
+
 	for _, value := range values {
 		delta := value - mean
 		variance += delta * delta
 	}
+
 	variance /= float64(len(values) - 1)
 
 	return mean, math.Sqrt(variance)
@@ -1173,13 +1532,16 @@ func pairedImprovement(control, candidate []resultRow) (float64, float64, int) {
 
 	differences := make([]float64, 0, len(candidate))
 	wins := 0
+
 	for _, row := range candidate {
 		difference := controlByBlock[row.Block] - row.Score
+
 		differences = append(differences, difference)
 		if difference > 0 {
 			wins++
 		}
 	}
+
 	mean, sd := meanSD(differences)
 	if sd == 0 {
 		return mean, math.Copysign(math.Inf(1), mean), wins
