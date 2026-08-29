@@ -445,6 +445,7 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 		// own generator rather than pinning every run to one point set.
 		config.QMCInit = m.qmcInit
 	}
+
 	config.LowerBound = 0.0
 
 	config.UpperBound = 1.0

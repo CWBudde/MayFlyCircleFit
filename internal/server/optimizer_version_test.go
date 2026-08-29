@@ -41,11 +41,13 @@ func TestResumeGuardsOptimizerVersion(t *testing.T) {
 
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
 
-		if err := server.jobManager.StartJob(job.ID); err != nil {
+		err := server.jobManager.StartJob(job.ID)
+		if err != nil {
 			t.Fatal(err)
 		}
 
-		if err := server.jobManager.CancelJob(job.ID); err != nil {
+		err = server.jobManager.CancelJob(job.ID)
+		if err != nil {
 			t.Fatal(err)
 		}
 
@@ -53,7 +55,8 @@ func TestResumeGuardsOptimizerVersion(t *testing.T) {
 		checkpoint.Evaluations = 80
 		checkpoint.OptimizerVersion = recordedVersion
 
-		if err := persistence.SaveCheckpoint(job.ID, checkpoint); err != nil {
+		err = persistence.SaveCheckpoint(job.ID, checkpoint)
+		if err != nil {
 			t.Fatal(err)
 		}
 
@@ -94,7 +97,8 @@ func TestResumeGuardsOptimizerVersion(t *testing.T) {
 			} `json:"error"`
 		}
 
-		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		err := json.Unmarshal(recorder.Body.Bytes(), &payload)
+		if err != nil {
 			t.Fatalf("decode error envelope %q: %v", recorder.Body.String(), err)
 		}
 

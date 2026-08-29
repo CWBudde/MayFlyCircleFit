@@ -204,7 +204,9 @@ func (o *restartOptimizer) RunContext(ctx context.Context, problem Problem, opti
 			}
 
 			boundary := EpochBoundary{Progress: progress, Termination: result.Termination}
-			if err := reportBoundary(options.EpochObserver, &boundaryCount, &boundaryBest, boundary); err != nil {
+
+			err := reportBoundary(options.EpochObserver, &boundaryCount, &boundaryBest, boundary)
+			if err != nil {
 				return best, err
 			}
 		}
