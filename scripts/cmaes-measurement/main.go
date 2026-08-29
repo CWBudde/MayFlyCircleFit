@@ -126,8 +126,10 @@ type design struct {
 	// reference and circles are the fixture. They belong to the design because
 	// a campaign run on a different image is not comparable to one run on
 	// example/MayFly-512.png, and a flag that silently changed either would
-	// make two campaigns' rows look poolable when they are not. Zero values
-	// mean the fixture every earlier campaign used.
+	// make two campaigns' rows look poolable when they are not. A design that
+	// leaves circles zero runs defaultCircles; one that leaves reference empty
+	// takes whatever -ref supplies, which defaults to the image every earlier
+	// campaign used but is not pinned to it.
 	reference string
 	circles   int
 	// descriptive marks a design that buys mechanism rather than inference.
@@ -136,8 +138,10 @@ type design struct {
 	descriptive bool
 }
 
-// fixture reports the reference image and circle count the design runs, and
-// the shared eight-circle 512x512 fixture when it names none.
+// fixture reports the reference image and circle count the design runs. A
+// design that names neither falls back to defaultCircles and to the caller's
+// -ref, so only a design that pins its reference is guaranteed the image it
+// was registered on.
 func (d design) fixture(fallback string) (string, int) {
 	reference, circles := d.reference, d.circles
 	if reference == "" {
@@ -367,12 +371,12 @@ func campaignDesign(name string, budget int) (design, error) {
 		}
 
 		return design{
-			name: name, baseline: "mayfly-r16", secondaryControl: "sep-ipop",
+			name: name, baseline: "mayfly-r16", secondaryControl: "sep-r5",
 			blocks: campaignBlocks, seedBase: 113_000, arms: split,
 			reference: "example/Ref-512.png", circles: 12,
 			contrasts: []plannedContrast{
 				{control: "mayfly-r16", candidate: "sep-ipop", primary: true},
-				{control: "sep-ipop", candidate: "sep-e5"},
+				{control: "sep-r5", candidate: "sep-e5"},
 			},
 		}, nil
 	default:
@@ -562,15 +566,29 @@ func stagnationArm(name string, lambda, budget, window int, minImprovement float
 // third: warm epochs re-initialize from the incumbent, cold restarts are
 // independent attempts scored best-of, and IPOP is the adapter's own ladder
 // doubling lambda. sep-e5 and sep-r5 hold the budget fixed and spend it as five
-// warm epochs and five cold attempts, against sep-ipop and the unsplit
-// sep-single.
+// warm epochs and five cold attempts, and the registered contrast is one
+// against the other -- that pair, not either against sep-ipop, is the epoch-
+// versus-cold-restart question Task 3 asks. sep-ipop and the unsplit sep-single
+// are run alongside as the reference shapes the two split arms are read
+// against, but they carry no test of their own.
 //
 // Only two contrasts are registered, so Holm corrects over the two questions
 // rather than the fifteen that six arms would otherwise produce.
 func budgetSplitArms(budget int) ([]arm, error) {
-	if budget%defaultPop != 0 {
+	if budget <= 0 || budget%defaultPop != 0 {
 		return nil, fmt.Errorf(
-			"budget %d is not divisible by lambda %d; the arms would not be evaluation-matched", budget, defaultPop)
+			"budget %d must be positive and divisible by lambda %d; the arms would not be evaluation-matched",
+			budget, defaultPop)
+	}
+	// The two Mayfly controls keep Phase 21's fixed shape, whose cost is
+	// defaultBudget evaluations, while only the CMA-ES arms derive their length
+	// from the budget. A larger one would fund those past anything the Mayfly
+	// arms reach and the collector would still print the engine comparison as
+	// evaluation-matched. Reject that instead of reporting it.
+	if budget > defaultBudget {
+		return nil, fmt.Errorf(
+			"budget %d exceeds the fixed Mayfly campaign budget %d; the arms would no longer be evaluation-matched",
+			budget, defaultBudget)
 	}
 
 	iters := budget / defaultPop

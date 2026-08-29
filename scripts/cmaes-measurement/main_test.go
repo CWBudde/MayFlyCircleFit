@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/cwbudde/circlefit/internal/opt"
@@ -745,6 +746,27 @@ func TestBudgetSplitArmsAreEvaluationMatchedAndFixtureIsExplicit(t *testing.T) {
 	if len(plan.contrasts) != 2 {
 		t.Fatalf("budget-split registers %d contrasts, want 2", len(plan.contrasts))
 	}
+
+	// Task 3 asks whether warm epochs beat equivalent cold attempts, so the
+	// two split arms have to be tested against each other. Reading either one
+	// against sep-ipop would compare it with a third mechanism and leave the
+	// question unanswered after twelve blocks of paid-for runs.
+	want := []plannedContrast{
+		{control: "mayfly-r16", candidate: "sep-ipop", primary: true},
+		{control: "sep-r5", candidate: "sep-e5"},
+	}
+	if !slices.Equal(plan.contrasts, want) {
+		t.Errorf("budget-split registers %+v, want %+v", plan.contrasts, want)
+	}
+
+	// Every registered contrast has to be rendered by one of the two report
+	// tables, which key off the baseline and the secondary control. A contrast
+	// naming neither would be corrected for and then printed nowhere.
+	for _, current := range plan.contrasts {
+		if current.control != plan.baseline && current.control != plan.secondaryControl {
+			t.Errorf("contrast against %q is reported by neither table", current.control)
+		}
+	}
 }
 
 func TestBudgetSplitRefusesABudgetItsSplitsDoNotDivide(t *testing.T) {
@@ -756,5 +778,23 @@ func TestBudgetSplitRefusesABudgetItsSplitsDoNotDivide(t *testing.T) {
 	_, err := budgetSplitArms(defaultPop * 1024)
 	if err == nil {
 		t.Fatal("budgetSplitArms accepted a budget its splits do not divide")
+	}
+
+	// The two Mayfly controls have Phase 21's fixed shape, so only the CMA-ES
+	// arms grow with the budget. A non-positive one would give them negative
+	// generation counts and a larger one would fund them past anything the
+	// controls reach, while the report still called the engine comparison
+	// evaluation-matched.
+	for _, budget := range []int{0, -defaultPop * 5, defaultBudget + defaultPop*5} {
+		_, budgetErr := budgetSplitArms(budget)
+		if budgetErr == nil {
+			t.Errorf("budgetSplitArms accepted budget %d", budget)
+		}
+	}
+
+	// The full budget still builds, so the guards reject only what they must.
+	_, defaultErr := budgetSplitArms(defaultBudget)
+	if defaultErr != nil {
+		t.Errorf("budgetSplitArms rejected the default budget: %v", defaultErr)
 	}
 }

@@ -288,7 +288,11 @@ exactly the cap.
 Two contrasts are registered, so Holm corrects over the two questions rather
 than the fifteen that six arms would otherwise produce: **`sep-ipop` against
 `mayfly-r16` is primary** — the default question on a fixture it has never
-seen — and `sep-e5` against `sep-ipop` is Task 3's.
+seen — and **`sep-e5` against `sep-r5`** is Task 3's. That second pair is the
+epoch-versus-cold-restart question itself; testing either split arm against
+`sep-ipop` would compare it with a third mechanism instead. `sep-single` and
+`sep-ipop` still run, as the unsplit and ladder shapes the two split arms are
+read against, but neither carries a test of its own.
 
 ### The fixture
 
