@@ -6,7 +6,7 @@ dashboard shows the queue and every active job. It refuses to overwrite a
 manifest, which prevents an accidental second submission from corrupting the
 paired design.
 
-Three designs are registered, selected with `-design`:
+Four designs are registered, selected with `-design`:
 
 - `phase21` (the default) — the original five arms: two Mayfly controls and
   three CMA-ES arms, all at `popSize` 1024. 60 jobs, 12 blocks, seeds
@@ -17,6 +17,8 @@ Three designs are registered, selected with `-design`:
   cross-campaign drift instead of assuming it away).
 - `stagnation-pilot` — nine arms over 3 blocks at seeds 112001-112003,
   descriptive only. See below.
+- `stagnation` — the four-arm campaign that pilot selected, 48 jobs, 12 blocks,
+  seeds 111013-111024. See below.
 
 **A design owns its block count, its seed base and its contrast family.** All
 three used to be global or flag-driven. `-blocks` and `-seed-base` are now
@@ -184,6 +186,54 @@ is window-only, and that is what the other arms measure.
 ```sh
 ./cmaes-measurement -action plan -design stagnation-pilot
 ./cmaes-measurement -action submit -design stagnation-pilot
+```
+
+## The stagnation campaign
+
+`-design stagnation` tests on cost what the pilot selected on mechanism. Two
+pairs, one per population size — each level's no-criterion baseline against the
+same level under a window of **half** the Hansen anchor, 102 generations at
+`lambda` 20 and 60 at `lambda` 1024.
+
+| | no criterion | half anchor |
+| --- | --- | --- |
+| lambda 20 (primary) | `sep-ipop-l20` | `sep-ipop-l20-w102` |
+| lambda 1024 | `sep-ipop` | `sep-ipop-w60` |
+
+**The window was selected by the rule, not by the costs.** The pilot's rule was
+fixed before its data existed, and at both levels it named the half-anchor: it
+reclaimed 19.7 and 25.6 percentage points of the budget spent after the last
+improvement, where the anchor itself reclaimed nothing at `lambda` 20 (waste
+rose to 84.7%) and four times the anchor never fired at all — `sep-ipop-l20-w816`
+and `sep-ipop-w484` returned their baselines' costs to the last digit in all
+three blocks, which is what a criterion that never triggers looks like.
+
+`lambda` 20 is primary because it is the level where the criterion bought
+another *restart*: the pilot's `-w102` completed nine runs in all three blocks
+against the baseline's 9/8/8, while every `lambda` 1024 arm completed exactly
+three however it terminated, the ladder being capped by the evaluation budget.
+At 1024 the reclaimed budget lengthens the final run instead, which is a
+different mechanism and is why it is a secondary question rather than a second
+answer to the same one.
+
+The design names **two** contrasts, so Holm corrects over two: the first gate is
+at 0.025 and `t` at `df=11` is about 2.59. Deriving the family from the arms
+would have cost four contrasts for the same two answers.
+
+**Go in expecting a null.** The pilot moved budget without moving cost — every
+criterion arm was nominally worse than its baseline, all of it inside the lambda
+screen's per-arm sd of 27-48 at three blocks. That the mechanism fires is
+measured; that it is worth anything is exactly what these twelve blocks decide.
+
+The pilot's ninth arm does not reappear here. `stopMinImprovement` is an
+absolute cost threshold, it cannot transfer to a reference image whose costs
+differ in scale, and the pilot found it reclaimed nothing anyway (82.1% against
+the baseline's 80.8%) despite firing most often. A test enforces that no arm of
+this campaign sets one.
+
+```sh
+./cmaes-measurement -action plan -design stagnation
+./cmaes-measurement -action submit -design stagnation
 ```
 
 ## Budget and pairing

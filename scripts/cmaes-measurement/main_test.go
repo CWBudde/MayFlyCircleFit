@@ -265,7 +265,7 @@ func TestLambdaScreenRejectsAnIndivisibleBudget(t *testing.T) {
 func TestCampaignDesignsAreNamedAndClosed(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{designPhase21, designLambda, designPilot} {
+	for _, name := range []string{designPhase21, designLambda, designPilot, designStag} {
 		plan, err := campaignDesign(name, defaultBudget)
 		if err != nil {
 			t.Fatalf("design %s: %v", name, err)
@@ -406,7 +406,7 @@ func TestRegisteredDesignsUseDisjointSeedPrefixes(t *testing.T) {
 	// happens to visit the designs in.
 	shared := map[[2]string]bool{{designPhase21, designLambda}: true, {designLambda, designPhase21}: true}
 
-	for _, name := range []string{designPhase21, designLambda, designPilot} {
+	for _, name := range []string{designPhase21, designLambda, designPilot, designStag} {
 		plan, err := campaignDesign(name, defaultBudget)
 		if err != nil {
 			t.Fatalf("design %s: %v", name, err)
@@ -614,5 +614,67 @@ func TestEvaluationCapFollowsTheSubmittedBudget(t *testing.T) {
 
 	if got := plan.evaluationCap(); got != half {
 		t.Errorf("evaluationCap = %d, want %d", got, half)
+	}
+}
+
+func TestStagnationCampaignRegistersOnePairPerPopulation(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designStag, defaultBudget)
+	if err != nil {
+		t.Fatalf("design %s: %v", designStag, err)
+	}
+
+	// The campaign pays multiplicity for exactly the two questions it asks.
+	// Deriving the family from the arms instead would cost four contrasts for
+	// the same two answers, which is what the lambda screen paid for.
+	if len(plan.contrasts) != 2 {
+		t.Fatalf("stagnation registers %d contrasts, want 2", len(plan.contrasts))
+	}
+
+	// Half the Hansen anchor at both levels: the window the pilot's
+	// pre-registered rule selected, not one chosen from the pilot's costs.
+	want := map[string]int{
+		"sep-ipop-l20": 0, "sep-ipop-l20-w102": 102,
+		"sep-ipop": 0, "sep-ipop-w60": 60,
+	}
+	if len(plan.arms) != len(want) {
+		t.Fatalf("stagnation runs %d arms, want %d", len(plan.arms), len(want))
+	}
+
+	for _, current := range plan.arms {
+		window, registered := want[current.name]
+		if !registered {
+			t.Errorf("stagnation runs unregistered arm %s", current.name)
+
+			continue
+		}
+
+		if current.stopStagnationIters != window {
+			t.Errorf("arm %s uses a window of %d, want %d",
+				current.name, current.stopStagnationIters, window)
+		}
+
+		// stopMinImprovement is an absolute cost threshold and cannot transfer
+		// to a reference image of a different scale, so no shipped arm may set
+		// one. The pilot's exploratory cell is the only place it belongs.
+		if current.stopMinImprovement != 0 {
+			t.Errorf("arm %s sets stopMinImprovement %g in a campaign meant to select a default",
+				current.name, current.stopMinImprovement)
+		}
+	}
+
+	// Half the Hansen anchor at both levels: the window the pilot's
+	// pre-registered rule selected, not one chosen from the pilot's costs.
+	// Those two numbers are half the Hansen anchor, derived rather than typed.
+	for lambda, window := range map[int]int{20: 102, defaultPop: 60} {
+		if hansenStagnationWindow(lambda)/2 != window {
+			t.Errorf("half the Hansen anchor at lambda %d is %d, want %d",
+				lambda, hansenStagnationWindow(lambda)/2, window)
+		}
+	}
+
+	if _, ok := plan.primaryContrast(); !ok {
+		t.Error("the stagnation campaign registers no primary contrast")
 	}
 }

@@ -34,6 +34,7 @@ const (
 	designPhase21 = "phase21"
 	designLambda  = "lambda"
 	designPilot   = "stagnation-pilot"
+	designStag    = "stagnation"
 )
 
 const (
@@ -218,7 +219,7 @@ func main() {
 func parseFlags() settings {
 	var config settings
 	flag.StringVar(&config.action, "action", "collect", "plan, submit, collect, preliminary, or analyze")
-	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21, lambda or stagnation-pilot")
+	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21, lambda, stagnation-pilot or stagnation")
 	flag.StringVar(&config.server, "server", "http://localhost:8085", "serve base URL")
 	flag.StringVar(&config.dataRoot, "data-root", "./data/cmaes-phase11", "serve data root")
 	flag.StringVar(&config.reference, "ref", "example/MayFly-512.png", "reference image")
@@ -311,8 +312,23 @@ func campaignDesign(name string, budget int) (design, error) {
 			blocks: stagnationPilotBlocks, seedBase: 112_000, arms: pilot,
 			descriptive: true,
 		}, nil
+	case designStag:
+		campaign, campaignErr := stagnationArms(budget)
+		if campaignErr != nil {
+			return design{}, campaignErr
+		}
+
+		return design{
+			name: name, baseline: "sep-ipop-l20", secondaryControl: "sep-ipop",
+			blocks: campaignBlocks, seedBase: 111_012, arms: campaign,
+			contrasts: []plannedContrast{
+				{control: "sep-ipop-l20", candidate: "sep-ipop-l20-w102", primary: true},
+				{control: "sep-ipop", candidate: "sep-ipop-w60"},
+			},
+		}, nil
 	default:
-		return design{}, fmt.Errorf("unknown design %q (want phase21, lambda or stagnation-pilot)", name)
+		return design{}, fmt.Errorf(
+			"unknown design %q (want phase21, lambda, stagnation-pilot or stagnation)", name)
 	}
 }
 
@@ -388,6 +404,44 @@ func stagnationPilotArms(budget int) ([]arm, error) {
 			arms = append(arms, stagnationArm(
 				stagnationArmName(lambda, anchor)+"-min01", lambda, budget, anchor, 0.1))
 		}
+	}
+
+	return arms, nil
+}
+
+// stagnationArms is the registered campaign the pilot selected. Two pairs, one
+// per population size: each level's no-criterion baseline against the same
+// level under a stagnation window of half the Hansen anchor -- 102 generations
+// at lambda 20 and 60 at lambda 1024.
+//
+// The window is not chosen here. The pilot's rule was fixed before its data
+// existed -- take the window that reclaims the most budget while still
+// completing at least two restarts, ties toward the anchor -- and the pilot
+// answered it at both levels with the half-anchor: it reclaimed 19.7 and 25.6
+// percentage points of budget spent after the last improvement, where the
+// anchor itself reclaimed nothing at lambda 20 and four times the anchor never
+// fired at all, returning its baseline's cost to the last digit in all three
+// blocks. Cost did not select it and cost is what this campaign tests.
+//
+// Four arms and exactly two registered contrasts, so Holm corrects over two
+// rather than over however many arms the design happens to carry. lambda 20 is
+// primary: it is the level where the pilot's criterion bought another restart
+// rather than merely a longer final run, the ladder at lambda 1024 being
+// capped at three runs by the evaluation budget however it terminates.
+func stagnationArms(budget int) ([]arm, error) {
+	arms := make([]arm, 0, 4)
+
+	for _, lambda := range []int{20, defaultPop} {
+		if budget%lambda != 0 {
+			return nil, fmt.Errorf(
+				"budget %d is not divisible by lambda %d; the arms would not be evaluation-matched", budget, lambda)
+		}
+
+		window := hansenStagnationWindow(lambda) / 2
+
+		arms = append(arms,
+			stagnationArm(stagnationArmName(lambda, 0), lambda, budget, 0, 0),
+			stagnationArm(stagnationArmName(lambda, window), lambda, budget, window, 0))
 	}
 
 	return arms, nil
