@@ -798,3 +798,137 @@ func TestBudgetSplitRefusesABudgetItsSplitsDoNotDivide(t *testing.T) {
 		t.Errorf("budgetSplitArms rejected the default budget: %v", defaultErr)
 	}
 }
+
+const (
+	provenanceStateCompleted  = "completed"
+	provenanceBackendCPU      = "cpu"
+	provenanceBackendOpenCL   = "opencl"
+	provenanceBackendFellBack = "opencl(degraded)"
+)
+
+// TestReadResultsAcceptsBothColumnWidths pins the compatibility rule that lets
+// the backend provenance column be added without touching a recorded campaign.
+// Every result CSV committed under docs/ was written at the legacy width, and
+// rewriting one to add a column would mean asserting a provenance nobody
+// recorded at the time -- so the reader accepts both, and a legacy row reports
+// an empty backend rather than a guessed cpu.
+func TestReadResultsAcceptsBothColumnWidths(t *testing.T) {
+	t.Parallel()
+
+	legacy := []string{
+		"arm", "block", "seed", "jobId", "state", "termination", "optimizerVersion",
+		"bestCost", "scoredEvaluations", "finalEvaluations", "iterations", "elapsedSeconds",
+	}
+
+	cases := []struct {
+		name        string
+		header      []string
+		row         []string
+		wantBackend string
+	}{
+		{
+			name:   "legacy",
+			header: legacy,
+			row: []string{
+				"a", "1", "42", "job-1", provenanceStateCompleted, provenanceStateCompleted,
+				"v0.1.0", "1.5", "10", "10", "5", "1.0",
+			},
+			wantBackend: "",
+		},
+		{
+			name:   "with backend",
+			header: append(append([]string(nil), legacy...), "backend"),
+			row: []string{
+				"a", "1", "42", "job-1", provenanceStateCompleted, provenanceStateCompleted,
+				"v0.1.0", "1.5", "10", "10", "5", "1.0", provenanceBackendFellBack,
+			},
+			wantBackend: provenanceBackendFellBack,
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), "results.csv")
+			writeCSVFixture(t, path, [][]string{testCase.header, testCase.row})
+
+			rows, err := readResults(path, 1)
+			if err != nil {
+				t.Fatalf("readResults: %v", err)
+			}
+
+			if len(rows) != 1 {
+				t.Fatalf("readResults returned %d rows, want 1", len(rows))
+			}
+
+			if rows[0].Backend != testCase.wantBackend {
+				t.Errorf("Backend = %q, want %q", rows[0].Backend, testCase.wantBackend)
+			}
+
+			if rows[0].Score != 1.5 {
+				t.Errorf("Score = %v, want 1.5", rows[0].Score)
+			}
+		})
+	}
+}
+
+// TestBackendProvenanceDistinguishesUnknownFromCPU pins the distinction the
+// column exists to make. A job whose server had no record is not a CPU job:
+// the fields are per-process, so a job collected after a server restart
+// genuinely does not know, and reporting cpu there would launder a gap into a
+// measurement.
+func TestBackendProvenanceDistinguishesUnknownFromCPU(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		status jobStatus
+		want   string
+	}{
+		{name: "no record", status: jobStatus{}, want: "unknown"},
+		{
+			name:   provenanceBackendCPU,
+			status: jobStatus{EffectiveBackend: provenanceBackendCPU},
+			want:   provenanceBackendCPU,
+		},
+		{
+			name:   provenanceBackendOpenCL,
+			status: jobStatus{EffectiveBackend: provenanceBackendOpenCL},
+			want:   provenanceBackendOpenCL,
+		},
+		{
+			name:   "opencl that fell back",
+			status: jobStatus{EffectiveBackend: provenanceBackendOpenCL, BackendDegraded: true},
+			want:   provenanceBackendFellBack,
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := backendProvenance(testCase.status); got != testCase.want {
+				t.Errorf("backendProvenance() = %q, want %q", got, testCase.want)
+			}
+		})
+	}
+}
+
+func writeCSVFixture(t *testing.T, path string, records [][]string) {
+	t.Helper()
+
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+
+	err = writer.WriteAll(records)
+	if err != nil {
+		t.Fatal(err)
+	}
+}

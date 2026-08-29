@@ -145,6 +145,8 @@ func jobFromCheckpoint(checkpoint *store.Checkpoint, project app.Project) *Job {
 		Evaluations:      int(checkpoint.Evaluations),
 		Termination:      checkpoint.Termination,
 		Restarts:         append([]opt.RestartRun(nil), checkpoint.Restarts...),
+		EffectiveBackend: checkpoint.EffectiveBackend,
+		BackendDegraded:  checkpoint.BackendDegraded,
 		StartTime:        checkpoint.Timestamp,
 		EndTime:          &end,
 	}

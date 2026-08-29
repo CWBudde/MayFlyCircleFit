@@ -1338,6 +1338,14 @@ func saveCheckpointWithImage(jm *JobManager, checkpointStore store.Store, rend r
 
 	checkpoint.Restarts = job.Restarts
 
+	// Only a process that actually built a renderer knows what ran. A job
+	// restored from disk has no record, and overwriting the stored one with an
+	// empty string would erase the provenance that the previous run persisted.
+	if job.EffectiveBackend != "" {
+		checkpoint.EffectiveBackend = job.EffectiveBackend
+		checkpoint.BackendDegraded = job.BackendDegraded
+	}
+
 	var persistenceErrors []error
 
 	err := checkpointStore.SaveCheckpoint(jobID, checkpoint)
