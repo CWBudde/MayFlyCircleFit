@@ -103,8 +103,17 @@ re-measure instead.
   campaign. Separable CMA-ES with IPOP restarts wins 12/12 blocks against
   MayFly's long run and 11/12 against its restart arm, while both IPOP arms
   spend about 40% of their budget after their last improvement. Read before
-  proposing a CMA-ES default, for the `lambda` question it leaves open, and for
-  why a large recorded sigma is not evidence of a diverged search.
+  proposing a CMA-ES default, and for why a large recorded sigma is not evidence
+  of a diverged search. The `lambda` and covariance questions it leaves open are
+  answered by `cmaes-lambda-report.md`.
+- [`cmaes-lambda-report.md`](cmaes-lambda-report.md) — the twelve-block
+  `lambda` x covariance screen, eight arms and ninety-six jobs. All thirteen
+  paired contrasts retain their null under Holm: `lambda` has no measured effect
+  on the mean at 20, 64 or 1024, and separable covariance without restarts is a
+  null against full. Read before proposing a `lambda` default, before lowering
+  `app.MinPopulation`, and for the measurement that retires the sigma question —
+  `sigma * max(D)` never exceeds 1.52 while sigma spans fifty-two orders of
+  magnitude. Also records that thirty-six cells reproduce Phase 21 bit for bit.
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by
