@@ -35,6 +35,7 @@ const (
 	designLambda  = "lambda"
 	designPilot   = "stagnation-pilot"
 	designStag    = "stagnation"
+	designSplit   = "budget-split"
 )
 
 const (
@@ -46,8 +47,13 @@ const (
 	// a descriptive pilot can buy three blocks and an inferential campaign
 	// twelve, and df follows the design rather than this constant.
 	campaignBlocks = 12
-	// searchDimensions is the dimensionality every campaign here searches:
-	// eight circles of seven parameters, fitted in one batch.
+	// defaultCircles is the eight-circle batch every campaign before the
+	// budget-split screen fitted, and the shape searchDimensions describes.
+	defaultCircles = 8
+	// searchDimensions is the dimensionality of that default fixture: eight
+	// circles of seven parameters, fitted in one batch. It is only read by
+	// hansenStagnationWindow, and both designs that call it run the default
+	// fixture. A design on another circle count must not reuse it.
 	searchDimensions = 56
 	// resultColumns is the width of the header writeResults emits.
 	resultColumns = 12
@@ -68,6 +74,12 @@ type arm struct {
 	// configured, Stop.enabled() is false, and a dead run holds its budget to
 	// the cap.
 	stopStagnationIters int
+	// optimizerEpochs runs the engine several times in sequence, each epoch
+	// re-initialized from the previous incumbent rather than cold. It is the
+	// warm counterpart to optimizerRestarts, and it reaches CMA-ES as well as
+	// MayFly: the server wraps WithRestarts(WithEpochs(...)) around whatever
+	// newStageOptimizer built, and CMAESAdapter implements RunWithInitial.
+	optimizerEpochs int
 	// stopMinImprovement is the absolute cost reduction that counts as
 	// progress. Zero accepts any improvement and is the only setting that can
 	// become a shipped default, because a threshold in cost units does not
@@ -111,10 +123,36 @@ type design struct {
 	// reports were produced and must stay reproducible; a design that fills
 	// this in itself is corrected over exactly the comparisons it names.
 	contrasts []plannedContrast
+	// reference and circles are the fixture. They belong to the design because
+	// a campaign run on a different image is not comparable to one run on
+	// example/MayFly-512.png, and a flag that silently changed either would
+	// make two campaigns' rows look poolable when they are not. A design that
+	// leaves circles zero runs defaultCircles; one that leaves reference empty
+	// takes whatever -ref supplies, which defaults to the image every earlier
+	// campaign used but is not pinned to it.
+	reference string
+	circles   int
 	// descriptive marks a design that buys mechanism rather than inference.
 	// It has too few blocks for a paired test, so the report prints arm
 	// summaries and refuses to print a statistic.
 	descriptive bool
+}
+
+// fixture reports the reference image and circle count the design runs. A
+// design that names neither falls back to defaultCircles and to the caller's
+// -ref, so only a design that pins its reference is guaranteed the image it
+// was registered on.
+func (d design) fixture(fallback string) (string, int) {
+	reference, circles := d.reference, d.circles
+	if reference == "" {
+		reference = fallback
+	}
+
+	if circles == 0 {
+		circles = defaultCircles
+	}
+
+	return reference, circles
 }
 
 // primaryContrast returns the design's registered primary comparison.
@@ -219,7 +257,7 @@ func main() {
 func parseFlags() settings {
 	var config settings
 	flag.StringVar(&config.action, "action", "collect", "plan, submit, collect, preliminary, or analyze")
-	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21, lambda, stagnation-pilot or stagnation")
+	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21, lambda, stagnation-pilot, stagnation or budget-split")
 	flag.StringVar(&config.server, "server", "http://localhost:8085", "serve base URL")
 	flag.StringVar(&config.dataRoot, "data-root", "./data/cmaes-phase11", "serve data root")
 	flag.StringVar(&config.reference, "ref", "example/MayFly-512.png", "reference image")
@@ -326,9 +364,24 @@ func campaignDesign(name string, budget int) (design, error) {
 				{control: "sep-ipop", candidate: "sep-ipop-w60"},
 			},
 		}, nil
+	case designSplit:
+		split, splitErr := budgetSplitArms(budget)
+		if splitErr != nil {
+			return design{}, splitErr
+		}
+
+		return design{
+			name: name, baseline: "mayfly-r16", secondaryControl: "sep-r5",
+			blocks: campaignBlocks, seedBase: 113_000, arms: split,
+			reference: "example/Ref-512.png", circles: 12,
+			contrasts: []plannedContrast{
+				{control: "mayfly-r16", candidate: "sep-ipop", primary: true},
+				{control: "sep-r5", candidate: "sep-e5"},
+			},
+		}, nil
 	default:
 		return design{}, fmt.Errorf(
-			"unknown design %q (want phase21, lambda, stagnation-pilot or stagnation)", name)
+			"unknown design %q (want phase21, lambda, stagnation-pilot, stagnation or budget-split)", name)
 	}
 }
 
@@ -495,6 +548,87 @@ func stagnationArm(name string, lambda, budget, window int, minImprovement float
 	}
 }
 
+// budgetSplitArms asks two questions on a fixture nothing has been measured on.
+//
+// The first is whether CMA-ES should be the default engine. Phase 21 found
+// separable IPOP beating MayFly's long run in 12/12 blocks and its r16 arm in
+// 11/12, and the three objections recorded against reading that as a default
+// change have since been answered and none survived: lambda is a null at 20,
+// 64 and 1024, separable covariance alone is a null, and arming a stagnation
+// criterion is a null, so the wasted budget it was spending was never a
+// recoverable gain. What remains is that every one of those numbers was taken
+// on eight circles of example/MayFly-512.png. This design repeats the decisive
+// contrast on a photographic reference at twelve circles, which is the open
+// box of Task 10.
+//
+// The second is Task 3's, asked of CMA-ES rather than of MayFly. A stage's
+// budget can be split three ways and every campaign so far varied only the
+// third: warm epochs re-initialize from the incumbent, cold restarts are
+// independent attempts scored best-of, and IPOP is the adapter's own ladder
+// doubling lambda. sep-e5 and sep-r5 hold the budget fixed and spend it as five
+// warm epochs and five cold attempts, and the registered contrast is one
+// against the other -- that pair, not either against sep-ipop, is the epoch-
+// versus-cold-restart question Task 3 asks. sep-ipop and the unsplit sep-single
+// are run alongside as the reference shapes the two split arms are read
+// against, but they carry no test of their own.
+//
+// Only two contrasts are registered, so Holm corrects over the two questions
+// rather than the fifteen that six arms would otherwise produce.
+func budgetSplitArms(budget int) ([]arm, error) {
+	if budget <= 0 || budget%defaultPop != 0 {
+		return nil, fmt.Errorf(
+			"budget %d must be positive and divisible by lambda %d; the arms would not be evaluation-matched",
+			budget, defaultPop)
+	}
+	// The two Mayfly controls keep Phase 21's fixed shape, whose cost is
+	// defaultBudget evaluations, while only the CMA-ES arms derive their length
+	// from the budget. A larger one would fund those past anything the Mayfly
+	// arms reach and the collector would still print the engine comparison as
+	// evaluation-matched. Reject that instead of reporting it.
+	if budget > defaultBudget {
+		return nil, fmt.Errorf(
+			"budget %d exceeds the fixed Mayfly campaign budget %d; the arms would no longer be evaluation-matched",
+			budget, defaultBudget)
+	}
+
+	iters := budget / defaultPop
+	// The split count has to divide the generation count exactly or the split
+	// arms would spend a different budget from the unsplit ones and the
+	// comparison would be confounded by it. 6350 = 2 * 5^2 * 127, so four -- the
+	// ladder's smallest interesting step in docs/restart-vs-budget-report.md --
+	// does not divide it and five does.
+	const splits = 5
+	if iters%splits != 0 {
+		return nil, fmt.Errorf(
+			"%d generations do not divide into %d equal parts; the split arms would not be evaluation-matched",
+			iters, splits)
+	}
+
+	cmaes := func(name string, epochs, restarts, perRun int) arm {
+		return arm{
+			name: name, optimizer: "cmaes", covariance: "separable", restartStrategy: "none",
+			iters: perRun, popSize: defaultPop, optimizerRestarts: restarts, optimizerEpochs: epochs,
+		}
+	}
+
+	return []arm{
+		// The MayFly controls keep the shapes Phase 21 ran, so the engine
+		// question is asked the same way on the new fixture.
+		{name: "mayfly-single", optimizer: "mayfly", iters: 2048, popSize: defaultPop, optimizerRestarts: 1},
+		{name: "mayfly-r16", optimizer: "mayfly", iters: 128, popSize: defaultPop, optimizerRestarts: 16},
+
+		cmaes("sep-single", 1, 1, iters),
+		// Five warm epochs and five cold attempts each get a fifth of the
+		// generations, so all four CMA-ES arms spend the same 6,502,400.
+		cmaes("sep-e5", splits, 1, iters/splits),
+		cmaes("sep-r5", 1, splits, iters/splits),
+		{
+			name: "sep-ipop", optimizer: "cmaes", covariance: "separable", restartStrategy: "ipop",
+			iters: iters, popSize: defaultPop, optimizerRestarts: 1,
+		},
+	}, nil
+}
+
 // lambdaScreenArms crosses the two covariance modes with four restart-and-
 // population shapes. Three of its cells -- cmaes-single, cmaes-ipop and
 // sep-cmaes-ipop -- repeat Phase 21 exactly, at the same seeds, so a
@@ -610,7 +744,7 @@ func submit(config settings) error {
 	for block := 1; block <= plan.blocks; block++ {
 		seed := plan.seedBase + int64(block)
 		for _, current := range arms {
-			jobID, submitErr := submitJob(client, config, current, seed)
+			jobID, submitErr := submitJob(client, config, plan, current, seed)
 			if submitErr != nil {
 				return fmt.Errorf("submit %s block %d: %w", current.name, block, submitErr)
 			}
@@ -633,34 +767,8 @@ func submit(config settings) error {
 	return nil
 }
 
-func submitJob(client *http.Client, config settings, current arm, seed int64) (string, error) {
-	payload := map[string]any{
-		"project": config.project, "refPath": config.reference,
-		"mode": "batch", "backend": "cpu", "optimizer": current.optimizer,
-		"circles": 8, "batchSize": 8, "iters": current.iters, "popSize": current.popSize,
-		"optimizerEpochs": 1, "optimizerRestarts": current.optimizerRestarts,
-		"seed": seed, "threads": 1, "parallelEvaluation": true,
-		"evaluationWorkers": config.workers, "disableConvergence": true,
-		"enableTrace": true, "enableOptimizerDiagnostics": true,
-	}
-	if current.optimizer == "mayfly" {
-		payload["variant"] = "standard"
-	} else {
-		payload["covarianceMode"] = current.covariance
-		payload["restartStrategy"] = current.restartStrategy
-	}
-	// Only send the stop fields when a window is configured. app.JobConfig
-	// rejects stopMinImprovement without stopStagnationIters, and an arm that
-	// sets neither has to reach the server as the untouched configuration every
-	// earlier campaign ran.
-	if current.stopStagnationIters > 0 {
-		payload["stopStagnationIters"] = current.stopStagnationIters
-		if current.stopMinImprovement > 0 {
-			payload["stopMinImprovement"] = current.stopMinImprovement
-		}
-	}
-
-	body, err := json.Marshal(payload)
+func submitJob(client *http.Client, config settings, plan design, current arm, seed int64) (string, error) {
+	body, err := json.Marshal(jobPayload(config, plan, current, seed))
 	if err != nil {
 		return "", err
 	}
@@ -701,6 +809,42 @@ func submitJob(client *http.Client, config settings, current arm, seed int64) (s
 	}
 
 	return created.ID, nil
+}
+
+// jobPayload is the create request one arm of one block submits. It is separate
+// from the transport so the registered shape of a job -- fixture, budget, and
+// the engine-specific fields -- can be read in one place.
+func jobPayload(config settings, plan design, current arm, seed int64) map[string]any {
+	reference, circles := plan.fixture(config.reference)
+	epochs := max(current.optimizerEpochs, 1)
+
+	payload := map[string]any{
+		"project": config.project, "refPath": reference,
+		"mode": "batch", "backend": "cpu", "optimizer": current.optimizer,
+		"circles": circles, "batchSize": circles, "iters": current.iters, "popSize": current.popSize,
+		"optimizerEpochs": epochs, "optimizerRestarts": current.optimizerRestarts,
+		"seed": seed, "threads": 1, "parallelEvaluation": true,
+		"evaluationWorkers": config.workers, "disableConvergence": true,
+		"enableTrace": true, "enableOptimizerDiagnostics": true,
+	}
+	if current.optimizer == "mayfly" {
+		payload["variant"] = "standard"
+	} else {
+		payload["covarianceMode"] = current.covariance
+		payload["restartStrategy"] = current.restartStrategy
+	}
+	// Only send the stop fields when a window is configured. app.JobConfig
+	// rejects stopMinImprovement without stopStagnationIters, and an arm that
+	// sets neither has to reach the server as the untouched configuration every
+	// earlier campaign ran.
+	if current.stopStagnationIters > 0 {
+		payload["stopStagnationIters"] = current.stopStagnationIters
+		if current.stopMinImprovement > 0 {
+			payload["stopMinImprovement"] = current.stopMinImprovement
+		}
+	}
+
+	return payload
 }
 
 func collect(config settings) error {
@@ -774,11 +918,14 @@ func printPlan(config settings) error {
 		return err
 	}
 
+	reference, circles := plan.fixture(config.reference)
+
 	fmt.Printf("design %s: %d arms x %d blocks = %d jobs, budget %d evaluations, seeds %d..%d\n",
 		plan.name, len(plan.arms), plan.blocks, len(plan.arms)*plan.blocks, config.budget,
 		plan.seedBase+1, plan.seedBase+int64(plan.blocks))
-	fmt.Println("| arm | optimizer | covariance | restarts | popSize (lambda) | iters | stagnation | evaluations |")
-	fmt.Println("| --- | --- | --- | --- | ---: | ---: | --- | ---: |")
+	fmt.Printf("fixture %s, %d circles in one batch\n", reference, circles)
+	fmt.Println("| arm | optimizer | covariance | restarts | epochs | popSize (lambda) | iters | stagnation | evaluations |")
+	fmt.Println("| --- | --- | --- | --- | ---: | ---: | ---: | --- | ---: |")
 
 	for _, current := range plan.arms {
 		covariance, restarts := current.covariance, current.restartStrategy
@@ -788,15 +935,25 @@ func printPlan(config settings) error {
 		// the budget by campaign shape rather than by that product; printing it
 		// as an evaluation count would invite the comparison the campaign
 		// deliberately makes post-hoc from the trace.
-		evaluations := strconv.FormatInt(int64(current.iters)*int64(current.popSize), 10)
+		// Epochs and cold restarts each multiply the generation count, so an
+		// arm's budget is the product of all three. Printing one run's share
+		// would make a split arm look like it spends a fifth of the cap.
+		evaluations := strconv.FormatInt(
+			int64(current.iters)*int64(current.popSize)*
+				int64(max(current.optimizerEpochs, 1))*int64(max(current.optimizerRestarts, 1)), 10)
 		if current.optimizer == "mayfly" {
 			covariance = "-"
 			restarts = fmt.Sprintf("%d cold run(s)", current.optimizerRestarts)
 			evaluations = "scored from trace"
+		} else if current.optimizerRestarts > 1 {
+			// A CMA-ES arm can carry both the adapter's own ladder and the
+			// generic cold-restart wrapper; naming only the strategy would hide
+			// the second.
+			restarts = fmt.Sprintf("%s + %d cold run(s)", restarts, current.optimizerRestarts)
 		}
 
-		fmt.Printf("| `%s` | %s | %s | %s | %d | %d | %s | %s |\n",
-			current.name, current.optimizer, covariance, restarts,
+		fmt.Printf("| `%s` | %s | %s | %s | %d | %d | %d | %s | %s |\n",
+			current.name, current.optimizer, covariance, restarts, max(current.optimizerEpochs, 1),
 			current.popSize, current.iters, describeStagnation(current), evaluations)
 	}
 

@@ -6,7 +6,7 @@ dashboard shows the queue and every active job. It refuses to overwrite a
 manifest, which prevents an accidental second submission from corrupting the
 paired design.
 
-Four designs are registered, selected with `-design`:
+Five designs are registered, selected with `-design`:
 
 - `phase21` (the default) — the original five arms: two Mayfly controls and
   three CMA-ES arms, all at `popSize` 1024. 60 jobs, 12 blocks, seeds
@@ -19,6 +19,8 @@ Four designs are registered, selected with `-design`:
   descriptive only. See below.
 - `stagnation` — the four-arm campaign that pilot selected, 48 jobs, 12 blocks,
   seeds 111013-111024. See below.
+- `budget-split` — six arms on a second fixture, 72 jobs, 12 blocks, seeds
+  113001-113012. See below.
 
 **A design owns its block count, its seed base and its contrast family.** All
 three used to be global or flag-driven. `-blocks` and `-seed-base` are now
@@ -238,6 +240,79 @@ this campaign sets one.
 ```sh
 ./cmaes-measurement -action plan -design stagnation
 ./cmaes-measurement -action submit -design stagnation
+```
+
+## The budget-split screen
+
+`-design budget-split` asks two questions at once, on a fixture nothing has been
+measured on.
+
+**Should CMA-ES be the default engine?** [`docs/cmaes-report.md`](../../docs/cmaes-report.md)
+found separable IPOP beating MayFly's long run in 12/12 blocks and its r16 arm
+in 11/12, both surviving Holm. Three objections were recorded against reading
+that as a default change, and all three have since been answered with nulls:
+`lambda` is indistinguishable at 20, 64 and 1024; separable covariance alone is
+a null; and arming a stagnation criterion is a null, so the budget those arms
+wasted was never a recoverable gain. What remains is that **every one of those
+numbers was taken on eight circles of `example/MayFly-512.png`**. This design
+repeats the decisive contrast on a photographic reference at twelve circles,
+which is Task 10.
+
+**How should a stage's budget be split?** That is Task 3, asked of CMA-ES
+rather than of MayFly. A budget can be split three ways and every campaign so
+far varied only the third:
+
+| mechanism | field | behaviour |
+| --- | --- | --- |
+| warm epochs | `optimizerEpochs` | each epoch re-initializes from the incumbent |
+| cold restarts | `optimizerRestarts` | independent attempts, scored best-of |
+| IPOP | `restartStrategy` | the adapter's own ladder, doubling `lambda` |
+
+Both wrappers are engine-agnostic — `internal/server/worker.go` wraps
+`WithRestarts(WithEpochs(...))` around whatever `newStageOptimizer` built, and
+`CMAESAdapter` implements `RunWithInitial` — so no adapter change was needed to
+measure this, exactly as with the stagnation campaign.
+
+| arm | shape |
+| --- | --- |
+| `mayfly-single`, `mayfly-r16` | the Phase 21 controls, re-baselined on the new fixture |
+| `sep-single` | no splitting |
+| `sep-e5` | five warm epochs |
+| `sep-r5` | five cold attempts |
+| `sep-ipop` | the Phase 21 winner's shape |
+
+**The split count is five, not four.** All four CMA-ES arms must spend the same
+budget or the contrast measures the budget instead of the split, and 6,350
+generations (`6502400 / 1024`) factor as `2 * 5^2 * 127` — four does not divide
+them and five does. The driver refuses a budget its splits do not divide, and a
+test pins that every CMA-ES arm's `iters * popSize * epochs * restarts` is
+exactly the cap.
+
+Two contrasts are registered, so Holm corrects over the two questions rather
+than the fifteen that six arms would otherwise produce: **`sep-ipop` against
+`mayfly-r16` is primary** — the default question on a fixture it has never
+seen — and **`sep-e5` against `sep-r5`** is Task 3's. That second pair is the
+epoch-versus-cold-restart question itself; testing either split arm against
+`sep-ipop` would compare it with a third mechanism instead. `sep-single` and
+`sep-ipop` still run, as the unsplit and ladder shapes the two split arms are
+read against, but neither carries a test of its own.
+
+### The fixture
+
+`example/Ref-512.png` is `example/Ref.png` halved by an exact 2x2 box average:
+at a factor of two every output pixel is the unweighted mean of four input
+pixels, so the result does not depend on any resampling library or its version.
+It is a photographic portrait where `MayFly-512.png` is a graphic, so it carries
+much higher spatial-frequency detail — which is the point, since a default that
+only holds on one kind of image is not a default.
+
+A design owns its fixture rather than taking it from `-ref`, because a campaign
+run on a different image is not poolable with one run on the shared fixture and
+a flag that silently changed it would hide that.
+
+```sh
+./cmaes-measurement -action plan   -design budget-split
+./cmaes-measurement -action submit -design budget-split
 ```
 
 ## Budget and pairing

@@ -116,7 +116,14 @@ anything new against its figures.
       before settling on any API. An epoch already re-initializes substantially:
       it advances to a fresh deterministic seed and, with no continuation
       profile, seeds only half the population around the incumbent. Every ladder
-      arm ran `optimizerEpochs: 1`, so the comparison is unmeasured.
+      arm ran `optimizerEpochs: 1`, so the comparison is unmeasured. **Submitted
+      2026-08-29 as `-design budget-split`**, asked of CMA-ES rather than
+      MayFly, since Task 10's fixture question and the default-engine question
+      ride along on the same campaign. Both wrappers are engine-agnostic —
+      `internal/server/worker.go` wraps `WithRestarts(WithEpochs(...))` around
+      whatever `newStageOptimizer` built, and `CMAESAdapter` implements
+      `RunWithInitial` — so no adapter change was needed. The MayFly half of
+      this box stays open: a MayFly ladder would need its own campaign.
 - [ ] Decide the surface once that comparison exists. A full restart differs
       from an epoch in independent re-initialization of the whole population
       plus best-of selection; if epochs already capture most of the gain, tune
@@ -256,9 +263,21 @@ engineering tasks.
 
 ### Task 10: A second CMA-ES fixture (P3)
 
+Task 2 is closed, and with it the last of the three objections recorded against
+reading Phase 21 as licence to change the default engine: `lambda`, covariance
+mode and the stagnation criterion are all nulls, so the budget those arms wasted
+was never a recoverable gain and the 12/12 and 11/12 wins stand. **This fixture
+question is now the only thing between that evidence and a default change**,
+which is why it is being run before the rest of its P3 neighbours.
+
 - [ ] Only after Task 2: repeat on a second reference image and a different
       circle count. Everything measured so far is eight circles on one 512x512
-      reference.
+      reference. **Submitted 2026-08-29** as part of `-design budget-split`:
+      `example/Ref-512.png` at twelve circles, carrying `sep-ipop` against
+      `mayfly-r16` as its primary contrast. Canvas size is deliberately held at
+      512x512 so a changed result is attributable to the image and the circle
+      count rather than to three axes at once; generalising across canvas size
+      is a separate question.
 
 ### Task 11: Remaining OpenCL optimization tranches (P3)
 

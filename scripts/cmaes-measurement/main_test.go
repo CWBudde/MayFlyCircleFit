@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/cwbudde/circlefit/internal/opt"
@@ -265,7 +266,7 @@ func TestLambdaScreenRejectsAnIndivisibleBudget(t *testing.T) {
 func TestCampaignDesignsAreNamedAndClosed(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{designPhase21, designLambda, designPilot, designStag} {
+	for _, name := range []string{designPhase21, designLambda, designPilot, designStag, designSplit} {
 		plan, err := campaignDesign(name, defaultBudget)
 		if err != nil {
 			t.Fatalf("design %s: %v", name, err)
@@ -406,7 +407,7 @@ func TestRegisteredDesignsUseDisjointSeedPrefixes(t *testing.T) {
 	// happens to visit the designs in.
 	shared := map[[2]string]bool{{designPhase21, designLambda}: true, {designLambda, designPhase21}: true}
 
-	for _, name := range []string{designPhase21, designLambda, designPilot, designStag} {
+	for _, name := range []string{designPhase21, designLambda, designPilot, designStag, designSplit} {
 		plan, err := campaignDesign(name, defaultBudget)
 		if err != nil {
 			t.Fatalf("design %s: %v", name, err)
@@ -703,5 +704,97 @@ func TestStagnationDesignsRejectABudgetShorterThanTheirWindow(t *testing.T) {
 		if err != nil {
 			t.Errorf("design %s at the default budget: %v", name, err)
 		}
+	}
+}
+
+func TestBudgetSplitArmsAreEvaluationMatchedAndFixtureIsExplicit(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designSplit, defaultBudget)
+	if err != nil {
+		t.Fatalf("design %s: %v", designSplit, err)
+	}
+
+	// A campaign run on a different image is not poolable with one run on the
+	// shared fixture, so the design has to name both, and the circle count has
+	// to differ from the eight every earlier campaign fitted (Task 10).
+	reference, circles := plan.fixture("example/MayFly-512.png")
+	if reference == "example/MayFly-512.png" {
+		t.Error("budget-split reuses the fixture every earlier campaign measured")
+	}
+
+	if circles == defaultCircles {
+		t.Errorf("budget-split fits %d circles, the same shape as every earlier campaign", circles)
+	}
+
+	// Splitting a budget into epochs or cold restarts multiplies the generation
+	// count. If the product missed the cap, a split arm would be compared
+	// against an unsplit one that had spent more, and the contrast would
+	// measure the budget rather than the split.
+	for _, current := range plan.arms {
+		if current.optimizer != "cmaes" {
+			continue
+		}
+
+		spent := current.iters * current.popSize *
+			max(current.optimizerEpochs, 1) * max(current.optimizerRestarts, 1)
+		if spent != defaultBudget {
+			t.Errorf("arm %s spends %d evaluations, want %d", current.name, spent, defaultBudget)
+		}
+	}
+
+	if len(plan.contrasts) != 2 {
+		t.Fatalf("budget-split registers %d contrasts, want 2", len(plan.contrasts))
+	}
+
+	// Task 3 asks whether warm epochs beat equivalent cold attempts, so the
+	// two split arms have to be tested against each other. Reading either one
+	// against sep-ipop would compare it with a third mechanism and leave the
+	// question unanswered after twelve blocks of paid-for runs.
+	want := []plannedContrast{
+		{control: "mayfly-r16", candidate: "sep-ipop", primary: true},
+		{control: "sep-r5", candidate: "sep-e5"},
+	}
+	if !slices.Equal(plan.contrasts, want) {
+		t.Errorf("budget-split registers %+v, want %+v", plan.contrasts, want)
+	}
+
+	// Every registered contrast has to be rendered by one of the two report
+	// tables, which key off the baseline and the secondary control. A contrast
+	// naming neither would be corrected for and then printed nowhere.
+	for _, current := range plan.contrasts {
+		if current.control != plan.baseline && current.control != plan.secondaryControl {
+			t.Errorf("contrast against %q is reported by neither table", current.control)
+		}
+	}
+}
+
+func TestBudgetSplitRefusesABudgetItsSplitsDoNotDivide(t *testing.T) {
+	t.Parallel()
+
+	// 1024 generations do not divide into five equal parts, so the split arms
+	// could not be evaluation-matched and the design must refuse rather than
+	// round a fifth of the budget away.
+	_, err := budgetSplitArms(defaultPop * 1024)
+	if err == nil {
+		t.Fatal("budgetSplitArms accepted a budget its splits do not divide")
+	}
+
+	// The two Mayfly controls have Phase 21's fixed shape, so only the CMA-ES
+	// arms grow with the budget. A non-positive one would give them negative
+	// generation counts and a larger one would fund them past anything the
+	// controls reach, while the report still called the engine comparison
+	// evaluation-matched.
+	for _, budget := range []int{0, -defaultPop * 5, defaultBudget + defaultPop*5} {
+		_, budgetErr := budgetSplitArms(budget)
+		if budgetErr == nil {
+			t.Errorf("budgetSplitArms accepted budget %d", budget)
+		}
+	}
+
+	// The full budget still builds, so the guards reject only what they must.
+	_, defaultErr := budgetSplitArms(defaultBudget)
+	if defaultErr != nil {
+		t.Errorf("budgetSplitArms rejected the default budget: %v", defaultErr)
 	}
 }
