@@ -85,8 +85,10 @@ re-measure instead.
   renderer measured on an NVIDIA GPU: the circle-count and image-size matrix,
   the transfer boundaries, and the staged pipelines before and after a renderer
   and its sessions began sharing one device engine. The evaluation path wins
-  by 6-14x; the image readback is what costs. **Supersedes every PoCL timing in
-  `gpu-backends.md`.**
+  by 6-14x; the image readback is what costs. It also closes the batched
+  objective question by measurement: a pipelined generation is 1.1-1.4x
+  *slower*, and the launch floor bounds any batching scheme at 1.58x, so read it
+  before proposing one. **Supersedes every PoCL timing in `gpu-backends.md`.**
 
 **Polishing**
 
