@@ -2124,11 +2124,30 @@ account is inference; recording it is what turns it into a measurement.
       `analyze` reports costs and budget waste and refuses to print a
       statistic. Selection rule, fixed before the data existed: take the
       window that reclaims the most budget while still completing at least two
-      restarts, ties broken toward the anchor. Submitted 2026-08-29. The
-      registered campaign — `sep-ipop-l20` and `sep-ipop` with and without the
-      selected window, 4 arms x 12 blocks at seeds 111013-111024, primary
-      contrast at `lambda` 20 — lands as a separate design once the pilot
-      names the window.
+      restarts, ties broken toward the anchor. It ran on 2026-08-29 and the
+      rule named **half the anchor at both levels** — 102 generations at
+      `lambda` 20 and 60 at 1024. Those windows reclaimed 19.7 and 25.6
+      percentage points of the budget spent after the last improvement, and at
+      `lambda` 20 the criterion bought a ninth restart in all three blocks
+      against the baseline's 9/8/8. Three arms are retired by the pilot rather
+      than by argument: at four times the anchor the criterion never fires at
+      all — `sep-ipop-l20-w816` and `sep-ipop-w484` reproduced their baselines'
+      costs to the last digit in every block — and the exploratory
+      `stopMinImprovement` cell fired most often while reclaiming nothing
+      (82.1% waste against the baseline's 80.8%), which retires an absolute
+      threshold on measurement as well as on transferability. The anchor itself
+      failed at `lambda` 20, raising waste to 84.7%; go-cma-es counts
+      iterations without sufficient progress where Hansen's criterion tests a
+      median of fitness histories across the span, and half the nominal length
+      is what recovers the intended behaviour here. **The pilot moved budget
+      without moving cost** — every criterion arm was nominally worse than its
+      baseline, all of it inside the lambda screen's per-arm sd of 27-48 at
+      three blocks — so the honest prior for the campaign is another null.
+      Registered as `-design stagnation`: `sep-ipop-l20` and `sep-ipop` with
+      and without their selected window, 4 arms x 12 blocks at seeds
+      111013-111024, **two** named contrasts rather than a derived family, with
+      `lambda` 20 primary because it is the level where the criterion bought a
+      restart rather than merely a longer final run. Submitted 2026-08-29.
 
 ### Task 23.2: Separate covariance mode from restart strategy (P1)
 
