@@ -4,8 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
-	// Registers the JPEG decoder for image.Decode; the reference image may be a JPEG.
-	_ "image/jpeg"
+	_ "image/jpeg" // Registers the JPEG decoder; the reference image may be a JPEG.
 	"math"
 	"os"
 
