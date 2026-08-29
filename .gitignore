@@ -1,5 +1,6 @@
 # Binaries
 /circlefit
+/cmaes-measurement
 *.exe
 *.dll
 *.so
