@@ -98,7 +98,9 @@ func (s *dirtySpanSet) normalize() bool {
 	return true
 }
 
-func (s *dirtySpanSet) normalizeRow(y int) (pixels, spans int) {
+// normalizeRow sorts and merges row y's spans in place. It returns the covered
+// pixel count of the merged row followed by the number of merged spans.
+func (s *dirtySpanSet) normalizeRow(y int) (int, int) {
 	row := s.row(y)
 	// Circle counts are deliberately small in the staged path. Insertion sort
 	// avoids interface calls and is faster than sort.Slice here.
@@ -126,6 +128,8 @@ func (s *dirtySpanSet) normalizeRow(y int) (pixels, spans int) {
 	}
 
 	s.counts[y] = merged
+
+	pixels := 0
 	for _, span := range row[:merged] {
 		pixels += span.end - span.start
 	}
@@ -143,7 +147,8 @@ func (s *dirtySpanSet) row(y int) []dirtySpan {
 	return s.spans[base : base+s.counts[y]]
 }
 
-func (s *dirtySpanSet) metrics() (pixels, spans int) {
+// metrics returns the dirty pixel count followed by the merged span count.
+func (s *dirtySpanSet) metrics() (int, int) {
 	if !s.normalize() {
 		return 0, 0
 	}

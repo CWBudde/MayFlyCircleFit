@@ -777,6 +777,7 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	job := s.jobManager.CreateJob(project, config)
 
 	// The server owns every job context, including jobs created through the UI.
+	//nolint:contextcheck // workerLoop deliberately outlives the request; it owns the job context, not this handler.
 	err = s.enqueueJob(job.ID)
 	if err != nil {
 		_ = s.jobManager.FailJob(job.ID, "server job queue is full")

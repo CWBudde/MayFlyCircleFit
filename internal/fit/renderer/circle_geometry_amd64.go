@@ -30,7 +30,10 @@ func init() {
 	})
 }
 
-func circleSpanFloat32AVX2(centerX, radiusSquaredMinusDY float32, width int) (xStart, xEnd int) {
+// circleSpanFloat32AVX2 returns the half-open span edges - the first covered
+// column and the column one past the last - falling back to the scalar span
+// when the AVX2 kernel is not the installed tier.
+func circleSpanFloat32AVX2(centerX, radiusSquaredMinusDY float32, width int) (int, int) {
 	if circleSpanFloat32Kernel != fit.TierAVX2 {
 		return circleSpanFloat32(centerX, radiusSquaredMinusDY, width)
 	}
@@ -38,7 +41,10 @@ func circleSpanFloat32AVX2(centerX, radiusSquaredMinusDY float32, width int) (xS
 	return circleSpanFloat32AVX2Unchecked(centerX, radiusSquaredMinusDY, width)
 }
 
-func circleSpanFloat32AVX2Unchecked(centerX, radiusSquaredMinusDY float32, width int) (xStart, xEnd int) {
+// circleSpanFloat32AVX2Unchecked returns the half-open span edges - the first
+// covered column and the column one past the last - without checking the
+// installed tier first.
+func circleSpanFloat32AVX2Unchecked(centerX, radiusSquaredMinusDY float32, width int) (int, int) {
 	cx := int(centerX + 0.5)
 	return circleSpanFloat32AVX2Kernel(centerX, radiusSquaredMinusDY, float32(cx), width)
 }
@@ -68,7 +74,7 @@ func circleSpanFloat32AVX2Unchecked(centerX, radiusSquaredMinusDY float32, width
 // tests measure against, but it is in the same position: if float32 geometry is
 // ever wanted in production it needs a configuration path first, and that
 // decision should come with a profile.
-func (g fixedCircleQ16) spanAVX2(y, width int) (xStart, xEnd int, intersects bool) {
+func (g fixedCircleQ16) spanAVX2(y, width int) (int, int, bool) {
 	const vectorMarginQ = 8 * circleQ16Scale
 
 	roundedCenterQ := int64(g.centerX) << circleQ16FractionBits
@@ -84,7 +90,7 @@ func (g fixedCircleQ16) spanAVX2(y, width int) (xStart, xEnd int, intersects boo
 		return 0, 0, false
 	}
 
-	xStart, xEnd = circleSpanQ16AVX2Kernel(g.xQ, g.centerX, g.radiusSquared-dyQ*dyQ, width)
+	xStart, xEnd := circleSpanQ16AVX2Kernel(g.xQ, g.centerX, g.radiusSquared-dyQ*dyQ, width)
 
 	return xStart, xEnd, xEnd > xStart
 }

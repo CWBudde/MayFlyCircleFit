@@ -119,7 +119,8 @@ func TestCPURendererPrecomputesInitialSSD(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer cleanup()
+
+			t.Cleanup(cleanup)
 
 			inherited := session.(*CPURenderer)
 			if inherited.initialSSD != want || inherited.initialSSDValid != renderer.initialSSDValid {
@@ -140,7 +141,8 @@ func TestCPURendererPrecomputesInitialSSD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cleanup()
+
+	t.Cleanup(cleanup)
 
 	staged := stagedSession.(*CPURenderer)
 	if !staged.initialSSDValid || staged.initialSSD != wantRetained {

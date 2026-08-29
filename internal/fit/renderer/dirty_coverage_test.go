@@ -31,6 +31,9 @@ func TestDirtySpanCoverageMetrics(t *testing.T) {
 
 	const width, height = 256, 256
 
+	// Repeated across the batch rows of the table below.
+	const batchR16Category = "batch_R16"
+
 	circle := func(x, y, radius float64) fit.Circle {
 		return fit.Circle{X: x, Y: y, R: radius, Opacity: 1}
 	}
@@ -81,12 +84,12 @@ func TestDirtySpanCoverageMetrics(t *testing.T) {
 		{category: "overlap_K4_R32", name: "coincident", circles: repeated(4, circle(128, 128, 32))},
 		{category: "overlap_K4_R32", name: "clustered", circles: clustered},
 		{category: "overlap_K4_R32", name: "disjoint", circles: disjoint},
-		{category: "batch_R16", name: "K1", circles: batchPool[:1]},
-		{category: "batch_R16", name: "K2", circles: batchPool[:2]},
-		{category: "batch_R16", name: "K4", circles: batchPool[:4]},
-		{category: "batch_R16", name: "K8", circles: batchPool[:8]},
-		{category: "batch_R16", name: "K16", circles: batchPool[:16]},
-		{category: "batch_R16", name: "K32", circles: batchPool[:32]},
+		{category: batchR16Category, name: "K1", circles: batchPool[:1]},
+		{category: batchR16Category, name: "K2", circles: batchPool[:2]},
+		{category: batchR16Category, name: "K4", circles: batchPool[:4]},
+		{category: batchR16Category, name: "K8", circles: batchPool[:8]},
+		{category: batchR16Category, name: "K16", circles: batchPool[:16]},
+		{category: batchR16Category, name: "K32", circles: batchPool[:32]},
 	}
 
 	for _, test := range tests {

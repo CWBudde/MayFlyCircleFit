@@ -244,7 +244,9 @@ func BenchmarkPolishSelectionByCircleCount(b *testing.B) {
 				b.ReportAllocs()
 
 				for range b.N {
-					_, err := selectResidualRegionActiveSet(cpu, &incumbentAuditCache{session: cpu}, params, polishBenchmarkActiveSetSize, nil)
+					_, err := selectResidualRegionActiveSet(
+						cpu, &incumbentAuditCache{session: cpu}, params, polishBenchmarkActiveSetSize, nil,
+					)
 					if err != nil {
 						b.Fatal(err)
 					}

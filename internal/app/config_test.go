@@ -154,7 +154,9 @@ func TestNormalizeOldConfigKeepsPolishingDisabled(t *testing.T) {
 
 	var old JobConfig
 
-	err := json.Unmarshal([]byte(`{"refPath":"reference.png","mode":"batch","circles":3,"iters":100,"popSize":30,"batchSize":3}`), &old)
+	payload := `{"refPath":"reference.png","mode":"batch","circles":3,"iters":100,"popSize":30,"batchSize":3}`
+
+	err := json.Unmarshal([]byte(payload), &old)
 	if err != nil {
 		t.Fatal(err)
 	}

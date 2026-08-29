@@ -20,8 +20,9 @@ package renderer
 // channel rather than byte-identical to compositeOpaqueSpanScalar, which is why
 // the whole path is opt-in.
 
-// fastSpanConstants returns the per-lane addend and multiplier described above.
-func fastSpanConstants(r, g, b, alpha float64) (addR, addG, addB, mul float32) {
+// fastSpanConstants returns the per-lane constants described above: the R, G
+// and B addends, in that order, followed by the multiplier shared by all three.
+func fastSpanConstants(r, g, b, alpha float64) (float32, float32, float32, float32) {
 	bgBlend := float32(1 - alpha)
 
 	return float32(r*alpha)*255 + 0.5,

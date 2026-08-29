@@ -69,7 +69,7 @@ func TestInputPolicyRejectsTraversalAndSymlinkEscapes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = os.WriteFile(filepath.Join(root, "notes.txt"), []byte("not image"), 0o644)
+	err = os.WriteFile(filepath.Join(root, "notes.txt"), []byte("not image"), 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}

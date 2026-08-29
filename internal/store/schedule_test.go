@@ -319,6 +319,7 @@ func TestScheduleStoreNotFoundAndListing(t *testing.T) {
 	}
 }
 
+//nolint:tparallel // its subtests are serial: they share one store and the order they save into it.
 func TestScheduleStoreRejectsInvalidInput(t *testing.T) {
 	t.Parallel()
 

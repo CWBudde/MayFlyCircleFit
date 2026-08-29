@@ -393,7 +393,7 @@ func TestListCheckpoints_SkipsInvalidDirectories(t *testing.T) {
 
 	dummyFile := filepath.Join(jobsDir, "dummy.txt")
 
-	err = os.WriteFile(dummyFile, []byte("test"), 0o644)
+	err = os.WriteFile(dummyFile, []byte("test"), 0o600)
 	if err != nil {
 		t.Fatalf("Failed to create dummy file: %v", err)
 	}

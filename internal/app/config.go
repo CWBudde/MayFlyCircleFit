@@ -724,6 +724,8 @@ func (c *JobConfig) ApplyDefaults() error {
 }
 
 // Validate returns a field-specific error for unsafe or inconsistent values.
+//
+//nolint:gocognit,gocyclo,cyclop,funlen,maintidx // one flat guard per config field; splitting scatters the rules.
 func (c *JobConfig) Validate() error {
 	if c.RefPath == "" {
 		return invalid("refPath", "is required")

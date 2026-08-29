@@ -479,7 +479,7 @@ func projectCheckpointInfo(path, jobID string) (CheckpointInfo, error) {
 	var trailing any
 
 	err = decoder.Decode(&trailing)
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		if err == nil {
 			return CheckpointInfo{}, errors.New("deserialize checkpoint summary: trailing JSON value")
 		}

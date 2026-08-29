@@ -356,7 +356,9 @@ func TestOptimizeBatchAppendRejectsInvalidPrefix(t *testing.T) {
 		{1, 1, 1, 0, 0, 0, 0},
 		append(transparentParams(2), transparentParams(1)...),
 	} {
-		_, err := OptimizeBatchAppendContext(context.Background(), base, opaqueBlackOptimizer(), prefix, 2, 1, DisabledConvergenceConfig())
+		_, err := OptimizeBatchAppendContext(
+			context.Background(), base, opaqueBlackOptimizer(), prefix, 2, 1, DisabledConvergenceConfig(),
+		)
 		if !errors.Is(err, ErrInvalidOptimizationInput) {
 			t.Fatalf("prefix %v error = %v, want ErrInvalidOptimizationInput", prefix, err)
 		}

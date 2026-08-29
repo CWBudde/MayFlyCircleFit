@@ -890,7 +890,7 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = decoder.Decode(&struct{}{})
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "request body must contain one JSON object")
 		return
 	}
@@ -948,6 +948,7 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	// Create job
 	job := s.jobManager.CreateJob(project, config)
 
+	//nolint:contextcheck // workerLoop deliberately outlives the request; it owns the job context, not this handler.
 	err = s.enqueueJob(job.ID)
 	if err != nil {
 		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
@@ -2052,7 +2053,7 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 	}
 
 	err = decoder.Decode(&struct{}{})
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "request body must contain one JSON object")
 		return
 	}

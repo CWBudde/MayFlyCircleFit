@@ -485,7 +485,10 @@ func TestServer_JobControlActions_E2E(t *testing.T) {
 	}
 
 	deleted := httptest.NewRecorder()
-	server.Handler().ServeHTTP(deleted, httptest.NewRequest(http.MethodDelete, "/api/v1/jobs/"+completedJob.ID, nil))
+	server.Handler().ServeHTTP(
+		deleted,
+		httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/api/v1/jobs/"+completedJob.ID, nil),
+	)
 
 	if deleted.Code != http.StatusNoContent {
 		t.Fatalf("delete status = %d, body %s", deleted.Code, deleted.Body.String())
@@ -1112,6 +1115,7 @@ func TestReferenceImageMetadata(t *testing.T) {
 func TestReferenceImageMetadataUnavailable(t *testing.T) {
 	t.Parallel()
 
+	//nolint:dogsled // the test only asserts that a missing file is reported; the width, height and size are not.
 	_, _, _, err := referenceImageMetadata(filepath.Join(t.TempDir(), "missing.png"))
 	if err == nil {
 		t.Fatal("referenceImageMetadata() error = nil for missing image")

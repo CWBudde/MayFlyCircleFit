@@ -673,7 +673,9 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	// disk yet. On a loaded host the gap is wide enough that the very next stage
 	// of a campaign asked for the parent checkpoint and was told it did not
 	// exist, which failed the whole campaign.
-	err = jm.RecordFinalResult(jobID, iterations, evaluations, result.BestParams, result.BestCost, initialCost, string(result.Termination))
+	err = jm.RecordFinalResult(
+		jobID, iterations, evaluations, result.BestParams, result.BestCost, initialCost, string(result.Termination),
+	)
 	if err != nil {
 		return err
 	}

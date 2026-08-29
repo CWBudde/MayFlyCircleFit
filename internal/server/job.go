@@ -173,6 +173,12 @@ var ErrInvalidTransition = errors.New("invalid job state transition")
 // instead of reporting a generic registration failure.
 var errDuplicateJobID = errors.New("job already exists")
 
+// errNonCanonicalJobID reports that CreateJobWithID was handed a caller-chosen
+// identifier that is not a canonical non-zero UUID. The schedule executor picks
+// a stage's job ID before the job exists, so this is the one place an ID
+// arrives unvalidated from outside.
+var errNonCanonicalJobID = errors.New("job ID must be a canonical non-zero UUID")
+
 // duplicateJobError names the project that already owns the ID so the caller
 // can report which side of the collision was kept.
 type duplicateJobError struct {
@@ -238,7 +244,7 @@ func (jm *JobManager) CreateJobWithID(id string, project app.Project, config Job
 	} else {
 		parsed, err := uuid.Parse(id)
 		if err != nil || parsed == uuid.Nil || parsed.String() != id {
-			return nil, errors.New("job ID must be a canonical non-zero UUID")
+			return nil, errNonCanonicalJobID
 		}
 	}
 

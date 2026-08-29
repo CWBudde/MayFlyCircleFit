@@ -11,6 +11,7 @@ import (
 	"github.com/cwbudde/circlefit/internal/fit"
 )
 
+//nolint:tparallel // its subtests are serial: they draw their fixtures from one shared random source.
 func TestDeltaSSDSpanMatchesScalar(t *testing.T) {
 	t.Parallel()
 

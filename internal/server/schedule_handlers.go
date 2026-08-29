@@ -542,6 +542,7 @@ func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 
 	s.publishScheduleChanged(record.ScheduleID)
 
+	//nolint:contextcheck // workerLoop deliberately outlives the request; it owns the job context, not this handler.
 	err = s.startScheduleDriver(record.ScheduleID)
 	if err != nil {
 		slog.Error("Failed to start schedule executor", "schedule_id", record.ScheduleID, "error", err)
