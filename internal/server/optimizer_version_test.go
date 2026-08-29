@@ -16,6 +16,8 @@ import (
 // than silently continued, a legacy checkpoint without a recorded version still
 // resumes, and the explicit override gets past the refusal.
 func TestResumeGuardsOptimizerVersion(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
@@ -71,6 +73,8 @@ func TestResumeGuardsOptimizerVersion(t *testing.T) {
 	}
 
 	t.Run("matching version resumes", func(t *testing.T) {
+		t.Parallel()
+
 		recorder := resume(stoppedJobWithCheckpoint(t, "v0.5.1"), "")
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("resume status = %d, body %s", recorder.Code, recorder.Body.String())
@@ -78,6 +82,8 @@ func TestResumeGuardsOptimizerVersion(t *testing.T) {
 	})
 
 	t.Run("legacy checkpoint resumes", func(t *testing.T) {
+		t.Parallel()
+
 		recorder := resume(stoppedJobWithCheckpoint(t, ""), "")
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("resume status = %d, body %s", recorder.Code, recorder.Body.String())
@@ -85,6 +91,8 @@ func TestResumeGuardsOptimizerVersion(t *testing.T) {
 	})
 
 	t.Run("mismatched version is refused", func(t *testing.T) {
+		t.Parallel()
+
 		recorder := resume(stoppedJobWithCheckpoint(t, "v0.4.0"), "")
 		if recorder.Code != http.StatusConflict {
 			t.Fatalf("resume status = %d, want %d, body %s", recorder.Code, http.StatusConflict, recorder.Body.String())
@@ -108,6 +116,8 @@ func TestResumeGuardsOptimizerVersion(t *testing.T) {
 	})
 
 	t.Run("override resumes the mismatch", func(t *testing.T) {
+		t.Parallel()
+
 		recorder := resume(stoppedJobWithCheckpoint(t, "v0.4.0"), "?allowOptimizerMismatch=true")
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("resume status = %d, body %s", recorder.Code, recorder.Body.String())
@@ -115,6 +125,8 @@ func TestResumeGuardsOptimizerVersion(t *testing.T) {
 	})
 
 	t.Run("malformed override does not disarm the guard", func(t *testing.T) {
+		t.Parallel()
+
 		recorder := resume(stoppedJobWithCheckpoint(t, "v0.4.0"), "?allowOptimizerMismatch=yes-please")
 		if recorder.Code != http.StatusConflict {
 			t.Fatalf("resume status = %d, want %d, body %s", recorder.Code, http.StatusConflict, recorder.Body.String())

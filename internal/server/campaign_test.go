@@ -111,6 +111,8 @@ func defaultSynthesizedChain() []synthesizedStage {
 // synthesized chain: four unrelated job records read back as one run, in order,
 // with each stage's kind recovered from its lineage.
 func TestImportedChainRendersAsOneCampaign(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScheduleFixture(t, 1)
 	synthesizeChain(t, fixture.server.store, fixture.imagePath, defaultSynthesizedChain())
 
@@ -143,6 +145,8 @@ func TestImportedChainRendersAsOneCampaign(t *testing.T) {
 }
 
 func TestChainAPIReturnsTheWholeLineage(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScheduleFixture(t, 1)
 	synthesizeChain(t, fixture.server.store, fixture.imagePath, defaultSynthesizedChain())
 
@@ -179,6 +183,8 @@ func TestChainAPIReturnsTheWholeLineage(t *testing.T) {
 }
 
 func TestChainAPIRejectsUnknownAndMalformedJobs(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScheduleFixture(t, 1)
 
 	tests := []struct {
@@ -191,6 +197,8 @@ func TestChainAPIRejectsUnknownAndMalformedJobs(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			recorder := httptest.NewRecorder()
 			fixture.server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, test.path, nil))
 
@@ -205,6 +213,8 @@ func TestChainAPIRejectsUnknownAndMalformedJobs(t *testing.T) {
 // honest: a lone checkpoint is not a campaign, and a stage a schedule already
 // owns is shown by the schedule view rather than twice.
 func TestChainDiscoveryIgnoresSingleJobsAndSchedules(t *testing.T) {
+	t.Parallel()
+
 	timestamp := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 	infos := []store.CheckpointInfo{
 		{JobID: chainBaseJob, ActualCircles: 8, BestCost: 812.5, Timestamp: timestamp},
@@ -227,6 +237,8 @@ func TestChainDiscoveryIgnoresSingleJobsAndSchedules(t *testing.T) {
 // TestChainDiscoveryStopsOnACycle guards the walk against a hand-edited or
 // corrupt lineage rather than letting the listing spin.
 func TestChainDiscoveryStopsOnACycle(t *testing.T) {
+	t.Parallel()
+
 	infos := []store.CheckpointInfo{
 		{JobID: chainBaseJob, ExtendedFrom: chainExtendJob},
 		{JobID: chainExtendJob, ExtendedFrom: chainBaseJob},
@@ -273,6 +285,8 @@ func TestChainDiscoveryStopsOnACycle(t *testing.T) {
 // TestCampaignViewOfAScheduleShowsEveryStageState covers the columns the stage
 // records can populate, including the skipped stage that policy declined.
 func TestCampaignViewOfAScheduleShowsEveryStageState(t *testing.T) {
+	t.Parallel()
+
 	started := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 	completed := started.Add(90 * time.Second)
 	record := &store.ScheduleRecord{
@@ -348,6 +362,8 @@ func TestCampaignViewOfAScheduleShowsEveryStageState(t *testing.T) {
 }
 
 func TestCampaignListPageShowsSchedulesAndChains(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScheduleFixture(t, 1)
 	synthesizeChain(t, fixture.server.store, fixture.imagePath, defaultSynthesizedChain())
 
@@ -375,6 +391,8 @@ func TestCampaignListPageShowsSchedulesAndChains(t *testing.T) {
 // purpose, and a chain that says "completed" where a restored job says
 // "cancelled" is the contradiction this guards against.
 func TestChainStageStateMatchesRestore(t *testing.T) {
+	t.Parallel()
+
 	terminations := []string{
 		"completed", "target_cost", "stagnation", "convergence", "stage_convergence", "refill_limit",
 		"failed", "cancelled",
@@ -383,6 +401,8 @@ func TestChainStageStateMatchesRestore(t *testing.T) {
 	}
 	for _, termination := range terminations {
 		t.Run("termination="+termination, func(t *testing.T) {
+			t.Parallel()
+
 			checkpoint := &store.Checkpoint{JobID: chainBaseJob, Termination: termination}
 
 			want := string(jobFromCheckpoint(checkpoint, app.DefaultProject).State)
@@ -396,6 +416,8 @@ func TestChainStageStateMatchesRestore(t *testing.T) {
 // TestChainListingReportsTheLeafTermination keeps the campaign card and the
 // campaign detail page telling the same story about how a chain ended.
 func TestChainListingReportsTheLeafTermination(t *testing.T) {
+	t.Parallel()
+
 	timestamp := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -410,6 +432,8 @@ func TestChainListingReportsTheLeafTermination(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.termination, func(t *testing.T) {
+			t.Parallel()
+
 			infos := []store.CheckpointInfo{
 				{JobID: chainBaseJob, Termination: "completed", ActualCircles: 8, Timestamp: timestamp},
 				{
@@ -434,6 +458,8 @@ func TestChainListingReportsTheLeafTermination(t *testing.T) {
 // seed: the record keeps the zero sentinel, but the stage that ran recorded the
 // seed it resolved, and that is the reproducible value the view must show.
 func TestCampaignSeedFallsBackToARecordedStage(t *testing.T) {
+	t.Parallel()
+
 	record := &store.ScheduleRecord{
 		SchemaVersion: store.ScheduleRecordSchemaVersion,
 		ScheduleID:    chainScheduleID,
@@ -464,6 +490,8 @@ func TestCampaignSeedFallsBackToARecordedStage(t *testing.T) {
 // detail route resolves a job through its own project store, so discovery has
 // to look in the same places.
 func TestChainDiscoveryCoversEveryProject(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -508,6 +536,8 @@ func TestChainDiscoveryCoversEveryProject(t *testing.T) {
 }
 
 func TestChainListingsShareInvalidationBasedDiscoveryCache(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	fsStore, err := store.NewFSStore(root)
@@ -560,6 +590,8 @@ func TestChainListingsShareInvalidationBasedDiscoveryCache(t *testing.T) {
 }
 
 func TestCampaignViewAPIUsesSourceNeutralReadModel(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)

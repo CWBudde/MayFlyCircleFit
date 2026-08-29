@@ -13,6 +13,8 @@ import (
 )
 
 func TestDecodeParameterCircles(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		count int
@@ -23,6 +25,8 @@ func TestDecodeParameterCircles(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			params := make([]float64, test.count*parametersPerCircle)
 			for i := range test.count {
 				offset := i * parametersPerCircle
@@ -52,6 +56,8 @@ func TestDecodeParameterCircles(t *testing.T) {
 }
 
 func TestDecodeParameterCirclesRejectsPartialCircle(t *testing.T) {
+	t.Parallel()
+
 	_, err := decodeParameterCircles(make([]float64, parametersPerCircle+1))
 	if err == nil {
 		t.Fatal("decodeParameterCircles() error = nil for partial circle")
@@ -59,6 +65,8 @@ func TestDecodeParameterCirclesRejectsPartialCircle(t *testing.T) {
 }
 
 func TestServerGetParameters(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer(":8080", nil)
 
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{Circles: 2})
@@ -133,6 +141,8 @@ func TestServerGetParameters(t *testing.T) {
 }
 
 func TestServerGetParametersErrors(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer(":8080", nil)
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{Circles: 1})
 
@@ -148,6 +158,8 @@ func TestServerGetParametersErrors(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			request := httptest.NewRequest(test.method, "/api/v1/jobs/"+test.jobID+"/params.json", nil)
 			recorder := httptest.NewRecorder()
 			server.Handler().ServeHTTP(recorder, request)

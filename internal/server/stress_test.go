@@ -15,6 +15,7 @@ import (
 	"time"
 )
 
+//nolint:paralleltest // boots real workers and joins on a shutdown deadline, which test load would skew
 func TestServerConcurrentJobLifecycleStress(t *testing.T) {
 	root := t.TempDir()
 	referencePath := filepath.Join(root, "reference.png")

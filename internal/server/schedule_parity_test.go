@@ -82,6 +82,7 @@ func parityConfig(imagePath string) string {
 		parityPolishSweeps, parityPolishIters, parityPolishStagn, paritySeed)
 }
 
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleReproducesTheHandDrivenCampaign(t *testing.T) {
 	// The campaign runs ten real optimizer stages, five per path. The budgets
 	// above are sized so that costs about a second and a half, which is why this

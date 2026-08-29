@@ -21,7 +21,11 @@ var wireTime = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 // round trip through the same types, because a round trip would still pass if
 // the shape had changed on both sides.
 func TestProjectTypeKeepsJSONWireFormat(t *testing.T) {
+	t.Parallel()
+
 	t.Run("job status response", func(t *testing.T) {
+		t.Parallel()
+
 		end := wireTime.Add(time.Minute)
 		response := jobStatusResponse{
 			ID:               "12345678-1234-4234-8234-123456789abc",
@@ -51,6 +55,8 @@ func TestProjectTypeKeepsJSONWireFormat(t *testing.T) {
 	})
 
 	t.Run("jobs list", func(t *testing.T) {
+		t.Parallel()
+
 		jobs := []*Job{{
 			ID:               "12345678-1234-4234-8234-123456789abc",
 			Project:          "christian",
@@ -73,6 +79,8 @@ func TestProjectTypeKeepsJSONWireFormat(t *testing.T) {
 	})
 
 	t.Run("projects endpoint", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 
 		persistence, err := store.NewFSStore(root)
@@ -103,6 +111,8 @@ func TestProjectTypeKeepsJSONWireFormat(t *testing.T) {
 	})
 
 	t.Run("job unmarshals a plain string project", func(t *testing.T) {
+		t.Parallel()
+
 		// The reverse direction: a client's bytes must still decode into the
 		// typed field without any custom unmarshaller.
 		var job Job
@@ -118,6 +128,8 @@ func TestProjectTypeKeepsJSONWireFormat(t *testing.T) {
 	})
 
 	t.Run("create request unmarshals a plain string project", func(t *testing.T) {
+		t.Parallel()
+
 		var request createJobRequest
 
 		err := json.Unmarshal([]byte(`{"project":"christian","refPath":"a.png"}`), &request)

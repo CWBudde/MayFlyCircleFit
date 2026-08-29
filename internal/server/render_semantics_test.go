@@ -14,6 +14,8 @@ import (
 )
 
 func TestBestImagePreservesConfiguredCanvas(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	referencePath := filepath.Join(root, "reference.png")
 	canvasPath := filepath.Join(root, "canvas.png")

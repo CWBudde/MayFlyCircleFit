@@ -12,6 +12,7 @@ import (
 	"time"
 )
 
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestUIEventHubOrdersEvents(t *testing.T) {
 	hub := NewUIEventHub()
 
@@ -45,6 +46,7 @@ func TestUIEventHubOrdersEvents(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestUIEventHubDisconnectsSlowSubscriber(t *testing.T) {
 	hub := NewUIEventHub()
 	events, subscription, _ := hub.Subscribe()
@@ -67,6 +69,7 @@ func TestUIEventHubDisconnectsSlowSubscriber(t *testing.T) {
 	hub.Unsubscribe(subscription)
 }
 
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestJobLifecyclePublishesUIEventsInOrder(t *testing.T) {
 	manager := NewJobManager()
 
@@ -110,6 +113,7 @@ func TestJobLifecyclePublishesUIEventsInOrder(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestUIEventsEndpointWritesOrderedEnvelope(t *testing.T) {
 	server := &Server{uiEvents: NewUIEventHub()}
 	server.uiEvents.PublishJobDeleted("before-connect")
@@ -157,6 +161,7 @@ func TestUIEventsEndpointWritesOrderedEnvelope(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestJobMetricsEndpointReturnsBoundedTail(t *testing.T) {
 	server := NewServer("localhost:0", nil)
 	shutdownTestServer(t, server)

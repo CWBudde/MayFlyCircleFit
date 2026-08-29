@@ -43,6 +43,8 @@ func seededJobConfig(refPath string) JobConfig {
 // job with no parent must begin at the cost of the circles it was handed, and
 // must never finish worse than it started.
 func TestRunJobStartsFromTheAuthoredArrangement(t *testing.T) {
+	t.Parallel()
+
 	imgPath := filepath.Join(t.TempDir(), "test.png")
 	createTestImage(t, imgPath)
 	config := seededJobConfig(imgPath)
@@ -117,6 +119,8 @@ func TestRunJobStartsFromTheAuthoredArrangement(t *testing.T) {
 // its parent's result, and a spec that rode along on the copied configuration
 // must not displace it.
 func TestRunJobPrefersAParentsParametersOverAnAuthoredArrangement(t *testing.T) {
+	t.Parallel()
+
 	imgPath := filepath.Join(t.TempDir(), "test.png")
 	createTestImage(t, imgPath)
 	config := seededJobConfig(imgPath)
@@ -161,6 +165,8 @@ func TestRunJobPrefersAParentsParametersOverAnAuthoredArrangement(t *testing.T) 
 // rather than a silent clamp: a circle far outside the bounds fails the job
 // instead of being pulled inside and scored as if it had been authored there.
 func TestRunJobRefusesAnArrangementTheCanvasCannotHold(t *testing.T) {
+	t.Parallel()
+
 	imgPath := filepath.Join(t.TempDir(), "test.png")
 	createTestImage(t, imgPath)
 	config := seededJobConfig(imgPath)
@@ -191,6 +197,8 @@ func TestRunJobRefusesAnArrangementTheCanvasCannotHold(t *testing.T) {
 // Leaving batchSize at the stock five would therefore validate, queue, and then
 // fail the run -- so the default follows the seed and the job actually starts.
 func TestSeededBatchRunsWhenTheBatchSizeIsDefaulted(t *testing.T) {
+	t.Parallel()
+
 	imgPath := filepath.Join(t.TempDir(), "test.png")
 	createTestImage(t, imgPath)
 
@@ -244,6 +252,8 @@ func TestSeededBatchRunsWhenTheBatchSizeIsDefaulted(t *testing.T) {
 // count check and reject every extend. Schedule expansion clears the field for
 // the same reason.
 func TestExtendClearsTheAuthoredArrangement(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "ref.png")
 	createSimpleTestImage(t, imgPath)
@@ -334,6 +344,8 @@ func TestExtendClearsTheAuthoredArrangement(t *testing.T) {
 // aliasing that a by-value Config copy would otherwise leave: everything the
 // manager hands out must be safe to write without touching live job state.
 func TestJobConfigsDoNotShareAuthoredCircles(t *testing.T) {
+	t.Parallel()
+
 	imgPath := filepath.Join(t.TempDir(), "test.png")
 	createTestImage(t, imgPath)
 	config := seededJobConfig(imgPath)

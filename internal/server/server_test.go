@@ -26,6 +26,7 @@ import (
 	"github.com/google/uuid"
 )
 
+//nolint:paralleltest // swaps the process-global slog default, which no two tests may do at once
 func TestLoggingMiddleware(t *testing.T) {
 	t.Run("logs request identity and explicit status", func(t *testing.T) {
 		logs := captureLogs(t)
@@ -100,6 +101,8 @@ func TestLoggingMiddleware(t *testing.T) {
 }
 
 func TestServer_CreateJob(t *testing.T) {
+	t.Parallel()
+
 	// Create test image
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
@@ -146,6 +149,8 @@ func TestServer_CreateJob(t *testing.T) {
 }
 
 func TestServer_CreateJob_BackendDefaults(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
@@ -161,6 +166,8 @@ func TestServer_CreateJob_BackendDefaults(t *testing.T) {
 	// the create endpoint refuses a written value the defaults would replace, so
 	// a marshalled partial struct is a request for zero circles.
 	t.Run("uses server default backend when omitted", func(t *testing.T) {
+		t.Parallel()
+
 		body, _ := json.Marshal(map[string]any{"refPath": imgPath})
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewReader(body))
 		w := httptest.NewRecorder()
@@ -184,6 +191,8 @@ func TestServer_CreateJob_BackendDefaults(t *testing.T) {
 	})
 
 	t.Run("keeps explicit backend override", func(t *testing.T) {
+		t.Parallel()
+
 		body, _ := json.Marshal(map[string]any{
 			"refPath": imgPath,
 			"backend": app.BackendCPU,
@@ -211,6 +220,8 @@ func TestServer_CreateJob_BackendDefaults(t *testing.T) {
 }
 
 func TestServer_ListJobs(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
@@ -298,6 +309,8 @@ func TestServer_ListJobs(t *testing.T) {
 }
 
 func TestJobsPageBoundsHydrationSeed(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer(":8080", nil)
 	for range defaultJobListLimit + 1 {
 		server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: "reference.png", Mode: app.ModeJoint, Circles: 1})
@@ -338,6 +351,8 @@ func TestJobsPageBoundsHydrationSeed(t *testing.T) {
 }
 
 func TestServer_GetJobStatus(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
@@ -372,6 +387,8 @@ func TestServer_GetJobStatus(t *testing.T) {
 }
 
 func TestServer_JobControlActions_E2E(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
@@ -484,6 +501,8 @@ func TestServer_JobControlActions_E2E(t *testing.T) {
 // worker loop would skip, a running job with nothing to resume from, and a
 // schedule stage whose driver waits for a terminal state.
 func TestServer_PauseJobRejections(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
@@ -505,6 +524,8 @@ func TestServer_PauseJobRejections(t *testing.T) {
 	}
 
 	t.Run("pending job", func(t *testing.T) {
+		t.Parallel()
+
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
 		if got := pause(job.ID).Code; got != http.StatusConflict {
 			t.Fatalf("pause status = %d, want %d", got, http.StatusConflict)
@@ -516,6 +537,8 @@ func TestServer_PauseJobRejections(t *testing.T) {
 	})
 
 	t.Run("running job without progress", func(t *testing.T) {
+		t.Parallel()
+
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
 
 		err := server.jobManager.StartJob(job.ID)
@@ -533,6 +556,8 @@ func TestServer_PauseJobRejections(t *testing.T) {
 	})
 
 	t.Run("schedule stage", func(t *testing.T) {
+		t.Parallel()
+
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
 
 		err := server.jobManager.StartJob(job.ID)
@@ -560,6 +585,8 @@ func TestServer_PauseJobRejections(t *testing.T) {
 	})
 
 	t.Run("missing job", func(t *testing.T) {
+		t.Parallel()
+
 		if got := pause("00000000-0000-4000-8000-000000000000").Code; got != http.StatusNotFound {
 			t.Fatalf("pause status = %d, want %d", got, http.StatusNotFound)
 		}
@@ -571,6 +598,8 @@ func TestServer_PauseJobRejections(t *testing.T) {
 // into a new one, which is the contract the resume CLI command and the release
 // lifecycle depend on.
 func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
@@ -606,6 +635,8 @@ func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
 	}
 
 	t.Run("paused job resumes in place", func(t *testing.T) {
+		t.Parallel()
+
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
 
 		err := server.jobManager.StartJob(job.ID)
@@ -638,6 +669,8 @@ func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
 	})
 
 	t.Run("cancelled job forks a new one", func(t *testing.T) {
+		t.Parallel()
+
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
 
 		err := server.jobManager.StartJob(job.ID)
@@ -684,6 +717,8 @@ func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
 	})
 
 	t.Run("job without a checkpoint", func(t *testing.T) {
+		t.Parallel()
+
 		job := server.jobManager.CreateJob(app.DefaultProject, config)
 
 		err := server.jobManager.StartJob(job.ID)
@@ -706,6 +741,8 @@ func TestServer_ResumeDispatchesOnJobState(t *testing.T) {
 // on: once the paused state is claimed, a worker that finishes afterwards may
 // not publish the job as completed over the snapshot the operator asked for.
 func TestPausedJobCannotBeCompleted(t *testing.T) {
+	t.Parallel()
+
 	manager := NewJobManager()
 
 	job := manager.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
@@ -740,6 +777,8 @@ func TestPausedJobCannotBeCompleted(t *testing.T) {
 }
 
 func TestServerJobStatusRepresentsInfinitePSNRAndOptionalSSIM(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer(":8080", nil)
 
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png", EnableSSIM: true})
@@ -786,6 +825,8 @@ func TestServerJobStatusRepresentsInfinitePSNRAndOptionalSSIM(t *testing.T) {
 }
 
 func TestServerJobStatusExposesProvisionalCandidateSeparately(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer(":8080", nil)
 
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
@@ -829,6 +870,8 @@ func TestServerJobStatusExposesProvisionalCandidateSeparately(t *testing.T) {
 }
 
 func TestServer_GetJobStatus_NotFound(t *testing.T) {
+	t.Parallel()
+
 	s := NewServer(":8080", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/nonexistent/status", nil)
@@ -842,6 +885,8 @@ func TestServer_GetJobStatus_NotFound(t *testing.T) {
 }
 
 func TestServer_GetBestImage(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
@@ -876,6 +921,7 @@ func TestServer_GetBestImage(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // boots a worker-backed server; parallel load would skew its wall-clock waits
 func TestServer_Integration(t *testing.T) {
 	// Skip in short mode
 	if testing.Short() {
@@ -971,6 +1017,8 @@ func TestServer_Integration(t *testing.T) {
 }
 
 func TestServer_JobDetailPage(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
@@ -1037,6 +1085,8 @@ func TestServer_JobDetailPage(t *testing.T) {
 }
 
 func TestReferenceImageMetadata(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "reference.png")
 	createSimpleTestImage(t, path)
 
@@ -1060,6 +1110,8 @@ func TestReferenceImageMetadata(t *testing.T) {
 }
 
 func TestReferenceImageMetadataUnavailable(t *testing.T) {
+	t.Parallel()
+
 	_, _, _, err := referenceImageMetadata(filepath.Join(t.TempDir(), "missing.png"))
 	if err == nil {
 		t.Fatal("referenceImageMetadata() error = nil for missing image")
@@ -1181,6 +1233,8 @@ func TestJobStatusCarriesReferenceImageFacts(t *testing.T) {
 }
 
 func TestServer_JobDetailPage_NotFound(t *testing.T) {
+	t.Parallel()
+
 	s := NewServer(":8080", nil)
 
 	// Test job detail page with non-existent job ID
@@ -1200,6 +1254,8 @@ func TestServer_JobDetailPage_NotFound(t *testing.T) {
 }
 
 func TestServer_GetRefImage(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
@@ -1233,6 +1289,8 @@ func TestServer_GetRefImage(t *testing.T) {
 }
 
 func TestServer_GetDiffImageColormap(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "reference.png")
 	createSimpleTestImage(t, path)
 
@@ -1302,6 +1360,8 @@ func TestServer_GetDiffImageColormap(t *testing.T) {
 }
 
 func TestServer_GetDiffImageRejectsInvalidColormap(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer(":8080", nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/missing/diff.png?colormap=viridis", nil)
 	recorder := httptest.NewRecorder()
@@ -1318,6 +1378,8 @@ func TestServer_GetDiffImageRejectsInvalidColormap(t *testing.T) {
 }
 
 func TestServer_JobDetailPage_Integration(t *testing.T) {
+	t.Parallel()
+
 	// Skip in short mode
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -1397,6 +1459,8 @@ func TestServer_JobDetailPage_Integration(t *testing.T) {
 }
 
 func TestServer_JobStream_SSE(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
@@ -1464,6 +1528,8 @@ func TestServer_JobStream_SSE(t *testing.T) {
 }
 
 func TestServer_JobStream_NotFound(t *testing.T) {
+	t.Parallel()
+
 	s := NewServer(":8080", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/nonexistent/stream", nil)
@@ -1477,6 +1543,8 @@ func TestServer_JobStream_NotFound(t *testing.T) {
 }
 
 func TestEventBroadcaster(t *testing.T) {
+	t.Parallel()
+
 	eb := NewEventBroadcaster()
 
 	// Subscribe to events
@@ -1548,6 +1616,8 @@ func createSimpleTestImage(t *testing.T, path string) {
 }
 
 func TestServer_CreatePageGet(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer(":0", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/create", nil)
@@ -1590,6 +1660,8 @@ func TestServer_CreatePageGet(t *testing.T) {
 }
 
 func TestServer_CreatePagePost_Success(t *testing.T) {
+	t.Parallel()
+
 	// Create temp directory and test image
 	tmpDir := t.TempDir()
 	testImagePath := filepath.Join(tmpDir, "test.png")
@@ -1725,6 +1797,8 @@ func TestServerCreatePagePostsCMAESEngine(t *testing.T) {
 }
 
 func TestServer_CreatePagePost_ValidationErrors(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer(":0", nil)
 
 	tests := []struct {
@@ -1796,6 +1870,8 @@ func TestServer_CreatePagePost_ValidationErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			form := url.Values{}
 			for k, v := range tt.formData {
 				form.Add(k, v)
@@ -1868,6 +1944,8 @@ func TestPlannedOptimizerIterationsCoversStagesAndPolishing(t *testing.T) {
 }
 
 func TestPolishEndpointCreatesCheckpointContinuation(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "ref.png")
 	createSimpleTestImage(t, imgPath)
@@ -2023,6 +2101,8 @@ func newExtendableBatchJob(t *testing.T) (*Server, string, []float64) {
 }
 
 func TestExtendEndpointCreatesOrderedBatchContinuation(t *testing.T) {
+	t.Parallel()
+
 	server, sourceID, params := newExtendableBatchJob(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+sourceID+"/extend", strings.NewReader(`{
@@ -2083,6 +2163,8 @@ func (ineffectiveBatchOptimizer) Run(eval func([]float64) float64, _, _ []float6
 }
 
 func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "black.png")
 
@@ -2289,6 +2371,8 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 }
 
 func TestExtendEndpointPolishIsOptIn(t *testing.T) {
+	t.Parallel()
+
 	for _, testCase := range []struct {
 		name string
 		body string
@@ -2299,6 +2383,8 @@ func TestExtendEndpointPolishIsOptIn(t *testing.T) {
 		{name: "enabled", body: `{"additionalCircles":3,"polish":true}`, want: true},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			server, sourceID, _ := newExtendableBatchJob(t)
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+sourceID+"/extend", strings.NewReader(testCase.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -2333,6 +2419,8 @@ func TestExtendEndpointPolishIsOptIn(t *testing.T) {
 }
 
 func TestServer_CreatePage_Integration(t *testing.T) {
+	t.Parallel()
+
 	// Create temp directory and test image
 	tmpDir := t.TempDir()
 	testImagePath := filepath.Join(tmpDir, "test.png")
@@ -2376,6 +2464,7 @@ func TestServer_CreatePage_Integration(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // boots a worker-backed server; parallel load would skew its wall-clock waits
 func TestServer_GracefulShutdownWithCheckpoint(t *testing.T) {
 	// Skip in short mode
 	if testing.Short() {
@@ -2514,6 +2603,8 @@ func shutdownTestServer(t *testing.T, server *Server) {
 // parses the optimizer-level stopping fields but leaves their bounds to
 // app.Normalize, so the HTML and JSON entry points cannot drift apart.
 func TestServer_CreatePagePost_EarlyStopDefersToAppValidation(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer(":0", nil)
 
 	base := map[string]string{
@@ -2563,6 +2654,8 @@ func TestServer_CreatePagePost_EarlyStopDefersToAppValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			form := url.Values{}
 			for k, v := range base {
 				form.Add(k, v)
@@ -2605,6 +2698,8 @@ func TestServer_CreatePagePost_EarlyStopDefersToAppValidation(t *testing.T) {
 // straight through app.Normalize, which filled the application-wide CPU default
 // before the server flag was ever consulted.
 func TestServer_BackendDefaults_AllEntryPoints(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
 	createSimpleTestImage(t, imgPath)
@@ -2617,6 +2712,8 @@ func TestServer_BackendDefaults_AllEntryPoints(t *testing.T) {
 	shutdownTestServer(t, s)
 
 	t.Run("whitespace backend counts as omitted", func(t *testing.T) {
+		t.Parallel()
+
 		body, _ := json.Marshal(map[string]any{"refPath": imgPath, "backend": "  "})
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewReader(body))
 		w := httptest.NewRecorder()
@@ -2640,6 +2737,8 @@ func TestServer_BackendDefaults_AllEntryPoints(t *testing.T) {
 	})
 
 	t.Run("dashboard form inherits the server default", func(t *testing.T) {
+		t.Parallel()
+
 		form := url.Values{
 			"refPath": {imgPath},
 			"mode":    {string(app.ModeJoint)},
@@ -2672,6 +2771,8 @@ func TestServer_BackendDefaults_AllEntryPoints(t *testing.T) {
 	})
 
 	t.Run("schedule stage inherits the server default", func(t *testing.T) {
+		t.Parallel()
+
 		stage := app.ScheduleStage{
 			Index:  0,
 			Kind:   app.ScheduleStageBase,
@@ -2689,6 +2790,8 @@ func TestServer_BackendDefaults_AllEntryPoints(t *testing.T) {
 	})
 
 	t.Run("schedule stage keeps an explicit backend", func(t *testing.T) {
+		t.Parallel()
+
 		stage := app.ScheduleStage{
 			Index:  0,
 			Kind:   app.ScheduleStageBase,

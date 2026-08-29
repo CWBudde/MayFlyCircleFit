@@ -9,6 +9,8 @@ import (
 )
 
 func TestComputeDiffImageUsesNormalizedAbsoluteRGBError(t *testing.T) {
+	t.Parallel()
+
 	ref := image.NewNRGBA(image.Rect(0, 0, 3, 1))
 	best := image.NewNRGBA(ref.Bounds())
 
@@ -43,6 +45,8 @@ func TestComputeDiffImageUsesNormalizedAbsoluteRGBError(t *testing.T) {
 }
 
 func TestComputeDiffImageSupportsMagma(t *testing.T) {
+	t.Parallel()
+
 	ref := image.NewNRGBA(image.Rect(0, 0, 1, 1))
 	best := image.NewNRGBA(ref.Bounds())
 	ref.SetNRGBA(0, 0, color.NRGBA{R: 255, G: 255, B: 255, A: 255})

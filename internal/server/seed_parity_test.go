@@ -67,6 +67,8 @@ func assertEndpointHas(t *testing.T, what string, endpointKeys map[string]any, p
 // the nested names fromRaw actually reads rather than against their own. Every
 // other field, and the page envelope, must agree name for name.
 func TestJobListSeedMatchesEndpointShape(t *testing.T) {
+	t.Parallel()
+
 	start := time.Date(2026, time.August, 13, 9, 0, 0, 0, time.UTC)
 	end := start.Add(90 * time.Second)
 
@@ -129,6 +131,8 @@ func TestJobListSeedMatchesEndpointShape(t *testing.T) {
 // in internal/ui/schedule.templ, so it is repeated here; the comparison runs
 // both ways because "identical" is the documented contract, not "subset".
 func TestCampaignListSeedMatchesEndpointShape(t *testing.T) {
+	t.Parallel()
+
 	updated := time.Date(2026, time.August, 13, 9, 0, 0, 0, time.UTC)
 	summary := func(id string, source ui.CampaignSource) ui.CampaignSummary {
 		return ui.CampaignSummary{
@@ -212,6 +216,8 @@ func campaignDetailFixture() ui.Campaign {
 // day one side gains a projection type the divergence has to fail here, and it
 // pins the wire names the detail island reads.
 func TestCampaignDetailSeedMatchesEndpointShape(t *testing.T) {
+	t.Parallel()
+
 	campaign := campaignDetailFixture()
 
 	seedKeys := jsonLeafKeys(t, campaign)

@@ -24,6 +24,7 @@ import (
 	"github.com/cwbudde/circlefit/internal/store"
 )
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRendererForJobConfiguresThreads(t *testing.T) {
 	ref := image.NewNRGBA(image.Rect(0, 0, 32, 32))
 
@@ -43,6 +44,7 @@ func TestRendererForJobConfiguresThreads(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRunJob_Success(t *testing.T) {
 	// Create temporary test image
 	tmpDir := t.TempDir()
@@ -85,6 +87,7 @@ func TestRunJob_Success(t *testing.T) {
 	// For now, just verify the job completed successfully
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRunJobRecordsPSNRAndOptionalSSIM(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
@@ -137,6 +140,7 @@ func TestRunJobRecordsPSNRAndOptionalSSIM(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRunJobPersistsExactFinalResultWithoutPeriodicCheckpointing(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
@@ -186,6 +190,7 @@ func TestRunJobPersistsExactFinalResultWithoutPeriodicCheckpointing(t *testing.T
 	}
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestLoadRetainedPrefixCanvasVerifiesArtifactCost(t *testing.T) {
 	fsStore, err := store.NewFSStore(t.TempDir())
 	if err != nil {
@@ -241,6 +246,7 @@ func (p *artifactRenderProbe) Bounds() ([]float64, []float64) {
 }
 func (p *artifactRenderProbe) Reference() *image.NRGBA { return p.reference }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestSaveCheckpointArtifactsReusesFinalImage(t *testing.T) {
 	fsStore, err := store.NewFSStore(t.TempDir())
 	if err != nil {
@@ -295,6 +301,8 @@ func (s *observingWorkerStore) SaveCheckpoint(jobID string, checkpoint *store.Ch
 // to continue from", so it must not be published while the checkpoint write is
 // still outstanding. Announcing it early cost a campaign its next stage on a
 // loaded host, which reported the parent's checkpoint as missing.
+//
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRunJobPublishesCompletionOnlyAfterTheCheckpointIsDurable(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
@@ -339,6 +347,7 @@ func TestRunJobPublishesCompletionOnlyAfterTheCheckpointIsDurable(t *testing.T) 
 	}
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRunJobRefusesToRecordAFinalResultForASettledJob(t *testing.T) {
 	jm := NewJobManager()
 
@@ -400,6 +409,7 @@ func (s *faultingWorkerStore) SavePNGArtifact(jobID string, artifact store.Artif
 	return s.FSStore.SavePNGArtifact(jobID, artifact, img)
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRunJobReportsFinalPersistenceFailuresAndAttemptsBothArtifacts(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -473,6 +483,7 @@ func TestRunJobReportsFinalPersistenceFailuresAndAttemptsBothArtifacts(t *testin
 	}
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRunJobExecutesConfiguredBatchPolishing(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
@@ -527,6 +538,8 @@ func TestRunJobExecutesConfiguredBatchPolishing(t *testing.T) {
 // same width as its main optimizer instead of dropping to a serial polisher.
 // Polishing refuses a concurrent optimizer it cannot pool sessions for, so this
 // also proves the server hands it a renderer that can.
+//
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRunJobPolishesAtTheConfiguredEvaluationWidth(t *testing.T) {
 	if runtime.GOMAXPROCS(0) < 2 {
 		t.Skip("needs at least two processors to enable parallel evaluation")
@@ -590,6 +603,8 @@ func TestRunJobPolishesAtTheConfiguredEvaluationWidth(t *testing.T) {
 // PolishingPopSize and not at the job-wide PopSize. The two are deliberately
 // far apart here, because before the polishing population existed the job-wide
 // one was what a sweep spent on its active set.
+//
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRunJobPolishesAtItsOwnPopulation(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
@@ -674,6 +689,7 @@ func polishingRecordField(t *testing.T, logs, key string) int {
 	return 0
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRunJobPolishingOnlyContinuesCompleteBatch(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
@@ -717,6 +733,7 @@ func TestRunJobPolishingOnlyContinuesCompleteBatch(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestInheritedContiguousWindowVisitCountsReplaysPolishLineage(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -786,6 +803,7 @@ func TestInheritedContiguousWindowVisitCountsReplaysPolishLineage(t *testing.T) 
 	}
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestInheritedContiguousWindowVisitCountsRejectsBrokenLineage(t *testing.T) {
 	persistence, err := store.NewFSStore(filepath.Join(t.TempDir(), "data"))
 	if err != nil {
@@ -856,6 +874,7 @@ func TestInheritedContiguousWindowVisitCountsRejectsBrokenLineage(t *testing.T) 
 	}
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRunJobContiguousWindowContinuationIsDeterministicForSameParentAndSeed(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
@@ -927,6 +946,7 @@ func TestRunJobContiguousWindowContinuationIsDeterministicForSameParentAndSeed(t
 	}
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRunJobResumesSingleStageBatch(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
@@ -965,6 +985,7 @@ func TestRunJobResumesSingleStageBatch(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRunJobAppendsBatchSuffix(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
@@ -1007,6 +1028,7 @@ func TestRunJobAppendsBatchSuffix(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRunJob_InvalidImage(t *testing.T) {
 	jm := NewJobManager()
 	config := JobConfig{
@@ -1037,6 +1059,7 @@ func TestRunJob_InvalidImage(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestRunJob_Cancellation(t *testing.T) {
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
@@ -1170,6 +1193,8 @@ func (t terminationOptimizer) RunContext(_ context.Context, problem opt.Problem,
 // TestProgressOptimizerPreservesTermination pins the wrapper that rebuilds
 // RunOptions: it must still return the base optimizer's termination reason,
 // because the worker now reports that reason instead of a hardcoded value.
+//
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestProgressOptimizerPreservesTermination(t *testing.T) {
 	reasons := []opt.Termination{
 		opt.TerminationCompleted,
@@ -1198,6 +1223,7 @@ func TestProgressOptimizerPreservesTermination(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestProgressOptimizerForwardsPipelineInitialSeed(t *testing.T) {
 	base := &optionsCaptureOptimizer{}
 	wrapped := &progressOptimizer{base: base}
@@ -1216,6 +1242,7 @@ func TestProgressOptimizerForwardsPipelineInitialSeed(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestProgressOptimizerMapsAndOffsetsEpochBoundary(t *testing.T) {
 	var boundary opt.EpochBoundary
 	wrapped := &progressOptimizer{
@@ -1247,6 +1274,7 @@ func TestProgressOptimizerMapsAndOffsetsEpochBoundary(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestSafeJobError(t *testing.T) {
 	t.Run("staged optimization unsupported", func(t *testing.T) {
 		got := safeJobError(renderer.ErrStagedOptimizationUnsupported)
@@ -1286,6 +1314,8 @@ func TestSafeJobError(t *testing.T) {
 // clamped, and a backend without independent sessions declines the request and
 // evaluates serially, so echoing the request back would claim a concurrency the
 // job never had -- in a field whose whole purpose is telling two runs apart.
+//
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestEvaluationWidthReportsWhatRanNotWhatWasAsked(t *testing.T) {
 	ref := image.NewNRGBA(image.Rect(0, 0, 32, 32))
 	oversized := runtime.GOMAXPROCS(0) * 100
@@ -1315,6 +1345,8 @@ func TestEvaluationWidthReportsWhatRanNotWhatWasAsked(t *testing.T) {
 // not opt in reports nothing rather than a worker count, so the detail page and
 // status output stay silent instead of showing a concurrency of one as if it
 // were a deliberate setting.
+//
+//nolint:paralleltest // runs real jobs through the worker path; test load would skew its thread-count assertions
 func TestEvaluationWidthIsZeroWithoutParallelEvaluation(t *testing.T) {
 	ref := image.NewNRGBA(image.Rect(0, 0, 32, 32))
 

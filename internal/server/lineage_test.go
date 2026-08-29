@@ -16,6 +16,8 @@ import (
 // parent used to exist only in the HTTP response, so a chain of extends left no
 // trace anywhere on disk.
 func TestContinuationJobsRecordTheirParent(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		path       string
@@ -40,6 +42,8 @@ func TestContinuationJobsRecordTheirParent(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			server, sourceID, _ := newExtendableBatchJob(t)
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+sourceID+test.path, strings.NewReader(test.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -80,6 +84,8 @@ func TestContinuationJobsRecordTheirParent(t *testing.T) {
 // TestJobLineageSurvivesTheCheckpoint asserts the round trip through the store:
 // a lineage written on a checkpoint comes back on the restored job.
 func TestJobLineageSurvivesTheCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	const (
 		jobID    = "11111111-1111-4111-8111-111111111111"
 		parentID = "22222222-2222-4222-8222-222222222222"
@@ -129,6 +135,8 @@ func TestJobLineageSurvivesTheCheckpoint(t *testing.T) {
 // TestJobWithoutLineageWritesNone keeps a hand-started job free of lineage
 // noise, which is also what a pre-existing checkpoint looks like.
 func TestJobWithoutLineageWritesNone(t *testing.T) {
+	t.Parallel()
+
 	config, err := app.Normalize(JobConfig{
 		RefPath: "assets/ref.png", Mode: app.ModeBatch, Circles: 1, BatchSize: 1,
 		Iters: 10, PopSize: 20, Threads: 1, Seed: 42,

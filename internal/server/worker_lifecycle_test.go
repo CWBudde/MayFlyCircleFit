@@ -11,6 +11,7 @@ import (
 	"github.com/cwbudde/circlefit/internal/store"
 )
 
+//nolint:paralleltest // boots real workers; parallel load would skew its wall-clock waits
 func TestServerSupervisesCancellationAndBoundedQueue(t *testing.T) {
 	root := t.TempDir()
 	imagePath := filepath.Join(root, "reference.png")
@@ -66,6 +67,7 @@ func TestServerSupervisesCancellationAndBoundedQueue(t *testing.T) {
 	_ = server.requestCancellation(second.ID)
 }
 
+//nolint:paralleltest // boots real workers; parallel load would skew its wall-clock waits
 func TestCancelledJobCanBeDeleted(t *testing.T) {
 	server := NewServer(":0", nil)
 
@@ -86,6 +88,7 @@ func TestCancelledJobCanBeDeleted(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // boots real workers; parallel load would skew its wall-clock waits
 func TestLongJobPublishesProgressTraceAndCheckpoint(t *testing.T) {
 	root := t.TempDir()
 	imagePath := filepath.Join(root, "reference.png")

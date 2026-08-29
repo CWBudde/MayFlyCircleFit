@@ -89,6 +89,8 @@ func syntheticUUID(index int) string {
 // measured alongside it, because a check that only asserts the new number
 // would still pass if the projection quietly went back to carrying configs.
 func TestScheduleDetailStaysUnderTheCLIResponseCap(t *testing.T) {
+	t.Parallel()
+
 	stages := sizeTestStages(t, app.MaxScheduleStages)
 
 	document, err := app.ParseSchedule([]byte(maxSizedCampaignDocument))
@@ -184,6 +186,8 @@ const maxSizedCampaignDocument = `{
 }`
 
 func TestMaxSizedCampaignDocumentExpandsToTheStageLimit(t *testing.T) {
+	t.Parallel()
+
 	document, err := app.ParseSchedule([]byte(maxSizedCampaignDocument))
 	if err != nil {
 		t.Fatalf("ParseSchedule() error = %v", err)
@@ -203,6 +207,8 @@ func TestMaxSizedCampaignDocumentExpandsToTheStageLimit(t *testing.T) {
 // `schedule import`. A chain is not bounded by MaxScheduleStages at all, so it
 // is measured at the same stage count for comparability.
 func TestChainDetailStaysUnderTheCLIResponseCap(t *testing.T) {
+	t.Parallel()
+
 	chain := make([]*store.Checkpoint, 0, app.MaxScheduleStages)
 
 	timestamp := time.Date(2026, 8, 18, 0, 0, 0, 0, time.UTC)
@@ -242,6 +248,8 @@ func TestChainDetailStaysUnderTheCLIResponseCap(t *testing.T) {
 // projection: the configuration a stage ran with stays retrievable, one stage
 // at a time, because replaying a single stage is what it is recorded for.
 func TestScheduleStageEndpointReturnsTheWholeRecord(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScheduleFixture(t, 1)
 
 	scheduleStore, err := fixture.server.scheduleStore()
@@ -309,6 +317,8 @@ func TestScheduleStageEndpointReturnsTheWholeRecord(t *testing.T) {
 		{name: "negative", path: "/stages/-1", want: http.StatusBadRequest},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
 				"/api/v1/schedules/"+testSizeScheduleID+test.path, nil))

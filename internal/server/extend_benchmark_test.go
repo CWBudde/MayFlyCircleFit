@@ -461,6 +461,8 @@ func BenchmarkSingleCircleExtendProductionCheckpoint(b *testing.B) {
 // correctness boundary: JSON persistence must preserve every float bit needed
 // to reproduce the parent's renderer cost before an extension starts.
 func TestCheckpointRoundTripPreservesContinuationCost(t *testing.T) {
+	t.Parallel()
+
 	const circleCount = 32
 	params := extendBenchmarkParams(circleCount)
 	reference := extendBenchmarkReference(params)

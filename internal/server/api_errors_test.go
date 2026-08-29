@@ -14,6 +14,8 @@ import (
 // dashboard and the CLI both parse. A plain-text body here would leave the
 // browser guessing why a request failed.
 func TestAPIErrorsUseTheJSONEnvelope(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		method     string
@@ -83,6 +85,8 @@ func TestAPIErrorsUseTheJSONEnvelope(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			response := httptest.NewRecorder()
 			server.Handler().ServeHTTP(response, httptest.NewRequest(test.method, test.target, nil))
 
@@ -115,6 +119,8 @@ func TestAPIErrorsUseTheJSONEnvelope(t *testing.T) {
 // TestAPIErrorsHideInternalDetail keeps reference-loading failures from leaking
 // filesystem paths to the client; the operator still gets them through the log.
 func TestAPIErrorsHideInternalDetail(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer(":0", nil)
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{
 		RefPath: "/does/not/exist/secret-reference.png",

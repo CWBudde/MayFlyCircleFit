@@ -65,6 +65,7 @@ func (w *safeResponseRecorder) Code() int {
 	return w.code
 }
 
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestEventBroadcasterConcurrentLifecycle(t *testing.T) {
 	eb := NewEventBroadcaster()
 	const jobID = "2b35aa54-6343-4d6e-86c1-915bb5543430"
@@ -102,6 +103,7 @@ func TestEventBroadcasterConcurrentLifecycle(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestEventBroadcasterAllSubscribers(t *testing.T) {
 	eb := NewEventBroadcaster()
 	all := eb.SubscribeAll()
@@ -139,6 +141,7 @@ func TestEventBroadcasterAllSubscribers(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestEventBroadcasterCleanupKeepsWildcardSubscribers(t *testing.T) {
 	eb := NewEventBroadcaster()
 
@@ -215,6 +218,8 @@ func TestEventBroadcasterCleanupKeepsWildcardSubscribers(t *testing.T) {
 // TestEventBroadcasterConcurrentWildcardLifecycle race-tests the fan-out itself.
 // The other wildcard tests are sequential, so running them under -race says
 // nothing about Broadcast reaching two subscriber sets while clients churn.
+//
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestEventBroadcasterConcurrentWildcardLifecycle(t *testing.T) {
 	eb := NewEventBroadcaster()
 	const jobID = "6f2c0d21-3f4a-4f0e-9c2d-2a1f5c8b7e04"
@@ -262,6 +267,7 @@ func TestEventBroadcasterConcurrentWildcardLifecycle(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestEventBroadcasterCleanupMakesUnsubscribeIdempotent(t *testing.T) {
 	eb := NewEventBroadcaster()
 	const jobID = "b65ef8ca-150c-4f74-ae59-661140af049f"
@@ -271,6 +277,7 @@ func TestEventBroadcasterCleanupMakesUnsubscribeIdempotent(t *testing.T) {
 	eb.Unsubscribe(jobID, ch)
 }
 
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestJobStreamPublishesTerminalTransitionsAndCloses(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -342,6 +349,7 @@ func TestJobStreamPublishesTerminalTransitionsAndCloses(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestAllJobStream_SnapshotAndUpdates(t *testing.T) {
 	server := NewServer(":8080", nil)
 	first := server.jobManager.CreateJob(app.DefaultProject, JobConfig{})
@@ -406,6 +414,7 @@ func TestAllJobStream_SnapshotAndUpdates(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestAllJobStreamRoute(t *testing.T) {
 	server := NewServer(":8080", nil)
 	root := t.TempDir()
@@ -467,6 +476,7 @@ func TestAllJobStreamRoute(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestAllJobStreamRouteMethodNotAllowed(t *testing.T) {
 	server := NewServer(":8080", nil)
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/stream", nil)
@@ -487,6 +497,8 @@ func TestAllJobStreamRouteMethodNotAllowed(t *testing.T) {
 // handler subscribes before it reads the manager, so an event queued in between
 // is older than the snapshot that gets written first; forwarding it would walk
 // the dashboard's iteration count backwards.
+//
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestAllJobStreamDropsEventsOlderThanTheSnapshot(t *testing.T) {
 	server := NewServer(":8080", nil)
 
@@ -543,6 +555,8 @@ func TestAllJobStreamDropsEventsOlderThanTheSnapshot(t *testing.T) {
 // TestAllJobStreamKeepsTerminalEventsInTheSnapshotGap pins the guard's
 // exemption: a cancellation carries whatever iteration count the job reached,
 // so an iteration floor must never be what drops it.
+//
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestAllJobStreamKeepsTerminalEventsInTheSnapshotGap(t *testing.T) {
 	server := NewServer(":8080", nil)
 
@@ -589,6 +603,7 @@ func TestAllJobStreamKeepsTerminalEventsInTheSnapshotGap(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestEventBroadcasterDoesNotRegressTerminalState(t *testing.T) {
 	broadcaster := NewEventBroadcaster()
 	terminal := ProgressEvent{JobID: "job", State: StateCancelled, Timestamp: time.Now()}

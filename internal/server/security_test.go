@@ -12,6 +12,8 @@ import (
 )
 
 func TestTrustedLocalOriginPolicy(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer("localhost:8080", nil)
 
 	tests := []struct {
@@ -25,6 +27,8 @@ func TestTrustedLocalOriginPolicy(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			request := httptest.NewRequest(http.MethodPost, "http://mayfly.local/api/v1/jobs", strings.NewReader(`{}`))
 			request.Header.Set("Content-Type", "application/json")
 
@@ -48,6 +52,8 @@ func TestTrustedLocalOriginPolicy(t *testing.T) {
 }
 
 func TestInputPolicyRejectsTraversalAndSymlinkEscapes(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	outside := t.TempDir()
 	outsideImage := filepath.Join(outside, "outside.png")
@@ -92,6 +98,8 @@ func TestInputPolicyRejectsTraversalAndSymlinkEscapes(t *testing.T) {
 }
 
 func TestCreateJobRejectsInvalidPayloads(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	validImage := filepath.Join(tmpDir, "ref.png")
 	createSimpleTestImage(t, validImage)
@@ -173,6 +181,8 @@ func TestCreateJobRejectsInvalidPayloads(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			body, err := json.Marshal(tt.body)
 			if err != nil {
 				t.Fatalf("json.Marshal(%v): %v", tt.body, err)
@@ -205,6 +215,8 @@ func TestCreateJobRejectsInvalidPayloads(t *testing.T) {
 }
 
 func TestPprofDisabledByDefault(t *testing.T) {
+	t.Parallel()
+
 	request := httptest.NewRequest(http.MethodGet, "http://mayfly.local/debug/pprof/", nil)
 
 	response := httptest.NewRecorder()
@@ -223,6 +235,8 @@ func TestPprofDisabledByDefault(t *testing.T) {
 }
 
 func TestCreateJobRejectsUnknownAndTrailingJSON(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer("localhost:8080", nil)
 
 	tests := []string{
@@ -241,6 +255,8 @@ func TestCreateJobRejectsUnknownAndTrailingJSON(t *testing.T) {
 }
 
 func TestAPIMethodResponseIncludesAllow(t *testing.T) {
+	t.Parallel()
+
 	request := httptest.NewRequest(http.MethodDelete, "/api/v1/jobs", nil)
 	response := httptest.NewRecorder()
 	NewServer("localhost:8080", nil).Handler().ServeHTTP(response, request)
@@ -255,6 +271,8 @@ func TestAPIMethodResponseIncludesAllow(t *testing.T) {
 }
 
 func TestCreateJobRejectsOversizedBody(t *testing.T) {
+	t.Parallel()
+
 	body := `{"refPath":"` + strings.Repeat("x", 1<<20) + `"}`
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(body))
 	response := httptest.NewRecorder()

@@ -56,6 +56,8 @@ func writeLegacyCheckpoint(t *testing.T, root, jobID string) {
 // Ref.png jobs: a data root that has only `jobs/` and no `projects/` must
 // restore every job and attribute it to the default project.
 func TestLegacyLayoutRestoresWithoutMigration(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	jobID := "12345678-1234-4234-8234-123456789abc"
 	writeLegacyCheckpoint(t, root, jobID)
@@ -100,6 +102,8 @@ func TestLegacyLayoutRestoresWithoutMigration(t *testing.T) {
 // TestProjectIsolation verifies artifacts land under the right project and that
 // filtering separates them.
 func TestProjectIsolation(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -152,6 +156,8 @@ func TestProjectIsolation(t *testing.T) {
 }
 
 func TestListJobsProjectFilterAndValidation(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -211,6 +217,8 @@ func TestListJobsProjectFilterAndValidation(t *testing.T) {
 }
 
 func TestProjectsEndpoint(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -266,6 +274,8 @@ func TestProjectsEndpoint(t *testing.T) {
 // behavior: `project` is accepted alongside the promoted JobConfig fields while
 // DisallowUnknownFields still rejects a genuine typo.
 func TestCreateJobAcceptsProjectAndStillRejectsTypos(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -299,6 +309,8 @@ func TestCreateJobAcceptsProjectAndStillRejectsTypos(t *testing.T) {
 }
 
 func TestResolveRequestedProjectConflict(t *testing.T) {
+	t.Parallel()
+
 	server := NewServerWithOptions("localhost:0", nil, ServerOptions{})
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/jobs?project=a", nil)
@@ -335,6 +347,8 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 // redirect: a slug the registry cannot resolve must fail, never fall back to
 // the default project's directory.
 func TestUnknownProjectDoesNotResolveToDefaultStore(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -384,6 +398,8 @@ func TestUnknownProjectDoesNotResolveToDefaultStore(t *testing.T) {
 // TestDeleteRejectsUnresolvableProject pins that a job whose project cannot be
 // resolved is not deleted against the default project's store.
 func TestDeleteRejectsUnresolvableProject(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -408,6 +424,8 @@ func TestDeleteRejectsUnresolvableProject(t *testing.T) {
 
 // TestDiscoverLogsUnusableProjectDirectory is the guard for the silent skip: a
 // directory that cannot become a project must leave a signal in the log.
+//
+//nolint:paralleltest // swaps the process-global slog default, which no two tests may do at once
 func TestDiscoverLogsUnusableProjectDirectory(t *testing.T) {
 	root := t.TempDir()
 
@@ -447,6 +465,8 @@ func TestDiscoverLogsUnusableProjectDirectory(t *testing.T) {
 // project is the legacy `<root>/jobs` tree, so a stray `projects/default`
 // directory must never become a second store under the same name. Without the
 // explicit skip the meaning depended on whether a store was injected.
+//
+//nolint:paralleltest // swaps the process-global slog default, which no two tests may do at once
 func TestDiscoverIgnoresDefaultProjectDirectory(t *testing.T) {
 	root := t.TempDir()
 
@@ -490,6 +510,8 @@ func TestDiscoverIgnoresDefaultProjectDirectory(t *testing.T) {
 // failure: a project directory that cannot be created is a 500, and the
 // response never carries the data root.
 func TestStoreFaultIsServerErrorWithoutPath(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	imageDir := t.TempDir()
 	imagePath := filepath.Join(imageDir, "ref.png")
@@ -545,6 +567,8 @@ func TestStoreFaultIsServerErrorWithoutPath(t *testing.T) {
 // single-job endpoints build jobStatusResponse by hand and used to drop it,
 // leaving a client holding only a job ID unable to learn who owns it.
 func TestJobStatusResponseCarriesProject(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -577,6 +601,8 @@ func TestJobStatusResponseCarriesProject(t *testing.T) {
 		{name: "legacy empty slug", project: app.DefaultProject, storeEmpty: true, want: app.DefaultProject},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			job := server.jobManager.CreateJob(tc.project, store.JobConfig{RefPath: "a.png"})
 			if tc.storeEmpty {
 				err := server.jobManager.UpdateJob(job.ID, func(stored *Job) {
@@ -625,6 +651,8 @@ func TestJobStatusResponseCarriesProject(t *testing.T) {
 // for: a job placed in a named project over HTTP must come back in that same
 // project after the process restarts, reading only what is on disk.
 func TestNamedProjectJobSurvivesRestart(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -732,6 +760,8 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 // Slugs() is sorted, but projects known only from in-memory jobs are appended
 // in Go map order, which is randomized per run.
 func TestProjectsEndpointOrderingIsStable(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -789,6 +819,8 @@ func TestProjectsEndpointOrderingIsStable(t *testing.T) {
 // opened with, so without a hidden field every job created from the UI landed
 // in the default project no matter which project the user came from.
 func TestCreateFormCarriesProjectThroughPost(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -824,6 +856,8 @@ func TestCreateFormCarriesProjectThroughPost(t *testing.T) {
 // silently relocating the job: the re-rendered form must still name the project
 // the user was creating in.
 func TestCreateFormEchoesProjectOnValidationError(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -890,6 +924,8 @@ func writeProjectCheckpoint(t *testing.T, root string, slug app.Project, jobID s
 // register persisted job" warning, which named one project and never said the
 // cause was a collision. The operator saw a job disappear and had nothing to
 // go looking for.
+//
+//nolint:paralleltest // swaps the process-global slog default, which no two tests may do at once
 func TestCrossProjectDuplicateJobIDIsDiagnosable(t *testing.T) {
 	root := t.TempDir()
 	jobID := "12345678-1234-4234-8234-123456789abc"

@@ -29,6 +29,7 @@ func stubPlatformDiscovery(t *testing.T, fn func() ([]gpu.PlatformInfo, error)) 
 	})
 }
 
+//nolint:paralleltest // re-arms the package-level GPU info cache and its platform discovery hook
 func TestHostFactsFromMetadataDefaultsToDevMetadata(t *testing.T) {
 	stubPlatformDiscovery(t, func() ([]gpu.PlatformInfo, error) {
 		return nil, nil
@@ -44,6 +45,7 @@ func TestHostFactsFromMetadataDefaultsToDevMetadata(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // re-arms the package-level GPU info cache and its platform discovery hook
 func TestHostFactsFromMetadataReportsGPUStates(t *testing.T) {
 	platforms := []gpu.PlatformInfo{{
 		Name:    "host",
@@ -101,6 +103,7 @@ func TestHostFactsFromMetadataReportsGPUStates(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // re-arms the package-level GPU info cache and its platform discovery hook
 func TestHandleSystem(t *testing.T) {
 	stubPlatformDiscovery(t, func() ([]gpu.PlatformInfo, error) {
 		return nil, gpu.ErrNotBuilt
@@ -141,6 +144,7 @@ func TestHandleSystem(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // re-arms the package-level GPU info cache and its platform discovery hook
 func TestHandleSystemMethodNotAllowed(t *testing.T) {
 	testServer := NewServer("localhost:0", nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/system", nil)
@@ -153,6 +157,7 @@ func TestHandleSystemMethodNotAllowed(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // re-arms the package-level GPU info cache and its platform discovery hook
 func TestRoutingSystemEndpoint(t *testing.T) {
 	// This test drives the real handler stack, which reaches the OpenCL probe.
 	// Stub it like every other test here so the route assertion does not depend
@@ -193,6 +198,8 @@ func TestRoutingSystemEndpoint(t *testing.T) {
 // TestGPUProbeRunsOncePerProcess pins the caching. OpenCL enumeration talks to
 // the driver and the answer cannot change while the process runs, so a dashboard
 // polling /api/v1/system must not pay for it on every request.
+//
+//nolint:paralleltest // re-arms the package-level GPU info cache and its platform discovery hook
 func TestGPUProbeRunsOncePerProcess(t *testing.T) {
 	probes := 0
 

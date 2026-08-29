@@ -214,6 +214,7 @@ func (f *scheduleFixture) waitForRunningStage(t *testing.T, scheduleID string, t
 	return store.ScheduleStageRecord{}
 }
 
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleRunsEveryPlannedStageExactlyOnce(t *testing.T) {
 	fixture := newScheduleFixture(t, 2)
 	scheduleID := fixture.createSchedule(t, scheduleDocument(fixture.imagePath, 5, 20))
@@ -286,6 +287,8 @@ func TestScheduleRunsEveryPlannedStageExactlyOnce(t *testing.T) {
 // started over the same data root; the campaign must continue the very same
 // stage, under the very same job identifier, and must neither start a second
 // job for it nor move on to the next one.
+//
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleResumesTheSameStageAfterRestart(t *testing.T) {
 	fixture := newScheduleFixture(t, 2)
 	// A budget large enough that the base stage is reliably still running when
@@ -360,6 +363,8 @@ func TestScheduleResumesTheSameStageAfterRestart(t *testing.T) {
 // point the ordering is designed for: the stage record was written as running,
 // naming its job, and the process died before that job could be created. The
 // next start must adopt the recorded stage, not plan a second one.
+//
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleAdoptsAStageWhoseJobNeverStarted(t *testing.T) {
 	fixture := newScheduleFixture(t, 2)
 	scheduleID := fixture.createSchedule(t, scheduleDocument(fixture.imagePath, 4000, 20))
@@ -402,6 +407,8 @@ func TestScheduleAdoptsAStageWhoseJobNeverStarted(t *testing.T) {
 // died before the driver could record the outcome. Rerunning that stage would
 // delete a finished checkpoint and repeat every iteration of it, so the record
 // must be settled from the restored job instead.
+//
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleAdoptsAStageThatAlreadyCompleted(t *testing.T) {
 	fixture := newScheduleFixture(t, 2)
 	scheduleID := fixture.createSchedule(t, scheduleDocument(fixture.imagePath, 5, 20))
@@ -487,6 +494,8 @@ func TestScheduleAdoptsAStageThatAlreadyCompleted(t *testing.T) {
 // driver reading the schedule as running and writing the stage record. Pause
 // and cancel are durable before they are acted on, so a driver holding a stale
 // read must notice and start nothing.
+//
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleStageIsNotStartedAfterAPause(t *testing.T) {
 	fixture := newScheduleFixture(t, 2)
 
@@ -545,6 +554,8 @@ func TestScheduleStageIsNotStartedAfterAPause(t *testing.T) {
 // driver makes as it deregisters: a resume that raced with the stop saw the
 // registration and started nothing, so the exiting driver has to look at the
 // record rather than assume it is done.
+//
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleWantsDriverFollowsTheDurableState(t *testing.T) {
 	fixture := newScheduleFixture(t, 1)
 
@@ -600,6 +611,8 @@ func TestScheduleWantsDriverFollowsTheDurableState(t *testing.T) {
 // TestScheduleAndManualJobShareTheJobLimit is the oversubscription acceptance
 // check: a stage goes through the same admission control as a hand-created job,
 // so the two together can never exceed MaxConcurrentJobs.
+//
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleAndManualJobShareTheJobLimit(t *testing.T) {
 	fixture := newScheduleFixture(t, 1)
 	scheduleID := fixture.createSchedule(t, scheduleDocument(fixture.imagePath, 80, 20))
@@ -676,6 +689,7 @@ func TestScheduleAndManualJobShareTheJobLimit(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestSchedulePauseStopsAtAStageBoundaryAndResumes(t *testing.T) {
 	fixture := newScheduleFixture(t, 2)
 	scheduleID := fixture.createSchedule(t, scheduleDocument(fixture.imagePath, 5, 20))
@@ -726,6 +740,7 @@ func TestSchedulePauseStopsAtAStageBoundaryAndResumes(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleCancelCancelsTheInFlightStage(t *testing.T) {
 	fixture := newScheduleFixture(t, 2)
 	scheduleID := fixture.createSchedule(t, scheduleDocument(fixture.imagePath, 4000, 20))
@@ -746,6 +761,7 @@ func TestScheduleCancelCancelsTheInFlightStage(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleEndpointsFollowTheJobConventions(t *testing.T) {
 	fixture := newScheduleFixture(t, 2)
 	handler := fixture.server.Handler()
@@ -865,6 +881,7 @@ func TestScheduleEndpointsFollowTheJobConventions(t *testing.T) {
 	})
 }
 
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestSchedulesAreUnavailableWithoutACheckpointStore(t *testing.T) {
 	server := NewServerWithOptions(":0", nil, ServerOptions{})
 
@@ -887,6 +904,8 @@ func TestSchedulesAreUnavailableWithoutACheckpointStore(t *testing.T) {
 // The polish is planned, so a dry run would print it, but its circle condition
 // never matches; the campaign must record the skip and continue the chain from
 // the last stage that actually ran.
+//
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleSkipsAStageItsPolicyDeclines(t *testing.T) {
 	fixture := newScheduleFixture(t, 2)
 	document := fmt.Sprintf(`{
@@ -937,6 +956,7 @@ func TestScheduleSkipsAStageItsPolicyDeclines(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestNextScheduleStageDerivesTheCursorFromTheRecords(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -991,6 +1011,8 @@ func TestNextScheduleStageDerivesTheCursorFromTheRecords(t *testing.T) {
 // that reached a perfect fit records a best cost of exactly zero, and policy
 // has to see that as a measurement; a record that never settled carries no cost
 // at all, and its zero must stay an absence.
+//
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleStageOutcomesMarkOnlyCompletedCostsAsMeasured(t *testing.T) {
 	recorded := []store.ScheduleStageRecord{
 		{Index: 0, Kind: app.ScheduleStageBase, State: store.ScheduleStateCompleted, BestCost: 161.99},
@@ -1027,6 +1049,8 @@ func TestScheduleStageOutcomesMarkOnlyCompletedCostsAsMeasured(t *testing.T) {
 // barred stage is not recorded at all (so nothing has to be undone), the reason
 // is durable enough to poll, and one resume carries it past — rather than
 // walking straight back into the same barrier.
+//
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleBarrierPausesBeforeTheStageAndResumeReleasesIt(t *testing.T) {
 	fixture := newScheduleFixture(t, 2)
 	document := fmt.Sprintf(`{
