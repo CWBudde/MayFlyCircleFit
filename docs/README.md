@@ -125,6 +125,15 @@ re-measure instead.
   `lambda` 20 it *raised* the wasted share. Read before proposing a default,
   and for a worked case of a three-block pilot whose mechanism finding did not
   replicate.
+- [`cmaes-budget-split-report.md`](cmaes-budget-split-report.md) — six arms and
+  seventy-two jobs on a **second fixture**, a photograph at twelve circles.
+  Phase 21's headline reproduces (`+36.36`, `t = +5.23`, 11/12, rejects under
+  Holm), so it is not specific to one image — but **separable CMA-ES run as one
+  long search is indistinguishable from `mayfly-r16`** (`p = 0.20`). Splitting
+  the budget is what wins, not the engine. Read before proposing a default
+  change, for why the IPOP ladder is budget-capped at two or three runs and
+  returns the unsplit arm's exact cost in half the blocks, and for the
+  registration discrepancy that leaves the epoch-versus-restart question open.
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by
