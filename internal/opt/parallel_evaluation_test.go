@@ -167,9 +167,11 @@ func TestParallelEvaluationCallsObjectiveConcurrently(t *testing.T) {
 	}
 
 	lifecycle := optimizer.(LifecycleOptimizer)
-	if _, err := lifecycle.RunContext(context.Background(), Problem{
+
+	_, err = lifecycle.RunContext(context.Background(), Problem{
 		Eval: eval, Lower: lower, Upper: upper, Dim: dim,
-	}, RunOptions{}); err != nil {
+	}, RunOptions{})
+	if err != nil {
 		t.Fatalf("RunContext() error = %v", err)
 	}
 
@@ -212,9 +214,11 @@ func TestSerialEvaluationStaysSingleThreaded(t *testing.T) {
 	}
 
 	lifecycle := optimizer.(LifecycleOptimizer)
-	if _, err := lifecycle.RunContext(context.Background(), Problem{
+
+	_, err = lifecycle.RunContext(context.Background(), Problem{
 		Eval: eval, Lower: lower, Upper: upper, Dim: dim,
-	}, RunOptions{}); err != nil {
+	}, RunOptions{})
+	if err != nil {
 		t.Fatalf("RunContext() error = %v", err)
 	}
 

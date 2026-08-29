@@ -59,7 +59,9 @@ func NewFSStore(baseDir string) (*FSStore, error) {
 	}
 
 	jobsDir := filepath.Join(root, "jobs")
-	if err := ensureSecureDir(root, jobsDir); err != nil {
+
+	err = ensureSecureDir(root, jobsDir)
+	if err != nil {
 		return nil, fmt.Errorf("create jobs directory: %w", err)
 	}
 
@@ -97,11 +99,13 @@ func (fs *FSStore) ensureJobDir(jobID string) (string, error) {
 		return "", err
 	}
 
-	if err := ensureSecureDir(fs.baseDir, fs.jobsDir); err != nil {
+	err = ensureSecureDir(fs.baseDir, fs.jobsDir)
+	if err != nil {
 		return "", fmt.Errorf("secure jobs directory: %w", err)
 	}
 
-	if err := ensureSecureDir(fs.baseDir, jobDir); err != nil {
+	err = ensureSecureDir(fs.baseDir, jobDir)
+	if err != nil {
 		return "", fmt.Errorf("create job directory: %w", err)
 	}
 
@@ -142,7 +146,8 @@ func validateArtifact(artifact Artifact) error {
 // ArtifactPath returns a validated path for an existing or future job
 // artifact. Only the closed Artifact set can be requested.
 func (fs *FSStore) ArtifactPath(jobID string, artifact Artifact) (string, error) {
-	if err := validateArtifact(artifact); err != nil {
+	err := validateArtifact(artifact)
+	if err != nil {
 		return "", err
 	}
 
@@ -152,11 +157,14 @@ func (fs *FSStore) ArtifactPath(jobID string, artifact Artifact) (string, error)
 	}
 
 	path := filepath.Join(jobDir, string(artifact))
-	if err := ensureContained(fs.baseDir, path); err != nil {
+
+	err = ensureContained(fs.baseDir, path)
+	if err != nil {
 		return "", err
 	}
 
-	if info, err := os.Lstat(path); err == nil {
+	info, err := os.Lstat(path)
+	if err == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 			return "", errors.New("refusing non-regular or symlink artifact path")
 		}
@@ -173,7 +181,8 @@ func (fs *FSStore) SaveCheckpoint(jobID string, checkpoint *Checkpoint) error {
 		return errors.New("checkpoint cannot be nil")
 	}
 
-	if err := validateJobID(jobID); err != nil {
+	err := validateJobID(jobID)
+	if err != nil {
 		return fmt.Errorf("invalid jobID: %w", err)
 	}
 
@@ -182,11 +191,14 @@ func (fs *FSStore) SaveCheckpoint(jobID string, checkpoint *Checkpoint) error {
 	}
 
 	normalized := checkpoint.normalized()
-	if err := normalized.Validate(); err != nil {
+
+	err = normalized.Validate()
+	if err != nil {
 		return fmt.Errorf("invalid checkpoint: %w", err)
 	}
 
-	if _, err := fs.ensureJobDir(jobID); err != nil {
+	_, err = fs.ensureJobDir(jobID)
+	if err != nil {
 		return err
 	}
 
@@ -206,11 +218,12 @@ func (fs *FSStore) SaveCheckpoint(jobID string, checkpoint *Checkpoint) error {
 	// An old summary must never describe a newly committed checkpoint. If the
 	// primary write fails, listings safely fall back to projecting the preserved
 	// checkpoint; if the process dies after the rename, the sidecar is absent.
-	if err := os.Remove(infoPath); err != nil && !os.IsNotExist(err) {
+	err = os.Remove(infoPath)
+	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove stale checkpoint summary: %w", err)
 	}
 
-	if err := fs.atomicWrite(path, func(writer io.Writer) error {
+	err = fs.atomicWrite(path, func(writer io.Writer) error {
 		encoder := json.NewEncoder(writer)
 		encoder.SetIndent("", "  ")
 		// Encode the wire struct rather than the Checkpoint: the latter would
@@ -218,15 +231,17 @@ func (fs *FSStore) SaveCheckpoint(jobID string, checkpoint *Checkpoint) error {
 		// BestParams a second time on a path that runs once per stage. The
 		// bytes are identical because normalized() is idempotent.
 		return encoder.Encode(checkpointWireFrom(normalized))
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("save checkpoint: %w", err)
 	}
 	// The sidecar is a performance index, not the durable result. A failure to
 	// write it leaves no stale copy and ListCheckpoints can still project the
 	// primary checkpoint without materializing BestParams.
-	if err := fs.atomicWrite(infoPath, func(writer io.Writer) error {
+	err = fs.atomicWrite(infoPath, func(writer io.Writer) error {
 		return json.NewEncoder(writer).Encode(normalized.ToInfo())
-	}); err != nil {
+	})
+	if err != nil {
 		_ = os.Remove(infoPath)
 
 		slog.Warn("Failed to save checkpoint summary; listings will use the checkpoint projection",
@@ -249,7 +264,8 @@ func (fs *FSStore) LoadCheckpoint(jobID string) (*Checkpoint, error) {
 }
 
 func (fs *FSStore) loadCheckpoint(jobID string) (*Checkpoint, error) {
-	if _, err := fs.existingJobDir(jobID); err != nil {
+	_, err := fs.existingJobDir(jobID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -268,7 +284,9 @@ func (fs *FSStore) loadCheckpoint(jobID string) (*Checkpoint, error) {
 	}
 
 	var checkpoint Checkpoint
-	if err := json.Unmarshal(data, &checkpoint); err != nil {
+
+	err = json.Unmarshal(data, &checkpoint)
+	if err != nil {
 		return nil, fmt.Errorf("deserialize checkpoint: %w", err)
 	}
 
@@ -276,7 +294,8 @@ func (fs *FSStore) loadCheckpoint(jobID string) (*Checkpoint, error) {
 		return nil, fmt.Errorf("checkpoint JobID %q does not match jobID %q", checkpoint.JobID, jobID)
 	}
 
-	if err := checkpoint.Validate(); err != nil {
+	err = checkpoint.Validate()
+	if err != nil {
 		return nil, fmt.Errorf("invalid checkpoint: %w", err)
 	}
 
@@ -287,7 +306,8 @@ func (fs *FSStore) loadCheckpoint(jobID string) (*Checkpoint, error) {
 
 // ListCheckpoints returns metadata for valid checkpoint directories.
 func (fs *FSStore) ListCheckpoints() ([]CheckpointInfo, error) {
-	if err := ensureSecureDir(fs.baseDir, fs.jobsDir); err != nil {
+	err := ensureSecureDir(fs.baseDir, fs.jobsDir)
+	if err != nil {
 		return nil, fmt.Errorf("secure jobs directory: %w", err)
 	}
 
@@ -341,7 +361,8 @@ func (fs *FSStore) checkpointLock(jobID string) *sync.RWMutex {
 }
 
 func (fs *FSStore) loadCheckpointInfo(jobID string) (CheckpointInfo, error) {
-	if _, err := fs.existingJobDir(jobID); err != nil {
+	_, err := fs.existingJobDir(jobID)
+	if err != nil {
 		return CheckpointInfo{}, err
 	}
 
@@ -361,7 +382,8 @@ func (fs *FSStore) loadCheckpointInfo(jobID string) (CheckpointInfo, error) {
 
 	infoPath, infoPathErr := fs.ArtifactPath(jobID, ArtifactCheckpointInfo)
 	if infoPathErr == nil {
-		if infoStat, statErr := os.Stat(infoPath); statErr == nil && !infoStat.ModTime().Before(checkpointStat.ModTime()) {
+		infoStat, statErr := os.Stat(infoPath)
+		if statErr == nil && !infoStat.ModTime().Before(checkpointStat.ModTime()) {
 			data, readErr := os.ReadFile(infoPath)
 			if readErr == nil {
 				var info CheckpointInfo
@@ -448,12 +470,16 @@ func projectCheckpointInfo(path, jobID string) (CheckpointInfo, error) {
 	var projection checkpointInfoProjection
 
 	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(&projection); err != nil {
+
+	err = decoder.Decode(&projection)
+	if err != nil {
 		return CheckpointInfo{}, fmt.Errorf("deserialize checkpoint summary: %w", err)
 	}
 	// Reject a second JSON value while allowing trailing whitespace.
 	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
+
+	err = decoder.Decode(&trailing)
+	if err != io.EOF {
 		if err == nil {
 			return CheckpointInfo{}, errors.New("deserialize checkpoint summary: trailing JSON value")
 		}
@@ -495,7 +521,8 @@ func (count *parameterCount) UnmarshalJSON(data []byte) error {
 		n++
 	}
 
-	if _, err := decoder.Token(); err != nil {
+	_, err = decoder.Token()
+	if err != nil {
 		return err
 	}
 
@@ -601,11 +628,13 @@ func (fs *FSStore) DeleteCheckpoint(jobID string) error {
 		return err
 	}
 
-	if err := ensureContained(fs.baseDir, jobDir); err != nil {
+	err = ensureContained(fs.baseDir, jobDir)
+	if err != nil {
 		return err
 	}
 
-	if err := os.RemoveAll(jobDir); err != nil {
+	err = os.RemoveAll(jobDir)
+	if err != nil {
 		return fmt.Errorf("remove job directory: %w", err)
 	}
 
@@ -630,12 +659,16 @@ func (fs *FSStore) SaveCircleSnapshot(jobID string, circleNum int, img image.Ima
 	}
 
 	snapshotsDir := filepath.Join(jobDir, "snapshots")
-	if err := ensureSecureDir(fs.baseDir, snapshotsDir); err != nil {
+
+	err = ensureSecureDir(fs.baseDir, snapshotsDir)
+	if err != nil {
 		return fmt.Errorf("create snapshots directory: %w", err)
 	}
 
 	path := filepath.Join(snapshotsDir, fmt.Sprintf("canvas-%02d.png", circleNum))
-	if err := fs.atomicWrite(path, func(writer io.Writer) error { return png.Encode(writer, img) }); err != nil {
+
+	err = fs.atomicWrite(path, func(writer io.Writer) error { return png.Encode(writer, img) })
+	if err != nil {
 		return fmt.Errorf("save circle snapshot: %w", err)
 	}
 
@@ -646,7 +679,8 @@ func (fs *FSStore) SaveCircleSnapshot(jobID string, circleNum int, img image.Ima
 
 // SaveCircleData atomically saves per-circle metadata as indented JSON.
 func (fs *FSStore) SaveCircleData(jobID string, circles []CircleData) error {
-	if _, err := fs.ensureJobDir(jobID); err != nil {
+	_, err := fs.ensureJobDir(jobID)
+	if err != nil {
 		return err
 	}
 
@@ -655,12 +689,13 @@ func (fs *FSStore) SaveCircleData(jobID string, circles []CircleData) error {
 		return err
 	}
 
-	if err := fs.atomicWrite(path, func(writer io.Writer) error {
+	err = fs.atomicWrite(path, func(writer io.Writer) error {
 		encoder := json.NewEncoder(writer)
 		encoder.SetIndent("", "  ")
 
 		return encoder.Encode(circles)
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("save circles: %w", err)
 	}
 
@@ -679,7 +714,8 @@ func (fs *FSStore) SavePNGArtifact(jobID string, artifact Artifact, img image.Im
 		return errors.New("image cannot be nil")
 	}
 
-	if _, err := fs.ensureJobDir(jobID); err != nil {
+	_, err := fs.ensureJobDir(jobID)
+	if err != nil {
 		return err
 	}
 
@@ -688,7 +724,8 @@ func (fs *FSStore) SavePNGArtifact(jobID string, artifact Artifact, img image.Im
 		return err
 	}
 
-	if err := fs.atomicWrite(path, func(writer io.Writer) error { return png.Encode(writer, img) }); err != nil {
+	err = fs.atomicWrite(path, func(writer io.Writer) error { return png.Encode(writer, img) })
+	if err != nil {
 		return fmt.Errorf("save %s: %w", artifact, err)
 	}
 
@@ -696,7 +733,8 @@ func (fs *FSStore) SavePNGArtifact(jobID string, artifact Artifact, img image.Im
 }
 
 func (fs *FSStore) atomicWrite(path string, write func(io.Writer) error) (resultErr error) {
-	if err := ensureContained(fs.baseDir, path); err != nil {
+	err := ensureContained(fs.baseDir, path)
+	if err != nil {
 		return err
 	}
 
@@ -727,7 +765,8 @@ func (fs *FSStore) atomicWrite(path string, write func(io.Writer) error) (result
 		}
 	}()
 
-	if err := temp.Chmod(artifactMode); err != nil {
+	err = temp.Chmod(artifactMode)
+	if err != nil {
 		return fmt.Errorf("secure temporary file permissions: %w", err)
 	}
 
@@ -736,15 +775,18 @@ func (fs *FSStore) atomicWrite(path string, write func(io.Writer) error) (result
 		writeTemp = func(file *os.File, write func(io.Writer) error) error { return write(file) }
 	}
 
-	if err := writeTemp(temp, write); err != nil {
+	err = writeTemp(temp, write)
+	if err != nil {
 		return fmt.Errorf("write temporary file: %w", err)
 	}
 
-	if err := temp.Sync(); err != nil {
+	err = temp.Sync()
+	if err != nil {
 		return fmt.Errorf("sync temporary file: %w", err)
 	}
 
-	if err := temp.Close(); err != nil {
+	err = temp.Close()
+	if err != nil {
 		return fmt.Errorf("close temporary file: %w", err)
 	}
 
@@ -755,11 +797,13 @@ func (fs *FSStore) atomicWrite(path string, write func(io.Writer) error) (result
 		rename = os.Rename
 	}
 
-	if err := rename(tempPath, path); err != nil {
+	err = rename(tempPath, path)
+	if err != nil {
 		return fmt.Errorf("replace destination: %w", err)
 	}
 
-	if err := syncDirectory(dir); err != nil {
+	err = syncDirectory(dir)
+	if err != nil {
 		return fmt.Errorf("sync destination directory: %w", err)
 	}
 

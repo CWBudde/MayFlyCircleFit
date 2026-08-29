@@ -88,7 +88,8 @@ func (p *inputPolicy) resolveImage(path string) (string, error) {
 		return "", errors.New("image format is invalid")
 	}
 
-	if err := app.ValidateImageDimensions(config.Width, config.Height); err != nil {
+	err = app.ValidateImageDimensions(config.Width, config.Height)
+	if err != nil {
 		return "", err
 	}
 

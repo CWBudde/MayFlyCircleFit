@@ -98,7 +98,8 @@ func printSchedulePlan(output io.Writer, path string, document *app.ScheduleDocu
 			stagePlanParameters(stage), stagePlanCondition(stage))
 	}
 
-	if err := writer.Flush(); err != nil {
+	err = writer.Flush()
+	if err != nil {
 		return err
 	}
 

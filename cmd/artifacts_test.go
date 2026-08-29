@@ -29,7 +29,9 @@ func TestWritePNGRoundTrips(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "out.png")
 
 	want := testImage()
-	if err := writePNG(path, want); err != nil {
+
+	err := writePNG(path, want)
+	if err != nil {
 		t.Fatalf("writePNG() error = %v, want nil", err)
 	}
 
@@ -64,8 +66,9 @@ func TestWritePNGReportsAFullFilesystem(t *testing.T) {
 		t.Skip("/dev/full is a Linux device")
 	}
 
-	if _, err := os.Stat("/dev/full"); err != nil {
-		t.Skipf("/dev/full unavailable: %v", err)
+	_, statErr := os.Stat("/dev/full")
+	if statErr != nil {
+		t.Skipf("/dev/full unavailable: %v", statErr)
 	}
 
 	err := writePNG("/dev/full", testImage())

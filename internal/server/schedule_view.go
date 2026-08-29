@@ -24,7 +24,9 @@ const maxChainLength = 4096
 // campaignFromSchedule turns a schedule and its recorded stages into the view.
 func campaignFromSchedule(record *store.ScheduleRecord, stages []store.ScheduleStageRecord) ui.Campaign {
 	planned := 0
-	if plan, err := record.Document.Expand(); err == nil {
+
+	plan, err := record.Document.Expand()
+	if err == nil {
 		planned = len(plan)
 	}
 
@@ -501,7 +503,9 @@ func chainCircles(info store.CheckpointInfo) int {
 // summarizeCampaign is the listing row for a schedule.
 func summarizeCampaign(record *store.ScheduleRecord, stages []store.ScheduleStageRecord) ui.CampaignSummary {
 	planned := 0
-	if plan, err := record.Document.Expand(); err == nil {
+
+	plan, err := record.Document.Expand()
+	if err == nil {
 		planned = len(plan)
 	}
 

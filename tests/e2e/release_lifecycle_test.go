@@ -235,7 +235,8 @@ func findRepositoryRoot(t *testing.T) string {
 	}
 
 	for {
-		if info, statErr := os.Stat(filepath.Join(dir, "go.mod")); statErr == nil && !info.IsDir() {
+		info, statErr := os.Stat(filepath.Join(dir, "go.mod"))
+		if statErr == nil && !info.IsDir() {
 			return dir
 		}
 
@@ -379,7 +380,9 @@ func availablePort(t *testing.T) int {
 	}
 
 	port := listener.Addr().(*net.TCPAddr).Port
-	if err := listener.Close(); err != nil {
+
+	err = listener.Close()
+	if err != nil {
 		t.Fatalf("release loopback port: %v", err)
 	}
 
@@ -556,7 +559,8 @@ func waitForProgress(t *testing.T, client *http.Client, baseURL, jobID string, a
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
+	err = scanner.Err()
+	if err != nil {
 		t.Fatalf("read SSE stream: %v", err)
 	}
 
@@ -714,13 +718,15 @@ func writeReferenceImage(t *testing.T, path string, width, height int) {
 		t.Fatalf("create reference image: %v", err)
 	}
 
-	if err := png.Encode(file, img); err != nil {
+	err = png.Encode(file, img)
+	if err != nil {
 		_ = file.Close()
 
 		t.Fatalf("encode reference image: %v", err)
 	}
 
-	if err := file.Close(); err != nil {
+	err = file.Close()
+	if err != nil {
 		t.Fatalf("close reference image: %v", err)
 	}
 }

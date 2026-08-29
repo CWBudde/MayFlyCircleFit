@@ -235,8 +235,11 @@ func (jm *JobManager) CreateJob(project app.Project, config JobConfig) *Job {
 func (jm *JobManager) CreateJobWithID(id string, project app.Project, config JobConfig) (*Job, error) {
 	if id == "" {
 		id = uuid.New().String()
-	} else if parsed, err := uuid.Parse(id); err != nil || parsed == uuid.Nil || parsed.String() != id {
-		return nil, errors.New("job ID must be a canonical non-zero UUID")
+	} else {
+		parsed, err := uuid.Parse(id)
+		if err != nil || parsed == uuid.Nil || parsed.String() != id {
+			return nil, errors.New("job ID must be a canonical non-zero UUID")
+		}
 	}
 
 	jm.mu.Lock()

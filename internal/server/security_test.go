@@ -57,11 +57,14 @@ func TestInputPolicyRejectsTraversalAndSymlinkEscapes(t *testing.T) {
 	createSimpleTestImage(t, insideImage)
 
 	link := filepath.Join(root, "escape.png")
-	if err := os.Symlink(outsideImage, link); err != nil {
+
+	err := os.Symlink(outsideImage, link)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("not image"), 0o644); err != nil {
+	err = os.WriteFile(filepath.Join(root, "notes.txt"), []byte("not image"), 0o644)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -81,7 +84,8 @@ func TestInputPolicyRejectsTraversalAndSymlinkEscapes(t *testing.T) {
 		filepath.Join(root, "..", filepath.Base(outside), "outside.png"),
 		filepath.Join(root, "notes.txt"),
 	} {
-		if _, err := policy.resolveImage(path); err == nil {
+		_, err := policy.resolveImage(path)
+		if err == nil {
 			t.Fatalf("escape path %q was accepted", path)
 		}
 	}
@@ -183,7 +187,9 @@ func TestCreateJobRejectsInvalidPayloads(t *testing.T) {
 			}
 
 			var decoded apiErrorResponse
-			if err := json.Unmarshal(response.Body.Bytes(), &decoded); err != nil {
+
+			err = json.Unmarshal(response.Body.Bytes(), &decoded)
+			if err != nil {
 				t.Fatalf("response %q is not the API error envelope: %v", response.Body.String(), err)
 			}
 

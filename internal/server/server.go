@@ -523,7 +523,8 @@ func (s *Server) requestPause(jobID string) error {
 		return err
 	}
 
-	if err := s.persistPauseCheckpoint(jobID, claimed); err != nil {
+	err = s.persistPauseCheckpoint(jobID, claimed)
+	if err != nil {
 		resumeErr := s.jobManager.ResumeJob(jobID)
 		if resumeErr != nil && !errors.Is(resumeErr, ErrInvalidTransition) {
 			slog.Error("Unable to restore a job after a failed pause", "job_id", jobID, "error", resumeErr)
@@ -573,7 +574,8 @@ func (s *Server) requestResume(jobID string, allowOptimizerMismatch bool) (*stor
 		return nil, err
 	}
 
-	if err := checkpoint.Validate(); err != nil {
+	err = checkpoint.Validate()
+	if err != nil {
 		return nil, err
 	}
 
@@ -595,7 +597,7 @@ func (s *Server) requestResume(jobID string, allowOptimizerMismatch bool) (*stor
 		slog.Warn("Optimizer version check", "job_id", jobID, "warning", warning)
 	}
 
-	if err := s.jobManager.UpdateJob(jobID, func(j *Job) {
+	err = s.jobManager.UpdateJob(jobID, func(j *Job) {
 		j.BestParams = append([]float64(nil), checkpoint.BestParams...)
 		j.BestCost = checkpoint.BestCost
 		j.InitialCost = checkpoint.InitialCost
@@ -606,11 +608,13 @@ func (s *Server) requestResume(jobID string, allowOptimizerMismatch bool) (*stor
 		j.CandidateCost = nil
 		j.Error = ""
 		j.Termination = checkpoint.Termination
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	if err := s.jobManager.ResumeJob(jobID); err != nil {
+	err = s.jobManager.ResumeJob(jobID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -644,7 +648,8 @@ func (s *Server) persistPauseCheckpoint(jobID string, job *Job) error {
 	checkpoint.Termination = job.Termination
 	applyJobLineage(checkpoint, job)
 
-	if err := jobStore.SaveCheckpoint(jobID, checkpoint); err != nil {
+	err = jobStore.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		slog.Error("Failed to persist pause checkpoint", "job_id", jobID, "error", err)
 		return err
 	}
@@ -878,12 +883,14 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 
-	if err := decoder.Decode(&request); err != nil {
+	err = decoder.Decode(&request)
+	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid JSON request body")
 		return
 	}
 
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+	err = decoder.Decode(&struct{}{})
+	if err != io.EOF {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "request body must contain one JSON object")
 		return
 	}
@@ -932,7 +939,8 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 
 	// Creating the project store before the job keeps a failed mkdir from
 	// leaving an unrunnable job behind.
-	if _, err := s.ensureProject(project); err != nil {
+	_, err = s.ensureProject(project)
+	if err != nil {
 		s.writeProjectError(w, project, err)
 		return
 	}
@@ -940,7 +948,8 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	// Create job
 	job := s.jobManager.CreateJob(project, config)
 
-	if err := s.enqueueJob(job.ID); err != nil {
+	err = s.enqueueJob(job.ID)
+	if err != nil {
 		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
 
 		writeAPIError(w, http.StatusTooManyRequests, "queue_full", "server job queue is full")
@@ -952,7 +961,8 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 
-	if err := json.NewEncoder(w).Encode(job); err != nil {
+	err = json.NewEncoder(w).Encode(job)
+	if err != nil {
 		slog.Error("Failed to encode create-job response", "error", err)
 	}
 }
@@ -1026,7 +1036,8 @@ func (s *Server) handleDeleteJob(w http.ResponseWriter, _ *http.Request, jobID s
 		return
 	}
 
-	if err := s.jobManager.DeleteJob(jobID); err != nil {
+	err = s.jobManager.DeleteJob(jobID)
+	if err != nil {
 		if errors.Is(err, ErrInvalidTransition) {
 			writeAPIError(w, http.StatusConflict, "invalid_state", "active jobs must be cancelled before deletion")
 		} else {
@@ -1108,7 +1119,8 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := json.NewEncoder(w).Encode(page); err != nil {
+	err = json.NewEncoder(w).Encode(page)
+	if err != nil {
 		slog.Error("Failed to encode job list response", "error", err)
 	}
 }
@@ -1172,7 +1184,8 @@ func decodeJobListCursor(raw string) (jobListCursor, error) {
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
 
-	if err := decoder.Decode(&cursor); err != nil {
+	err = decoder.Decode(&cursor)
+	if err != nil {
 		return jobListCursor{}, err
 	}
 
@@ -1447,7 +1460,8 @@ func (s *Server) handleGetBestImage(w http.ResponseWriter, r *http.Request, jobI
 	}
 
 	// Encode and send
-	if err := png.Encode(w, img); err != nil {
+	err = png.Encode(w, img)
+	if err != nil {
 		slog.Error("Failed to encode PNG", "error", err)
 	}
 }
@@ -1510,7 +1524,8 @@ func (s *Server) handleGetDiffImage(w http.ResponseWriter, r *http.Request, jobI
 	}
 
 	// Encode and send
-	if err := png.Encode(w, diff); err != nil {
+	err = png.Encode(w, diff)
+	if err != nil {
 		slog.Error("Failed to encode PNG", "error", err)
 	}
 }
@@ -1620,7 +1635,8 @@ func (s *Server) handleGetRefImage(w http.ResponseWriter, r *http.Request, jobID
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 
 	// Encode and send
-	if err := png.Encode(w, ref); err != nil {
+	err = png.Encode(w, ref)
+	if err != nil {
 		slog.Error("Failed to encode PNG", "error", err)
 	}
 }
@@ -1722,7 +1738,8 @@ func (s *Server) resumePausedJob(w http.ResponseWriter, jobID string, allowOptim
 		return
 	}
 
-	if err := s.enqueueJob(jobID); err != nil {
+	err = s.enqueueJob(jobID)
+	if err != nil {
 		resumeErr := s.jobManager.PauseJob(jobID)
 		if resumeErr != nil {
 			slog.Warn("Failed to restore job to paused state", "job_id", jobID, "error", resumeErr)
@@ -1750,7 +1767,8 @@ func (s *Server) resumePausedJob(w http.ResponseWriter, jobID string, allowOptim
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	err = json.NewEncoder(w).Encode(response)
+	if err != nil {
 		slog.Error("Failed to encode resume-job response", "error", err)
 	}
 }
@@ -1780,7 +1798,8 @@ func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string, allo
 		return
 	}
 
-	if err := checkpoint.Validate(); err != nil {
+	err = checkpoint.Validate()
+	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_checkpoint", err.Error())
 		return
 	}
@@ -1835,17 +1854,19 @@ func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string, allo
 	config.ResumeCount = checkpoint.ResumeCount + 1
 	newJob := s.jobManager.CreateJob(s.projectForJob(jobID), config)
 
-	if err := s.jobManager.UpdateJob(newJob.ID, func(j *Job) {
+	err = s.jobManager.UpdateJob(newJob.ID, func(j *Job) {
 		updateBestResult(j, checkpoint.BestParams, checkpoint.BestCost)
 		j.InitialCost = checkpoint.InitialCost
 		j.Iterations = checkpoint.Iteration
 		j.Evaluations = int(checkpoint.Evaluations)
-	}); err != nil {
+	})
+	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "resume_failed", "unable to seed the resumed job")
 		return
 	}
 
-	if err := s.enqueueJob(newJob.ID); err != nil {
+	err = s.enqueueJob(newJob.ID)
+	if err != nil {
 		_ = s.jobManager.FailJob(newJob.ID, "server job queue is full")
 
 		writeAPIError(w, http.StatusTooManyRequests, "queue_full", "server job queue is full")
@@ -1865,7 +1886,8 @@ func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string, allo
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	err = json.NewEncoder(w).Encode(response)
+	if err != nil {
 		slog.Error("Failed to encode fork-job response", "error", err)
 	}
 }
@@ -1892,7 +1914,8 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 		return
 	}
 
-	if failure := s.requireCheckpointStore(); failure != nil {
+	failure := s.requireCheckpointStore()
+	if failure != nil {
 		writeContinuationError(w, failure)
 		return
 	}
@@ -1901,7 +1924,8 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 
-	if err := decoder.Decode(&request); err != nil && !errors.Is(err, io.EOF) {
+	err := decoder.Decode(&request)
+	if err != nil && !errors.Is(err, io.EOF) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid polishing configuration")
 		return
 	}
@@ -1957,7 +1981,7 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 		config.EffectiveSeed = *request.Seed
 	}
 
-	config, err := app.Normalize(config)
+	config, err = app.Normalize(config)
 	if err != nil {
 		// The parent's engine is the failure this endpoint sees in practice: a
 		// completed CMA-ES job inherits its optimizer into the continuation,
@@ -2011,7 +2035,8 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 		return
 	}
 
-	if failure := s.requireCheckpointStore(); failure != nil {
+	failure := s.requireCheckpointStore()
+	if failure != nil {
 		writeContinuationError(w, failure)
 		return
 	}
@@ -2020,12 +2045,14 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 
-	if err := decoder.Decode(&request); err != nil {
+	err := decoder.Decode(&request)
+	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid extension configuration")
 		return
 	}
 
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+	err = decoder.Decode(&struct{}{})
+	if err != io.EOF {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "request body must contain one JSON object")
 		return
 	}
@@ -2080,7 +2107,7 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 		config.PolishingEnabled = *request.Polish
 	}
 
-	config, err := app.Normalize(config)
+	config, err = app.Normalize(config)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid extension configuration")
 		return

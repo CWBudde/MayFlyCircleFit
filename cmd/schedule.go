@@ -230,7 +230,9 @@ func runScheduleCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	var summary scheduleSummaryResponse
-	if err := decodeCLIResponse(body, &summary); err != nil {
+
+	err = decodeCLIResponse(body, &summary)
+	if err != nil {
 		return fmt.Errorf("decode schedule response: %w", err)
 	}
 
@@ -280,7 +282,9 @@ func runScheduleList(cmd *cobra.Command, _ []string) error {
 	}
 
 	var summaries []scheduleSummaryResponse
-	if err := decodeCLIResponse(body, &summaries); err != nil {
+
+	err = decodeCLIResponse(body, &summaries)
+	if err != nil {
 		return fmt.Errorf("decode schedules response: %w", err)
 	}
 
@@ -317,7 +321,9 @@ func runScheduleStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	var detail scheduleDetailResponse
-	if err := decodeCLIResponse(body, &detail); err != nil {
+
+	err = decodeCLIResponse(body, &detail)
+	if err != nil {
 		return fmt.Errorf("decode schedule response: %w", err)
 	}
 
@@ -397,7 +403,9 @@ func runScheduleImport(cmd *cobra.Command, args []string) error {
 	}
 
 	var detail chainDetailResponse
-	if err := decodeCLIResponse(body, &detail); err != nil {
+
+	err = decodeCLIResponse(body, &detail)
+	if err != nil {
 		return fmt.Errorf("decode chain response: %w", err)
 	}
 
@@ -437,7 +445,9 @@ func runScheduleAction(ctx context.Context, output io.Writer, scheduleID, action
 	}
 
 	var summary scheduleSummaryResponse
-	if err := decodeCLIResponse(body, &summary); err != nil {
+
+	err = decodeCLIResponse(body, &summary)
+	if err != nil {
 		return fmt.Errorf("decode schedule response: %w", err)
 	}
 

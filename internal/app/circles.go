@@ -63,7 +63,8 @@ func (s CircleSpecs) Validate() error {
 			return invalid(field("r"), "must be at least 1")
 		}
 
-		if _, _, _, err := parseHexColor(spec.Color); err != nil {
+		_, _, _, err := parseHexColor(spec.Color)
+		if err != nil {
 			return invalid(field("color"), err.Error())
 		}
 

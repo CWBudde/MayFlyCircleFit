@@ -24,7 +24,9 @@ func TestServerRestoresPersistedJobsAndHistory(t *testing.T) {
 	checkpoint.Termination = "completed"
 
 	checkpoint.Timestamp = end
-	if err := persistence.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+	err = persistence.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -45,7 +47,8 @@ func TestServerRestoresPersistedJobsAndHistory(t *testing.T) {
 		}
 	}
 
-	if err := writer.Close(); err != nil {
+	err = writer.Close()
+	if err != nil {
 		t.Fatal(err)
 	}
 

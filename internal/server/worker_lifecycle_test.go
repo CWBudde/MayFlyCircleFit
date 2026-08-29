@@ -112,7 +112,9 @@ func TestLongJobPublishesProgressTraceAndCheckpoint(t *testing.T) {
 	}
 
 	job := server.jobManager.CreateJob(app.DefaultProject, config)
-	if err := server.enqueueJob(job.ID); err != nil {
+
+	err = server.enqueueJob(job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -138,7 +140,8 @@ func TestLongJobPublishesProgressTraceAndCheckpoint(t *testing.T) {
 		t.Fatalf("checkpoint has no live progress: %+v", checkpoint)
 	}
 
-	if err := server.requestCancellation(job.ID); err != nil {
+	err = server.requestCancellation(job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 

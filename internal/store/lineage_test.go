@@ -53,7 +53,9 @@ func TestCheckpointLineageRoundTrip(t *testing.T) {
 	}
 
 	var reloaded Checkpoint
-	if err := json.Unmarshal(data, &reloaded); err != nil {
+
+	err = json.Unmarshal(data, &reloaded)
+	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -73,7 +75,8 @@ func TestCheckpointLineageRoundTrip(t *testing.T) {
 		t.Fatalf("StageIndex = %v, want %d", reloaded.StageIndex, stage)
 	}
 
-	if err := reloaded.Validate(); err != nil {
+	err = reloaded.Validate()
+	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
 
@@ -204,7 +207,9 @@ func TestSaveAndLoadCheckpointPreservesLineage(t *testing.T) {
 	checkpoint := lineageCheckpoint(t, jobID)
 
 	checkpoint.PolishedFrom = parent
-	if err := fsStore.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+	err = fsStore.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		t.Fatalf("SaveCheckpoint() error = %v", err)
 	}
 

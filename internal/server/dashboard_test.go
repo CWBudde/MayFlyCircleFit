@@ -97,7 +97,7 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 	})
 
 	// Force stable states for aggregate assertions and the running row.
-	if err := fixture.server.jobManager.UpdateJob(running.ID, func(job *Job) {
+	err = fixture.server.jobManager.UpdateJob(running.ID, func(job *Job) {
 		job.State = StateRunning
 		job.StartTime = time.Now().Add(-2 * time.Second)
 		job.Iterations = 55
@@ -113,17 +113,19 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 				Timestamp: time.Now().Add(-time.Second * time.Duration(200-i)),
 			})
 		}
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("seed running job: %v", err)
 	}
 
-	if err := fixture.server.jobManager.UpdateJob(completed.ID, func(job *Job) {
+	err = fixture.server.jobManager.UpdateJob(completed.ID, func(job *Job) {
 		done := time.Now()
 		job.State = StateCompleted
 		job.BestCost = 9.9
 		job.InitialCost = 12
 		job.EndTime = &done
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("seed completed job: %v", err)
 	}
 
@@ -136,7 +138,9 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 	}
 
 	var response dashboardResponse
-	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+
+	err = json.NewDecoder(rec.Body).Decode(&response)
+	if err != nil {
 		t.Fatalf("decode dashboard: %v", err)
 	}
 
@@ -251,7 +255,9 @@ func TestDashboardChainCampaignCarriesRunOrderSeries(t *testing.T) {
 	}
 
 	var response dashboardResponse
-	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+
+	err = json.NewDecoder(rec.Body).Decode(&response)
+	if err != nil {
 		t.Fatalf("decode dashboard: %v", err)
 	}
 
@@ -486,7 +492,9 @@ func saveCampaignScheduleForDashboard(
 	record.State = state
 
 	record.UpdatedAt = updated
-	if err := scheduleStore.SaveSchedule(record); err != nil {
+
+	err = scheduleStore.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("save schedule %s: %v", scheduleID, err)
 	}
 
@@ -506,7 +514,9 @@ func saveCampaignScheduleForDashboard(
 	stage.Iterations = 1
 
 	stage.Evaluations = 1
-	if err := scheduleStore.SaveScheduleStage(scheduleID, stage); err != nil {
+
+	err = scheduleStore.SaveScheduleStage(scheduleID, stage)
+	if err != nil {
 		t.Fatalf("save schedule stage %s: %v", scheduleID, err)
 	}
 
@@ -579,7 +589,9 @@ func jsonLeafKeys(t *testing.T, value any) map[string]any {
 	}
 
 	var decoded any
-	if err := json.Unmarshal(encoded, &decoded); err != nil {
+
+	err = json.Unmarshal(encoded, &decoded)
+	if err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
 

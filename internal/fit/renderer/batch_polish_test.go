@@ -395,7 +395,8 @@ func TestPolishCircleBatchValidatesOptions(t *testing.T) {
 		{ActiveSetSize: 1, MaxSweeps: 1, Strategy: "unsupported"},
 	}
 	for _, options := range tests {
-		if _, err := PolishCircleBatchContext(context.Background(), base, &fixedPolishOptimizer{params: params}, params, options); err == nil {
+		_, err := PolishCircleBatchContext(context.Background(), base, &fixedPolishOptimizer{params: params}, params, options)
+		if err == nil {
 			t.Fatalf("PolishCircleBatchContext options %+v returned nil error", options)
 		}
 	}
@@ -773,7 +774,8 @@ func TestPolishCircleBatchContiguousWindowUsesInitialVisitCounts(t *testing.T) {
 
 func TestPlanContiguousWindowsRejectsInvalidVisitCounts(t *testing.T) {
 	for _, initial := range [][]int{{0, 0}, {0, -1, 0}} {
-		if _, _, err := PlanContiguousWindows(3, 1, 1, initial); !errors.Is(err, ErrInvalidOptimizationInput) {
+		_, _, err := PlanContiguousWindows(3, 1, 1, initial)
+		if !errors.Is(err, ErrInvalidOptimizationInput) {
 			t.Fatalf("PlanContiguousWindows(initial %v) error = %v, want invalid input", initial, err)
 		}
 	}
@@ -1334,11 +1336,13 @@ func TestPolishCircleBatchRejectsParallelOptimizerWithoutSessionPool(t *testing.
 	serial := &parallelPolishOptimizer{workers: 1}
 
 	serial.params = circleParams(2, 2, 5, color.NRGBA{A: 255}, 1)
-	if _, err := PolishCircleBatchContext(context.Background(), base, serial, initial, BatchPolishOptions{
+
+	_, err = PolishCircleBatchContext(context.Background(), base, serial, initial, BatchPolishOptions{
 		ActiveSetSize: 1,
 		MaxSweeps:     1,
 		Strategy:      BatchPolishResidualRegion,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("polishing rejected a serial optimizer: %v", err)
 	}
 
@@ -1366,10 +1370,12 @@ func TestPolishCircleBatchRejectsParallelOptimizerWithoutSessionPool(t *testing.
 	pooled := &parallelPolishOptimizer{workers: 4}
 
 	pooled.params = circleParams(2, 2, 5, color.NRGBA{A: 255}, 1)
-	if _, err := PolishCircleBatchContext(context.Background(), NewCPURenderer(ref, 1), pooled, initial, BatchPolishOptions{
+
+	_, err = PolishCircleBatchContext(context.Background(), NewCPURenderer(ref, 1), pooled, initial, BatchPolishOptions{
 		ActiveSetSize: 1,
 		MaxSweeps:     1,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("polishing rejected a concurrent optimizer over a poolable renderer: %v", err)
 	}
 }
@@ -1423,7 +1429,8 @@ func TestPolishCircleBatchBakesThePrefixOncePerSweep(t *testing.T) {
 		base := sessionCountingRenderer{CPURenderer: cpu, counts: counts}
 
 		optimizer := &widthPolishOptimizer{workers: workers}
-		if _, err := PolishCircleBatchContext(context.Background(), base, optimizer, params, BatchPolishOptions{
+
+		_, err := PolishCircleBatchContext(context.Background(), base, optimizer, params, BatchPolishOptions{
 			ActiveSetSize: 2,
 			MaxSweeps:     sweeps,
 			// The window slides toward the front of the vector, so with this many
@@ -1431,7 +1438,8 @@ func TestPolishCircleBatchBakesThePrefixOncePerSweep(t *testing.T) {
 			// that cannot bake would open a full session per slot instead, which
 			// would blur the very counts this test compares.
 			Strategy: BatchPolishContiguousWindow,
-		}); err != nil {
+		})
+		if err != nil {
 			t.Fatalf("PolishCircleBatchContext(width %d) error = %v", workers, err)
 		}
 

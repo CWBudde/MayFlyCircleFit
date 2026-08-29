@@ -420,7 +420,8 @@ func (s *Server) runScheduleStage(
 	// job exists. Without this, a paused campaign would still start one more
 	// stage, and a cancel would find a record naming a job that does not exist
 	// yet and cancel nothing.
-	if state, err := scheduleStateNow(scheduleStore, record.ScheduleID); err == nil && state != store.ScheduleStateRunning {
+	state, err := scheduleStateNow(scheduleStore, record.ScheduleID)
+	if err == nil && state != store.ScheduleStateRunning {
 		slog.Info("Schedule stage not started; the campaign is no longer running",
 			"schedule_id", record.ScheduleID, "stage", index, "state", string(state))
 		// The same "stop without a verdict of our own" signal shutdown uses.
@@ -435,13 +436,16 @@ func (s *Server) runScheduleStage(
 	startedAt := time.Now().UTC()
 
 	stageRecord.StartedAt = &startedAt
-	if err := scheduleStore.SaveScheduleStage(record.ScheduleID, stageRecord); err != nil {
+
+	err = scheduleStore.SaveScheduleStage(record.ScheduleID, stageRecord)
+	if err != nil {
 		return "", fmt.Errorf("record stage %d: %w", index, err)
 	}
 
 	s.publishScheduleChanged(record.ScheduleID)
 
-	if err := s.startScheduleStageJob(jobID, config, source, stage, record.ScheduleID, parentJobID); err != nil {
+	err = s.startScheduleStageJob(jobID, config, source, stage, record.ScheduleID, parentJobID)
+	if err != nil {
 		stageRecord.State = store.ScheduleStateFailed
 
 		stageRecord.Error = err.Error()
@@ -461,7 +465,8 @@ func (s *Server) runScheduleStage(
 	// did not exist yet, so requestCancellation had nothing to cancel. The job
 	// exists now, so the durable intent is replayed against it rather than
 	// letting the stage run for hours after the campaign was cancelled.
-	if state, err := scheduleStateNow(scheduleStore, record.ScheduleID); err == nil && state == store.ScheduleStateCancelled {
+	state, err = scheduleStateNow(scheduleStore, record.ScheduleID)
+	if err == nil && state == store.ScheduleStateCancelled {
 		err := s.requestCancellation(jobID)
 		if err != nil {
 			slog.Debug("Replayed cancel found the stage job already settling",
@@ -496,7 +501,8 @@ func (s *Server) runScheduleStage(
 		stageRecord.Error = job.Error
 	}
 
-	if err := scheduleStore.SaveScheduleStage(record.ScheduleID, stageRecord); err != nil {
+	err = scheduleStore.SaveScheduleStage(record.ScheduleID, stageRecord)
+	if err != nil {
 		return "", fmt.Errorf("record stage %d outcome: %w", index, err)
 	}
 
@@ -626,7 +632,8 @@ func (s *Server) startBaseStageJob(jobID string, config JobConfig, lineage func(
 		return continuationFailure(http.StatusInternalServerError, "job_error", fmt.Sprintf("failed to create base stage job: %v", err))
 	}
 
-	if err := s.jobManager.UpdateJob(job.ID, lineage); err != nil {
+	err = s.jobManager.UpdateJob(job.ID, lineage)
+	if err != nil {
 		return continuationFailure(http.StatusInternalServerError, "job_error", "failed to initialize base stage job")
 	}
 
@@ -635,7 +642,8 @@ func (s *Server) startBaseStageJob(jobID string, config JobConfig, lineage func(
 		s.publishScheduleChanged(initialized.ScheduleID)
 	}
 
-	if err := s.enqueueJob(job.ID); err != nil {
+	err = s.enqueueJob(job.ID)
+	if err != nil {
 		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
 		return continuationFailure(http.StatusTooManyRequests, "queue_full", "server job queue is full")
 	}
@@ -728,7 +736,8 @@ func (s *Server) discardStageAttempt(jobID string) {
 		jobStore = s.store
 	}
 
-	if err := s.jobManager.DeleteJob(jobID); err != nil && !errors.Is(err, ErrInvalidTransition) {
+	err = s.jobManager.DeleteJob(jobID)
+	if err != nil && !errors.Is(err, ErrInvalidTransition) {
 		slog.Debug("No restored job to discard for an adopted stage", "job_id", jobID, "error", err)
 	}
 
@@ -800,7 +809,9 @@ func (s *Server) settleSchedule(scheduleID string, state store.ScheduleState, re
 	record.State = state
 
 	record.Error = reason
-	if err := scheduleStore.SaveSchedule(record); err != nil {
+
+	err = scheduleStore.SaveSchedule(record)
+	if err != nil {
 		slog.Error("Unable to record schedule outcome", "schedule_id", scheduleID, "state", string(state), "error", err)
 		return
 	}

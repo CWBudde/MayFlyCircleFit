@@ -161,7 +161,9 @@ func (s *Server) handleGetReport(w http.ResponseWriter, r *http.Request, jobID s
 	}
 
 	var output bytes.Buffer
-	if err := ui.JobReportPage(report).Render(r.Context(), &output); err != nil {
+
+	err = ui.JobReportPage(report).Render(r.Context(), &output)
+	if err != nil {
 		slog.Error("Failed to render report", "job_id", jobID, "error", err)
 		writeAPIError(w, http.StatusInternalServerError, "report_failed", "failed to render report")
 
@@ -172,7 +174,8 @@ func (s *Server) handleGetReport(w http.ResponseWriter, r *http.Request, jobID s
 	w.Header().Set("Cache-Control", "no-store")
 	setAttachment(w, artifactFilename(jobID, "report.html"))
 
-	if _, err := w.Write(output.Bytes()); err != nil {
+	_, err = w.Write(output.Bytes())
+	if err != nil {
 		slog.Error("Failed to write report", "job_id", jobID, "error", err)
 	}
 }

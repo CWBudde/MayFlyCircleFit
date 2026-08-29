@@ -28,7 +28,9 @@ func TestRequestCLIReportsARefusedConnection(t *testing.T) {
 	}
 
 	endpoint := "http://" + listener.Addr().String() + "/api/v1/jobs"
-	if err := listener.Close(); err != nil {
+
+	err = listener.Close()
+	if err != nil {
 		t.Fatalf("release the port: %v", err)
 	}
 
@@ -60,7 +62,8 @@ func TestRequestCLIReportsATruncatedResponse(t *testing.T) {
 		w.Header().Set("Content-Length", "4096")
 		w.WriteHeader(http.StatusOK)
 
-		if _, err := w.Write([]byte(`[{"jobId":"abc"`)); err != nil {
+		_, err := w.Write([]byte(`[{"jobId":"abc"`))
+		if err != nil {
 			return
 		}
 		// Hijack and close hard so the client sees a short body rather than a

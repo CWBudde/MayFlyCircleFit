@@ -192,11 +192,13 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		return fmt.Errorf("job not found: %s", jobID)
 	}
 
-	if err := jm.StartJob(jobID); err != nil {
+	err := jm.StartJob(jobID)
+	if err != nil {
 		return err
 	}
 
-	if err := ctx.Err(); err != nil {
+	err = ctx.Err()
+	if err != nil {
 		if state := jm.getJobState(jobID); state != StatePaused {
 			markJobCancelled(jm, jobID)
 		}
@@ -210,7 +212,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		return err
 	}
 
-	if err := app.ValidateImageDimensions(ref.Bounds().Dx(), ref.Bounds().Dy()); err != nil {
+	err = app.ValidateImageDimensions(ref.Bounds().Dx(), ref.Bounds().Dy())
+	if err != nil {
 		markJobFailed(jm, jobID, err)
 		return err
 	}
@@ -504,7 +507,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	var callback renderer.CircleCallback
 	if job.Config.SaveSnapshots && checkpointStore != nil {
 		callback = func(circleNum int, params []float64, cost float64, img image.Image) {
-			if err := checkpointStore.SaveCircleSnapshot(jobID, circleNum, img); err != nil {
+			err := checkpointStore.SaveCircleSnapshot(jobID, circleNum, img)
+			if err != nil {
 				slog.Warn("Failed to save circle snapshot", "job_id", jobID, "circle", circleNum, "error", err)
 			}
 
@@ -669,7 +673,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	// disk yet. On a loaded host the gap is wide enough that the very next stage
 	// of a campaign asked for the parent checkpoint and was told it did not
 	// exist, which failed the whole campaign.
-	if err := jm.RecordFinalResult(jobID, iterations, evaluations, result.BestParams, result.BestCost, initialCost, string(result.Termination)); err != nil {
+	err = jm.RecordFinalResult(jobID, iterations, evaluations, result.BestParams, result.BestCost, initialCost, string(result.Termination))
+	if err != nil {
 		return err
 	}
 
@@ -722,7 +727,8 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 	// that landed while the result was being written wins: the transition is
 	// refused, and the job stays cancelled rather than being resurrected as a
 	// completed one whose caller was told it had stopped.
-	if err := jm.MarkJobCompleted(jobID); err != nil {
+	err = jm.MarkJobCompleted(jobID)
+	if err != nil {
 		if errors.Is(err, ErrInvalidTransition) {
 			slog.Info("Job settled before its final result was published", "job_id", jobID, "error", err)
 			return persistenceErr
@@ -788,13 +794,15 @@ func polishBatchResult(
 	mainIterations := batch.Iterations
 
 	mainEvaluations := batch.Evaluations
-	if err := jm.UpdateProgress(
+
+	err = jm.UpdateProgress(
 		job.ID,
 		baseIterations+mainIterations,
 		baseEvaluations+mainEvaluations,
 		batch.BestParams,
 		batch.BestCost,
-	); err != nil {
+	)
+	if err != nil {
 		return nil, fmt.Errorf("record pre-polishing result: %w", err)
 	}
 

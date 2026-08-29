@@ -180,7 +180,9 @@ func BenchmarkPolishResidualRegionSelection(b *testing.B) {
 
 			for range b.N {
 				audit := &incumbentAuditCache{session: cpu}
-				if _, err := selectResidualRegionActiveSet(cpu, audit, params, polishBenchmarkActiveSetSize, nil); err != nil {
+
+				_, err := selectResidualRegionActiveSet(cpu, audit, params, polishBenchmarkActiveSetSize, nil)
+				if err != nil {
 					b.Fatal(err)
 				}
 			}

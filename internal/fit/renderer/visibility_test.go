@@ -92,7 +92,8 @@ func TestAnalyzeCircleVisibilityAcceptsOutsideCenterThatReachesCanvas(t *testing
 }
 
 func TestAnalyzeCircleVisibilityRejectsInvalidInput(t *testing.T) {
-	if _, err := AnalyzeCircleVisibility(nil, nil); err == nil {
+	_, err := AnalyzeCircleVisibility(nil, nil)
+	if err == nil {
 		t.Fatal("AnalyzeCircleVisibility(nil) error = nil")
 	}
 
@@ -100,7 +101,9 @@ func TestAnalyzeCircleVisibilityRejectsInvalidInput(t *testing.T) {
 	reference.SetNRGBA(0, 0, color.NRGBA{A: 255})
 
 	renderer := NewCPURenderer(reference, 1)
-	if _, err := AnalyzeCircleVisibility(renderer, make([]float64, paramsPerCircle-1)); err == nil {
+
+	_, err = AnalyzeCircleVisibility(renderer, make([]float64, paramsPerCircle-1))
+	if err == nil {
 		t.Fatal("AnalyzeCircleVisibility(short params) error = nil")
 	}
 }

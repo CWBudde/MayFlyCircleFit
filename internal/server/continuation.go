@@ -94,7 +94,8 @@ func (s *Server) continuationSourceFor(jobID string, kind continuationKind) (*co
 		return nil, continuationFailure(http.StatusInternalServerError, "checkpoint_error", "failed to load completed checkpoint")
 	}
 
-	if err := checkpoint.Validate(); err != nil {
+	err = checkpoint.Validate()
+	if err != nil {
 		return nil, continuationFailure(http.StatusBadRequest, "invalid_checkpoint", "completed checkpoint is invalid")
 	}
 
@@ -176,7 +177,7 @@ func (s *Server) startContinuation(jobID string, project app.Project, config Job
 		return nil, continuationFailure(http.StatusInternalServerError, "job_error", "failed to initialize continuation job")
 	}
 
-	if err := s.jobManager.UpdateJob(job.ID, func(live *Job) {
+	err = s.jobManager.UpdateJob(job.ID, func(live *Job) {
 		updateBestResult(live, src.checkpoint.BestParams, src.checkpoint.BestCost)
 		live.InitialCost = src.checkpoint.InitialCost
 		live.Iterations = src.checkpoint.Iteration
@@ -185,7 +186,8 @@ func (s *Server) startContinuation(jobID string, project app.Project, config Job
 		if lineage != nil {
 			lineage(live)
 		}
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, continuationFailure(http.StatusInternalServerError, "job_error", "failed to initialize continuation job")
 	}
 
@@ -199,7 +201,8 @@ func (s *Server) startContinuation(jobID string, project app.Project, config Job
 		}
 	}
 
-	if err := s.enqueueJob(job.ID); err != nil {
+	err = s.enqueueJob(job.ID)
+	if err != nil {
 		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
 		return nil, continuationFailure(http.StatusTooManyRequests, "queue_full", "server job queue is full")
 	}

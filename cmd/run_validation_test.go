@@ -196,7 +196,8 @@ func createSimpleRunImage(t *testing.T, path string) {
 	}
 	defer f.Close()
 
-	if err := png.Encode(f, img); err != nil {
+	err = png.Encode(f, img)
+	if err != nil {
 		t.Fatalf("encode test image: %v", err)
 	}
 }

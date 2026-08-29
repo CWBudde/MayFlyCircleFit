@@ -106,7 +106,9 @@ func TestScheduleDetailStaysUnderTheCLIResponseCap(t *testing.T) {
 	// once inside the document — so the worst legal case is measured, not the
 	// tidy one the fixture would otherwise have.
 	record.Document.Name = strings.Repeat("a", app.MaxScheduleNameLen)
-	if err := record.Document.Validate(); err != nil {
+
+	err = record.Document.Validate()
+	if err != nil {
 		t.Fatalf("a name at the limit is not a valid document: %v", err)
 	}
 
@@ -258,12 +260,16 @@ func TestScheduleStageEndpointReturnsTheWholeRecord(t *testing.T) {
 	}
 
 	record.State = store.ScheduleStateCompleted
-	if err := scheduleStore.SaveSchedule(record); err != nil {
+
+	err = scheduleStore.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("SaveSchedule() error = %v", err)
 	}
 
 	stage := sizeTestStages(t, 2)[1]
-	if err := scheduleStore.SaveScheduleStage(testSizeScheduleID, &stage); err != nil {
+
+	err = scheduleStore.SaveScheduleStage(testSizeScheduleID, &stage)
+	if err != nil {
 		t.Fatalf("SaveScheduleStage() error = %v", err)
 	}
 
@@ -277,7 +283,9 @@ func TestScheduleStageEndpointReturnsTheWholeRecord(t *testing.T) {
 	}
 
 	var got store.ScheduleStageRecord
-	if err := json.Unmarshal(recorder.Body.Bytes(), &got); err != nil {
+
+	err = json.Unmarshal(recorder.Body.Bytes(), &got)
+	if err != nil {
 		t.Fatalf("decode stage: %v", err)
 	}
 

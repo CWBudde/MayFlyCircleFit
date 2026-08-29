@@ -81,7 +81,9 @@ func TestProjectTypeKeepsJSONWireFormat(t *testing.T) {
 		}
 
 		server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
-		if _, err := server.ensureProject("christian"); err != nil {
+
+		_, err = server.ensureProject("christian")
+		if err != nil {
 			t.Fatal(err)
 		}
 

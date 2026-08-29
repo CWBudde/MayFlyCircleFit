@@ -41,7 +41,9 @@ func TestCheckpointOptimizerVersionRoundTrips(t *testing.T) {
 	}
 
 	var restored Checkpoint
-	if err := json.Unmarshal(data, &restored); err != nil {
+
+	err = json.Unmarshal(data, &restored)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -79,7 +81,8 @@ func TestLegacyCheckpointHasNoOptimizerVersion(t *testing.T) {
 		t.Fatalf("OptimizerVersion = %q, want empty for a legacy checkpoint", migrated.OptimizerVersion)
 	}
 
-	if err := migrated.Validate(); err != nil {
+	err = migrated.Validate()
+	if err != nil {
 		t.Fatalf("legacy checkpoint is invalid: %v", err)
 	}
 }

@@ -45,7 +45,9 @@ func writeLegacyCheckpoint(t *testing.T, root, jobID string) {
 			PopSize: 30,
 		},
 	}
-	if err := legacy.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+	err = legacy.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 }
@@ -58,7 +60,8 @@ func TestLegacyLayoutRestoresWithoutMigration(t *testing.T) {
 	jobID := "12345678-1234-4234-8234-123456789abc"
 	writeLegacyCheckpoint(t, root, jobID)
 
-	if _, err := os.Stat(filepath.Join(root, projectsDirName)); !os.IsNotExist(err) {
+	_, err := os.Stat(filepath.Join(root, projectsDirName))
+	if !os.IsNotExist(err) {
 		t.Fatalf("projects directory must not exist before any project is created")
 	}
 
@@ -88,7 +91,8 @@ func TestLegacyLayoutRestoresWithoutMigration(t *testing.T) {
 	}
 
 	// Restoring must not have created the projects container.
-	if _, err := os.Stat(filepath.Join(root, projectsDirName)); !os.IsNotExist(err) {
+	_, err = os.Stat(filepath.Join(root, projectsDirName))
+	if !os.IsNotExist(err) {
 		t.Fatalf("restore must not create the projects directory")
 	}
 }
@@ -106,7 +110,9 @@ func TestProjectIsolation(t *testing.T) {
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
 
 	legacyJob := server.jobManager.CreateJob(app.DefaultProject, store.JobConfig{RefPath: "a.png"})
-	if _, err := server.ensureProject("christian"); err != nil {
+
+	_, err = server.ensureProject("christian")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -114,7 +120,9 @@ func TestProjectIsolation(t *testing.T) {
 
 	// The project store must be a distinct directory under projects/.
 	projectDir := filepath.Join(root, projectsDirName, "christian", "jobs")
-	if info, err := os.Stat(projectDir); err != nil || !info.IsDir() {
+
+	info, err := os.Stat(projectDir)
+	if err != nil || !info.IsDir() {
 		t.Fatalf("project jobs directory not created: %v", err)
 	}
 
@@ -152,7 +160,9 @@ func TestListJobsProjectFilterAndValidation(t *testing.T) {
 	}
 
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
-	if _, err := server.ensureProject("christian"); err != nil {
+
+	_, err = server.ensureProject("christian")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -209,7 +219,9 @@ func TestProjectsEndpoint(t *testing.T) {
 	}
 
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
-	if _, err := server.ensureProject("christian"); err != nil {
+
+	_, err = server.ensureProject("christian")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -223,7 +235,9 @@ func TestProjectsEndpoint(t *testing.T) {
 	}
 
 	var projects []projectResponse
-	if err := json.NewDecoder(recorder.Body).Decode(&projects); err != nil {
+
+	err = json.NewDecoder(recorder.Body).Decode(&projects)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -288,15 +302,19 @@ func TestResolveRequestedProjectConflict(t *testing.T) {
 	server := NewServerWithOptions("localhost:0", nil, ServerOptions{})
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/jobs?project=a", nil)
-	if _, err := server.resolveRequestedProject("b", request); err == nil {
+
+	_, err := server.resolveRequestedProject("b", request)
+	if err == nil {
 		t.Fatalf("conflicting project must be rejected")
 	}
 
-	if slug, err := server.resolveRequestedProject("a", request); err != nil || slug != "a" {
+	slug, err := server.resolveRequestedProject("a", request)
+	if err != nil || slug != "a" {
 		t.Fatalf("matching project = %q, %v", slug, err)
 	}
 
-	if slug, err := server.resolveRequestedProject("", request); err != nil || slug != "a" {
+	slug, err = server.resolveRequestedProject("", request)
+	if err != nil || slug != "a" {
 		t.Fatalf("query fallback = %q, %v", slug, err)
 	}
 }
@@ -392,11 +410,14 @@ func TestDeleteRejectsUnresolvableProject(t *testing.T) {
 // directory that cannot become a project must leave a signal in the log.
 func TestDiscoverLogsUnusableProjectDirectory(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, projectsDirName, "Alpha"), 0o755); err != nil {
+
+	err := os.MkdirAll(filepath.Join(root, projectsDirName, "Alpha"), 0o755)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(filepath.Join(root, projectsDirName, "stray.txt"), []byte("x"), 0o600); err != nil {
+	err = os.WriteFile(filepath.Join(root, projectsDirName, "stray.txt"), []byte("x"), 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -430,7 +451,9 @@ func TestDiscoverIgnoresDefaultProjectDirectory(t *testing.T) {
 	root := t.TempDir()
 
 	shadow := filepath.Join(root, projectsDirName, string(app.DefaultProject))
-	if err := os.MkdirAll(shadow, 0o755); err != nil {
+
+	err := os.MkdirAll(shadow, 0o755)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -474,7 +497,8 @@ func TestStoreFaultIsServerErrorWithoutPath(t *testing.T) {
 
 	// A regular file where the projects container belongs makes every project
 	// directory creation fail the way a read-only or NTFS root would.
-	if err := os.WriteFile(filepath.Join(root, projectsDirName), []byte("not a directory"), 0o600); err != nil {
+	err := os.WriteFile(filepath.Join(root, projectsDirName), []byte("not a directory"), 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -529,7 +553,9 @@ func TestJobStatusResponseCarriesProject(t *testing.T) {
 	}
 
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
-	if _, err := server.ensureProject("christian"); err != nil {
+
+	_, err = server.ensureProject("christian")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -612,7 +638,8 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 	// the restart, and the restored side reads only the checkpoint written
 	// below plus the directory it sits in. Creation over HTTP is covered by
 	// TestCreateJobAcceptsProjectAndStillRejectsTypos.
-	if _, err := server.ensureProject("christian"); err != nil {
+	_, err = server.ensureProject("christian")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -633,7 +660,9 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 		Timestamp:     time.Now(),
 		Config:        store.JobConfig{RefPath: "example/Ref.png", Mode: app.ModeJoint, Circles: 1, Iters: 10, PopSize: 30},
 	}
-	if err := projectStore.SaveCheckpoint(job.ID, checkpoint); err != nil {
+
+	err = projectStore.SaveCheckpoint(job.ID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -676,7 +705,9 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 		ID      string `json:"id"`
 		Project string `json:"project"`
 	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &listed); err != nil {
+
+	err = json.Unmarshal(recorder.Body.Bytes(), &listed)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -687,7 +718,8 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 	recorder = httptest.NewRecorder()
 	restarted.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/jobs?project="+string(app.DefaultProject), nil))
 
-	if err := json.Unmarshal(recorder.Body.Bytes(), &listed); err != nil {
+	err = json.Unmarshal(recorder.Body.Bytes(), &listed)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -823,7 +855,9 @@ func writeProjectCheckpoint(t *testing.T, root string, slug app.Project, jobID s
 	t.Helper()
 
 	dir := filepath.Join(root, projectsDirName, string(slug))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+
+	err := os.MkdirAll(dir, 0o755)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -842,7 +876,9 @@ func writeProjectCheckpoint(t *testing.T, root string, slug app.Project, jobID s
 		Timestamp:     time.Now(),
 		Config:        store.JobConfig{RefPath: "example/Ref.png", Mode: app.ModeJoint, Circles: 1, Iters: 10, PopSize: 30},
 	}
-	if err := projectStore.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+	err = projectStore.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 }
@@ -922,7 +958,8 @@ func TestCrossProjectDuplicateJobIDIsDiagnosable(t *testing.T) {
 
 	// The skipped project's checkpoint is untouched: detection only, with no
 	// rename and no migration.
-	if _, err := os.Stat(filepath.Join(root, projectsDirName, "zulu", "jobs", jobID)); err != nil {
+	_, err = os.Stat(filepath.Join(root, projectsDirName, "zulu", "jobs", jobID))
+	if err != nil {
 		t.Fatalf("the skipped project's artifacts must stay on disk: %v", err)
 	}
 }

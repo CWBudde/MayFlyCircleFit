@@ -319,7 +319,9 @@ func createStressJobs(t *testing.T, server *Server, referencePath string, count 
 			}
 
 			var job Job
-			if err := json.NewDecoder(response.Body).Decode(&job); err != nil {
+
+			err = json.NewDecoder(response.Body).Decode(&job)
+			if err != nil {
 				errors <- err
 				return
 			}

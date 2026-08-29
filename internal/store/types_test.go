@@ -42,7 +42,9 @@ func TestCheckpoint_JSONSerialization(t *testing.T) {
 
 	// Deserialize from JSON
 	var restored Checkpoint
-	if err := json.Unmarshal(data, &restored); err != nil {
+
+	err = json.Unmarshal(data, &restored)
+	if err != nil {
 		t.Fatalf("Failed to unmarshal checkpoint: %v", err)
 	}
 
@@ -116,7 +118,9 @@ func TestCheckpoint_JSONIndented(t *testing.T) {
 
 	// Verify it's valid JSON and can be unmarshaled
 	var restored Checkpoint
-	if err := json.Unmarshal(data, &restored); err != nil {
+
+	err = json.Unmarshal(data, &restored)
+	if err != nil {
 		t.Fatalf("Failed to unmarshal indented JSON: %v", err)
 	}
 
@@ -550,7 +554,9 @@ func TestCheckpointAcceptsNewTerminationValues(t *testing.T) {
 			}
 
 			var restored Checkpoint
-			if err := json.Unmarshal(data, &restored); err != nil {
+
+			err = json.Unmarshal(data, &restored)
+			if err != nil {
 				t.Fatalf("Unmarshal() error = %v", err)
 			}
 
@@ -562,7 +568,8 @@ func TestCheckpointAcceptsNewTerminationValues(t *testing.T) {
 				t.Fatalf("SchemaVersion = %d, want %d", restored.SchemaVersion, CheckpointSchemaVersion)
 			}
 
-			if err := restored.Validate(); err != nil {
+			err = restored.Validate()
+			if err != nil {
 				t.Fatalf("Validate() error = %v", err)
 			}
 		})

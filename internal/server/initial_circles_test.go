@@ -62,7 +62,9 @@ func TestRunJobStartsFromTheAuthoredArrangement(t *testing.T) {
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, config)
-	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
+
+	err = runJob(context.Background(), jm, nil, job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -93,7 +95,9 @@ func TestRunJobStartsFromTheAuthoredArrangement(t *testing.T) {
 	unseeded.InitialCircles = nil
 
 	control := jm.CreateJob(app.DefaultProject, unseeded)
-	if err := runJob(context.Background(), jm, nil, control.ID); err != nil {
+
+	err = runJob(context.Background(), jm, nil, control.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -129,14 +133,17 @@ func TestRunJobPrefersAParentsParametersOverAnAuthoredArrangement(t *testing.T) 
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, config)
-	if err := jm.UpdateJob(job.ID, func(live *Job) {
+
+	err = jm.UpdateJob(job.ID, func(live *Job) {
 		updateBestResult(live, parentParams, parentCost)
 		live.InitialCost = parentCost
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
+	err = runJob(context.Background(), jm, nil, job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -215,7 +222,9 @@ func TestSeededBatchRunsWhenTheBatchSizeIsDefaulted(t *testing.T) {
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, normalized)
-	if err := runJob(context.Background(), jm, nil, job.ID); err != nil {
+
+	err = runJob(context.Background(), jm, nil, job.ID)
+	if err != nil {
 		t.Fatalf("runJob() = %v, want a seeded batch run to complete", err)
 	}
 
@@ -265,18 +274,22 @@ func TestExtendClearsTheAuthoredArrangement(t *testing.T) {
 		2, 2, 1, 0, 1, 0, 1,
 	}
 
-	if err := server.jobManager.StartJob(source.ID); err != nil {
+	err = server.jobManager.StartJob(source.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := server.jobManager.CompleteJob(source.ID, 8000, 900000, params, 600, 1000, "completed"); err != nil {
+	err = server.jobManager.CompleteJob(source.ID, 8000, 900000, params, 600, 1000, "completed")
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	checkpoint := store.NewCheckpoint(source.ID, params, 600, 1000, 8000, config)
 
 	checkpoint.Evaluations = 900000
-	if err := fsStore.SaveCheckpoint(source.ID, checkpoint); err != nil {
+
+	err = fsStore.SaveCheckpoint(source.ID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -296,7 +309,9 @@ func TestExtendClearsTheAuthoredArrangement(t *testing.T) {
 	var payload struct {
 		JobID string `json:"jobId"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+
+	err = json.NewDecoder(response.Body).Decode(&payload)
+	if err != nil {
 		t.Fatal(err)
 	}
 

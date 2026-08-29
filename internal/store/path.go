@@ -61,7 +61,8 @@ func validatePathSegment(name string) error {
 // returns its path. It refuses separators, traversal segments, and symlinks, so
 // callers never have to join caller-supplied names into a path themselves.
 func EnsureSecureSubdir(parent, name string) (string, error) {
-	if err := validatePathSegment(name); err != nil {
+	err := validatePathSegment(name)
+	if err != nil {
 		return "", err
 	}
 
@@ -71,7 +72,9 @@ func EnsureSecureSubdir(parent, name string) (string, error) {
 	}
 
 	path := filepath.Join(root, name)
-	if err := ensureSecureDir(root, path); err != nil {
+
+	err = ensureSecureDir(root, path)
+	if err != nil {
 		return "", err
 	}
 
@@ -88,7 +91,8 @@ func canonicalRoot(baseDir string) (string, error) {
 		return "", fmt.Errorf("resolve base directory: %w", err)
 	}
 
-	if err := os.MkdirAll(abs, directoryMode); err != nil {
+	err = os.MkdirAll(abs, directoryMode)
+	if err != nil {
 		return "", fmt.Errorf("create base directory: %w", err)
 	}
 
@@ -106,7 +110,8 @@ func canonicalRoot(baseDir string) (string, error) {
 		return "", errors.New("base path is not a directory")
 	}
 
-	if err := os.Chmod(resolved, directoryMode); err != nil {
+	err = os.Chmod(resolved, directoryMode)
+	if err != nil {
 		return "", fmt.Errorf("secure base directory permissions: %w", err)
 	}
 
@@ -130,11 +135,13 @@ func ensureContained(root, path string) error {
 // Parents are created separately so every component below the canonical root
 // is checked before it is used.
 func ensureSecureDir(root, path string) error {
-	if err := ensureContained(root, path); err != nil {
+	err := ensureContained(root, path)
+	if err != nil {
 		return err
 	}
 
-	if err := os.Mkdir(path, directoryMode); err != nil && !os.IsExist(err) {
+	err = os.Mkdir(path, directoryMode)
+	if err != nil && !os.IsExist(err) {
 		return err
 	}
 
@@ -147,7 +154,8 @@ func ensureSecureDir(root, path string) error {
 		return fmt.Errorf("refusing non-directory or symlink path %q", path)
 	}
 
-	if err := os.Chmod(path, directoryMode); err != nil {
+	err = os.Chmod(path, directoryMode)
+	if err != nil {
 		return err
 	}
 

@@ -26,7 +26,9 @@ func loadReferenceImage(path string) (*image.NRGBA, error) {
 
 	// Convert to NRGBA
 	bounds := img.Bounds()
-	if err := app.ValidateImageDimensions(bounds.Dx(), bounds.Dy()); err != nil {
+
+	err = app.ValidateImageDimensions(bounds.Dx(), bounds.Dy())
+	if err != nil {
 		return nil, err
 	}
 

@@ -440,7 +440,9 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	config.Threads = threads
 
 	config.ConvergencePatience = patience
-	if err := config.Validate(); err != nil {
+
+	err = config.Validate()
+	if err != nil {
 		return NewUsageError(fmt.Errorf("invalid configuration: %w", err))
 	}
 
@@ -460,7 +462,8 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 			}
 		}()
 
-		if err := pprof.StartCPUProfile(f); err != nil {
+		err = pprof.StartCPUProfile(f)
+		if err != nil {
 			return fmt.Errorf("failed to start CPU profile: %w", err)
 		}
 
@@ -491,7 +494,9 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 
 	// Convert to NRGBA
 	bounds := img.Bounds()
-	if err := app.ValidateImageDimensions(bounds.Dx(), bounds.Dy()); err != nil {
+
+	err = app.ValidateImageDimensions(bounds.Dx(), bounds.Dy())
+	if err != nil {
 		return err
 	}
 
@@ -686,7 +691,8 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 	}
 
 	// Save output
-	if err := writePNG(outPath, output); err != nil {
+	err = writePNG(outPath, output)
+	if err != nil {
 		return fmt.Errorf("failed to write output: %w", err)
 	}
 
@@ -773,14 +779,16 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 
 		runtime.GC() // Run GC to get accurate heap stats
 
-		if err := pprof.WriteHeapProfile(f); err != nil {
+		err = pprof.WriteHeapProfile(f)
+		if err != nil {
 			_ = f.Close()
 			return fmt.Errorf("failed to write memory profile: %w", err)
 		}
 		// Closed explicitly, not deferred: a full filesystem reports the
 		// short write here, and a deferred close would discard it and let
 		// the command claim a profile it did not finish writing.
-		if err := f.Close(); err != nil {
+		err = f.Close()
+		if err != nil {
 			return fmt.Errorf("failed to close memory profile: %w", err)
 		}
 

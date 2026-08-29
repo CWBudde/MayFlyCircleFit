@@ -143,7 +143,9 @@ func TestValidateBoundaries(t *testing.T) {
 
 func TestNormalizeOldConfigKeepsPolishingDisabled(t *testing.T) {
 	var old JobConfig
-	if err := json.Unmarshal([]byte(`{"refPath":"reference.png","mode":"batch","circles":3,"iters":100,"popSize":30,"batchSize":3}`), &old); err != nil {
+
+	err := json.Unmarshal([]byte(`{"refPath":"reference.png","mode":"batch","circles":3,"iters":100,"popSize":30,"batchSize":3}`), &old)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -172,7 +174,9 @@ func TestNormalizeOldConfigKeepsPolishingDisabled(t *testing.T) {
 // resumed run diverge from the run it resumes.
 func TestNormalizeOldConfigKeepsParallelEvaluationDisabled(t *testing.T) {
 	var old JobConfig
-	if err := json.Unmarshal([]byte(`{"refPath":"reference.png","mode":"joint","circles":3,"iters":100,"popSize":30}`), &old); err != nil {
+
+	err := json.Unmarshal([]byte(`{"refPath":"reference.png","mode":"joint","circles":3,"iters":100,"popSize":30}`), &old)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -192,9 +196,11 @@ func TestNormalizeOldConfigKeepsParallelEvaluationDisabled(t *testing.T) {
 // checkpoints to resume with the concurrency they were written with.
 func TestNormalizeEvaluationWorkersFallsBackToThreads(t *testing.T) {
 	var old JobConfig
-	if err := json.Unmarshal([]byte(
+
+	err := json.Unmarshal([]byte(
 		`{"refPath":"reference.png","mode":"joint","circles":3,"iters":100,"popSize":30,"threads":3,"parallelEvaluation":true}`,
-	), &old); err != nil {
+	), &old)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -233,9 +239,11 @@ func TestNormalizeEvaluationWorkersFallsBackToThreads(t *testing.T) {
 // rather than at its own popSize.
 func TestNormalizePolishingPopulationDoesNotInheritPopSize(t *testing.T) {
 	var old JobConfig
-	if err := json.Unmarshal([]byte(
+
+	err := json.Unmarshal([]byte(
 		`{"refPath":"reference.png","mode":"batch","circles":8,"iters":100,"popSize":200,"batchSize":8}`,
-	), &old); err != nil {
+	), &old)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -335,7 +343,8 @@ func TestValidateRejectsUnknownPolishingStrategy(t *testing.T) {
 	config.PolishingEnabled = true
 	config.PolishingStrategy = PolishingStrategy("sliding-window")
 
-	if _, err := Normalize(config); err == nil {
+	_, err := Normalize(config)
+	if err == nil {
 		t.Fatal("Normalize accepted an unknown polishing strategy")
 	}
 }
@@ -503,7 +512,9 @@ func TestNormalizeRequestRefusesAWrittenDefault(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var config JobConfig
-			if err := json.Unmarshal([]byte(test.body), &config); err != nil {
+
+			err := json.Unmarshal([]byte(test.body), &config)
+			if err != nil {
 				t.Fatalf("unmarshal fixture: %v", err)
 			}
 

@@ -38,7 +38,8 @@ type TraceWriter struct {
 
 // NewTraceWriter opens the store-owned trace for a job.
 func (fs *FSStore) NewTraceWriter(jobID string, appendMode bool) (*TraceWriter, error) {
-	if _, err := fs.ensureJobDir(jobID); err != nil {
+	_, err := fs.ensureJobDir(jobID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -57,7 +58,8 @@ func (fs *FSStore) NewTraceWriter(jobID string, appendMode bool) (*TraceWriter, 
 		return nil, fmt.Errorf("open trace file: %w", err)
 	}
 
-	if err := file.Chmod(artifactMode); err != nil {
+	err = file.Chmod(artifactMode)
+	if err != nil {
 		_ = file.Close()
 		return nil, fmt.Errorf("secure trace file permissions: %w", err)
 	}
@@ -93,11 +95,13 @@ func (tw *TraceWriter) Write(entry TraceEntry) error {
 		return fmt.Errorf("marshal trace entry: %w", err)
 	}
 
-	if _, err := tw.writer.Write(data); err != nil {
+	_, err = tw.writer.Write(data)
+	if err != nil {
 		return fmt.Errorf("write trace entry: %w", err)
 	}
 
-	if err := tw.writer.WriteByte('\n'); err != nil {
+	err = tw.writer.WriteByte('\n')
+	if err != nil {
 		return fmt.Errorf("write trace newline: %w", err)
 	}
 
@@ -164,7 +168,8 @@ type TraceReader struct {
 
 // NewTraceReader opens the store-owned trace for a job.
 func (fs *FSStore) NewTraceReader(jobID string) (*TraceReader, error) {
-	if _, err := fs.existingJobDir(jobID); err != nil {
+	_, err := fs.existingJobDir(jobID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -245,7 +250,8 @@ func (tr *TraceReader) Close() error {
 }
 
 func (fs *FSStore) DeleteTrace(jobID string) error {
-	if err := validateJobID(jobID); err != nil {
+	err := validateJobID(jobID)
+	if err != nil {
 		return fmt.Errorf("invalid jobID: %w", err)
 	}
 
@@ -254,7 +260,8 @@ func (fs *FSStore) DeleteTrace(jobID string) error {
 		return err
 	}
 
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+	err = os.Remove(path)
+	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("delete trace file: %w", err)
 	}
 

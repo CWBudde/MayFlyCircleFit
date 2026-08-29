@@ -150,7 +150,8 @@ func createParityTestImage(t *testing.T, path string) string {
 	}
 	defer file.Close()
 
-	if err := png.Encode(file, img); err != nil {
+	err = png.Encode(file, img)
+	if err != nil {
 		t.Fatalf("encode parity image: %v", err)
 	}
 

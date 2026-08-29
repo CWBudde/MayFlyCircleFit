@@ -1018,7 +1018,9 @@ func invalid(field, reason string) error {
 
 func randomSeed() (int64, error) {
 	var data [8]byte
-	if _, err := cryptorand.Read(data[:]); err != nil {
+
+	_, err := cryptorand.Read(data[:])
+	if err != nil {
 		return 0, err
 	}
 

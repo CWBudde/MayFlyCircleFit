@@ -102,7 +102,9 @@ func runResumeServer(ctx context.Context, output io.Writer, jobID string) error 
 		PreviousIters *int     `json:"previousIters"`
 		Message       string   `json:"message,omitempty"`
 	}
-	if err := decodeCLIResponse(body, &result); err != nil {
+
+	err = decodeCLIResponse(body, &result)
+	if err != nil {
 		return fmt.Errorf("decode resume response: %w", err)
 	}
 
@@ -148,7 +150,8 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	}
 
 	// Validate checkpoint
-	if err := checkpoint.Validate(); err != nil {
+	err = checkpoint.Validate()
+	if err != nil {
 		return fmt.Errorf("invalid checkpoint: %w", err)
 	}
 
@@ -347,7 +350,8 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	fmt.Printf("  Throughput: %.0f circles/sec\n", cps)
 
 	// Create output directory
-	if err := os.MkdirAll(resumeOutputDir, 0o755); err != nil {
+	err = os.MkdirAll(resumeOutputDir, 0o755)
+	if err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -355,7 +359,9 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	bestImg := rend.Render(bestParams)
 
 	bestPath := filepath.Join(resumeOutputDir, jobID+"_resumed.png")
-	if err := saveImage(bestImg, bestPath); err != nil {
+
+	err = saveImage(bestImg, bestPath)
+	if err != nil {
 		return fmt.Errorf("failed to save output image: %w", err)
 	}
 
@@ -384,7 +390,8 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 		checkpoint.Restarts, optimization.Restarts, updatedConfig.ResumeCount,
 	)
 
-	if err := checkpointStore.SaveCheckpoint(jobID, updatedCheckpoint); err != nil {
+	err = checkpointStore.SaveCheckpoint(jobID, updatedCheckpoint)
+	if err != nil {
 		slog.Warn("Failed to update checkpoint", "error", err)
 	} else {
 		fmt.Printf("✓ Checkpoint updated\n")

@@ -111,7 +111,9 @@ func TestGetDirSize(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 
 	content := []byte("Hello, World!")
-	if err := os.WriteFile(testFile, content, 0o644); err != nil {
+
+	err := os.WriteFile(testFile, content, 0o644)
+	if err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 

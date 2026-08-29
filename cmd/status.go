@@ -157,7 +157,9 @@ func listJobs(ctx context.Context, output io.Writer, endpoint string) error {
 	}
 
 	var page jobListPageResponse
-	if err := decodeCLIResponse(body, &page); err != nil {
+
+	err = decodeCLIResponse(body, &page)
+	if err != nil {
 		return fmt.Errorf("decode jobs response: %w", err)
 	}
 
@@ -165,7 +167,8 @@ func listJobs(ctx context.Context, output io.Writer, endpoint string) error {
 		return errors.New("invalid jobs response: expected a paginated job collection")
 	}
 
-	if err := validateJobListPage(page.Jobs, 0); err != nil {
+	err = validateJobListPage(page.Jobs, 0)
+	if err != nil {
 		return err
 	}
 
@@ -282,11 +285,14 @@ func getJobStatus(ctx context.Context, output io.Writer, endpoint, jobID string)
 	}
 
 	var status jobResponse
-	if err := decodeCLIResponse(body, &status); err != nil {
+
+	err = decodeCLIResponse(body, &status)
+	if err != nil {
 		return fmt.Errorf("decode status response: %w", err)
 	}
 
-	if err := status.validate(true); err != nil {
+	err = status.validate(true)
+	if err != nil {
 		return fmt.Errorf("invalid status response: %w", err)
 	}
 

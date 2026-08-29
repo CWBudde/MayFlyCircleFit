@@ -173,8 +173,10 @@ func TestScheduleCreateRefusesAnInvalidDocumentLocally(t *testing.T) {
 
 	document := `{"seed": 42, "base": {"refPath": "assets/ref.png", "mode": "batch", "circles": 8, "iters": 100, "popSize": 30},
  "steps": [{"type": "sharpen"}]}`
-	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
-		t.Fatalf("write document: %v", err)
+
+	writeErr := os.WriteFile(path, []byte(document), 0o600)
+	if writeErr != nil {
+		t.Fatalf("write document: %v", writeErr)
 	}
 
 	err := runScheduleCreate(testCommand(context.Background(), &bytes.Buffer{}), []string{path})
@@ -459,7 +461,8 @@ func TestScheduleDryRunTouchesNoStore(t *testing.T) {
 		t.Fatalf("NewScheduleRecord() error = %v", err)
 	}
 
-	if err := persistence.SaveSchedule(record); err != nil {
+	err = persistence.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("SaveSchedule() error = %v", err)
 	}
 
@@ -672,7 +675,8 @@ func decodeFixture(t *testing.T, fixture map[string]any, target any) {
 		t.Fatalf("encode fixture: %v", err)
 	}
 
-	if err := json.Unmarshal(encoded, target); err != nil {
+	err = json.Unmarshal(encoded, target)
+	if err != nil {
 		t.Fatalf("decode fixture: %v", err)
 	}
 }

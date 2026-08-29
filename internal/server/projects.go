@@ -102,7 +102,8 @@ func (r *projectRegistry) discover() {
 			continue
 		}
 
-		if _, err := r.GetOrCreate(slug); err != nil {
+		_, err = r.GetOrCreate(slug)
+		if err != nil {
 			// The directory is a valid project that failed to open. Its jobs
 			// disappear from the API and UI, so this is a fault, not a skip.
 			slog.Error("Unable to adopt project directory; its jobs stay hidden",
@@ -143,7 +144,8 @@ func (r *projectRegistry) Get(slug app.Project) (store.Store, bool) {
 
 // GetOrCreate returns the store for a slug, creating it on first use.
 func (r *projectRegistry) GetOrCreate(slug app.Project) (store.Store, error) {
-	if err := app.ValidateProjectSlug(slug); err != nil {
+	err := app.ValidateProjectSlug(slug)
+	if err != nil {
 		return nil, err
 	}
 

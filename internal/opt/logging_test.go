@@ -121,9 +121,10 @@ func TestMayflyLoggerNilIsSafe(t *testing.T) {
 		t.Fatal("WithLogger(nil) stored a logger")
 	}
 
-	if _, err := optimizer.RunContext(context.Background(), Problem{
+	_, err := optimizer.RunContext(context.Background(), Problem{
 		Eval: sphere, Lower: []float64{-1, -1}, Upper: []float64{1, 1}, Dim: 2,
-	}, RunOptions{}); err != nil {
+	}, RunOptions{})
+	if err != nil {
 		t.Fatalf("RunContext() error = %v", err)
 	}
 

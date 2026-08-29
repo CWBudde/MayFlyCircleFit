@@ -39,7 +39,9 @@ func TestLoggingMiddleware(t *testing.T) {
 		handler.ServeHTTP(recorder, request)
 
 		requestID := recorder.Header().Get("X-Request-ID")
-		if _, err := uuid.Parse(requestID); err != nil {
+
+		_, err := uuid.Parse(requestID)
+		if err != nil {
 			t.Fatalf("X-Request-ID = %q, want UUID: %v", requestID, err)
 		}
 
@@ -392,11 +394,14 @@ func TestServer_JobControlActions_E2E(t *testing.T) {
 		PopSize: 30,
 		Seed:    42,
 	})
-	if err := server.jobManager.StartJob(pauseAndResume.ID); err != nil {
+
+	err = server.jobManager.StartJob(pauseAndResume.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := server.jobManager.UpdateProgress(pauseAndResume.ID, 1, 1, []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7}, 125); err != nil {
+	err = server.jobManager.UpdateProgress(pauseAndResume.ID, 1, 1, []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7}, 125)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -443,11 +448,13 @@ func TestServer_JobControlActions_E2E(t *testing.T) {
 		PopSize: 30,
 		Seed:    44,
 	})
-	if err := server.jobManager.StartJob(completedJob.ID); err != nil {
+
+	err = server.jobManager.StartJob(completedJob.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := server.jobManager.CompleteJob(
+	err = server.jobManager.CompleteJob(
 		completedJob.ID,
 		10,
 		100,
@@ -455,7 +462,8 @@ func TestServer_JobControlActions_E2E(t *testing.T) {
 		1.23,
 		1.25,
 		"completed",
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -701,7 +709,9 @@ func TestPausedJobCannotBeCompleted(t *testing.T) {
 	manager := NewJobManager()
 
 	job := manager.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
-	if err := manager.StartJob(job.ID); err != nil {
+
+	err := manager.StartJob(job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -714,7 +724,8 @@ func TestPausedJobCannotBeCompleted(t *testing.T) {
 		t.Fatalf("claimed state = %q, want %q", claimed.State, StatePaused)
 	}
 
-	if err := manager.MarkJobCompleted(job.ID); !errors.Is(err, ErrInvalidTransition) {
+	err = manager.MarkJobCompleted(job.ID)
+	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("MarkJobCompleted error = %v, want %v", err, ErrInvalidTransition)
 	}
 
@@ -722,7 +733,8 @@ func TestPausedJobCannotBeCompleted(t *testing.T) {
 		t.Fatalf("state = %q, want %q", state, StatePaused)
 	}
 
-	if _, err := manager.claimPause(job.ID); !errors.Is(err, ErrInvalidTransition) {
+	_, err = manager.claimPause(job.ID)
+	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("second claimPause error = %v, want %v", err, ErrInvalidTransition)
 	}
 }
@@ -1039,7 +1051,8 @@ func TestReferenceImageMetadata(t *testing.T) {
 }
 
 func TestReferenceImageMetadataUnavailable(t *testing.T) {
-	if _, _, _, err := referenceImageMetadata(filepath.Join(t.TempDir(), "missing.png")); err == nil {
+	_, _, _, err := referenceImageMetadata(filepath.Join(t.TempDir(), "missing.png"))
+	if err == nil {
 		t.Fatal("referenceImageMetadata() error = nil for missing image")
 	}
 }
@@ -1517,7 +1530,8 @@ func createSimpleTestImage(t *testing.T, path string) {
 	}
 	defer f.Close()
 
-	if err := png.Encode(f, img); err != nil {
+	err = png.Encode(f, img)
+	if err != nil {
 		t.Fatalf("Failed to encode test image: %v", err)
 	}
 }
@@ -1866,18 +1880,22 @@ func TestPolishEndpointCreatesCheckpointContinuation(t *testing.T) {
 	source := server.jobManager.CreateJob(app.DefaultProject, config)
 	params := []float64{1, 1, 1, 1, 0, 0, 1}
 
-	if err := server.jobManager.StartJob(source.ID); err != nil {
+	err = server.jobManager.StartJob(source.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := server.jobManager.CompleteJob(source.ID, 8000, 900000, params, 600, 1000, "completed"); err != nil {
+	err = server.jobManager.CompleteJob(source.ID, 8000, 900000, params, 600, 1000, "completed")
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	checkpoint := store.NewCheckpoint(source.ID, params, 600, 1000, 8000, config)
 
 	checkpoint.Evaluations = 900000
-	if err := fsStore.SaveCheckpoint(source.ID, checkpoint); err != nil {
+
+	err = fsStore.SaveCheckpoint(source.ID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 	// Keep the continuation pending so its exact checkpoint initialization can
@@ -1907,7 +1925,9 @@ func TestPolishEndpointCreatesCheckpointContinuation(t *testing.T) {
 	var payload struct {
 		JobID string `json:"jobId"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+
+	err = json.NewDecoder(response.Body).Decode(&payload)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -1967,18 +1987,22 @@ func newExtendableBatchJob(t *testing.T) (*Server, string, []float64) {
 		2, 2, 1, 0, 1, 0, 1,
 	}
 
-	if err := server.jobManager.StartJob(source.ID); err != nil {
+	err = server.jobManager.StartJob(source.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := server.jobManager.CompleteJob(source.ID, 8000, 900000, params, 600, 1000, "completed"); err != nil {
+	err = server.jobManager.CompleteJob(source.ID, 8000, 900000, params, 600, 1000, "completed")
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	checkpoint := store.NewCheckpoint(source.ID, params, 600, 1000, 8000, config)
 
 	checkpoint.Evaluations = 900000
-	if err := fsStore.SaveCheckpoint(source.ID, checkpoint); err != nil {
+
+	err = fsStore.SaveCheckpoint(source.ID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -2061,13 +2085,15 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := png.Encode(file, ref); err != nil {
+	err = png.Encode(file, ref)
+	if err != nil {
 		_ = file.Close()
 
 		t.Fatal(err)
 	}
 
-	if err := file.Close(); err != nil {
+	err = file.Close()
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -2109,12 +2135,15 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 	}
 
 	source := server.jobManager.CreateJob(app.DefaultProject, config)
-	if err := server.jobManager.StartJob(source.ID); err != nil {
+
+	err = server.jobManager.StartJob(source.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := server.jobManager.CompleteJob(source.ID, result.Iterations, result.Evaluations,
-		result.BestParams, result.BestCost, result.InitialCost, string(result.Termination)); err != nil {
+	err = server.jobManager.CompleteJob(source.ID, result.Iterations, result.Evaluations,
+		result.BestParams, result.BestCost, result.InitialCost, string(result.Termination))
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -2122,7 +2151,9 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 	checkpoint.Evaluations = int64(result.Evaluations)
 
 	checkpoint.Termination = string(result.Termination)
-	if err := fsStore.SaveCheckpoint(source.ID, checkpoint); err != nil {
+
+	err = fsStore.SaveCheckpoint(source.ID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 	// Keep the accepted continuation pending so its inherited size is stable to
@@ -2137,7 +2168,9 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 	}
 
 	var resource jobStatusResponse
-	if err := json.NewDecoder(status.Body).Decode(&resource); err != nil {
+
+	err = json.NewDecoder(status.Body).Decode(&resource)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -2154,7 +2187,9 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 	}
 
 	var summaries []JobSummary
-	if err := json.NewDecoder(list.Body).Decode(&summaries); err != nil {
+
+	err = json.NewDecoder(list.Body).Decode(&summaries)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -2173,7 +2208,9 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 	var polishPayload struct {
 		JobID string `json:"jobId"`
 	}
-	if err := json.NewDecoder(polish.Body).Decode(&polishPayload); err != nil {
+
+	err = json.NewDecoder(polish.Body).Decode(&polishPayload)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -2200,7 +2237,9 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 		PreviousCircles int    `json:"previousCircles"`
 		TargetCircles   int    `json:"targetCircles"`
 	}
-	if err := json.NewDecoder(extend.Body).Decode(&payload); err != nil {
+
+	err = json.NewDecoder(extend.Body).Decode(&payload)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -2223,7 +2262,9 @@ func TestRefillLimitedBatchCheckpointContinuesFromActualSize(t *testing.T) {
 	// completed. refill_limit is the typed outcome that makes its actual size a
 	// valid continuation boundary.
 	checkpoint.Termination = string(opt.TerminationCompleted)
-	if err := fsStore.SaveCheckpoint(source.ID, checkpoint); err != nil {
+
+	err = fsStore.SaveCheckpoint(source.ID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -2428,11 +2469,13 @@ func TestServer_GracefulShutdownWithCheckpoint(t *testing.T) {
 	bestPngPath := filepath.Join(jobDir, "best.png")
 	diffPngPath := filepath.Join(jobDir, "diff.png")
 
-	if _, err := os.Stat(bestPngPath); os.IsNotExist(err) {
+	_, err = os.Stat(bestPngPath)
+	if os.IsNotExist(err) {
 		t.Error("best.png artifact should exist")
 	}
 
-	if _, err := os.Stat(diffPngPath); os.IsNotExist(err) {
+	_, err = os.Stat(diffPngPath)
+	if os.IsNotExist(err) {
 		t.Error("diff.png artifact should exist")
 	}
 }

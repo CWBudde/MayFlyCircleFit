@@ -96,7 +96,8 @@ func (s *Server) handleGetParameters(w http.ResponseWriter, r *http.Request, job
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 
-	if err := encoder.Encode(export); err != nil {
+	err = encoder.Encode(export)
+	if err != nil {
 		slog.Error("Failed to encode parameter export", "job_id", jobID, "error", err)
 	}
 }

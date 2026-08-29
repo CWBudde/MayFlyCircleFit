@@ -101,7 +101,9 @@ func TestRunJobRecordsPSNRAndOptionalSSIM(t *testing.T) {
 		RefPath: imgPath, Mode: "joint", Circles: 2, Iters: 5, PopSize: 20, Seed: 42,
 		EnableTrace: true, EnableSSIM: true,
 	})
-	if err := runJob(context.Background(), jm, persistence, job.ID); err != nil {
+
+	err = runJob(context.Background(), jm, persistence, job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -151,7 +153,8 @@ func TestRunJobPersistsExactFinalResultWithoutPeriodicCheckpointing(t *testing.T
 		CheckpointInterval: 0,
 	})
 
-	if err := runJob(context.Background(), jm, persistence, job.ID); err != nil {
+	err = runJob(context.Background(), jm, persistence, job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -176,7 +179,8 @@ func TestRunJobPersistsExactFinalResultWithoutPeriodicCheckpointing(t *testing.T
 			t.Fatal(err)
 		}
 
-		if _, err := os.Stat(path); err != nil {
+		_, err = os.Stat(path)
+		if err != nil {
 			t.Errorf("stat final artifact %s: %v", artifact, err)
 		}
 	}
@@ -198,7 +202,8 @@ func TestLoadRetainedPrefixCanvasVerifiesArtifactCost(t *testing.T) {
 		}
 	}
 
-	if err := fsStore.SavePNGArtifact(parentID, store.ArtifactBest, canvas); err != nil {
+	err = fsStore.SavePNGArtifact(parentID, store.ArtifactBest, canvas)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -247,14 +252,16 @@ func TestSaveCheckpointArtifactsReusesFinalImage(t *testing.T) {
 	probe := &artifactRenderProbe{reference: ref}
 
 	jobID := "00000000-0000-4000-8000-000000000165"
-	if err := saveCheckpointArtifacts(
+
+	err = saveCheckpointArtifacts(
 		fsStore,
 		probe,
 		JobConfig{Backend: app.BackendCPU, Threads: 1},
 		jobID,
 		[]float64{2, 2, 1, 0, 0, 0, 1},
 		best,
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -304,7 +311,8 @@ func TestRunJobPublishesCompletionOnlyAfterTheCheckpointIsDurable(t *testing.T) 
 		RefPath: imgPath, Mode: "batch", Circles: 1, BatchSize: 1, Iters: 3, PopSize: 20, Seed: 42,
 	})
 
-	if err := runJob(context.Background(), jm, persistence, job.ID); err != nil {
+	err = runJob(context.Background(), jm, persistence, job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -325,7 +333,8 @@ func TestRunJobPublishesCompletionOnlyAfterTheCheckpointIsDurable(t *testing.T) 
 		t.Fatalf("job state after runJob = %q, want completed", settled.State)
 	}
 
-	if _, err := persistence.LoadCheckpoint(job.ID); err != nil {
+	_, err = persistence.LoadCheckpoint(job.ID)
+	if err != nil {
 		t.Fatalf("a completed job has no checkpoint to continue from: %v", err)
 	}
 }
@@ -334,20 +343,24 @@ func TestRunJobRefusesToRecordAFinalResultForASettledJob(t *testing.T) {
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "ref.png", Mode: "batch", Circles: 1})
-	if err := jm.StartJob(job.ID); err != nil {
+
+	err := jm.StartJob(job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := jm.CancelJob(job.ID); err != nil {
+	err = jm.CancelJob(job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := jm.RecordFinalResult(job.ID, 1, 1, []float64{1, 2, 3, 4, 5, 6, 7}, 1, 2, "completed")
+	err = jm.RecordFinalResult(job.ID, 1, 1, []float64{1, 2, 3, 4, 5, 6, 7}, 1, 2, "completed")
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("RecordFinalResult on a cancelled job = %v, want ErrInvalidTransition", err)
 	}
 
-	if err := jm.MarkJobCompleted(job.ID); !errors.Is(err, ErrInvalidTransition) {
+	err = jm.MarkJobCompleted(job.ID)
+	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("MarkJobCompleted on a cancelled job = %v, want ErrInvalidTransition", err)
 	}
 
@@ -796,7 +809,9 @@ func TestInheritedContiguousWindowVisitCountsRejectsBrokenLineage(t *testing.T) 
 		BestParams:   make([]float64, 2*app.ParamsPerCircle),
 		PolishedFrom: "00000000-0000-4000-8000-000000000174",
 	}
-	if _, err := inheritedContiguousWindowVisitCounts(persistence, job); !errors.Is(err, store.ErrNotFound) {
+
+	_, err = inheritedContiguousWindowVisitCounts(persistence, job)
+	if !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing parent error = %v, want store.ErrNotFound", err)
 	}
 
@@ -819,7 +834,9 @@ func TestInheritedContiguousWindowVisitCountsRejectsBrokenLineage(t *testing.T) 
 	save(secondID, firstID, config)
 
 	job.PolishedFrom = firstID
-	if _, err := inheritedContiguousWindowVisitCounts(persistence, job); err == nil || !strings.Contains(err.Error(), "cyclic") {
+
+	_, err = inheritedContiguousWindowVisitCounts(persistence, job)
+	if err == nil || !strings.Contains(err.Error(), "cyclic") {
 		t.Fatalf("cyclic lineage error = %v, want an explicit cycle error", err)
 	}
 
@@ -870,7 +887,9 @@ func TestRunJobContiguousWindowContinuationIsDeterministicForSameParentAndSeed(t
 	parent := store.NewCheckpoint(parentID, params, 1000, 2000, 10, config)
 
 	parent.Termination = "completed"
-	if err := persistence.SaveCheckpoint(parentID, parent); err != nil {
+
+	err = persistence.SaveCheckpoint(parentID, parent)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -1087,7 +1106,8 @@ func createTestImage(t *testing.T, path string) {
 	}
 	defer f.Close()
 
-	if err := png.Encode(f, img); err != nil {
+	err = png.Encode(f, img)
+	if err != nil {
 		t.Fatalf("Failed to encode test image: %v", err)
 	}
 }
@@ -1181,9 +1201,11 @@ func TestProgressOptimizerForwardsPipelineInitialSeed(t *testing.T) {
 	wrapped := &progressOptimizer{base: base}
 
 	initial := &opt.Candidate{Params: []float64{0.75}, Cost: 2}
-	if _, err := wrapped.RunContext(context.Background(), opt.Problem{
+
+	_, err := wrapped.RunContext(context.Background(), opt.Problem{
 		Eval: func([]float64) float64 { return 1 }, Lower: []float64{0}, Upper: []float64{1}, Dim: 1,
-	}, opt.RunOptions{Initial: initial, ResumeCount: 3}); err != nil {
+	}, opt.RunOptions{Initial: initial, ResumeCount: 3})
+	if err != nil {
 		t.Fatal(err)
 	}
 

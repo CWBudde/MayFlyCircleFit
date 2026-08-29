@@ -131,7 +131,9 @@ func TestSSDDisableEnvIsTierScalarAlias(t *testing.T) {
 	cmd := exec.Command(os.Args[0], "-test.run=^TestSSDDisableEnvIsTierScalarAlias$")
 
 	cmd.Env = append(tierSubprocessEnv(os.Environ()), simdDisableEnv+"=1", ssdForcedTierHelper+"=2")
-	if output, err := cmd.CombinedOutput(); err != nil {
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
 		t.Fatalf("subprocess failed: %v\n%s", err, output)
 	}
 }
@@ -182,7 +184,9 @@ func runTierSubprocess(t *testing.T, pattern, helper string, extra map[string]st
 	cmd := exec.Command(os.Args[0], "-test.run="+pattern)
 
 	cmd.Env = env
-	if output, err := cmd.CombinedOutput(); err != nil {
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
 		t.Fatalf("subprocess failed: %v\n%s", err, output)
 	}
 }

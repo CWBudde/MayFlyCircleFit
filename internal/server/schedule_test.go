@@ -372,14 +372,16 @@ func TestScheduleAdoptsAStageWhoseJobNeverStarted(t *testing.T) {
 		t.Fatalf("create store: %v", err)
 	}
 
-	if err := persistence.DeleteCheckpoint(interrupted.JobID); err != nil && !errors.Is(err, store.ErrNotFound) {
+	err = persistence.DeleteCheckpoint(interrupted.JobID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("delete checkpoint: %v", err)
 	}
 	// There is nothing left for the restart to restore, which has to be checked
 	// here rather than through the job manager afterwards: the adopted stage runs
 	// under the very same identifier, so a driver that is quick off the mark puts
 	// a fresh job back under it before the assertion could look.
-	if _, err := persistence.LoadCheckpoint(interrupted.JobID); !errors.Is(err, store.ErrNotFound) {
+	_, err = persistence.LoadCheckpoint(interrupted.JobID)
+	if !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("checkpoint for %s survived the delete: %v", interrupted.JobID, err)
 	}
 
@@ -432,7 +434,9 @@ func TestScheduleAdoptsAStageThatAlreadyCompleted(t *testing.T) {
 	rewound.Iterations = 0
 
 	rewound.Evaluations = 0
-	if err := persistence.SaveScheduleStage(scheduleID, &rewound); err != nil {
+
+	err = persistence.SaveScheduleStage(scheduleID, &rewound)
+	if err != nil {
 		t.Fatalf("rewind stage 0: %v", err)
 	}
 
@@ -442,7 +446,9 @@ func TestScheduleAdoptsAStageThatAlreadyCompleted(t *testing.T) {
 	}
 
 	record.State = store.ScheduleStateRunning
-	if err := persistence.SaveSchedule(record); err != nil {
+
+	err = persistence.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("rewind schedule: %v", err)
 	}
 
@@ -500,7 +506,9 @@ func TestScheduleStageIsNotStartedAfterAPause(t *testing.T) {
 	}
 
 	record.State = store.ScheduleStatePaused
-	if err := scheduleStore.SaveSchedule(record); err != nil {
+
+	err = scheduleStore.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("save schedule: %v", err)
 	}
 
@@ -556,7 +564,9 @@ func TestScheduleWantsDriverFollowsTheDurableState(t *testing.T) {
 	}
 
 	record.State = store.ScheduleStatePaused
-	if err := scheduleStore.SaveSchedule(record); err != nil {
+
+	err = scheduleStore.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("save schedule: %v", err)
 	}
 
@@ -569,7 +579,9 @@ func TestScheduleWantsDriverFollowsTheDurableState(t *testing.T) {
 	}
 
 	record.State = store.ScheduleStateRunning
-	if err := scheduleStore.SaveSchedule(record); err != nil {
+
+	err = scheduleStore.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("save schedule: %v", err)
 	}
 
@@ -611,7 +623,9 @@ func TestScheduleAndManualJobShareTheJobLimit(t *testing.T) {
 	}
 
 	var manualJob Job
-	if err := json.Unmarshal(recorder.Body.Bytes(), &manualJob); err != nil {
+
+	err = json.Unmarshal(recorder.Body.Bytes(), &manualJob)
+	if err != nil {
 		t.Fatalf("decode manual job: %v", err)
 	}
 

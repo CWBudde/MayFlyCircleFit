@@ -124,7 +124,9 @@ func TestScheduleStatusPrintsACampaignAtTheStageLimit(t *testing.T) {
 	})
 
 	var output bytes.Buffer
-	if err := runScheduleStatus(testCommand(context.Background(), &output), []string{testScheduleID}); err != nil {
+
+	err = runScheduleStatus(testCommand(context.Background(), &output), []string{testScheduleID})
+	if err != nil {
 		t.Fatalf("runScheduleStatus() error = %v", err)
 	}
 
@@ -193,7 +195,9 @@ func TestScheduleImportPrintsAChainAtTheStageLimit(t *testing.T) {
 	})
 
 	var output bytes.Buffer
-	if err := runScheduleImport(testCommand(context.Background(), &output), []string{detail.LeafJobID}); err != nil {
+
+	err = runScheduleImport(testCommand(context.Background(), &output), []string{detail.LeafJobID})
+	if err != nil {
 		t.Fatalf("runScheduleImport() error = %v", err)
 	}
 
@@ -237,7 +241,9 @@ func TestProjectionIsUnchangedByTheSummaryProjection(t *testing.T) {
 	// A paused campaign keeps its remaining stages — so there is something to
 	// project — without the restored server driving one of them.
 	record.State = store.ScheduleStatePaused
-	if err := persistence.SaveSchedule(record); err != nil {
+
+	err = persistence.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("SaveSchedule() error = %v", err)
 	}
 
@@ -271,7 +277,9 @@ func TestProjectionIsUnchangedByTheSummaryProjection(t *testing.T) {
 	// The command itself first: it has to decode what this server sends, and it
 	// refuses a field it does not know about.
 	var output bytes.Buffer
-	if err := runScheduleStatus(testCommand(context.Background(), &output), []string{testScheduleID}); err != nil {
+
+	err = runScheduleStatus(testCommand(context.Background(), &output), []string{testScheduleID})
+	if err != nil {
 		t.Fatalf("runScheduleStatus() error = %v", err)
 	}
 
@@ -286,7 +294,9 @@ func TestProjectionIsUnchangedByTheSummaryProjection(t *testing.T) {
 	}
 
 	var detail scheduleDetailResponse
-	if err := decodeCLIResponse(body, &detail); err != nil {
+
+	err = decodeCLIResponse(body, &detail)
+	if err != nil {
 		t.Fatalf("decode the schedule: %v", err)
 	}
 

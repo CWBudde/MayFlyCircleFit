@@ -181,7 +181,8 @@ func BenchmarkAuditCircleBatch(b *testing.B) {
 			b.ReportAllocs()
 
 			for range b.N {
-				if _, err := AuditCircleBatch(r, params); err != nil {
+				_, err := AuditCircleBatch(r, params)
+				if err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -192,7 +193,8 @@ func BenchmarkAuditCircleBatch(b *testing.B) {
 			b.ReportAllocs()
 
 			for range b.N {
-				if _, err := AuditCircleBatch(r, params); err != nil {
+				_, err := AuditCircleBatch(r, params)
+				if err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -201,12 +203,15 @@ func BenchmarkAuditCircleBatch(b *testing.B) {
 }
 
 func TestAuditCircleBatchRejectsInvalidInput(t *testing.T) {
-	if _, err := AuditCircleBatch(nil, nil); err == nil {
+	_, err := AuditCircleBatch(nil, nil)
+	if err == nil {
 		t.Fatal("AuditCircleBatch(nil) error = nil")
 	}
 
 	r := NewCPURenderer(image.NewNRGBA(image.Rect(0, 0, 2, 2)), 1)
-	if _, err := AuditCircleBatch(r, make([]float64, paramsPerCircle-1)); err == nil {
+
+	_, err = AuditCircleBatch(r, make([]float64, paramsPerCircle-1))
+	if err == nil {
 		t.Fatal("AuditCircleBatch(short params) error = nil")
 	}
 }
@@ -366,7 +371,8 @@ func TestSeedCirclesFromResidualRejectsInvalidInput(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := SeedCirclesFromResidual(test.canvas, test.reference, test.count, test.options); err == nil {
+			_, err := SeedCirclesFromResidual(test.canvas, test.reference, test.count, test.options)
+			if err == nil {
 				t.Fatal("SeedCirclesFromResidual() error = nil")
 			}
 		})

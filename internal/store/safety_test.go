@@ -180,7 +180,8 @@ func TestAtomicSnapshotAndCircleDataWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := png.Decode(snapshot); err != nil {
+	_, err = png.Decode(snapshot)
+	if err != nil {
 		_ = snapshot.Close()
 
 		t.Fatalf("final snapshot is incomplete: %v", err)
@@ -194,7 +195,9 @@ func TestAtomicSnapshotAndCircleDataWrites(t *testing.T) {
 	}
 
 	var circles []CircleData
-	if err := json.Unmarshal(data, &circles); err != nil {
+
+	err = json.Unmarshal(data, &circles)
+	if err != nil {
 		t.Fatalf("final circles JSON is incomplete: %v", err)
 	}
 
@@ -209,11 +212,14 @@ func TestFSStoreRefusesSymlinkJobDirectory(t *testing.T) {
 	jobID := testJobID(1)
 
 	jobPath := filepath.Join(root, "jobs", jobID)
-	if err := os.Symlink(outside, jobPath); err != nil {
+
+	err := os.Symlink(outside, jobPath)
+	if err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 
-	if err := fs.SaveCheckpoint(jobID, createTestCheckpoint(jobID)); err == nil {
+	err = fs.SaveCheckpoint(jobID, createTestCheckpoint(jobID))
+	if err == nil {
 		t.Fatal("store followed a symlink job directory")
 	}
 
@@ -237,19 +243,24 @@ func TestFSStoreRefusesSymlinkArtifact(t *testing.T) {
 	}
 
 	outside := filepath.Join(t.TempDir(), "outside.json")
-	if err := os.WriteFile(outside, []byte(`{"jobId":"outside"}`), 0o600); err != nil {
+
+	err = os.WriteFile(outside, []byte(`{"jobId":"outside"}`), 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := os.Symlink(outside, filepath.Join(jobDir, string(ArtifactCheckpoint))); err != nil {
+	err = os.Symlink(outside, filepath.Join(jobDir, string(ArtifactCheckpoint)))
+	if err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 
-	if _, err := fs.LoadCheckpoint(jobID); err == nil {
+	_, err = fs.LoadCheckpoint(jobID)
+	if err == nil {
 		t.Fatal("store followed a symlink checkpoint artifact")
 	}
 
-	if _, err := fs.ArtifactPath(jobID, ArtifactCheckpoint); err == nil {
+	_, err = fs.ArtifactPath(jobID, ArtifactCheckpoint)
+	if err == nil {
 		t.Fatal("ArtifactPath returned a symlink artifact")
 	}
 }
@@ -259,12 +270,16 @@ func TestStorePermissionsAndPNGArtifactAPI(t *testing.T) {
 	jobID := testJobID(1)
 
 	checkpoint := createTestCheckpoint(jobID)
-	if err := fs.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+	err := fs.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
-	if err := fs.SavePNGArtifact(jobID, ArtifactBest, img); err != nil {
+
+	err = fs.SavePNGArtifact(jobID, ArtifactBest, img)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -290,7 +305,8 @@ func TestStorePermissionsAndPNGArtifactAPI(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := ensureContained(fs.baseDir, path); err != nil {
+		err = ensureContained(fs.baseDir, path)
+		if err != nil {
 			t.Fatalf("artifact escaped root: %v", err)
 		}
 
@@ -304,7 +320,8 @@ func TestStorePermissionsAndPNGArtifactAPI(t *testing.T) {
 		}
 	}
 
-	if _, err := fs.ArtifactPath(jobID, Artifact("../escape")); err == nil {
+	_, err = fs.ArtifactPath(jobID, Artifact("../escape"))
+	if err == nil {
 		t.Fatal("ArtifactPath accepted an arbitrary artifact name")
 	}
 }
@@ -334,7 +351,9 @@ func TestCheckpointSchemaV2RoundTrip(t *testing.T) {
 	}
 
 	var restored Checkpoint
-	if err := json.Unmarshal(data, &restored); err != nil {
+
+	err = json.Unmarshal(data, &restored)
+	if err != nil {
 		t.Fatal(err)
 	}
 

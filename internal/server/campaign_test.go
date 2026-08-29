@@ -249,18 +249,23 @@ func TestChainDiscoveryStopsOnACycle(t *testing.T) {
 	}
 
 	checkpoint.ExtendedFrom = chainExtendJob
-	if err := persistence.SaveCheckpoint(chainBaseJob, checkpoint); err != nil {
+
+	err = persistence.SaveCheckpoint(chainBaseJob, checkpoint)
+	if err != nil {
 		t.Fatalf("save checkpoint: %v", err)
 	}
 
 	checkpoint.JobID = chainExtendJob
 
 	checkpoint.ExtendedFrom = chainBaseJob
-	if err := persistence.SaveCheckpoint(chainExtendJob, checkpoint); err != nil {
+
+	err = persistence.SaveCheckpoint(chainExtendJob, checkpoint)
+	if err != nil {
 		t.Fatalf("save checkpoint: %v", err)
 	}
 
-	if _, err := chainCheckpoints(persistence, chainExtendJob); err == nil {
+	_, err = chainCheckpoints(persistence, chainExtendJob)
+	if err == nil {
 		t.Fatal("chainCheckpoints() accepted a cyclic lineage")
 	}
 }
@@ -537,11 +542,13 @@ func TestChainListingsShareInvalidationBasedDiscoveryCache(t *testing.T) {
 		t.Fatalf("job creation did not invalidate chain cache: scans=%d", got)
 	}
 
-	if err := server.jobManager.StartJob(job.ID); err != nil {
+	err = server.jobManager.StartJob(job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := server.jobManager.CompleteJob(job.ID, 1, 1, make([]float64, 7), 1, 2, "completed"); err != nil {
+	err = server.jobManager.CompleteJob(job.ID, 1, 1, make([]float64, 7), 1, 2, "completed")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -577,7 +584,9 @@ func TestCampaignViewAPIUsesSourceNeutralReadModel(t *testing.T) {
 	}
 
 	var list campaignViewList
-	if err := json.NewDecoder(listResponse.Body).Decode(&list); err != nil {
+
+	err = json.NewDecoder(listResponse.Body).Decode(&list)
+	if err != nil {
 		t.Fatalf("decode campaign list: %v", err)
 	}
 
@@ -593,7 +602,9 @@ func TestCampaignViewAPIUsesSourceNeutralReadModel(t *testing.T) {
 	}
 
 	var campaign ui.Campaign
-	if err := json.NewDecoder(detailResponse.Body).Decode(&campaign); err != nil {
+
+	err = json.NewDecoder(detailResponse.Body).Decode(&campaign)
+	if err != nil {
 		t.Fatalf("decode campaign detail: %v", err)
 	}
 

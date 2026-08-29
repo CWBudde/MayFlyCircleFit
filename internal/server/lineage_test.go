@@ -111,7 +111,8 @@ func TestJobLineageSurvivesTheCheckpoint(t *testing.T) {
 		t.Fatalf("checkpoint StageIndex = %v, want 0", checkpoint.StageIndex)
 	}
 
-	if err := checkpoint.Validate(); err != nil {
+	err = checkpoint.Validate()
+	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
 

@@ -711,7 +711,9 @@ func TestScheduleDocumentIsBounded(t *testing.T) {
 
 	t.Run("a name at the limit is accepted", func(t *testing.T) {
 		document := fmt.Sprintf(`{"seed": 42, "name": %q, %s}`, strings.Repeat("a", MaxScheduleNameLen), base)
-		if _, err := ParseSchedule([]byte(document)); err != nil {
+
+		_, err := ParseSchedule([]byte(document))
+		if err != nil {
 			t.Fatalf("ParseSchedule() error = %v", err)
 		}
 	})

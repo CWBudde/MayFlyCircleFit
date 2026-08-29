@@ -44,13 +44,16 @@ func TestTraceWriter_WriteAndRead(t *testing.T) {
 	}
 
 	// Close writer
-	if err := writer.Close(); err != nil {
+	err = writer.Close()
+	if err != nil {
 		t.Fatalf("Failed to close writer: %v", err)
 	}
 
 	// Verify file exists
 	tracePath := filepath.Join(tmpDir, "jobs", jobID, "trace.jsonl")
-	if _, err := os.Stat(tracePath); os.IsNotExist(err) {
+
+	_, err = os.Stat(tracePath)
+	if os.IsNotExist(err) {
 		t.Fatalf("Trace file not created: %s", tracePath)
 	}
 
@@ -114,11 +117,13 @@ func TestTraceWriter_Append(t *testing.T) {
 		t.Fatalf("Failed to create trace writer: %v", err)
 	}
 
-	if err := writer.Write(TraceEntry{Iteration: 0, Cost: 1.0, Timestamp: time.Now()}); err != nil {
+	err = writer.Write(TraceEntry{Iteration: 0, Cost: 1.0, Timestamp: time.Now()})
+	if err != nil {
 		t.Fatalf("Failed to write entry: %v", err)
 	}
 
-	if err := writer.Close(); err != nil {
+	err = writer.Close()
+	if err != nil {
 		t.Fatalf("Failed to close writer: %v", err)
 	}
 
@@ -128,11 +133,13 @@ func TestTraceWriter_Append(t *testing.T) {
 		t.Fatalf("Failed to create trace writer in append mode: %v", err)
 	}
 
-	if err := writer.Write(TraceEntry{Iteration: 10, Cost: 0.8, Timestamp: time.Now()}); err != nil {
+	err = writer.Write(TraceEntry{Iteration: 10, Cost: 0.8, Timestamp: time.Now()})
+	if err != nil {
 		t.Fatalf("Failed to write entry: %v", err)
 	}
 
-	if err := writer.Close(); err != nil {
+	err = writer.Close()
+	if err != nil {
 		t.Fatalf("Failed to close writer: %v", err)
 	}
 
@@ -173,12 +180,14 @@ func TestTraceWriter_Flush(t *testing.T) {
 	defer writer.Close()
 
 	// Write entry
-	if err := writer.Write(TraceEntry{Iteration: 0, Cost: 1.0, Timestamp: time.Now()}); err != nil {
+	err = writer.Write(TraceEntry{Iteration: 0, Cost: 1.0, Timestamp: time.Now()})
+	if err != nil {
 		t.Fatalf("Failed to write entry: %v", err)
 	}
 
 	// Flush
-	if err := writer.Flush(); err != nil {
+	err = writer.Flush()
+	if err != nil {
 		t.Fatalf("Failed to flush: %v", err)
 	}
 
@@ -283,7 +292,8 @@ func TestTraceWriter_WithParams(t *testing.T) {
 		Params:    params,
 	}
 
-	if err := writer.Write(entry); err != nil {
+	err = writer.Write(entry)
+	if err != nil {
 		t.Fatalf("Failed to write entry with params: %v", err)
 	}
 
@@ -329,7 +339,8 @@ func TestTraceWriter_EmptyParams(t *testing.T) {
 		Params:    nil, // No params
 	}
 
-	if err := writer.Write(entry); err != nil {
+	err = writer.Write(entry)
+	if err != nil {
 		t.Fatalf("Failed to write entry: %v", err)
 	}
 
@@ -368,17 +379,21 @@ func TestDeleteTrace(t *testing.T) {
 
 	// Verify file exists
 	tracePath := filepath.Join(tmpDir, "jobs", jobID, "trace.jsonl")
-	if _, err := os.Stat(tracePath); os.IsNotExist(err) {
+
+	_, err = os.Stat(tracePath)
+	if os.IsNotExist(err) {
 		t.Fatal("Trace file was not created")
 	}
 
 	// Delete trace
-	if err := DeleteTrace(tmpDir, jobID); err != nil {
+	err = DeleteTrace(tmpDir, jobID)
+	if err != nil {
 		t.Fatalf("Failed to delete trace: %v", err)
 	}
 
 	// Verify file is gone
-	if _, err := os.Stat(tracePath); !os.IsNotExist(err) {
+	_, err = os.Stat(tracePath)
+	if !os.IsNotExist(err) {
 		t.Error("Trace file still exists after delete")
 	}
 }

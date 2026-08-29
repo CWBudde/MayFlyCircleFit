@@ -52,7 +52,8 @@ func TestDecodeParameterCircles(t *testing.T) {
 }
 
 func TestDecodeParameterCirclesRejectsPartialCircle(t *testing.T) {
-	if _, err := decodeParameterCircles(make([]float64, parametersPerCircle+1)); err == nil {
+	_, err := decodeParameterCircles(make([]float64, parametersPerCircle+1))
+	if err == nil {
 		t.Fatal("decodeParameterCircles() error = nil for partial circle")
 	}
 }
@@ -61,7 +62,9 @@ func TestServerGetParameters(t *testing.T) {
 	server := NewServer(":8080", nil)
 
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{Circles: 2})
-	if err := server.jobManager.StartJob(job.ID); err != nil {
+
+	err := server.jobManager.StartJob(job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -69,7 +72,9 @@ func TestServerGetParameters(t *testing.T) {
 		10.25, 20.5, 3.75, 1, 0.5, 0, 0.8,
 		30, 40, 8, 0.1, 0.2, 0.3, 0.4,
 	}
-	if err := server.jobManager.UpdateProgress(job.ID, 17, 23, params, 12.5); err != nil {
+
+	err = server.jobManager.UpdateProgress(job.ID, 17, 23, params, 12.5)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -99,7 +104,9 @@ func TestServerGetParameters(t *testing.T) {
 	}
 
 	var exported parameterExport
-	if err := json.NewDecoder(recorder.Body).Decode(&exported); err != nil {
+
+	err = json.NewDecoder(recorder.Body).Decode(&exported)
+	if err != nil {
 		t.Fatal(err)
 	}
 

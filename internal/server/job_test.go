@@ -493,7 +493,8 @@ func TestCreateJobWithIDHoldsTheIdentifierTheCallerChose(t *testing.T) {
 		t.Fatal("job was not registered under the chosen identifier")
 	}
 
-	if _, err := manager.CreateJobWithID(chosen, app.DefaultProject, JobConfig{RefPath: "ref.png"}); !errors.Is(err, errDuplicateJobID) {
+	_, err = manager.CreateJobWithID(chosen, app.DefaultProject, JobConfig{RefPath: "ref.png"})
+	if !errors.Is(err, errDuplicateJobID) {
 		t.Fatalf("second create error = %v, want errDuplicateJobID", err)
 	}
 
@@ -507,7 +508,8 @@ func TestCreateJobWithIDHoldsTheIdentifierTheCallerChose(t *testing.T) {
 	}
 
 	for _, bad := range []string{"not-a-uuid", "00000000-0000-0000-0000-000000000000", "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"} {
-		if _, err := manager.CreateJobWithID(bad, app.DefaultProject, JobConfig{}); err == nil {
+		_, err := manager.CreateJobWithID(bad, app.DefaultProject, JobConfig{})
+		if err == nil {
 			t.Fatalf("CreateJobWithID(%q) was accepted", bad)
 		}
 	}

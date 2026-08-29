@@ -340,7 +340,8 @@ func TestOptimizeBatchAppendRejectsInvalidPrefix(t *testing.T) {
 		{1, 1, 1, 0, 0, 0, 0},
 		append(transparentParams(2), transparentParams(1)...),
 	} {
-		if _, err := OptimizeBatchAppendContext(context.Background(), base, opaqueBlackOptimizer(), prefix, 2, 1, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+		_, err := OptimizeBatchAppendContext(context.Background(), base, opaqueBlackOptimizer(), prefix, 2, 1, DisabledConvergenceConfig())
+		if !errors.Is(err, ErrInvalidOptimizationInput) {
 			t.Fatalf("prefix %v error = %v, want ErrInvalidOptimizationInput", prefix, err)
 		}
 	}
@@ -627,15 +628,18 @@ func TestPipelineRejectsShortOptimizerResults(t *testing.T) {
 		return make([]float64, dim-1), 0
 	})
 
-	if _, err := OptimizeJoint(base, short, 1, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+	_, err := OptimizeJoint(base, short, 1, DisabledConvergenceConfig())
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("OptimizeJoint() error = %v, want ErrInvalidOptimizationInput", err)
 	}
 
-	if _, err := OptimizeSequential(base, short, 1, DisabledConvergenceConfig(), nil); !errors.Is(err, ErrInvalidOptimizationInput) {
+	_, err = OptimizeSequential(base, short, 1, DisabledConvergenceConfig(), nil)
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("OptimizeSequential() error = %v, want ErrInvalidOptimizationInput", err)
 	}
 
-	if _, err := OptimizeBatch(base, short, 1, 1, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+	_, err = OptimizeBatch(base, short, 1, 1, DisabledConvergenceConfig())
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("OptimizeBatch() error = %v, want ErrInvalidOptimizationInput", err)
 	}
 }
@@ -670,16 +674,20 @@ func TestPipelineRejectsInvalidAndEmptyInputs(t *testing.T) {
 	ref := solidImage(2, 2, color.NRGBA{A: 255})
 	base := NewCPURenderer(ref, 1)
 
-	if _, err := OptimizeJoint(base, transparentOptimizer(), -1, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+	_, err := OptimizeJoint(base, transparentOptimizer(), -1, DisabledConvergenceConfig())
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("OptimizeJoint(-1) error = %v, want ErrInvalidOptimizationInput", err)
 	}
 
-	if _, err := OptimizeBatch(base, transparentOptimizer(), 1, 0, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+	_, err = OptimizeBatch(base, transparentOptimizer(), 1, 0, DisabledConvergenceConfig())
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("OptimizeBatch(batchSize=0) error = %v, want ErrInvalidOptimizationInput", err)
 	}
 
 	empty := NewCPURenderer(image.NewNRGBA(image.Rect(0, 0, 0, 0)), 0)
-	if _, err := OptimizeJoint(empty, nil, 0, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+
+	_, err = OptimizeJoint(empty, nil, 0, DisabledConvergenceConfig())
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("OptimizeJoint(empty reference) error = %v, want ErrInvalidOptimizationInput", err)
 	}
 }
@@ -688,11 +696,13 @@ func TestStagedOptimizationRejectsUnsupportedRenderer(t *testing.T) {
 	ref := solidImage(2, 2, color.NRGBA{A: 255})
 	base := struct{ Renderer }{Renderer: NewCPURenderer(ref, 1)}
 
-	if _, err := OptimizeSequential(base, transparentOptimizer(), 1, DisabledConvergenceConfig(), nil); !errors.Is(err, ErrStagedOptimizationUnsupported) {
+	_, err := OptimizeSequential(base, transparentOptimizer(), 1, DisabledConvergenceConfig(), nil)
+	if !errors.Is(err, ErrStagedOptimizationUnsupported) {
 		t.Fatalf("OptimizeSequential() error = %v, want ErrStagedOptimizationUnsupported", err)
 	}
 
-	if _, err := OptimizeBatch(base, transparentOptimizer(), 1, 1, DisabledConvergenceConfig()); !errors.Is(err, ErrStagedOptimizationUnsupported) {
+	_, err = OptimizeBatch(base, transparentOptimizer(), 1, 1, DisabledConvergenceConfig())
+	if !errors.Is(err, ErrStagedOptimizationUnsupported) {
 		t.Fatalf("OptimizeBatch() error = %v, want ErrStagedOptimizationUnsupported", err)
 	}
 }
@@ -731,7 +741,8 @@ func TestPipelineUsesLifecycleStatsAndCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if _, err := OptimizeJointContext(ctx, base, measuredOptimizer{}, 1, DisabledConvergenceConfig()); !errors.Is(err, context.Canceled) {
+	_, err = OptimizeJointContext(ctx, base, measuredOptimizer{}, 1, DisabledConvergenceConfig())
+	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled OptimizeJointContext() error = %v, want context.Canceled", err)
 	}
 }
