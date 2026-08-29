@@ -1,22 +1,47 @@
 # CMA-ES measurement campaign
 
-This driver owns the registered twelve-block campaigns behind go-cma-es
-`PLAN.md` Phase 11 and this repository's Phase 23. It submits jobs through a
-running server so the dashboard shows the queue and every active job. It
-refuses to overwrite a manifest, which prevents an accidental second submission
-from corrupting the paired design.
+This driver owns the registered campaigns behind go-cma-es `PLAN.md` Phase 11
+and this repository's Phase 23. It submits jobs through a running server so the
+dashboard shows the queue and every active job. It refuses to overwrite a
+manifest, which prevents an accidental second submission from corrupting the
+paired design.
 
-Two designs are registered, selected with `-design`:
+Three designs are registered, selected with `-design`:
 
 - `phase21` (the default) — the original five arms: two Mayfly controls and
-  three CMA-ES arms, all at `popSize` 1024. 60 jobs.
+  three CMA-ES arms, all at `popSize` 1024. 60 jobs, 12 blocks, seeds
+  111001-111012.
 - `lambda` — the eight-arm screen that crosses both covariance modes with four
-  restart-and-population shapes. 96 jobs.
+  restart-and-population shapes. 96 jobs, 12 blocks, seeds 111001-111012
+  (deliberately the same as `phase21`, so three repeated arms measure
+  cross-campaign drift instead of assuming it away).
+- `stagnation-pilot` — nine arms over 3 blocks at seeds 112001-112003,
+  descriptive only. See below.
+
+**A design owns its block count, its seed base and its contrast family.** All
+three used to be global or flag-driven. `-blocks` and `-seed-base` are now
+assertions a caller may make against the registered design, not ways to alter
+one: a mistyped seed base would otherwise silently reuse another campaign's
+seeds, and a mistyped block count would change `df` after the fact.
 
 Designs are enumerated in code rather than assembled from flags, so a campaign
 cannot silently differ from the one that was registered. `-action plan` prints
 a design without submitting it; a manifest may only be written once, so it is
-worth reading before twelve blocks are queued.
+worth reading before a campaign is queued.
+
+## Contrast families are registered, not derived
+
+`phase21` and `lambda` derive their family as every arm against each of two
+controls. That is how their committed reports were produced and it stays
+reproducible — but it is also a trap, and the lambda screen paid for it:
+crossing two factors turned eight arms into **thirteen** contrasts, and Holm's
+first gate at 0.05/13 retained a `p` of 0.00557. A design that adds an arm to
+answer one question raises the bar for every other question it asks.
+
+A design may now name its comparisons instead, and mark at most one primary.
+The number of contrasts a design declares is then the multiplicity it pays for,
+which is a decision made when the campaign is registered rather than a
+consequence of how many arms it happens to run.
 
 Build one identified binary and keep it for the whole campaign:
 
@@ -103,6 +128,50 @@ Small populations cost wall clock at equal evaluations, because a generation is
 a synchronisation barrier. Measured on the 64-core host at seven concurrent
 jobs and eight evaluation workers, lambda 64 ran at 0.67x and lambda 20 at
 0.61x the evaluation rate of lambda 1024.
+
+## The stagnation pilot
+
+`stagnation-pilot` answers the open box of Task 23.1: should a restart strategy
+arm a default stagnation criterion when the caller sets none? Six IPOP arms
+across three `lambda` levels spend **30-57%** of their budget after their last
+improvement, because no criterion is configured, `Stop.enabled()` is false, and
+a schedule cannot end a run that has stopped progressing and hand its budget to
+the next restart.
+
+Nine arms, all separable IPOP, at the two population sizes the registered
+campaign will use — `lambda` 20, where the measured waste is worst and where an
+IPOP ladder stays inside the population range the screen found unremarkable,
+and `lambda` 1024, the shape Phase 21 ran. Each level contributes its own
+no-criterion baseline, so reclaimed budget is read inside the pilot's own three
+blocks rather than against the lambda screen's different seeds.
+
+Windows are half, one and four times Hansen's `120 + 30n/lambda` — 204
+generations at `lambda` 20 and 121 at 1024, for the 56-dimension search. That
+is an **anchor, not a fidelity claim**: go-cma-es stops a run after N
+iterations without sufficient progress, while Hansen's criterion tests a median
+of fitness histories across that span.
+
+**The pilot is descriptive and `analyze` refuses to print a statistic for it.**
+Three blocks cannot support a paired test. It reports each arm's cost, the
+budget it spent and the share of that budget falling after its last
+improvement; the restart counts and per-run termination reasons in the
+`-restarts` CSV are what select the window. The selection rule is fixed before
+the data exists: **take the window that reclaims the most budget while still
+completing at least two restarts, breaking ties toward the Hansen anchor.**
+Selecting it on cost and then testing cost would be selecting on the outcome.
+
+One arm raises `stopMinImprovement` off zero, at `lambda` 20's anchor. The
+committed lambda traces show 30.9% of that arm's recorded improvements are
+smaller than 0.1 cost units and the smallest is 2.7e-05, so whether trivial
+improvements keep resetting the counter is worth one arm. It stays exploratory:
+an absolute cost threshold cannot become a shipped default, because it does not
+transfer to a reference image whose costs differ in scale. The shippable shape
+is window-only, and that is what the other arms measure.
+
+```sh
+./cmaes-measurement -action plan -design stagnation-pilot
+./cmaes-measurement -action submit -design stagnation-pilot
+```
 
 ## Budget and pairing
 
