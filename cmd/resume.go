@@ -375,7 +375,14 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	)
 	updatedCheckpoint.Evaluations = checkpoint.Evaluations + int64(optimization.Evaluations)
 	updatedCheckpoint.Termination = string(optimization.Termination)
-	updatedCheckpoint.Restarts = optimization.Restarts
+	// The continuation's records are added to what the checkpoint already
+	// holds rather than replacing them: its iteration and evaluation counts
+	// accumulate under the same job ID, so replacing the history would leave
+	// the checkpoint claiming totals for work whose per-run record it had
+	// thrown away, and a second resume would erase the first one's for good.
+	updatedCheckpoint.Restarts = opt.AppendContinuedRestartRuns(
+		checkpoint.Restarts, optimization.Restarts, updatedConfig.ResumeCount,
+	)
 
 	if err := checkpointStore.SaveCheckpoint(jobID, updatedCheckpoint); err != nil {
 		slog.Warn("Failed to update checkpoint", "error", err)

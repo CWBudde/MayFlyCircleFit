@@ -316,7 +316,15 @@ Rendering-side invariants live in
   checkpoint written before the field existed, which is why the schema version
   does not move. Each trace sample's optimizer diagnostics carry the matching
   `restart` index: cumulative counts run straight through a restart boundary,
-  so that index is the only thing that says which run produced a sample.
+  so that index is the only thing that says which run produced a sample. The
+  records accumulate over everything one job does. An optimizer wrapped in
+  epochs or cold attempts runs several schedules, each numbered from zero by
+  the engine, and the wrapper renumbers them onto one sequence --- shifting the
+  observed diagnostics the same way, so the trace and the records keep agreeing
+  on what a run is called. A resume adds its runs to the ones the checkpoint
+  already holds instead of replacing them, stamped with the resume count: a
+  continuation drives a fresh schedule numbered from zero again, and it
+  rewrites the trace rather than extending it.
 - **A batch run spends the iterations its configuration asked for, and no
   more.** Every stage is a full optimizer run, refills included, so an
   unbudgeted refill is a silent doubling of a run's compute. Two things keep it

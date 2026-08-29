@@ -559,12 +559,19 @@ func (jm *JobManager) RecordFinalResult(id string, iterations, evaluations int, 
 	return nil
 }
 
-// RecordRestartRuns attaches the per-run records of a finished restart
-// schedule to a running job, so the checkpoint write that follows persists
-// them. It is separate from RecordFinalResult because a restart schedule is
-// the exception rather than the shape of an ordinary result: every other
-// engine would pass nil through one more positional parameter of an already
-// long signature.
+// RecordRestartRuns adds the per-run records of a finished restart schedule to
+// a running job, so the checkpoint write that follows persists them. It is
+// separate from RecordFinalResult because a restart schedule is the exception
+// rather than the shape of an ordinary result: every other engine would pass
+// nil through one more positional parameter of an already long signature.
+//
+// The records accumulate over a job's lifetime instead of replacing what it
+// already holds. A resumed job keeps its cumulative iteration and evaluation
+// counts, so replacing them would leave the job reporting totals for work
+// whose restart history had been dropped, and each resume would erase the
+// termination reasons of every earlier one. The job's resume count is stamped
+// onto the new records, which is what keeps them apart from the earlier ones:
+// a continuation drives a fresh schedule numbered from zero.
 func (jm *JobManager) RecordRestartRuns(id string, runs []opt.RestartRun) error {
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
@@ -576,7 +583,7 @@ func (jm *JobManager) RecordRestartRuns(id string, runs []opt.RestartRun) error 
 		return fmt.Errorf("job not found: %s", id) //nolint:err113 // Matches the neighbouring accessors.
 	}
 
-	job.Restarts = append([]opt.RestartRun(nil), runs...)
+	job.Restarts = opt.AppendContinuedRestartRuns(job.Restarts, runs, job.Config.ResumeCount)
 
 	return nil
 }
@@ -814,6 +821,7 @@ func cloneJob(job *Job) *Job {
 	// seeding from it.
 	cloned.Config.InitialCircles = cloneCircleSpecs(job.Config.InitialCircles)
 	cloned.BestParams = append([]float64(nil), job.BestParams...)
+	cloned.Restarts = append([]opt.RestartRun(nil), job.Restarts...)
 	cloned.CandidateCost = cloneFloat(job.CandidateCost)
 	cloned.PSNR = cloneFloat(job.PSNR)
 	cloned.SSIM = cloneFloat(job.SSIM)

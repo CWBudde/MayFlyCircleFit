@@ -77,7 +77,7 @@ type stageOutcome struct {
 	Termination opt.Termination
 }
 
-// withStage stamps a stage index onto one stage's restart records and appends
+// appendStageRestarts stamps a stage index onto one stage's restart records and appends
 // them to the run's list. The optimizer knows its own restart indices and
 // nothing about the pipeline around it, so the stage is attached here, where
 // it is known, rather than being threaded into the optimizer contract.

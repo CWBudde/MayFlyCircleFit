@@ -78,10 +78,16 @@ func (o *epochOptimizer) RunContext(ctx context.Context, problem Problem, option
 	best := Result{BestCost: math.Inf(1), Termination: TerminationCompleted}
 	initial := options.Initial
 	additionalSeeds := append([]Candidate(nil), options.AdditionalSeeds...)
+	// Every epoch's restart records belong to the one invocation this method
+	// reports, for the same reason its iteration and evaluation counts do.
+	// Keeping only the last epoch's would describe a fraction of the work the
+	// totals already claim.
+	var records restartRecords
 
 	for epoch := range o.epochs {
 		iterationOffset := totalIterations
 		evaluationOffset := totalEvaluations
+		restartOffset := records.offset()
 
 		epochOptions := RunOptions{
 			Initial:         initial,
@@ -95,21 +101,24 @@ func (o *epochOptimizer) RunContext(ctx context.Context, problem Problem, option
 			epochOptions.Observer = func(progress Progress) {
 				progress.Iterations += iterationOffset
 				progress.Evaluations += evaluationOffset
-				options.Observer(progress)
+				options.Observer(shiftRestart(progress, restartOffset))
 			}
 		}
 
 		result, err := lifecycle.RunContext(ctx, problem, epochOptions)
 		totalIterations += result.Iterations
-
 		totalEvaluations += result.Evaluations
+
+		records.record(result.Restarts)
+
 		if len(result.BestParams) > 0 {
 			best = result
 		}
 
 		best.Iterations = totalIterations
-
 		best.Evaluations = totalEvaluations
+		best.Restarts = records.runs
+
 		if err != nil {
 			return best, err
 		}

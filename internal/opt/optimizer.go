@@ -188,9 +188,21 @@ type RestartRun struct {
 	// circle or per batch, and without this their records would pool into one
 	// undifferentiated list.
 	Stage int `json:"stage"`
-	// Restart is the zero-based index within the schedule. Zero is the initial
-	// run, so a schedule that never restarted holds exactly one record.
+	// Restart is the zero-based index of the run within the invocation that
+	// produced it. Zero is the initial run, so a schedule that never restarted
+	// holds exactly one record. An optimizer wrapped in epochs or cold
+	// attempts runs several schedules, each numbered from zero by the engine;
+	// the wrapper renumbers them onto one sequence, so this stays unique
+	// within a stage and keeps matching the trace, which the wrapper shifts
+	// the same way.
 	Restart int `json:"restart"`
+	// Resume is the resume count of the invocation that recorded this run. It
+	// is zero for a job's first run and rises with every resume, which is what
+	// keeps the records a resumed job accumulates distinguishable: a
+	// continuation drives a fresh schedule numbered from zero again, and it
+	// rewrites the trace rather than extending it, so renumbering the records
+	// across a resume instead would leave the two disagreeing.
+	Resume int `json:"resume,omitempty"`
 	// Population is the run's sampled population size. A restart strategy that
 	// grows it — IPOP doubles — makes this the record of what it actually grew
 	// to.
