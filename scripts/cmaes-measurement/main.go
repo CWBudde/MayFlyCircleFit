@@ -27,6 +27,15 @@ import (
 	"github.com/cwbudde/circlefit/internal/store"
 )
 
+// The registered design names, so every place that has to name one -- the
+// switch in campaignDesign, the artifact defaults, and the tests that
+// enumerate them -- cannot drift apart.
+const (
+	designPhase21 = "phase21"
+	designLambda  = "lambda"
+	designPilot   = "stagnation-pilot"
+)
+
 const (
 	defaultBudget  = 6_502_400
 	defaultProject = "cmaes-phase11"
@@ -213,16 +222,50 @@ func parseFlags() settings {
 	flag.StringVar(&config.server, "server", "http://localhost:8085", "serve base URL")
 	flag.StringVar(&config.dataRoot, "data-root", "./data/cmaes-phase11", "serve data root")
 	flag.StringVar(&config.reference, "ref", "example/MayFly-512.png", "reference image")
-	flag.StringVar(&config.manifestPath, "manifest", "./data/cmaes-phase11/manifest.csv", "job manifest")
-	flag.StringVar(&config.resultsPath, "results", "docs/cmaes-measurement.csv", "collected result CSV")
-	flag.StringVar(&config.trajectory, "trajectories", "docs/cmaes-trajectories.csv", "diagnostic trajectory CSV")
-	flag.StringVar(&config.restartsPath, "restarts", "docs/cmaes-restarts.csv", "per-restart outcome CSV")
+	flag.StringVar(&config.manifestPath, "manifest", "", "job manifest (default: the design's own)")
+	flag.StringVar(&config.resultsPath, "results", "", "collected result CSV (default: the design's own)")
+	flag.StringVar(&config.trajectory, "trajectories", "", "diagnostic trajectory CSV (default: the design's own)")
+	flag.StringVar(&config.restartsPath, "restarts", "", "per-restart outcome CSV (default: the design's own)")
 	flag.StringVar(&config.project, "project", defaultProject, "server project")
 	flag.IntVar(&config.blocks, "blocks", 0, "assert the design's paired block count (0 uses it)")
 	flag.IntVar(&config.budget, "budget", defaultBudget, "optimizer evaluation cap")
 	flag.IntVar(&config.workers, "workers", 8, "parallel evaluation workers")
 	flag.Int64Var(&config.seedBase, "seed-base", 0, "assert the design's first block seed prefix (0 uses it)")
 	flag.Parse()
+
+	return withDesignArtifacts(config)
+}
+
+// withDesignArtifacts fills every artifact path the caller left unset with one
+// belonging to the selected design. Without it a second campaign collected
+// with only -design would write over the first one's committed data: the
+// Phase 21 paths are not a neutral default, they are one campaign's record.
+// Submission already refuses to overwrite an existing manifest; this extends
+// that refusal to the CSVs collection writes.
+func withDesignArtifacts(config settings) settings {
+	prefix := "docs/cmaes-"
+	manifest := "manifest.csv"
+
+	if config.design != "" && config.design != designPhase21 {
+		prefix += config.design + "-"
+		manifest = "manifest-" + config.design + ".csv"
+	}
+
+	if config.manifestPath == "" {
+		config.manifestPath = filepath.Join(config.dataRoot, manifest)
+	}
+
+	if config.resultsPath == "" {
+		config.resultsPath = prefix + "measurement.csv"
+	}
+
+	if config.trajectory == "" {
+		config.trajectory = prefix + "trajectories.csv"
+	}
+
+	if config.restartsPath == "" {
+		config.restartsPath = prefix + "restarts.csv"
+	}
 
 	return config
 }
@@ -242,12 +285,12 @@ func campaignDesign(name string, budget int) (design, error) {
 	}
 
 	switch name {
-	case "phase21":
+	case designPhase21:
 		return withDerivedContrasts(design{
 			name: name, baseline: "mayfly-single", secondaryControl: "mayfly-r16",
 			blocks: campaignBlocks, seedBase: 111_000, arms: arms,
 		}), nil
-	case "lambda":
+	case designLambda:
 		screen, screenErr := lambdaScreenArms(budget)
 		if screenErr != nil {
 			return design{}, screenErr
@@ -257,7 +300,7 @@ func campaignDesign(name string, budget int) (design, error) {
 			name: name, baseline: "cmaes-single", secondaryControl: "cmaes-ipop",
 			blocks: campaignBlocks, seedBase: 111_000, arms: screen,
 		}), nil
-	case "stagnation-pilot":
+	case designPilot:
 		pilot, pilotErr := stagnationPilotArms(budget)
 		if pilotErr != nil {
 			return design{}, pilotErr
@@ -1209,31 +1252,67 @@ func reportDescriptive(plan design, names []string, byArm map[string][]resultRow
 	fmt.Println("| arm | mean | best | worst | mean evaluations | % of cap | % spent after last improvement |")
 	fmt.Println("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
 
+	capacity := plan.evaluationCap()
+
 	for _, name := range names {
 		rows := byArm[name]
 		values := costs(rows)
 		mean, _ := meanSD(values)
 
+		// Both shares are ratios of totals rather than means of per-job
+		// ratios: the jobs of one arm do not all spend the same number of
+		// evaluations, so averaging their fractions would weight a short run
+		// exactly like a long one and misstate the budget share the pilot
+		// exists to measure.
 		var final, wasted float64
 		for _, row := range rows {
 			final += float64(row.FinalEvaluations)
-			if row.FinalEvaluations > 0 {
-				wasted += float64(row.FinalEvaluations-row.ScoredEvaluations) / float64(row.FinalEvaluations)
-			}
+			wasted += float64(row.FinalEvaluations - row.ScoredEvaluations)
+		}
+
+		var share float64
+		if final > 0 {
+			share = wasted / final * 100
 		}
 
 		final /= float64(len(rows))
-		wasted /= float64(len(rows))
 
 		fmt.Printf("| `%s` | %.2f | %.2f | %.2f | %.0f | %.1f%% | %.1f%% |\n",
 			name, mean, slices.Min(values), slices.Max(values),
-			final, final/float64(defaultBudget)*100, wasted*100)
+			final, final/float64(capacity)*100, share)
 	}
 
 	fmt.Println("\nRestart counts and per-run termination reasons are in the -restarts CSV;")
 	fmt.Println("they, not the costs above, are what selects the window for the registered campaign.")
 
 	return nil
+}
+
+// evaluationCap is the per-job evaluation budget this design's arms were built
+// from, read back off the arms rather than assumed from defaultBudget: a
+// campaign submitted with a smaller -budget would otherwise report its spend
+// as a share of a cap it never had. Only CMA-ES spends exactly lambda
+// evaluations per iteration, so only there is iters*popSize the cap; a Mayfly
+// arm is matched to the fixed campaign budget by shape instead.
+func (d design) evaluationCap() int {
+	highest := 0
+
+	for _, current := range d.arms {
+		spend := defaultBudget
+		if current.optimizer != "mayfly" {
+			spend = current.iters * current.popSize
+		}
+
+		if spend > highest {
+			highest = spend
+		}
+	}
+
+	if highest == 0 {
+		return defaultBudget
+	}
+
+	return highest
 }
 
 // buildContrasts evaluates the family the design registered. All of them are

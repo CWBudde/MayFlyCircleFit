@@ -97,6 +97,19 @@ labels a non-completed checkpoint `interrupted`. It deliberately prints no
 inferential statistics. See
 [`docs/cmaes-preliminary-report.md`](../../docs/cmaes-preliminary-report.md).
 
+## A design owns its artifact paths
+
+`-manifest`, `-results`, `-trajectories` and `-restarts` default to the
+selected design's own files rather than to Phase 21's. `phase21` keeps
+`manifest.csv` in the data root and `docs/cmaes-measurement.csv`,
+`docs/cmaes-trajectories.csv`, `docs/cmaes-restarts.csv`; every other design
+carries its name, so `-design stagnation-pilot` collects into
+`docs/cmaes-stagnation-pilot-measurement.csv` and its siblings. Collecting a
+second campaign with nothing but `-design` therefore cannot write over the
+first one's committed record, which is the same refusal submission already
+makes for an existing manifest. Passing any of the four flags still overrides
+the default.
+
 ## The lambda screen
 
 `-design lambda` answers the two questions `docs/cmaes-report.md` left open.
@@ -196,9 +209,9 @@ interpret.
 
 ## Restart records
 
-`-action collect` writes a third file, `-restarts` (default
-`docs/cmaes-restarts.csv`), holding one row per independent run of every
-restart schedule in the campaign: `arm, block, seed, stage, restart, regime,
+`-action collect` writes a third file, `-restarts` (the selected design's own
+path, `docs/cmaes-restarts.csv` for `phase21`), holding one row per
+independent run of every restart schedule in the campaign: `arm, block, seed, stage, restart, regime,
 population, iterations, evaluations, bestCost, termination`.
 
 It exists because the result CSV's `termination` column cannot describe a

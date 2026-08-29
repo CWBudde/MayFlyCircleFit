@@ -262,14 +262,6 @@ func TestLambdaScreenRejectsAnIndivisibleBudget(t *testing.T) {
 	}
 }
 
-// The registered design names, so a test that enumerates them cannot drift
-// from the names campaignDesign accepts.
-const (
-	designPhase21 = "phase21"
-	designLambda  = "lambda"
-	designPilot   = "stagnation-pilot"
-)
-
 func TestCampaignDesignsAreNamedAndClosed(t *testing.T) {
 	t.Parallel()
 
@@ -408,6 +400,12 @@ func TestRegisteredDesignsUseDisjointSeedPrefixes(t *testing.T) {
 	// a new design has to pick a free one.
 	used := make(map[int64]string)
 
+	// phase21 and lambda deliberately share seeds: three lambda arms repeat
+	// Phase 21 so cross-campaign drift is measured. The exception is recorded
+	// as an unordered pair, so it does not depend on the order this test
+	// happens to visit the designs in.
+	shared := map[[2]string]bool{{designPhase21, designLambda}: true, {designLambda, designPhase21}: true}
+
 	for _, name := range []string{designPhase21, designLambda, designPilot} {
 		plan, err := campaignDesign(name, defaultBudget)
 		if err != nil {
@@ -416,9 +414,7 @@ func TestRegisteredDesignsUseDisjointSeedPrefixes(t *testing.T) {
 
 		for block := 1; block <= plan.blocks; block++ {
 			seed := plan.seedBase + int64(block)
-			// phase21 and lambda deliberately share seeds: three lambda arms
-			// repeat Phase 21 so cross-campaign drift is measured.
-			if owner, taken := used[seed]; taken && (owner != designPhase21 || name != designLambda) {
+			if owner, taken := used[seed]; taken && !shared[[2]string{owner, name}] {
 				t.Errorf("designs %s and %s both use seed %d", owner, name, seed)
 			}
 
@@ -559,5 +555,64 @@ func TestDerivedContrastsMatchTheLambdaScreenFamily(t *testing.T) {
 
 	if len(plan.contrasts) != 13 {
 		t.Errorf("lambda design registers %d contrasts, want 13", len(plan.contrasts))
+	}
+}
+
+// testDataRoot is any data root: the artifact defaults only join it with the
+// design's manifest name.
+const testDataRoot = "./data/cmaes-phase11"
+
+func TestDesignArtifactDefaultsAreDistinctPerDesign(t *testing.T) {
+	t.Parallel()
+
+	// Collecting a second campaign with only -design must not write over the
+	// first one's committed record.
+	phase21 := withDesignArtifacts(settings{design: designPhase21, dataRoot: testDataRoot})
+	pilot := withDesignArtifacts(settings{design: designPilot, dataRoot: testDataRoot})
+
+	if phase21.resultsPath != "docs/cmaes-measurement.csv" || phase21.trajectory != "docs/cmaes-trajectories.csv" {
+		t.Errorf("phase21 artifacts = %q, %q, want the committed campaign's paths",
+			phase21.resultsPath, phase21.trajectory)
+	}
+
+	for _, pair := range [][2]string{
+		{phase21.resultsPath, pilot.resultsPath},
+		{phase21.trajectory, pilot.trajectory},
+		{phase21.restartsPath, pilot.restartsPath},
+		{phase21.manifestPath, pilot.manifestPath},
+	} {
+		if pair[0] == pair[1] {
+			t.Errorf("phase21 and the pilot share artifact path %q", pair[0])
+		}
+	}
+}
+
+func TestExplicitArtifactPathsSurviveTheDesignDefaults(t *testing.T) {
+	t.Parallel()
+
+	config := withDesignArtifacts(settings{
+		design: designPilot, dataRoot: testDataRoot,
+		resultsPath: "docs/elsewhere.csv",
+	})
+
+	if config.resultsPath != "docs/elsewhere.csv" {
+		t.Errorf("results = %q, want the caller's path", config.resultsPath)
+	}
+}
+
+func TestEvaluationCapFollowsTheSubmittedBudget(t *testing.T) {
+	t.Parallel()
+
+	// The descriptive report divides by this, so a campaign run at half the
+	// budget has to report its spend against half the cap.
+	half := defaultBudget / 2
+
+	plan, err := campaignDesign(designPilot, half)
+	if err != nil {
+		t.Fatalf("campaignDesign: %v", err)
+	}
+
+	if got := plan.evaluationCap(); got != half {
+		t.Errorf("evaluationCap = %d, want %d", got, half)
 	}
 }
