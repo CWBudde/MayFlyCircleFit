@@ -20,10 +20,15 @@ built to test:
   cost units *worse* than `cmaes-ipop` (`t` = -0.04); `cmaes-ipop-l20` scores
   11.97 better (`t` = +0.33). A sixteen-fold and a fifty-one-fold reduction in
   the initial population move the mean by less than a tenth of its own standard
-  deviation.
-- **Separable covariance alone does nothing.** `sep-cmaes-single` beats
-  `cmaes-single` by 3.97 (`t` = +0.10). The +90.24 that `sep-cmaes-ipop` won in
-  Phase 21 is not attributable to the covariance mode on its own.
+  deviation. Both of those registered contrasts hold covariance at *full*; the
+  matching simple effects inside the separable family are computed below, are
+  the same size and the same null, and are not part of the registered thirteen.
+- **Separable covariance shows no measured effect on its own.**
+  `sep-cmaes-single` beats `cmaes-single` by 3.97 (`t` = +0.10), which is a
+  failure to detect an effect at twelve blocks, not a demonstration that there
+  is none. This screen therefore does not show the +90.24 that `sep-cmaes-ipop`
+  won in Phase 21 to come from the covariance mode on its own; it leaves the
+  question open with a loose bound.
 
 What the screen did find, outside its registered design, is that `lambda` acts
 on **variance** rather than on the mean. That is reported below as exploratory,
@@ -40,7 +45,7 @@ evaluation workers, CPU backend with the exact AVX2 compositor, ordinary stage
 convergence disabled, trace and optimizer diagnostics on. Identical to the
 Phase 21 campaign in every respect except the arm set.
 
-| Arm | Covariance | Restarts | `lambda` | Iterations |
+| Arm | Covariance | Restarts | `lambda` | Iterations at cap |
 | --- | --- | --- | ---: | ---: |
 | `cmaes-single` | full | none | 1024 | 6350 |
 | `cmaes-ipop` | full | IPOP | 1024 | 6350 |
@@ -50,6 +55,13 @@ Phase 21 campaign in every respect except the arm set.
 | `sep-cmaes-ipop` | separable | IPOP | 1024 | 6350 |
 | `sep-cmaes-ipop-l64` | separable | IPOP | 64 | 101600 |
 | `sep-cmaes-ipop-l20` | separable | IPOP | 20 | 325120 |
+
+The `Iterations at cap` column is derived, not observed: it is
+6,502,400 / `lambda`, the generation count an arm would reach if it spent the
+whole budget. The two non-restarting arms stop early on `TolFun` and never get
+there, and a restart schedule splits its generations across a ladder of runs, so
+no arm's actual run length is a single number in this table. Observed final
+evaluation counts are in "Where the budget went" below and per job in the CSV.
 
 **Every arm is evaluation-matched by construction, not by post-hoc truncation.**
 `lambda` levels are admitted only if they divide the budget exactly, so
@@ -96,6 +108,26 @@ Against the secondary control `cmaes-ipop`:
 | `sep-cmaes-ipop` | +21.27 | +0.78 | 0.45302 | retain | 7/12 |
 | `sep-cmaes-ipop-l64` | +23.57 | +0.84 | 0.41711 | retain | 6/12 |
 | `sep-cmaes-ipop-l20` | +42.92 | +1.72 | 0.11400 | retain | 9/12 |
+
+The registered family compares every candidate against `cmaes-single` and
+`cmaes-ipop`, both full-covariance, so it contains no contrast that varies
+`lambda` *within* the separable family. Those two simple effects are computable
+from the committed CSV and are given here as **unregistered and exploratory**;
+they carry no Holm column because they were not part of the family that was
+corrected.
+
+| contrast | gain | t (df=11) | p | blocks won |
+| --- | ---: | ---: | ---: | ---: |
+| `sep-cmaes-ipop-l64` vs `sep-cmaes-ipop` | +2.31 | +0.12 | 0.90543 | 6/12 |
+| `sep-cmaes-ipop-l20` vs `sep-cmaes-ipop` | +21.66 | +1.22 | 0.24884 | 7/12 |
+
+They agree with the registered full-covariance pair in sign, size and outcome:
+reducing `lambda` sixteen-fold or fifty-one-fold inside the separable family
+moves the mean by less than half a standard error, and neither would clear even
+the uncorrected `t` = 2.20. So the `lambda` conclusion is not an artefact of
+having tested it only under full covariance — but it rests on two contrasts that
+were declared after the data were seen, and a screen that wants to establish it
+should register them.
 
 Six of the seven arms beat the baseline on the mean and four clear the
 uncorrected `t` = 2.20. None clears the corrected bar. **Read the table as
@@ -238,6 +270,10 @@ columns is a representation difference, not a stability difference. Cite
   null. `sep-cmaes-ipop-l20` has the best mean, the lowest standard deviation
   and eleven of twelve blocks, and none of that is licence to call it the
   winner or to change a default.
+- **The `lambda` conclusion leans partly on unregistered contrasts.** The two
+  registered contrasts that isolate `lambda` are both full-covariance. The
+  separable simple effects agree, but they were declared after the data were
+  seen and are not corrected with the family.
 - **A null is not equivalence.** The screen bounds the `lambda` effect on the
   mean loosely, not tightly: the `cmaes-ipop-l20` contrast has a standard error
   of about 36 cost units, so an effect would have had to reach roughly 80 units
@@ -265,17 +301,20 @@ Specifically:
 
 - **Leave `lambda` pinned to `popSize`.** The worry that 1024 against Hansen's 16
   was costing quality is not supported: a fifty-one-fold reduction moved the mean
-  by `t` = 0.33. Decoupling `lambda` from `popSize` is still defensible as a
-  surface-completeness change, but it should not be justified by a measured gain,
-  because there isn't one.
+  by `t` = 0.33 under full covariance, and by `t` = 1.22 in the unregistered
+  separable simple effect. Decoupling `lambda` from `popSize` is still
+  defensible as a surface-completeness change, but it should not be justified by
+  a measured gain, because there isn't one.
 - **Do not lower `app.MinPopulation` to 16.** The open box in Task 23.3 asked
   whether the limit should reach Hansen's default. Nothing measured here wants
   it: `lambda` = 20 and `lambda` = 64 are indistinguishable from `lambda` = 1024
   on the mean, so 16 has no case that 20 does not already fail to make.
 - **Do not read `sep-*` as the recommended covariance mode on its own.**
-  `sep-cmaes-single` is a null against `cmaes-single`. The Phase 21 winner's
-  advantage, whatever its size, is not attributable to the covariance mode
-  independently of the restart strategy.
+  `sep-cmaes-single` is a null against `cmaes-single`, so nothing here
+  attributes the Phase 21 winner's advantage to the covariance mode
+  independently of the restart strategy. That is an absence of evidence and not
+  evidence of absence: an effect smaller than roughly 80 cost units would have
+  gone undetected, so a separable default is unsupported rather than refuted.
 - **The stagnation criterion is now the highest-value open question.** It is the
   one intervention with a large, measured, consistent quantity behind it — 30%
   to 57% of six arms' budgets, across three `lambda` levels — rather than a

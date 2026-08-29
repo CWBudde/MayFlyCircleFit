@@ -68,8 +68,9 @@ ones that will change what you propose:
   evaluation-matched by construction; all thirteen paired contrasts retain their
   null under Holm. `lambda` at 20, 64 and 1024 is indistinguishable on the mean
   (`lambda` 64 against 1024 is `t` = -0.04), and separable covariance *without*
-  restarts is a null against full (`t` = +0.10), so Phase 21's winner is not
-  explained by its covariance mode alone. **Read before proposing a `lambda`
+  restarts is a null against full (`t` = +0.10), so nothing in the screen
+  explains Phase 21's winner by its covariance mode alone — an undetected
+  effect at twelve blocks, not a measured zero. **Read before proposing a `lambda`
   default or lowering `app.MinPopulation` to Hansen's 16; neither has a measured
   case.** Two by-products matter beyond the screen. Its `distributionExtent`
   column settles the sigma question by measurement rather than inference —

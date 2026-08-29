@@ -2115,16 +2115,17 @@ separable-without-restarts arm, so nothing attributes the +90.24 to either.
       Run as a cell of the `-design lambda` screen, collected 2026-08-29 and
       reported in
       [`docs/cmaes-lambda-report.md`](docs/cmaes-lambda-report.md).
-      **The answer is a null: separable covariance on its own does nothing.**
+      **The answer is a null: no covariance effect was detected on its own.**
       `sep-cmaes-single` beats `cmaes-single` by 3.97 cost units, `t` = +0.10,
-      `p` = 0.92, 6/12 blocks — and loses to `cmaes-ipop` by 58.88. So the
-      +90.24 is not attributable to the covariance mode independently of the
-      restart strategy, and `sep-*` must not be recommended as a covariance
-      default on the strength of Phase 21. The screen's other purpose also
-      succeeded: `cmaes-single`, `cmaes-ipop` and `sep-cmaes-ipop` reproduce all
-      thirty-six committed Phase 21 cells bit for bit, across a different binary
-      and a different concurrency setting, so cross-campaign drift is measured
-      at exactly zero rather than assumed.
+      `p` = 0.92, 6/12 blocks — and loses to `cmaes-ipop` by 58.88. Twelve
+      blocks bound the effect loosely rather than to zero, so the screen does
+      not attribute the +90.24 to the covariance mode independently of the
+      restart strategy and leaves that question open; `sep-*` must not be
+      recommended as a covariance default on the strength of Phase 21. The
+      screen's other purpose also succeeded: `cmaes-single`, `cmaes-ipop` and
+      `sep-cmaes-ipop` reproduce all thirty-six committed Phase 21 cells bit for
+      bit, across a different binary and a different concurrency setting, so
+      cross-campaign drift is measured at exactly zero rather than assumed.
 
 ### Task 23.3: Screen `lambda` (P2)
 
