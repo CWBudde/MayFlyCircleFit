@@ -19,6 +19,8 @@ import (
 // ErrBackendUnavailable normalisation in renderer_opencl_gpu.go and need a
 // prepared OpenCL runner.
 func TestGPUUnavailableInAPortableBuild(t *testing.T) {
+	t.Parallel()
+
 	rend, cleanup, err := NewOpenCLRenderer(failureTestReference(), 4)
 	if err == nil {
 		t.Fatal("NewOpenCLRenderer() = nil error in a build without the gpu tag")

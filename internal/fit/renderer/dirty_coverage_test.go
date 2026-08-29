@@ -27,6 +27,8 @@ type dirtyCoverageMetrics struct {
 // geometrically dirty pixel change, which also checks the test-only span union
 // against production rendering.
 func TestDirtySpanCoverageMetrics(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 256, 256
 
 	circle := func(x, y, radius float64) fit.Circle {
@@ -89,6 +91,8 @@ func TestDirtySpanCoverageMetrics(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.category+"/"+test.name, func(t *testing.T) {
+			t.Parallel()
+
 			metrics := measureDirtyCoverage(test.circles, width, height)
 
 			changedPixels := renderChangedPixels(test.circles, width, height)

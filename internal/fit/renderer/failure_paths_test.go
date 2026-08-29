@@ -57,6 +57,8 @@ func (o *failingOptimizer) Run(eval func([]float64) float64, _, _ []float64, dim
 // caller that gets a nil error takes the cost it is handed as real, and a
 // checkpoint written from it would record a fit that never happened.
 func TestOptimizerFailurePropagates(t *testing.T) {
+	t.Parallel()
+
 	ref := failureTestReference()
 
 	tests := []struct {
@@ -108,6 +110,8 @@ func TestOptimizerFailurePropagates(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			optimizer := &failingOptimizer{failOnCall: test.failOnCall}
 
 			err := test.run(optimizer)
@@ -149,6 +153,8 @@ func (shortResultOptimizer) Run(eval func([]float64) float64, _, _ []float64, di
 // was returned and which was wanted — to stay reachable rather than being
 // flattened into the message.
 func TestInvalidOptimizerResultKeepsItsCause(t *testing.T) {
+	t.Parallel()
+
 	ref := failureTestReference()
 
 	_, err := OptimizeJoint(NewCPURenderer(ref, 2), shortResultOptimizer{}, 2, DisabledConvergenceConfig())

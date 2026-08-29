@@ -94,6 +94,8 @@ type resumeResponse struct {
 // compiled executable and its public HTTP boundary. It is intentionally opt-in
 // because it builds a binary, starts real processes, and runs an optimizer long
 // enough to persist live progress.
+//
+//nolint:paralleltest // builds a binary and starts real processes, one at a time.
 func TestReleaseLifecycle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("release E2E test is not part of the short suite")

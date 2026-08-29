@@ -10,6 +10,8 @@ import (
 )
 
 func TestPolishDirtySessionMatchesFullCanvas(t *testing.T) {
+	t.Parallel()
+
 	const width, height, circleCount = 128, 96, 112
 	reference := randomNRGBA(width, height, 15_700)
 	incumbent := tinyPolishParams(circleCount, width, height, 15_701)
@@ -67,6 +69,8 @@ func TestPolishDirtySessionMatchesFullCanvas(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			old := append([]float64(nil), incumbent...)
 			candidate := append([]float64(nil), old...)
 			test.configure(old, candidate, test.active)
@@ -114,6 +118,8 @@ func TestPolishDirtySessionMatchesFullCanvas(t *testing.T) {
 }
 
 func TestPolishDirtySessionFallsBackForLargeAffectedRegion(t *testing.T) {
+	t.Parallel()
+
 	const width, height, circleCount = 128, 96, 16
 	reference := randomNRGBA(width, height, 15_710)
 	incumbent := tinyPolishParams(circleCount, width, height, 15_711)

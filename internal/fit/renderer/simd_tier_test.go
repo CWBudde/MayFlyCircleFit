@@ -14,6 +14,8 @@ import (
 const requiredTierEnv = "CIRCLEFIT_REQUIRE_SIMD_TIER"
 
 // TestRequiredSIMDTier is the renderer-side half of the CI assertion.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestRequiredSIMDTier(t *testing.T) {
 	required := os.Getenv(requiredTierEnv)
 	if required == "" {
@@ -57,6 +59,8 @@ func rendererKernels() []struct {
 // Each kernel is allowed to be narrower than the tier -- not every kernel
 // exists at every tier, and the reasons are documented at each dispatch site --
 // but none may be wider, and none may be a tier this architecture cannot run.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestRendererKernelsMatchTier(t *testing.T) {
 	tier := fit.Tier()
 	for _, kernel := range rendererKernels() {
@@ -72,6 +76,8 @@ func TestRendererKernelsMatchTier(t *testing.T) {
 // package is actually registered with the tier switch. A site that kept its own
 // init-time decision would ignore the forced tier and fail here, which is the
 // regression the old copy-paste dispatch made undetectable.
+//
+//nolint:paralleltest // forces the process-global SIMD tier, which no two tests may do at once
 func TestRendererKernelsFollowForcedTier(t *testing.T) {
 	fit.SetForcedTier(fit.TierScalar)
 

@@ -112,6 +112,8 @@ func evaluationCostsFor(t *testing.T, workers int, run func(base *CPURenderer, o
 // of the same candidates returns. A shared canvas would interleave and produce
 // different numbers here. Run it under -race to also catch the data race.
 func TestParallelEvaluationIsPixelExact(t *testing.T) {
+	t.Parallel()
+
 	modes := map[string]func(base *CPURenderer, optimizer opt.Optimizer) error{
 		"joint": func(base *CPURenderer, optimizer opt.Optimizer) error {
 			_, err := OptimizeJoint(base, optimizer, 3, DisabledConvergenceConfig())
@@ -128,6 +130,8 @@ func TestParallelEvaluationIsPixelExact(t *testing.T) {
 	}
 	for name, run := range modes {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			serial := evaluationCostsFor(t, 1, run)
 
 			parallel := evaluationCostsFor(t, 4, run)
@@ -145,6 +149,8 @@ func TestParallelEvaluationIsPixelExact(t *testing.T) {
 // TestEvaluationPoolReportsEveryEvaluation guards the atomic counter that
 // replaced the shared increment.
 func TestEvaluationPoolReportsEveryEvaluation(t *testing.T) {
+	t.Parallel()
+
 	// Both setters clamp to GOMAXPROCS, so a hard 4 is a hidden requirement for
 	// a four-processor machine. The macOS ARM64 runner has three, which is how
 	// this surfaced once internal/fit/renderer started running there.
@@ -190,6 +196,8 @@ func TestEvaluationPoolReportsEveryEvaluation(t *testing.T) {
 // TestEvaluationPoolFallsBackToPrimary keeps a backend that cannot create
 // sessions working instead of failing the run.
 func TestEvaluationPoolFallsBackToPrimary(t *testing.T) {
+	t.Parallel()
+
 	base := NewCPURenderer(gradientReference(8, 8), 1)
 
 	pool := newEvaluationPool(base, nil, 8, func() (Renderer, func(), error) {
@@ -213,6 +221,8 @@ func TestEvaluationPoolFallsBackToPrimary(t *testing.T) {
 // disable the row-band fan-out inside a pooled session: with many evaluations
 // in flight it only oversubscribes the machine.
 func TestPooledSessionsRenderSingleThreaded(t *testing.T) {
+	t.Parallel()
+
 	// Clamped to GOMAXPROCS, as in TestEvaluationPoolReportsEveryEvaluation.
 	threads := min(4, runtime.GOMAXPROCS(0))
 	workers := min(3, runtime.GOMAXPROCS(0))
@@ -252,6 +262,8 @@ func TestPooledSessionsRenderSingleThreaded(t *testing.T) {
 // from the CLI and from the server job API alike; at 1920x1080 an unclamped
 // pool would try to allocate on the order of 166 GB.
 func TestParallelEvaluationWorkersCapped(t *testing.T) {
+	t.Parallel()
+
 	base := NewCPURenderer(gradientReference(16, 12), 2)
 	base.SetParallelEvaluationWorkers(10000)
 
@@ -270,6 +282,8 @@ func TestParallelEvaluationWorkersCapped(t *testing.T) {
 // which is right for row sharding and wrong for evaluation width, because
 // concurrent evaluations are whole independent renders.
 func TestParallelEvaluationWorkersIgnoresImageHeight(t *testing.T) {
+	t.Parallel()
+
 	if runtime.GOMAXPROCS(0) < 3 {
 		t.Skip("needs at least three processors to distinguish the caps")
 	}
@@ -307,6 +321,8 @@ func (r *sessionlessRenderer) Bounds() ([]float64, []float64) {
 // all while still paying the different search trajectory that parallel
 // evaluation implies. The request must be declined, and visibly so.
 func TestParallelEvaluationOptionRequiresIndependentSessions(t *testing.T) {
+	t.Parallel()
+
 	sessionless := &sessionlessRenderer{reference: gradientReference(8, 8), circles: 2}
 	if got := EvaluationWidth(sessionless); got != 1 {
 		t.Fatalf("EvaluationWidth() = %d, want 1 for a renderer without sessions", got)
@@ -338,6 +354,8 @@ func TestParallelEvaluationOptionRequiresIndependentSessions(t *testing.T) {
 // the evaluation setter first read it as one -- so a configuration that set only
 // --parallel-evaluation silently got no parallelism at all.
 func TestEvaluationWorkersZeroMeansGOMAXPROCS(t *testing.T) {
+	t.Parallel()
+
 	base := NewCPURenderer(gradientReference(16, 12), 2)
 	base.SetParallelEvaluationWorkers(0)
 
@@ -356,6 +374,8 @@ func TestEvaluationWorkersZeroMeansGOMAXPROCS(t *testing.T) {
 // width stays inert until it is opted into, so a configuration carrying a
 // worker count but no flag keeps the historical single-session path.
 func TestConfigureCPUParallelismLeavesEvaluationWidthOptIn(t *testing.T) {
+	t.Parallel()
+
 	base := NewCPURenderer(gradientReference(16, 12), 2)
 	ConfigureCPUParallelism(base, 2, 4, false)
 

@@ -25,9 +25,12 @@ func callDeltaSSDSSE2(candidate, base, reference []byte, pixels int) int64 {
 }
 
 // TestDeltaSSDSpanSSE2MatchesScalar checks byte-exact parity on randomized data.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestDeltaSSDSpanSSE2MatchesScalar(t *testing.T) {
 	rng := rand.New(rand.NewSource(20_251))
 
+	//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 	for _, pixels := range deltaSSDSSE2PixelCounts {
 		t.Run(strconv.Itoa(pixels), func(t *testing.T) {
 			for round := range 8 {
@@ -50,6 +53,8 @@ func TestDeltaSSDSpanSSE2MatchesScalar(t *testing.T) {
 
 // TestDeltaSSDSpanSSE2IdenticalSpansAreZero checks that an unchanged span
 // produces an exactly zero delta, including a nonzero alpha channel.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestDeltaSSDSpanSSE2IdenticalSpansAreZero(t *testing.T) {
 	rng := rand.New(rand.NewSource(20_252))
 
@@ -69,6 +74,8 @@ func TestDeltaSSDSpanSSE2IdenticalSpansAreZero(t *testing.T) {
 
 // TestDeltaSSDSpanSSE2SignedExtremes checks maximum-magnitude deltas in both
 // directions, where the two accumulators must widen identically.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestDeltaSSDSpanSSE2SignedExtremes(t *testing.T) {
 	for _, pixels := range deltaSSDSSE2PixelCounts {
 		black := make([]byte, pixels*4)
@@ -130,7 +137,10 @@ func BenchmarkDeltaSSDSpanSSE2Direct(b *testing.B) {
 // The maximum-difference case is the one that matters. A single lane of a
 // 16385-pixel span would carry 16385*130050 = 2130862500, past 2^31, so a
 // kernel called without chunking would wrap and this test would catch it.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestDeltaSSDSpanSSE2ChunkBoundary(t *testing.T) {
+	//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 	for _, pixels := range []int{
 		deltaSSDSSE2MaxPixels - 1,
 		deltaSSDSSE2MaxPixels,
@@ -179,6 +189,8 @@ func TestDeltaSSDSpanSSE2ChunkBoundary(t *testing.T) {
 // the dispatcher in one process. Its predecessor skipped unless the host had
 // already selected SSE2, so the SSE2 branch of deltaSSDSpan was never taken on a
 // development machine and the ladder's tier ordering went unchecked.
+//
+//nolint:paralleltest // forces the process-global SIMD tier, which no two tests may do at once
 func TestDeltaSSDSpanDispatchPerForcedTier(t *testing.T) {
 	tiers := []fit.SIMDTier{fit.TierScalar, fit.TierSSE2}
 	if cpu.X86.HasAVX2 {
@@ -193,6 +205,7 @@ func TestDeltaSSDSpanDispatchPerForcedTier(t *testing.T) {
 	_, _ = rng.Read(base)
 	_, _ = rng.Read(reference)
 
+	//nolint:paralleltest // each subtest renders under a forced tier the loop owns
 	for _, tier := range tiers {
 		t.Run(tier.String(), func(t *testing.T) {
 			fit.SetForcedTier(tier)
@@ -219,6 +232,8 @@ func TestDeltaSSDSpanDispatchPerForcedTier(t *testing.T) {
 // property: an AVX2 host still reaches the SSE2 kernel for 4-to-7-pixel spans,
 // because the AVX2 kernel needs eight. Falling straight to scalar there was
 // leaving the shortest vectorizable spans unvectorized.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestDeltaSSDSpanUsesSSE2ForShortSpansOnAVX2(t *testing.T) {
 	if !cpu.X86.HasAVX2 || deltaSSDKernel != fit.TierAVX2 {
 		t.Skipf("host tier is %s, not avx2", deltaSSDKernel)

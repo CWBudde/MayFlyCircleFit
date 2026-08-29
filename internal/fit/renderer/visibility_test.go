@@ -9,6 +9,8 @@ import (
 )
 
 func TestAnalyzeCircleVisibilityCountsChangedCanvasPixels(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 12, 8
 	reference := image.NewNRGBA(image.Rect(0, 0, width, height))
 	renderer := NewCPURenderer(reference, 8)
@@ -72,6 +74,8 @@ func TestAnalyzeCircleVisibilityCountsChangedCanvasPixels(t *testing.T) {
 }
 
 func TestAnalyzeCircleVisibilityAcceptsOutsideCenterThatReachesCanvas(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 20, 10
 	reference := image.NewNRGBA(image.Rect(0, 0, width, height))
 	renderer := NewCPURenderer(reference, 1)
@@ -92,6 +96,8 @@ func TestAnalyzeCircleVisibilityAcceptsOutsideCenterThatReachesCanvas(t *testing
 }
 
 func TestAnalyzeCircleVisibilityRejectsInvalidInput(t *testing.T) {
+	t.Parallel()
+
 	_, err := AnalyzeCircleVisibility(nil, nil)
 	if err == nil {
 		t.Fatal("AnalyzeCircleVisibility(nil) error = nil")

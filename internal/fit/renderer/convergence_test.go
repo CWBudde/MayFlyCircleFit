@@ -6,6 +6,8 @@ import (
 )
 
 func TestConvergenceTracker_BasicConvergence(t *testing.T) {
+	t.Parallel()
+
 	config := ConvergenceConfig{
 		Enabled:   true,
 		Patience:  3,
@@ -65,6 +67,8 @@ func TestConvergenceTracker_BasicConvergence(t *testing.T) {
 }
 
 func TestConvergenceTracker_ImprovementResetsStaleCount(t *testing.T) {
+	t.Parallel()
+
 	config := ConvergenceConfig{
 		Enabled:   true,
 		Patience:  2,
@@ -91,6 +95,8 @@ func TestConvergenceTracker_ImprovementResetsStaleCount(t *testing.T) {
 }
 
 func TestConvergenceTracker_Disabled(t *testing.T) {
+	t.Parallel()
+
 	config := DisabledConvergenceConfig()
 	tracker := NewConvergenceTracker(config)
 
@@ -103,6 +109,8 @@ func TestConvergenceTracker_Disabled(t *testing.T) {
 }
 
 func TestConvergenceTracker_History(t *testing.T) {
+	t.Parallel()
+
 	config := DefaultConvergenceConfig()
 	tracker := NewConvergenceTracker(config)
 
@@ -131,6 +139,8 @@ func TestConvergenceTracker_History(t *testing.T) {
 }
 
 func TestConvergenceTracker_Reset(t *testing.T) {
+	t.Parallel()
+
 	config := DefaultConvergenceConfig()
 	tracker := NewConvergenceTracker(config)
 
@@ -158,6 +168,8 @@ func TestConvergenceTracker_Reset(t *testing.T) {
 }
 
 func TestConvergenceTracker_ZeroThreshold(t *testing.T) {
+	t.Parallel()
+
 	config := ConvergenceConfig{
 		Enabled:   true,
 		Patience:  2,
@@ -181,6 +193,8 @@ func TestConvergenceTracker_ZeroThreshold(t *testing.T) {
 }
 
 func TestDefaultConvergenceConfig(t *testing.T) {
+	t.Parallel()
+
 	config := DefaultConvergenceConfig()
 
 	if !config.Enabled {
@@ -197,6 +211,8 @@ func TestDefaultConvergenceConfig(t *testing.T) {
 }
 
 func TestDisabledConvergenceConfig(t *testing.T) {
+	t.Parallel()
+
 	config := DisabledConvergenceConfig()
 
 	if config.Enabled {

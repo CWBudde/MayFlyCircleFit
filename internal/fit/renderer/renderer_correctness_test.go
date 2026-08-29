@@ -18,6 +18,8 @@ import (
 // implementation below intentionally mirrors revision 3650d61: it uses the
 // original bounding-box traversal, Porter-Duff arithmetic, and math.Round.
 func TestCPURendererMatchesPreOptimizationBaseline(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name          string
 		width, height int
@@ -83,6 +85,8 @@ func TestCPURendererMatchesPreOptimizationBaseline(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			reference := randomNRGBA(test.width, test.height, 901)
 
 			var initial *image.NRGBA
@@ -97,6 +101,8 @@ func TestCPURendererMatchesPreOptimizationBaseline(t *testing.T) {
 			threadCounts := []int{1, runtime.GOMAXPROCS(0)}
 			for _, threads := range threadCounts {
 				t.Run(fmt.Sprintf("threads_%d", threads), func(t *testing.T) {
+					t.Parallel()
+
 					var renderer *CPURenderer
 					if initial == nil {
 						renderer = NewCPURenderer(reference, len(test.circles))

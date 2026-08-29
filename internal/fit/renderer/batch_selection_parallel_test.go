@@ -50,6 +50,8 @@ func selectionParityRenderer(reference *image.NRGBA, threads int) *CPURenderer {
 // nothing else. It fails if a chunk's rebuilt prefix ever differs from the one
 // the serial walk accumulated.
 func TestAuditCircleBatchChunkedMatchesSerial(t *testing.T) {
+	t.Parallel()
+
 	reference, params := selectionParityFixture(t)
 
 	workers := runtime.GOMAXPROCS(0)
@@ -85,6 +87,8 @@ func TestAuditCircleBatchChunkedMatchesSerial(t *testing.T) {
 // that no worker checks at run time: the runs are contiguous, non-overlapping,
 // and together cover every draw slot exactly once.
 func TestAuditChunksCoverDrawOrder(t *testing.T) {
+	t.Parallel()
+
 	for _, circleCount := range []int{1, 2, 3, 8, 32, 256, 512} {
 		for _, count := range []int{1, 2, 3, 4, 8, 12, 48, 1000} {
 			chunks := auditChunks(circleCount, count)
@@ -120,6 +124,8 @@ type fullRenderRenderer struct {
 // raster, so restricting both the render and the comparison to region
 // intersected with that raster leaves every energy unchanged.
 func TestRegionInfluenceEnergiesMatchFullRenders(t *testing.T) {
+	t.Parallel()
+
 	reference, params := selectionParityFixture(t)
 
 	candidates := make([]int, selectionParityCircles)
@@ -138,6 +144,8 @@ func TestRegionInfluenceEnergiesMatchFullRenders(t *testing.T) {
 		for _, region := range regions {
 			name := "threads-" + strconv.Itoa(threads) + "/region-" + region.String()
 			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+
 				banded := selectionParityRenderer(reference, threads)
 				full := selectionParityRenderer(reference, threads)
 				fullImage := cloneNRGBA(banded.Render(params))
@@ -156,6 +164,8 @@ func TestRegionInfluenceEnergiesMatchFullRenders(t *testing.T) {
 // 15.2: every strategy must return the same active set, replacement set, and
 // region however wide the selection ran.
 func TestSelectPolishingActiveSetMatchesSerial(t *testing.T) {
+	t.Parallel()
+
 	reference, params := selectionParityFixture(t)
 
 	workers := runtime.GOMAXPROCS(0)
@@ -199,6 +209,8 @@ func TestSelectPolishingActiveSetMatchesSerial(t *testing.T) {
 
 	for _, strategy := range strategies {
 		t.Run(string(strategy), func(t *testing.T) {
+			t.Parallel()
+
 			serial := selectWith(1, strategy)
 
 			parallel := selectWith(workers, strategy)
