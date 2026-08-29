@@ -62,8 +62,8 @@ type HostFacts struct {
 	GOMAXPROCS             int      `json:"gomaxProcs"`
 	GoVersion              string   `json:"goVersion"`
 	SIMD                   string   `json:"simd"`
-	ActiveSSDKernel        string   `json:"activeSSDKernel"`
-	ActiveSADKernel        string   `json:"activeSADKernel"`
+	ActiveSSDKernel        string   `json:"activeSsdKernel"`
+	ActiveSADKernel        string   `json:"activeSadKernel"`
 	CompositingBackend     string   `json:"compositingBackend"`
 	FastCompositingBackend string   `json:"fastCompositingBackend"`
 	GPU                    GPUFacts `json:"gpu"`

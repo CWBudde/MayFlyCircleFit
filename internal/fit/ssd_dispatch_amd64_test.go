@@ -22,6 +22,8 @@ const (
 // need one subprocess per configuration. Tier forcing re-runs every registered
 // dispatch site, so a single test can walk the whole amd64 ladder and check
 // both which kernel was installed and that it agrees with scalar.
+//
+//nolint:paralleltest // forces the process-global SIMD tier, which no two tests may do at once
 func TestSSDKernelPerForcedTier(t *testing.T) {
 	tiers := []SIMDTier{TierScalar, TierSSE2}
 	if cpu.X86.HasAVX2 {
@@ -31,6 +33,7 @@ func TestSSDKernelPerForcedTier(t *testing.T) {
 	a := []uint8{0, 10, 20, 255}
 	b := []uint8{30, 40, 50, 0}
 
+	//nolint:paralleltest // each subtest runs under a forced tier the loop owns
 	for _, tier := range tiers {
 		t.Run(tier.String(), func(t *testing.T) {
 			SetForcedTier(tier)
@@ -50,6 +53,8 @@ func TestSSDKernelPerForcedTier(t *testing.T) {
 
 // TestSSDForcedTierRestored proves ResetTierDetection puts the process back,
 // which is what makes the forcing above safe for the rest of the suite.
+//
+//nolint:paralleltest // forces the process-global SIMD tier, which no two tests may do at once
 func TestSSDForcedTierRestored(t *testing.T) {
 	before := ActiveSSDKernel()
 
@@ -67,6 +72,8 @@ func TestSSDForcedTierRestored(t *testing.T) {
 // the detected tier down, rather than that dispatch honors a value we handed it.
 //
 // Without AVX2 the amd64 tier below it is SSE2, not scalar.
+//
+//nolint:paralleltest // spawns a subprocess that re-detects the process-global SIMD tier
 func TestSSDDetectedTierWithoutAVX2(t *testing.T) {
 	if os.Getenv(ssdDetectedTierHelper) == "1" {
 		if cpu.X86.HasAVX2 {
@@ -95,6 +102,8 @@ func TestSSDDetectedTierWithoutAVX2(t *testing.T) {
 //
 // GODEBUG=cpu.all=off cannot express this on amd64, because x/sys/cpu marks
 // sse2 Required there and ORs the requirement back in after processing GODEBUG.
+//
+//nolint:paralleltest // spawns a subprocess that re-detects the process-global SIMD tier
 func TestSSDTierEnvForcesScalar(t *testing.T) {
 	if os.Getenv(ssdForcedTierHelper) == "1" {
 		if Tier() != TierScalar {
@@ -119,6 +128,8 @@ func TestSSDTierEnvForcesScalar(t *testing.T) {
 
 // TestSSDDisableEnvIsTierScalarAlias keeps the older lever working, because CI
 // steps and operator notes already use it.
+//
+//nolint:paralleltest // spawns a subprocess that re-detects the process-global SIMD tier
 func TestSSDDisableEnvIsTierScalarAlias(t *testing.T) {
 	if os.Getenv(ssdForcedTierHelper) == "2" {
 		if Tier() != TierScalar {
@@ -131,7 +142,9 @@ func TestSSDDisableEnvIsTierScalarAlias(t *testing.T) {
 	cmd := exec.Command(os.Args[0], "-test.run=^TestSSDDisableEnvIsTierScalarAlias$")
 
 	cmd.Env = append(tierSubprocessEnv(os.Environ()), simdDisableEnv+"=1", ssdForcedTierHelper+"=2")
-	if output, err := cmd.CombinedOutput(); err != nil {
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
 		t.Fatalf("subprocess failed: %v\n%s", err, output)
 	}
 }
@@ -139,6 +152,8 @@ func TestSSDDisableEnvIsTierScalarAlias(t *testing.T) {
 // TestSIMDTierEnvRejectsUnknownValue proves the env lever fails loudly. Quietly
 // substituting a detected tier for an unparseable request would let a CI gate
 // that asks for SSE2 pass while measuring AVX2.
+//
+//nolint:paralleltest // spawns a subprocess that re-detects the process-global SIMD tier
 func TestSIMDTierEnvRejectsUnknownValue(t *testing.T) {
 	if os.Getenv(ssdForcedTierHelper) == "3" {
 		// Reaching any assertion here means the panic did not happen.
@@ -182,7 +197,9 @@ func runTierSubprocess(t *testing.T, pattern, helper string, extra map[string]st
 	cmd := exec.Command(os.Args[0], "-test.run="+pattern)
 
 	cmd.Env = env
-	if output, err := cmd.CombinedOutput(); err != nil {
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
 		t.Fatalf("subprocess failed: %v\n%s", err, output)
 	}
 }
@@ -228,12 +245,16 @@ func tierSubprocessEnv(environ []string) []string {
 // ssdSSE2MaxWidth+1 to the scalar kernel, and that both sides agree. Neither
 // width comes close to overflowing; see the derivation on ssdSSE2MaxWidth.
 func TestFastSSD_SSE2MaxWidthDispatchBoundary(t *testing.T) {
+	t.Parallel()
+
 	// Black against white maximizes the per-pixel difference on every channel.
 	black := color.NRGBA{A: 255}
 	white := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 
 	for _, width := range []int{ssdSSE2MaxWidth, ssdSSE2MaxWidth + 1} {
 		t.Run(fmt.Sprintf("width_%d", width), func(t *testing.T) {
+			t.Parallel()
+
 			const height = 1
 
 			a := solidColorNRGBA(width, height, black)

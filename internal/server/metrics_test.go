@@ -7,6 +7,8 @@ import (
 )
 
 func TestSerializablePSNR(t *testing.T) {
+	t.Parallel()
+
 	value, infinite := serializablePSNR(1)
 	if value == nil || infinite || math.Abs(*value-48.1308036086791) > 1e-12 {
 		t.Fatalf("serializablePSNR(1) = (%v, %v)", value, infinite)
@@ -24,6 +26,8 @@ func TestSerializablePSNR(t *testing.T) {
 }
 
 func TestShouldSampleSSIM(t *testing.T) {
+	t.Parallel()
+
 	last := time.Unix(100, 0)
 	for _, test := range []struct {
 		name string
@@ -37,6 +41,8 @@ func TestShouldSampleSSIM(t *testing.T) {
 		{name: "regressed", now: last.Add(2 * time.Second), cost: 11},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := shouldSampleSSIM(test.now, last, test.cost, 10); got != test.want {
 				t.Fatalf("shouldSampleSSIM() = %v, want %v", got, test.want)
 			}
@@ -45,6 +51,8 @@ func TestShouldSampleSSIM(t *testing.T) {
 }
 
 func TestThroughputCPS(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name             string
 		stageEvaluations int
@@ -59,6 +67,8 @@ func TestThroughputCPS(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := throughputCPS(test.stageEvaluations, test.circles, test.elapsed); got != test.want {
 				t.Fatalf("throughputCPS() = %v, want %v", got, test.want)
 			}

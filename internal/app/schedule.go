@@ -78,6 +78,8 @@ const (
 // The document is deliberately JSON. It is the format the extend and polish
 // endpoints already speak, the format the store already writes, and it needs no
 // new dependency.
+//
+//nolint:recvcheck // the value receiver on Validate is deliberate: it normalizes a copy.
 type ScheduleDocument struct {
 	// SchemaVersion is ScheduleSchemaVersion, or absent for the current version.
 	SchemaVersion int `json:"schemaVersion,omitempty"`
@@ -230,11 +232,14 @@ func ParseSchedule(data []byte) (*ScheduleDocument, error) {
 	decoder.DisallowUnknownFields()
 
 	var doc ScheduleDocument
-	if err := decoder.Decode(&doc); err != nil {
+
+	err := decoder.Decode(&doc)
+	if err != nil {
 		return nil, fmt.Errorf("decode schedule: %w", err)
 	}
 
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+	err = decoder.Decode(&struct{}{})
+	if !errors.Is(err, io.EOF) {
 		return nil, invalid("schedule", "must contain exactly one JSON object")
 	}
 
@@ -243,13 +248,15 @@ func ParseSchedule(data []byte) (*ScheduleDocument, error) {
 		return nil, err
 	}
 
-	if err := doc.validate(present); err != nil {
+	err = doc.validate(present)
+	if err != nil {
 		return nil, err
 	}
 	// The campaign seed is pinned here rather than at expansion time: a document
 	// that omitted a seed must still expand the same way on every later call and
 	// after a restart.
-	if err := doc.ResolveSeed(); err != nil {
+	err = doc.ResolveSeed()
+	if err != nil {
 		return nil, err
 	}
 
@@ -326,7 +333,8 @@ func (d ScheduleDocument) Validate() error {
 		return invalid("steps", fmt.Sprintf("must contain at most %d steps", MaxScheduleSteps))
 	}
 
-	if err := d.reconcileSeed(); err != nil {
+	err := d.reconcileSeed()
+	if err != nil {
 		return err
 	}
 
@@ -335,11 +343,14 @@ func (d ScheduleDocument) Validate() error {
 	}
 
 	base := d.Base
-	if err := base.ApplyDefaults(); err != nil {
+
+	err = base.ApplyDefaults()
+	if err != nil {
 		return err
 	}
 
-	if err := base.Validate(); err != nil {
+	err = base.Validate()
+	if err != nil {
 		return fmt.Errorf("base: %w", err)
 	}
 
@@ -356,7 +367,7 @@ func (d ScheduleDocument) Validate() error {
 	// Expanding is the only honest way to know a document is runnable: the
 	// per-stage configurations are what the optimizer sees, and only they can
 	// report an extension that walks past the circle limit.
-	_, err := d.Expand()
+	_, err = d.Expand()
 
 	return err
 }

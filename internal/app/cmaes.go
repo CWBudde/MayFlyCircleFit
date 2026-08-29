@@ -34,7 +34,7 @@ const (
 )
 
 // ResolvedCMAESInitialSigma returns the configured normalized initial step.
-func (c JobConfig) ResolvedCMAESInitialSigma() float64 {
+func (c *JobConfig) ResolvedCMAESInitialSigma() float64 {
 	if c.InitialSigma == nil {
 		return DefaultCMAESInitialSigma
 	}
@@ -43,7 +43,7 @@ func (c JobConfig) ResolvedCMAESInitialSigma() float64 {
 }
 
 // ResolvedCMAESActive reports whether negative rank-mu adaptation is enabled.
-func (c JobConfig) ResolvedCMAESActive() bool {
+func (c *JobConfig) ResolvedCMAESActive() bool {
 	if c.ActiveCMA == nil {
 		return true
 	}
@@ -53,7 +53,7 @@ func (c JobConfig) ResolvedCMAESActive() bool {
 
 // ResolvedCMAESCovarianceMode returns the default dense representation for an
 // omitted mode.
-func (c JobConfig) ResolvedCMAESCovarianceMode() CMAESCovarianceMode {
+func (c *JobConfig) ResolvedCMAESCovarianceMode() CMAESCovarianceMode {
 	if c.CovarianceMode == "" {
 		return CMAESCovarianceFull
 	}
@@ -63,7 +63,7 @@ func (c JobConfig) ResolvedCMAESCovarianceMode() CMAESCovarianceMode {
 
 // ResolvedCMAESRestartStrategy returns the single-run default for an omitted
 // restart strategy.
-func (c JobConfig) ResolvedCMAESRestartStrategy() CMAESRestartStrategy {
+func (c *JobConfig) ResolvedCMAESRestartStrategy() CMAESRestartStrategy {
 	if c.RestartStrategy == "" {
 		return CMAESRestartNone
 	}
@@ -71,7 +71,7 @@ func (c JobConfig) ResolvedCMAESRestartStrategy() CMAESRestartStrategy {
 	return c.RestartStrategy
 }
 
-func (c JobConfig) cmaesOnlyFields() []engineOnlyField {
+func (c *JobConfig) cmaesOnlyFields() []engineOnlyField {
 	return []engineOnlyField{
 		{field: "initialSigma", set: c.InitialSigma != nil},
 		{field: "covarianceMode", set: c.CovarianceMode != ""},
@@ -80,7 +80,7 @@ func (c JobConfig) cmaesOnlyFields() []engineOnlyField {
 	}
 }
 
-func (c JobConfig) refuseCMAESOnlyFields() error {
+func (c *JobConfig) refuseCMAESOnlyFields() error {
 	for _, field := range c.cmaesOnlyFields() {
 		if field.set {
 			return engineOnlyFieldError(field, OptimizerCMAES, c.ResolvedOptimizer())
@@ -90,7 +90,7 @@ func (c JobConfig) refuseCMAESOnlyFields() error {
 	return nil
 }
 
-func (c JobConfig) validateCMAESConfig() error {
+func (c *JobConfig) validateCMAESConfig() error {
 	err := c.validateCMAESInitialSigma()
 	if err != nil {
 		return err
@@ -104,7 +104,7 @@ func (c JobConfig) validateCMAESConfig() error {
 	return c.validateCMAESRestarts()
 }
 
-func (c JobConfig) validateCMAESInitialSigma() error {
+func (c *JobConfig) validateCMAESInitialSigma() error {
 	sigma := c.ResolvedCMAESInitialSigma()
 	if math.IsNaN(sigma) || math.IsInf(sigma, 0) || sigma <= 0 {
 		return invalid("initialSigma", "must be finite and positive")
@@ -113,7 +113,7 @@ func (c JobConfig) validateCMAESInitialSigma() error {
 	return nil
 }
 
-func (c JobConfig) validateCMAESCovariance() error {
+func (c *JobConfig) validateCMAESCovariance() error {
 	mode := c.ResolvedCMAESCovarianceMode()
 	switch mode {
 	case CMAESCovarianceFull, CMAESCovarianceSeparable, CMAESCovarianceBlock:
@@ -130,7 +130,7 @@ func (c JobConfig) validateCMAESCovariance() error {
 	return nil
 }
 
-func (c JobConfig) validateCMAESRestarts() error {
+func (c *JobConfig) validateCMAESRestarts() error {
 	strategy := c.ResolvedCMAESRestartStrategy()
 	switch strategy {
 	case CMAESRestartNone, CMAESRestartIPOP, CMAESRestartBIPOP:

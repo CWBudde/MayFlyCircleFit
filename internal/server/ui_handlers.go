@@ -129,7 +129,9 @@ func (s *Server) handleJobsPage(w http.ResponseWriter, r *http.Request) {
 
 	// Render the job list page using templ
 	seed := ui.JobListPage{Jobs: jobItems, NextCursor: page.NextCursor, Total: page.Total}
-	if err := ui.JobList(seed).Render(r.Context(), w); err != nil {
+
+	err = ui.JobList(seed).Render(r.Context(), w)
+	if err != nil {
 		http.Error(w, "Failed to render page", http.StatusInternalServerError)
 		return
 	}
@@ -278,7 +280,8 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Render the job detail page using templ
-	if err := ui.JobDetailPage(jobDetail).Render(r.Context(), w); err != nil {
+	err = ui.JobDetailPage(jobDetail).Render(r.Context(), w)
+	if err != nil {
 		http.Error(w, "Failed to render page", http.StatusInternalServerError)
 		return
 	}
@@ -311,7 +314,8 @@ func plannedOptimizerIterations(config JobConfig) int {
 	return total
 }
 
-func referenceImageMetadata(path string) (width, height int, size int64, err error) {
+// The results are the image's width and height in pixels and its size in bytes.
+func referenceImageMetadata(path string) (int, int, int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return 0, 0, 0, err
@@ -474,7 +478,9 @@ func renderCreateJobError(w http.ResponseWriter, r *http.Request, message, proje
 func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	// Parse form data
 	r.Body = http.MaxBytesReader(w, r.Body, app.MaxRequestBody)
-	if err := r.ParseForm(); err != nil {
+
+	err := r.ParseForm()
+	if err != nil {
 		renderCreateJobError(w, r, "Failed to parse form data", "")
 		return
 	}
@@ -771,7 +777,9 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	job := s.jobManager.CreateJob(project, config)
 
 	// The server owns every job context, including jobs created through the UI.
-	if err := s.enqueueJob(job.ID); err != nil {
+	//nolint:contextcheck // workerLoop deliberately outlives the request; it owns the job context, not this handler.
+	err = s.enqueueJob(job.ID)
+	if err != nil {
 		_ = s.jobManager.FailJob(job.ID, "server job queue is full")
 
 		renderCreateJobError(w, r, "Server job queue is full", formProject)

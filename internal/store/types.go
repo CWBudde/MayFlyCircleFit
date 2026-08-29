@@ -75,6 +75,8 @@ const (
 //   - Different optimizers have different internal state structures
 //   - Would significantly increase checkpoint size
 //   - Would tie checkpoint format to specific optimizer implementations
+//
+//nolint:recvcheck // MarshalJSON must stay a value receiver; UnmarshalJSON must be a pointer.
 type Checkpoint struct {
 	// SchemaVersion identifies the persisted checkpoint format.
 	SchemaVersion int `json:"schemaVersion"`
@@ -395,49 +397,6 @@ func (c *Checkpoint) Validate() error {
 	return nil
 }
 
-// validateLineage keeps a recorded chain trustworthy. A checkpoint that names
-// two parents, or names itself, describes a chain that cannot be walked, and a
-// stage index without a schedule points at nothing.
-func (c Checkpoint) validateLineage() error {
-	if c.ExtendedFrom != "" && c.PolishedFrom != "" {
-		return &ValidationError{Field: "PolishedFrom", Reason: "cannot be set together with ExtendedFrom"}
-	}
-
-	for field, parent := range map[string]string{"ExtendedFrom": c.ExtendedFrom, "PolishedFrom": c.PolishedFrom} {
-		if parent == "" {
-			continue
-		}
-
-		err := validateJobID(parent)
-		if err != nil {
-			return &ValidationError{Field: field, Reason: err.Error()}
-		}
-
-		if parent == c.JobID {
-			return &ValidationError{Field: field, Reason: "cannot name the checkpoint's own job"}
-		}
-	}
-
-	if c.ScheduleID != "" {
-		err := validateScheduleID(c.ScheduleID)
-		if err != nil {
-			return &ValidationError{Field: "ScheduleID", Reason: err.Error()}
-		}
-	}
-
-	if c.StageIndex != nil {
-		if c.ScheduleID == "" {
-			return &ValidationError{Field: "StageIndex", Reason: "requires ScheduleID"}
-		}
-
-		if *c.StageIndex < 0 {
-			return &ValidationError{Field: "StageIndex", Reason: "cannot be negative"}
-		}
-	}
-
-	return nil
-}
-
 // MarshalJSON always emits the current schema, including normalized progress
 // metadata. It does not mutate the caller's checkpoint.
 func (c Checkpoint) MarshalJSON() ([]byte, error) {
@@ -556,57 +515,6 @@ func checkpointWireFrom(c Checkpoint) checkpointWire {
 	}
 }
 
-func (c Checkpoint) normalized() Checkpoint {
-	c = c.normalizedMetadata()
-
-	c.BestParams = append([]float64(nil), c.BestParams...)
-	if c.StageIndex != nil {
-		index := *c.StageIndex
-		c.StageIndex = &index
-	}
-
-	return c
-}
-
-// normalizedMetadata applies schema migration without copying the parameter
-// vector. Metadata-only readers must not pay O(circles) merely to report a
-// checkpoint in a listing.
-func (c Checkpoint) normalizedMetadata() Checkpoint {
-	if c.SchemaVersion == 0 || c.SchemaVersion == 1 {
-		c.SchemaVersion = CheckpointSchemaVersion
-	}
-
-	if c.Iterations == 0 && c.Iteration != 0 {
-		c.Iterations = c.Iteration
-	}
-
-	c.Iteration = c.Iterations
-	if c.RequestedCircles == 0 {
-		c.RequestedCircles = c.Config.Circles
-	}
-
-	if c.ActualCircles == 0 && len(c.BestParams)%7 == 0 {
-		c.ActualCircles = len(c.BestParams) / 7
-	}
-
-	if c.EffectiveSeed == 0 {
-		c.EffectiveSeed = effectiveSeed(c.Config)
-	}
-
-	if c.ResumeCount == 0 {
-		c.ResumeCount = c.Config.ResumeCount
-	}
-
-	if c.Termination == "" {
-		c.Termination = TerminationUnknown
-	}
-
-	c.Config.EffectiveSeed = c.EffectiveSeed
-	c.Config.ResumeCount = c.ResumeCount
-
-	return c
-}
-
 func effectiveSeed(config JobConfig) int64 {
 	if config.EffectiveSeed != 0 {
 		return config.EffectiveSeed
@@ -653,6 +561,105 @@ func (c *Checkpoint) IsCompatible(config JobConfig) error {
 	}
 
 	return nil
+}
+
+// validateLineage keeps a recorded chain trustworthy. A checkpoint that names
+// two parents, or names itself, describes a chain that cannot be walked, and a
+// stage index without a schedule points at nothing.
+//
+//nolint:cyclop // each branch checks one independent lineage field; the count is the field count, not nesting.
+func (c *Checkpoint) validateLineage() error {
+	if c.ExtendedFrom != "" && c.PolishedFrom != "" {
+		return &ValidationError{Field: "PolishedFrom", Reason: "cannot be set together with ExtendedFrom"}
+	}
+
+	for field, parent := range map[string]string{"ExtendedFrom": c.ExtendedFrom, "PolishedFrom": c.PolishedFrom} {
+		if parent == "" {
+			continue
+		}
+
+		err := validateJobID(parent)
+		if err != nil {
+			return &ValidationError{Field: field, Reason: err.Error()}
+		}
+
+		if parent == c.JobID {
+			return &ValidationError{Field: field, Reason: "cannot name the checkpoint's own job"}
+		}
+	}
+
+	if c.ScheduleID != "" {
+		err := validateScheduleID(c.ScheduleID)
+		if err != nil {
+			return &ValidationError{Field: "ScheduleID", Reason: err.Error()}
+		}
+	}
+
+	if c.StageIndex != nil {
+		if c.ScheduleID == "" {
+			return &ValidationError{Field: "StageIndex", Reason: "requires ScheduleID"}
+		}
+
+		if *c.StageIndex < 0 {
+			return &ValidationError{Field: "StageIndex", Reason: "cannot be negative"}
+		}
+	}
+
+	return nil
+}
+
+func (c *Checkpoint) normalized() Checkpoint {
+	out := c.normalizedMetadata()
+
+	out.BestParams = append([]float64(nil), out.BestParams...)
+	if out.StageIndex != nil {
+		index := *out.StageIndex
+		out.StageIndex = &index
+	}
+
+	return out
+}
+
+// normalizedMetadata applies schema migration without copying the parameter
+// vector. Metadata-only readers must not pay O(circles) merely to report a
+// checkpoint in a listing.
+//
+//nolint:cyclop // one guarded default per legacy checkpoint field; splitting it would hide the migration list.
+func (c *Checkpoint) normalizedMetadata() Checkpoint {
+	out := *c
+	if out.SchemaVersion == 0 || out.SchemaVersion == 1 {
+		out.SchemaVersion = CheckpointSchemaVersion
+	}
+
+	if out.Iterations == 0 && out.Iteration != 0 {
+		out.Iterations = out.Iteration
+	}
+
+	out.Iteration = out.Iterations
+	if out.RequestedCircles == 0 {
+		out.RequestedCircles = out.Config.Circles
+	}
+
+	if out.ActualCircles == 0 && len(out.BestParams)%7 == 0 {
+		out.ActualCircles = len(out.BestParams) / 7
+	}
+
+	if out.EffectiveSeed == 0 {
+		out.EffectiveSeed = effectiveSeed(out.Config)
+	}
+
+	if out.ResumeCount == 0 {
+		out.ResumeCount = out.Config.ResumeCount
+	}
+
+	if out.Termination == "" {
+		out.Termination = TerminationUnknown
+	}
+
+	out.Config.EffectiveSeed = out.EffectiveSeed
+	out.Config.ResumeCount = out.ResumeCount
+
+	return out
 }
 
 // CompatibilityError represents a checkpoint compatibility error.

@@ -62,6 +62,8 @@ func renderCampaign(t *testing.T, campaign Campaign) string {
 // TestCampaignPageShowsTheStageTable checks the columns the task named, and
 // checks that the two it cannot populate say so rather than showing a zero.
 func TestCampaignPageShowsTheStageTable(t *testing.T) {
+	t.Parallel()
+
 	body := renderCampaign(t, synthesizedCampaign())
 	for _, marker := range []string{
 		"synthesized campaign",
@@ -98,6 +100,8 @@ func TestCampaignPageShowsTheStageTable(t *testing.T) {
 // upgrades the plot after mount, so the SVG stays the page's own drawing and
 // every script the page pulls is embedded in this binary.
 func TestCampaignPlotIsSelfContained(t *testing.T) {
+	t.Parallel()
+
 	body := renderCampaign(t, synthesizedCampaign())
 	if !strings.Contains(body, "<svg") || !strings.Contains(body, "<polyline") {
 		t.Fatal("campaign page does not draw an inline SVG plot")
@@ -126,6 +130,8 @@ func TestCampaignPlotIsSelfContained(t *testing.T) {
 // server-rendered SVG, which CampaignDetailIsland replaces along with the rest
 // of the page.
 func TestCampaignPageMountsOneIsland(t *testing.T) {
+	t.Parallel()
+
 	body := renderCampaign(t, synthesizedCampaign())
 
 	island := bodyWithoutLayout(body)
@@ -188,6 +194,8 @@ func bodyWithoutLayout(body string) string {
 // markup: the plot exists to answer "is this schedule better than the last
 // one", which needs the points in the right place, not merely present.
 func TestCampaignPlotPlacesEveryMeasuredStage(t *testing.T) {
+	t.Parallel()
+
 	plot := buildCampaignPlot(synthesizedCampaign().Stages)
 	if plot.Empty {
 		t.Fatal("plot is empty for a campaign with three measured stages")
@@ -222,6 +230,8 @@ func TestCampaignPlotPlacesEveryMeasuredStage(t *testing.T) {
 // TestCampaignPlotSurvivesDegenerateInput covers the two campaigns that would
 // otherwise divide by zero: one stage, and a cost that never moved.
 func TestCampaignPlotSurvivesDegenerateInput(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		stages []CampaignStage
@@ -238,6 +248,8 @@ func TestCampaignPlotSurvivesDegenerateInput(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			plot := buildCampaignPlot(test.stages)
 			if plot.Empty {
 				t.Fatal("plot is empty for a campaign that measured a cost")
@@ -253,6 +265,8 @@ func TestCampaignPlotSurvivesDegenerateInput(t *testing.T) {
 }
 
 func TestCampaignPlotIgnoresUnmeasuredAndNonFiniteStages(t *testing.T) {
+	t.Parallel()
+
 	plot := buildCampaignPlot([]CampaignStage{
 		{Index: 0, Kind: "base", Circles: 8, State: "running"},
 		{Index: 1, Kind: "extend", Circles: 16, BestCost: math.Inf(1), HasBestCost: true},
@@ -264,6 +278,8 @@ func TestCampaignPlotIgnoresUnmeasuredAndNonFiniteStages(t *testing.T) {
 }
 
 func TestCampaignPageWithoutStages(t *testing.T) {
+	t.Parallel()
+
 	body := renderCampaign(t, Campaign{ID: "66666666-6666-4666-8666-666666666666", State: "pending", Source: CampaignFromSchedule})
 	if !strings.Contains(body, "No stage has been recorded yet.") {
 		t.Error("an empty campaign does not say so")
@@ -291,6 +307,8 @@ func parseCoord(t *testing.T, value string) float64 {
 // as much as the viewer being there — pointing the viewer at a running stage
 // would render three broken images.
 func TestCampaignPageShowsTheLatestCompletedStageImages(t *testing.T) {
+	t.Parallel()
+
 	body := renderCampaign(t, synthesizedCampaign())
 	if !strings.Contains(body, `class="card image-viewer campaign-images"`) {
 		t.Fatal("campaign page does not render the shared image viewer")
@@ -325,6 +343,8 @@ func TestCampaignPageShowsTheLatestCompletedStageImages(t *testing.T) {
 // a campaign whose stages have all yet to finish must say there is nothing to
 // show rather than render a viewer whose images 404.
 func TestCampaignPageWithoutCompletedStagesSaysSo(t *testing.T) {
+	t.Parallel()
+
 	body := renderCampaign(t, Campaign{
 		ID:     "66666666-6666-4666-8666-666666666666",
 		State:  "running",

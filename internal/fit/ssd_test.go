@@ -46,6 +46,8 @@ func solidColorNRGBA(width, height int, c color.NRGBA) *image.NRGBA {
 
 // TestFastSSD_IdenticalImages tests that SSD of identical images is zero.
 func TestFastSSD_IdenticalImages(t *testing.T) {
+	t.Parallel()
+
 	sizes := []struct {
 		width, height int
 	}{
@@ -59,6 +61,8 @@ func TestFastSSD_IdenticalImages(t *testing.T) {
 
 	for _, sz := range sizes {
 		t.Run(fmt.Sprintf("%dx%d", sz.width, sz.height), func(t *testing.T) {
+			t.Parallel()
+
 			img := randomNRGBA(sz.width, sz.height, 42)
 
 			// SSD of image with itself should be zero
@@ -73,6 +77,8 @@ func TestFastSSD_IdenticalImages(t *testing.T) {
 
 // TestFastSSD_KnownDifference tests SSD with known pixel differences.
 func TestFastSSD_KnownDifference(t *testing.T) {
+	t.Parallel()
+
 	// Create two 2x2 images with known differences
 	img1 := solidColorNRGBA(2, 2, color.NRGBA{R: 100, G: 150, B: 200, A: 255})
 	img2 := solidColorNRGBA(2, 2, color.NRGBA{R: 110, G: 140, B: 210, A: 255})
@@ -96,6 +102,8 @@ func TestFastSSD_KnownDifference(t *testing.T) {
 
 // TestFastSSD_MaxDifference tests SSD with maximum possible differences.
 func TestFastSSD_MaxDifference(t *testing.T) {
+	t.Parallel()
+
 	// White vs black: maximum possible difference
 	white := solidColorNRGBA(10, 10, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	black := solidColorNRGBA(10, 10, color.NRGBA{R: 0, G: 0, B: 0, A: 255})
@@ -116,6 +124,8 @@ func TestFastSSD_MaxDifference(t *testing.T) {
 
 // TestFastSSD_AlphaIgnored tests that alpha channel is ignored in SSD computation.
 func TestFastSSD_AlphaIgnored(t *testing.T) {
+	t.Parallel()
+
 	// Create two images with same RGB but different alpha
 	img1 := solidColorNRGBA(10, 10, color.NRGBA{R: 100, G: 150, B: 200, A: 255})
 	img2 := solidColorNRGBA(10, 10, color.NRGBA{R: 100, G: 150, B: 200, A: 0})
@@ -131,6 +141,8 @@ func TestFastSSD_AlphaIgnored(t *testing.T) {
 // ---------------------- Equivalence Tests (SIMD vs Scalar) ----------------------
 
 // TestFastSSD_ScalarEquivalence tests that active backend matches scalar reference.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestFastSSD_ScalarEquivalence(t *testing.T) {
 	if ActiveSSDKernel() == TierScalar {
 		t.Skip("Skipping equivalence test: active backend is scalar")
@@ -147,6 +159,7 @@ func TestFastSSD_ScalarEquivalence(t *testing.T) {
 		{7, 11},    // Smaller than AVX2 batch (tests remainder handling)
 	}
 
+	//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 	for _, sz := range sizes {
 		t.Run(fmt.Sprintf("%dx%d", sz.width, sz.height), func(t *testing.T) {
 			img1 := randomNRGBA(sz.width, sz.height, 12345)
@@ -168,6 +181,8 @@ func TestFastSSD_ScalarEquivalence(t *testing.T) {
 }
 
 // TestFastSSD_CompareImplementations uses the built-in comparison utility.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestFastSSD_CompareImplementations(t *testing.T) {
 	if ActiveSSDKernel() == TierScalar {
 		t.Skip("Skipping comparison test: active backend is scalar")
@@ -186,6 +201,7 @@ func TestFastSSD_CompareImplementations(t *testing.T) {
 		{"thin_vertical", 8, 256, 1001, 1002},
 	}
 
+	//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			img1 := randomNRGBA(tc.width, tc.height, tc.seed1)
@@ -209,6 +225,8 @@ func TestFastSSD_CompareImplementations(t *testing.T) {
 
 // TestFastSSD_SinglePixel tests SSD with 1x1 images.
 func TestFastSSD_SinglePixel(t *testing.T) {
+	t.Parallel()
+
 	img1 := solidColorNRGBA(1, 1, color.NRGBA{R: 50, G: 100, B: 150, A: 255})
 	img2 := solidColorNRGBA(1, 1, color.NRGBA{R: 60, G: 90, B: 160, A: 255})
 
@@ -226,6 +244,8 @@ func TestFastSSD_SinglePixel(t *testing.T) {
 
 // TestFastSSD_ThinImages tests edge case with very thin images.
 func TestFastSSD_ThinImages(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name          string
 		width, height int
@@ -238,6 +258,8 @@ func TestFastSSD_ThinImages(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			img1 := randomNRGBA(tc.width, tc.height, 123)
 			img2 := randomNRGBA(tc.width, tc.height, 456)
 
@@ -257,6 +279,8 @@ func TestFastSSD_ThinImages(t *testing.T) {
 
 // TestFastSSD_DimensionMismatch tests safe rejection of mismatched dimensions.
 func TestFastSSD_DimensionMismatch(t *testing.T) {
+	t.Parallel()
+
 	img1 := randomNRGBA(64, 64, 111)
 
 	img2 := randomNRGBA(128, 128, 222) // Different size
@@ -278,6 +302,8 @@ func TestFastSSD_DimensionMismatch(t *testing.T) {
 
 // TestFastSSD_ConcurrentAccess tests thread-safety of SSD computation.
 func TestFastSSD_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
 	img1 := randomNRGBA(256, 256, 111)
 	img2 := randomNRGBA(256, 256, 222)
 
@@ -320,6 +346,8 @@ func TestFastSSD_ConcurrentAccess(t *testing.T) {
 // ---------------------- Large Image Tests ----------------------
 
 // TestFastSSD_LargeImages stress tests with very large images.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestFastSSD_LargeImages(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping large image test in short mode")
@@ -332,6 +360,7 @@ func TestFastSSD_LargeImages(t *testing.T) {
 		{2048, 2048}, // 4M pixels
 	}
 
+	//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 	for _, sz := range sizes {
 		t.Run(fmt.Sprintf("%dx%d", sz.width, sz.height), func(t *testing.T) {
 			img1 := randomNRGBA(sz.width, sz.height, 111)
@@ -365,6 +394,8 @@ func TestFastSSD_LargeImages(t *testing.T) {
 // ---------------------- Padded Stride Tests ----------------------
 
 // TestFastSSD_PaddedStride tests handling of non-standard stride (padded images).
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestFastSSD_PaddedStride(t *testing.T) {
 	width, height := 63, 32 // Non-multiple of 8 (tests remainder handling)
 
@@ -425,6 +456,8 @@ const requiredTierEnv = "CIRCLEFIT_REQUIRE_SIMD_TIER"
 // package: the renderer's dispatch was invisible to it, so a CI step could ask
 // for SSE2, run the renderer package, and pass while the renderer had silently
 // fallen back to scalar.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestRequiredSIMDTier(t *testing.T) {
 	required := os.Getenv(requiredTierEnv)
 	if required == "" {
@@ -445,6 +478,8 @@ func TestRequiredSIMDTier(t *testing.T) {
 // dispatch could not express: every kernel in the process agrees with one
 // resolved tier, and the exceptions are the documented ones rather than an
 // accident of which init ran.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestInstalledKernelsMatchTier(t *testing.T) {
 	tier := Tier()
 	t.Logf("tier %s: SSD kernel %s, SAD kernel %s", tier, ActiveSSDKernel(), ActiveSADKernel())
@@ -482,6 +517,8 @@ func TestInstalledKernelsMatchTier(t *testing.T) {
 // did not select a tier this CPU cannot execute. A forced tier is excluded,
 // because forcing a narrower tier than the CPU offers is the supported way to
 // test a fallback.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestDetectedTierMatchesCPUFeatures(t *testing.T) {
 	if os.Getenv(simdTierEnv) != "" || os.Getenv(simdDisableEnv) == "1" {
 		t.Skip("tier is pinned by the environment")
@@ -629,6 +666,8 @@ func BenchmarkFastSSD_Comparison(b *testing.B) {
 
 // TestFastMSECost_EquivalentToMSECost tests that FastMSECost matches MSECost.
 func TestFastMSECost_EquivalentToMSECost(t *testing.T) {
+	t.Parallel()
+
 	sizes := []struct {
 		width, height int
 	}{
@@ -640,6 +679,8 @@ func TestFastMSECost_EquivalentToMSECost(t *testing.T) {
 
 	for _, sz := range sizes {
 		t.Run(fmt.Sprintf("%dx%d", sz.width, sz.height), func(t *testing.T) {
+			t.Parallel()
+
 			img1 := randomNRGBA(sz.width, sz.height, 9999)
 			img2 := randomNRGBA(sz.width, sz.height, 8888)
 
@@ -664,6 +705,8 @@ func TestFastMSECost_EquivalentToMSECost(t *testing.T) {
 // ---------------------- Validation Test ----------------------
 
 // TestSSDBackendDetection validates that the correct backend was selected.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestSSDBackendDetection(t *testing.T) {
 	t.Logf("Active SSD backend: %s", ActiveSSDKernel())
 

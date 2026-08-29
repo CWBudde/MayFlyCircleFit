@@ -343,7 +343,8 @@ func (m *MayflyAdapter) Run(eval func([]float64) float64, lower, upper []float64
 // RunContext executes Mayfly with cancellation, progress, measured work, and
 // optional population seeding around a saved best candidate.
 func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options RunOptions) (Result, error) {
-	if err := validateProblem(problem); err != nil {
+	err := validateProblem(problem)
+	if err != nil {
 		return Result{}, err
 	}
 
@@ -351,7 +352,8 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 		return Result{}, errors.New("resume count cannot be negative")
 	}
 
-	if err := validateContinuationProfile(options.Continuation); err != nil {
+	err = validateContinuationProfile(options.Continuation)
+	if err != nil {
 		return Result{}, err
 	}
 
@@ -429,6 +431,10 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 		// library still honours a value in [0,1]. Leaving the field untouched
 		// is what selects the paper's fitness test, so there is no
 		// non-deprecated way to express the override.
+		// Two directives, because the two gates read different ones: the
+		// standalone staticcheck job honours //lint:ignore, golangci-lint honours
+		// //nolint. Dropping either one fails that gate.
+		//nolint:staticcheck // deliberate use of the deprecated override; there is no non-deprecated equivalent.
 		//lint:ignore SA1019 deliberate use of the deprecated override; there is no non-deprecated equivalent.
 		config.AquilaWeight = *m.aquilaWeight
 	}

@@ -25,7 +25,7 @@ type parameterCircle struct {
 }
 
 type parameterExport struct {
-	JobID      string            `json:"jobID"`
+	JobID      string            `json:"jobId"`
 	Cost       float64           `json:"cost"`
 	Iterations int               `json:"iterations"`
 	Timestamp  time.Time         `json:"timestamp"`
@@ -96,7 +96,8 @@ func (s *Server) handleGetParameters(w http.ResponseWriter, r *http.Request, job
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 
-	if err := encoder.Encode(export); err != nil {
+	err = encoder.Encode(export)
+	if err != nil {
 		slog.Error("Failed to encode parameter export", "job_id", jobID, "error", err)
 	}
 }

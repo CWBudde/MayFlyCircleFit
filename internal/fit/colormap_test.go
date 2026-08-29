@@ -7,6 +7,8 @@ import (
 )
 
 func TestParseColormap(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input string
 		want  Colormap
@@ -27,6 +29,8 @@ func TestParseColormap(t *testing.T) {
 }
 
 func TestMapErrorColorClampsAndNormalizes(t *testing.T) {
+	t.Parallel()
+
 	zero := color.NRGBA{R: 35, G: 23, B: 27, A: 255}
 	maximum := color.NRGBA{R: 144, G: 12, B: 0, A: 255}
 
@@ -46,6 +50,8 @@ func TestMapErrorColorClampsAndNormalizes(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := MapErrorColor(test.value, test.maxError, ColormapTurbo); got != test.want {
 				t.Errorf("MapErrorColor(%v, %v, turbo) = %#v, want %#v", test.value, test.maxError, got, test.want)
 			}
@@ -54,6 +60,8 @@ func TestMapErrorColorClampsAndNormalizes(t *testing.T) {
 }
 
 func TestMagmaEndpointsAndInterpolation(t *testing.T) {
+	t.Parallel()
+
 	if got, want := MapNormalizedColor(0, ColormapMagma), magmaStops[0]; got != want {
 		t.Errorf("magma(0) = %#v, want %#v", got, want)
 	}
@@ -69,6 +77,8 @@ func TestMagmaEndpointsAndInterpolation(t *testing.T) {
 }
 
 func TestUnknownColormapFallsBackToTurbo(t *testing.T) {
+	t.Parallel()
+
 	if got, want := MapNormalizedColor(0.4, Colormap("unknown")), MapNormalizedColor(0.4, ColormapTurbo); got != want {
 		t.Errorf("unknown colormap = %#v, want Turbo %#v", got, want)
 	}

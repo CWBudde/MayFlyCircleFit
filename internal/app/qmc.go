@@ -50,7 +50,7 @@ func SupportedQMCInits() []QMCInit {
 // Every consumer needs that fallback for the same reason ResolvedOptimizer
 // does: a checkpoint written before the field existed carries no strategy and
 // must resume exactly as it did.
-func (c JobConfig) ResolvedQMCInit() QMCInit {
+func (c *JobConfig) ResolvedQMCInit() QMCInit {
 	if c.QMCInit == "" {
 		return QMCInitUniform
 	}
@@ -60,7 +60,7 @@ func (c JobConfig) ResolvedQMCInit() QMCInit {
 
 // validateQMCInit enforces the strategy set. It runs only for MayFly jobs,
 // because mayflyOnlyFields has already refused the field for any other engine.
-func (c JobConfig) validateQMCInit() error {
+func (c *JobConfig) validateQMCInit() error {
 	supported := SupportedQMCInits()
 	if slices.Contains(supported, c.ResolvedQMCInit()) {
 		return nil

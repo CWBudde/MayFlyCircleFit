@@ -71,7 +71,8 @@ func (s *Server) restoreProjectJobs(slug app.Project, projectStore store.Store) 
 			}
 		}
 
-		if err := s.jobManager.restoreJob(job); err != nil {
+		err = s.jobManager.restoreJob(job)
+		if err != nil {
 			// A duplicate ID is not an ordinary skip: the same job UUID exists
 			// under two projects on disk, so this project's copy is dropped from
 			// the API and the UI entirely while its files stay where they are.

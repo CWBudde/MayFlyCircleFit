@@ -19,6 +19,8 @@ import (
 // reason internal/fit owns the ParametersPerCircle contract: the test needs the
 // unexported set, and only this side may import the other.
 func TestSupportedVariantsMatchTheApplicationConfiguration(t *testing.T) {
+	t.Parallel()
+
 	configurable := make([]string, 0, len(app.SupportedVariants()))
 	for _, variant := range app.SupportedVariants() {
 		configurable = append(configurable, string(variant))
@@ -49,8 +51,12 @@ func TestSupportedVariantsMatchTheApplicationConfiguration(t *testing.T) {
 // is not enough, because a name could route to a constructor that fails or
 // diverges. The budget is deliberately tiny so this stays a -short test.
 func TestEveryConfigurableVariantOptimizes(t *testing.T) {
+	t.Parallel()
+
 	for _, variant := range app.SupportedVariants() {
 		t.Run(string(variant), func(t *testing.T) {
+			t.Parallel()
+
 			optimizer, err := NewMayflyVariant(string(variant), 5, 20, 1234)
 			if err != nil {
 				t.Fatalf("NewMayflyVariant(%q) error = %v", variant, err)

@@ -12,6 +12,8 @@ import (
 )
 
 func TestJobManagerBestRevisionAdvancesOnlyForStrictImprovements(t *testing.T) {
+	t.Parallel()
+
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
@@ -48,6 +50,8 @@ func TestJobManagerBestRevisionAdvancesOnlyForStrictImprovements(t *testing.T) {
 }
 
 func TestJobManagerCandidateProgressIsProvisional(t *testing.T) {
+	t.Parallel()
+
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
@@ -92,6 +96,8 @@ func TestJobManagerCandidateProgressIsProvisional(t *testing.T) {
 }
 
 func TestJobManagerCandidateProgressKeepsBestCandidateAndClearsAtTerminalState(t *testing.T) {
+	t.Parallel()
+
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
@@ -130,6 +136,8 @@ func TestJobManagerCandidateProgressKeepsBestCandidateAndClearsAtTerminalState(t
 }
 
 func TestJobManager_CreateJob(t *testing.T) {
+	t.Parallel()
+
 	jm := NewJobManager()
 
 	config := JobConfig{
@@ -157,6 +165,8 @@ func TestJobManager_CreateJob(t *testing.T) {
 }
 
 func TestJobManagerLegalTransitions(t *testing.T) {
+	t.Parallel()
+
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
@@ -192,6 +202,8 @@ func TestJobManagerLegalTransitions(t *testing.T) {
 }
 
 func TestJobManagerRejectsRegressingProgress(t *testing.T) {
+	t.Parallel()
+
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
@@ -213,6 +225,8 @@ func TestJobManagerRejectsRegressingProgress(t *testing.T) {
 }
 
 func TestJobManager_GetJob(t *testing.T) {
+	t.Parallel()
+
 	jm := NewJobManager()
 
 	config := JobConfig{RefPath: "test.png", Mode: "joint"}
@@ -234,6 +248,8 @@ func TestJobManager_GetJob(t *testing.T) {
 }
 
 func TestJobManager_ReturnsDetachedSnapshots(t *testing.T) {
+	t.Parallel()
+
 	jm := NewJobManager()
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
 
@@ -328,6 +344,8 @@ func TestJobManagerRestartRunsAccumulateAcrossResumesAndStaySnapshotSafe(t *test
 }
 
 func TestJobManagerRecordsCompleteDetachedMetricHistory(t *testing.T) {
+	t.Parallel()
+
 	jm := NewJobManager()
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
 	psnr, ssim := 30.0, 0.8
@@ -363,6 +381,8 @@ func TestJobManagerRecordsCompleteDetachedMetricHistory(t *testing.T) {
 }
 
 func TestJobManager_ListJobs(t *testing.T) {
+	t.Parallel()
+
 	jm := NewJobManager()
 
 	if len(jm.ListJobs()) != 0 {
@@ -379,6 +399,8 @@ func TestJobManager_ListJobs(t *testing.T) {
 }
 
 func TestJobManagerListSummariesDoesNotCarryOptimizerHistory(t *testing.T) {
+	t.Parallel()
+
 	jm := NewJobManager()
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
 	end := time.Now()
@@ -409,6 +431,8 @@ func TestJobManagerListSummariesDoesNotCarryOptimizerHistory(t *testing.T) {
 }
 
 func TestJobManager_UpdateJob(t *testing.T) {
+	t.Parallel()
+
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
@@ -442,6 +466,8 @@ func TestJobManager_UpdateJob(t *testing.T) {
 }
 
 func TestJobManager_ThreadSafety(t *testing.T) {
+	t.Parallel()
+
 	jm := NewJobManager()
 
 	job := jm.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
@@ -451,11 +477,14 @@ func TestJobManager_ThreadSafety(t *testing.T) {
 
 	for i := range 10 {
 		go func(iteration int) {
-			jm.UpdateJob(job.ID, func(j *Job) {
+			err := jm.UpdateJob(job.ID, func(j *Job) {
 				j.Iterations = iteration
 
 				time.Sleep(1 * time.Millisecond)
 			})
+			if err != nil {
+				t.Errorf("UpdateJob: %v", err)
+			}
 
 			done <- true
 		}(i)
@@ -477,6 +506,8 @@ func TestJobManager_ThreadSafety(t *testing.T) {
 // schedule executor depends on: a stage can name its job before that job
 // exists, and no second job can then take that name.
 func TestCreateJobWithIDHoldsTheIdentifierTheCallerChose(t *testing.T) {
+	t.Parallel()
+
 	manager := NewJobManager()
 	chosen := uuid.NewString()
 
@@ -493,7 +524,8 @@ func TestCreateJobWithIDHoldsTheIdentifierTheCallerChose(t *testing.T) {
 		t.Fatal("job was not registered under the chosen identifier")
 	}
 
-	if _, err := manager.CreateJobWithID(chosen, app.DefaultProject, JobConfig{RefPath: "ref.png"}); !errors.Is(err, errDuplicateJobID) {
+	_, err = manager.CreateJobWithID(chosen, app.DefaultProject, JobConfig{RefPath: "ref.png"})
+	if !errors.Is(err, errDuplicateJobID) {
 		t.Fatalf("second create error = %v, want errDuplicateJobID", err)
 	}
 
@@ -507,7 +539,8 @@ func TestCreateJobWithIDHoldsTheIdentifierTheCallerChose(t *testing.T) {
 	}
 
 	for _, bad := range []string{"not-a-uuid", "00000000-0000-0000-0000-000000000000", "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"} {
-		if _, err := manager.CreateJobWithID(bad, app.DefaultProject, JobConfig{}); err == nil {
+		_, err := manager.CreateJobWithID(bad, app.DefaultProject, JobConfig{})
+		if err == nil {
 			t.Fatalf("CreateJobWithID(%q) was accepted", bad)
 		}
 	}

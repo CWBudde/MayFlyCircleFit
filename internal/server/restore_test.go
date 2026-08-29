@@ -9,6 +9,8 @@ import (
 )
 
 func TestServerRestoresPersistedJobsAndHistory(t *testing.T) {
+	t.Parallel()
+
 	persistence, err := store.NewFSStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -24,7 +26,9 @@ func TestServerRestoresPersistedJobsAndHistory(t *testing.T) {
 	checkpoint.Termination = "completed"
 
 	checkpoint.Timestamp = end
-	if err := persistence.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+	err = persistence.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -45,7 +49,8 @@ func TestServerRestoresPersistedJobsAndHistory(t *testing.T) {
 		}
 	}
 
-	if err := writer.Close(); err != nil {
+	err = writer.Close()
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -72,6 +77,8 @@ func TestServerRestoresPersistedJobsAndHistory(t *testing.T) {
 }
 
 func TestJobFromCheckpointTreatsRefillLimitAsCompleted(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := store.NewCheckpoint("12345678-1234-4234-8234-123456789abc", make([]float64, 7), 5, 10, 100, store.JobConfig{
 		RefPath: "test.png", Mode: "batch", Circles: 1, Iters: 100, PopSize: 20, BatchSize: 1,
 	})

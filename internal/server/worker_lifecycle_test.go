@@ -11,6 +11,7 @@ import (
 	"github.com/cwbudde/circlefit/internal/store"
 )
 
+//nolint:paralleltest // boots real workers; parallel load would skew its wall-clock waits
 func TestServerSupervisesCancellationAndBoundedQueue(t *testing.T) {
 	root := t.TempDir()
 	imagePath := filepath.Join(root, "reference.png")
@@ -66,6 +67,7 @@ func TestServerSupervisesCancellationAndBoundedQueue(t *testing.T) {
 	_ = server.requestCancellation(second.ID)
 }
 
+//nolint:paralleltest // boots real workers; parallel load would skew its wall-clock waits
 func TestCancelledJobCanBeDeleted(t *testing.T) {
 	server := NewServer(":0", nil)
 
@@ -86,6 +88,7 @@ func TestCancelledJobCanBeDeleted(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // boots real workers; parallel load would skew its wall-clock waits
 func TestLongJobPublishesProgressTraceAndCheckpoint(t *testing.T) {
 	root := t.TempDir()
 	imagePath := filepath.Join(root, "reference.png")
@@ -112,7 +115,9 @@ func TestLongJobPublishesProgressTraceAndCheckpoint(t *testing.T) {
 	}
 
 	job := server.jobManager.CreateJob(app.DefaultProject, config)
-	if err := server.enqueueJob(job.ID); err != nil {
+
+	err = server.enqueueJob(job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -138,7 +143,8 @@ func TestLongJobPublishesProgressTraceAndCheckpoint(t *testing.T) {
 		t.Fatalf("checkpoint has no live progress: %+v", checkpoint)
 	}
 
-	if err := server.requestCancellation(job.ID); err != nil {
+	err = server.requestCancellation(job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 

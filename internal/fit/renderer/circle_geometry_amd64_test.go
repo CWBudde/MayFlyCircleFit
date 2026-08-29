@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sys/cpu"
 )
 
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCircleSpanFloat32AVX2MatchesScalar(t *testing.T) {
 	if !cpu.X86.HasAVX2 {
 		t.Skip("AVX2 unavailable")
@@ -83,6 +84,8 @@ var circleSpanFloat32Cases = []struct {
 // TestCircleSpanFloat32KernelMatchesTier pins the installed float32 span kernel
 // against the resolved tier, and checks that the gated wrapper agrees with the
 // scalar oracle in whichever configuration it lands in.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCircleSpanFloat32KernelMatchesTier(t *testing.T) {
 	want := fit.TierScalar
 	if fit.Tier() == fit.TierAVX2 {
@@ -107,6 +110,8 @@ func TestCircleSpanFloat32KernelMatchesTier(t *testing.T) {
 // TestCircleSpanFloat32KernelFollowsForcedTier proves the geometry dispatch is
 // wired to the same tier switch as everything else, rather than having made its
 // own decision at init.
+//
+//nolint:paralleltest // forces the process-global SIMD tier, which no two tests may do at once
 func TestCircleSpanFloat32KernelFollowsForcedTier(t *testing.T) {
 	fit.SetForcedTier(fit.TierScalar)
 
@@ -127,6 +132,7 @@ func TestCircleSpanFloat32KernelFollowsForcedTier(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestFixedCircleQ16AVX2MatchesScalar(t *testing.T) {
 	if !cpu.X86.HasAVX2 {
 		t.Skip("AVX2 unavailable")

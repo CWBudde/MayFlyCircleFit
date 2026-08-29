@@ -82,6 +82,7 @@ func parityConfig(imagePath string) string {
 		parityPolishSweeps, parityPolishIters, parityPolishStagn, paritySeed)
 }
 
+//nolint:paralleltest // boots a worker-backed server; parallel campaigns would skew its wall-clock waits.
 func TestScheduleReproducesTheHandDrivenCampaign(t *testing.T) {
 	// The campaign runs ten real optimizer stages, five per path. The budgets
 	// above are sized so that costs about a second and a half, which is why this
@@ -150,7 +151,8 @@ func createParityTestImage(t *testing.T, path string) string {
 	}
 	defer file.Close()
 
-	if err := png.Encode(file, img); err != nil {
+	err = png.Encode(file, img)
+	if err != nil {
 		t.Fatalf("encode parity image: %v", err)
 	}
 

@@ -95,12 +95,12 @@ func (hub *UIEventHub) Publish(event UIEvent) UIEvent {
 }
 
 func (hub *UIEventHub) PublishJob(progress ProgressEvent) UIEvent {
-	copy := progress
+	snapshot := progress
 
 	return hub.Publish(UIEvent{
 		Type:      uiEventJobUpsert,
 		JobID:     progress.JobID,
-		Progress:  &copy,
+		Progress:  &snapshot,
 		Timestamp: progress.Timestamp,
 	})
 }
@@ -201,7 +201,8 @@ func writeUIEvent(w http.ResponseWriter, event UIEvent) error {
 		return fmt.Errorf("marshal UI event: %w", err)
 	}
 
-	if _, err := fmt.Fprintf(w, "id: %s\ndata: %s\n\n", strconv.FormatUint(event.Sequence, 10), data); err != nil {
+	_, err = fmt.Fprintf(w, "id: %s\ndata: %s\n\n", strconv.FormatUint(event.Sequence, 10), data)
+	if err != nil {
 		return fmt.Errorf("write UI event: %w", err)
 	}
 

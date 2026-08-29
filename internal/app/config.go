@@ -478,7 +478,7 @@ type JobConfig struct {
 }
 
 // EarlyStopEnabled reports whether optimizer-level early stopping is configured.
-func (c JobConfig) EarlyStopEnabled() bool {
+func (c *JobConfig) EarlyStopEnabled() bool {
 	return c.StopTargetCost > 0 || c.StopStagnationIters > 0
 }
 
@@ -724,7 +724,9 @@ func (c *JobConfig) ApplyDefaults() error {
 }
 
 // Validate returns a field-specific error for unsafe or inconsistent values.
-func (c JobConfig) Validate() error {
+//
+//nolint:gocognit,gocyclo,cyclop,funlen,maintidx // one flat guard per config field; splitting scatters the rules.
+func (c *JobConfig) Validate() error {
 	if c.RefPath == "" {
 		return invalid("refPath", "is required")
 	}
@@ -1018,7 +1020,9 @@ func invalid(field, reason string) error {
 
 func randomSeed() (int64, error) {
 	var data [8]byte
-	if _, err := cryptorand.Read(data[:]); err != nil {
+
+	_, err := cryptorand.Read(data[:])
+	if err != nil {
 		return 0, err
 	}
 

@@ -8,6 +8,8 @@ import (
 )
 
 func TestPSNR(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		mse  float64
@@ -19,6 +21,8 @@ func TestPSNR(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := PSNR(test.mse); math.Abs(got-test.want) > 1e-12 {
 				t.Fatalf("PSNR(%v) = %.15f, want %.15f", test.mse, got, test.want)
 			}
@@ -37,6 +41,8 @@ func TestPSNR(t *testing.T) {
 }
 
 func TestSSIMIdenticalAndAlphaIgnored(t *testing.T) {
+	t.Parallel()
+
 	left := patternedNRGBA(image.Rect(3, 5, 20, 18))
 	right := image.NewNRGBA(image.Rect(30, 40, 47, 53))
 
@@ -48,12 +54,15 @@ func TestSSIMIdenticalAndAlphaIgnored(t *testing.T) {
 		}
 	}
 
-	if got, err := SSIM(left, right); err != nil || math.Abs(got-1) > 1e-12 {
+	got, err := SSIM(left, right)
+	if err != nil || math.Abs(got-1) > 1e-12 {
 		t.Fatalf("SSIM identical RGB = (%v, %v), want (1, nil)", got, err)
 	}
 }
 
 func TestSSIMStructuralDifferenceIsSymmetricAndBounded(t *testing.T) {
+	t.Parallel()
+
 	left := patternedNRGBA(image.Rect(0, 0, 24, 19))
 
 	right := image.NewNRGBA(left.Bounds())
@@ -84,6 +93,8 @@ func TestSSIMStructuralDifferenceIsSymmetricAndBounded(t *testing.T) {
 }
 
 func TestSSIMConstantImagesMatchesAnalyticalLuminanceTerm(t *testing.T) {
+	t.Parallel()
+
 	black := image.NewNRGBA(image.Rect(0, 0, 13, 9))
 
 	gray := image.NewNRGBA(black.Bounds())
@@ -107,13 +118,16 @@ func TestSSIMConstantImagesMatchesAnalyticalLuminanceTerm(t *testing.T) {
 }
 
 func TestSSIMSupportsSmallImagesAndRejectsInvalidInput(t *testing.T) {
+	t.Parallel()
+
 	one := image.NewNRGBA(image.Rect(4, 7, 5, 8))
 	two := image.NewNRGBA(image.Rect(10, 12, 11, 13))
 
 	one.SetNRGBA(4, 7, color.NRGBA{R: 20, G: 40, B: 60, A: 10})
 	two.SetNRGBA(10, 12, color.NRGBA{R: 20, G: 40, B: 60, A: 250})
 
-	if got, err := SSIM(one, two); err != nil || math.Abs(got-1) > 1e-12 {
+	got, err := SSIM(one, two)
+	if err != nil || math.Abs(got-1) > 1e-12 {
 		t.Fatalf("one-pixel SSIM = (%v, %v), want (1, nil)", got, err)
 	}
 
@@ -126,7 +140,10 @@ func TestSSIMSupportsSmallImagesAndRejectsInvalidInput(t *testing.T) {
 		"mismatch": {one, mismatch},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := SSIM(images[0], images[1]); err == nil {
+			t.Parallel()
+
+			_, err := SSIM(images[0], images[1])
+			if err == nil {
 				t.Fatal("SSIM accepted invalid input")
 			}
 		})

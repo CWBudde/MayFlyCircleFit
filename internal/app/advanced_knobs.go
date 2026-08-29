@@ -14,7 +14,7 @@ type advancedKnob struct {
 
 // advancedKnobs lists the three knobs in a fixed order, so a configuration
 // setting more than one always reports the same one first.
-func (c JobConfig) advancedKnobs() []advancedKnob {
+func (c *JobConfig) advancedKnobs() []advancedKnob {
 	return []advancedKnob{
 		{"danceDamp", c.DanceDamp},
 		{"aquilaWeight", c.AquilaWeight},
@@ -24,7 +24,7 @@ func (c JobConfig) advancedKnobs() []advancedKnob {
 
 // validateAdvancedOptimizerKnobs range-checks the three low-level MayFly
 // parameters and refuses the two that only the aoblmoa variant reads.
-func (c JobConfig) validateAdvancedOptimizerKnobs() error {
+func (c *JobConfig) validateAdvancedOptimizerKnobs() error {
 	err := c.validateAdvancedKnobRanges()
 	if err != nil {
 		return err
@@ -40,7 +40,7 @@ func (c JobConfig) validateAdvancedOptimizerKnobs() error {
 // a damping factor above 1 grows the dance coefficient every iteration. The
 // library still returns finite results -- velocity and position are clamped --
 // so this bound guards against a saturated random walk, not against a crash.
-func (c JobConfig) validateAdvancedKnobRanges() error {
+func (c *JobConfig) validateAdvancedKnobRanges() error {
 	for _, knob := range c.advancedKnobs() {
 		if knob.value == nil {
 			continue
@@ -59,7 +59,7 @@ func (c JobConfig) validateAdvancedKnobRanges() error {
 // Rejecting rather than ignoring them is the point: a configuration that set
 // aquilaWeight on a standard run would otherwise be accepted, persisted into a
 // checkpoint and reported back unchanged while never reaching the optimizer.
-func (c JobConfig) validateAOBLMOAOnlyKnobs() error {
+func (c *JobConfig) validateAOBLMOAOnlyKnobs() error {
 	if c.Variant == VariantAOBLMOA {
 		return nil
 	}

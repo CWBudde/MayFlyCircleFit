@@ -10,6 +10,8 @@ import (
 )
 
 func TestCompositeOpaqueSpanMatchesPixelPath(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name           string
 		r, g, b, alpha float64
@@ -24,6 +26,8 @@ func TestCompositeOpaqueSpanMatchesPixelPath(t *testing.T) {
 	for _, test := range tests {
 		for _, pixels := range sizes {
 			t.Run(fmt.Sprintf("%s/%d", test.name, pixels), func(t *testing.T) {
+				t.Parallel()
+
 				const prefixPixels = 1
 				got := makeOpaqueSpanFixture(prefixPixels + pixels + 1)
 				want := append([]byte(nil), got...)
@@ -53,6 +57,8 @@ func TestCompositeOpaqueSpanMatchesPixelPath(t *testing.T) {
 }
 
 func TestCompositeOpaqueSpanRandomMatchesPixelPath(t *testing.T) {
+	t.Parallel()
+
 	rng := rand.New(rand.NewPCG(0x1012, 0x4e454f4e))
 
 	for iteration := range 128 {
@@ -86,6 +92,8 @@ func TestCompositeOpaqueSpanRandomMatchesPixelPath(t *testing.T) {
 }
 
 func TestCompositeOpaqueSpanPairMatchesSeparateSpans(t *testing.T) {
+	t.Parallel()
+
 	const (
 		rowPixels  = 273
 		spanStart  = 5
@@ -103,6 +111,8 @@ func TestCompositeOpaqueSpanPairMatchesSeparateSpans(t *testing.T) {
 		{name: "opaque", r: 0.99, g: 0.01, b: 0.49, alpha: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := makeOpaqueSpanFixture(rowPixels * 2)
 			want := append([]byte(nil), got...)
 			compositeOpaqueSpanColor(want, firstOffset, spanPixels, test.r, test.g, test.b, test.alpha)
@@ -119,6 +129,8 @@ func TestCompositeOpaqueSpanPairMatchesSeparateSpans(t *testing.T) {
 }
 
 func TestPixelsAreOpaque(t *testing.T) {
+	t.Parallel()
+
 	opaque := []byte{1, 2, 3, 255, 4, 5, 6, 255}
 	if !pixelsAreOpaque(opaque) {
 		t.Fatal("opaque pixels reported as translucent")
@@ -131,6 +143,8 @@ func TestPixelsAreOpaque(t *testing.T) {
 }
 
 func TestCPURendererDetectsOpaqueCanvas(t *testing.T) {
+	t.Parallel()
+
 	reference := image.NewNRGBA(image.Rect(0, 0, 2, 1))
 	if renderer := NewCPURenderer(reference, 1); !renderer.opaqueCanvas {
 		t.Fatal("white canvas was not marked opaque")

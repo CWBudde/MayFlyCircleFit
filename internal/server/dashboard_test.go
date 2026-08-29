@@ -17,6 +17,8 @@ import (
 )
 
 func TestHandleDashboardMethodNotAllowed(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScheduleFixture(t, 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/dashboard", nil)
@@ -29,6 +31,8 @@ func TestHandleDashboardMethodNotAllowed(t *testing.T) {
 }
 
 func TestRoutingDashboardEndpoint(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScheduleFixture(t, 1)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard", nil)
@@ -56,6 +60,8 @@ func TestRoutingDashboardEndpoint(t *testing.T) {
 }
 
 func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScheduleFixture(t, 2)
 
 	scheduleStore, err := fixture.server.scheduleStore()
@@ -97,7 +103,7 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 	})
 
 	// Force stable states for aggregate assertions and the running row.
-	if err := fixture.server.jobManager.UpdateJob(running.ID, func(job *Job) {
+	err = fixture.server.jobManager.UpdateJob(running.ID, func(job *Job) {
 		job.State = StateRunning
 		job.StartTime = time.Now().Add(-2 * time.Second)
 		job.Iterations = 55
@@ -113,17 +119,19 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 				Timestamp: time.Now().Add(-time.Second * time.Duration(200-i)),
 			})
 		}
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("seed running job: %v", err)
 	}
 
-	if err := fixture.server.jobManager.UpdateJob(completed.ID, func(job *Job) {
+	err = fixture.server.jobManager.UpdateJob(completed.ID, func(job *Job) {
 		done := time.Now()
 		job.State = StateCompleted
 		job.BestCost = 9.9
 		job.InitialCost = 12
 		job.EndTime = &done
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("seed completed job: %v", err)
 	}
 
@@ -136,7 +144,9 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 	}
 
 	var response dashboardResponse
-	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+
+	err = json.NewDecoder(rec.Body).Decode(&response)
+	if err != nil {
 		t.Fatalf("decode dashboard: %v", err)
 	}
 
@@ -226,6 +236,8 @@ func TestHandleDashboardBuildsCampaignsJobsAndHostFacts(t *testing.T) {
 // contributes: the mini chart plots cost against circles in run order, so the
 // base stage has to come first even though discovery walks from the leaf up.
 func TestDashboardChainCampaignCarriesRunOrderSeries(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -251,7 +263,9 @@ func TestDashboardChainCampaignCarriesRunOrderSeries(t *testing.T) {
 	}
 
 	var response dashboardResponse
-	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+
+	err = json.NewDecoder(rec.Body).Decode(&response)
+	if err != nil {
 		t.Fatalf("decode dashboard: %v", err)
 	}
 
@@ -285,6 +299,8 @@ func TestDashboardChainCampaignCarriesRunOrderSeries(t *testing.T) {
 }
 
 func TestSortDashboardCampaigns(t *testing.T) {
+	t.Parallel()
+
 	campaigns := []ui.CampaignSummary{
 		{ID: "1", State: string(store.ScheduleStateCompleted), UpdatedAt: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)},
 		{ID: "2", State: string(store.ScheduleStateRunning), UpdatedAt: time.Date(2026, 8, 1, 12, 3, 0, 0, time.UTC)},
@@ -299,6 +315,8 @@ func TestSortDashboardCampaigns(t *testing.T) {
 }
 
 func TestDashboardRunningJobFromBoundsMetricHistory(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScheduleFixture(t, 1)
 
 	job := fixture.server.jobManager.CreateJob(app.DefaultProject, app.JobConfig{
@@ -363,6 +381,8 @@ func TestDashboardRunningJobFromBoundsMetricHistory(t *testing.T) {
 // are read under one lock, so the page cannot claim a running job it does not
 // show.
 func TestDashboardCountsAndRowsComeFromOneSnapshot(t *testing.T) {
+	t.Parallel()
+
 	manager := NewJobManager()
 
 	config := app.JobConfig{Mode: app.ModeBatch, Circles: 8, Iters: 100, PopSize: 30, Seed: 42}
@@ -400,6 +420,8 @@ func TestDashboardCountsAndRowsComeFromOneSnapshot(t *testing.T) {
 // but the clock restarts with the stage, and dividing one by the other reports
 // a throughput the machine never reached.
 func TestCirclesPerSecondExcludesInheritedEvaluations(t *testing.T) {
+	t.Parallel()
+
 	job := &Job{
 		Evaluations:          300,
 		InheritedEvaluations: 200,
@@ -419,6 +441,8 @@ func TestCirclesPerSecondExcludesInheritedEvaluations(t *testing.T) {
 // seed is taken when the job starts its own clock, so every continuation path
 // records it without having to remember to.
 func TestStartJobRecordsInheritedEvaluations(t *testing.T) {
+	t.Parallel()
+
 	manager := NewJobManager()
 
 	job := manager.CreateJob(app.DefaultProject, app.JobConfig{
@@ -486,7 +510,9 @@ func saveCampaignScheduleForDashboard(
 	record.State = state
 
 	record.UpdatedAt = updated
-	if err := scheduleStore.SaveSchedule(record); err != nil {
+
+	err = scheduleStore.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("save schedule %s: %v", scheduleID, err)
 	}
 
@@ -506,7 +532,9 @@ func saveCampaignScheduleForDashboard(
 	stage.Iterations = 1
 
 	stage.Evaluations = 1
-	if err := scheduleStore.SaveScheduleStage(scheduleID, stage); err != nil {
+
+	err = scheduleStore.SaveScheduleStage(scheduleID, stage)
+	if err != nil {
 		t.Fatalf("save schedule stage %s: %v", scheduleID, err)
 	}
 
@@ -524,6 +552,8 @@ func saveCampaignScheduleForDashboard(
 // against the names the island reads, because a drifting metricHistory tag
 // costs every sparkline its history without emptying anything else.
 func TestDashboardPageSeedMatchesEndpointShape(t *testing.T) {
+	t.Parallel()
+
 	payload := dashboardResponse{
 		RunningJobs: []dashboardRunningJob{{
 			ID: "job-1", Project: app.DefaultProject, State: string(StateRunning),
@@ -579,7 +609,9 @@ func jsonLeafKeys(t *testing.T, value any) map[string]any {
 	}
 
 	var decoded any
-	if err := json.Unmarshal(encoded, &decoded); err != nil {
+
+	err = json.Unmarshal(encoded, &decoded)
+	if err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
 

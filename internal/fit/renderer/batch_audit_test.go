@@ -13,6 +13,8 @@ import (
 )
 
 func TestAuditCircleBatchDistinguishesIntroducedAndFinalVisibility(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 9, 9
 	params := encodeAuditCircles(width, height, []fit.Circle{
 		{X: 2, Y: 2, R: 2, Opacity: 1},
@@ -61,6 +63,8 @@ func TestAuditCircleBatchDistinguishesIntroducedAndFinalVisibility(t *testing.T)
 }
 
 func TestAuditCircleBatchReportsHarmfulCircle(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 5, 5
 	reference := opaqueAuditImage(width, height, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	r := NewCPURenderer(reference, 1)
@@ -85,6 +89,8 @@ type replayOnlyRenderer struct {
 }
 
 func TestAuditCircleBatchAccumulatedMatchesReplay(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 24, 20
 	circles := auditParityCircles()
 	params := encodeAuditCircles(width, height, circles)
@@ -93,6 +99,8 @@ func TestAuditCircleBatchAccumulatedMatchesReplay(t *testing.T) {
 	for _, threads := range []int{1, 4} {
 		for _, custom := range []bool{false, true} {
 			t.Run(auditParityName(threads, custom), func(t *testing.T) {
+				t.Parallel()
+
 				build := func() *CPURenderer {
 					var r *CPURenderer
 
@@ -181,7 +189,8 @@ func BenchmarkAuditCircleBatch(b *testing.B) {
 			b.ReportAllocs()
 
 			for range b.N {
-				if _, err := AuditCircleBatch(r, params); err != nil {
+				_, err := AuditCircleBatch(r, params)
+				if err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -192,7 +201,8 @@ func BenchmarkAuditCircleBatch(b *testing.B) {
 			b.ReportAllocs()
 
 			for range b.N {
-				if _, err := AuditCircleBatch(r, params); err != nil {
+				_, err := AuditCircleBatch(r, params)
+				if err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -201,17 +211,24 @@ func BenchmarkAuditCircleBatch(b *testing.B) {
 }
 
 func TestAuditCircleBatchRejectsInvalidInput(t *testing.T) {
-	if _, err := AuditCircleBatch(nil, nil); err == nil {
+	t.Parallel()
+
+	_, err := AuditCircleBatch(nil, nil)
+	if err == nil {
 		t.Fatal("AuditCircleBatch(nil) error = nil")
 	}
 
 	r := NewCPURenderer(image.NewNRGBA(image.Rect(0, 0, 2, 2)), 1)
-	if _, err := AuditCircleBatch(r, make([]float64, paramsPerCircle-1)); err == nil {
+
+	_, err = AuditCircleBatch(r, make([]float64, paramsPerCircle-1))
+	if err == nil {
 		t.Fatal("AuditCircleBatch(short params) error = nil")
 	}
 }
 
 func TestSeedCirclesFromResidualRestrictsCentersToRegion(t *testing.T) {
+	t.Parallel()
+
 	canvas := solidImage(8, 8, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	reference := cloneNRGBA(canvas)
 	reference.SetNRGBA(1, 1, color.NRGBA{A: 255})
@@ -230,6 +247,8 @@ func TestSeedCirclesFromResidualRestrictsCentersToRegion(t *testing.T) {
 }
 
 func TestPruneCircleBatchIteratesAndPreservesDrawOrder(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 9, 9
 	circles := []fit.Circle{
 		{X: 2, Y: 2, R: 2, Opacity: 1},
@@ -271,6 +290,8 @@ func TestPruneCircleBatchIteratesAndPreservesDrawOrder(t *testing.T) {
 }
 
 func TestPruneCircleBatchRespectsContributionThresholdAndRemovalLimit(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 8, 4
 	params := encodeAuditCircles(width, height, []fit.Circle{
 		{X: 1, Y: 1, R: 1, Opacity: 1},
@@ -296,6 +317,8 @@ func TestPruneCircleBatchRespectsContributionThresholdAndRemovalLimit(t *testing
 }
 
 func TestSeedCirclesFromResidualTargetsSeparatedHighErrorPixels(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 10, 6
 	canvas := opaqueAuditImage(width, height, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	reference := cloneNRGBA(canvas)
@@ -326,6 +349,8 @@ func TestSeedCirclesFromResidualTargetsSeparatedHighErrorPixels(t *testing.T) {
 }
 
 func TestSeedParamsFromResidualReturnsValidCandidate(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 20, 10
 	canvas := opaqueAuditImage(width, height, color.NRGBA{R: 200, G: 200, B: 200, A: 255})
 	reference := opaqueAuditImage(width, height, color.NRGBA{R: 50, G: 100, B: 150, A: 255})
@@ -345,6 +370,8 @@ func TestSeedParamsFromResidualReturnsValidCandidate(t *testing.T) {
 }
 
 func TestSeedCirclesFromResidualRejectsInvalidInput(t *testing.T) {
+	t.Parallel()
+
 	canvas := image.NewNRGBA(image.Rect(0, 0, 2, 2))
 	reference := image.NewNRGBA(image.Rect(0, 0, 3, 2))
 
@@ -366,7 +393,10 @@ func TestSeedCirclesFromResidualRejectsInvalidInput(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := SeedCirclesFromResidual(test.canvas, test.reference, test.count, test.options); err == nil {
+			t.Parallel()
+
+			_, err := SeedCirclesFromResidual(test.canvas, test.reference, test.count, test.options)
+			if err == nil {
 				t.Fatal("SeedCirclesFromResidual() error = nil")
 			}
 		})

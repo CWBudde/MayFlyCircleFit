@@ -74,10 +74,14 @@ func (g fixedCircleQ16) symmetricRowSum() (int, bool) {
 	return int((int64(g.yQ) * 2) / circleQ16Scale), true
 }
 
-// span returns the half-open horizontal pixel span covered on row y. It uses
-// the same center-out search and inclusive boundary rule as the float64 oracle,
-// but all hot-loop distance checks are fixed-point integer operations.
-func (g fixedCircleQ16) span(y, width int) (xStart, xEnd int, intersects bool) {
+// span returns the half-open horizontal pixel span covered on row y: the first
+// covered column, the column one past the last, and whether the span is
+// non-empty. It uses the same center-out search and inclusive boundary rule as
+// the float64 oracle, but all hot-loop distance checks are fixed-point integer
+// operations.
+//
+//nolint:dupl,cyclop,funlen // fixedCircleQ24.span is a deliberate Q24.8 clone; staying identical is the point.
+func (g fixedCircleQ16) span(y, width int) (int, int, bool) {
 	dyQ := (int64(y) << circleQ16FractionBits) - int64(g.yQ)
 
 	radiusQ := int64(g.radiusQ)
@@ -87,7 +91,7 @@ func (g fixedCircleQ16) span(y, width int) (xStart, xEnd int, intersects bool) {
 
 	remaining := g.radiusSquared - dyQ*dyQ
 
-	xStart = g.centerX
+	xStart := g.centerX
 	// Distance grows monotonically away from the rounded center. If the eighth
 	// pixel to the left is inside, all seven pixels before it are also inside.
 	// This provides the useful part of SIMD batching without lanes or masks.
@@ -124,7 +128,7 @@ func (g fixedCircleQ16) span(y, width int) (xStart, xEnd int, intersects bool) {
 		xStart = 0
 	}
 
-	xEnd = g.centerX + 1
+	xEnd := g.centerX + 1
 	if remaining >= minimumBatchDistanceQ*minimumBatchDistanceQ {
 		for xEnd+7 < width {
 			dxQ := (int64(xEnd+7) << circleQ16FractionBits) - int64(g.xQ)
@@ -158,7 +162,10 @@ func (g fixedCircleQ16) span(y, width int) (xStart, xEnd int, intersects bool) {
 	return xStart, xEnd, xEnd > xStart
 }
 
-func circleSpanFloat64(centerX, radiusSquaredMinusDY float64, width int) (xStart, xEnd int) {
+// circleSpanFloat64 returns the half-open horizontal span edges - the first
+// covered column and the column one past the last - selecting the batched or
+// the one-pixel search by how much of the row the circle covers.
+func circleSpanFloat64(centerX, radiusSquaredMinusDY float64, width int) (int, int) {
 	if radiusSquaredMinusDY < circleBatchMinSquare {
 		return circleSpanFloat64OnePixel(centerX, radiusSquaredMinusDY, width)
 	}
@@ -166,10 +173,13 @@ func circleSpanFloat64(centerX, radiusSquaredMinusDY float64, width int) (xStart
 	return circleSpanFloat64Batched(centerX, radiusSquaredMinusDY, width)
 }
 
-func circleSpanFloat64Batched(centerX, radiusSquaredMinusDY float64, width int) (xStart, xEnd int) {
+// circleSpanFloat64Batched returns the half-open span edges - the first covered
+// column and the column one past the last - stepping eight pixels at a time
+// while the batch stays inside the circle.
+func circleSpanFloat64Batched(centerX, radiusSquaredMinusDY float64, width int) (int, int) {
 	cx := int(centerX + 0.5)
 
-	xStart = cx
+	xStart := cx
 	for xStart >= 8 {
 		dx := float64(xStart-8) - centerX
 		if dx*dx > radiusSquaredMinusDY {
@@ -188,7 +198,7 @@ func circleSpanFloat64Batched(centerX, radiusSquaredMinusDY float64, width int) 
 		xStart--
 	}
 
-	xEnd = cx + 1
+	xEnd := cx + 1
 	for xEnd+7 < width {
 		dx := float64(xEnd+7) - centerX
 		if dx*dx > radiusSquaredMinusDY {
@@ -214,7 +224,10 @@ func circleSpanFloat64Batched(centerX, radiusSquaredMinusDY float64, width int) 
 	return xStart, xEnd
 }
 
-func circleSpanFloat32(centerX, radiusSquaredMinusDY float32, width int) (xStart, xEnd int) {
+// circleSpanFloat32 returns the half-open horizontal span edges - the first
+// covered column and the column one past the last - selecting the batched or
+// the one-pixel search by how much of the row the circle covers.
+func circleSpanFloat32(centerX, radiusSquaredMinusDY float32, width int) (int, int) {
 	if radiusSquaredMinusDY < circleBatchMinSquare {
 		return circleSpanFloat32OnePixel(centerX, radiusSquaredMinusDY, width)
 	}
@@ -222,10 +235,13 @@ func circleSpanFloat32(centerX, radiusSquaredMinusDY float32, width int) (xStart
 	return circleSpanFloat32Batched(centerX, radiusSquaredMinusDY, width)
 }
 
-func circleSpanFloat32Batched(centerX, radiusSquaredMinusDY float32, width int) (xStart, xEnd int) {
+// circleSpanFloat32Batched returns the half-open span edges - the first covered
+// column and the column one past the last - stepping eight pixels at a time
+// while the batch stays inside the circle.
+func circleSpanFloat32Batched(centerX, radiusSquaredMinusDY float32, width int) (int, int) {
 	cx := int(centerX + 0.5)
 
-	xStart = cx
+	xStart := cx
 	for xStart >= 8 {
 		dx := float32(xStart-8) - centerX
 		if dx*dx > radiusSquaredMinusDY {
@@ -244,7 +260,7 @@ func circleSpanFloat32Batched(centerX, radiusSquaredMinusDY float32, width int) 
 		xStart--
 	}
 
-	xEnd = cx + 1
+	xEnd := cx + 1
 	for xEnd+7 < width {
 		dx := float32(xEnd+7) - centerX
 		if dx*dx > radiusSquaredMinusDY {
@@ -270,8 +286,10 @@ func circleSpanFloat32Batched(centerX, radiusSquaredMinusDY float32, width int) 
 	return xStart, xEnd
 }
 
-func circleSpanFloat64OnePixel(centerX, remaining float64, width int) (xStart, xEnd int) {
-	xStart = int(centerX + 0.5)
+// circleSpanFloat64OnePixel returns the half-open span edges - the first covered
+// column and the column one past the last - walking outward one pixel at a time.
+func circleSpanFloat64OnePixel(centerX, remaining float64, width int) (int, int) {
+	xStart := int(centerX + 0.5)
 	for xStart > 0 {
 		dx := float64(xStart-1) - centerX
 		if dx*dx > remaining {
@@ -281,7 +299,7 @@ func circleSpanFloat64OnePixel(centerX, remaining float64, width int) (xStart, x
 		xStart--
 	}
 
-	xEnd = int(centerX+0.5) + 1
+	xEnd := int(centerX+0.5) + 1
 	for xEnd < width {
 		dx := float64(xEnd) - centerX
 		if dx*dx > remaining {
@@ -294,8 +312,10 @@ func circleSpanFloat64OnePixel(centerX, remaining float64, width int) (xStart, x
 	return xStart, min(xEnd, width)
 }
 
-func circleSpanFloat32OnePixel(centerX, remaining float32, width int) (xStart, xEnd int) {
-	xStart = int(centerX + 0.5)
+// circleSpanFloat32OnePixel returns the half-open span edges - the first covered
+// column and the column one past the last - walking outward one pixel at a time.
+func circleSpanFloat32OnePixel(centerX, remaining float32, width int) (int, int) {
+	xStart := int(centerX + 0.5)
 	for xStart > 0 {
 		dx := float32(xStart-1) - centerX
 		if dx*dx > remaining {
@@ -305,7 +325,7 @@ func circleSpanFloat32OnePixel(centerX, remaining float32, width int) (xStart, x
 		xStart--
 	}
 
-	xEnd = int(centerX+0.5) + 1
+	xEnd := int(centerX+0.5) + 1
 	for xEnd < width {
 		dx := float32(xEnd) - centerX
 		if dx*dx > remaining {

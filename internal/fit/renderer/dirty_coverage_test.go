@@ -2,7 +2,6 @@ package renderer
 
 import (
 	"bytes"
-	"fmt"
 	"image"
 	"math/rand"
 	"sort"
@@ -28,7 +27,12 @@ type dirtyCoverageMetrics struct {
 // geometrically dirty pixel change, which also checks the test-only span union
 // against production rendering.
 func TestDirtySpanCoverageMetrics(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 256, 256
+
+	// Repeated across the batch rows of the table below.
+	const batchR16Category = "batch_R16"
 
 	circle := func(x, y, radius float64) fit.Circle {
 		return fit.Circle{X: x, Y: y, R: radius, Opacity: 1}
@@ -80,17 +84,18 @@ func TestDirtySpanCoverageMetrics(t *testing.T) {
 		{category: "overlap_K4_R32", name: "coincident", circles: repeated(4, circle(128, 128, 32))},
 		{category: "overlap_K4_R32", name: "clustered", circles: clustered},
 		{category: "overlap_K4_R32", name: "disjoint", circles: disjoint},
-	}
-	for _, count := range []int{1, 2, 4, 8, 16, 32} {
-		tests = append(tests, struct {
-			category string
-			name     string
-			circles  []fit.Circle
-		}{category: "batch_R16", name: fmt.Sprintf("K%d", count), circles: batchPool[:count]})
+		{category: batchR16Category, name: "K1", circles: batchPool[:1]},
+		{category: batchR16Category, name: "K2", circles: batchPool[:2]},
+		{category: batchR16Category, name: "K4", circles: batchPool[:4]},
+		{category: batchR16Category, name: "K8", circles: batchPool[:8]},
+		{category: batchR16Category, name: "K16", circles: batchPool[:16]},
+		{category: batchR16Category, name: "K32", circles: batchPool[:32]},
 	}
 
 	for _, test := range tests {
 		t.Run(test.category+"/"+test.name, func(t *testing.T) {
+			t.Parallel()
+
 			metrics := measureDirtyCoverage(test.circles, width, height)
 
 			changedPixels := renderChangedPixels(test.circles, width, height)

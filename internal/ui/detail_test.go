@@ -30,6 +30,8 @@ func renderJobDetail(t *testing.T, job JobDetail) string {
 }
 
 func TestJobDetailPageViewModes(t *testing.T) {
+	t.Parallel()
+
 	psnr, ssim := 31.25, 0.9123
 	job := JobDetail{
 		ID:          "12345678-1234-1234-1234-123456789abc",
@@ -250,6 +252,8 @@ func TestJobDetailPageDistinguishesCandidateFromAuditedBest(t *testing.T) {
 }
 
 func TestJobDetailPageOmitsSSIMControlsWhenDisabled(t *testing.T) {
+	t.Parallel()
+
 	psnr, ssim := 31.25, 0.9123
 	body := renderJobDetail(t, JobDetail{
 		ID: "12345678-1234-1234-1234-123456789abc", State: "pending", StartTime: time.Now(),
@@ -272,6 +276,8 @@ func TestJobDetailPageOmitsSSIMControlsWhenDisabled(t *testing.T) {
 }
 
 func TestJobDetailPageShowsPolishingSchedule(t *testing.T) {
+	t.Parallel()
+
 	body := renderJobDetail(t, JobDetail{
 		ID: "12345678-1234-1234-1234-123456789abc", State: "pending", StartTime: time.Now(),
 		PolishingEnabled: true, PolishingActiveSetSize: 5, PolishingMaxSweeps: 3,
@@ -299,6 +305,8 @@ func TestJobDetailPageShowsPolishingSchedule(t *testing.T) {
 // back to this page. It is the one control in the row that works with no script
 // at all, so it is the one control that may still look clickable.
 func TestJobDetailFallbackMutationsAreDisabled(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		state  string
 		button string
@@ -312,6 +320,8 @@ func TestJobDetailFallbackMutationsAreDisabled(t *testing.T) {
 		{"completed", "download-report"},
 	} {
 		t.Run(tc.button+"/"+tc.state, func(t *testing.T) {
+			t.Parallel()
+
 			body := renderJobDetail(t, JobDetail{
 				ID: "12345678-1234-1234-1234-123456789abc", State: tc.state,
 				StartTime: time.Now(),
@@ -381,6 +391,8 @@ func TestJobDetailFallbackIsCompleteWithoutScript(t *testing.T) {
 }
 
 func TestJobDetailPageMetadataUnavailable(t *testing.T) {
+	t.Parallel()
+
 	body := renderJobDetail(t, JobDetail{
 		ID:        "12345678-1234-1234-1234-123456789abc",
 		State:     "pending",
@@ -393,6 +405,8 @@ func TestJobDetailPageMetadataUnavailable(t *testing.T) {
 }
 
 func TestJobDetailPageParameterViewerCircleCounts(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		parameters []CircleParameter
@@ -412,6 +426,8 @@ func TestJobDetailPageParameterViewerCircleCounts(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			body := renderJobDetail(t, JobDetail{
 				ID: "12345678-1234-1234-1234-123456789abc", State: "completed",
 				StartTime: time.Now(), Circles: 64, Parameters: test.parameters,
@@ -456,6 +472,8 @@ func TestJobDetailPageParameterViewerCircleCounts(t *testing.T) {
 }
 
 func TestProgressPercent(t *testing.T) {
+	t.Parallel()
+
 	for _, test := range []struct {
 		iterations, maximum int
 		want                float64
@@ -481,6 +499,8 @@ func makeCircleParameters(count int) []CircleParameter {
 }
 
 func TestFormatFileSize(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		size int64
 		want string

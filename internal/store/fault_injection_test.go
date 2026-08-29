@@ -18,12 +18,16 @@ import (
 // filesystem/fsync failures, which require an integration fault filesystem.
 
 func TestAtomicWriteFailurePreservesCheckpointAndRecovers(t *testing.T) {
+	t.Parallel()
+
 	fs, _ := setupTestStore(t)
 	jobID := testJobID(1)
 	original := createTestCheckpoint(jobID)
 
 	original.BestCost = 0.75
-	if err := fs.SaveCheckpoint(jobID, original); err != nil {
+
+	err := fs.SaveCheckpoint(jobID, original)
+	if err != nil {
 		t.Fatalf("save original checkpoint: %v", err)
 	}
 
@@ -40,7 +44,8 @@ func TestAtomicWriteFailurePreservesCheckpointAndRecovers(t *testing.T) {
 	injected := errors.New("injected temporary-file write failure")
 	originalWrite := fs.atomic.write
 	fs.atomic.write = func(file *os.File, _ func(io.Writer) error) error {
-		if _, err := file.WriteString("{\"partial\":"); err != nil {
+		_, err := file.WriteString("{\"partial\":")
+		if err != nil {
 			return err
 		}
 
@@ -58,7 +63,8 @@ func TestAtomicWriteFailurePreservesCheckpointAndRecovers(t *testing.T) {
 	assertArtifactUnchanged(t, path, before)
 	assertNoAtomicTemps(t, filepath.Dir(path))
 
-	if err := fs.SaveCheckpoint(jobID, updated); err != nil {
+	err = fs.SaveCheckpoint(jobID, updated)
+	if err != nil {
 		t.Fatalf("save after write failure: %v", err)
 	}
 
@@ -73,12 +79,16 @@ func TestAtomicWriteFailurePreservesCheckpointAndRecovers(t *testing.T) {
 }
 
 func TestAtomicRenameFailurePreservesCheckpointAndRecovers(t *testing.T) {
+	t.Parallel()
+
 	fs, _ := setupTestStore(t)
 	jobID := testJobID(1)
 	original := createTestCheckpoint(jobID)
 
 	original.BestCost = 0.75
-	if err := fs.SaveCheckpoint(jobID, original); err != nil {
+
+	err := fs.SaveCheckpoint(jobID, original)
+	if err != nil {
 		t.Fatalf("save original checkpoint: %v", err)
 	}
 
@@ -107,7 +117,8 @@ func TestAtomicRenameFailurePreservesCheckpointAndRecovers(t *testing.T) {
 	assertArtifactUnchanged(t, path, before)
 	assertNoAtomicTemps(t, filepath.Dir(path))
 
-	if err := fs.SaveCheckpoint(jobID, updated); err != nil {
+	err = fs.SaveCheckpoint(jobID, updated)
+	if err != nil {
 		t.Fatalf("save after rename failure: %v", err)
 	}
 
@@ -134,7 +145,9 @@ func assertArtifactUnchanged(t *testing.T, path string, want []byte) {
 	}
 
 	var checkpoint Checkpoint
-	if err := json.Unmarshal(got, &checkpoint); err != nil {
+
+	err = json.Unmarshal(got, &checkpoint)
+	if err != nil {
 		t.Fatalf("preserved artifact is invalid JSON: %v", err)
 	}
 }

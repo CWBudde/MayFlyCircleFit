@@ -61,6 +61,9 @@ fix:
 	golangci-lint fmt --config ./.golangci.toml
 	golangci-lint run --config ./.golangci.toml --timeout 5m --fix
 
+# Alias for `just fix`
+lint-fix: fix
+
 # Install the pinned golangci-lint into $GOBIN
 golangci-install:
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{GOLANGCI_VERSION}}

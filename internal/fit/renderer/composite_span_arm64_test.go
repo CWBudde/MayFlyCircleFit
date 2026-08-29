@@ -19,6 +19,7 @@ import (
 
 const compositeNEONDisabledHelper = "CIRCLEFIT_TEST_COMPOSITE_NEON_DISABLED"
 
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeSpanARM64DispatchMatchesCPUFeatures(t *testing.T) {
 	// The environment overrides outrank the feature check: ASIMD is mandatory
 	// on ARM64 and stays reported even when the scalar fallback was requested.
@@ -35,6 +36,8 @@ func TestCompositeSpanARM64DispatchMatchesCPUFeatures(t *testing.T) {
 // same tier switch as every other kernel, and that the scalar fallback it
 // reaches is byte-identical. The subprocess test below still earns its keep: it
 // covers detection under GODEBUG, which forcing cannot.
+//
+//nolint:paralleltest // forces the process-global SIMD tier, which no two tests may do at once
 func TestCompositeSpanFollowsForcedTier(t *testing.T) {
 	fit.SetForcedTier(fit.TierScalar)
 	defer fit.ResetTierDetection()
@@ -68,6 +71,8 @@ func TestCompositeSpanFollowsForcedTier(t *testing.T) {
 // against a reference that was genuinely wrong. Colours the renderer actually
 // receives are k/255, which hit those boundaries often enough that the same
 // defect shows up in a few thousand bytes per run. Keep the k/255 sampling.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeSpanNEONMatchesScalar(t *testing.T) {
 	if fit.Tier() != fit.TierNEON {
 		t.Skipf("detected tier is %s, so the NEON kernel is not the one under test", fit.Tier())
@@ -103,6 +108,7 @@ func TestCompositeSpanNEONMatchesScalar(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // re-runs the test binary as a subprocess with CPU detection disabled
 func TestCompositeSpanNEONDisabledFallback(t *testing.T) {
 	if os.Getenv(compositeNEONDisabledHelper) == "1" {
 		if cpu.ARM64.HasASIMD {

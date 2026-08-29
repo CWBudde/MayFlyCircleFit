@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
-	_ "image/jpeg"
+	_ "image/jpeg" // Registers the JPEG decoder; the reference image may be a JPEG.
 	"math"
 	"os"
 
@@ -69,7 +69,8 @@ func runScore(_ *cobra.Command, _ []string) error {
 
 	specs.ApplyDefaults()
 
-	if err := specs.Validate(); err != nil {
+	err = specs.Validate()
+	if err != nil {
 		return err
 	}
 
@@ -188,7 +189,9 @@ func loadCircleSpecs(path string) (app.CircleSpecs, string, error) {
 	}
 
 	var specs app.CircleSpecs
-	if err := json.Unmarshal(data, &specs); err == nil {
+
+	err = json.Unmarshal(data, &specs)
+	if err == nil {
 		return specs, "", nil
 	}
 
@@ -198,7 +201,9 @@ func loadCircleSpecs(path string) (app.CircleSpecs, string, error) {
 			CanvasPath     string          `json:"canvasPath"`
 		} `json:"base"`
 	}
-	if err := json.Unmarshal(data, &document); err != nil {
+
+	err = json.Unmarshal(data, &document)
+	if err != nil {
 		return nil, "", fmt.Errorf("%s is neither a circle array nor a schedule document: %w", path, err)
 	}
 
@@ -243,7 +248,9 @@ func loadScoreReference(path string) (*image.NRGBA, error) {
 	}
 
 	bounds := decoded.Bounds()
-	if err := app.ValidateImageDimensions(bounds.Dx(), bounds.Dy()); err != nil {
+
+	err = app.ValidateImageDimensions(bounds.Dx(), bounds.Dy())
+	if err != nil {
 		return nil, err
 	}
 
@@ -263,7 +270,8 @@ func writeScorePNG(path string, img *image.NRGBA) error {
 		return fmt.Errorf("create output: %w", err)
 	}
 
-	if err := encodePNG(file, path, img); err != nil {
+	err = encodePNG(file, path, img)
+	if err != nil {
 		return fmt.Errorf("encode output: %w", err)
 	}
 

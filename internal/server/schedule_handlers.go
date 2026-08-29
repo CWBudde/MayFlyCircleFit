@@ -386,7 +386,9 @@ func summarizeScheduleStage(stage *store.ScheduleStageRecord) scheduleStageSumma
 
 func summarizeSchedule(record *store.ScheduleRecord) scheduleSummary {
 	total := 0
-	if plan, err := record.Document.Expand(); err == nil {
+
+	plan, err := record.Document.Expand()
+	if err == nil {
 		total = len(plan)
 	}
 
@@ -529,7 +531,9 @@ func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	record.State = store.ScheduleStateRunning
-	if err := scheduleStore.SaveSchedule(record); err != nil {
+
+	err = scheduleStore.SaveSchedule(record)
+	if err != nil {
 		slog.Error("Failed to persist schedule", "error", err)
 		writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to persist the schedule")
 
@@ -538,7 +542,9 @@ func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 
 	s.publishScheduleChanged(record.ScheduleID)
 
-	if err := s.startScheduleDriver(record.ScheduleID); err != nil {
+	//nolint:contextcheck // workerLoop deliberately outlives the request; it owns the job context, not this handler.
+	err = s.startScheduleDriver(record.ScheduleID)
+	if err != nil {
 		slog.Error("Failed to start schedule executor", "schedule_id", record.ScheduleID, "error", err)
 		writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to start the schedule")
 
@@ -649,7 +655,8 @@ func (s *Server) handleGetScheduleStage(w http.ResponseWriter, r *http.Request, 
 	}
 	// The schedule is loaded first so an unknown campaign answers as a missing
 	// schedule rather than as a missing stage.
-	if _, err := scheduleStore.LoadSchedule(scheduleID); err != nil {
+	_, err = scheduleStore.LoadSchedule(scheduleID)
+	if err != nil {
 		writeScheduleLoadError(w, err)
 		return
 	}
@@ -710,7 +717,8 @@ func (s *Server) handleScheduleAction(w http.ResponseWriter, r *http.Request, sc
 		// resume that left the marker alone would restart the driver straight
 		// into the same barrier and pause again, which reads as a broken
 		// resume rather than as a campaign holding its ground.
-		if released, err := releasedBarrierStage(scheduleStore, record); err == nil {
+		released, err := releasedBarrierStage(scheduleStore, record)
+		if err == nil {
 			record.ReleasedThroughStage = max(record.ReleasedThroughStage, released)
 		} else {
 			slog.Warn("Unable to determine which stage a resume releases",
@@ -718,7 +726,8 @@ func (s *Server) handleScheduleAction(w http.ResponseWriter, r *http.Request, sc
 		}
 	}
 
-	if err := scheduleStore.SaveSchedule(record); err != nil {
+	err = scheduleStore.SaveSchedule(record)
+	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "schedule_error", "failed to update the schedule")
 		return
 	}

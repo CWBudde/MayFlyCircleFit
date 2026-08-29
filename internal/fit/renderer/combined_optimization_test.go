@@ -10,6 +10,8 @@ import (
 )
 
 func TestFixedCircleQ16SymmetricRowSum(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		y    float64
@@ -26,6 +28,8 @@ func TestFixedCircleQ16SymmetricRowSum(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			geometry, ok := newFixedCircleQ16(fit.Circle{Y: test.y, R: 1})
 			if !ok {
 				t.Fatal("test circle unexpectedly outside Q16.16 range")
@@ -40,6 +44,8 @@ func TestFixedCircleQ16SymmetricRowSum(t *testing.T) {
 }
 
 func TestCPURendererSymmetricRowsMatchUnpairedRendering(t *testing.T) {
+	t.Parallel()
+
 	const (
 		width  = 97
 		height = 73
@@ -66,6 +72,8 @@ func TestCPURendererSymmetricRowsMatchUnpairedRendering(t *testing.T) {
 	} {
 		for _, threads := range []int{1, 4} {
 			t.Run(fmt.Sprintf("%s/threads=%d", canvas.name, threads), func(t *testing.T) {
+				t.Parallel()
+
 				paired := newCombinedTestRenderer(reference, canvas.image, len(circles))
 				unpaired := newCombinedTestRenderer(reference, canvas.image, len(circles))
 
@@ -93,6 +101,8 @@ func TestCPURendererSymmetricRowsMatchUnpairedRendering(t *testing.T) {
 }
 
 func TestCPURendererSymmetricRowsMatchEveryShard(t *testing.T) {
+	t.Parallel()
+
 	const (
 		width  = 41
 		height = 31
@@ -133,6 +143,8 @@ func TestCPURendererSymmetricRowsMatchEveryShard(t *testing.T) {
 }
 
 func TestCPURendererCombinedSettingsPropagateToSessions(t *testing.T) {
+	t.Parallel()
+
 	reference := randomNRGBA(32, 24, 1015)
 	base := NewCPURenderer(reference, 2)
 	base.enableRowSymmetry = true

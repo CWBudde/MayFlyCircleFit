@@ -59,6 +59,8 @@ func TestMayflySearchDiagnosticsReportNormalizedRMSPairwiseSpread(t *testing.T) 
 }
 
 func TestMayflyAdapterLifecycleProgressAndCancellation(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	optimizer := NewMayfly(100, 20, 42).(*MayflyAdapter)
 	var updates []Progress
@@ -89,6 +91,8 @@ func TestMayflyAdapterLifecycleProgressAndCancellation(t *testing.T) {
 }
 
 func TestMayflyAdapterRepairsEvaluationsProgressAndResult(t *testing.T) {
+	t.Parallel()
+
 	const repairedValue = 0.75
 	optimizer := NewMayfly(2, 20, 42).(*MayflyAdapter)
 	observations := 0
@@ -126,6 +130,8 @@ func TestMayflyAdapterRepairsEvaluationsProgressAndResult(t *testing.T) {
 }
 
 func TestMayflyAdapterMapsProgressWithoutChangingLocalResult(t *testing.T) {
+	t.Parallel()
+
 	optimizer := NewMayfly(2, 20, 42).(*MayflyAdapter)
 	var mapped Progress
 
@@ -152,6 +158,8 @@ func TestMayflyAdapterMapsProgressWithoutChangingLocalResult(t *testing.T) {
 }
 
 func TestMayflyAdapterEvaluatesInequalitiesOnCanonicalParameters(t *testing.T) {
+	t.Parallel()
+
 	const repairedValue = 7.5
 	var constraintCalls int
 	optimizer := NewMayfly(2, 20, 42).(*MayflyAdapter)
@@ -193,6 +201,8 @@ func TestMayflyAdapterEvaluatesInequalitiesOnCanonicalParameters(t *testing.T) {
 }
 
 func TestMayflyAdapterUsesFeasibilityAndReportsRawCost(t *testing.T) {
+	t.Parallel()
+
 	const minimum = 0.75
 	var updates []Progress
 	problem := Problem{
@@ -239,6 +249,8 @@ func TestMayflyAdapterUsesFeasibilityAndReportsRawCost(t *testing.T) {
 }
 
 func TestMayflyAdapterFeasibleResultReplacesCheaperInfeasibleResumeSeed(t *testing.T) {
+	t.Parallel()
+
 	const minimum = 0.5
 	problem := Problem{
 		Eval: func(params []float64) float64 { return params[0] },
@@ -268,6 +280,8 @@ func TestMayflyAdapterFeasibleResultReplacesCheaperInfeasibleResumeSeed(t *testi
 }
 
 func TestMayflyAdapterRejectsNilInequality(t *testing.T) {
+	t.Parallel()
+
 	optimizer := NewMayfly(1, 20, 42).(*MayflyAdapter)
 
 	_, err := optimizer.RunContext(context.Background(), Problem{
@@ -283,6 +297,8 @@ func TestMayflyAdapterRejectsNilInequality(t *testing.T) {
 }
 
 func TestMayflyAdapterSeedsResumePopulationAroundBest(t *testing.T) {
+	t.Parallel()
+
 	initial := Candidate{Params: []float64{2, -3}, Cost: 13}
 	var firstEvaluation []float64
 	objective := func(params []float64) float64 {
@@ -315,6 +331,8 @@ func TestMayflyAdapterSeedsResumePopulationAroundBest(t *testing.T) {
 }
 
 func TestMayflyAdapterMixesIncumbentAndAlternativeSeedPopulations(t *testing.T) {
+	t.Parallel()
+
 	incumbent := Candidate{Params: []float64{-3, 2}, Cost: 13}
 	alternative := Candidate{Params: []float64{4, -1}, Cost: 17}
 	var evaluations [][]float64
@@ -344,6 +362,8 @@ func TestMayflyAdapterMixesIncumbentAndAlternativeSeedPopulations(t *testing.T) 
 }
 
 func TestContinuationSeedIsStableAndAdvances(t *testing.T) {
+	t.Parallel()
+
 	first := continuationSeed(42, 1, 0)
 	if first != continuationSeed(42, 1, 0) {
 		t.Fatal("continuation seed is not deterministic")
@@ -355,6 +375,8 @@ func TestContinuationSeedIsStableAndAdvances(t *testing.T) {
 }
 
 func TestSeededPopulationHonorsLocalContinuationProfile(t *testing.T) {
+	t.Parallel()
+
 	profile := &ContinuationProfile{
 		LocalFraction:  1,
 		Sigma:          0.01,
@@ -394,6 +416,8 @@ func TestSeededPopulationHonorsLocalContinuationProfile(t *testing.T) {
 }
 
 func TestMayflyAdapterRejectsInvalidContinuationProfile(t *testing.T) {
+	t.Parallel()
+
 	optimizer := NewMayfly(1, 20, 42).(*MayflyAdapter)
 
 	_, err := optimizer.RunContext(context.Background(), Problem{
@@ -408,6 +432,8 @@ func TestMayflyAdapterRejectsInvalidContinuationProfile(t *testing.T) {
 }
 
 func TestMayflyAdapterOnSphere(t *testing.T) {
+	t.Parallel()
+
 	optimizer := NewMayfly(100, 20, 42) // maxIters, popSize, seed
 
 	dim := 3
@@ -439,6 +465,8 @@ func TestMayflyAdapterOnSphere(t *testing.T) {
 }
 
 func TestMayflyAdapterDeterministic(t *testing.T) {
+	t.Parallel()
+
 	dim := 2
 	lower := []float64{-5, -5}
 	upper := []float64{5, 5}
@@ -456,6 +484,8 @@ func TestMayflyAdapterDeterministic(t *testing.T) {
 }
 
 func TestMayflyAdapter_RunWithInitial(t *testing.T) {
+	t.Parallel()
+
 	dim := 3
 	lower := make([]float64, dim)
 
@@ -499,6 +529,8 @@ func TestMayflyAdapter_RunWithInitial(t *testing.T) {
 }
 
 func TestMayflyAdapter_RunWithInitial_AlreadyOptimal(t *testing.T) {
+	t.Parallel()
+
 	dim := 2
 	lower := []float64{-10, -10}
 	upper := []float64{10, 10}
@@ -520,6 +552,8 @@ func TestMayflyAdapter_RunWithInitial_AlreadyOptimal(t *testing.T) {
 }
 
 func TestMayflyAdapter_RunWithInitial_VsFromScratch(t *testing.T) {
+	t.Parallel()
+
 	dim := 3
 	lower := make([]float64, dim)
 
@@ -553,6 +587,8 @@ func TestMayflyAdapter_RunWithInitial_VsFromScratch(t *testing.T) {
 }
 
 func TestMayflyAdapter_RunWithInitial_KeepsCheckpointIfBetter(t *testing.T) {
+	t.Parallel()
+
 	dim := 2
 	lower := []float64{-10, -10}
 	upper := []float64{10, 10}
@@ -579,6 +615,8 @@ func TestMayflyAdapter_RunWithInitial_KeepsCheckpointIfBetter(t *testing.T) {
 }
 
 func TestNewMayflyVariantSelectsVariant(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		want string
@@ -592,6 +630,8 @@ func TestNewMayflyVariantSelectsVariant(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			optimizer, err := NewMayflyVariant(test.name, 10, 20, 1)
 			if err != nil {
 				t.Fatalf("NewMayflyVariant(%q) error = %v", test.name, err)
@@ -610,6 +650,8 @@ func TestNewMayflyVariantSelectsVariant(t *testing.T) {
 }
 
 func TestNewMayflyVariantRejectsUnknownName(t *testing.T) {
+	t.Parallel()
+
 	optimizer, err := NewMayflyVariant("nope", 10, 20, 1)
 	if !errors.Is(err, ErrUnknownVariant) {
 		t.Fatalf("error = %v, want ErrUnknownVariant", err)
@@ -624,6 +666,8 @@ func TestNewMayflyVariantRejectsUnknownName(t *testing.T) {
 // through the factory is identical to calling the dedicated constructor, so the
 // three call sites gain variant support without changing optimizer behavior.
 func TestNewMayflyVariantMatchesNamedConstructors(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		named Optimizer
@@ -638,6 +682,8 @@ func TestNewMayflyVariantMatchesNamedConstructors(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			byName, err := NewMayflyVariant(test.name, 30, 20, 7)
 			if err != nil {
 				t.Fatalf("NewMayflyVariant(%q) error = %v", test.name, err)
@@ -681,6 +727,8 @@ func runAdapter(t *testing.T, optimizer Optimizer) Result {
 // bit-identical to constructing one without them, so that an unconfigured run
 // behaves exactly as it did before early stopping and logging existed.
 func TestMayflyAdapterDefaultsAreUnchanged(t *testing.T) {
+	t.Parallel()
+
 	want := runAdapter(t, NewMayfly(40, 20, 42))
 
 	withZeroOptions := runAdapter(t, NewMayfly(40, 20, 42, WithEarlyStop(Stop{}), WithLogger(nil)))
@@ -714,6 +762,8 @@ func TestMayflyAdapterDefaultsAreUnchanged(t *testing.T) {
 }
 
 func TestMayflyAdapterStopsOnTargetCost(t *testing.T) {
+	t.Parallel()
+
 	result := runAdapter(t, NewMayfly(500, 20, 42, WithEarlyStop(Stop{TargetCost: 1e-2, MinIters: 1})))
 
 	if result.Termination != TerminationTargetCost {
@@ -730,6 +780,8 @@ func TestMayflyAdapterStopsOnTargetCost(t *testing.T) {
 }
 
 func TestMayflyAdapterStopsOnStagnation(t *testing.T) {
+	t.Parallel()
+
 	constant := func([]float64) float64 { return 1 }
 	optimizer := NewMayfly(100, 20, 42, WithEarlyStop(Stop{StagnationIters: 3, MinIters: 1}))
 
@@ -750,6 +802,8 @@ func TestMayflyAdapterStopsOnStagnation(t *testing.T) {
 }
 
 func TestMayflyAdapterMinItersDelaysStop(t *testing.T) {
+	t.Parallel()
+
 	const minIters = 20
 	constant := func([]float64) float64 { return 1 }
 	optimizer := NewMayfly(100, 20, 42, WithEarlyStop(Stop{StagnationIters: 1, MinIters: minIters}))
@@ -770,6 +824,8 @@ func TestMayflyAdapterMinItersDelaysStop(t *testing.T) {
 // against the objective's own value. The adapter normalizes positions to [0,1],
 // so a target interpreted in normalized space would behave differently.
 func TestMayflyAdapterTargetCostUsesObjectiveUnits(t *testing.T) {
+	t.Parallel()
+
 	// Costs are always 500: above the target in objective units, but below it if
 	// anything were to rescale them.
 	constant := func([]float64) float64 { return 500 }
@@ -796,6 +852,8 @@ func TestMayflyAdapterTargetCostUsesObjectiveUnits(t *testing.T) {
 // persisted configuration without renormalizing it. Mayfly rejects a minimum
 // above the iteration cap, so the adapter clamps instead of erroring.
 func TestMayflyAdapterClampsMinItersToMaxIterations(t *testing.T) {
+	t.Parallel()
+
 	// Without the clamp this run fails with an opaque optimizer validation
 	// error. With it, the minimum lands on the last iteration, so the run still
 	// consumes its whole budget; the reported reason may be either "completed"

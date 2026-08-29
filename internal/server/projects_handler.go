@@ -83,7 +83,8 @@ func (s *Server) ensureProject(slug app.Project) (app.Project, error) {
 		return "", err
 	}
 
-	if _, err := s.projects.GetOrCreate(slug); err != nil {
+	_, err = s.projects.GetOrCreate(slug)
+	if err != nil {
 		return "", &projectStoreError{slug: slug, err: err}
 	}
 

@@ -12,6 +12,8 @@ import (
 )
 
 func TestCheckpoint_JSONSerialization(t *testing.T) {
+	t.Parallel()
+
 	original := &Checkpoint{
 		JobID:       testJobID(1),
 		BestParams:  []float64{100.5, 50.2, 25.0, 0.8, 0.2, 0.1, 0.9},
@@ -42,7 +44,9 @@ func TestCheckpoint_JSONSerialization(t *testing.T) {
 
 	// Deserialize from JSON
 	var restored Checkpoint
-	if err := json.Unmarshal(data, &restored); err != nil {
+
+	err = json.Unmarshal(data, &restored)
+	if err != nil {
 		t.Fatalf("Failed to unmarshal checkpoint: %v", err)
 	}
 
@@ -91,6 +95,8 @@ func TestCheckpoint_JSONSerialization(t *testing.T) {
 }
 
 func TestCheckpoint_JSONIndented(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := &Checkpoint{
 		JobID:       testJobID(1),
 		BestParams:  []float64{1.0, 2.0, 3.0, 0.5, 0.5, 0.5, 1.0},
@@ -116,7 +122,9 @@ func TestCheckpoint_JSONIndented(t *testing.T) {
 
 	// Verify it's valid JSON and can be unmarshaled
 	var restored Checkpoint
-	if err := json.Unmarshal(data, &restored); err != nil {
+
+	err = json.Unmarshal(data, &restored)
+	if err != nil {
 		t.Fatalf("Failed to unmarshal indented JSON: %v", err)
 	}
 
@@ -126,6 +134,8 @@ func TestCheckpoint_JSONIndented(t *testing.T) {
 }
 
 func TestCheckpoint_Validate_Valid(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := &Checkpoint{
 		JobID:       testJobID(1),
 		BestParams:  []float64{100, 50, 25, 0.8, 0.2, 0.1, 0.9},
@@ -150,6 +160,8 @@ func TestCheckpoint_Validate_Valid(t *testing.T) {
 }
 
 func TestCheckpoint_Validate_EmptyJobID(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := &Checkpoint{
 		JobID:       "",
 		BestParams:  []float64{1, 2, 3, 4, 5, 6, 7},
@@ -178,6 +190,8 @@ func TestCheckpoint_Validate_EmptyJobID(t *testing.T) {
 }
 
 func TestCheckpoint_Validate_NilBestParams(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := &Checkpoint{
 		JobID:       testJobID(1),
 		BestParams:  nil,
@@ -201,6 +215,8 @@ func TestCheckpoint_Validate_NilBestParams(t *testing.T) {
 }
 
 func TestCheckpoint_Validate_EmptyBestParams(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := &Checkpoint{
 		JobID:       testJobID(1),
 		BestParams:  []float64{},
@@ -224,6 +240,8 @@ func TestCheckpoint_Validate_EmptyBestParams(t *testing.T) {
 }
 
 func TestCheckpoint_Validate_InvalidParamsLength(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name       string
 		bestParams []float64
@@ -234,6 +252,8 @@ func TestCheckpoint_Validate_InvalidParamsLength(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			checkpoint := &Checkpoint{
 				JobID:       testJobID(1),
 				BestParams:  tc.bestParams,
@@ -259,6 +279,8 @@ func TestCheckpoint_Validate_InvalidParamsLength(t *testing.T) {
 }
 
 func TestCheckpoint_Validate_NegativeValues(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name        string
 		bestCost    float64
@@ -272,6 +294,8 @@ func TestCheckpoint_Validate_NegativeValues(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			checkpoint := &Checkpoint{
 				JobID:       testJobID(1),
 				BestParams:  []float64{1, 2, 3, 4, 5, 6, 7},
@@ -297,6 +321,8 @@ func TestCheckpoint_Validate_NegativeValues(t *testing.T) {
 }
 
 func TestCheckpoint_Validate_ZeroTimestamp(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := &Checkpoint{
 		JobID:       testJobID(1),
 		BestParams:  []float64{1, 2, 3, 4, 5, 6, 7},
@@ -320,6 +346,8 @@ func TestCheckpoint_Validate_ZeroTimestamp(t *testing.T) {
 }
 
 func TestCheckpoint_Validate_InvalidConfig(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name   string
 		config JobConfig
@@ -334,6 +362,8 @@ func TestCheckpoint_Validate_InvalidConfig(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			checkpoint := &Checkpoint{
 				JobID:       testJobID(1),
 				BestParams:  []float64{1, 2, 3, 4, 5, 6, 7},
@@ -353,6 +383,8 @@ func TestCheckpoint_Validate_InvalidConfig(t *testing.T) {
 }
 
 func TestCheckpoint_IsCompatible_Compatible(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := &Checkpoint{
 		Config: JobConfig{
 			RefPath: "test.png",
@@ -374,6 +406,8 @@ func TestCheckpoint_IsCompatible_Compatible(t *testing.T) {
 }
 
 func TestCheckpoint_IsCompatible_DifferentRefPath(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := &Checkpoint{
 		Config: JobConfig{
 			RefPath: "test1.png",
@@ -400,6 +434,8 @@ func TestCheckpoint_IsCompatible_DifferentRefPath(t *testing.T) {
 }
 
 func TestCheckpoint_IsCompatible_DifferentMode(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := &Checkpoint{
 		Config: JobConfig{
 			RefPath: "test.png",
@@ -421,6 +457,8 @@ func TestCheckpoint_IsCompatible_DifferentMode(t *testing.T) {
 }
 
 func TestCheckpoint_IsCompatible_DifferentCircles(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := &Checkpoint{
 		Config: JobConfig{
 			RefPath: "test.png",
@@ -442,6 +480,8 @@ func TestCheckpoint_IsCompatible_DifferentCircles(t *testing.T) {
 }
 
 func TestCheckpointInfo_FromCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := &Checkpoint{
 		JobID:     testJobID(1),
 		BestCost:  0.123,
@@ -486,6 +526,8 @@ func TestCheckpointInfo_FromCheckpoint(t *testing.T) {
 }
 
 func TestNewCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	jobID := testJobID(1)
 	bestParams := []float64{1, 2, 3, 4, 5, 6, 7}
 	bestCost := 0.123
@@ -528,8 +570,12 @@ func TestNewCheckpoint(t *testing.T) {
 // field is free-form, so these must survive a round trip and validation without
 // a schema-version bump.
 func TestCheckpointAcceptsNewTerminationValues(t *testing.T) {
+	t.Parallel()
+
 	for _, termination := range []string{"target_cost", "stagnation", "convergence", "stage_convergence", "refill_limit", "completed"} {
 		t.Run(termination, func(t *testing.T) {
+			t.Parallel()
+
 			original := &Checkpoint{
 				JobID:            "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
 				BestParams:       make([]float64, 7),
@@ -550,7 +596,9 @@ func TestCheckpointAcceptsNewTerminationValues(t *testing.T) {
 			}
 
 			var restored Checkpoint
-			if err := json.Unmarshal(data, &restored); err != nil {
+
+			err = json.Unmarshal(data, &restored)
+			if err != nil {
 				t.Fatalf("Unmarshal() error = %v", err)
 			}
 
@@ -562,7 +610,8 @@ func TestCheckpointAcceptsNewTerminationValues(t *testing.T) {
 				t.Fatalf("SchemaVersion = %d, want %d", restored.SchemaVersion, CheckpointSchemaVersion)
 			}
 
-			if err := restored.Validate(); err != nil {
+			err = restored.Validate()
+			if err != nil {
 				t.Fatalf("Validate() error = %v", err)
 			}
 		})
@@ -574,6 +623,8 @@ func TestCheckpointAcceptsNewTerminationValues(t *testing.T) {
 // before those fields existed must still load, validate, and resume with early
 // stopping disabled.
 func TestOldCheckpointLoadsWithoutEarlyStopFields(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name            string
 		schema          string
@@ -586,6 +637,8 @@ func TestOldCheckpointLoadsWithoutEarlyStopFields(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			raw := `{
 				` + test.schema + `
 				"jobId": "8d5f1c2a-1f2e-4c3b-8a9d-2b6c7e0f1a34",

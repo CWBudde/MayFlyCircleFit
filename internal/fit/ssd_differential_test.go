@@ -25,6 +25,8 @@ type ssdKernel struct {
 // (CompareSSDImplementations) compared the active backend against scalar within
 // a tolerance and had no callers.
 func TestSSDKernelsAgreeExactly(t *testing.T) {
+	t.Parallel()
+
 	kernels := hostSSDKernels()
 	if len(kernels) < 2 {
 		t.Logf("only the %s kernel is executable here; the comparison is degenerate", kernels[0].tier)
@@ -38,6 +40,8 @@ func TestSSDKernelsAgreeExactly(t *testing.T) {
 
 	for _, width := range widths {
 		t.Run(fmt.Sprintf("width_%d", width), func(t *testing.T) {
+			t.Parallel()
+
 			a := randomNRGBA(width, height, 100)
 			b := randomNRGBA(width, height, 200)
 
@@ -59,6 +63,8 @@ func TestSSDKernelsAgreeExactly(t *testing.T) {
 // 512x512 totals 100270080000, which no 32-bit lane can hold: the SSE2 kernel
 // reaches it only because it widens per row rather than per iteration.
 func TestSSDKernelsAgreeOnMaximumDifference(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 512, 512
 	black := solidColorNRGBA(width, height, color.NRGBA{A: 0})
 	white := solidColorNRGBA(width, height, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
@@ -75,6 +81,8 @@ func TestSSDKernelsAgreeOnMaximumDifference(t *testing.T) {
 // TestSSDKernelsIgnoreAlpha proves no kernel reads the alpha byte, which the
 // cost function depends on and which a lane-shuffle bug would break.
 func TestSSDKernelsIgnoreAlpha(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 37, 5
 
 	a := randomNRGBA(width, height, 7)
@@ -101,11 +109,14 @@ func TestSSDKernelsIgnoreAlpha(t *testing.T) {
 // only ever seen a tightly packed buffer whose rows start at a Go allocation
 // boundary. A row stride wider than the row, and a row that does not start at
 // offset zero, are both reachable from sub-images in the renderer.
+//
+//nolint:paralleltest // the subtests draw from one seeded random source
 func TestSSDKernelsHandleStridePadding(t *testing.T) {
 	source := rand.New(rand.NewPCG(4242, 1))
 
 	for _, width := range []int{1, 3, 4, 5, 8, 9, 16, 17, 33} {
 		for _, padPixels := range []int{1, 2, 5} {
+			//nolint:paralleltest // the subtests draw from one seeded random source
 			for _, leadPixels := range []int{0, 1, 3} {
 				name := fmt.Sprintf("width_%d/pad_%d/lead_%d", width, padPixels, leadPixels)
 				t.Run(name, func(t *testing.T) {
@@ -137,6 +148,8 @@ func TestSSDKernelsHandleStridePadding(t *testing.T) {
 // TestSSDKernelsAgreeOnRandomShapes is the randomized sweep behind the fixed
 // tables above. It is seeded, so a failure reproduces exactly.
 func TestSSDKernelsAgreeOnRandomShapes(t *testing.T) {
+	t.Parallel()
+
 	kernels := hostSSDKernels()
 	source := rand.New(rand.NewPCG(20260816, 3))
 

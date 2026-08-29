@@ -391,7 +391,8 @@ func (fs *FSStore) schedulesDir() (string, error) {
 }
 
 func (fs *FSStore) schedulePath(scheduleID string) (string, error) {
-	if err := validateScheduleID(scheduleID); err != nil {
+	err := validateScheduleID(scheduleID)
+	if err != nil {
 		return "", fmt.Errorf("invalid scheduleID: %w", err)
 	}
 
@@ -401,7 +402,9 @@ func (fs *FSStore) schedulePath(scheduleID string) (string, error) {
 	}
 
 	path := filepath.Join(root, scheduleID)
-	if err := ensureContained(fs.baseDir, path); err != nil {
+
+	err = ensureContained(fs.baseDir, path)
+	if err != nil {
 		return "", err
 	}
 
@@ -436,7 +439,8 @@ func (fs *FSStore) SaveSchedule(record *ScheduleRecord) error {
 		return errors.New("schedule record cannot be nil")
 	}
 
-	if err := record.Validate(); err != nil {
+	err := record.Validate()
+	if err != nil {
 		return fmt.Errorf("invalid schedule: %w", err)
 	}
 
@@ -445,12 +449,15 @@ func (fs *FSStore) SaveSchedule(record *ScheduleRecord) error {
 		return err
 	}
 
-	if err := ensureSecureDir(fs.baseDir, dir); err != nil {
+	err = ensureSecureDir(fs.baseDir, dir)
+	if err != nil {
 		return fmt.Errorf("create schedule directory: %w", err)
 	}
 
 	record.UpdatedAt = time.Now().UTC()
-	if err := fs.atomicWrite(filepath.Join(dir, "schedule.json"), encodeIndented(record)); err != nil {
+
+	err = fs.atomicWrite(filepath.Join(dir, "schedule.json"), encodeIndented(record))
+	if err != nil {
 		return fmt.Errorf("save schedule: %w", err)
 	}
 
@@ -502,7 +509,9 @@ func readScheduleRecord(path, scheduleID string) (*ScheduleRecord, error) {
 	}
 
 	var record ScheduleRecord
-	if err := json.Unmarshal(data, &record); err != nil {
+
+	err = json.Unmarshal(data, &record)
+	if err != nil {
 		return nil, fmt.Errorf("deserialize schedule: %w", err)
 	}
 
@@ -510,7 +519,8 @@ func readScheduleRecord(path, scheduleID string) (*ScheduleRecord, error) {
 		return nil, fmt.Errorf("schedule ID %q does not match %q", record.ScheduleID, scheduleID)
 	}
 
-	if err := record.Validate(); err != nil {
+	err = record.Validate()
+	if err != nil {
 		return nil, fmt.Errorf("invalid schedule: %w", err)
 	}
 
@@ -558,11 +568,13 @@ func (fs *FSStore) DeleteSchedule(scheduleID string) error {
 		return err
 	}
 
-	if err := ensureContained(fs.baseDir, dir); err != nil {
+	err = ensureContained(fs.baseDir, dir)
+	if err != nil {
 		return err
 	}
 
-	if err := os.RemoveAll(dir); err != nil {
+	err = os.RemoveAll(dir)
+	if err != nil {
 		return fmt.Errorf("remove schedule directory: %w", err)
 	}
 
@@ -578,7 +590,8 @@ func (fs *FSStore) SaveScheduleStage(scheduleID string, stage *ScheduleStageReco
 		return errors.New("stage record cannot be nil")
 	}
 
-	if err := stage.Validate(); err != nil {
+	err := stage.Validate()
+	if err != nil {
 		return fmt.Errorf("invalid schedule stage: %w", err)
 	}
 
@@ -593,14 +606,18 @@ func (fs *FSStore) SaveScheduleStage(scheduleID string, stage *ScheduleStageReco
 	}
 
 	stagesDir := filepath.Join(dir, stagesDirName)
-	if err := ensureSecureDir(fs.baseDir, stagesDir); err != nil {
+
+	err = ensureSecureDir(fs.baseDir, stagesDir)
+	if err != nil {
 		return fmt.Errorf("create schedule stages directory: %w", err)
 	}
 
 	stage.UpdatedAt = time.Now().UTC()
 
 	path := filepath.Join(stagesDir, stageFileName(stage.Index))
-	if err := fs.atomicWrite(path, encodeIndented(stage)); err != nil {
+
+	err = fs.atomicWrite(path, encodeIndented(stage))
+	if err != nil {
 		return fmt.Errorf("save schedule stage: %w", err)
 	}
 
@@ -643,11 +660,14 @@ func (fs *FSStore) LoadScheduleStages(scheduleID string) ([]ScheduleStageRecord,
 		}
 
 		var stage ScheduleStageRecord
-		if err := json.Unmarshal(data, &stage); err != nil {
+
+		err = json.Unmarshal(data, &stage)
+		if err != nil {
 			return nil, fmt.Errorf("deserialize schedule stage: %w", err)
 		}
 
-		if err := stage.Validate(); err != nil {
+		err = stage.Validate()
+		if err != nil {
 			return nil, fmt.Errorf("invalid schedule stage %s: %w", name, err)
 		}
 
@@ -690,7 +710,9 @@ func (fs *FSStore) LoadScheduleStage(scheduleID string, index int) (*ScheduleSta
 	}
 
 	path := filepath.Join(stagesDir, stageFileName(index))
-	if err := ensureContained(fs.baseDir, path); err != nil {
+
+	err = ensureContained(fs.baseDir, path)
+	if err != nil {
 		return nil, err
 	}
 
@@ -704,11 +726,14 @@ func (fs *FSStore) LoadScheduleStage(scheduleID string, index int) (*ScheduleSta
 	}
 
 	var stage ScheduleStageRecord
-	if err := json.Unmarshal(data, &stage); err != nil {
+
+	err = json.Unmarshal(data, &stage)
+	if err != nil {
 		return nil, fmt.Errorf("deserialize schedule stage: %w", err)
 	}
 
-	if err := stage.Validate(); err != nil {
+	err = stage.Validate()
+	if err != nil {
 		return nil, fmt.Errorf("invalid schedule stage %d: %w", index, err)
 	}
 

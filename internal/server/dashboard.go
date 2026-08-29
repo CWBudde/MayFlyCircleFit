@@ -97,17 +97,20 @@ func (s *Server) dashboardCampaigns() []ui.CampaignSummary {
 	scheduleStore, err := s.scheduleStore()
 	if err != nil {
 		slog.Warn("Unable to open the schedule store for the dashboard", "error", err)
-	} else if records, listErr := scheduleStore.ListSchedules(); listErr != nil {
-		slog.Warn("Unable to list schedules for the dashboard", "error", listErr)
 	} else {
-		for i := range records {
-			stages, loadErr := scheduleStore.LoadScheduleStages(records[i].ScheduleID)
-			if loadErr != nil {
-				slog.Warn("Unable to load schedule stages for the dashboard",
-					"schedule_id", records[i].ScheduleID, "error", loadErr)
-			}
+		records, listErr := scheduleStore.ListSchedules()
+		if listErr != nil {
+			slog.Warn("Unable to list schedules for the dashboard", "error", listErr)
+		} else {
+			for i := range records {
+				stages, loadErr := scheduleStore.LoadScheduleStages(records[i].ScheduleID)
+				if loadErr != nil {
+					slog.Warn("Unable to load schedule stages for the dashboard",
+						"schedule_id", records[i].ScheduleID, "error", loadErr)
+				}
 
-			summaries = append(summaries, summarizeCampaign(&records[i], stages))
+				summaries = append(summaries, summarizeCampaign(&records[i], stages))
+			}
 		}
 	}
 

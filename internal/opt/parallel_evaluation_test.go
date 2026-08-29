@@ -69,6 +69,8 @@ func runRippledSphereVariant(t *testing.T, variant string, workers int) Result {
 // Mayfly's batch best breaks ties by population index and its RNG is only ever
 // advanced from the serial phase code.
 func TestParallelEvaluationIsReproducible(t *testing.T) {
+	t.Parallel()
+
 	first := runRippledSphere(t, 4)
 	again := runRippledSphere(t, 4)
 	wider := runRippledSphere(t, 7)
@@ -131,6 +133,8 @@ func TestParallelEvaluationMatchesSerial(t *testing.T) {
 // reaches Mayfly's worker pool. Without it the objective is only ever called
 // from one goroutine, and enabling the pipeline's session pool would buy
 // nothing.
+//
+//nolint:paralleltest // asserts the peak count of concurrent in-flight evaluations, which test load would skew
 func TestParallelEvaluationCallsObjectiveConcurrently(t *testing.T) {
 	const dim = 4
 	lower := make([]float64, dim)
@@ -167,9 +171,11 @@ func TestParallelEvaluationCallsObjectiveConcurrently(t *testing.T) {
 	}
 
 	lifecycle := optimizer.(LifecycleOptimizer)
-	if _, err := lifecycle.RunContext(context.Background(), Problem{
+
+	_, err = lifecycle.RunContext(context.Background(), Problem{
 		Eval: eval, Lower: lower, Upper: upper, Dim: dim,
-	}, RunOptions{}); err != nil {
+	}, RunOptions{})
+	if err != nil {
 		t.Fatalf("RunContext() error = %v", err)
 	}
 
@@ -181,6 +187,8 @@ func TestParallelEvaluationCallsObjectiveConcurrently(t *testing.T) {
 // TestSerialEvaluationStaysSingleThreaded pins the default: an optimizer built
 // without the option must never call the objective from two goroutines, because
 // callers built against that guarantee share one renderer canvas.
+//
+//nolint:paralleltest // asserts the peak count of concurrent in-flight evaluations, which test load would skew
 func TestSerialEvaluationStaysSingleThreaded(t *testing.T) {
 	const dim = 4
 	lower := make([]float64, dim)
@@ -212,9 +220,11 @@ func TestSerialEvaluationStaysSingleThreaded(t *testing.T) {
 	}
 
 	lifecycle := optimizer.(LifecycleOptimizer)
-	if _, err := lifecycle.RunContext(context.Background(), Problem{
+
+	_, err = lifecycle.RunContext(context.Background(), Problem{
 		Eval: eval, Lower: lower, Upper: upper, Dim: dim,
-	}, RunOptions{}); err != nil {
+	}, RunOptions{})
+	if err != nil {
 		t.Fatalf("RunContext() error = %v", err)
 	}
 
@@ -229,8 +239,12 @@ func TestSerialEvaluationStaysSingleThreaded(t *testing.T) {
 // on all of them keeping their RNG draws on the optimizer goroutine; a variant
 // that drew from a worker would be reproducible for the default and broken here.
 func TestParallelEvaluationIsReproducibleAcrossVariants(t *testing.T) {
+	t.Parallel()
+
 	for variant := range supportedVariants {
 		t.Run(variant, func(t *testing.T) {
+			t.Parallel()
+
 			first := runRippledSphereVariant(t, variant, 4)
 			again := runRippledSphereVariant(t, variant, 4)
 			wider := runRippledSphereVariant(t, variant, 7)
@@ -254,6 +268,8 @@ func TestParallelEvaluationIsReproducibleAcrossVariants(t *testing.T) {
 // serial-only guard into a silent no-op, which is exactly the failure the guard
 // exists to prevent.
 func TestParallelEvaluationWidthSeesThroughWrappers(t *testing.T) {
+	t.Parallel()
+
 	serial, err := NewMayflyVariant(variantStandard, 5, 16, 99)
 	if err != nil {
 		t.Fatal(err)

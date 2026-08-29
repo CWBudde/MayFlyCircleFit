@@ -15,6 +15,8 @@ import (
 // surface on the trusted-local boundary, so the mux must reach it and the mux
 // must not have swallowed it into the catch-all "/" handler.
 func TestStaticRouteServesTheIslandBundle(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -43,6 +45,8 @@ func TestStaticRouteServesTheIslandBundle(t *testing.T) {
 // TestUnknownStaticAssetIsNotFound guards against the mux falling back to the
 // "/" handler, which would answer a missing asset with a 200 and an HTML page.
 func TestUnknownStaticAssetIsNotFound(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -70,6 +74,8 @@ func TestUnknownStaticAssetIsNotFound(t *testing.T) {
 // only for names that are actually embedded. Without the guard, those cases are
 // handled by the mux redirect first.
 func TestStaticRouteRejectsNonCanonicalPaths(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -97,6 +103,8 @@ func TestStaticRouteRejectsNonCanonicalPaths(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, testCase.url, nil))
 
@@ -116,6 +124,8 @@ func TestStaticRouteRejectsNonCanonicalPaths(t *testing.T) {
 // redirect. A guard that swallowed all non-canonical paths would silently
 // change the API surface.
 func TestNonStaticRoutesKeepMuxCanonicalization(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -138,6 +148,8 @@ func TestNonStaticRoutesKeepMuxCanonicalization(t *testing.T) {
 }
 
 func TestIsCanonicalPath(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		path string
 		want bool

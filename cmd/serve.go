@@ -100,7 +100,8 @@ func runServer(cmd *cobra.Command, args []string) error {
 			}
 		}()
 
-		if err := pprof.StartCPUProfile(f); err != nil {
+		err = pprof.StartCPUProfile(f)
+		if err != nil {
 			return fmt.Errorf("failed to start CPU profile: %w", err)
 		}
 
@@ -189,14 +190,16 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 			runtime.GC() // Run GC to get accurate heap stats
 
-			if err := pprof.WriteHeapProfile(f); err != nil {
+			err = pprof.WriteHeapProfile(f)
+			if err != nil {
 				_ = f.Close()
 				return fmt.Errorf("failed to write memory profile: %w", err)
 			}
 			// Closed explicitly, not deferred: a full filesystem reports the
 			// short write here, and a deferred close would discard it and let
 			// the command claim a profile it did not finish writing.
-			if err := f.Close(); err != nil {
+			err = f.Close()
+			if err != nil {
 				return fmt.Errorf("failed to close memory profile: %w", err)
 			}
 

@@ -13,9 +13,9 @@ const (
 	incrementalCostDisabled incrementalCostMode = iota
 	incrementalCostAuto
 	incrementalCostForce
-
-	incrementalSmallImagePixels = 128 * 128
 )
+
+const incrementalSmallImagePixels = 128 * 128
 
 // incrementalCostWorthwhile models native AVX2 measurements. Three dirty-pixel
 // units account for reading candidate, base, and reference instead of the full

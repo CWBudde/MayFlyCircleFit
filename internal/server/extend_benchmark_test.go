@@ -95,7 +95,9 @@ func BenchmarkSingleCircleExtendTerms(b *testing.B) {
 				}
 
 				jobID := "00000000-0000-4000-8000-000000000158"
-				if err := fsStore.SavePNGArtifact(jobID, store.ArtifactBest, prefixCanvas); err != nil {
+
+				err = fsStore.SavePNGArtifact(jobID, store.ArtifactBest, prefixCanvas)
+				if err != nil {
 					b.Fatal(err)
 				}
 
@@ -153,15 +155,18 @@ func BenchmarkSingleCircleExtendTerms(b *testing.B) {
 						b.Fatal(err)
 					}
 
-					if err := writer.Write(entry); err != nil {
+					err = writer.Write(entry)
+					if err != nil {
 						b.Fatal(err)
 					}
 
-					if err := writer.Write(entry); err != nil {
+					err = writer.Write(entry)
+					if err != nil {
 						b.Fatal(err)
 					}
 
-					if err := writer.Close(); err != nil {
+					err = writer.Close()
+					if err != nil {
 						b.Fatal(err)
 					}
 				}
@@ -217,10 +222,11 @@ func BenchmarkSingleCircleExtendTerms(b *testing.B) {
 
 					started := time.Now()
 
-					if _, err := renderer.OptimizeBatchAppendFromCanvasContext(
+					_, err := renderer.OptimizeBatchAppendFromCanvasContext(
 						context.Background(), fixedBase, fixedExtendOptimizer{candidate: extendBenchmarkTruthCandidate()},
 						params, prefixCanvas, prefixCost, circleCount+1, 1, renderer.DisabledConvergenceConfig(),
-					); err != nil {
+					)
+					if err != nil {
 						b.Fatal(err)
 					}
 
@@ -292,11 +298,13 @@ func BenchmarkSingleCircleExtendWall(b *testing.B) {
 			parentID := "00000000-0000-4000-8000-000000000166"
 			referenceID := "00000000-0000-4000-8000-000000000167"
 
-			if err := fsStore.SavePNGArtifact(parentID, store.ArtifactBest, prefixCanvas); err != nil {
+			err = fsStore.SavePNGArtifact(parentID, store.ArtifactBest, prefixCanvas)
+			if err != nil {
 				b.Fatal(err)
 			}
 
-			if err := fsStore.SavePNGArtifact(referenceID, store.ArtifactBest, reference); err != nil {
+			err = fsStore.SavePNGArtifact(referenceID, store.ArtifactBest, reference)
+			if err != nil {
 				b.Fatal(err)
 			}
 
@@ -366,11 +374,14 @@ func BenchmarkSingleCircleExtendProductionCheckpoint(b *testing.B) {
 	}
 
 	var checkpoint store.Checkpoint
-	if err := json.Unmarshal(data, &checkpoint); err != nil {
+
+	err = json.Unmarshal(data, &checkpoint)
+	if err != nil {
 		b.Fatal(err)
 	}
 
-	if err := checkpoint.Validate(); err != nil {
+	err = checkpoint.Validate()
+	if err != nil {
 		b.Fatal(err)
 	}
 
@@ -395,7 +406,8 @@ func BenchmarkSingleCircleExtendProductionCheckpoint(b *testing.B) {
 				b.Fatal(err)
 			}
 
-			if err := fsStore.SavePNGArtifact(checkpoint.JobID, store.ArtifactBest, prefixCanvas); err != nil {
+			err = fsStore.SavePNGArtifact(checkpoint.JobID, store.ArtifactBest, prefixCanvas)
+			if err != nil {
 				b.Fatal(err)
 			}
 
@@ -449,6 +461,8 @@ func BenchmarkSingleCircleExtendProductionCheckpoint(b *testing.B) {
 // correctness boundary: JSON persistence must preserve every float bit needed
 // to reproduce the parent's renderer cost before an extension starts.
 func TestCheckpointRoundTripPreservesContinuationCost(t *testing.T) {
+	t.Parallel()
+
 	const circleCount = 32
 	params := extendBenchmarkParams(circleCount)
 	reference := extendBenchmarkReference(params)
@@ -464,7 +478,9 @@ func TestCheckpointRoundTripPreservesContinuationCost(t *testing.T) {
 	jobID := "00000000-0000-4000-8000-000000000162"
 
 	checkpoint := store.NewCheckpoint(jobID, params, parentCost, parentCost+1, 500, extendBenchmarkConfig(circleCount))
-	if err := fsStore.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+	err = fsStore.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 

@@ -12,6 +12,8 @@ import (
 )
 
 func TestIncrementalCostBoundaryParity(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 41, 37
 	reference := randomNRGBA(width, height, 10_016)
 
@@ -49,6 +51,8 @@ func TestIncrementalCostBoundaryParity(t *testing.T) {
 		params := encodeCircles(test.circles)
 		for _, threads := range []int{1, 4} {
 			t.Run(test.name+"/threads="+fmtInt(threads), func(t *testing.T) {
+				t.Parallel()
+
 				assertIncrementalCostParity(t, reference, test.canvas, params, threads)
 			})
 		}
@@ -56,8 +60,12 @@ func TestIncrementalCostBoundaryParity(t *testing.T) {
 }
 
 func TestIncrementalCostSIMDSpanBoundaries(t *testing.T) {
+	t.Parallel()
+
 	for _, width := range []int{1, 2, 3, 4, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65} {
 		t.Run(fmtInt(width), func(t *testing.T) {
+			t.Parallel()
+
 			const height = 5
 			reference := randomNRGBA(width, height, int64(20_000+width))
 			canvas := randomNRGBA(width, height, int64(30_000+width))
@@ -71,12 +79,16 @@ func TestIncrementalCostSIMDSpanBoundaries(t *testing.T) {
 }
 
 func TestIncrementalCostPreservesCandidateOrdering(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 96, 80
 	reference := randomNRGBA(width, height, 40_000)
 	canvas := randomNRGBA(width, height, 40_001)
 
 	for _, circles := range []int{1, 5} {
 		t.Run(fmtInt(circles)+"_circles", func(t *testing.T) {
+			t.Parallel()
+
 			full := NewCPURendererWithCanvas(reference, canvas, circles)
 			automatic := NewCPURendererWithCanvas(reference, canvas, circles)
 
@@ -109,6 +121,8 @@ func TestIncrementalCostPreservesCandidateOrdering(t *testing.T) {
 }
 
 func TestIncrementalPipelineOutcomesMatchFullImage(t *testing.T) {
+	t.Parallel()
+
 	const totalCircles = 8
 	reference := benchmarkPipelineReference(64, 64)
 	convergence := ConvergenceConfig{Enabled: true, Patience: 2, Threshold: 1}
@@ -130,6 +144,8 @@ func TestIncrementalPipelineOutcomesMatchFullImage(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			full := NewCPURenderer(reference, totalCircles)
 			full.SetThreads(4)
 			full.stagedIncremental = false
@@ -153,6 +169,8 @@ func TestIncrementalPipelineOutcomesMatchFullImage(t *testing.T) {
 }
 
 func TestIncrementalMayflyOutcomesMatchFullImage(t *testing.T) {
+	t.Parallel()
+
 	const totalCircles = 4
 	reference := benchmarkPipelineReference(48, 48)
 	tests := []struct {
@@ -172,6 +190,8 @@ func TestIncrementalMayflyOutcomesMatchFullImage(t *testing.T) {
 
 	for index, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			full := NewCPURenderer(reference, totalCircles)
 			full.SetThreads(1)
 			full.stagedIncremental = false
@@ -196,6 +216,7 @@ func TestIncrementalMayflyOutcomesMatchFullImage(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // testing.AllocsPerRun pins GOMAXPROCS process-wide for the duration of the measurement
 func TestIncrementalCostSteadyStateAllocations(t *testing.T) {
 	const width, height = 256, 256
 	reference := randomNRGBA(width, height, 50_000)

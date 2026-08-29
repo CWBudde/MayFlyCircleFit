@@ -66,10 +66,14 @@ func newScheduleStore(t *testing.T) (*FSStore, string) {
 // campaign and its realized lineage must come back from disk without an
 // external ledger.
 func TestScheduleSurvivesAStoreRestart(t *testing.T) {
+	t.Parallel()
+
 	fsStore, dir := newScheduleStore(t)
 
 	record := testScheduleRecord(t)
-	if err := fsStore.SaveSchedule(record); err != nil {
+
+	err := fsStore.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("SaveSchedule() error = %v", err)
 	}
 
@@ -149,10 +153,14 @@ func TestScheduleSurvivesAStoreRestart(t *testing.T) {
 }
 
 func TestSaveScheduleStageIsIdempotentPerIndex(t *testing.T) {
+	t.Parallel()
+
 	fsStore, _ := newScheduleStore(t)
 
 	record := testScheduleRecord(t)
-	if err := fsStore.SaveSchedule(record); err != nil {
+
+	err := fsStore.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("SaveSchedule() error = %v", err)
 	}
 
@@ -165,14 +173,18 @@ func TestSaveScheduleStageIsIdempotentPerIndex(t *testing.T) {
 	stage.JobID = testBaseJobID
 
 	stage.State = ScheduleStateRunning
-	if err := fsStore.SaveScheduleStage(testScheduleID, stage); err != nil {
+
+	err = fsStore.SaveScheduleStage(testScheduleID, stage)
+	if err != nil {
 		t.Fatalf("SaveScheduleStage() error = %v", err)
 	}
 
 	stage.State = ScheduleStateCompleted
 
 	stage.BestCost = 161.99
-	if err := fsStore.SaveScheduleStage(testScheduleID, stage); err != nil {
+
+	err = fsStore.SaveScheduleStage(testScheduleID, stage)
+	if err != nil {
 		t.Fatalf("SaveScheduleStage() rewrite error = %v", err)
 	}
 
@@ -194,10 +206,14 @@ func TestSaveScheduleStageIsIdempotentPerIndex(t *testing.T) {
 // listing leans on: the listing carries no configuration, so the configuration
 // a stage ran with has to be readable on its own.
 func TestLoadScheduleStageReadsOneStage(t *testing.T) {
+	t.Parallel()
+
 	fsStore, _ := newScheduleStore(t)
 
 	record := testScheduleRecord(t)
-	if err := fsStore.SaveSchedule(record); err != nil {
+
+	err := fsStore.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("SaveSchedule() error = %v", err)
 	}
 
@@ -210,7 +226,9 @@ func TestLoadScheduleStageReadsOneStage(t *testing.T) {
 	stage.JobID = testBaseJobID
 
 	stage.State = ScheduleStateCompleted
-	if err := fsStore.SaveScheduleStage(testScheduleID, stage); err != nil {
+
+	err = fsStore.SaveScheduleStage(testScheduleID, stage)
+	if err != nil {
 		t.Fatalf("SaveScheduleStage() error = %v", err)
 	}
 
@@ -228,31 +246,40 @@ func TestLoadScheduleStageReadsOneStage(t *testing.T) {
 		t.Fatalf("LoadScheduleStage() config = %+v, want the recorded configuration", loaded.Config)
 	}
 
-	if _, err := fsStore.LoadScheduleStage(testScheduleID, stage.Index+1); !errors.Is(err, ErrNotFound) {
+	_, err = fsStore.LoadScheduleStage(testScheduleID, stage.Index+1)
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("LoadScheduleStage() for an unrecorded stage error = %v, want ErrNotFound", err)
 	}
 
-	if _, err := fsStore.LoadScheduleStage(testScheduleID, -1); err == nil {
+	_, err = fsStore.LoadScheduleStage(testScheduleID, -1)
+	if err == nil {
 		t.Fatal("LoadScheduleStage() accepted a negative index")
 	}
 	// A well-formed identifier that names no schedule is a missing schedule,
 	// not a missing stage file inside one.
-	if _, err := fsStore.LoadScheduleStage(testStageJobID, stage.Index); !errors.Is(err, ErrNotFound) {
+	_, err = fsStore.LoadScheduleStage(testStageJobID, stage.Index)
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("LoadScheduleStage() for an unknown schedule error = %v, want ErrNotFound", err)
 	}
 }
 
 func TestScheduleStoreNotFoundAndListing(t *testing.T) {
+	t.Parallel()
+
 	fsStore, _ := newScheduleStore(t)
-	if _, err := fsStore.LoadSchedule(testScheduleID); !errors.Is(err, ErrNotFound) {
+
+	_, err := fsStore.LoadSchedule(testScheduleID)
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("LoadSchedule() error = %v, want ErrNotFound", err)
 	}
 
-	if _, err := fsStore.LoadScheduleStages(testScheduleID); !errors.Is(err, ErrNotFound) {
+	_, err = fsStore.LoadScheduleStages(testScheduleID)
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("LoadScheduleStages() error = %v, want ErrNotFound", err)
 	}
 
-	if err := fsStore.DeleteSchedule(testScheduleID); !errors.Is(err, ErrNotFound) {
+	err = fsStore.DeleteSchedule(testScheduleID)
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("DeleteSchedule() error = %v, want ErrNotFound", err)
 	}
 
@@ -266,7 +293,9 @@ func TestScheduleStoreNotFoundAndListing(t *testing.T) {
 	}
 
 	record := testScheduleRecord(t)
-	if err := fsStore.SaveSchedule(record); err != nil {
+
+	err = fsStore.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("SaveSchedule() error = %v", err)
 	}
 
@@ -279,16 +308,21 @@ func TestScheduleStoreNotFoundAndListing(t *testing.T) {
 		t.Fatalf("ListSchedules() = %+v, want the saved schedule", schedules)
 	}
 
-	if err := fsStore.DeleteSchedule(testScheduleID); err != nil {
+	err = fsStore.DeleteSchedule(testScheduleID)
+	if err != nil {
 		t.Fatalf("DeleteSchedule() error = %v", err)
 	}
 
-	if _, err := fsStore.LoadSchedule(testScheduleID); !errors.Is(err, ErrNotFound) {
+	_, err = fsStore.LoadSchedule(testScheduleID)
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("LoadSchedule() after delete error = %v, want ErrNotFound", err)
 	}
 }
 
+//nolint:tparallel // its subtests are serial: they share one store and the order they save into it.
 func TestScheduleStoreRejectsInvalidInput(t *testing.T) {
+	t.Parallel()
+
 	fsStore, _ := newScheduleStore(t)
 	valid := testScheduleRecord(t)
 
@@ -472,6 +506,7 @@ func TestScheduleStoreRejectsInvalidInput(t *testing.T) {
 			wantErr: "State",
 		},
 	}
+	//nolint:paralleltest // the subtests share one store and the order they save into it
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			err := test.run()
@@ -490,6 +525,8 @@ func TestScheduleStoreRejectsInvalidInput(t *testing.T) {
 // record must carry a concrete seed even when the document omitted one, or the
 // stages replanned after a restart would use a fresh random campaign seed.
 func TestScheduleRecordResolvesAnOmittedSeed(t *testing.T) {
+	t.Parallel()
+
 	doc, err := app.ParseSchedule([]byte(`{
 		"base": {"refPath": "assets/ref.png", "mode": "batch", "circles": 8, "batchSize": 8, "iters": 200, "popSize": 30},
 		"steps": [{"type": "extend", "additionalCircles": 8}]
@@ -508,7 +545,9 @@ func TestScheduleRecordResolvesAnOmittedSeed(t *testing.T) {
 	}
 
 	fsStore, dir := newScheduleStore(t)
-	if err := fsStore.SaveSchedule(record); err != nil {
+
+	err = fsStore.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("SaveSchedule() error = %v", err)
 	}
 
@@ -535,6 +574,8 @@ func TestScheduleRecordResolvesAnOmittedSeed(t *testing.T) {
 // TestScheduleStoreRefusesASymlinkedRecord keeps the schedule reader inside the
 // store, matching the guard the checkpoint artifacts already have.
 func TestScheduleStoreRefusesASymlinkedRecord(t *testing.T) {
+	t.Parallel()
+
 	fsStore, dir := newScheduleStore(t)
 
 	record := testScheduleRecord(t)
@@ -563,7 +604,8 @@ func TestScheduleStoreRefusesASymlinkedRecord(t *testing.T) {
 		t.Skipf("symlinks are unavailable here: %v", err)
 	}
 
-	if _, err := fsStore.LoadSchedule(testScheduleID); err == nil || !strings.Contains(err.Error(), "symlink") {
+	_, err = fsStore.LoadSchedule(testScheduleID)
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Fatalf("LoadSchedule() error = %v, want a refusal naming the symlink", err)
 	}
 }
@@ -574,10 +616,14 @@ func TestScheduleStoreRefusesASymlinkedRecord(t *testing.T) {
 // contained. Reading one stage by index has to refuse it exactly as listing
 // them all does.
 func TestScheduleStoreRefusesASymlinkedStagesDirectory(t *testing.T) {
+	t.Parallel()
+
 	fsStore, dir := newScheduleStore(t)
 
 	record := testScheduleRecord(t)
-	if err := fsStore.SaveSchedule(record); err != nil {
+
+	err := fsStore.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("SaveSchedule() error = %v", err)
 	}
 
@@ -589,7 +635,9 @@ func TestScheduleStoreRefusesASymlinkedStagesDirectory(t *testing.T) {
 	stage := NewScheduleStageRecord(testScheduleID, stages[0])
 
 	stage.State = ScheduleStateCompleted
-	if err := fsStore.SaveScheduleStage(testScheduleID, stage); err != nil {
+
+	err = fsStore.SaveScheduleStage(testScheduleID, stage)
+	if err != nil {
 		t.Fatalf("SaveScheduleStage() error = %v", err)
 	}
 
@@ -598,25 +646,32 @@ func TestScheduleStoreRefusesASymlinkedStagesDirectory(t *testing.T) {
 	outside := t.TempDir()
 
 	planted := *stage
-	if err := os.WriteFile(filepath.Join(outside, stageFileName(stage.Index)),
-		[]byte(mustEncodeStage(t, &planted)), 0o600); err != nil {
+
+	err = os.WriteFile(filepath.Join(outside, stageFileName(stage.Index)),
+		[]byte(mustEncodeStage(t, &planted)), 0o600)
+	if err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
 	stagesPath := filepath.Join(dir, schedulesDirName, testScheduleID, stagesDirName)
-	if err := os.RemoveAll(stagesPath); err != nil {
+
+	err = os.RemoveAll(stagesPath)
+	if err != nil {
 		t.Fatalf("RemoveAll() error = %v", err)
 	}
 
-	if err := os.Symlink(outside, stagesPath); err != nil {
+	err = os.Symlink(outside, stagesPath)
+	if err != nil {
 		t.Skipf("symlinks are unavailable here: %v", err)
 	}
 
-	if _, err := fsStore.LoadScheduleStage(testScheduleID, stage.Index); err == nil || !strings.Contains(err.Error(), "symlink") {
+	_, err = fsStore.LoadScheduleStage(testScheduleID, stage.Index)
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Fatalf("LoadScheduleStage() error = %v, want a refusal naming the symlink", err)
 	}
 
-	if _, err := fsStore.LoadScheduleStages(testScheduleID); err == nil || !strings.Contains(err.Error(), "symlink") {
+	_, err = fsStore.LoadScheduleStages(testScheduleID)
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Fatalf("LoadScheduleStages() error = %v, want a refusal naming the symlink", err)
 	}
 }
@@ -635,6 +690,8 @@ func mustEncodeStage(t *testing.T, stage *ScheduleStageRecord) string {
 // TestScheduleStoreSatisfiesTheInterface pins the contract 16.2's executor will
 // program against.
 func TestScheduleStoreSatisfiesTheInterface(t *testing.T) {
+	t.Parallel()
+
 	fsStore, _ := newScheduleStore(t)
 	var _ ScheduleStore = fsStore
 }
@@ -643,11 +700,15 @@ func TestScheduleStoreSatisfiesTheInterface(t *testing.T) {
 // campaign can be paused between stages, but a stage cannot be, because a stage
 // is the unit that either runs to a result or does not.
 func TestPausedIsAScheduleStateOnly(t *testing.T) {
+	t.Parallel()
+
 	fsStore, _ := newScheduleStore(t)
 	record := testScheduleRecord(t)
 
 	record.State = ScheduleStatePaused
-	if err := fsStore.SaveSchedule(record); err != nil {
+
+	err := fsStore.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("SaveSchedule(paused) error = %v", err)
 	}
 
@@ -668,7 +729,9 @@ func TestPausedIsAScheduleStateOnly(t *testing.T) {
 	stage := NewScheduleStageRecord(testScheduleID, plan[0])
 
 	stage.State = ScheduleStatePaused
-	if err := fsStore.SaveScheduleStage(testScheduleID, stage); err == nil {
+
+	err = fsStore.SaveScheduleStage(testScheduleID, stage)
+	if err == nil {
 		t.Fatal("SaveScheduleStage() accepted a paused stage")
 	}
 }
@@ -677,10 +740,14 @@ func TestPausedIsAScheduleStateOnly(t *testing.T) {
 // declines individual stages, never whole campaigns, and a declined stage never
 // ran and so can name no job.
 func TestSkippedIsAStageStateOnly(t *testing.T) {
+	t.Parallel()
+
 	fsStore, _ := newScheduleStore(t)
 
 	record := testScheduleRecord(t)
-	if err := fsStore.SaveSchedule(record); err != nil {
+
+	err := fsStore.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("SaveSchedule() error = %v", err)
 	}
 
@@ -693,7 +760,9 @@ func TestSkippedIsAStageStateOnly(t *testing.T) {
 	stage.State = ScheduleStateSkipped
 
 	stage.Reason = "polish is scheduled only at 32 circles"
-	if err := fsStore.SaveScheduleStage(testScheduleID, stage); err != nil {
+
+	err = fsStore.SaveScheduleStage(testScheduleID, stage)
+	if err != nil {
 		t.Fatalf("SaveScheduleStage(skipped) error = %v", err)
 	}
 
@@ -711,12 +780,16 @@ func TestSkippedIsAStageStateOnly(t *testing.T) {
 	}
 
 	stage.JobID = "11111111-2222-3333-4444-555555555555"
-	if err := fsStore.SaveScheduleStage(testScheduleID, stage); err == nil {
+
+	err = fsStore.SaveScheduleStage(testScheduleID, stage)
+	if err == nil {
 		t.Fatal("SaveScheduleStage() accepted a skipped stage that names a job")
 	}
 
 	record.State = ScheduleStateSkipped
-	if err := fsStore.SaveSchedule(record); err == nil {
+
+	err = fsStore.SaveSchedule(record)
+	if err == nil {
 		t.Fatal("SaveSchedule() accepted a skipped campaign")
 	}
 }

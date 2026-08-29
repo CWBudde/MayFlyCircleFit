@@ -10,6 +10,8 @@ import (
 )
 
 func TestDashboardPageRenders(t *testing.T) {
+	t.Parallel()
+
 	page := DashboardPageData{
 		Campaigns: []CampaignSummary{
 			{
@@ -90,6 +92,8 @@ func TestDashboardPageRenders(t *testing.T) {
 // script and later parses /api/v1/dashboard into the same shape, so a tag
 // renamed on only one side would leave the page correct until it refreshed.
 func TestDashboardPageSeedsTheIsland(t *testing.T) {
+	t.Parallel()
+
 	page := DashboardPageData{
 		RunningJobs: []DashboardRunningJob{{ID: "job-1", Project: "default", State: "running", Iterations: 7, MaxIters: 10, CPS: 1.5}},
 		Aggregates:  DashboardAggregates{Running: 1, Pending: 2, Completed: 3, CPS: 1.5},
@@ -165,6 +169,8 @@ func extractDashboardSeed(t *testing.T, body string) string {
 }
 
 func TestDashboardCampaignURL(t *testing.T) {
+	t.Parallel()
+
 	if got, want := dashboardCampaignURL(CampaignSummary{Source: CampaignFromChain, ID: "abc"}), "/chains/abc"; got != want {
 		t.Fatalf("dashboardCampaignURL() = %q, want %q", got, want)
 	}
@@ -234,6 +240,8 @@ func renderDashboardPage(t *testing.T, page DashboardPageData) string {
 }
 
 func TestDashboardPageRendersCampaignCardsWithLinksAndActions(t *testing.T) {
+	t.Parallel()
+
 	body := renderDashboardPage(t, dashboardPageFixture())
 
 	markers := []string{
@@ -257,6 +265,8 @@ func TestDashboardPageRendersCampaignCardsWithLinksAndActions(t *testing.T) {
 }
 
 func TestDashboardPageDisplaysRunningJobsAndAggregates(t *testing.T) {
+	t.Parallel()
+
 	body := renderDashboardPage(t, dashboardPageFixture())
 	for _, marker := range []string{
 		`<strong>Running:</strong> 1`,
@@ -274,6 +284,8 @@ func TestDashboardPageDisplaysRunningJobsAndAggregates(t *testing.T) {
 }
 
 func TestFormatJobImprovement(t *testing.T) {
+	t.Parallel()
+
 	for _, test := range []struct {
 		name          string
 		initial, best float64
@@ -284,6 +296,8 @@ func TestFormatJobImprovement(t *testing.T) {
 		{"worse", 5, 10, "—"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := formatJobImprovement(test.initial, test.best); got != test.want {
 				t.Fatalf("formatJobImprovement(%v, %v) = %q, want %q", test.initial, test.best, got, test.want)
 			}

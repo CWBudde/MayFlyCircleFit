@@ -104,6 +104,8 @@ func stageLimitDetail(t *testing.T) scheduleDetailResponse {
 // TestScheduleStatusPrintsACampaignAtTheStageLimit is the Task 16.7 acceptance
 // check: the stage table and the projection are printed for a campaign at
 // MaxScheduleStages, and the response the command read is measured.
+//
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleStatusPrintsACampaignAtTheStageLimit(t *testing.T) {
 	detail := stageLimitDetail(t)
 
@@ -124,7 +126,9 @@ func TestScheduleStatusPrintsACampaignAtTheStageLimit(t *testing.T) {
 	})
 
 	var output bytes.Buffer
-	if err := runScheduleStatus(testCommand(context.Background(), &output), []string{testScheduleID}); err != nil {
+
+	err = runScheduleStatus(testCommand(context.Background(), &output), []string{testScheduleID})
+	if err != nil {
 		t.Fatalf("runScheduleStatus() error = %v", err)
 	}
 
@@ -155,6 +159,8 @@ func TestScheduleStatusPrintsACampaignAtTheStageLimit(t *testing.T) {
 
 // TestScheduleImportPrintsAChainAtTheStageLimit is the same check for
 // `schedule import`, whose chain view is on the same curve.
+//
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestScheduleImportPrintsAChainAtTheStageLimit(t *testing.T) {
 	detail := chainDetailResponse{
 		LeafJobID: fmt.Sprintf("00000000-0000-4000-8000-%012d", app.MaxScheduleStages-1),
@@ -193,7 +199,9 @@ func TestScheduleImportPrintsAChainAtTheStageLimit(t *testing.T) {
 	})
 
 	var output bytes.Buffer
-	if err := runScheduleImport(testCommand(context.Background(), &output), []string{detail.LeafJobID}); err != nil {
+
+	err = runScheduleImport(testCommand(context.Background(), &output), []string{detail.LeafJobID})
+	if err != nil {
 		t.Fatalf("runScheduleImport() error = %v", err)
 	}
 
@@ -217,6 +225,8 @@ func TestScheduleImportPrintsAChainAtTheStageLimit(t *testing.T) {
 // endpoint produces rather than ones this test wrote, and compares the
 // projection derived from them with the projection derived from the stage
 // records on disk, field by field.
+//
+//nolint:paralleltest // swaps the package-level scheduleServerURL, as every test here does.
 func TestProjectionIsUnchangedByTheSummaryProjection(t *testing.T) {
 	root := t.TempDir()
 
@@ -237,7 +247,9 @@ func TestProjectionIsUnchangedByTheSummaryProjection(t *testing.T) {
 	// A paused campaign keeps its remaining stages — so there is something to
 	// project — without the restored server driving one of them.
 	record.State = store.ScheduleStatePaused
-	if err := persistence.SaveSchedule(record); err != nil {
+
+	err = persistence.SaveSchedule(record)
+	if err != nil {
 		t.Fatalf("SaveSchedule() error = %v", err)
 	}
 
@@ -271,7 +283,9 @@ func TestProjectionIsUnchangedByTheSummaryProjection(t *testing.T) {
 	// The command itself first: it has to decode what this server sends, and it
 	// refuses a field it does not know about.
 	var output bytes.Buffer
-	if err := runScheduleStatus(testCommand(context.Background(), &output), []string{testScheduleID}); err != nil {
+
+	err = runScheduleStatus(testCommand(context.Background(), &output), []string{testScheduleID})
+	if err != nil {
 		t.Fatalf("runScheduleStatus() error = %v", err)
 	}
 
@@ -286,7 +300,9 @@ func TestProjectionIsUnchangedByTheSummaryProjection(t *testing.T) {
 	}
 
 	var detail scheduleDetailResponse
-	if err := decodeCLIResponse(body, &detail); err != nil {
+
+	err = decodeCLIResponse(body, &detail)
+	if err != nil {
 		t.Fatalf("decode the schedule: %v", err)
 	}
 

@@ -137,7 +137,8 @@ func OptimizeJoint(base Renderer, optimizer opt.Optimizer, circleCount int, conv
 // OptimizeJointContext is OptimizeJoint with cooperative cancellation when the
 // optimizer implements opt.LifecycleOptimizer.
 func OptimizeJointContext(ctx context.Context, base Renderer, optimizer opt.Optimizer, circleCount int, _ ConvergenceConfig) (*OptimizationResult, error) {
-	if err := validatePipelineInputs(base, optimizer, circleCount); err != nil {
+	err := validatePipelineInputs(base, optimizer, circleCount)
+	if err != nil {
 		return nil, err
 	}
 
@@ -198,7 +199,9 @@ func OptimizeJointContext(ctx context.Context, base Renderer, optimizer opt.Opti
 		runOptions := opt.RunOptions{}
 
 		initialCanvas := cloneNRGBA(session.Render(baseline))
-		if seedParams, seedErr := SeedParamsFromResidual(initialCanvas, base.Reference(), circleCount, ResidualSeedOptions{}); seedErr == nil {
+
+		seedParams, seedErr := SeedParamsFromResidual(initialCanvas, base.Reference(), circleCount, ResidualSeedOptions{})
+		if seedErr == nil {
 			seedCost := evaluate(seedParams)
 			runOptions.Initial = &opt.Candidate{Params: seedParams, Cost: seedCost}
 		} else {
@@ -219,7 +222,8 @@ func OptimizeJointContext(ctx context.Context, base Renderer, optimizer opt.Opti
 			stagesStoppedEarly = 1
 		}
 
-		if err := validateParamLength(outcome.Params, dim); err != nil {
+		err = validateParamLength(outcome.Params, dim)
+		if err != nil {
 			return nil, fmt.Errorf("%w: optimizer result: %w", ErrInvalidOptimizationInput, err)
 		}
 
@@ -262,7 +266,8 @@ func OptimizeSequential(base Renderer, optimizer opt.Optimizer, totalCircles int
 // OptimizeSequentialContext is OptimizeSequential with cooperative
 // cancellation when the optimizer implements opt.LifecycleOptimizer.
 func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt.Optimizer, totalCircles int, convergenceConfig ConvergenceConfig, callback CircleCallback) (*OptimizationResult, error) {
-	if err := validatePipelineInputs(base, optimizer, totalCircles); err != nil {
+	err := validatePipelineInputs(base, optimizer, totalCircles)
+	if err != nil {
 		return nil, err
 	}
 
@@ -352,7 +357,8 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 			},
 		}
 
-		if seedParams, seedErr := SeedParamsFromResidual(currentCanvas, base.Reference(), 1, ResidualSeedOptions{}); seedErr == nil {
+		seedParams, seedErr := SeedParamsFromResidual(currentCanvas, base.Reference(), 1, ResidualSeedOptions{})
+		if seedErr == nil {
 			seedCost := evaluate(seedParams)
 			runOptions.Initial = &opt.Candidate{Params: seedParams, Cost: seedCost}
 		} else {
@@ -374,7 +380,8 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 			stagesStoppedEarly++
 		}
 
-		if err := validateParamLength(candidateCircle, paramsPerCircle); err != nil {
+		err = validateParamLength(candidateCircle, paramsPerCircle)
+		if err != nil {
 			cleanup()
 			return nil, fmt.Errorf("%w: optimizer result for circle %d: %w", ErrInvalidOptimizationInput, circleNum, err)
 		}
@@ -484,8 +491,9 @@ type retainedBatchPrefix struct {
 }
 
 func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Optimizer, prefixParams []float64, retained *retainedBatchPrefix, totalCircles, batchSize int, convergenceConfig ConvergenceConfig) (*OptimizationResult, error) {
-	if err := validatePipelineInputs(base, optimizer, totalCircles); err != nil {
-		return nil, err
+	inputErr := validatePipelineInputs(base, optimizer, totalCircles)
+	if inputErr != nil {
+		return nil, inputErr
 	}
 
 	if batchSize <= 0 {
@@ -697,7 +705,8 @@ func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 			stagesStoppedEarly++
 		}
 
-		if err := validateParamLength(candidateBatch, dim); err != nil {
+		err = validateParamLength(candidateBatch, dim)
+		if err != nil {
 			cleanup()
 			return nil, fmt.Errorf("%w: optimizer result for batch %d: %w", ErrInvalidOptimizationInput, stages, err)
 		}

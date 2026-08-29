@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+//nolint:paralleltest // reads the package-level command flags, which every test in this package mutates.
 func TestServeBackendFlagDefaultsToCPU(t *testing.T) {
 	flag := serveCmd.Flags().Lookup("backend")
 	if flag == nil {

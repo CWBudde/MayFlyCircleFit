@@ -7,6 +7,8 @@ import (
 )
 
 func TestCircleSpecsToParams(t *testing.T) {
+	t.Parallel()
+
 	specs := CircleSpecs{
 		{X: 256, Y: 660, R: 300, Color: "#232650"},
 		{X: 10, Y: 20, R: 5, Color: "ffffff", Opacity: 0.5},
@@ -34,6 +36,8 @@ func TestCircleSpecsToParams(t *testing.T) {
 }
 
 func TestCircleSpecsValidate(t *testing.T) {
+	t.Parallel()
+
 	valid := CircleSpec{X: 1, Y: 2, R: 3, Color: "#010203", Opacity: 1}
 
 	cases := []struct {
@@ -51,6 +55,8 @@ func TestCircleSpecsValidate(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			err := CircleSpecs{testCase.spec}.Validate()
 			if testCase.field == "" {
 				if err != nil {
@@ -73,6 +79,8 @@ func TestCircleSpecsValidate(t *testing.T) {
 }
 
 func TestJobConfigValidateInitialCircles(t *testing.T) {
+	t.Parallel()
+
 	base := func() JobConfig {
 		config := DefaultConfig()
 		config.RefPath = "ref.png"
@@ -90,7 +98,9 @@ func TestJobConfigValidateInitialCircles(t *testing.T) {
 		return config
 	}
 
-	err := base().Validate()
+	valid := base()
+
+	err := valid.Validate()
 	if err != nil {
 		t.Fatalf("Validate() = %v, want nil", err)
 	}
@@ -131,6 +141,8 @@ func TestJobConfigValidateInitialCircles(t *testing.T) {
 // of that rule: the stock batch size of five would otherwise queue a seeded
 // ten-circle run that the batch dispatch then refuses.
 func TestApplyDefaultsWidensTheBatchForAnAuthoredSeed(t *testing.T) {
+	t.Parallel()
+
 	config := DefaultConfig()
 	config.RefPath = "ref.png"
 	config.Mode = ModeBatch
@@ -180,6 +192,8 @@ func TestApplyDefaultsWidensTheBatchForAnAuthoredSeed(t *testing.T) {
 // TestApplyDefaultsMakesInitialCirclesOpaque pins the one default the field
 // has: an omitted opacity is a circle the author meant to be solid.
 func TestApplyDefaultsMakesInitialCirclesOpaque(t *testing.T) {
+	t.Parallel()
+
 	config := DefaultConfig()
 	config.RefPath = "ref.png"
 	config.Seed = 1

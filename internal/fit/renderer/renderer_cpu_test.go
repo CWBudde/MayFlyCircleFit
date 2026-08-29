@@ -13,6 +13,8 @@ import (
 )
 
 func TestCPURendererWhiteCanvas(t *testing.T) {
+	t.Parallel()
+
 	// Create a white 10x10 reference
 	ref := image.NewNRGBA(image.Rect(0, 0, 10, 10))
 	white := color.NRGBA{255, 255, 255, 255}
@@ -45,6 +47,8 @@ func TestCPURendererWhiteCanvas(t *testing.T) {
 }
 
 func TestCPURendererSingleCircle(t *testing.T) {
+	t.Parallel()
+
 	// Create a white 20x20 reference
 	ref := image.NewNRGBA(image.Rect(0, 0, 20, 20))
 	white := color.NRGBA{255, 255, 255, 255}
@@ -80,6 +84,8 @@ func TestCPURendererSingleCircle(t *testing.T) {
 }
 
 func TestCPURendererParallelMatchesSingleThreaded(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name          string
 		width, height int
@@ -93,6 +99,8 @@ func TestCPURendererParallelMatchesSingleThreaded(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			ref := randomNRGBA(test.width, test.height, 42)
 			params := deterministicParams(test.circles, test.width, test.height, 99)
 			var single, parallel *CPURenderer
@@ -125,6 +133,8 @@ func TestCPURendererParallelMatchesSingleThreaded(t *testing.T) {
 }
 
 func TestCPURendererParallelRenderStable(t *testing.T) {
+	t.Parallel()
+
 	const (
 		width   = 193
 		height  = 129
@@ -145,6 +155,8 @@ func TestCPURendererParallelRenderStable(t *testing.T) {
 }
 
 func TestCPURendererStagedSessionsShareOnlyImmutableBackground(t *testing.T) {
+	t.Parallel()
+
 	reference := randomNRGBA(32, 24, 15_901)
 	retained := randomNRGBA(32, 24, 15_902)
 	base := NewCPURenderer(reference, 2)
@@ -186,6 +198,8 @@ func TestCPURendererStagedSessionsShareOnlyImmutableBackground(t *testing.T) {
 }
 
 func TestCPURendererSessionsPreserveThreads(t *testing.T) {
+	t.Parallel()
+
 	ref := randomNRGBA(32, 32, 42)
 	base := NewCPURenderer(ref, 4)
 	base.SetThreads(2)
@@ -208,6 +222,8 @@ func TestCPURendererSessionsPreserveThreads(t *testing.T) {
 
 // TestScanlineCircleRenderingMatchesOriginal verifies scanline method produces identical results.
 func TestScanlineCircleRenderingMatchesOriginal(t *testing.T) {
+	t.Parallel()
+
 	sizes := []struct {
 		name    string
 		w, h    int
@@ -240,6 +256,8 @@ func TestScanlineCircleRenderingMatchesOriginal(t *testing.T) {
 
 	for _, tc := range sizes {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			// Create two identical white canvases
 			original := image.NewNRGBA(image.Rect(0, 0, tc.w, tc.h))
 			scanline := image.NewNRGBA(image.Rect(0, 0, tc.w, tc.h))
@@ -424,6 +442,8 @@ func BenchmarkCompositePixelOpaque(b *testing.B) {
 }
 
 func TestCompositePixelOpaqueMatchesGeneralPath(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		background color.NRGBA
@@ -440,6 +460,8 @@ func TestCompositePixelOpaqueMatchesGeneralPath(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := image.NewNRGBA(image.Rect(0, 0, 1, 1))
 			want := image.NewNRGBA(image.Rect(0, 0, 1, 1))
 

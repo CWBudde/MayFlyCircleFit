@@ -13,6 +13,8 @@ import (
 )
 
 func TestSelectCheckpointsForDeletion_ByAge(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now()
 	infos := []store.CheckpointInfo{
 		{JobID: "job1", Timestamp: now.AddDate(0, 0, -10)}, // 10 days old
@@ -48,6 +50,8 @@ func TestSelectCheckpointsForDeletion_ByAge(t *testing.T) {
 }
 
 func TestSelectCheckpointsForDeletion_ByCount(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now()
 	infos := []store.CheckpointInfo{
 		{JobID: "job1", Timestamp: now.AddDate(0, 0, -10)},
@@ -83,6 +87,8 @@ func TestSelectCheckpointsForDeletion_ByCount(t *testing.T) {
 }
 
 func TestSelectCheckpointsForDeletion_Combined(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now()
 	infos := []store.CheckpointInfo{
 		{JobID: "job1", Timestamp: now.AddDate(0, 0, -10)},
@@ -104,6 +110,8 @@ func TestSelectCheckpointsForDeletion_Combined(t *testing.T) {
 }
 
 func TestGetDirSize(t *testing.T) {
+	t.Parallel()
+
 	// Create temp directory with files
 	tmpDir := t.TempDir()
 
@@ -111,7 +119,9 @@ func TestGetDirSize(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 
 	content := []byte("Hello, World!")
-	if err := os.WriteFile(testFile, content, 0o644); err != nil {
+
+	err := os.WriteFile(testFile, content, 0o600)
+	if err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -127,6 +137,8 @@ func TestGetDirSize(t *testing.T) {
 }
 
 func TestFormatBytes(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		bytes    int64
 		expected string
@@ -148,6 +160,7 @@ func TestFormatBytes(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // mutates the package-level checkpoint flags, which every test in this package shares.
 func TestCheckpointsListCommand_NoCheckpoints(t *testing.T) {
 	// Create temp directory for checkpoints
 	tmpDir := t.TempDir()
@@ -171,6 +184,7 @@ func TestCheckpointsListCommand_NoCheckpoints(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // mutates the package-level checkpoint flags, which every test in this package shares.
 func TestCheckpointsListCommand_WithCheckpoints(t *testing.T) {
 	// Create temp directory for checkpoints
 	tmpDir := t.TempDir()
@@ -217,6 +231,7 @@ func TestCheckpointsListCommand_WithCheckpoints(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // mutates the package-level checkpoint flags, which every test in this package shares.
 func TestCheckpointsCleanCommand_NoFlags(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -239,6 +254,7 @@ func TestCheckpointsCleanCommand_NoFlags(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // mutates the package-level checkpoint flags, which every test in this package shares.
 func TestCheckpointsCleanCommand_WithForce(t *testing.T) {
 	tmpDir := t.TempDir()
 

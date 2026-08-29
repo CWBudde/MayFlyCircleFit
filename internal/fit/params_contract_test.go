@@ -12,6 +12,8 @@ import (
 // population is affordable, so the two drifting apart would silently move that
 // limit. This test is the reason the duplication is safe.
 func TestParametersPerCircleMatchesTheRenderer(t *testing.T) {
+	t.Parallel()
+
 	if app.ParametersPerCircle != paramsPerCircle {
 		t.Fatalf(
 			"app.ParametersPerCircle = %d, fit.paramsPerCircle = %d; "+

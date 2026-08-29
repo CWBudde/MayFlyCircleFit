@@ -11,9 +11,13 @@ import (
 	"github.com/cwbudde/circlefit/internal/fit"
 )
 
+//nolint:tparallel // its subtests are serial: they draw their fixtures from one shared random source.
 func TestDeltaSSDSpanMatchesScalar(t *testing.T) {
+	t.Parallel()
+
 	rng := rand.New(rand.NewSource(10_016))
 
+	//nolint:paralleltest // the subtests draw their fixtures from one shared random source
 	for _, pixels := range []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255, 256, 257} {
 		t.Run(strconv.Itoa(pixels), func(t *testing.T) {
 			candidate := make([]byte, pixels*4)
@@ -33,6 +37,8 @@ func TestDeltaSSDSpanMatchesScalar(t *testing.T) {
 }
 
 func TestDeltaSSDSpanSignedExtremes(t *testing.T) {
+	t.Parallel()
+
 	const pixels = 257
 	black := make([]byte, pixels*4)
 
@@ -54,6 +60,8 @@ func TestDeltaSSDSpanSignedExtremes(t *testing.T) {
 }
 
 func TestDirtySpanSetMergesHalfOpenIntervals(t *testing.T) {
+	t.Parallel()
+
 	var dirty dirtySpanSet
 	dirty.reset(3, 6)
 
@@ -91,6 +99,8 @@ func TestDirtySpanSetMergesHalfOpenIntervals(t *testing.T) {
 }
 
 func TestDirtySpanSetRandomizedUnion(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 97, 23
 	rng := rand.New(rand.NewSource(1016))
 	var dirty dirtySpanSet
@@ -154,6 +164,8 @@ func TestDirtySpanSetRandomizedUnion(t *testing.T) {
 }
 
 func TestIncrementalCostMatchesFullImageSSD(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 79, 61
 	reference := randomNRGBA(width, height, 42)
 
@@ -184,6 +196,8 @@ func TestIncrementalCostMatchesFullImageSSD(t *testing.T) {
 	for _, test := range tests {
 		for _, threads := range []int{1, 4} {
 			t.Run(test.name+"/threads="+strconv.Itoa(threads), func(t *testing.T) {
+				t.Parallel()
+
 				circleCount := len(test.params) / paramsPerCircle
 				full := newCostTestRenderer(reference, test.canvas, circleCount)
 				incremental := newCostTestRenderer(reference, test.canvas, circleCount)
@@ -204,6 +218,8 @@ func TestIncrementalCostMatchesFullImageSSD(t *testing.T) {
 }
 
 func TestIncrementalCostSignedDeltaDirections(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 17, 13
 	black := image.NewNRGBA(image.Rect(0, 0, width, height))
 	white := image.NewNRGBA(black.Bounds())
@@ -226,6 +242,8 @@ func TestIncrementalCostSignedDeltaDirections(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			params := encodeCircles([]fit.Circle{test.circle})
 			full := NewCPURendererWithCanvas(test.reference, test.canvas, 1)
 			incremental := NewCPURendererWithCanvas(test.reference, test.canvas, 1)
@@ -239,6 +257,8 @@ func TestIncrementalCostSignedDeltaDirections(t *testing.T) {
 }
 
 func TestIncrementalCostRandomizedParity(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 67, 53
 	reference := randomNRGBA(width, height, 501)
 
@@ -263,6 +283,8 @@ func TestIncrementalCostRandomizedParity(t *testing.T) {
 }
 
 func TestIncrementalCostFallbackAndSessionRules(t *testing.T) {
+	t.Parallel()
+
 	reference := randomNRGBA(32, 24, 42)
 	renderer := NewCPURenderer(reference, 1)
 	renderer.incrementalCostMode = incrementalCostAuto
@@ -303,6 +325,8 @@ func TestIncrementalCostFallbackAndSessionRules(t *testing.T) {
 }
 
 func TestIncrementalCostWorthwhilePolicy(t *testing.T) {
+	t.Parallel()
+
 	var dirty dirtySpanSet
 	dirty.reset(100, 101)
 	dirty.add(0, 0, 10)
@@ -321,6 +345,8 @@ func TestIncrementalCostWorthwhilePolicy(t *testing.T) {
 }
 
 func TestIncrementalCostPreflightPolicy(t *testing.T) {
+	t.Parallel()
+
 	renderer := NewCPURenderer(randomNRGBA(256, 256, 42), 1)
 
 	small := encodeCircles([]fit.Circle{{X: 128, Y: 128, R: 64, Opacity: 1}})
@@ -352,6 +378,8 @@ func TestIncrementalCostPreflightPolicy(t *testing.T) {
 }
 
 func TestIncrementalStagedSessionEligibility(t *testing.T) {
+	t.Parallel()
+
 	reference := randomNRGBA(64, 64, 44)
 
 	smallSingle := NewCPURenderer(reference, 1)

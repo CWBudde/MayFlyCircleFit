@@ -97,8 +97,8 @@ type HostFacts = {
 	gomaxProcs: number;
 	goVersion: string;
 	simd: string;
-	activeSSDKernel: string;
-	activeSADKernel: string;
+	activeSsdKernel: string;
+	activeSadKernel: string;
 	compositingBackend: string;
 	fastCompositingBackend: string;
 	gpu: {

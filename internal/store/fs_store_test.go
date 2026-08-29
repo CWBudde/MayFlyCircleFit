@@ -51,6 +51,8 @@ func createTestCheckpoint(jobID string) *Checkpoint {
 }
 
 func TestNewFSStore(t *testing.T) {
+	t.Parallel()
+
 	tempDir := t.TempDir()
 
 	store, err := NewFSStore(tempDir)
@@ -63,12 +65,15 @@ func TestNewFSStore(t *testing.T) {
 	}
 
 	// Verify base directory was created
-	if _, err := os.Stat(tempDir); os.IsNotExist(err) {
+	_, err = os.Stat(tempDir)
+	if os.IsNotExist(err) {
 		t.Fatal("Base directory was not created")
 	}
 }
 
 func TestSaveCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	store, tempDir := setupTestStore(t)
 
 	jobID := testJobID(1)
@@ -82,7 +87,9 @@ func TestSaveCheckpoint(t *testing.T) {
 
 	// Verify checkpoint file exists
 	expectedPath := filepath.Join(tempDir, "jobs", jobID, "checkpoint.json")
-	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+
+	_, err = os.Stat(expectedPath)
+	if os.IsNotExist(err) {
 		t.Fatalf("Checkpoint file was not created at %s", expectedPath)
 	}
 
@@ -99,12 +106,16 @@ func TestSaveCheckpoint(t *testing.T) {
 
 	// Verify no temp file remains
 	tempPath := expectedPath + ".tmp"
-	if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
+
+	_, err = os.Stat(tempPath)
+	if !os.IsNotExist(err) {
 		t.Errorf("Temp file should not exist after save: %s", tempPath)
 	}
 }
 
 func TestListCheckpointsProjectsLegacyCheckpointWithoutSidecar(t *testing.T) {
+	t.Parallel()
+
 	fs, tempDir := setupTestStore(t)
 	jobID := testJobID(1)
 	checkpoint := createTestCheckpoint(jobID)
@@ -113,11 +124,14 @@ func TestListCheckpointsProjectsLegacyCheckpointWithoutSidecar(t *testing.T) {
 	checkpoint.ActualCircles = 0
 
 	checkpoint.RequestedCircles = 0
-	if err := fs.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+	err := fs.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := os.Remove(filepath.Join(tempDir, "jobs", jobID, string(ArtifactCheckpointInfo))); err != nil {
+	err = os.Remove(filepath.Join(tempDir, "jobs", jobID, string(ArtifactCheckpointInfo)))
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -141,16 +155,22 @@ func TestListCheckpointsProjectsLegacyCheckpointWithoutSidecar(t *testing.T) {
 }
 
 func TestListCheckpointsFallsBackFromCorruptSidecar(t *testing.T) {
+	t.Parallel()
+
 	fs, tempDir := setupTestStore(t)
 	jobID := testJobID(1)
 
 	checkpoint := createTestCheckpoint(jobID)
-	if err := fs.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+	err := fs.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	infoPath := filepath.Join(tempDir, "jobs", jobID, string(ArtifactCheckpointInfo))
-	if err := os.WriteFile(infoPath, []byte("not json"), 0o600); err != nil {
+
+	err = os.WriteFile(infoPath, []byte("not json"), 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -165,6 +185,8 @@ func TestListCheckpointsFallsBackFromCorruptSidecar(t *testing.T) {
 }
 
 func TestSaveCheckpoint_EmptyJobID(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 	checkpoint := createTestCheckpoint(testJobID(1))
 
@@ -175,6 +197,8 @@ func TestSaveCheckpoint_EmptyJobID(t *testing.T) {
 }
 
 func TestSaveCheckpoint_NilCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	err := store.SaveCheckpoint(testJobID(1), nil)
@@ -184,6 +208,8 @@ func TestSaveCheckpoint_NilCheckpoint(t *testing.T) {
 }
 
 func TestSaveCheckpoint_Overwrite(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	jobID := testJobID(1)
@@ -194,12 +220,14 @@ func TestSaveCheckpoint_Overwrite(t *testing.T) {
 	checkpoint2.BestCost = 0.1
 
 	// Save first checkpoint
-	if err := store.SaveCheckpoint(jobID, checkpoint1); err != nil {
+	err := store.SaveCheckpoint(jobID, checkpoint1)
+	if err != nil {
 		t.Fatalf("First save failed: %v", err)
 	}
 
 	// Overwrite with second checkpoint
-	if err := store.SaveCheckpoint(jobID, checkpoint2); err != nil {
+	err = store.SaveCheckpoint(jobID, checkpoint2)
+	if err != nil {
 		t.Fatalf("Second save failed: %v", err)
 	}
 
@@ -215,13 +243,16 @@ func TestSaveCheckpoint_Overwrite(t *testing.T) {
 }
 
 func TestLoadCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	jobID := testJobID(1)
 	original := createTestCheckpoint(jobID)
 
 	// Save checkpoint
-	if err := store.SaveCheckpoint(jobID, original); err != nil {
+	err := store.SaveCheckpoint(jobID, original)
+	if err != nil {
 		t.Fatalf("SaveCheckpoint failed: %v", err)
 	}
 
@@ -254,6 +285,8 @@ func TestLoadCheckpoint(t *testing.T) {
 }
 
 func TestLoadCheckpoint_NotFound(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	_, err := store.LoadCheckpoint(testJobID(99))
@@ -268,6 +301,8 @@ func TestLoadCheckpoint_NotFound(t *testing.T) {
 }
 
 func TestLoadCheckpoint_EmptyJobID(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	_, err := store.LoadCheckpoint("")
@@ -277,6 +312,8 @@ func TestLoadCheckpoint_EmptyJobID(t *testing.T) {
 }
 
 func TestListCheckpoints_Empty(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	infos, err := store.ListCheckpoints()
@@ -290,6 +327,8 @@ func TestListCheckpoints_Empty(t *testing.T) {
 }
 
 func TestListCheckpoints_Multiple(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	// Create multiple checkpoints
@@ -327,19 +366,25 @@ func TestListCheckpoints_Multiple(t *testing.T) {
 }
 
 func TestListCheckpoints_SkipsInvalidDirectories(t *testing.T) {
+	t.Parallel()
+
 	store, tempDir := setupTestStore(t)
 
 	// Create valid checkpoint
 	validJobID := testJobID(1)
 
 	checkpoint := createTestCheckpoint(validJobID)
-	if err := store.SaveCheckpoint(validJobID, checkpoint); err != nil {
+
+	err := store.SaveCheckpoint(validJobID, checkpoint)
+	if err != nil {
 		t.Fatalf("Failed to save valid checkpoint: %v", err)
 	}
 
 	// Create directory without checkpoint.json
 	invalidJobDir := filepath.Join(tempDir, "jobs", "invalid-job")
-	if err := os.MkdirAll(invalidJobDir, 0o755); err != nil {
+
+	err = os.MkdirAll(invalidJobDir, 0o755)
+	if err != nil {
 		t.Fatalf("Failed to create invalid job directory: %v", err)
 	}
 
@@ -347,16 +392,21 @@ func TestListCheckpoints_SkipsInvalidDirectories(t *testing.T) {
 	jobsDir := filepath.Join(tempDir, "jobs")
 
 	dummyFile := filepath.Join(jobsDir, "dummy.txt")
-	if err := os.WriteFile(dummyFile, []byte("test"), 0o644); err != nil {
+
+	err = os.WriteFile(dummyFile, []byte("test"), 0o600)
+	if err != nil {
 		t.Fatalf("Failed to create dummy file: %v", err)
 	}
 
 	artifactOnlyDir := filepath.Join(jobsDir, testJobID(98))
-	if err := os.Mkdir(artifactOnlyDir, 0o700); err != nil {
+
+	err = os.Mkdir(artifactOnlyDir, 0o700)
+	if err != nil {
 		t.Fatalf("Failed to create artifact-only job directory: %v", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(artifactOnlyDir, "trace.jsonl"), nil, 0o600); err != nil {
+	err = os.WriteFile(filepath.Join(artifactOnlyDir, "trace.jsonl"), nil, 0o600)
+	if err != nil {
 		t.Fatalf("Failed to create artifact-only trace: %v", err)
 	}
 
@@ -376,18 +426,21 @@ func TestListCheckpoints_SkipsInvalidDirectories(t *testing.T) {
 }
 
 func TestDeleteCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	jobID := testJobID(1)
 	checkpoint := createTestCheckpoint(jobID)
 
 	// Save checkpoint
-	if err := store.SaveCheckpoint(jobID, checkpoint); err != nil {
+	err := store.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		t.Fatalf("SaveCheckpoint failed: %v", err)
 	}
 
 	// Delete checkpoint
-	err := store.DeleteCheckpoint(jobID)
+	err = store.DeleteCheckpoint(jobID)
 	if err != nil {
 		t.Fatalf("DeleteCheckpoint failed: %v", err)
 	}
@@ -405,6 +458,8 @@ func TestDeleteCheckpoint(t *testing.T) {
 }
 
 func TestDeleteCheckpoint_NotFound(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	err := store.DeleteCheckpoint(testJobID(99))
@@ -419,6 +474,8 @@ func TestDeleteCheckpoint_NotFound(t *testing.T) {
 }
 
 func TestDeleteCheckpoint_EmptyJobID(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	err := store.DeleteCheckpoint("")
@@ -428,6 +485,8 @@ func TestDeleteCheckpoint_EmptyJobID(t *testing.T) {
 }
 
 func TestCheckpointToInfo(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := createTestCheckpoint(testJobID(1))
 
 	info := checkpoint.ToInfo()
@@ -454,6 +513,8 @@ func TestCheckpointToInfo(t *testing.T) {
 }
 
 func TestConcurrentSave(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	// Save multiple checkpoints concurrently
@@ -508,11 +569,14 @@ func isErrorType(err error, target any) bool {
 // normalize and BestParams copy: the file must stay byte-for-byte what
 // Checkpoint.MarshalJSON would have produced, indentation included.
 func TestSaveCheckpointBytesMatchMarshalJSON(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 	jobID := testJobID(1)
 	checkpoint := createTestCheckpoint(jobID)
 
-	if err := store.SaveCheckpoint(jobID, checkpoint); err != nil {
+	err := store.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		t.Fatalf("SaveCheckpoint failed: %v", err)
 	}
 
@@ -530,7 +594,8 @@ func TestSaveCheckpointBytesMatchMarshalJSON(t *testing.T) {
 	encoder := json.NewEncoder(&viaMarshaler)
 	encoder.SetIndent("", "  ")
 
-	if err := encoder.Encode(checkpoint.normalized()); err != nil {
+	err = encoder.Encode(checkpoint.normalized())
+	if err != nil {
 		t.Fatalf("encode via MarshalJSON: %v", err)
 	}
 

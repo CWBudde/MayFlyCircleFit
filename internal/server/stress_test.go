@@ -15,6 +15,7 @@ import (
 	"time"
 )
 
+//nolint:paralleltest // boots real workers and joins on a shutdown deadline, which test load would skew
 func TestServerConcurrentJobLifecycleStress(t *testing.T) {
 	root := t.TempDir()
 	referencePath := filepath.Join(root, "reference.png")
@@ -319,7 +320,9 @@ func createStressJobs(t *testing.T, server *Server, referencePath string, count 
 			}
 
 			var job Job
-			if err := json.NewDecoder(response.Body).Decode(&job); err != nil {
+
+			err = json.NewDecoder(response.Body).Decode(&job)
+			if err != nil {
 				errors <- err
 				return
 			}

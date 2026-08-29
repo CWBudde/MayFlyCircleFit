@@ -61,6 +61,8 @@ var exactSpanSizes = []int{2, 4, 6, 8, 15, 16, 17, 23, 24, 25, 31, 32, 33, 64, 2
 //
 // It calls each kernel directly rather than going through compositeOpaqueSpan,
 // so the dispatch cutoff cannot hide short spans from it.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeSpanExactMatchesScalar(t *testing.T) {
 	source := rand.New(rand.NewSource(20260816))
 	colors := []struct{ r, g, b, alpha float64 }{
@@ -73,6 +75,7 @@ func TestCompositeSpanExactMatchesScalar(t *testing.T) {
 		{1, 0, 0, 1.0 / 255},
 	}
 
+	//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 	for _, kernel := range hostExactSpanKernels() {
 		for _, pixels := range exactSpanSizes {
 			for _, c := range colors {
@@ -100,7 +103,10 @@ func TestCompositeSpanExactMatchesScalar(t *testing.T) {
 
 // TestCompositeSpanExactRandomMatchesScalar is the randomized sweep behind the
 // fixed colors above. Seven hand-picked colors are not an accuracy contract.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeSpanExactRandomMatchesScalar(t *testing.T) {
+	//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 	for _, kernel := range hostExactSpanKernels() {
 		t.Run(kernel.name, func(t *testing.T) {
 			source := rand.New(rand.NewSource(4242))
@@ -129,6 +135,8 @@ func TestCompositeSpanExactRandomMatchesScalar(t *testing.T) {
 // is the one that still means something if compositeOpaqueSpanScalar itself
 // ever changes, and it fails loudly if a future third kernel is added and
 // silently disagrees on inputs the sweeps happen not to reach.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeSpanExactKernelsAgree(t *testing.T) {
 	kernels := hostExactSpanKernels()
 	if len(kernels) < 2 {
@@ -161,7 +169,10 @@ func TestCompositeSpanExactKernelsAgree(t *testing.T) {
 // correctness is arithmetic rather than obvious. Alpha is carried through by
 // giving lane 3 identity constants, so it must survive any byte value, not just
 // the 255 an opaque canvas happens to hold.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeSpanExactPreservesArbitraryAlpha(t *testing.T) {
+	//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 	for _, kernel := range hostExactSpanKernels() {
 		t.Run(kernel.name, func(t *testing.T) {
 			const pixels = 256
@@ -190,7 +201,10 @@ func TestCompositeSpanExactPreservesArbitraryAlpha(t *testing.T) {
 
 // TestCompositeSpanExactZeroPairs guards the early exit, and with the guard
 // pixels in the fixture, that nothing outside the span is written.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeSpanExactZeroPairs(t *testing.T) {
+	//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 	for _, kernel := range hostExactSpanKernels() {
 		t.Run(kernel.name, func(t *testing.T) {
 			source := rand.New(rand.NewSource(11))
@@ -220,6 +234,8 @@ func TestCompositeSpanExactZeroPairs(t *testing.T) {
 //
 // The test searches for inputs where the two evaluations produce different
 // bytes and then requires the scalar span to agree with the unfused one.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeSpanExactFusionContract(t *testing.T) {
 	source := rand.New(rand.NewSource(31337))
 
@@ -254,6 +270,8 @@ func TestCompositeSpanExactFusionContract(t *testing.T) {
 
 // TestCompositeOpaqueSpanDispatchMatchesScalar exercises the dispatcher rather
 // than the kernel, including the sub-cutoff spans and the odd-pixel tail.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeOpaqueSpanDispatchMatchesScalar(t *testing.T) {
 	source := rand.New(rand.NewSource(99))
 
@@ -278,9 +296,12 @@ func TestCompositeOpaqueSpanDispatchMatchesScalar(t *testing.T) {
 
 // TestCompositeOpaqueSpanPairDispatchMatchesScalar covers the paired path,
 // which has its own cutoff branch and its own tail handling.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeOpaqueSpanPairDispatchMatchesScalar(t *testing.T) {
 	source := rand.New(rand.NewSource(1234))
 
+	//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 	for _, pixels := range []int{1, 2, 15, 16, 17, 65} {
 		t.Run(strconv.Itoa(pixels), func(t *testing.T) {
 			stride := (pixels + 8) * 4
@@ -311,6 +332,8 @@ func TestCompositeOpaqueSpanPairDispatchMatchesScalar(t *testing.T) {
 // which is the point of the central tier: it proves this dispatch site reads
 // Tier() rather than deciding once at init, and that the cutoff moves with the
 // kernel instead of being left behind on a stale constant.
+//
+//nolint:paralleltest // forces the process-global SIMD tier, which no two tests may do at once
 func TestCompositeSpanFollowsForcedTier(t *testing.T) {
 	defer fit.ResetTierDetection()
 
@@ -326,6 +349,7 @@ func TestCompositeSpanFollowsForcedTier(t *testing.T) {
 
 	source := rand.New(rand.NewSource(7))
 
+	//nolint:paralleltest // each subtest renders under a forced tier the loop owns
 	for _, tc := range cases {
 		t.Run(tc.tier.String(), func(t *testing.T) {
 			if !tc.reachable {
@@ -390,9 +414,12 @@ func TestCompositeSpanFollowsForcedTier(t *testing.T) {
 // unforced run only ever exercises whichever kernel this host happens to
 // dispatch to, so the other one could regress to a heap allocation without any
 // development machine noticing.
+//
+//nolint:paralleltest // forces the process-global SIMD tier, which no two tests may do at once
 func TestCompositeOpaqueSpanDoesNotAllocate(t *testing.T) {
 	defer fit.ResetTierDetection()
 
+	//nolint:paralleltest // each subtest renders under a forced tier the loop owns
 	for _, tc := range []struct {
 		tier      fit.SIMDTier
 		reachable bool

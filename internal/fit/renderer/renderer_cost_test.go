@@ -9,6 +9,8 @@ import (
 )
 
 func TestCPURenderer_DefaultCostMatchesMSE(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name          string
 		width, height int
@@ -25,6 +27,8 @@ func TestCPURenderer_DefaultCostMatchesMSE(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			reference := randomNRGBA(test.width, test.height, 42)
 			params := deterministicParams(test.circles, test.width, test.height, 99)
 
@@ -58,6 +62,8 @@ func TestCPURenderer_DefaultCostMatchesMSE(t *testing.T) {
 
 // TestCPURenderer_SetCostFunc verifies custom cost functions can be set.
 func TestCPURenderer_SetCostFunc(t *testing.T) {
+	t.Parallel()
+
 	ref := image.NewNRGBA(image.Rect(0, 0, 16, 16))
 	r := NewCPURenderer(ref, 1)
 
@@ -77,6 +83,8 @@ func TestCPURenderer_SetCostFunc(t *testing.T) {
 }
 
 func TestCPURendererPrecomputesInitialSSD(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 37, 29
 	reference := randomNRGBA(width, height, 42)
 	tests := []struct {
@@ -89,6 +97,8 @@ func TestCPURendererPrecomputesInitialSSD(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			var renderer *CPURenderer
 			if test.canvas == nil {
 				renderer = NewCPURenderer(reference, 2)
@@ -109,7 +119,8 @@ func TestCPURendererPrecomputesInitialSSD(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer cleanup()
+
+			t.Cleanup(cleanup)
 
 			inherited := session.(*CPURenderer)
 			if inherited.initialSSD != want || inherited.initialSSDValid != renderer.initialSSDValid {
@@ -130,7 +141,8 @@ func TestCPURendererPrecomputesInitialSSD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cleanup()
+
+	t.Cleanup(cleanup)
 
 	staged := stagedSession.(*CPURenderer)
 	if !staged.initialSSDValid || staged.initialSSD != wantRetained {

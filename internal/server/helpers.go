@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
-	_ "image/jpeg"
+	_ "image/jpeg" // Registers the JPEG decoder; the reference image may be a JPEG.
 	"os"
 
 	"github.com/cwbudde/circlefit/internal/app"
@@ -26,7 +26,9 @@ func loadReferenceImage(path string) (*image.NRGBA, error) {
 
 	// Convert to NRGBA
 	bounds := img.Bounds()
-	if err := app.ValidateImageDimensions(bounds.Dx(), bounds.Dy()); err != nil {
+
+	err = app.ValidateImageDimensions(bounds.Dx(), bounds.Dy())
+	if err != nil {
 		return nil, err
 	}
 

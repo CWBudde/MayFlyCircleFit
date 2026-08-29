@@ -47,6 +47,8 @@ const (
 // wants while running on a CPU device on purpose. Only
 // CIRCLEFIT_REQUIRE_GPU_DEVICE=1 additionally demands a vendor GPU, so a run
 // that claims to be GPU validation cannot quietly be anything else.
+//
+//nolint:paralleltest // one serial device; the backend withholds concurrent evaluation
 func TestOpenCLDeviceReportsAPreparedDevice(t *testing.T) {
 	ref := patternedReference(image.Rect(0, 0, 8, 8))
 
@@ -98,6 +100,8 @@ func TestOpenCLDeviceReportsAPreparedDevice(t *testing.T) {
 //
 // docs/renderer-correctness.md documents the CPU rule and names this exact
 // circle; TestSpanSearchAlwaysCoversNearestSample is the CPU-side pin.
+//
+//nolint:paralleltest // one serial device; the backend withholds concurrent evaluation
 func TestOpenCLPaintsEveryIntersectingRowsNearestSample(t *testing.T) {
 	ref := solidImage(24, 24, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	params := []float64{10.5, 10, 1, 0, 0, 0, 1}
@@ -126,6 +130,8 @@ func TestOpenCLPaintsEveryIntersectingRowsNearestSample(t *testing.T) {
 // sizes. The sizes are deliberately not all powers of two: a canvas whose pixel
 // count is not a multiple of the reduction workgroup size exercises the padded
 // tail of the on-device sum, and an odd width exercises the row indexing.
+//
+//nolint:paralleltest // one serial device; the backend withholds concurrent evaluation
 func TestOpenCLParityAcrossCircleCountsAndSizes(t *testing.T) {
 	sizes := []image.Point{{X: 1, Y: 1}, {X: 7, Y: 5}, {X: 33, Y: 17}, {X: 64, Y: 64}, {X: 137, Y: 91}}
 	counts := []int{1, 2, 8, 32}
@@ -149,6 +155,8 @@ func TestOpenCLParityAcrossCircleCountsAndSizes(t *testing.T) {
 // renderer accepts, plus the overlap and clipping cases. The CPU render is the
 // golden image, and a mismatch writes both renders and an amplified difference
 // map so the failure can be looked at rather than only counted.
+//
+//nolint:paralleltest // one serial device; the backend withholds concurrent evaluation
 func TestOpenCLEdgeCaseScenes(t *testing.T) {
 	const w, h = 40, 30
 
@@ -220,6 +228,8 @@ func TestOpenCLEdgeCaseScenes(t *testing.T) {
 
 // TestOpenCLDegenerateCanvases covers the shapes whose pixel count breaks the
 // reduction's assumptions: a single pixel, a single row, and a single column.
+//
+//nolint:paralleltest // one serial device; the backend withholds concurrent evaluation
 func TestOpenCLDegenerateCanvases(t *testing.T) {
 	bounds := []image.Rectangle{
 		image.Rect(0, 0, 1, 1),
@@ -243,6 +253,8 @@ func TestOpenCLDegenerateCanvases(t *testing.T) {
 // order. Two overlapping opaque circles render differently depending on which
 // is drawn second, and the GPU has to disagree with itself in the same way the
 // CPU does.
+//
+//nolint:paralleltest // one serial device; the backend withholds concurrent evaluation
 func TestOpenCLPreservesCompositingOrder(t *testing.T) {
 	ref := solidImage(32, 32, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	red := []float64{13, 16, 9, 1, 0, 0, 1}
@@ -277,6 +289,8 @@ func TestOpenCLPreservesCompositingOrder(t *testing.T) {
 // exceeds the budget documented in docs/renderer-correctness.md. It reports the
 // measured worst case either way, so the documented number can be checked
 // against a run rather than trusted.
+//
+//nolint:paralleltest // one serial device; the backend withholds concurrent evaluation
 func TestOpenCLDeviationBudget(t *testing.T) {
 	if testing.Short() {
 		t.Skip("randomized deviation sweep is not a short test")

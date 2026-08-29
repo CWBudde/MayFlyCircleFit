@@ -183,7 +183,8 @@ func PolishCircleBatchContext(
 	}
 	defer cleanup()
 
-	if _, _, err := exactBounds(fullSession, len(initialParams)); err != nil {
+	_, _, err = exactBounds(fullSession, len(initialParams))
+	if err != nil {
 		return nil, err
 	}
 
@@ -227,7 +228,8 @@ func PolishCircleBatchContext(
 	for sweep := 1; sweep <= options.MaxSweeps; sweep++ {
 		releaseSweep()
 
-		if err := ctx.Err(); err != nil {
+		err := ctx.Err()
+		if err != nil {
 			return nil, err
 		}
 
@@ -526,7 +528,9 @@ func PolishCircleBatchContext(
 
 			if candidateCost < bestCost {
 				var gateErr error
-				if commit, blockers, candidateAudit, gateErr = admitSweep(candidate); gateErr != nil {
+
+				commit, blockers, candidateAudit, gateErr = admitSweep(candidate)
+				if gateErr != nil {
 					return nil, gateErr
 				}
 			}

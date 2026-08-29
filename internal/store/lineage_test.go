@@ -32,6 +32,8 @@ func lineageCheckpoint(t *testing.T, jobID string) *Checkpoint {
 // TestCheckpointLineageRoundTrip is the point of the field: the chain must be
 // reconstructible from the job tree alone, with no external ledger.
 func TestCheckpointLineageRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	const (
 		jobID    = "11111111-1111-4111-8111-111111111111"
 		parentID = "22222222-2222-4222-8222-222222222222"
@@ -53,7 +55,9 @@ func TestCheckpointLineageRoundTrip(t *testing.T) {
 	}
 
 	var reloaded Checkpoint
-	if err := json.Unmarshal(data, &reloaded); err != nil {
+
+	err = json.Unmarshal(data, &reloaded)
+	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -73,7 +77,8 @@ func TestCheckpointLineageRoundTrip(t *testing.T) {
 		t.Fatalf("StageIndex = %v, want %d", reloaded.StageIndex, stage)
 	}
 
-	if err := reloaded.Validate(); err != nil {
+	err = reloaded.Validate()
+	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
 
@@ -90,6 +95,8 @@ func TestCheckpointLineageRoundTrip(t *testing.T) {
 // TestCheckpointWithoutLineageStillLoads guards the migration promise: a
 // checkpoint written before the field existed must load unchanged.
 func TestCheckpointWithoutLineageStillLoads(t *testing.T) {
+	t.Parallel()
+
 	for _, version := range []string{`"schemaVersion": 1,`, `"schemaVersion": 2,`, ``} {
 		payload := `{
 			` + version + `
@@ -127,6 +134,8 @@ func TestCheckpointWithoutLineageStillLoads(t *testing.T) {
 }
 
 func TestCheckpointLineageValidation(t *testing.T) {
+	t.Parallel()
+
 	const (
 		jobID  = "11111111-1111-4111-8111-111111111111"
 		parent = "22222222-2222-4222-8222-222222222222"
@@ -175,6 +184,8 @@ func TestCheckpointLineageValidation(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			checkpoint := lineageCheckpoint(t, jobID)
 			test.mutate(checkpoint)
 
@@ -191,6 +202,8 @@ func TestCheckpointLineageValidation(t *testing.T) {
 }
 
 func TestSaveAndLoadCheckpointPreservesLineage(t *testing.T) {
+	t.Parallel()
+
 	const (
 		jobID  = "11111111-1111-4111-8111-111111111111"
 		parent = "22222222-2222-4222-8222-222222222222"
@@ -204,7 +217,9 @@ func TestSaveAndLoadCheckpointPreservesLineage(t *testing.T) {
 	checkpoint := lineageCheckpoint(t, jobID)
 
 	checkpoint.PolishedFrom = parent
-	if err := fsStore.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+	err = fsStore.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		t.Fatalf("SaveCheckpoint() error = %v", err)
 	}
 

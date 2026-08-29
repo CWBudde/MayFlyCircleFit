@@ -21,6 +21,7 @@ const (
 	openCLCostRelativeTolerance = 0.01
 )
 
+//nolint:paralleltest // one serial device; the backend withholds concurrent evaluation
 func TestOpenCLRendererMatchesCPU(t *testing.T) {
 	ref := patternedReference(image.Rect(0, 0, 32, 32))
 	params := []float64{
@@ -31,6 +32,7 @@ func TestOpenCLRendererMatchesCPU(t *testing.T) {
 	assertOpenCLParity(t, ref, params)
 }
 
+//nolint:paralleltest // one serial device; the backend withholds concurrent evaluation
 func TestOpenCLReductionBoundaries(t *testing.T) {
 	probeRef := patternedReference(image.Rect(0, 0, 1, 1))
 	probe, releaseProbe := newOpenCLTestRenderer(t, probeRef, 0)
@@ -57,6 +59,7 @@ func TestOpenCLReductionBoundaries(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // one serial device; the backend withholds concurrent evaluation
 func TestOpenCLReferenceOriginStrideAndAlpha(t *testing.T) {
 	parent := image.NewNRGBA(image.Rect(-4, -3, 29, 23))
 	refBounds := image.Rect(2, 1, 21, 14)
@@ -80,6 +83,7 @@ func TestOpenCLReferenceOriginStrideAndAlpha(t *testing.T) {
 	assertOpenCLParity(t, ref, params)
 }
 
+//nolint:paralleltest // one serial device; the backend withholds concurrent evaluation
 func TestOpenCLZeroCirclesAndInvalidParams(t *testing.T) {
 	ref := patternedReference(image.Rect(0, 0, 17, 9))
 	assertOpenCLParity(t, ref, nil)
@@ -108,6 +112,7 @@ func TestOpenCLZeroCirclesAndInvalidParams(t *testing.T) {
 	assertNRGBAWithin(t, want, got, 0)
 }
 
+//nolint:paralleltest // one serial device; the backend withholds concurrent evaluation
 func TestOpenCLCostDefersImageReadback(t *testing.T) {
 	ref := patternedReference(image.Rect(0, 0, 31, 17))
 	r, release := newOpenCLTestRenderer(t, ref, 1)
@@ -149,6 +154,7 @@ func TestOpenCLCostDefersImageReadback(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // one serial device; the backend withholds concurrent evaluation
 func TestOpenCLOptimizationPipelines(t *testing.T) {
 	ref := solidImage(3, 3, color.NRGBA{A: 255})
 

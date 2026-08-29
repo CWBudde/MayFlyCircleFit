@@ -411,8 +411,8 @@ func (r *CPURenderer) Dim() int {
 	return r.k * 7 // paramsPerCircle
 }
 
-// Bounds returns lower and upper bounds for parameters.
-func (r *CPURenderer) Bounds() (lower, upper []float64) {
+// Bounds returns the lower and upper bounds for parameters, in that order.
+func (r *CPURenderer) Bounds() ([]float64, []float64) {
 	return r.bounds.Lower, r.bounds.Upper
 }
 

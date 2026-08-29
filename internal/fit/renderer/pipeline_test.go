@@ -170,6 +170,8 @@ func solidImage(width, height int, c color.NRGBA) *image.NRGBA {
 }
 
 func TestOptimizeJointPreservesCustomCanvas(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(3, 3, color.NRGBA{R: 255, A: 255})
 	canvasColor := color.NRGBA{G: 128, B: 255, A: 255}
 	canvas := solidImage(3, 3, canvasColor)
@@ -190,6 +192,8 @@ func TestOptimizeJointPreservesCustomCanvas(t *testing.T) {
 }
 
 func TestOptimizeSequentialPreservesCustomCanvas(t *testing.T) {
+	t.Parallel()
+
 	canvasColor := color.NRGBA{R: 10, G: 80, B: 160, A: 255}
 	ref := solidImage(3, 3, canvasColor)
 	base := NewCPURendererWithCanvas(ref, solidImage(3, 3, canvasColor), 2)
@@ -209,6 +213,8 @@ func TestOptimizeSequentialPreservesCustomCanvas(t *testing.T) {
 }
 
 func TestOptimizeBatchPreservesCustomCanvas(t *testing.T) {
+	t.Parallel()
+
 	canvasColor := color.NRGBA{R: 70, G: 30, B: 190, A: 255}
 	ref := solidImage(3, 3, canvasColor)
 	base := NewCPURendererWithCanvas(ref, solidImage(3, 3, canvasColor), 4)
@@ -228,6 +234,8 @@ func TestOptimizeBatchPreservesCustomCanvas(t *testing.T) {
 }
 
 func TestOptimizeBatchAppendPreservesPrefixOrder(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(3, 3, color.NRGBA{A: 255})
 	prefix := []float64{1, 1, 1, 1, 0, 0, 0.5}
 
@@ -264,6 +272,8 @@ func TestOptimizeBatchAppendPreservesPrefixOrder(t *testing.T) {
 }
 
 func TestOptimizeBatchAppendFromCanvasMatchesPrefixReplay(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(5, 5, color.NRGBA{A: 255})
 	prefix := []float64{2, 2, 2, 1, 0, 0, 0.5}
 	prefixRenderer := NewCPURenderer(ref, 1)
@@ -307,6 +317,8 @@ func TestOptimizeBatchAppendFromCanvasMatchesPrefixReplay(t *testing.T) {
 }
 
 func TestOptimizeBatchAppendFromCanvasRejectsInvalidRetainedState(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(5, 5, color.NRGBA{A: 255})
 	prefix := []float64{2, 2, 2, 1, 0, 0, 0.5}
 
@@ -320,6 +332,8 @@ func TestOptimizeBatchAppendFromCanvasRejectsInvalidRetainedState(t *testing.T) 
 		{name: "non-finite cost", canvas: solidImage(5, 5, color.NRGBA{A: 255}), cost: math.Inf(1)},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			_, err := OptimizeBatchAppendFromCanvasContext(
 				context.Background(), NewCPURenderer(ref, 2), opaqueBlackOptimizer(),
 				prefix, testCase.canvas, testCase.cost, 2, 1, DisabledConvergenceConfig(),
@@ -332,6 +346,8 @@ func TestOptimizeBatchAppendFromCanvasRejectsInvalidRetainedState(t *testing.T) 
 }
 
 func TestOptimizeBatchAppendRejectsInvalidPrefix(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(3, 3, color.NRGBA{A: 255})
 
 	base := NewCPURenderer(ref, 2)
@@ -340,13 +356,18 @@ func TestOptimizeBatchAppendRejectsInvalidPrefix(t *testing.T) {
 		{1, 1, 1, 0, 0, 0, 0},
 		append(transparentParams(2), transparentParams(1)...),
 	} {
-		if _, err := OptimizeBatchAppendContext(context.Background(), base, opaqueBlackOptimizer(), prefix, 2, 1, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+		_, err := OptimizeBatchAppendContext(
+			context.Background(), base, opaqueBlackOptimizer(), prefix, 2, 1, DisabledConvergenceConfig(),
+		)
+		if !errors.Is(err, ErrInvalidOptimizationInput) {
 			t.Fatalf("prefix %v error = %v, want ErrInvalidOptimizationInput", prefix, err)
 		}
 	}
 }
 
 func TestAccumulatedStagesMatchFinalFullReplay(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(5, 5, color.NRGBA{A: 255})
 
 	sequential, err := OptimizeSequential(
@@ -381,6 +402,8 @@ func TestAccumulatedStagesMatchFinalFullReplay(t *testing.T) {
 }
 
 func TestSequentialCallbackCannotMutateAccumulatedState(t *testing.T) {
+	t.Parallel()
+
 	canvasColor := color.NRGBA{R: 30, G: 90, B: 150, A: 255}
 	ref := solidImage(3, 3, canvasColor)
 	base := NewCPURendererWithCanvas(ref, solidImage(3, 3, canvasColor), 3)
@@ -411,10 +434,14 @@ func TestSequentialCallbackCannotMutateAccumulatedState(t *testing.T) {
 }
 
 func TestOptimizeBatchRejectsIneffectiveCirclesAfterBoundedRefill(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(3, 3, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 
 	for _, total := range []int{1, 4, 6, 7} {
 		t.Run(string(rune('0'+total)), func(t *testing.T) {
+			t.Parallel()
+
 			base := NewCPURenderer(ref, total)
 
 			result, err := OptimizeBatch(base, solidColorOptimizer(color.NRGBA{R: 255, G: 255, B: 255, A: 255}, 1), total, 5, DisabledConvergenceConfig())
@@ -500,6 +527,8 @@ func TestOptimizeBatchKeepsWeakCirclesRatherThanRefillingThem(t *testing.T) {
 }
 
 func TestStagedOptimizationRollsBackWorseningStage(t *testing.T) {
+	t.Parallel()
+
 	white := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 	ref := solidImage(3, 3, white)
 	base := NewCPURenderer(ref, 1)
@@ -536,6 +565,8 @@ func TestStagedOptimizationRollsBackWorseningStage(t *testing.T) {
 }
 
 func TestOptimizationRepairsDynamicCircleBounds(t *testing.T) {
+	t.Parallel()
+
 	const width, height, circles = 20, 10, 2
 	black := color.NRGBA{A: 255}
 	optimizer := optimizerFunc(func(eval func([]float64) float64, lower, upper []float64, dim int) ([]float64, float64) {
@@ -576,6 +607,8 @@ func TestOptimizationRepairsDynamicCircleBounds(t *testing.T) {
 	}
 	for _, test := range runs {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			result, err := test.run(NewCPURenderer(solidImage(width, height, black), circles))
 			if err != nil {
 				t.Fatal(err)
@@ -598,6 +631,8 @@ func TestOptimizationRepairsDynamicCircleBounds(t *testing.T) {
 }
 
 func TestJointUsesContinuousRadiusConstraintWithoutTangencyProjection(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 20, 10
 	optimizer := &constraintProbeOptimizer{}
 
@@ -621,26 +656,33 @@ func TestJointUsesContinuousRadiusConstraintWithoutTangencyProjection(t *testing
 }
 
 func TestPipelineRejectsShortOptimizerResults(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(2, 2, color.NRGBA{A: 255})
 	base := NewCPURenderer(ref, 1)
 	short := optimizerFunc(func(_ func([]float64) float64, _, _ []float64, dim int) ([]float64, float64) {
 		return make([]float64, dim-1), 0
 	})
 
-	if _, err := OptimizeJoint(base, short, 1, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+	_, err := OptimizeJoint(base, short, 1, DisabledConvergenceConfig())
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("OptimizeJoint() error = %v, want ErrInvalidOptimizationInput", err)
 	}
 
-	if _, err := OptimizeSequential(base, short, 1, DisabledConvergenceConfig(), nil); !errors.Is(err, ErrInvalidOptimizationInput) {
+	_, err = OptimizeSequential(base, short, 1, DisabledConvergenceConfig(), nil)
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("OptimizeSequential() error = %v, want ErrInvalidOptimizationInput", err)
 	}
 
-	if _, err := OptimizeBatch(base, short, 1, 1, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+	_, err = OptimizeBatch(base, short, 1, 1, DisabledConvergenceConfig())
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("OptimizeBatch() error = %v, want ErrInvalidOptimizationInput", err)
 	}
 }
 
 func TestZeroCirclePipelines(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(2, 2, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	base := NewCPURenderer(ref, 0)
 
@@ -667,37 +709,49 @@ func TestZeroCirclePipelines(t *testing.T) {
 }
 
 func TestPipelineRejectsInvalidAndEmptyInputs(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(2, 2, color.NRGBA{A: 255})
 	base := NewCPURenderer(ref, 1)
 
-	if _, err := OptimizeJoint(base, transparentOptimizer(), -1, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+	_, err := OptimizeJoint(base, transparentOptimizer(), -1, DisabledConvergenceConfig())
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("OptimizeJoint(-1) error = %v, want ErrInvalidOptimizationInput", err)
 	}
 
-	if _, err := OptimizeBatch(base, transparentOptimizer(), 1, 0, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+	_, err = OptimizeBatch(base, transparentOptimizer(), 1, 0, DisabledConvergenceConfig())
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("OptimizeBatch(batchSize=0) error = %v, want ErrInvalidOptimizationInput", err)
 	}
 
 	empty := NewCPURenderer(image.NewNRGBA(image.Rect(0, 0, 0, 0)), 0)
-	if _, err := OptimizeJoint(empty, nil, 0, DisabledConvergenceConfig()); !errors.Is(err, ErrInvalidOptimizationInput) {
+
+	_, err = OptimizeJoint(empty, nil, 0, DisabledConvergenceConfig())
+	if !errors.Is(err, ErrInvalidOptimizationInput) {
 		t.Fatalf("OptimizeJoint(empty reference) error = %v, want ErrInvalidOptimizationInput", err)
 	}
 }
 
 func TestStagedOptimizationRejectsUnsupportedRenderer(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(2, 2, color.NRGBA{A: 255})
 	base := struct{ Renderer }{Renderer: NewCPURenderer(ref, 1)}
 
-	if _, err := OptimizeSequential(base, transparentOptimizer(), 1, DisabledConvergenceConfig(), nil); !errors.Is(err, ErrStagedOptimizationUnsupported) {
+	_, err := OptimizeSequential(base, transparentOptimizer(), 1, DisabledConvergenceConfig(), nil)
+	if !errors.Is(err, ErrStagedOptimizationUnsupported) {
 		t.Fatalf("OptimizeSequential() error = %v, want ErrStagedOptimizationUnsupported", err)
 	}
 
-	if _, err := OptimizeBatch(base, transparentOptimizer(), 1, 1, DisabledConvergenceConfig()); !errors.Is(err, ErrStagedOptimizationUnsupported) {
+	_, err = OptimizeBatch(base, transparentOptimizer(), 1, 1, DisabledConvergenceConfig())
+	if !errors.Is(err, ErrStagedOptimizationUnsupported) {
 		t.Fatalf("OptimizeBatch() error = %v, want ErrStagedOptimizationUnsupported", err)
 	}
 }
 
 func TestCPURendererShortParamsDoNotPanic(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(2, 2, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	renderer := NewCPURenderer(ref, 1)
 
@@ -712,6 +766,8 @@ func TestCPURendererShortParamsDoNotPanic(t *testing.T) {
 }
 
 func TestPipelineUsesLifecycleStatsAndCancellation(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(2, 2, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	base := NewCPURenderer(ref, 1)
 
@@ -731,7 +787,8 @@ func TestPipelineUsesLifecycleStatsAndCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if _, err := OptimizeJointContext(ctx, base, measuredOptimizer{}, 1, DisabledConvergenceConfig()); !errors.Is(err, context.Canceled) {
+	_, err = OptimizeJointContext(ctx, base, measuredOptimizer{}, 1, DisabledConvergenceConfig())
+	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled OptimizeJointContext() error = %v, want context.Canceled", err)
 	}
 }
@@ -765,6 +822,8 @@ func (t terminatingOptimizer) RunContext(ctx context.Context, problem opt.Proble
 }
 
 func TestJointReportsOptimizerTerminationVerbatim(t *testing.T) {
+	t.Parallel()
+
 	tests := []opt.Termination{
 		opt.TerminationCompleted,
 		opt.TerminationTargetCost,
@@ -773,6 +832,8 @@ func TestJointReportsOptimizerTerminationVerbatim(t *testing.T) {
 
 	for _, reason := range tests {
 		t.Run(string(reason), func(t *testing.T) {
+			t.Parallel()
+
 			ref := solidImage(4, 4, color.NRGBA{A: 255})
 
 			result, err := OptimizeJoint(NewCPURenderer(ref, 2), terminatingOptimizer{reason: reason}, 2, DisabledConvergenceConfig())
@@ -797,6 +858,8 @@ func TestJointReportsOptimizerTerminationVerbatim(t *testing.T) {
 }
 
 func TestJointZeroCirclesReportsCompleted(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(4, 4, color.NRGBA{A: 255})
 
 	result, err := OptimizeJoint(NewCPURenderer(ref, 0), terminatingOptimizer{reason: opt.TerminationStagnation}, 0, DisabledConvergenceConfig())
@@ -813,6 +876,8 @@ func TestJointZeroCirclesReportsCompleted(t *testing.T) {
 // whose optimizer stopped early is not why a staged run ended, because the loop
 // went on to the next circle or batch.
 func TestStagedRunToCompletionReportsCompleted(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(5, 5, color.NRGBA{A: 255})
 	optimizer := terminatingOptimizer{reason: opt.TerminationStagnation}
 
@@ -846,6 +911,8 @@ func TestStagedRunToCompletionReportsCompleted(t *testing.T) {
 // TestStagedTrackerStopReportsStageConvergence covers the one staged case that
 // genuinely ends the run early: the stage-level convergence tracker.
 func TestStagedTrackerStopReportsStageConvergence(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(5, 5, color.NRGBA{A: 255})
 	// The optimizer's zero opacity is repaired to the positive minimum; once no
 	// further improvement is found, the tracker stalls at patience 1.
@@ -873,6 +940,8 @@ func TestStagedTrackerStopReportsStageConvergence(t *testing.T) {
 // TestNonLifecycleOptimizerReportsCompleted keeps the plain Optimizer interface
 // reporting what the pipeline assumed before reasons were propagated.
 func TestNonLifecycleOptimizerReportsCompleted(t *testing.T) {
+	t.Parallel()
+
 	ref := solidImage(4, 4, color.NRGBA{A: 255})
 
 	result, err := OptimizeJoint(NewCPURenderer(ref, 2), transparentOptimizer(), 2, DisabledConvergenceConfig())

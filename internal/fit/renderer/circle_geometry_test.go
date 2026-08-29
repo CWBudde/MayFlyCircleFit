@@ -10,6 +10,8 @@ import (
 )
 
 func TestFixedCircleQ16Range(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		c    fit.Circle
@@ -25,6 +27,8 @@ func TestFixedCircleQ16Range(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			_, ok := newFixedCircleQ16(test.c)
 			if ok != test.ok {
 				t.Fatalf("newFixedCircleQ16(%+v) ok = %v, want %v", test.c, ok, test.ok)
@@ -34,6 +38,8 @@ func TestFixedCircleQ16Range(t *testing.T) {
 }
 
 func TestBatchedFloatSpansMatchOnePixelSearch(t *testing.T) {
+	t.Parallel()
+
 	rng := rand.New(rand.NewSource(8131013))
 	for i := range 100_000 {
 		width := 1 + rng.Intn(2048)
@@ -60,6 +66,8 @@ func TestBatchedFloatSpansMatchOnePixelSearch(t *testing.T) {
 }
 
 func TestFixedCircleQ16CoverageError(t *testing.T) {
+	t.Parallel()
+
 	const (
 		width  = 513
 		height = 389
@@ -113,6 +121,7 @@ func TestFixedCircleQ16CoverageError(t *testing.T) {
 	t.Logf("Q16.16 changed %d of %d intersecting rows", changedRows, totalRows)
 }
 
+//nolint:paralleltest // reads the float32 span kernel the forced-tier tests reinstall
 func TestCircleSpanFloat32CoverageError(t *testing.T) {
 	const (
 		width  = 513
@@ -165,6 +174,8 @@ func TestCircleSpanFloat32CoverageError(t *testing.T) {
 }
 
 func TestFixedCircleQ16ExactRepresentableBoundaries(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		width    int
@@ -182,6 +193,8 @@ func TestFixedCircleQ16ExactRepresentableBoundaries(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			fixed, ok := newFixedCircleQ16(test.c)
 			if !ok {
 				t.Fatal("representable test circle rejected")
@@ -208,6 +221,8 @@ func TestFixedCircleQ16ExactRepresentableBoundaries(t *testing.T) {
 }
 
 func TestCPURendererQ16FallbackMatchesFloat64(t *testing.T) {
+	t.Parallel()
+
 	const size = 5
 	reference := image.NewNRGBA(image.Rect(0, 0, size, size))
 	circle := fit.Circle{X: 2, Y: 2, R: 32768, CR: 0.25, CG: 0.5, CB: 0.75, Opacity: 0.5}

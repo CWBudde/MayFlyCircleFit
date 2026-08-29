@@ -167,9 +167,7 @@ func floatToQ24(value float64) (int32, bool) {
 // span is fixedCircleQ16.span with Q24.8 constants. Keeping the search, the
 // eight-pixel batching, and the finite differences identical is what makes the
 // comparison a comparison of number formats and nothing else.
-//
-//nolint:nonamedreturns // mirrors fixedCircleQ16.span's signature exactly
-func (g fixedCircleQ24) span(y, width int) (xStart, xEnd int, intersects bool) {
+func (g fixedCircleQ24) span(y, width int) (int, int, bool) {
 	dyQ := (int64(y) << circleQ24FractionBits) - int64(g.yQ)
 
 	radiusQ := int64(g.radiusQ)
@@ -179,7 +177,7 @@ func (g fixedCircleQ24) span(y, width int) (xStart, xEnd int, intersects bool) {
 
 	remaining := g.radiusSquared - dyQ*dyQ
 
-	xStart = g.centerX
+	xStart := g.centerX
 
 	minimumBatchDistanceQ := 15 * circleQ24Scale / 2
 	if remaining >= minimumBatchDistanceQ*minimumBatchDistanceQ {
@@ -212,7 +210,7 @@ func (g fixedCircleQ24) span(y, width int) (xStart, xEnd int, intersects bool) {
 		xStart = 0
 	}
 
-	xEnd = g.centerX + 1
+	xEnd := g.centerX + 1
 	if remaining >= minimumBatchDistanceQ*minimumBatchDistanceQ {
 		for xEnd+7 < width {
 			dxQ := (int64(xEnd+7) << circleQ24FractionBits) - int64(g.xQ)

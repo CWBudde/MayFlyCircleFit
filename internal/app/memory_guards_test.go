@@ -25,6 +25,8 @@ import (
 // literals so the cases stay representable — and stay overflowing — on the
 // 32-bit targets in the cross-build matrix.
 func TestImageDimensionGuardSurvivesOverflow(t *testing.T) {
+	t.Parallel()
+
 	// halfWidthMax has half the bits of an int, so its square wraps: on a
 	// 64-bit int that is 1<<32, on a 32-bit int 1<<16.
 	halfWidthMax := 1 << (bits.UintSize / 2)
@@ -40,6 +42,8 @@ func TestImageDimensionGuardSurvivesOverflow(t *testing.T) {
 	}
 	for _, test := range overflowing {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			err := ValidateImageDimensions(test.width, test.height)
 			if err == nil {
 				t.Fatalf("ValidateImageDimensions(%d, %d) = nil, want a rejection: this would size an allocation from a wrapped product", test.width, test.height)
@@ -56,6 +60,8 @@ func TestImageDimensionGuardSurvivesOverflow(t *testing.T) {
 // TestImageDimensionGuardIsExactAtItsBound pins the boundary itself, so a later
 // refactor cannot quietly move the limit by one pixel in either direction.
 func TestImageDimensionGuardIsExactAtItsBound(t *testing.T) {
+	t.Parallel()
+
 	err := ValidateImageDimensions(MaxImagePixels, 1)
 	if err != nil {
 		t.Fatalf("ValidateImageDimensions at exactly the limit = %v, want it accepted", err)
@@ -82,6 +88,8 @@ func TestImageDimensionGuardIsExactAtItsBound(t *testing.T) {
 // the optimizer's vector, and the population holds several such vectors, so an
 // unbounded circle count is an unbounded allocation.
 func TestCircleCountGuardBoundsTheParameterVector(t *testing.T) {
+	t.Parallel()
+
 	config := DefaultConfig()
 	config.RefPath = "assets/reference.png"
 

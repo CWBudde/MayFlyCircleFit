@@ -19,6 +19,8 @@ import (
 // transcription of that switch - and its doc comment claimed to pin the tier
 // "compositeOpaqueSpanFast actually enters" while never calling that function.
 // This version does call it, and compares against the kernel invoked directly.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestFastCompositeKernelMatchesTier(t *testing.T) {
 	if got := fastCompositeKernel; got != fit.Tier() {
 		t.Fatalf("fast composite kernel = %s, tier = %s", got, fit.Tier())
@@ -55,6 +57,8 @@ func TestFastCompositeKernelMatchesTier(t *testing.T) {
 // SSE2 direct test below. It was missing: the only CI step that ran this
 // package set GODEBUG=cpu.avx2=off, so the AVX2 kernel had no direct coverage
 // anywhere.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeSpanFastAVX2DirectMatchesScalarOracle(t *testing.T) {
 	if !cpu.X86.HasAVX2 {
 		t.Skip("host CPU lacks AVX2")
@@ -93,6 +97,8 @@ func TestCompositeSpanFastAVX2DirectMatchesScalarOracle(t *testing.T) {
 // unaligned 16-byte loads and writes with unaligned 16-byte stores, so the only
 // preconditions are batches*4 pixels of storage and four float32 lanes of
 // addend and multiplier.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeSpanFastSSE2DirectMatchesScalarOracle(t *testing.T) {
 	cases := []struct{ r, g, b, alpha float64 }{
 		{0, 0, 0, 0},
@@ -124,6 +130,7 @@ func TestCompositeSpanFastSSE2DirectMatchesScalarOracle(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeSpanFastSSE2DirectRandomMatchesScalarOracle(t *testing.T) {
 	rng := rand.New(rand.NewPCG(0x5e2, 0x73736532))
 	const pixels = 256
@@ -150,6 +157,8 @@ func TestCompositeSpanFastSSE2DirectRandomMatchesScalarOracle(t *testing.T) {
 
 // TestCompositeSpanFastSSE2DirectZeroBatches guards the early exit and, with
 // the guard pixels in the fixture, that nothing outside the span is written.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeSpanFastSSE2DirectZeroBatches(t *testing.T) {
 	pix := fastSpanFixture(4, 0x2e0)
 	want := bytes.Clone(pix)

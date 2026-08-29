@@ -35,7 +35,8 @@ func writeScoreFixture(t *testing.T, path string) {
 	}
 	defer file.Close()
 
-	if err := png.Encode(file, img); err != nil {
+	err = png.Encode(file, img)
+	if err != nil {
 		t.Fatal(err)
 	}
 }
@@ -53,6 +54,7 @@ func withScoreFlags(t *testing.T, ref, circles, out string) {
 	})
 }
 
+//nolint:paralleltest // mutates the package-level score flags, which every test in this package shares.
 func TestScoreReadsABareCircleArrayAndASchedule(t *testing.T) {
 	dir := t.TempDir()
 	refPath := filepath.Join(dir, "ref.png")
@@ -97,11 +99,13 @@ func TestScoreReadsABareCircleArrayAndASchedule(t *testing.T) {
 		t.Fatalf("runScore() error = %v", err)
 	}
 
-	if _, err := os.Stat(outPath); err != nil {
+	_, err = os.Stat(outPath)
+	if err != nil {
 		t.Fatalf("--out did not write a file: %v", err)
 	}
 }
 
+//nolint:paralleltest // mutates the package-level score flags, which every test in this package shares.
 func TestScoreRefusesACircleOutsideTheCanvas(t *testing.T) {
 	dir := t.TempDir()
 	refPath := filepath.Join(dir, "ref.png")
@@ -123,6 +127,7 @@ func TestScoreRefusesACircleOutsideTheCanvas(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // mutates the package-level score flags, which every test in this package shares.
 func TestScoreRejectsAnUnparseableColour(t *testing.T) {
 	dir := t.TempDir()
 	refPath := filepath.Join(dir, "ref.png")
@@ -150,14 +155,18 @@ func TestScoreRejectsAnUnparseableColour(t *testing.T) {
 // answers impossible to confuse -- the canvas is the reference itself, and the
 // one circle is white on an already-white corner, so the faithful cost is zero
 // while the same arrangement on white still carries the whole red square.
+//
+//nolint:paralleltest // mutates the package-level score flags, which every test in this package shares.
 func TestScoreHonorsTheScheduleCanvas(t *testing.T) {
 	dir := t.TempDir()
 	refPath := filepath.Join(dir, "ref.png")
 	writeScoreFixture(t, refPath)
 
 	plainPath := filepath.Join(dir, "plain.json")
-	if err := os.WriteFile(plainPath, []byte(
-		`{"base": {"initialCircles": [{"x": 2, "y": 2, "r": 1, "color": "#ffffff"}]}}`), 0o600); err != nil {
+
+	err := os.WriteFile(plainPath, []byte(
+		`{"base": {"initialCircles": [{"x": 2, "y": 2, "r": 1, "color": "#ffffff"}]}}`), 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -165,7 +174,9 @@ func TestScoreHonorsTheScheduleCanvas(t *testing.T) {
 
 	document := `{"base": {"canvasPath": ` + strconv.Quote(refPath) +
 		`, "initialCircles": [{"x": 2, "y": 2, "r": 1, "color": "#ffffff"}]}}`
-	if err := os.WriteFile(canvasPath, []byte(document), 0o600); err != nil {
+
+	err = os.WriteFile(canvasPath, []byte(document), 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -209,13 +220,15 @@ func TestScoreHonorsTheScheduleCanvas(t *testing.T) {
 	// The end-to-end path must reach the same renderer, not just the helper.
 	withScoreFlags(t, refPath, canvasPath, "")
 
-	if err := runScore(nil, nil); err != nil {
+	err = runScore(nil, nil)
+	if err != nil {
 		t.Fatalf("runScore() error = %v", err)
 	}
 
 	withScoreFlags(t, refPath, plainPath, "")
 
-	if err := runScore(nil, nil); err != nil {
+	err = runScore(nil, nil)
+	if err != nil {
 		t.Fatalf("runScore() error = %v", err)
 	}
 }
@@ -223,6 +236,8 @@ func TestScoreHonorsTheScheduleCanvas(t *testing.T) {
 // TestScoreRejectsACanvasOfTheWrongSize keeps a mismatch an error: the renderer
 // constructor panics on it, and a path the operator typed is an input.
 func TestScoreRejectsACanvasOfTheWrongSize(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	refPath := filepath.Join(dir, "ref.png")
 	writeScoreFixture(t, refPath)
@@ -240,17 +255,20 @@ func TestScoreRejectsACanvasOfTheWrongSize(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := png.Encode(file, small); err != nil {
+	err = png.Encode(file, small)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	file.Close()
 
-	if _, err := scoreRenderer(ref, smallPath, 1); err == nil {
+	_, err = scoreRenderer(ref, smallPath, 1)
+	if err == nil {
 		t.Fatal("scoreRenderer() accepted a canvas smaller than the reference")
 	}
 
-	if _, err := scoreRenderer(ref, filepath.Join(dir, "absent.png"), 1); err == nil {
+	_, err = scoreRenderer(ref, filepath.Join(dir, "absent.png"), 1)
+	if err == nil {
 		t.Fatal("scoreRenderer() accepted a canvas that does not exist")
 	}
 }

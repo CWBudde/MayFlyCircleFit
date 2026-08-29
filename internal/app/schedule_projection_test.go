@@ -34,6 +34,8 @@ func completed(index int, kind ScheduleStageKind, elapsed time.Duration) Schedul
 }
 
 func TestProjectScheduleFinishRefusesToGuess(t *testing.T) {
+	t.Parallel()
+
 	plan := projectionPlan(t)
 	asOf := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
 
@@ -75,6 +77,8 @@ func TestProjectScheduleFinishRefusesToGuess(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			projection := ProjectScheduleFinish(plan, testCase.timings, asOf)
 			if projection.Complete {
 				t.Fatalf("projection claimed a finish time from %d timings", len(testCase.timings))
@@ -105,6 +109,8 @@ func TestProjectScheduleFinishRefusesToGuess(t *testing.T) {
 // stated as a test: the extend rate and the polish rate are computed from their
 // own stages, and a blended rate would give a different answer.
 func TestProjectScheduleFinishDerivesEachKindSeparately(t *testing.T) {
+	t.Parallel()
+
 	plan := projectionPlan(t)
 	asOf := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
 
@@ -158,6 +164,8 @@ func TestProjectScheduleFinishDerivesEachKindSeparately(t *testing.T) {
 // TestProjectScheduleFinishSeparatesConditionalWork keeps a conditional stage
 // from being promised: it is counted, and counted apart.
 func TestProjectScheduleFinishSeparatesConditionalWork(t *testing.T) {
+	t.Parallel()
+
 	plan := projectionPlan(t)
 	asOf := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
 	timings := []ScheduleStageTiming{
@@ -167,15 +175,13 @@ func TestProjectScheduleFinishSeparatesConditionalWork(t *testing.T) {
 		// A polish elsewhere in the campaign measured twice, so the kind has a
 		// rate even though the plan's own polish has not run.
 		{Index: 3, Kind: ScheduleStagePolish, State: ScheduleOutcomePending},
+		completed(5, ScheduleStagePolish, 4*time.Minute),
+		completed(6, ScheduleStagePolish, 6*time.Minute),
 	}
 	// Two polish samples are needed; plan a second polish and measure both.
 	plan = append(plan,
 		ScheduleStage{Index: 5, Kind: ScheduleStagePolish, Circles: 32, Config: plan[3].Config, When: plan[3].When},
 		ScheduleStage{Index: 6, Kind: ScheduleStagePolish, Circles: 40, Config: plan[3].Config, When: plan[3].When},
-	)
-	timings = append(timings,
-		completed(5, ScheduleStagePolish, 4*time.Minute),
-		completed(6, ScheduleStagePolish, 6*time.Minute),
 	)
 
 	projection := ProjectScheduleFinish(plan, timings, asOf)

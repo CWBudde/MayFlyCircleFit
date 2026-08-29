@@ -14,6 +14,8 @@ import (
 )
 
 func TestBestImagePreservesConfiguredCanvas(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	referencePath := filepath.Join(root, "reference.png")
 	canvasPath := filepath.Join(root, "canvas.png")
@@ -28,11 +30,14 @@ func TestBestImagePreservesConfiguredCanvas(t *testing.T) {
 		RefPath: referencePath, CanvasPath: canvasPath, Mode: "joint", Backend: "cpu",
 		Circles: 1, Iters: 1, PopSize: 20, BatchSize: 1,
 	})
-	if err := server.jobManager.StartJob(job.ID); err != nil {
+
+	err := server.jobManager.StartJob(job.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 	// A zero-opacity circle is a no-op, so the endpoint must return the canvas.
-	if err := server.jobManager.CompleteJob(job.ID, 1, 1, make([]float64, 7), 1, 2, "completed"); err != nil {
+	err = server.jobManager.CompleteJob(job.ID, 1, 1, make([]float64, 7), 1, 2, "completed")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -86,7 +91,8 @@ func writeSolidPNG(t *testing.T, path string, value color.NRGBA) {
 	}
 	defer file.Close()
 
-	if err := png.Encode(file, img); err != nil {
+	err = png.Encode(file, img)
+	if err != nil {
 		t.Fatal(err)
 	}
 }

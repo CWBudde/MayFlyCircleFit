@@ -46,6 +46,8 @@ func requireFastVectorKernel(t *testing.T) {
 // TestCompositeOpaqueSpanFastMatchesScalarOracle is the strict test: the SIMD
 // kernels must reproduce the float32 reference bit for bit. Any difference is a
 // kernel bug, not a precision artifact.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeOpaqueSpanFastMatchesScalarOracle(t *testing.T) {
 	requireFastVectorKernel(t)
 
@@ -74,6 +76,7 @@ func TestCompositeOpaqueSpanFastMatchesScalarOracle(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeOpaqueSpanFastRandomMatchesScalarOracle(t *testing.T) {
 	requireFastVectorKernel(t)
 
@@ -99,6 +102,8 @@ func TestCompositeOpaqueSpanFastRandomMatchesScalarOracle(t *testing.T) {
 
 // TestCompositeOpaqueSpanFastAlphaPreserved guards the lane trick that passes
 // the alpha byte through with multiplier 1 and addend 0.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeOpaqueSpanFastAlphaPreserved(t *testing.T) {
 	requireFastVectorKernel(t)
 
@@ -127,6 +132,8 @@ func TestCompositeOpaqueSpanFastAlphaPreserved(t *testing.T) {
 // The test also reports how often the bound is actually reached, so a change
 // that widens the error without breaking the bound is visible rather than
 // silent.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeOpaqueSpanFastWithinToleranceOfExact(t *testing.T) {
 	source := rand.New(rand.NewPCG(0x71c, 0xacc))
 
@@ -197,6 +204,8 @@ func TestCompositeOpaqueSpanFastWithinToleranceOfExact(t *testing.T) {
 // It holds because each layer contracts the existing value by (1-alpha), so an
 // inherited one-unit difference shrinks rather than adding to the next layer's.
 // Two hundred layers at a low alpha is the worst case for that argument.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCompositeOpaqueSpanFastDoesNotAccumulate(t *testing.T) {
 	const pixels = 256
 
@@ -228,6 +237,8 @@ func TestCompositeOpaqueSpanFastDoesNotAccumulate(t *testing.T) {
 // TestCPURendererFastCompositingDefaultsOff protects the opt-in guarantee: a
 // renderer built the ordinary way must produce byte-identical output to before
 // this feature existed.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestCPURendererFastCompositingDefaultsOff(t *testing.T) {
 	reference := image.NewNRGBA(image.Rect(0, 0, 64, 64))
 

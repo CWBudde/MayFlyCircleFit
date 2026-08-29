@@ -63,6 +63,8 @@ func TestLayoutThemeFallbackMakesNoClaimItCannotHonour(t *testing.T) {
 }
 
 func TestLayoutIncludesThemeSwitcher(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 
 	err := Layout("Theme test").Render(context.Background(), &output)

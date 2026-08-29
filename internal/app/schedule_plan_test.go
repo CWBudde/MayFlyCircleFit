@@ -6,6 +6,8 @@ import (
 )
 
 func TestPlannedIterationsCountsTheStageBudget(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		steps string
@@ -53,6 +55,8 @@ func TestPlannedIterationsCountsTheStageBudget(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			plan, err := documentWithSteps(t, testCase.steps).Expand()
 			if err != nil {
 				t.Fatalf("Expand() error = %v", err)
@@ -69,6 +73,8 @@ func TestPlannedIterationsCountsTheStageBudget(t *testing.T) {
 // TestConditionDescribeStatesBothClauses keeps a conditional stage from being
 // printed as merely "conditional": a plan has to say on what.
 func TestConditionDescribeStatesBothClauses(t *testing.T) {
+	t.Parallel()
+
 	plan, err := documentWithSteps(t, referenceCampaignSteps).Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)
@@ -126,6 +132,8 @@ func TestConditionDescribeStatesBothClauses(t *testing.T) {
 // 63 extends because the canvas climbs from 8 to 512 in steps of 8, and
 // (512 - 8) / 8 = 63.
 func TestReferenceCampaignPlanMatchesTheHandComputation(t *testing.T) {
+	t.Parallel()
+
 	plan, err := documentWithSteps(t, referenceCampaignSteps).Expand()
 	if err != nil {
 		t.Fatalf("Expand() error = %v", err)

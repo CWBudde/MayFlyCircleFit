@@ -15,6 +15,8 @@ import (
 )
 
 func TestArtifactDownloadHeaders(t *testing.T) {
+	t.Parallel()
+
 	server, jobID := downloadTestJob(t, false)
 
 	tests := []struct {
@@ -31,6 +33,8 @@ func TestArtifactDownloadHeaders(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			request := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+jobID+"/"+test.path, nil)
 			recorder := httptest.NewRecorder()
 			server.Handler().ServeHTTP(recorder, request)
@@ -61,6 +65,8 @@ func TestArtifactDownloadHeaders(t *testing.T) {
 }
 
 func TestServerReportIsSelfContained(t *testing.T) {
+	t.Parallel()
+
 	server, jobID := downloadTestJob(t, true)
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+jobID+"/report.html?colormap=magma", nil)
 	recorder := httptest.NewRecorder()
@@ -116,6 +122,8 @@ func TestServerReportIsSelfContained(t *testing.T) {
 }
 
 func TestServerReportErrors(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer(":8080", nil)
 	job := server.jobManager.CreateJob(app.DefaultProject, JobConfig{Circles: 1})
 
@@ -133,6 +141,8 @@ func TestServerReportErrors(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			request := httptest.NewRequest(test.method, "/api/v1/jobs/"+test.jobID+"/report.html"+test.query, nil)
 			recorder := httptest.NewRecorder()
 			server.Handler().ServeHTTP(recorder, request)
@@ -145,6 +155,8 @@ func TestServerReportErrors(t *testing.T) {
 }
 
 func TestServerReportSnapshotFailures(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		refPath string
@@ -155,6 +167,8 @@ func TestServerReportSnapshotFailures(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			refPath := test.refPath
 			if refPath == "" {
 				refPath = filepath.Join(t.TempDir(), "reference.png")

@@ -26,10 +26,14 @@ func testImage() *image.NRGBA {
 }
 
 func TestWritePNGRoundTrips(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "out.png")
 
 	want := testImage()
-	if err := writePNG(path, want); err != nil {
+
+	err := writePNG(path, want)
+	if err != nil {
 		t.Fatalf("writePNG() error = %v, want nil", err)
 	}
 
@@ -60,12 +64,15 @@ func TestWritePNGRoundTrips(t *testing.T) {
 // *os.PathError wrapping ENOSPC, which is what the CLI matches on to suggest
 // freeing space.
 func TestWritePNGReportsAFullFilesystem(t *testing.T) {
+	t.Parallel()
+
 	if runtime.GOOS != "linux" {
 		t.Skip("/dev/full is a Linux device")
 	}
 
-	if _, err := os.Stat("/dev/full"); err != nil {
-		t.Skipf("/dev/full unavailable: %v", err)
+	_, statErr := os.Stat("/dev/full")
+	if statErr != nil {
+		t.Skipf("/dev/full unavailable: %v", statErr)
 	}
 
 	err := writePNG("/dev/full", testImage())
@@ -84,6 +91,8 @@ func TestWritePNGReportsAFullFilesystem(t *testing.T) {
 }
 
 func TestWritePNGReportsAnUncreatablePath(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "missing-dir", "out.png")
 
 	err := writePNG(path, testImage())
@@ -118,6 +127,8 @@ func (w *failOnCloseWriter) Close() error {
 // that drops its error: every byte is accepted, so the encode succeeds, and
 // only the close says the image never landed.
 func TestEncodePNGReportsACloseFailure(t *testing.T) {
+	t.Parallel()
+
 	destination := &failOnCloseWriter{err: syscall.ENOSPC}
 
 	err := encodePNG(destination, "out.png", testImage())
@@ -141,6 +152,8 @@ func TestEncodePNGReportsACloseFailure(t *testing.T) {
 // TestEncodePNGKeepsTheFirstErrorAndStillCloses guards against the close error
 // masking the real cause when both fail.
 func TestEncodePNGKeepsTheFirstErrorAndStillCloses(t *testing.T) {
+	t.Parallel()
+
 	encodeErr := errors.New("encode exploded")
 	destination := &errorOnWriteCloser{writeErr: encodeErr, closeErr: syscall.ENOSPC}
 

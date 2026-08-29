@@ -15,6 +15,8 @@ import (
 // every shutdown open until the caller's timeout expired -- ten seconds each
 // time a dashboard happened to be connected, which reads exactly like a server
 // ignoring SIGTERM.
+//
+//nolint:paralleltest // asserts SSE delivery against wall-clock deadlines, which test load would skew
 func TestShutdownDoesNotWaitForOpenEventStreams(t *testing.T) {
 	// One case per stream the fix touches. The per-job endpoint needs a
 	// registered job before it will answer with anything but 404, so the path

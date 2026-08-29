@@ -10,6 +10,8 @@ import (
 )
 
 func TestRouting_RootIsDashboard(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer(":0", nil)
 	shutdownTestServer(t, server)
 
@@ -53,6 +55,8 @@ func assertPageMethods(t *testing.T, server *Server, path string) {
 }
 
 func TestRouting_JobsListAndJobDetailRoutes(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer(":0", nil)
 	shutdownTestServer(t, server)
 
@@ -103,6 +107,8 @@ func createTempRefImage(t *testing.T) string {
 }
 
 func TestRouting_SettingsPage(t *testing.T) {
+	t.Parallel()
+
 	server := NewServer(":0", nil)
 	shutdownTestServer(t, server)
 

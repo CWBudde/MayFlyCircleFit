@@ -13,6 +13,8 @@ import (
 )
 
 func TestBundleIsEmbeddedAndGenerated(t *testing.T) {
+	t.Parallel()
+
 	asset, ok := staticAssets[bundleName]
 	if !ok {
 		t.Fatalf("bundle %q is not embedded; run `just bundle`", bundleName)
@@ -32,6 +34,8 @@ func TestBundleIsEmbeddedAndGenerated(t *testing.T) {
 }
 
 func TestBundleURLCarriesTheContentHash(t *testing.T) {
+	t.Parallel()
+
 	url := BundleURL()
 
 	prefix := StaticPrefix + bundleName + "?v="
@@ -50,6 +54,8 @@ func TestBundleURLCarriesTheContentHash(t *testing.T) {
 }
 
 func TestStaticHandlerServesTheBundle(t *testing.T) {
+	t.Parallel()
+
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, BundleURL(), nil)
 	StaticHandler().ServeHTTP(recorder, request)
@@ -77,11 +83,15 @@ func TestStaticHandlerServesTheBundle(t *testing.T) {
 }
 
 func TestStaticHandlerRevalidatesUnversionedAndStaleURLs(t *testing.T) {
+	t.Parallel()
+
 	for name, url := range map[string]string{
 		"no version":    StaticPrefix + bundleName,
 		"stale version": StaticPrefix + bundleName + "?v=0000000000000000",
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			recorder := httptest.NewRecorder()
 			StaticHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, url, nil))
 
@@ -97,6 +107,8 @@ func TestStaticHandlerRevalidatesUnversionedAndStaleURLs(t *testing.T) {
 }
 
 func TestStaticHandlerHonorsIfNoneMatch(t *testing.T) {
+	t.Parallel()
+
 	request := httptest.NewRequest(http.MethodGet, BundleURL(), nil)
 	request.Header.Set("If-None-Match", staticAssets[bundleName].etag)
 
@@ -113,6 +125,8 @@ func TestStaticHandlerHonorsIfNoneMatch(t *testing.T) {
 }
 
 func TestStaticHandlerRejectsAnythingNotEmbedded(t *testing.T) {
+	t.Parallel()
+
 	cases := map[string]struct {
 		method string
 		url    string
@@ -126,6 +140,8 @@ func TestStaticHandlerRejectsAnythingNotEmbedded(t *testing.T) {
 	}
 	for name, testCase := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			recorder := httptest.NewRecorder()
 			StaticHandler().ServeHTTP(recorder, httptest.NewRequest(testCase.method, testCase.url, nil))
 
@@ -137,6 +153,8 @@ func TestStaticHandlerRejectsAnythingNotEmbedded(t *testing.T) {
 }
 
 func TestIslandBundleLoadsTheVersionedBundle(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 
 	err := IslandBundle().Render(context.Background(), &output)
@@ -187,6 +205,8 @@ func TestLayoutLoadsTheIslandBundle(t *testing.T) {
 // redistributed inside release binaries, so their licence banners have to
 // survive minification. See THIRD-PARTY-NOTICES.md.
 func TestBundleKeepsDependencyLicenseNotices(t *testing.T) {
+	t.Parallel()
+
 	bundle, err := staticFS.ReadFile("static/" + bundleName)
 	if err != nil {
 		t.Fatalf("read bundle: %v", err)
@@ -211,6 +231,8 @@ func firstLine(content []byte) []byte {
 // committed and embedded exactly like the bundle, so a build without node
 // still ships it.
 func TestBundleSourceMapIsEmbeddedAndComplete(t *testing.T) {
+	t.Parallel()
+
 	asset, ok := staticAssets[bundleMapName]
 	if !ok {
 		t.Fatalf("source map %q is not embedded; run `just bundle`", bundleMapName)
@@ -263,6 +285,8 @@ func TestBundleSourceMapIsEmbeddedAndComplete(t *testing.T) {
 // resolved against the bundle's own URL, so it must name a sibling the flat
 // static handler will actually serve.
 func TestBundleLinksItsSourceMap(t *testing.T) {
+	t.Parallel()
+
 	bundle := staticAssets[bundleName].content
 
 	want := "//# sourceMappingURL=" + bundleMapName
@@ -316,6 +340,8 @@ func TestBundleLinksItsSourceMap(t *testing.T) {
 // The map is a devtools-only download; the page itself must never pull two
 // megabytes of sources on load.
 func TestIslandBundleDoesNotLinkTheSourceMap(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 
 	err := IslandBundle().Render(context.Background(), &output)

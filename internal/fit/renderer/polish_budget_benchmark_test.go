@@ -248,7 +248,10 @@ func polishBudgetEarlyStop(stagnationIters int) []opt.MayflyOption {
 // polishBudgetAxes is the one-at-a-time sweep: each axis moves through its range
 // while the other two hold the shipped default.
 func polishBudgetAxes() []polishBudget {
-	var budgets []polishBudget
+	iterAxis := []int{50, 100, 400, 800}
+	epochAxis := []int{2, 4}
+	budgets := make([]polishBudget, 0, len(polishBudgetPopulations())+len(iterAxis)+len(epochAxis))
+
 	for _, population := range polishBudgetPopulations() {
 		budgets = append(budgets, polishBudget{
 			population: population,
@@ -258,7 +261,7 @@ func polishBudgetAxes() []polishBudget {
 		})
 	}
 
-	for _, iters := range []int{50, 100, 400, 800} {
+	for _, iters := range iterAxis {
 		budgets = append(budgets, polishBudget{
 			population: polishBudgetDefaultPop,
 			iters:      iters,
@@ -267,7 +270,7 @@ func polishBudgetAxes() []polishBudget {
 		})
 	}
 
-	for _, epochs := range []int{2, 4} {
+	for _, epochs := range epochAxis {
 		budgets = append(budgets, polishBudget{
 			population: polishBudgetDefaultPop,
 			iters:      polishBudgetDefaultIters,

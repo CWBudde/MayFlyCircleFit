@@ -76,7 +76,9 @@ func TestApplyDefaultsResolvesTheEngine(t *testing.T) {
 func TestResolvedOptimizerTreatsAnEmptyEngineAsMayfly(t *testing.T) {
 	t.Parallel()
 
-	if got := (app.JobConfig{}).ResolvedOptimizer(); got != app.OptimizerMayfly {
+	empty := app.JobConfig{}
+
+	if got := empty.ResolvedOptimizer(); got != app.OptimizerMayfly {
 		t.Errorf("ResolvedOptimizer() = %q, want %q", got, app.OptimizerMayfly)
 	}
 }

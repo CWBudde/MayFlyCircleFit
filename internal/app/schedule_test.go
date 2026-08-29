@@ -39,6 +39,8 @@ func documentWithSteps(t *testing.T, steps string) *ScheduleDocument {
 }
 
 func TestParseScheduleRejectsUnknownFields(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		document string
@@ -62,6 +64,8 @@ func TestParseScheduleRejectsUnknownFields(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			_, err := ParseSchedule([]byte(test.document))
 			if err == nil {
 				t.Fatalf("ParseSchedule() error = nil, want rejection of %q", test.field)
@@ -78,6 +82,8 @@ func TestParseScheduleRejectsUnknownFields(t *testing.T) {
 // field that ApplyDefaults puts back must be an error naming the field that
 // actually works, never a silent drop.
 func TestParseScheduleRejectsSilentlyOverriddenFields(t *testing.T) {
+	t.Parallel()
+
 	const anchor = `"refPath": "assets/ref.png",`
 
 	tests := []struct {
@@ -126,6 +132,8 @@ func TestParseScheduleRejectsSilentlyOverriddenFields(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			source := strings.Replace(baseDocument, test.old, test.new, 1)
 
 			_, err := ParseSchedule([]byte(source))
@@ -158,6 +166,8 @@ func TestParseScheduleRejectsSilentlyOverriddenFields(t *testing.T) {
 }
 
 func TestParseScheduleValidation(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		document string
@@ -221,6 +231,8 @@ func TestParseScheduleValidation(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			_, err := ParseSchedule([]byte(test.document))
 			if err == nil {
 				t.Fatalf("ParseSchedule() error = nil, want an error mentioning %q", test.wantErr)
@@ -234,6 +246,8 @@ func TestParseScheduleValidation(t *testing.T) {
 }
 
 func TestScheduleExpandRepeatsGeneratorSteps(t *testing.T) {
+	t.Parallel()
+
 	doc := documentWithSteps(t, `[
     {"type": "extend", "repeat": 3, "additionalCircles": 8},
     {"type": "polish", "maxSweeps": 4, "activeSetSize": 8}
@@ -302,6 +316,8 @@ func TestScheduleExpandRepeatsGeneratorSteps(t *testing.T) {
 // TestScheduleExpandRealizesTheReferenceCampaign pins the campaign the phase
 // was written for: base 8, +8 to 512, polish at 32/64/96/128/192/256.
 func TestScheduleExpandRealizesTheReferenceCampaign(t *testing.T) {
+	t.Parallel()
+
 	doc := documentWithSteps(t, `[
     {"type": "extend", "repeat": 3, "additionalCircles": 8},
     {"type": "polish"},
@@ -360,6 +376,8 @@ func TestScheduleExpandRealizesTheReferenceCampaign(t *testing.T) {
 }
 
 func TestParseScheduleRejectsMalformedInput(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		document string
@@ -386,6 +404,8 @@ func TestParseScheduleRejectsMalformedInput(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			_, err := ParseSchedule([]byte(test.document))
 			if err == nil {
 				t.Fatalf("ParseSchedule() error = nil, want one mentioning %q", test.wantErr)
@@ -402,6 +422,8 @@ func TestParseScheduleRejectsMalformedInput(t *testing.T) {
 // writes the polishing population under, and that a written value survives the
 // defaults it would otherwise be replaced by.
 func TestScheduleBaseCarriesThePolishingPopulation(t *testing.T) {
+	t.Parallel()
+
 	source := strings.Replace(baseDocument, `"popSize": 30`, `"popSize": 30,
     "polishingPopSize": 50`, 1)
 
@@ -423,6 +445,8 @@ func TestScheduleBaseCarriesThePolishingPopulation(t *testing.T) {
 // TestScheduleStepBudgetOverrides pins that a step's budget lands on the field
 // the matching HTTP request would have set, polish included.
 func TestScheduleStepBudgetOverrides(t *testing.T) {
+	t.Parallel()
+
 	doc := documentWithSteps(t, `[
     {"type": "extend", "additionalCircles": 8, "batchSize": 4, "epochs": 3, "iters": 500, "popSize": 40},
     {"type": "polish", "strategy": "contiguous-window", "epochs": 2, "iters": 900, "stagnationIters": 100, "minImprovement": 0.5, "popSize": 60}
@@ -457,6 +481,8 @@ func TestScheduleStepBudgetOverrides(t *testing.T) {
 }
 
 func TestScheduleStepRepetitions(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		repeat int
 		want   int
@@ -469,6 +495,8 @@ func TestScheduleStepRepetitions(t *testing.T) {
 }
 
 func TestScheduleExpandIsDeterministicForAFixedSeed(t *testing.T) {
+	t.Parallel()
+
 	doc := documentWithSteps(t, `[{"type": "extend", "repeat": 2, "additionalCircles": 8}]`)
 
 	first, err := doc.Expand()
@@ -495,6 +523,8 @@ func TestScheduleExpandIsDeterministicForAFixedSeed(t *testing.T) {
 }
 
 func TestScheduleCampaignSeedResolvesWhenOmitted(t *testing.T) {
+	t.Parallel()
+
 	source := strings.Replace(baseDocument, `"seed": 4242,`, "", 1)
 
 	doc, err := ParseSchedule([]byte(source))
@@ -530,6 +560,8 @@ func TestScheduleCampaignSeedResolvesWhenOmitted(t *testing.T) {
 // TestScheduleDocumentValidateWithoutTheParser covers the documents the parser
 // never sees: reconstructed in code, or read back from the store.
 func TestScheduleDocumentValidateWithoutTheParser(t *testing.T) {
+	t.Parallel()
+
 	valid := *documentWithSteps(t, `[{"type": "extend", "additionalCircles": 8}]`)
 
 	err := valid.Validate()
@@ -560,6 +592,8 @@ func TestScheduleDocumentValidateWithoutTheParser(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			document := valid
 			document.Steps = append([]ScheduleStep(nil), valid.Steps...)
 			test.mutate(&document)
@@ -580,6 +614,8 @@ func TestScheduleDocumentValidateWithoutTheParser(t *testing.T) {
 // against a document assembled in code, where the parser's refusal of
 // base.effectiveSeed cannot help.
 func TestScheduleExpandIgnoresAnAuthoredEffectiveSeed(t *testing.T) {
+	t.Parallel()
+
 	doc := *documentWithSteps(t, `[{"type": "extend", "additionalCircles": 8}]`)
 	doc.Base.EffectiveSeed = 7
 
@@ -602,6 +638,8 @@ func TestScheduleExpandIgnoresAnAuthoredEffectiveSeed(t *testing.T) {
 // fails validation — and a polish stage would carry an arrangement its parent
 // has already moved past.
 func TestScheduleExpandKeepsAuthoredCirclesOnTheBaseStageOnly(t *testing.T) {
+	t.Parallel()
+
 	source := strings.Replace(baseDocument, `"popSize": 30`, `"popSize": 30,
     "initialCircles": [
       {"x": 1, "y": 2, "r": 3, "color": "#010203"},
@@ -650,6 +688,8 @@ func TestScheduleExpandKeepsAuthoredCirclesOnTheBaseStageOnly(t *testing.T) {
 // barrier promises: it marks the stage the campaign stops before, and on a
 // repeated step it marks one stage rather than every repetition.
 func TestScheduleExpandCarriesABarrierOntoItsFirstStageOnly(t *testing.T) {
+	t.Parallel()
+
 	doc := documentWithSteps(t, `[
 		{"type": "polish"},
 		{"type": "extend", "additionalCircles": 4, "pauseBefore": true, "repeat": 3}
@@ -686,6 +726,8 @@ func TestScheduleExpandCarriesABarrierOntoItsFirstStageOnly(t *testing.T) {
 // which is refused on extend. A barrier skips nothing, so the reason `when` is
 // refused there does not apply to it.
 func TestScheduleBarrierIsLegalOnEitherKind(t *testing.T) {
+	t.Parallel()
+
 	doc := documentWithSteps(t, `[
 		{"type": "polish", "pauseBefore": true},
 		{"type": "extend", "additionalCircles": 4, "pauseBefore": true}
@@ -707,16 +749,24 @@ func TestScheduleBarrierIsLegalOnEitherKind(t *testing.T) {
 // accepted before this, and put `schedule status` back over the CLI's cap with
 // a handful of stages.
 func TestScheduleDocumentIsBounded(t *testing.T) {
+	t.Parallel()
+
 	base := `"base": {"refPath": "assets/ref.png", "mode": "batch", "circles": 8, "batchSize": 8, "iters": 200, "popSize": 30}`
 
 	t.Run("a name at the limit is accepted", func(t *testing.T) {
+		t.Parallel()
+
 		document := fmt.Sprintf(`{"seed": 42, "name": %q, %s}`, strings.Repeat("a", MaxScheduleNameLen), base)
-		if _, err := ParseSchedule([]byte(document)); err != nil {
+
+		_, err := ParseSchedule([]byte(document))
+		if err != nil {
 			t.Fatalf("ParseSchedule() error = %v", err)
 		}
 	})
 
 	t.Run("a longer name is refused", func(t *testing.T) {
+		t.Parallel()
+
 		document := fmt.Sprintf(`{"seed": 42, "name": %q, %s}`, strings.Repeat("a", MaxScheduleNameLen+1), base)
 
 		_, err := ParseSchedule([]byte(document))
@@ -730,6 +780,8 @@ func TestScheduleDocumentIsBounded(t *testing.T) {
 	})
 
 	t.Run("a document over the byte limit is refused", func(t *testing.T) {
+		t.Parallel()
+
 		// The padding is a legal value in a legal field, so the refusal is about
 		// the size of the document and not about anything malformed in it.
 		padding := strings.Repeat(" ", MaxScheduleDocumentBytes)
@@ -749,6 +801,8 @@ func TestScheduleDocumentIsBounded(t *testing.T) {
 	// shares the response with. A stage summary costs about 172 B, measured by
 	// server.TestScheduleDetailStaysUnderTheCLIResponseCap.
 	t.Run("the bound leaves room for a full stage listing", func(t *testing.T) {
+		t.Parallel()
+
 		const measuredBytesPerStage = 172
 
 		listing := MaxScheduleStages * measuredBytesPerStage

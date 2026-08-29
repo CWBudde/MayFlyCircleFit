@@ -45,7 +45,9 @@ func writeLegacyCheckpoint(t *testing.T, root, jobID string) {
 			PopSize: 30,
 		},
 	}
-	if err := legacy.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+	err = legacy.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 }
@@ -54,11 +56,14 @@ func writeLegacyCheckpoint(t *testing.T, root, jobID string) {
 // Ref.png jobs: a data root that has only `jobs/` and no `projects/` must
 // restore every job and attribute it to the default project.
 func TestLegacyLayoutRestoresWithoutMigration(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	jobID := "12345678-1234-4234-8234-123456789abc"
 	writeLegacyCheckpoint(t, root, jobID)
 
-	if _, err := os.Stat(filepath.Join(root, projectsDirName)); !os.IsNotExist(err) {
+	_, err := os.Stat(filepath.Join(root, projectsDirName))
+	if !os.IsNotExist(err) {
 		t.Fatalf("projects directory must not exist before any project is created")
 	}
 
@@ -88,7 +93,8 @@ func TestLegacyLayoutRestoresWithoutMigration(t *testing.T) {
 	}
 
 	// Restoring must not have created the projects container.
-	if _, err := os.Stat(filepath.Join(root, projectsDirName)); !os.IsNotExist(err) {
+	_, err = os.Stat(filepath.Join(root, projectsDirName))
+	if !os.IsNotExist(err) {
 		t.Fatalf("restore must not create the projects directory")
 	}
 }
@@ -96,6 +102,8 @@ func TestLegacyLayoutRestoresWithoutMigration(t *testing.T) {
 // TestProjectIsolation verifies artifacts land under the right project and that
 // filtering separates them.
 func TestProjectIsolation(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -106,7 +114,9 @@ func TestProjectIsolation(t *testing.T) {
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
 
 	legacyJob := server.jobManager.CreateJob(app.DefaultProject, store.JobConfig{RefPath: "a.png"})
-	if _, err := server.ensureProject("christian"); err != nil {
+
+	_, err = server.ensureProject("christian")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -114,7 +124,9 @@ func TestProjectIsolation(t *testing.T) {
 
 	// The project store must be a distinct directory under projects/.
 	projectDir := filepath.Join(root, projectsDirName, "christian", "jobs")
-	if info, err := os.Stat(projectDir); err != nil || !info.IsDir() {
+
+	info, err := os.Stat(projectDir)
+	if err != nil || !info.IsDir() {
 		t.Fatalf("project jobs directory not created: %v", err)
 	}
 
@@ -144,6 +156,8 @@ func TestProjectIsolation(t *testing.T) {
 }
 
 func TestListJobsProjectFilterAndValidation(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -152,7 +166,9 @@ func TestListJobsProjectFilterAndValidation(t *testing.T) {
 	}
 
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
-	if _, err := server.ensureProject("christian"); err != nil {
+
+	_, err = server.ensureProject("christian")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -201,6 +217,8 @@ func TestListJobsProjectFilterAndValidation(t *testing.T) {
 }
 
 func TestProjectsEndpoint(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -209,7 +227,9 @@ func TestProjectsEndpoint(t *testing.T) {
 	}
 
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
-	if _, err := server.ensureProject("christian"); err != nil {
+
+	_, err = server.ensureProject("christian")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -223,7 +243,9 @@ func TestProjectsEndpoint(t *testing.T) {
 	}
 
 	var projects []projectResponse
-	if err := json.NewDecoder(recorder.Body).Decode(&projects); err != nil {
+
+	err = json.NewDecoder(recorder.Body).Decode(&projects)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -252,6 +274,8 @@ func TestProjectsEndpoint(t *testing.T) {
 // behavior: `project` is accepted alongside the promoted JobConfig fields while
 // DisallowUnknownFields still rejects a genuine typo.
 func TestCreateJobAcceptsProjectAndStillRejectsTypos(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -285,18 +309,24 @@ func TestCreateJobAcceptsProjectAndStillRejectsTypos(t *testing.T) {
 }
 
 func TestResolveRequestedProjectConflict(t *testing.T) {
+	t.Parallel()
+
 	server := NewServerWithOptions("localhost:0", nil, ServerOptions{})
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/jobs?project=a", nil)
-	if _, err := server.resolveRequestedProject("b", request); err == nil {
+
+	_, err := server.resolveRequestedProject("b", request)
+	if err == nil {
 		t.Fatalf("conflicting project must be rejected")
 	}
 
-	if slug, err := server.resolveRequestedProject("a", request); err != nil || slug != "a" {
+	slug, err := server.resolveRequestedProject("a", request)
+	if err != nil || slug != "a" {
 		t.Fatalf("matching project = %q, %v", slug, err)
 	}
 
-	if slug, err := server.resolveRequestedProject("", request); err != nil || slug != "a" {
+	slug, err = server.resolveRequestedProject("", request)
+	if err != nil || slug != "a" {
 		t.Fatalf("query fallback = %q, %v", slug, err)
 	}
 }
@@ -317,6 +347,8 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 // redirect: a slug the registry cannot resolve must fail, never fall back to
 // the default project's directory.
 func TestUnknownProjectDoesNotResolveToDefaultStore(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -366,6 +398,8 @@ func TestUnknownProjectDoesNotResolveToDefaultStore(t *testing.T) {
 // TestDeleteRejectsUnresolvableProject pins that a job whose project cannot be
 // resolved is not deleted against the default project's store.
 func TestDeleteRejectsUnresolvableProject(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -390,13 +424,18 @@ func TestDeleteRejectsUnresolvableProject(t *testing.T) {
 
 // TestDiscoverLogsUnusableProjectDirectory is the guard for the silent skip: a
 // directory that cannot become a project must leave a signal in the log.
+//
+//nolint:paralleltest // swaps the process-global slog default, which no two tests may do at once
 func TestDiscoverLogsUnusableProjectDirectory(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, projectsDirName, "Alpha"), 0o755); err != nil {
+
+	err := os.MkdirAll(filepath.Join(root, projectsDirName, "Alpha"), 0o755)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(filepath.Join(root, projectsDirName, "stray.txt"), []byte("x"), 0o600); err != nil {
+	err = os.WriteFile(filepath.Join(root, projectsDirName, "stray.txt"), []byte("x"), 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -426,11 +465,15 @@ func TestDiscoverLogsUnusableProjectDirectory(t *testing.T) {
 // project is the legacy `<root>/jobs` tree, so a stray `projects/default`
 // directory must never become a second store under the same name. Without the
 // explicit skip the meaning depended on whether a store was injected.
+//
+//nolint:paralleltest // swaps the process-global slog default, which no two tests may do at once
 func TestDiscoverIgnoresDefaultProjectDirectory(t *testing.T) {
 	root := t.TempDir()
 
 	shadow := filepath.Join(root, projectsDirName, string(app.DefaultProject))
-	if err := os.MkdirAll(shadow, 0o755); err != nil {
+
+	err := os.MkdirAll(shadow, 0o755)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -467,6 +510,8 @@ func TestDiscoverIgnoresDefaultProjectDirectory(t *testing.T) {
 // failure: a project directory that cannot be created is a 500, and the
 // response never carries the data root.
 func TestStoreFaultIsServerErrorWithoutPath(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	imageDir := t.TempDir()
 	imagePath := filepath.Join(imageDir, "ref.png")
@@ -474,7 +519,8 @@ func TestStoreFaultIsServerErrorWithoutPath(t *testing.T) {
 
 	// A regular file where the projects container belongs makes every project
 	// directory creation fail the way a read-only or NTFS root would.
-	if err := os.WriteFile(filepath.Join(root, projectsDirName), []byte("not a directory"), 0o600); err != nil {
+	err := os.WriteFile(filepath.Join(root, projectsDirName), []byte("not a directory"), 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -521,6 +567,8 @@ func TestStoreFaultIsServerErrorWithoutPath(t *testing.T) {
 // single-job endpoints build jobStatusResponse by hand and used to drop it,
 // leaving a client holding only a job ID unable to learn who owns it.
 func TestJobStatusResponseCarriesProject(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -529,7 +577,9 @@ func TestJobStatusResponseCarriesProject(t *testing.T) {
 	}
 
 	server := NewServerWithOptions("localhost:0", persistence, ServerOptions{DataRoot: root})
-	if _, err := server.ensureProject("christian"); err != nil {
+
+	_, err = server.ensureProject("christian")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -551,6 +601,8 @@ func TestJobStatusResponseCarriesProject(t *testing.T) {
 		{name: "legacy empty slug", project: app.DefaultProject, storeEmpty: true, want: app.DefaultProject},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			job := server.jobManager.CreateJob(tc.project, store.JobConfig{RefPath: "a.png"})
 			if tc.storeEmpty {
 				err := server.jobManager.UpdateJob(job.ID, func(stored *Job) {
@@ -599,6 +651,8 @@ func TestJobStatusResponseCarriesProject(t *testing.T) {
 // for: a job placed in a named project over HTTP must come back in that same
 // project after the process restarts, reading only what is on disk.
 func TestNamedProjectJobSurvivesRestart(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -612,7 +666,8 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 	// the restart, and the restored side reads only the checkpoint written
 	// below plus the directory it sits in. Creation over HTTP is covered by
 	// TestCreateJobAcceptsProjectAndStillRejectsTypos.
-	if _, err := server.ensureProject("christian"); err != nil {
+	_, err = server.ensureProject("christian")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -633,7 +688,9 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 		Timestamp:     time.Now(),
 		Config:        store.JobConfig{RefPath: "example/Ref.png", Mode: app.ModeJoint, Circles: 1, Iters: 10, PopSize: 30},
 	}
-	if err := projectStore.SaveCheckpoint(job.ID, checkpoint); err != nil {
+
+	err = projectStore.SaveCheckpoint(job.ID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -676,7 +733,9 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 		ID      string `json:"id"`
 		Project string `json:"project"`
 	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &listed); err != nil {
+
+	err = json.Unmarshal(recorder.Body.Bytes(), &listed)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -687,7 +746,8 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 	recorder = httptest.NewRecorder()
 	restarted.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/jobs?project="+string(app.DefaultProject), nil))
 
-	if err := json.Unmarshal(recorder.Body.Bytes(), &listed); err != nil {
+	err = json.Unmarshal(recorder.Body.Bytes(), &listed)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -700,6 +760,8 @@ func TestNamedProjectJobSurvivesRestart(t *testing.T) {
 // Slugs() is sorted, but projects known only from in-memory jobs are appended
 // in Go map order, which is randomized per run.
 func TestProjectsEndpointOrderingIsStable(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -757,6 +819,8 @@ func TestProjectsEndpointOrderingIsStable(t *testing.T) {
 // opened with, so without a hidden field every job created from the UI landed
 // in the default project no matter which project the user came from.
 func TestCreateFormCarriesProjectThroughPost(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -792,6 +856,8 @@ func TestCreateFormCarriesProjectThroughPost(t *testing.T) {
 // silently relocating the job: the re-rendered form must still name the project
 // the user was creating in.
 func TestCreateFormEchoesProjectOnValidationError(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 
 	persistence, err := store.NewFSStore(root)
@@ -823,7 +889,9 @@ func writeProjectCheckpoint(t *testing.T, root string, slug app.Project, jobID s
 	t.Helper()
 
 	dir := filepath.Join(root, projectsDirName, string(slug))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+
+	err := os.MkdirAll(dir, 0o755)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -842,7 +910,9 @@ func writeProjectCheckpoint(t *testing.T, root string, slug app.Project, jobID s
 		Timestamp:     time.Now(),
 		Config:        store.JobConfig{RefPath: "example/Ref.png", Mode: app.ModeJoint, Circles: 1, Iters: 10, PopSize: 30},
 	}
-	if err := projectStore.SaveCheckpoint(jobID, checkpoint); err != nil {
+
+	err = projectStore.SaveCheckpoint(jobID, checkpoint)
+	if err != nil {
 		t.Fatal(err)
 	}
 }
@@ -854,6 +924,8 @@ func writeProjectCheckpoint(t *testing.T, root string, slug app.Project, jobID s
 // register persisted job" warning, which named one project and never said the
 // cause was a collision. The operator saw a job disappear and had nothing to
 // go looking for.
+//
+//nolint:paralleltest // swaps the process-global slog default, which no two tests may do at once
 func TestCrossProjectDuplicateJobIDIsDiagnosable(t *testing.T) {
 	root := t.TempDir()
 	jobID := "12345678-1234-4234-8234-123456789abc"
@@ -922,7 +994,8 @@ func TestCrossProjectDuplicateJobIDIsDiagnosable(t *testing.T) {
 
 	// The skipped project's checkpoint is untouched: detection only, with no
 	// rename and no migration.
-	if _, err := os.Stat(filepath.Join(root, projectsDirName, "zulu", "jobs", jobID)); err != nil {
+	_, err = os.Stat(filepath.Join(root, projectsDirName, "zulu", "jobs", jobID))
+	if err != nil {
 		t.Fatalf("the skipped project's artifacts must stay on disk: %v", err)
 	}
 }

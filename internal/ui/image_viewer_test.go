@@ -180,17 +180,25 @@ func renderImageViewer(t *testing.T, data ImageViewerData) string {
 }
 
 func TestImageViewerSrcAddsCacheBustingRevision(t *testing.T) {
+	t.Parallel()
+
 	t.Run("without revision", func(t *testing.T) {
+		t.Parallel()
+
 		if got, want := imageViewerSrc("/api/v1/jobs/abc/best.png", 0), "/api/v1/jobs/abc/best.png"; got != want {
 			t.Fatalf("imageViewerSrc without revision = %q, want %q", got, want)
 		}
 	})
 	t.Run("with revision", func(t *testing.T) {
+		t.Parallel()
+
 		if got, want := imageViewerSrc("/api/v1/jobs/abc/best.png", 7), "/api/v1/jobs/abc/best.png?v=7"; got != want {
 			t.Fatalf("imageViewerSrc with revision = %q, want %q", got, want)
 		}
 	})
 	t.Run("with existing query", func(t *testing.T) {
+		t.Parallel()
+
 		if got, want := imageViewerSrc("/api/v1/jobs/abc/diff.png?colormap=turbo", 9), "/api/v1/jobs/abc/diff.png?colormap=turbo&v=9"; got != want {
 			t.Fatalf("imageViewerSrc with query = %q, want %q", got, want)
 		}
@@ -198,7 +206,11 @@ func TestImageViewerSrcAddsCacheBustingRevision(t *testing.T) {
 }
 
 func TestImageViewerClassesAndModeDefaults(t *testing.T) {
+	t.Parallel()
+
 	t.Run("adds extra class", func(t *testing.T) {
+		t.Parallel()
+
 		body := renderImageViewer(t, ImageViewerData{
 			ExtraClass:  "card dashboard",
 			DefaultMode: "reference",
@@ -209,6 +221,8 @@ func TestImageViewerClassesAndModeDefaults(t *testing.T) {
 		}
 	})
 	t.Run("defaults side-by-side", func(t *testing.T) {
+		t.Parallel()
+
 		body := renderImageViewer(t, ImageViewerData{
 			JobID:       viewerJobID,
 			DefaultMode: "",

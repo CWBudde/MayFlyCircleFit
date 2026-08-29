@@ -9,6 +9,8 @@ import (
 )
 
 func TestNormalizeAppliesCanonicalDefaults(t *testing.T) {
+	t.Parallel()
+
 	config, err := Normalize(JobConfig{RefPath: "reference.png"})
 	if err != nil {
 		t.Fatal(err)
@@ -58,6 +60,8 @@ func TestOptimizerDiagnosticsRequireTrace(t *testing.T) {
 }
 
 func TestNormalizePreservesExplicitSeedAndDisables(t *testing.T) {
+	t.Parallel()
+
 	config, err := Normalize(JobConfig{
 		RefPath:            "reference.png",
 		Seed:               42,
@@ -78,6 +82,8 @@ func TestNormalizePreservesExplicitSeedAndDisables(t *testing.T) {
 }
 
 func TestValidateBoundaries(t *testing.T) {
+	t.Parallel()
+
 	valid := DefaultConfig()
 	valid.RefPath = "reference.png"
 	valid.EffectiveSeed = 1
@@ -129,6 +135,8 @@ func TestValidateBoundaries(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			config := valid
 			test.mutate(&config)
 			err := config.Validate()
@@ -142,8 +150,14 @@ func TestValidateBoundaries(t *testing.T) {
 }
 
 func TestNormalizeOldConfigKeepsPolishingDisabled(t *testing.T) {
+	t.Parallel()
+
 	var old JobConfig
-	if err := json.Unmarshal([]byte(`{"refPath":"reference.png","mode":"batch","circles":3,"iters":100,"popSize":30,"batchSize":3}`), &old); err != nil {
+
+	payload := `{"refPath":"reference.png","mode":"batch","circles":3,"iters":100,"popSize":30,"batchSize":3}`
+
+	err := json.Unmarshal([]byte(payload), &old)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -171,8 +185,12 @@ func TestNormalizeOldConfigKeepsPolishingDisabled(t *testing.T) {
 // produces, so silently switching it on for an old configuration would make a
 // resumed run diverge from the run it resumes.
 func TestNormalizeOldConfigKeepsParallelEvaluationDisabled(t *testing.T) {
+	t.Parallel()
+
 	var old JobConfig
-	if err := json.Unmarshal([]byte(`{"refPath":"reference.png","mode":"joint","circles":3,"iters":100,"popSize":30}`), &old); err != nil {
+
+	err := json.Unmarshal([]byte(`{"refPath":"reference.png","mode":"joint","circles":3,"iters":100,"popSize":30}`), &old)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -191,10 +209,14 @@ func TestNormalizeOldConfigKeepsParallelEvaluationDisabled(t *testing.T) {
 // count, so an omitted value has to keep resolving that way for old
 // checkpoints to resume with the concurrency they were written with.
 func TestNormalizeEvaluationWorkersFallsBackToThreads(t *testing.T) {
+	t.Parallel()
+
 	var old JobConfig
-	if err := json.Unmarshal([]byte(
+
+	err := json.Unmarshal([]byte(
 		`{"refPath":"reference.png","mode":"joint","circles":3,"iters":100,"popSize":30,"threads":3,"parallelEvaluation":true}`,
-	), &old); err != nil {
+	), &old)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -232,10 +254,14 @@ func TestNormalizeEvaluationWorkersFallsBackToThreads(t *testing.T) {
 // checkpoint written before the field therefore polishes at the measured default
 // rather than at its own popSize.
 func TestNormalizePolishingPopulationDoesNotInheritPopSize(t *testing.T) {
+	t.Parallel()
+
 	var old JobConfig
-	if err := json.Unmarshal([]byte(
+
+	err := json.Unmarshal([]byte(
 		`{"refPath":"reference.png","mode":"batch","circles":8,"iters":100,"popSize":200,"batchSize":8}`,
-	), &old); err != nil {
+	), &old)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -275,6 +301,8 @@ func TestNormalizePolishingPopulationDoesNotInheritPopSize(t *testing.T) {
 // `status`, which validates what the API returned, must be able to display such
 // a job rather than failing on it. Zero is the omitted value, not a population.
 func TestValidateAcceptsAnOmittedPolishingPopulation(t *testing.T) {
+	t.Parallel()
+
 	legacy := DefaultConfig()
 	legacy.RefPath = "reference.png"
 
@@ -295,6 +323,8 @@ func TestValidateAcceptsAnOmittedPolishingPopulation(t *testing.T) {
 }
 
 func TestNormalizeAcceptsResidualRegionPolishing(t *testing.T) {
+	t.Parallel()
+
 	config := DefaultConfig()
 	config.RefPath = "reference.png"
 	config.Mode = ModeBatch
@@ -312,6 +342,8 @@ func TestNormalizeAcceptsResidualRegionPolishing(t *testing.T) {
 }
 
 func TestNormalizeAcceptsContiguousWindowPolishing(t *testing.T) {
+	t.Parallel()
+
 	config := DefaultConfig()
 	config.RefPath = "reference.png"
 	config.Mode = ModeBatch
@@ -329,18 +361,23 @@ func TestNormalizeAcceptsContiguousWindowPolishing(t *testing.T) {
 }
 
 func TestValidateRejectsUnknownPolishingStrategy(t *testing.T) {
+	t.Parallel()
+
 	config := DefaultConfig()
 	config.RefPath = "reference.png"
 	config.Mode = ModeBatch
 	config.PolishingEnabled = true
 	config.PolishingStrategy = PolishingStrategy("sliding-window")
 
-	if _, err := Normalize(config); err == nil {
+	_, err := Normalize(config)
+	if err == nil {
 		t.Fatal("Normalize accepted an unknown polishing strategy")
 	}
 }
 
 func TestValidateImageDimensions(t *testing.T) {
+	t.Parallel()
+
 	for _, test := range []struct {
 		width, height int
 		wantErr       bool
@@ -362,6 +399,8 @@ func TestValidateImageDimensions(t *testing.T) {
 // optimizer-level stopping fields: ApplyDefaults must never fill them in, so an
 // unconfigured run behaves exactly as it did before they existed.
 func TestNormalizeLeavesEarlyStopDisabled(t *testing.T) {
+	t.Parallel()
+
 	config, err := Normalize(JobConfig{RefPath: "reference.png"})
 	if err != nil {
 		t.Fatal(err)
@@ -381,6 +420,8 @@ func TestNormalizeLeavesEarlyStopDisabled(t *testing.T) {
 }
 
 func TestSSIMIsOptInAndSerializedWhenEnabled(t *testing.T) {
+	t.Parallel()
+
 	config, err := Normalize(JobConfig{RefPath: "reference.png"})
 	if err != nil {
 		t.Fatal(err)
@@ -410,6 +451,8 @@ func TestSSIMIsOptInAndSerializedWhenEnabled(t *testing.T) {
 // TestDefaultConfigJSONOmitsEarlyStopFields proves the persisted bytes for a
 // default job are unchanged, so existing checkpoints round-trip identically.
 func TestDefaultConfigJSONOmitsEarlyStopFields(t *testing.T) {
+	t.Parallel()
+
 	config, err := Normalize(JobConfig{RefPath: "reference.png"})
 	if err != nil {
 		t.Fatal(err)
@@ -428,6 +471,8 @@ func TestDefaultConfigJSONOmitsEarlyStopFields(t *testing.T) {
 }
 
 func TestEarlyStopEnabledAndValidCombinations(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		mutate  func(*JobConfig)
@@ -446,6 +491,8 @@ func TestEarlyStopEnabledAndValidCombinations(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			config := DefaultConfig()
 			config.RefPath = "reference.png"
 			config.EffectiveSeed = 1
@@ -469,6 +516,8 @@ func TestEarlyStopEnabledAndValidCombinations(t *testing.T) {
 // error naming the field, because filling it would run something other than
 // what was asked for.
 func TestNormalizeRequestRefusesAWrittenDefault(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		body    string
@@ -502,8 +551,12 @@ func TestNormalizeRequestRefusesAWrittenDefault(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			var config JobConfig
-			if err := json.Unmarshal([]byte(test.body), &config); err != nil {
+
+			err := json.Unmarshal([]byte(test.body), &config)
+			if err != nil {
 				t.Fatalf("unmarshal fixture: %v", err)
 			}
 
@@ -536,6 +589,8 @@ func TestNormalizeRequestRefusesAWrittenDefault(t *testing.T) {
 // position, a velocity and a personal best, so the cost grows with the product
 // rather than with either number alone.
 func TestPopulationIsBoundedByOptimizerDimensionality(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		mode    Mode
@@ -554,6 +609,8 @@ func TestPopulationIsBoundedByOptimizerDimensionality(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			config := DefaultConfig()
 			config.RefPath = "reference.png"
 			config.EffectiveSeed = 1
@@ -588,6 +645,8 @@ func TestPopulationIsBoundedByOptimizerDimensionality(t *testing.T) {
 // what was already accepted: the largest product reachable under the previous
 // MaxPopulation of 200 must still validate.
 func TestTheDimensionLimitAcceptsEveryPreviouslyValidPopulation(t *testing.T) {
+	t.Parallel()
+
 	if got := MaxCircles * ParametersPerCircle * 200; got > MaxPopulationDimensions {
 		t.Fatalf(
 			"the largest pre-existing product is %d, which exceeds the limit of %d; "+
