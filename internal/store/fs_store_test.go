@@ -51,6 +51,8 @@ func createTestCheckpoint(jobID string) *Checkpoint {
 }
 
 func TestNewFSStore(t *testing.T) {
+	t.Parallel()
+
 	tempDir := t.TempDir()
 
 	store, err := NewFSStore(tempDir)
@@ -70,6 +72,8 @@ func TestNewFSStore(t *testing.T) {
 }
 
 func TestSaveCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	store, tempDir := setupTestStore(t)
 
 	jobID := testJobID(1)
@@ -110,6 +114,8 @@ func TestSaveCheckpoint(t *testing.T) {
 }
 
 func TestListCheckpointsProjectsLegacyCheckpointWithoutSidecar(t *testing.T) {
+	t.Parallel()
+
 	fs, tempDir := setupTestStore(t)
 	jobID := testJobID(1)
 	checkpoint := createTestCheckpoint(jobID)
@@ -149,6 +155,8 @@ func TestListCheckpointsProjectsLegacyCheckpointWithoutSidecar(t *testing.T) {
 }
 
 func TestListCheckpointsFallsBackFromCorruptSidecar(t *testing.T) {
+	t.Parallel()
+
 	fs, tempDir := setupTestStore(t)
 	jobID := testJobID(1)
 
@@ -177,6 +185,8 @@ func TestListCheckpointsFallsBackFromCorruptSidecar(t *testing.T) {
 }
 
 func TestSaveCheckpoint_EmptyJobID(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 	checkpoint := createTestCheckpoint(testJobID(1))
 
@@ -187,6 +197,8 @@ func TestSaveCheckpoint_EmptyJobID(t *testing.T) {
 }
 
 func TestSaveCheckpoint_NilCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	err := store.SaveCheckpoint(testJobID(1), nil)
@@ -196,6 +208,8 @@ func TestSaveCheckpoint_NilCheckpoint(t *testing.T) {
 }
 
 func TestSaveCheckpoint_Overwrite(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	jobID := testJobID(1)
@@ -229,6 +243,8 @@ func TestSaveCheckpoint_Overwrite(t *testing.T) {
 }
 
 func TestLoadCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	jobID := testJobID(1)
@@ -269,6 +285,8 @@ func TestLoadCheckpoint(t *testing.T) {
 }
 
 func TestLoadCheckpoint_NotFound(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	_, err := store.LoadCheckpoint(testJobID(99))
@@ -283,6 +301,8 @@ func TestLoadCheckpoint_NotFound(t *testing.T) {
 }
 
 func TestLoadCheckpoint_EmptyJobID(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	_, err := store.LoadCheckpoint("")
@@ -292,6 +312,8 @@ func TestLoadCheckpoint_EmptyJobID(t *testing.T) {
 }
 
 func TestListCheckpoints_Empty(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	infos, err := store.ListCheckpoints()
@@ -305,6 +327,8 @@ func TestListCheckpoints_Empty(t *testing.T) {
 }
 
 func TestListCheckpoints_Multiple(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	// Create multiple checkpoints
@@ -342,6 +366,8 @@ func TestListCheckpoints_Multiple(t *testing.T) {
 }
 
 func TestListCheckpoints_SkipsInvalidDirectories(t *testing.T) {
+	t.Parallel()
+
 	store, tempDir := setupTestStore(t)
 
 	// Create valid checkpoint
@@ -400,6 +426,8 @@ func TestListCheckpoints_SkipsInvalidDirectories(t *testing.T) {
 }
 
 func TestDeleteCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	jobID := testJobID(1)
@@ -430,6 +458,8 @@ func TestDeleteCheckpoint(t *testing.T) {
 }
 
 func TestDeleteCheckpoint_NotFound(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	err := store.DeleteCheckpoint(testJobID(99))
@@ -444,6 +474,8 @@ func TestDeleteCheckpoint_NotFound(t *testing.T) {
 }
 
 func TestDeleteCheckpoint_EmptyJobID(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	err := store.DeleteCheckpoint("")
@@ -453,6 +485,8 @@ func TestDeleteCheckpoint_EmptyJobID(t *testing.T) {
 }
 
 func TestCheckpointToInfo(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := createTestCheckpoint(testJobID(1))
 
 	info := checkpoint.ToInfo()
@@ -479,6 +513,8 @@ func TestCheckpointToInfo(t *testing.T) {
 }
 
 func TestConcurrentSave(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 
 	// Save multiple checkpoints concurrently
@@ -533,6 +569,8 @@ func isErrorType(err error, target any) bool {
 // normalize and BestParams copy: the file must stay byte-for-byte what
 // Checkpoint.MarshalJSON would have produced, indentation included.
 func TestSaveCheckpointBytesMatchMarshalJSON(t *testing.T) {
+	t.Parallel()
+
 	store, _ := setupTestStore(t)
 	jobID := testJobID(1)
 	checkpoint := createTestCheckpoint(jobID)

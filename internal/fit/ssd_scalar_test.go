@@ -11,6 +11,8 @@ import (
 
 // TestScalarVariants_Equivalence ensures all scalar variants produce identical results.
 func TestScalarVariants_Equivalence(t *testing.T) {
+	t.Parallel()
+
 	sizes := []struct {
 		width, height int
 	}{
@@ -27,6 +29,8 @@ func TestScalarVariants_Equivalence(t *testing.T) {
 
 	for _, sz := range sizes {
 		t.Run(fmt.Sprintf("%dx%d", sz.width, sz.height), func(t *testing.T) {
+			t.Parallel()
+
 			img1 := randomNRGBA(sz.width, sz.height, 1111)
 			img2 := randomNRGBA(sz.width, sz.height, 2222)
 
@@ -56,6 +60,8 @@ func TestScalarVariants_Equivalence(t *testing.T) {
 
 // TestScalarVariants_EdgeCases tests scalar variants with edge case dimensions.
 func TestScalarVariants_EdgeCases(t *testing.T) {
+	t.Parallel()
+
 	edgeCases := []struct {
 		name          string
 		width, height int
@@ -72,6 +78,8 @@ func TestScalarVariants_EdgeCases(t *testing.T) {
 
 	for _, tc := range edgeCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			img1 := randomNRGBA(tc.width, tc.height, 3333)
 			img2 := randomNRGBA(tc.width, tc.height, 4444)
 
@@ -90,6 +98,8 @@ func TestScalarVariants_EdgeCases(t *testing.T) {
 // ---------------------- Scalar Implementation Selection Tests ----------------------
 
 // TestSetScalarImplementation tests that variant selection works correctly.
+//
+//nolint:paralleltest // mutates the process-global scalar SSD implementation, which no two tests may do at once
 func TestSetScalarImplementation(t *testing.T) {
 	// Save original implementation
 	originalImpl := GetScalarImplementation()
@@ -128,6 +138,8 @@ func TestSetScalarImplementation(t *testing.T) {
 
 // TestScalarImplementation_String tests string representation.
 func TestScalarImplementation_String(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		impl     scalarImplementation
 		expected string
@@ -279,11 +291,15 @@ func BenchmarkScalarVsMSECost(b *testing.B) {
 
 // TestScalarUnrolling_RemainderHandling tests that remainder pixels are processed correctly.
 func TestScalarUnrolling_RemainderHandling(t *testing.T) {
+	t.Parallel()
+
 	// Test widths that leave different remainders after unrolling
 	widths := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33}
 
 	for _, width := range widths {
 		t.Run(fmt.Sprintf("width_%d", width), func(t *testing.T) {
+			t.Parallel()
+
 			img1 := randomNRGBA(width, 10, 7777)
 			img2 := randomNRGBA(width, 10, 8888)
 
@@ -306,6 +322,8 @@ func TestScalarUnrolling_RemainderHandling(t *testing.T) {
 
 // TestScalarUnrolling_ExactMultiples tests unrolling with exact multiples of unroll factor.
 func TestScalarUnrolling_ExactMultiples(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name          string
 		width, height int
@@ -318,6 +336,8 @@ func TestScalarUnrolling_ExactMultiples(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			img1 := randomNRGBA(tt.width, tt.height, 9999)
 			img2 := randomNRGBA(tt.width, tt.height, 10000)
 
@@ -335,6 +355,8 @@ func TestScalarUnrolling_ExactMultiples(t *testing.T) {
 
 // TestScalarInt32_NoOverflow tests that int32 arithmetic doesn't overflow.
 func TestScalarInt32_NoOverflow(t *testing.T) {
+	t.Parallel()
+
 	// Create worst-case scenario: maximum differences (255 - 0 = 255)
 	// Squared: 255^2 = 65,025
 	// Per pixel: 3 channels × 65,025 = 195,075

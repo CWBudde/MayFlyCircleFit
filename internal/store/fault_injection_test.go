@@ -18,6 +18,8 @@ import (
 // filesystem/fsync failures, which require an integration fault filesystem.
 
 func TestAtomicWriteFailurePreservesCheckpointAndRecovers(t *testing.T) {
+	t.Parallel()
+
 	fs, _ := setupTestStore(t)
 	jobID := testJobID(1)
 	original := createTestCheckpoint(jobID)
@@ -77,6 +79,8 @@ func TestAtomicWriteFailurePreservesCheckpointAndRecovers(t *testing.T) {
 }
 
 func TestAtomicRenameFailurePreservesCheckpointAndRecovers(t *testing.T) {
+	t.Parallel()
+
 	fs, _ := setupTestStore(t)
 	jobID := testJobID(1)
 	original := createTestCheckpoint(jobID)

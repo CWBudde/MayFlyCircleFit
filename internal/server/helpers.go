@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
+	// Registers the JPEG decoder for image.Decode; the reference image may be a JPEG.
 	_ "image/jpeg"
 	"os"
 

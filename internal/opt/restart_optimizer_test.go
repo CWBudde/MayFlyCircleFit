@@ -60,6 +60,8 @@ func (o *recordingOptimizer) RunContext(_ context.Context, _ Problem, options Ru
 }
 
 func TestWithRestartsKeepsTheBestAttempt(t *testing.T) {
+	t.Parallel()
+
 	base := &recordingOptimizer{costs: []float64{10, 3, 7}, iterations: 5}
 
 	result, err := WithRestarts(base, 3).(LifecycleOptimizer).
@@ -85,6 +87,8 @@ func TestWithRestartsKeepsTheBestAttempt(t *testing.T) {
 // The defining difference from WithEpochs: an attempt must not be handed the
 // previous attempt's result, because inheriting it inherits its basin.
 func TestWithRestartsDoesNotChainFromThePreviousBest(t *testing.T) {
+	t.Parallel()
+
 	base := &recordingOptimizer{costs: []float64{10, 3}, iterations: 5}
 
 	_, err := WithRestarts(base, 2).(LifecycleOptimizer).
@@ -103,6 +107,8 @@ func TestWithRestartsDoesNotChainFromThePreviousBest(t *testing.T) {
 // A caller-supplied candidate is different: a resumed or staged run must not
 // have the work it was handed thrown away.
 func TestWithRestartsPreservesACallerSuppliedInitial(t *testing.T) {
+	t.Parallel()
+
 	base := &recordingOptimizer{costs: []float64{10, 3}, iterations: 5}
 	initial := &Candidate{Params: []float64{1, 2}, Cost: 42}
 
@@ -120,6 +126,8 @@ func TestWithRestartsPreservesACallerSuppliedInitial(t *testing.T) {
 }
 
 func TestWithRestartsGivesEachAttemptADistinctSeedOffset(t *testing.T) {
+	t.Parallel()
+
 	base := &recordingOptimizer{costs: []float64{10, 3, 7}, iterations: 5}
 
 	_, err := WithRestarts(base, 3).(LifecycleOptimizer).
@@ -147,6 +155,8 @@ func TestWithRestartsGivesEachAttemptADistinctSeedOffset(t *testing.T) {
 // Progress is documented as best-so-far, and a fresh attempt's early costs are
 // worse than what an earlier attempt already reached.
 func TestWithRestartsReportsMonotonicProgress(t *testing.T) {
+	t.Parallel()
+
 	base := &recordingOptimizer{costs: []float64{10, 3}, iterations: 5}
 
 	var reported []float64
@@ -226,6 +236,8 @@ func TestWithRestartsForwardsDiagnosticsFromNonImprovingAttempts(t *testing.T) {
 // An observer that persists a checkpoint must never be handed a candidate
 // worse than one it has already stored.
 func TestWithRestartsBoundaryCarriesTheRunningBest(t *testing.T) {
+	t.Parallel()
+
 	base := &recordingOptimizer{costs: []float64{3, 10}, iterations: 5}
 
 	var boundaries []float64
@@ -255,6 +267,8 @@ func TestWithRestartsBoundaryCarriesTheRunningBest(t *testing.T) {
 }
 
 func TestWithRestartsBelowTwoIsTheIdentity(t *testing.T) {
+	t.Parallel()
+
 	base := &recordingOptimizer{costs: []float64{1}}
 	for _, restarts := range []int{-1, 0, 1} {
 		if got := WithRestarts(base, restarts); got != Optimizer(base) {
@@ -270,6 +284,8 @@ func TestWithRestartsBelowTwoIsTheIdentity(t *testing.T) {
 // Restarts wrap epochs at every construction site, so the composition has to
 // hold: each attempt runs its own epoch chain and the attempts stay distinct.
 func TestWithRestartsComposesWithEpochsWithoutSeedAliasing(t *testing.T) {
+	t.Parallel()
+
 	base := &recordingOptimizer{costs: []float64{9, 8, 7, 6}, iterations: 5}
 
 	_, err := WithRestarts(WithEpochs(base, 2), 2).(LifecycleOptimizer).
@@ -301,6 +317,8 @@ func TestWithRestartsComposesWithEpochsWithoutSeedAliasing(t *testing.T) {
 // and swallowing them until the whole epoch chain finished would drop every
 // intermediate checkpoint of an attempt.
 func TestWithRestartsForwardsNestedEpochBoundaries(t *testing.T) {
+	t.Parallel()
+
 	base := &recordingOptimizer{costs: []float64{9, 8, 7, 6}, iterations: 5}
 
 	var boundaries []EpochBoundary
@@ -343,6 +361,8 @@ func TestWithRestartsForwardsNestedEpochBoundaries(t *testing.T) {
 // reached, and an observer that persists them must not be handed that
 // regression.
 func TestWithRestartsNestedBoundariesCarryTheRunningBest(t *testing.T) {
+	t.Parallel()
+
 	base := &recordingOptimizer{costs: []float64{3, 4, 10, 5}, iterations: 5}
 
 	var boundaries []EpochBoundary
@@ -377,6 +397,8 @@ func TestWithRestartsNestedBoundariesCarryTheRunningBest(t *testing.T) {
 // The documented contract: an observer error aborts the remaining work, so a
 // persistence failure cannot be silently ignored for the rest of the run.
 func TestWithRestartsNestedBoundaryErrorAborts(t *testing.T) {
+	t.Parallel()
+
 	base := &recordingOptimizer{costs: []float64{9, 8, 7, 6}, iterations: 5}
 	failure := errors.New("checkpoint failed")
 

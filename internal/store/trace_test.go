@@ -12,6 +12,8 @@ import (
 )
 
 func TestTraceWriter_WriteAndRead(t *testing.T) {
+	t.Parallel()
+
 	// Create temp directory
 	tmpDir := t.TempDir()
 
@@ -108,6 +110,8 @@ func TestTraceWriter_WriteAndRead(t *testing.T) {
 }
 
 func TestTraceWriter_Append(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	jobID := testJobID(1)
 
@@ -170,6 +174,8 @@ func TestTraceWriter_Append(t *testing.T) {
 }
 
 func TestTraceWriter_Flush(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	jobID := testJobID(1)
 
@@ -205,6 +211,8 @@ func TestTraceWriter_Flush(t *testing.T) {
 }
 
 func TestTraceReader_ReadIteratively(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	jobID := testJobID(1)
 
@@ -256,6 +264,8 @@ func TestTraceReader_ReadIteratively(t *testing.T) {
 }
 
 func TestTraceReader_NotFound(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	jobID := testJobID(99)
 
@@ -271,6 +281,8 @@ func TestTraceReader_NotFound(t *testing.T) {
 }
 
 func TestTraceWriter_WithParams(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	jobID := testJobID(1)
 
@@ -323,6 +335,8 @@ func TestTraceWriter_WithParams(t *testing.T) {
 }
 
 func TestTraceWriter_EmptyParams(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	jobID := testJobID(1)
 
@@ -365,6 +379,8 @@ func TestTraceWriter_EmptyParams(t *testing.T) {
 }
 
 func TestDeleteTrace(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	jobID := testJobID(1)
 
@@ -374,7 +390,11 @@ func TestDeleteTrace(t *testing.T) {
 		t.Fatalf("Failed to create trace writer: %v", err)
 	}
 
-	writer.Write(TraceEntry{Iteration: 0, Cost: 1.0, Timestamp: time.Now()})
+	err = writer.Write(TraceEntry{Iteration: 0, Cost: 1.0, Timestamp: time.Now()})
+	if err != nil {
+		t.Fatalf("Failed to write trace entry: %v", err)
+	}
+
 	writer.Close()
 
 	// Verify file exists
@@ -399,6 +419,8 @@ func TestDeleteTrace(t *testing.T) {
 }
 
 func TestDeleteTrace_NotFound(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	jobID := testJobID(99)
 
@@ -410,6 +432,8 @@ func TestDeleteTrace_NotFound(t *testing.T) {
 }
 
 func TestTraceWriter_ConcurrentWrites(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	jobID := testJobID(1)
 

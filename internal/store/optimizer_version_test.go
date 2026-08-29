@@ -18,6 +18,8 @@ func optimizerVersionTestConfig() JobConfig {
 // guard: a checkpoint has to say which optimizer produced it, or a later resume
 // cannot tell that it is crossing a comparability boundary.
 func TestNewCheckpointRecordsOptimizerVersion(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := NewCheckpoint(testJobID(1), []float64{1, 2, 3, 0.1, 0.2, 0.3, 0.4}, 0.1, 1, 42, optimizerVersionTestConfig())
 
 	if want := opt.LibraryVersion(); checkpoint.OptimizerVersion != want {
@@ -28,6 +30,8 @@ func TestNewCheckpointRecordsOptimizerVersion(t *testing.T) {
 // TestCheckpointOptimizerVersionRoundTrips pins the field through the wire
 // format, including the listing projection a status view reads.
 func TestCheckpointOptimizerVersionRoundTrips(t *testing.T) {
+	t.Parallel()
+
 	checkpoint := NewCheckpoint(testJobID(2), []float64{1, 2, 3, 0.1, 0.2, 0.3, 0.4}, 0.1, 1, 42, optimizerVersionTestConfig())
 	checkpoint.OptimizerVersion = "v0.4.0"
 
@@ -60,6 +64,8 @@ func TestCheckpointOptimizerVersionRoundTrips(t *testing.T) {
 // compatibility promise: a checkpoint written before the field existed decodes
 // with it empty rather than being rejected.
 func TestLegacyCheckpointHasNoOptimizerVersion(t *testing.T) {
+	t.Parallel()
+
 	legacy := fmt.Sprintf(`{
 		"jobId": %q,
 		"bestParams": [1,2,3,0.1,0.2,0.3,0.4],

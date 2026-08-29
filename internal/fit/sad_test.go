@@ -14,6 +14,8 @@ import (
 
 // TestSAD_IdenticalImages verifies SAD returns 0 for identical images.
 func TestSAD_IdenticalImages(t *testing.T) {
+	t.Parallel()
+
 	sizes := []struct {
 		width, height int
 	}{
@@ -26,6 +28,8 @@ func TestSAD_IdenticalImages(t *testing.T) {
 
 	for _, sz := range sizes {
 		t.Run(fmt.Sprintf("%dx%d", sz.width, sz.height), func(t *testing.T) {
+			t.Parallel()
+
 			img := randomNRGBA(sz.width, sz.height, 42)
 			cost := FastSAD(img, img)
 
@@ -37,6 +41,8 @@ func TestSAD_IdenticalImages(t *testing.T) {
 }
 
 // TestSAD_ScalarEquivalence verifies AVX2 matches scalar implementation.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestSAD_ScalarEquivalence(t *testing.T) {
 	sizes := []struct {
 		width, height int
@@ -47,6 +53,7 @@ func TestSAD_ScalarEquivalence(t *testing.T) {
 		{17, 23}, // Non-power-of-2
 	}
 
+	//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 	for _, sz := range sizes {
 		t.Run(fmt.Sprintf("%dx%d", sz.width, sz.height), func(t *testing.T) {
 			img1 := randomNRGBA(sz.width, sz.height, 100)
@@ -69,6 +76,8 @@ func TestSAD_ScalarEquivalence(t *testing.T) {
 
 // TestSAD_KnownValues tests SAD with manually computed expected values.
 func TestSAD_KnownValues(t *testing.T) {
+	t.Parallel()
+
 	// Create two 2x2 images with known pixel values
 	img1 := image.NewNRGBA(image.Rect(0, 0, 2, 2))
 	img2 := image.NewNRGBA(image.Rect(0, 0, 2, 2))
@@ -104,6 +113,8 @@ func TestSAD_KnownValues(t *testing.T) {
 
 // TestSAD_AlphaIgnored verifies alpha channel is ignored.
 func TestSAD_AlphaIgnored(t *testing.T) {
+	t.Parallel()
+
 	img1 := image.NewNRGBA(image.Rect(0, 0, 4, 4))
 	img2 := image.NewNRGBA(image.Rect(0, 0, 4, 4))
 
@@ -127,6 +138,8 @@ func TestSAD_AlphaIgnored(t *testing.T) {
 
 // TestSAD_AVX2_BatchBoundaries tests AVX2 batch processing with various widths
 // AVX2 processes 8 pixels per batch, so we test exact multiples and remainders.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestSAD_AVX2_BatchBoundaries(t *testing.T) {
 	if ActiveSADKernel() != TierAVX2 {
 		t.Skipf("Skipping AVX2 batch boundary test: active backend is %s, not AVX2", ActiveSADKernel())
@@ -136,6 +149,7 @@ func TestSAD_AVX2_BatchBoundaries(t *testing.T) {
 	widths := []int{7, 8, 9, 15, 16, 17, 23, 24, 25, 31, 32, 33, 63, 64, 65}
 	height := 10
 
+	//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 	for _, width := range widths {
 		t.Run(fmt.Sprintf("width_%d", width), func(t *testing.T) {
 			img1 := randomNRGBA(width, height, 300)
@@ -161,6 +175,8 @@ func TestSAD_AVX2_BatchBoundaries(t *testing.T) {
 
 // TestSAD_NEON_BatchBoundaries tests NEON batch processing with various widths
 // NEON processes 4 pixels per batch (128-bit registers), so we test multiples of 4.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestSAD_NEON_BatchBoundaries(t *testing.T) {
 	if ActiveSADKernel() != TierNEON {
 		t.Skipf("Skipping NEON batch boundary test: active backend is %s, not NEON", ActiveSADKernel())
@@ -170,6 +186,7 @@ func TestSAD_NEON_BatchBoundaries(t *testing.T) {
 	widths := []int{3, 4, 5, 7, 8, 9, 11, 12, 13, 15, 16, 17}
 	height := 10
 
+	//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 	for _, width := range widths {
 		t.Run(fmt.Sprintf("width_%d", width), func(t *testing.T) {
 			img1 := randomNRGBA(width, height, 300)
@@ -197,6 +214,8 @@ func TestSAD_NEON_BatchBoundaries(t *testing.T) {
 
 // TestSAD_ConcurrentAccess tests thread-safety of SAD computation.
 func TestSAD_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
 	img1 := randomNRGBA(256, 256, 333)
 	img2 := randomNRGBA(256, 256, 444)
 
@@ -239,6 +258,8 @@ func TestSAD_ConcurrentAccess(t *testing.T) {
 // ---------------------- Large Image Tests ----------------------
 
 // TestSAD_LargeImages stress tests with very large images.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestSAD_LargeImages(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping large image test in short mode")
@@ -251,6 +272,7 @@ func TestSAD_LargeImages(t *testing.T) {
 		{2048, 2048}, // 4M pixels
 	}
 
+	//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 	for _, sz := range sizes {
 		t.Run(fmt.Sprintf("%dx%d", sz.width, sz.height), func(t *testing.T) {
 			img1 := randomNRGBA(sz.width, sz.height, 333)
@@ -285,6 +307,8 @@ func TestSAD_LargeImages(t *testing.T) {
 
 // TestSAD_PaddedStride tests handling of non-standard stride (padded images).
 func TestSAD_PaddedStride(t *testing.T) {
+	t.Parallel()
+
 	width, height := 63, 32 // Non-multiple of 8 (tests remainder handling)
 
 	// Create image with padded stride (align to 64 bytes)
@@ -331,6 +355,8 @@ func TestSAD_PaddedStride(t *testing.T) {
 // ---------------------- Backend Selection Tests ----------------------
 
 // TestSAD_BackendSelection validates that the correct backend was selected based on CPU features.
+//
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestSAD_BackendSelection(t *testing.T) {
 	t.Logf("Active SAD backend: %s", ActiveSADKernel())
 

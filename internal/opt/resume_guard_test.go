@@ -28,6 +28,8 @@ const (
 // version is supplied rather than read, so the table can exercise a real
 // mismatch even though a test binary carries no module information.
 func TestGuardCheckpointVersion(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name          string
 		library       string
@@ -169,6 +171,8 @@ func TestGuardCheckpointVersion(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			library := testCase.library
 			if library == "" {
 				library = "MayFly"

@@ -231,7 +231,7 @@ type Result struct {
 // LifecycleOptimizer supports errors, cooperative cancellation, measured
 // progress, and genuine restart-from-best population seeding.
 type LifecycleOptimizer interface {
-	RunContext(context.Context, Problem, RunOptions) (Result, error)
+	RunContext(ctx context.Context, problem Problem, options RunOptions) (Result, error)
 }
 
 // Optimizer defines an optimization algorithm interface.

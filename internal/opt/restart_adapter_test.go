@@ -29,6 +29,8 @@ func restartProblem(dim int) Problem {
 // Restarts must stay reproducible for a fixed base seed; the attempts vary the
 // seed deterministically rather than drawing fresh entropy.
 func TestRestartsAreReproducibleForAFixedSeed(t *testing.T) {
+	t.Parallel()
+
 	run := func() Result {
 		optimizer := WithRestarts(NewMayfly(20, 12, 7), 3).(LifecycleOptimizer)
 
@@ -55,6 +57,8 @@ func TestRestartsAreReproducibleForAFixedSeed(t *testing.T) {
 // The attempts must actually differ. If they collapsed onto one seed, every
 // attempt would return the same cost and the wrapper would be dead weight.
 func TestRestartAttemptsExploreDifferently(t *testing.T) {
+	t.Parallel()
+
 	base := NewMayfly(20, 12, 7).(LifecycleOptimizer)
 	problem := restartProblem(4)
 
@@ -76,6 +80,8 @@ func TestRestartAttemptsExploreDifferently(t *testing.T) {
 
 // A restarted run must never return worse than its own best attempt.
 func TestRestartsNeverReturnWorseThanTheBestAttempt(t *testing.T) {
+	t.Parallel()
+
 	problem := restartProblem(4)
 
 	best := math.Inf(1)

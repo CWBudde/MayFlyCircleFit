@@ -3,6 +3,8 @@ package app
 import "testing"
 
 func TestValidateProjectSlug(t *testing.T) {
+	t.Parallel()
+
 	valid := []Project{
 		"default",
 		"ref",

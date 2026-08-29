@@ -4,6 +4,7 @@ package fit
 
 import "testing"
 
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestGenericSIMDDispatchUsesScalarBackends(t *testing.T) {
 	if Tier() != TierScalar {
 		t.Fatalf("tier = %s, want scalar", Tier())

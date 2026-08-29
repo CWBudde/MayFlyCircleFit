@@ -3,6 +3,8 @@ package app
 import "testing"
 
 func TestOptimizerRestartsDefaultsToOne(t *testing.T) {
+	t.Parallel()
+
 	config, err := Normalize(JobConfig{RefPath: "reference.png"})
 	if err != nil {
 		t.Fatal(err)
@@ -15,6 +17,8 @@ func TestOptimizerRestartsDefaultsToOne(t *testing.T) {
 }
 
 func TestOptimizerRestartsBounds(t *testing.T) {
+	t.Parallel()
+
 	for _, testCase := range []struct {
 		name     string
 		restarts int
@@ -27,6 +31,8 @@ func TestOptimizerRestartsBounds(t *testing.T) {
 		{"above limit", MaxOptimizerRestarts + 1, false},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			_, err := Normalize(JobConfig{
 				RefPath:           "reference.png",
 				OptimizerRestarts: testCase.restarts,
@@ -46,6 +52,8 @@ func TestOptimizerRestartsBounds(t *testing.T) {
 // Restarts multiply the planned work exactly as epochs do. A plan that ignored
 // them would under-report a restarted campaign's cost by the restart factor.
 func TestPlannedIterationsCountsRestarts(t *testing.T) {
+	t.Parallel()
+
 	base, err := Normalize(JobConfig{RefPath: "reference.png", Mode: ModeJoint, Iters: 100})
 	if err != nil {
 		t.Fatal(err)

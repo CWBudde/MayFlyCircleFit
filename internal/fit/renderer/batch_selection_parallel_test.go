@@ -20,8 +20,8 @@ const (
 	selectionParityCircles = 48
 )
 
-func selectionParityFixture(t testing.TB) (*image.NRGBA, []float64) {
-	t.Helper()
+func selectionParityFixture(tb testing.TB) (*image.NRGBA, []float64) {
+	tb.Helper()
 
 	reference := solidImage(selectionParityWidth, selectionParityHeight, color.NRGBA{R: 60, G: 120, B: 180, A: 255})
 	for y := range selectionParityHeight {

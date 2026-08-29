@@ -8,6 +8,8 @@ import (
 )
 
 func TestMSECost(t *testing.T) {
+	t.Parallel()
+
 	// Create two identical 2x2 white images
 	img1 := image.NewNRGBA(image.Rect(0, 0, 2, 2))
 	img2 := image.NewNRGBA(image.Rect(0, 0, 2, 2))
@@ -28,6 +30,8 @@ func TestMSECost(t *testing.T) {
 }
 
 func TestCostsSupportIndependentOriginsAndStrides(t *testing.T) {
+	t.Parallel()
+
 	currentParent := image.NewNRGBA(image.Rect(0, 0, 8, 6))
 	referenceParent := image.NewNRGBA(image.Rect(10, 20, 21, 28))
 	current := currentParent.SubImage(image.Rect(2, 1, 6, 4)).(*image.NRGBA)
@@ -59,6 +63,8 @@ func TestCostsSupportIndependentOriginsAndStrides(t *testing.T) {
 }
 
 func TestExactSSD(t *testing.T) {
+	t.Parallel()
+
 	white := image.NewNRGBA(image.Rect(0, 0, 2, 2))
 	black := image.NewNRGBA(image.Rect(0, 0, 2, 2))
 
@@ -91,6 +97,8 @@ func TestExactSSD(t *testing.T) {
 }
 
 func TestCostsRejectEmptyAndMismatchedImages(t *testing.T) {
+	t.Parallel()
+
 	empty := image.NewNRGBA(image.Rect(0, 0, 0, 0))
 	nonempty := image.NewNRGBA(image.Rect(0, 0, 1, 1))
 
@@ -106,6 +114,8 @@ func TestCostsRejectEmptyAndMismatchedImages(t *testing.T) {
 }
 
 func TestMSECostDifferent(t *testing.T) {
+	t.Parallel()
+
 	// Create white and black 2x2 images
 	white := image.NewNRGBA(image.Rect(0, 0, 2, 2))
 	black := image.NewNRGBA(image.Rect(0, 0, 2, 2))
@@ -132,6 +142,8 @@ func TestMSECostDifferent(t *testing.T) {
 }
 
 func TestMSECostSinglePixel(t *testing.T) {
+	t.Parallel()
+
 	// Two identical images except one red pixel
 	img1 := image.NewNRGBA(image.Rect(0, 0, 2, 2))
 	img2 := image.NewNRGBA(image.Rect(0, 0, 2, 2))

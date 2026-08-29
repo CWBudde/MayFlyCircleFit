@@ -39,6 +39,8 @@ func (o *epochProbeOptimizer) RunContext(_ context.Context, _ Problem, options R
 }
 
 func TestEpochOptimizerReportsMappedDurableBoundaries(t *testing.T) {
+	t.Parallel()
+
 	base := &epochProbeOptimizer{}
 	optimizer := WithEpochs(base, 3).(LifecycleOptimizer)
 	var boundaries []EpochBoundary
@@ -75,6 +77,8 @@ func TestEpochOptimizerReportsMappedDurableBoundaries(t *testing.T) {
 }
 
 func TestWithEpochsPreservesSingleEpochIdentity(t *testing.T) {
+	t.Parallel()
+
 	base := &epochProbeOptimizer{}
 	if got := WithEpochs(base, 1); got != base {
 		t.Fatalf("WithEpochs(base, 1) = %T, want original optimizer", got)
@@ -82,6 +86,8 @@ func TestWithEpochsPreservesSingleEpochIdentity(t *testing.T) {
 }
 
 func TestEpochOptimizerReseedsAndReportsCumulativeProgress(t *testing.T) {
+	t.Parallel()
+
 	base := &epochProbeOptimizer{}
 	optimizer := WithEpochs(base, 4).(LifecycleOptimizer)
 	initial := &Candidate{Params: []float64{0}, Cost: 10}

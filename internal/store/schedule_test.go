@@ -66,6 +66,8 @@ func newScheduleStore(t *testing.T) (*FSStore, string) {
 // campaign and its realized lineage must come back from disk without an
 // external ledger.
 func TestScheduleSurvivesAStoreRestart(t *testing.T) {
+	t.Parallel()
+
 	fsStore, dir := newScheduleStore(t)
 
 	record := testScheduleRecord(t)
@@ -151,6 +153,8 @@ func TestScheduleSurvivesAStoreRestart(t *testing.T) {
 }
 
 func TestSaveScheduleStageIsIdempotentPerIndex(t *testing.T) {
+	t.Parallel()
+
 	fsStore, _ := newScheduleStore(t)
 
 	record := testScheduleRecord(t)
@@ -202,6 +206,8 @@ func TestSaveScheduleStageIsIdempotentPerIndex(t *testing.T) {
 // listing leans on: the listing carries no configuration, so the configuration
 // a stage ran with has to be readable on its own.
 func TestLoadScheduleStageReadsOneStage(t *testing.T) {
+	t.Parallel()
+
 	fsStore, _ := newScheduleStore(t)
 
 	record := testScheduleRecord(t)
@@ -258,6 +264,8 @@ func TestLoadScheduleStageReadsOneStage(t *testing.T) {
 }
 
 func TestScheduleStoreNotFoundAndListing(t *testing.T) {
+	t.Parallel()
+
 	fsStore, _ := newScheduleStore(t)
 
 	_, err := fsStore.LoadSchedule(testScheduleID)
@@ -312,6 +320,8 @@ func TestScheduleStoreNotFoundAndListing(t *testing.T) {
 }
 
 func TestScheduleStoreRejectsInvalidInput(t *testing.T) {
+	t.Parallel()
+
 	fsStore, _ := newScheduleStore(t)
 	valid := testScheduleRecord(t)
 
@@ -495,6 +505,7 @@ func TestScheduleStoreRejectsInvalidInput(t *testing.T) {
 			wantErr: "State",
 		},
 	}
+	//nolint:paralleltest // the subtests share one store and the order they save into it
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			err := test.run()
@@ -513,6 +524,8 @@ func TestScheduleStoreRejectsInvalidInput(t *testing.T) {
 // record must carry a concrete seed even when the document omitted one, or the
 // stages replanned after a restart would use a fresh random campaign seed.
 func TestScheduleRecordResolvesAnOmittedSeed(t *testing.T) {
+	t.Parallel()
+
 	doc, err := app.ParseSchedule([]byte(`{
 		"base": {"refPath": "assets/ref.png", "mode": "batch", "circles": 8, "batchSize": 8, "iters": 200, "popSize": 30},
 		"steps": [{"type": "extend", "additionalCircles": 8}]
@@ -560,6 +573,8 @@ func TestScheduleRecordResolvesAnOmittedSeed(t *testing.T) {
 // TestScheduleStoreRefusesASymlinkedRecord keeps the schedule reader inside the
 // store, matching the guard the checkpoint artifacts already have.
 func TestScheduleStoreRefusesASymlinkedRecord(t *testing.T) {
+	t.Parallel()
+
 	fsStore, dir := newScheduleStore(t)
 
 	record := testScheduleRecord(t)
@@ -600,6 +615,8 @@ func TestScheduleStoreRefusesASymlinkedRecord(t *testing.T) {
 // contained. Reading one stage by index has to refuse it exactly as listing
 // them all does.
 func TestScheduleStoreRefusesASymlinkedStagesDirectory(t *testing.T) {
+	t.Parallel()
+
 	fsStore, dir := newScheduleStore(t)
 
 	record := testScheduleRecord(t)
@@ -672,6 +689,8 @@ func mustEncodeStage(t *testing.T, stage *ScheduleStageRecord) string {
 // TestScheduleStoreSatisfiesTheInterface pins the contract 16.2's executor will
 // program against.
 func TestScheduleStoreSatisfiesTheInterface(t *testing.T) {
+	t.Parallel()
+
 	fsStore, _ := newScheduleStore(t)
 	var _ ScheduleStore = fsStore
 }
@@ -680,6 +699,8 @@ func TestScheduleStoreSatisfiesTheInterface(t *testing.T) {
 // campaign can be paused between stages, but a stage cannot be, because a stage
 // is the unit that either runs to a result or does not.
 func TestPausedIsAScheduleStateOnly(t *testing.T) {
+	t.Parallel()
+
 	fsStore, _ := newScheduleStore(t)
 	record := testScheduleRecord(t)
 
@@ -718,6 +739,8 @@ func TestPausedIsAScheduleStateOnly(t *testing.T) {
 // declines individual stages, never whole campaigns, and a declined stage never
 // ran and so can name no job.
 func TestSkippedIsAStageStateOnly(t *testing.T) {
+	t.Parallel()
+
 	fsStore, _ := newScheduleStore(t)
 
 	record := testScheduleRecord(t)

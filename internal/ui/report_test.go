@@ -12,6 +12,8 @@ import (
 )
 
 func TestJobReportPageRendersSelfContainedContent(t *testing.T) {
+	t.Parallel()
+
 	ended := time.Date(2026, time.August, 14, 1, 2, 3, 0, time.UTC)
 	report := JobReport{
 		ID: "12345678-1234-1234-1234-123456789abc", State: "completed", Mode: "joint",
@@ -59,6 +61,8 @@ func TestJobReportPageRendersSelfContainedContent(t *testing.T) {
 }
 
 func TestJobReportPageOmitsMissingEndTime(t *testing.T) {
+	t.Parallel()
+
 	report := JobReport{
 		ID: "12345678-1234-1234-1234-123456789abc", StartTime: time.Now(), GeneratedAt: time.Now(),
 		ReferenceDataURI: "data:image/png;base64,AA==", BestDataURI: "data:image/png;base64,AA==",
@@ -78,6 +82,8 @@ func TestJobReportPageOmitsMissingEndTime(t *testing.T) {
 }
 
 func TestJobReportComponentsHonorCancelledContext(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -92,6 +98,8 @@ func TestJobReportComponentsHonorCancelledContext(t *testing.T) {
 	}
 	for _, test := range components {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			err := test.component.Render(ctx, &bytes.Buffer{})
 			if !errors.Is(err, context.Canceled) {
 				t.Fatalf("render error = %v, want context cancellation", err)

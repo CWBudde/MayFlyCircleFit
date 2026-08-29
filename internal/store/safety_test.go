@@ -15,6 +15,8 @@ import (
 )
 
 func TestFSStoreRejectsUnsafeJobIDs(t *testing.T) {
+	t.Parallel()
+
 	fs, _ := setupTestStore(t)
 	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
 
@@ -28,6 +30,8 @@ func TestFSStoreRejectsUnsafeJobIDs(t *testing.T) {
 	}
 	for _, jobID := range invalid {
 		t.Run(fmt.Sprintf("%q", jobID), func(t *testing.T) {
+			t.Parallel()
+
 			checkpoint := createTestCheckpoint(jobID)
 
 			operations := []struct {
@@ -55,6 +59,8 @@ func TestFSStoreRejectsUnsafeJobIDs(t *testing.T) {
 }
 
 func TestSaveCheckpointRequiresMatchingJobID(t *testing.T) {
+	t.Parallel()
+
 	fs, _ := setupTestStore(t)
 	jobID := testJobID(1)
 
@@ -67,6 +73,8 @@ func TestSaveCheckpointRequiresMatchingJobID(t *testing.T) {
 }
 
 func TestConcurrentSaveSameJobIsAtomic(t *testing.T) {
+	t.Parallel()
+
 	fs, _ := setupTestStore(t)
 	jobID := testJobID(1)
 
@@ -132,6 +140,8 @@ func TestConcurrentSaveSameJobIsAtomic(t *testing.T) {
 }
 
 func TestAtomicSnapshotAndCircleDataWrites(t *testing.T) {
+	t.Parallel()
+
 	fs, _ := setupTestStore(t)
 	jobID := testJobID(1)
 	const writers = 24
@@ -207,6 +217,8 @@ func TestAtomicSnapshotAndCircleDataWrites(t *testing.T) {
 }
 
 func TestFSStoreRefusesSymlinkJobDirectory(t *testing.T) {
+	t.Parallel()
+
 	fs, root := setupTestStore(t)
 	outside := t.TempDir()
 	jobID := testJobID(1)
@@ -234,6 +246,8 @@ func TestFSStoreRefusesSymlinkJobDirectory(t *testing.T) {
 }
 
 func TestFSStoreRefusesSymlinkArtifact(t *testing.T) {
+	t.Parallel()
+
 	fs, _ := setupTestStore(t)
 	jobID := testJobID(1)
 
@@ -266,6 +280,8 @@ func TestFSStoreRefusesSymlinkArtifact(t *testing.T) {
 }
 
 func TestStorePermissionsAndPNGArtifactAPI(t *testing.T) {
+	t.Parallel()
+
 	fs, _ := setupTestStore(t)
 	jobID := testJobID(1)
 
@@ -327,6 +343,8 @@ func TestStorePermissionsAndPNGArtifactAPI(t *testing.T) {
 }
 
 func TestCheckpointSchemaV2RoundTrip(t *testing.T) {
+	t.Parallel()
+
 	config := JobConfig{
 		RefPath:       "reference.png",
 		Mode:          "joint",
@@ -367,6 +385,8 @@ func TestCheckpointSchemaV2RoundTrip(t *testing.T) {
 }
 
 func TestCheckpointMigratesMissingVersionV1(t *testing.T) {
+	t.Parallel()
+
 	legacy := fmt.Sprintf(`{
 		"jobId": %q,
 		"bestParams": [1,2,3,0.1,0.2,0.3,0.4],
@@ -399,6 +419,8 @@ func TestCheckpointMigratesMissingVersionV1(t *testing.T) {
 }
 
 func TestCheckpointRejectsFutureSchema(t *testing.T) {
+	t.Parallel()
+
 	data := fmt.Sprintf(`{"schemaVersion":%d,"jobId":%q}`, CheckpointSchemaVersion+1, testJobID(1))
 
 	var checkpoint Checkpoint

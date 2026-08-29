@@ -72,6 +72,8 @@ func runLoggedOptimization(t *testing.T, handler *captureHandler, maxIters int) 
 // level a run must emit exactly one optimizer record regardless of iteration
 // count.
 func TestMayflyLoggerDemotesHighFrequencyEvents(t *testing.T) {
+	t.Parallel()
+
 	handler := &captureHandler{level: slog.LevelInfo}
 	runLoggedOptimization(t, handler, 25)
 
@@ -96,6 +98,8 @@ func TestMayflyLoggerDemotesHighFrequencyEvents(t *testing.T) {
 // TestMayflyLoggerEmitsIterationDetailAtDebug covers the escape hatch: debug
 // level still exposes the full per-iteration history.
 func TestMayflyLoggerEmitsIterationDetailAtDebug(t *testing.T) {
+	t.Parallel()
+
 	const iterations = 12
 	handler := &captureHandler{level: slog.LevelDebug}
 	runLoggedOptimization(t, handler, iterations)
@@ -116,6 +120,8 @@ func TestMayflyLoggerEmitsIterationDetailAtDebug(t *testing.T) {
 
 // TestMayflyLoggerNilIsSafe keeps WithLogger(nil) a real off switch.
 func TestMayflyLoggerNilIsSafe(t *testing.T) {
+	t.Parallel()
+
 	optimizer := NewMayfly(5, 20, 42, WithLogger(nil)).(*MayflyAdapter)
 	if optimizer.logger != nil {
 		t.Fatal("WithLogger(nil) stored a logger")
@@ -135,6 +141,8 @@ func TestMayflyLoggerNilIsSafe(t *testing.T) {
 // TestRemapEventLevelKeepsUnknownEvents ensures a new upstream event is never
 // silently hidden by this adapter.
 func TestRemapEventLevelKeepsUnknownEvents(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		args []any
@@ -153,6 +161,8 @@ func TestRemapEventLevelKeepsUnknownEvents(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := remapEventLevel(slog.LevelInfo, test.args); got != test.want {
 				t.Fatalf("remapEventLevel() = %v, want %v", got, test.want)
 			}

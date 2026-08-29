@@ -6,6 +6,8 @@ import (
 )
 
 func TestCircleEncoding(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		circle Circle
@@ -26,6 +28,8 @@ func TestCircleEncoding(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			params := NewParamVector(1, tt.width, tt.height)
 			params.EncodeCircle(0, tt.circle)
 			decoded := params.DecodeCircle(0)
@@ -46,6 +50,8 @@ func TestCircleEncoding(t *testing.T) {
 }
 
 func TestBoundsValidation(t *testing.T) {
+	t.Parallel()
+
 	width, height := 100, 100
 	bounds := NewBounds(1, width, height)
 
@@ -76,6 +82,8 @@ func TestBoundsValidation(t *testing.T) {
 }
 
 func TestClampCircle(t *testing.T) {
+	t.Parallel()
+
 	bounds := NewBounds(1, 100, 100)
 
 	// Out of bounds circle
@@ -109,6 +117,8 @@ func TestClampCircle(t *testing.T) {
 }
 
 func TestRequiredCircleRadius(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		x, y       float64
@@ -124,6 +134,8 @@ func TestRequiredCircleRadius(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := RequiredCircleRadius(tt.x, tt.y, tt.width, tt.height); math.Abs(got-tt.wantRadius) > 1e-12 {
 				t.Fatalf("RequiredCircleRadius() = %g, want %g", got, tt.wantRadius)
 			}
@@ -132,6 +144,8 @@ func TestRequiredCircleRadius(t *testing.T) {
 }
 
 func TestRequiredCircleRadiusCoversRasterSampleAfterQ16Quantization(t *testing.T) {
+	t.Parallel()
+
 	const q16Scale = 1 << 16
 	tests := []struct {
 		name          string
@@ -146,6 +160,8 @@ func TestRequiredCircleRadiusCoversRasterSampleAfterQ16Quantization(t *testing.T
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			nearestX := clamp(math.Round(tt.x), 0, float64(tt.width-1))
 			nearestY := clamp(math.Round(tt.y), 0, float64(tt.height-1))
 			xQ := int64(math.Round(tt.x * q16Scale))
@@ -170,6 +186,8 @@ func TestRequiredCircleRadiusCoversRasterSampleAfterQ16Quantization(t *testing.T
 }
 
 func TestBoundsValidateCircle(t *testing.T) {
+	t.Parallel()
+
 	bounds := NewBounds(1, 100, 80)
 
 	tests := []struct {
@@ -190,6 +208,8 @@ func TestBoundsValidateCircle(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			err := bounds.ValidateCircle(tt.circle)
 			if (err == nil) != tt.valid {
 				t.Fatalf("ValidateCircle() error = %v, valid = %t", err, tt.valid)
@@ -199,6 +219,8 @@ func TestBoundsValidateCircle(t *testing.T) {
 }
 
 func TestClampCircleRaisesRadiusForOutsideCenter(t *testing.T) {
+	t.Parallel()
+
 	bounds := NewBounds(1, 100, 80)
 	clamped := bounds.ClampCircle(Circle{X: -30, Y: -40, R: 1, Opacity: 0})
 
@@ -218,6 +240,8 @@ func TestClampCircleRaisesRadiusForOutsideCenter(t *testing.T) {
 }
 
 func TestClampIndependentVectorPreservesDynamicRadiusViolation(t *testing.T) {
+	t.Parallel()
+
 	bounds := NewBounds(1, 100, 80)
 	params := []float64{-100, 200, 0, -1, 2, 0.5, 0}
 	bounds.ClampIndependentVector(params)

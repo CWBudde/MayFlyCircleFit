@@ -13,8 +13,12 @@ import (
 // three, so four were unreachable from the CLI, the server, and schedule
 // documents.
 func TestValidateAcceptsEveryVariant(t *testing.T) {
+	t.Parallel()
+
 	for _, variant := range SupportedVariants() {
 		t.Run(string(variant), func(t *testing.T) {
+			t.Parallel()
+
 			config := DefaultConfig()
 			config.RefPath = "reference.png"
 			config.Variant = variant
@@ -32,6 +36,8 @@ func TestValidateAcceptsEveryVariant(t *testing.T) {
 }
 
 func TestSupportedVariantsListsEveryConstantOnce(t *testing.T) {
+	t.Parallel()
+
 	want := []Variant{
 		VariantStandard,
 		VariantDESMA,
@@ -47,6 +53,8 @@ func TestSupportedVariantsListsEveryConstantOnce(t *testing.T) {
 }
 
 func TestValidateRejectsUnknownVariantAndNamesTheAcceptedOnes(t *testing.T) {
+	t.Parallel()
+
 	config := DefaultConfig()
 	config.RefPath = "reference.png"
 	config.Variant = Variant("desna")

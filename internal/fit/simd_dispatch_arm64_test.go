@@ -13,6 +13,7 @@ import (
 
 const ssdNEONDisabledHelper = "CIRCLEFIT_TEST_SSD_NEON_DISABLED"
 
+//nolint:paralleltest // shares the process-global SIMD tier the forced-tier tests mutate
 func TestARM64SIMDDispatchMatchesCPUFeatures(t *testing.T) {
 	// The environment overrides outrank the feature check: ASIMD is mandatory
 	// on ARM64 and stays reported even when the scalar fallback was requested.
@@ -42,6 +43,8 @@ func TestARM64SIMDDispatchMatchesCPUFeatures(t *testing.T) {
 // TestARM64SSDKernelPerForcedTier is the in-process ladder walk, the arm64 twin
 // of the amd64 test. It needs no subprocess because tier forcing re-runs every
 // registered dispatch site.
+//
+//nolint:paralleltest // forces the process-global SIMD tier, which no two tests may do at once
 func TestARM64SSDKernelPerForcedTier(t *testing.T) {
 	tiers := []SIMDTier{TierScalar}
 	if cpu.ARM64.HasASIMD {
@@ -51,6 +54,7 @@ func TestARM64SSDKernelPerForcedTier(t *testing.T) {
 	a := []uint8{0, 10, 20, 255}
 	b := []uint8{30, 40, 50, 0}
 
+	//nolint:paralleltest // each subtest runs under a forced tier the loop owns
 	for _, tier := range tiers {
 		t.Run(tier.String(), func(t *testing.T) {
 			SetForcedTier(tier)
@@ -73,6 +77,8 @@ func TestARM64SSDKernelPerForcedTier(t *testing.T) {
 //
 // cpu.all=off is used because ASIMD is mandatory on ARM64 and is not exposed as
 // an individual Go runtime feature override on every supported toolchain.
+//
+//nolint:paralleltest // spawns a subprocess that re-detects the process-global SIMD tier
 func TestSSDNEONDisabledFallback(t *testing.T) {
 	if os.Getenv(ssdNEONDisabledHelper) == "1" {
 		if cpu.ARM64.HasASIMD {

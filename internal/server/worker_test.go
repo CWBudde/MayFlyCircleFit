@@ -1082,6 +1082,8 @@ func TestRunJob_Cancellation(t *testing.T) {
 
 // Helper function to create a simple test image.
 func createTestImage(t *testing.T, path string) {
+	t.Helper()
+
 	img := image.NewNRGBA(image.Rect(0, 0, 50, 50))
 	white := color.NRGBA{255, 255, 255, 255}
 	red := color.NRGBA{255, 0, 0, 255}

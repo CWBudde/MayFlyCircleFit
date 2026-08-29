@@ -37,6 +37,8 @@ func readScheduleExample(t *testing.T) []byte {
 // TestReferenceCampaignPlanMatchesTheHandComputation; this test checks the
 // documented file reproduces it.
 func TestDocumentedExamplePlansTheReferenceCampaign(t *testing.T) {
+	t.Parallel()
+
 	document, err := ParseSchedule(readScheduleExample(t))
 	if err != nil {
 		t.Fatalf("the documented example does not parse: %v", err)
@@ -80,6 +82,8 @@ func TestDocumentedExamplePlansTheReferenceCampaign(t *testing.T) {
 // apart in either direction: editing the example without editing the tests, or
 // the reverse, fails here.
 func TestDocumentedExampleIsTheCampaignTheTestsAlreadyPin(t *testing.T) {
+	t.Parallel()
+
 	documented, err := ParseSchedule(readScheduleExample(t))
 	if err != nil {
 		t.Fatalf("the documented example does not parse: %v", err)

@@ -467,11 +467,11 @@ func TestServer_JobControlActions_E2E(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	delete := httptest.NewRecorder()
-	server.Handler().ServeHTTP(delete, httptest.NewRequest(http.MethodDelete, "/api/v1/jobs/"+completedJob.ID, nil))
+	deleted := httptest.NewRecorder()
+	server.Handler().ServeHTTP(deleted, httptest.NewRequest(http.MethodDelete, "/api/v1/jobs/"+completedJob.ID, nil))
 
-	if delete.Code != http.StatusNoContent {
-		t.Fatalf("delete status = %d, body %s", delete.Code, delete.Body.String())
+	if deleted.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, body %s", deleted.Code, deleted.Body.String())
 	}
 
 	if _, ok := server.jobManager.GetJob(completedJob.ID); ok {
@@ -920,7 +920,11 @@ func TestServer_Integration(t *testing.T) {
 	defer resp.Body.Close()
 
 	var job Job
-	json.NewDecoder(resp.Body).Decode(&job)
+
+	err = json.NewDecoder(resp.Body).Decode(&job)
+	if err != nil {
+		t.Fatalf("Failed to decode job: %v", err)
+	}
 
 	// Poll status until completed
 	maxAttempts := 50
@@ -931,8 +935,13 @@ func TestServer_Integration(t *testing.T) {
 		}
 
 		var status map[string]any
-		json.NewDecoder(resp.Body).Decode(&status)
+
+		err = json.NewDecoder(resp.Body).Decode(&status)
 		resp.Body.Close()
+
+		if err != nil {
+			t.Fatalf("Failed to decode status: %v", err)
+		}
 
 		if status["state"] == string(StateCompleted) {
 			break
@@ -1508,6 +1517,8 @@ func containsString(haystack, needle string) bool {
 }
 
 func createSimpleTestImage(t *testing.T, path string) {
+	t.Helper()
+
 	img := image.NewNRGBA(image.Rect(0, 0, 50, 50))
 	white := color.NRGBA{255, 255, 255, 255}
 	red := color.NRGBA{255, 0, 0, 255}
@@ -2399,8 +2410,9 @@ func TestServer_GracefulShutdownWithCheckpoint(t *testing.T) {
 
 	job := server.jobManager.CreateJob(app.DefaultProject, config)
 
-	// Start worker in background
-	go runJob(server.ctx, server.jobManager, store, job.ID)
+	// Start worker in background; the test asserts on the checkpoint it writes,
+	// not on how the run ends.
+	go func() { _ = runJob(server.ctx, server.jobManager, store, job.ID) }()
 
 	// Wait for job to start and for at least one checkpoint to happen
 	// Since checkpointInterval is 1 second, wait 1.5 seconds to ensure checkpoint occurs

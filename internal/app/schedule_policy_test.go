@@ -86,6 +86,8 @@ func formatInts(values []int) string {
 // sequences purely from what the stages measured, and every one of them is
 // stated exactly.
 func TestReferenceCampaignPolicyRealizesTheExactStageSequence(t *testing.T) {
+	t.Parallel()
+
 	doc := documentWithSteps(t, referenceCampaignSteps)
 
 	plan, err := doc.Expand()
@@ -133,6 +135,8 @@ func TestReferenceCampaignPolicyRealizesTheExactStageSequence(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			polishes := 0
 			realized, ran := realizeSchedule(plan, 1000, func(stage ScheduleStage) float64 {
 				if stage.Kind != ScheduleStagePolish {
@@ -174,6 +178,8 @@ func TestReferenceCampaignPolicyRealizesTheExactStageSequence(t *testing.T) {
 // TestScheduleCirclesConditionGatesAStage pins the other half of the policy: a
 // polish whose circle count is not listed never runs, whatever the costs said.
 func TestScheduleCirclesConditionGatesAStage(t *testing.T) {
+	t.Parallel()
+
 	doc := documentWithSteps(t, `[
     {"type": "extend", "repeat": 2, "additionalCircles": 8},
     {"type": "polish", "when": {"circles": [16]}},
@@ -211,6 +217,8 @@ func TestScheduleCirclesConditionGatesAStage(t *testing.T) {
 // TestEvaluateScheduleStageIsPureOverTheOutcomes covers the decision function
 // directly, including the cases the campaign test cannot reach.
 func TestEvaluateScheduleStageIsPureOverTheOutcomes(t *testing.T) {
+	t.Parallel()
+
 	limit := 2
 	threshold := 1.0
 	condition := &ScheduleCondition{MinGain: &threshold, AbortAfterBarren: &limit}
@@ -340,6 +348,8 @@ func TestEvaluateScheduleStageIsPureOverTheOutcomes(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			verdict := EvaluateScheduleStage(plan, testCase.index, testCase.outcomes)
 			if verdict.Run != testCase.wantRun {
 				t.Fatalf("Run = %v (%q), want %v", verdict.Run, verdict.Reason, testCase.wantRun)
@@ -357,6 +367,8 @@ func TestEvaluateScheduleStageIsPureOverTheOutcomes(t *testing.T) {
 }
 
 func TestParseScheduleRejectsMalformedConditions(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		steps   string
@@ -405,6 +417,8 @@ func TestParseScheduleRejectsMalformedConditions(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			source := strings.Replace(baseDocument, `"steps": []`, `"steps": `+test.steps, 1)
 
 			_, err := ParseSchedule([]byte(source))

@@ -95,12 +95,12 @@ func (hub *UIEventHub) Publish(event UIEvent) UIEvent {
 }
 
 func (hub *UIEventHub) PublishJob(progress ProgressEvent) UIEvent {
-	copy := progress
+	snapshot := progress
 
 	return hub.Publish(UIEvent{
 		Type:      uiEventJobUpsert,
 		JobID:     progress.JobID,
-		Progress:  &copy,
+		Progress:  &snapshot,
 		Timestamp: progress.Timestamp,
 	})
 }

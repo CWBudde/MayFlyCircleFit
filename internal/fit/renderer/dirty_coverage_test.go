@@ -2,7 +2,6 @@ package renderer
 
 import (
 	"bytes"
-	"fmt"
 	"image"
 	"math/rand"
 	"sort"
@@ -80,13 +79,12 @@ func TestDirtySpanCoverageMetrics(t *testing.T) {
 		{category: "overlap_K4_R32", name: "coincident", circles: repeated(4, circle(128, 128, 32))},
 		{category: "overlap_K4_R32", name: "clustered", circles: clustered},
 		{category: "overlap_K4_R32", name: "disjoint", circles: disjoint},
-	}
-	for _, count := range []int{1, 2, 4, 8, 16, 32} {
-		tests = append(tests, struct {
-			category string
-			name     string
-			circles  []fit.Circle
-		}{category: "batch_R16", name: fmt.Sprintf("K%d", count), circles: batchPool[:count]})
+		{category: "batch_R16", name: "K1", circles: batchPool[:1]},
+		{category: "batch_R16", name: "K2", circles: batchPool[:2]},
+		{category: "batch_R16", name: "K4", circles: batchPool[:4]},
+		{category: "batch_R16", name: "K8", circles: batchPool[:8]},
+		{category: "batch_R16", name: "K16", circles: batchPool[:16]},
+		{category: "batch_R16", name: "K32", circles: batchPool[:32]},
 	}
 
 	for _, test := range tests {

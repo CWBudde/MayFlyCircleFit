@@ -451,11 +451,14 @@ func TestJobManager_ThreadSafety(t *testing.T) {
 
 	for i := range 10 {
 		go func(iteration int) {
-			jm.UpdateJob(job.ID, func(j *Job) {
+			err := jm.UpdateJob(job.ID, func(j *Job) {
 				j.Iterations = iteration
 
 				time.Sleep(1 * time.Millisecond)
 			})
+			if err != nil {
+				t.Errorf("UpdateJob: %v", err)
+			}
 
 			done <- true
 		}(i)

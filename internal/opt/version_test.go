@@ -9,6 +9,8 @@ import (
 // the test binary actually links, so a dependency bump that forgets to update
 // the documentation still reports the truth.
 func TestLibraryVersionMatchesBuildInfo(t *testing.T) {
+	t.Parallel()
+
 	got := LibraryVersion()
 	if got == "" {
 		t.Fatal("LibraryVersion returned an empty string")
@@ -45,6 +47,8 @@ func TestLibraryVersionMatchesBuildInfo(t *testing.T) {
 // TestLibraryVersionIsStable guards the cached lookup: a second call must not
 // re-read build info into a different answer.
 func TestLibraryVersionIsStable(t *testing.T) {
+	t.Parallel()
+
 	if first, second := LibraryVersion(), LibraryVersion(); first != second {
 		t.Fatalf("LibraryVersion() returned %q then %q", first, second)
 	}
