@@ -25,7 +25,7 @@ type parameterCircle struct {
 }
 
 type parameterExport struct {
-	JobID      string            `json:"jobID"`
+	JobID      string            `json:"jobId"`
 	Cost       float64           `json:"cost"`
 	Iterations int               `json:"iterations"`
 	Timestamp  time.Time         `json:"timestamp"`
