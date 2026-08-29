@@ -431,7 +431,11 @@ func (m *MayflyAdapter) RunContext(ctx context.Context, problem Problem, options
 		// library still honours a value in [0,1]. Leaving the field untouched
 		// is what selects the paper's fitness test, so there is no
 		// non-deprecated way to express the override.
+		// Two directives, because the two gates read different ones: the
+		// standalone staticcheck job honours //lint:ignore, golangci-lint honours
+		// //nolint. Dropping either one fails that gate.
 		//nolint:staticcheck // deliberate use of the deprecated override; there is no non-deprecated equivalent.
+		//lint:ignore SA1019 deliberate use of the deprecated override; there is no non-deprecated equivalent.
 		config.AquilaWeight = *m.aquilaWeight
 	}
 
