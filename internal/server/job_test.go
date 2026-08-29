@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/opt"
 	"github.com/google/uuid"
 )
 
@@ -271,6 +272,58 @@ func TestJobManager_ReturnsDetachedSnapshots(t *testing.T) {
 
 	if unchanged.State == StateFailed {
 		t.Fatal("mutable job snapshot escaped")
+	}
+}
+
+func TestJobManagerRestartRunsAccumulateAcrossResumesAndStaySnapshotSafe(t *testing.T) {
+	t.Parallel()
+
+	manager := NewJobManager()
+	job := manager.CreateJob(app.DefaultProject, JobConfig{RefPath: "test.png"})
+
+	first := []opt.RestartRun{{Termination: "tol_fun", Restart: 0}, {Termination: "max_iter", Restart: 1}}
+
+	err := manager.RecordRestartRuns(job.ID, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A resumed job keeps its cumulative counts, so its earlier runs have to
+	// survive the continuation that follows them.
+	err = manager.UpdateJob(job.ID, func(live *Job) { live.Config.ResumeCount = 1 })
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	continued := []opt.RestartRun{{Termination: "condition_number", Restart: 0}}
+
+	err = manager.RecordRestartRuns(job.ID, continued)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, ok := manager.GetJob(job.ID)
+	if !ok {
+		t.Fatal("job not found")
+	}
+
+	if len(snapshot.Restarts) != 3 {
+		t.Fatalf("restart runs = %+v, want the first invocation's two kept", snapshot.Restarts)
+	}
+
+	if snapshot.Restarts[2].Resume != 1 {
+		t.Fatalf("continued run = %+v, want it stamped with resume 1", snapshot.Restarts[2])
+	}
+
+	snapshot.Restarts[0].Termination = "mutated"
+
+	unchanged, ok := manager.GetJob(job.ID)
+	if !ok {
+		t.Fatal("job not found")
+	}
+
+	if unchanged.Restarts[0].Termination != "tol_fun" {
+		t.Fatalf("mutable restart records escaped: %+v", unchanged.Restarts[0])
 	}
 }
 

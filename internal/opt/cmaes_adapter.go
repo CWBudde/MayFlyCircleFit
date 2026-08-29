@@ -284,10 +284,38 @@ func (adapter *CMAESAdapter) executeCMAES(
 		best.Iterations += record.Iterations
 	}
 
+	best.Restarts = cmaesRestartRuns(restarted.Restarts)
 	best.Evaluations = restarted.FuncEvalCount
 	best.Termination = terminationFromCMAES(restarted.TerminationReason)
 
 	return restarted.TerminationReason, nil
+}
+
+// cmaesRestartRuns converts the library's per-run records into this package's
+// engine-neutral form. The library's TerminationReason is carried across
+// verbatim rather than through terminationFromCMAES, because the coarser
+// mapping folds tol_x, tol_fun, tol_x_up, the condition-number test and both
+// no-effect tests into a single TerminationConvergence, and which of them
+// ended a run is the reason to record it at all.
+func cmaesRestartRuns(records []cmaes.RestartRecord) []RestartRun {
+	if len(records) == 0 {
+		return nil
+	}
+
+	runs := make([]RestartRun, 0, len(records))
+	for _, record := range records {
+		runs = append(runs, RestartRun{
+			Termination: string(record.TerminationReason),
+			Regime:      string(record.Regime),
+			Restart:     record.Restart,
+			Population:  record.Lambda,
+			Iterations:  record.Iterations,
+			Evaluations: record.Evaluations,
+			BestCost:    record.Best.Cost,
+		})
+	}
+
+	return runs
 }
 
 func updateCMAESBestFromLibrary(
@@ -486,6 +514,8 @@ func (adapter *CMAESAdapter) cmaesRunOptions(
 		runOptions = append(runOptions, cmaes.WithLogger(adapter.logger))
 	}
 
+	pendingRestart := 0
+
 	runOptions = append(runOptions, cmaes.WithProgressObserver(func(progress cmaes.Progress) {
 		iterations, evaluations := progressTotals.cumulative(progress)
 		updateCMAESBest(
@@ -511,6 +541,7 @@ func (adapter *CMAESAdapter) cmaesRunOptions(
 		}
 		if adapter.searchDiagnostics {
 			pendingProgress = &reported
+			pendingRestart = progressTotals.restart
 
 			return
 		}
@@ -529,6 +560,7 @@ func (adapter *CMAESAdapter) cmaesRunOptions(
 				Sigma:              snapshot.Sigma,
 				ConditionNumber:    snapshot.ConditionNumber,
 				DistributionExtent: snapshot.Sigma * maxAxisScale(snapshot),
+				Restart:            pendingRestart,
 			}
 			pendingProgress = nil
 
@@ -571,12 +603,19 @@ type cmaesProgressTotals struct {
 	evaluationOffset int
 	lastIteration    int
 	lastEvaluations  int
+	// restart counts the run boundaries already crossed, so it is the
+	// zero-based index of the run the next progress snapshot belongs to. The
+	// library reports iteration and evaluation counts local to each run of a
+	// restart schedule, which is exactly the reset this type already detects
+	// in order to accumulate them; naming that reset is all the index costs.
+	restart int
 }
 
 func (totals *cmaesProgressTotals) cumulative(progress cmaes.Progress) (int, int) {
 	if totals.lastIteration > 0 && progress.Iteration <= totals.lastIteration {
 		totals.iterationOffset += totals.lastIteration
 		totals.evaluationOffset += totals.lastEvaluations
+		totals.restart++
 	}
 
 	totals.lastIteration = progress.Iteration

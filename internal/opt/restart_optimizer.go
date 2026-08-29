@@ -91,10 +91,16 @@ func (o *restartOptimizer) RunContext(ctx context.Context, problem Problem, opti
 	// 1..epochs for the first attempt, epochs+1..2*epochs for the second, and
 	// so on.
 	boundaryCount := 0
+	// Restart records are collected over every attempt for the same reason the
+	// boundaries are numbered over every attempt: one invocation of this
+	// method is one run, and a history covering only the attempt that happened
+	// to win describes a fraction of the work its totals already claim.
+	var records restartRecords
 
 	for attempt := range o.restarts {
 		iterationOffset := totalIterations
 		evaluationOffset := totalEvaluations
+		restartOffset := records.offset()
 
 		attemptOptions := RunOptions{
 			Initial:         options.Initial,
@@ -140,7 +146,7 @@ func (o *restartOptimizer) RunContext(ctx context.Context, problem Problem, opti
 
 				progress.Iterations += iterationOffset
 				progress.Evaluations += evaluationOffset
-				options.Observer(progress)
+				options.Observer(shiftRestart(progress, restartOffset))
 			}
 		}
 
@@ -166,12 +172,15 @@ func (o *restartOptimizer) RunContext(ctx context.Context, problem Problem, opti
 		totalIterations += result.Iterations
 		totalEvaluations += result.Evaluations
 
+		records.record(result.Restarts)
+
 		if len(result.BestParams) > 0 && result.BestCost < best.BestCost {
 			best = result
 		}
 
 		best.Iterations = totalIterations
 		best.Evaluations = totalEvaluations
+		best.Restarts = records.runs
 
 		if err != nil {
 			return best, err

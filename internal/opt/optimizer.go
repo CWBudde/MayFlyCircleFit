@@ -60,6 +60,19 @@ type SearchDiagnostics struct {
 	// its initial value, so a run whose extent is flat is a run whose sampling
 	// distribution has not moved, whatever its sigma column says.
 	DistributionExtent float64 `json:"distributionExtent,omitempty"`
+	// Restart is the zero-based index of the independent run this sample was
+	// taken in. It is zero for a single run and for every engine without a
+	// restart schedule, so it stays absent from the trace unless a schedule
+	// actually restarted.
+	//
+	// It exists because a restart schedule's samples are otherwise
+	// indistinguishable: cumulative iteration and evaluation counts run
+	// straight through a restart boundary, so a trace cannot say which run
+	// produced a sample, and neither the per-run budget nor the evaluations a
+	// run spent after its last improvement can be recovered from it. Pairing
+	// this with Result.Restarts, which carries why each run ended, is what
+	// makes a restart arm measurable rather than merely summarized.
+	Restart int `json:"restart,omitempty"`
 }
 
 // Observer consumes synchronous best-so-far snapshots.
@@ -146,9 +159,69 @@ const (
 	TerminationConvergence Termination = "convergence"
 )
 
+// RestartRun is one independent optimizer run inside a restart schedule.
+//
+// A schedule reports a single Termination for the whole run, and that reason
+// is structurally uninformative: the driver overwrites it with its
+// budget-exhausted reason whenever the shared evaluation budget is spent,
+// which for a campaign arm sized to consume its budget is always. Every run
+// therefore reported "completed" no matter how its individual restarts ended,
+// so nothing said whether a restart stopped on a convergence criterion — the
+// outcome a restart schedule exists to exploit — or simply ran until the
+// budget ran out.
+//
+// Recording the per-run reasons is what distinguishes a schedule that is
+// harvesting converged runs from one spending its budget on runs that stopped
+// progressing long before they ended.
+type RestartRun struct {
+	// Termination is why this individual run stopped, verbatim from the
+	// engine, not folded into this package's coarser Termination values. A
+	// restart schedule's whole point is the distinction between tol_fun,
+	// tol_x, condition_number and the rest, which TerminationConvergence
+	// erases.
+	Termination string `json:"termination"`
+	// Regime names the budget account the run belongs to. IPOP records every
+	// run as large; BIPOP alternates. It is empty for engines without regimes.
+	Regime string `json:"regime,omitempty"`
+	// Stage is the zero-based pipeline stage this run belongs to. Joint mode
+	// has one; sequential and batch modes run an independent schedule per
+	// circle or per batch, and without this their records would pool into one
+	// undifferentiated list.
+	Stage int `json:"stage"`
+	// Restart is the zero-based index of the run within the invocation that
+	// produced it. Zero is the initial run, so a schedule that never restarted
+	// holds exactly one record. An optimizer wrapped in epochs or cold
+	// attempts runs several schedules, each numbered from zero by the engine;
+	// the wrapper renumbers them onto one sequence, so this stays unique
+	// within a stage and keeps matching the trace, which the wrapper shifts
+	// the same way.
+	Restart int `json:"restart"`
+	// Resume is the resume count of the invocation that recorded this run. It
+	// is zero for a job's first run and rises with every resume, which is what
+	// keeps the records a resumed job accumulates distinguishable: a
+	// continuation drives a fresh schedule numbered from zero again, and it
+	// rewrites the trace rather than extending it, so renumbering the records
+	// across a resume instead would leave the two disagreeing.
+	Resume int `json:"resume,omitempty"`
+	// Population is the run's sampled population size. A restart strategy that
+	// grows it — IPOP doubles — makes this the record of what it actually grew
+	// to.
+	Population int `json:"population"`
+	// Iterations and Evaluations are local to this run, not cumulative.
+	Iterations  int `json:"iterations"`
+	Evaluations int `json:"evaluations"`
+	// BestCost is the best cost this run reached on its own, which is not the
+	// schedule's best unless this run produced it.
+	BestCost float64 `json:"bestCost"`
+}
+
 // Result is the complete, measured outcome of an optimization run.
 type Result struct {
-	BestParams  []float64
+	BestParams []float64
+	// Restarts records each independent run of a restart schedule. It is nil
+	// for an ordinary single run and for every engine that has no restart
+	// schedule, so a caller persisting it writes nothing in those cases.
+	Restarts    []RestartRun
 	BestCost    float64
 	Iterations  int
 	Evaluations int

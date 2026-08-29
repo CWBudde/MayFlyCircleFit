@@ -95,16 +95,23 @@ type Job struct {
 	// StageIndex is a pointer, and matches the checkpoint field it is persisted
 	// to, because stage zero is a real stage: with a plain int and omitempty the
 	// base stage of a campaign would serialize a schedule with no index at all.
-	ScheduleID    string         `json:"scheduleId,omitempty"`
-	StageIndex    *int           `json:"stageIndex,omitempty"`
-	Termination   string         `json:"termination,omitempty"`
-	StartTime     time.Time      `json:"startTime"`
-	EndTime       *time.Time     `json:"endTime,omitempty"`
-	Error         string         `json:"error,omitempty"`
-	PSNR          *float64       `json:"-"`
-	PSNRInfinite  bool           `json:"-"`
-	SSIM          *float64       `json:"-"`
-	MetricHistory []MetricSample `json:"-"`
+	ScheduleID  string `json:"scheduleId,omitempty"`
+	StageIndex  *int   `json:"stageIndex,omitempty"`
+	Termination string `json:"termination,omitempty"`
+	// Restarts records each independent run of every restart schedule the job
+	// ran. It is omitted from the JSON API for a job whose optimizer had no
+	// restart schedule, which is every job but a CMA-ES one with ipop or bipop
+	// selected. Termination says nothing about a restart arm — a schedule that
+	// spends its whole evaluation budget always reports completed — so these
+	// records are the only account of why each individual run ended.
+	Restarts      []opt.RestartRun `json:"restarts,omitempty"`
+	StartTime     time.Time        `json:"startTime"`
+	EndTime       *time.Time       `json:"endTime,omitempty"`
+	Error         string           `json:"error,omitempty"`
+	PSNR          *float64         `json:"-"`
+	PSNRInfinite  bool             `json:"-"`
+	SSIM          *float64         `json:"-"`
+	MetricHistory []MetricSample   `json:"-"`
 }
 
 // MetricSample is a live-history point used by the detail page. The sampling
@@ -552,6 +559,35 @@ func (jm *JobManager) RecordFinalResult(id string, iterations, evaluations int, 
 	return nil
 }
 
+// RecordRestartRuns adds the per-run records of a finished restart schedule to
+// a running job, so the checkpoint write that follows persists them. It is
+// separate from RecordFinalResult because a restart schedule is the exception
+// rather than the shape of an ordinary result: every other engine would pass
+// nil through one more positional parameter of an already long signature.
+//
+// The records accumulate over a job's lifetime instead of replacing what it
+// already holds. A resumed job keeps its cumulative iteration and evaluation
+// counts, so replacing them would leave the job reporting totals for work
+// whose restart history had been dropped, and each resume would erase the
+// termination reasons of every earlier one. The job's resume count is stamped
+// onto the new records, which is what keeps them apart from the earlier ones:
+// a continuation drives a fresh schedule numbered from zero.
+func (jm *JobManager) RecordRestartRuns(id string, runs []opt.RestartRun) error {
+	jm.mu.Lock()
+	defer jm.mu.Unlock()
+
+	job, exists := jm.jobs[id]
+	if !exists {
+		// The dynamic error matches every other accessor on this type; a
+		// static one here alone would be the odd caller out.
+		return fmt.Errorf("job not found: %s", id) //nolint:err113 // Matches the neighbouring accessors.
+	}
+
+	job.Restarts = opt.AppendContinuedRestartRuns(job.Restarts, runs, job.Config.ResumeCount)
+
+	return nil
+}
+
 // MarkJobCompleted transitions a running job whose result is already recorded
 // and persisted.
 func (jm *JobManager) MarkJobCompleted(id string) error {
@@ -785,6 +821,7 @@ func cloneJob(job *Job) *Job {
 	// seeding from it.
 	cloned.Config.InitialCircles = cloneCircleSpecs(job.Config.InitialCircles)
 	cloned.BestParams = append([]float64(nil), job.BestParams...)
+	cloned.Restarts = append([]opt.RestartRun(nil), job.Restarts...)
 	cloned.CandidateCost = cloneFloat(job.CandidateCost)
 	cloned.PSNR = cloneFloat(job.PSNR)
 	cloned.SSIM = cloneFloat(job.SSIM)

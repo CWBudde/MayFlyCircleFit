@@ -57,13 +57,37 @@ type OptimizationResult struct {
 	// StagesStoppedEarly counts stages whose optimizer stopped before its own
 	// iteration cap. It is diagnostic and never changes Termination.
 	StagesStoppedEarly int
+
+	// Restarts records every independent run of every stage whose optimizer
+	// ran a restart schedule, tagged with the stage it belongs to. It is nil
+	// for an optimizer without one, which is every Mayfly and Dragonfly run
+	// and every CMA-ES run configured with restartStrategy none.
+	//
+	// It is diagnostic and never changes Termination: a staged run's reason is
+	// about the pipeline loop, and a restart schedule's reasons are about one
+	// stage's optimizer.
+	Restarts []opt.RestartRun
 }
 
 // stageOutcome is the measured result of one optimizer run within a pipeline.
 type stageOutcome struct {
 	Params      []float64
+	Restarts    []opt.RestartRun
 	Iterations  int
 	Termination opt.Termination
+}
+
+// appendStageRestarts stamps a stage index onto one stage's restart records and appends
+// them to the run's list. The optimizer knows its own restart indices and
+// nothing about the pipeline around it, so the stage is attached here, where
+// it is known, rather than being threaded into the optimizer contract.
+func appendStageRestarts(runs []opt.RestartRun, outcome stageOutcome, stage int) []opt.RestartRun {
+	for _, run := range outcome.Restarts {
+		run.Stage = stage
+		runs = append(runs, run)
+	}
+
+	return runs
 }
 
 // stoppedEarly reports whether the optimizer ended a stage before exhausting
@@ -168,6 +192,8 @@ func OptimizeJointContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	termination := opt.TerminationCompleted
 	stagesStoppedEarly := 0
 
+	var restartRuns []opt.RestartRun
+
 	if circleCount > 0 {
 		runOptions := opt.RunOptions{}
 
@@ -186,6 +212,7 @@ func OptimizeJointContext(ctx context.Context, base Renderer, optimizer opt.Opti
 
 		iterations += outcome.Iterations
 		stages = 1
+		restartRuns = appendStageRestarts(restartRuns, outcome, 0)
 		// Joint runs one optimizer, so its reason is the run's reason.
 		termination = outcome.Termination
 		if outcome.stoppedEarly() {
@@ -219,6 +246,7 @@ func OptimizeJointContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	result.Iterations = iterations
 	result.Termination = termination
 	result.StagesStoppedEarly = stagesStoppedEarly
+	result.Restarts = restartRuns
 
 	slog.Info("Joint optimization complete", "initial_cost", initialCost, "best_cost", bestCost, "evaluations", evaluations)
 
@@ -259,6 +287,8 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 	iterations := 0
 	stagesStoppedEarly := 0
 	termination := opt.TerminationCompleted
+
+	var restartRuns []opt.RestartRun
 
 	for circleNum := 1; circleNum <= totalCircles; circleNum++ {
 		retainedCircles := len(bestParams) / paramsPerCircle
@@ -337,6 +367,7 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 
 		candidateCircle := outcome.Params
 		iterations += outcome.Iterations
+		restartRuns = appendStageRestarts(restartRuns, outcome, stages)
 		stages++
 
 		if outcome.stoppedEarly() {
@@ -393,6 +424,7 @@ func OptimizeSequentialContext(ctx context.Context, base Renderer, optimizer opt
 	result.Iterations = iterations
 	result.Termination = termination
 	result.StagesStoppedEarly = stagesStoppedEarly
+	result.Restarts = restartRuns
 	slog.Info("Sequential optimization complete",
 		"stages", stages,
 		"stages_stopped_early", stagesStoppedEarly,
@@ -545,6 +577,8 @@ func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	stagesStoppedEarly := 0
 	termination := opt.TerminationCompleted
 
+	var restartRuns []opt.RestartRun
+
 	plannedStages := 0
 	if remaining := totalCircles - optimizedCircles; remaining > 0 {
 		plannedStages = (remaining + batchSize - 1) / batchSize
@@ -655,6 +689,7 @@ func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 
 		candidateBatch := outcome.Params
 		iterations += outcome.Iterations
+		restartRuns = appendStageRestarts(restartRuns, outcome, stages)
 		stages++
 
 		if outcome.stoppedEarly() {
@@ -761,6 +796,7 @@ func optimizeBatchContext(ctx context.Context, base Renderer, optimizer opt.Opti
 	result.Iterations = iterations
 	result.Termination = termination
 	result.StagesStoppedEarly = stagesStoppedEarly
+	result.Restarts = restartRuns
 	slog.Info("Batch optimization complete",
 		"stages", stages,
 		"stages_stopped_early", stagesStoppedEarly,
@@ -795,6 +831,7 @@ func runOptimizer(
 
 		return stageOutcome{
 			Params:      result.BestParams,
+			Restarts:    result.Restarts,
 			Iterations:  result.Iterations,
 			Termination: result.Termination,
 		}, nil

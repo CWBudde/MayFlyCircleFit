@@ -124,3 +124,31 @@ evaluations/second at eight evaluation workers, so the queue takes on the order
 of three days there. Keep `--max-jobs 1`: competing jobs do not increase this
 six-core host's aggregate throughput and make wall-clock records harder to
 interpret.
+
+## Restart records
+
+`-action collect` writes a third file, `-restarts` (default
+`docs/cmaes-restarts.csv`), holding one row per independent run of every
+restart schedule in the campaign: `arm, block, seed, stage, restart, regime,
+population, iterations, evaluations, bestCost, termination`.
+
+It exists because the result CSV's `termination` column cannot describe a
+restart arm. The schedule reports its own budget-exhausted reason whenever the
+shared evaluation budget is spent, which for an arm sized to consume that
+budget is always, so every restart arm records `completed` however its
+individual runs ended. Only the per-run reasons distinguish a schedule that is
+harvesting converged runs — `tol_fun`, `tol_x`, `condition_number` — from one
+paying for runs that stopped progressing long before they ended.
+
+The trajectory CSV carries the matching `restart` column, taken from each trace
+sample's optimizer diagnostics. It is the join key. Cumulative iteration and
+evaluation counts run straight through a restart boundary, so without it a
+trace cannot say which run produced a sample, and the evaluations a run spent
+after its last improvement — the 40% of two Phase 21 arms' budgets that
+motivated Task 23.1 — cannot be attributed to a run at all.
+
+Both are empty for a campaign whose checkpoints predate the adapter recording
+them, which includes the Phase 21 campaign and the lambda screen. The restarts
+file is still written, header only: an empty file says "this campaign has no
+per-run record" where a missing one would be indistinguishable from a
+collection that failed.

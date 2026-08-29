@@ -673,6 +673,15 @@ func runJob(ctx context.Context, jm *JobManager, checkpointStore store.Store, jo
 		return err
 	}
 
+	// Recorded before the checkpoint write below, for the same reason the
+	// final result is: the checkpoint is what persists them, and a job that
+	// announced completion first would hand out a record of the run with its
+	// restart schedule missing.
+	restartErr := jm.RecordRestartRuns(jobID, result.Restarts)
+	if restartErr != nil {
+		return restartErr
+	}
+
 	completedAt := time.Now()
 
 	var finalSSIM *float64
@@ -1316,6 +1325,8 @@ func saveCheckpointWithImage(jm *JobManager, checkpointStore store.Store, rend r
 	if job.Termination != "" {
 		checkpoint.Termination = job.Termination
 	}
+
+	checkpoint.Restarts = job.Restarts
 
 	var persistenceErrors []error
 

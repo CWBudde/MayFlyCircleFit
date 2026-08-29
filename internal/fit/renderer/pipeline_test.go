@@ -962,3 +962,102 @@ func TestOptimizeBatchKeepsAWholeBatchOnTheReplayPath(t *testing.T) {
 		t.Fatalf("sessions = %d, want 9", sessions)
 	}
 }
+
+// restartingOptimizer reports two independent restart runs per stage, so the
+// pipeline's stage tagging can be tested without a real restart schedule.
+type restartingOptimizer struct{}
+
+func (restartingOptimizer) Run(eval func([]float64) float64, _, _ []float64, dim int) ([]float64, float64) {
+	params := transparentParams(dim / paramsPerCircle)
+	return params, eval(params)
+}
+
+func (restartingOptimizer) RunContext(_ context.Context, problem opt.Problem, _ opt.RunOptions) (opt.Result, error) {
+	params := transparentParams(problem.Dim / paramsPerCircle)
+
+	return opt.Result{
+		BestParams:  params,
+		BestCost:    problem.Eval(params),
+		Iterations:  3,
+		Evaluations: 1,
+		Termination: opt.TerminationCompleted,
+		Restarts: []opt.RestartRun{
+			{Termination: "tol_fun", Regime: "large", Restart: 0, Population: 8},
+			{Termination: "maximum_evaluations", Regime: "large", Restart: 1, Population: 16},
+		},
+	}, nil
+}
+
+// TestSequentialTagsRestartRunsWithTheirStage covers the one thing a staged
+// pipeline has to add to an optimizer's restart records. The optimizer knows
+// its own restart indices and nothing about the loop around it, so a
+// sequential run's records would otherwise pool into one undifferentiated
+// list in which every stage looks like a repeat of the first.
+func TestSequentialTagsRestartRunsWithTheirStage(t *testing.T) {
+	t.Parallel()
+
+	ref := solidImage(4, 4, color.NRGBA{A: 255})
+
+	result, err := OptimizeSequential(NewCPURenderer(ref, 1), restartingOptimizer{}, 3, DisabledConvergenceConfig(), nil)
+	if err != nil {
+		t.Fatalf("OptimizeSequential() error = %v", err)
+	}
+
+	if len(result.Restarts) != 6 {
+		t.Fatalf("Restarts = %d, want two runs for each of three stages", len(result.Restarts))
+	}
+
+	for index, run := range result.Restarts {
+		wantStage := index / 2
+		wantRestart := index % 2
+
+		if run.Stage != wantStage || run.Restart != wantRestart {
+			t.Errorf("run %d = stage %d restart %d, want stage %d restart %d",
+				index, run.Stage, run.Restart, wantStage, wantRestart)
+		}
+	}
+}
+
+// TestJointTagsRestartRunsWithTheOnlyStage keeps joint mode's single stage
+// numbered like every other, so a reader does not have to know which mode
+// wrote a record to interpret its stage column.
+func TestJointTagsRestartRunsWithTheOnlyStage(t *testing.T) {
+	t.Parallel()
+
+	ref := solidImage(4, 4, color.NRGBA{A: 255})
+
+	result, err := OptimizeJoint(NewCPURenderer(ref, 2), restartingOptimizer{}, 2, DisabledConvergenceConfig())
+	if err != nil {
+		t.Fatalf("OptimizeJoint() error = %v", err)
+	}
+
+	if len(result.Restarts) != 2 {
+		t.Fatalf("Restarts = %d, want the one stage's two runs", len(result.Restarts))
+	}
+
+	for index, run := range result.Restarts {
+		if run.Stage != 0 {
+			t.Errorf("run %d has Stage = %d, want joint's only stage", index, run.Stage)
+		}
+	}
+}
+
+// TestOptimizerWithoutRestartsRecordsNone keeps the field absent for the
+// engines that have no restart schedule, so a persisted checkpoint writes
+// nothing rather than an empty list.
+func TestOptimizerWithoutRestartsRecordsNone(t *testing.T) {
+	t.Parallel()
+
+	ref := solidImage(4, 4, color.NRGBA{A: 255})
+
+	optimizer := terminatingOptimizer{reason: opt.TerminationCompleted}
+
+	result, err := OptimizeJoint(NewCPURenderer(ref, 2), optimizer, 2, DisabledConvergenceConfig())
+	if err != nil {
+		t.Fatalf("OptimizeJoint() error = %v", err)
+	}
+
+	if result.Restarts != nil {
+		t.Errorf("Restarts = %v, want nil", result.Restarts)
+	}
+}

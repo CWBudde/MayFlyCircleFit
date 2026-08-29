@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/opt"
 	"github.com/cwbudde/circlefit/internal/store"
 )
 
@@ -142,6 +143,7 @@ func jobFromCheckpoint(checkpoint *store.Checkpoint, project app.Project) *Job {
 		Iterations:       checkpoint.Iterations,
 		Evaluations:      int(checkpoint.Evaluations),
 		Termination:      checkpoint.Termination,
+		Restarts:         append([]opt.RestartRun(nil), checkpoint.Restarts...),
 		StartTime:        checkpoint.Timestamp,
 		EndTime:          &end,
 	}
