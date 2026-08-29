@@ -48,7 +48,7 @@ func SupportedOptimizers() []Optimizer {
 // field existed carries no engine and must resume exactly as it did. Reading
 // the field directly is the one way to run the wrong optimizer, so nothing
 // outside this package should.
-func (c JobConfig) ResolvedOptimizer() Optimizer {
+func (c *JobConfig) ResolvedOptimizer() Optimizer {
 	if c.Optimizer == "" {
 		return OptimizerMayfly
 	}
@@ -78,7 +78,7 @@ type engineOnlyField struct {
 // population by construction; the remaining polishing fields are inert without
 // polishingEnabled and are defaulted for every job, so refusing them would
 // reject configurations nobody wrote.
-func (c JobConfig) mayflyOnlyFields() []engineOnlyField {
+func (c *JobConfig) mayflyOnlyFields() []engineOnlyField {
 	fields := []engineOnlyField{
 		{field: "variant", set: c.Variant != ""},
 		{field: "qmcInit", set: c.QMCInit != ""},
@@ -114,7 +114,7 @@ const polishingEngineDetail = "a polishing sweep runs its own MayFly population 
 // a variant would otherwise be accepted, persisted into a checkpoint and
 // reported back unchanged while never reaching the optimizer, which makes
 // every cost it produces impossible to compare.
-func (c JobConfig) validateOptimizerEngine() error {
+func (c *JobConfig) validateOptimizerEngine() error {
 	supported := SupportedOptimizers()
 	if !slices.Contains(supported, c.ResolvedOptimizer()) {
 		names := make([]string, len(supported))
@@ -160,7 +160,7 @@ func engineOnlyFieldError(field engineOnlyField, owner, running Optimizer) error
 
 // validateVariant enforces the MayFly variant set. It runs only for MayFly
 // jobs, because a Dragonfly job legitimately has no variant.
-func (c JobConfig) validateVariant() error {
+func (c *JobConfig) validateVariant() error {
 	if slices.Contains(variants, c.Variant) {
 		return nil
 	}

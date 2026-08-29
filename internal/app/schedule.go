@@ -78,6 +78,8 @@ const (
 // The document is deliberately JSON. It is the format the extend and polish
 // endpoints already speak, the format the store already writes, and it needs no
 // new dependency.
+//
+//nolint:recvcheck // the value receiver on Validate is deliberate: it normalizes a copy.
 type ScheduleDocument struct {
 	// SchemaVersion is ScheduleSchemaVersion, or absent for the current version.
 	SchemaVersion int `json:"schemaVersion,omitempty"`

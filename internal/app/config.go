@@ -478,7 +478,7 @@ type JobConfig struct {
 }
 
 // EarlyStopEnabled reports whether optimizer-level early stopping is configured.
-func (c JobConfig) EarlyStopEnabled() bool {
+func (c *JobConfig) EarlyStopEnabled() bool {
 	return c.StopTargetCost > 0 || c.StopStagnationIters > 0
 }
 
@@ -724,7 +724,7 @@ func (c *JobConfig) ApplyDefaults() error {
 }
 
 // Validate returns a field-specific error for unsafe or inconsistent values.
-func (c JobConfig) Validate() error {
+func (c *JobConfig) Validate() error {
 	if c.RefPath == "" {
 		return invalid("refPath", "is required")
 	}

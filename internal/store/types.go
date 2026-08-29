@@ -75,6 +75,8 @@ const (
 //   - Different optimizers have different internal state structures
 //   - Would significantly increase checkpoint size
 //   - Would tie checkpoint format to specific optimizer implementations
+//
+//nolint:recvcheck // MarshalJSON must stay a value receiver; UnmarshalJSON must be a pointer.
 type Checkpoint struct {
 	// SchemaVersion identifies the persisted checkpoint format.
 	SchemaVersion int `json:"schemaVersion"`
@@ -398,7 +400,7 @@ func (c *Checkpoint) Validate() error {
 // validateLineage keeps a recorded chain trustworthy. A checkpoint that names
 // two parents, or names itself, describes a chain that cannot be walked, and a
 // stage index without a schedule points at nothing.
-func (c Checkpoint) validateLineage() error {
+func (c *Checkpoint) validateLineage() error {
 	if c.ExtendedFrom != "" && c.PolishedFrom != "" {
 		return &ValidationError{Field: "PolishedFrom", Reason: "cannot be set together with ExtendedFrom"}
 	}
@@ -556,55 +558,56 @@ func checkpointWireFrom(c Checkpoint) checkpointWire {
 	}
 }
 
-func (c Checkpoint) normalized() Checkpoint {
-	c = c.normalizedMetadata()
+func (c *Checkpoint) normalized() Checkpoint {
+	out := c.normalizedMetadata()
 
-	c.BestParams = append([]float64(nil), c.BestParams...)
-	if c.StageIndex != nil {
-		index := *c.StageIndex
-		c.StageIndex = &index
+	out.BestParams = append([]float64(nil), out.BestParams...)
+	if out.StageIndex != nil {
+		index := *out.StageIndex
+		out.StageIndex = &index
 	}
 
-	return c
+	return out
 }
 
 // normalizedMetadata applies schema migration without copying the parameter
 // vector. Metadata-only readers must not pay O(circles) merely to report a
 // checkpoint in a listing.
-func (c Checkpoint) normalizedMetadata() Checkpoint {
-	if c.SchemaVersion == 0 || c.SchemaVersion == 1 {
-		c.SchemaVersion = CheckpointSchemaVersion
+func (c *Checkpoint) normalizedMetadata() Checkpoint {
+	out := *c
+	if out.SchemaVersion == 0 || out.SchemaVersion == 1 {
+		out.SchemaVersion = CheckpointSchemaVersion
 	}
 
-	if c.Iterations == 0 && c.Iteration != 0 {
-		c.Iterations = c.Iteration
+	if out.Iterations == 0 && out.Iteration != 0 {
+		out.Iterations = out.Iteration
 	}
 
-	c.Iteration = c.Iterations
-	if c.RequestedCircles == 0 {
-		c.RequestedCircles = c.Config.Circles
+	out.Iteration = out.Iterations
+	if out.RequestedCircles == 0 {
+		out.RequestedCircles = out.Config.Circles
 	}
 
-	if c.ActualCircles == 0 && len(c.BestParams)%7 == 0 {
-		c.ActualCircles = len(c.BestParams) / 7
+	if out.ActualCircles == 0 && len(out.BestParams)%7 == 0 {
+		out.ActualCircles = len(out.BestParams) / 7
 	}
 
-	if c.EffectiveSeed == 0 {
-		c.EffectiveSeed = effectiveSeed(c.Config)
+	if out.EffectiveSeed == 0 {
+		out.EffectiveSeed = effectiveSeed(out.Config)
 	}
 
-	if c.ResumeCount == 0 {
-		c.ResumeCount = c.Config.ResumeCount
+	if out.ResumeCount == 0 {
+		out.ResumeCount = out.Config.ResumeCount
 	}
 
-	if c.Termination == "" {
-		c.Termination = TerminationUnknown
+	if out.Termination == "" {
+		out.Termination = TerminationUnknown
 	}
 
-	c.Config.EffectiveSeed = c.EffectiveSeed
-	c.Config.ResumeCount = c.ResumeCount
+	out.Config.EffectiveSeed = out.EffectiveSeed
+	out.Config.ResumeCount = out.ResumeCount
 
-	return c
+	return out
 }
 
 func effectiveSeed(config JobConfig) int64 {

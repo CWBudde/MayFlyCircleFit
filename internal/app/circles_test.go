@@ -98,7 +98,9 @@ func TestJobConfigValidateInitialCircles(t *testing.T) {
 		return config
 	}
 
-	err := base().Validate()
+	valid := base()
+
+	err := valid.Validate()
 	if err != nil {
 		t.Fatalf("Validate() = %v, want nil", err)
 	}

@@ -30,7 +30,9 @@ func TestValidateAcceptsEveryQMCInit(t *testing.T) {
 func TestValidateRejectsAnUnknownQMCInit(t *testing.T) {
 	t.Parallel()
 
-	assertInvalidField(t, mayflyQMCConfig(t, "hammersley").Validate(), fieldQMCInit)
+	config := mayflyQMCConfig(t, "hammersley")
+
+	assertInvalidField(t, config.Validate(), fieldQMCInit)
 }
 
 // TestResolvedQMCInitTreatsAnEmptyStrategyAsUniform covers the value a
@@ -40,7 +42,9 @@ func TestValidateRejectsAnUnknownQMCInit(t *testing.T) {
 func TestResolvedQMCInitTreatsAnEmptyStrategyAsUniform(t *testing.T) {
 	t.Parallel()
 
-	if got := (app.JobConfig{}).ResolvedQMCInit(); got != app.QMCInitUniform {
+	empty := app.JobConfig{}
+
+	if got := empty.ResolvedQMCInit(); got != app.QMCInitUniform {
 		t.Errorf("ResolvedQMCInit() = %q, want %q", got, app.QMCInitUniform)
 	}
 }
