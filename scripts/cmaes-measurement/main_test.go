@@ -265,7 +265,7 @@ func TestLambdaScreenRejectsAnIndivisibleBudget(t *testing.T) {
 func TestCampaignDesignsAreNamedAndClosed(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{designPhase21, designLambda, designPilot, designStag} {
+	for _, name := range []string{designPhase21, designLambda, designPilot, designStag, designSplit} {
 		plan, err := campaignDesign(name, defaultBudget)
 		if err != nil {
 			t.Fatalf("design %s: %v", name, err)
@@ -406,7 +406,7 @@ func TestRegisteredDesignsUseDisjointSeedPrefixes(t *testing.T) {
 	// happens to visit the designs in.
 	shared := map[[2]string]bool{{designPhase21, designLambda}: true, {designLambda, designPhase21}: true}
 
-	for _, name := range []string{designPhase21, designLambda, designPilot, designStag} {
+	for _, name := range []string{designPhase21, designLambda, designPilot, designStag, designSplit} {
 		plan, err := campaignDesign(name, defaultBudget)
 		if err != nil {
 			t.Fatalf("design %s: %v", name, err)
@@ -703,5 +703,58 @@ func TestStagnationDesignsRejectABudgetShorterThanTheirWindow(t *testing.T) {
 		if err != nil {
 			t.Errorf("design %s at the default budget: %v", name, err)
 		}
+	}
+}
+
+func TestBudgetSplitArmsAreEvaluationMatchedAndFixtureIsExplicit(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designSplit, defaultBudget)
+	if err != nil {
+		t.Fatalf("design %s: %v", designSplit, err)
+	}
+
+	// A campaign run on a different image is not poolable with one run on the
+	// shared fixture, so the design has to name both, and the circle count has
+	// to differ from the eight every earlier campaign fitted (Task 10).
+	reference, circles := plan.fixture("example/MayFly-512.png")
+	if reference == "example/MayFly-512.png" {
+		t.Error("budget-split reuses the fixture every earlier campaign measured")
+	}
+
+	if circles == defaultCircles {
+		t.Errorf("budget-split fits %d circles, the same shape as every earlier campaign", circles)
+	}
+
+	// Splitting a budget into epochs or cold restarts multiplies the generation
+	// count. If the product missed the cap, a split arm would be compared
+	// against an unsplit one that had spent more, and the contrast would
+	// measure the budget rather than the split.
+	for _, current := range plan.arms {
+		if current.optimizer != "cmaes" {
+			continue
+		}
+
+		spent := current.iters * current.popSize *
+			max(current.optimizerEpochs, 1) * max(current.optimizerRestarts, 1)
+		if spent != defaultBudget {
+			t.Errorf("arm %s spends %d evaluations, want %d", current.name, spent, defaultBudget)
+		}
+	}
+
+	if len(plan.contrasts) != 2 {
+		t.Fatalf("budget-split registers %d contrasts, want 2", len(plan.contrasts))
+	}
+}
+
+func TestBudgetSplitRefusesABudgetItsSplitsDoNotDivide(t *testing.T) {
+	t.Parallel()
+
+	// 1024 generations do not divide into five equal parts, so the split arms
+	// could not be evaluation-matched and the design must refuse rather than
+	// round a fifth of the budget away.
+	_, err := budgetSplitArms(defaultPop * 1024)
+	if err == nil {
+		t.Fatal("budgetSplitArms accepted a budget its splits do not divide")
 	}
 }
