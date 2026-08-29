@@ -1002,9 +1002,7 @@ func TestRestartLadderIsEvaluationMatchedAndRegistersTwoContrasts(t *testing.T) 
 		strategy                     string
 	}{
 		"sep-r2-l1024":  {1024, 2, 0, coldRestartStrategy},
-		"sep-r4-l512":   {512, 4, 0, coldRestartStrategy},
 		"sep-r8-l256":   {256, 8, 0, coldRestartStrategy},
-		"sep-r16-l128":  {128, 16, 0, coldRestartStrategy},
 		"sep-r32-l64":   {64, 32, 0, coldRestartStrategy},
 		"sep-r64-l32":   {32, 64, 0, coldRestartStrategy},
 		"sep-ipop":      {1024, 1, 0, "ipop"},

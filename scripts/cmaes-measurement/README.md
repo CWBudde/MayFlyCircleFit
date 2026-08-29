@@ -21,7 +21,7 @@ Five designs are registered, selected with `-design`:
   seeds 111013-111024. See below.
 - `budget-split` — six arms on a second fixture, 72 jobs, 12 blocks, seeds
   113001-113012. See below.
-- `restart-ladder` — nine arms, 108 jobs, 12 blocks, seeds 111013-111024
+- `restart-ladder` — seven arms, 84 jobs, 12 blocks, seeds 111013-111024
   (deliberately the same as `stagnation`, so two repeated arms have to
   reproduce that campaign bit for bit and the recorded best cost is inside the
   design). See below.
@@ -335,7 +335,7 @@ minimum of roughly thirty draws from the basin distribution, not the product of
 a deep search, so the obvious way to beat it is more draws rather than longer
 ones.
 
-Six rungs hold `lambda * restarts` at 2048 and give every run
+Four rungs hold `lambda * restarts` at 2048 and give every run
 `budget / 2048 = 3175` generations, so each spends the 6,502,400 cap exactly
 while trading sampling breadth per generation against the number of independent
 searches:
@@ -343,11 +343,15 @@ searches:
 | arm | lambda | cold restarts | independent draws over 12 blocks |
 | --- | ---: | ---: | ---: |
 | `sep-r2-l1024` | 1024 | 2 | 24 |
-| `sep-r4-l512` | 512 | 4 | 48 |
 | `sep-r8-l256` | 256 | 8 | 96 |
-| `sep-r16-l128` | 128 | 16 | 192 |
 | `sep-r32-l64` | 64 | 32 | 384 |
 | `sep-r64-l32` | 32 | 64 | 768 |
+
+The product admits every power of two from 1024 down to 32. The campaign spends
+its arms on span rather than resolution -- three rungs a factor of four apart
+plus the extreme one -- because an arm costs about 1,740 job-seconds a block on
+this fixture and the run had a fixed deadline. The dropped 512 and 128 rungs are
+interior points of the same trend and neither carries a registered contrast.
 
 2048 is the largest product that keeps the whole legal width reachable: the
 last rung needs exactly `app.MaxOptimizerRestarts` cold restarts, and its
@@ -376,7 +380,7 @@ carry no criterion: their restart count is fixed, so ending a dead run early
 cannot buy another one and would only leave the budget unspent.
 
 Two contrasts are registered, so Holm corrects over two questions rather than
-the thirty-six that nine arms would otherwise produce. **`sep-r32-l64` against
+the twenty-one that seven arms would otherwise produce. **`sep-r32-l64` against
 `sep-ipop` is primary** — lambda 64 is four times Hansen's default at this
 dimensionality, so covariance still adapts, while 32 restarts is the most
 independent draws available at a lambda that adapts reliably. It is named here

@@ -150,7 +150,7 @@ anything new against its figures.
       screen established that splitting a CMA-ES budget beats not splitting it
       but could not order the three mechanisms, and it found the IPOP ladder
       budget-capped at two or three runs with the last always truncated.
-      **Registered 2026-08-30 as `-design restart-ladder`**: six rungs holding
+      **Registered 2026-08-30 as `-design restart-ladder`**: four rungs holding
       `lambda * restarts` at 2048 on the shared eight-circle fixture, plus
       `sep-ipop`, `sep-ipop-w60` and the first `bipop` arm this project has
       measured. It runs on the stagnation campaign's seeds so its two IPOP arms

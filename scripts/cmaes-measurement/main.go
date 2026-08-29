@@ -615,6 +615,16 @@ func stagnationArm(name string, lambda, budget, window int, minImprovement float
 // is exactly app.MaxOptimizerRestarts, and 32 is above app.MinPopulation of 20.
 const ladderWork = 2048
 
+// ladderLambdas are the rungs the campaign actually runs. The product above
+// admits every power of two from 1024 down to 32, but a twelve-block campaign
+// costs about 1,740 job-seconds an arm on this fixture and the run had a fixed
+// deadline, so the design spends its arms on span rather than on resolution:
+// three rungs a factor of four apart plus the extreme one, which is where the
+// restart count reaches app.MaxOptimizerRestarts. The two dropped rungs, 512
+// and 128, are interior points of the same trend and neither carries a
+// registered contrast.
+func ladderLambdas() []int { return []int{defaultPop, 256, 64, 32} }
+
 // restartLadderArms asks how many independent basins a fixed budget can buy,
 // and whether buying more of them beats spending the budget on the shape that
 // currently holds the record.
@@ -657,7 +667,7 @@ const ladderWork = 2048
 // leave the budget unspent.
 //
 // Two contrasts are registered, so Holm corrects over two questions rather
-// than the thirty-six that nine arms would otherwise produce. sep-r32-l64 is
+// than the twenty-one that seven arms would otherwise produce. sep-r32-l64 is
 // named as the primary candidate in advance rather than chosen from the
 // ladder afterwards: lambda 64 is four times Hansen's default at this
 // dimensionality, so covariance still adapts, while 32 restarts is the most
@@ -677,9 +687,14 @@ func restartLadderArms(budget int) ([]arm, error) {
 
 	generations := budget / ladderWork
 
-	arms := make([]arm, 0, 9)
+	rungs := ladderLambdas()
 
-	for lambda := defaultPop; lambda >= ladderWork/app.MaxOptimizerRestarts; lambda /= 2 {
+	arms := make([]arm, 0, len(rungs)+3)
+	for _, lambda := range rungs {
+		if ladderWork%lambda != 0 {
+			return nil, fmt.Errorf("ladder rung lambda %d does not divide the ladder product %d", lambda, ladderWork)
+		}
+
 		restarts := ladderWork / lambda
 		if lambda < app.MinPopulation {
 			return nil, fmt.Errorf(
