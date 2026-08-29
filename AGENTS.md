@@ -60,7 +60,7 @@ ones that will change what you propose:
   the winning arm confounds covariance mode with restart strategy, and `lambda`
   is pinned to `popSize` and ran at 1024 against Hansen's default of 16. The
   `lambda` screen below answers the last two with nulls; the stagnation
-  criterion is Task 23.1 of `PLAN.md`. The report's sigma column is **not**
+  criterion is Task 2 of `PLAN.md`. The report's sigma column is **not**
   evidence of a diverged search — sigma alone is gauge-dependent and the
   identifiable `sigma * max(D)` was never recorded; do not cite it.
 - [`docs/cmaes-lambda-report.md`](docs/cmaes-lambda-report.md) — the twelve-block
@@ -109,8 +109,8 @@ ones that will change what you propose:
 - [`docs/support-matrix.md`](docs/support-matrix.md),
   [`docs/known-limitations.md`](docs/known-limitations.md),
   [`docs/troubleshooting.md`](docs/troubleshooting.md) — supported targets, CLI
-  exit statuses, and the JSON API error envelope — and the active Phase 14
-  section of `PLAN.md`.
+  exit statuses, and the JSON API error envelope — and the release-verification
+  task (Task 1) of `PLAN.md`.
 
 ## Architecture
 

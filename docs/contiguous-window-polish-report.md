@@ -293,7 +293,7 @@ re-walked the cheap end before reaching the valuable one.
 
 **Measured 2026-08-21** on the same Ryzen 5 4600H host, Linux 7.0.0,
 Go 1.26.0, `GOMAXPROCS=12`, AVX2, and one render thread per evaluation. These
-measurements cover the Task 15.7 evaluator, which applies to every CPU
+measurements cover the dirty-region evaluator, which applies to every CPU
 polishing strategy; they are recorded here because dirty scoring removes the
 render-cost premise that originally motivated `contiguous-window`.
 
@@ -337,7 +337,7 @@ case. Setup storage is retained by the session, so the timed loops perform zero
 allocations per evaluation.
 
 The original 599 s live sweep cannot be re-run from this checkout: the
-2,111-circle checkpoint named in Task 15.7 is no longer present under
+2,111-circle checkpoint behind it is no longer present under
 `data/jobs` (the live campaign has advanced), and the checkpoint was not
 committed as a fixture. Consequently this report does **not** claim a new
 equal-budget wall clock or re-assert its 0.000 result. Exact cost parity is
@@ -346,7 +346,8 @@ active sets, including consecutive candidates and the full-canvas fallback.
 Preserving the missing checkpoint, or another immutable production fixture, is
 required before closing that final acceptance check.
 
-Dirty scoring also changes the Task 15.3 tradeoff. Prefix-aware active-set
+Dirty scoring also changes the prefix-aware selection tradeoff (Task 13 of
+[`../PLAN.md`](../PLAN.md)). Prefix-aware active-set
 selection would still shorten the suffix traversal, and baked prefixes remain
 useful for the fallback, but ordinary dirty evaluations no longer rasterize
 the complete suffix or score the complete canvas. The remaining gain is not

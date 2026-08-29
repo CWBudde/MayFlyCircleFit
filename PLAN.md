@@ -5,9 +5,16 @@ here; what they decided and measured lives in [`docs/`](docs/README.md), their
 tests, and git history. A completed marker in git records implementation for its
 revision, not a fresh release-gate result.
 
+Tasks are numbered `1`–`13` in priority order. **The old phase-dotted numbers
+were retired with the phases that carried them**; the index below maps each open
+task to the number it used to have, so an older citation — in `docs/`, a code
+comment, a commit message, or a pull request — still resolves. A dotted number
+that does not appear in the "was" column belongs to completed work and keeps its
+historical meaning wherever it is cited.
+
 > **Production-readiness caveat (2026-08-09 audit):** the remediation code,
 > release-gating CI, and corrected documentation are present, but no gate counts
-> as passed because its workflow exists. Task 14.13 removes this caveat.
+> as passed because its workflow exists. Task 1 removes this caveat.
 
 ## Rules for this plan
 
@@ -19,27 +26,29 @@ revision, not a fresh release-gate result.
 - Findings belong in `docs/`, not here. A task keeps only what is needed to
   decide and do it, plus a link.
 
+## Index
+
+| # | Task | P | Was |
+| ---: | --- | --- | --- |
+| [1](#task-1-final-release-verification-p0) | Final release verification | P0 | 14.13 |
+| [2](#task-2-decide-whether-a-restart-strategy-arms-a-stagnation-criterion-p1) | CMA-ES stagnation criterion | P1 | 23.1 |
+| [3](#task-3-spend-a-stages-budget-as-restarts-not-one-long-run-p1) | Restarts, not one long run | P1 | 15.11 |
+| [4](#task-4-close-the-dirty-region-evaluators-end-to-end-check-p1) | Dirty-region end-to-end check | P1 | 15.7 |
+| [5](#task-5-browser-bundle-and-documentation-sign-off-p1) | Dashboard sign-off | P1 | 17.11 |
+| [6](#task-6-derive-the-evaluation-width-from-a-measurement-p2) | Evaluation width from measurement | P2 | 15.5 |
+| [7](#task-7-refresh-post-fix-polishing-evidence-p2) | Refresh polishing evidence | P2 | 15.10 |
+| [8](#task-8-bound-the-restore-path-resident-set-p2) | Bound the restore-path resident set | P2 | 17.12 |
+| [9](#task-9-remaining-documentation-examples-and-observability-p3) | Documentation and observability | P3 | 13.15 |
+| [10](#task-10-a-second-cma-es-fixture-p3) | A second CMA-ES fixture | P3 | 23.4 |
+| [11](#task-11-remaining-opencl-optimization-tranches-p3) | Remaining OpenCL tranches | P3 | 11.13 |
+| [12](#task-12-deferred-cpu-kernel-research-p3) | Deferred CPU-kernel research | P3 | 10.20 |
+| [13](#task-13-prefix-aware-active-set-selection-p3-effectively-closed) | Prefix-aware active-set selection | P3 | 15.3 |
+
 ---
 
-## Open work, in priority order
+## P0 — release gate
 
-| # | Work | Tasks |
-| --- | --- | --- |
-| 1 | Release gate (P0) | 14.13 |
-| 2 | CMA-ES stagnation default (P1) | 23.1 |
-| 3 | Search quality (P1) | 15.11 |
-| 4 | Polishing evidence and defaults (P1/P2) | 15.7, 15.5, 15.10 |
-| 5 | Dashboard sign-off (P1) | 17.11 |
-| 6 | Server memory (P2) | 17.12 |
-| 7 | Supporting documentation (P3) | 13.15 |
-| 8 | Second CMA-ES fixture (P3) | 23.4 |
-| 9 | Experimental backends and research (P3) | 11.13, 10.20, 15.3 |
-
----
-
-## Phase 14: Production readiness 🚨 RELEASE GATE
-
-### Task 14.13: Final release verification (P0)
+### Task 1: Final release verification (P0)
 
 - [ ] Observe every required CI gate — all supported cross-builds, generation,
       race, vulnerability, GPU compile, and core end-to-end — passing from a
@@ -50,20 +59,18 @@ revision, not a fresh release-gate result.
 - [ ] On a clean user machine, follow the README verbatim and complete a small
       CLI job and a server/UI job without workspace preparation.
 - [ ] After those checks pass, remove the production-readiness caveat above and
-      mark Phase 14 complete.
+      record the release gate as met.
 
 ---
 
-## Phase 23: CMA-ES restart behaviour
+## P1
+
+### Task 2: Decide whether a restart strategy arms a stagnation criterion (P1)
 
 [`docs/cmaes-report.md`](docs/cmaes-report.md),
 [`docs/cmaes-lambda-report.md`](docs/cmaes-lambda-report.md), and
 [`docs/cmaes-stagnation-pilot-report.md`](docs/cmaes-stagnation-pilot-report.md)
-are the evidence. Read them first; their numbers are not repeated here. Tasks
-23.2 and 23.3 are closed — both returned nulls, and neither `lambda` nor
-separable covariance has a measured case for a default change.
-
-### Task 23.1: Decide whether a restart strategy arms a stagnation criterion (P1)
+are the evidence. Read them first; their numbers are not repeated here.
 
 The observability this needs is built: per-restart `TerminationReason` records,
 `DistributionExtent`, and the trace `restart` index. The window is selected:
@@ -71,6 +78,10 @@ half Hansen's anchor at both `lambda` levels. The campaign that tests whether
 reclaimed budget buys quality — `-design stagnation`, 4 arms x 12 blocks at
 seeds 111013-111024, two named contrasts, `lambda` 20 primary — was submitted
 2026-08-29.
+
+The two questions the Phase 21 campaign left beside this one are closed. Both
+returned nulls, and neither `lambda` nor separable covariance has a measured
+case for a default change.
 
 - [ ] Analyze the `stagnation` campaign and report it in
       [`docs/cmaes-stagnation-pilot-report.md`](docs/cmaes-stagnation-pilot-report.md)
@@ -84,17 +95,7 @@ seeds 111013-111024, two named contrasts, `lambda` 20 primary — was submitted
       default must be window-only — `stopMinImprovement` is an absolute cost
       threshold and cannot transfer to another reference image.
 
-### Task 23.4: A second fixture (P3)
-
-- [ ] Only after 23.1: repeat on a second reference image and a different circle
-      count. Everything measured so far is eight circles on one 512x512
-      reference.
-
----
-
-## Phase 15: Search quality and polishing throughput
-
-### Task 15.11: Spend a stage's budget as restarts, not one long run (P1)
+### Task 3: Spend a stage's budget as restarts, not one long run (P1)
 
 A budget-matched ladder over twelve paired blocks puts splitting a stage's
 budget at about 160 cost points, winning every block at eight and sixteen
@@ -122,7 +123,7 @@ anything new against its figures.
       vector rather than a cold population, so the collapse dynamics there are
       unmeasured.
 
-### Task 15.7: Close the dirty-region evaluator's end-to-end check (P1)
+### Task 4: Close the dirty-region evaluator's end-to-end check (P1)
 
 The evaluator is built, measured, and pinned for exact cost parity; the
 production-shaped 2,111-circle case is 3.1x faster per candidate. See the
@@ -137,53 +138,7 @@ the 2,111-circle checkpoint behind the original 599 s sweep is no longer under
       cost it reaches is unchanged.
 - [ ] Record per-candidate cost against affected fraction in the report.
 
-### Task 15.5: Derive the evaluation width from a measurement (P2)
-
-`EvaluationWorkers` defaults to `Threads`, clamped to `GOMAXPROCS`, so an
-ordinary run uses one concurrent evaluation per hardware thread. That is the
-core count talking, and the one host measured disagrees — see "The shipped
-default is the core count, not this measurement" in
-[`docs/polishing-throughput-report.md`](docs/polishing-throughput-report.md).
-
-- [ ] Benchmark widths on more than one machine and more than one canvas size.
-      One data point on one 12-thread box cannot pick a formula.
-- [ ] Establish whether the rule is a fraction of `GOMAXPROCS`, a fixed headroom
-      below it, or image-size dependent, and replace the default with it.
-- [ ] Document the chosen rule next to `EvaluationWorkers` with the measurement
-      behind it, keeping an explicit setting authoritative.
-
-**Acceptance checks:**
-
-- [ ] A benchmark table shows sweep cost against evaluation width on the stated
-      machines, and the default the code picks is the width that table
-      recommends.
-- [ ] An explicitly configured `EvaluationWorkers` is still honored up to the
-      `GOMAXPROCS` clamp, with a test covering it.
-
-### Task 15.10: Refresh post-fix polishing evidence (P2)
-
-- [ ] Re-measure `BenchmarkPolishStrategyQualityAfterBatchFit` after the Task
-      15.6 acceptance-gate correction and refresh
-      [`docs/contiguous-window-polish-report.md`](docs/contiguous-window-polish-report.md).
-      The old ranking was partly determined by which active set happened to
-      cover inherited blocker circles.
-
-### Task 15.3: Prefix-aware active-set selection (P3, effectively closed)
-
-Dirty-region scoring removed the premise. Ordinary evaluations no longer
-rasterize the whole suffix or score the whole canvas, and the report's verdict
-is to keep selection quality-driven. Reopen only if a new end-to-end profile
-shows the prefix mattering again.
-
-- [ ] If reopened: bias selection toward later draw slots when region energy is
-      close, and ship it only with a measured quality comparison at equal
-      optimizer budget on the same seed — not on the cost argument alone.
-
----
-
-## Phase 17: Dashboard
-
-### Task 17.11: Browser, bundle, and documentation sign-off (P1)
+### Task 5: Browser, bundle, and documentation sign-off (P1)
 
 - [ ] Capture and add the README dashboard screenshot on a working browser
       runner.
@@ -206,7 +161,42 @@ Safari proper is not covered by CI — Playwright ships WebKit built for Linux.
 Use the manual checklist in
 [`docs/browser-support.md`](docs/browser-support.md).
 
-### Task 17.12: Bound the restore-path resident set (P2)
+---
+
+## P2
+
+### Task 6: Derive the evaluation width from a measurement (P2)
+
+`EvaluationWorkers` defaults to `Threads`, clamped to `GOMAXPROCS`, so an
+ordinary run uses one concurrent evaluation per hardware thread. That is the
+core count talking, and the one host measured disagrees — see "The shipped
+default is the core count, not this measurement" in
+[`docs/polishing-throughput-report.md`](docs/polishing-throughput-report.md).
+
+- [ ] Benchmark widths on more than one machine and more than one canvas size.
+      One data point on one 12-thread box cannot pick a formula.
+- [ ] Establish whether the rule is a fraction of `GOMAXPROCS`, a fixed headroom
+      below it, or image-size dependent, and replace the default with it.
+- [ ] Document the chosen rule next to `EvaluationWorkers` with the measurement
+      behind it, keeping an explicit setting authoritative.
+
+**Acceptance checks:**
+
+- [ ] A benchmark table shows sweep cost against evaluation width on the stated
+      machines, and the default the code picks is the width that table
+      recommends.
+- [ ] An explicitly configured `EvaluationWorkers` is still honored up to the
+      `GOMAXPROCS` clamp, with a test covering it.
+
+### Task 7: Refresh post-fix polishing evidence (P2)
+
+- [ ] Re-measure `BenchmarkPolishStrategyQualityAfterBatchFit` after the
+      acceptance-gate correction and refresh
+      [`docs/contiguous-window-polish-report.md`](docs/contiguous-window-polish-report.md).
+      The old ranking was partly determined by which active set happened to
+      cover inherited blocker circles.
+
+### Task 8: Bound the restore-path resident set (P2)
 
 The measurement and the mechanism are in the "Security and deployment" section
 of [`docs/known-limitations.md`](docs/known-limitations.md): 1.34 GB resident
@@ -230,15 +220,15 @@ than to what is being served.
 - [ ] `GET /` and `/api/v1/dashboard` latency is reported at the same three
       sizes and does not grow with total job count.
 - [ ] A restored job still resumes, extends, and renders identically — a resumed
-      job reproduces the parent cost exactly, as in Task 15.9.
+      job reproduces the parent cost exactly.
 - [ ] Job detail, campaign charts, and the trace download return the same series
       as before for a terminal job whose history is no longer resident.
 
 ---
 
-## Phase 13: Documentation and observability
+## P3
 
-### Task 13.15: Remaining documentation, examples, and observability (P3)
+### Task 9: Remaining documentation, examples, and observability (P3)
 
 - [ ] Audit structured logging fields and levels, document logging
       configuration, and add measured slow-operation or progress logging where
@@ -257,24 +247,26 @@ Badges, promotional screenshots, a walkthrough video, source-file copyright
 headers, and a code of conduct remain optional publication work rather than
 engineering tasks.
 
----
+### Task 10: A second CMA-ES fixture (P3)
 
-## Phase 11: GPU backend (experimental)
+- [ ] Only after Task 2: repeat on a second reference image and a different
+      circle count. Everything measured so far is eight circles on one 512x512
+      reference.
 
-Tasks 11.1–11.12 are complete: OpenCL is integrated, benchmarked, parity-tested,
-and documented on one vendor GPU, with deliberate opt-in fallback.
+### Task 11: Remaining OpenCL optimization tranches (P3)
+
+OpenCL is integrated, benchmarked, parity-tested, and documented on one vendor
+GPU, with deliberate opt-in fallback.
 [`docs/gpu-backends.md`](docs/gpu-backends.md) and
 [`docs/gpu-performance-report.md`](docs/gpu-performance-report.md) are
 authoritative.
 
-**OpenCL stays experimental**, and the remaining reasons are coverage, not
-speed: parity and throughput are established on one NVIDIA T550, AMD and Intel
-are unmeasured for both, and there is no required real-device CI runner — the
-GPU gate runs PoCL on a CPU. No optimization answers any of those.
+**It stays experimental**, and the remaining reasons are coverage, not speed:
+parity and throughput are established on one NVIDIA T550, AMD and Intel are
+unmeasured for both, and there is no required real-device CI runner — the GPU
+gate runs PoCL on a CPU. No optimization answers any of those.
 
-### Task 11.13: Remaining OpenCL optimization tranches (P3)
-
-Tranches 1 and 2 shipped: sessions share one device engine, and staged sessions
+Two tranches shipped: sessions share one device engine, and staged sessions
 composite onto a retained canvas. The staged path went from a 26x/84x separated
 loss to 2.5–4.8x faster than the CPU at 512², flat in retained depth.
 
@@ -285,7 +277,7 @@ K=1 to K=100 and latency-bound), `engine.poison()` (the shared degradation
 record already discovers a lost device once per run), and a device-resident
 retained-canvas handoff (the host needs the canvas on every stage boundary
 regardless, so only the upload could be avoided — one image copy per stage
-against the term tranche 2 made flat).
+against the term the second tranche made flat).
 
 Note before benchmarking any of this: whole-pipeline benchmarks fix K at 12 and
 run eight evaluations per stage where a real stage runs hundreds, so they cannot
@@ -320,11 +312,7 @@ see the effects that matter. Use `BenchmarkStagedEvaluationAtDepth`.
   - [ ] Document crossover points and retain an optimization only where
         profiling demonstrates a benefit.
 
----
-
-## Phase 10: CPU kernel research
-
-### Task 10.20: Deferred CPU-kernel research (P3)
+### Task 12: Deferred CPU-kernel research (P3)
 
 Bounded research follow-ups, not blockers for the selected production CPU path.
 Everything already measured is recorded in
@@ -349,6 +337,17 @@ and [`docs/renderer-precision-measurements.md`](docs/renderer-precision-measurem
 - [ ] If the original Pascal/Delphi source becomes available, document its exact
       cost arithmetic and numeric/SIMD representations. Until then,
       [`docs/incremental-cost.md`](docs/incremental-cost.md) is the contract.
+
+### Task 13: Prefix-aware active-set selection (P3, effectively closed)
+
+Dirty-region scoring removed the premise. Ordinary evaluations no longer
+rasterize the whole suffix or score the whole canvas, and the report's verdict
+is to keep selection quality-driven. Reopen only if a new end-to-end profile
+shows the prefix mattering again.
+
+- [ ] If reopened: bias selection toward later draw slots when region energy is
+      close, and ship it only with a measured quality comparison at equal
+      optimizer budget on the same seed — not on the cost argument alone.
 
 ---
 

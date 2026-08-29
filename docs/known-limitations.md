@@ -39,10 +39,10 @@ behavior is production-ready.
   | `GET /` | 5.3 s |
 
   The earlier OOM kill on this data root was caused by per-request re-parsing
-  and is fixed; this is the floor that remains under it. Bounding it is Task
-  17.12 in [`../PLAN.md`](../PLAN.md). A long campaign on one data root is the
-  case to watch: prune or move terminal jobs if startup time or resident set
-  becomes a problem before then.
+  and is fixed; this is the floor that remains under it. Bounding it is Task 8
+  in [`../PLAN.md`](../PLAN.md). A long campaign on one data root is the case to
+  watch: prune or move terminal jobs if startup time or resident set becomes a
+  problem before then.
 
 ## Resume and persistence
 
@@ -538,7 +538,7 @@ behavior is production-ready.
   [`browser-support.md`](browser-support.md) carries the manual checklist that
   does, and a results table so a completed pass is recorded evidence.
 - The existence of a workflow is not evidence that a revision passed it. Use
-  the workflow result and Phase 14 acceptance checks for release decisions.
+  the workflow result and the release-verification checks for release decisions.
 - Valid SemVer tags run the complete required matrix before the repository's
   automated release job can publish portable CPU archives. This dependency gate
   does not prevent a sufficiently privileged GitHub user from creating a tag or
@@ -548,5 +548,5 @@ behavior is production-ready.
   or an SBOM. The published SHA-256 manifest detects accidental or post-download
   corruption but is not a substitute for signature verification.
 
-Track remaining work in the active
-[Phase 14 release gate](../PLAN.md#phase-14-production-readiness--release-gate).
+Track remaining work in
+[Task 1, final release verification](../PLAN.md#task-1-final-release-verification-p0).

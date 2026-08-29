@@ -50,7 +50,7 @@ must use the prefixed form or it will wait forever on a check that never reports
    ignored `dist/` directory with archives for Linux/AMD64, Linux/ARM64,
    macOS/AMD64, macOS/ARM64, and Windows/AMD64.
 
-4. Confirm the required CI workflow has passed for the commit. Phase 14 also
+4. Confirm the required CI workflow has passed for the commit. The release-verification task in `PLAN.md` also
    requires two consecutive clean workflow runs before declaring the release
    candidate ready.
 
@@ -98,8 +98,8 @@ published tag; issue a new patch version instead.
 The workflow gates repository-controlled automated releases. GitHub users with
 sufficient repository permissions may still create tags or releases manually
 unless repository rules and roles prevent it. Maintainers must configure and
-verify those administrative controls before checking Phase 14's absolute
-release-policy acceptance item.
+verify those administrative controls before checking the release-policy
+acceptance item in `PLAN.md`.
 
 Release archives are portable CPU builds with `CGO_ENABLED=0`. OpenCL builds,
 artifact signing, provenance attestations, SBOMs, and real-vendor GPU

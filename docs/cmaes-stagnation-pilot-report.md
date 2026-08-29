@@ -108,7 +108,7 @@ Registered as `-design stagnation`: `sep-ipop-l20` and `sep-ipop`, each with and
 without its selected window, 4 arms x 12 blocks at seeds 111013-111024.
 **Two named contrasts** rather than a derived family, with `lambda` 20 primary,
 because that is the level where the criterion bought a restart rather than
-merely a longer final run. Submitted 2026-08-29; open work is Task 23.1 in
+merely a longer final run. Submitted 2026-08-29; open work is Task 2 in
 [`../PLAN.md`](../PLAN.md).
 
 ## Reproducing

@@ -319,4 +319,4 @@ spend a stage's budget as four or more cold attempts and keep the best, rather
 than as one long attempt. On this workload that was 88 points better for 15%
 of the compute at four attempts, and about 157 points better at equal budget.
 
-Tracked as Task 15.11.
+Tracked as Task 3 of [`../PLAN.md`](../PLAN.md).
