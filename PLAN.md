@@ -69,31 +69,38 @@ historical meaning wherever it is cited.
 
 [`docs/cmaes-report.md`](docs/cmaes-report.md),
 [`docs/cmaes-lambda-report.md`](docs/cmaes-lambda-report.md), and
-[`docs/cmaes-stagnation-pilot-report.md`](docs/cmaes-stagnation-pilot-report.md)
+[`docs/cmaes-stagnation-report.md`](docs/cmaes-stagnation-report.md)
 are the evidence. Read them first; their numbers are not repeated here.
 
-The observability this needs is built: per-restart `TerminationReason` records,
-`DistributionExtent`, and the trace `restart` index. The window is selected:
-half Hansen's anchor at both `lambda` levels. The campaign that tests whether
-reclaimed budget buys quality — `-design stagnation`, 4 arms x 12 blocks at
-seeds 111013-111024, two named contrasts, `lambda` 20 primary — was submitted
-2026-08-29.
+**Answered: no.** The twelve-block campaign ran on 2026-08-29 and both
+registered contrasts retain their null under Holm — the primary at `t = -0.34`
+with six blocks won of twelve. The criterion fires as designed and does not
+improve the fit, so arming one by default would be a behaviour change for every
+existing CMA-ES restart configuration in exchange for nothing measurable.
 
-The two questions the Phase 21 campaign left beside this one are closed. Both
-returned nulls, and neither `lambda` nor separable covariance has a measured
-case for a default change.
+The three questions the Phase 21 campaign raised are now all closed, and all
+three returned nulls: neither `lambda`, nor separable covariance, nor a
+stagnation criterion has a measured case for a default change.
 
-- [ ] Analyze the `stagnation` campaign and report it in
-      [`docs/cmaes-stagnation-pilot-report.md`](docs/cmaes-stagnation-pilot-report.md)
-      or its own report, correcting the two registered contrasts together.
-- [ ] Decide, on that result, whether a restart strategy arms a default
-      stagnation criterion when the caller sets none. It is a behaviour change
-      for every existing CMA-ES restart configuration. The pilot's prior is a
-      null: it moved budget without moving cost.
-- [ ] If adopted, document the default beside `stopStagnationIters` with the
-      measurement behind it, and keep an explicit setting authoritative. A
-      default must be window-only — `stopMinImprovement` is an absolute cost
+- [x] Analyze the `stagnation` campaign and report it in
+      [`docs/cmaes-stagnation-report.md`](docs/cmaes-stagnation-report.md),
+      correcting the two registered contrasts together. Both retain. Raw costs,
+      trajectories and per-restart records are committed beside it — the first
+      non-empty restart files in the repository.
+- [x] Decide whether a restart strategy arms a default stagnation criterion
+      when the caller sets none. **It does not.** `stopStagnationIters` stays
+      available and unchanged for a caller who sets it deliberately.
+- [x] Not adopted, so no default to document. The window-only constraint stands
+      if this is ever revisited: `stopMinImprovement` is an absolute cost
       threshold and cannot transfer to another reference image.
+
+One methodological correction is worth carrying forward. The window was chosen
+by a rule fixed before the pilot's data existed, which was the right procedure —
+but it was applied to a quantity that proved unstable at three blocks, and
+reclaimed budget reversed sign at `lambda` 20 between the pilot and the
+campaign. The campaign's answer is unaffected, because it tests cost and cost is
+a null at both levels. A future pilot that selects on a measured quantity needs
+more than three blocks to do it.
 
 ### Task 3: Spend a stage's budget as restarts, not one long run (P1)
 

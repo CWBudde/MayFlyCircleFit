@@ -114,13 +114,15 @@ re-measure instead.
   `app.MinPopulation`, and for the measurement that retires the sigma question —
   `sigma * max(D)` never exceeds 1.52 while sigma spans fifty-two orders of
   magnitude. Also records that thirty-six cells reproduce Phase 21 bit for bit.
-- [`cmaes-stagnation-pilot-report.md`](cmaes-stagnation-pilot-report.md) — the
-  three-block pilot that selects the stagnation window a restart schedule should
-  arm, on mechanism rather than on cost: half Hansen's anchor at both `lambda`
-  levels, reclaiming 19.7 and 25.6 percentage points of wasted budget. Records
-  what the adapter now writes per restart, and why an absolute
-  `stopMinImprovement` threshold is retired. Descriptive only — it moved budget
-  without moving cost.
+- [`cmaes-stagnation-report.md`](cmaes-stagnation-report.md) — the
+  window-selection pilot and the twelve-block campaign that tested it. **Arming
+  a stagnation criterion on a CMA-ES restart schedule does not improve the
+  fit**: both registered contrasts retain their null under Holm, the primary at
+  `t = -0.34` with 6/12 blocks won. The criterion fires as designed and buys
+  almost nothing — at `lambda` 1024 it adds no restarts at all, and at
+  `lambda` 20 it *raised* the wasted share. Read before proposing a default,
+  and for a worked case of a three-block pilot whose mechanism finding did not
+  replicate.
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by

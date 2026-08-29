@@ -34,7 +34,7 @@ ones that will change what you propose:
   what was ruled out; re-measure before citing a figure. See the Toolchain
   section. Five reports are on the current pins and may be cited directly: the
   QMC screen, and the four CMA-ES ones — `cmaes-report.md`,
-  `cmaes-lambda-report.md`, `cmaes-stagnation-pilot-report.md` and
+  `cmaes-lambda-report.md`, `cmaes-stagnation-report.md` and
   `cmaes-preliminary-report.md`, all run in 2026-08 on MayFly v0.7.1 and
   go-cma-es v0.1.0 — the preliminary one on the code-identical pseudo-version
   that preceded that tag. Each states its own pins; trust that line over this
@@ -86,16 +86,20 @@ ones that will change what you propose:
   three replication arms reproduce all thirty-six Phase 21 cells bit for bit
   across a different binary and a different concurrency setting, which is what
   licenses comparing the two campaigns' rows directly.
-- [`docs/cmaes-stagnation-pilot-report.md`](docs/cmaes-stagnation-pilot-report.md)
-  — the three-block pilot that selects the stagnation window a CMA-ES restart
-  schedule should arm: half Hansen's `120 + 30n/lambda` anchor at both `lambda`
-  levels, reclaiming 19.7 and 25.6 percentage points of the budget spent after
-  the last improvement. It also records what the adapter now writes per restart
-  — `TerminationReason`, `DistributionExtent`, and the trace `restart` index —
-  which no earlier campaign carries, so an arm this question rests on must be
-  re-run rather than re-read. **It moved budget without moving cost**, so do not
-  quote it as a quality result; the twelve-block campaign that tests cost is
-  open.
+- [`docs/cmaes-stagnation-report.md`](docs/cmaes-stagnation-report.md)
+  — the window-selection pilot and the twelve-block campaign that tested it.
+  **Arming a stagnation criterion on a CMA-ES restart schedule does not improve
+  the fit.** Both registered contrasts retain their null under Holm; the primary
+  is `t = -0.34` with six blocks won of twelve, and the secondary's positive
+  mean comes from a single outlying control block while it wins only four. The
+  criterion fires — 68 stopped runs of 98 at `lambda` 20 — and buys almost
+  nothing: at `lambda` 1024 the ladder is budget-capped at three runs either
+  way, and at `lambda` 20 the wasted share *rose*. **Read before proposing that
+  a restart strategy arm one by default; the 30-57% waste the earlier reports
+  measured is not an available gain.** It also carries the first non-empty
+  per-restart records in the repository, the `distributionExtent` reading that
+  reproduces the lambda screen's sigma finding on new seeds, and a worked case
+  of a three-block pilot whose mechanism result reversed sign at twelve.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more

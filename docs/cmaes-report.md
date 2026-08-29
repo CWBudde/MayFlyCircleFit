@@ -234,15 +234,14 @@ progress, so a dead run holds the shared budget until it is spent instead of
 handing it to the next restart. `cmaes-single` does not have this problem
 because a single run that reaches `MaxIterations` simply ends.
 
-That is a configuration finding, not a library defect, and it is cheap to act
-on: setting `stopStagnationIters` on a restart arm converts wasted budget into
-additional restarts.
-
-Which window to set is measured in
-[`cmaes-stagnation-pilot-report.md`](cmaes-stagnation-pilot-report.md) — half
-Hansen's anchor at both `lambda` levels — along with the per-restart records
-this campaign could not have written, and the warning that reclaimed budget has
-not yet been shown to buy quality.
+That is a configuration finding, not a library defect. **It is also not worth
+acting on**, which this campaign could not have known:
+[`cmaes-stagnation-report.md`](cmaes-stagnation-report.md) armed
+`stopStagnationIters` over twelve paired blocks and both registered contrasts
+retain their null, the primary at `t = -0.34` with six blocks won of twelve.
+The criterion does stop dead runs — 68 of 98 at `lambda` 20 — and it does not
+improve the fit. Read the waste figures above as a description of where the
+budget goes, never as an available gain.
 
 ### What the recorded sigma does and does not show
 
