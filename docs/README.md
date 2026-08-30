@@ -134,6 +134,19 @@ re-measure instead.
   change, for why the IPOP ladder is budget-capped at two or three runs and
   returns the unsplit arm's exact cost in half the blocks, and for the
   registration discrepancy that leaves the epoch-versus-restart question open.
+- [`cmaes-restart-ladder-report.md`](cmaes-restart-ladder-report.md) — seven
+  arms and eighty-four jobs asking how many independent basins a fixed budget
+  can buy. **Both registered contrasts retain**: trading population for cold
+  restarts does not beat the incumbent IPOP schedule (`t = -0.26`), and BIPOP
+  does not beat IPOP at a matched criterion (`t = +0.76`). The record was
+  matched, not beaten. Read it for why: the record is **not** the lucky tail of
+  thirty draws but what a population of 1024 reliably converges to on that seed
+  — all four `lambda` 1024 arms return it bit for bit and no small-population
+  arm found it with 32 or 64 draws. Read it also before designing another
+  restart ladder, because this one's arms spent only 29-44% of their cap and a
+  fixed `optimizerRestarts` count cannot express "restart until the budget is
+  gone". Carries the first `bipop` data in the repository, and the twenty-four
+  cells that reproduce `cmaes-stagnation-report.md` bit for bit.
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by

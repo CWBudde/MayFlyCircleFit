@@ -159,7 +159,16 @@ anything new against its figures.
       contrast `sep-r32-l64` against `sep-ipop`; secondary `sep-bipop-w60`
       against `sep-ipop-w60`. **The design is frozen at the commit the campaign
       is submitted from**, which is the procedural lesson the budget-split
-      report had to record.
+      report had to record. **Ran 2026-08-30** (84 jobs, 04:01 of wall clock);
+      both registered contrasts retain and the record was matched, not beaten.
+      See [`docs/cmaes-restart-ladder-report.md`](docs/cmaes-restart-ladder-report.md).
+      **The box stays open**, and for a specific reason the campaign discovered
+      rather than assumed: its ladder arms spent only 29-44% of the cap, because
+      each cold restart trips `TolFun` early and `optimizerRestarts` is a fixed
+      count that cannot express "restart until the budget is gone". So the
+      restart-count question is cap-matched but not spend-matched and remains
+      unanswered. Closing it needs that shape first — which is a change to the
+      restart wrapper, not another campaign on the current one.
 
 ### Task 4: Close the dirty-region evaluator's end-to-end check (P1)
 
