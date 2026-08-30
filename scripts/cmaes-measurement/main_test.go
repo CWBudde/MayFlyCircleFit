@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/cwbudde/circlefit/internal/app"
+	"github.com/cwbudde/circlefit/internal/fit"
 	"github.com/cwbudde/circlefit/internal/opt"
 )
 
@@ -272,8 +273,8 @@ func TestLambdaScreenRejectsAnIndivisibleBudget(t *testing.T) {
 func TestCampaignDesignsAreNamedAndClosed(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{designPhase21, designLambda, designPilot, designStag, designSplit, designLadder} {
-		plan, err := campaignDesign(name, defaultBudget)
+	for _, name := range registeredDesigns() {
+		plan, err := campaignDesign(name, mustDesignBudget(t, name))
 		if err != nil {
 			t.Fatalf("design %s: %v", name, err)
 		}
@@ -422,8 +423,8 @@ func TestRegisteredDesignsUseDisjointSeedPrefixes(t *testing.T) {
 		{designStag, designLadder}: true, {designLadder, designStag}: true,
 	}
 
-	for _, name := range []string{designPhase21, designLambda, designPilot, designStag, designSplit, designLadder} {
-		plan, err := campaignDesign(name, defaultBudget)
+	for _, name := range registeredDesigns() {
+		plan, err := campaignDesign(name, mustDesignBudget(t, name))
 		if err != nil {
 			t.Fatalf("design %s: %v", name, err)
 		}
@@ -1167,5 +1168,346 @@ func TestRestartLadderRefusesABudgetItsRungsDoNotDivide(t *testing.T) {
 	_, err = restartLadderArms(0)
 	if err == nil {
 		t.Error("restartLadderArms accepted a zero budget")
+	}
+}
+
+// registeredDesigns is every design campaignDesign knows. The enumerating tests
+// share it so a new design cannot be added to the switch and quietly skip the
+// closure and seed-collision guards.
+func registeredDesigns() []string {
+	return []string{
+		designPhase21, designLambda, designPilot, designStag,
+		designSplit, designLadder, designHunt,
+	}
+}
+
+// mustDesignBudget resolves a design's own registered budget the way main does,
+// so an enumerating test does not have to know which designs inherit the fixed
+// MayFly-matched cap and which register their own.
+func mustDesignBudget(t *testing.T, name string) int {
+	t.Helper()
+
+	budget, err := designBudget(name, 0)
+	if err != nil {
+		t.Fatalf("design %s budget: %v", name, err)
+	}
+
+	return budget
+}
+
+func TestDesignBudgetIsTheDesignsAndAFlagCanOnlyAssertIt(t *testing.T) {
+	t.Parallel()
+
+	// -budget is both the arm sizer and the trace scoring cap, so a campaign
+	// submitted at one value and collected at another would score every job
+	// against a cap it never ran under. The design owns the number.
+	if budget := mustDesignBudget(t, designHunt); budget != huntBudget {
+		t.Errorf("deep hunt budget = %d, want %d", budget, huntBudget)
+	}
+
+	if budget := mustDesignBudget(t, designLadder); budget != defaultBudget {
+		t.Errorf("restart ladder budget = %d, want %d", budget, defaultBudget)
+	}
+
+	_, contradictsHunt := designBudget(designHunt, defaultBudget)
+	if contradictsHunt == nil {
+		t.Error("designBudget accepted a -budget that contradicts the deep hunt's own")
+	}
+
+	_, contradictsLadder := designBudget(designLadder, huntBudget)
+	if contradictsLadder == nil {
+		t.Error("designBudget accepted a -budget that contradicts the ladder's own")
+	}
+
+	// The ceiling every earlier design inherits still has to refuse a bigger
+	// budget, or its arms would stop being evaluation-matched.
+	_, aboveCeiling := campaignDesign(designLadder, huntBudget)
+	if aboveCeiling == nil {
+		t.Error("campaignDesign built the restart ladder above the fixed campaign budget")
+	}
+}
+
+func TestDeepHuntRegistersItsSingleFactorAndCompoundArms(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designHunt, huntBudget)
+	if err != nil {
+		t.Fatalf("deep hunt: %v", err)
+	}
+
+	if !plan.descriptive {
+		t.Error("the deep hunt reports an order statistic and must be descriptive")
+	}
+
+	if len(plan.contrasts) != 0 {
+		t.Errorf("the deep hunt registers %d contrasts, want none", len(plan.contrasts))
+	}
+
+	if plan.record != recordCost {
+		t.Errorf("deep hunt record = %v, want %v", plan.record, recordCost)
+	}
+
+	if plan.blocks != huntBlocks {
+		t.Errorf("deep hunt blocks = %d, want %d", plan.blocks, huntBlocks)
+	}
+
+	// Pinned rather than left to -ref: the design reports a cost against
+	// recordCost and warm-starts from coordinates bounded by that canvas.
+	if plan.reference != recordReference || plan.circles != defaultCircles {
+		t.Errorf("deep hunt fixture = %q at %d circles, want the pinned %q at %d",
+			plan.reference, plan.circles, recordReference, defaultCircles)
+	}
+
+	type shape struct {
+		covariance   string
+		strategy     string
+		lambda       int
+		iters        int
+		epochs       int
+		initialSigma float64
+		passiveCMA   bool
+		warmStart    bool
+	}
+
+	want := map[string]shape{
+		"sep-ipop":         {"separable", "ipop", 1024, 12288, 1, 0, false, false},
+		"blk-ipop":         {"block", "ipop", 1024, 12288, 1, 0, false, false},
+		"blk-l4096":        {"block", coldRestartStrategy, 4096, 3072, 1, 0, false, false},
+		"sep-l4096":        {"separable", coldRestartStrategy, 4096, 3072, 1, 0, false, false},
+		"sep-ipop-s015":    {"separable", "ipop", 1024, 12288, 1, 0.15, false, false},
+		"sep-ipop-s050":    {"separable", "ipop", 1024, 12288, 1, 0.50, false, false},
+		"sep-ipop-passive": {"separable", "ipop", 1024, 12288, 1, 0, true, false},
+		"sep-e8":           {"separable", coldRestartStrategy, 1024, 1536, 8, 0, false, false},
+		"sep-warm-e8":      {"separable", coldRestartStrategy, 1024, 1536, 8, 0.05, false, true},
+	}
+
+	if len(plan.arms) != len(want) {
+		t.Fatalf("deep hunt has %d arms, want %d", len(plan.arms), len(want))
+	}
+
+	for _, current := range plan.arms {
+		expected, registered := want[current.name]
+		if !registered {
+			t.Errorf("unregistered arm %s", current.name)
+
+			continue
+		}
+
+		got := shape{
+			current.covariance, current.restartStrategy, current.popSize, current.iters,
+			current.optimizerEpochs, current.initialSigma, current.passiveCMA, current.warmStart,
+		}
+		if got != expected {
+			t.Errorf("arm %s = %+v, want %+v", current.name, got, expected)
+		}
+
+		if current.optimizer != "cmaes" {
+			t.Errorf("arm %s runs %s; the deep hunt is a CMA-ES design", current.name, current.optimizer)
+		}
+
+		// Evaluation-matched by construction. A descriptive design would
+		// survive an unmatched one, but an arm quietly running on more
+		// evaluations than its neighbours would make the minimum unreadable.
+		spend := current.iters * current.popSize * current.optimizerEpochs * current.optimizerRestarts
+		if spend != huntBudget {
+			t.Errorf("arm %s spends %d evaluations, want %d", current.name, spend, huntBudget)
+		}
+
+		if current.popSize < app.MinPopulation || current.popSize > app.MaxPopulation {
+			t.Errorf("arm %s wants lambda %d, outside app's %d..%d",
+				current.name, current.popSize, app.MinPopulation, app.MaxPopulation)
+		}
+
+		if current.optimizerEpochs > app.MaxOptimizerEpochs {
+			t.Errorf("arm %s wants %d epochs, above app's %d",
+				current.name, current.optimizerEpochs, app.MaxOptimizerEpochs)
+		}
+
+		if current.iters > app.MaxIterations {
+			t.Errorf("arm %s wants %d iterations, above app's %d",
+				current.name, current.iters, app.MaxIterations)
+		}
+
+		// app requires optimizerRestarts to be exactly 1 under ipop or bipop,
+		// so a stray cold-restart count would be refused at submit time.
+		if current.optimizerRestarts != 1 {
+			t.Errorf("arm %s wants %d cold restarts; the hunt splits with epochs",
+				current.name, current.optimizerRestarts)
+		}
+	}
+}
+
+func TestDeepHuntRefusesABudgetItsArmsDoNotDivide(t *testing.T) {
+	t.Parallel()
+
+	// The largest population is 4096, so a budget divisible by 1024 but not by
+	// 4096 leaves that arm unmatched rather than merely awkward.
+	_, unmatched := deepHuntArms(huntBudget + 1024)
+	if unmatched == nil {
+		t.Error("deepHuntArms accepted a budget lambda 4096 does not divide")
+	}
+
+	_, empty := deepHuntArms(0)
+	if empty == nil {
+		t.Error("deepHuntArms accepted a zero budget")
+	}
+}
+
+func TestWarmStartCirclesAreInsideTheBoundsAppEnforces(t *testing.T) {
+	t.Parallel()
+
+	// app refuses an out-of-bounds initialCircles rather than clamping it, so a
+	// silent edit to recordCircles would fail eleven jobs at submit time rather
+	// than degrade quietly. Two of these sit exactly on a bound.
+	const side = 512
+
+	bounds := fit.NewBounds(defaultCircles, side, side)
+
+	circles := recordCircles()
+	if len(circles) != defaultCircles {
+		t.Fatalf("recordCircles has %d circles, want %d", len(circles), defaultCircles)
+	}
+
+	for index, circle := range circles {
+		params := []float64{circle.x, circle.y, circle.r, circle.red, circle.green, circle.blue, circle.opacity}
+		for offset, value := range params {
+			position := index*app.ParametersPerCircle + offset
+			if value < bounds.Lower[position] || value > bounds.Upper[position] {
+				t.Errorf("circle %d parameter %d = %v, outside [%v, %v]",
+					index, offset, value, bounds.Lower[position], bounds.Upper[position])
+			}
+		}
+	}
+}
+
+func TestDeepHuntPayloadCarriesOnlyTheKnobsAnArmTurns(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designHunt, huntBudget)
+	if err != nil {
+		t.Fatalf("deep hunt: %v", err)
+	}
+
+	byName := make(map[string]arm, len(plan.arms))
+	for _, current := range plan.arms {
+		byName[current.name] = current
+	}
+
+	config := settings{project: defaultProject, reference: "example/MayFly-512.png", workers: 8}
+
+	control := jobPayload(config, plan, byName["sep-ipop"], 114001)
+	for _, field := range []string{"initialSigma", "activeCMA", "initialCircles"} {
+		if _, present := control[field]; present {
+			t.Errorf("the control arm sent %s; it has to reach the server untouched", field)
+		}
+	}
+
+	if control["covarianceMode"] != "separable" {
+		t.Errorf("control covarianceMode = %v, want separable", control["covarianceMode"])
+	}
+
+	if block := jobPayload(config, plan, byName["blk-ipop"], 114001); block["covarianceMode"] != "block" {
+		t.Errorf("blk-ipop covarianceMode = %v, want block", block["covarianceMode"])
+	}
+
+	if sigma := jobPayload(config, plan, byName["sep-ipop-s015"], 114001); sigma["initialSigma"] != 0.15 {
+		t.Errorf("sep-ipop-s015 initialSigma = %v, want 0.15", sigma["initialSigma"])
+	}
+
+	passive := jobPayload(config, plan, byName["sep-ipop-passive"], 114001)
+	if active, present := passive["activeCMA"]; !present || active != false {
+		t.Errorf("sep-ipop-passive activeCMA = %v (present %v), want false", active, present)
+	}
+
+	warm := jobPayload(config, plan, byName["sep-warm-e8"], 114001)
+
+	specs, ok := warm["initialCircles"].([]map[string]any)
+	if !ok {
+		t.Fatalf("sep-warm-e8 initialCircles = %T, want []map[string]any", warm["initialCircles"])
+	}
+
+	// app requires exactly one spec per circle and a batch wide enough to cover
+	// them all, which this design's batchSize already is.
+	if len(specs) != defaultCircles {
+		t.Errorf("sep-warm-e8 sent %d circles, want %d", len(specs), defaultCircles)
+	}
+
+	if warm["batchSize"] != defaultCircles {
+		t.Errorf("sep-warm-e8 batchSize = %v, want %d", warm["batchSize"], defaultCircles)
+	}
+
+	if colour := specs[0]["color"]; colour != "#181700" {
+		t.Errorf("first circle colour = %v, want #181700", colour)
+	}
+}
+
+// TestRecordDesignsPinTheirFixture covers the review finding that a design
+// reporting a cost against recordCost must not let -ref redirect it. Both the
+// ladder and the hunt report that record, and the hunt additionally seeds
+// initialCircles from coordinates bounded by a 512x512 canvas.
+func TestRecordDesignsPinTheirFixture(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{designLadder, designHunt} {
+		budget := defaultBudget
+		if name == designHunt {
+			budget = huntBudget
+		}
+
+		plan, err := campaignDesign(name, budget)
+		if err != nil {
+			t.Fatalf("design %s: %v", name, err)
+		}
+
+		if plan.record <= 0 {
+			t.Fatalf("design %s reports no record, so this test is asserting the wrong thing", name)
+		}
+
+		// The fallback is deliberately an image the design must not accept: a
+		// pinned design ignores it, an unpinned one would return it.
+		reference, circles := plan.fixture("example/Ref-512.png")
+		if reference != recordReference {
+			t.Errorf("design %s took fixture %q from -ref, want the pinned %q",
+				name, reference, recordReference)
+		}
+
+		if circles != defaultCircles {
+			t.Errorf("design %s fits %d circles, want the %d the record was recorded at",
+				name, circles, defaultCircles)
+		}
+	}
+}
+
+// TestEvaluationCapCountsEpochsAndRestarts covers the review finding that the
+// descriptive report's "% of cap" column read iters*lambda only, so an arm that
+// split its budget into epochs reported eight times its cap.
+func TestEvaluationCapCountsEpochsAndRestarts(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designHunt, huntBudget)
+	if err != nil {
+		t.Fatalf("design %s: %v", designHunt, err)
+	}
+
+	if got := plan.evaluationCap(); got != huntBudget {
+		t.Errorf("evaluationCap = %d, want the budget %d every arm was sized against", got, huntBudget)
+	}
+
+	// The arm that exposed it: eight epochs, so the old product understated the
+	// cap eightfold and the column would have printed 800%.
+	var split arm
+
+	for _, current := range plan.arms {
+		if current.name == "sep-e8" {
+			split = current
+		}
+	}
+
+	if split.optimizerEpochs <= 1 {
+		t.Fatalf("sep-e8 has %d epochs, so it no longer covers the finding", split.optimizerEpochs)
+	}
+
+	if spent := split.iters * split.popSize * split.optimizerEpochs; spent != plan.evaluationCap() {
+		t.Errorf("sep-e8 spends %d against a cap of %d", spent, plan.evaluationCap())
 	}
 }
