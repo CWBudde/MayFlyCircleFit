@@ -142,6 +142,7 @@ func TestCollectPreliminaryUsesPersistedJobsOnly(t *testing.T) {
 	manifestPath := filepath.Join(root, "manifest.csv")
 	resultsPath := filepath.Join(root, "results.csv")
 	trajectoryPath := filepath.Join(root, "trajectory.csv")
+	restartsPath := filepath.Join(root, "restarts.csv")
 
 	jobDir := filepath.Join(root, "projects", "measurement", "jobs", "persisted")
 
@@ -154,7 +155,12 @@ func TestCollectPreliminaryUsesPersistedJobsOnly(t *testing.T) {
 	writeFixture(t, filepath.Join(jobDir, "checkpoint-info.json"), `{
   "termination":"unknown","optimizerVersion":"test-version","iteration":2,"evaluations":20
 }`)
-	writeFixture(t, filepath.Join(jobDir, "checkpoint.json"), `{"optimizerVersion":"test-version"}`)
+	writeFixture(t, filepath.Join(jobDir, "checkpoint.json"), `{"optimizerVersion":"test-version","restarts":[
+  {"stage":0,"restart":0,"regime":"large","population":1024,"iterations":1126,
+   "evaluations":1153024,"bestCost":812.5,"termination":"tol_fun"},
+  {"stage":0,"restart":1,"regime":"large","population":2048,"iterations":510,
+   "evaluations":1044480,"bestCost":803.25,"termination":"maximum_evaluations"}
+]}`)
 
 	trace := `{"optimizerDiagnostics":{"sigma":0.3,"conditionNumber":1.2},` +
 		`"iteration":1,"cost":12,"evaluations":10,"timestamp":"2026-08-25T10:00:00Z"}` + "\n" +
@@ -164,7 +170,8 @@ func TestCollectPreliminaryUsesPersistedJobsOnly(t *testing.T) {
 
 	err = collectPreliminary(settings{
 		dataRoot: root, project: "measurement", manifestPath: manifestPath,
-		resultsPath: resultsPath, trajectory: trajectoryPath, budget: 100,
+		resultsPath: resultsPath, trajectory: trajectoryPath,
+		restartsPath: restartsPath, budget: 100,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -184,6 +191,22 @@ func TestCollectPreliminaryUsesPersistedJobsOnly(t *testing.T) {
 	trajectory := readCSVFixture(t, trajectoryPath)
 	if len(trajectory) != 3 || trajectory[1][6] != "" || trajectory[1][7] != "0.29999999999999999" {
 		t.Fatalf("unexpected preliminary trajectory: %#v", trajectory)
+	}
+
+	// A campaign that cannot complete is exactly the one whose restart schedules
+	// need reading, so the preliminary path writes them too. They come off the
+	// checkpoint in collectJob, so they are available here without the server.
+	restarts := readCSVFixture(t, restartsPath)
+	if len(restarts) != 3 {
+		t.Fatalf("unexpected preliminary restarts: %#v", restarts)
+	}
+
+	// writeRestarts itself is covered directly elsewhere; what matters here is
+	// that the preliminary path reaches it and carries the manifest identity.
+	for index, want := range map[int]string{0: "cmaes-ipop", 1: "1", 2: "1001", 4: "1", 6: "2048"} {
+		if restarts[2][index] != want {
+			t.Fatalf("restarts[%d] = %q, want %q", index, restarts[2][index], want)
+		}
 	}
 }
 

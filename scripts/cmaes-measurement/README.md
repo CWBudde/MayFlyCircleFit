@@ -437,7 +437,18 @@ been set by any campaign in this repository:
   improved.
 - **`activeCMA`.** Negative rank-mu adaptation, default on. It governs how fast
   the covariance contracts, which is what decides whether a run commits to a
-  basin early.
+  basin early. **It is inert in separable mode, so `sep-ipop-passive` was
+  cancelled after one block and the arm reports n=1.** go-cma-es v0.1.0 corrects
+  `cmu` by `(n+2)/(blockDimension+2)`, and separable mode has `blockDimension`
+  1, which saturates `cmu` at `1-c1`; `deriveNegativeWeights` then computes
+  `positiveDefiniteMass = (1 - c1 - cmu*sum(positiveWeights)) / (ProblemSize*cmu)`
+  as exactly zero and scales every negative weight to nothing. Block mode does
+  not saturate -- `blockDimension` is 7 there -- so the knob is only untestable
+  on the separable arms. Measured as well as derived: block 1 of
+  `sep-ipop-passive` is bit-identical to `sep-ipop` at all 1514 shared trace
+  points. A second seed cannot say anything the first did not, so the remaining
+  ten jobs were cancelled while still pending and the slots were spent on the
+  sigma probe below.
 
 ### The arms
 
@@ -527,6 +538,27 @@ exchangeable draws from a common design and the headline is a minimum.
 ./cmaes-measurement -action plan   -design deep-hunt
 ./cmaes-measurement -action submit -design deep-hunt
 ```
+
+### The sigma probe, which is not part of the design
+
+`sep-warm-e8` block 1 did something the design did not anticipate: it descended
+*continuously* out of the record, sitting near 752.99 for about 850 generations
+and then breaking away to 744.047 with no discontinuity anywhere in the trace.
+That is not a jump into a neighbouring basin, which means **752.5220120747884
+was never a local optimum** -- the run that set it stopped on `tol_fun` with
+descent still available, because its distribution had collapsed rather than
+because it had arrived.
+
+The ten slots freed by cancelling `sep-ipop-passive` were spent asking how much
+of that depends on the one sigma the design happened to pick. Nine jobs,
+`initialSigma` in {0.02, 0.10, 0.20} x seeds 115001-115003, every other field
+cloned verbatim from deep-hunt job `30ab5fa0` so nothing but sigma and the seed
+differs.
+
+They are **not** deep-hunt arms. The design's manifest is written `O_EXCL` and
+frozen at the commit it was submitted from, so adding rows after seeing a result
+would make it a design rewritten around its own outcome. The probe carries its
+own `probe-manifest.csv`, is analyzed by hand, and is reported as a follow-up.
 
 ## Budget and pairing
 

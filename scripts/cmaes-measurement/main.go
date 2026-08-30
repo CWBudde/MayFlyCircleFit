@@ -1586,6 +1586,15 @@ func collectPreliminary(config settings) error {
 		return err
 	}
 
+	// The per-restart records come off the checkpoint in collectJob, not off the
+	// live status, so they are just as available here as they are in collect.
+	// Writing them matters most exactly when this path is the one being used: a
+	// campaign that cannot complete is a campaign whose restart schedules are
+	// the thing worth reading.
+	if err := writeRestarts(config, results); err != nil {
+		return err
+	}
+
 	fmt.Printf("wrote %d preliminary results from %d planned jobs; no inferential statistics were calculated\n", len(results), len(manifest))
 
 	return nil
