@@ -398,6 +398,108 @@ rather than a bias, but it does not carry a p-value.
 ./cmaes-measurement -action submit -design restart-ladder
 ```
 
+## The deep hunt
+
+`-design deep-hunt` is the first design here that is not a hypothesis test. It
+exists to beat a number: **752.5220120747884**, the best eight-circle cost this
+repository has recorded on `example/MayFly-512.png`. It reports a minimum, and a
+minimum is an order statistic, so the design is `descriptive` and **registers no
+contrasts at all**. Nothing in its report is a p-value, and nothing in it should
+be quoted as one.
+
+### The knobs nobody had turned
+
+`internal/app/cmaes.go` exposes four CMA-ES parameters. Every campaign before
+this one varied `restartStrategy`, `covarianceMode` between `full` and
+`separable`, lambda, and a stagnation window -- and lambda, covariance mode and
+the stagnation window are all now measured nulls on the mean. The rest had never
+been set by any campaign in this repository:
+
+- **`covarianceMode: block`.** `app` pins `blockSize` to `ParametersPerCircle`,
+  so block mode is eight 7x7 blocks, one per circle. It learns the coupling
+  between a circle's own x, y, r, RGB and opacity while treating different
+  circles as independent, which is the actual structure of this problem:
+  `separable` throws the within-circle coupling away and `full` pays for 56x56
+  correlations that mostly do not exist.
+- **`initialSigma`.** Default 0.3, validated only as finite and positive. The
+  adapter searches a unit box with its mean at 0.5, so sigma decides how much of
+  the space generation zero sees -- and generation zero is where the record was
+  decided: on seed 111018 restart 0 alone found 752.52 and nothing after it
+  improved.
+- **`activeCMA`.** Negative rank-mu adaptation, default on. It governs how fast
+  the covariance contracts, which is what decides whether a run commits to a
+  basin early.
+
+### The arms
+
+Nine arms, eleven blocks, 99 jobs, seeds 114001-114011. Every arm but the
+control moves exactly one knob against `sep-ipop` -- the configuration that
+holds the record -- so an arm that wins names its own cause.
+
+| arm | covariance | restarts | lambda | iters | epochs | sigma | active | start |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+| `sep-ipop` | separable | ipop | 1024 | 12288 | 1 | default | on | residual |
+| `blk-ipop` | block | ipop | 1024 | 12288 | 1 | default | on | residual |
+| `blk-l4096` | block | none | 4096 | 3072 | 1 | default | on | residual |
+| `sep-l4096` | separable | none | 4096 | 3072 | 1 | default | on | residual |
+| `sep-ipop-s015` | separable | ipop | 1024 | 12288 | 1 | 0.15 | on | residual |
+| `sep-ipop-s050` | separable | ipop | 1024 | 12288 | 1 | 0.5 | on | residual |
+| `sep-ipop-passive` | separable | ipop | 1024 | 12288 | 1 | default | off | residual |
+| `sep-e8` | separable | none | 1024 | 1536 | 8 | default | on | residual |
+| `sep-warm-e8` | separable | none | 1024 | 1536 | 8 | 0.05 | on | record |
+
+### Why the budget is bigger
+
+`huntBudget` is 12,582,912, which is 1.94x the fixed cap every other design
+inherits. That cap exists to match Mayfly's 2048-iteration control, and the hunt
+runs no Mayfly arm, so it has no reason to keep it. It also has a reason to drop
+it: across the two committed restart CSVs, **57 of 57 runs at lambda 4096
+terminated on `maximum_evaluations`**, at a mean of 585 generations, when lambda
+2048 needs 1450 to converge and lambda 1024 needs 1126. The top of the IPOP
+ladder has never once been allowed to finish. 3*2^22 divides exactly by 1024,
+2048 and 4096, so every arm stays evaluation-matched by construction.
+
+`-budget` is both the arm sizer and the trace scoring cap, so the design now
+owns the value and the flag can only assert it -- exactly as `-blocks` and
+`-seed-base` already work. A campaign submitted at one budget and collected at
+another would score every job against a cap it never ran under.
+
+### The warm-start arm
+
+`sep-warm-e8` is the only arm that exploits the record rather than trying to
+rediscover it. `initialCircles` is the one operator-authored warm start in the
+system and it works for a CMA-ES job in batch mode when `batchSize == circles`,
+which is this design's shape. The specs are committed in `recordCircles()` with
+their provenance -- job `2997714f`, seed 111018, cost 752.5220120747884, arm
+`sep-ipop` of the restart-ladder campaign.
+
+Three things about it are worth knowing before reading its column. `app` refuses
+an out-of-bounds `initialCircles` rather than clamping it, and two of the
+record's values sit exactly on a bound, so a test asserts every one of them is
+inside `fit.NewBounds`. Colours go through an 8-bit hex round trip, so the run
+starts a hair off the recorded optimum. And it splits its budget with
+`optimizerEpochs` rather than cold restarts on purpose: `RunOptions.Initial` is
+consumed once, so restarts 2..8 would start cold, whereas each epoch reseeds
+from the incumbent and keeps the search anchored near the record.
+
+### Reading the result
+
+`reportDescriptive` prints a `vs record` column and a campaign-best line when a
+design sets `record`. Three outcomes are all reportable: a cost below the record;
+the record matched from new seeds, which would make it reproducible rather than
+the n=1 it is today; or neither, in which case the `-restarts` CSV still answers
+whether lambda 4096 finally converged and the sigma pair still answers whether
+initialization matters.
+
+Pairs that invite a test -- `sep-warm-e8` against `sep-e8`, `blk-ipop` against
+`sep-ipop` -- are leads for a registered campaign, not findings. The arms are not
+exchangeable draws from a common design and the headline is a minimum.
+
+```sh
+./cmaes-measurement -action plan   -design deep-hunt
+./cmaes-measurement -action submit -design deep-hunt
+```
+
 ## Budget and pairing
 
 The current Mayfly v0.7.1 pin consumes 6,502,400 optimizer evaluations in the
@@ -409,8 +511,9 @@ the small tail beyond the control budget.
 Submission is block-major. Block `b` uses seed prefix `111000+b` in every arm
 of the design; the twelve prefixes are disjoint, and the restart
 implementations derive their attempt seeds from only that block's prefix. The
-driver refuses any block count other than twelve, so the paired test always has
-`df=11`.
+driver refuses a block count that contradicts the design's own; the inferential
+campaigns register twelve, so their paired tests have `df=11`. The stagnation
+pilot registers three and the deep hunt eleven, and neither computes a t.
 
 The exact 512x512 campaign is roughly 390 million render evaluations. A short
 calibration on the documented Ryzen 5 4600H host measured about 1,450

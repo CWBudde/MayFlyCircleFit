@@ -38,7 +38,19 @@ const (
 	designStag    = "stagnation"
 	designSplit   = "budget-split"
 	designLadder  = "restart-ladder"
+	designHunt    = "deep-hunt"
 )
+
+// huntBudget is the deep hunt's per-job evaluation cap. It is 1.94x
+// defaultBudget on purpose: every earlier campaign inherited the MayFly-matched
+// 6,502,400 and, at that cap, no CMA-ES run at lambda 4096 has ever terminated
+// on anything but maximum_evaluations -- 57 of 57 across the two committed
+// restart CSVs, at a mean of 585 generations, when lambda 2048 needs 1450 to
+// converge. The hunt makes no comparison against a MayFly arm, so it has no
+// reason to keep a cap that exists to match MayFly's shape. 3*2^22 divides
+// exactly by 1024, 2048 and 4096, so every arm stays evaluation-matched by
+// construction.
+const huntBudget = 12_582_912
 
 const (
 	defaultBudget  = 6_502_400
@@ -102,7 +114,63 @@ type arm struct {
 	// become a shipped default, because a threshold in cost units does not
 	// transfer between reference images whose costs differ in scale.
 	stopMinImprovement float64
+	// initialSigma is the CMA-ES initial step size, normalized: the adapter
+	// searches a unit box with its mean at 0.5, so this is the fraction of
+	// every coordinate's own range that generation zero sees. Zero leaves the
+	// field unsent and the job takes app's DefaultCMAESInitialSigma of 0.3,
+	// which is what every campaign before the deep hunt ran -- none of them
+	// set this at all.
+	initialSigma float64
+	// passiveCMA turns negative rank-mu covariance adaptation off. It is
+	// spelled negatively so the zero value is the shipped default (active
+	// adaptation on) and arm stays comparable; the payload sends
+	// activeCMA: false only when this is set.
+	passiveCMA bool
+	// warmStart seeds the run at recordCircles rather than from the residual,
+	// which is the only way an arm can begin at a known solution: every other
+	// warm start in the system comes from a checkpoint, and a checkpoint is
+	// written by a run rather than by a design. It is deliberately a bool
+	// rather than a slice so arm stays comparable -- the tests compare arms
+	// with != to assert that two designs registered the same one.
+	warmStart bool
 }
+
+// recordCircle is one circle of a known solution, in the shape
+// app.CircleSpecs accepts once the colour is formatted.
+type recordCircle struct {
+	x, y, r          float64
+	red, green, blue float64
+	opacity          float64
+}
+
+// recordCircles is the best eight-circle fit this repository has recorded on
+// example/MayFly-512.png: cost 752.5220120747884, seed 111018, job
+// 2997714f-aa17-4a0d-9a10-45c746f2d270, arm sep-ipop of the restart-ladder
+// campaign. Four independent lambda-1024 schedules returned it bit for bit on
+// that seed, so it is an attractor rather than one run's luck.
+//
+// Every value is inside fit.NewBounds for a 512x512 reference -- x and y in
+// [-256, 767], r in [1, 512] -- which matters because app refuses an
+// out-of-bounds initialCircles rather than clamping it. Two of them sit exactly
+// on a bound. The colours go through an 8-bit hex round trip on the way to the
+// server, so the run starts a hair off the recorded optimum.
+func recordCircles() []recordCircle {
+	return []recordCircle{
+		{x: 329.9423119106, y: 373.0225476704, r: 431.5423031015, red: 0.0952935261, green: 0.0899109656, blue: 0.0019265758, opacity: 0.8890438275},
+		{x: 365.0914174402, y: 190.2735475663, r: 173.8904554558, red: 0.7839592864, green: 0.9188836416, blue: 0.9168788995, opacity: 0.8546525007},
+		{x: 577.8767134563, y: -63.3337480908, r: 385.0442728104, red: 0.1283559047, green: 0.1321413762, blue: 0.0001885401, opacity: 0.9161314775},
+		{x: 766.9993601946, y: 274.8295172743, r: 438.8285807262, red: 0.3837069103, green: 0.3680930374, blue: 0.2076307413, opacity: 0.9989963181},
+		{x: 404.5302577836, y: 113.0090295166, r: 35.9794288312, red: 0.9995151396, green: 0.9470507642, blue: 0.7532006364, opacity: 0.9992998456},
+		{x: -142.4033416647, y: 75.6240703214, r: 265.6286379537, red: 0.7076551967, green: 0.6835767334, blue: 0.5242550009, opacity: 0.7240497837},
+		{x: -255.9431084465, y: 388.9910244196, r: 458.6624137213, red: 0.1020058899, green: 0.1080295816, blue: 0.0490751067, opacity: 0.8886370426},
+		{x: 281.5353202309, y: 2.3742393186, r: 511.9960144115, red: 0.2968523207, green: 0.2570314710, blue: 0.1317415412, opacity: 0.4405397128},
+	}
+}
+
+// recordCost is the cost recordCircles produces. reportDescriptive prints each
+// arm's minimum against it, which is the whole point of a design that reports
+// an order statistic instead of a paired test.
+const recordCost = 752.5220120747884
 
 // plannedContrast is one paired comparison a design registers before it runs.
 // Naming them is what bounds multiplicity: the lambda screen crossed two
@@ -153,6 +221,11 @@ type design struct {
 	// It has too few blocks for a paired test, so the report prints arm
 	// summaries and refuses to print a statistic.
 	descriptive bool
+	// record is the best cost previously recorded on this design's fixture.
+	// When it is set the descriptive report prints each arm's minimum against
+	// it, because a design whose goal is to beat a number has to say plainly
+	// whether it did. Zero prints no such column.
+	record float64
 }
 
 // fixture reports the reference image and circle count the design runs. A
@@ -272,8 +345,39 @@ type settings struct {
 	seedBase     int64
 }
 
+// designBudget resolves the per-job evaluation budget a design runs at. It is
+// resolved once, in main, because -budget is two things at the same time: the
+// input the arm builders size iters from, and the cap collectJob scores a
+// trace against. A campaign submitted at one and collected at the other would
+// silently truncate every job's score at the smaller number, which is a whole
+// day of compute reported as somebody else's result. So the design owns the
+// value and the flag can only assert it, exactly as -blocks and -seed-base
+// already work.
+func designBudget(name string, requested int) (int, error) {
+	registered := defaultBudget
+	if name == designHunt {
+		registered = huntBudget
+	}
+
+	if requested != 0 && requested != registered {
+		return 0, fmt.Errorf("design %s registers a %d-evaluation budget, got -budget %d",
+			name, registered, requested)
+	}
+
+	return registered, nil
+}
+
 func main() {
 	config := parseFlags()
+
+	budget, budgetErr := designBudget(config.design, config.budget)
+	if budgetErr != nil {
+		fmt.Fprintln(os.Stderr, budgetErr)
+		os.Exit(1)
+	}
+
+	config.budget = budget
+
 	var err error
 
 	switch config.action {
@@ -300,7 +404,8 @@ func main() {
 func parseFlags() settings {
 	var config settings
 	flag.StringVar(&config.action, "action", "collect", "plan, submit, collect, preliminary, or analyze")
-	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21, lambda, stagnation-pilot, stagnation or budget-split")
+	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21, lambda, stagnation-pilot, "+
+		"stagnation, budget-split, restart-ladder or deep-hunt")
 	flag.StringVar(&config.server, "server", "http://localhost:8085", "serve base URL")
 	flag.StringVar(&config.dataRoot, "data-root", "./data/cmaes-phase11", "serve data root")
 	flag.StringVar(&config.reference, "ref", "example/MayFly-512.png", "reference image")
@@ -310,7 +415,7 @@ func parseFlags() settings {
 	flag.StringVar(&config.restartsPath, "restarts", "", "per-restart outcome CSV (default: the design's own)")
 	flag.StringVar(&config.project, "project", defaultProject, "server project")
 	flag.IntVar(&config.blocks, "blocks", 0, "assert the design's paired block count (0 uses it)")
-	flag.IntVar(&config.budget, "budget", defaultBudget, "optimizer evaluation cap")
+	flag.IntVar(&config.budget, "budget", 0, "optimizer evaluation cap; 0 takes the design's own")
 	flag.IntVar(&config.workers, "workers", 8, "parallel evaluation workers")
 	flag.Int64Var(&config.seedBase, "seed-base", 0, "assert the design's first block seed prefix (0 uses it)")
 	flag.Parse()
@@ -361,13 +466,25 @@ func withDesignArtifacts(config settings) settings {
 func lambdaLevels() []int { return []int{1024, 64, 20} }
 
 func campaignDesign(name string, budget int) (design, error) {
-	arms, err := campaignArms(budget)
-	if err != nil {
-		return design{}, err
+	// Every design registered before the deep hunt was built against the fixed
+	// MayFly-matched cap, and campaignArms refuses a larger one so its arms
+	// cannot silently stop being evaluation-matched. That refusal used to sit
+	// in a call at the top of this function, which meant no design could ever
+	// run above the cap; it belongs to the designs that inherit the cap, not
+	// to the switch.
+	if name != designHunt && budget > defaultBudget {
+		return design{}, fmt.Errorf(
+			"budget %d exceeds the fixed campaign budget %d; only %s is registered above it",
+			budget, defaultBudget, designHunt)
 	}
 
 	switch name {
 	case designPhase21:
+		arms, err := campaignArms(budget)
+		if err != nil {
+			return design{}, err
+		}
+
 		return withDerivedContrasts(design{
 			name: name, baseline: "mayfly-single", secondaryControl: "mayfly-r16",
 			blocks: campaignBlocks, seedBase: 111_000, arms: arms,
@@ -436,9 +553,26 @@ func campaignDesign(name string, budget int) (design, error) {
 				{control: "sep-ipop-w60", candidate: "sep-bipop-w60"},
 			},
 		}, nil
+	case designHunt:
+		hunt, huntErr := deepHuntArms(budget)
+		if huntErr != nil {
+			return design{}, huntErr
+		}
+
+		// No contrasts and no secondary control on purpose. The hunt reports a
+		// minimum, and a minimum is an order statistic rather than a paired
+		// mean, so there is nothing here for Holm to correct and nothing that
+		// a t on twelve blocks would be measuring. descriptive routes the
+		// report past every statistic in this driver.
+		return design{
+			name: name, baseline: "sep-ipop",
+			blocks: huntBlocks, seedBase: 114_000, arms: hunt,
+			descriptive: true, record: recordCost,
+		}, nil
 	default:
 		return design{}, fmt.Errorf(
-			"unknown design %q (want phase21, lambda, stagnation-pilot, stagnation, budget-split or restart-ladder)",
+			"unknown design %q (want phase21, lambda, stagnation-pilot, stagnation, "+
+				"budget-split, restart-ladder or deep-hunt)",
 			name)
 	}
 }
@@ -854,6 +988,115 @@ func lambdaScreenArms(budget int) ([]arm, error) {
 	return arms, nil
 }
 
+// huntBlocks is the deep hunt's block count. Blocks are independent seeds
+// here rather than pairs: a best-of-N hunt gets its power from how many
+// distinct initial populations it draws, not from df, so eleven is a compute
+// budget rather than a statistical one. Nothing in this design reads it as
+// degrees of freedom, because nothing in this design computes a t.
+const huntBlocks = 11
+
+const (
+	// huntLargePop is app.MaxPopulation: the largest population the job config
+	// will accept, and the rung at which no run in this repository has ever
+	// been allowed to converge.
+	huntLargePop = app.MaxPopulation
+	// huntEpochs splits an arm's budget into warm restarts. Eight sits just
+	// above the 1126-generation mean at which a lambda-1024 run trips TolFun,
+	// so each epoch gets 1536 generations: long enough to converge, short
+	// enough that the arm does not spend most of its cap on a dead run.
+	huntEpochs = 8
+)
+
+// huntRow is one registered row of the deep hunt. It exists so the arm table
+// can be read as a table -- one line per arm, one column per knob -- rather
+// than as nine constructor calls in which a changed field is invisible.
+type huntRow struct {
+	name         string
+	covariance   string
+	strategy     string
+	lambda       int
+	epochs       int
+	initialSigma float64
+	passiveCMA   bool
+	warmStart    bool
+}
+
+// deepHuntRows is the registered arm table. Every row but the first moves
+// exactly one knob against sep-ipop, which is the configuration that holds the
+// record, so an arm that wins names its own cause.
+//
+// The three knobs nobody has turned are covarianceMode: block -- eight 7x7
+// blocks, one per circle, because app pins blockSize to ParametersPerCircle --
+// initialSigma, and activeCMA. None of them has been set by any campaign in
+// this repository; every earlier one varied lambda, the restart strategy and a
+// stagnation window, and all three of those are now measured nulls.
+func deepHuntRows() []huntRow {
+	return []huntRow{
+		{name: "sep-ipop", covariance: "separable", strategy: "ipop", lambda: defaultPop, epochs: 1},
+		{name: "blk-ipop", covariance: "block", strategy: "ipop", lambda: defaultPop, epochs: 1},
+		{name: "blk-l4096", covariance: "block", strategy: "none", lambda: huntLargePop, epochs: 1},
+		{name: "sep-l4096", covariance: "separable", strategy: "none", lambda: huntLargePop, epochs: 1},
+		{name: "sep-ipop-s015", covariance: "separable", strategy: "ipop", lambda: defaultPop, epochs: 1, initialSigma: 0.15},
+		{name: "sep-ipop-s050", covariance: "separable", strategy: "ipop", lambda: defaultPop, epochs: 1, initialSigma: 0.50},
+		{name: "sep-ipop-passive", covariance: "separable", strategy: "ipop", lambda: defaultPop, epochs: 1, passiveCMA: true},
+		{name: "sep-e8", covariance: "separable", strategy: "none", lambda: defaultPop, epochs: huntEpochs},
+		{name: "sep-warm-e8", covariance: "separable", strategy: "none", lambda: defaultPop, epochs: huntEpochs, initialSigma: 0.05, warmStart: true},
+	}
+}
+
+// deepHuntArms sizes the registered table against the budget. Every arm spends
+// iters*lambda*epochs evaluations and every one of those products has to equal
+// the budget exactly, so the table is evaluation-matched by construction rather
+// than by truncating a longer arm afterwards -- even though a descriptive
+// design would survive an unmatched one, because an arm that quietly ran on
+// more evaluations than its neighbours would make the minimum column
+// unreadable.
+func deepHuntArms(budget int) ([]arm, error) {
+	if budget <= 0 {
+		return nil, fmt.Errorf("budget %d must be positive", budget)
+	}
+
+	rows := deepHuntRows()
+	arms := make([]arm, 0, len(rows))
+
+	for _, row := range rows {
+		work := row.lambda * row.epochs
+		if budget%work != 0 {
+			return nil, fmt.Errorf(
+				"budget %d is not divisible by arm %s's lambda %d times %d epochs; "+
+					"the arms would not be evaluation-matched",
+				budget, row.name, row.lambda, row.epochs)
+		}
+
+		iters := budget / work
+
+		if row.lambda < app.MinPopulation || row.lambda > app.MaxPopulation {
+			return nil, fmt.Errorf("arm %s wants lambda %d, outside app's %d..%d population range",
+				row.name, row.lambda, app.MinPopulation, app.MaxPopulation)
+		}
+
+		if row.epochs > app.MaxOptimizerEpochs {
+			return nil, fmt.Errorf("arm %s wants %d epochs, above app's maximum of %d",
+				row.name, row.epochs, app.MaxOptimizerEpochs)
+		}
+
+		if iters > app.MaxIterations {
+			return nil, fmt.Errorf("arm %s wants %d iterations, above app's maximum of %d",
+				row.name, iters, app.MaxIterations)
+		}
+
+		arms = append(arms, arm{
+			name: row.name, optimizer: "cmaes",
+			covariance: row.covariance, restartStrategy: row.strategy,
+			iters: iters, popSize: row.lambda, optimizerRestarts: 1,
+			optimizerEpochs: row.epochs, initialSigma: row.initialSigma,
+			passiveCMA: row.passiveCMA, warmStart: row.warmStart,
+		})
+	}
+
+	return arms, nil
+}
+
 func campaignArms(budget int) ([]arm, error) {
 	if budget <= 0 || budget%defaultPop != 0 {
 		return nil, fmt.Errorf("budget %d must be positive and divisible by population %d", budget, defaultPop)
@@ -1000,6 +1243,32 @@ func submitJob(client *http.Client, config settings, plan design, current arm, s
 	return created.ID, nil
 }
 
+// warmStartSpecs renders recordCircles in the shape app.CircleSpecs decodes.
+// The colour is quantized to eight bits per channel on the way through, which
+// is the format's doing rather than a choice: initialCircles is the only
+// operator-authored warm start in the system and it names colours as hex. The
+// run therefore starts a hair off the recorded optimum, which is harmless for
+// a neighbourhood search and is stated in the report rather than hidden.
+func warmStartSpecs() []map[string]any {
+	circles := recordCircles()
+	specs := make([]map[string]any, 0, len(circles))
+
+	channel := func(value float64) int {
+		return int(math.Round(math.Min(math.Max(value, 0), 1) * 255))
+	}
+
+	for _, circle := range circles {
+		specs = append(specs, map[string]any{
+			"x": circle.x, "y": circle.y, "r": circle.r,
+			"color": fmt.Sprintf("#%02x%02x%02x",
+				channel(circle.red), channel(circle.green), channel(circle.blue)),
+			"opacity": circle.opacity,
+		})
+	}
+
+	return specs
+}
+
 // jobPayload is the create request one arm of one block submits. It is separate
 // from the transport so the registered shape of a job -- fixture, budget, and
 // the engine-specific fields -- can be read in one place.
@@ -1021,6 +1290,23 @@ func jobPayload(config settings, plan design, current arm, seed int64) map[strin
 	} else {
 		payload["covarianceMode"] = current.covariance
 		payload["restartStrategy"] = current.restartStrategy
+
+		// Only send the knobs an arm actually turns. app refuses every one of
+		// these on a MayFly job rather than ignoring it, and an arm that names
+		// none of them has to reach the server as the untouched configuration
+		// every campaign before the deep hunt ran.
+
+		if current.initialSigma > 0 {
+			payload["initialSigma"] = current.initialSigma
+		}
+
+		if current.passiveCMA {
+			payload["activeCMA"] = false
+		}
+
+		if current.warmStart {
+			payload["initialCircles"] = warmStartSpecs()
+		}
 	}
 	// Only send the stop fields when a window is configured. app.JobConfig
 	// rejects stopMinImprovement without stopStagnationIters, and an arm that
@@ -1113,8 +1399,9 @@ func printPlan(config settings) error {
 		plan.name, len(plan.arms), plan.blocks, len(plan.arms)*plan.blocks, config.budget,
 		plan.seedBase+1, plan.seedBase+int64(plan.blocks))
 	fmt.Printf("fixture %s, %d circles in one batch\n", reference, circles)
-	fmt.Println("| arm | optimizer | covariance | restarts | epochs | popSize (lambda) | iters | stagnation | evaluations |")
-	fmt.Println("| --- | --- | --- | --- | ---: | ---: | ---: | --- | ---: |")
+	fmt.Println("| arm | optimizer | covariance | restarts | epochs | popSize (lambda) | iters | " +
+		"sigma | active | start | stagnation | evaluations |")
+	fmt.Println("| --- | --- | --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | ---: |")
 
 	for _, current := range plan.arms {
 		covariance, restarts := current.covariance, current.restartStrategy
@@ -1141,9 +1428,27 @@ func printPlan(config settings) error {
 			restarts = fmt.Sprintf("%s + %d cold run(s)", restarts, current.optimizerRestarts)
 		}
 
-		fmt.Printf("| `%s` | %s | %s | %s | %d | %d | %d | %s | %s |\n",
+		sigma, active, start := "default", "-", "residual"
+		if current.optimizer != "mayfly" {
+			active = "on"
+
+			if current.initialSigma > 0 {
+				sigma = strconv.FormatFloat(current.initialSigma, 'g', -1, 64)
+			}
+
+			if current.passiveCMA {
+				active = "off"
+			}
+
+			if current.warmStart {
+				start = "record"
+			}
+		}
+
+		fmt.Printf("| `%s` | %s | %s | %s | %d | %d | %d | %s | %s | %s | %s | %s |\n",
 			current.name, current.optimizer, covariance, restarts, max(current.optimizerEpochs, 1),
-			current.popSize, current.iters, describeStagnation(current), evaluations)
+			current.popSize, current.iters, sigma, active, start,
+			describeStagnation(current), evaluations)
 	}
 
 	if plan.secondaryControl != "" {
@@ -1153,7 +1458,11 @@ func printPlan(config settings) error {
 	}
 
 	if plan.descriptive {
-		fmt.Println("descriptive design: mechanism only, too few blocks for a paired test")
+		fmt.Println("descriptive design: no inferential statistic is computed or reported")
+	}
+
+	if plan.record > 0 {
+		fmt.Printf("standing record on this fixture: %.10f\n", plan.record)
 	}
 
 	for _, current := range plan.contrasts {
@@ -1697,13 +2006,24 @@ func analyze(path string, plan design) error {
 
 // reportDescriptive is the output for a design that buys mechanism instead of
 // inference. It prints what each arm cost and what its budget did, and no
-// statistic at all: three blocks cannot support a paired test, and printing a
-// t on them would invite exactly the reading the design was built to avoid.
+// statistic at all: the stagnation pilot has too few blocks to support a paired
+// test, and the deep hunt reports a minimum, which is an order statistic rather
+// than a mean. Printing a t on either would invite exactly the reading the
+// designs were built to avoid.
 func reportDescriptive(plan design, names []string, byArm map[string][]resultRow) error {
 	fmt.Printf("design %s: descriptive only, %d blocks, no inferential statistics\n\n",
 		plan.name, plan.blocks)
-	fmt.Println("| arm | mean | best | worst | mean evaluations | % of cap | % spent after last improvement |")
-	fmt.Println("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+
+	record := ""
+	divider := ""
+
+	if plan.record > 0 {
+		record = " vs record |"
+		divider = " ---: |"
+	}
+
+	fmt.Printf("| arm | mean | best | worst | mean evaluations | %% of cap | %% spent after last improvement |%s\n", record)
+	fmt.Printf("| --- | ---: | ---: | ---: | ---: | ---: | ---: |%s\n", divider)
 
 	capacity := plan.evaluationCap()
 
@@ -1730,9 +2050,31 @@ func reportDescriptive(plan design, names []string, byArm map[string][]resultRow
 
 		final /= float64(len(rows))
 
-		fmt.Printf("| `%s` | %.2f | %.2f | %.2f | %.0f | %.1f%% | %.1f%% |\n",
-			name, mean, slices.Min(values), slices.Max(values),
-			final, final/float64(capacity)*100, share)
+		best := slices.Min(values)
+
+		against := ""
+		if plan.record > 0 {
+			against = fmt.Sprintf(" %+.2f |", best-plan.record)
+		}
+
+		fmt.Printf("| `%s` | %.2f | %.2f | %.2f | %.0f | %.1f%% | %.1f%% |%s\n",
+			name, mean, best, slices.Max(values),
+			final, final/float64(capacity)*100, share, against)
+	}
+
+	if plan.record > 0 {
+		campaign := math.Inf(1)
+		for _, name := range names {
+			campaign = math.Min(campaign, slices.Min(costs(byArm[name])))
+		}
+
+		verdict := "did not beat"
+		if campaign < plan.record {
+			verdict = "BEAT"
+		}
+
+		fmt.Printf("\ncampaign best %.10f against the standing record %.10f: %s it by %+.10f\n",
+			campaign, plan.record, verdict, campaign-plan.record)
 	}
 
 	fmt.Println("\nRestart counts and per-run termination reasons are in the -restarts CSV;")
