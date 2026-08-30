@@ -143,11 +143,21 @@ type recordCircle struct {
 	opacity          float64
 }
 
+// recordReference is the fixture recordCircles and recordCost were recorded on.
+// A design that reports either has to pin it: the coordinates are bounded by a
+// 512x512 canvas and the cost is not comparable across reference images, so
+// letting -ref redirect such a design would invalidate the comparison and can
+// fail bounds validation on a smaller canvas.
+const recordReference = "example/MayFly-512.png"
+
 // recordCircles is the best eight-circle fit this repository has recorded on
-// example/MayFly-512.png: cost 752.5220120747884, seed 111018, job
-// 2997714f-aa17-4a0d-9a10-45c746f2d270, arm sep-ipop of the restart-ladder
-// campaign. Four independent lambda-1024 schedules returned it bit for bit on
-// that seed, so it is an attractor rather than one run's luck.
+// recordReference: cost 752.5220120747884, seed 111018, job
+// 2997714f-aa17-4a0d-9a10-45c746f2d270, produced under the sep-ipop
+// configuration -- separable covariance, IPOP, lambda 1024. Naming a campaign
+// here would be wrong whichever one were named: the stagnation campaign set the
+// cost and the restart ladder returned it bit for bit from four independent
+// lambda-1024 schedules on that seed, which is what makes it an attractor
+// rather than one run's luck.
 //
 // Every value is inside fit.NewBounds for a 512x512 reference -- x and y in
 // [-256, 767], r in [1, 512] -- which matters because app refuses an
@@ -548,6 +558,8 @@ func campaignDesign(name string, budget int) (design, error) {
 		return design{
 			name: name, baseline: "sep-ipop", secondaryControl: "sep-ipop-w60",
 			blocks: campaignBlocks, seedBase: stagnationSeedBase, arms: ladder,
+			reference: recordReference, circles: defaultCircles,
+			record: recordCost,
 			contrasts: []plannedContrast{
 				{control: "sep-ipop", candidate: "sep-r32-l64", primary: true},
 				{control: "sep-ipop-w60", candidate: "sep-bipop-w60"},
@@ -567,6 +579,7 @@ func campaignDesign(name string, budget int) (design, error) {
 		return design{
 			name: name, baseline: "sep-ipop",
 			blocks: huntBlocks, seedBase: 114_000, arms: hunt,
+			reference: recordReference, circles: defaultCircles,
 			descriptive: true, record: recordCost,
 		}, nil
 	default:
@@ -1021,9 +1034,21 @@ type huntRow struct {
 	warmStart    bool
 }
 
-// deepHuntRows is the registered arm table. Every row but the first moves
-// exactly one knob against sep-ipop, which is the configuration that holds the
-// record, so an arm that wins names its own cause.
+// deepHuntRows is the registered arm table. sep-ipop is the control -- the
+// configuration that holds the record -- and the rows divide into two kinds
+// that have to be read differently.
+//
+// Four are true single-factor rows against it, so an arm that wins names its
+// own cause: blk-ipop moves covariance alone, sep-ipop-s015 and sep-ipop-s050
+// move initialSigma alone, and sep-ipop-passive moves activeCMA alone.
+//
+// The other four are compound and cannot identify a cause. sep-l4096 drops
+// IPOP and raises lambda; blk-l4096 does both and changes covariance on top;
+// sep-e8 drops IPOP and splits the budget into epochs; sep-warm-e8 does that
+// and also sets initialSigma and warm-starts from the record. They are here
+// because the budget buys the whole table and each is worth a look, but a win
+// by one of them is an exploratory lead for a registered campaign, never a
+// finding about the knob its name happens to mention.
 //
 // The three knobs nobody has turned are covarianceMode: block -- eight 7x7
 // blocks, one per circle, because app pins blockSize to ParametersPerCircle --
@@ -1960,9 +1985,18 @@ func analyze(path string, plan design) error {
 	contrasts := buildContrasts(plan, byArm)
 	holmReject(contrasts, familyAlpha)
 
-	fmt.Printf("| arm | mean | sd | median | best | gain vs %s | t (df=%d) | p | Holm | blocks won |\n",
-		plan.baseline, plan.blocks-1)
-	fmt.Println("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |")
+	// A design that registers a record answers a second, non-inferential
+	// question alongside its contrasts: whether any arm's minimum beat the
+	// standing cost. It is an order statistic and carries no p-value, so it
+	// gets a column and a verdict line rather than a row in the family.
+	record, divider := "", ""
+	if plan.record > 0 {
+		record, divider = " vs record |", " ---: |"
+	}
+
+	fmt.Printf("| arm | mean | sd | median | best |%s gain vs %s | t (df=%d) | p | Holm | blocks won |\n",
+		record, plan.baseline, plan.blocks-1)
+	fmt.Printf("| --- | ---: | ---: | ---: | ---: |%s ---: | ---: | ---: | --- | ---: |\n", divider)
 
 	for _, name := range names {
 		values := costs(byArm[name])
@@ -1973,9 +2007,18 @@ func analyze(path string, plan design) error {
 			summary = summarize(contrasts, plan.baseline, name, plan.blocks)
 		}
 
-		fmt.Printf("| `%s` | %.2f | %.2f | %.2f | %.2f | %s |\n",
-			name, mean, sd, median(values), slices.Min(values), summary)
+		best := slices.Min(values)
+
+		against := ""
+		if plan.record > 0 {
+			against = fmt.Sprintf(" %+.2f |", best-plan.record)
+		}
+
+		fmt.Printf("| `%s` | %.2f | %.2f | %.2f | %.2f |%s %s |\n",
+			name, mean, sd, median(values), best, against, summary)
 	}
+
+	reportRecord(plan, names, byArm)
 
 	fmt.Printf("\nAgainst %s:\n", plan.secondaryControl)
 	fmt.Printf("| arm | gain vs %s | t (df=%d) | p | Holm | blocks won |\n",
@@ -2062,20 +2105,7 @@ func reportDescriptive(plan design, names []string, byArm map[string][]resultRow
 			final, final/float64(capacity)*100, share, against)
 	}
 
-	if plan.record > 0 {
-		campaign := math.Inf(1)
-		for _, name := range names {
-			campaign = math.Min(campaign, slices.Min(costs(byArm[name])))
-		}
-
-		verdict := "did not beat"
-		if campaign < plan.record {
-			verdict = "BEAT"
-		}
-
-		fmt.Printf("\ncampaign best %.10f against the standing record %.10f: %s it by %+.10f\n",
-			campaign, plan.record, verdict, campaign-plan.record)
-	}
+	reportRecord(plan, names, byArm)
 
 	fmt.Println("\nRestart counts and per-run termination reasons are in the -restarts CSV;")
 	fmt.Println("they, not the costs above, are what selects the window for the registered campaign.")
@@ -2083,19 +2113,49 @@ func reportDescriptive(plan design, names []string, byArm map[string][]resultRow
 	return nil
 }
 
+// reportRecord prints the campaign best against the standing record. Both
+// reports call it, because registering a record is independent of whether the
+// design also registers contrasts: the ladder asks its record question next to
+// a paired test, the hunt asks it instead of one. It is a no-op for a design
+// that registers no record.
+func reportRecord(plan design, names []string, byArm map[string][]resultRow) {
+	if plan.record <= 0 {
+		return
+	}
+
+	campaign := math.Inf(1)
+	for _, name := range names {
+		campaign = math.Min(campaign, slices.Min(costs(byArm[name])))
+	}
+
+	verdict := "did not beat"
+	if campaign < plan.record {
+		verdict = "BEAT"
+	}
+
+	fmt.Printf("\ncampaign best %.10f against the standing record %.10f: %s it by %+.10f\n",
+		campaign, plan.record, verdict, campaign-plan.record)
+}
+
 // evaluationCap is the per-job evaluation budget this design's arms were built
 // from, read back off the arms rather than assumed from defaultBudget: a
 // campaign submitted with a smaller -budget would otherwise report its spend
 // as a share of a cap it never had. Only CMA-ES spends exactly lambda
-// evaluations per iteration, so only there is iters*popSize the cap; a Mayfly
+// evaluations per iteration, so only there is the product the cap; a Mayfly
 // arm is matched to the fixed campaign budget by shape instead.
+//
+// The product is iters*lambda*epochs*restarts, the same one printPlan reports,
+// because epochs and cold restarts each multiply the generation count. Reading
+// iters*lambda alone would take one run of a split arm for the whole arm and
+// report sep-e8's spend as eight times its cap.
 func (d design) evaluationCap() int {
 	highest := 0
 
 	for _, current := range d.arms {
 		spend := defaultBudget
 		if current.optimizer != "mayfly" {
-			spend = current.iters * current.popSize
+			spend = current.iters * current.popSize *
+				max(current.optimizerEpochs, 1) * max(current.optimizerRestarts, 1)
 		}
 
 		if spend > highest {

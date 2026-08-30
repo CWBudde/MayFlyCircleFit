@@ -1227,7 +1227,7 @@ func TestDesignBudgetIsTheDesignsAndAFlagCanOnlyAssertIt(t *testing.T) {
 	}
 }
 
-func TestDeepHuntTurnsOneUntouchedKnobPerArm(t *testing.T) {
+func TestDeepHuntRegistersItsSingleFactorAndCompoundArms(t *testing.T) {
 	t.Parallel()
 
 	plan, err := campaignDesign(designHunt, huntBudget)
@@ -1251,8 +1251,11 @@ func TestDeepHuntTurnsOneUntouchedKnobPerArm(t *testing.T) {
 		t.Errorf("deep hunt blocks = %d, want %d", plan.blocks, huntBlocks)
 	}
 
-	if plan.reference != "" || plan.circles != 0 {
-		t.Error("the deep hunt runs the default fixture, the one the record was set on")
+	// Pinned rather than left to -ref: the design reports a cost against
+	// recordCost and warm-starts from coordinates bounded by that canvas.
+	if plan.reference != recordReference || plan.circles != defaultCircles {
+		t.Errorf("deep hunt fixture = %q at %d circles, want the pinned %q at %d",
+			plan.reference, plan.circles, recordReference, defaultCircles)
 	}
 
 	type shape struct {
@@ -1435,5 +1438,76 @@ func TestDeepHuntPayloadCarriesOnlyTheKnobsAnArmTurns(t *testing.T) {
 
 	if colour := specs[0]["color"]; colour != "#181700" {
 		t.Errorf("first circle colour = %v, want #181700", colour)
+	}
+}
+
+// TestRecordDesignsPinTheirFixture covers the review finding that a design
+// reporting a cost against recordCost must not let -ref redirect it. Both the
+// ladder and the hunt report that record, and the hunt additionally seeds
+// initialCircles from coordinates bounded by a 512x512 canvas.
+func TestRecordDesignsPinTheirFixture(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{designLadder, designHunt} {
+		budget := defaultBudget
+		if name == designHunt {
+			budget = huntBudget
+		}
+
+		plan, err := campaignDesign(name, budget)
+		if err != nil {
+			t.Fatalf("design %s: %v", name, err)
+		}
+
+		if plan.record <= 0 {
+			t.Fatalf("design %s reports no record, so this test is asserting the wrong thing", name)
+		}
+
+		// The fallback is deliberately an image the design must not accept: a
+		// pinned design ignores it, an unpinned one would return it.
+		reference, circles := plan.fixture("example/Ref-512.png")
+		if reference != recordReference {
+			t.Errorf("design %s took fixture %q from -ref, want the pinned %q",
+				name, reference, recordReference)
+		}
+
+		if circles != defaultCircles {
+			t.Errorf("design %s fits %d circles, want the %d the record was recorded at",
+				name, circles, defaultCircles)
+		}
+	}
+}
+
+// TestEvaluationCapCountsEpochsAndRestarts covers the review finding that the
+// descriptive report's "% of cap" column read iters*lambda only, so an arm that
+// split its budget into epochs reported eight times its cap.
+func TestEvaluationCapCountsEpochsAndRestarts(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designHunt, huntBudget)
+	if err != nil {
+		t.Fatalf("design %s: %v", designHunt, err)
+	}
+
+	if got := plan.evaluationCap(); got != huntBudget {
+		t.Errorf("evaluationCap = %d, want the budget %d every arm was sized against", got, huntBudget)
+	}
+
+	// The arm that exposed it: eight epochs, so the old product understated the
+	// cap eightfold and the column would have printed 800%.
+	var split arm
+
+	for _, current := range plan.arms {
+		if current.name == "sep-e8" {
+			split = current
+		}
+	}
+
+	if split.optimizerEpochs <= 1 {
+		t.Fatalf("sep-e8 has %d epochs, so it no longer covers the finding", split.optimizerEpochs)
+	}
+
+	if spent := split.iters * split.popSize * split.optimizerEpochs; spent != plan.evaluationCap() {
+		t.Errorf("sep-e8 spends %d against a cap of %d", spent, plan.evaluationCap())
 	}
 }

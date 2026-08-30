@@ -391,7 +391,16 @@ ladder trend and every other pairing stay exploratory.
 The record question gets a column of its own — the minimum over blocks per arm,
 against 752.52 — and it is an order statistic, not a test. Best-of-N favours
 the high-restart arms by construction; that is the mechanism under examination
-rather than a bias, but it does not carry a p-value.
+rather than a bias, but it does not carry a p-value. The design registers the
+record, so `report` prints that column and the campaign-best verdict beside the
+paired table; registering one is independent of whether a design also registers
+contrasts.
+
+Because it reports a record, this design pins its fixture to
+`example/MayFly-512.png` and ignores `-ref`, for the reason the budget-split
+section gives: a cost is not comparable across reference images, so a flag that
+redirected the campaign would leave the record column comparing two different
+problems.
 
 ```sh
 ./cmaes-measurement -action plan   -design restart-ladder
@@ -432,9 +441,20 @@ been set by any campaign in this repository:
 
 ### The arms
 
-Nine arms, eleven blocks, 99 jobs, seeds 114001-114011. Every arm but the
-control moves exactly one knob against `sep-ipop` -- the configuration that
-holds the record -- so an arm that wins names its own cause.
+Nine arms, eleven blocks, 99 jobs, seeds 114001-114011. `sep-ipop` is the
+control -- the configuration that holds the record -- and the other eight rows
+divide into two kinds that have to be read differently.
+
+Four are true single-factor rows against it, so an arm that wins names its own
+cause: `blk-ipop` moves covariance alone, `sep-ipop-s015` and `sep-ipop-s050`
+move `initialSigma` alone, and `sep-ipop-passive` moves `activeCMA` alone.
+
+The other four are compound. `sep-l4096` drops IPOP and raises lambda;
+`blk-l4096` does both and changes covariance on top; `sep-e8` drops IPOP and
+splits the budget into epochs; `sep-warm-e8` does that and also sets
+`initialSigma` and warm-starts from the record. They are exploratory rows: a win
+by one of them is a lead for a registered campaign, not a finding about the knob
+its name happens to mention.
 
 | arm | covariance | restarts | lambda | iters | epochs | sigma | active | start |
 | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
@@ -470,8 +490,11 @@ another would score every job against a cap it never ran under.
 rediscover it. `initialCircles` is the one operator-authored warm start in the
 system and it works for a CMA-ES job in batch mode when `batchSize == circles`,
 which is this design's shape. The specs are committed in `recordCircles()` with
-their provenance -- job `2997714f`, seed 111018, cost 752.5220120747884, arm
-`sep-ipop` of the restart-ladder campaign.
+their provenance -- job `2997714f`, seed 111018, cost 752.5220120747884,
+produced under the `sep-ipop` configuration. The comment names the
+configuration rather than a campaign on purpose: the stagnation campaign set the
+cost and the restart ladder returned it bit for bit, so naming either alone
+would be wrong.
 
 Three things about it are worth knowing before reading its column. `app` refuses
 an out-of-bounds `initialCircles` rather than clamping it, and two of the
@@ -483,6 +506,11 @@ consumed once, so restarts 2..8 would start cold, whereas each epoch reseeds
 from the incumbent and keeps the search anchored near the record.
 
 ### Reading the result
+
+Like the ladder, the hunt pins its fixture to `example/MayFly-512.png` and
+ignores `-ref`. It has the ladder's reason and a second one: `sep-warm-e8` seeds
+`initialCircles` from coordinates bounded by a 512x512 canvas, so a smaller one
+would fail bounds validation at submit.
 
 `reportDescriptive` prints a `vs record` column and a campaign-best line when a
 design sets `record`. Three outcomes are all reportable: a cost below the record;
