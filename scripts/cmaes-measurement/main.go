@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/cwbudde/circlefit/internal/app"
 	"github.com/cwbudde/circlefit/internal/opt"
 	"github.com/cwbudde/circlefit/internal/store"
 )
@@ -36,6 +37,7 @@ const (
 	designPilot   = "stagnation-pilot"
 	designStag    = "stagnation"
 	designSplit   = "budget-split"
+	designLadder  = "restart-ladder"
 )
 
 const (
@@ -57,6 +59,16 @@ const (
 	searchDimensions = 56
 	// resultColumns is the width of the header writeResults emits.
 	resultColumns = 13
+	// stagnationSeedBase is shared by the stagnation campaign and the restart
+	// ladder on purpose. The ladder registers sep-ipop and sep-ipop-w60 in the
+	// configuration the stagnation campaign already ran, so on these seeds both
+	// arms have to reproduce that campaign's twelve cells bit for bit. That is
+	// the ladder's validity check, the way the lambda screen's replication arms
+	// checked Phase 21, and it is what licenses reading the two campaigns'
+	// rows against each other. It also puts seed 111018 -- the block that
+	// produced the best eight-circle cost this project has recorded, 752.52 --
+	// inside the design, so the ladder meets the record on the seed that set it.
+	stagnationSeedBase = 111_012
 	// legacyResultColumns is the width every result CSV committed under docs/
 	// still has, from before the backend provenance column existed. readResults
 	// accepts it so a recorded campaign can still be re-analysed, rather than
@@ -389,7 +401,7 @@ func campaignDesign(name string, budget int) (design, error) {
 
 		return design{
 			name: name, baseline: "sep-ipop-l20", secondaryControl: "sep-ipop",
-			blocks: campaignBlocks, seedBase: 111_012, arms: campaign,
+			blocks: campaignBlocks, seedBase: stagnationSeedBase, arms: campaign,
 			contrasts: []plannedContrast{
 				{control: "sep-ipop-l20", candidate: "sep-ipop-l20-w102", primary: true},
 				{control: "sep-ipop", candidate: "sep-ipop-w60"},
@@ -410,9 +422,24 @@ func campaignDesign(name string, budget int) (design, error) {
 				{control: "sep-r5", candidate: "sep-e5"},
 			},
 		}, nil
+	case designLadder:
+		ladder, ladderErr := restartLadderArms(budget)
+		if ladderErr != nil {
+			return design{}, ladderErr
+		}
+
+		return design{
+			name: name, baseline: "sep-ipop", secondaryControl: "sep-ipop-w60",
+			blocks: campaignBlocks, seedBase: stagnationSeedBase, arms: ladder,
+			contrasts: []plannedContrast{
+				{control: "sep-ipop", candidate: "sep-r32-l64", primary: true},
+				{control: "sep-ipop-w60", candidate: "sep-bipop-w60"},
+			},
+		}, nil
 	default:
 		return design{}, fmt.Errorf(
-			"unknown design %q (want phase21, lambda, stagnation-pilot, stagnation or budget-split)", name)
+			"unknown design %q (want phase21, lambda, stagnation-pilot, stagnation, budget-split or restart-ladder)",
+			name)
 	}
 }
 
@@ -577,6 +604,137 @@ func stagnationArm(name string, lambda, budget, window int, minImprovement float
 		iters: budget / lambda, popSize: lambda, optimizerRestarts: 1,
 		stopStagnationIters: window, stopMinImprovement: minImprovement,
 	}
+}
+
+// ladderWork is the product of population and cold restarts every rung of the
+// restart ladder holds fixed. Because lambda * restarts is constant and each
+// run gets budget/ladderWork generations, every rung spends the cap exactly
+// while trading sampling breadth per generation against the number of
+// independent searches. 2048 is the largest product that keeps the whole legal
+// width of the ladder reachable: at lambda 32 it needs 64 cold restarts, which
+// is exactly app.MaxOptimizerRestarts, and 32 is above app.MinPopulation of 20.
+const ladderWork = 2048
+
+// ladderLambdas are the rungs the campaign actually runs. The product above
+// admits every power of two from 1024 down to 32, but a twelve-block campaign
+// costs about 1,740 job-seconds an arm on this fixture and the run had a fixed
+// deadline, so the design spends its arms on span rather than on resolution:
+// three rungs a factor of four apart plus the extreme one, which is where the
+// restart count reaches app.MaxOptimizerRestarts. The two dropped rungs, 512
+// and 128, are interior points of the same trend and neither carries a
+// registered contrast.
+func ladderLambdas() []int { return []int{defaultPop, 256, 64, 32} }
+
+// restartLadderArms asks how many independent basins a fixed budget can buy,
+// and whether buying more of them beats spending the budget on the shape that
+// currently holds the record.
+//
+// The record it is aimed at is 752.52, set by the stagnation campaign's
+// sep-ipop arm at seed 111018. Two things about that number motivate the whole
+// design. It was reached at 1,224,704 evaluations, 19% of the cap, so the
+// remaining four fifths of that run bought nothing; across the arm the best
+// arrives at 57% of budget on average. And IPOP doubles lambda each rung, so a
+// block affords two or three runs and twelve blocks are about thirty converged
+// searches in total. The record is therefore the minimum of roughly thirty
+// draws from the basin distribution, not the product of a deep search, and the
+// obvious way to beat it is to take more draws rather than longer ones.
+//
+// The ladder holds lambda * restarts at ladderWork so every rung is
+// evaluation-matched by construction, and holds generations per run constant
+// at budget/ladderWork so a rung differs in how its runs are shaped rather
+// than in how far each is allowed to get. lambda and the restart count
+// necessarily move together, so a rung effect belongs to the pair; what makes
+// it readable as the restart count is the lambda screen's existing null, which
+// found lambda at 20, 64 and 1024 indistinguishable on the mean.
+//
+// Three restart-strategy arms run beside it at the shape Phase 21 ran.
+// sep-ipop and sep-ipop-w60 repeat the stagnation campaign exactly, on its own
+// seeds, as the incumbent and as the control that separates BIPOP from the
+// criterion it needs. sep-bipop-w60 is the arm nothing has measured: BIPOP
+// alternates large runs with small ones at randomized budgets and randomized-
+// down sigma, which is a mechanism for leaving a basin rather than refining
+// one.
+//
+// The criterion on the BIPOP arm is structural, not a re-run of the stagnation
+// campaign's null. go-cma-es gives the first large run a budget equal to the
+// entire schedule, and BIPOP reaches its small regime only after a large run
+// has finished, so an unarmed bipop job is IPOP under another name. The window
+// is the same half-anchor the stagnation campaign selected on mechanism and
+// then measured, so nothing about it is chosen here.
+//
+// The ladder arms deliberately carry no criterion. Their restart count is
+// fixed, so ending a dead run early cannot buy another one; it would only
+// leave the budget unspent.
+//
+// Two contrasts are registered, so Holm corrects over two questions rather
+// than the twenty-one that seven arms would otherwise produce. sep-r32-l64 is
+// named as the primary candidate in advance rather than chosen from the
+// ladder afterwards: lambda 64 is four times Hansen's default at this
+// dimensionality, so covariance still adapts, while 32 restarts is the most
+// independent draws available at a lambda that adapts reliably.
+func restartLadderArms(budget int) ([]arm, error) {
+	if budget <= 0 || budget%ladderWork != 0 {
+		return nil, fmt.Errorf(
+			"budget %d must be positive and divisible by %d; the ladder rungs would not be evaluation-matched",
+			budget, ladderWork)
+	}
+
+	if budget%defaultPop != 0 {
+		return nil, fmt.Errorf(
+			"budget %d is not divisible by lambda %d; the restart-strategy arms would not be evaluation-matched",
+			budget, defaultPop)
+	}
+
+	generations := budget / ladderWork
+
+	rungs := ladderLambdas()
+
+	arms := make([]arm, 0, len(rungs)+3)
+	for _, lambda := range rungs {
+		if ladderWork%lambda != 0 {
+			return nil, fmt.Errorf("ladder rung lambda %d does not divide the ladder product %d", lambda, ladderWork)
+		}
+
+		restarts := ladderWork / lambda
+		if lambda < app.MinPopulation {
+			return nil, fmt.Errorf(
+				"ladder rung lambda %d is below app.MinPopulation %d and would be refused at submit",
+				lambda, app.MinPopulation)
+		}
+
+		if restarts > app.MaxOptimizerRestarts {
+			return nil, fmt.Errorf(
+				"ladder rung lambda %d needs %d cold restarts, above app.MaxOptimizerRestarts %d",
+				lambda, restarts, app.MaxOptimizerRestarts)
+		}
+
+		arms = append(arms, arm{
+			name:      fmt.Sprintf("sep-r%d-l%d", restarts, lambda),
+			optimizer: "cmaes", covariance: "separable", restartStrategy: "none",
+			iters: generations, popSize: lambda, optimizerRestarts: restarts,
+		})
+	}
+
+	window := hansenStagnationWindow(defaultPop) / 2
+	if err := checkStagnationWindow(defaultPop, budget, window); err != nil {
+		return nil, err
+	}
+
+	strategyArm := func(name, strategy string, stagnation int) arm {
+		return arm{
+			name: name, optimizer: "cmaes", covariance: "separable", restartStrategy: strategy,
+			iters: budget / defaultPop, popSize: defaultPop, optimizerRestarts: 1,
+			stopStagnationIters: stagnation,
+		}
+	}
+
+	// The two IPOP arms take their names from stagnationArmName, so they cannot
+	// drift from the campaign whose cells they have to reproduce.
+	return append(arms,
+		strategyArm(stagnationArmName(defaultPop, 0), "ipop", 0),
+		strategyArm(stagnationArmName(defaultPop, window), "ipop", window),
+		strategyArm(fmt.Sprintf("sep-bipop-w%d", window), "bipop", window),
+	), nil
 }
 
 // budgetSplitArms asks two questions on a fixture nothing has been measured on.

@@ -8,8 +8,14 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/cwbudde/circlefit/internal/app"
 	"github.com/cwbudde/circlefit/internal/opt"
 )
+
+// coldRestartStrategy is the restartStrategy value an arm carries when it uses
+// the engine-agnostic cold-restart wrapper rather than one of CMA-ES's own
+// shared-budget schedules.
+const coldRestartStrategy = "none"
 
 func TestCampaignArmsAreEvaluationMatched(t *testing.T) {
 	t.Parallel()
@@ -266,7 +272,7 @@ func TestLambdaScreenRejectsAnIndivisibleBudget(t *testing.T) {
 func TestCampaignDesignsAreNamedAndClosed(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{designPhase21, designLambda, designPilot, designStag, designSplit} {
+	for _, name := range []string{designPhase21, designLambda, designPilot, designStag, designSplit, designLadder} {
 		plan, err := campaignDesign(name, defaultBudget)
 		if err != nil {
 			t.Fatalf("design %s: %v", name, err)
@@ -405,9 +411,18 @@ func TestRegisteredDesignsUseDisjointSeedPrefixes(t *testing.T) {
 	// Phase 21 so cross-campaign drift is measured. The exception is recorded
 	// as an unordered pair, so it does not depend on the order this test
 	// happens to visit the designs in.
-	shared := map[[2]string]bool{{designPhase21, designLambda}: true, {designLambda, designPhase21}: true}
+	//
+	// The restart ladder shares the stagnation campaign's seeds for the same
+	// reason and one more: its sep-ipop and sep-ipop-w60 arms repeat that
+	// campaign's configuration exactly, so the cells have to reproduce bit for
+	// bit, and the shared range puts seed 111018 -- the block that set the best
+	// recorded eight-circle cost -- inside the ladder's own design.
+	shared := map[[2]string]bool{
+		{designPhase21, designLambda}: true, {designLambda, designPhase21}: true,
+		{designStag, designLadder}: true, {designLadder, designStag}: true,
+	}
 
-	for _, name := range []string{designPhase21, designLambda, designPilot, designStag, designSplit} {
+	for _, name := range []string{designPhase21, designLambda, designPilot, designStag, designSplit, designLadder} {
 		plan, err := campaignDesign(name, defaultBudget)
 		if err != nil {
 			t.Fatalf("design %s: %v", name, err)
@@ -953,5 +968,204 @@ func writeCSVFixture(t *testing.T, path string, records [][]string) {
 	err = writer.WriteAll(records)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestRestartLadderIsEvaluationMatchedAndRegistersTwoContrasts pins the shape
+// of the ladder the campaign was submitted under. The lesson the budget-split
+// report had to record is that a registered design must be frozen at the
+// commit its campaign is submitted from; this test is what makes a later edit
+// to that design fail loudly rather than silently rewrite what was registered.
+func TestRestartLadderIsEvaluationMatchedAndRegistersTwoContrasts(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designLadder, defaultBudget)
+	if err != nil {
+		t.Fatalf("design %s: %v", designLadder, err)
+	}
+
+	// The ladder asks its question on the fixture the record was set on, so it
+	// must not carry a fixture override the way budget-split does.
+	reference, circles := plan.fixture("example/MayFly-512.png")
+	if reference != "example/MayFly-512.png" || circles != defaultCircles {
+		t.Errorf("ladder runs %s at %d circles, want the default fixture at %d", reference, circles, defaultCircles)
+	}
+
+	if plan.blocks != campaignBlocks {
+		t.Errorf("ladder registers %d blocks, want %d", plan.blocks, campaignBlocks)
+	}
+
+	// hansenStagnationWindow reads searchDimensions, which describes the
+	// default eight-circle fixture. The check above is what makes that legal.
+	want := map[string]struct {
+		lambda, restarts, stagnation int
+		strategy                     string
+	}{
+		"sep-r2-l1024":  {1024, 2, 0, coldRestartStrategy},
+		"sep-r8-l256":   {256, 8, 0, coldRestartStrategy},
+		"sep-r32-l64":   {64, 32, 0, coldRestartStrategy},
+		"sep-r64-l32":   {32, 64, 0, coldRestartStrategy},
+		"sep-ipop":      {1024, 1, 0, "ipop"},
+		"sep-ipop-w60":  {1024, 1, 60, "ipop"},
+		"sep-bipop-w60": {1024, 1, 60, "bipop"},
+	}
+	if len(plan.arms) != len(want) {
+		t.Fatalf("ladder registers %d arms, want %d", len(plan.arms), len(want))
+	}
+
+	for _, current := range plan.arms {
+		expected, registered := want[current.name]
+		if !registered {
+			t.Errorf("ladder registers unexpected arm %s", current.name)
+
+			continue
+		}
+
+		if current.popSize != expected.lambda || current.optimizerRestarts != expected.restarts {
+			t.Errorf("arm %s is lambda %d x %d restarts, want %d x %d",
+				current.name, current.popSize, current.optimizerRestarts, expected.lambda, expected.restarts)
+		}
+
+		if current.stopStagnationIters != expected.stagnation || current.restartStrategy != expected.strategy {
+			t.Errorf("arm %s is %s with window %d, want %s with window %d",
+				current.name, current.restartStrategy, current.stopStagnationIters,
+				expected.strategy, expected.stagnation)
+		}
+
+		// Every rung has to spend the cap exactly, or a rung difference would
+		// measure the budget rather than the shape.
+		spent := current.iters * current.popSize *
+			max(current.optimizerEpochs, 1) * max(current.optimizerRestarts, 1)
+		if spent != defaultBudget {
+			t.Errorf("arm %s spends %d evaluations, want %d", current.name, spent, defaultBudget)
+		}
+
+		// A rung the server would refuse costs the whole campaign: the manifest
+		// is written O_EXCL, so a rejected arm cannot simply be resubmitted.
+		if current.popSize < app.MinPopulation || current.popSize > app.MaxPopulation {
+			t.Errorf("arm %s uses lambda %d, outside app's %d..%d",
+				current.name, current.popSize, app.MinPopulation, app.MaxPopulation)
+		}
+
+		if current.optimizerRestarts > app.MaxOptimizerRestarts {
+			t.Errorf("arm %s asks for %d cold restarts, above app.MaxOptimizerRestarts %d",
+				current.name, current.optimizerRestarts, app.MaxOptimizerRestarts)
+		}
+	}
+
+	// Two contrasts, so Holm corrects over two questions rather than the
+	// twenty-one that seven arms would otherwise produce. sep-r32-l64 is named
+	// here rather than chosen from the ladder once the costs are in.
+	wantContrasts := []plannedContrast{
+		{control: "sep-ipop", candidate: "sep-r32-l64", primary: true},
+		{control: "sep-ipop-w60", candidate: "sep-bipop-w60"},
+	}
+	if !slices.Equal(plan.contrasts, wantContrasts) {
+		t.Errorf("ladder registers %+v, want %+v", plan.contrasts, wantContrasts)
+	}
+
+	for _, current := range plan.contrasts {
+		if current.control != plan.baseline && current.control != plan.secondaryControl {
+			t.Errorf("contrast against %q is reported by neither table", current.control)
+		}
+	}
+}
+
+// TestRestartLadderReplicatesTheStagnationCampaignArms is the ladder's validity
+// check expressed as a test. sep-ipop and sep-ipop-w60 have to be
+// configuration-identical to the stagnation campaign's arms of the same names
+// and run on the same seeds, so that campaign's twelve cells must reproduce bit
+// for bit. If they do not, the ladder's comparison against the recorded 752.52
+// is not licensed and the campaign says nothing about the record.
+func TestRestartLadderReplicatesTheStagnationCampaignArms(t *testing.T) {
+	t.Parallel()
+
+	ladder, err := campaignDesign(designLadder, defaultBudget)
+	if err != nil {
+		t.Fatalf("design %s: %v", designLadder, err)
+	}
+
+	stagnation, err := campaignDesign(designStag, defaultBudget)
+	if err != nil {
+		t.Fatalf("design %s: %v", designStag, err)
+	}
+
+	if ladder.seedBase != stagnation.seedBase {
+		t.Fatalf("ladder seeds from %d, stagnation from %d; the arms would not be comparable",
+			ladder.seedBase, stagnation.seedBase)
+	}
+
+	byName := func(plan design, name string) (arm, bool) {
+		for _, current := range plan.arms {
+			if current.name == name {
+				return current, true
+			}
+		}
+
+		return arm{}, false
+	}
+
+	for _, name := range []string{"sep-ipop", "sep-ipop-w60"} {
+		mine, ok := byName(ladder, name)
+		if !ok {
+			t.Errorf("ladder does not register %s", name)
+
+			continue
+		}
+
+		theirs, ok := byName(stagnation, name)
+		if !ok {
+			t.Errorf("stagnation does not register %s", name)
+
+			continue
+		}
+
+		if mine != theirs {
+			t.Errorf("ladder %s is %+v, stagnation ran %+v; the cells would not reproduce", name, mine, theirs)
+		}
+	}
+}
+
+// TestRestartLadderBipopArmCarriesAWindow guards the one configuration mistake
+// that would make the secondary contrast measure nothing. go-cma-es gives the
+// first large run a budget equal to the whole schedule and only reaches the
+// small regime after a large run finishes, so a bipop arm with no stagnation
+// criterion is IPOP under another name and the contrast would compare two
+// spellings of the same search.
+func TestRestartLadderBipopArmCarriesAWindow(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designLadder, defaultBudget)
+	if err != nil {
+		t.Fatalf("design %s: %v", designLadder, err)
+	}
+
+	for _, current := range plan.arms {
+		if current.restartStrategy == "bipop" && current.stopStagnationIters == 0 {
+			t.Errorf("arm %s runs bipop with no stagnation window and degenerates to a single large run", current.name)
+		}
+
+		// The ladder rungs must not carry one. Their restart count is fixed, so
+		// stopping a dead run early cannot buy another one -- it would only
+		// leave the budget unspent and break the evaluation match.
+		if current.restartStrategy == coldRestartStrategy && current.stopStagnationIters != 0 {
+			t.Errorf("ladder rung %s carries a stagnation window it cannot spend", current.name)
+		}
+	}
+}
+
+func TestRestartLadderRefusesABudgetItsRungsDoNotDivide(t *testing.T) {
+	t.Parallel()
+
+	// One evaluation short of the cap divides neither the ladder product nor
+	// the population, so the rungs could not be evaluation-matched.
+	_, err := restartLadderArms(defaultBudget - 1)
+	if err == nil {
+		t.Error("restartLadderArms accepted a budget its rungs do not divide")
+	}
+
+	_, err = restartLadderArms(0)
+	if err == nil {
+		t.Error("restartLadderArms accepted a zero budget")
 	}
 }

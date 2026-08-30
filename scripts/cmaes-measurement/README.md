@@ -6,7 +6,7 @@ dashboard shows the queue and every active job. It refuses to overwrite a
 manifest, which prevents an accidental second submission from corrupting the
 paired design.
 
-Five designs are registered, selected with `-design`:
+Six designs are registered, selected with `-design`:
 
 - `phase21` (the default) — the original five arms: two Mayfly controls and
   three CMA-ES arms, all at `popSize` 1024. 60 jobs, 12 blocks, seeds
@@ -21,6 +21,10 @@ Five designs are registered, selected with `-design`:
   seeds 111013-111024. See below.
 - `budget-split` — six arms on a second fixture, 72 jobs, 12 blocks, seeds
   113001-113012. See below.
+- `restart-ladder` — seven arms, 84 jobs, 12 blocks, seeds 111013-111024
+  (deliberately the same as `stagnation`, so two repeated arms have to
+  reproduce that campaign bit for bit and the recorded best cost is inside the
+  design). See below.
 
 **A design owns its block count, its seed base and its contrast family.** All
 three used to be global or flag-driven. `-blocks` and `-seed-base` are now
@@ -313,6 +317,85 @@ a flag that silently changed it would hide that.
 ```sh
 ./cmaes-measurement -action plan   -design budget-split
 ./cmaes-measurement -action submit -design budget-split
+```
+
+## The restart ladder
+
+`-design restart-ladder` asks how many independent basins a fixed budget can
+buy, and whether buying more of them beats the shape that currently holds the
+record on the shared fixture.
+
+The record is **752.52**, set by the stagnation campaign's `sep-ipop` arm at
+seed 111018. Two properties of it drive the design. It was reached at
+1,224,704 evaluations — 19% of the cap — so four fifths of that run bought
+nothing, and across the arm the best arrives at 57% of budget on average. And
+IPOP doubles lambda at each rung, so a block affords two or three runs and
+twelve blocks are about thirty converged searches in total. The record is the
+minimum of roughly thirty draws from the basin distribution, not the product of
+a deep search, so the obvious way to beat it is more draws rather than longer
+ones.
+
+Four rungs hold `lambda * restarts` at 2048 and give every run
+`budget / 2048 = 3175` generations, so each spends the 6,502,400 cap exactly
+while trading sampling breadth per generation against the number of independent
+searches:
+
+| arm | lambda | cold restarts | independent draws over 12 blocks |
+| --- | ---: | ---: | ---: |
+| `sep-r2-l1024` | 1024 | 2 | 24 |
+| `sep-r8-l256` | 256 | 8 | 96 |
+| `sep-r32-l64` | 64 | 32 | 384 |
+| `sep-r64-l32` | 32 | 64 | 768 |
+
+The product admits every power of two from 1024 down to 32. The campaign spends
+its arms on span rather than resolution -- three rungs a factor of four apart
+plus the extreme one -- because an arm costs about 1,740 job-seconds a block on
+this fixture and the run had a fixed deadline. The dropped 512 and 128 rungs are
+interior points of the same trend and neither carries a registered contrast.
+
+2048 is the largest product that keeps the whole legal width reachable: the
+last rung needs exactly `app.MaxOptimizerRestarts` cold restarts, and its
+lambda of 32 is above `app.MinPopulation`. Lambda and the restart count
+necessarily move together, so a rung difference belongs to the pair; what makes
+it readable as the restart count is the lambda screen's existing null, which
+found lambda at 20, 64 and 1024 indistinguishable on the mean.
+
+Three restart-strategy arms run beside the ladder at Phase 21's shape.
+`sep-ipop` and `sep-ipop-w60` repeat the stagnation campaign exactly, on its
+own seeds, so their twelve cells have to reproduce bit for bit — that is the
+ladder's validity check, the way the lambda screen's replication arms checked
+Phase 21, and it is what licenses reading the two campaigns' rows against each
+other. `sep-bipop-w60` is the arm nothing has measured: BIPOP alternates large
+runs with small ones at randomized budgets and randomized-down sigma, which is
+a mechanism for leaving a basin rather than refining one.
+
+**The criterion on the BIPOP arm is structural, not a re-run of the stagnation
+campaign's null.** go-cma-es gives the first large run a budget equal to the
+whole schedule and reaches the small regime only after a large run finishes, so
+an unarmed `bipop` job is IPOP under another name. `sep-ipop-w60` is the
+control that separates the strategy from the criterion, and the window is the
+same half-anchor the stagnation campaign selected on mechanism and then
+measured, so nothing about it is chosen here. The ladder rungs deliberately
+carry no criterion: their restart count is fixed, so ending a dead run early
+cannot buy another one and would only leave the budget unspent.
+
+Two contrasts are registered, so Holm corrects over two questions rather than
+the twenty-one that seven arms would otherwise produce. **`sep-r32-l64` against
+`sep-ipop` is primary** — lambda 64 is four times Hansen's default at this
+dimensionality, so covariance still adapts, while 32 restarts is the most
+independent draws available at a lambda that adapts reliably. It is named here
+rather than picked from the ladder once the costs are in. **`sep-bipop-w60`
+against `sep-ipop-w60`** is the strategy question at matched criterion. The
+ladder trend and every other pairing stay exploratory.
+
+The record question gets a column of its own — the minimum over blocks per arm,
+against 752.52 — and it is an order statistic, not a test. Best-of-N favours
+the high-restart arms by construction; that is the mechanism under examination
+rather than a bias, but it does not carry a p-value.
+
+```sh
+./cmaes-measurement -action plan   -design restart-ladder
+./cmaes-measurement -action submit -design restart-ladder
 ```
 
 ## Budget and pairing
