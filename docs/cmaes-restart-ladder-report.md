@@ -8,11 +8,13 @@ and BIPOP does not beat IPOP at a matched stagnation criterion (`t = +0.76`,
 seven of twelve). The best cost recorded anywhere in the campaign is
 **752.5220120747884** — exactly the standing record, matched but not improved.
 
-The useful result is the mechanism, and it inverts the hypothesis. The record
-is not the lucky tail of thirty draws. **It is what a population of 1024
-reliably converges to on that seed.** All four `lambda` 1024 arms return it to
-the last bit, whatever their restart shape, and no small-population arm found
-it at all — not with 32 independent searches, and not with 64.
+The useful result is the mechanism, and it narrows the hypothesis rather than
+confirming it. **The record is one `lambda` 1024 trajectory on one seed**, and
+the four arms that report it to the last bit are not four confirmations: they
+share that trajectory. It is reached on their common first run, before any
+restart shape has had an opportunity to differentiate them. What block 6 does
+establish is the negative — on that seed the three small-population arms missed
+the basin entirely, with 8, 32 and 64 independent draws each.
 
 **Ran 2026-08-30** on the 64-core campaign host at `--max-jobs 8`, driver
 `scripts/cmaes-measurement`, design `restart-ladder` (84 jobs, 7 arms, 12
@@ -51,6 +53,12 @@ evaluations while trading sampling breadth per generation against the number of
 independent searches. Three restart-strategy arms run beside them at
 `lambda` 1024.
 
+6,502,400 is the *nominal* optimizer budget throughout this report. A job that
+spends it reports `finalEvaluations` of 6,502,403, three above the nominal
+figure, because the stage counts a few evaluations outside the optimizer's own
+budget; the same +3 appears in every campaign in `docs/` that reaches its cap.
+The two numbers refer to the same full-cap run and neither is an error.
+
 | arm | shape | independent searches over 12 blocks |
 | --- | --- | ---: |
 | `sep-r2-l1024` | 2 cold restarts, lambda 1024 | 24 |
@@ -70,13 +78,13 @@ together by construction, so a rung difference belongs to the pair.
 
 | arm | mean | sd | median | best | gain vs `sep-ipop` | `t` (df=11) | p | blocks won |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `sep-r2-l1024` | 896.59 | 63.79 | 904.08 | **752.52** | -17.79 | -1.60 | 0.138 | 3/12 |
-| `sep-r8-l256` | 875.42 | 18.74 | 875.68 | 853.05 | +3.38 | +0.23 | 0.822 | 8/12 |
-| `sep-r32-l64` | 882.46 | 22.59 | 893.07 | 840.82 | **-3.67** | **-0.26** | **0.803** | **5/12** |
-| `sep-r64-l32` | **864.35** | 25.58 | 860.10 | 824.37 | +14.44 | +0.99 | 0.343 | 10/12 |
+| `sep-r2-l1024` | 896.59 | 63.79 | 904.08 | **752.52** | -17.79 | -1.60 | 0.13719 | 3/12 |
+| `sep-r8-l256` | 875.42 | 18.74 | 875.68 | 853.05 | +3.38 | +0.23 | 0.82530 | 8/12 |
+| `sep-r32-l64` | 882.46 | 22.59 | 893.07 | 840.82 | **-3.67** | **-0.26** | **0.80272** | **5/12** |
+| `sep-r64-l32` | **864.35** | 25.58 | 860.10 | 824.37 | +14.44 | +0.99 | 0.34504 | 10/12 |
 | `sep-ipop` | 878.80 | 50.93 | 886.80 | **752.52** | control | control | control | control |
-| `sep-ipop-w60` | 868.95 | 48.28 | 881.89 | **752.52** | +9.84 | +0.82 | 0.430 | 4/12 |
-| `sep-bipop-w60` | **862.13** | 43.42 | 864.73 | **752.52** | +16.66 | +1.54 | 0.152 | 6/12 |
+| `sep-ipop-w60` | 868.95 | 48.28 | 881.89 | **752.52** | +9.84 | +0.82 | 0.43223 | 4/12 |
+| `sep-bipop-w60` | **862.13** | 43.42 | 864.73 | **752.52** | +16.66 | +1.54 | 0.15072 | 6/12 |
 
 | registered contrast | gain | `t` (df=11) | p | Holm | blocks won |
 | --- | ---: | ---: | ---: | --- | ---: |
@@ -112,29 +120,45 @@ refutes. That reading was: 752.52 was reached at 19% of its run's cap, and IPOP
 affords only two or three runs per block, so the record is the minimum of
 roughly thirty draws from a basin distribution — and more draws should beat it.
 
-**Block 6 says otherwise.** Four arms return 752.5220120747884 there, to the
-last bit: `sep-r2-l1024`, `sep-ipop`, `sep-ipop-w60` and `sep-bipop-w60`. Those
-are exactly the four arms that search at `lambda` 1024. The three
-small-population arms miss it entirely, and not narrowly — 870.38 at
-`lambda` 256, 851.93 at `lambda` 64, 882.91 at `lambda` 32 — despite taking 8,
-32 and 64 independent draws each on that seed.
+**Block 6 says otherwise, but not in the way it first appears.** Four arms
+return 752.5220120747884 there, to the last bit: `sep-r2-l1024`, `sep-ipop`,
+`sep-ipop-w60` and `sep-bipop-w60` — exactly the four that search at
+`lambda` 1024. The three small-population arms miss it entirely, and not
+narrowly — 870.38 at `lambda` 256, 851.93 at `lambda` 64, 882.91 at
+`lambda` 32 — despite taking 8, 32 and 64 independent draws each on that seed.
 
-So the basin is not rare. It is found reliably, by every schedule that samples
-1024 points per generation, including the one that only restarts twice. What
-does *not* find it is a small population, however many times it is restarted.
-**Population size reaches that basin; draw count does not.**
+**Those four are one trajectory, not four.** All four arms share seed 111018,
+`lambda` 1024 and the same initial sigma, so their first run is the same
+deterministic search, and the trajectory CSV shows it: their rows are identical
+through iteration 1241 at 1,270,784 evaluations, and the record is first
+reached earlier still, at iteration 1216 and 1,245,184 evaluations, with the
+restart column at 0 in every one of them. Only afterwards do they diverge — the
+two `w60` arms trip their stagnation criterion and enter restart 1 around
+1,296,384 evaluations, while `sep-ipop` and `sep-r2-l1024` stay on the first
+run. The bit-identical costs are therefore evidence of deterministic reuse of a
+single trajectory, and it would be wrong to read them as four schedules
+independently converging on the basin.
 
-That is consistent with, and sharper than, the `lambda` screen's null: `lambda`
-has no measured effect on the *mean*, and this campaign reproduces that — but
-on the one seed where an exceptional basin exists, `lambda` is what decides
-whether the search enters it. A mean-level null does not imply a tail-level
-one, and the two campaigns together are a worked example of the difference.
+So the supported claim is narrower than the one the campaign hoped for, and it
+is one-sided. **One `lambda` 1024 trajectory found the basin; 8, 32 and 64
+small-population draws on the same seed did not.** That is a real asymmetry and
+it is the campaign's most useful reading, but it is a single trajectory against
+three, not a demonstration that large populations reach the basin reliably.
 
-**One block is one block.** This is n = 1 for the exceptional basin, and it
-cannot support a general claim that large populations find rare optima. It is
-the strongest available reading of the only such basin the project has seen,
-and the right response is a design that goes looking for more of them, not a
-default change.
+The rest of the campaign says the basin is in fact rare. `lambda` 1024 is
+searched in every one of the twelve blocks, by four arms — 48 cells — and
+752.52 is returned in **four of them, all in block 6**. The other 44 sit
+between 817.40 and 982.00. Whatever reaches that basin, it is not something a
+population of 1024 does on demand: across twelve seeds it was entered on one.
+
+**One block is one block, and one trajectory is one trajectory.** This is n = 1
+for the exceptional basin, and it cannot support a general claim about how
+population size finds rare optima. What survives is a lead worth designing for:
+a mean-level `lambda` null does not settle the tail, because the only
+exceptional basin the project has seen was entered by a large population and
+not by many small ones. The right response is a design that goes looking for
+more such basins — with `lambda` varied on seeds that do not share a first run
+— not a default change.
 
 The record therefore stands at 752.52, and this campaign did not beat it. What
 it removed is the reason to expect that more restarts would.
@@ -154,6 +178,9 @@ anticipated:
 | `sep-ipop` | 6,502,403 | 100% |
 | `sep-ipop-w60` | 6,502,403 | 100% |
 | `sep-bipop-w60` | 6,502,403 | 100% |
+
+The three 6,502,403 rows are the full-cap figure described under **The design**:
+the nominal budget is 6,502,400 and a job that exhausts it reports three more.
 
 Each cold restart converges and trips `TolFun` long before its 3175 generations
 are used, and because the restart count is *fixed*, the remainder is simply not
@@ -185,8 +212,16 @@ This is the first `bipop` data in the repository, and the strategy did what it
 is supposed to do. Across twelve blocks it ran **156 runs — 123 small and 33
 large** — between 9 and 19 per block, against the two or three an IPOP ladder
 manages on the same budget. The small regime is reached in every block, its
-populations are randomized between 1024 and about 2050 as designed, and **the
-best result came from a small run in 4 of 12 blocks**.
+populations are randomized between 1024 and 2047 as designed, and **the best
+result came from a small run in 4 of 12 blocks**. One run falls outside that
+range and is not a counterexample to it: block 9's restart 18 is a small run of
+population 46 that ran a single iteration for 46 evaluations. It is the
+budget tail — that block's nineteen restarts sum to exactly 6,502,400
+evaluations, so the last one is allotted only what is left of the cap and its
+population is clamped to the remainder. Restarts 16 and 17 of the same block
+are truncated the same way, at one and two iterations. A truncated tail run
+carries no information about the schedule and should be excluded when reading
+the regime's populations.
 
 The structural precaution was necessary and sufficient: with the stagnation
 criterion armed, the first large run ends and the schedule proceeds. Without it

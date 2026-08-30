@@ -133,20 +133,26 @@ ones that will change what you propose:
   — seven arms, eighty-four jobs, asking whether buying more independent basins
   beats the shape that holds the record. **Both registered contrasts retain**
   (`t = -0.26` and `t = +0.76`) and the record was matched, not beaten. Its
-  value is the mechanism, which inverted the hypothesis: the record is not the
-  tail of thirty lucky draws but **what a population of 1024 reliably converges
-  to on that seed** — all four `lambda` 1024 arms return 752.52 to the last bit,
-  and no small-population arm found it with 32 or 64 independent draws. That is
-  one block, so it is a lead rather than a finding, but it means a mean-level
-  `lambda` null does not imply a tail-level one. **Read before designing another
-  restart ladder:** these arms spent only 29-44% of their cap, because each cold
-  restart trips `TolFun` early and a fixed `optimizerRestarts` count cannot
-  express "restart until the budget is gone", so the primary contrast is
-  cap-matched but not spend-matched and the restart-count question is still
-  open. Also carries the first `bipop` measurement here — 123 small and 33 large
-  runs, the small regime reached in every block, best mean in the campaign and
-  not significant — and the twenty-four cells that reproduce the stagnation
-  campaign bit for bit across a different binary and `--max-jobs`.
+  value is the mechanism, and it is narrower than the four bit-identical
+  `lambda` 1024 cells make it look: **those four arms share one deterministic
+  trajectory.** They run the same seed, `lambda` and initial sigma, their rows
+  are identical through 1,270,784 evaluations, and the record is reached before
+  that at 1,245,184 on restart 0 — so it is one trajectory reused, not four
+  schedules converging. What the block does establish is one-sided and still
+  worth having: that one `lambda` 1024 trajectory found the basin where 8, 32
+  and 64 small-population draws on the same seed did not. It is **not** evidence
+  that a population of 1024 reaches it reliably — `lambda` 1024 is searched in
+  all twelve blocks and returns 752.52 in one. So it is a lead rather than a
+  finding, but it means a mean-level `lambda` null does not settle the tail.
+  **Read before designing another restart ladder:** these arms spent only
+  29-44% of their cap, because each cold restart trips `TolFun` early and a
+  fixed `optimizerRestarts` count cannot express "restart until the budget is
+  gone", so the primary contrast is cap-matched but not spend-matched and the
+  restart-count question is still open. Also carries the first `bipop`
+  measurement here — 123 small and 33 large runs, the small regime reached in
+  every block, best mean in the campaign and not significant — and the
+  twenty-four cells that reproduce the stagnation campaign bit for bit across a
+  different binary and `--max-jobs`.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more

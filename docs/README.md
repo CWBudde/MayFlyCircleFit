@@ -139,10 +139,12 @@ re-measure instead.
   can buy. **Both registered contrasts retain**: trading population for cold
   restarts does not beat the incumbent IPOP schedule (`t = -0.26`), and BIPOP
   does not beat IPOP at a matched criterion (`t = +0.76`). The record was
-  matched, not beaten. Read it for why: the record is **not** the lucky tail of
-  thirty draws but what a population of 1024 reliably converges to on that seed
-  — all four `lambda` 1024 arms return it bit for bit and no small-population
-  arm found it with 32 or 64 draws. Read it also before designing another
+  matched, not beaten. Read it for why the four bit-identical `lambda` 1024
+  cells prove less than they appear to: **they are one deterministic trajectory
+  shared by four arms**, which reaches the record before any restart shape
+  separates them. The surviving claim is one-sided — that one `lambda` 1024
+  trajectory found the basin where 8, 32 and 64 small-population draws did not,
+  on a seed that is one of twelve. Read it also before designing another
   restart ladder, because this one's arms spent only 29-44% of their cap and a
   fixed `optimizerRestarts` count cannot express "restart until the budget is
   gone". Carries the first `bipop` data in the repository, and the twenty-four
