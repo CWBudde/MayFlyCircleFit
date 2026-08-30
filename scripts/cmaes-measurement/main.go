@@ -39,6 +39,7 @@ const (
 	designSplit   = "budget-split"
 	designLadder  = "restart-ladder"
 	designHunt    = "deep-hunt"
+	designCov     = "covariance"
 )
 
 // huntBudget is the deep hunt's per-job evaluation cap. It is 1.94x
@@ -51,6 +52,19 @@ const (
 // exactly by 1024, 2048 and 4096, so every arm stays evaluation-matched by
 // construction.
 const huntBudget = 12_582_912
+
+// runsAtHuntBudget names the designs registered above the fixed cap. The deep
+// hunt raised the cap because it ran no Mayfly arm and had a reason to let the
+// IPOP ladder finish; the covariance campaign keeps the raised cap for a
+// sharper reason. The hunt's block arm took its block best from the lambda 8192
+// rung in six of eleven blocks, and that rung exists only at this budget, so a
+// covariance contract run at defaultBudget would be testing a different
+// mechanism from the one that produced the lead. Both arms share the number, so
+// the contrast stays evaluation-matched -- it simply cannot be quoted against a
+// campaign that ran at defaultBudget, which is what the reports say.
+func runsAtHuntBudget(name string) bool {
+	return name == designHunt || name == designCov
+}
 
 const (
 	defaultBudget  = 6_502_400
@@ -365,7 +379,7 @@ type settings struct {
 // already work.
 func designBudget(name string, requested int) (int, error) {
 	registered := defaultBudget
-	if name == designHunt {
+	if runsAtHuntBudget(name) {
 		registered = huntBudget
 	}
 
@@ -415,7 +429,7 @@ func parseFlags() settings {
 	var config settings
 	flag.StringVar(&config.action, "action", "collect", "plan, submit, collect, preliminary, or analyze")
 	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21, lambda, stagnation-pilot, "+
-		"stagnation, budget-split, restart-ladder or deep-hunt")
+		"stagnation, budget-split, restart-ladder, deep-hunt or covariance")
 	flag.StringVar(&config.server, "server", "http://localhost:8085", "serve base URL")
 	flag.StringVar(&config.dataRoot, "data-root", "./data/cmaes-phase11", "serve data root")
 	flag.StringVar(&config.reference, "ref", "example/MayFly-512.png", "reference image")
@@ -482,10 +496,10 @@ func campaignDesign(name string, budget int) (design, error) {
 	// in a call at the top of this function, which meant no design could ever
 	// run above the cap; it belongs to the designs that inherit the cap, not
 	// to the switch.
-	if name != designHunt && budget > defaultBudget {
+	if !runsAtHuntBudget(name) && budget > defaultBudget {
 		return design{}, fmt.Errorf(
-			"budget %d exceeds the fixed campaign budget %d; only %s is registered above it",
-			budget, defaultBudget, designHunt)
+			"budget %d exceeds the fixed campaign budget %d; only %s and %s are registered above it",
+			budget, defaultBudget, designHunt, designCov)
 	}
 
 	switch name {
@@ -582,10 +596,35 @@ func campaignDesign(name string, budget int) (design, error) {
 			reference: recordReference, circles: defaultCircles,
 			descriptive: true, record: recordCost,
 		}, nil
+	case designCov:
+		covariance, covErr := covarianceArms(budget)
+		if covErr != nil {
+			return design{}, covErr
+		}
+
+		// Two contrasts, named before the campaign runs, and both single-factor
+		// against the same control. That is the whole family Holm corrects
+		// here: the lambda screen manufactured thirteen contrasts out of eight
+		// arms by crossing two factors and paid for it with a threshold that
+		// retained a p of 0.0056, and this campaign exists to answer one
+		// question sharply rather than four vaguely.
+		//
+		// The fixture is pinned for the same reason the hunt and the ladder pin
+		// theirs: a cost on another image is not comparable, and the whole
+		// point is to test a difference measured on this one.
+		return design{
+			name: name, baseline: "sep-ipop",
+			blocks: covarianceBlocks, seedBase: covarianceSeedBase, arms: covariance,
+			reference: recordReference, circles: defaultCircles,
+			contrasts: []plannedContrast{
+				{control: "sep-ipop", candidate: "blk-ipop", primary: true},
+				{control: "sep-ipop", candidate: "sep-ipop-passive"},
+			},
+		}, nil
 	default:
 		return design{}, fmt.Errorf(
 			"unknown design %q (want phase21, lambda, stagnation-pilot, stagnation, "+
-				"budget-split, restart-ladder or deep-hunt)",
+				"budget-split, restart-ladder, deep-hunt or covariance)",
 			name)
 	}
 }
@@ -1077,11 +1116,20 @@ func deepHuntRows() []huntRow {
 // more evaluations than its neighbours would make the minimum column
 // unreadable.
 func deepHuntArms(budget int) ([]arm, error) {
+	return sizeHuntRows(deepHuntRows(), budget)
+}
+
+// sizeHuntRows turns a registered row table into arms at the given budget,
+// refusing any table it cannot keep evaluation-matched. It is shared by the
+// deep hunt and the covariance campaign so the two cannot drift apart in how
+// they size an arm: the campaign's sep-ipop and blk-ipop rows have to be the
+// configurations the hunt actually ran, or its confirmation would be of
+// something else.
+func sizeHuntRows(rows []huntRow, budget int) ([]arm, error) {
 	if budget <= 0 {
 		return nil, fmt.Errorf("budget %d must be positive", budget)
 	}
 
-	rows := deepHuntRows()
 	arms := make([]arm, 0, len(rows))
 
 	for _, row := range rows {
@@ -1120,6 +1168,61 @@ func deepHuntArms(budget int) ([]arm, error) {
 	}
 
 	return arms, nil
+}
+
+// covarianceBlocks is the paired-block count every registered campaign in this
+// driver has used. The covariance campaign has no reason to depart from it: the
+// lead it tests is large -- 77.24 cost points, 11 blocks of 11 in the deep hunt
+// -- so twelve blocks is not the marginal case that would argue for more, and
+// keeping the count makes its power directly comparable to the campaigns whose
+// nulls it is read against.
+const covarianceBlocks = campaignBlocks
+
+// covarianceSeedBase is deliberately *not* the deep hunt's 114_000, and the
+// reason is the opposite of the restart ladder's. The ladder shared the
+// stagnation campaign's seeds so its repeated arms would reproduce that
+// campaign bit for bit, which is a validity check worth having when the new
+// arms are the new evidence. Here the arms are the same arms, so reusing
+// 114_000 would re-report the eleven blocks that produced the lead rather than
+// test it. Fresh seeds are the whole point: an unregistered 11-of-11 has to be
+// confirmed on draws it did not come from. 115_001-115_003 are avoided too --
+// they belong to the deep hunt's warm-sigma probe, which is not a registered
+// design and so is invisible to the disjointness test.
+const covarianceSeedBase = 116_000
+
+// covarianceRows is the registered arm table, and every row is a single-factor
+// move against sep-ipop, the configuration that held the record before the deep
+// hunt and the control every CMA-ES campaign here has used.
+//
+// blk-ipop moves covarianceMode alone, from separable to block -- eight 7x7
+// blocks, one per circle, because app pins blockSize to ParametersPerCircle. It
+// is the primary contrast, and it exists because the deep hunt found it better
+// in 11 blocks of 11 by a mean of 77.24 while registering no contrast at all,
+// so the difference is an observed one that has never been tested.
+//
+// sep-ipop-passive moves activeCMA alone. The deep hunt registered exactly this
+// arm and could not read it: ten of its eleven jobs were cancelled while queued
+// to free workers, leaving n = 1. It is the secondary contrast because the
+// campaign owes the knob a measurement, not because anything suggests it wins.
+//
+// There is no compound row. The deep hunt bought four of them with the budget
+// that was going spare and none identified a cause; this campaign is an
+// inferential one, and every arm it adds is a contrast Holm has to pay for.
+func covarianceRows() []huntRow {
+	return []huntRow{
+		{name: "sep-ipop", covariance: "separable", strategy: "ipop", lambda: defaultPop, epochs: 1},
+		{name: "blk-ipop", covariance: "block", strategy: "ipop", lambda: defaultPop, epochs: 1},
+		{name: "sep-ipop-passive", covariance: "separable", strategy: "ipop", lambda: defaultPop, epochs: 1, passiveCMA: true},
+	}
+}
+
+// covarianceArms sizes that table against the budget. It shares deepHuntArms'
+// checker because the rows are the same shape and the matching requirement is
+// the same one: every arm spends iters*lambda*epochs evaluations and all three
+// products have to equal the budget exactly, or a paired difference would be
+// reading an unmatched pair.
+func covarianceArms(budget int) ([]arm, error) {
+	return sizeHuntRows(covarianceRows(), budget)
 }
 
 func campaignArms(budget int) ([]arm, error) {

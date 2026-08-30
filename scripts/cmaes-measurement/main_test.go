@@ -1177,7 +1177,7 @@ func TestRestartLadderRefusesABudgetItsRungsDoNotDivide(t *testing.T) {
 func registeredDesigns() []string {
 	return []string{
 		designPhase21, designLambda, designPilot, designStag,
-		designSplit, designLadder, designHunt,
+		designSplit, designLadder, designHunt, designCov,
 	}
 }
 
@@ -1509,5 +1509,147 @@ func TestEvaluationCapCountsEpochsAndRestarts(t *testing.T) {
 
 	if spent := split.iters * split.popSize * split.optimizerEpochs; spent != plan.evaluationCap() {
 		t.Errorf("sep-e8 spends %d against a cap of %d", spent, plan.evaluationCap())
+	}
+}
+
+func TestCovarianceCampaignRegistersTwoSingleFactorContrasts(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designCov, mustDesignBudget(t, designCov))
+	if err != nil {
+		t.Fatalf("covariance design: %v", err)
+	}
+
+	if plan.descriptive {
+		t.Error("the covariance campaign is inferential; it must not be descriptive")
+	}
+
+	if plan.blocks != campaignBlocks {
+		t.Errorf("covariance blocks = %d, want %d", plan.blocks, campaignBlocks)
+	}
+
+	if len(plan.arms) != 3 {
+		t.Fatalf("covariance arms = %d, want 3", len(plan.arms))
+	}
+
+	// Every arm is a single-factor move against the control, so a win names its
+	// own cause. Assert that directly rather than trusting the table: the
+	// control and the candidate must agree on everything except the one field
+	// the candidate's name claims.
+	byName := make(map[string]arm, len(plan.arms))
+	for _, current := range plan.arms {
+		byName[current.name] = current
+	}
+
+	control, ok := byName["sep-ipop"]
+	if !ok {
+		t.Fatal("covariance campaign does not run its own control")
+	}
+
+	block, ok := byName["blk-ipop"]
+	if !ok {
+		t.Fatal("covariance campaign does not run blk-ipop")
+	}
+
+	if block.covariance != "block" || control.covariance != "separable" {
+		t.Errorf("covariance = %q against %q, want block against separable", block.covariance, control.covariance)
+	}
+
+	wantBlock := control
+	wantBlock.name, wantBlock.covariance = block.name, block.covariance
+
+	if block != wantBlock {
+		t.Errorf("blk-ipop moves more than covarianceMode:\n got %+v\nwant %+v", block, wantBlock)
+	}
+
+	passive, ok := byName["sep-ipop-passive"]
+	if !ok {
+		t.Fatal("covariance campaign does not run sep-ipop-passive")
+	}
+
+	if !passive.passiveCMA || control.passiveCMA {
+		t.Error("sep-ipop-passive must be the only arm turning active adaptation off")
+	}
+
+	wantPassive := control
+	wantPassive.name, wantPassive.passiveCMA = passive.name, passive.passiveCMA
+
+	if passive != wantPassive {
+		t.Errorf("sep-ipop-passive moves more than activeCMA:\n got %+v\nwant %+v", passive, wantPassive)
+	}
+
+	want := []plannedContrast{
+		{control: "sep-ipop", candidate: "blk-ipop", primary: true},
+		{control: "sep-ipop", candidate: "sep-ipop-passive"},
+	}
+	if !slices.Equal(plan.contrasts, want) {
+		t.Errorf("contrasts = %+v, want %+v", plan.contrasts, want)
+	}
+}
+
+func TestCovarianceCampaignRepeatsTheDeepHuntsConfigurationsOnFreshSeeds(t *testing.T) {
+	t.Parallel()
+
+	// The campaign confirms a difference the deep hunt observed, so its two
+	// repeated arms have to be the configurations the hunt actually ran --
+	// otherwise it would be confirming something else. Budget included: both
+	// designs register huntBudget, so iters match too.
+	hunt, huntErr := campaignDesign(designHunt, mustDesignBudget(t, designHunt))
+	if huntErr != nil {
+		t.Fatalf("deep hunt design: %v", huntErr)
+	}
+
+	covariance, covErr := campaignDesign(designCov, mustDesignBudget(t, designCov))
+	if covErr != nil {
+		t.Fatalf("covariance design: %v", covErr)
+	}
+
+	huntArms := make(map[string]arm, len(hunt.arms))
+	for _, current := range hunt.arms {
+		huntArms[current.name] = current
+	}
+
+	for _, current := range covariance.arms {
+		previous, ran := huntArms[current.name]
+		if !ran {
+			t.Errorf("arm %s is not one the deep hunt ran", current.name)
+			continue
+		}
+
+		if current != previous {
+			t.Errorf("arm %s differs from the deep hunt's:\n got %+v\nwant %+v", current.name, current, previous)
+		}
+	}
+
+	// And the seeds must not be the hunt's, or the campaign would re-report the
+	// blocks that produced the lead instead of testing it. The enumerating
+	// disjointness test covers registered designs; this asserts the reason.
+	if covariance.seedBase == hunt.seedBase {
+		t.Errorf("covariance campaign reuses the deep hunt's seed base %d", hunt.seedBase)
+	}
+
+	for block := 1; block <= covariance.blocks; block++ {
+		seed := covariance.seedBase + int64(block)
+		// The deep hunt's warm-sigma probe ran at 115_001-115_003 outside any
+		// registered design, so no enumerating test can see the collision.
+		if seed >= 115_001 && seed <= 115_003 {
+			t.Errorf("block %d seed %d collides with the deep hunt's warm-sigma probe", block, seed)
+		}
+	}
+}
+
+func TestCovarianceCampaignRunsAtTheHuntBudget(t *testing.T) {
+	t.Parallel()
+
+	if budget := mustDesignBudget(t, designCov); budget != huntBudget {
+		t.Errorf("covariance budget = %d, want %d", budget, huntBudget)
+	}
+
+	// The lead being tested came from the lambda 8192 rung, which only exists
+	// at this budget, so a -budget asserting the fixed cap has to be refused
+	// rather than silently sizing the arms shorter.
+	_, contradicts := designBudget(designCov, defaultBudget)
+	if contradicts == nil {
+		t.Error("designBudget accepted a -budget that contradicts the covariance campaign's own")
 	}
 }

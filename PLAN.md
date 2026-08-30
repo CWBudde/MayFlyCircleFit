@@ -188,6 +188,24 @@ anything new against its figures.
       arm taking its best from the lambda 8192 rung in 6 blocks where the
       separable control never won above 4096. `activeCMA` stays unmeasured —
       ten of its eleven jobs were cancelled while queued.
+- [ ] Test the covariance lead the hunt could only observe. **Registered
+      2026-08-30 as `-design covariance`**, to run the weekend of 2026-09-05:
+      three arms, twelve blocks, 36 jobs, seeds 116001-116012, on the shared
+      eight-circle fixture at `huntBudget`. Primary contrast `blk-ipop` against
+      `sep-ipop`, secondary `sep-ipop-passive` against `sep-ipop`; both
+      candidates are single-factor moves against the control, and a test asserts
+      that field by field rather than trusting the table. Two things about the
+      registration are deliberate and are the reasons to read
+      `scripts/cmaes-measurement/README.md` before submitting. The seeds are
+      **fresh**, not the hunt's — the opposite of what the restart ladder did,
+      because here the arms are the same arms and reusing 114_000 would
+      re-report the blocks that produced the lead instead of testing it. And the
+      budget stays raised, because the lead came from the lambda 8192 rung and
+      that rung exists only at `huntBudget`; the cost of that choice is that the
+      campaign's numbers cannot be quoted against any campaign run at
+      `defaultBudget`. Sized from the hunt's own rates at roughly 3.5-5h of wall
+      clock at `--max-jobs 7`. **The design is frozen at the commit the campaign
+      is submitted from.**
 
 ### Task 4: Close the dirty-region evaluator's end-to-end check (P1)
 
