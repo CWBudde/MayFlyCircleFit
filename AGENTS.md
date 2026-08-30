@@ -32,10 +32,10 @@ ones that will change what you propose:
   earlier, and v0.7.0 changed results for every variant, so none of their
   numbers is comparable to a run made today.** Read those for method and for
   what was ruled out; re-measure before citing a figure. See the Toolchain
-  section. Six reports are on the current pins and may be cited directly: the
-  QMC screen, and the five CMA-ES ones — `cmaes-report.md`,
+  section. Seven reports are on the current pins and may be cited directly: the
+  QMC screen, and the six CMA-ES ones — `cmaes-report.md`,
   `cmaes-lambda-report.md`, `cmaes-stagnation-report.md`,
-  `cmaes-budget-split-report.md` and
+  `cmaes-budget-split-report.md`, `cmaes-restart-ladder-report.md` and
   `cmaes-preliminary-report.md`, all run in 2026-08 on MayFly v0.7.1 and
   go-cma-es v0.1.0 — the preliminary one on the code-identical pseudo-version
   that preceded that tag. Each states its own pins; trust that line over this
@@ -95,7 +95,7 @@ ones that will change what you propose:
 - [`docs/cmaes-stagnation-report.md`](docs/cmaes-stagnation-report.md)
   — the window-selection pilot and the twelve-block campaign that tested it.
   **Arming a stagnation criterion on a separable IPOP schedule does not improve
-  the fit** — `bipop` was not in the design and is unmeasured either way. Both
+  the fit** — `bipop` was not in this design; it is measured in `cmaes-restart-ladder-report.md`. Both
   registered contrasts retain their null under Holm; the primary is `t = -0.34`
   with six blocks won of twelve, and the secondary's positive mean comes from a
   single outlying control block while it wins only four. The
@@ -129,6 +129,30 @@ ones that will change what you propose:
   partial results were visible and neither version of it carries correction; and
   restarts-over-budget did *not* replicate for MayFly here (`t = -1.11`, 7/12),
   so `restart-vs-budget-report.md`'s number does not transfer to this fixture.
+- [`docs/cmaes-restart-ladder-report.md`](docs/cmaes-restart-ladder-report.md)
+  — seven arms, eighty-four jobs, asking whether buying more independent basins
+  beats the shape that holds the record. **Both registered contrasts retain**
+  (`t = -0.26` and `t = +0.76`) and the record was matched, not beaten. Its
+  value is the mechanism, and it is narrower than the four bit-identical
+  `lambda` 1024 cells make it look: **those four arms share one deterministic
+  trajectory.** They run the same seed, `lambda` and initial sigma, their rows
+  are identical through 1,270,784 evaluations, and the record is reached before
+  that at 1,245,184 on restart 0 — so it is one trajectory reused, not four
+  schedules converging. What the block does establish is one-sided and still
+  worth having: that one `lambda` 1024 trajectory found the basin where 8, 32
+  and 64 small-population draws on the same seed did not. It is **not** evidence
+  that a population of 1024 reaches it reliably — `lambda` 1024 is searched in
+  all twelve blocks and returns 752.52 in one. So it is a lead rather than a
+  finding, but it means a mean-level `lambda` null does not settle the tail.
+  **Read before designing another restart ladder:** these arms spent only
+  29-44% of their cap, because each cold restart trips `TolFun` early and a
+  fixed `optimizerRestarts` count cannot express "restart until the budget is
+  gone", so the primary contrast is cap-matched but not spend-matched and the
+  restart-count question is still open. Also carries the first `bipop`
+  measurement here — 123 small and 33 large runs, the small regime reached in
+  every block, best mean in the campaign and not significant — and the
+  twenty-four cells that reproduce the stagnation campaign bit for bit across a
+  different binary and `--max-jobs`.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more
