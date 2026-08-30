@@ -1,12 +1,17 @@
 # How a CMA-ES budget should be split, and whether the engine alone wins
 
-**Splitting the budget is what wins; swapping the engine is not.** Separable
+**Splitting the budget is what wins; swapping the engine alone is not shown
+to.** Separable
 CMA-ES run as one long search is statistically indistinguishable from MayFly's
 sixteen-restart arm on this fixture (`t = +1.37`, `p = 0.20`, nine blocks won of
 twelve). Every significant CMA-ES win in this campaign belongs to an arm that
 splits its budget, and splitting an already-CMA-ES budget is itself worth
-`t = +4.05` to `+4.79`. **A default change that swapped the optimizer and kept
-one long run would, on this evidence, buy nothing.**
+`t = +4.05` to `+4.79`. **What a default change that swapped the optimizer and
+kept one long run would buy is undetermined here**: twelve blocks put the
+engine-only gain at `+13.83` with a 95% paired interval of `[-8.40, +36.06]`,
+which admits no benefit and a useful one alike. No equivalence margin was
+registered, so the failure to reject is an absence of evidence and not evidence
+of absence.
 
 The registered primary contrast rejects: separable CMA-ES with IPOP restarts
 beats `mayfly-r16` by `+36.36` (`t = +5.23`, `p = 0.00028`, 11/12 blocks) and
@@ -175,7 +180,7 @@ hypotheses for a follow-up.
 | `sep-e5` vs `sep-single` | +25.64 | +4.79 | 0.00056 | 11/12 |
 | `sep-r5` vs `sep-single` | +42.48 | +4.05 | 0.0019 | 10/12 |
 | `sep-r5` vs `sep-ipop` | +19.95 | +2.20 | 0.0501 | 7/12 |
-| `mayfly-single` vs `mayfly-r16` | +13.74 | +1.11 | 0.291 | 5/12 |
+| `mayfly-single` vs `mayfly-r16` | -13.74 | -1.11 | 0.291 | 7/12 |
 
 `sep-e5` vs `sep-r5` is in the [result table](#result) instead, because one of
 the two registrations names it. It is uncorrected there for the reason given in
@@ -183,9 +188,14 @@ that section, so it is no stronger than a row of this table.
 
 Three readings, in decreasing order of how much the data supports them.
 
-**The engine alone is not the win.** `sep-single` against `mayfly-r16` is
-`p = 0.20`. The registered primary rejects, but the arm that carries it splits
-its budget, and so does every other CMA-ES arm that separates from MayFly. The
+**The engine alone is not shown to be the win.** `sep-single` against
+`mayfly-r16` is `+13.83` with `p = 0.20` and a 95% paired interval of
+`[-8.40, +36.06]`, so twelve blocks cannot separate an engine swap from no
+change — nor rule out a gain two-thirds the size of the primary's. What follows
+is that the *split* is what this campaign demonstrates, not that the engine
+demonstrably does nothing. The registered primary rejects, but the arm that
+carries it splits its budget, and so does every other CMA-ES arm that separates
+from MayFly. The
 two contrasts isolating the split — `sep-e5` and `sep-r5` each against
 `sep-single`, same engine, same covariance mode, same cap — are `p = 0.00056`
 and `p = 0.0019`. This is the campaign's firmest result and it is the one that
@@ -202,7 +212,12 @@ recorded fact rather than inference, which makes it a well-posed question for a
 registered follow-up rather than a fishing expedition.
 
 **Restarts-over-budget did not replicate for MayFly on this fixture.**
-`mayfly-single` vs `mayfly-r16` is `t = +1.11` with five blocks won of twelve.
+`mayfly-single` vs `mayfly-r16` is `-13.74` with `t = -1.11` and seven blocks
+won of twelve. The sign of the mean is the one that report predicts — the
+restart arm is ahead on average — but three blocks carry all of it (1, 3 and 4,
+at -103.15, -51.29 and -84.01) while the single long run wins the majority of
+blocks, which is the mean-versus-win-count mismatch again and not a
+reproduction.
 [`restart-vs-budget-report.md`](restart-vs-budget-report.md) is a v0.6.0 result
 on the eight-circle graphic; on twelve circles of a photograph under v0.7.1 it
 is a null. That report's *method* conclusion stands and its number does not
@@ -247,7 +262,18 @@ changed nothing at all.
 The cap is shared, but the *spend* is not, and this is the honest qualifier on
 "splitting wins".
 
-| arm | mean evaluations used | min | max | share of the 6,502,400 cap |
+Two columns are easy to conflate here, so the table below reports only one of
+them. The **scoring cap** is the 6,502,400 evaluations the design budgets an
+arm, and it is what every arm's `iters * popSize * epochs * restarts` is
+constructed to equal. What the table shows is the **work observed**, the
+`finalEvaluations` each completed job recorded, which differs from the cap for
+two reasons that are accounting rather than search: a completed checkpoint
+carries a `+3` offset, so a job that spends its whole allowance records
+6,502,403; and `mayfly-r16` finishes every restart attempt it starts rather than
+truncating the last one, so it deliberately runs a little past the cap. Its
+100.5% is that overrun and not a cap violation.
+
+| arm | mean `finalEvaluations` | min | max | share of the 6,502,400 cap |
 | --- | ---: | ---: | ---: | ---: |
 | `mayfly-single` | 6,502,403 | 6,502,403 | 6,502,403 | 100% |
 | `mayfly-r16` | 6,533,123 | 6,533,123 | 6,533,123 | 100.5% |
@@ -309,7 +335,10 @@ recommendation are now all discharged by measurement — lambda by
 criterion by [`cmaes-stagnation-report.md`](cmaes-stagnation-report.md), and the
 single fixture by this campaign.
 
-**Not supported.** Swapping the engine while keeping one long run: `p = 0.20`.
+**Not supported.** Swapping the engine while keeping one long run: `p = 0.20`,
+95% paired interval `[-8.40, +36.06]`. Not supported is not refuted — the
+interval is wide enough to hold a worthwhile gain, and no equivalence margin was
+registered that could have ruled one out.
 Any claim that IPOP specifically is the right restart strategy — this campaign
 found it the weakest of the three splitting mechanisms and explains why, but at
 `p = 0.0501` on seven blocks of twelve it did not *establish* that. Any specific

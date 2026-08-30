@@ -132,8 +132,8 @@ anything new against its figures.
       not splitting it (`p = 0.00056` and `p = 0.0019` against the unsplit arm),
       which is the ladder result reproduced under a different engine. The MayFly
       half of this box also stays open: a MayFly ladder would need its own
-      campaign, and `mayfly-single` vs `mayfly-r16` was a null here (`t = +1.11`,
-      5/12) on this fixture.
+      campaign, and `mayfly-single` vs `mayfly-r16` was a null here (`t = -1.11`,
+      7/12) on this fixture.
 - [ ] Decide the surface once that comparison exists. A full restart differs
       from an epoch in independent re-initialization of the whole population
       plus best-of selection; if epochs already capture most of the gain, tune

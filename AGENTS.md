@@ -127,7 +127,7 @@ ones that will change what you propose:
   the epoch-versus-cold-restart question — Task 3's own — is **unanswered**,
   because the design's secondary contrast was changed after submission while
   partial results were visible and neither version of it carries correction; and
-  restarts-over-budget did *not* replicate for MayFly here (`t = +1.11`, 5/12),
+  restarts-over-budget did *not* replicate for MayFly here (`t = -1.11`, 7/12),
   so `restart-vs-budget-report.md`'s number does not transfer to this fixture.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
