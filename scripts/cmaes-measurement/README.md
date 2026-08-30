@@ -6,7 +6,7 @@ dashboard shows the queue and every active job. It refuses to overwrite a
 manifest, which prevents an accidental second submission from corrupting the
 paired design.
 
-Five designs are registered, selected with `-design`:
+Six designs are registered, selected with `-design`:
 
 - `phase21` (the default) — the original five arms: two Mayfly controls and
   three CMA-ES arms, all at `popSize` 1024. 60 jobs, 12 blocks, seeds

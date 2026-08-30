@@ -1054,7 +1054,7 @@ func TestRestartLadderIsEvaluationMatchedAndRegistersTwoContrasts(t *testing.T) 
 	}
 
 	// Two contrasts, so Holm corrects over two questions rather than the
-	// thirty-six that nine arms would otherwise produce. sep-r32-l64 is named
+	// twenty-one that seven arms would otherwise produce. sep-r32-l64 is named
 	// here rather than chosen from the ladder once the costs are in.
 	wantContrasts := []plannedContrast{
 		{control: "sep-ipop", candidate: "sep-r32-l64", primary: true},
