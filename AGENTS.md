@@ -32,9 +32,10 @@ ones that will change what you propose:
   earlier, and v0.7.0 changed results for every variant, so none of their
   numbers is comparable to a run made today.** Read those for method and for
   what was ruled out; re-measure before citing a figure. See the Toolchain
-  section. Five reports are on the current pins and may be cited directly: the
-  QMC screen, and the four CMA-ES ones — `cmaes-report.md`,
-  `cmaes-lambda-report.md`, `cmaes-stagnation-report.md` and
+  section. Six reports are on the current pins and may be cited directly: the
+  QMC screen, and the five CMA-ES ones — `cmaes-report.md`,
+  `cmaes-lambda-report.md`, `cmaes-stagnation-report.md`,
+  `cmaes-budget-split-report.md` and
   `cmaes-preliminary-report.md`, all run in 2026-08 on MayFly v0.7.1 and
   go-cma-es v0.1.0 — the preliminary one on the code-identical pseudo-version
   that preceded that tag. Each states its own pins; trust that line over this
@@ -66,7 +67,12 @@ ones that will change what you propose:
   the winning arm confounds covariance mode with restart strategy, and `lambda`
   is pinned to `popSize` and ran at 1024 against Hansen's default of 16. The
   `lambda` screen below answers the last two with nulls; the stagnation
-  criterion is Task 2 of `PLAN.md`. The report's sigma column is **not**
+  criterion is answered by `cmaes-stagnation-report.md`, also with a null. All
+  three carried questions are therefore discharged, and the budget-split report
+  discharges the single-fixture one on top of them — but that last campaign
+  replaces them with a sharper caveat, that the unsplit CMA-ES arm is a null
+  against `mayfly-r16` and the win belongs to splitting the budget. Read it
+  before acting on this one. The report's sigma column is **not**
   evidence of a diverged search — sigma alone is gauge-dependent and the
   identifiable `sigma * max(D)` was never recorded; do not cite it.
 - [`docs/cmaes-lambda-report.md`](docs/cmaes-lambda-report.md) — the twelve-block
@@ -101,6 +107,28 @@ ones that will change what you propose:
   per-restart records in the repository, the `distributionExtent` reading that
   reproduces the lambda screen's sigma finding on new seeds, and a worked case
   of a three-block pilot whose mechanism result reversed sign at twelve.
+- [`docs/cmaes-budget-split-report.md`](docs/cmaes-budget-split-report.md) — six
+  arms and seventy-two jobs on a **second fixture**, `example/Ref-512.png` at
+  twelve circles instead of the eight-circle graphic every earlier CMA-ES
+  campaign fitted. Phase 21's headline reproduces — `sep-ipop` beats
+  `mayfly-r16` by `+36.36` (`t = +5.23`, 11/12) and rejects under Holm — which
+  discharges the fixture objection and, with `lambda`, covariance and the
+  stagnation criterion all nulls, leaves nothing carried against that campaign.
+  **It is still not licence to swap the engine.** Separable CMA-ES as one long
+  run is indistinguishable from `mayfly-r16` (`t = +1.37`, `p = 0.20`); every
+  significant CMA-ES win belongs to an arm that splits its budget, and splitting
+  an already-CMA-ES budget is worth `p = 0.00056` and `p = 0.0019` against the
+  unsplit arm. **A default change must therefore name a restart shape, not just
+  an optimizer** — and which shape is open: the report recommends fixed-lambda
+  cold restarts on mechanism (the IPOP ladder doubles lambda, so it is
+  budget-capped at two or three runs, the last always truncated, and in six of
+  twelve blocks it returns the unsplit arm's cost to the last bit) but at
+  `p = 0.0501` with 7/12 blocks it did not establish it. Two further cautions:
+  the epoch-versus-cold-restart question — Task 3's own — is **unanswered**,
+  because the design's secondary contrast was changed after submission while
+  partial results were visible and neither version of it carries correction; and
+  restarts-over-budget did *not* replicate for MayFly here (`t = -1.11`, 7/12),
+  so `restart-vs-budget-report.md`'s number does not transfer to this fixture.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more

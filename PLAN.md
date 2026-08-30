@@ -116,14 +116,24 @@ anything new against its figures.
       before settling on any API. An epoch already re-initializes substantially:
       it advances to a fresh deterministic seed and, with no continuation
       profile, seeds only half the population around the incumbent. Every ladder
-      arm ran `optimizerEpochs: 1`, so the comparison is unmeasured. **Submitted
-      2026-08-29 as `-design budget-split`**, asked of CMA-ES rather than
-      MayFly, since Task 10's fixture question and the default-engine question
-      ride along on the same campaign. Both wrappers are engine-agnostic —
-      `internal/server/worker.go` wraps `WithRestarts(WithEpochs(...))` around
-      whatever `newStageOptimizer` built, and `CMAESAdapter` implements
-      `RunWithInitial` — so no adapter change was needed. The MayFly half of
-      this box stays open: a MayFly ladder would need its own campaign.
+      arm ran `optimizerEpochs: 1`, so the comparison is unmeasured. **Ran
+      2026-08-29 as `-design budget-split`** (72 jobs, 12 blocks), asked of
+      CMA-ES rather than MayFly, since Task 10's fixture question and the
+      default-engine question rode along on the same campaign. Both wrappers are
+      engine-agnostic — `internal/server/worker.go` wraps
+      `WithRestarts(WithEpochs(...))` around whatever `newStageOptimizer` built,
+      and `CMAESAdapter` implements `RunWithInitial` — so no adapter change was
+      needed. **The box stays open and the epoch-versus-restart question stays
+      unanswered**: the campaign's secondary contrast was changed after
+      submission while partial results were visible, so neither version of it
+      carries correction. See
+      [`docs/cmaes-budget-split-report.md`](docs/cmaes-budget-split-report.md).
+      What the campaign *does* establish is that splitting a CMA-ES budget beats
+      not splitting it (`p = 0.00056` and `p = 0.0019` against the unsplit arm),
+      which is the ladder result reproduced under a different engine. The MayFly
+      half of this box also stays open: a MayFly ladder would need its own
+      campaign, and `mayfly-single` vs `mayfly-r16` was a null here (`t = -1.11`,
+      7/12) on this fixture.
 - [ ] Decide the surface once that comparison exists. A full restart differs
       from an epoch in independent re-initialization of the whole population
       plus best-of selection; if epochs already capture most of the gain, tune
@@ -270,14 +280,27 @@ was never a recoverable gain and the 12/12 and 11/12 wins stand. **This fixture
 question is now the only thing between that evidence and a default change**,
 which is why it is being run before the rest of its P3 neighbours.
 
-- [ ] Only after Task 2: repeat on a second reference image and a different
-      circle count. Everything measured so far is eight circles on one 512x512
-      reference. **Submitted 2026-08-29** as part of `-design budget-split`:
+- [x] Only after Task 2: repeat on a second reference image and a different
+      circle count. Everything measured before this was eight circles on one
+      512x512 reference. **Ran 2026-08-29** as part of `-design budget-split`:
       `example/Ref-512.png` at twelve circles, carrying `sep-ipop` against
-      `mayfly-r16` as its primary contrast. Canvas size is deliberately held at
+      `mayfly-r16` as its primary contrast. Canvas size was deliberately held at
       512x512 so a changed result is attributable to the image and the circle
       count rather than to three axes at once; generalising across canvas size
-      is a separate question.
+      is a separate question. **The primary reproduced**: `+36.36`, `t = +5.23`,
+      `p = 0.00028`, 11/12 blocks, rejecting under Holm. See
+      [`docs/cmaes-budget-split-report.md`](docs/cmaes-budget-split-report.md).
+
+Phase 21's headline is therefore not specific to one image or one circle count,
+and the fixture objection is discharged. **That is not by itself licence to
+change the default engine.** The same campaign found the unsplit CMA-ES arm
+indistinguishable from `mayfly-r16` (`t = +1.37`, `p = 0.20`), so the advantage
+belongs to CMA-ES *with its budget split*, not to the engine. A default change
+should therefore name a restart shape, and which shape is still open — the
+report recommends fixed-lambda cold restarts over the IPOP ladder on mechanism,
+but at `p = 0.0501` with 7/12 blocks that contrast did not establish it. A
+registered campaign on IPOP versus fixed lambda, with the split count as a
+second factor, is the next thing this line of work needs.
 
 ### Task 11: Remaining OpenCL optimization tranches (P3)
 
