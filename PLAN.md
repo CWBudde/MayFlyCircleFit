@@ -205,7 +205,33 @@ anything new against its figures.
       campaign's numbers cannot be quoted against any campaign run at
       `defaultBudget`. Sized from the hunt's own rates at roughly 3.5-5h of wall
       clock at `--max-jobs 7`. **The design is frozen at the commit the campaign
-      is submitted from.**
+      is submitted from.** **Ran 2026-08-30/31** — a week early, on request —
+      submitted 21:58 and finished 03:20, 5h22m of wall clock, all 36 jobs
+      completed with none cancelled or failed. **The primary contrast rejects**:
+      `blk-ipop` beats `sep-ipop` by `+39.12` (`t = +2.72`, `p = 0.020`, 11/12)
+      and survives Holm — about half the unregistered lead's size, with a
+      standard deviation of 49.85 and one block reversing it by 84.38. The
+      mechanism is the ladder: block converges every rung up to lambda 4096 in
+      12/12 jobs and takes its block best from lambda 8192 in 7 blocks, where
+      the separable control never does. The record was not approached (best
+      746.9953 against the standing 726.1984). See
+      [`docs/cmaes-covariance-report.md`](docs/cmaes-covariance-report.md).
+- [ ] Measure `activeCMA`. It is now unmeasured for the **second** campaign
+      running, and this time the cause was not operational. The covariance
+      campaign's secondary contrast is **void, not null**: `sep-ipop-passive`
+      returned costs bit-identical to its control in all twelve blocks because
+      the knob is arithmetically inert in separable mode in `go-cma-es v0.1.0`.
+      The separable correction clamps the rank-mu rate to `1 - c1`, which makes
+      Hansen's positive-definiteness guard exactly zero, so every negative
+      weight is scaled to nothing. The same clamp zeroes the covariance decay,
+      so every separable campaign in `docs/` ran a memoryless covariance update.
+      Fixed upstream in go-cma-es 0.2.0 (`CWBudde/go-cma-es` PR #3); **this
+      repository has not taken that upgrade**, and doing so is a re-baselining
+      campaign rather than a dependency bump, because it changes the update
+      rules for every recorded figure. Until then `activeCMA` can only be
+      measured in `block` or `full` mode, where the guard leaves a positive
+      budget. The contrast that would also retire the covariance campaign's
+      confound is `blk-ipop` against `blk-ipop-passive`.
 
 ### Task 4: Close the dirty-region evaluator's end-to-end check (P1)
 

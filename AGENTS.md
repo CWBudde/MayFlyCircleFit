@@ -32,16 +32,18 @@ ones that will change what you propose:
   earlier, and v0.7.0 changed results for every variant, so none of their
   numbers is comparable to a run made today.** Read those for method and for
   what was ruled out; re-measure before citing a figure. See the Toolchain
-  section. Eight reports are on the current pins and may be cited directly: the
-  QMC screen, and the seven CMA-ES ones — `cmaes-report.md`,
+  section. Nine reports are on the current pins and may be cited directly: the
+  QMC screen, and the eight CMA-ES ones — `cmaes-report.md`,
   `cmaes-lambda-report.md`, `cmaes-stagnation-report.md`,
   `cmaes-budget-split-report.md`, `cmaes-restart-ladder-report.md`,
-  `cmaes-deep-hunt-report.md` and `cmaes-preliminary-report.md`, all run in
-  2026-08 on MayFly v0.7.1 and go-cma-es v0.1.0 — the preliminary one on the
-  code-identical pseudo-version that preceded that tag. Each states its own
-  pins; trust that line over this one. The deep hunt is the exception to
-  citability *within* that set: it ran at 1.94x the shared cap, so its costs
-  are not comparable to the other six.
+  `cmaes-deep-hunt-report.md`, `cmaes-covariance-report.md` and
+  `cmaes-preliminary-report.md`, all run in 2026-08 on MayFly v0.7.1 and
+  go-cma-es v0.1.0 — the preliminary one on the code-identical pseudo-version
+  that preceded that tag. Each states its own pins; trust that line over this
+  one. The deep hunt and the covariance campaign are the exceptions to
+  citability *within* that set: both ran at 1.94x the shared cap, so their costs
+  are not comparable to the other seven, though they are comparable to each
+  other.
 - [`docs/qmc-initial-population-report.md`](docs/qmc-initial-population-report.md)
   — `qmcInit` measured on the eight-circle batch stage at three population
   sizes. All six comparisons are null and the data bound any effect to about
@@ -177,6 +179,30 @@ ones that will change what you propose:
   n = 1 because ten of its jobs were cancelled while queued.
   `scripts/cmaes-measurement/main.go`'s `recordCircles()` and `recordCost` still
   carry the superseded solution; the report holds the new one.
+- [`docs/cmaes-covariance-report.md`](docs/cmaes-covariance-report.md) — three
+  arms and 36 jobs, all completed, testing the deep hunt's strongest lead.
+  **`covarianceMode: block` beats separable and rejects under Holm** (`+39.12`,
+  `t = +2.72`, 11/12) — but at about half the unregistered lead's size, with a
+  standard deviation of 49.85 above a mean of 39.12 and one block reversing it
+  by 84.38, so the direction is established and the magnitude is not. The
+  mechanism is the restart ladder rather than the covariance model: block
+  converges every rung up to lambda 4096 in 12/12 jobs, spends 47% of its cap at
+  lambda 8192 against the control's 13.8% in only 8 of 12 blocks, and takes its
+  block best from that top rung in 7 blocks where the control never does. It
+  ran at 1.94x the shared cap, so its costs compare only against the deep hunt.
+  **Read it before proposing a covariance default, and read the second contrast
+  before trusting any separable measurement in this repository.** That contrast
+  is **void, not null**: `sep-ipop-passive` returned costs bit-identical to its
+  control in all twelve blocks because `activeCMA` is arithmetically inert in
+  separable mode in `go-cma-es v0.1.0` — the separable correction clamps the
+  rank-mu rate to `1 - c1`, which makes Hansen's positive-definiteness guard
+  exactly zero. The same clamp zeroes the covariance decay, so **every separable
+  campaign in `docs/` ran a memoryless covariance update with active adaptation
+  silently disabled**. Its `t = +Inf` and Holm verdict are artifacts of a
+  zero-variance paired difference and mean nothing. Two consequences carry:
+  `activeCMA` is now unmeasured for the second campaign running and can only be
+  measured in `block` or `full` mode, and the primary contrast confounds
+  covariance mode with whether active adaptation does anything at all.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more
@@ -357,6 +383,21 @@ measurement itself.
   and evaluation counts under both, in full and separable mode, at 5 and 14
   dimensions. That pair is the guard's second allowlist entry, so a checkpoint
   written before the tag still resumes. Any older CMA-ES revision is refused.
+- **v0.1.0 has a measured defect, and the pin stays on it anyway.** In separable
+  mode at a large `lambda` the rank-mu rate is clamped to `1 - c1`, which makes
+  the covariance decay exactly zero — the matrix is rebuilt from each generation
+  and remembers nothing — and makes Hansen's positive-definiteness guard exactly
+  zero, so `activeCMA` is arithmetically inert whatever a job requests. Every
+  separable measurement in `docs/` was taken under those conditions, which is
+  why the whole corpus is internally consistent and why `activeCMA` has never
+  been measured here. Proven by measurement and by arithmetic in
+  [`docs/cmaes-covariance-report.md`](docs/cmaes-covariance-report.md), and
+  fixed upstream in go-cma-es 0.2.0.
+  **Do not bump the pin as a tidy-up.** 0.2.0 changes the update rules, so every
+  recorded CMA-ES figure in `docs/` becomes incomparable and would need
+  re-baselining; the resume guard will refuse the version until the pair is
+  added to `internal/opt/resume_guard.go` deliberately. Taking the upgrade is a
+  campaign, not a dependency bump.
 - `github.com/evanw/esbuild/cmd/esbuild` is installed as a Go tool to compile the
   frontend bundle, while `npm` is only used to fetch TypeScript dependency files.
 - `internal/ui/*_templ.go` is generated and committed. After changing a `.templ`

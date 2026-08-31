@@ -36,8 +36,17 @@ below.
 That leaves **`sep-ipop-passive` at n = 1**, and it is the design's only
 single-factor row for `activeCMA`. **The `activeCMA` question is therefore not
 answered by this campaign** — one block is one draw, and the arm's block-1 cost
-of 812.5142 is bit-identical to `sep-ipop`'s, which is what a shared
-deterministic prefix looks like rather than evidence of anything.
+of 812.5142 is bit-identical to `sep-ipop`'s.
+
+That identity was originally read here as a shared deterministic prefix. It was
+not. The follow-up campaign ran the same arm twelve times and found it
+bit-identical to its control in all twelve blocks, then traced the cause into
+`go-cma-es v0.1.0`: in separable mode at this `lambda` the rank-mu rate is
+clamped to `1 - c1`, which makes Hansen's positive-definiteness guard exactly
+zero, so `activeCMA` is arithmetically inert. The two runs were identical for
+their whole length, not their prefix. The conclusion that the arm measured
+nothing is unchanged and now rests on a mechanism rather than on n = 1; see
+[`cmaes-covariance-report.md`](cmaes-covariance-report.md).
 
 Because `collect` refuses a manifest it cannot complete, the CSVs were collected
 against a filtered manifest holding the 89 completed jobs
