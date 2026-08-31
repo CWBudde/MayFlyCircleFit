@@ -151,12 +151,50 @@ Measured directly on the campaign's configuration, in each covariance mode:
 | full | 0.142695 | no | 0.107 | live |
 
 The same clamp has a second consequence that matters more than the disabled
-flag. The covariance decay factor is that identical numerator, so in separable
-mode at this `lambda` it is **exactly zero**: the covariance matrix is rebuilt
-from the current generation alone and retains nothing from the generations
-before it. The separable arms in this campaign — and in every earlier CMA-ES
-campaign in this repository, all of which are separable at `lambda` 1024 — were
-running a memoryless covariance update.
+flag. The covariance decay factor is that identical numerator, so wherever the
+clamp binds it is **exactly zero**: the covariance matrix is rebuilt from the
+current generation alone and retains nothing from the generations before it.
+
+### Exactly where the clamp binds
+
+The clamp is a function of `lambda`, the covariance mode and the problem
+dimension — not of the campaign — because `cmu` grows with `muEff`. The table
+above is the campaign's own `lambda` 1024 row and generalizes no further than
+that, so here is the whole boundary, read out of `deriveStrategyParameters` in
+`go-cma-es v0.1.0` itself rather than reasoned about:
+
+| dimension | mode | decay > 0 (`activeCMA` live) | decay exactly 0 (inert) |
+| --- | --- | --- | --- |
+| 56 (8 circles) | separable | lambda <= 256 | **lambda >= 512** |
+| 56 (8 circles) | block (7) | lambda <= 1024 | **lambda >= 2048** |
+| 84 (12 circles) | separable | lambda <= 512 | **lambda >= 1024** |
+| 84 (12 circles) | block (7) | lambda <= 1024 | **lambda >= 2048** |
+
+Full covariance never reaches the clamp at any `lambda` in this range; it has no
+correction factor to inflate `cmu`.
+
+So the corpus splits, and it does not split by campaign:
+
+- **Degenerate.** Every separable arm at `lambda` 1024 — which is the default
+  `popSize` and therefore the great majority of the CMA-ES work here, including
+  Phase 21's `sep-cmaes-ipop`, the stagnation and budget-split campaigns, and
+  both separable arms of this one. Every rung of an IPOP ladder above the
+  threshold, whatever `lambda` the ladder started from. And, newly, **`blk-ipop`
+  above its first rung**: block mode is clean at 1024 but clamped at 2048, 4096
+  and 8192.
+- **Not degenerate.** Separable arms below the threshold, which do exist and are
+  the reason not to state this as a blanket claim: `cmaes-restart-ladder-report.md`'s
+  `sep-r8-l256`, `sep-r32-l64` and `sep-r64-l32` hold `lambda` fixed at 256, 64
+  and 32 across their cold restarts and never reach the clamp at all. Every full
+  covariance arm anywhere. And the low rungs of the lambda screen's
+  `sep-cmaes-ipop-l20` and `-l64`, which start clean and cross the boundary only
+  as IPOP doubles them past 512.
+
+That last one is worth stating plainly, because it cuts against a comparison
+this repository has already published: the lambda screen's separable arms at 20
+and 64 spent their early restarts running a covariance update with memory, and
+their late ones running one without. A `lambda` contrast across that boundary is
+not comparing one algorithm at two population sizes.
 
 This is fixed upstream in `go-cma-es` 0.2.0, which bounds the rank-mu rate away
 from that boundary. **This repository has not taken that upgrade**, and the pin
@@ -170,9 +208,18 @@ Three things follow, and the third is the awkward one.
 
 **`activeCMA` is still unmeasured.** This is the second campaign to fail to
 measure it — the deep hunt lost the arm to cancelled jobs, and this one lost it
-to the library. It is now measurable, but only in `block` or `full` mode, where
-the guard leaves a positive budget, and only against a library version that has
-the fix.
+to the library. It **is** measurable on the current pin, with no upgrade: the
+guard leaves a positive budget in full covariance at every `lambda` here, and in
+block mode up to `lambda` 1024.
+
+What it may not do is inherit this campaign's restart shape. An IPOP ladder
+doubles its population, so `blk-ipop` against `blk-ipop-passive` would differ
+only on the first rung and be inert on 2048, 4096 and 8192 — and the first rung
+is 6% of the budget and produces the block best once in twelve. That contrast
+would be diluted almost to nothing, which is exactly the failure this section is
+about. A design that wants to measure `activeCMA` on the current pin has to hold
+`lambda` **below the threshold for its mode** and buy its restarts cold rather
+than by doubling.
 
 **The deep hunt's block-1 reading is explained.** That report noted its
 `sep-ipop-passive` job returned a cost bit-identical to `sep-ipop`'s and read it
@@ -181,18 +228,24 @@ harmless direction: the two runs were identical not for a prefix but for their
 whole length, for the reason above. The report's conclusion — that the arm
 measured nothing — stands, and is now stronger.
 
-**The primary contrast carries an unplanned confound.** `blk-ipop` had active
-adaptation live; its separable control did not. Both arms *requested*
-`activeCMA` on, and the design's own test asserts they differ in exactly one
-declared field, which they do. But the field's *effect* differs by mode, so the
-contrast compares block-with-working-active-updates against
-separable-with-inert-ones, and some unknown share of the +39.12 belongs to the
-active update rather than to the covariance structure.
+**The primary contrast carries an unplanned confound, and the threshold table
+bounds it tightly.** Both arms *requested* `activeCMA` on, and the design's test
+asserts they differ in exactly one declared field, which they do — but the
+field's *effect* depends on `lambda` and mode, so the arms are not treated
+alike. `sep-ipop` is inert on all four rungs. `blk-ipop` is live on **one**: the
+`lambda` 1024 rung, and inert on 2048, 4096 and 8192 like its control.
 
-The share is probably small — block mode's negative mass is 0.00155, two orders
-below full mode's — but "probably small" is an argument, not a measurement. The
-contrast that would settle it is `blk-ipop` against `blk-ipop-passive`, on a
-library version where both mean something. That is the campaign this one earns.
+That rung takes a median 6.1% of `blk-ipop`'s budget and supplies its block best
+in 1 block of 12, while the rung that supplies the best in 7 of 12 — `lambda`
+8192 — has active adaptation disabled in both arms. So the win is produced
+overwhelmingly on rungs where the two arms differ in covariance structure alone,
+which is the comparison the design intended. The confound is real, confined to
+a sixth of one arm's budget, and cannot plausibly account for +39.12.
+
+It is still not zero, and the way to retire it is a `blk-ipop` against
+`blk-ipop-passive` contrast — with the caveat above, that it must hold `lambda`
+at or below 1024 rather than let an IPOP ladder double past the threshold, or it
+will measure nothing for the same reason this campaign did.
 
 ## Diagnostics
 
@@ -226,10 +279,13 @@ of twelve honest draws.
 this budget under an IPOP ladder, by a mean of 39.12 over twelve paired blocks,
 `t = +2.72`, rejecting under Holm at a family-wise alpha of 0.05.
 
-**Established, and worth more than the headline.** `activeCMA` was arithmetically
-inert in separable mode in `go-cma-es v0.1.0`, and the separable covariance
-update was memoryless at this `lambda`. Every separable measurement in `docs/`
-was taken under those conditions.
+**Established, and worth more than the headline.** `activeCMA` is arithmetically
+inert, and the covariance update memoryless, wherever the rank-mu clamp binds in
+`go-cma-es v0.1.0`: separable above `lambda` 256 at 56 dimensions and above 512
+at 84, block above 1024 in both. That covers every separable arm at the default
+`popSize` of 1024, every IPOP rung above the threshold, and `blk-ipop`'s top
+three rungs here. It does **not** cover the fixed-`lambda` separable arms at 32,
+64 and 256 in `cmaes-restart-ladder-report.md`, nor any full covariance arm.
 
 **Not established.** That `covarianceMode: block` should become a default —
 one fixture, one `lambda`, one restart shape, a non-standard budget, and a

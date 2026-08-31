@@ -188,7 +188,7 @@ anything new against its figures.
       arm taking its best from the lambda 8192 rung in 6 blocks where the
       separable control never won above 4096. `activeCMA` stays unmeasured —
       ten of its eleven jobs were cancelled while queued.
-- [ ] Test the covariance lead the hunt could only observe. **Registered
+- [x] Test the covariance lead the hunt could only observe. **Registered
       2026-08-30 as `-design covariance`**, to run the weekend of 2026-09-05:
       three arms, twelve blocks, 36 jobs, seeds 116001-116012, on the shared
       eight-circle fixture at `huntBudget`. Primary contrast `blk-ipop` against
@@ -220,18 +220,23 @@ anything new against its figures.
       running, and this time the cause was not operational. The covariance
       campaign's secondary contrast is **void, not null**: `sep-ipop-passive`
       returned costs bit-identical to its control in all twelve blocks because
-      the knob is arithmetically inert in separable mode in `go-cma-es v0.1.0`.
-      The separable correction clamps the rank-mu rate to `1 - c1`, which makes
+      the knob is arithmetically inert wherever `go-cma-es v0.1.0`'s rank-mu
+      clamp binds. The correction clamps the rate to `1 - c1`, which makes
       Hansen's positive-definiteness guard exactly zero, so every negative
-      weight is scaled to nothing. The same clamp zeroes the covariance decay,
-      so every separable campaign in `docs/` ran a memoryless covariance update.
-      Fixed upstream in go-cma-es 0.2.0 (`CWBudde/go-cma-es` PR #3); **this
-      repository has not taken that upgrade**, and doing so is a re-baselining
-      campaign rather than a dependency bump, because it changes the update
-      rules for every recorded figure. Until then `activeCMA` can only be
-      measured in `block` or `full` mode, where the guard leaves a positive
-      budget. The contrast that would also retire the covariance campaign's
-      confound is `blk-ipop` against `blk-ipop-passive`.
+      weight is scaled to nothing, and zeroes the covariance decay with it. The
+      threshold depends on `lambda`, mode and dimension: separable above
+      `lambda` 256 at 56 dimensions and above 512 at 84, block above 1024, full
+      never. Fixed upstream in go-cma-es 0.2.0 (`CWBudde/go-cma-es` PR #3);
+      **this repository has not taken that upgrade**, and doing so is a
+      re-baselining campaign rather than a dependency bump, because it changes
+      the update rules for every recorded figure.
+      **No upgrade is needed to measure this**, though. Full covariance is clean
+      at every `lambda` used here and block mode up to 1024, so a design can run
+      on the current pin — but it must hold `lambda` below the threshold for its
+      mode and buy restarts **cold rather than by IPOP doubling**, or the ladder
+      climbs into the clamped regime and the contrast measures nothing for the
+      same reason this one did. That also rules out the obvious shape:
+      `blk-ipop` against `blk-ipop-passive` would differ only on its first rung.
 
 ### Task 4: Close the dirty-region evaluator's end-to-end check (P1)
 

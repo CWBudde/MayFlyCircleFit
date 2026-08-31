@@ -176,10 +176,12 @@ re-measure instead.
   converges every rung up to lambda 4096 in 12/12 jobs and takes its block best
   from lambda 8192 in 7 blocks, where the separable control never does. Read it
   above all for the second contrast, which is **void rather than null**:
-  `activeCMA` was arithmetically inert in separable mode in `go-cma-es v0.1.0`,
-  and the separable covariance update was memoryless at this lambda, so every
-  separable measurement in this directory was taken under those conditions.
-  Fixed upstream in 0.2.0, which this repository has **not** taken.
+  `activeCMA` is arithmetically inert, and the covariance update memoryless,
+  wherever `go-cma-es v0.1.0`'s rank-mu clamp binds — separable above lambda 256
+  at 56 dimensions, block above 1024, full never. That covers every separable
+  arm at the default popSize of 1024 and this campaign's own top rungs, though
+  not the restart ladder's fixed-lambda arms at 32, 64 and 256. Fixed upstream
+  in 0.2.0, which this repository has **not** taken.
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by

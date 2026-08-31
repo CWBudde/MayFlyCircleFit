@@ -194,15 +194,23 @@ ones that will change what you propose:
   before trusting any separable measurement in this repository.** That contrast
   is **void, not null**: `sep-ipop-passive` returned costs bit-identical to its
   control in all twelve blocks because `activeCMA` is arithmetically inert in
-  separable mode in `go-cma-es v0.1.0` — the separable correction clamps the
-  rank-mu rate to `1 - c1`, which makes Hansen's positive-definiteness guard
-  exactly zero. The same clamp zeroes the covariance decay, so **every separable
-  campaign in `docs/` ran a memoryless covariance update with active adaptation
-  silently disabled**. Its `t = +Inf` and Holm verdict are artifacts of a
-  zero-variance paired difference and mean nothing. Two consequences carry:
-  `activeCMA` is now unmeasured for the second campaign running and can only be
-  measured in `block` or `full` mode, and the primary contrast confounds
-  covariance mode with whether active adaptation does anything at all.
+  separable mode at this `lambda` in `go-cma-es v0.1.0` — the separable
+  correction clamps the rank-mu rate to `1 - c1`, which makes Hansen's
+  positive-definiteness guard exactly zero. The same clamp zeroes the covariance
+  decay. **The clamp is a function of `lambda`, mode and dimension, not of the
+  campaign**, and the report carries the verified boundary: separable is
+  degenerate above `lambda` 256 at 56 dimensions and above 512 at 84, block
+  above 1024, full never. So every separable arm at the default `popSize` 1024
+  ran a memoryless update with active adaptation silently off — but the
+  fixed-`lambda` arms at 32, 64 and 256 in the restart ladder did not, and
+  neither did any full covariance arm. Its `t = +Inf` and Holm verdict are
+  artifacts of a zero-variance paired difference and mean nothing. Two
+  consequences carry: `activeCMA` is now unmeasured for the second campaign
+  running, and is measurable **on the current pin** in full mode or in block
+  mode below `lambda` 2048 provided the design does not let an IPOP ladder
+  double past the threshold; and the primary contrast confounds covariance mode
+  with active adaptation on one rung of four, bounded to 6% of the winning arm's
+  budget.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more
@@ -383,14 +391,17 @@ measurement itself.
   and evaluation counts under both, in full and separable mode, at 5 and 14
   dimensions. That pair is the guard's second allowlist entry, so a checkpoint
   written before the tag still resumes. Any older CMA-ES revision is refused.
-- **v0.1.0 has a measured defect, and the pin stays on it anyway.** In separable
-  mode at a large `lambda` the rank-mu rate is clamped to `1 - c1`, which makes
-  the covariance decay exactly zero — the matrix is rebuilt from each generation
-  and remembers nothing — and makes Hansen's positive-definiteness guard exactly
-  zero, so `activeCMA` is arithmetically inert whatever a job requests. Every
+- **v0.1.0 has a measured defect, and the pin stays on it anyway.** Above a
+  `lambda` threshold the rank-mu rate is clamped to `1 - c1`, which makes the
+  covariance decay exactly zero — the matrix is rebuilt from each generation and
+  remembers nothing — and makes Hansen's positive-definiteness guard exactly
+  zero, so `activeCMA` is arithmetically inert whatever a job requests. The
+  threshold is separable above `lambda` 256 at 56 dimensions and above 512 at
+  84, block above 1024, full never. Because `popSize` defaults to 1024, most
   separable measurement in `docs/` was taken under those conditions, which is
-  why the whole corpus is internally consistent and why `activeCMA` has never
-  been measured here. Proven by measurement and by arithmetic in
+  why the corpus is largely internally consistent and why `activeCMA` has never
+  been measured here; the fixed-`lambda` restart-ladder arms at 32, 64 and 256
+  are the exception and were not degenerate. Proven by measurement and by arithmetic in
   [`docs/cmaes-covariance-report.md`](docs/cmaes-covariance-report.md), and
   fixed upstream in go-cma-es 0.2.0.
   **Do not bump the pin as a tidy-up.** 0.2.0 changes the update rules, so every
