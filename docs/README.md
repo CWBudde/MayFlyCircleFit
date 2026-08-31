@@ -161,10 +161,12 @@ re-measure instead.
   ladder left open is discharged: at this budget 4096 converges in 32/45 runs
   while lambda 8192, the rung no earlier campaign reached, is truncated in
   33/33 — and it is the rung that set the record, still cut off by the cap. And
-  the old record was never a local optimum: eleven warm starts descended out of
-  it into a ~743 band, in a different basin from the new one. `activeCMA` is
-  **not** answered — its arm is n = 1 because ten of its jobs were cancelled
-  while queued.
+  a warm start from the old record beats it every time: eleven of them ended in
+  a ~743 band, none of them near the new record. That says the warm start finds
+  something better, not that the old record was a point on a slope — the start
+  quantizes colours to eight bits and sigma 0.05 can leave a genuine local
+  minimum. `activeCMA` is **not** answered — its arm is n = 1 because ten of its
+  jobs were cancelled while queued.
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by

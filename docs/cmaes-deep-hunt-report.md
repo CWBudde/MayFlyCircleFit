@@ -142,11 +142,23 @@ So the natural reading is not "the budget was big enough" but "the budget is
 still the constraint, one rung further up, and the arm that can use the big
 populations is the one with block covariance."
 
-## 752.52 was never a local optimum
+## 752.52 is not where the search stops
 
-`sep-warm-e8` starts at the old record's circles (`initialCircles`, sigma 0.05,
-eight epochs) and **descended out of it in 11 of 11 blocks**, into a tight
-742.55-744.37 band. The old record was a point on a slope, not a basin floor.
+`sep-warm-e8` starts from the old record's circles (`initialCircles`, sigma
+0.05, eight epochs) and **ended below 752.52 in 11 of 11 blocks**, in a tight
+742.55-744.37 band.
+
+That is a statement about this warm start, not about the shape of the old
+record, and two things stop it short of "752.52 was a point on a slope". The
+run does not begin exactly at the recorded optimum: `warmStartSpecs()` renders
+each circle's colour as hex, because `initialCircles` is the only
+operator-authored warm start the system has and that format names colours in
+eight bits per channel, so every colour coordinate is quantized on the way in.
+And CMA-ES at sigma 0.05 samples a whole neighbourhood rather than following a
+local descent direction, so leaving a genuine local minimum is well within what
+it can do. What the arm establishes is that a warm start from the old record's
+neighbourhood reliably finds something better than it -- which is what the
+campaign needed from it -- not that the old record had a downhill direction.
 
 The follow-up probe (`submit-probe.py`, 9 jobs, seeds 115001-3) was submitted
 mid-campaign once block 1 showed this, cloning job `30ab5fa0`'s config verbatim
@@ -160,13 +172,21 @@ Note what the warm arms did *not* do: none of them approached 726.20. Eleven
 independent warm starts converged to ~743, so **the region around the old record
 and the region `blk-ipop` found are different basins.**
 
-## Cold-start sigma did nothing
+## Cold-start sigma moved nothing that separates from noise
 
 `sep-ipop-s015` and `sep-ipop-s050` are the design's other true single-factor
-rows, moving `initialSigma` alone from the 0.3 default. Both are worse than the
-control on the mean (873.48 and 856.35 against 868.33) and neither produced a
-run under the old record. Whatever initialization buys, it is bought from a warm
-start, not from a cold one.
+rows, moving `initialSigma` alone from the 0.3 default. Neither separates from
+the control, and they do not even fall on the same side of it. Paired by block
+against `sep-ipop`, sigma 0.15 is worse by 5.14 (`t = -0.34`, better in 4 blocks
+of 11) while sigma 0.50 is **better** by 11.98 (`t = +0.72`, 7 of 11) -- lower
+cost is better, so the 856.35 mean above is an improvement on the control's
+868.33, not a loss. Both differences sit far inside the noise of an eleven-block
+paired difference whose standard deviation is about 50, neither had a contrast
+registered for it, and neither arm produced a single run under the old record:
+the best cold run in the pair is 819.54 against the control's own 812.51. So
+nothing here recommends moving the default in either direction, and whatever
+initialization buys on this fixture is still bought from a warm start rather
+than a cold one.
 
 ## Diagnostics
 
@@ -206,12 +226,26 @@ Committed artifacts:
 - `cmaes-deep-hunt-measurement.csv` — 89 campaign jobs
 - `cmaes-deep-hunt-trajectories.csv` — per-iteration diagnostics
 - `cmaes-deep-hunt-restarts.csv` — 168 per-restart records
-- `cmaes-deep-hunt-probe-{measurement,trajectories,restarts}.csv` — the 9 probe jobs
+- `cmaes-deep-hunt-probe-{measurement,trajectories,restarts}.csv` — the 9 probe
+  jobs. The restarts file is a header row and nothing else, and that is correct
+  rather than a collection failure: the probe clones a `sep-warm-e8` job, that
+  arm runs `restartStrategy: none`, and only the IPOP arms write per-restart
+  records at all.
 
 The record fit, job `65b38e2f-e75f-4d80-8ae9-822e8a28ede6`, seed 114007, cost
 726.1984354654948, 3291 iterations, 12,582,915 evaluations, `cpu`, under
 `covarianceMode: block`, `restartStrategy: ipop`, `popSize` 1024,
 `initialSigma` 0.3 (default), `activeCMA` on, in `recordCircles()` shape:
+
+The 12,582,915 in that line is the job's `finalEvaluations` counter, not the
+budget, and the two are not the same accounting. `huntBudget` is 12,582,912 and
+the optimizer honours it exactly: this job's four per-restart records in
+`cmaes-deep-hunt-restarts.csv` are 837,632 + 1,546,240 + 3,870,720 + 6,328,320,
+which is 12,582,912 to the evaluation. The job-level counter reports three more,
+and the offset is a per-job constant rather than a per-restart one -- every run
+in this campaign that reaches the cap reports 12,582,915, whether its ladder
+held three restarts or four. Compare a `finalEvaluations` against another
+`finalEvaluations`; never against the budget.
 
 ```go
 {x: -255.9984368618, y: 162.9965102619, r: 453.9864281082, red: 0.3609139228, green: 0.2820853129, blue: 0.0920986151, opacity: 0.7111318709},
