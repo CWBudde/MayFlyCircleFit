@@ -550,6 +550,93 @@ of three days there. Keep `--max-jobs 1`: competing jobs do not increase this
 six-core host's aggregate throughput and make wall-clock records harder to
 interpret.
 
+## The covariance campaign
+
+`-design covariance` is the registered test of the deep hunt's strongest lead.
+Three arms, twelve blocks, 36 jobs, seeds 116001-116012, on the same
+`example/MayFly-512.png` eight-circle fixture and at the same `huntBudget` the
+hunt ran.
+
+| arm | covariance | restarts | lambda | iters | sigma | active |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| `sep-ipop` (control) | separable | ipop | 1024 | 12288 | default | on |
+| `blk-ipop` | block | ipop | 1024 | 12288 | default | on |
+| `sep-ipop-passive` | separable | ipop | 1024 | 12288 | default | **off** |
+
+Both candidates are single-factor moves against the control, so an arm that wins
+names its own cause, and a test asserts that directly rather than trusting the
+table: each candidate must equal the control in every field except the one its
+name claims.
+
+- **Primary:** `blk-ipop` against `sep-ipop`. `covarianceMode: block` is eight
+  7x7 blocks, one per circle, because `app` pins `blockSize` to
+  `ParametersPerCircle`. The deep hunt found it better in 11 blocks of 11 by a
+  mean of 77.24 — but that design registered no contrasts at all, so the
+  difference has been observed and never tested.
+- **Secondary:** `sep-ipop-passive` against `sep-ipop`. The deep hunt registered
+  this exact arm and could not read it: ten of its eleven jobs were cancelled
+  while queued, leaving n = 1. The campaign owes `activeCMA` a measurement.
+
+Two arms and two contrasts, deliberately. The lambda screen crossed two factors
+and manufactured thirteen contrasts out of eight arms, and Holm at that family
+size retained a p of 0.0056; a design that names two pays for two.
+
+### Why fresh seeds, and why the raised budget
+
+The seed base is **116_000**, not the hunt's 114_000, and that is the opposite
+of what the restart ladder did. The ladder shared the stagnation campaign's
+seeds so its repeated arms would reproduce that campaign bit for bit, which is a
+validity check worth having when the *new* arms carry the new evidence. Here the
+arms are the same arms. Reusing 114_000 would re-report the eleven blocks that
+produced the lead rather than test it, so the campaign draws seeds it has never
+seen. 115_001-115_003 are avoided as well: they belong to the deep hunt's
+warm-sigma probe, which is not a registered design and therefore invisible to
+the seed-disjointness test.
+
+The budget stays at `huntBudget`, 12,582,912. The lead came from the top of the
+IPOP ladder — the hunt's block arm took its block best from the lambda 8192 rung
+in six of eleven blocks, where the separable control never won above 4096 — and
+that rung exists only at this budget. Run at `defaultBudget` the campaign would
+be testing a different mechanism from the one that produced the lead. Both arms
+share the number, so the contrast is evaluation-matched; it simply **cannot be
+quoted against any campaign that ran at `defaultBudget`**, which is what
+`docs/cmaes-deep-hunt-report.md` already says of the hunt.
+
+### Running it
+
+Sized from the deep hunt's own rates: its IPOP arms took a median 0.93h per job,
+and 99 jobs finished in 09:07 of wall clock at `--max-jobs 7` on a 64-core host.
+36 jobs is **roughly 3.5-5h**, so it fits inside a single day with room for the
+collection.
+
+```sh
+just build && go build -o bin/cmaes-measurement ./scripts/cmaes-measurement
+./bin/cmaes-measurement -action plan   -design covariance   # read the table first
+./bin/circlefit serve --addr localhost --port 8085 \
+  --data-root ./data/cmaes-phase11 --max-jobs 7 --queue-size 100 --input-root . &
+./bin/cmaes-measurement -action submit -design covariance
+```
+
+Four things the deep hunt learned the hard way are worth carrying over.
+
+**Collect before anything stops the server.** `collect` reads job status over
+HTTP, so a deadline guard that kills `serve` also ends the ability to collect;
+run the collection first, or be prepared to restart `serve` on the same data
+root.
+
+**Do not cancel an arm to free workers.** The hunt cancelled ten queued
+`sep-ipop-passive` jobs mid-campaign and lost the arm — which is why this design
+has to measure `activeCMA` a second time. A queue is cheaper than a re-run.
+
+**`collect` refuses a manifest it cannot complete**, and it refuses before
+writing anything. A campaign that loses even one job has to be collected against
+a filtered manifest, and the filtering then has to be stated in the report.
+
+**The design is frozen at the commit the campaign is submitted from.** That is
+the budget-split report's procedural lesson, and it applies to the contrasts
+above: changing either one after partial results are visible would cost this
+campaign its correction, exactly as it cost that one.
+
 ## Restart records
 
 `-action collect` writes a third file, `-restarts` (the selected design's own
