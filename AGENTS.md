@@ -173,10 +173,13 @@ ones that will change what you propose:
   budget lambda 4096 converges on `tol_fun` in 32 of 45 runs where 57 of 57 were
   previously truncated, while lambda **8192** — a rung no earlier campaign ever
   reached — is truncated in 33 of 33, and it is the rung that set the record,
-  itself still cut off by the cap. And the old record was never a local
-  optimum: eleven warm starts from it descended into a ~743 band, a different
-  basin from the new record's. **`activeCMA` remains unmeasured** — its arm is
-  n = 1 because ten of its jobs were cancelled while queued.
+  itself still cut off by the cap. And a warm start from the old record beats it
+  every time: eleven of them ended in a ~743 band, none of them near the new
+  record. Read that as a fact about the warm start, **not** as evidence that the
+  old record was a point on a slope — `warmStartSpecs()` quantizes colours to
+  eight bits, so the run does not begin exactly there, and CMA-ES at sigma 0.05
+  can leave a genuine local minimum. **`activeCMA` remains unmeasured** — its
+  arm is n = 1 because ten of its jobs were cancelled while queued.
   `scripts/cmaes-measurement/main.go`'s `recordCircles()` and `recordCost` still
   carry the superseded solution; the report holds the new one.
 - [`docs/cmaes-covariance-report.md`](docs/cmaes-covariance-report.md) — three
