@@ -149,6 +149,24 @@ re-measure instead.
   fixed `optimizerRestarts` count cannot express "restart until the budget is
   gone". Carries the first `bipop` data in the repository, and the twenty-four
   cells that reproduce `cmaes-stagnation-report.md` bit for bit.
+- [`cmaes-deep-hunt-report.md`](cmaes-deep-hunt-report.md) — nine arms and 89
+  jobs whose only purpose was to beat the recorded eight-circle cost, and which
+  did: **752.5220 is superseded by 726.1984**, from `blk-ipop` — block
+  covariance, IPOP, at a budget 1.94x the one every comparative campaign uses.
+  The design is descriptive and registers no contrasts, so **nothing in it is a
+  test and none of its costs is comparable to the other CMA-ES reports**. Read
+  it for three things. Block covariance beats the separable control in 11/11
+  blocks by a mean of 77 — the campaign's strongest lead, and the obvious next
+  registered measurement. The lambda-4096 convergence question the restart
+  ladder left open is discharged: at this budget 4096 converges in 32/45 runs
+  while lambda 8192, the rung no earlier campaign reached, is truncated in
+  33/33 — and it is the rung that set the record, still cut off by the cap. And
+  a warm start from the old record beats it every time: eleven of them ended in
+  a ~743 band, none of them near the new record. That says the warm start finds
+  something better, not that the old record was a point on a slope — the start
+  quantizes colours to eight bits and sigma 0.05 can leave a genuine local
+  minimum. `activeCMA` is **not** answered — its arm is n = 1 because ten of its
+  jobs were cancelled while queued.
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by

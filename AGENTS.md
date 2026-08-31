@@ -32,14 +32,16 @@ ones that will change what you propose:
   earlier, and v0.7.0 changed results for every variant, so none of their
   numbers is comparable to a run made today.** Read those for method and for
   what was ruled out; re-measure before citing a figure. See the Toolchain
-  section. Seven reports are on the current pins and may be cited directly: the
-  QMC screen, and the six CMA-ES ones — `cmaes-report.md`,
+  section. Eight reports are on the current pins and may be cited directly: the
+  QMC screen, and the seven CMA-ES ones — `cmaes-report.md`,
   `cmaes-lambda-report.md`, `cmaes-stagnation-report.md`,
-  `cmaes-budget-split-report.md`, `cmaes-restart-ladder-report.md` and
-  `cmaes-preliminary-report.md`, all run in 2026-08 on MayFly v0.7.1 and
-  go-cma-es v0.1.0 — the preliminary one on the code-identical pseudo-version
-  that preceded that tag. Each states its own pins; trust that line over this
-  one.
+  `cmaes-budget-split-report.md`, `cmaes-restart-ladder-report.md`,
+  `cmaes-deep-hunt-report.md` and `cmaes-preliminary-report.md`, all run in
+  2026-08 on MayFly v0.7.1 and go-cma-es v0.1.0 — the preliminary one on the
+  code-identical pseudo-version that preceded that tag. Each states its own
+  pins; trust that line over this one. The deep hunt is the exception to
+  citability *within* that set: it ran at 1.94x the shared cap, so its costs
+  are not comparable to the other six.
 - [`docs/qmc-initial-population-report.md`](docs/qmc-initial-population-report.md)
   — `qmcInit` measured on the eight-circle batch stage at three population
   sizes. All six comparisons are null and the data bound any effect to about
@@ -153,6 +155,28 @@ ones that will change what you propose:
   every block, best mean in the campaign and not significant — and the
   twenty-four cells that reproduce the stagnation campaign bit for bit across a
   different binary and `--max-jobs`.
+- [`docs/cmaes-deep-hunt-report.md`](docs/cmaes-deep-hunt-report.md) — nine
+  arms and 89 jobs that existed only to beat the recorded eight-circle cost, and
+  did. **The record on `example/MayFly-512.png` is now 726.1984354654948**, from
+  `blk-ipop` — block covariance under IPOP — superseding 752.5220120747884. The
+  design is descriptive and **registers no contrasts, so nothing in it is a
+  test**, and it ran at `huntBudget` = 12,582,912 evaluations, 1.94x the cap
+  every comparative campaign inherits, so **none of its costs may be compared
+  against a figure in the other CMA-ES reports**. Three things in it change what
+  a proposal should say. `covarianceMode: block` beats the separable control in
+  11 of 11 blocks by a mean of 77.24 — the strongest lead this project has, and
+  an unregistered one, so read it before proposing either a covariance default
+  or the registered campaign that would earn one. The lambda-4096 convergence
+  question `cmaes-restart-ladder-report.md` left open is discharged: at this
+  budget lambda 4096 converges on `tol_fun` in 32 of 45 runs where 57 of 57 were
+  previously truncated, while lambda **8192** — a rung no earlier campaign ever
+  reached — is truncated in 33 of 33, and it is the rung that set the record,
+  itself still cut off by the cap. And the old record was never a local
+  optimum: eleven warm starts from it descended into a ~743 band, a different
+  basin from the new record's. **`activeCMA` remains unmeasured** — its arm is
+  n = 1 because ten of its jobs were cancelled while queued.
+  `scripts/cmaes-measurement/main.go`'s `recordCircles()` and `recordCost` still
+  carry the superseded solution; the report holds the new one.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more

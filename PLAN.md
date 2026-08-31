@@ -169,6 +169,25 @@ anything new against its figures.
       restart-count question is cap-matched but not spend-matched and remains
       unanswered. Closing it needs that shape first — which is a change to the
       restart wrapper, not another campaign on the current one.
+- [ ] Decide what the IPOP ladder's top rung is worth, now that one has been
+      reached. **Ran 2026-08-30 as `-design deep-hunt`** (89 of 99 jobs, 09:07 of
+      wall clock, 62.9h of optimizer time), a descriptive record hunt rather than
+      a test, at `huntBudget` = 12,582,912 evaluations — 1.94x the cap every
+      comparative campaign inherits, so **none of its costs is comparable to one**.
+      It beat the record: **726.1984354654948**, superseding 752.5220120747884.
+      See [`docs/cmaes-deep-hunt-report.md`](docs/cmaes-deep-hunt-report.md). Two
+      results bear on this task. The lambda-4096 convergence question the ladder
+      left open is discharged — at this budget 4096 converges on `tol_fun` in 32
+      of 45 runs where 57 of 57 were previously truncated — but **the constraint
+      simply moved up one rung**: lambda 8192, which no earlier campaign reached,
+      is truncated in 33 of 33, and it is the rung that set the record, itself
+      still cut off by the cap. So "restart until the budget is gone" is now
+      wanted at the *top* of the ladder as well as the bottom. And the strongest
+      lead the project has is unregistered: `covarianceMode: block` beat the
+      separable control in 11 of 11 blocks by a mean of 77.24, with the block
+      arm taking its best from the lambda 8192 rung in 6 blocks where the
+      separable control never won above 4096. `activeCMA` stays unmeasured —
+      ten of its eleven jobs were cancelled while queued.
 
 ### Task 4: Close the dirty-region evaluator's end-to-end check (P1)
 
