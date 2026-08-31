@@ -611,10 +611,10 @@ collection.
 
 ```sh
 just build && go build -o bin/cmaes-measurement ./scripts/cmaes-measurement
-./cmaes-measurement -action plan   -design covariance   # read the table first
-./circlefit serve --addr localhost --port 8085 \
+./bin/cmaes-measurement -action plan   -design covariance   # read the table first
+./bin/circlefit serve --addr localhost --port 8085 \
   --data-root ./data/cmaes-phase11 --max-jobs 7 --queue-size 100 --input-root . &
-./cmaes-measurement -action submit -design covariance
+./bin/cmaes-measurement -action submit -design covariance
 ```
 
 Four things the deep hunt learned the hard way are worth carrying over.

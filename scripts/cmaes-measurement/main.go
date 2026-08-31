@@ -2123,17 +2123,26 @@ func analyze(path string, plan design) error {
 
 	reportRecord(plan, names, byArm)
 
-	fmt.Printf("\nAgainst %s:\n", plan.secondaryControl)
-	fmt.Printf("| arm | gain vs %s | t (df=%d) | p | Holm | blocks won |\n",
-		plan.secondaryControl, plan.blocks-1)
-	fmt.Println("| --- | ---: | ---: | ---: | --- | ---: |")
+	// A design that names no secondary control has no contrasts against one,
+	// so printing the section anyway produced an "Against :" table whose every
+	// row was n/a -- output that reads like a failed lookup in a report meant
+	// to be read as the record of a registered experiment. The covariance
+	// design is the first inferential one to leave the field empty; every
+	// earlier one set it, which is why this went unnoticed until now.
+	if plan.secondaryControl != "" {
+		fmt.Printf("\nAgainst %s:\n", plan.secondaryControl)
+		fmt.Printf("| arm | gain vs %s | t (df=%d) | p | Holm | blocks won |\n",
+			plan.secondaryControl, plan.blocks-1)
+		fmt.Println("| --- | ---: | ---: | ---: | --- | ---: |")
 
-	for _, name := range names {
-		if name == plan.baseline || name == plan.secondaryControl {
-			continue
+		for _, name := range names {
+			if name == plan.baseline || name == plan.secondaryControl {
+				continue
+			}
+
+			fmt.Printf("| `%s` | %s |\n",
+				name, summarize(contrasts, plan.secondaryControl, name, plan.blocks))
 		}
-
-		fmt.Printf("| `%s` | %s |\n", name, summarize(contrasts, plan.secondaryControl, name, plan.blocks))
 	}
 
 	fmt.Printf("\nHolm step-down over all %d paired contrasts at a family-wise alpha of %.2f;\n",
