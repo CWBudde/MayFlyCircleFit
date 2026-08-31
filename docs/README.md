@@ -167,6 +167,21 @@ re-measure instead.
   quantizes colours to eight bits and sigma 0.05 can leave a genuine local
   minimum. `activeCMA` is **not** answered — its arm is n = 1 because ten of its
   jobs were cancelled while queued.
+- [`cmaes-covariance-report.md`](cmaes-covariance-report.md) — the registered
+  test of the deep hunt's strongest lead, three arms and 36 jobs, all completed.
+  **Block covariance beats separable and rejects under Holm** (`+39.12`,
+  `t = +2.72`, 11/12) — about half the size the unregistered hunt observed, with
+  a standard deviation larger than the mean, and one block reversing it by
+  84.38. The mechanism is the ladder rather than the update: block covariance
+  converges every rung up to lambda 4096 in 12/12 jobs and takes its block best
+  from lambda 8192 in 7 blocks, where the separable control never does. Read it
+  above all for the second contrast, which is **void rather than null**:
+  `activeCMA` is arithmetically inert, and the covariance update memoryless,
+  wherever `go-cma-es v0.1.0`'s rank-mu clamp binds — separable above lambda 256
+  at 56 dimensions, block above 1024, full never. That covers every separable
+  arm at the default popSize of 1024 and this campaign's own top rungs, though
+  not the restart ladder's fixed-lambda arms at 32, 64 and 256. Fixed upstream
+  in 0.2.0, which this repository has **not** taken.
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by
