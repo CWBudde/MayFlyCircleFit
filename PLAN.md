@@ -241,7 +241,17 @@ anything new against its figures.
       blocks, 24 jobs, seeds 111013-111024, on the shared eight-circle fixture
       at `defaultBudget`. `blk-r32-l64` against `blk-r32-l64-passive` — block
       covariance, 32 **cold** restarts at a fixed `lambda` 64, one registered
-      contrast which is therefore the whole Holm family. Every choice follows
+      contrast which is therefore the whole Holm family. **It is registered as
+      cap-matched, not spend-matched**, which is this design inheriting the
+      restart-ladder box's own open problem rather than dodging it: a fixed
+      `optimizerRestarts` count cannot express "restart until the budget is
+      gone", so a run that trips `TolFun` early returns its remainder to
+      nobody. The ladder measured the identical `lambda` 64 schedule at 36.7%
+      of the cap (34.4-39.9% across twelve blocks), so the expected spend is
+      known, and the report must read `finalEvaluations` per arm — active and
+      passive can converge at different evaluation counts, and an asymmetry
+      larger than the ladder's five-point spread is a finding about the knob
+      rather than noise. Every choice follows
       from the two failures: block because it is the mode a default would name
       and the only shippable one clean at a usable `lambda`; cold restarts
       because an IPOP ladder would double past the clamp and dilute the

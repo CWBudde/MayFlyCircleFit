@@ -1316,8 +1316,28 @@ const activeCMAMinNegativeMass = 0.01
 //
 // And lambda 64, for the reason activeCMALambda gives.
 //
-// The rung is the restart ladder's ladderWork product, so each arm spends the
-// cap exactly: 64 * 32 = 2048 and each run gets budget/2048 generations.
+// The rung is the restart ladder's ladderWork product, so both arms are sized
+// against the cap identically: 64 * 32 = 2048 and each run gets budget/2048
+// generations.
+//
+// That makes the design cap-matched and NOT spend-matched, and it is registered
+// that way rather than described as evaluation-matched. WithRestarts runs a
+// fixed count of attempts and consults no evaluation budget, so a run that
+// trips TolFun early returns its remainder to nobody -- the very hole
+// PLAN.md's restart-ladder box records, and closing it is a change to the
+// restart wrapper rather than a choice available to a campaign. The ladder
+// measured the identical lambda 64 schedule at a mean of 2,387,822
+// evaluations, 36.7% of the cap, ranging 34.4-39.9% across its twelve blocks.
+// Expect this campaign to land there too.
+//
+// Two consequences the report has to carry rather than assume away. The arms
+// may not be spend-matched to each other, because active and passive
+// adaptation can reach TolFun after different numbers of evaluations, so
+// finalEvaluations must be read per arm and not taken as the cap. And the
+// ladder's own five-point spread is the yardstick for that reading: a spend
+// asymmetry inside it is seed noise, while a much larger one is a finding
+// about the knob and has to be reported as part of the result rather than
+// beside it.
 func activeCMAArms(budget int) ([]arm, error) {
 	if budget <= 0 || budget%ladderWork != 0 {
 		return nil, fmt.Errorf(
@@ -1369,10 +1389,14 @@ func activeCMAArms(budget int) ([]arm, error) {
 // the three cmu values docs/cmaes-covariance-report.md read out of the library
 // itself, so a divergence fails a test rather than passing silently.
 //
-// Zero is the failure this whole campaign exists because of: when the
-// separable or block correction drives cmu to its 1-c1 clamp, Hansen's
-// positive-definiteness guard becomes exactly zero, every negative weight is
-// scaled to nothing, and activeCMA is inert however the job is configured.
+// A vanishing mass is the failure this whole campaign exists because of: when
+// the separable or block correction drives cmu to its 1-c1 clamp, Hansen's
+// positive-definiteness guard collapses to the difference of two quantities
+// that are equal to within summation rounding, every negative weight is scaled
+// to about 1e-17 of itself, and activeCMA is inert however the job is
+// configured. It is a near cancellation rather than the exact zero
+// docs/cmaes-covariance-report.md describes -- which is why callers must test
+// the result against activeCMAMinNegativeMass and not against zero.
 func activeCMANegativeMass(dimension, lambda, blockDimension int) float64 {
 	mu := lambda / 2
 	if mu < 1 || dimension < 1 {
@@ -1429,8 +1453,9 @@ func activeCMANegativeMass(dimension, lambda, blockDimension int) float64 {
 	mass := math.Min(1+c1/cmu, 1+2*muEffMinus/(muEff+2))
 
 	// Positive weights are normalized to sum 1 above, so this is exactly the
-	// guard active.go applies -- and exactly the expression that is zero when
-	// cmu has been assigned the clamp.
+	// guard active.go applies -- and the expression that all but cancels once
+	// cmu has been assigned the clamp, leaving the rounding residue rather
+	// than a true zero.
 	positiveDefinite := (1 - c1 - cmu*sumOf(weights)) / (n * cmu)
 
 	return math.Min(mass, positiveDefinite)

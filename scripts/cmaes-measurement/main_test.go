@@ -1710,7 +1710,7 @@ func TestActiveCMACampaignRegistersOneSingleFactorContrast(t *testing.T) {
 	}
 }
 
-func TestActiveCMACampaignHoldsLambdaFixedAndSpendsTheCap(t *testing.T) {
+func TestActiveCMACampaignHoldsLambdaFixedAndIsCapMatched(t *testing.T) {
 	t.Parallel()
 
 	budget := mustDesignBudget(t, designActive)
@@ -1742,9 +1742,15 @@ func TestActiveCMACampaignHoldsLambdaFixedAndSpendsTheCap(t *testing.T) {
 			t.Errorf("arm %s runs %q covariance, want block", current.name, current.covariance)
 		}
 
+		// This is the nominal size, which is a cap and not a spend. A cold
+		// restart that trips TolFun early returns nothing to the schedule, and
+		// the ladder measured this exact rung at 36.7% of the cap, so the
+		// design is cap-matched and the report reads finalEvaluations per arm.
+		// What the assertion buys is that the two arms are sized identically
+		// against that cap, which is what the contrast needs.
 		epochs := max(current.optimizerEpochs, 1)
-		if spent := current.iters * current.popSize * current.optimizerRestarts * epochs; spent != budget {
-			t.Errorf("arm %s spends %d evaluations against a budget of %d", current.name, spent, budget)
+		if nominal := current.iters * current.popSize * current.optimizerRestarts * epochs; nominal != budget {
+			t.Errorf("arm %s is sized for %d evaluations against a cap of %d", current.name, nominal, budget)
 		}
 	}
 }
@@ -1836,9 +1842,19 @@ func TestActiveCMANegativeMassMatchesTheLibrary(t *testing.T) {
 
 			mass := activeCMANegativeMass(testCase.dimension, testCase.lambda, testCase.blockDim)
 
-			// The report quotes six significant figures, so the tolerance is
-			// the one that reading matches rather than a bit-exact compare.
-			if math.Abs(mass-testCase.want) > 1e-5*math.Abs(testCase.want) {
+			// The report quotes six significant figures, so the relative
+			// tolerance is the one that reading matches rather than a
+			// bit-exact compare. The absolute floor matters for the clamped
+			// rows: their expected value is summation-rounding residue near
+			// 1e-18, where a relative tolerance would demand about 1e-23 and
+			// make the test hostage to the platform's floating-point ordering.
+			// Anything under the floor is inert, which is all the row claims.
+			const (
+				relative = 1e-5
+				absolute = 1e-15
+			)
+
+			if math.Abs(mass-testCase.want) > math.Max(absolute, relative*math.Abs(testCase.want)) {
 				t.Errorf("negative mass = %.9g, want %.9g", mass, testCase.want)
 			}
 		})

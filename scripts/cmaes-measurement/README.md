@@ -710,13 +710,35 @@ distinction changes nothing that report concluded — at 1e-17 the arm measured
 bit-identical to its control in all twelve blocks — but it is why the guard has
 a floor rather than a sign test.
 
-### The rung, the budget and the seeds
+### The rung and the budget: cap-matched, not spend-matched
 
-`lambda * restarts` is `ladderWork`, 2048, so each arm spends the fixed cap
-exactly: 32 cold runs of 3,175 generations at `lambda` 64. The budget stays at
-`defaultBudget`. `huntBudget` exists so an IPOP ladder can finish its top rung,
-and this design runs no ladder; staying at the fixed cap is what lets its costs
-be read against the restart ladder's rows.
+`lambda * restarts` is `ladderWork`, 2048, so both arms are sized against the
+fixed cap identically: 32 cold runs of 3,175 generations at `lambda` 64. The
+budget stays at `defaultBudget`. `huntBudget` exists so an IPOP ladder can
+finish its top rung, and this design runs no ladder; staying at the fixed cap is
+what lets its costs be read against the restart ladder's rows.
+
+**That sizing is a cap and not a spend, and the design is registered as
+cap-matched rather than evaluation-matched.** `WithRestarts` runs a fixed count
+of attempts and consults no evaluation budget, so a run that trips `TolFun`
+early returns its remainder to nobody. This is exactly the hole `PLAN.md`'s
+restart-ladder box records — "a fixed `optimizerRestarts` count cannot express
+*restart until the budget is gone*" — and closing it is a change to the restart
+wrapper, not a choice a campaign can make.
+
+The ladder measured this identical `lambda` 64 schedule, so the expected spend
+is known rather than guessed: `sep-r32-l64` used a mean of **2,387,822
+evaluations, 36.7% of the cap**, ranging 34.4-39.9% across its twelve blocks.
+
+Two consequences belong in the report rather than in a footnote. The arms may
+not be spend-matched **to each other**, because active and passive adaptation
+can reach `TolFun` after different numbers of evaluations, so `finalEvaluations`
+has to be read per arm and never taken as the cap. And the ladder's own
+five-point spread is the yardstick for reading it: an asymmetry inside that
+range is seed noise, while a much larger one is a finding about the knob and has
+to be reported as part of the result.
+
+### The seeds
 
 The seed base is the stagnation campaign's and the ladder's, 111_012, and this
 design's reason for sharing it is **weaker than the ladder's and is stated as
