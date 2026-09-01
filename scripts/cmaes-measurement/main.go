@@ -40,6 +40,7 @@ const (
 	designLadder  = "restart-ladder"
 	designHunt    = "deep-hunt"
 	designCov     = "covariance"
+	designActive  = "active-cma"
 )
 
 // huntBudget is the deep hunt's per-job evaluation cap. It is 1.94x
@@ -429,7 +430,7 @@ func parseFlags() settings {
 	var config settings
 	flag.StringVar(&config.action, "action", "collect", "plan, submit, collect, preliminary, or analyze")
 	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21, lambda, stagnation-pilot, "+
-		"stagnation, budget-split, restart-ladder, deep-hunt or covariance")
+		"stagnation, budget-split, restart-ladder, deep-hunt, covariance or active-cma")
 	flag.StringVar(&config.server, "server", "http://localhost:8085", "serve base URL")
 	flag.StringVar(&config.dataRoot, "data-root", "./data/cmaes-phase11", "serve data root")
 	flag.StringVar(&config.reference, "ref", "example/MayFly-512.png", "reference image")
@@ -621,10 +622,41 @@ func campaignDesign(name string, budget int) (design, error) {
 				{control: "sep-ipop", candidate: "sep-ipop-passive"},
 			},
 		}, nil
+	case designActive:
+		active, activeErr := activeCMAArms(budget)
+		if activeErr != nil {
+			return design{}, activeErr
+		}
+
+		// One contrast, and it is the whole family. Holm's first gate is
+		// therefore the unadjusted 0.05: the campaign asks a single question,
+		// and the lambda screen already paid for the alternative -- crossing
+		// two factors turned eight arms into thirteen contrasts and retained a
+		// p of 0.0056.
+		//
+		// The seed base is the stagnation campaign's and the restart ladder's,
+		// which needs its own justification because this design repeats no arm
+		// and so gets no bit-for-bit validity check from it. What it gets is a
+		// by-product: blk-r32-l64 runs the identical blocks as the ladder's
+		// committed sep-r32-l64 cells, at the identical rung and budget, so
+		// the two can be read as a paired block-against-separable comparison
+		// at a rung where *both* modes are clean. The covariance campaign
+		// could not make that comparison -- its separable arm was clamped dead
+		// -- so this is the one place the corpus can ask whether block's win
+		// survives when separable is allowed to work. It is cross-campaign and
+		// unregistered, so it is a lead, never a finding.
+		return design{
+			name: name, baseline: active[0].name,
+			blocks: campaignBlocks, seedBase: stagnationSeedBase, arms: active,
+			reference: recordReference, circles: defaultCircles,
+			contrasts: []plannedContrast{
+				{control: active[0].name, candidate: active[1].name, primary: true},
+			},
+		}, nil
 	default:
 		return design{}, fmt.Errorf(
 			"unknown design %q (want phase21, lambda, stagnation-pilot, stagnation, "+
-				"budget-split, restart-ladder, deep-hunt or covariance)",
+				"budget-split, restart-ladder, deep-hunt, covariance or active-cma)",
 			name)
 	}
 }
@@ -1223,6 +1255,194 @@ func covarianceRows() []huntRow {
 // reading an unmatched pair.
 func covarianceArms(budget int) ([]arm, error) {
 	return sizeHuntRows(covarianceRows(), budget)
+}
+
+// activeCMALambda is the population every arm of the active-CMA campaign
+// holds, and it is chosen for the size of the treatment rather than for
+// realism. Negative rank-mu adaptation is not a knob whose effect is constant:
+// its whole magnitude is the negativeMass that active.go scales the negative
+// weights by, and that mass shrinks steeply with lambda long before the clamp
+// binds. At 56 dimensions in block mode it is 0.281 at lambda 64, 0.0554 at
+// 256 and 0.00155 at the shipped popSize of 1024 -- so a campaign run at the
+// default population would apply a treatment three orders of magnitude smaller
+// than this one and return a null that says nothing about the knob. That is
+// the covariance campaign's void reached by a second route, and
+// activeCMANegativeMass exists to refuse it.
+//
+// lambda 64 is also four times Hansen's default at this dimensionality, so
+// covariance still adapts, and it is the restart ladder's own primary rung.
+const activeCMALambda = 64
+
+// activeCMAMinNegativeMass is the smallest treatment this design will register,
+// and it is set to exclude two distinct failures rather than one.
+//
+// The clamped regime is the failure the covariance campaign hit. Where the
+// rank-mu correction drives cmu to its 1-c1 clamp, Hansen's
+// positive-definiteness guard collapses to the difference of two quantities
+// that are equal to within summation rounding, and the mass that survives is
+// about 1e-17 -- sixteen orders of magnitude below a live one. That is a near
+// cancellation rather than the exact zero docs/cmaes-covariance-report.md
+// describes, and the distinction is arithmetic trivia: at 1e-17 the arm was
+// measured bit-identical to its control in all twelve blocks. A floor at any
+// scale a person would write catches it.
+//
+// The near-inert regime is the subtler one, and it is why the floor is not
+// simply a guard against rounding. Block covariance at the shipped popSize of
+// 1024 is genuinely unclamped, and its mass is still only 0.00155: a campaign
+// there would apply a treatment 180x smaller than this one and return a null
+// that says nothing about the knob. 0.01 excludes both, and the registered rung
+// clears it by a factor of 28.
+const activeCMAMinNegativeMass = 0.01
+
+// activeCMAArms registers the campaign that finally measures activeCMA. Two
+// campaigns have now failed to: the deep hunt lost its arm to ten cancelled
+// jobs, and the covariance campaign lost its secondary contrast to the library
+// -- sep-ipop-passive returned costs bit-identical to its control in all twelve
+// blocks because go-cma-es v0.1.0's rank-mu clamp makes the knob arithmetically
+// inert in separable mode at lambda 1024. See docs/cmaes-covariance-report.md.
+//
+// Three properties of this design are the direct consequence of that failure,
+// and none of them is a preference:
+//
+// Block covariance, because it is the mode the covariance campaign established
+// as the winner and therefore the mode a default would name, and because it is
+// clean at every lambda this design could reach.
+//
+// Cold restarts rather than IPOP, because an IPOP ladder doubles its
+// population: blk-ipop against blk-ipop-passive would differ on its first rung
+// alone and be inert on 2048, 4096 and 8192, which is the same dilution to
+// nothing in a new costume. optimizerRestarts holds lambda fixed, so every one
+// of the 32 runs applies the identical treatment.
+//
+// And lambda 64, for the reason activeCMALambda gives.
+//
+// The rung is the restart ladder's ladderWork product, so each arm spends the
+// cap exactly: 64 * 32 = 2048 and each run gets budget/2048 generations.
+func activeCMAArms(budget int) ([]arm, error) {
+	if budget <= 0 || budget%ladderWork != 0 {
+		return nil, fmt.Errorf(
+			"budget %d must be positive and divisible by %d; the two arms would not be evaluation-matched",
+			budget, ladderWork)
+	}
+
+	restarts := ladderWork / activeCMALambda
+
+	if activeCMALambda < app.MinPopulation {
+		return nil, fmt.Errorf("lambda %d is below app.MinPopulation %d and would be refused at submit",
+			activeCMALambda, app.MinPopulation)
+	}
+
+	if restarts > app.MaxOptimizerRestarts {
+		return nil, fmt.Errorf("lambda %d needs %d cold restarts, above app.MaxOptimizerRestarts %d",
+			activeCMALambda, restarts, app.MaxOptimizerRestarts)
+	}
+
+	// The design's whole validity rests on the treatment being large enough to
+	// read, and that is arithmetic this driver can check rather than assert.
+	// Refusing here means a future edit to the rung cannot quietly reproduce
+	// the void that cost the covariance campaign its secondary contrast.
+	mass := activeCMANegativeMass(searchDimensions, activeCMALambda, app.ParametersPerCircle)
+	if mass < activeCMAMinNegativeMass {
+		return nil, fmt.Errorf(
+			"block covariance at lambda %d in %d dimensions gives active adaptation a negative mass of %g, "+
+				"below the %g this design requires; the contrast would measure nothing",
+			activeCMALambda, searchDimensions, mass, activeCMAMinNegativeMass)
+	}
+
+	control := arm{
+		name:      fmt.Sprintf("blk-r%d-l%d", restarts, activeCMALambda),
+		optimizer: "cmaes", covariance: "block", restartStrategy: "none",
+		iters: budget / ladderWork, popSize: activeCMALambda, optimizerRestarts: restarts,
+	}
+
+	passive := control
+	passive.name = control.name + "-passive"
+	passive.passiveCMA = true
+
+	return []arm{control, passive}, nil
+}
+
+// activeCMANegativeMass returns the mass go-cma-es v0.1.0 scales its negative
+// rank-mu weights by, for a configuration this driver is about to register. It
+// replicates deriveStrategyParameters and deriveNegativeWeights rather than
+// calling them, because both are unexported; the replication is pinned against
+// the three cmu values docs/cmaes-covariance-report.md read out of the library
+// itself, so a divergence fails a test rather than passing silently.
+//
+// Zero is the failure this whole campaign exists because of: when the
+// separable or block correction drives cmu to its 1-c1 clamp, Hansen's
+// positive-definiteness guard becomes exactly zero, every negative weight is
+// scaled to nothing, and activeCMA is inert however the job is configured.
+func activeCMANegativeMass(dimension, lambda, blockDimension int) float64 {
+	mu := lambda / 2
+	if mu < 1 || dimension < 1 {
+		return 0
+	}
+
+	weightBase := math.Log(math.Max(float64(mu), float64(lambda)/2) + 0.5)
+
+	weights := make([]float64, mu)
+	weightSum := 0.0
+
+	for i := range weights {
+		weights[i] = weightBase - math.Log(float64(i+1))
+		weightSum += weights[i]
+	}
+
+	squareSum := 0.0
+
+	for i := range weights {
+		weights[i] /= weightSum
+		squareSum += weights[i] * weights[i]
+	}
+
+	n := float64(dimension)
+	muEff := 1 / squareSum
+	//nolint:varnamelen // c1 and cmu are Hansen's notation and go-cma-es's own
+	// field names. Renaming them breaks the correspondence this function exists
+	// to preserve, which is the only thing that makes it reviewable.
+	c1 := 2 / ((n+1.3)*(n+1.3) + muEff)
+	cmu := math.Min(1-c1, 2*(muEff-2+1/muEff)/((n+2)*(n+2)+muEff))
+
+	if blockDimension < dimension {
+		cmu = math.Min(1-c1, cmu*(n+2)/float64(blockDimension+2))
+	}
+
+	if cmu <= 0 || lambda-mu <= 0 {
+		return 0
+	}
+
+	negativeSum := 0.0
+	negativeSquareSum := 0.0
+
+	for rank := mu + 1; rank <= lambda; rank++ {
+		weight := math.Min(0, weightBase-math.Log(float64(rank)))
+		negativeSum -= weight
+		negativeSquareSum += weight * weight
+	}
+
+	if negativeSum == 0 || negativeSquareSum == 0 {
+		return 0
+	}
+
+	muEffMinus := negativeSum * negativeSum / negativeSquareSum
+	mass := math.Min(1+c1/cmu, 1+2*muEffMinus/(muEff+2))
+
+	// Positive weights are normalized to sum 1 above, so this is exactly the
+	// guard active.go applies -- and exactly the expression that is zero when
+	// cmu has been assigned the clamp.
+	positiveDefinite := (1 - c1 - cmu*sumOf(weights)) / (n * cmu)
+
+	return math.Min(mass, positiveDefinite)
+}
+
+func sumOf(values []float64) float64 {
+	total := 0.0
+	for _, value := range values {
+		total += value
+	}
+
+	return total
 }
 
 func campaignArms(budget int) ([]arm, error) {

@@ -418,9 +418,18 @@ func TestRegisteredDesignsUseDisjointSeedPrefixes(t *testing.T) {
 	// campaign's configuration exactly, so the cells have to reproduce bit for
 	// bit, and the shared range puts seed 111018 -- the block that set the best
 	// recorded eight-circle cost -- inside the ladder's own design.
+	//
+	// The active-CMA campaign joins that same range, and its reason is weaker
+	// and stated as such: it repeats no arm, so it gets no bit-for-bit check.
+	// What the shared seeds buy is that its blk-r32-l64 arm runs the identical
+	// blocks as the ladder's committed sep-r32-l64 cells, at the identical rung
+	// and budget, so the pair can be read as block against separable where both
+	// modes are clean. That is a cross-campaign lead, not a registered result.
 	shared := map[[2]string]bool{
 		{designPhase21, designLambda}: true, {designLambda, designPhase21}: true,
 		{designStag, designLadder}: true, {designLadder, designStag}: true,
+		{designStag, designActive}: true, {designActive, designStag}: true,
+		{designLadder, designActive}: true, {designActive, designLadder}: true,
 	}
 
 	for _, name := range registeredDesigns() {
@@ -1177,7 +1186,7 @@ func TestRestartLadderRefusesABudgetItsRungsDoNotDivide(t *testing.T) {
 func registeredDesigns() []string {
 	return []string{
 		designPhase21, designLambda, designPilot, designStag,
-		designSplit, designLadder, designHunt, designCov,
+		designSplit, designLadder, designHunt, designCov, designActive,
 	}
 }
 
@@ -1651,5 +1660,212 @@ func TestCovarianceCampaignRunsAtTheHuntBudget(t *testing.T) {
 	_, contradicts := designBudget(designCov, defaultBudget)
 	if contradicts == nil {
 		t.Error("designBudget accepted a -budget that contradicts the covariance campaign's own")
+	}
+}
+
+func TestActiveCMACampaignRegistersOneSingleFactorContrast(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designActive, mustDesignBudget(t, designActive))
+	if err != nil {
+		t.Fatalf("active-cma design: %v", err)
+	}
+
+	if plan.descriptive {
+		t.Error("the active-CMA campaign is inferential; it must not be descriptive")
+	}
+
+	if plan.blocks != campaignBlocks {
+		t.Errorf("active-cma blocks = %d, want %d", plan.blocks, campaignBlocks)
+	}
+
+	if len(plan.arms) != 2 {
+		t.Fatalf("active-cma arms = %d, want 2", len(plan.arms))
+	}
+
+	control, passive := plan.arms[0], plan.arms[1]
+
+	// One contrast is the whole family, so Holm's first gate is the unadjusted
+	// 0.05. A design that added an arm would raise the bar for the only
+	// question this campaign exists to answer.
+	want := []plannedContrast{
+		{control: control.name, candidate: passive.name, primary: true},
+	}
+	if !slices.Equal(plan.contrasts, want) {
+		t.Errorf("contrasts = %+v, want %+v", plan.contrasts, want)
+	}
+
+	if !passive.passiveCMA || control.passiveCMA {
+		t.Error("the candidate must be the only arm turning active adaptation off")
+	}
+
+	// The single-factor assertion, made field by field rather than read off the
+	// table: the two arms must agree on everything except the name and the one
+	// knob the campaign is measuring.
+	wantPassive := control
+	wantPassive.name, wantPassive.passiveCMA = passive.name, passive.passiveCMA
+
+	if passive != wantPassive {
+		t.Errorf("the candidate moves more than activeCMA:\n got %+v\nwant %+v", passive, wantPassive)
+	}
+}
+
+func TestActiveCMACampaignHoldsLambdaFixedAndSpendsTheCap(t *testing.T) {
+	t.Parallel()
+
+	budget := mustDesignBudget(t, designActive)
+
+	plan, err := campaignDesign(designActive, budget)
+	if err != nil {
+		t.Fatalf("active-cma design: %v", err)
+	}
+
+	for _, current := range plan.arms {
+		// Cold restarts, not IPOP. An IPOP ladder doubles its population, so
+		// the arms would differ on the first rung alone and be inert above the
+		// clamp -- the covariance campaign's void in a new costume.
+		if current.restartStrategy != coldRestartStrategy {
+			t.Errorf("arm %s uses restart strategy %q; the treatment is only constant under cold restarts",
+				current.name, current.restartStrategy)
+		}
+
+		if current.optimizerRestarts <= 1 {
+			t.Errorf("arm %s takes %d restarts; the design buys its splits cold",
+				current.name, current.optimizerRestarts)
+		}
+
+		if current.popSize != activeCMALambda {
+			t.Errorf("arm %s runs lambda %d, want %d", current.name, current.popSize, activeCMALambda)
+		}
+
+		if current.covariance != "block" {
+			t.Errorf("arm %s runs %q covariance, want block", current.name, current.covariance)
+		}
+
+		epochs := max(current.optimizerEpochs, 1)
+		if spent := current.iters * current.popSize * current.optimizerRestarts * epochs; spent != budget {
+			t.Errorf("arm %s spends %d evaluations against a budget of %d", current.name, spent, budget)
+		}
+	}
+}
+
+func TestActiveCMACampaignRunsAtTheFixedCap(t *testing.T) {
+	t.Parallel()
+
+	budget, err := designBudget(designActive, 0)
+	if err != nil {
+		t.Fatalf("active-cma budget: %v", err)
+	}
+
+	// The raised huntBudget exists so an IPOP ladder can finish its top rung.
+	// This design runs no ladder, and staying at the fixed cap is what lets its
+	// costs be read against the restart ladder's rows on the same seeds.
+	if budget != defaultBudget {
+		t.Errorf("active-cma budget = %d, want the fixed cap %d", budget, defaultBudget)
+	}
+
+	_, err = designBudget(designActive, huntBudget)
+	if err == nil {
+		t.Error("active-cma accepted the hunt budget; the flag may only assert the design's own")
+	}
+}
+
+// TestActiveCMANegativeMassMatchesTheLibrary pins the driver's replication of
+// go-cma-es v0.1.0's rank-mu arithmetic against the three cmu values
+// docs/cmaes-covariance-report.md read out of the library itself at lambda 1024
+// in 56 dimensions. Without this the guard in activeCMAArms could drift from
+// the library and start certifying a treatment that is really inert, which is
+// the exact failure the campaign exists to avoid.
+func TestActiveCMANegativeMassMatchesTheLibrary(t *testing.T) {
+	t.Parallel()
+
+	const (
+		separableBlock = 1
+		blockBlock     = app.ParametersPerCircle
+	)
+
+	cases := []struct {
+		name      string
+		dimension int
+		lambda    int
+		blockDim  int
+		want      float64
+	}{
+		// The clamped row: separable at the shipped popSize, which is what made
+		// the covariance campaign's secondary contrast void. What survives the
+		// clamp is summation rounding, not the exact zero the report describes
+		// -- practically the same thing, sixteen orders of magnitude below a
+		// live treatment, but it is why the guard has a floor and not a sign
+		// test.
+		{
+			name: "separable lambda 1024 is inert", dimension: searchDimensions,
+			lambda: 1024, blockDim: separableBlock, want: 7.934642387593768e-18,
+		},
+		// The live rows the report tabulates beside it.
+		{
+			name: "block lambda 1024 is live but tiny", dimension: searchDimensions,
+			lambda: 1024, blockDim: blockBlock, want: 0.00155054,
+		},
+		{
+			name: "full lambda 1024 is live", dimension: searchDimensions,
+			lambda: 1024, blockDim: searchDimensions, want: 0.107215,
+		},
+		// The rung this campaign registers, and the reason it does.
+		{
+			name: "block lambda 64 is the campaign's rung", dimension: searchDimensions,
+			lambda: activeCMALambda, blockDim: blockBlock, want: 0.280789,
+		},
+		// The report's other dimension, from the twelve-circle budget-split
+		// fixture. Nothing registered runs active adaptation there yet, so
+		// these rows exist to keep the threshold table honest for a design
+		// that might: separable is clean at lambda 512 in 84 dimensions where
+		// it is already clamped in 56.
+		{
+			name: "separable lambda 512 is live at 84 dimensions", dimension: 84,
+			lambda: 512, blockDim: separableBlock, want: 0.000145874,
+		},
+		{
+			name: "separable lambda 1024 is inert at 84 dimensions", dimension: 84,
+			lambda: 1024, blockDim: separableBlock, want: 5.288178783898026e-18,
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			mass := activeCMANegativeMass(testCase.dimension, testCase.lambda, testCase.blockDim)
+
+			// The report quotes six significant figures, so the tolerance is
+			// the one that reading matches rather than a bit-exact compare.
+			if math.Abs(mass-testCase.want) > 1e-5*math.Abs(testCase.want) {
+				t.Errorf("negative mass = %.9g, want %.9g", mass, testCase.want)
+			}
+		})
+	}
+}
+
+// TestActiveCMACampaignRefusesAnInertRung is the guard's own test. A rung whose
+// treatment is too small to read has to be refused at registration rather than
+// discovered in the report, which is how the covariance campaign found out.
+func TestActiveCMACampaignRefusesAnInertRung(t *testing.T) {
+	t.Parallel()
+
+	// Two rungs the guard has to reject, for the two different reasons the
+	// floor exists. Block covariance at 56 dimensions is clamped from lambda
+	// 2048 up, and at 1024 it is unclamped but applies 0.00155 -- a treatment
+	// 180x smaller than the registered rung's.
+	for _, lambda := range []int{1024, 2048} {
+		mass := activeCMANegativeMass(searchDimensions, lambda, app.ParametersPerCircle)
+		if mass >= activeCMAMinNegativeMass {
+			t.Errorf("block lambda %d reports a negative mass of %g, at or above the %g floor; the threshold moved",
+				lambda, mass, activeCMAMinNegativeMass)
+		}
+	}
+
+	registered := activeCMANegativeMass(searchDimensions, activeCMALambda, app.ParametersPerCircle)
+	if registered < activeCMAMinNegativeMass {
+		t.Fatalf("the registered rung reports a negative mass of %g, below the %g floor; the campaign would measure nothing",
+			registered, activeCMAMinNegativeMass)
 	}
 }

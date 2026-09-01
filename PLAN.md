@@ -237,6 +237,41 @@ anything new against its figures.
       climbs into the clamped regime and the contrast measures nothing for the
       same reason this one did. That also rules out the obvious shape:
       `blk-ipop` against `blk-ipop-passive` would differ only on its first rung.
+      **Registered 2026-09-02 as `-design active-cma`**: two arms, twelve
+      blocks, 24 jobs, seeds 111013-111024, on the shared eight-circle fixture
+      at `defaultBudget`. `blk-r32-l64` against `blk-r32-l64-passive` — block
+      covariance, 32 **cold** restarts at a fixed `lambda` 64, one registered
+      contrast which is therefore the whole Holm family. Every choice follows
+      from the two failures: block because it is the mode a default would name
+      and the only shippable one clean at a usable `lambda`; cold restarts
+      because an IPOP ladder would double past the clamp and dilute the
+      contrast to its first rung; `defaultBudget` because the raised cap exists
+      for a ladder this design does not run, and the fixed cap is what lets the
+      costs be read against the restart ladder's rows.
+      **`lambda` 64 is the part the covariance report does not cover.** The
+      knob's effect is not constant: its whole magnitude is the `negativeMass`
+      scaling the negative weights, and that mass collapses with `lambda` well
+      *before* the clamp binds — in block mode at 56 dimensions it is 0.281 at
+      64, 0.0554 at 256 and 0.00155 at the shipped `popSize` of 1024. A
+      campaign at the default population would be formally live and still apply
+      a treatment 180x smaller, returning a null that says nothing. The driver
+      now refuses such a rung: `activeCMAArms` computes the treatment and
+      rejects anything below a floor, replicating go-cma-es's unexported
+      derivation with a test pinning it to the values the covariance report
+      read out of the library. One correction falls out of that test — where
+      the clamp binds the surviving mass is about **1e-17, not the exact IEEE
+      zero** the report describes, a near cancellation from summation rounding.
+      It changes nothing that report concluded, and it is why the guard has a
+      floor rather than a sign test.
+      The seeds are the ladder's, and for a **weaker** reason than the ladder's
+      own, stated as such: this design repeats no arm, so it earns no
+      bit-for-bit check. What they buy is a by-product — `blk-r32-l64` runs the
+      identical blocks as the ladder's committed `sep-r32-l64` cells, so the
+      pair reads as block against separable at a rung where *both* modes are
+      clean, which is the comparison the covariance campaign could not make.
+      Cross-campaign and unregistered: a lead, never a finding. Sized at
+      roughly 1-1.5h of wall clock at `--max-jobs 7`. **The design is frozen at
+      the commit the campaign is submitted from.** Not yet run.
 
 ### Task 4: Close the dirty-region evaluator's end-to-end check (P1)
 

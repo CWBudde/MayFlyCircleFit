@@ -6,7 +6,7 @@ dashboard shows the queue and every active job. It refuses to overwrite a
 manifest, which prevents an accidental second submission from corrupting the
 paired design.
 
-Six designs are registered, selected with `-design`:
+Nine designs are registered, selected with `-design`:
 
 - `phase21` (the default) — the original five arms: two Mayfly controls and
   three CMA-ES arms, all at `popSize` 1024. 60 jobs, 12 blocks, seeds
@@ -25,6 +25,11 @@ Six designs are registered, selected with `-design`:
   (deliberately the same as `stagnation`, so two repeated arms have to
   reproduce that campaign bit for bit and the recorded best cost is inside the
   design). See below.
+- `deep-hunt` — nine arms, 99 jobs, 11 blocks, seeds 114001-114011, descriptive
+  only and run at `huntBudget`. See below.
+- `covariance` — three arms, 36 jobs, 12 blocks, seeds 116001-116012, at
+  `huntBudget`. See below.
+- `active-cma` — two arms, 24 jobs, 12 blocks, seeds 111013-111024. See below.
 
 **A design owns its block count, its seed base and its contrast family.** All
 three used to be global or flag-driven. `-blocks` and `-seed-base` are now
@@ -636,6 +641,106 @@ a filtered manifest, and the filtering then has to be stated in the report.
 the budget-split report's procedural lesson, and it applies to the contrasts
 above: changing either one after partial results are visible would cost this
 campaign its correction, exactly as it cost that one.
+
+## The active-CMA campaign
+
+`-design active-cma` measures the one knob two campaigns in a row have failed to
+measure. The deep hunt lost its arm to ten cancelled jobs. The covariance
+campaign lost its secondary contrast to the library: `sep-ipop-passive` returned
+costs bit-identical to its control in all twelve blocks, because
+`go-cma-es v0.1.0`'s rank-mu clamp makes `activeCMA` arithmetically inert in
+separable mode at `lambda` 1024. See
+[`docs/cmaes-covariance-report.md`](../../docs/cmaes-covariance-report.md).
+
+| arm | covariance | restarts | lambda | iters | active |
+| --- | --- | --- | ---: | ---: | --- |
+| `blk-r32-l64` (control) | block | 32 cold | 64 | 3175 | on |
+| `blk-r32-l64-passive` | block | 32 cold | 64 | 3175 | **off** |
+
+Two arms, one registered contrast, and the contrast is primary. One contrast is
+the whole family, so Holm's first gate is the unadjusted 0.05 — the lambda
+screen already paid for the alternative, turning eight arms into thirteen
+contrasts and retaining a `p` of 0.0056.
+
+### Every choice in it is a consequence of that failure
+
+**Block covariance**, because it is the mode the covariance campaign established
+as the winner and therefore the mode a default would name, and because it is the
+only mode that is both clean at a usable `lambda` and worth shipping.
+
+**Cold restarts, not IPOP.** An IPOP ladder doubles its population, so
+`blk-ipop` against `blk-ipop-passive` would differ on its first rung alone and
+be inert on 2048, 4096 and 8192 — the same dilution to nothing in a new costume,
+and the covariance report says so explicitly. `optimizerRestarts` holds `lambda`
+fixed, so all 32 runs of both arms apply the identical treatment. The app
+enforces the exclusivity: IPOP and BIPOP require `optimizerRestarts == 1`.
+
+**`lambda` 64**, and this is the part the covariance report does not cover.
+`activeCMA` is not a knob whose effect is constant. Its entire magnitude is the
+`negativeMass` that `active.go` scales the negative weights by, and that mass
+falls off steeply with `lambda` **long before the clamp binds**:
+
+| mode | lambda 64 | lambda 256 | lambda 1024 | lambda 2048 |
+| --- | ---: | ---: | ---: | ---: |
+| separable | 0.0817 | 0.00655 | **clamped** | **clamped** |
+| block (7) | **0.281** | 0.0554 | 0.00155 | **clamped** |
+| full | 1.065 | 0.454 | 0.107 | 0.0493 |
+
+So a campaign run at the shipped `popSize` of 1024 would be technically live and
+would still apply a treatment 180 times smaller than this one, and return a null
+that says nothing about the knob. That is the covariance campaign's void reached
+by a second route. `lambda` 64 is also four times Hansen's default at this
+dimensionality, so covariance still adapts, and it is the restart ladder's own
+primary rung.
+
+### The driver refuses an inert rung
+
+`activeCMAArms` computes the treatment before it registers the arms and refuses
+a rung below `activeCMAMinNegativeMass`, so a future edit cannot quietly
+reproduce the void. `activeCMANegativeMass` replicates
+`deriveStrategyParameters` and `deriveNegativeWeights` rather than calling them,
+because both are unexported; a test pins the replication against the three `cmu`
+values the covariance report read out of the library itself.
+
+That test records one correction to the report. Where the clamp binds, the
+surviving mass is about **1e-17, not exactly zero**: Hansen's guard becomes the
+difference of two quantities equal only to within summation rounding, so it is a
+near cancellation rather than the exact IEEE zero the report describes. The
+distinction changes nothing that report concluded — at 1e-17 the arm measured
+bit-identical to its control in all twelve blocks — but it is why the guard has
+a floor rather than a sign test.
+
+### The rung, the budget and the seeds
+
+`lambda * restarts` is `ladderWork`, 2048, so each arm spends the fixed cap
+exactly: 32 cold runs of 3,175 generations at `lambda` 64. The budget stays at
+`defaultBudget`. `huntBudget` exists so an IPOP ladder can finish its top rung,
+and this design runs no ladder; staying at the fixed cap is what lets its costs
+be read against the restart ladder's rows.
+
+The seed base is the stagnation campaign's and the ladder's, 111_012, and this
+design's reason for sharing it is **weaker than the ladder's and is stated as
+such**. The ladder repeated two arms, so its cells had to reproduce bit for bit
+and the shared range bought a validity check. This design repeats no arm, so it
+gets none. What the shared seeds buy is a by-product: `blk-r32-l64` runs the
+identical blocks as the ladder's committed `sep-r32-l64` cells, at the identical
+rung and budget, so the pair can be read as block against separable at a rung
+where **both** modes are clean. The covariance campaign could not make that
+comparison — its separable arm was clamped dead — so this is the one place the
+corpus can ask whether block's win survives when separable is allowed to work.
+It is cross-campaign and unregistered: a lead, never a finding.
+
+**The design is frozen at the commit the campaign is submitted from.**
+
+Sized from the restart ladder's rates — 84 jobs in 04:01 at `--max-jobs 7` on
+the 64-core host — 24 jobs is roughly **1-1.5h**. Small populations cost wall
+clock at equal evaluations, though: the lambda screen measured `lambda` 64 at
+0.67x the evaluation rate of 1024, so budget nearer the upper end.
+
+```sh
+./cmaes-measurement -action plan   -design active-cma
+./cmaes-measurement -action submit -design active-cma
+```
 
 ## Restart records
 
