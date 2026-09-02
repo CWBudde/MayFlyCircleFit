@@ -759,6 +759,11 @@ the 64-core host — 24 jobs is roughly **1-1.5h**. Small populations cost wall
 clock at equal evaluations, though: the lambda screen measured `lambda` 64 at
 0.67x the evaluation rate of 1024, so budget nearer the upper end.
 
+**Ran 2026-09-02/03**, 24 of 24 jobs in 01:16 of wall clock. The registered
+contrast retains and the knob is live: every block separates, so the null is a
+measurement of `activeCMA` rather than of the clamp. See
+[`docs/cmaes-active-cma-report.md`](../../docs/cmaes-active-cma-report.md).
+
 ```sh
 ./cmaes-measurement -action plan   -design active-cma
 ./cmaes-measurement -action submit -design active-cma

@@ -32,18 +32,18 @@ ones that will change what you propose:
   earlier, and v0.7.0 changed results for every variant, so none of their
   numbers is comparable to a run made today.** Read those for method and for
   what was ruled out; re-measure before citing a figure. See the Toolchain
-  section. Nine reports are on the current pins and may be cited directly: the
-  QMC screen, and the eight CMA-ES ones — `cmaes-report.md`,
+  section. Ten reports are on the current pins and may be cited directly: the
+  QMC screen, and the nine CMA-ES ones — `cmaes-report.md`,
   `cmaes-lambda-report.md`, `cmaes-stagnation-report.md`,
   `cmaes-budget-split-report.md`, `cmaes-restart-ladder-report.md`,
-  `cmaes-deep-hunt-report.md`, `cmaes-covariance-report.md` and
-  `cmaes-preliminary-report.md`, all run in 2026-08 on MayFly v0.7.1 and
-  go-cma-es v0.1.0 — the preliminary one on the code-identical pseudo-version
-  that preceded that tag. Each states its own pins; trust that line over this
-  one. The deep hunt and the covariance campaign are the exceptions to
-  citability *within* that set: both ran at 1.94x the shared cap, so their costs
-  are not comparable to the other seven, though they are comparable to each
-  other.
+  `cmaes-deep-hunt-report.md`, `cmaes-covariance-report.md`,
+  `cmaes-active-cma-report.md` and `cmaes-preliminary-report.md`, run in
+  2026-08 and 2026-09 on MayFly v0.7.1 and go-cma-es v0.1.0 — the preliminary
+  one on the code-identical pseudo-version that preceded that tag. Each states
+  its own pins; trust that line over this one. The deep hunt and the covariance
+  campaign are the exceptions to citability *within* that set: both ran at
+  1.94x the shared cap, so their costs are not comparable to the other eight,
+  though they are comparable to each other.
 - [`docs/qmc-initial-population-report.md`](docs/qmc-initial-population-report.md)
   — `qmcInit` measured on the eight-circle batch stage at three population
   sizes. All six comparisons are null and the data bound any effect to about
@@ -214,6 +214,23 @@ ones that will change what you propose:
   double past the threshold; and the primary contrast confounds covariance mode
   with active adaptation on one rung of four, bounded to 6% of the winning arm's
   budget.
+- [`docs/cmaes-active-cma-report.md`](docs/cmaes-active-cma-report.md) — two
+  arms and 24 jobs, the campaign that finally measures `activeCMA` after two
+  campaigns failed to. **The registered contrast retains** (`-23.79`,
+  `t = -1.70`, `p = 0.117`, 8 of 12 blocks favouring the knob), and unlike the
+  covariance campaign's void every block separates, by up to 90.38 in both
+  directions — so it measures the knob rather than the clamp. It is a bound
+  rather than a zero: at a paired sd of 48.43 an effect of the observed size
+  needs roughly four times the blocks. **Nothing in it licenses turning
+  `activeCMA` on by default**, and the knob stays unmeasured in **full**
+  covariance mode, which never clamps and is the other clean place to ask.
+  Read it above all for the by-product, which bears directly on the covariance
+  result: sharing the restart ladder's seeds, rung and budget, it reads **block
+  against separable where both modes are clean** — and block leads by only
+  `+7.27` (`t` = 0.54, 7/12) against the `+39.12` the covariance campaign
+  registered at `lambda` 1024, where its separable control was clamped dead.
+  Cross-campaign and unregistered, so a lead and not a refutation; but answer
+  it before proposing a covariance default.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more

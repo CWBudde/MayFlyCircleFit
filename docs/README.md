@@ -182,6 +182,21 @@ re-measure instead.
   arm at the default popSize of 1024 and this campaign's own top rungs, though
   not the restart ladder's fixed-lambda arms at 32, 64 and 256. Fixed upstream
   in 0.2.0, which this repository has **not** taken.
+- [`cmaes-active-cma-report.md`](cmaes-active-cma-report.md) — two arms and 24
+  jobs that finally measure `activeCMA`, after the deep hunt lost its arm to
+  cancelled jobs and the covariance campaign lost its contrast to the clamp.
+  **The registered contrast retains** (`-23.79`, `t = -1.70`, `p = 0.117`,
+  8/12 blocks favouring the knob) — but unlike the covariance campaign's void,
+  every block separates, by up to 90.38 in both directions, so this is a
+  measurement of the knob rather than of the clamp. It is a bound and not a
+  zero. Read it for two things beyond that. Its spend reading confirms the
+  cap-matched design stayed matched — 38.96% of the cap against 41.59%, inside
+  the ladder's own 5.5-point spread — and its by-product reads **block against
+  separable at a rung where both modes are clean**, which no other campaign
+  can: block leads by only `+7.27` (`t` = 0.54, 7/12) against the `+39.12` the
+  covariance campaign registered against a clamped control. Cross-campaign and
+  unregistered — a lead, not a finding — but answer it before proposing a
+  covariance default.
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by
