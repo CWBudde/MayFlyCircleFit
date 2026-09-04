@@ -216,7 +216,7 @@ anything new against its figures.
       the separable control never does. The record was not approached (best
       746.9953 against the standing 726.1984). See
       [`docs/cmaes-covariance-report.md`](docs/cmaes-covariance-report.md).
-- [ ] Measure `activeCMA`. It is now unmeasured for the **second** campaign
+- [x] Measure `activeCMA`. It was unmeasured for the **second** campaign
       running, and this time the cause was not operational. The covariance
       campaign's secondary contrast is **void, not null**: `sep-ipop-passive`
       returned costs bit-identical to its control in all twelve blocks because
@@ -281,7 +281,40 @@ anything new against its figures.
       clean, which is the comparison the covariance campaign could not make.
       Cross-campaign and unregistered: a lead, never a finding. Sized at
       roughly 1-1.5h of wall clock at `--max-jobs 7`. **The design is frozen at
-      the commit the campaign is submitted from.** Not yet run.
+      the commit the campaign is submitted from.** **Ran 2026-09-02/03** —
+      submitted 23:32, finished 00:48, 01:16 of wall clock, all 24 jobs
+      completed with none cancelled or failed. **The registered contrast
+      retains**: switching `activeCMA` off costs 23.79 on the mean and loses 8
+      of 12 blocks, at `t = -1.70`, `p = 0.117`, against a paired standard
+      deviation of 48.43. See
+      [`docs/cmaes-active-cma-report.md`](docs/cmaes-active-cma-report.md).
+      **The box closes anyway, because what it asked for was a measurement and
+      it got one.** Unlike the covariance campaign's void, every block
+      separates — by up to 90.38, in both directions — so the null is a
+      measurement of the knob rather than of the clamp. It is absence of
+      evidence and not a zero: the 95% paired interval runs from -6.98 to
+      +54.56, so it admits a benefit twice the point estimate as readily as
+      none, and at this variance an effect of the observed size needs roughly
+      four times the blocks. Nothing licenses changing its default. The
+      registered spend reading came back inside its own yardstick — 38.96% of
+      the cap active against 41.59% passive, a 2.63-point asymmetry inside the
+      ladder's 5.5-point spread — but that yardstick is a range from another
+      arm, not a paired test, and the paired test on `finalEvaluations` is
+      `t = 2.66` in 9 of 12 blocks. It is unregistered, so the spend question
+      is open rather than answered in either direction.
+      Two things carry forward rather than closing. `activeCMA` in **full**
+      covariance mode is still unmeasured at every `lambda`, and full never
+      clamps, so it is the other clean place to ask this. And the campaign's
+      by-product is the more consequential result: `blk-r32-l64` shares the
+      ladder's seeds, rung and budget with its committed `sep-r32-l64` cells,
+      so block against separable can finally be read where **both** modes are
+      clean — and block leads by only **+7.27** (`t` = 0.54, 7/12) against the
+      +39.12 the covariance campaign registered at `lambda` 1024, where its
+      separable control was clamped dead. Cross-campaign and unregistered: a
+      lead, never a finding, and not a refutation. But it raises the question
+      whether part of that +39.12 was separable being crippled rather than
+      block being good, and **anyone proposing a covariance default has to
+      answer it first.**
 
 ### Task 4: Close the dirty-region evaluator's end-to-end check (P1)
 
