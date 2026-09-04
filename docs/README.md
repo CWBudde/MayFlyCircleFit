@@ -97,7 +97,13 @@ re-measure instead.
 - [`polishing-budget-report.md`](polishing-budget-report.md) — how much budget
   polishing deserves.
 - [`contiguous-window-polish-report.md`](contiguous-window-polish-report.md) —
-  the windowed active-set polish and its crossover.
+  the windowed active-set polish and its crossover, plus the dirty-region
+  evaluator's end-to-end check on a committed 2,111-circle fixture. Cost parity
+  holds to the last bit, but the evaluator scores no candidate at all under the
+  default `replacement` strategy, because merit selection ranks the
+  canvas-spanning circles weakest. Read before claiming the 3.1x per-candidate
+  figure for a real job, and for the measurement that the 5% fallback gate is
+  too low at 2,111 circles.
 
 **Search quality**
 

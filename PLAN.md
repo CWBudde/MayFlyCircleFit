@@ -318,18 +318,49 @@ anything new against its figures.
 
 ### Task 4: Close the dirty-region evaluator's end-to-end check (P1)
 
-The evaluator is built, measured, and pinned for exact cost parity; the
-production-shaped 2,111-circle case is 3.1x faster per candidate. See the
-dirty-region section of
-[`docs/contiguous-window-polish-report.md`](docs/contiguous-window-polish-report.md).
-What is missing is the end-to-end confirmation, and it is blocked on a fixture:
-the 2,111-circle checkpoint behind the original 599 s sweep is no longer under
-`data/jobs` and was never committed.
+**Closed 2026-09-04.** Evidence is the dirty-region section of
+[`docs/contiguous-window-polish-report.md`](docs/contiguous-window-polish-report.md);
+its numbers are not repeated here.
 
-- [ ] Preserve an immutable production-shaped checkpoint as a fixture.
-- [ ] Re-run that sweep at equal budget, record its wall clock, and confirm the
-      cost it reaches is unchanged.
-- [ ] Record per-candidate cost against affected fraction in the report.
+The premise this task was written on was wrong. The 2,111-circle checkpoint was
+still under `data/jobs`, and so was one fitted against the committed
+`example/MayFly-512.png`, which is now the fixture. Exact parity holds
+end to end: one complete sweep through each evaluator, three shapes, identical
+budget and seed, bit-identical cost and all 14,777 parameters.
+
+**Do not read that as licence to expect the 3.1x on a real job.** Under the
+default `replacement` strategy the evaluator scores no candidate at all — a
+merit selector ranks the huge, nearly transparent circles weakest, and those
+are the ones that cover the canvas, so every candidate falls back correctly.
+The 1.72x end-to-end win belongs to `contiguous-window`, which keeps the active
+set positional and small. The original 599 s sweep is not reproduced and its
+wall clock is not claimed: it fitted a reference the repository does not carry.
+
+- [x] Preserve an immutable production-shaped checkpoint as a fixture:
+      `internal/fit/renderer/testdata/polish-fixture-2111.json`, with its
+      provenance and immutability rule in the `testdata/README.md` beside it.
+- [x] Re-run that sweep at equal budget, record its wall clock, and confirm the
+      cost it reaches is unchanged. `TestPolishFixtureDirtyVsFull` is the
+      harness; it fails if no shape exercises the dirty path, because parity
+      over a sweep that fell back on every candidate proves only that the
+      fallback is exact. It runs for ~21 minutes, so it is opt-in behind
+      `CIRCLEFIT_POLISH_FIXTURE=1` — the native-SIMD gates run this package
+      without `-short`, and the harness outlives Go's 600 s panic timeout.
+- [x] Record per-candidate cost against affected fraction in the report.
+      `BenchmarkPolishDirtyCrossover` now sweeps eleven radii and adds a
+      shipped-dispatch arm beside the forced one.
+
+Two leads came out of it, neither acted on:
+
+- **The 5% fallback gate is measurably too low at 2,111 circles.** The forced
+  arm is still cheaper than a full render at 46% affected, and a fallback costs
+  up to 29% more than dispatching straight to full. Raising the constant needs
+  its own crossover per canvas size and circle count, and the one sweep that
+  engages the evaluator today sits at 0.669% affected and would not benefit.
+- **The re-measured absolute per-candidate costs do not reproduce the
+  2026-08-21 table** on the same host with the same commands — roughly 2.5-3x
+  faster across the suite. The cause was not identified. Compare ratios within
+  a run, not figures across the two tables.
 
 ### Task 5: Browser, bundle, and documentation sign-off (P1)
 
