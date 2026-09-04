@@ -4,12 +4,16 @@ package renderer
 import (
 	"context"
 	"encoding/json"
+	"flag"
+	"fmt"
 	"image"
 	_ "image/jpeg" // registered for image.Decode
 	_ "image/png"  // the committed reference is a PNG
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sync"
 	"testing"
@@ -61,9 +65,14 @@ type polishFixtureShape struct {
 	popSize         int
 	stagnationIters int
 	minImprovement  float64
+
+	// perturbPixels nudges every circle centre before the sweep starts, so the
+	// sweep has something to recover and can be accepted. A shape that leaves
+	// it zero polishes the converged fixture, where no sweep is accepted.
+	perturbPixels float64
 }
 
-// Three shapes, because what decides whether the dirty-region evaluator can
+// Four shapes. What decides whether the dirty-region evaluator can
 // score a candidate is the active set's canvas coverage, and both the size and
 // the selector move it. "default" is what a job gets when the caller sets
 // nothing (app.DefaultPolishing*, active set 5, merit selection); "wide" is the
@@ -72,6 +81,13 @@ type polishFixtureShape struct {
 // TestPolishFixtureActiveSetCoverage shows positional windows of five clear the
 // gate where merit-selected sets of five do not. One sweep each: a sweep is the
 // unit under test, and repeating it measures the same thing again.
+//
+// "window-headroom" exists for a different reason. The fixture is converged, so
+// no sweep on it is accepted, and a rejected sweep rolls back to exactly the
+// vector it started from -- which would let both arms return identical results
+// no matter what the evaluator did. This shape perturbs the vector first so the
+// sweep has room to improve and commits, which is the only configuration in
+// which BestParams is the optimizer's output rather than the input.
 var polishFixtureShapes = []polishFixtureShape{
 	{
 		name: "default", strategy: BatchPolishWeakestReplacement,
@@ -84,6 +100,11 @@ var polishFixtureShapes = []polishFixtureShape{
 	{
 		name: "window", strategy: BatchPolishContiguousWindow,
 		activeSetSize: 5, iters: 200, popSize: 30, stagnationIters: 100, minImprovement: 0.001,
+	},
+	{
+		name: "window-headroom", strategy: BatchPolishContiguousWindow,
+		activeSetSize: 5, iters: 200, popSize: 30, stagnationIters: 100, minImprovement: 0.001,
+		perturbPixels: 1.5,
 	},
 }
 
@@ -166,9 +187,11 @@ func loadPolishFixtureReference(t *testing.T, fixture polishFixture) *image.NRGB
 
 // polishFixtureArm is one complete sweep and what it cost to run.
 type polishFixtureArm struct {
-	result   *BatchPolishResult
-	elapsed  time.Duration
-	sessions []*polishDirtySession
+	startCost float64
+	result    *BatchPolishResult
+	elapsed   time.Duration
+	sessions  []*polishDirtySession
+	decisions []polishSweepDecision
 }
 
 func runPolishFixtureArm(
@@ -196,6 +219,12 @@ func runPolishFixtureArm(
 		polishDirtySessionHook = previousHook
 	}()
 
+	// Restored when the arm returns, not when the test ends: the second arm
+	// installs its own recorder, and a t.Cleanup would leave the first one in
+	// place to collect the second arm's sweeps as well.
+	capture, restoreLogger := capturePolishSweeps(t)
+	defer restoreLogger()
+
 	polishDirtyEnabled = dirty
 	polishDirtySessionHook = func(session *polishDirtySession) {
 		mu.Lock()
@@ -219,11 +248,13 @@ func runPolishFixtureArm(
 		t.Fatalf("build optimizer: %v", err)
 	}
 
+	start := perturbPolishFixtureParams(fixture.BestParams, shape.perturbPixels)
+	startCost := cpu.Cost(start)
 	started := time.Now()
 
 	result, err := PolishCircleBatchContext(context.Background(), cpu,
 		opt.WithEpochs(optimizer, polishFixtureEpochs),
-		fixture.BestParams, BatchPolishOptions{
+		start, BatchPolishOptions{
 			ActiveSetSize: shape.activeSetSize,
 			MaxSweeps:     polishFixtureMaxSweeps,
 			Strategy:      shape.strategy,
@@ -234,7 +265,159 @@ func runPolishFixtureArm(
 		t.Fatalf("polish sweep: %v", err)
 	}
 
-	return polishFixtureArm{result: result, elapsed: elapsed, sessions: sessions}
+	return polishFixtureArm{
+		startCost: startCost,
+		result:    result,
+		elapsed:   elapsed,
+		sessions:  sessions,
+		decisions: capture.records(),
+	}
+}
+
+// perturbPolishFixtureParams nudges every circle centre by a fixed, seedless
+// offset so the sweep that follows has something to recover. Deterministic by
+// construction -- the offset is a function of the circle index alone -- because
+// the two arms must start from bit-identical vectors or the comparison means
+// nothing. A zero offset returns the fixture untouched.
+func perturbPolishFixtureParams(params []float64, pixels float64) []float64 {
+	if pixels == 0 {
+		return params
+	}
+
+	perturbed := append([]float64(nil), params...)
+	for i := 0; i+paramsPerCircle <= len(perturbed); i += paramsPerCircle {
+		circle := float64(i / paramsPerCircle)
+		perturbed[i] += pixels * math.Sin(circle)
+		perturbed[i+1] += pixels * math.Cos(circle)
+	}
+
+	return perturbed
+}
+
+// polishSweepDecision is what a sweep produced before the transaction decided
+// its fate: the cost of the merged candidate the optimizer actually proposed,
+// and the reason the sweep was rejected or accepted.
+//
+// It is the load-bearing observation of this test. BatchPolishResult carries
+// only the committed incumbent, and a rejected sweep rolls back to exactly the
+// vector it started from -- so on a converged fixture the two arms would return
+// identical costs and identical parameters even if the dirty evaluator had sent
+// the optimizer somewhere else entirely. Comparing the candidate cost compares
+// the optimizer's output instead of the rollback's.
+type polishSweepDecision struct {
+	sweep         int64
+	message       string
+	reason        string
+	candidateCost float64
+	bestCost      float64
+	hasCandidate  bool
+}
+
+func (d polishSweepDecision) String() string {
+	if !d.hasCandidate {
+		return fmt.Sprintf("sweep %d: %s (%s), no candidate cost", d.sweep, d.message, d.reason)
+	}
+
+	return fmt.Sprintf("sweep %d: %s (%s), candidate %.17g, incumbent %.17g",
+		d.sweep, d.message, d.reason, d.candidateCost, d.bestCost)
+}
+
+// polishSweepCapture records the sweep decisions PolishCircleBatchContext logs.
+// Every path out of the acceptance decision reports at Info with a "sweep"
+// attribute, which is the only place the pre-rollback candidate cost is
+// observable from outside the package's own call.
+type polishSweepCapture struct {
+	slog.Handler
+
+	mu   sync.Mutex
+	seen []polishSweepDecision
+}
+
+// Enabled overrides the discarding delegate, which reports every level off. The
+// recorder has to see the records it exists to record.
+func (c *polishSweepCapture) Enabled(_ context.Context, level slog.Level) bool {
+	return level >= slog.LevelInfo
+}
+
+func (c *polishSweepCapture) Handle(ctx context.Context, record slog.Record) error {
+	decision := polishSweepDecision{message: record.Message}
+
+	var (
+		isSweep      bool
+		candidate    float64
+		best         float64
+		previous     float64
+		hasCandidate bool
+		hasPrevious  bool
+	)
+
+	record.Attrs(func(attr slog.Attr) bool {
+		switch attr.Key {
+		case "sweep":
+			isSweep = true
+			decision.sweep = attr.Value.Int64()
+		case "reason":
+			decision.reason = attr.Value.String()
+		case "candidate_cost":
+			candidate, hasCandidate = attr.Value.Float64(), true
+		case "best_cost":
+			best = attr.Value.Float64()
+		case "previous_cost":
+			previous, hasPrevious = attr.Value.Float64(), true
+		}
+
+		return true
+	})
+
+	// An accepted sweep names the same two numbers under different keys: the
+	// candidate it committed becomes "best_cost" and the incumbent it replaced
+	// becomes "previous_cost". Normalize, so an accepted and a rejected sweep
+	// are compared on the same pair.
+	switch {
+	case hasPrevious:
+		decision.reason = "accepted"
+		decision.candidateCost, decision.bestCost, decision.hasCandidate = best, previous, true
+	case hasCandidate:
+		decision.candidateCost, decision.bestCost, decision.hasCandidate = candidate, best, true
+	}
+
+	if isSweep {
+		c.mu.Lock()
+		c.seen = append(c.seen, decision)
+		c.mu.Unlock()
+	}
+
+	return c.Handler.Handle(ctx, record)
+}
+
+func (c *polishSweepCapture) records() []polishSweepDecision {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return append([]polishSweepDecision(nil), c.seen...)
+}
+
+// capturePolishSweeps redirects the default logger through a recorder for the
+// length of one arm. The harness holds package state already and never runs
+// beside another test, so replacing the global logger costs nothing extra here.
+//
+// The recorder delegates to a discarding handler rather than to the previous
+// one. Chaining is the obvious thing and it hangs: the standard library's
+// default handler writes through the log package, and slog.SetDefault routes
+// the log package back into slog, so a wrapper that forwards to it recurses.
+// A sweep logs once, and the decisions are printed from the record below, so
+// nothing is lost.
+func capturePolishSweeps(t *testing.T) (*polishSweepCapture, func()) {
+	t.Helper()
+
+	previous := slog.Default()
+	capture := &polishSweepCapture{
+		Handler: slog.DiscardHandler,
+	}
+
+	slog.SetDefault(slog.New(capture))
+
+	return capture, func() { slog.SetDefault(previous) }
 }
 
 // TestPolishFixtureDirtyVsFull runs the same production-shaped polishing sweep
@@ -244,9 +427,17 @@ func runPolishFixtureArm(
 // Bit-identical is the right bar rather than a tolerance. The dirty evaluator
 // returns exactly equal floats by construction, which
 // TestPolishDirtySessionMatchesFullCanvas pins per candidate; equal costs mean
-// the optimizer sees an identical landscape and takes an identical trajectory,
-// so a whole sweep must agree to the last bit. A tolerance here would hide the
-// only failure mode worth catching.
+// the optimizer saw an identical landscape, so a whole sweep must agree to the
+// last bit. A tolerance here would hide the only failure mode worth catching.
+//
+// The comparison deliberately does not rest on BestCost alone. A sweep that is
+// rejected rolls back to the vector it started from, and on a converged fixture
+// every sweep is rejected -- so both arms would return the input unchanged even
+// if the dirty evaluator had sent the optimizer somewhere else. Three things
+// close that gap: the per-sweep candidate cost the optimizer proposed before
+// the transaction ruled on it, the iteration and evaluation counts, and the
+// "window-headroom" shape, which perturbs the fixture so its sweep commits and
+// BestParams is an output rather than an echo of the input.
 //
 //nolint:paralleltest // flips the package-level dirty-region switch, which no two tests may do at once
 func TestPolishFixtureDirtyVsFull(t *testing.T) {
@@ -254,6 +445,13 @@ func TestPolishFixtureDirtyVsFull(t *testing.T) {
 		t.Skipf("end-to-end polishing sweep on a 2,111-circle fixture; set %s=1 to run it (~21 min)",
 			polishFixtureEnvVar)
 	}
+
+	// The switch this test flips is package-level, and the rest of the package
+	// runs in parallel and assumes the dirty session is installed. So the
+	// environment variable is not enough on its own: require that the run was
+	// also narrowed with -run, which is what keeps those tests out of the
+	// window in which the switch is off.
+	requirePolishFixtureSelected(t)
 
 	fixture := loadPolishFixture(t)
 	ref := loadPolishFixtureReference(t, fixture)
@@ -264,7 +462,7 @@ func TestPolishFixtureDirtyVsFull(t *testing.T) {
 	t.Logf("fixture: job %s, %d circles, cost %.12f, reference %s",
 		fixture.JobID, fixture.ActualCircles, fixture.BestCost, fixture.Config.RefPath)
 
-	maskedTotal := 0
+	scoredTotal := 0
 
 	//nolint:paralleltest // each shape owns the package switch for the length of its two arms
 	for _, shape := range polishFixtureShapes {
@@ -288,6 +486,20 @@ func TestPolishFixtureDirtyVsFull(t *testing.T) {
 				t.Fatalf("full arm installed %d dirty-region sessions, want 0", len(fullArm.sessions))
 			}
 
+			// The sweep decisions come before the transaction rolls a rejected
+			// candidate back, so they are what says the two evaluators sent the
+			// optimizer to the same place. On a converged fixture no sweep is
+			// accepted and the assertions below reduce to "the rollback works",
+			// which is true whatever the evaluator did.
+			comparePolishSweepDecisions(t, dirtyArm.decisions, fullArm.decisions)
+
+			if dirtyArm.result.Iterations != fullArm.result.Iterations ||
+				dirtyArm.result.Evaluations != fullArm.result.Evaluations {
+				t.Errorf("budget differs: dirty %d iterations / %d evaluations, full %d / %d",
+					dirtyArm.result.Iterations, dirtyArm.result.Evaluations,
+					fullArm.result.Iterations, fullArm.result.Evaluations)
+			}
+
 			if dirtyArm.result.BestCost != fullArm.result.BestCost {
 				t.Errorf("cost differs: dirty %.17g, full %.17g (delta %g)",
 					dirtyArm.result.BestCost, fullArm.result.BestCost,
@@ -301,8 +513,17 @@ func TestPolishFixtureDirtyVsFull(t *testing.T) {
 				}
 			}
 
-			reportPolishFixtureArm(t, "dirty", dirtyArm, fixture)
-			reportPolishFixtureArm(t, "full", fullArm, fixture)
+			// The shape that perturbs the fixture exists to make the sweep
+			// commit; if it stops committing, its parity result has quietly
+			// become as weak as the converged shapes' and must not pass
+			// silently.
+			if shape.perturbPixels != 0 && dirtyArm.result.AcceptedSweeps == 0 {
+				t.Error("no sweep was accepted, so BestParams is the input vector " +
+					"and the comparison never sees the optimizer's output")
+			}
+
+			reportPolishFixtureArm(t, "dirty", dirtyArm)
+			reportPolishFixtureArm(t, "full", fullArm)
 
 			if dirtyArm.elapsed > 0 {
 				t.Logf("wall clock: dirty %v, full %v, speedup %.2fx",
@@ -311,7 +532,7 @@ func TestPolishFixtureDirtyVsFull(t *testing.T) {
 					fullArm.elapsed.Seconds()/dirtyArm.elapsed.Seconds())
 			}
 
-			maskedTotal += reportPolishFixtureFractions(t, dirtyArm)
+			scoredTotal += reportPolishFixtureFractions(t, dirtyArm)
 		})
 	}
 
@@ -319,16 +540,98 @@ func TestPolishFixtureDirtyVsFull(t *testing.T) {
 	// proves only that the fallback is exact. At least one shape has to have
 	// scored candidates through the dirty path, or the suite says nothing about
 	// the evaluator it exists to check.
-	if maskedTotal == 0 {
+	if scoredTotal == 0 {
 		t.Error("no shape scored a candidate through the dirty path; the parity result is vacuous")
 	}
 }
 
-func reportPolishFixtureArm(t *testing.T, name string, arm polishFixtureArm, fixture polishFixture) {
+// requirePolishFixtureSelected skips unless -run names this test and nothing
+// else. Turning the dirty-region evaluator off is safe only while no other
+// test in the package is running, and -run is the only lever the test binary
+// gives us over that.
+func requirePolishFixtureSelected(t *testing.T) {
 	t.Helper()
 
-	t.Logf("%s: cost %.12f (gain %.12f), sweeps %d accepted %d, iterations %d, evaluations %d, elapsed %v",
-		name, arm.result.BestCost, fixture.BestCost-arm.result.BestCost,
+	pattern := ""
+	if f := flag.Lookup("test.run"); f != nil {
+		pattern = f.Value.String()
+	}
+
+	if pattern == "" {
+		t.Skipf("flips the package-level dirty-region switch; select it explicitly, "+
+			"for example -run '^%s$'", t.Name())
+	}
+
+	for _, name := range polishFixtureSiblingTests {
+		matched, err := regexp.MatchString(pattern, name)
+		if err != nil {
+			t.Fatalf("-run pattern %q: %v", pattern, err)
+		}
+
+		if matched {
+			t.Skipf("-run %q also selects %s, which reads the dirty-region switch "+
+				"this test turns off; narrow it, for example -run '^%s$'",
+				pattern, name, t.Name())
+		}
+	}
+}
+
+// polishFixtureSiblingTests are the tests in this package that assume the
+// dirty-region evaluator is installed. Any -run pattern that reaches one of
+// them may run it beside the harness, so the harness stands down instead.
+var polishFixtureSiblingTests = []string{
+	"TestPolishDirtySessionMatchesFullCanvas",
+	"TestPolishDirtySessionFallsBackForLargeAffectedRegion",
+	"TestPolishDirtyEnabledByDefault",
+	"TestPolishFixtureActiveSetCoverage",
+}
+
+// comparePolishSweepDecisions requires the two arms to have produced the same
+// sweep outcomes, candidate cost included, to the last bit.
+func comparePolishSweepDecisions(t *testing.T, dirty, full []polishSweepDecision) {
+	t.Helper()
+
+	if len(dirty) == 0 {
+		t.Fatal("no sweep decision was captured, so the pre-rollback comparison is vacuous")
+	}
+
+	if len(dirty) != len(full) {
+		t.Fatalf("sweep count differs: dirty %d, full %d", len(dirty), len(full))
+	}
+
+	proposals := 0
+
+	for i := range dirty {
+		if dirty[i].hasCandidate {
+			proposals++
+		}
+
+		if dirty[i] != full[i] {
+			t.Errorf("sweep decision %d differs:\n  dirty %s\n  full  %s", i, dirty[i], full[i])
+		}
+	}
+
+	// A run in which no sweep ever reached the cost comparison -- every
+	// candidate invalid, say -- would pass the loop above without comparing a
+	// single optimizer output.
+	if proposals == 0 {
+		t.Error("no sweep produced a candidate cost; the two arms were never compared on optimizer output")
+	}
+
+	t.Logf("sweep decisions: %d captured, %d with a candidate cost, all identical across arms",
+		len(dirty), proposals)
+
+	for _, decision := range dirty {
+		t.Logf("  %s", decision)
+	}
+}
+
+func reportPolishFixtureArm(t *testing.T, name string, arm polishFixtureArm) {
+	t.Helper()
+
+	t.Logf("%s: cost %.12f (start %.12f, gain %.12f), sweeps %d accepted %d, "+
+		"iterations %d, evaluations %d, elapsed %v",
+		name, arm.result.BestCost, arm.startCost, arm.startCost-arm.result.BestCost,
 		arm.result.Sweeps, arm.result.AcceptedSweeps,
 		arm.result.Iterations, arm.result.Evaluations,
 		arm.elapsed.Round(time.Millisecond))
@@ -374,6 +677,12 @@ func incumbentUnionFraction(session *polishDirtySession) (float64, float64) {
 // to BenchmarkPolishCandidateCost's single synthetic fraction: the radii here
 // come from a real fit, so the distribution says where a real sweep sits
 // relative to the 5% fallback gate instead of assuming it.
+//
+// It returns the number of evaluations the dirty path actually carried to a
+// cost, not the number that built a mask: a candidate whose mask cleared the
+// preflight and then lost to the 5% gate still fell back to the full canvas,
+// so counting it would let the suite's non-vacuity guard pass on a sweep the
+// evaluator never scored.
 func reportPolishFixtureFractions(t *testing.T, arm polishFixtureArm) int {
 	t.Helper()
 
@@ -381,6 +690,7 @@ func reportPolishFixtureFractions(t *testing.T, arm polishFixtureArm) int {
 		counts     [len(polishDirtyFractionEdges)]int
 		total      int
 		masked     int
+		scored     int
 		fallbacks  int
 		preflights int
 		sum        float64
@@ -390,6 +700,7 @@ func reportPolishFixtureFractions(t *testing.T, arm polishFixtureArm) int {
 	for _, session := range arm.sessions {
 		total += session.evaluations
 		masked += session.maskedEvaluations()
+		scored += session.scoredEvaluations()
 		fallbacks += session.fallbacks
 		preflights += session.preflightFallbacks
 		sum += session.fractionSum
@@ -403,8 +714,8 @@ func reportPolishFixtureFractions(t *testing.T, arm polishFixtureArm) int {
 		}
 	}
 
-	t.Logf("dirty sessions: %d, evaluations %d, masked %d, fallbacks %d (preflight %d)",
-		len(arm.sessions), total, masked, fallbacks, preflights)
+	t.Logf("dirty sessions: %d, evaluations %d, masked %d, scored %d, fallbacks %d (preflight %d)",
+		len(arm.sessions), total, masked, scored, fallbacks, preflights)
 
 	// Every session in a sweep shares one active set, so one reading of the
 	// incumbent union describes the whole sweep.
@@ -438,7 +749,7 @@ func reportPolishFixtureFractions(t *testing.T, arm polishFixtureArm) int {
 		lower = edge
 	}
 
-	return masked
+	return scored
 }
 
 // TestPolishFixtureActiveSetCoverage measures how much canvas a polishing
@@ -477,8 +788,6 @@ func TestPolishFixtureActiveSetCoverage(t *testing.T) {
 			t.Fatal("dirty session not installed")
 		}
 
-		step := max(1, size/5)
-
 		var (
 			windows   int
 			underGate int
@@ -487,7 +796,10 @@ func TestPolishFixtureActiveSetCoverage(t *testing.T) {
 			maximum   float64
 		)
 
-		for start := 0; start+size <= fixture.ActualCircles; start += step {
+		// Every window, not a stride sample: the report quotes these minima,
+		// maxima and under-gate rates as the complete distribution, and a
+		// skipped start could hold any of them.
+		for start := 0; start+size <= fixture.ActualCircles; start++ {
 			session.activeCircles = makeRangeFrom(start, size)
 
 			fraction, _ := incumbentUnionFraction(session)

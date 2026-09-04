@@ -394,8 +394,10 @@ the fixture's draw order, with no optimizer involved:
 | Active set | Windows | Union min | Union mean | Union max | Under the 5% gate |
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 5 | 2,107 | 0.0057% | 5.23% | 100% | 1,669 (79.2%) |
-| 20 | 523 | 0.0538% | 18.58% | 100% | 202 (38.6%) |
-| 100 | 101 | 18.63% | 57.93% | 100% | 0 (0%) |
+| 20 | 2,092 | 0.0538% | 18.40% | 100% | 817 (39.1%) |
+| 100 | 2,012 | 13.46% | 57.61% | 100% | 0 (0%) |
+
+Every contiguous window of the draw order is measured, not a stride sample.
 
 So at the default active-set size most *positional* windows clear the gate
 comfortably, and at 100 none can. The obstacle at the default size is the
@@ -525,15 +527,20 @@ go test -run '^$' -bench BenchmarkPolishStrategyQualityAfterBatchFit -benchtime 
 go test -run '^$' -bench '^BenchmarkPolishCandidateCost$' -benchmem -benchtime 500ms -count 3 ./internal/fit/renderer/
 go test -run '^$' -bench '^BenchmarkPolishDirtyCrossover$' -benchmem -benchtime 150ms -count 1 ./internal/fit/renderer/
 go test -run TestPolishFixtureActiveSetCoverage -v ./internal/fit/renderer/
-CIRCLEFIT_POLISH_FIXTURE=1 go test -run TestPolishFixtureDirtyVsFull -v -timeout 180m ./internal/fit/renderer/
+CIRCLEFIT_POLISH_FIXTURE=1 go test -run '^TestPolishFixtureDirtyVsFull$' -v -timeout 180m ./internal/fit/renderer/
 ```
 
-`TestPolishFixtureDirtyVsFull` runs for about 21 minutes, so it skips unless
-`CIRCLEFIT_POLISH_FIXTURE=1` is set. That opt-in is deliberate rather than a
-`-short` guard: the native-SIMD CI rows run this package without `-short`, and
-the harness outlives Go's default 600 s panic timeout, which fails the whole
-package. `TestPolishFixtureActiveSetCoverage` takes a quarter of a second and
-runs everywhere.
+`TestPolishFixtureDirtyVsFull` skips unless `CIRCLEFIT_POLISH_FIXTURE=1` is set
+*and* `-run` selects it without also selecting a test that expects the
+dirty-region evaluator to be installed. Two guards, for two different reasons.
+The environment variable is deliberate rather than a `-short` guard: the
+native-SIMD CI rows run this package without `-short`, and the harness outlives
+Go's default 600 s panic timeout, which fails the whole package. The `-run`
+guard exists because the harness turns the evaluator off through package-level
+state, which is not safe while the package's parallel tests are running.
+Individual shapes can be selected as subtests, for example
+`-run '^TestPolishFixtureDirtyVsFull$/^window'` for the two fast ones.
+`TestPolishFixtureActiveSetCoverage` takes about a second and runs everywhere.
 
 The quality benchmarks report `final_cost`, `reduction_pct`, and
 `accepted_sweeps` per run rather than per `b.N`, so those columns stay

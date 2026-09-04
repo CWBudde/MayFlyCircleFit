@@ -32,7 +32,7 @@ var polishDirtyEnabled = true
 //nolint:gochecknoglobals // a test-only hook; nil in production, see polishDirtyEnabled.
 var polishDirtySessionHook func(*polishDirtySession)
 
-// polishDirtyFractionEdges are the inclusive upper bounds of the affected-pixel
+// polishDirtyFractionEdges are the exclusive upper bounds of the affected-pixel
 // histogram a session accumulates. They are spaced by decade rather than
 // linearly because a real polishing sweep spends nearly every evaluation far
 // below the 5% fallback gate, where linear buckets would show one column.
@@ -458,7 +458,16 @@ func (s *polishDirtySession) recordAffectedFraction(fraction float64) {
 }
 
 // maskedEvaluations counts the evaluations that built a scanline mask and so
-// contributed to the affected-pixel histogram.
+// contributed to the affected-pixel histogram. It includes the ones the mask
+// gate then rejected, which is what makes it the right denominator for the
+// histogram and the wrong one for "did the dirty path score anything".
 func (s *polishDirtySession) maskedEvaluations() int {
 	return s.evaluations - s.preflightFallbacks
+}
+
+// scoredEvaluations counts the evaluations the dirty path carried all the way
+// to a cost, taking neither the preflight, the mask gate, nor the delta
+// overflow out to the full canvas. Only these say the evaluator was exercised.
+func (s *polishDirtySession) scoredEvaluations() int {
+	return s.evaluations - s.fallbacks
 }
