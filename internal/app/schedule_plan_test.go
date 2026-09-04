@@ -41,6 +41,19 @@ func TestPlannedIterationsCountsTheStageBudget(t *testing.T) {
 			want:  1 * 4 * 500,
 		},
 		{
+			name:  "extend restart count multiplies the stage budget",
+			steps: `[{"type": "extend", "additionalCircles": 8, "restarts": 4}]`,
+			want:  1 * 1 * 200 * 4,
+		},
+		{
+			// Both shapes bound the stage at abs(N) * iters, so a filled cap
+			// plans exactly as a fixed count of the same magnitude does. What
+			// differs is the spend, which a plan cannot know.
+			name:  "extend restart cap plans as its magnitude",
+			steps: `[{"type": "extend", "additionalCircles": 8, "restarts": -4}]`,
+			want:  1 * 1 * 200 * 4,
+		},
+		{
 			// A polish stage runs no batch stage at all, only sweeps.
 			name:  "polish uses the polishing budget",
 			steps: `[{"type": "polish"}]`,

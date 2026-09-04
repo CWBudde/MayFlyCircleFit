@@ -86,6 +86,7 @@ Omitting it means one stage.
 | `additionalCircles` | Required, positive. How many circles this stage appends. |
 | `batchSize` | Overrides the append width, which otherwise equals `additionalCircles`. |
 | `epochs`, `iters`, `popSize` | Budget overrides. |
+| `restarts` | Overrides the stage's restart count, in either shape. Positive is that many independent cold attempts; negative asks for a cap of `abs(N) × iters` and spends it, starting a further attempt whenever a whole one still fits. Extend-only — see below. |
 
 The existing circles are a frozen prefix; an extend optimizes only what it
 appends.
@@ -100,6 +101,21 @@ appends.
 
 An extend override on a polish step, or a polish override on an extend step, is
 an error rather than a silently ignored field.
+
+`restarts` is extend-only for a reason worth stating, because the field name
+does not suggest it. A polish-only stage never runs the base optimizer: the
+worker hands its retained parameters straight to the polishing sweep, and the
+sweep is wrapped in epochs alone. A restart count written on a polish step would
+therefore be accepted and do nothing, so it is refused instead. Restarting a
+polishing sweep is unmeasured and would need the polisher wrapped first; see
+Task 3 in [`PLAN.md`](../PLAN.md).
+
+Both shapes bound the stage at `abs(N) × iters` iterations, so the ITERATIONS
+column of a dry run cannot tell them apart — the stage table names the shape in
+its parameters column instead. What differs is the spend: a fixed count runs
+exactly N attempts whatever each one costs and returns the remainder to nobody,
+which is why the restart-ladder campaign's arms spent only 29-44% of their cap.
+See [`cmaes-restart-ladder-report.md`](cmaes-restart-ladder-report.md).
 
 ## `when`: policy, not mechanism
 
