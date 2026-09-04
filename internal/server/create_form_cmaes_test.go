@@ -300,10 +300,6 @@ func TestCreateFormRejectsInvalidCMAESSettings(t *testing.T) {
 			value:   strconv.Itoa(-app.MaxOptimizerRestarts - 1),
 			message: fmt.Sprintf("or between -1 and -%d to fill a cap of that many times iters", app.MaxOptimizerRestarts),
 		},
-		{
-			name: "restarts of zero", field: fieldOptimizerRestarts, value: "0",
-			message: fmt.Sprintf("Optimizer restarts must be between 1 and %d", app.MaxOptimizerRestarts),
-		},
 	}
 
 	for _, test := range tests {
@@ -358,6 +354,25 @@ func TestCreateFormRoundTripsOptimizerRestarts(t *testing.T) {
 // spent on as many whole cold attempts as fit. The sign is the whole message,
 // so what this pins is that it survives the form rather than being clamped
 // into an ordinary fixed count on the way through.
+// Zero is the unset value on both creation paths. The island's
+// buildCreateJobBody omits a zero from the body and lets ApplyDefaults supply
+// the default, so the no-JavaScript handler has to reach the same job rather
+// than refusing one the island creates -- a divergence the widened input range
+// made reachable in a browser for the first time.
+func TestCreateFormTreatsZeroRestartsAsUnset(t *testing.T) {
+	t.Parallel()
+
+	server, reference := newCreateFormServer(t)
+
+	form := cmaesCreateForm(reference)
+	form.Set(fieldOptimizerRestarts, "0")
+
+	config := createdFormJobConfig(t, server, submitCreateForm(t, server, form))
+	if config.OptimizerRestarts != 1 {
+		t.Fatalf("OptimizerRestarts = %d, want the default 1", config.OptimizerRestarts)
+	}
+}
+
 func TestCreateFormRoundTripsBudgetFillingRestarts(t *testing.T) {
 	t.Parallel()
 

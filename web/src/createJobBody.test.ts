@@ -22,6 +22,7 @@ describe("create job body parity", () => {
 			"cmaes with an emptied initial sigma",
 			"dragonfly with a canvas path",
 			"budget-filling restart cap",
+			"unset restart count",
 		]);
 	});
 

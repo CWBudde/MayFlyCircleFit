@@ -589,13 +589,20 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The magnitude is bounded rather than the value: a negative count is the
+	// budget-filling shape, and abs(N) is both the attempts it guarantees and
+	// the multiplier on the iteration cap.
+	//
+	// Zero is the unset value, not an out-of-range one, and it means here what
+	// it means to JobConfig.Normalize and to the island's buildCreateJobBody:
+	// take the default. Rejecting it would make the two creation paths disagree
+	// on a value the widened range now lets a browser submit -- the island
+	// omits a zero and has the API default it, so the fallback would refuse the
+	// job that enabling JavaScript creates.
 	optimizerRestarts := 1
 	if optimizerRestartsStr != "" {
-		optimizerRestarts, err = strconv.Atoi(optimizerRestartsStr)
-		// The magnitude is bounded rather than the value: a negative count is
-		// the budget-filling shape, and abs(N) is both the attempts it
-		// guarantees and the multiplier on the iteration cap.
-		if magnitude := absInt(optimizerRestarts); err != nil || magnitude < 1 || magnitude > app.MaxOptimizerRestarts {
+		parsed, restartsErr := strconv.Atoi(optimizerRestartsStr)
+		if restartsErr != nil || absInt(parsed) > app.MaxOptimizerRestarts {
 			renderCreateJobError(w, r, fmt.Sprintf(
 				"Optimizer restarts must be between 1 and %d for a fixed count, "+
 					"or between -1 and -%d to fill a cap of that many times iters",
@@ -603,6 +610,10 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 			), formProject)
 
 			return
+		}
+
+		if parsed != 0 {
+			optimizerRestarts = parsed
 		}
 	}
 
