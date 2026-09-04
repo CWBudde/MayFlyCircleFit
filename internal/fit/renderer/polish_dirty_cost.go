@@ -17,6 +17,31 @@ const (
 	polishDirtyPreflightMaxFraction = 0.50
 )
 
+// polishDirtyEnabled gates the dirty-region evaluator. Production always leaves
+// it set; the end-to-end fixture harness clears it to drive the same polishing
+// sweep through the full-canvas evaluator and compare the two.
+//
+//nolint:gochecknoglobals // a test-only switch; a parameter would put it in the production API.
+var polishDirtyEnabled = true
+
+// polishDirtySessionHook, when set, receives every dirty session a polishing
+// sweep creates. It exists so the end-to-end fixture harness can read the
+// affected-pixel telemetry a real sweep accumulates, which is otherwise sealed
+// inside PolishCircleBatchContext. Production leaves it nil.
+//
+//nolint:gochecknoglobals // a test-only hook; nil in production, see polishDirtyEnabled.
+var polishDirtySessionHook func(*polishDirtySession)
+
+// polishDirtyFractionEdges are the inclusive upper bounds of the affected-pixel
+// histogram a session accumulates. They are spaced by decade rather than
+// linearly because a real polishing sweep spends nearly every evaluation far
+// below the 5% fallback gate, where linear buckets would show one column.
+//
+//nolint:gochecknoglobals // an immutable table; an array constant is not expressible in Go.
+var polishDirtyFractionEdges = [...]float64{
+	0.0001, 0.0005, 0.001, 0.005, 0.01, 0.02, 0.05, 0.10, 0.25, 0.50, 1.01,
+}
+
 // polishDirtySession scores a polishing candidate by rebuilding only pixels
 // covered by an active circle before or after the candidate mutation. Pixels
 // outside that union are bit-identical to the incumbent, so their SSD is the
@@ -39,6 +64,14 @@ type polishDirtySession struct {
 	preflightMaxFraction float64
 	evaluations          int
 	fallbacks            int
+
+	// Affected-pixel telemetry. fractionCounts covers only evaluations that
+	// built a scanline mask; a preflight rejection never learns its true
+	// fraction and is counted separately.
+	fractionCounts     [len(polishDirtyFractionEdges)]int
+	fractionSum        float64
+	fractionMax        float64
+	preflightFallbacks int
 }
 
 func newPolishDirtySession(
@@ -49,7 +82,8 @@ func newPolishDirtySession(
 	activeCircles []int,
 ) Renderer {
 	cpu, ok := session.(*CPURenderer)
-	if !ok || !cpu.fastCostSelected || baseline == nil || len(incumbent) != cpu.Dim() {
+	if !polishDirtyEnabled || !ok || !cpu.fastCostSelected ||
+		baseline == nil || len(incumbent) != cpu.Dim() {
 		return session
 	}
 
@@ -71,6 +105,10 @@ func newPolishDirtySession(
 	}
 	dirty.dirty.reset(cpu.height, max(1, 2*len(activeCircles)))
 	dirty.previousDirty.reset(cpu.height, max(1, 2*len(activeCircles)))
+
+	if polishDirtySessionHook != nil {
+		polishDirtySessionHook(dirty)
+	}
 
 	return dirty
 }
@@ -105,6 +143,7 @@ func (s *polishDirtySession) Cost(params []float64) float64 {
 
 		if area > areaLimit {
 			s.fallbacks++
+			s.preflightFallbacks++
 			s.fullRestore = true
 			s.previousDirty.reset(0, 1)
 
@@ -118,6 +157,8 @@ func (s *polishDirtySession) Cost(params []float64) float64 {
 	}
 
 	pixels, _ := s.dirty.metrics()
+	s.recordAffectedFraction(float64(pixels) / float64(s.width*s.height))
+
 	if s.dirty.overflow || float64(pixels) > float64(s.width*s.height)*s.maxFraction {
 		s.fallbacks++
 		s.fullRestore = true
@@ -394,4 +435,30 @@ func (s *polishDirtySession) fallbackRate() float64 {
 	}
 
 	return float64(s.fallbacks) / float64(s.evaluations)
+}
+
+// recordAffectedFraction files one evaluation into the affected-pixel
+// histogram. The mask is already built and measured at the call site, so this
+// costs one comparison loop over eleven edges and no allocation.
+func (s *polishDirtySession) recordAffectedFraction(fraction float64) {
+	s.fractionSum += fraction
+	if fraction > s.fractionMax {
+		s.fractionMax = fraction
+	}
+
+	for i, edge := range polishDirtyFractionEdges {
+		if fraction < edge {
+			s.fractionCounts[i]++
+
+			return
+		}
+	}
+
+	s.fractionCounts[len(polishDirtyFractionEdges)-1]++
+}
+
+// maskedEvaluations counts the evaluations that built a scanline mask and so
+// contributed to the affected-pixel histogram.
+func (s *polishDirtySession) maskedEvaluations() int {
+	return s.evaluations - s.preflightFallbacks
 }

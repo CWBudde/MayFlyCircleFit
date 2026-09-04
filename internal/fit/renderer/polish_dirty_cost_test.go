@@ -234,9 +234,18 @@ func BenchmarkPolishCandidateCost(b *testing.B) {
 // BenchmarkPolishDirtyCrossover keeps the fallback boundary evidence close to
 // the policy. It forces the dirty evaluator past that boundary so a change in
 // circle traversal, compositing, or SSD dispatch can reveal a new crossover.
+//
+// Three arms per radius, because the forced path alone cannot say whether the
+// shipped gates sit in the right place. "dirty-forced" disables both gates and
+// measures the dirty path wherever it is asked to run, which is what locates
+// the crossover. "dirty-shipped" leaves the gates at their production values
+// and so measures what a candidate of that size actually costs, fallback
+// included. "full" is the control. Comparing shipped against full across the
+// radius range is what shows whether dispatch is choosing the cheaper path at
+// each fraction, rather than assuming it from the forced numbers.
 func BenchmarkPolishDirtyCrossover(b *testing.B) {
 	for _, circleCount := range []int{512, 2_111} {
-		for _, radius := range []float64{2, 4, 8, 12, 16} {
+		for _, radius := range []float64{1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24} {
 			b.Run(fmt.Sprintf("circles=%d/radius=%.0f", circleCount, radius), func(b *testing.B) {
 				const width, height, activeCount = 512, 512, 100
 				reference := randomNRGBA(width, height, int64(15_740+circleCount)+int64(radius))
@@ -269,6 +278,15 @@ func BenchmarkPolishDirtyCrossover(b *testing.B) {
 				dirty.preflightMaxFraction = 2 // measure; never fall back
 				affected := polishAffectedFraction(dirty, candidate)
 
+				shippedCPU := NewCPURenderer(reference, circleCount)
+				shippedCPU.SetThreads(1)
+
+				shipped, ok := newPolishDirtySession(
+					shippedCPU, baseline, baselineSSD, incumbent, active).(*polishDirtySession)
+				if !ok {
+					b.Fatal("shipped dirty session not installed")
+				}
+
 				b.Run("dirty-forced", func(b *testing.B) {
 					b.ReportAllocs()
 					b.ResetTimer()
@@ -279,6 +297,18 @@ func BenchmarkPolishDirtyCrossover(b *testing.B) {
 
 					b.StopTimer()
 					b.ReportMetric(100*affected, "affected-%")
+				})
+				b.Run("dirty-shipped", func(b *testing.B) {
+					b.ReportAllocs()
+					b.ResetTimer()
+
+					for range b.N {
+						polishCandidateCostSink = shipped.Cost(candidate)
+					}
+
+					b.StopTimer()
+					b.ReportMetric(100*affected, "affected-%")
+					b.ReportMetric(100*shipped.fallbackRate(), "fallback-%")
 				})
 				b.Run("full", func(b *testing.B) {
 					b.ReportAllocs()
