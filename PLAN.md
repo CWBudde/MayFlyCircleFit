@@ -139,7 +139,18 @@ anything new against its figures.
       plus best-of selection; if epochs already capture most of the gain, tune
       them rather than adding a second mode.
 - [ ] Implement restarts for the base stage on the CLI, the job config, and the
-      schedule format, keeping determinism per seed.
+      schedule format, keeping determinism per seed. **Audited 2026-09-05 while
+      adding the budget-filling shape.** The CLI (`--restarts`), the job config
+      (`app.JobConfig.OptimizerRestarts`, bounded by magnitude), the JSON API,
+      the create form and its React island all carry the count in both shapes,
+      and determinism per seed holds — attempts vary `SeedOffset` on a dimension
+      of their own, and the extra attempts a filling schedule creates continue
+      that sequence. **The schedule format is the half still missing**: its
+      budget overrides are `iters`, `popSize` and `epochs`
+      (`internal/app/schedule.go:134`), there is no `restarts` key, and a staged
+      run therefore inherits the base config's count with no way to vary it per
+      stage. That is what the extend-and-polish box below needs before it can be
+      measured.
 - [ ] Re-measure on a second reference image before changing any default. The
       ladder covered one image, `variant` standard, and the eight-circle base
       stage only.
@@ -169,6 +180,26 @@ anything new against its figures.
       restart-count question is cap-matched but not spend-matched and remains
       unanswered. Closing it needs that shape first — which is a change to the
       restart wrapper, not another campaign on the current one.
+      **That wrapper change is now made, and the box stays open because the
+      campaign it unblocks has not run.** `optimizerRestarts` carries the shape
+      in its sign: a positive count is exactly that many attempts, unchanged and
+      bit-for-bit reproducible, while a negative count asks for the same cap —
+      `abs(N) * iters` iterations — and spends it, starting a further cold
+      attempt whenever a whole one still fits. It never overruns the cap, so it
+      leaves only the last partial slot, a residue bounded by one attempt
+      against the majority a fixed count can waste. Measured 2026-09-05 on a
+      CMA-ES sphere, 4 dimensions, `popSize` 8, `iters` 200, seed 4242, at 32
+      cold restarts: spend rises from 4179 of 6400 iterations (65.3%) to 6211
+      (97.0%), and 32 attempts become 48. That is a scratch reading, not an
+      asserted one; `internal/opt/restart_fill_cmaes_test.go` runs the same
+      shape at 4 restarts and asserts the direction — that the engine converges
+      early, that filling spends strictly more, and that it never overruns the
+      cap — rather than pinning figures a library bump would churn. A filling schedule also synthesizes one restart record
+      per attempt where the engine reports none, because the attempt count is
+      the one thing a run-time-decided schedule does not put in its
+      configuration; a fixed count synthesizes nothing, so no recorded campaign
+      changes what it persists. The next step is a design that names this shape
+      and re-asks the restart-count question spend-matched.
 - [ ] Decide what the IPOP ladder's top rung is worth, now that one has been
       reached. **Ran 2026-08-30 as `-design deep-hunt`** (89 of 99 jobs, 09:07 of
       wall clock, 62.9h of optimizer time), a descriptive record hunt rather than

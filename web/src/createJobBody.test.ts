@@ -21,6 +21,8 @@ describe("create job body parity", () => {
 			"batch run with polishing and early stopping",
 			"cmaes with an emptied initial sigma",
 			"dragonfly with a canvas path",
+			"budget-filling restart cap",
+			"unset restart count",
 		]);
 	});
 
@@ -60,6 +62,20 @@ describe("buildCreateJobBody", () => {
 		expect(buildCreateJobBody({ ...shared, optimizer: "mayfly" })).not.toHaveProperty("covarianceMode");
 		expect(buildCreateJobBody({ ...shared, optimizer: "cmaes" }).covarianceMode).toBe("block");
 		expect(buildCreateJobBody({ ...shared, optimizer: "cmaes" }).activeCMA).toBe(true);
+	});
+
+	// The sign of optimizerRestarts is the request rather than a typo: a
+	// negative count caps the stage at that many times its iteration budget and
+	// fills the cap with cold attempts. The omit-a-zero rule the defaulted
+	// numbers share must not normalize it away, and a zero still has to be
+	// omitted so ApplyDefaults can fill in the single attempt.
+	it("keeps a negative restart count on the wire with its sign", () => {
+		const shared = { refPath: "a.png", circles: "4", iters: "9", popSize: "20", seed: "1" };
+
+		expect(buildCreateJobBody({ ...shared, optimizerRestarts: "-8" }).optimizerRestarts).toBe(-8);
+		expect(buildCreateJobBody({ ...shared, optimizerRestarts: "-1" }).optimizerRestarts).toBe(-1);
+		expect(buildCreateJobBody({ ...shared, optimizerRestarts: "0" })).not.toHaveProperty("optimizerRestarts");
+		expect(buildCreateJobBody({ ...shared, optimizerRestarts: "" })).not.toHaveProperty("optimizerRestarts");
 	});
 
 	it("carries the explicit disable flag when convergence is unchecked", () => {

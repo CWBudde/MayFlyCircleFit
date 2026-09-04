@@ -254,13 +254,20 @@ function restartWarning(values: CreateJobFormValues): string {
 	const strategy = (values.restartStrategy ?? "").trim();
 	if (strategy === "" || strategy === "none") return "";
 
-	// An emptied count is the omitted key, which ApplyDefaults fills with 1 —
-	// the value the strategy requires — so a blank field is not a conflict.
+	// An emptied count is the omitted key, and a zero is dropped from the body
+	// by buildCreateJobBody, so both reach ApplyDefaults, which fills in 1 —
+	// the value the strategy requires. Neither is a conflict.
+	//
+	// Everything else is, negatives included: validateCMAESRestarts tests the
+	// value rather than its magnitude, so a budget-filling cap is refused
+	// beside an IPOP or BIPOP ladder exactly as a fixed count above one is.
 	const restarts = (values.optimizerRestarts ?? "").trim();
-	if (restarts === "" || Number(restarts) === 1) return "";
+	const count = Number(restarts);
+	if (restarts === "" || count === 1 || count === 0) return "";
 
 	return `${strategy.toUpperCase()} schedules its own restarts inside one budget, so Optimizer Restarts must be 1 `
-		+ "and this job will be refused. Set it to 1, or choose the None strategy to keep independent cold attempts.";
+		+ "and this job will be refused. Neither an outer count nor a negative budget-filling cap may wrap that "
+		+ "ladder. Set it to 1, or choose the None strategy to keep independent cold attempts.";
 }
 
 function Text({ form, name, label, help, required }: FieldProps) {
@@ -525,9 +532,9 @@ export function CreateJobIsland({ root }: { root: HTMLElement }) {
 						form={form}
 						name="optimizerRestarts"
 						label="Optimizer Restarts"
-						min={1}
+						min={-limits.maxOptimizerRestarts}
 						max={limits.maxOptimizerRestarts}
-						help="Independent cold attempts per optimizer run, keeping the best. Each attempt spends the full iteration budget, so the run costs this many times as much."
+						help="Independent cold attempts per optimizer run, keeping the best. Each attempt spends the full iteration budget, so the run costs this many times as much. A negative value instead caps the run at that many times the iteration budget and keeps launching cold attempts until no further whole attempt fits, so an attempt that converges early buys another one."
 					/>
 				</div>
 			</fieldset>

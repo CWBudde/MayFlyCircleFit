@@ -372,12 +372,12 @@ templ CreateJobPage(page CreateJobPageData) {
 									id="optimizerRestarts"
 									name="optimizerRestarts"
 									value="1"
-									min="1"
+									min={ attrInt(-page.Limits.MaxOptimizerRestarts) }
 									max={ attrInt(page.Limits.MaxOptimizerRestarts) }
 									style={ createInputStyle }
 								/>
 								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-									Independent cold attempts per optimizer run, keeping the best. Each attempt spends the full iteration budget, so the run costs this many times as much. Leave at 1 when the CMA-ES restart strategy below is IPOP or BIPOP, which schedule their own restarts inside one budget and are refused otherwise.
+									Independent cold attempts per optimizer run, keeping the best. Each attempt spends the full iteration budget, so the run costs this many times as much. A negative value instead caps the run at that many times the iteration budget and keeps launching cold attempts until no further whole attempt fits, so an attempt that converges early buys another one. Leave at 1 when the CMA-ES restart strategy below is IPOP or BIPOP, which schedule their own restarts inside one budget and are refused otherwise.
 								</p>
 							</div>
 						</div>

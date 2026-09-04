@@ -288,3 +288,27 @@ describe("circle rows", () => {
 		expect(colorChannel(2)).toBe(255);
 	});
 });
+
+// The three restart shapes the configuration can express, stated on their own
+// rather than through a fixture job. internal/ui/detail.templ's optimizerSchedule
+// carries the same table in TestOptimizerSchedule; the wording has to
+// match it exactly, because the fallback and the island write this string into
+// the same slot and a reader may see either.
+describe("optimizer schedule", () => {
+	it("drops the restart clause at a single attempt", () => {
+		expect(optimizerSchedule(1, 2, 500)).toBe("2 × 500 iterations");
+		expect(optimizerSchedule(0, 4, 2000)).toBe("4 × 2000 iterations");
+	});
+
+	it("multiplies the schedule by a fixed count", () => {
+		expect(optimizerSchedule(16, 2, 500)).toBe("16 restarts × 2 × 500 iterations");
+	});
+
+	// A negative count is the budget-filling shape. How many attempts fit is
+	// not knowable from the configuration, so the line states the cap and
+	// claims no count.
+	it("states the cap rather than a count for a budget-filling run", () => {
+		expect(optimizerSchedule(-16, 4, 2000)).toBe("restarts filling a cap of 16 × 4 × 2000 iterations");
+		expect(optimizerSchedule(-1, 1, 500)).toBe("restarts filling a cap of 1 × 1 × 500 iterations");
+	});
+});

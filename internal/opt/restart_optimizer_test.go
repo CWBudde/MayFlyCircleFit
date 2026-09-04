@@ -428,3 +428,353 @@ func TestWithRestartsNestedBoundaryErrorAborts(t *testing.T) {
 		t.Fatalf("ran %d underlying runs after the abort, want 2", len(base.seen))
 	}
 }
+
+// restartLifecycle asserts the wrapper's lifecycle interface once, so the
+// filling tests below read as assertions about the schedule rather than about
+// a type conversion.
+func restartLifecycle(t *testing.T, optimizer Optimizer) LifecycleOptimizer {
+	t.Helper()
+
+	lifecycle, ok := optimizer.(LifecycleOptimizer)
+	if !ok {
+		t.Fatalf("optimizer %T is not a LifecycleOptimizer", optimizer)
+	}
+
+	return lifecycle
+}
+
+// budgetedOptimizer reports an iteration budget and consumes a scripted number
+// of iterations per attempt, which is what a filling schedule reads to decide
+// whether another whole attempt still fits. A real cold restart trips its
+// engine's convergence test long before its cap, so the scripted values are
+// deliberately shorter than the budget.
+type budgetedOptimizer struct {
+	perAttempt []int
+	budget     int
+	attempts   int
+}
+
+func (o *budgetedOptimizer) ParallelEvaluationWorkers() int { return 0 }
+func (o *budgetedOptimizer) IterationBudget() int           { return o.budget }
+
+func (o *budgetedOptimizer) Run(_ func([]float64) float64, _, _ []float64, _ int) ([]float64, float64) {
+	result, _ := o.RunContext(context.Background(), Problem{}, RunOptions{})
+	return result.BestParams, result.BestCost
+}
+
+func (o *budgetedOptimizer) RunContext(_ context.Context, _ Problem, _ RunOptions) (Result, error) {
+	index := o.attempts
+	o.attempts++
+
+	iterations := o.budget
+	if index < len(o.perAttempt) {
+		iterations = o.perAttempt[index]
+	}
+
+	// Costs descend so the best attempt is always the last one that ran, which
+	// makes an assertion on the returned cost an assertion on how many
+	// attempts the schedule chose to run.
+	cost := 100 - float64(index)
+
+	return Result{
+		BestParams:  []float64{cost},
+		BestCost:    cost,
+		Iterations:  iterations,
+		Evaluations: iterations * 10,
+		Termination: TerminationConvergence,
+	}, nil
+}
+
+func TestWithRestartsFillsTheCapWhenAttemptsConvergeEarly(t *testing.T) {
+	t.Parallel()
+
+	// Four attempts' worth of cap at 100 iterations each, against attempts
+	// that each converge after 30. A fixed count of four would spend 120 of
+	// 400; the filling shape keeps starting attempts while a whole one fits.
+	base := &budgetedOptimizer{budget: 100, perAttempt: []int{30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30}}
+
+	result, err := restartLifecycle(t, WithRestarts(base, -4)).
+		RunContext(context.Background(), Problem{}, RunOptions{})
+	if err != nil {
+		t.Fatalf("RunContext: %v", err)
+	}
+
+	// Eleven attempts start, the last of them at 300 iterations spent; a
+	// twelfth would begin at 330 and need 100 more than the cap allows. A
+	// fixed count of four would have stopped at 120.
+	if base.attempts != 11 {
+		t.Fatalf("attempts = %d, want 11", base.attempts)
+	}
+
+	if result.Iterations != 330 {
+		t.Fatalf("iterations = %d, want 330", result.Iterations)
+	}
+
+	if result.Iterations > 400 {
+		t.Fatalf("iterations = %d overruns the cap of 400", result.Iterations)
+	}
+}
+
+func TestWithRestartsFillingMatchesAFixedCountWhenAttemptsUseTheirBudget(t *testing.T) {
+	t.Parallel()
+
+	// An attempt that consumes its whole per-run budget leaves nothing to
+	// reclaim, so the filling shape has to reduce to the fixed count exactly.
+	filling := &budgetedOptimizer{budget: 100}
+	fixed := &budgetedOptimizer{budget: 100}
+
+	fillingResult, err := restartLifecycle(t, WithRestarts(filling, -4)).
+		RunContext(context.Background(), Problem{}, RunOptions{})
+	if err != nil {
+		t.Fatalf("filling RunContext: %v", err)
+	}
+
+	fixedResult, err := restartLifecycle(t, WithRestarts(fixed, 4)).
+		RunContext(context.Background(), Problem{}, RunOptions{})
+	if err != nil {
+		t.Fatalf("fixed RunContext: %v", err)
+	}
+
+	if filling.attempts != fixed.attempts {
+		t.Fatalf("attempts: filling %d, fixed %d", filling.attempts, fixed.attempts)
+	}
+
+	if fillingResult.BestCost != fixedResult.BestCost {
+		t.Fatalf("best cost: filling %v, fixed %v", fillingResult.BestCost, fixedResult.BestCost)
+	}
+
+	if fillingResult.Iterations != fixedResult.Iterations {
+		t.Fatalf("iterations: filling %d, fixed %d", fillingResult.Iterations, fixedResult.Iterations)
+	}
+}
+
+func TestWithRestartsFillingReportsTheSameCapAsAFixedCount(t *testing.T) {
+	t.Parallel()
+
+	base := &budgetedOptimizer{budget: 100}
+
+	filling := StageIterationBudget(WithRestarts(base, -4))
+	fixed := StageIterationBudget(WithRestarts(base, 4))
+
+	if filling != fixed {
+		t.Fatalf("IterationBudget: filling %d, fixed %d", filling, fixed)
+	}
+
+	if filling != 400 {
+		t.Fatalf("IterationBudget = %d, want 400", filling)
+	}
+}
+
+func TestWithRestartsFillingKeepsAttemptSeedsDistinct(t *testing.T) {
+	t.Parallel()
+
+	base := &seedRecordingOptimizer{budgetedOptimizer: budgetedOptimizer{
+		budget:     100,
+		perAttempt: []int{25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25},
+	}}
+
+	_, err := restartLifecycle(t, WithRestarts(base, -2)).
+		RunContext(context.Background(), Problem{}, RunOptions{SeedOffset: 5})
+	if err != nil {
+		t.Fatalf("RunContext: %v", err)
+	}
+
+	if len(base.offsets) != 5 {
+		t.Fatalf("attempts = %d, want 5", len(base.offsets))
+	}
+
+	want := []int{5, 6, 7, 8, 9}
+	if !slices.Equal(base.offsets, want) {
+		t.Fatalf("seed offsets = %v, want %v", base.offsets, want)
+	}
+}
+
+// seedRecordingOptimizer is budgetedOptimizer plus the seed offsets it was
+// handed, which is how the independence contract is asserted across the extra
+// attempts a filling schedule creates.
+type seedRecordingOptimizer struct {
+	budgetedOptimizer
+
+	offsets []int
+}
+
+func (o *seedRecordingOptimizer) RunContext(ctx context.Context, problem Problem, options RunOptions) (Result, error) {
+	o.offsets = append(o.offsets, options.SeedOffset)
+	return o.budgetedOptimizer.RunContext(ctx, problem, options)
+}
+
+func TestWithRestartsFillingIsDeterministic(t *testing.T) {
+	t.Parallel()
+
+	run := func() (int, float64) {
+		base := &budgetedOptimizer{budget: 100, perAttempt: []int{40, 10, 70, 20, 90, 10, 30, 60, 10, 10}}
+
+		result, err := restartLifecycle(t, WithRestarts(base, -3)).
+			RunContext(context.Background(), Problem{}, RunOptions{})
+		if err != nil {
+			t.Fatalf("RunContext: %v", err)
+		}
+
+		return base.attempts, result.BestCost
+	}
+
+	firstAttempts, firstCost := run()
+	secondAttempts, secondCost := run()
+
+	if firstAttempts != secondAttempts || firstCost != secondCost {
+		t.Fatalf("run twice: (%d, %v) then (%d, %v)", firstAttempts, firstCost, secondAttempts, secondCost)
+	}
+}
+
+func TestWithRestartsFillingFallsBackToTheCountWithoutAnIterationBudget(t *testing.T) {
+	t.Parallel()
+
+	// recordingOptimizer reports no iteration budget, so the cap is unknowable
+	// and there is nothing to fill. The count is all the wrapper has left.
+	base := &recordingOptimizer{costs: []float64{10, 3, 7}, iterations: 5}
+
+	result, err := restartLifecycle(t, WithRestarts(base, -3)).
+		RunContext(context.Background(), Problem{}, RunOptions{})
+	if err != nil {
+		t.Fatalf("RunContext: %v", err)
+	}
+
+	if len(base.seen) != 3 {
+		t.Fatalf("attempts = %d, want 3", len(base.seen))
+	}
+
+	if result.BestCost != 3 {
+		t.Fatalf("best cost = %v, want 3", result.BestCost)
+	}
+}
+
+func TestWithRestartsFillingStopsWhenAnAttemptConsumesNothing(t *testing.T) {
+	t.Parallel()
+
+	// An attempt that reports no iterations cannot fill a budget, and
+	// continuing would spin forever against a cap that never moves.
+	base := &budgetedOptimizer{budget: 100, perAttempt: []int{30, 0, 30}}
+
+	result, err := restartLifecycle(t, WithRestarts(base, -4)).
+		RunContext(context.Background(), Problem{}, RunOptions{})
+	if err != nil {
+		t.Fatalf("RunContext: %v", err)
+	}
+
+	if base.attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", base.attempts)
+	}
+
+	if result.Iterations != 30 {
+		t.Fatalf("iterations = %d, want 30", result.Iterations)
+	}
+}
+
+func TestWithRestartsFillingRecordsEveryAttemptItRan(t *testing.T) {
+	t.Parallel()
+
+	// A fixed count is recoverable from the configuration; the number of
+	// attempts a filling schedule chose is not, so the records are the only
+	// place it is observable.
+	base := &budgetedOptimizer{budget: 100, perAttempt: []int{30, 30, 30, 30, 30, 30, 30}}
+
+	result, err := restartLifecycle(t, WithRestarts(base, -2)).
+		RunContext(context.Background(), Problem{}, RunOptions{})
+	if err != nil {
+		t.Fatalf("RunContext: %v", err)
+	}
+
+	if len(result.Restarts) != base.attempts {
+		t.Fatalf("records = %d, attempts = %d", len(result.Restarts), base.attempts)
+	}
+
+	for index, run := range result.Restarts {
+		if run.Restart != index {
+			t.Fatalf("record %d numbered %d", index, run.Restart)
+		}
+
+		if run.Iterations != 30 {
+			t.Fatalf("record %d iterations = %d, want 30", index, run.Iterations)
+		}
+
+		if run.Termination != string(TerminationConvergence) {
+			t.Fatalf("record %d termination = %q", index, run.Termination)
+		}
+	}
+}
+
+func TestWithRestartsFixedCountRecordsNothingOfItsOwn(t *testing.T) {
+	t.Parallel()
+
+	// The synthesized records exist for the filling shape alone. Emitting them
+	// for a fixed count would change what every recorded campaign persists.
+	base := &budgetedOptimizer{budget: 100, perAttempt: []int{30, 30, 30}}
+
+	result, err := restartLifecycle(t, WithRestarts(base, 3)).
+		RunContext(context.Background(), Problem{}, RunOptions{})
+	if err != nil {
+		t.Fatalf("RunContext: %v", err)
+	}
+
+	if len(result.Restarts) != 0 {
+		t.Fatalf("records = %d, want none", len(result.Restarts))
+	}
+}
+
+func TestWithRestartsTreatsAMagnitudeOfOneAsNoWrapper(t *testing.T) {
+	t.Parallel()
+
+	// A cap of one attempt's budget has room for exactly one attempt whichever
+	// sign asks for it, so -1 and 1 are the same run and neither needs a
+	// wrapper.
+	base := &budgetedOptimizer{budget: 100}
+
+	if got := WithRestarts(base, -1); got != Optimizer(base) {
+		t.Fatalf("WithRestarts(base, -1) = %T, want the base optimizer", got)
+	}
+
+	if got := WithRestarts(base, 1); got != Optimizer(base) {
+		t.Fatalf("WithRestarts(base, 1) = %T, want the base optimizer", got)
+	}
+}
+
+func TestWithRestartsFillingStopsOnACancelledAttempt(t *testing.T) {
+	t.Parallel()
+
+	// Both shipped engines report cancellation as an error, which returns
+	// before this guard. An engine that reported it as a termination instead
+	// would otherwise have the rest of the cap spent on attempts that cannot
+	// run either.
+	base := &cancellingOptimizer{budgetedOptimizer: budgetedOptimizer{budget: 100, perAttempt: []int{30, 30, 30}}}
+
+	result, err := restartLifecycle(t, WithRestarts(base, -4)).
+		RunContext(context.Background(), Problem{}, RunOptions{})
+	if err != nil {
+		t.Fatalf("RunContext: %v", err)
+	}
+
+	if base.attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", base.attempts)
+	}
+
+	if result.Iterations != 60 {
+		t.Fatalf("iterations = %d, want 60", result.Iterations)
+	}
+}
+
+// cancellingOptimizer reports its second attempt as cancelled without
+// returning an error, which is the shape the filling guard exists for.
+type cancellingOptimizer struct {
+	budgetedOptimizer
+}
+
+func (o *cancellingOptimizer) RunContext(ctx context.Context, problem Problem, options RunOptions) (Result, error) {
+	second := o.attempts == 1
+
+	result, err := o.budgetedOptimizer.RunContext(ctx, problem, options)
+	if second {
+		result.Termination = TerminationCancelled
+	}
+
+	return result, err
+}

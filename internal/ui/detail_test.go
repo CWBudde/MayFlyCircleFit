@@ -486,6 +486,31 @@ func TestProgressPercent(t *testing.T) {
 	}
 }
 
+// TestOptimizerSchedule pins the three shapes the restart count can take. The
+// negative one is the budget-filling cap, where the number of attempts depends
+// on how early each one converges and so is not knowable from the
+// configuration: the line has to describe the cap, not claim a count.
+func TestOptimizerSchedule(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name                    string
+		restarts, epochs, iters int
+		want                    string
+	}{
+		{"single attempt", 1, 4, 2000, "4 × 2000 iterations"},
+		{"unset", 0, 4, 2000, "4 × 2000 iterations"},
+		{"fixed count", 16, 4, 2000, "16 restarts × 4 × 2000 iterations"},
+		{"budget filling", -16, 4, 2000, "restarts filling a cap of 16 × 4 × 2000 iterations"},
+		{"budget filling at one", -1, 1, 500, "restarts filling a cap of 1 × 1 × 500 iterations"},
+	} {
+		if got := optimizerSchedule(test.restarts, test.epochs, test.iters); got != test.want {
+			t.Errorf("%s: optimizerSchedule(%d, %d, %d) = %q, want %q",
+				test.name, test.restarts, test.epochs, test.iters, got, test.want)
+		}
+	}
+}
+
 func makeCircleParameters(count int) []CircleParameter {
 	parameters := make([]CircleParameter, count)
 	for i := range parameters {

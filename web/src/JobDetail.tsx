@@ -374,9 +374,16 @@ export function parameterDescription(circle: CircleParameter): string {
  * optimizerSchedule in internal/ui/detail.templ, and the pair is pinned by
  * job-detail-parity.json: the restart clause is dropped at a single attempt so
  * an ordinary job does not read as though something extra happened to it.
+ *
+ * A negative count is the budget-filling shape: it caps the stage at abs(N)
+ * times the schedule and launches cold attempts until no further whole attempt
+ * fits, so the count of attempts is not knowable from the configuration and is
+ * deliberately not claimed here.
  */
 export function optimizerSchedule(restarts: number, epochs: number, itersPerEpoch: number): string {
 	const schedule = `${epochs} × ${itersPerEpoch} iterations`;
+
+	if (restarts < 0) return `restarts filling a cap of ${-restarts} × ${schedule}`;
 
 	return restarts > 1 ? `${restarts} restarts × ${schedule}` : schedule;
 }

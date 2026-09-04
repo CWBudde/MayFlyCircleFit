@@ -82,7 +82,9 @@ type JobDetail struct {
 	// OptimizerRestarts is the number of independent cold attempts the stage
 	// was run as. It is reported beside the epoch schedule because it
 	// multiplies the same budget, and because a job created from the dashboard
-	// can now set it.
+	// can now set it. A negative value is the budget-filling shape, where the
+	// magnitude caps the iterations rather than fixing the attempt count; the
+	// sign is carried through rather than clamped away so the page can say so.
 	OptimizerRestarts int `json:"optimizerRestarts"`
 	PopSize       int `json:"popSize"`
 	PolishingEnabled bool `json:"polishingEnabled"`
@@ -179,8 +181,17 @@ func statusBorderColor(state string) string {
 // clause is dropped at a single attempt, which is the default and by far the
 // common case, so an ordinary job does not read as though something extra
 // happened to it.
+//
+// A negative count is the budget-filling shape: it caps the stage at abs(N)
+// times the schedule and launches cold attempts until no further whole attempt
+// fits, so the count of attempts is not knowable from the configuration and is
+// deliberately not claimed here.
 func optimizerSchedule(restarts, epochs, itersPerEpoch int) string {
 	schedule := fmt.Sprintf("%d × %d iterations", epochs, itersPerEpoch)
+	if restarts < 0 {
+		return fmt.Sprintf("restarts filling a cap of %d × %s", -restarts, schedule)
+	}
+
 	if restarts > 1 {
 		return fmt.Sprintf("%d restarts × %s", restarts, schedule)
 	}

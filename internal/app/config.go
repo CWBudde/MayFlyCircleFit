@@ -92,6 +92,8 @@ const (
 	ParametersPerCircle = 7
 	MaxOptimizerEpochs  = 32
 	// MaxOptimizerRestarts bounds independent cold attempts per optimizer run.
+	// It bounds the magnitude of JobConfig.OptimizerRestarts, so it caps a
+	// fixed count and the iteration multiplier of a budget-filling cap alike.
 	// Measured returns had not flattened at 32; see
 	// docs/restart-vs-budget-report.md.
 	MaxOptimizerRestarts = 64
@@ -340,11 +342,30 @@ type JobConfig struct {
 	Iters           int     `json:"iters"`
 	PopSize         int     `json:"popSize"`
 	OptimizerEpochs int     `json:"optimizerEpochs,omitempty"`
-	// OptimizerRestarts runs each optimizer invocation as this many
-	// independent cold attempts and keeps the best. It is not
+	// OptimizerRestarts shapes the independent cold attempts an optimizer
+	// invocation makes, and keeps the best of them. It is not
 	// OptimizerEpochs: an epoch reseeds from the best candidate so far and
 	// inherits its basin, while a restart explores from a fresh
 	// population. One preserves the historical single-attempt behaviour.
+	//
+	// The sign selects the shape:
+	//
+	//   - Positive N is a fixed count: exactly N cold attempts, whatever
+	//     each one spends. This is the historical form and is unchanged.
+	//   - Negative N is a budget-filling cap: attempts are launched until
+	//     no further whole attempt fits inside abs(N) * Iters iterations,
+	//     so at least abs(N) of them, and more whenever attempts terminate
+	//     early on convergence or stagnation.
+	//   - Zero is normalized to the default of one.
+	//
+	// The negative form exists because a fixed count cannot express "keep
+	// restarting until the budget is gone": the restart-ladder campaign's
+	// arms spent only 29-44% of their cap, because each cold restart tripped
+	// its convergence tolerance early and the count had no way to reinvest
+	// what was left. See docs/cmaes-restart-ladder-report.md.
+	//
+	// Either way the cap is exactly abs(N) * Iters iterations, so planned
+	// and upper-bound work figures multiply by the magnitude and stay exact.
 	OptimizerRestarts int `json:"optimizerRestarts,omitempty"`
 	// CrossoverCount overrides how many crossover offspring MayFly produces
 	// per iteration. Zero leaves the library's own scaling alone, which is
@@ -789,8 +810,16 @@ func (c *JobConfig) Validate() error {
 		return invalid("optimizerEpochs", fmt.Sprintf("must be between 1 and %d", MaxOptimizerEpochs))
 	}
 
-	if c.OptimizerRestarts < 1 || c.OptimizerRestarts > MaxOptimizerRestarts {
-		return invalid("optimizerRestarts", fmt.Sprintf("must be between 1 and %d", MaxOptimizerRestarts))
+	// The magnitude is bounded rather than the value: a negative count is
+	// the budget-filling shape, and abs(N) is the number of attempts it
+	// guarantees as well as the multiplier on the iteration cap. Zero never
+	// reaches here, because Normalize has already filled it in with the
+	// default.
+	if restarts := absInt(c.OptimizerRestarts); restarts < 1 || restarts > MaxOptimizerRestarts {
+		return invalid("optimizerRestarts", fmt.Sprintf(
+			"must be between 1 and %d for a fixed count, or between -1 and -%d "+
+				"to fill a cap of that many times iters",
+			MaxOptimizerRestarts, MaxOptimizerRestarts))
 	}
 
 	// Zero defers to the library. Two is the smallest count the library
@@ -1036,4 +1065,16 @@ func randomSeed() (int64, error) {
 	}
 
 	return seed, nil
+}
+
+// absInt is the magnitude of an integer. OptimizerRestarts carries its shape in
+// its sign, so every place that bounds it or multiplies planned work by it
+// wants the magnitude rather than the value. math.Abs would round-trip through
+// float64, which is lossy above 2^53 and wrong for a count.
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+
+	return value
 }

@@ -107,7 +107,12 @@ func init() {
 	runCmd.Flags().IntVar(&iters, "iters", 100, "Max iterations")
 	runCmd.Flags().IntVar(&popSize, "pop", 30, "Population size")
 	runCmd.Flags().IntVar(&optimizerEpochs, "optimizer-epochs", 1, "Optimizer runs per stage, reseeding each continuation from the best result")
-	runCmd.Flags().IntVar(&optimizerRestarts, "restarts", 1, "Independent cold attempts per optimizer run, keeping the best. Unlike --optimizer-epochs this does not reseed from the previous best, so each attempt explores from a fresh population")
+	runCmd.Flags().IntVar(&optimizerRestarts, "restarts", 1,
+		"Independent cold attempts per optimizer run, keeping the best. Unlike --optimizer-epochs this "+
+			"does not reseed from the previous best, so each attempt explores from a fresh population. "+
+			"A positive N is exactly N attempts, whatever each spends; a negative N is a cap of abs(N) x "+
+			"--iters iterations instead, launching attempts until no further whole one fits, so at least "+
+			"abs(N) of them and more when attempts stop early")
 	// Advanced MayFly parameters. Each is left to the library unless the
 	// operator names it on the command line, which is why they are read back
 	// through Flags().Changed rather than by value: zero is a meaningful

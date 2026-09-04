@@ -103,12 +103,33 @@ func TestCreateJobPageTakesItsBoundsFromTheLimits(t *testing.T) {
 		`max="66"`,  // batch size, polishing active set
 		`max="77"`,  // polishing sweeps
 		`max="88"`,  // convergence patience
+		`max="44"`,  // optimizer restarts
+		`min="-44"`, // optimizer restarts, the budget-filling half of the range
 		`min="0.0002"`,
 		`max="0.2"`,
 		`min="0.000000001"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the create page does not render %s from its limits", want)
+		}
+	}
+}
+
+// TestCreateJobPageExplainsBudgetFillingRestarts checks the restart field says
+// what its negative half means. The sign is the only thing that distinguishes
+// the two shapes, so a range that admits a negative without a word about it
+// would leave the reader to guess.
+func TestCreateJobPageExplainsBudgetFillingRestarts(t *testing.T) {
+	t.Parallel()
+
+	body := renderCreatePage(t, "", "")
+
+	for _, want := range []string{
+		"A negative value instead caps the run",
+		"Leave at 1 when the CMA-ES restart strategy below is IPOP or BIPOP",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the restart field's help text does not carry %q", want)
 		}
 	}
 }

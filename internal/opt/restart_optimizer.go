@@ -18,17 +18,55 @@ import (
 // keeps a resumed or staged run from discarding work it was handed, while the
 // cold base stage -- where Initial is nil -- gets the fully independent
 // attempts that the measurement in docs/restart-vs-budget-report.md covers.
+//
+// The sign of restarts selects between two shapes that share one cap.
+//
+// A positive count runs exactly that many attempts. Each attempt may stop
+// early on its engine's own convergence or stagnation test, and whatever it
+// leaves unused is simply not spent: the restart-ladder campaign's arms
+// reached only 29-44% of their cap that way, which made every contrast
+// involving them cap-matched but not spend-matched. See
+// docs/cmaes-restart-ladder-report.md.
+//
+// A negative count asks for the same cap -- |restarts| times the base
+// optimizer's own iteration budget -- and spends it instead of merely bounding
+// it, by starting a further attempt whenever a whole one still fits. So it
+// runs at least |restarts| attempts and more when they converge early, which
+// is the shape that report asks a follow-up campaign to measure. It never
+// overruns the cap, and it therefore leaves the last partial slot unused: an
+// attempt is only started if its full budget fits, following the same rule the
+// refill pipeline already applies to a stage. That residue is bounded by one
+// attempt's budget, against the majority of the cap a fixed count can waste.
+//
+// The two shapes coincide wherever attempts consume their whole per-run
+// budget, and |restarts| == 1 is one attempt under either sign, so both return
+// the base optimizer unwrapped.
+//
+// Filling needs the cap, so it needs the base optimizer to report an iteration
+// budget. One that does not -- StageIterationBudget returns zero -- leaves the
+// cap unknowable and the count is all the wrapper has left, so it falls back
+// to running exactly |restarts| attempts.
 func WithRestarts(base Optimizer, restarts int) Optimizer {
-	if base == nil || restarts <= 1 {
+	attempts := restarts
+	if attempts < 0 {
+		attempts = -attempts
+	}
+
+	if base == nil || attempts <= 1 {
 		return base
 	}
 
-	return &restartOptimizer{base: base, restarts: restarts}
+	return &restartOptimizer{base: base, restarts: attempts, fill: restarts < 0}
 }
 
 type restartOptimizer struct {
 	base     Optimizer
 	restarts int
+	// fill spends the cap rather than bounding it, by starting a further
+	// attempt whenever a whole one still fits. It is the negative count
+	// documented on WithRestarts; restarts always holds the magnitude, so the
+	// cap and every plan derived from it are identical under both shapes.
+	fill bool
 }
 
 // ParallelEvaluationWorkers forwards the wrapped optimizer's evaluation width.
@@ -41,6 +79,12 @@ func (o *restartOptimizer) ParallelEvaluationWorkers() int {
 // IterationBudget reports what one Run of every attempt may consume, for the
 // same reason the epoch wrapper does: an attempt is a whole optimizer run, so
 // the attempts multiply the inner cap.
+//
+// It is the same figure under both shapes, because restarts holds the
+// magnitude of the configured count. A fixed count treats it as a bound it may
+// leave unspent and a filling schedule treats it as a budget to consume, but
+// neither exceeds it, so every plan derived from this stays an exact upper
+// bound.
 func (o *restartOptimizer) IterationBudget() int {
 	return o.restarts * StageIterationBudget(o.base)
 }
@@ -57,6 +101,11 @@ func (o *restartOptimizer) Run(eval func([]float64) float64, lower, upper []floa
 		}
 	}
 
+	// The legacy interface reports no work done, so there is nothing for a
+	// filling schedule to measure its cap against. restarts holds the
+	// magnitude, so both shapes fall back to the same fixed number of attempts
+	// here, exactly as one wrapping an optimizer that reports no iteration
+	// budget does.
 	bestParams, bestCost := o.base.Run(eval, lower, upper, dim)
 	for range o.restarts - 1 {
 		params, cost := o.base.Run(eval, lower, upper, dim)
@@ -97,7 +146,29 @@ func (o *restartOptimizer) RunContext(ctx context.Context, problem Problem, opti
 	// to win describes a fraction of the work its totals already claim.
 	var records restartRecords
 
-	for attempt := range o.restarts {
+	// attemptBudget is what one attempt may consume, and the cap is that
+	// multiplied by the count under both shapes. Filling needs the cap, so a
+	// base optimizer that reports no budget leaves nothing to fill against and
+	// the count is all the wrapper has left.
+	attemptBudget := StageIterationBudget(o.base)
+	filling := o.fill && attemptBudget > 0
+	iterationCap := o.restarts * attemptBudget
+
+	for attempt := 0; ; attempt++ {
+		if filling {
+			// Start an attempt only if its whole budget still fits. That keeps
+			// the filling shape inside the cap it shares with the fixed count,
+			// at the price of leaving the last partial slot unused -- the same
+			// rule the refill pipeline applies to a stage, and a residue
+			// bounded by one attempt against the majority of the cap a fixed
+			// count can leave behind.
+			if totalIterations+attemptBudget > iterationCap {
+				break
+			}
+		} else if attempt >= o.restarts {
+			break
+		}
+
 		iterationOffset := totalIterations
 		evaluationOffset := totalEvaluations
 		restartOffset := records.offset()
@@ -172,7 +243,7 @@ func (o *restartOptimizer) RunContext(ctx context.Context, problem Problem, opti
 		totalIterations += result.Iterations
 		totalEvaluations += result.Evaluations
 
-		records.record(result.Restarts)
+		records.record(o.attemptRuns(filling, result))
 
 		if len(result.BestParams) > 0 && result.BestCost < best.BestCost {
 			best = result
@@ -214,6 +285,19 @@ func (o *restartOptimizer) RunContext(ctx context.Context, problem Problem, opti
 		if result.Termination == TerminationTargetCost {
 			return best, nil
 		}
+
+		// Two guards a fixed count does not need, because its bound is the
+		// count itself while a filling schedule's is the work it observes.
+		//
+		// An attempt that consumed nothing cannot bring the cap any closer, so
+		// the schedule would start attempts against an unmoving total forever.
+		// And a cancelled attempt must not fund another one: both engines
+		// report cancellation as an error and are caught above, but an engine
+		// that reports it as a termination instead would otherwise have the
+		// remaining cap spent on attempts that cannot run either.
+		if filling && (result.Iterations <= 0 || result.Termination == TerminationCancelled) {
+			break
+		}
 	}
 
 	// Consuming the requested number of attempts is a completed run even if an
@@ -241,4 +325,32 @@ func reportBoundary(observer EpochObserver, count *int, running *Candidate, boun
 	boundary.Epoch = *count
 
 	return observer(boundary)
+}
+
+// attemptRuns is the restart history one attempt contributes. An engine with a
+// restart schedule of its own reports it, and that record is always preferred.
+//
+// Where it reports none, a filling schedule synthesizes one record per attempt
+// and a fixed count synthesizes nothing. The asymmetry is deliberate: how many
+// attempts a fixed count ran is recoverable from the configuration, while how
+// many a filling schedule chose is decided at run time and observable nowhere
+// else. Emitting these for a fixed count as well would change what every
+// already-recorded campaign persists, for a number those campaigns already
+// know.
+//
+// Population is left zero because the wrapper genuinely does not know it: the
+// attempt's population belongs to the engine that sampled it, which is the
+// same engine that reported no records. Termination carries this package's
+// coarse value rather than an engine string, for the same reason.
+func (o *restartOptimizer) attemptRuns(filling bool, result Result) []RestartRun {
+	if len(result.Restarts) > 0 || !filling {
+		return result.Restarts
+	}
+
+	return []RestartRun{{
+		Iterations:  result.Iterations,
+		Evaluations: result.Evaluations,
+		BestCost:    result.BestCost,
+		Termination: string(result.Termination),
+	}}
 }
