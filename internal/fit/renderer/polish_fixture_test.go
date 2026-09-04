@@ -43,6 +43,13 @@ const (
 	polishFixtureMaxSweeps  = 1
 	polishFixtureEpochs     = 2
 	polishFixtureMaxWorkers = 12
+
+	// polishFixtureEnvVar opts into the long harness. It is a measurement, not
+	// a gate: it runs for about twenty minutes, which is past the point where
+	// Go's default 600 s panic timeout kills the whole package, and the CI
+	// rows that run this package natively do not pass -short. So the skip
+	// cannot rely on -short alone -- it has to be off unless asked for.
+	polishFixtureEnvVar = "CIRCLEFIT_POLISH_FIXTURE"
 )
 
 // polishFixtureShape is one sweep configuration to run through both evaluators.
@@ -243,8 +250,9 @@ func runPolishFixtureArm(
 //
 //nolint:paralleltest // flips the package-level dirty-region switch, which no two tests may do at once
 func TestPolishFixtureDirtyVsFull(t *testing.T) {
-	if testing.Short() {
-		t.Skip("end-to-end polishing sweep on a 2,111-circle fixture; runs for minutes")
+	if testing.Short() || os.Getenv(polishFixtureEnvVar) != "1" {
+		t.Skipf("end-to-end polishing sweep on a 2,111-circle fixture; set %s=1 to run it (~21 min)",
+			polishFixtureEnvVar)
 	}
 
 	fixture := loadPolishFixture(t)

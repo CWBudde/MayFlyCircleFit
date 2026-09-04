@@ -343,7 +343,9 @@ wall clock is not claimed: it fitted a reference the repository does not carry.
       cost it reaches is unchanged. `TestPolishFixtureDirtyVsFull` is the
       harness; it fails if no shape exercises the dirty path, because parity
       over a sweep that fell back on every candidate proves only that the
-      fallback is exact.
+      fallback is exact. It runs for ~21 minutes, so it is opt-in behind
+      `CIRCLEFIT_POLISH_FIXTURE=1` — the native-SIMD gates run this package
+      without `-short`, and the harness outlives Go's 600 s panic timeout.
 - [x] Record per-candidate cost against affected fraction in the report.
       `BenchmarkPolishDirtyCrossover` now sweeps eleven radii and adds a
       shipped-dispatch arm beside the forced one.

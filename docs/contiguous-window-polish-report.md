@@ -524,11 +524,15 @@ go test -run '^$' -bench 'BenchmarkPolishStrategyQuality$' -benchtime 1x -count 
 go test -run '^$' -bench BenchmarkPolishStrategyQualityAfterBatchFit -benchtime 1x -count 3 -timeout 60m ./internal/fit/renderer/
 go test -run '^$' -bench '^BenchmarkPolishCandidateCost$' -benchmem -benchtime 500ms -count 3 ./internal/fit/renderer/
 go test -run '^$' -bench '^BenchmarkPolishDirtyCrossover$' -benchmem -benchtime 150ms -count 1 ./internal/fit/renderer/
-go test -run 'TestPolishFixtureDirtyVsFull|TestPolishFixtureActiveSetCoverage' -v -timeout 180m ./internal/fit/renderer/
+go test -run TestPolishFixtureActiveSetCoverage -v ./internal/fit/renderer/
+CIRCLEFIT_POLISH_FIXTURE=1 go test -run TestPolishFixtureDirtyVsFull -v -timeout 180m ./internal/fit/renderer/
 ```
 
-`TestPolishFixtureDirtyVsFull` runs for about 21 minutes and is skipped under
-`-short`; `TestPolishFixtureActiveSetCoverage` takes a quarter of a second and
+`TestPolishFixtureDirtyVsFull` runs for about 21 minutes, so it skips unless
+`CIRCLEFIT_POLISH_FIXTURE=1` is set. That opt-in is deliberate rather than a
+`-short` guard: the native-SIMD CI rows run this package without `-short`, and
+the harness outlives Go's default 600 s panic timeout, which fails the whole
+package. `TestPolishFixtureActiveSetCoverage` takes a quarter of a second and
 runs everywhere.
 
 The quality benchmarks report `final_cost`, `reduction_pct`, and
