@@ -219,9 +219,13 @@ ones that will change what you propose:
   campaigns failed to. **The registered contrast retains** (`-23.79`,
   `t = -1.70`, `p = 0.117`, 8 of 12 blocks favouring the knob), and unlike the
   covariance campaign's void every block separates, by up to 90.38 in both
-  directions — so it measures the knob rather than the clamp. It is a bound
-  rather than a zero: at a paired sd of 48.43 an effect of the observed size
-  needs roughly four times the blocks. **Nothing in it licenses turning
+  directions — so it measures the knob rather than the clamp. It is absence of
+  evidence rather than a zero: the 95% paired interval runs from -6.98 to
+  +54.56, and at a paired sd of 48.43 an effect of the observed size needs
+  roughly four times the blocks. Its registered spend reading calls the arms
+  matched, but that yardstick is a range from another arm; the unregistered
+  paired test on `finalEvaluations` is `t = 2.66` in 9 of 12 blocks, so treat
+  the spend question as open. **Nothing in it licenses turning
   `activeCMA` on by default**, and the knob stays unmeasured in **full**
   covariance mode, which never clamps and is the other clean place to ask.
   Read it above all for the by-product, which bears directly on the covariance

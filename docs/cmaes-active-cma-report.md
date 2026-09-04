@@ -14,7 +14,7 @@ active adaptation arithmetically inert wherever it binds. Here every block
 differs, in both directions, by up to 90.38. The rung the design was built
 around does what the driver's guard predicted, so the null is a measurement of
 `activeCMA` rather than a measurement of the clamp. See
-[`docs/cmaes-covariance-report.md`](cmaes-covariance-report.md) for the defect
+[`cmaes-covariance-report.md`](cmaes-covariance-report.md) for the defect
 and for the two campaigns this one exists to repair.
 
 ## Conditions
@@ -31,11 +31,16 @@ and for the two campaigns this one exists to repair.
 | seeds | 111013-111024, twelve paired blocks |
 | jobs | 24 of 24 completed; none failed, none cancelled |
 
-**These costs may be compared against any campaign that ran at
-`defaultBudget`**, and that is deliberate. The deep hunt and the covariance
-campaign both ran at 1.94x the shared cap so an IPOP ladder could finish its top
-rung; this design runs no ladder, so it stays at the fixed cap, and staying
-there is what lets its rows be read against the restart ladder's.
+**These costs may be compared against an otherwise matching campaign that ran
+at `defaultBudget`**, and that is deliberate. `defaultBudget` is necessary and
+not sufficient: a comparison also needs the same fixture, the same circle count
+and the same backend, so these rows may be read against the restart ladder's and
+must not be read against the budget-split campaign's, which fits
+`example/Ref-512.png` at twelve circles on the same cap. The deep hunt and the
+covariance campaign are excluded for the other reason — both ran at 1.94x the
+shared cap so an IPOP ladder could finish its top rung. This design runs no
+ladder, so it stays at the fixed cap, and staying there is what lets its rows be
+read against the ladder's.
 
 ## The design
 
@@ -116,11 +121,16 @@ work at this rung; the campaign measured its effect on the fit and found that
 effect indistinguishable from zero at twelve blocks against a paired standard
 deviation of 48.43.
 
-That is a bound, not a proof of absence. An effect of the size the mean suggests
-would need roughly four times the blocks to separate at this variance, so the
-honest reading is that **`activeCMA` is worth at most a modest amount on this
-problem and may be worth nothing**, and that nothing here recommends changing
-its default either way.
+That is absence of evidence, not evidence of absence, and the interval says how
+little the campaign narrows the question: the 95% paired interval on the
+difference runs from **-6.98 to +54.56** cost units. It contains zero, so the
+contrast retains; it also contains a benefit more than twice the point estimate,
+so nothing here bounds the knob to a modest gain. No equivalence margin was
+registered, and a retained two-sided test could not have established one. An
+effect of the size the mean suggests would need roughly four times the blocks to
+separate at this variance. **The honest reading is that this campaign does not
+establish what `activeCMA` is worth on this problem**, and that nothing here
+recommends changing its default either way.
 
 ## The spend reading, which the design registered in advance
 
@@ -137,18 +147,28 @@ fixed count of attempts and consults no evaluation budget: a run that trips
 
 The yardstick was fixed before the campaign ran: the restart ladder measured
 this identical `lambda` 64 schedule at 34.4-39.9% of the cap, a spread of 5.5
-points. **The asymmetry between these arms is 2.63 points, inside that spread**,
-so by the reading registered in advance it is seed noise rather than a finding
-about the knob.
+points. The asymmetry between these arms is 2.63 points, inside that spread, so
+**by the reading registered in advance the design remained cap-matched**.
 
-Two observations sit alongside it and are exploratory. The passive arm spends
-more in nine of twelve blocks, which runs in the direction that active
-adaptation reaches `TolFun` *earlier* and still returns the better cost — its
-mean `scoredEvaluations`, the count at which each job reached its own minimum,
-is 1,281,893 against the passive arm's 1,463,387. And both arms sit above the
-ladder's separable 36.7%, so block covariance appears to spend more per cold
-restart than separable does at the same rung. Neither is registered; read them
-as descriptions of these 24 jobs.
+**That reading is weak, and the committed data contradict the stronger claim it
+invites.** A min-to-max range taken from a different arm is not a test of a
+paired difference, and the paired difference here is not small. Passive minus
+active `finalEvaluations` has a mean of **+170,816** and a standard deviation of
+**222,831** over the same twelve blocks, giving `t = 2.66` against the df = 11
+threshold of 2.20, with the passive arm spending more in **nine of twelve**
+blocks. So the arms do differ in spend by their own paired test. That contrast
+was **not registered** — the design registered the range comparison and
+nothing else — so read it as an exploratory spend signal, not as a result, and
+do not report it as though it had passed a gate. What it rules out is the
+reassurance: the spend asymmetry is *not* established as seed noise.
+
+Two observations sit alongside it and are equally exploratory. The direction of
+the asymmetry runs with active adaptation reaching `TolFun` *earlier* and still
+returning the better cost — its mean `scoredEvaluations`, the count at which
+each job reached its own minimum, is 1,281,893 against the passive arm's
+1,463,387. And both arms sit above the ladder's separable 36.7%, so block
+covariance appears to spend more per cold restart than separable does at the
+same rung. Neither is registered; read them as descriptions of these 24 jobs.
 
 ## Block against separable, at a rung where both are clean
 
@@ -215,12 +235,15 @@ was shaped to try.
 **Established.** `activeCMA` is measurable on the current pin, and the design
 that measures it is the one registered here: block covariance, cold restarts, a
 `lambda` below the clamp threshold for its mode. The knob's effect on the fit is
-a null at twelve blocks, bounded to at most a modest gain by a paired standard
-deviation of 48.43.
+a null at twelve blocks, with a 95% paired interval of -6.98 to +54.56 — an
+interval that contains zero and a benefit twice the point estimate alike, so it
+is absence of evidence and not a bound on the effect.
 
-**Established, and cheap to have.** The spend asymmetry between active and
-passive adaptation is inside the ladder's own seed-noise spread, so the
-cap-matched design did not silently become an unmatched one.
+**Not established, and it was reported as if it were.** That the arms spend the
+same. The registered range comparison says the design stayed cap-matched, but
+the paired difference on `finalEvaluations` is `t = 2.66` in nine of twelve
+blocks. That test is unregistered, so it establishes nothing either; the state
+of the question is open, not settled in either direction.
 
 **Not established.** That `activeCMA` helps. The mean favours it and eight of
 twelve blocks favour it, and neither clears the gate. Do **not** turn it on by

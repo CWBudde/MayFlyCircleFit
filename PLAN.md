@@ -291,14 +291,17 @@ anything new against its figures.
       **The box closes anyway, because what it asked for was a measurement and
       it got one.** Unlike the covariance campaign's void, every block
       separates — by up to 90.38, in both directions — so the null is a
-      measurement of the knob rather than of the clamp. It is a bound and not a
-      zero: at this variance an effect of the observed size needs roughly four
-      times the blocks, so the reading is that `activeCMA` is worth at most a
-      modest amount here and may be worth nothing. Nothing licenses changing
-      its default. The registered spend reading came back inside its own
-      yardstick — 38.96% of the cap active against 41.59% passive, a 2.63-point
-      asymmetry inside the ladder's 5.5-point spread — so the cap-matched
-      design did not silently become an unmatched one.
+      measurement of the knob rather than of the clamp. It is absence of
+      evidence and not a zero: the 95% paired interval runs from -6.98 to
+      +54.56, so it admits a benefit twice the point estimate as readily as
+      none, and at this variance an effect of the observed size needs roughly
+      four times the blocks. Nothing licenses changing its default. The
+      registered spend reading came back inside its own yardstick — 38.96% of
+      the cap active against 41.59% passive, a 2.63-point asymmetry inside the
+      ladder's 5.5-point spread — but that yardstick is a range from another
+      arm, not a paired test, and the paired test on `finalEvaluations` is
+      `t = 2.66` in 9 of 12 blocks. It is unregistered, so the spend question
+      is open rather than answered in either direction.
       Two things carry forward rather than closing. `activeCMA` in **full**
       covariance mode is still unmeasured at every `lambda`, and full never
       clamps, so it is the other clean place to ask this. And the campaign's

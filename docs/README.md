@@ -188,10 +188,14 @@ re-measure instead.
   **The registered contrast retains** (`-23.79`, `t = -1.70`, `p = 0.117`,
   8/12 blocks favouring the knob) — but unlike the covariance campaign's void,
   every block separates, by up to 90.38 in both directions, so this is a
-  measurement of the knob rather than of the clamp. It is a bound and not a
-  zero. Read it for two things beyond that. Its spend reading confirms the
-  cap-matched design stayed matched — 38.96% of the cap against 41.59%, inside
-  the ladder's own 5.5-point spread — and its by-product reads **block against
+  measurement of the knob rather than of the clamp. It is absence of evidence
+  and not a zero — the 95% paired interval runs from -6.98 to +54.56, so it
+  admits a benefit twice the point estimate. Read it for two things beyond
+  that. Its registered spend reading puts the arms inside the ladder's own
+  5.5-point spread — 38.96% of the cap against 41.59% — but that yardstick is
+  a range from another arm rather than a paired test, and the unregistered
+  paired test on `finalEvaluations` is `t = 2.66` in 9/12 blocks, so read the
+  spend question as open. Its by-product reads **block against
   separable at a rung where both modes are clean**, which no other campaign
   can: block leads by only `+7.27` (`t` = 0.54, 7/12) against the `+39.12` the
   covariance campaign registered against a clamped control. Cross-campaign and
