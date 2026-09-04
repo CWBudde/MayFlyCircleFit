@@ -336,15 +336,141 @@ the dispatch does not turn a legal large proposal into a dirty-region worst
 case. Setup storage is retained by the session, so the timed loops perform zero
 allocations per evaluation.
 
-The original 599 s live sweep cannot be re-run from this checkout: the
-2,111-circle checkpoint behind it is no longer present under
-`data/jobs` (the live campaign has advanced), and the checkpoint was not
-committed as a fixture. Consequently this report does **not** claim a new
-equal-budget wall clock or re-assert its 0.000 result. Exact cost parity is
-pinned instead across scattered, clustered, edge-clipped, and radius-growing
-active sets, including consecutive candidates and the full-canvas fallback.
-Preserving the missing checkpoint, or another immutable production fixture, is
-required before closing that final acceptance check.
+### End-to-end confirmation on a committed fixture
+
+**Measured 2026-09-04**, same host and Go version as the section above
+(Ryzen 5 4600H, Linux 7.0.0, Go 1.26.0, `GOMAXPROCS=12`, twelve evaluation
+workers, one render thread per evaluation).
+
+The end-to-end check this section previously deferred is now closed. The
+statement it was deferred on — that the 2,111-circle checkpoint was no longer
+under `data/jobs` — was wrong: four of them were still there, along with a
+2,111-circle vector fitted against the *committed* `example/MayFly-512.png`.
+That last one is now preserved as
+[`../internal/fit/renderer/testdata/polish-fixture-2111.json`](../internal/fit/renderer/testdata/polish-fixture-2111.json)
+(job `228e3715`, cost `85.12514114379883`), so the check runs from a clean
+clone. `TestPolishFixtureDirtyVsFull` drives one complete polishing sweep of
+that vector through both evaluators at an identical budget and seed and
+requires the results to be bit-identical.
+
+**The original 599 s sweep is still not reproduced and is not claimed.** It
+fitted a reference image the repository deliberately does not carry, so the
+fixture is a different vector and the numbers below are a fresh in-repo
+baseline, not a reproduction.
+
+| Shape | Strategy | Active set | Evaluations | Dirty | Full | Ratio | Candidates scored dirty |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `default` | `replacement` | 5 | 37,723 | 2m24.3s | 2m22.7s | 0.99x | 0 of 37,721 |
+| `wide` | `replacement` | 100 | 149,043 | 8m31.7s | 8m5.2s | 0.95x | 0 of 149,041 |
+| `window` | `contiguous-window` | 5 | 18,923 | 0.639 s | 1.103 s | **1.72x** | 18,921 of 18,921 |
+
+Cost and every one of the 14,777 parameters agree to the last bit in all three
+shapes. That is the acceptance result, and the `window` row is what makes it
+mean something: the other two scored no candidate through the dirty path at
+all, so their parity proves only that the fallback is exact.
+
+**The dirty-region evaluator does not engage under the default polishing
+strategy on a real fitted vector.** Both `replacement` shapes fell back on
+100% of candidates, every one of them at the summed-disc-area preflight. This
+is not the preflight being over-conservative: the active set `replacement`
+selected covers 70.56% of the canvas at size 5 and 100% at size 100, so the 5%
+mask gate would have rejected these candidates too. Falling back is the correct
+decision; the evaluator simply has nothing to offer here.
+
+The mechanism is a direct conflict between what merit selection looks for and
+what dirty scoring needs. A converged 2,111-circle fit of a 512x512 reference
+is bimodal — median radius 1.85 px, but 8.3% of circles exceed radius 50 and
+the largest is 498 px. The huge ones are nearly transparent (opacity 0.0039,
+one 8-bit step) and therefore contribute almost nothing, which is exactly what
+makes `replacement` rank them weakest. Three of the five circles it selected
+had radii 312, 153 and 348 px. The selector systematically picks the
+canvas-spanning circles, which is the worst possible case for an evaluator
+whose premise is a small affected region.
+
+`TestPolishFixtureActiveSetCoverage` separates the size effect from the
+selector effect by measuring the union coverage of every contiguous window of
+the fixture's draw order, with no optimizer involved:
+
+| Active set | Windows | Union min | Union mean | Union max | Under the 5% gate |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 5 | 2,107 | 0.0057% | 5.23% | 100% | 1,669 (79.2%) |
+| 20 | 523 | 0.0538% | 18.58% | 100% | 202 (38.6%) |
+| 100 | 101 | 18.63% | 57.93% | 100% | 0 (0%) |
+
+So at the default active-set size most *positional* windows clear the gate
+comfortably, and at 100 none can. The obstacle at the default size is the
+selector, not the size: `contiguous-window` at active set 5 lands at 0.563%
+coverage and scores 18,921 of 18,921 candidates through the dirty path, falling
+back 43 times (0.23%). Its affected fraction has mean 0.669% and maximum
+14.33%, distributed as 92.43% of candidates in [0.5%, 1%), 5.94% in [1%, 2%),
+1.41% in [2%, 5%), 0.20% in [5%, 10%) and 0.03% in [10%, 25%).
+
+Three caveats on the wall clocks. Budgets are matched between the two arms of
+a shape, which is what parity and the ratio need, but not across shapes: each
+row stops on its own early-stopping criterion, so `window` ran 200 iterations
+where `default` ran 400. No sweep was accepted in any shape — the fixture is at
+a local optimum for these budgets — so these figures measure evaluation cost,
+not polishing quality. And the two `replacement` rows execute the same code
+path in both arms, so their 0.99x and 0.95x are not a measurement of anything;
+an earlier run of the same two shapes on the same host returned 0.91x and
+1.26x, which is the size of the thermal drift a 25-minute run on this laptop
+produces.
+
+This also revises a claim made earlier in this section. Dirty scoring does not
+remove the premise that motivated `contiguous-window`; on this evidence it adds
+one. Positional selection is currently the only way to keep an active set small
+enough for the evaluator to run at all, so the two features are complements
+rather than substitutes.
+
+### Per-candidate cost against affected fraction
+
+**Measured 2026-09-04** on the same host. `BenchmarkPolishDirtyCrossover` now
+sweeps eleven radii and runs three arms at each: `dirty-forced` with both gates
+disabled, which locates the crossover; `dirty-shipped` at the production gate
+values, which is what a candidate of that size actually costs; and `full` as
+the control. Milliseconds per candidate, `-benchtime 150ms -count 1`:
+
+| Affected | 512 forced | 512 shipped | 512 full | 2,111 forced | 2,111 shipped | 2,111 full |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.27% | 0.080 | 0.084 | 0.378 | 0.288 | 0.223 | 0.869 |
+| 0.65% | 0.122 | 0.097 | 0.387 | 0.256 | 0.248 | 0.835 |
+| 1.26% | 0.142 | 0.121 | 0.428 | 0.277 | 0.326 | 0.767 |
+| 2.10% | 0.147 | 0.147 | 0.448 | 0.355 | 0.327 | 0.804 |
+| 4.54% | 0.291 | 0.222 | 0.492 | 0.391 | 0.441 | 0.845 |
+| 7.90% | 0.381 | 0.708 | 0.542 | 0.474 | 1.208 | 0.937 |
+| 11.97% | 0.447 | 0.659 | 0.573 | 0.671 | 1.324 | 0.964 |
+| 15.76% | 0.507 | 0.688 | 0.592 | 0.773 | 1.358 | 1.055 |
+| 24.65% | 0.733 | 0.707 | 0.698 | 0.837 | 1.173 | 1.184 |
+| 34.97% | 1.042 | 0.798 | 0.892 | 1.258 | 1.294 | 1.307 |
+| 46.31% | 1.200 | 1.013 | 1.010 | 1.278 | 1.472 | 1.388 |
+
+Dispatch behaves as designed: the shipped arm falls back on 100% of candidates
+from 7.90% upward and on none below, which is the 5% constant doing its job.
+
+Two readings follow, and they point the same way. The forced arm puts the
+crossover far higher than the 7.90%-to-15.76% window this report recorded in
+2026-08: at 512 circles it is somewhere around 16-25%, and at 2,111 circles the
+dirty path is still cheaper than a full render at 46.31% affected, the largest
+fraction measured. And a fallback is not free — it builds the scanline mask
+before discarding it — so `dirty-shipped` above the gate costs up to 29% more
+than going straight to `full` (1.208 against 0.937 ms at 7.90%, 2,111 circles).
+
+**So the 5% gate is measurably too low at 2,111 circles**, which is the size
+the evaluator exists for: candidates between 5% and roughly 46% affected pay
+full cost plus mask-building overhead where the dirty path would have been
+cheaper. This is a lead, not a change. Raising the constant is a tuning
+decision with its own crossover to establish per canvas size and circle count,
+and nothing here measures what it would be worth on a real sweep — the sweep
+that *does* engage the evaluator (`window`, above) has a mean affected fraction
+of 0.669% and would be untouched by it.
+
+One caution about absolute numbers. These re-measurements do not reproduce the
+2026-08-21 table above on the same host with the same commands: full-canvas
+scoring at 2,111 circles is 0.762 ms here against 2.523 ms then, and the whole
+suite is roughly 2.5-3x faster. Something outside these benchmarks moved —
+machine state is the likeliest candidate, and no attempt was made to identify
+it. Compare ratios within a single run, never a figure from one of these two
+tables against the other.
 
 Dirty scoring also changes the prefix-aware selection tradeoff (Task 13 of
 [`../PLAN.md`](../PLAN.md)). Prefix-aware active-set
@@ -398,7 +524,12 @@ go test -run '^$' -bench 'BenchmarkPolishStrategyQuality$' -benchtime 1x -count 
 go test -run '^$' -bench BenchmarkPolishStrategyQualityAfterBatchFit -benchtime 1x -count 3 -timeout 60m ./internal/fit/renderer/
 go test -run '^$' -bench '^BenchmarkPolishCandidateCost$' -benchmem -benchtime 500ms -count 3 ./internal/fit/renderer/
 go test -run '^$' -bench '^BenchmarkPolishDirtyCrossover$' -benchmem -benchtime 150ms -count 1 ./internal/fit/renderer/
+go test -run 'TestPolishFixtureDirtyVsFull|TestPolishFixtureActiveSetCoverage' -v -timeout 180m ./internal/fit/renderer/
 ```
+
+`TestPolishFixtureDirtyVsFull` runs for about 21 minutes and is skipped under
+`-short`; `TestPolishFixtureActiveSetCoverage` takes a quarter of a second and
+runs everywhere.
 
 The quality benchmarks report `final_cost`, `reduction_pct`, and
 `accepted_sweeps` per run rather than per `b.N`, so those columns stay
