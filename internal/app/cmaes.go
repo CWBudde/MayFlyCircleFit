@@ -138,8 +138,15 @@ func (c *JobConfig) validateCMAESRestarts() error {
 		return invalid("restartStrategy", "must be one of none, ipop, bipop")
 	}
 
+	// Exactly one, and deliberately not a magnitude test: an IPOP or BIPOP
+	// ladder already restarts on its own schedule, so neither an outer fixed
+	// count nor a budget-filling wrapper around it is a shape this repository
+	// supports. Negative values are refused here for the same reason positive
+	// ones are.
 	if strategy != CMAESRestartNone && c.OptimizerRestarts != 1 {
-		return invalid("optimizerRestarts", "must be 1 when CMA-ES restartStrategy is ipop or bipop")
+		return invalid("optimizerRestarts",
+			"must be 1 when CMA-ES restartStrategy is ipop or bipop; that ladder restarts on its own, "+
+				"so neither an outer restart count nor a budget-filling cap may wrap it")
 	}
 
 	return nil

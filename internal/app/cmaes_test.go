@@ -76,6 +76,17 @@ func TestCMAESValidation(t *testing.T) {
 			c.RestartStrategy = app.CMAESRestartIPOP
 			c.OptimizerRestarts = 2
 		}},
+		// A budget-filling cap around a ladder that already restarts is refused
+		// for the same reason a fixed outer count is; the guard tests the value
+		// and not its magnitude on purpose.
+		{name: "filling cap around ipop", field: "optimizerRestarts", apply: func(c *app.JobConfig) {
+			c.RestartStrategy = app.CMAESRestartIPOP
+			c.OptimizerRestarts = -4
+		}},
+		{name: "filling cap around bipop", field: "optimizerRestarts", apply: func(c *app.JobConfig) {
+			c.RestartStrategy = app.CMAESRestartBIPOP
+			c.OptimizerRestarts = -1
+		}},
 		{name: "dense dimensions", field: fieldCovarianceMode, apply: func(c *app.JobConfig) {
 			c.Circles = app.MaxCMAESFullDimensions/app.ParametersPerCircle + 1
 			c.BatchSize = c.Circles

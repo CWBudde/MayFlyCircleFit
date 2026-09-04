@@ -286,7 +286,7 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 
 	optimizer = opt.WithRestarts(
 		opt.WithEpochs(optimizer, max(checkpoint.Config.OptimizerEpochs, 1)),
-		max(checkpoint.Config.OptimizerRestarts, 1),
+		checkpointRestarts(checkpoint.Config.OptimizerRestarts),
 	)
 
 	lifecycle, ok := optimizer.(opt.LifecycleOptimizer)
@@ -398,6 +398,23 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 	}
 
 	return nil
+}
+
+// checkpointRestarts is the restart shape a checkpoint resumes with.
+//
+// The sign carries meaning, so this is not max(restarts, 1): a negative count
+// is the budget-filling shape — a cap of abs(N) times iters, spent on as many
+// whole cold attempts as fit inside it — and clamping it to one would resume a
+// different search than the one that was interrupted, silently and with no way
+// for the operator to see it. Only zero normalizes, because zero is what every
+// checkpoint written before the field existed carries, and those resume as the
+// historical single attempt.
+func checkpointRestarts(restarts int) int {
+	if restarts == 0 {
+		return 1
+	}
+
+	return restarts
 }
 
 // configureCPURendererForResume applies a checkpoint's parallelism settings and

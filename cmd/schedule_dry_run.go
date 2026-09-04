@@ -136,11 +136,33 @@ func stagePlanParameters(stage app.ScheduleStage) string {
 			config.PolishingStrategy, config.PolishingActiveSetSize, config.PolishingMaxSweeps,
 			config.PolishingEpochs, config.PolishingIters, config.PolishingPopSize)
 	case app.ScheduleStageExtend:
-		return fmt.Sprintf("+%d circles, batch %d, %d × %d iters, pop %d",
-			stage.AdditionalCircles, config.BatchSize, config.OptimizerEpochs, config.Iters, config.PopSize)
+		return fmt.Sprintf("+%d circles, batch %d, %d × %d iters, pop %d%s",
+			stage.AdditionalCircles, config.BatchSize, config.OptimizerEpochs, config.Iters, config.PopSize,
+			stagePlanRestarts(config))
 	default:
-		return fmt.Sprintf("%s, batch %d, %d × %d iters, pop %d",
-			config.Mode, config.BatchSize, config.OptimizerEpochs, config.Iters, config.PopSize)
+		return fmt.Sprintf("%s, batch %d, %d × %d iters, pop %d%s",
+			config.Mode, config.BatchSize, config.OptimizerEpochs, config.Iters, config.PopSize,
+			stagePlanRestarts(config))
+	}
+}
+
+// stagePlanRestarts names the stage's restart shape, and says nothing when the
+// stage takes the historical single attempt — which is every document written
+// so far, so their plans print exactly as before.
+//
+// It is worth naming because the ITERATIONS column cannot distinguish the two
+// shapes: both bound the stage at abs(N) times iters, so a fixed count of 8 and
+// a cap filled by 8 or more attempts print the same figure. What differs is how
+// the budget is spent — a fixed count runs exactly N attempts whatever each one
+// costs, while a cap keeps launching whole attempts until none fits.
+func stagePlanRestarts(config app.JobConfig) string {
+	switch restarts := config.OptimizerRestarts; {
+	case restarts < 0:
+		return fmt.Sprintf(", restarts filling %d × iters", -restarts)
+	case restarts > 1:
+		return fmt.Sprintf(", %d restarts", restarts)
+	default:
+		return ""
 	}
 }
 

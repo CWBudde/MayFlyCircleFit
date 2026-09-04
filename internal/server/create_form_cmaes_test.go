@@ -295,6 +295,15 @@ func TestCreateFormRejectsInvalidCMAESSettings(t *testing.T) {
 			value:   strconv.Itoa(app.MaxOptimizerRestarts + 1),
 			message: fmt.Sprintf("Optimizer restarts must be between 1 and %d", app.MaxOptimizerRestarts),
 		},
+		{
+			name: "budget-filling cap below the form's own bound", field: fieldOptimizerRestarts,
+			value:   strconv.Itoa(-app.MaxOptimizerRestarts - 1),
+			message: fmt.Sprintf("or between -1 and -%d to fill a cap of that many times iters", app.MaxOptimizerRestarts),
+		},
+		{
+			name: "restarts of zero", field: fieldOptimizerRestarts, value: "0",
+			message: fmt.Sprintf("Optimizer restarts must be between 1 and %d", app.MaxOptimizerRestarts),
+		},
 	}
 
 	for _, test := range tests {
@@ -342,6 +351,42 @@ func TestCreateFormRoundTripsOptimizerRestarts(t *testing.T) {
 	if config.ResolvedCMAESRestartStrategy() != app.CMAESRestartNone {
 		t.Fatalf("restart strategy = %q, want none", config.ResolvedCMAESRestartStrategy())
 	}
+}
+
+// TestCreateFormRoundTripsBudgetFillingRestarts covers the other shape the
+// input accepts: a negative count, which is a cap of that many times iters
+// spent on as many whole cold attempts as fit. The sign is the whole message,
+// so what this pins is that it survives the form rather than being clamped
+// into an ordinary fixed count on the way through.
+func TestCreateFormRoundTripsBudgetFillingRestarts(t *testing.T) {
+	t.Parallel()
+
+	server, reference := newCreateFormServer(t)
+
+	form := cmaesCreateForm(reference)
+	form.Set(fieldOptimizerRestarts, "-8")
+
+	config := createdFormJobConfig(t, server, submitCreateForm(t, server, form))
+	if config.OptimizerRestarts != -8 {
+		t.Fatalf("OptimizerRestarts = %d, want -8", config.OptimizerRestarts)
+	}
+
+	// The planned figure is what the progress bar divides by, so a negative
+	// count has to plan the magnitude rather than a negative or zero total.
+	planned := plannedOptimizerIterations(config)
+	want := plannedOptimizerIterations(withOptimizerRestarts(config, 8))
+
+	if planned != want {
+		t.Fatalf("plannedOptimizerIterations() = %d for -8, want %d, the figure for 8", planned, want)
+	}
+}
+
+// withOptimizerRestarts is the one-field copy the planned-iterations comparison
+// above needs; JobConfig is a value type, so this cannot disturb the original.
+func withOptimizerRestarts(config app.JobConfig, restarts int) app.JobConfig {
+	config.OptimizerRestarts = restarts
+
+	return config
 }
 
 // TestCreateFormRefusesRestartsBesideAnInternalSchedule is what the form's own
@@ -395,6 +440,9 @@ func TestCreatePageExposesTheRestartControls(t *testing.T) {
 	for _, marker := range []string{
 		`name="` + fieldOptimizerRestarts + `"`,
 		fmt.Sprintf(`max=%q`, strconv.Itoa(app.MaxOptimizerRestarts)),
+		// The negative half of the range has to be enterable, or the
+		// budget-filling shape is reachable only through the API.
+		fmt.Sprintf(`min=%q`, strconv.Itoa(-app.MaxOptimizerRestarts)),
 	} {
 		if !containsString(body, marker) {
 			t.Fatalf("rendered create page does not carry %q", marker)

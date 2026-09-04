@@ -243,7 +243,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		MaxIters:                 maxIterations,
 		ItersPerEpoch:            job.Config.Iters,
 		OptimizerEpochs:          max(job.Config.OptimizerEpochs, 1),
-		OptimizerRestarts:        max(job.Config.OptimizerRestarts, 1),
+		OptimizerRestarts:        normalizedOptimizerRestarts(job.Config.OptimizerRestarts),
 		PopSize:                  job.Config.PopSize,
 		PolishingEnabled:         job.Config.PolishingEnabled,
 		PolishingOnly:            job.Config.PolishingOnly,
@@ -289,8 +289,12 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 
 func plannedOptimizerIterations(config JobConfig) int {
 	// Restarts multiply the work exactly as epochs do; a progress bar that
-	// ignored them would sit at the wrong fraction for the whole run.
-	perStage := config.Iters * max(config.OptimizerEpochs, 1) * max(config.OptimizerRestarts, 1)
+	// ignored them would sit at the wrong fraction for the whole run. The
+	// magnitude is what multiplies: a negative count is the budget-filling
+	// shape, whose cap is abs(N) x iters, so the planned figure is the same
+	// either way. Taking the value itself would leave a negative or zero
+	// planned total and a progress bar that never fills.
+	perStage := config.Iters * max(config.OptimizerEpochs, 1) * max(absInt(config.OptimizerRestarts), 1)
 	stages := 1
 
 	switch config.Mode {
@@ -312,6 +316,29 @@ func plannedOptimizerIterations(config JobConfig) int {
 	}
 
 	return total
+}
+
+// absInt is the magnitude of an integer. OptimizerRestarts carries its shape in
+// its sign, so every place that bounds it or multiplies planned work by it
+// wants the magnitude rather than the value.
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+
+	return value
+}
+
+// normalizedOptimizerRestarts fills an unset count in with the default of one
+// attempt while preserving a negative one. Clamping the negative away here
+// would make a budget-filling job report itself on the detail page as an
+// ordinary single attempt.
+func normalizedOptimizerRestarts(restarts int) int {
+	if restarts == 0 {
+		return 1
+	}
+
+	return restarts
 }
 
 // The results are the image's width and height in pixels and its size in bytes.
@@ -565,9 +592,14 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	optimizerRestarts := 1
 	if optimizerRestartsStr != "" {
 		optimizerRestarts, err = strconv.Atoi(optimizerRestartsStr)
-		if err != nil || optimizerRestarts < 1 || optimizerRestarts > app.MaxOptimizerRestarts {
+		// The magnitude is bounded rather than the value: a negative count is
+		// the budget-filling shape, and abs(N) is both the attempts it
+		// guarantees and the multiplier on the iteration cap.
+		if magnitude := absInt(optimizerRestarts); err != nil || magnitude < 1 || magnitude > app.MaxOptimizerRestarts {
 			renderCreateJobError(w, r, fmt.Sprintf(
-				"Optimizer restarts must be between 1 and %d", app.MaxOptimizerRestarts,
+				"Optimizer restarts must be between 1 and %d for a fixed count, "+
+					"or between -1 and -%d to fill a cap of that many times iters",
+				app.MaxOptimizerRestarts, app.MaxOptimizerRestarts,
 			), formProject)
 
 			return

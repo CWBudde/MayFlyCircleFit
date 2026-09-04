@@ -358,6 +358,34 @@ Rendering-side invariants live in
   handed. Attempts vary the run seed on a dimension of their own, so epochs
   nested inside an attempt cannot alias onto another attempt's seed, and a
   restarted run stays reproducible for a fixed seed.
+- **The sign of `optimizerRestarts` selects between two shapes that share one
+  cap.** A positive count runs exactly that many attempts, and whatever an
+  attempt leaves unused when its engine converges early is simply not spent —
+  the restart-ladder campaign's arms reached only 29-44% of their cap that way
+  (`docs/cmaes-restart-ladder-report.md`). A negative count asks for the same
+  cap, `abs(optimizerRestarts) * iters` iterations, and spends it rather than
+  merely bounding it: it starts a further cold attempt whenever a whole one
+  still fits, so it runs at least that many attempts and more when they
+  converge early. It never overruns the cap, and so leaves the last partial
+  slot unused — a residue bounded by one attempt's budget. The two shapes
+  coincide wherever attempts consume their whole per-run budget, and a
+  magnitude of one is a single attempt under either sign. Because the wrapper
+  holds the magnitude, `IterationBudget` and every planned figure derived from
+  it — the dry run's total, the dashboard's projection, the refill accounting —
+  are the same exact upper bound under both shapes.
+- **A filling schedule records the attempts it chose; a fixed count does not.**
+  How many attempts a fixed count ran is recoverable from the configuration,
+  so the wrapper adds nothing to what the engine reported. How many a filling
+  schedule ran is decided at run time and observable nowhere else, so where the
+  engine reports no restart records of its own the wrapper synthesizes one per
+  attempt, carrying that attempt's iterations, evaluations, best cost and
+  coarse termination. Its `population` is zero, because the population belongs
+  to the engine that declined to report it. An engine with a restart schedule
+  of its own — CMA-ES under IPOP or BIPOP — always has its own records
+  preferred, and those two forms cannot be combined with an outer count anyway.
+- **Filling needs a cap, so it needs the base optimizer to report one.** An
+  optimizer that reports no iteration budget leaves the cap unknowable, and a
+  negative count then falls back to running exactly that many attempts.
 - **CMA-ES has two explicit, mutually exclusive restart forms.** With
   `restartStrategy: "none"`, `optimizerRestarts` retains the consumer's fixed
   number of independent cold attempts. With `ipop` or `bipop`,
