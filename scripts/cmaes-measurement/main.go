@@ -727,7 +727,7 @@ func campaignDesign(name string, budget int) (design, error) {
 		// mode.
 		return design{
 			name: name, baseline: full[0].name,
-			blocks: covarianceCleanBlocks, seedBase: activeCMAFullSeedBase, arms: full,
+			blocks: activeCMAFullBlocks, seedBase: activeCMAFullSeedBase, arms: full,
 			reference: recordReference, circles: defaultCircles,
 			contrasts: []plannedContrast{
 				{control: full[0].name, candidate: full[1].name, primary: true},
@@ -1510,7 +1510,8 @@ func hansenWeights(lambda int) ([]float64, float64, float64) {
 // boolean, which is why a design may test it directly rather than inferring it
 // from a measured mass.
 //
-// field names. Renaming them breaks the correspondence these functions exist to
+// The parameter and local names are Hansen's notation and go-cma-es's own field
+// names. Renaming them breaks the correspondence these functions exist to
 // preserve, which is the only thing that makes them reviewable.
 //
 //nolint:varnamelen // c1 and cmu are Hansen's notation and go-cma-es's own
@@ -1760,6 +1761,20 @@ func covarianceCleanArms(budget int) ([]arm, error) {
 
 	return arms, nil
 }
+
+// activeCMAFullBlocks is this design's own count, not a reference to the
+// covariance-clean campaign's, even though the two are equal today.
+//
+// They are equal for the same external reason -- twenty-four is what a campaign
+// window affords at the fixed cap -- and for different internal ones, so a
+// shared constant would make one design's power argument silently govern the
+// other's. This one's argument is its own: docs/cmaes-active-cma-report.md put
+// the cost of its twelve-block null at roughly four times the blocks, which is
+// forty-eight, and this campaign runs half that while applying a treatment 3.8x
+// larger at the same rung. Whether the larger treatment makes up the difference
+// is exactly what it measures, so the count is a bet the report has to state
+// rather than a number inherited from elsewhere.
+const activeCMAFullBlocks = 24
 
 // activeCMAFullSeedBase is a fresh range. The full-mode campaign repeats no
 // committed cell, so it gets no bit-for-bit replication check, and it asks its

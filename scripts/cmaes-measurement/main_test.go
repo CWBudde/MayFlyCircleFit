@@ -2222,6 +2222,14 @@ func TestActiveCMAFullCampaignAsksWhereTheTreatmentIsLargest(t *testing.T) {
 		t.Fatalf("active-cma-full arms = %d, want 2", len(plan.arms))
 	}
 
+	// Its own block count, not the covariance-clean campaign's. The two are
+	// equal today for the same external reason and different internal ones, so
+	// a shared constant would let one design's power argument govern the
+	// other's the next time either is resized.
+	if plan.blocks != activeCMAFullBlocks {
+		t.Errorf("active-cma-full blocks = %d, want %d", plan.blocks, activeCMAFullBlocks)
+	}
+
 	for _, current := range plan.arms {
 		if current.covariance != "full" {
 			t.Errorf("arm %s runs %q covariance; the campaign exists to ask in full mode",
