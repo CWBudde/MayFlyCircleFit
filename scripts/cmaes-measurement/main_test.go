@@ -57,6 +57,146 @@ func TestPairedImprovement(t *testing.T) {
 	}
 }
 
+// The four arms the interaction fixtures below pair. They are named for their
+// role in the difference rather than for any real campaign's arm: what the
+// arithmetic does must not depend on which campaign registered it.
+const (
+	outerControl   = "outer-control"
+	outerCandidate = "outer-candidate"
+	innerControl   = "inner-control"
+	innerCandidate = "inner-candidate"
+)
+
+// scoredBlocks is a contrast's side of a synthetic result set: one row per
+// block, in the order given, so a test can state the costs it means.
+func scoredBlocks(scores ...float64) []resultRow {
+	rows := make([]resultRow, len(scores))
+	for index, score := range scores {
+		rows[index] = resultRow{manifestRow: manifestRow{Block: index + 1}, Score: score}
+	}
+
+	return rows
+}
+
+// TestInteractionDifferencesSubtractsTheContrastsBlockByBlock checks the
+// arithmetic the covariance-clean campaign's explanatory claim rests on. The
+// outer contrast gains 5, 5, 5 and the inner gains 1, 2, 3, so the interaction
+// is 4, 3, 2 -- and every one of those is a within-block figure, which is the
+// whole reason it can be tested rather than eyeballed.
+func TestInteractionDifferencesSubtractsTheContrastsBlockByBlock(t *testing.T) {
+	t.Parallel()
+
+	byArm := map[string][]resultRow{
+		outerControl:   scoredBlocks(100, 100, 100),
+		outerCandidate: scoredBlocks(95, 95, 95),
+		innerControl:   scoredBlocks(50, 50, 50),
+		innerCandidate: scoredBlocks(49, 48, 47),
+	}
+
+	differences, err := interactionDifferences(byArm, plannedInteraction{
+		outer: plannedContrast{control: outerControl, candidate: outerCandidate},
+		inner: plannedContrast{control: innerControl, candidate: innerCandidate},
+	})
+	if err != nil {
+		t.Fatalf("interactionDifferences: %v", err)
+	}
+
+	if want := []float64{4, 3, 2}; !slices.Equal(differences, want) {
+		t.Fatalf("differences = %v, want %v", differences, want)
+	}
+
+	mean, deviation, statistic, wins := pairedStatistics(differences)
+	if mean != 3 || deviation != 1 || wins != 3 || math.Abs(statistic-5.196152422706632) > 1e-12 {
+		t.Fatalf("pairedStatistics() = (%v, %v, %v, %d)", mean, deviation, statistic, wins)
+	}
+}
+
+// TestInteractionDifferencesRefusesBlocksThatDoNotLineUp pins the failure the
+// subtraction must not paper over. Pairing a contrast measured on three blocks
+// against one measured on two would silently compare different seeds, so it is
+// an error rather than a shorter slice.
+func TestInteractionDifferencesRefusesBlocksThatDoNotLineUp(t *testing.T) {
+	t.Parallel()
+
+	byArm := map[string][]resultRow{
+		outerControl:   scoredBlocks(100, 100, 100),
+		outerCandidate: scoredBlocks(95, 95, 95),
+		innerControl:   scoredBlocks(50, 50),
+		innerCandidate: scoredBlocks(49, 48),
+	}
+
+	_, err := interactionDifferences(byArm, plannedInteraction{
+		outer: plannedContrast{control: outerControl, candidate: outerCandidate},
+		inner: plannedContrast{control: innerControl, candidate: innerCandidate},
+	})
+	if err == nil {
+		t.Fatal("interactionDifferences accepted contrasts measured on different blocks")
+	}
+}
+
+// TestRegisteredInteractionJoinsTheHolmFamily is the point of registering the
+// difference rather than describing it: it has to be corrected alongside the
+// contrasts it is built from, not reported beside them for free.
+func TestRegisteredInteractionJoinsTheHolmFamily(t *testing.T) {
+	t.Parallel()
+
+	outer := plannedContrast{control: outerControl, candidate: outerCandidate, primary: true}
+	inner := plannedContrast{control: innerControl, candidate: innerCandidate}
+
+	plan := design{
+		blocks: 3,
+		arms: []arm{
+			{name: outerControl},
+			{name: outerCandidate},
+			{name: innerControl},
+			{name: innerCandidate},
+		},
+		contrasts:   []plannedContrast{outer, inner},
+		interaction: &plannedInteraction{outer: outer, inner: inner},
+	}
+
+	contrasts, err := buildContrasts(plan, map[string][]resultRow{
+		outerControl:   scoredBlocks(100, 100, 100),
+		outerCandidate: scoredBlocks(95, 95, 95),
+		innerControl:   scoredBlocks(50, 50, 50),
+		innerCandidate: scoredBlocks(49, 48, 47),
+	})
+	if err != nil {
+		t.Fatalf("buildContrasts: %v", err)
+	}
+
+	if len(contrasts) != 3 {
+		t.Fatalf("contrasts = %d, want the two registered ones and the interaction", len(contrasts))
+	}
+
+	interaction := contrasts[2]
+	if interaction.label == "" {
+		t.Error("the interaction carries no label, so no report can name it")
+	}
+
+	// The two contrasts gain 5 and 2 on average, so the difference is 3, and
+	// it comes with an interval because the size is what the reading is for.
+	if interaction.gain != 3 || interaction.interval <= 0 {
+		t.Errorf("interaction = %+v, want a gain of 3 and a positive interval", interaction)
+	}
+
+	// Holm has to see it, and this fixture shows what that costs. The
+	// interaction clears the uncorrected 0.05 on its own and still retains
+	// once it is the third member of a family of three -- which is exactly the
+	// price the design agreed to pay for asking the question properly instead
+	// of reading it off the other two rows for free.
+	holmReject(contrasts, familyAlpha)
+
+	if interaction = contrasts[2]; interaction.pValue >= familyAlpha {
+		t.Fatalf("interaction p = %.5f, want a fixture that clears the uncorrected alpha", interaction.pValue)
+	}
+
+	if interaction.rejected {
+		t.Errorf("interaction rejected at p = %.5f; Holm corrects it over three contrasts here",
+			interaction.pValue)
+	}
+}
+
 func TestStudentTTwoSided(t *testing.T) {
 	t.Parallel()
 
@@ -318,6 +458,21 @@ func TestCampaignDesignsAreNamedAndClosed(t *testing.T) {
 
 		if primaries > 1 {
 			t.Errorf("design %s registers %d primary contrasts, want at most one", name, primaries)
+		}
+
+		// An interaction has to be built from contrasts the design already
+		// registered. One assembled from an unregistered pair would be a
+		// comparison the family never declared, smuggled in through a field
+		// that is corrected but not listed.
+		if plan.interaction != nil {
+			for _, side := range []plannedContrast{plan.interaction.outer, plan.interaction.inner} {
+				if !slices.ContainsFunc(plan.contrasts, func(current plannedContrast) bool {
+					return current.control == side.control && current.candidate == side.candidate
+				}) {
+					t.Errorf("design %s interacts over %s vs %s, which it does not register",
+						name, side.candidate, side.control)
+				}
+			}
 		}
 	}
 
@@ -1984,12 +2139,16 @@ func TestCovarianceCleanCampaignCrossesModeAgainstTheClamp(t *testing.T) {
 	}
 }
 
-// TestCovarianceCleanCampaignRegistersTwoSingleFactorContrasts pins the family
-// the campaign pays multiplicity for. The interaction between the two contrasts
-// is the reading the design is really after, and it is deliberately not a third
-// contrast: it is a function of these two, so registering it would raise Holm's
-// bar on both without asking anything new.
-func TestCovarianceCleanCampaignRegistersTwoSingleFactorContrasts(t *testing.T) {
+// TestCovarianceCleanCampaignRegistersItsInteraction pins the family the
+// campaign pays multiplicity for: two single-factor contrasts and the
+// difference between them.
+//
+// The interaction is the reading the design is really after, and it is
+// registered rather than inferred from the other two. Comparing their verdicts
+// would be the difference-in-significance error -- two tests can fall either
+// side of a threshold while the effects they estimate are indistinguishable --
+// and the campaign's explanatory claim is precisely about the difference.
+func TestCovarianceCleanCampaignRegistersItsInteraction(t *testing.T) {
 	t.Parallel()
 
 	plan, err := campaignDesign(designCovClean, mustDesignBudget(t, designCovClean))
@@ -2003,6 +2162,14 @@ func TestCovarianceCleanCampaignRegistersTwoSingleFactorContrasts(t *testing.T) 
 	}
 	if !slices.Equal(plan.contrasts, want) {
 		t.Errorf("contrasts = %+v, want %+v", plan.contrasts, want)
+	}
+
+	// Outer is the clamped rung and inner the clean one, so a positive
+	// difference of differences says block's lead is larger where separable is
+	// dead -- which is the campaign's explanatory claim, stated in the sign.
+	wantInteraction := &plannedInteraction{outer: want[1], inner: want[0]}
+	if plan.interaction == nil || *plan.interaction != *wantInteraction {
+		t.Errorf("interaction = %+v, want %+v", plan.interaction, wantInteraction)
 	}
 
 	// Each contrast must move covariance mode alone. Asserted field by field

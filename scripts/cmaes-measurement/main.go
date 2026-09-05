@@ -212,6 +212,33 @@ type plannedContrast struct {
 	primary bool
 }
 
+// plannedInteraction is a difference-in-differences: the paired per-block
+// difference between two contrasts' gains.
+//
+// It exists because comparing two contrasts' verdicts is not a test of the
+// difference between them. A design that reads "large and significant here,
+// small and null there" as evidence that the two differ has committed the
+// difference-in-significance error, and a 2x2 whose conclusion rests on that
+// reading has to test the interaction directly instead. The reading is
+// outer - inner, block by block, on the same seeds, so it carries its own
+// standard error and its own degrees of freedom.
+//
+// A design that registers one pays multiplicity for it like any other member
+// of the family, which is the honest price: the interaction asks a question
+// neither contrast asks, so it is not free.
+type plannedInteraction struct {
+	// outer is the contrast whose gain the campaign wants to explain; inner is
+	// the contrast it is explained against.
+	outer plannedContrast
+	inner plannedContrast
+}
+
+// describe names the interaction the way the report prints it.
+func (i plannedInteraction) describe() string {
+	return fmt.Sprintf("(`%s` vs `%s`) - (`%s` vs `%s`)",
+		i.outer.candidate, i.outer.control, i.inner.candidate, i.inner.control)
+}
+
 // design is one registered campaign: a fixed arm set, the arm every paired
 // comparison is taken against, and an optional second control reported
 // underneath. Designs are named and enumerated rather than assembled from
@@ -235,6 +262,11 @@ type design struct {
 	// reports were produced and must stay reproducible; a design that fills
 	// this in itself is corrected over exactly the comparisons it names.
 	contrasts []plannedContrast
+	// interaction is an optional difference-in-differences over two of those
+	// contrasts. It joins the same Holm family, so registering one costs the
+	// rest of the family a step; a design that only wants to describe the gap
+	// between two contrasts should leave it nil and say so.
+	interaction *plannedInteraction
 	// reference and circles are the fixture. They belong to the design because
 	// a campaign run on a different image is not comparable to one run on
 	// example/MayFly-512.png, and a flag that silently changed either would
@@ -662,24 +694,26 @@ func campaignDesign(name string, budget int) (design, error) {
 			return design{}, cleanErr
 		}
 
-		// Two contrasts, both single-factor, both against their own rung's
-		// separable control. The primary is the question AGENTS.md blocks a
-		// covariance default on; the secondary exists so the primary can be
-		// interpreted, because a small clean-rung difference means one thing
-		// beside a large clamped-rung one and another beside a small one.
+		// Two single-factor contrasts, each against its own rung's separable
+		// control, plus the interaction between them. The primary is the
+		// question AGENTS.md blocks a covariance default on; the secondary is
+		// the clamped rung the covariance report registered its +39.12 on.
 		//
-		// The interaction -- the difference between the two -- is deliberately
-		// not a third registered contrast. It is a function of the two already
-		// registered, so paying multiplicity for it a third time would raise
-		// the bar on both without asking anything new.
+		// The interaction is registered rather than read off the other two.
+		// The campaign's explanatory claim is that the covariance win is the
+		// clamp, and that claim is about the *difference* between the two
+		// rungs' effects -- which a small p at one rung beside a large p at
+		// the other does not establish, however tempting the pattern looks. It
+		// is a third member of the family and Holm corrects over all three.
+		clamped := plannedContrast{control: clean[2].name, candidate: clean[3].name}
+		cleanRung := plannedContrast{control: clean[0].name, candidate: clean[1].name, primary: true}
+
 		return design{
 			name: name, baseline: clean[0].name,
 			blocks: covarianceCleanBlocks, seedBase: covarianceCleanSeedBase, arms: clean,
 			reference: recordReference, circles: defaultCircles,
-			contrasts: []plannedContrast{
-				{control: clean[0].name, candidate: clean[1].name, primary: true},
-				{control: clean[2].name, candidate: clean[3].name},
-			},
+			contrasts:   []plannedContrast{cleanRung, clamped},
+			interaction: &plannedInteraction{outer: clamped, inner: cleanRung},
 		}, nil
 	case designActiveFull:
 		full, fullErr := activeCMAFullArms(budget)
@@ -1637,12 +1671,16 @@ const (
 // on its own cannot separate "block is no better anywhere" from "this campaign
 // lacked the power to see it", because the effect it is chasing is small. The
 // clamped rung is run in the same campaign, on the same seeds and the same
-// cap, so the two contrasts are paired against each other: if the difference is
-// large at 1024 and small at 64, the campaign has shown that the covariance
-// win is the clamp, which is a positive finding rather than a failure to
-// reject. That comparison of the two contrasts is descriptive, not registered
-// -- the family is the two contrasts themselves, and the interaction is read
-// off them.
+// cap, so the two contrasts can be subtracted block by block: if block's lead
+// is larger at 1024 than at 64, the campaign has shown that the covariance win
+// is the clamp, which is a positive finding rather than a failure to reject.
+//
+// That subtraction is registered as an interaction rather than eyeballed off
+// the two contrasts' verdicts. Reading "significant at 1024, null at 64" as a
+// difference between the rungs would be the difference-in-significance error:
+// the two tests can land either side of a threshold while the effects they
+// estimate are indistinguishable. So the family is three, Holm corrects over
+// three, and the explanatory claim is the one that carries its own p.
 //
 // Cold restarts at a fixed lambda rather than IPOP, for the reason the
 // active-CMA design gives: an IPOP ladder doubles its population, so it would
@@ -2626,11 +2664,20 @@ const familyAlpha = 0.05
 type contrast struct {
 	control   string
 	candidate string
+	// label is set only on an interaction, whose gain belongs to no pair of
+	// arms and so cannot be found by control and candidate. summarize matches
+	// on those two, so leaving them empty keeps an interaction out of the arm
+	// tables while Holm still corrects over it.
+	label     string
 	gain      float64
 	statistic float64
 	pValue    float64
-	wins      int
-	rejected  bool
+	// interval is the half-width of the 95% paired confidence interval. It is
+	// filled for an interaction, where the size of the difference is the whole
+	// point and a bare verdict would under-report what was measured.
+	interval float64
+	wins     int
+	rejected bool
 }
 
 func analyze(path string, plan design) error {
@@ -2660,7 +2707,11 @@ func analyze(path string, plan design) error {
 		return reportDescriptive(plan, names, byArm)
 	}
 
-	contrasts := buildContrasts(plan, byArm)
+	contrasts, err := buildContrasts(plan, byArm)
+	if err != nil {
+		return err
+	}
+
 	holmReject(contrasts, familyAlpha)
 
 	// A design that registers a record answers a second, non-inferential
@@ -2719,6 +2770,8 @@ func analyze(path string, plan design) error {
 				name, summarize(contrasts, plan.secondaryControl, name, plan.blocks))
 		}
 	}
+
+	reportInteraction(plan, contrasts)
 
 	fmt.Printf("\nHolm step-down over all %d paired contrasts at a family-wise alpha of %.2f;\n",
 		len(contrasts), familyAlpha)
@@ -2862,8 +2915,8 @@ func (d design) evaluationCap() int {
 // declares is the multiplicity it pays for -- which is why declaring them is
 // now the design's job rather than a consequence of how many arms it happens
 // to run.
-func buildContrasts(plan design, byArm map[string][]resultRow) []contrast {
-	contrasts := make([]contrast, 0, len(plan.contrasts))
+func buildContrasts(plan design, byArm map[string][]resultRow) ([]contrast, error) {
+	contrasts := make([]contrast, 0, len(plan.contrasts)+1)
 	for _, planned := range plan.contrasts {
 		gain, statistic, wins := pairedImprovement(byArm[planned.control], byArm[planned.candidate])
 		contrasts = append(contrasts, contrast{
@@ -2876,7 +2929,48 @@ func buildContrasts(plan design, byArm map[string][]resultRow) []contrast {
 		})
 	}
 
-	return contrasts
+	if plan.interaction == nil {
+		return contrasts, nil
+	}
+
+	differences, err := interactionDifferences(byArm, *plan.interaction)
+	if err != nil {
+		return nil, err
+	}
+
+	gain, deviation, statistic, wins := pairedStatistics(differences)
+	contrasts = append(contrasts, contrast{
+		label:     plan.interaction.describe(),
+		gain:      gain,
+		statistic: statistic,
+		pValue:    studentTTwoSided(statistic, plan.blocks-1),
+		interval: studentTCritical(familyAlpha, plan.blocks-1) *
+			deviation / math.Sqrt(float64(len(differences))),
+		wins: wins,
+	})
+
+	return contrasts, nil
+}
+
+// interactionDifferences subtracts one contrast's per-block gain from the
+// other's. Both contrasts run the same blocks by construction -- a design's
+// arms all run its whole block set -- so a mismatch is a corrupt result file
+// rather than something to paper over with a partial pairing.
+func interactionDifferences(byArm map[string][]resultRow, planned plannedInteraction) ([]float64, error) {
+	outerBlocks, outer := pairedDifferences(byArm[planned.outer.control], byArm[planned.outer.candidate])
+	innerBlocks, inner := pairedDifferences(byArm[planned.inner.control], byArm[planned.inner.candidate])
+
+	if !slices.Equal(outerBlocks, innerBlocks) {
+		return nil, fmt.Errorf("interaction %s pairs %v against %v; the blocks do not line up",
+			planned.describe(), outerBlocks, innerBlocks)
+	}
+
+	differences := make([]float64, len(outer))
+	for index := range outer {
+		differences[index] = outer[index] - inner[index]
+	}
+
+	return differences, nil
 }
 
 // summarize renders one contrast's cells for the Markdown tables above.
@@ -2896,6 +2990,38 @@ func summarize(contrasts []contrast, control, candidate string, blocks int) stri
 	}
 
 	return "n/a | n/a | n/a | n/a | n/a"
+}
+
+// reportInteraction prints the design's difference-in-differences, if it
+// registered one. It carries the interval as well as the verdict because the
+// interaction exists to say how much the two contrasts differ, and a design
+// that only printed reject-or-retain would leave the reader to infer the size
+// from two other rows -- which is the reading the interaction replaces.
+func reportInteraction(plan design, contrasts []contrast) {
+	if plan.interaction == nil {
+		return
+	}
+
+	for _, current := range contrasts {
+		if current.label == "" {
+			continue
+		}
+
+		decision := "retain"
+		if current.rejected {
+			decision = "reject"
+		}
+
+		fmt.Printf("\nRegistered interaction %s:\n", current.label)
+		fmt.Printf("| difference of differences | 95%% interval | t (df=%d) | p | Holm | blocks won |\n",
+			plan.blocks-1)
+		fmt.Println("| ---: | ---: | ---: | ---: | --- | ---: |")
+		fmt.Printf("| %+.2f | %+.2f to %+.2f | %+.2f | %.5f | %s | %d/%d |\n",
+			current.gain, current.gain-current.interval, current.gain+current.interval,
+			current.statistic, current.pValue, decision, current.wins, plan.blocks)
+
+		return
+	}
 }
 
 // holmReject marks the contrasts whose null hypotheses Holm's step-down
@@ -3152,27 +3278,61 @@ func median(values []float64) float64 {
 }
 
 func pairedImprovement(control, candidate []resultRow) (float64, float64, int) {
+	_, differences := pairedDifferences(control, candidate)
+	mean, _, statistic, wins := pairedStatistics(differences)
+
+	return mean, statistic, wins
+}
+
+// pairedDifferences is one contrast's per-block gain, in block order, with the
+// blocks it was taken over.
+//
+// The ordering is not cosmetic. Floating-point addition is not associative, so
+// summing the differences in Go's randomized map order would make a reported
+// mean depend on the run rather than on the data.
+func pairedDifferences(control, candidate []resultRow) ([]int, []float64) {
 	controlByBlock := make(map[int]float64, len(control))
 	for _, row := range control {
 		controlByBlock[row.Block] = row.Score
 	}
 
-	differences := make([]float64, 0, len(candidate))
+	ordered := append([]resultRow(nil), candidate...)
+	slices.SortFunc(ordered, func(a, b resultRow) int { return a.Block - b.Block })
+
+	blocks := make([]int, 0, len(ordered))
+	differences := make([]float64, 0, len(ordered))
+
+	for _, row := range ordered {
+		blocks = append(blocks, row.Block)
+		differences = append(differences, controlByBlock[row.Block]-row.Score)
+	}
+
+	return blocks, differences
+}
+
+// pairedStatistics reduces a set of paired differences to what a contrast row
+// prints, in that order: the mean, its sample standard deviation, the
+// one-sample t statistic on those differences, and how many of them favour the
+// candidate.
+//
+// A zero standard deviation is an infinite statistic rather than a division by
+// zero, which is what docs/cmaes-covariance-report.md's void secondary
+// contrast produced and why that report says the value means nothing.
+func pairedStatistics(differences []float64) (float64, float64, float64, int) {
 	wins := 0
 
-	for _, row := range candidate {
-		difference := controlByBlock[row.Block] - row.Score
-
-		differences = append(differences, difference)
+	for _, difference := range differences {
 		if difference > 0 {
 			wins++
 		}
 	}
 
-	mean, sd := meanSD(differences)
-	if sd == 0 {
-		return mean, math.Copysign(math.Inf(1), mean), wins
+	mean, deviation := meanSD(differences)
+
+	statistic := math.Copysign(math.Inf(1), mean)
+	if deviation != 0 {
+		statistic = mean / (deviation / math.Sqrt(float64(len(differences))))
 	}
 
-	return mean, mean / (sd / math.Sqrt(float64(len(differences)))), wins
+	return mean, deviation, statistic, wins
 }
