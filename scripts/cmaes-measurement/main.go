@@ -200,6 +200,12 @@ func recordCircles() []recordCircle {
 // an order statistic instead of a paired test.
 const recordCost = 752.5220120747884
 
+// coldRestartStrategy is the restartStrategy value an arm carries when it uses
+// the engine-agnostic cold-restart wrapper rather than one of CMA-ES's own
+// shared-budget schedules. It moved out of the test file when printPlan needed
+// it: an arm whose only schedule is the wrapper has no engine strategy to name.
+const coldRestartStrategy = "none"
+
 // plannedContrast is one paired comparison a design registers before it runs.
 // Naming them is what bounds multiplicity: the lambda screen crossed two
 // factors and thereby manufactured thirteen contrasts out of eight arms, and
@@ -722,12 +728,14 @@ func campaignDesign(name string, budget int) (design, error) {
 			return design{}, shapeErr
 		}
 
-		// Three contrasts, each single-factor in the mechanism it moves, all
-		// against a control that spends its cap. The primary is the head-to-head
-		// a default has to choose between; the secondary measures the filling
-		// shape against the fixed count it replaces, which is the same question
-		// the restart ladder could not ask; the third re-asks the ladder's own
-		// secondary at twice its blocks and in a mode where nothing clamps.
+		// Two contrasts, both against a control that spends its cap. The primary
+		// is the head-to-head a default has to choose between; the secondary
+		// measures the filling shape against the fixed count it replaces, which
+		// is the question the restart ladder could not ask.
+		//
+		// A BIPOP arm was registered here and then removed before the design
+		// ran; see restartShapeArms for why it could not be made to measure
+		// anything without two further arms.
 		return design{
 			name: name, baseline: shape[0].name, secondaryControl: shape[1].name,
 			blocks: restartShapeBlocks, seedBase: restartShapeSeedBase, arms: shape,
@@ -736,7 +744,6 @@ func campaignDesign(name string, budget int) (design, error) {
 			contrasts: []plannedContrast{
 				{control: shape[0].name, candidate: shape[2].name, primary: true},
 				{control: shape[1].name, candidate: shape[2].name},
-				{control: shape[0].name, candidate: shape[3].name},
 			},
 		}, nil
 	case designActiveFull:
@@ -1935,6 +1942,23 @@ const restartShapeBlocks = 24
 // happens after a run converges.
 const restartShapeLambda = 64
 
+// restartShapeRungs is every population an IPOP or BIPOP ladder could double
+// its way to from this design's starting lambda, out to three rungs past the
+// shipped popSize.
+//
+// It is a function rather than two hand-written lists because the runtime guard
+// and the test that pins it have to walk the same rungs. A guard checking fewer
+// than the test does is the drift that lets a mode look safe here and clamp on
+// the box, which is precisely the failure the mode is pinned to avoid.
+func restartShapeRungs() []int {
+	rungs := make([]int, 0, 8)
+	for lambda := restartShapeLambda; lambda <= 8*defaultPop; lambda *= 2 {
+		rungs = append(rungs, lambda)
+	}
+
+	return rungs
+}
+
 // restartShapeArms asks which restart shape a CMA-ES default would name, with
 // every arm spending the cap it was given.
 //
@@ -1971,9 +1995,22 @@ const restartShapeLambda = 64
 //   - full-fill-l64 asks for the same cap as that arm and fills it, starting a
 //     further cold attempt whenever a whole one still fits. It is the candidate
 //     in two of the three contrasts.
-//   - full-bipop-l64 interleaves large and small populations. The ladder
-//     measured the best mean in its campaign here and could not separate it;
-//     this asks again at twice the blocks.
+//
+// **There is deliberately no BIPOP arm**, and removing one is what review
+// caught. go-cma-es gives a BIPOP schedule's first large run a budget equal to
+// the whole schedule and reaches the small regime only after a large run has
+// finished, so an unarmed bipop job is IPOP under another name -- which this
+// driver documents at restartLadderArms and enforces for that design. A bipop
+// arm here would therefore have spent 24 blocks comparing two spellings of the
+// same search, the way docs/cmaes-covariance-report.md's secondary contrast
+// did.
+//
+// Arming it is not a one-line repair. The criterion has to be matched on both
+// sides, and the primary's control must stay unarmed to match the cold arms
+// that cannot use a criterion at all, so an honest BIPOP question needs an
+// armed IPOP *and* an armed BIPOP on top of these three. That is 48 more jobs
+// and a third contrast Holm would charge the primary for, to re-ask something
+// the restart ladder already asked. This campaign exists for the primary.
 //
 // The primary contrast pairs the two shapes that spend their cap, which is the
 // choice a default actually faces. It moves more than one thing -- a fixed
@@ -2021,7 +2058,7 @@ func restartShapeArms(budget int) ([]arm, error) {
 	// Full never clamps, at any lambda in any dimensionality this project
 	// searches. Asserted rather than trusted, because the whole reason the mode
 	// is pinned is that a ladder's top rung cannot be known in advance.
-	for _, lambda := range []int{restartShapeLambda, defaultPop, 2 * defaultPop, 4 * defaultPop} {
+	for _, lambda := range restartShapeRungs() {
 		if rankMuClamped(searchDimensions, lambda, searchDimensions) {
 			return nil, fmt.Errorf("full covariance clamps at lambda %d in %d dimensions; a ladder could reach it",
 				lambda, searchDimensions)
@@ -2046,7 +2083,6 @@ func restartShapeArms(budget int) ([]arm, error) {
 		ladder(fmt.Sprintf("full-ipop-l%d", restartShapeLambda), "ipop"),
 		cold(fmt.Sprintf("full-r%d-l%d", attempts, restartShapeLambda), attempts),
 		cold(fmt.Sprintf("full-fill-l%d", restartShapeLambda), -attempts),
-		ladder(fmt.Sprintf("full-bipop-l%d", restartShapeLambda), "bipop"),
 	}, nil
 }
 
@@ -2358,7 +2394,13 @@ func printPlan(config settings) error {
 				shape = fmt.Sprintf("cold runs filling %d x iters", attempts)
 			}
 
-			restarts = fmt.Sprintf("%s + %s", restarts, shape)
+			// An arm carrying only the wrapper has no engine strategy to name,
+			// and "none + 32 cold run(s)" reads as though something had been
+			// switched off. Prepend the strategy only where there is one.
+			restarts = shape
+			if current.restartStrategy != coldRestartStrategy {
+				restarts = fmt.Sprintf("%s + %s", current.restartStrategy, shape)
+			}
 		}
 
 		sigma, active, start := "default", "-", "residual"

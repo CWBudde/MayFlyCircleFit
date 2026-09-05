@@ -13,11 +13,6 @@ import (
 	"github.com/cwbudde/circlefit/internal/opt"
 )
 
-// coldRestartStrategy is the restartStrategy value an arm carries when it uses
-// the engine-agnostic cold-restart wrapper rather than one of CMA-ES's own
-// shared-budget schedules.
-const coldRestartStrategy = "none"
-
 func TestCampaignArmsAreEvaluationMatched(t *testing.T) {
 	t.Parallel()
 
@@ -1291,6 +1286,35 @@ func TestRestartLadderReplicatesTheStagnationCampaignArms(t *testing.T) {
 	}
 }
 
+// TestNoRegisteredDesignRunsAnUnarmedBipopArm is the same guard as
+// TestRestartLadderBipopArmCarriesAWindow, applied to every registered design
+// rather than to one of them.
+//
+// The narrow version was written for the restart ladder and did its job there,
+// and then the restart-shape design registered an unarmed bipop arm and walked
+// straight past it -- caught in review rather than by a test. A rule that holds
+// for one design because of how go-cma-es behaves holds for all of them: the
+// first large run owns the whole schedule budget, so an unarmed bipop job is
+// IPOP under another name and any contrast against an IPOP arm compares two
+// spellings of the same search.
+func TestNoRegisteredDesignRunsAnUnarmedBipopArm(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range registeredDesigns() {
+		plan, err := campaignDesign(name, mustDesignBudget(t, name))
+		if err != nil {
+			t.Fatalf("design %s: %v", name, err)
+		}
+
+		for _, current := range plan.arms {
+			if current.restartStrategy == "bipop" && current.stopStagnationIters == 0 {
+				t.Errorf("design %s runs %s as bipop with no stagnation window, which is IPOP under another name",
+					name, current.name)
+			}
+		}
+	}
+}
+
 // TestRestartLadderBipopArmCarriesAWindow guards the one configuration mistake
 // that would make the secondary contrast measure nothing. go-cma-es gives the
 // first large run a budget equal to the whole schedule and only reaches the
@@ -2343,8 +2367,8 @@ func TestRestartShapeCampaignSpendsOneCapPerArm(t *testing.T) {
 		t.Fatalf("restart-shape design: %v", err)
 	}
 
-	if len(plan.arms) != 4 {
-		t.Fatalf("restart-shape arms = %d, want 4", len(plan.arms))
+	if len(plan.arms) != 3 {
+		t.Fatalf("restart-shape arms = %d, want 3", len(plan.arms))
 	}
 
 	for _, current := range plan.arms {
@@ -2386,9 +2410,14 @@ func TestRestartShapeCampaignCannotWalkIntoTheClamp(t *testing.T) {
 		}
 	}
 
-	// Every rung a ladder from this lambda could plausibly reach, including two
-	// beyond the shipped population.
-	for lambda := restartShapeLambda; lambda <= 8*defaultPop; lambda *= 2 {
+	// The same rung walk the arm constructor guards with, so the two cannot
+	// drift into a guard that checks fewer rungs than the test does.
+	rungs := restartShapeRungs()
+	if len(rungs) < 2 || rungs[0] != restartShapeLambda {
+		t.Fatalf("rung walk %v does not start at the design's lambda %d", rungs, restartShapeLambda)
+	}
+
+	for _, lambda := range rungs {
 		if rankMuClamped(searchDimensions, lambda, searchDimensions) {
 			t.Errorf("full covariance clamps at lambda %d; the design's guarantee does not hold", lambda)
 		}
@@ -2422,9 +2451,9 @@ func TestRestartShapeCampaignIsolatesTheFillingShape(t *testing.T) {
 	}
 }
 
-// TestRestartShapeCampaignRegistersThreeContrasts pins the family, and that the
+// TestRestartShapeCampaignRegistersTwoContrasts pins the family, and that the
 // primary is the head-to-head between the two shapes that spend their cap.
-func TestRestartShapeCampaignRegistersThreeContrasts(t *testing.T) {
+func TestRestartShapeCampaignRegistersTwoContrasts(t *testing.T) {
 	t.Parallel()
 
 	plan, err := campaignDesign(designShape, mustDesignBudget(t, designShape))
@@ -2435,7 +2464,6 @@ func TestRestartShapeCampaignRegistersThreeContrasts(t *testing.T) {
 	want := []plannedContrast{
 		{control: "full-ipop-l64", candidate: "full-fill-l64", primary: true},
 		{control: "full-r32-l64", candidate: "full-fill-l64"},
-		{control: "full-ipop-l64", candidate: "full-bipop-l64"},
 	}
 	if !slices.Equal(plan.contrasts, want) {
 		t.Errorf("contrasts = %+v, want %+v", plan.contrasts, want)

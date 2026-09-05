@@ -226,17 +226,25 @@ anything new against its figures.
       the offset a trace's restart index is shifted by *is* the number of
       records accumulated, so a shape recording nothing left every sample in
       that campaign reporting restart 0.
-      **Registered 2026-09-05 as `-design restart-shape`, running.** Four arms,
-      24 blocks, 96 jobs, seeds 119001-119024, every arm capped at
-      `defaultBudget` and starting from `lambda` 64: an IPOP ladder (control), a
-      BIPOP ladder, the ladder campaign's fixed 32 cold restarts, and the same
-      32 as a filling cap. Primary contrast `full-fill-l64` against
-      `full-ipop-l64` — the head-to-head between the two shapes that spend their
-      cap, which is the choice a default faces; secondary `full-fill-l64`
-      against `full-r32-l64`, the one genuinely single-factor pair, measuring
-      what filling buys over bounding at one lambda; third `full-bipop-l64`
-      against `full-ipop-l64`, the ladder's own secondary re-asked at twice its
-      blocks. **Full covariance throughout, and that is a constraint rather than
+      **Registered 2026-09-05 as `-design restart-shape`, running.** Three arms,
+      24 blocks, 72 jobs, seeds 119001-119024, every arm capped at
+      `defaultBudget` and starting from `lambda` 64: an IPOP ladder (control),
+      the ladder campaign's fixed 32 cold restarts, and the same 32 as a filling
+      cap. Primary contrast `full-fill-l64` against `full-ipop-l64` — the
+      head-to-head between the two shapes that spend their cap, which is the
+      choice a default faces; secondary `full-fill-l64` against `full-r32-l64`,
+      the one genuinely single-factor pair, measuring what filling buys over
+      bounding at one lambda.
+      **A BIPOP arm was registered and removed before the campaign produced
+      anything**, which is worth recording because the mistake is one this
+      driver already knew about. go-cma-es gives a BIPOP schedule's first large
+      run the whole schedule budget, so an unarmed bipop job is IPOP under
+      another name — documented at `restartLadderArms` and enforced by a test
+      that was written for that one design, which the new design walked past.
+      Arming it needs a matched pair, and the primary's control has to stay
+      unarmed to match the cold arms, so an honest BIPOP question costs two
+      further arms, 48 more jobs and a third contrast Holm would charge the
+      primary for. The guard is now cross-design. **Full covariance throughout, and that is a constraint rather than
       a preference**: a ladder's top rung is decided at run time, so the only
       way to guarantee no arm meets the rank-mu clamp mid-run is the one mode
       that never clamps — separable from `lambda` 64 would cross on its fourth
