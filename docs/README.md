@@ -224,6 +224,28 @@ re-measure instead.
   large ones in separable mode (`+30.15`, `t = 3.38`), and the two driver
   defects it exposed — a registered contrast that was never printed, and a fixed
   restart count that recorded nothing about its attempts.
+- [`cmaes-restart-shape-report.md`](cmaes-restart-shape-report.md) — three arms
+  and 72 jobs asking which restart *shape* a CMA-ES default should name, all in
+  full covariance at `lambda` 64 because full is the only mode that never
+  clamps. **Budget-filling cold restarts beat a fixed count of 32** (`+6.89`,
+  `t = +2.89`, `p = 0.0083`, rejects under Holm) and are **indistinguishable
+  from an IPOP ladder** (`+3.82`, `t = +0.23`, 12/24). The secondary's mechanism
+  is exact rather than inferred: the two cold arms share a trajectory, so 14
+  blocks tie bit-identically and none is a loss, and the 10 blocks the filling
+  arm wins are *precisely* the 10 where its block best came from a restart index
+  of 32 or higher. Read it before proposing a restart default — it is the only
+  shape in the corpus with a rejected contrast behind it. Two cautions. What
+  tips the recommendation toward filling over IPOP is the spread (sd 22.31
+  against 71.36, range 88 against 325), and **the spread comparison is
+  unregistered**; the registered primary is a null that could not have detected
+  a 30-point effect. And IPOP's mechanism is worth its own design: the ladder
+  reaches `lambda` 4096 in 12 of 24 blocks and **never once takes its block best
+  from that rung**, so where to *stop* a ladder is an unvaried knob. Carries the
+  first per-attempt restart records for cold arms in this repository (2,231
+  rows, from the fix in `internal/opt/restart_optimizer.go`), a
+  `distributionExtent` reading bounded at 1.0821 over 14,519 samples, and the
+  note that the driver's `recordCost` still reports against the superseded
+  752.52 record.
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by
