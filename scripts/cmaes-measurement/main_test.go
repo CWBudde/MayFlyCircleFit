@@ -2502,10 +2502,22 @@ func TestExtendWidthArmsAreEvaluationMatched(t *testing.T) {
 				current.name, current.covariance)
 		}
 
-		if current.popSize != extendWidthLambda || current.iters != extendWidthAttemptIters {
-			t.Errorf("%s runs %d x %d, want the pinned attempt %d x %d",
-				current.name, current.iters, current.popSize,
-				extendWidthAttemptIters, extendWidthLambda)
+		if current.popSize != extendWidthLambda {
+			t.Errorf("%s popSize = %d, want the pinned lambda %d",
+				current.name, current.popSize, extendWidthLambda)
+		}
+
+		// What is pinned is the attempt count, not the attempt length: the
+		// length scales with the stage's share so every arm leaves the same
+		// fraction of its cap unspendable. See extendWidthStageAttempts.
+		if restartAttempts(current.optimizerRestarts) != extendWidthStageAttempts {
+			t.Errorf("%s asks for %d attempts per stage, want %d",
+				current.name, restartAttempts(current.optimizerRestarts), extendWidthStageAttempts)
+		}
+
+		stageGenerations := defaultBudget / extendWidthLambda / max(current.stages, 1)
+		if want := stageGenerations / extendWidthStageAttempts; current.iters != want {
+			t.Errorf("%s attempt length = %d, want %d", current.name, current.iters, want)
 		}
 
 		// A positive count bounds the spend; only the negative shape fills it,

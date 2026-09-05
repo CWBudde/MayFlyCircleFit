@@ -2249,11 +2249,33 @@ const (
 	// extendWidthLambda is the population every stage runs, and the rung the
 	// restart-shape campaign measured its winning shape at.
 	extendWidthLambda = 64
-	// extendWidthAttemptIters is one cold attempt's generation count, pinned
-	// across arms so grouping width is not confounded with attempt length. It
-	// is the value full-fill-l64 ran, so an attempt here is the same object the
-	// restart-shape campaign measured.
-	extendWidthAttemptIters = 3175
+	// extendWidthStageAttempts is how many nominal cold attempts every stage of
+	// every arm is given. It is this, rather than the attempt's length, that is
+	// pinned across arms, and a probe is what decided which.
+	//
+	// A filling shape starts a further attempt only while a *whole* nominal one
+	// still fits, so it always leaves a remainder smaller than one attempt. That
+	// remainder is an absolute size, and these arms' stage caps differ eightfold,
+	// so pinning the attempt length would make the unspent share scale with the
+	// width under test. Measured directly on this fixture at 3,175 iterations,
+	// one stage per width: 76.5% of cap spent at 7 dimensions, 87.8% at 14,
+	// 94.7% at 28, against the 97.8% docs/cmaes-restart-shape-report.md measured
+	// at 56. A 21-point spend gradient along the campaign's own variable is not
+	// a matched design.
+	//
+	// Pinning the count instead makes the remainder one twentieth of each arm's
+	// own cap, so the unspent share is equal in expectation across arms. What it
+	// gives up is a constant attempt length -- 5,080 generations at one stage
+	// down to 635 at eight -- and that is the right thing to give up:
+	// docs/restart-vs-budget-report.md found every adjacent restart-length
+	// comparison null ("the decision that matters is whether to restart, not how
+	// long each restart is") while spend is first order.
+	//
+	// Twenty also keeps every nominal length well above where an attempt
+	// actually converges -- the probe's medians were 157, 332 and 669
+	// generations against nominal 635, 1,270 and 2,540 -- so no attempt is
+	// truncated by its own length and each one ends where CMA-ES decides.
+	extendWidthStageAttempts = 20
 	// extendWidthBaseCircles is the seeded prefix and extendWidthCircles the
 	// count every arm finishes at. The difference is what the campaign spends
 	// its budget appending.
@@ -2336,16 +2358,13 @@ const (
 // contrast among them; it does not cancel against cold-w16, which it
 // handicaps by that much.
 func extendWidthArms(budget int) ([]arm, error) {
-	const attemptWork = extendWidthAttemptIters * extendWidthLambda
-
-	if budget <= 0 || budget%attemptWork != 0 {
+	if budget <= 0 || budget%extendWidthLambda != 0 {
 		return nil, fmt.Errorf(
-			"budget %d must be positive and divisible by one attempt of %d evaluations; "+
-				"the arms would not be evaluation-matched",
-			budget, attemptWork)
+			"budget %d must be positive and divisible by lambda %d; the arms would not be evaluation-matched",
+			budget, extendWidthLambda)
 	}
 
-	attempts := budget / attemptWork
+	generations := budget / extendWidthLambda
 	appended := extendWidthCircles - extendWidthBaseCircles
 
 	arms := make([]arm, 0, 5)
@@ -2359,7 +2378,7 @@ func extendWidthArms(budget int) ([]arm, error) {
 		{"ext-w2", 4},
 		{"ext-w1", 8},
 	} {
-		built, err := extendWidthStagedArm(spec.name, spec.stages, attempts, appended)
+		built, err := extendWidthStagedArm(spec.name, spec.stages, generations, appended)
 		if err != nil {
 			return nil, err
 		}
@@ -2372,11 +2391,16 @@ func extendWidthArms(budget int) ([]arm, error) {
 		return nil, err
 	}
 
+	coldIters, err := extendWidthAttemptLength("cold-w16", generations)
+	if err != nil {
+		return nil, err
+	}
+
 	arms = append(arms, arm{
 		name: "cold-w16", optimizer: "cmaes",
 		covariance: "full", restartStrategy: coldRestartStrategy,
-		iters: extendWidthAttemptIters, popSize: extendWidthLambda,
-		optimizerRestarts: -attempts,
+		iters: coldIters, popSize: extendWidthLambda,
+		optimizerRestarts: -extendWidthStageAttempts,
 	})
 
 	for _, built := range arms {
@@ -2393,37 +2417,26 @@ func extendWidthArms(budget int) ([]arm, error) {
 // Every refusal here is a design-time one, because an arm that cannot express
 // its share of the cap is an arm that would silently not be
 // evaluation-matched.
-func extendWidthStagedArm(name string, stages, attempts, appended int) (arm, error) {
+func extendWidthStagedArm(name string, stages, generations, appended int) (arm, error) {
 	if appended%stages != 0 {
 		return arm{}, fmt.Errorf("%s: %d stages cannot append %d circles evenly", name, stages, appended)
 	}
 
-	if attempts%stages != 0 {
+	if generations%stages != 0 {
 		return arm{}, fmt.Errorf(
-			"%s: %d cold attempts cannot be split evenly across %d stages, so the arm would not be "+
-				"evaluation-matched against the others", name, attempts, stages)
+			"%s: %d generations cannot be split evenly across %d stages, so the arm would not be "+
+				"evaluation-matched against the others", name, generations, stages)
 	}
 
 	width := appended / stages
-	perStage := attempts / stages
 
 	if width > app.MaxBatchSize {
 		return arm{}, fmt.Errorf("%s: append width %d exceeds app.MaxBatchSize %d", name, width, app.MaxBatchSize)
 	}
 
-	// A filling shape asks for a cap of perStage x iters and then spends it,
-	// starting a further attempt whenever a whole one still fits, so the
-	// attempt count can exceed perStage and is bounded separately by
-	// app.MaxOptimizerRestarts. The narrow arms are where that ceiling binds:
-	// docs/cmaes-restart-shape-report.md measured its filling arm averaging 61
-	// attempts of the 64 available at 56 dimensions, and these stages search as
-	// few as 7, where an attempt trips TolFun far sooner. This guard only
-	// refuses a cap that cannot be expressed; whether the ceiling binds in
-	// practice is a measurement, and the campaign probes it before it runs.
-	if perStage > app.MaxOptimizerRestarts {
-		return arm{}, fmt.Errorf(
-			"%s: %d cold attempts per stage exceeds app.MaxOptimizerRestarts %d",
-			name, perStage, app.MaxOptimizerRestarts)
+	iters, err := extendWidthAttemptLength(name, generations/stages)
+	if err != nil {
+		return arm{}, err
 	}
 
 	dimensions := width * app.ParametersPerCircle
@@ -2434,10 +2447,34 @@ func extendWidthStagedArm(name string, stages, attempts, appended int) (arm, err
 	return arm{
 		name: name, optimizer: "cmaes",
 		covariance: "full", restartStrategy: coldRestartStrategy,
-		iters: extendWidthAttemptIters, popSize: extendWidthLambda,
-		optimizerRestarts: -perStage,
+		iters: iters, popSize: extendWidthLambda,
+		optimizerRestarts: -extendWidthStageAttempts,
 		stages:            stages, width: width, seeded: true,
 	}, nil
+}
+
+// extendWidthAttemptLength divides a stage's generations into the pinned number
+// of nominal cold attempts. app.MaxOptimizerRestarts bounds the magnitude a job
+// may request, which is what this checks; it does not bound how many attempts a
+// filling shape actually runs -- the probe ran 69 from a request of 16.
+func extendWidthAttemptLength(name string, stageGenerations int) (int, error) {
+	if stageGenerations%extendWidthStageAttempts != 0 {
+		return 0, fmt.Errorf(
+			"%s: %d generations per stage cannot be split into %d whole attempts",
+			name, stageGenerations, extendWidthStageAttempts)
+	}
+
+	if extendWidthStageAttempts > app.MaxOptimizerRestarts {
+		return 0, fmt.Errorf("%s: %d attempts per stage exceeds app.MaxOptimizerRestarts %d",
+			name, extendWidthStageAttempts, app.MaxOptimizerRestarts)
+	}
+
+	iters := stageGenerations / extendWidthStageAttempts
+	if iters < 1 || iters > app.MaxIterations {
+		return 0, fmt.Errorf("%s: attempt length %d is outside 1..%d", name, iters, app.MaxIterations)
+	}
+
+	return iters, nil
 }
 
 // assertExtendWidthRung refuses a stage whose search the pinned library cannot

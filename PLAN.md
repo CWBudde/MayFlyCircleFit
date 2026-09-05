@@ -186,9 +186,10 @@ anything new against its figures.
       committed: `ext-w8`, `ext-w4`, `ext-w2` and `ext-w1` run one, two, four
       and eight extend stages, and `cold-w16` fits all sixteen from scratch at
       the same cap. Everything else is held: full covariance, `lambda` 64,
-      budget-filling cold restarts, and an attempt pinned at 3,175 iterations
-      so grouping width is not confounded with restart length. Twelve blocks,
-      seeds 120001-120012, 6,502,400 evaluations per arm by construction.
+      budget-filling cold restarts, and **twenty nominal cold attempts per
+      stage** — the attempt *count* is what is pinned, not its length. Twelve
+      blocks, seeds 120001-120012, 6,502,400 evaluations per arm by
+      construction.
       Primary contrast `ext-w1` against `ext-w8` — the `+1`-versus-`+8`
       question, which `docs/schedule-format.md` answered under a MayFly pin
       that no longer applies and which
@@ -208,6 +209,22 @@ anything new against its figures.
       counters are **cumulative**: an eight-stage probe reported 1,625
       evaluations at stage 1 and 12,839 at stage 8, so a campaign's spend is its
       final stage's counter and summing the stages overstates it by 4.5x.
+      **A third pre-flight changed the design rather than just documenting it.**
+      A filling shape starts a further attempt only while a whole nominal one
+      still fits, so it leaves a remainder of fixed absolute size while these
+      arms' stage caps differ eightfold. Probed at a pinned 3,175-iteration
+      attempt, one stage per width, spend was 76.5% of cap at 7 dimensions,
+      87.8% at 14 and 94.7% at 28 against the 97.8% measured at 56 — a 21-point
+      gradient running along the campaign's own variable. Pinning twenty
+      attempts per stage instead, and letting the length scale (5,080 down to
+      635), flattens it to 96.2 / 95.8 / 95.9%. Attempt length was the right
+      thing to give up: `docs/restart-vs-budget-report.md` found every adjacent
+      restart-length comparison null while spend is first order. The probe also
+      **contradicts this repository's reading of `app.MaxOptimizerRestarts`**:
+      it bounds the magnitude a job may request, not the attempts a filling
+      shape runs, which the probe demonstrated by running 69 from a request of
+      16. `docs/cmaes-restart-shape-report.md` reads its block 3 as having hit a
+      64-attempt ceiling; on this evidence that block simply stopped at 64.
 - [x] Settle which restart *shape* a CMA-ES default would name. The budget-split
       screen established that splitting a CMA-ES budget beats not splitting it
       but could not order the three mechanisms, and it found the IPOP ladder
