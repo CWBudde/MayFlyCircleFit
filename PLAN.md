@@ -249,8 +249,9 @@ anything new against its figures.
       way to guarantee no arm meets the rank-mu clamp mid-run is the one mode
       that never clamps — separable from `lambda` 64 would cross on its fourth
       rung and block on its fifth. The covariance-clean campaign measured block
-      and separable indistinguishable at this rung, so nothing known is given up
-      by pinning it.
+      and separable indistinguishable at this rung, so pinning it gives up
+      nothing those two modes were shown to carry — that campaign had no
+      full-covariance arm, so covariance mode stays unmeasured here.
       **Ran 2026-09-05, and it answers the task.** 72 of 72 jobs, 06:51 of wall
       clock, 52.0 job-hours. **The shape a default should name is budget-filling
       cold restarts.** Filling beats the fixed count of 32 by `+6.89`
@@ -262,8 +263,10 @@ anything new against its figures.
       bit-identical ties, 10 wins, 0 losses — and the ten winning blocks are
       *identical* to the ten whose best came from a restart index of 32 or
       higher, which is the region a fixed count never reaches. The fixed arm
-      spent 51.6% of its cap and the filling arm 97.8%, so the gain is free at
-      matched evaluations.
+      spent 51.6% of its cap and the filling arm 97.8% — 3,353,403 against
+      6,359,486 mean final evaluations — so the arms share a nominal cap rather
+      than a matched spend, and the gain is what filling buys with the budget a
+      fixed count strands.
       **Three things this does not close.** What tips the recommendation from
       "either" to "filling" is spread — sd 22.31 against IPOP's 71.36, range 88
       against 325 — and **no dispersion contrast was registered**, so that part

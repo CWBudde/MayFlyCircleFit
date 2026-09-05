@@ -45,11 +45,15 @@ behind it.
 | seeds | 119001-119024, twenty-four paired blocks |
 | jobs | 72 of 72 completed; none failed, none cancelled |
 
-**These costs may be compared against every CMA-ES campaign that ran at
-`defaultBudget`** — the nine citable ones listed in AGENTS.md — and **not**
-against [`cmaes-deep-hunt-report.md`](cmaes-deep-hunt-report.md) or
+**These costs may be compared against a CMA-ES campaign that ran at
+`defaultBudget` on this fixture** — the citable ones listed in AGENTS.md, less
+the exclusions below. They may **not** be compared against
+[`cmaes-deep-hunt-report.md`](cmaes-deep-hunt-report.md) or
 [`cmaes-covariance-report.md`](cmaes-covariance-report.md), which ran at 1.94x
-this cap.
+this cap, nor against
+[`cmaes-budget-split-report.md`](cmaes-budget-split-report.md), which fits a
+different image at twelve circles: an equal evaluation cap does not make two
+objective functions comparable.
 
 An earlier submission of this campaign was aborted after about fifty minutes
 because its design contained an unarmed BIPOP arm, which go-cma-es runs as a
@@ -80,8 +84,12 @@ which rungs were degenerate. `restartShapeArms` asserts this rather than
 trusting it, walking every rung the ladder could reach up to `8 * defaultPop`
 and refusing to build the design if any of them clamps. The
 [clean-rung covariance campaign](cmaes-covariance-clean-report.md) is what makes
-that choice free: with block and separable measured as indistinguishable where
-both are clean, pinning full costs nothing in generality.
+that choice cheap rather than free: with block and separable measured as
+indistinguishable where both are clean, pinning full gives up nothing those two
+modes were shown to carry. It had no full-covariance arm, so it cannot say that
+full behaves like either, and every result here was obtained under full only.
+Covariance mode stays an unmeasured limitation on how far the restart-shape
+recommendation transfers.
 
 **`lambda` 64, because it is the rung where the shapes are comparable.** The
 cold arms need a per-attempt budget small enough that 32 attempts fit inside the

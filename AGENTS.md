@@ -39,9 +39,10 @@ ones that will change what you propose:
   `cmaes-deep-hunt-report.md`, `cmaes-covariance-report.md`,
   `cmaes-active-cma-report.md`, `cmaes-covariance-clean-report.md`,
   `cmaes-restart-shape-report.md` and `cmaes-preliminary-report.md`, run in
-  2026-08 and 2026-09 on MayFly v0.7.1 and go-cma-es v0.1.0 — the preliminary
-  one on the code-identical pseudo-version that preceded that tag. Each states
-  its own pins; trust that line over this one. The deep hunt and the covariance
+  2026-08 and 2026-09. The QMC screen is MayFly-only and ran on MayFly v0.7.1;
+  the eleven CMA-ES ones ran on go-cma-es v0.1.0 — the preliminary one on the
+  code-identical pseudo-version that preceded that tag. Each report states its
+  own pins; trust that line over this one. The deep hunt and the covariance
   campaign are the exceptions to citability *within* that set: both ran at
   1.94x the shared cap, so their costs are not comparable to the other ten,
   though they are comparable to each other.
