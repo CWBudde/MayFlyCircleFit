@@ -32,16 +32,17 @@ import (
 // switch in campaignDesign, the artifact defaults, and the tests that
 // enumerate them -- cannot drift apart.
 const (
-	designPhase21  = "phase21"
-	designLambda   = "lambda"
-	designPilot    = "stagnation-pilot"
-	designStag     = "stagnation"
-	designSplit    = "budget-split"
-	designLadder   = "restart-ladder"
-	designHunt     = "deep-hunt"
-	designCov      = "covariance"
-	designActive   = "active-cma"
-	designCovClean = "covariance-clean"
+	designPhase21    = "phase21"
+	designLambda     = "lambda"
+	designPilot      = "stagnation-pilot"
+	designStag       = "stagnation"
+	designSplit      = "budget-split"
+	designLadder     = "restart-ladder"
+	designHunt       = "deep-hunt"
+	designCov        = "covariance"
+	designActive     = "active-cma"
+	designCovClean   = "covariance-clean"
+	designActiveFull = "active-cma-full"
 )
 
 // huntBudget is the deep hunt's per-job evaluation cap. It is 1.94x
@@ -431,7 +432,8 @@ func parseFlags() settings {
 	var config settings
 	flag.StringVar(&config.action, "action", "collect", "plan, submit, collect, preliminary, or analyze")
 	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21, lambda, stagnation-pilot, "+
-		"stagnation, budget-split, restart-ladder, deep-hunt, covariance, active-cma or covariance-clean")
+		"stagnation, budget-split, restart-ladder, deep-hunt, covariance, active-cma, covariance-clean "+
+		"or active-cma-full")
 	flag.StringVar(&config.server, "server", "http://localhost:8085", "serve base URL")
 	flag.StringVar(&config.dataRoot, "data-root", "./data/cmaes-phase11", "serve data root")
 	flag.StringVar(&config.reference, "ref", "example/MayFly-512.png", "reference image")
@@ -679,10 +681,28 @@ func campaignDesign(name string, budget int) (design, error) {
 				{control: clean[2].name, candidate: clean[3].name},
 			},
 		}, nil
+	case designActiveFull:
+		full, fullErr := activeCMAFullArms(budget)
+		if fullErr != nil {
+			return design{}, fullErr
+		}
+
+		// One contrast, the whole family, Holm's first gate the unadjusted
+		// 0.05 -- the active-CMA campaign's reasoning, unchanged, because this
+		// design asks the identical single question in a different covariance
+		// mode.
+		return design{
+			name: name, baseline: full[0].name,
+			blocks: covarianceCleanBlocks, seedBase: activeCMAFullSeedBase, arms: full,
+			reference: recordReference, circles: defaultCircles,
+			contrasts: []plannedContrast{
+				{control: full[0].name, candidate: full[1].name, primary: true},
+			},
+		}, nil
 	default:
 		return design{}, fmt.Errorf(
-			"unknown design %q (want phase21, lambda, stagnation-pilot, stagnation, "+
-				"budget-split, restart-ladder, deep-hunt, covariance, active-cma or covariance-clean)",
+			"unknown design %q (want phase21, lambda, stagnation-pilot, stagnation, budget-split, "+
+				"restart-ladder, deep-hunt, covariance, active-cma, covariance-clean or active-cma-full)",
 			name)
 	}
 }
@@ -1701,6 +1721,83 @@ func covarianceCleanArms(budget int) ([]arm, error) {
 	}
 
 	return arms, nil
+}
+
+// activeCMAFullSeedBase is a fresh range. The full-mode campaign repeats no
+// committed cell, so it gets no bit-for-bit replication check, and it asks its
+// question of blocks no earlier design has seen.
+const activeCMAFullSeedBase = 118_000
+
+// activeCMAFullArms registers activeCMA measured in full covariance mode, which
+// is the gap docs/cmaes-active-cma-report.md names in its own conclusion: the
+// knob "stays unmeasured in full covariance mode, which never clamps and is the
+// other clean place to ask".
+//
+// The block campaign that preceded it retained its null at t = -1.70 and read
+// as absence of evidence rather than a zero. Full mode is the better place to
+// re-ask it for a reason that is arithmetic rather than preference: the whole
+// magnitude of the treatment is the mass active.go scales the negative weights
+// by, and at lambda 64 in 56 dimensions that mass is 1.065 in full mode against
+// 0.281 in block. So this campaign applies a treatment 3.8x larger than the one
+// that returned the null, at the same rung, the same cap and the same restart
+// schedule -- which is what makes it a sharper instrument and not merely
+// another arm.
+//
+// Full mode also never clamps at any lambda, at any dimensionality this project
+// searches, so the rung carries no risk of reproducing the covariance
+// campaign's void. That is asserted below rather than assumed.
+//
+// Everything else is held at the block campaign's settings on purpose. Same
+// rung, same ladderWork product, same cold restarts, same cap. The two
+// campaigns then differ in covariance mode alone, so their nulls and their
+// intervals can be read against each other even though the comparison is
+// across campaigns and therefore a lead rather than a finding.
+func activeCMAFullArms(budget int) ([]arm, error) {
+	if budget <= 0 || budget%ladderWork != 0 {
+		return nil, fmt.Errorf(
+			"budget %d must be positive and divisible by %d; the two arms would not be evaluation-matched",
+			budget, ladderWork)
+	}
+
+	restarts := ladderWork / activeCMALambda
+
+	if restarts > app.MaxOptimizerRestarts {
+		return nil, fmt.Errorf("lambda %d needs %d cold restarts, above app.MaxOptimizerRestarts %d",
+			activeCMALambda, restarts, app.MaxOptimizerRestarts)
+	}
+
+	if searchDimensions > app.MaxCMAESFullDimensions {
+		return nil, fmt.Errorf("full covariance is refused above %d dimensions and this design searches %d",
+			app.MaxCMAESFullDimensions, searchDimensions)
+	}
+
+	// Full mode takes no block correction, so the clamp cannot bind. Checked
+	// rather than asserted, because the whole point of running here is that the
+	// treatment survives.
+	if rankMuClamped(searchDimensions, activeCMALambda, searchDimensions) {
+		return nil, fmt.Errorf("full covariance at lambda %d in %d dimensions clamps; the contrast would be void",
+			activeCMALambda, searchDimensions)
+	}
+
+	mass := activeCMANegativeMass(searchDimensions, activeCMALambda, searchDimensions)
+	if mass < activeCMAMinNegativeMass {
+		return nil, fmt.Errorf(
+			"full covariance at lambda %d in %d dimensions gives active adaptation a negative mass of %g, "+
+				"below the %g this design requires; the contrast would measure nothing",
+			activeCMALambda, searchDimensions, mass, activeCMAMinNegativeMass)
+	}
+
+	control := arm{
+		name:      fmt.Sprintf("full-r%d-l%d", restarts, activeCMALambda),
+		optimizer: "cmaes", covariance: "full", restartStrategy: "none",
+		iters: budget / ladderWork, popSize: activeCMALambda, optimizerRestarts: restarts,
+	}
+
+	passive := control
+	passive.name = control.name + "-passive"
+	passive.passiveCMA = true
+
+	return []arm{control, passive}, nil
 }
 
 func campaignArms(budget int) ([]arm, error) {

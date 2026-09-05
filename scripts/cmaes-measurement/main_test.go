@@ -1187,7 +1187,7 @@ func registeredDesigns() []string {
 	return []string{
 		designPhase21, designLambda, designPilot, designStag,
 		designSplit, designLadder, designHunt, designCov, designActive,
-		designCovClean,
+		designCovClean, designActiveFull,
 	}
 }
 
@@ -2034,5 +2034,97 @@ func TestCovarianceCleanCampaignRunsAtTheFixedCap(t *testing.T) {
 
 	if budget := mustDesignBudget(t, designCovClean); budget != defaultBudget {
 		t.Errorf("covariance-clean budget = %d, want %d", budget, defaultBudget)
+	}
+}
+
+// TestActiveCMAFullCampaignAsksWhereTheTreatmentIsLargest pins the two
+// properties that make full mode the place docs/cmaes-active-cma-report.md
+// says to re-ask its question: the clamp cannot bind there, and the treatment
+// is substantially larger than the block campaign's at the same rung. Both are
+// arithmetic the driver can check, so a future edit cannot quietly move the
+// design somewhere the knob is inert again.
+func TestActiveCMAFullCampaignAsksWhereTheTreatmentIsLargest(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designActiveFull, mustDesignBudget(t, designActiveFull))
+	if err != nil {
+		t.Fatalf("active-cma-full design: %v", err)
+	}
+
+	if len(plan.arms) != 2 {
+		t.Fatalf("active-cma-full arms = %d, want 2", len(plan.arms))
+	}
+
+	for _, current := range plan.arms {
+		if current.covariance != "full" {
+			t.Errorf("arm %s runs %q covariance; the campaign exists to ask in full mode",
+				current.name, current.covariance)
+		}
+
+		if rankMuClamped(searchDimensions, current.popSize, searchDimensions) {
+			t.Errorf("arm %s clamps at lambda %d; full mode must not", current.name, current.popSize)
+		}
+	}
+
+	// The block campaign returned its null at a mass of 0.281. Asking again at
+	// a smaller one would repeat that campaign's weakness rather than answer
+	// it, so the design requires strictly more treatment than it had.
+	blockMass := activeCMANegativeMass(searchDimensions, activeCMALambda, app.ParametersPerCircle)
+
+	fullMass := activeCMANegativeMass(searchDimensions, activeCMALambda, searchDimensions)
+	if fullMass <= blockMass {
+		t.Errorf("full mass %g does not exceed the block campaign's %g; the design is not a sharper instrument",
+			fullMass, blockMass)
+	}
+}
+
+// TestActiveCMAFullCampaignMovesOnlyTheKnob asserts the single-factor property
+// field by field, and that the campaign is held at the block campaign's rung,
+// schedule and cap so the two can be read against each other.
+func TestActiveCMAFullCampaignMovesOnlyTheKnob(t *testing.T) {
+	t.Parallel()
+
+	budget := mustDesignBudget(t, designActiveFull)
+
+	plan, err := campaignDesign(designActiveFull, budget)
+	if err != nil {
+		t.Fatalf("active-cma-full design: %v", err)
+	}
+
+	control, passive := plan.arms[0], plan.arms[1]
+
+	want := []plannedContrast{{control: control.name, candidate: passive.name, primary: true}}
+	if !slices.Equal(plan.contrasts, want) {
+		t.Errorf("contrasts = %+v, want %+v", plan.contrasts, want)
+	}
+
+	if !passive.passiveCMA || control.passiveCMA {
+		t.Error("the candidate must be the only arm turning active adaptation off")
+	}
+
+	wantPassive := control
+	wantPassive.name, wantPassive.passiveCMA = passive.name, passive.passiveCMA
+
+	if passive != wantPassive {
+		t.Errorf("the candidate moves more than activeCMA:\n got %+v\nwant %+v", passive, wantPassive)
+	}
+
+	// Held at the block campaign's settings, so the only difference between the
+	// two campaigns is the covariance mode.
+	blockPlan, blockErr := campaignDesign(designActive, mustDesignBudget(t, designActive))
+	if blockErr != nil {
+		t.Fatalf("active-cma design: %v", blockErr)
+	}
+
+	blockControl := blockPlan.arms[0]
+	if control.popSize != blockControl.popSize ||
+		control.optimizerRestarts != blockControl.optimizerRestarts ||
+		control.iters != blockControl.iters ||
+		control.restartStrategy != blockControl.restartStrategy {
+		t.Errorf("full arm %+v is not held at the block campaign's schedule %+v", control, blockControl)
+	}
+
+	if spend := control.popSize * control.optimizerRestarts * control.iters; spend != budget {
+		t.Errorf("arm %s is capped at %d evaluations, want %d", control.name, spend, budget)
 	}
 }
