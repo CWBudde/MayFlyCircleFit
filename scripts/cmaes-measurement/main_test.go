@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"math"
 	"os"
 	"path/filepath"
@@ -316,8 +317,13 @@ func TestCollectPreliminaryUsesPersistedJobsOnly(t *testing.T) {
 		}
 	}
 
+	// The stage column sits at index 3, so populationSpread and sigma moved one
+	// place right when the first staged design landed. A preliminary row is
+	// always stage 0: -action preliminary reads jobs off disk and knows nothing
+	// about schedules.
 	trajectory := readCSVFixture(t, trajectoryPath)
-	if len(trajectory) != 3 || trajectory[1][6] != "" || trajectory[1][7] != "0.29999999999999999" {
+	if len(trajectory) != 3 || trajectory[1][3] != "0" ||
+		trajectory[1][7] != "" || trajectory[1][8] != "0.29999999999999999" {
 		t.Fatalf("unexpected preliminary trajectory: %#v", trajectory)
 	}
 }
@@ -1625,8 +1631,8 @@ func TestDeepHuntPayloadCarriesOnlyTheKnobsAnArmTurns(t *testing.T) {
 		t.Errorf("sep-warm-e8 batchSize = %v, want %d", warm["batchSize"], defaultCircles)
 	}
 
-	if colour := specs[0]["color"]; colour != "#181700" {
-		t.Errorf("first circle colour = %v, want #181700", colour)
+	if colour := specs[0]["color"]; colour != "#5c4817" {
+		t.Errorf("first circle colour = %v, want #5c4817", colour)
 	}
 }
 
@@ -2471,5 +2477,155 @@ func TestRestartShapeCampaignRegistersTwoContrasts(t *testing.T) {
 
 	if plan.interaction != nil {
 		t.Error("restart-shape registers an interaction; its contrasts are not a 2x2")
+	}
+}
+
+func TestExtendWidthArmsAreEvaluationMatched(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designExtendWidth, defaultBudget)
+	if err != nil {
+		t.Fatalf("extend-width: %v", err)
+	}
+
+	if len(plan.arms) != 5 {
+		t.Fatalf("extend-width has %d arms, want 5", len(plan.arms))
+	}
+
+	for _, current := range plan.arms {
+		if spend := current.plannedEvaluations(); spend != defaultBudget {
+			t.Errorf("%s plans %d evaluations, want %d", current.name, spend, defaultBudget)
+		}
+
+		if current.covariance != "full" {
+			t.Errorf("%s covariance = %q; only full never clamps at every width here",
+				current.name, current.covariance)
+		}
+
+		if current.popSize != extendWidthLambda || current.iters != extendWidthAttemptIters {
+			t.Errorf("%s runs %d x %d, want the pinned attempt %d x %d",
+				current.name, current.iters, current.popSize,
+				extendWidthAttemptIters, extendWidthLambda)
+		}
+
+		// A positive count bounds the spend; only the negative shape fills it,
+		// and filling is the shape the campaign registered.
+		if current.optimizerRestarts >= 0 {
+			t.Errorf("%s optimizerRestarts = %d, want a negative (filling) count",
+				current.name, current.optimizerRestarts)
+		}
+
+		if current.stages > 0 && current.stages*current.width != extendWidthCircles-extendWidthBaseCircles {
+			t.Errorf("%s appends %d x %d circles, want %d",
+				current.name, current.stages, current.width,
+				extendWidthCircles-extendWidthBaseCircles)
+		}
+	}
+}
+
+// TestExtendWidthDocumentsExpandAsRegistered runs each staged arm's payload
+// through the parser and expander the server uses. A campaign document that
+// app refuses, or that expands to a different circle climb than the design
+// registered, would otherwise fail sixty times at submit rather than once here.
+func TestExtendWidthDocumentsExpandAsRegistered(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designExtendWidth, defaultBudget)
+	if err != nil {
+		t.Fatalf("extend-width: %v", err)
+	}
+
+	config := settings{project: defaultProject, reference: recordReference, workers: 8}
+
+	for _, current := range plan.arms {
+		if current.stages == 0 {
+			continue
+		}
+
+		body, marshalErr := json.Marshal(schedulePayload(config, plan, current, extendWidthSeedBase+1))
+		if marshalErr != nil {
+			t.Fatalf("%s: %v", current.name, marshalErr)
+		}
+
+		document, parseErr := app.ParseSchedule(body)
+		if parseErr != nil {
+			t.Fatalf("%s: app refused the document: %v", current.name, parseErr)
+		}
+
+		stages, expandErr := document.Expand()
+		if expandErr != nil {
+			t.Fatalf("%s: expand: %v", current.name, expandErr)
+		}
+
+		if len(stages) != current.stages+1 {
+			t.Fatalf("%s expands to %d stages, want a base plus %d extends",
+				current.name, len(stages), current.stages)
+		}
+
+		base := stages[0]
+		if base.Kind != app.ScheduleStageBase || base.Circles != extendWidthBaseCircles {
+			t.Errorf("%s base is %s at %d circles, want base at %d",
+				current.name, base.Kind, base.Circles, extendWidthBaseCircles)
+		}
+
+		if len(base.Config.InitialCircles) != extendWidthBaseCircles {
+			t.Errorf("%s base carries %d authored circles, want %d",
+				current.name, len(base.Config.InitialCircles), extendWidthBaseCircles)
+		}
+
+		for index, stage := range stages[1:] {
+			if stage.Kind != app.ScheduleStageExtend {
+				t.Errorf("%s stage %d is %s, want extend", current.name, stage.Index, stage.Kind)
+			}
+
+			// Expansion clears initialCircles on every continuation: an extend
+			// is seeded from its parent checkpoint. A stage that still carried
+			// the authored arrangement would refit the prefix.
+			if len(stage.Config.InitialCircles) != 0 {
+				t.Errorf("%s stage %d still carries authored circles", current.name, stage.Index)
+			}
+
+			if want := extendWidthBaseCircles + (index+1)*current.width; stage.Circles != want {
+				t.Errorf("%s stage %d reaches %d circles, want %d",
+					current.name, stage.Index, stage.Circles, want)
+			}
+
+			if stage.Config.OptimizerRestarts != current.optimizerRestarts {
+				t.Errorf("%s stage %d restarts = %d, want %d",
+					current.name, stage.Index, stage.Config.OptimizerRestarts, current.optimizerRestarts)
+			}
+
+			if stage.Config.PopSize != current.popSize || stage.Config.Iters != current.iters {
+				t.Errorf("%s stage %d runs %d x %d, want %d x %d",
+					current.name, stage.Index, stage.Config.Iters, stage.Config.PopSize,
+					current.iters, current.popSize)
+			}
+		}
+
+		if final := stages[len(stages)-1]; final.Circles != extendWidthCircles {
+			t.Errorf("%s finishes at %d circles, want %d", current.name, final.Circles, extendWidthCircles)
+		}
+	}
+}
+
+// TestExtendWidthSeedsTheStandingRecord pins the base stage to the solution the
+// campaign is built on. recordCircles was superseded once already, and a silent
+// edit would make every seeded arm fit a different prefix than the report says.
+func TestExtendWidthSeedsTheStandingRecord(t *testing.T) {
+	t.Parallel()
+
+	if recordCost >= recordCostAtSharedCap {
+		t.Errorf("recordCost %v is not better than the shared-cap record %v; the two look swapped",
+			recordCost, recordCostAtSharedCap)
+	}
+
+	if recordQuantizedCost <= recordCost {
+		t.Errorf("recordQuantizedCost %v is not above recordCost %v; quantization cannot improve a fit",
+			recordQuantizedCost, recordCost)
+	}
+
+	specs := warmStartSpecs()
+	if len(specs) != extendWidthBaseCircles {
+		t.Fatalf("warmStartSpecs has %d circles, want %d", len(specs), extendWidthBaseCircles)
 	}
 }

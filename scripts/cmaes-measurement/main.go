@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cwbudde/circlefit/internal/app"
@@ -32,18 +33,19 @@ import (
 // switch in campaignDesign, the artifact defaults, and the tests that
 // enumerate them -- cannot drift apart.
 const (
-	designPhase21    = "phase21"
-	designLambda     = "lambda"
-	designPilot      = "stagnation-pilot"
-	designStag       = "stagnation"
-	designSplit      = "budget-split"
-	designLadder     = "restart-ladder"
-	designHunt       = "deep-hunt"
-	designCov        = "covariance"
-	designActive     = "active-cma"
-	designCovClean   = "covariance-clean"
-	designActiveFull = "active-cma-full"
-	designShape      = "restart-shape"
+	designPhase21     = "phase21"
+	designLambda      = "lambda"
+	designPilot       = "stagnation-pilot"
+	designStag        = "stagnation"
+	designSplit       = "budget-split"
+	designLadder      = "restart-ladder"
+	designHunt        = "deep-hunt"
+	designCov         = "covariance"
+	designActive      = "active-cma"
+	designCovClean    = "covariance-clean"
+	designActiveFull  = "active-cma-full"
+	designShape       = "restart-shape"
+	designExtendWidth = "extend-width"
 )
 
 // huntBudget is the deep hunt's per-job evaluation cap. It is 1.94x
@@ -151,6 +153,42 @@ type arm struct {
 	// rather than a slice so arm stays comparable -- the tests compare arms
 	// with != to assert that two designs registered the same one.
 	warmStart bool
+	// stages is how many extend stages follow the arm's base stage. Zero is
+	// every campaign before extend-width: one from-scratch batch job, posted
+	// to /api/v1/jobs. A positive count makes the arm a schedule instead --
+	// a seeded base plus this many extend steps, posted to /api/v1/schedules
+	// -- because the frozen-prefix continuation an extend performs has no
+	// single-job form. iters, popSize and optimizerRestarts then describe one
+	// stage, and plannedEvaluations multiplies them up.
+	stages int
+	// width is additionalCircles on each of those stages, so stages*width is
+	// what the arm appends. It is the variable extend-width exists to vary:
+	// the same circles and the same evaluation cap, committed in different
+	// sized groups.
+	width int
+	// seeded starts the base stage from recordCircles. It is separate from
+	// warmStart because that field seeds the run under test itself, while this
+	// seeds a base stage that the run under test then extends and never
+	// revisits -- an extend freezes its prefix.
+	seeded bool
+}
+
+// plannedEvaluations is the nominal cap an arm spends across every stage it
+// runs. It is the one place the arithmetic lives, because printPlan and
+// evaluationCap disagreeing about a staged arm would make the plan printout and
+// the spend column describe different campaigns.
+//
+// Only CMA-ES spends exactly lambda evaluations per iteration; a MayFly arm
+// evaluates its population several times per iteration and is matched to the
+// budget by campaign shape instead, so it reports zero and its callers say so.
+func (a arm) plannedEvaluations() int {
+	if a.optimizer == "mayfly" {
+		return 0
+	}
+
+	perStage := a.iters * a.popSize * max(a.optimizerEpochs, 1) * restartAttempts(a.optimizerRestarts)
+
+	return perStage * max(a.stages, 1)
 }
 
 // recordCircle is one circle of a known solution, in the shape
@@ -169,13 +207,18 @@ type recordCircle struct {
 const recordReference = "example/MayFly-512.png"
 
 // recordCircles is the best eight-circle fit this repository has recorded on
-// recordReference: cost 752.5220120747884, seed 111018, job
-// 2997714f-aa17-4a0d-9a10-45c746f2d270, produced under the sep-ipop
-// configuration -- separable covariance, IPOP, lambda 1024. Naming a campaign
-// here would be wrong whichever one were named: the stagnation campaign set the
-// cost and the restart ladder returned it bit for bit from four independent
-// lambda-1024 schedules on that seed, which is what makes it an attractor
-// rather than one run's luck.
+// recordReference: cost 726.1984354654948, seed 114007, job
+// 65b38e2f-e75f-4d80-8ae9-822e8a28ede6, produced by the deep hunt's blk-ipop
+// arm -- block covariance, IPOP, lambda 1024, activeCMA on -- at huntBudget.
+//
+// It supersedes 752.5220120747884, which stood here until the extend-width
+// campaign made the constant load-bearing rather than cosmetic: that design
+// seeds its base stage from these circles, so a stale solution would not merely
+// misreport a "vs record" column, it would fit the wrong prefix. Replacing it
+// re-dates one committed number elsewhere: re-running -action analyze against
+// docs/cmaes-deep-hunt-measurement.csv now prints its "vs record" column
+// against 726.20, where the committed report printed it against 752.52. The
+// report's own text is the record of that, and it asked for this change.
 //
 // Every value is inside fit.NewBounds for a 512x512 reference -- x and y in
 // [-256, 767], r in [1, 512] -- which matters because app refuses an
@@ -184,21 +227,47 @@ const recordReference = "example/MayFly-512.png"
 // server, so the run starts a hair off the recorded optimum.
 func recordCircles() []recordCircle {
 	return []recordCircle{
-		{x: 329.9423119106, y: 373.0225476704, r: 431.5423031015, red: 0.0952935261, green: 0.0899109656, blue: 0.0019265758, opacity: 0.8890438275},
-		{x: 365.0914174402, y: 190.2735475663, r: 173.8904554558, red: 0.7839592864, green: 0.9188836416, blue: 0.9168788995, opacity: 0.8546525007},
-		{x: 577.8767134563, y: -63.3337480908, r: 385.0442728104, red: 0.1283559047, green: 0.1321413762, blue: 0.0001885401, opacity: 0.9161314775},
-		{x: 766.9993601946, y: 274.8295172743, r: 438.8285807262, red: 0.3837069103, green: 0.3680930374, blue: 0.2076307413, opacity: 0.9989963181},
-		{x: 404.5302577836, y: 113.0090295166, r: 35.9794288312, red: 0.9995151396, green: 0.9470507642, blue: 0.7532006364, opacity: 0.9992998456},
-		{x: -142.4033416647, y: 75.6240703214, r: 265.6286379537, red: 0.7076551967, green: 0.6835767334, blue: 0.5242550009, opacity: 0.7240497837},
-		{x: -255.9431084465, y: 388.9910244196, r: 458.6624137213, red: 0.1020058899, green: 0.1080295816, blue: 0.0490751067, opacity: 0.8886370426},
-		{x: 281.5353202309, y: 2.3742393186, r: 511.9960144115, red: 0.2968523207, green: 0.2570314710, blue: 0.1317415412, opacity: 0.4405397128},
+		{x: -255.9984368618, y: 162.9965102619, r: 453.9864281082, red: 0.3609139228, green: 0.2820853129, blue: 0.0920986151, opacity: 0.7111318709},
+		{x: 744.4424245310, y: -26.0369045361, r: 505.2796370210, red: 0.3440046884, green: 0.2823678220, blue: 0.0693873643, opacity: 0.8724086185},
+		{x: 265.0455681973, y: -60.1884457624, r: 173.5574152281, red: 0.2274085173, green: 0.1787557007, blue: 0.0083019424, opacity: 0.9996893742},
+		{x: 238.4804876773, y: 115.1411171072, r: 123.4125723014, red: 0.0002970486, green: 0.0029787927, blue: 0.0010754562, opacity: 0.3081065940},
+		{x: 603.0374244715, y: 704.5071940232, r: 497.7213147548, red: 0.3691050888, green: 0.3294344931, blue: 0.1844828750, opacity: 0.9995349479},
+		{x: -130.9847103652, y: 397.7000301004, r: 378.6305876042, red: 0.1005364754, green: 0.0744961555, blue: 0.0001518657, opacity: 0.8537465786},
+		{x: 404.5290495013, y: 113.0087727614, r: 35.9797436427, red: 0.9995692756, green: 0.9541192220, blue: 0.7392165928, opacity: 0.9983728139},
+		{x: 197.2818260205, y: 149.9331262837, r: 347.0495027937, red: 0.2275988185, green: 0.2439870809, blue: 0.1426256606, opacity: 0.4372276652},
 	}
 }
 
-// recordCost is the cost recordCircles produces. reportDescriptive prints each
-// arm's minimum against it, which is the whole point of a design that reports
-// an order statistic instead of a paired test.
-const recordCost = 752.5220120747884
+// recordCost is the cost recordCircles produces at full precision.
+// reportDescriptive prints each arm's minimum against it, which is the whole
+// point of a design that reports an order statistic instead of a paired test.
+//
+// A run seeded from recordCircles does not start here. initialCircles names a
+// colour in eight bits per channel, so the three colour coordinates are
+// quantized on the way to the server while x, y, r and opacity pass through as
+// float64. Scored back through `circlefit score`, the quantized arrangement
+// costs 728.382406870524 -- 2.184 above this constant. That gap is identical
+// for every arm seeded from it, so it cancels in a paired contrast between two
+// such arms and does not cancel against a cold arm.
+const recordCost = 726.1984354654948
+
+// recordQuantizedCost is what recordCircles actually costs once initialCircles
+// has rounded its colours, measured with
+// `circlefit score --ref example/MayFly-512.png --circles <specs>`. A design
+// that seeds a base stage from the record asserts its base against this, not
+// against recordCost.
+const recordQuantizedCost = 728.382406870524
+
+// recordCostAtSharedCap is the best eight-circle cost recorded at
+// defaultBudget, from the stagnation campaign's sep-ipop arm and returned bit
+// for bit by four of the restart ladder's lambda-1024 schedules on that seed.
+//
+// It is not the standing record and is not meant to be. recordCost was bought
+// at huntBudget, 1.94x this cap, so an arm held to defaultBudget beating it
+// would be remarkable while failing to is no information at all. A design
+// reports against whichever of the two shares its cap; recordReference pins
+// both to the same fixture.
+const recordCostAtSharedCap = 752.5220120747884
 
 // coldRestartStrategy is the restartStrategy value an arm carries when it uses
 // the engine-agnostic cold-restart wrapper rather than one of CMA-ES's own
@@ -326,7 +395,47 @@ type manifestRow struct {
 	Arm   string
 	Block int
 	Seed  int64
+	// ScheduleID is set for a staged arm and empty for a single-job one. A
+	// staged arm has no job ID at submit time -- the executor starts its stages
+	// one at a time -- so the manifest records the campaign and collect
+	// resolves the final stage's job from it.
+	ScheduleID string
+	// JobID is the job whose cost is this row's answer. For a staged arm that
+	// is the last extend stage, resolved at collect time and empty in the
+	// manifest on disk.
 	JobID string
+	// Stages is every job the row's evaluations were spent in, in order, each
+	// with the share of the cap it was held to. It is populated at collect time
+	// for a staged arm and nil for a single-job one, where jobs() supplies the
+	// one-element equivalent.
+	Stages []stageJob
+}
+
+// stageJob is one job a manifest row resolved to, and the budget that job alone
+// was held to. A staged arm splits the campaign cap evenly across its extend
+// stages, so a per-stage reading -- scoring, or the trajectory downsampler's
+// buckets -- has to use the stage's share and not the campaign's.
+type stageJob struct {
+	Stage int
+	JobID string
+	// Project is the slug the job's directory lives under. It is not always
+	// the campaign's: the schedule executor creates every stage under
+	// app.DefaultProject, because a schedule document has no project field --
+	// project is not part of JobConfig, and the base stanza is a JobConfig.
+	// A reader that assumed config.project would look in an empty directory.
+	Project string
+	Budget  int
+}
+
+// jobs is every job this row spent evaluations in. A row from a campaign
+// without stages is one job holding the whole budget, which is what every
+// design before extend-width submitted.
+func (r manifestRow) jobs(project string, budget int) []stageJob {
+	if len(r.Stages) > 0 {
+		return r.Stages
+	}
+
+	return []stageJob{{Stage: 0, JobID: r.JobID, Project: project, Budget: budget}}
 }
 
 type jobStatus struct {
@@ -616,7 +725,7 @@ func campaignDesign(name string, budget int) (design, error) {
 			name: name, baseline: "sep-ipop", secondaryControl: "sep-ipop-w60",
 			blocks: campaignBlocks, seedBase: stagnationSeedBase, arms: ladder,
 			reference: recordReference, circles: defaultCircles,
-			record: recordCost,
+			record: recordCostAtSharedCap,
 			contrasts: []plannedContrast{
 				{control: "sep-ipop", candidate: "sep-r32-l64", primary: true},
 				{control: "sep-ipop-w60", candidate: "sep-bipop-w60"},
@@ -740,10 +849,46 @@ func campaignDesign(name string, budget int) (design, error) {
 			name: name, baseline: shape[0].name, secondaryControl: shape[1].name,
 			blocks: restartShapeBlocks, seedBase: restartShapeSeedBase, arms: shape,
 			reference: recordReference, circles: defaultCircles,
-			record: recordCost,
+			record: recordCostAtSharedCap,
 			contrasts: []plannedContrast{
 				{control: shape[0].name, candidate: shape[2].name, primary: true},
 				{control: shape[1].name, candidate: shape[2].name},
+			},
+		}, nil
+	case designExtendWidth:
+		widths, widthErr := extendWidthArms(budget)
+		if widthErr != nil {
+			return design{}, widthErr
+		}
+
+		// Four contrasts in one Holm family. The primary re-asks the +1 versus
+		// +8 question on the current pin and with the current engine; the two
+		// intermediate widths are registered rather than derived so the family
+		// is exactly what the campaign intends to read, the way the lambda
+		// screen's thirteen derived contrasts showed is worth avoiding.
+		//
+		// The secondary runs the other way round on purpose. Its control is the
+		// cold arm, so a positive gain means the seeded prefix helped, which is
+		// the direction the question is asked in: is the record an asset or a
+		// cage? It is the one contrast that can invalidate the campaign's
+		// premise rather than answer its primary.
+		//
+		// No record column. A sixteen-circle cost on this fixture is comparable
+		// to nothing recorded so far, and recordCostAtSharedCap is an
+		// eight-circle number; printing either would invite exactly the
+		// comparison AGENTS.md forbids. The reference point this campaign has
+		// is recordQuantizedCost, the cost its own base stage starts from, and
+		// that belongs in the report beside every arm rather than in a BEAT
+		// line.
+		return design{
+			name: name, baseline: "ext-w8", secondaryControl: "cold-w16",
+			blocks: extendWidthBlocks, seedBase: extendWidthSeedBase, arms: widths,
+			reference: recordReference, circles: extendWidthCircles,
+			contrasts: []plannedContrast{
+				{control: "ext-w8", candidate: "ext-w1", primary: true},
+				{control: "ext-w8", candidate: "ext-w4"},
+				{control: "ext-w8", candidate: "ext-w2"},
+				{control: "cold-w16", candidate: "ext-w8"},
 			},
 		}, nil
 	case designActiveFull:
@@ -2020,9 +2165,9 @@ func restartShapeRungs() []int {
 // against bounding at one lambda, and it is the direct measurement of what the
 // filling shape buys.
 //
-// The record it reports against is recordCost, 752.52, and that is the right
-// one here rather than the deep hunt's 726.1984354654948: 752.52 was set at
-// this cap, while the hunt's was bought with 1.94x of it. A fixed-cap arm
+// The record it reports against is recordCostAtSharedCap, 752.52, and that is
+// the right one here rather than the standing 726.1984354654948: 752.52 was set
+// at this cap, while the record was bought with 1.94x of it. A fixed-cap arm
 // beating the hunt's number would be remarkable; failing to is not information.
 //
 // Cap-matched by construction, and spend-matched only as an intent: the fill
@@ -2091,6 +2236,238 @@ func restartShapeArms(budget int) ([]arm, error) {
 // assertion a caller can make rather than a way to alter a campaign: a
 // mistyped seed base would silently reuse another campaign's seeds, and a
 // mistyped block count would change df after the fact.
+// The extend-width campaign's fixed shape. Every one of these is a design input
+// rather than a flag, for the reason design.seedBase and design.reference are:
+// a campaign that could silently differ from the registered one is not a
+// registered campaign.
+const (
+	// extendWidthSeedBase follows restartShapeSeedBase's block. Seeds belong to
+	// a design so two campaigns cannot silently share them, and so a
+	// replication cannot silently fail to.
+	extendWidthSeedBase = 120_000
+	extendWidthBlocks   = 12
+	// extendWidthLambda is the population every stage runs, and the rung the
+	// restart-shape campaign measured its winning shape at.
+	extendWidthLambda = 64
+	// extendWidthAttemptIters is one cold attempt's generation count, pinned
+	// across arms so grouping width is not confounded with attempt length. It
+	// is the value full-fill-l64 ran, so an attempt here is the same object the
+	// restart-shape campaign measured.
+	extendWidthAttemptIters = 3175
+	// extendWidthBaseCircles is the seeded prefix and extendWidthCircles the
+	// count every arm finishes at. The difference is what the campaign spends
+	// its budget appending.
+	extendWidthBaseCircles = 8
+	extendWidthCircles     = 16
+	// extendWidthBasePop and extendWidthBaseIters make the base stage as close
+	// to a no-op as the server allows: app.MinPopulation individuals for one
+	// generation. The base exists to install recordCircles and write the
+	// checkpoint the first extend continues from, not to search. Its cost is
+	// asserted against recordQuantizedCost before the campaign runs, and it is
+	// identical across the four seeded arms, so it cancels in every contrast
+	// among them.
+	extendWidthBasePop   = 20
+	extendWidthBaseIters = 1
+)
+
+// The extend-width campaign: how to spend a budget on circles 9 to 16.
+//
+// Every campaign in this driver before this one is single-stage and cold --
+// eight circles fitted from scratch in one batch, 56 dimensions. This one holds
+// a fitted eight-circle prefix and asks how the next eight should be committed:
+// all at once, in two fours, four twos, or one at a time. PLAN Task 3 names the
+// gap ("measure whether extend and polish stages benefit"; the collapse
+// dynamics from a fitted vector are unmeasured) and the extend half became
+// expressible when steps[].restarts landed.
+//
+// The two priors point opposite ways and neither is on the current pin.
+// docs/schedule-format.md measured +1 beating +4 by 4.05 cost units at 312
+// circles, and says in the same breath that the figure is a pre-v0.7.0 MayFly
+// number that must not be compared against a run made today.
+// docs/seed-variance-and-population-report.md argues the other direction: an
+// extend freezes its prefix, so every stage is a commitment, and it names
+// larger extends as the untried lever against exactly that. Re-asking the
+// question on the current pin is the campaign.
+//
+// What is held constant, and why each choice is forced rather than picked:
+//
+//   - Full covariance. It is the only mode that never clamps the rank-mu rate
+//     in go-cma-es v0.1.0, and these arms search four different dimensions
+//     (7, 14, 28, 56) where separable and block each cross their boundary in a
+//     different place. Holding covariance constant is required anyway; full is
+//     the value that is also safe at every width. docs/cmaes-covariance-clean-report.md
+//     measured block and separable indistinguishable on clean rungs, so the
+//     choice gives up nothing that has been measured.
+//   - lambda 64 with budget-filling cold restarts, the shape
+//     docs/cmaes-restart-shape-report.md established with the only rejected
+//     restart contrast in the corpus (+6.89, p = 0.0083).
+//   - Attempt length pinned at extendWidthAttemptIters for every arm. Without
+//     this, a narrow arm would run both more stages and shorter attempts, and
+//     the campaign would confound grouping width with restart length -- which
+//     the restart-shape campaign has already shown is worth several cost units
+//     on its own.
+//
+// So only two things vary with an arm: how many stages it runs, and how many
+// cold attempts each stage gets. Their product is constant, which is what makes
+// the arms evaluation-matched by construction:
+//
+//	stages x attemptsPerStage x extendWidthAttemptIters x lambda = budget
+//
+// Evaluation-matched is not wall-clock-matched here, and the gap runs along the
+// variable under test: a narrow stage renders fewer circles per candidate over
+// a retained canvas and can take the incremental dirty-span path that joint
+// sessions never take, while a small-population run pays per-iteration overhead
+// the restart-shape campaign measured at 37% of wall clock. The campaign
+// registers on evaluations, as every earlier one does, and reports elapsed as a
+// by-product.
+//
+// cold-w16 is the control that can invalidate the premise rather than answer
+// the primary. It fits all sixteen circles from scratch, jointly, at the same
+// cap and never sees the record.
+// docs/seed-variance-and-population-report.md found the best eight-circle base
+// of four finishing last at every rung from 32 circles on, and the deep hunt's
+// warm starts settled in a 742.55-744.37 band in 11 of 11 blocks without ever
+// approaching the cold-found 726.20. If building on the record is worth
+// nothing, this arm is how the campaign finds out instead of assuming.
+//
+// The seeded arms do not start at recordCost. initialCircles names colours in
+// eight bits, so the base costs recordQuantizedCost -- 2.184 above the record.
+// That offset is identical for all four seeded arms and cancels in every
+// contrast among them; it does not cancel against cold-w16, which it
+// handicaps by that much.
+func extendWidthArms(budget int) ([]arm, error) {
+	const attemptWork = extendWidthAttemptIters * extendWidthLambda
+
+	if budget <= 0 || budget%attemptWork != 0 {
+		return nil, fmt.Errorf(
+			"budget %d must be positive and divisible by one attempt of %d evaluations; "+
+				"the arms would not be evaluation-matched",
+			budget, attemptWork)
+	}
+
+	attempts := budget / attemptWork
+	appended := extendWidthCircles - extendWidthBaseCircles
+
+	arms := make([]arm, 0, 5)
+
+	for _, spec := range []struct {
+		name   string
+		stages int
+	}{
+		{"ext-w8", 1},
+		{"ext-w4", 2},
+		{"ext-w2", 4},
+		{"ext-w1", 8},
+	} {
+		built, err := extendWidthStagedArm(spec.name, spec.stages, attempts, appended)
+		if err != nil {
+			return nil, err
+		}
+
+		arms = append(arms, built)
+	}
+
+	coldDimensions := extendWidthCircles * app.ParametersPerCircle
+	if err := assertExtendWidthRung("cold-w16", coldDimensions); err != nil {
+		return nil, err
+	}
+
+	arms = append(arms, arm{
+		name: "cold-w16", optimizer: "cmaes",
+		covariance: "full", restartStrategy: coldRestartStrategy,
+		iters: extendWidthAttemptIters, popSize: extendWidthLambda,
+		optimizerRestarts: -attempts,
+	})
+
+	for _, built := range arms {
+		if spend := built.plannedEvaluations(); spend != budget {
+			return nil, fmt.Errorf("%s plans %d evaluations, want %d", built.name, spend, budget)
+		}
+	}
+
+	return arms, nil
+}
+
+// extendWidthStagedArm builds one seeded arm: a prefix, then stages extends of
+// equal width, each holding an equal share of the campaign's cold attempts.
+// Every refusal here is a design-time one, because an arm that cannot express
+// its share of the cap is an arm that would silently not be
+// evaluation-matched.
+func extendWidthStagedArm(name string, stages, attempts, appended int) (arm, error) {
+	if appended%stages != 0 {
+		return arm{}, fmt.Errorf("%s: %d stages cannot append %d circles evenly", name, stages, appended)
+	}
+
+	if attempts%stages != 0 {
+		return arm{}, fmt.Errorf(
+			"%s: %d cold attempts cannot be split evenly across %d stages, so the arm would not be "+
+				"evaluation-matched against the others", name, attempts, stages)
+	}
+
+	width := appended / stages
+	perStage := attempts / stages
+
+	if width > app.MaxBatchSize {
+		return arm{}, fmt.Errorf("%s: append width %d exceeds app.MaxBatchSize %d", name, width, app.MaxBatchSize)
+	}
+
+	// A filling shape asks for a cap of perStage x iters and then spends it,
+	// starting a further attempt whenever a whole one still fits, so the
+	// attempt count can exceed perStage and is bounded separately by
+	// app.MaxOptimizerRestarts. The narrow arms are where that ceiling binds:
+	// docs/cmaes-restart-shape-report.md measured its filling arm averaging 61
+	// attempts of the 64 available at 56 dimensions, and these stages search as
+	// few as 7, where an attempt trips TolFun far sooner. This guard only
+	// refuses a cap that cannot be expressed; whether the ceiling binds in
+	// practice is a measurement, and the campaign probes it before it runs.
+	if perStage > app.MaxOptimizerRestarts {
+		return arm{}, fmt.Errorf(
+			"%s: %d cold attempts per stage exceeds app.MaxOptimizerRestarts %d",
+			name, perStage, app.MaxOptimizerRestarts)
+	}
+
+	dimensions := width * app.ParametersPerCircle
+	if err := assertExtendWidthRung(name, dimensions); err != nil {
+		return arm{}, err
+	}
+
+	return arm{
+		name: name, optimizer: "cmaes",
+		covariance: "full", restartStrategy: coldRestartStrategy,
+		iters: extendWidthAttemptIters, popSize: extendWidthLambda,
+		optimizerRestarts: -perStage,
+		stages:            stages, width: width, seeded: true,
+	}, nil
+}
+
+// assertExtendWidthRung refuses a stage whose search the pinned library cannot
+// run cleanly. It is a design-time refusal for the same reason
+// covarianceCleanArms and restartShapeArms carry one: a clamped rank-mu rate is
+// silent at run time, and a campaign that walked into it would report a
+// covariance model that had stopped remembering anything.
+func assertExtendWidthRung(name string, dimensions int) error {
+	if dimensions < 1 {
+		return fmt.Errorf("%s: a stage must search at least one dimension", name)
+	}
+
+	// blockDimension at or above the dimension count is full mode, which never
+	// applies the separable correction. Asserting it rather than trusting it
+	// keeps the guard true if the arms ever move off full.
+	if rankMuClamped(dimensions, extendWidthLambda, dimensions) {
+		return fmt.Errorf(
+			"%s: lambda %d clamps the rank-mu rate at %d dimensions, so covariance would decay to nothing",
+			name, extendWidthLambda, dimensions)
+	}
+
+	if product := extendWidthLambda * dimensions; product > app.MaxPopulationDimensions {
+		return fmt.Errorf(
+			"%s: lambda %d over %d dimensions is %d, above app.MaxPopulationDimensions %d",
+			name, extendWidthLambda, dimensions, product, app.MaxPopulationDimensions)
+	}
+
+	return nil
+}
+
 func assertDesignShape(config settings, plan design) error {
 	if config.blocks != 0 && config.blocks != plan.blocks {
 		return fmt.Errorf("design %s registers %d paired blocks, got -blocks %d",
@@ -2128,7 +2505,7 @@ func submit(config settings) error {
 	defer file.Close()
 
 	writer := csv.NewWriter(file)
-	if err := writer.Write([]string{"arm", "block", "seed", "jobId"}); err != nil {
+	if err := writer.Write([]string{"arm", "block", "seed", "scheduleId", "jobId"}); err != nil {
 		return err
 	}
 
@@ -2139,12 +2516,27 @@ func submit(config settings) error {
 	for block := 1; block <= plan.blocks; block++ {
 		seed := plan.seedBase + int64(block)
 		for _, current := range arms {
-			jobID, submitErr := submitJob(client, config, plan, current, seed)
+			// A staged arm is a campaign document, not a job: an extend
+			// continues a frozen prefix from its parent's checkpoint and has no
+			// single-job form. Both paths return one identifier, and which
+			// column it lands in is what tells collect how to resolve it.
+			var scheduleID, jobID string
+
+			var submitErr error
+
+			if current.stages > 0 {
+				scheduleID, submitErr = submitSchedule(client, config, plan, current, seed)
+			} else {
+				jobID, submitErr = submitJob(client, config, plan, current, seed)
+			}
+
 			if submitErr != nil {
 				return fmt.Errorf("submit %s block %d: %w", current.name, block, submitErr)
 			}
 
-			record := []string{current.name, strconv.Itoa(block), strconv.FormatInt(seed, 10), jobID}
+			record := []string{
+				current.name, strconv.Itoa(block), strconv.FormatInt(seed, 10), scheduleID, jobID,
+			}
 			if err := writer.Write(record); err != nil {
 				return fmt.Errorf("record submitted job: %w", err)
 			}
@@ -2155,7 +2547,7 @@ func submit(config settings) error {
 				return fmt.Errorf("flush manifest: %w", err)
 			}
 
-			fmt.Printf("submitted block %02d %-16s %s\n", block, current.name, jobID)
+			fmt.Printf("submitted block %02d %-16s %s%s\n", block, current.name, scheduleID, jobID)
 		}
 	}
 
@@ -2285,6 +2677,301 @@ func jobPayload(config settings, plan design, current arm, seed int64) map[strin
 	return payload
 }
 
+// schedulePayload is the campaign document a staged arm submits. It is the
+// schedule-format.md document, built here rather than authored on disk so the
+// registered design and the thing that runs cannot drift apart.
+//
+// The base stage installs recordCircles and nothing else. app requires
+// initialCircles on a batch stage with exactly circles entries and a batchSize
+// covering all of them, and it refuses the field on every continuation -- an
+// extend is seeded from its parent checkpoint, always -- so the seed can only
+// enter here. One generation of app.MinPopulation individuals is the smallest
+// search the server will accept; the stage exists to write the checkpoint the
+// first extend continues from.
+//
+// The steps are one stanza. repeat is the generator form, so eight single
+// circle extends are one step with repeat 8 rather than eight copies of it,
+// which is also what keeps the document inside the 128 KiB the API allows.
+// restarts is negative: the filling shape asks for a cap of abs(N) x epochs x
+// iters and spends it, starting a further attempt whenever a whole one fits.
+func schedulePayload(config settings, plan design, current arm, seed int64) map[string]any {
+	reference, circles := plan.fixture(config.reference)
+	base := circles - current.stages*current.width
+
+	document := map[string]any{
+		"schemaVersion": 1,
+		"name":          fmt.Sprintf("%s %s block seed %d", plan.name, current.name, seed),
+		"seed":          seed,
+		"base": map[string]any{
+			"refPath": reference,
+			"mode":    "batch", "backend": "cpu", "optimizer": current.optimizer,
+			"circles": base, "batchSize": base,
+			"iters": extendWidthBaseIters, "popSize": extendWidthBasePop,
+			"optimizerEpochs": 1, "optimizerRestarts": 1,
+			"seed": seed, "threads": 1, "parallelEvaluation": true,
+			"evaluationWorkers": config.workers, "disableConvergence": true,
+			"enableTrace": true, "enableOptimizerDiagnostics": true,
+			"covarianceMode": current.covariance, "restartStrategy": current.restartStrategy,
+			"initialCircles": warmStartSpecs(),
+		},
+		"steps": []map[string]any{{
+			"type":              "extend",
+			"repeat":            current.stages,
+			"additionalCircles": current.width,
+			"batchSize":         current.width,
+			"epochs":            max(current.optimizerEpochs, 1),
+			"iters":             current.iters,
+			"popSize":           current.popSize,
+			"restarts":          current.optimizerRestarts,
+		}},
+	}
+
+	return document
+}
+
+// submitSchedule posts a staged arm's campaign document and returns the
+// schedule ID. A staged arm has no job ID at submit time: its stages are
+// started one at a time by the executor, so the manifest records the schedule
+// and collect resolves the final stage's job from it.
+func submitSchedule(client *http.Client, config settings, plan design, current arm, seed int64) (string, error) {
+	body, err := json.Marshal(schedulePayload(config, plan, current, seed))
+	if err != nil {
+		return "", err
+	}
+
+	request, err := http.NewRequestWithContext(
+		context.Background(), http.MethodPost, config.server+"/api/v1/schedules", bytes.NewReader(body),
+	)
+	if err != nil {
+		return "", fmt.Errorf("build schedule request: %w", err)
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := client.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("post schedule: %w", err)
+	}
+	defer response.Body.Close()
+
+	payload, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return "", fmt.Errorf("read schedule response: %w", err)
+	}
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return "", fmt.Errorf("schedule create returned %s: %s", response.Status, strings.TrimSpace(string(payload)))
+	}
+
+	var created struct {
+		ScheduleID string `json:"scheduleId"`
+	}
+
+	if err := json.Unmarshal(payload, &created); err != nil {
+		return "", fmt.Errorf("decode schedule response: %w", err)
+	}
+
+	if created.ScheduleID == "" {
+		return "", fmt.Errorf("schedule create returned no scheduleId: %s", strings.TrimSpace(string(payload)))
+	}
+
+	return created.ScheduleID, nil
+}
+
+// scheduleStage is the part of a stage listing this driver reads.
+type scheduleStage struct {
+	Index        int     `json:"index"`
+	Kind         string  `json:"kind"`
+	State        string  `json:"state"`
+	Circles      int     `json:"circles"`
+	BestCost     float64 `json:"bestCost"`
+	JobID        string  `json:"jobId"`
+	ElapsedNanos *int64  `json:"elapsedNanos"`
+	Error        string  `json:"error"`
+}
+
+// scheduleDetail is the campaign listing GET /api/v1/schedules/:id returns.
+type scheduleDetail struct {
+	ScheduleID  string          `json:"scheduleId"`
+	State       string          `json:"state"`
+	TotalStages int             `json:"totalStages"`
+	Error       string          `json:"error"`
+	Stages      []scheduleStage `json:"stages"`
+}
+
+// fetchSchedule reads one campaign's stage listing.
+func fetchSchedule(client *http.Client, server, scheduleID string) (scheduleDetail, error) {
+	request, err := http.NewRequestWithContext(
+		context.Background(), http.MethodGet, server+"/api/v1/schedules/"+scheduleID, nil,
+	)
+	if err != nil {
+		return scheduleDetail{}, err
+	}
+
+	response, err := client.Do(request)
+	if err != nil {
+		return scheduleDetail{}, err
+	}
+	defer response.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(response.Body, 8<<20))
+	if err != nil {
+		return scheduleDetail{}, err
+	}
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return scheduleDetail{}, fmt.Errorf("schedule %s returned %s", scheduleID, response.Status)
+	}
+
+	var detail scheduleDetail
+	if err := json.Unmarshal(body, &detail); err != nil {
+		return scheduleDetail{}, fmt.Errorf("decode schedule %s: %w", scheduleID, err)
+	}
+
+	return detail, nil
+}
+
+// extendStages returns the campaign's extend stages in index order, which is
+// draw order: the last of them is the run whose cost is the campaign's answer.
+func (d scheduleDetail) extendStages() []scheduleStage {
+	stages := make([]scheduleStage, 0, len(d.Stages))
+
+	for _, stage := range d.Stages {
+		if stage.Kind == "extend" {
+			stages = append(stages, stage)
+		}
+	}
+
+	slices.SortFunc(stages, func(a, b scheduleStage) int { return a.Index - b.Index })
+
+	return stages
+}
+
+// collectSchedule scores one staged arm's campaign.
+//
+// The answer is the last extend stage's cost, because an extend freezes the
+// prefix it inherits: the final stage's incumbent is the whole sixteen-circle
+// vector, and every earlier stage's cost is a prefix of it. The spend columns
+// are sums across stages instead, which is the only reading that compares
+// against a single-job arm's -- an arm that ran eight stages spent its cap in
+// eight places.
+//
+// The base stage is deliberately not in either total. It is one generation of
+// app.MinPopulation individuals whose only job is to install recordCircles, it
+// is identical across the four seeded arms, and counting it would put a
+// constant into a column whose whole purpose is to show whether the arms spent
+// the same amount searching.
+//
+// Returned state is the campaign's, not a stage's: a schedule that failed at
+// stage three is not a completed campaign with a usable final cost, and this
+// reports it as whatever the executor called it so the tally in collect names
+// the real state.
+func collectSchedule(config settings, client *http.Client, record manifestRow) (resultRow, string, error) {
+	detail, err := fetchSchedule(client, config.server, record.ScheduleID)
+	if err != nil {
+		return resultRow{}, "", fmt.Errorf("schedule %s: %w", record.ScheduleID, err)
+	}
+
+	if detail.State != "completed" {
+		return resultRow{}, detail.State, nil
+	}
+
+	stages := detail.extendStages()
+	if len(stages) == 0 {
+		return resultRow{}, detail.State, fmt.Errorf("schedule %s completed with no extend stage", record.ScheduleID)
+	}
+
+	resolved := record
+	resolved.Stages = make([]stageJob, 0, len(stages))
+
+	for ordinal, stage := range stages {
+		if stage.JobID == "" {
+			return resultRow{}, detail.State, fmt.Errorf(
+				"schedule %s stage %d completed without a job", record.ScheduleID, stage.Index)
+		}
+
+		resolved.Stages = append(resolved.Stages, stageJob{
+			Stage: ordinal, JobID: stage.JobID, Project: string(app.DefaultProject), Budget: config.budget,
+		})
+	}
+
+	resolved.JobID = resolved.Stages[len(resolved.Stages)-1].JobID
+
+	final, err := fetchStatus(client, config.server, resolved.JobID)
+	if err != nil {
+		return resultRow{}, detail.State, fmt.Errorf("status %s: %w", resolved.JobID, err)
+	}
+
+	// Scored against the campaign budget, not the stage's share, because a
+	// continuation's counters are cumulative: an extend inherits its parent's
+	// evaluation total and counts on from it. The last stage of an eight-stage
+	// arm carries samples numbered near the whole cap, so capping its trace at
+	// a stage's share would reject every one of them.
+	row, err := collectJob(config, string(app.DefaultProject), resolved, final, config.budget)
+	if err != nil {
+		return resultRow{}, detail.State, err
+	}
+
+	// For the same reason the spend columns are the final stage's and not a sum
+	// over stages: the counter already accumulated, so adding the stages
+	// together would count the first stage's evaluations eight times. Measured
+	// on an eight-stage probe -- stage 1 reported 1,625 evaluations and stage 8
+	// reported 12,839, each stage adding about 1,602 -- so the final figure is
+	// the campaign total and the sum is 4.5x it.
+	//
+	// Wall clock does not accumulate that way and is summed from the stage
+	// listing, where each entry is its own completion minus its own start.
+	row.ElapsedSeconds = 0
+
+	for _, stage := range stages {
+		if stage.ElapsedNanos != nil {
+			row.ElapsedSeconds += time.Duration(*stage.ElapsedNanos).Seconds()
+		}
+	}
+
+	// Per-restart records are per stage rather than cumulative -- a stage's
+	// checkpoint holds only the attempts that stage ran -- so these are
+	// concatenated. RestartRun.Stage is the pipeline stage within one job,
+	// always zero here because an extend's batch covers exactly the circles it
+	// appends; renumbering onto the campaign's stage ordinal is what keeps the
+	// restarts CSV readable for an eight-stage arm.
+	row.Restarts, err = stageRestartRuns(config, resolved.Stages)
+	if err != nil {
+		return resultRow{}, detail.State, err
+	}
+
+	row.manifestRow = resolved
+
+	return row, detail.State, nil
+}
+
+// stageRestartRuns concatenates a campaign's per-attempt records, renumbering
+// each onto the campaign stage it came from.
+func stageRestartRuns(config settings, stages []stageJob) ([]opt.RestartRun, error) {
+	var runs []opt.RestartRun
+
+	for _, job := range stages {
+		var saved checkpoint
+
+		body, err := os.ReadFile(filepath.Join(
+			jobDirectory(config.dataRoot, job.Project, job.JobID), "checkpoint.json"))
+		if err != nil {
+			return nil, fmt.Errorf("read %s checkpoint: %w", job.JobID, err)
+		}
+
+		if err := json.Unmarshal(body, &saved); err != nil {
+			return nil, fmt.Errorf("decode %s checkpoint: %w", job.JobID, err)
+		}
+
+		for _, run := range saved.Restarts {
+			run.Stage = job.Stage
+			runs = append(runs, run)
+		}
+	}
+
+	return runs, nil
+}
+
 func collect(config settings) error {
 	manifest, err := readManifest(config.manifestPath)
 	if err != nil {
@@ -2293,9 +2980,29 @@ func collect(config settings) error {
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	results := make([]resultRow, 0, len(manifest))
+	resolved := make([]manifestRow, 0, len(manifest))
 	counts := make(map[string]int)
 
 	for _, record := range manifest {
+		// A staged row names a campaign and a single-job row names a job. Both
+		// resolve to one scored result; only the staged path has to find the
+		// job first, and only it can report a state that is not a job's.
+		if record.ScheduleID != "" {
+			result, state, scheduleErr := collectSchedule(config, client, record)
+			if scheduleErr != nil {
+				return scheduleErr
+			}
+
+			counts[state]++
+
+			if state == "completed" {
+				results = append(results, result)
+				resolved = append(resolved, result.manifestRow)
+			}
+
+			continue
+		}
+
 		status, statusErr := fetchStatus(client, config.server, record.JobID)
 		if statusErr != nil {
 			return fmt.Errorf("status %s: %w", record.JobID, statusErr)
@@ -2306,12 +3013,13 @@ func collect(config settings) error {
 			continue
 		}
 
-		result, collectErr := collectJob(config, record, status)
+		result, collectErr := collectJob(config, config.project, record, status, config.budget)
 		if collectErr != nil {
 			return collectErr
 		}
 
 		results = append(results, result)
+		resolved = append(resolved, record)
 	}
 
 	fmt.Printf("campaign status:")
@@ -2332,7 +3040,7 @@ func collect(config settings) error {
 		return err
 	}
 
-	if err := writeTrajectories(config, manifest); err != nil {
+	if err := writeTrajectories(config, resolved); err != nil {
 		return err
 	}
 
@@ -2361,10 +3069,10 @@ func printPlan(config settings) error {
 	fmt.Printf("design %s: %d arms x %d blocks = %d jobs, budget %d evaluations, seeds %d..%d\n",
 		plan.name, len(plan.arms), plan.blocks, len(plan.arms)*plan.blocks, config.budget,
 		plan.seedBase+1, plan.seedBase+int64(plan.blocks))
-	fmt.Printf("fixture %s, %d circles in one batch\n", reference, circles)
-	fmt.Println("| arm | optimizer | covariance | restarts | epochs | popSize (lambda) | iters | " +
+	fmt.Printf("fixture %s, %d circles\n", reference, circles)
+	fmt.Println("| arm | optimizer | shape | covariance | restarts | epochs | popSize (lambda) | iters | " +
 		"sigma | active | start | stagnation | evaluations |")
-	fmt.Println("| --- | --- | --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | ---: |")
+	fmt.Println("| --- | --- | --- | --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | ---: |")
 
 	for _, current := range plan.arms {
 		covariance, restarts := current.covariance, current.restartStrategy
@@ -2377,9 +3085,7 @@ func printPlan(config settings) error {
 		// Epochs and cold restarts each multiply the generation count, so an
 		// arm's budget is the product of all three. Printing one run's share
 		// would make a split arm look like it spends a fifth of the cap.
-		evaluations := strconv.FormatInt(
-			int64(current.iters)*int64(current.popSize)*
-				int64(max(current.optimizerEpochs, 1))*int64(restartAttempts(current.optimizerRestarts)), 10)
+		evaluations := strconv.Itoa(current.plannedEvaluations())
 		if current.optimizer == "mayfly" {
 			covariance = "-"
 			restarts = fmt.Sprintf("%d cold run(s)", current.optimizerRestarts)
@@ -2415,13 +3121,14 @@ func printPlan(config settings) error {
 				active = "off"
 			}
 
-			if current.warmStart {
+			if current.warmStart || current.seeded {
 				start = "record"
 			}
 		}
 
-		fmt.Printf("| `%s` | %s | %s | %s | %d | %d | %d | %s | %s | %s | %s | %s |\n",
-			current.name, current.optimizer, covariance, restarts, max(current.optimizerEpochs, 1),
+		fmt.Printf("| `%s` | %s | %s | %s | %s | %d | %d | %d | %s | %s | %s | %s | %s |\n",
+			current.name, current.optimizer, describeShape(current, circles), covariance, restarts,
+			max(current.optimizerEpochs, 1),
 			current.popSize, current.iters, sigma, active, start,
 			describeStagnation(current), evaluations)
 	}
@@ -2455,6 +3162,19 @@ func printPlan(config settings) error {
 // describeStagnation renders an arm's stopping configuration for the plan
 // table. "none" is the configuration every campaign before this one ran, and
 // naming it explicitly is the point of the column.
+// describeShape names how an arm reaches the fixture's circle count: one cold
+// batch, or a seeded prefix plus a run of extend stages. The restarts and iters
+// columns describe one stage, so without this an arm that runs eight of them
+// reads as though it spent an eighth of the cap.
+func describeShape(current arm, circles int) string {
+	if current.stages == 0 {
+		return fmt.Sprintf("cold %d, one batch", circles)
+	}
+
+	return fmt.Sprintf("%d seeded + %d x +%d", circles-current.stages*current.width,
+		current.stages, current.width)
+}
+
 func describeStagnation(current arm) string {
 	if current.stopStagnationIters == 0 {
 		return "none"
@@ -2488,7 +3208,7 @@ func collectPreliminary(config settings) error {
 
 	available := make([]manifestRow, 0, len(manifest))
 	for _, record := range manifest {
-		jobDir := filepath.Join(config.dataRoot, "projects", config.project, "jobs", record.JobID)
+		jobDir := jobDirectory(config.dataRoot, config.project, record.JobID)
 
 		body, readErr := os.ReadFile(filepath.Join(jobDir, "checkpoint-info.json"))
 		if errors.Is(readErr, os.ErrNotExist) {
@@ -2514,7 +3234,7 @@ func collectPreliminary(config settings) error {
 			Iterations: saved.Iteration, Evaluations: saved.Evaluations,
 		}
 
-		result, collectErr := collectJob(config, record, status)
+		result, collectErr := collectJob(config, config.project, record, status, config.budget)
 		if collectErr != nil {
 			return collectErr
 		}
@@ -2568,8 +3288,30 @@ func fetchStatus(client *http.Client, server, jobID string) (jobStatus, error) {
 	return status, nil
 }
 
-func collectJob(config settings, record manifestRow, status jobStatus) (resultRow, error) {
-	jobDir := filepath.Join(config.dataRoot, "projects", config.project, "jobs", record.JobID)
+// collectJob scores one job. budget is the cap that job alone was held to,
+// which is the campaign budget for a single-job arm and the stage's share of
+// it for one stage of a staged arm.
+// jobDirectory resolves where a job's artifacts live, which is not one rule.
+// A named project is an FSStore rooted at <data-root>/projects/<slug>, but the
+// default project is the legacy tree at <data-root>/jobs and has no slug
+// segment at all -- internal/server/projects.go states it: "The legacy layout
+// keeps its jobs directly under `<data-root>/jobs`, so the two never collide."
+//
+// Every campaign before extend-width read only its own named project and never
+// met the other case. A staged one does: the schedule executor creates every
+// stage under app.DefaultProject, because project is not a JobConfig field and
+// a document's base stanza is a JobConfig, so a campaign's stages land in the
+// legacy tree however the driver names its project.
+func jobDirectory(dataRoot, project, jobID string) string {
+	if project == "" || app.Project(project) == app.DefaultProject {
+		return filepath.Join(dataRoot, "jobs", jobID)
+	}
+
+	return filepath.Join(dataRoot, "projects", project, "jobs", jobID)
+}
+
+func collectJob(config settings, project string, record manifestRow, status jobStatus, budget int) (resultRow, error) {
+	jobDir := jobDirectory(config.dataRoot, project, record.JobID)
 
 	trace, err := readTrace(filepath.Join(jobDir, "trace.jsonl"))
 	if err != nil {
@@ -2580,7 +3322,7 @@ func collectJob(config settings, record manifestRow, status jobStatus) (resultRo
 	scoredEvaluations := 0
 
 	for _, entry := range trace {
-		if entry.Evaluations <= config.budget && entry.Cost < score {
+		if entry.Evaluations <= budget && entry.Cost < score {
 			score = entry.Cost
 			scoredEvaluations = entry.Evaluations
 		}
@@ -2680,13 +3422,24 @@ func readManifest(path string) ([]manifestRow, error) {
 		return nil, err
 	}
 
-	if len(records) < 2 || !slices.Equal(records[0], []string{"arm", "block", "seed", "jobId"}) {
+	// The scheduleId column arrived with the first staged design. Manifests
+	// written before it are still readable, and every row in one is a job, the
+	// way every campaign before extend-width was.
+	staged := slices.Equal(records[0], []string{"arm", "block", "seed", "scheduleId", "jobId"})
+	legacy := slices.Equal(records[0], []string{"arm", "block", "seed", "jobId"})
+
+	if len(records) < 2 || (!staged && !legacy) {
 		return nil, errors.New("manifest has an unexpected header or no jobs")
+	}
+
+	columns := 4
+	if staged {
+		columns = 5
 	}
 
 	rows := make([]manifestRow, 0, len(records)-1)
 	for _, record := range records[1:] {
-		if len(record) != 4 {
+		if len(record) != columns {
 			return nil, fmt.Errorf("invalid manifest row %q", record)
 		}
 
@@ -2697,7 +3450,12 @@ func readManifest(path string) ([]manifestRow, error) {
 			return nil, fmt.Errorf("invalid manifest row %q", record)
 		}
 
-		rows = append(rows, manifestRow{Arm: record[0], Block: block, Seed: seed, JobID: record[3]})
+		row := manifestRow{Arm: record[0], Block: block, Seed: seed, JobID: record[3]}
+		if staged {
+			row.ScheduleID, row.JobID = record[3], record[4]
+		}
+
+		rows = append(rows, row)
 	}
 
 	return rows, nil
@@ -2751,55 +3509,67 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 	defer file.Close()
 
 	writer := csv.NewWriter(file)
-	if err := writer.Write([]string{"arm", "block", "seed", "iteration", "evaluations", "bestCost", "populationSpread", "sigma", "conditionNumber", "distributionExtent", "restart"}); err != nil {
+	// stage is the campaign stage the sample came from, zero for a single-job
+	// arm. An eight-stage arm restarts its iteration and evaluation counters in
+	// every stage, so without this column its rows would read as one trajectory
+	// that jumped backwards eight times.
+	if err := writer.Write([]string{"arm", "block", "seed", "stage", "iteration", "evaluations", "bestCost", "populationSpread", "sigma", "conditionNumber", "distributionExtent", "restart"}); err != nil {
 		return err
 	}
 
 	early := map[int]bool{1: true, 5: true, 10: true, 20: true, 40: true, 80: true, 160: true, 255: true}
 
-	for _, record := range manifest {
-		jobDir := filepath.Join(config.dataRoot, "projects", config.project, "jobs", record.JobID)
+	for _, row := range manifest {
+		// Each stage is downsampled against its own share of the cap, so an
+		// eight-stage arm keeps 256 buckets per stage the way a single-job arm
+		// keeps 256 for the whole run. Sampling every stage against the
+		// campaign budget instead would collapse a short stage to a handful of
+		// rows and hide exactly the shape this column exists to show.
+		for _, job := range row.jobs(config.project, config.budget) {
+			jobDir := jobDirectory(config.dataRoot, job.Project, job.JobID)
 
-		entries, readErr := readTrace(filepath.Join(jobDir, "trace.jsonl"))
-		if readErr != nil {
-			return readErr
-		}
-
-		lastEligible := -1
-
-		for index, entry := range entries {
-			if entry.OptimizerDiagnostics != nil && entry.Evaluations <= config.budget {
-				lastEligible = index
-			}
-		}
-
-		lastBucket := -1
-
-		for index, entry := range entries {
-			if entry.OptimizerDiagnostics == nil || entry.Evaluations > config.budget {
-				continue
+			entries, readErr := readTrace(filepath.Join(jobDir, "trace.jsonl"))
+			if readErr != nil {
+				return readErr
 			}
 
-			bucket := entry.Evaluations * 256 / config.budget
+			lastEligible := -1
 
-			isLast := index == lastEligible
-			if !isLast && !early[entry.Iteration] && bucket == lastBucket {
-				continue
+			for index, entry := range entries {
+				if entry.OptimizerDiagnostics != nil && entry.Evaluations <= job.Budget {
+					lastEligible = index
+				}
 			}
 
-			lastBucket = bucket
-			diagnostic := entry.OptimizerDiagnostics
-			populationSpread, sigma, conditionNumber, extent := formatDiagnostics(diagnostic)
+			lastBucket := -1
 
-			record := []string{
-				record.Arm, strconv.Itoa(record.Block), strconv.FormatInt(record.Seed, 10),
-				strconv.Itoa(entry.Iteration), strconv.Itoa(entry.Evaluations),
-				strconv.FormatFloat(entry.Cost, 'g', 17, 64),
-				populationSpread, sigma, conditionNumber, extent,
-				strconv.Itoa(diagnostic.Restart),
-			}
-			if err := writer.Write(record); err != nil {
-				return err
+			for index, entry := range entries {
+				if entry.OptimizerDiagnostics == nil || entry.Evaluations > job.Budget {
+					continue
+				}
+
+				bucket := entry.Evaluations * 256 / job.Budget
+
+				isLast := index == lastEligible
+				if !isLast && !early[entry.Iteration] && bucket == lastBucket {
+					continue
+				}
+
+				lastBucket = bucket
+				diagnostic := entry.OptimizerDiagnostics
+				populationSpread, sigma, conditionNumber, extent := formatDiagnostics(diagnostic)
+
+				record := []string{
+					row.Arm, strconv.Itoa(row.Block), strconv.FormatInt(row.Seed, 10),
+					strconv.Itoa(job.Stage),
+					strconv.Itoa(entry.Iteration), strconv.Itoa(entry.Evaluations),
+					strconv.FormatFloat(entry.Cost, 'g', 17, 64),
+					populationSpread, sigma, conditionNumber, extent,
+					strconv.Itoa(diagnostic.Restart),
+				}
+				if err := writer.Write(record); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -3144,10 +3914,9 @@ func (d design) evaluationCap() int {
 	highest := 0
 
 	for _, current := range d.arms {
-		spend := defaultBudget
-		if current.optimizer != "mayfly" {
-			spend = current.iters * current.popSize *
-				max(current.optimizerEpochs, 1) * restartAttempts(current.optimizerRestarts)
+		spend := current.plannedEvaluations()
+		if spend == 0 {
+			spend = defaultBudget
 		}
 
 		if spend > highest {

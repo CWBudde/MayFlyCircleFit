@@ -179,6 +179,35 @@ anything new against its figures.
       `WithRestarts` first and deciding what an attempt of a sweep even is — a
       whole sweep chain, or one sweep. Do that deliberately, not as a
       side effect of writing the campaign.
+      **The extend half is registered 2026-09-05 as `-design extend-width`**,
+      the first staged campaign in this driver and the first CMA-ES measurement
+      here that is not a cold eight-circle batch. It seeds the standing record
+      as a frozen prefix and asks how the next eight circles should be
+      committed: `ext-w8`, `ext-w4`, `ext-w2` and `ext-w1` run one, two, four
+      and eight extend stages, and `cold-w16` fits all sixteen from scratch at
+      the same cap. Everything else is held: full covariance, `lambda` 64,
+      budget-filling cold restarts, and an attempt pinned at 3,175 iterations
+      so grouping width is not confounded with restart length. Twelve blocks,
+      seeds 120001-120012, 6,502,400 evaluations per arm by construction.
+      Primary contrast `ext-w1` against `ext-w8` — the `+1`-versus-`+8`
+      question, which `docs/schedule-format.md` answered under a MayFly pin
+      that no longer applies and which
+      `docs/seed-variance-and-population-report.md` argues the other way.
+      Registered alongside them: `ext-w4` and `ext-w2` against `ext-w8`, and
+      `ext-w8` against `cold-w16`, which is the one that can invalidate the
+      premise rather than answer the primary. **The polish half of this box is
+      untouched by that campaign** and stays open for the reason above; a
+      CMA-ES schedule cannot contain a polish step at all, because
+      `polishingEnabled` is on `JobConfig.mayflyOnlyFields()`.
+      **Two facts the campaign's pre-flights established**, both recorded here
+      because they are properties of the system rather than of the campaign.
+      `initialCircles` quantizes colour to eight bits, so a base seeded from the
+      record starts at 728.382406870524 rather than 726.1984354654948 — a
+      constant 2.184 that cancels between seeded arms and does not cancel
+      against a cold one. And a continuation's evaluation and iteration
+      counters are **cumulative**: an eight-stage probe reported 1,625
+      evaluations at stage 1 and 12,839 at stage 8, so a campaign's spend is its
+      final stage's counter and summing the stages overstates it by 4.5x.
 - [x] Settle which restart *shape* a CMA-ES default would name. The budget-split
       screen established that splitting a CMA-ES budget beats not splitting it
       but could not order the three mechanisms, and it found the IPOP ladder
