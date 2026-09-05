@@ -1187,6 +1187,7 @@ func registeredDesigns() []string {
 	return []string{
 		designPhase21, designLambda, designPilot, designStag,
 		designSplit, designLadder, designHunt, designCov, designActive,
+		designCovClean,
 	}
 }
 
@@ -1883,5 +1884,155 @@ func TestActiveCMACampaignRefusesAnInertRung(t *testing.T) {
 	if registered < activeCMAMinNegativeMass {
 		t.Fatalf("the registered rung reports a negative mass of %g, below the %g floor; the campaign would measure nothing",
 			registered, activeCMAMinNegativeMass)
+	}
+}
+
+// TestRankMuClampReproducesTheMeasuredBoundary pins the clamp predicate against
+// the boundary docs/cmaes-covariance-report.md verified in the library itself:
+// separable degenerate above lambda 256 at 56 dimensions and above 512 at 84,
+// block above 1024, full never. The predicate is what licenses the
+// covariance-clean design's claim about which of its cells is clamped, so it
+// has to agree with the measurement rather than merely look like the formula.
+func TestRankMuClampReproducesTheMeasuredBoundary(t *testing.T) {
+	t.Parallel()
+
+	rungs := []int{16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192}
+
+	cases := []struct {
+		name           string
+		dimension      int
+		blockDimension int
+		// lastClean is the largest rung in rungs that does not clamp; every
+		// rung above it must.
+		lastClean int
+	}{
+		{name: "separable at 56 dimensions", dimension: 56, blockDimension: separableBlockDimension, lastClean: 256},
+		{name: "separable at 84 dimensions", dimension: 84, blockDimension: separableBlockDimension, lastClean: 512},
+		{name: "block at 56 dimensions", dimension: 56, blockDimension: app.ParametersPerCircle, lastClean: 1024},
+		{name: "full at 56 dimensions", dimension: 56, blockDimension: 56, lastClean: 8192},
+	}
+
+	for _, current := range cases {
+		t.Run(current.name, func(t *testing.T) {
+			t.Parallel()
+
+			for _, rung := range rungs {
+				want := rung > current.lastClean
+				if got := rankMuClamped(current.dimension, rung, current.blockDimension); got != want {
+					t.Errorf("rankMuClamped(%d, %d, %d) = %t, want %t",
+						current.dimension, rung, current.blockDimension, got, want)
+				}
+			}
+		})
+	}
+}
+
+// TestCovarianceCleanCampaignCrossesModeAgainstTheClamp asserts the property
+// the whole design rests on: it is a 2x2 of covariance mode against rung, one
+// cell of which is clamped and three of which are not. If a future edit moved a
+// rung across the boundary the campaign would silently stop measuring the
+// question it registered, so the arms constructor refuses that and this test
+// pins what it refuses.
+func TestCovarianceCleanCampaignCrossesModeAgainstTheClamp(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designCovClean, mustDesignBudget(t, designCovClean))
+	if err != nil {
+		t.Fatalf("covariance-clean design: %v", err)
+	}
+
+	if plan.descriptive {
+		t.Error("the covariance-clean campaign is inferential; it must not be descriptive")
+	}
+
+	if plan.blocks != covarianceCleanBlocks {
+		t.Errorf("covariance-clean blocks = %d, want %d", plan.blocks, covarianceCleanBlocks)
+	}
+
+	if len(plan.arms) != 4 {
+		t.Fatalf("covariance-clean arms = %d, want 4", len(plan.arms))
+	}
+
+	wantClamped := []bool{false, false, true, false}
+
+	for i, current := range plan.arms {
+		blockDimension := separableBlockDimension
+		if current.covariance == "block" {
+			blockDimension = app.ParametersPerCircle
+		}
+
+		if got := rankMuClamped(searchDimensions, current.popSize, blockDimension); got != wantClamped[i] {
+			t.Errorf("arm %s clamps = %t, want %t", current.name, got, wantClamped[i])
+		}
+
+		// Cold restarts, for the reason the design gives: an IPOP ladder
+		// doubles its population and would walk an arm across the boundary
+		// mid-run, so the rung would stop naming a condition.
+		if current.restartStrategy != coldRestartStrategy {
+			t.Errorf("arm %s uses restart strategy %q; the rung is only a condition under cold restarts",
+				current.name, current.restartStrategy)
+		}
+	}
+
+	// Cap-matched by construction: every arm's lambda times its restart count
+	// times its iteration count is the same budget.
+	budget := mustDesignBudget(t, designCovClean)
+	for _, current := range plan.arms {
+		if spend := current.popSize * current.optimizerRestarts * current.iters; spend != budget {
+			t.Errorf("arm %s is capped at %d evaluations, want %d", current.name, spend, budget)
+		}
+	}
+}
+
+// TestCovarianceCleanCampaignRegistersTwoSingleFactorContrasts pins the family
+// the campaign pays multiplicity for. The interaction between the two contrasts
+// is the reading the design is really after, and it is deliberately not a third
+// contrast: it is a function of these two, so registering it would raise Holm's
+// bar on both without asking anything new.
+func TestCovarianceCleanCampaignRegistersTwoSingleFactorContrasts(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designCovClean, mustDesignBudget(t, designCovClean))
+	if err != nil {
+		t.Fatalf("covariance-clean design: %v", err)
+	}
+
+	want := []plannedContrast{
+		{control: "sep-r32-l64", candidate: "blk-r32-l64", primary: true},
+		{control: "sep-r2-l1024", candidate: "blk-r2-l1024"},
+	}
+	if !slices.Equal(plan.contrasts, want) {
+		t.Errorf("contrasts = %+v, want %+v", plan.contrasts, want)
+	}
+
+	// Each contrast must move covariance mode alone. Asserted field by field
+	// rather than read off the plan table, the way the active-CMA design's is.
+	for _, pair := range [][2]int{{0, 1}, {2, 3}} {
+		control, candidate := plan.arms[pair[0]], plan.arms[pair[1]]
+
+		wantCandidate := control
+		wantCandidate.name, wantCandidate.covariance = candidate.name, candidate.covariance
+
+		if candidate != wantCandidate {
+			t.Errorf("%s moves more than the covariance mode:\n got %+v\nwant %+v",
+				candidate.name, candidate, wantCandidate)
+		}
+	}
+}
+
+// TestCovarianceCleanCampaignRunsAtTheFixedCap records the trade the design
+// made. It gives up comparability with docs/cmaes-covariance-report.md's
+// absolute figures, which ran at huntBudget, and buys comparability with the
+// restart ladder and the active-CMA campaign, which is where the lead it tests
+// came from.
+func TestCovarianceCleanCampaignRunsAtTheFixedCap(t *testing.T) {
+	t.Parallel()
+
+	if runsAtHuntBudget(designCovClean) {
+		t.Fatal("covariance-clean must run at the fixed cap, not huntBudget")
+	}
+
+	if budget := mustDesignBudget(t, designCovClean); budget != defaultBudget {
+		t.Errorf("covariance-clean budget = %d, want %d", budget, defaultBudget)
 	}
 }
