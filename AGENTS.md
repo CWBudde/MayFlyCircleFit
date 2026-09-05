@@ -32,18 +32,18 @@ ones that will change what you propose:
   earlier, and v0.7.0 changed results for every variant, so none of their
   numbers is comparable to a run made today.** Read those for method and for
   what was ruled out; re-measure before citing a figure. See the Toolchain
-  section. Eleven reports are on the current pins and may be cited directly:
-  the QMC screen, and the ten CMA-ES ones — `cmaes-report.md`,
+  section. Twelve reports are on the current pins and may be cited directly:
+  the QMC screen, and the eleven CMA-ES ones — `cmaes-report.md`,
   `cmaes-lambda-report.md`, `cmaes-stagnation-report.md`,
   `cmaes-budget-split-report.md`, `cmaes-restart-ladder-report.md`,
   `cmaes-deep-hunt-report.md`, `cmaes-covariance-report.md`,
-  `cmaes-active-cma-report.md`, `cmaes-covariance-clean-report.md` and
-  `cmaes-preliminary-report.md`, run in
+  `cmaes-active-cma-report.md`, `cmaes-covariance-clean-report.md`,
+  `cmaes-restart-shape-report.md` and `cmaes-preliminary-report.md`, run in
   2026-08 and 2026-09 on MayFly v0.7.1 and go-cma-es v0.1.0 — the preliminary
   one on the code-identical pseudo-version that preceded that tag. Each states
   its own pins; trust that line over this one. The deep hunt and the covariance
   campaign are the exceptions to citability *within* that set: both ran at
-  1.94x the shared cap, so their costs are not comparable to the other nine,
+  1.94x the shared cap, so their costs are not comparable to the other ten,
   though they are comparable to each other.
 - [`docs/qmc-initial-population-report.md`](docs/qmc-initial-population-report.md)
   — `qmcInit` measured on the eight-circle batch stage at three population
@@ -265,6 +265,34 @@ ones that will change what you propose:
   its control's 36.0%, because a fixed restart count cannot refill what an
   attempt that trips `TolFun` leaves behind, so that contrast compares two
   differently sized searches.
+- [`docs/cmaes-restart-shape-report.md`](docs/cmaes-restart-shape-report.md) —
+  three arms and 72 jobs, the campaign that answers the question
+  `cmaes-budget-split-report.md` left open: **a default must name a restart
+  shape, and the shape is budget-filling cold restarts.** Filling beats a fixed
+  count of 32 by `+6.89` (`t = +2.89`, `p = 0.0083`, rejects under Holm) and is
+  a null against an IPOP ladder (`+3.82`, `t = +0.23`, 12/24). Everything is
+  full covariance at `lambda` 64, because full is the only mode that never
+  clamps and a ladder picks its top rung at run time; `restartShapeArms` refuses
+  to build a design whose ladder could reach a clamped rung, and the clean-rung
+  covariance null is what makes pinning full free. The secondary's mechanism is
+  exact: the cold arms share a trajectory, so its paired differences cannot go
+  negative — 14 bit-identical ties, 10 wins, 0 losses — and the winning blocks
+  are *identical* to the blocks whose best came from a restart index of 32 or
+  higher. **Read before proposing a restart default; this is the only shape with
+  a rejected contrast behind it.** Three cautions. The recommendation of filling
+  over IPOP rests on spread (sd 22.31 against 71.36) and **no dispersion
+  contrast was registered**, so that part is a lead; the registered primary is
+  underpowered, needing roughly 130 blocks to see a 20-point effect. IPOP still
+  holds the three best single results, so it is not retired — but it reaches
+  `lambda` 4096 in 12 of 24 blocks and **never takes a block best from that
+  rung**, which makes a ladder ceiling the obvious unvaried knob. And the
+  filling arm costs 37% more wall clock than IPOP at the same evaluation cap,
+  which the cap does not show. Its `app.MaxOptimizerRestarts` ceiling bound one
+  block of 24, so a filling shape at a smaller `lambda` would need that constant
+  raised first. By-products: the first per-attempt restart records for cold arms
+  (2,231 rows, from the `attemptRuns` fix), `distributionExtent` bounded at
+  1.0821 over 14,519 samples on fresh seeds, and confirmation that the driver's
+  `recordCost` still reports against the superseded 752.52 record.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more
