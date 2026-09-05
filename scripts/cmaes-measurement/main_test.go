@@ -57,6 +57,146 @@ func TestPairedImprovement(t *testing.T) {
 	}
 }
 
+// The four arms the interaction fixtures below pair. They are named for their
+// role in the difference rather than for any real campaign's arm: what the
+// arithmetic does must not depend on which campaign registered it.
+const (
+	outerControl   = "outer-control"
+	outerCandidate = "outer-candidate"
+	innerControl   = "inner-control"
+	innerCandidate = "inner-candidate"
+)
+
+// scoredBlocks is a contrast's side of a synthetic result set: one row per
+// block, in the order given, so a test can state the costs it means.
+func scoredBlocks(scores ...float64) []resultRow {
+	rows := make([]resultRow, len(scores))
+	for index, score := range scores {
+		rows[index] = resultRow{manifestRow: manifestRow{Block: index + 1}, Score: score}
+	}
+
+	return rows
+}
+
+// TestInteractionDifferencesSubtractsTheContrastsBlockByBlock checks the
+// arithmetic the covariance-clean campaign's explanatory claim rests on. The
+// outer contrast gains 5, 5, 5 and the inner gains 1, 2, 3, so the interaction
+// is 4, 3, 2 -- and every one of those is a within-block figure, which is the
+// whole reason it can be tested rather than eyeballed.
+func TestInteractionDifferencesSubtractsTheContrastsBlockByBlock(t *testing.T) {
+	t.Parallel()
+
+	byArm := map[string][]resultRow{
+		outerControl:   scoredBlocks(100, 100, 100),
+		outerCandidate: scoredBlocks(95, 95, 95),
+		innerControl:   scoredBlocks(50, 50, 50),
+		innerCandidate: scoredBlocks(49, 48, 47),
+	}
+
+	differences, err := interactionDifferences(byArm, plannedInteraction{
+		outer: plannedContrast{control: outerControl, candidate: outerCandidate},
+		inner: plannedContrast{control: innerControl, candidate: innerCandidate},
+	})
+	if err != nil {
+		t.Fatalf("interactionDifferences: %v", err)
+	}
+
+	if want := []float64{4, 3, 2}; !slices.Equal(differences, want) {
+		t.Fatalf("differences = %v, want %v", differences, want)
+	}
+
+	mean, deviation, statistic, wins := pairedStatistics(differences)
+	if mean != 3 || deviation != 1 || wins != 3 || math.Abs(statistic-5.196152422706632) > 1e-12 {
+		t.Fatalf("pairedStatistics() = (%v, %v, %v, %d)", mean, deviation, statistic, wins)
+	}
+}
+
+// TestInteractionDifferencesRefusesBlocksThatDoNotLineUp pins the failure the
+// subtraction must not paper over. Pairing a contrast measured on three blocks
+// against one measured on two would silently compare different seeds, so it is
+// an error rather than a shorter slice.
+func TestInteractionDifferencesRefusesBlocksThatDoNotLineUp(t *testing.T) {
+	t.Parallel()
+
+	byArm := map[string][]resultRow{
+		outerControl:   scoredBlocks(100, 100, 100),
+		outerCandidate: scoredBlocks(95, 95, 95),
+		innerControl:   scoredBlocks(50, 50),
+		innerCandidate: scoredBlocks(49, 48),
+	}
+
+	_, err := interactionDifferences(byArm, plannedInteraction{
+		outer: plannedContrast{control: outerControl, candidate: outerCandidate},
+		inner: plannedContrast{control: innerControl, candidate: innerCandidate},
+	})
+	if err == nil {
+		t.Fatal("interactionDifferences accepted contrasts measured on different blocks")
+	}
+}
+
+// TestRegisteredInteractionJoinsTheHolmFamily is the point of registering the
+// difference rather than describing it: it has to be corrected alongside the
+// contrasts it is built from, not reported beside them for free.
+func TestRegisteredInteractionJoinsTheHolmFamily(t *testing.T) {
+	t.Parallel()
+
+	outer := plannedContrast{control: outerControl, candidate: outerCandidate, primary: true}
+	inner := plannedContrast{control: innerControl, candidate: innerCandidate}
+
+	plan := design{
+		blocks: 3,
+		arms: []arm{
+			{name: outerControl},
+			{name: outerCandidate},
+			{name: innerControl},
+			{name: innerCandidate},
+		},
+		contrasts:   []plannedContrast{outer, inner},
+		interaction: &plannedInteraction{outer: outer, inner: inner},
+	}
+
+	contrasts, err := buildContrasts(plan, map[string][]resultRow{
+		outerControl:   scoredBlocks(100, 100, 100),
+		outerCandidate: scoredBlocks(95, 95, 95),
+		innerControl:   scoredBlocks(50, 50, 50),
+		innerCandidate: scoredBlocks(49, 48, 47),
+	})
+	if err != nil {
+		t.Fatalf("buildContrasts: %v", err)
+	}
+
+	if len(contrasts) != 3 {
+		t.Fatalf("contrasts = %d, want the two registered ones and the interaction", len(contrasts))
+	}
+
+	interaction := contrasts[2]
+	if interaction.label == "" {
+		t.Error("the interaction carries no label, so no report can name it")
+	}
+
+	// The two contrasts gain 5 and 2 on average, so the difference is 3, and
+	// it comes with an interval because the size is what the reading is for.
+	if interaction.gain != 3 || interaction.interval <= 0 {
+		t.Errorf("interaction = %+v, want a gain of 3 and a positive interval", interaction)
+	}
+
+	// Holm has to see it, and this fixture shows what that costs. The
+	// interaction clears the uncorrected 0.05 on its own and still retains
+	// once it is the third member of a family of three -- which is exactly the
+	// price the design agreed to pay for asking the question properly instead
+	// of reading it off the other two rows for free.
+	holmReject(contrasts, familyAlpha)
+
+	if interaction = contrasts[2]; interaction.pValue >= familyAlpha {
+		t.Fatalf("interaction p = %.5f, want a fixture that clears the uncorrected alpha", interaction.pValue)
+	}
+
+	if interaction.rejected {
+		t.Errorf("interaction rejected at p = %.5f; Holm corrects it over three contrasts here",
+			interaction.pValue)
+	}
+}
+
 func TestStudentTTwoSided(t *testing.T) {
 	t.Parallel()
 
@@ -318,6 +458,21 @@ func TestCampaignDesignsAreNamedAndClosed(t *testing.T) {
 
 		if primaries > 1 {
 			t.Errorf("design %s registers %d primary contrasts, want at most one", name, primaries)
+		}
+
+		// An interaction has to be built from contrasts the design already
+		// registered. One assembled from an unregistered pair would be a
+		// comparison the family never declared, smuggled in through a field
+		// that is corrected but not listed.
+		if plan.interaction != nil {
+			for _, side := range []plannedContrast{plan.interaction.outer, plan.interaction.inner} {
+				if !slices.ContainsFunc(plan.contrasts, func(current plannedContrast) bool {
+					return current.control == side.control && current.candidate == side.candidate
+				}) {
+					t.Errorf("design %s interacts over %s vs %s, which it does not register",
+						name, side.candidate, side.control)
+				}
+			}
 		}
 	}
 
@@ -1187,6 +1342,7 @@ func registeredDesigns() []string {
 	return []string{
 		designPhase21, designLambda, designPilot, designStag,
 		designSplit, designLadder, designHunt, designCov, designActive,
+		designCovClean, designActiveFull,
 	}
 }
 
@@ -1883,5 +2039,267 @@ func TestActiveCMACampaignRefusesAnInertRung(t *testing.T) {
 	if registered < activeCMAMinNegativeMass {
 		t.Fatalf("the registered rung reports a negative mass of %g, below the %g floor; the campaign would measure nothing",
 			registered, activeCMAMinNegativeMass)
+	}
+}
+
+// TestRankMuClampReproducesTheMeasuredBoundary pins the clamp predicate against
+// the boundary docs/cmaes-covariance-report.md verified in the library itself:
+// separable degenerate above lambda 256 at 56 dimensions and above 512 at 84,
+// block above 1024, full never. The predicate is what licenses the
+// covariance-clean design's claim about which of its cells is clamped, so it
+// has to agree with the measurement rather than merely look like the formula.
+func TestRankMuClampReproducesTheMeasuredBoundary(t *testing.T) {
+	t.Parallel()
+
+	rungs := []int{16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192}
+
+	cases := []struct {
+		name           string
+		dimension      int
+		blockDimension int
+		// lastClean is the largest rung in rungs that does not clamp; every
+		// rung above it must.
+		lastClean int
+	}{
+		{name: "separable at 56 dimensions", dimension: 56, blockDimension: separableBlockDimension, lastClean: 256},
+		{name: "separable at 84 dimensions", dimension: 84, blockDimension: separableBlockDimension, lastClean: 512},
+		{name: "block at 56 dimensions", dimension: 56, blockDimension: app.ParametersPerCircle, lastClean: 1024},
+		{name: "full at 56 dimensions", dimension: 56, blockDimension: 56, lastClean: 8192},
+	}
+
+	for _, current := range cases {
+		t.Run(current.name, func(t *testing.T) {
+			t.Parallel()
+
+			for _, rung := range rungs {
+				want := rung > current.lastClean
+				if got := rankMuClamped(current.dimension, rung, current.blockDimension); got != want {
+					t.Errorf("rankMuClamped(%d, %d, %d) = %t, want %t",
+						current.dimension, rung, current.blockDimension, got, want)
+				}
+			}
+		})
+	}
+}
+
+// TestCovarianceCleanCampaignCrossesModeAgainstTheClamp asserts the property
+// the whole design rests on: it is a 2x2 of covariance mode against rung, one
+// cell of which is clamped and three of which are not. If a future edit moved a
+// rung across the boundary the campaign would silently stop measuring the
+// question it registered, so the arms constructor refuses that and this test
+// pins what it refuses.
+func TestCovarianceCleanCampaignCrossesModeAgainstTheClamp(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designCovClean, mustDesignBudget(t, designCovClean))
+	if err != nil {
+		t.Fatalf("covariance-clean design: %v", err)
+	}
+
+	if plan.descriptive {
+		t.Error("the covariance-clean campaign is inferential; it must not be descriptive")
+	}
+
+	if plan.blocks != covarianceCleanBlocks {
+		t.Errorf("covariance-clean blocks = %d, want %d", plan.blocks, covarianceCleanBlocks)
+	}
+
+	if len(plan.arms) != 4 {
+		t.Fatalf("covariance-clean arms = %d, want 4", len(plan.arms))
+	}
+
+	wantClamped := []bool{false, false, true, false}
+
+	for i, current := range plan.arms {
+		blockDimension := separableBlockDimension
+		if current.covariance == "block" {
+			blockDimension = app.ParametersPerCircle
+		}
+
+		if got := rankMuClamped(searchDimensions, current.popSize, blockDimension); got != wantClamped[i] {
+			t.Errorf("arm %s clamps = %t, want %t", current.name, got, wantClamped[i])
+		}
+
+		// Cold restarts, for the reason the design gives: an IPOP ladder
+		// doubles its population and would walk an arm across the boundary
+		// mid-run, so the rung would stop naming a condition.
+		if current.restartStrategy != coldRestartStrategy {
+			t.Errorf("arm %s uses restart strategy %q; the rung is only a condition under cold restarts",
+				current.name, current.restartStrategy)
+		}
+	}
+
+	// Cap-matched by construction: every arm's lambda times its restart count
+	// times its iteration count is the same budget.
+	budget := mustDesignBudget(t, designCovClean)
+	for _, current := range plan.arms {
+		if spend := current.popSize * current.optimizerRestarts * current.iters; spend != budget {
+			t.Errorf("arm %s is capped at %d evaluations, want %d", current.name, spend, budget)
+		}
+	}
+}
+
+// TestCovarianceCleanCampaignRegistersItsInteraction pins the family the
+// campaign pays multiplicity for: two single-factor contrasts and the
+// difference between them.
+//
+// The interaction is the reading the design is really after, and it is
+// registered rather than inferred from the other two. Comparing their verdicts
+// would be the difference-in-significance error -- two tests can fall either
+// side of a threshold while the effects they estimate are indistinguishable --
+// and the campaign's explanatory claim is precisely about the difference.
+func TestCovarianceCleanCampaignRegistersItsInteraction(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designCovClean, mustDesignBudget(t, designCovClean))
+	if err != nil {
+		t.Fatalf("covariance-clean design: %v", err)
+	}
+
+	want := []plannedContrast{
+		{control: "sep-r32-l64", candidate: "blk-r32-l64", primary: true},
+		{control: "sep-r2-l1024", candidate: "blk-r2-l1024"},
+	}
+	if !slices.Equal(plan.contrasts, want) {
+		t.Errorf("contrasts = %+v, want %+v", plan.contrasts, want)
+	}
+
+	// Outer is the clamped rung and inner the clean one, so a positive
+	// difference of differences says block's lead is larger where separable is
+	// dead -- which is the campaign's explanatory claim, stated in the sign.
+	wantInteraction := &plannedInteraction{outer: want[1], inner: want[0]}
+	if plan.interaction == nil || *plan.interaction != *wantInteraction {
+		t.Errorf("interaction = %+v, want %+v", plan.interaction, wantInteraction)
+	}
+
+	// Each contrast must move covariance mode alone. Asserted field by field
+	// rather than read off the plan table, the way the active-CMA design's is.
+	for _, pair := range [][2]int{{0, 1}, {2, 3}} {
+		control, candidate := plan.arms[pair[0]], plan.arms[pair[1]]
+
+		wantCandidate := control
+		wantCandidate.name, wantCandidate.covariance = candidate.name, candidate.covariance
+
+		if candidate != wantCandidate {
+			t.Errorf("%s moves more than the covariance mode:\n got %+v\nwant %+v",
+				candidate.name, candidate, wantCandidate)
+		}
+	}
+}
+
+// TestCovarianceCleanCampaignRunsAtTheFixedCap records the trade the design
+// made. It gives up comparability with docs/cmaes-covariance-report.md's
+// absolute figures, which ran at huntBudget, and buys comparability with the
+// restart ladder and the active-CMA campaign, which is where the lead it tests
+// came from.
+func TestCovarianceCleanCampaignRunsAtTheFixedCap(t *testing.T) {
+	t.Parallel()
+
+	if runsAtHuntBudget(designCovClean) {
+		t.Fatal("covariance-clean must run at the fixed cap, not huntBudget")
+	}
+
+	if budget := mustDesignBudget(t, designCovClean); budget != defaultBudget {
+		t.Errorf("covariance-clean budget = %d, want %d", budget, defaultBudget)
+	}
+}
+
+// TestActiveCMAFullCampaignAsksWhereTheTreatmentIsLargest pins the two
+// properties that make full mode the place docs/cmaes-active-cma-report.md
+// says to re-ask its question: the clamp cannot bind there, and the treatment
+// is substantially larger than the block campaign's at the same rung. Both are
+// arithmetic the driver can check, so a future edit cannot quietly move the
+// design somewhere the knob is inert again.
+func TestActiveCMAFullCampaignAsksWhereTheTreatmentIsLargest(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designActiveFull, mustDesignBudget(t, designActiveFull))
+	if err != nil {
+		t.Fatalf("active-cma-full design: %v", err)
+	}
+
+	if len(plan.arms) != 2 {
+		t.Fatalf("active-cma-full arms = %d, want 2", len(plan.arms))
+	}
+
+	// Its own block count, not the covariance-clean campaign's. The two are
+	// equal today for the same external reason and different internal ones, so
+	// a shared constant would let one design's power argument govern the
+	// other's the next time either is resized.
+	if plan.blocks != activeCMAFullBlocks {
+		t.Errorf("active-cma-full blocks = %d, want %d", plan.blocks, activeCMAFullBlocks)
+	}
+
+	for _, current := range plan.arms {
+		if current.covariance != "full" {
+			t.Errorf("arm %s runs %q covariance; the campaign exists to ask in full mode",
+				current.name, current.covariance)
+		}
+
+		if rankMuClamped(searchDimensions, current.popSize, searchDimensions) {
+			t.Errorf("arm %s clamps at lambda %d; full mode must not", current.name, current.popSize)
+		}
+	}
+
+	// The block campaign returned its null at a mass of 0.281. Asking again at
+	// a smaller one would repeat that campaign's weakness rather than answer
+	// it, so the design requires strictly more treatment than it had.
+	blockMass := activeCMANegativeMass(searchDimensions, activeCMALambda, app.ParametersPerCircle)
+
+	fullMass := activeCMANegativeMass(searchDimensions, activeCMALambda, searchDimensions)
+	if fullMass <= blockMass {
+		t.Errorf("full mass %g does not exceed the block campaign's %g; the design is not a sharper instrument",
+			fullMass, blockMass)
+	}
+}
+
+// TestActiveCMAFullCampaignMovesOnlyTheKnob asserts the single-factor property
+// field by field, and that the campaign is held at the block campaign's rung,
+// schedule and cap so the two can be read against each other.
+func TestActiveCMAFullCampaignMovesOnlyTheKnob(t *testing.T) {
+	t.Parallel()
+
+	budget := mustDesignBudget(t, designActiveFull)
+
+	plan, err := campaignDesign(designActiveFull, budget)
+	if err != nil {
+		t.Fatalf("active-cma-full design: %v", err)
+	}
+
+	control, passive := plan.arms[0], plan.arms[1]
+
+	want := []plannedContrast{{control: control.name, candidate: passive.name, primary: true}}
+	if !slices.Equal(plan.contrasts, want) {
+		t.Errorf("contrasts = %+v, want %+v", plan.contrasts, want)
+	}
+
+	if !passive.passiveCMA || control.passiveCMA {
+		t.Error("the candidate must be the only arm turning active adaptation off")
+	}
+
+	wantPassive := control
+	wantPassive.name, wantPassive.passiveCMA = passive.name, passive.passiveCMA
+
+	if passive != wantPassive {
+		t.Errorf("the candidate moves more than activeCMA:\n got %+v\nwant %+v", passive, wantPassive)
+	}
+
+	// Held at the block campaign's settings, so the only difference between the
+	// two campaigns is the covariance mode.
+	blockPlan, blockErr := campaignDesign(designActive, mustDesignBudget(t, designActive))
+	if blockErr != nil {
+		t.Fatalf("active-cma design: %v", blockErr)
+	}
+
+	blockControl := blockPlan.arms[0]
+	if control.popSize != blockControl.popSize ||
+		control.optimizerRestarts != blockControl.optimizerRestarts ||
+		control.iters != blockControl.iters ||
+		control.restartStrategy != blockControl.restartStrategy {
+		t.Errorf("full arm %+v is not held at the block campaign's schedule %+v", control, blockControl)
+	}
+
+	if spend := control.popSize * control.optimizerRestarts * control.iters; spend != budget {
+		t.Errorf("arm %s is capped at %d evaluations, want %d", control.name, spend, budget)
 	}
 }

@@ -32,15 +32,17 @@ import (
 // switch in campaignDesign, the artifact defaults, and the tests that
 // enumerate them -- cannot drift apart.
 const (
-	designPhase21 = "phase21"
-	designLambda  = "lambda"
-	designPilot   = "stagnation-pilot"
-	designStag    = "stagnation"
-	designSplit   = "budget-split"
-	designLadder  = "restart-ladder"
-	designHunt    = "deep-hunt"
-	designCov     = "covariance"
-	designActive  = "active-cma"
+	designPhase21    = "phase21"
+	designLambda     = "lambda"
+	designPilot      = "stagnation-pilot"
+	designStag       = "stagnation"
+	designSplit      = "budget-split"
+	designLadder     = "restart-ladder"
+	designHunt       = "deep-hunt"
+	designCov        = "covariance"
+	designActive     = "active-cma"
+	designCovClean   = "covariance-clean"
+	designActiveFull = "active-cma-full"
 )
 
 // huntBudget is the deep hunt's per-job evaluation cap. It is 1.94x
@@ -210,6 +212,33 @@ type plannedContrast struct {
 	primary bool
 }
 
+// plannedInteraction is a difference-in-differences: the paired per-block
+// difference between two contrasts' gains.
+//
+// It exists because comparing two contrasts' verdicts is not a test of the
+// difference between them. A design that reads "large and significant here,
+// small and null there" as evidence that the two differ has committed the
+// difference-in-significance error, and a 2x2 whose conclusion rests on that
+// reading has to test the interaction directly instead. The reading is
+// outer - inner, block by block, on the same seeds, so it carries its own
+// standard error and its own degrees of freedom.
+//
+// A design that registers one pays multiplicity for it like any other member
+// of the family, which is the honest price: the interaction asks a question
+// neither contrast asks, so it is not free.
+type plannedInteraction struct {
+	// outer is the contrast whose gain the campaign wants to explain; inner is
+	// the contrast it is explained against.
+	outer plannedContrast
+	inner plannedContrast
+}
+
+// describe names the interaction the way the report prints it.
+func (i plannedInteraction) describe() string {
+	return fmt.Sprintf("(`%s` vs `%s`) - (`%s` vs `%s`)",
+		i.outer.candidate, i.outer.control, i.inner.candidate, i.inner.control)
+}
+
 // design is one registered campaign: a fixed arm set, the arm every paired
 // comparison is taken against, and an optional second control reported
 // underneath. Designs are named and enumerated rather than assembled from
@@ -233,6 +262,11 @@ type design struct {
 	// reports were produced and must stay reproducible; a design that fills
 	// this in itself is corrected over exactly the comparisons it names.
 	contrasts []plannedContrast
+	// interaction is an optional difference-in-differences over two of those
+	// contrasts. It joins the same Holm family, so registering one costs the
+	// rest of the family a step; a design that only wants to describe the gap
+	// between two contrasts should leave it nil and say so.
+	interaction *plannedInteraction
 	// reference and circles are the fixture. They belong to the design because
 	// a campaign run on a different image is not comparable to one run on
 	// example/MayFly-512.png, and a flag that silently changed either would
@@ -430,7 +464,8 @@ func parseFlags() settings {
 	var config settings
 	flag.StringVar(&config.action, "action", "collect", "plan, submit, collect, preliminary, or analyze")
 	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21, lambda, stagnation-pilot, "+
-		"stagnation, budget-split, restart-ladder, deep-hunt, covariance or active-cma")
+		"stagnation, budget-split, restart-ladder, deep-hunt, covariance, active-cma, covariance-clean "+
+		"or active-cma-full")
 	flag.StringVar(&config.server, "server", "http://localhost:8085", "serve base URL")
 	flag.StringVar(&config.dataRoot, "data-root", "./data/cmaes-phase11", "serve data root")
 	flag.StringVar(&config.reference, "ref", "example/MayFly-512.png", "reference image")
@@ -653,10 +688,55 @@ func campaignDesign(name string, budget int) (design, error) {
 				{control: active[0].name, candidate: active[1].name, primary: true},
 			},
 		}, nil
+	case designCovClean:
+		clean, cleanErr := covarianceCleanArms(budget)
+		if cleanErr != nil {
+			return design{}, cleanErr
+		}
+
+		// Two single-factor contrasts, each against its own rung's separable
+		// control, plus the interaction between them. The primary is the
+		// question AGENTS.md blocks a covariance default on; the secondary is
+		// the clamped rung the covariance report registered its +39.12 on.
+		//
+		// The interaction is registered rather than read off the other two.
+		// The campaign's explanatory claim is that the covariance win is the
+		// clamp, and that claim is about the *difference* between the two
+		// rungs' effects -- which a small p at one rung beside a large p at
+		// the other does not establish, however tempting the pattern looks. It
+		// is a third member of the family and Holm corrects over all three.
+		clamped := plannedContrast{control: clean[2].name, candidate: clean[3].name}
+		cleanRung := plannedContrast{control: clean[0].name, candidate: clean[1].name, primary: true}
+
+		return design{
+			name: name, baseline: clean[0].name,
+			blocks: covarianceCleanBlocks, seedBase: covarianceCleanSeedBase, arms: clean,
+			reference: recordReference, circles: defaultCircles,
+			contrasts:   []plannedContrast{cleanRung, clamped},
+			interaction: &plannedInteraction{outer: clamped, inner: cleanRung},
+		}, nil
+	case designActiveFull:
+		full, fullErr := activeCMAFullArms(budget)
+		if fullErr != nil {
+			return design{}, fullErr
+		}
+
+		// One contrast, the whole family, Holm's first gate the unadjusted
+		// 0.05 -- the active-CMA campaign's reasoning, unchanged, because this
+		// design asks the identical single question in a different covariance
+		// mode.
+		return design{
+			name: name, baseline: full[0].name,
+			blocks: activeCMAFullBlocks, seedBase: activeCMAFullSeedBase, arms: full,
+			reference: recordReference, circles: defaultCircles,
+			contrasts: []plannedContrast{
+				{control: full[0].name, candidate: full[1].name, primary: true},
+			},
+		}, nil
 	default:
 		return design{}, fmt.Errorf(
-			"unknown design %q (want phase21, lambda, stagnation-pilot, stagnation, "+
-				"budget-split, restart-ladder, deep-hunt, covariance or active-cma)",
+			"unknown design %q (want phase21, lambda, stagnation-pilot, stagnation, budget-split, "+
+				"restart-ladder, deep-hunt, covariance, active-cma, covariance-clean or active-cma-full)",
 			name)
 	}
 }
@@ -1382,6 +1462,93 @@ func activeCMAArms(budget int) ([]arm, error) {
 	return []arm{control, passive}, nil
 }
 
+// hansenWeights returns go-cma-es v0.1.0's normalized positive recombination
+// weights, the unnormalized log base they are built from, and the variance
+// effective selection mass they imply. It is split out of
+// activeCMANegativeMass so the clamp predicate below can reach muEff without
+// duplicating the arithmetic; the operations and their order are unchanged, so
+// every value it returns is bit-identical to what that function computed
+// inline.
+func hansenWeights(lambda int) ([]float64, float64, float64) {
+	mu := lambda / 2
+
+	weightBase := math.Log(math.Max(float64(mu), float64(lambda)/2) + 0.5)
+
+	weights := make([]float64, mu)
+	weightSum := 0.0
+
+	for i := range weights {
+		weights[i] = weightBase - math.Log(float64(i+1))
+		weightSum += weights[i]
+	}
+
+	squareSum := 0.0
+
+	for i := range weights {
+		weights[i] /= weightSum
+		squareSum += weights[i] * weights[i]
+	}
+
+	return weights, weightBase, 1 / squareSum
+}
+
+// hansenLearningRates returns the rank-one and rank-mu covariance learning
+// rates go-cma-es v0.1.0 derives, and whether the rank-mu rate arrived at its
+// 1-c1 clamp.
+//
+// blockDimension is what selects the covariance mode: 1 for separable, the
+// per-circle parameter count for block, and anything at or above dimension for
+// full, which takes no correction at all. The correction divides by
+// blockDimension+2, so the smaller the block the larger the multiplier and the
+// sooner the clamp binds -- which is why separable degenerates first.
+//
+// The clamp is the defect docs/cmaes-covariance-report.md measured. Once cmu is
+// the clamp the covariance decay 1-c1-cmu is exactly zero, so the matrix is
+// rebuilt from each generation and remembers nothing, and Hansen's
+// positive-definiteness guard collapses to the difference of two equal
+// quantities, so activeCMA is inert. Both consequences follow from this one
+// boolean, which is why a design may test it directly rather than inferring it
+// from a measured mass.
+//
+// The parameter and local names are Hansen's notation and go-cma-es's own field
+// names. Renaming them breaks the correspondence these functions exist to
+// preserve, which is the only thing that makes them reviewable.
+//
+//nolint:varnamelen // c1 and cmu are Hansen's notation and go-cma-es's own
+func hansenLearningRates(dimension int, muEff float64, blockDimension int) (float64, float64, bool) {
+	n := float64(dimension)
+
+	c1 := 2 / ((n+1.3)*(n+1.3) + muEff)
+	cmu := math.Min(1-c1, 2*(muEff-2+1/muEff)/((n+2)*(n+2)+muEff))
+
+	if blockDimension < dimension {
+		cmu = math.Min(1-c1, cmu*(n+2)/float64(blockDimension+2))
+	}
+
+	return c1, cmu, cmu >= 1-c1
+}
+
+// rankMuClamped reports whether a covariance mode is degenerate at a
+// population, in the dimensionality a design searches. It is the predicate a
+// design uses to state, and have checked, which of its cells the library's
+// defect applies to.
+func rankMuClamped(dimension, lambda, blockDimension int) bool {
+	if lambda/2 < 1 || dimension < 1 {
+		return false
+	}
+
+	_, _, muEff := hansenWeights(lambda)
+	_, _, clamped := hansenLearningRates(dimension, muEff, blockDimension)
+
+	return clamped
+}
+
+// separableBlockDimension is the blockDimension separable covariance presents
+// to the arithmetic above: it adapts one variance per coordinate. Block mode
+// passes app.ParametersPerCircle, one dense matrix per circle, and full mode
+// passes the search dimensionality itself, which takes no correction at all.
+const separableBlockDimension = 1
+
 // activeCMANegativeMass returns the mass go-cma-es v0.1.0 scales its negative
 // rank-mu weights by, for a configuration this driver is about to register. It
 // replicates deriveStrategyParameters and deriveNegativeWeights rather than
@@ -1403,34 +1570,12 @@ func activeCMANegativeMass(dimension, lambda, blockDimension int) float64 {
 		return 0
 	}
 
-	weightBase := math.Log(math.Max(float64(mu), float64(lambda)/2) + 0.5)
-
-	weights := make([]float64, mu)
-	weightSum := 0.0
-
-	for i := range weights {
-		weights[i] = weightBase - math.Log(float64(i+1))
-		weightSum += weights[i]
-	}
-
-	squareSum := 0.0
-
-	for i := range weights {
-		weights[i] /= weightSum
-		squareSum += weights[i] * weights[i]
-	}
+	weights, weightBase, muEff := hansenWeights(lambda)
+	//nolint:varnamelen // c1 and cmu are Hansen's notation and go-cma-es's own
+	// field names, kept here for the same reason hansenLearningRates keeps them.
+	c1, cmu, _ := hansenLearningRates(dimension, muEff, blockDimension)
 
 	n := float64(dimension)
-	muEff := 1 / squareSum
-	//nolint:varnamelen // c1 and cmu are Hansen's notation and go-cma-es's own
-	// field names. Renaming them breaks the correspondence this function exists
-	// to preserve, which is the only thing that makes it reviewable.
-	c1 := 2 / ((n+1.3)*(n+1.3) + muEff)
-	cmu := math.Min(1-c1, 2*(muEff-2+1/muEff)/((n+2)*(n+2)+muEff))
-
-	if blockDimension < dimension {
-		cmu = math.Min(1-c1, cmu*(n+2)/float64(blockDimension+2))
-	}
 
 	if cmu <= 0 || lambda-mu <= 0 {
 		return 0
@@ -1468,6 +1613,244 @@ func sumOf(values []float64) float64 {
 	}
 
 	return total
+}
+
+// covarianceCleanSeedBase is a fresh range, and choosing one is the design's
+// central methodological decision rather than housekeeping. The lead this
+// campaign re-asks was read off the restart ladder's and the active-CMA
+// campaign's shared blocks at seeds 111013-111024; re-running that contrast on
+// those seeds would re-read the data that raised it rather than test it. The
+// price is the bit-for-bit replication check a shared range buys, and this
+// design pays it: it repeats no committed cell.
+const covarianceCleanSeedBase = 117_000
+
+// covarianceCleanBlocks is twice the count every inferential campaign in this
+// repository has run, bought with the wall clock the fixed cap frees relative
+// to the two campaigns that ran at huntBudget.
+//
+// It is a direct response to the active-CMA report, which put the cost of a
+// twelve-block null plainly: at a paired sd of 48.43 an effect of the size it
+// observed needs roughly four times the blocks. Twenty-four is not four times
+// and this design does not pretend it is -- it is the largest count the
+// campaign window affords, it narrows the paired interval by about 29%, and a
+// null here still has to be reported as absence of evidence.
+const covarianceCleanBlocks = 24
+
+// The two rungs the design crosses covariance mode against. Each is chosen for
+// what go-cma-es v0.1.0 does at it, not for realism.
+//
+// covarianceCleanRung is where both modes are clean, so the contrast there
+// measures the covariance model and nothing else. It is the restart ladder's
+// primary rung and the active-CMA campaign's, which is what makes this
+// campaign's reading comparable to the lead it tests.
+//
+// covarianceShippedRung is app's default popSize and the rung
+// docs/cmaes-covariance-report.md registered its +39.12 on. Separable clamps
+// there and block does not, so the contrast measures the covariance model
+// confounded with a dead control -- deliberately, because that confound is the
+// thing under test.
+const (
+	covarianceCleanRung   = 64
+	covarianceShippedRung = defaultPop
+)
+
+// covarianceCleanArms registers the campaign that asks whether block
+// covariance's registered win survives when separable is allowed to work.
+//
+// docs/cmaes-covariance-report.md measured block against separable at
+// +39.12 (t = +2.72, 11/12) and it rejects under Holm, but its separable
+// control ran at lambda 1024, where the rank-mu clamp makes separable
+// memoryless -- so the registered result cannot distinguish a better
+// covariance model from a broken comparison. The active-CMA campaign read the
+// same contrast at lambda 64, where both modes are clean, and got +7.27
+// (t = 0.54, 7/12). That reading is cross-campaign and unregistered, so the
+// corpus currently holds a registered result and an unregistered lead pointing
+// opposite ways, and AGENTS.md blocks a covariance default on resolving it.
+//
+// The design is a 2x2 -- covariance mode crossed with rung -- and it is a 2x2
+// for a reason that a single clean-rung contrast would miss. A clean-rung null
+// on its own cannot separate "block is no better anywhere" from "this campaign
+// lacked the power to see it", because the effect it is chasing is small. The
+// clamped rung is run in the same campaign, on the same seeds and the same
+// cap, so the two contrasts can be subtracted block by block: if block's lead
+// is larger at 1024 than at 64, the campaign has shown that the covariance win
+// is the clamp, which is a positive finding rather than a failure to reject.
+//
+// That subtraction is registered as an interaction rather than eyeballed off
+// the two contrasts' verdicts. Reading "significant at 1024, null at 64" as a
+// difference between the rungs would be the difference-in-significance error:
+// the two tests can land either side of a threshold while the effects they
+// estimate are indistinguishable. So the family is three, Holm corrects over
+// three, and the explanatory claim is the one that carries its own p.
+//
+// Cold restarts at a fixed lambda rather than IPOP, for the reason the
+// active-CMA design gives: an IPOP ladder doubles its population, so it would
+// walk each arm across the clamp boundary mid-run and the rung would stop
+// naming a condition. optimizerRestarts holds lambda fixed, so every run in an
+// arm sits on the same side of it.
+//
+// The cap is defaultBudget, not huntBudget. That costs comparability with the
+// covariance campaign's absolute figures and buys it with the restart ladder
+// and the active-CMA campaign, which is the trade this design wants: those two
+// are where the lead came from, and every contrast that matters here is
+// within-campaign anyway.
+//
+// Like the active-CMA campaign this is cap-matched and NOT spend-matched.
+// WithRestarts consults no evaluation budget, so an arm whose runs trip TolFun
+// early returns the remainder to nobody. Expect the lambda 64 arms near the
+// ladder's measured 36.7% of cap and the lambda 1024 arms well above it, and
+// read finalEvaluations per arm rather than assuming the cap.
+func covarianceCleanArms(budget int) ([]arm, error) {
+	if budget <= 0 || budget%ladderWork != 0 {
+		return nil, fmt.Errorf(
+			"budget %d must be positive and divisible by %d; the arms would not be evaluation-matched",
+			budget, ladderWork)
+	}
+
+	modes := []struct {
+		name       string
+		short      string
+		blockDimen int
+	}{
+		{name: "separable", short: "sep", blockDimen: separableBlockDimension},
+		{name: "block", short: "blk", blockDimen: app.ParametersPerCircle},
+	}
+
+	// Which cell the library's defect applies to is the design's whole claim,
+	// so it is checked here rather than asserted in a comment. A future edit to
+	// either rung that moved a cell across the clamp boundary would change what
+	// the campaign measures without changing anything a reader would notice.
+	wantClamped := map[string]bool{
+		"separable-64": false, "block-64": false,
+		"separable-1024": true, "block-1024": false,
+	}
+
+	arms := make([]arm, 0, 4)
+
+	for _, rung := range []int{covarianceCleanRung, covarianceShippedRung} {
+		restarts := ladderWork / rung
+
+		if rung < app.MinPopulation {
+			return nil, fmt.Errorf("lambda %d is below app.MinPopulation %d and would be refused at submit",
+				rung, app.MinPopulation)
+		}
+
+		if restarts > app.MaxOptimizerRestarts {
+			return nil, fmt.Errorf("lambda %d needs %d cold restarts, above app.MaxOptimizerRestarts %d",
+				rung, restarts, app.MaxOptimizerRestarts)
+		}
+
+		for _, mode := range modes {
+			clamped := rankMuClamped(searchDimensions, rung, mode.blockDimen)
+
+			key := fmt.Sprintf("%s-%d", mode.name, rung)
+			if want, known := wantClamped[key]; !known || want != clamped {
+				return nil, fmt.Errorf(
+					"%s covariance at lambda %d in %d dimensions clamps=%t, but the design is registered "+
+						"for clamps=%t; the 2x2 would not measure the condition it names",
+					mode.name, rung, searchDimensions, clamped, want)
+			}
+
+			arms = append(arms, arm{
+				name:      fmt.Sprintf("%s-r%d-l%d", mode.short, restarts, rung),
+				optimizer: "cmaes", covariance: mode.name, restartStrategy: "none",
+				iters: budget / ladderWork, popSize: rung, optimizerRestarts: restarts,
+			})
+		}
+	}
+
+	return arms, nil
+}
+
+// activeCMAFullBlocks is this design's own count, not a reference to the
+// covariance-clean campaign's, even though the two are equal today.
+//
+// They are equal for the same external reason -- twenty-four is what a campaign
+// window affords at the fixed cap -- and for different internal ones, so a
+// shared constant would make one design's power argument silently govern the
+// other's. This one's argument is its own: docs/cmaes-active-cma-report.md put
+// the cost of its twelve-block null at roughly four times the blocks, which is
+// forty-eight, and this campaign runs half that while applying a treatment 3.8x
+// larger at the same rung. Whether the larger treatment makes up the difference
+// is exactly what it measures, so the count is a bet the report has to state
+// rather than a number inherited from elsewhere.
+const activeCMAFullBlocks = 24
+
+// activeCMAFullSeedBase is a fresh range. The full-mode campaign repeats no
+// committed cell, so it gets no bit-for-bit replication check, and it asks its
+// question of blocks no earlier design has seen.
+const activeCMAFullSeedBase = 118_000
+
+// activeCMAFullArms registers activeCMA measured in full covariance mode, which
+// is the gap docs/cmaes-active-cma-report.md names in its own conclusion: the
+// knob "stays unmeasured in full covariance mode, which never clamps and is the
+// other clean place to ask".
+//
+// The block campaign that preceded it retained its null at t = -1.70 and read
+// as absence of evidence rather than a zero. Full mode is the better place to
+// re-ask it for a reason that is arithmetic rather than preference: the whole
+// magnitude of the treatment is the mass active.go scales the negative weights
+// by, and at lambda 64 in 56 dimensions that mass is 1.065 in full mode against
+// 0.281 in block. So this campaign applies a treatment 3.8x larger than the one
+// that returned the null, at the same rung, the same cap and the same restart
+// schedule -- which is what makes it a sharper instrument and not merely
+// another arm.
+//
+// Full mode also never clamps at any lambda, at any dimensionality this project
+// searches, so the rung carries no risk of reproducing the covariance
+// campaign's void. That is asserted below rather than assumed.
+//
+// Everything else is held at the block campaign's settings on purpose. Same
+// rung, same ladderWork product, same cold restarts, same cap. The two
+// campaigns then differ in covariance mode alone, so their nulls and their
+// intervals can be read against each other even though the comparison is
+// across campaigns and therefore a lead rather than a finding.
+func activeCMAFullArms(budget int) ([]arm, error) {
+	if budget <= 0 || budget%ladderWork != 0 {
+		return nil, fmt.Errorf(
+			"budget %d must be positive and divisible by %d; the two arms would not be evaluation-matched",
+			budget, ladderWork)
+	}
+
+	restarts := ladderWork / activeCMALambda
+
+	if restarts > app.MaxOptimizerRestarts {
+		return nil, fmt.Errorf("lambda %d needs %d cold restarts, above app.MaxOptimizerRestarts %d",
+			activeCMALambda, restarts, app.MaxOptimizerRestarts)
+	}
+
+	if searchDimensions > app.MaxCMAESFullDimensions {
+		return nil, fmt.Errorf("full covariance is refused above %d dimensions and this design searches %d",
+			app.MaxCMAESFullDimensions, searchDimensions)
+	}
+
+	// Full mode takes no block correction, so the clamp cannot bind. Checked
+	// rather than asserted, because the whole point of running here is that the
+	// treatment survives.
+	if rankMuClamped(searchDimensions, activeCMALambda, searchDimensions) {
+		return nil, fmt.Errorf("full covariance at lambda %d in %d dimensions clamps; the contrast would be void",
+			activeCMALambda, searchDimensions)
+	}
+
+	mass := activeCMANegativeMass(searchDimensions, activeCMALambda, searchDimensions)
+	if mass < activeCMAMinNegativeMass {
+		return nil, fmt.Errorf(
+			"full covariance at lambda %d in %d dimensions gives active adaptation a negative mass of %g, "+
+				"below the %g this design requires; the contrast would measure nothing",
+			activeCMALambda, searchDimensions, mass, activeCMAMinNegativeMass)
+	}
+
+	control := arm{
+		name:      fmt.Sprintf("full-r%d-l%d", restarts, activeCMALambda),
+		optimizer: "cmaes", covariance: "full", restartStrategy: "none",
+		iters: budget / ladderWork, popSize: activeCMALambda, optimizerRestarts: restarts,
+	}
+
+	passive := control
+	passive.name = control.name + "-passive"
+	passive.passiveCMA = true
+
+	return []arm{control, passive}, nil
 }
 
 func campaignArms(budget int) ([]arm, error) {
@@ -2296,11 +2679,20 @@ const familyAlpha = 0.05
 type contrast struct {
 	control   string
 	candidate string
+	// label is set only on an interaction, whose gain belongs to no pair of
+	// arms and so cannot be found by control and candidate. summarize matches
+	// on those two, so leaving them empty keeps an interaction out of the arm
+	// tables while Holm still corrects over it.
+	label     string
 	gain      float64
 	statistic float64
 	pValue    float64
-	wins      int
-	rejected  bool
+	// interval is the half-width of the 95% paired confidence interval. It is
+	// filled for an interaction, where the size of the difference is the whole
+	// point and a bare verdict would under-report what was measured.
+	interval float64
+	wins     int
+	rejected bool
 }
 
 func analyze(path string, plan design) error {
@@ -2330,7 +2722,11 @@ func analyze(path string, plan design) error {
 		return reportDescriptive(plan, names, byArm)
 	}
 
-	contrasts := buildContrasts(plan, byArm)
+	contrasts, err := buildContrasts(plan, byArm)
+	if err != nil {
+		return err
+	}
+
 	holmReject(contrasts, familyAlpha)
 
 	// A design that registers a record answers a second, non-inferential
@@ -2389,6 +2785,9 @@ func analyze(path string, plan design) error {
 				name, summarize(contrasts, plan.secondaryControl, name, plan.blocks))
 		}
 	}
+
+	reportUnprintedContrasts(plan, contrasts)
+	reportInteraction(plan, contrasts)
 
 	fmt.Printf("\nHolm step-down over all %d paired contrasts at a family-wise alpha of %.2f;\n",
 		len(contrasts), familyAlpha)
@@ -2532,8 +2931,8 @@ func (d design) evaluationCap() int {
 // declares is the multiplicity it pays for -- which is why declaring them is
 // now the design's job rather than a consequence of how many arms it happens
 // to run.
-func buildContrasts(plan design, byArm map[string][]resultRow) []contrast {
-	contrasts := make([]contrast, 0, len(plan.contrasts))
+func buildContrasts(plan design, byArm map[string][]resultRow) ([]contrast, error) {
+	contrasts := make([]contrast, 0, len(plan.contrasts)+1)
 	for _, planned := range plan.contrasts {
 		gain, statistic, wins := pairedImprovement(byArm[planned.control], byArm[planned.candidate])
 		contrasts = append(contrasts, contrast{
@@ -2546,7 +2945,48 @@ func buildContrasts(plan design, byArm map[string][]resultRow) []contrast {
 		})
 	}
 
-	return contrasts
+	if plan.interaction == nil {
+		return contrasts, nil
+	}
+
+	differences, err := interactionDifferences(byArm, *plan.interaction)
+	if err != nil {
+		return nil, err
+	}
+
+	gain, deviation, statistic, wins := pairedStatistics(differences)
+	contrasts = append(contrasts, contrast{
+		label:     plan.interaction.describe(),
+		gain:      gain,
+		statistic: statistic,
+		pValue:    studentTTwoSided(statistic, plan.blocks-1),
+		interval: studentTCritical(familyAlpha, plan.blocks-1) *
+			deviation / math.Sqrt(float64(len(differences))),
+		wins: wins,
+	})
+
+	return contrasts, nil
+}
+
+// interactionDifferences subtracts one contrast's per-block gain from the
+// other's. Both contrasts run the same blocks by construction -- a design's
+// arms all run its whole block set -- so a mismatch is a corrupt result file
+// rather than something to paper over with a partial pairing.
+func interactionDifferences(byArm map[string][]resultRow, planned plannedInteraction) ([]float64, error) {
+	outerBlocks, outer := pairedDifferences(byArm[planned.outer.control], byArm[planned.outer.candidate])
+	innerBlocks, inner := pairedDifferences(byArm[planned.inner.control], byArm[planned.inner.candidate])
+
+	if !slices.Equal(outerBlocks, innerBlocks) {
+		return nil, fmt.Errorf("interaction %s pairs %v against %v; the blocks do not line up",
+			planned.describe(), outerBlocks, innerBlocks)
+	}
+
+	differences := make([]float64, len(outer))
+	for index := range outer {
+		differences[index] = outer[index] - inner[index]
+	}
+
+	return differences, nil
 }
 
 // summarize renders one contrast's cells for the Markdown tables above.
@@ -2566,6 +3006,86 @@ func summarize(contrasts []contrast, control, candidate string, blocks int) stri
 	}
 
 	return "n/a | n/a | n/a | n/a | n/a"
+}
+
+// reportUnprintedContrasts prints every registered contrast the two tables
+// above have no column for.
+//
+// Those tables are organized around the controls: one column against the
+// baseline and, where a design names one, a table against the secondary
+// control. A design whose contrasts all point at the baseline is fully
+// reported by them, which every design before covariance-clean was -- so a
+// contrast between two arms that are neither control simply vanished, and the
+// row that should have carried it printed "n/a" as though the lookup had
+// failed. It had not; there was nowhere to print it.
+//
+// Registering a comparison and then not reporting it is the worse half of that
+// bug: Holm still corrects the family for a contrast the reader never sees.
+func reportUnprintedContrasts(plan design, contrasts []contrast) {
+	printed := func(control, candidate string) bool {
+		if control == plan.baseline {
+			return candidate != plan.baseline
+		}
+
+		if control == plan.secondaryControl && plan.secondaryControl != "" {
+			return candidate != plan.baseline && candidate != plan.secondaryControl
+		}
+
+		return false
+	}
+
+	remaining := make([]contrast, 0, len(contrasts))
+
+	for _, current := range contrasts {
+		if current.label == "" && !printed(current.control, current.candidate) {
+			remaining = append(remaining, current)
+		}
+	}
+
+	if len(remaining) == 0 {
+		return
+	}
+
+	fmt.Println("\nFurther registered contrasts:")
+	fmt.Printf("| contrast | gain | t (df=%d) | p | Holm | blocks won |\n", plan.blocks-1)
+	fmt.Println("| --- | ---: | ---: | ---: | --- | ---: |")
+
+	for _, current := range remaining {
+		fmt.Printf("| `%s` vs `%s` | %s |\n", current.candidate, current.control,
+			summarize(contrasts, current.control, current.candidate, plan.blocks))
+	}
+}
+
+// reportInteraction prints the design's difference-in-differences, if it
+// registered one. It carries the interval as well as the verdict because the
+// interaction exists to say how much the two contrasts differ, and a design
+// that only printed reject-or-retain would leave the reader to infer the size
+// from two other rows -- which is the reading the interaction replaces.
+func reportInteraction(plan design, contrasts []contrast) {
+	if plan.interaction == nil {
+		return
+	}
+
+	for _, current := range contrasts {
+		if current.label == "" {
+			continue
+		}
+
+		decision := "retain"
+		if current.rejected {
+			decision = "reject"
+		}
+
+		fmt.Printf("\nRegistered interaction %s:\n", current.label)
+		fmt.Printf("| difference of differences | 95%% interval | t (df=%d) | p | Holm | blocks won |\n",
+			plan.blocks-1)
+		fmt.Println("| ---: | ---: | ---: | ---: | --- | ---: |")
+		fmt.Printf("| %+.2f | %+.2f to %+.2f | %+.2f | %.5f | %s | %d/%d |\n",
+			current.gain, current.gain-current.interval, current.gain+current.interval,
+			current.statistic, current.pValue, decision, current.wins, plan.blocks)
+
+		return
+	}
 }
 
 // holmReject marks the contrasts whose null hypotheses Holm's step-down
@@ -2822,27 +3342,61 @@ func median(values []float64) float64 {
 }
 
 func pairedImprovement(control, candidate []resultRow) (float64, float64, int) {
+	_, differences := pairedDifferences(control, candidate)
+	mean, _, statistic, wins := pairedStatistics(differences)
+
+	return mean, statistic, wins
+}
+
+// pairedDifferences is one contrast's per-block gain, in block order, with the
+// blocks it was taken over.
+//
+// The ordering is not cosmetic. Floating-point addition is not associative, so
+// summing the differences in Go's randomized map order would make a reported
+// mean depend on the run rather than on the data.
+func pairedDifferences(control, candidate []resultRow) ([]int, []float64) {
 	controlByBlock := make(map[int]float64, len(control))
 	for _, row := range control {
 		controlByBlock[row.Block] = row.Score
 	}
 
-	differences := make([]float64, 0, len(candidate))
+	ordered := append([]resultRow(nil), candidate...)
+	slices.SortFunc(ordered, func(a, b resultRow) int { return a.Block - b.Block })
+
+	blocks := make([]int, 0, len(ordered))
+	differences := make([]float64, 0, len(ordered))
+
+	for _, row := range ordered {
+		blocks = append(blocks, row.Block)
+		differences = append(differences, controlByBlock[row.Block]-row.Score)
+	}
+
+	return blocks, differences
+}
+
+// pairedStatistics reduces a set of paired differences to what a contrast row
+// prints, in that order: the mean, its sample standard deviation, the
+// one-sample t statistic on those differences, and how many of them favour the
+// candidate.
+//
+// A zero standard deviation is an infinite statistic rather than a division by
+// zero, which is what docs/cmaes-covariance-report.md's void secondary
+// contrast produced and why that report says the value means nothing.
+func pairedStatistics(differences []float64) (float64, float64, float64, int) {
 	wins := 0
 
-	for _, row := range candidate {
-		difference := controlByBlock[row.Block] - row.Score
-
-		differences = append(differences, difference)
+	for _, difference := range differences {
 		if difference > 0 {
 			wins++
 		}
 	}
 
-	mean, sd := meanSD(differences)
-	if sd == 0 {
-		return mean, math.Copysign(math.Inf(1), mean), wins
+	mean, deviation := meanSD(differences)
+
+	statistic := math.Copysign(math.Inf(1), mean)
+	if deviation != 0 {
+		statistic = mean / (deviation / math.Sqrt(float64(len(differences))))
 	}
 
-	return mean, mean / (sd / math.Sqrt(float64(len(differences)))), wins
+	return mean, deviation, statistic, wins
 }

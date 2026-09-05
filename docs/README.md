@@ -207,6 +207,23 @@ re-measure instead.
   covariance campaign registered against a clamped control. Cross-campaign and
   unregistered — a lead, not a finding — but answer it before proposing a
   covariance default.
+- [`cmaes-covariance-clean-report.md`](cmaes-covariance-clean-report.md) — four
+  arms and 96 jobs, the 2x2 that answers the lead the active-CMA campaign left
+  open. **Block covariance does not beat separable where both modes are clean**:
+  the registered primary is `-7.53` (`t = -0.82`, 9/24) and its 95% interval,
+  `-26.55` to `+11.49`, **excludes the `+39.12`** the covariance campaign
+  registered against a clamped control. All three registered contrasts retain.
+  Read it before proposing a covariance default — this is the measurement that
+  discharges that question, in the negative. Its interaction was registered so
+  the clamp explanation would get a test rather than an eyeball, and came back
+  inconclusive (`+15.11`, `-33.63` to `+63.84`), underpowered by about tenfold
+  because the lambda 1024 arms are erratic; so the clamp remains the leading
+  explanation on arithmetic grounds and gains no measured support here. Carries
+  a `distributionExtent` reading that reproduces the lambda screen's sigma
+  finding on fresh seeds, an unregistered lead that 32 small restarts beat 2
+  large ones in separable mode (`+30.15`, `t = 3.38`), and the two driver
+  defects it exposed — a registered contrast that was never printed, and a fixed
+  restart count that recorded nothing about its attempts.
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by

@@ -703,11 +703,14 @@ func TestWithRestartsFillingRecordsEveryAttemptItRan(t *testing.T) {
 	}
 }
 
-func TestWithRestartsFixedCountRecordsNothingOfItsOwn(t *testing.T) {
+func TestWithRestartsFixedCountRecordsEveryAttemptToo(t *testing.T) {
 	t.Parallel()
 
-	// The synthesized records exist for the filling shape alone. Emitting them
-	// for a fixed count would change what every recorded campaign persists.
+	// A fixed count once recorded nothing, because how many attempts it ran is
+	// recoverable from the configuration. The count is; each attempt's own
+	// cost, work and termination is not, and that is most of what a record is
+	// for -- a schedule reports one job-level termination covering attempts
+	// that may have ended for quite different reasons.
 	base := &budgetedOptimizer{budget: 100, perAttempt: []int{30, 30, 30}}
 
 	result, err := restartLifecycle(t, WithRestarts(base, 3)).
@@ -716,8 +719,69 @@ func TestWithRestartsFixedCountRecordsNothingOfItsOwn(t *testing.T) {
 		t.Fatalf("RunContext: %v", err)
 	}
 
-	if len(result.Restarts) != 0 {
-		t.Fatalf("records = %d, want none", len(result.Restarts))
+	if len(result.Restarts) != base.attempts {
+		t.Fatalf("records = %d, attempts = %d", len(result.Restarts), base.attempts)
+	}
+
+	for index, run := range result.Restarts {
+		if run.Restart != index {
+			t.Fatalf("record %d numbered %d", index, run.Restart)
+		}
+
+		if run.Iterations != 30 {
+			t.Fatalf("record %d iterations = %d, want 30", index, run.Iterations)
+		}
+	}
+}
+
+// observingOptimizer reports one progress sample per invocation, numbering its
+// own restart from zero the way a real engine does: the engine knows nothing of
+// the attempts around it, so shifting that index onto a run-wide sequence is
+// the wrapper's job and this is where it is observed.
+type observingOptimizer struct {
+	budgetedOptimizer
+}
+
+func (o *observingOptimizer) RunContext(ctx context.Context, problem Problem, options RunOptions) (Result, error) {
+	result, err := o.budgetedOptimizer.RunContext(ctx, problem, options)
+	if err != nil {
+		return result, err
+	}
+
+	if options.Observer != nil {
+		options.Observer(Progress{Diagnostics: &SearchDiagnostics{Restart: 0}})
+	}
+
+	return result, nil
+}
+
+func TestWithRestartsFixedCountNumbersItsAttemptsInTheTrace(t *testing.T) {
+	t.Parallel()
+
+	// The offset the progress observer shifts by is the number of runs already
+	// recorded, so a shape that recorded nothing left every attempt reporting
+	// restart 0 and a trace with no attempt boundaries in it. The
+	// covariance-clean campaign's trace is the worked case: 8,891 samples over
+	// four fixed-count arms, restart 0 in every one of them.
+	base := &observingOptimizer{budgetedOptimizer: budgetedOptimizer{budget: 100, perAttempt: []int{30, 30, 30}}}
+
+	seen := map[int]bool{}
+	options := RunOptions{Observer: func(progress Progress) {
+		if progress.Diagnostics != nil {
+			seen[progress.Diagnostics.Restart] = true
+		}
+	}}
+
+	_, err := restartLifecycle(t, WithRestarts(base, 3)).
+		RunContext(context.Background(), Problem{}, options)
+	if err != nil {
+		t.Fatalf("RunContext: %v", err)
+	}
+
+	for attempt := range base.attempts {
+		if !seen[attempt] {
+			t.Errorf("no trace sample reports restart %d; the attempts are indistinguishable", attempt)
+		}
 	}
 }
 
