@@ -216,12 +216,33 @@ anything new against its figures.
       asserted one; `internal/opt/restart_fill_cmaes_test.go` runs the same
       shape at 4 restarts and asserts the direction — that the engine converges
       early, that filling spends strictly more, and that it never overruns the
-      cap — rather than pinning figures a library bump would churn. A filling schedule also synthesizes one restart record
-      per attempt where the engine reports none, because the attempt count is
-      the one thing a run-time-decided schedule does not put in its
-      configuration; a fixed count synthesizes nothing, so no recorded campaign
-      changes what it persists. The next step is a design that names this shape
-      and re-asks the restart-count question spend-matched.
+      cap — rather than pinning figures a library bump would churn.
+      **Every attempt now leaves a restart record**, whichever shape ran it.
+      Filling schedules did from the start; a fixed count did not, on the ground
+      that its attempt count is recoverable from the configuration — true of the
+      count and false of each attempt's cost, work and termination, which the
+      covariance-clean campaign then needed and could not get. Corrected
+      2026-09-05 alongside that report, which also repaired the trace numbering:
+      the offset a trace's restart index is shifted by *is* the number of
+      records accumulated, so a shape recording nothing left every sample in
+      that campaign reporting restart 0.
+      **Registered 2026-09-05 as `-design restart-shape`, running.** Four arms,
+      24 blocks, 96 jobs, seeds 119001-119024, every arm capped at
+      `defaultBudget` and starting from `lambda` 64: an IPOP ladder (control), a
+      BIPOP ladder, the ladder campaign's fixed 32 cold restarts, and the same
+      32 as a filling cap. Primary contrast `full-fill-l64` against
+      `full-ipop-l64` — the head-to-head between the two shapes that spend their
+      cap, which is the choice a default faces; secondary `full-fill-l64`
+      against `full-r32-l64`, the one genuinely single-factor pair, measuring
+      what filling buys over bounding at one lambda; third `full-bipop-l64`
+      against `full-ipop-l64`, the ladder's own secondary re-asked at twice its
+      blocks. **Full covariance throughout, and that is a constraint rather than
+      a preference**: a ladder's top rung is decided at run time, so the only
+      way to guarantee no arm meets the rank-mu clamp mid-run is the one mode
+      that never clamps — separable from `lambda` 64 would cross on its fourth
+      rung and block on its fifth. The covariance-clean campaign measured block
+      and separable indistinguishable at this rung, so nothing known is given up
+      by pinning it.
 - [ ] Decide what the IPOP ladder's top rung is worth, now that one has been
       reached. **Ran 2026-08-30 as `-design deep-hunt`** (89 of 99 jobs, 09:07 of
       wall clock, 62.9h of optimizer time), a descriptive record hunt rather than

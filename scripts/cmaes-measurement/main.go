@@ -43,6 +43,7 @@ const (
 	designActive     = "active-cma"
 	designCovClean   = "covariance-clean"
 	designActiveFull = "active-cma-full"
+	designShape      = "restart-shape"
 )
 
 // huntBudget is the deep hunt's per-job evaluation cap. It is 1.94x
@@ -464,8 +465,8 @@ func parseFlags() settings {
 	var config settings
 	flag.StringVar(&config.action, "action", "collect", "plan, submit, collect, preliminary, or analyze")
 	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21, lambda, stagnation-pilot, "+
-		"stagnation, budget-split, restart-ladder, deep-hunt, covariance, active-cma, covariance-clean "+
-		"or active-cma-full")
+		"stagnation, budget-split, restart-ladder, deep-hunt, covariance, active-cma, covariance-clean, "+
+		"active-cma-full or restart-shape")
 	flag.StringVar(&config.server, "server", "http://localhost:8085", "serve base URL")
 	flag.StringVar(&config.dataRoot, "data-root", "./data/cmaes-phase11", "serve data root")
 	flag.StringVar(&config.reference, "ref", "example/MayFly-512.png", "reference image")
@@ -715,6 +716,29 @@ func campaignDesign(name string, budget int) (design, error) {
 			contrasts:   []plannedContrast{cleanRung, clamped},
 			interaction: &plannedInteraction{outer: clamped, inner: cleanRung},
 		}, nil
+	case designShape:
+		shape, shapeErr := restartShapeArms(budget)
+		if shapeErr != nil {
+			return design{}, shapeErr
+		}
+
+		// Three contrasts, each single-factor in the mechanism it moves, all
+		// against a control that spends its cap. The primary is the head-to-head
+		// a default has to choose between; the secondary measures the filling
+		// shape against the fixed count it replaces, which is the same question
+		// the restart ladder could not ask; the third re-asks the ladder's own
+		// secondary at twice its blocks and in a mode where nothing clamps.
+		return design{
+			name: name, baseline: shape[0].name, secondaryControl: shape[1].name,
+			blocks: restartShapeBlocks, seedBase: restartShapeSeedBase, arms: shape,
+			reference: recordReference, circles: defaultCircles,
+			record: recordCost,
+			contrasts: []plannedContrast{
+				{control: shape[0].name, candidate: shape[2].name, primary: true},
+				{control: shape[1].name, candidate: shape[2].name},
+				{control: shape[0].name, candidate: shape[3].name},
+			},
+		}, nil
 	case designActiveFull:
 		full, fullErr := activeCMAFullArms(budget)
 		if fullErr != nil {
@@ -736,7 +760,8 @@ func campaignDesign(name string, budget int) (design, error) {
 	default:
 		return design{}, fmt.Errorf(
 			"unknown design %q (want phase21, lambda, stagnation-pilot, stagnation, budget-split, "+
-				"restart-ladder, deep-hunt, covariance, active-cma, covariance-clean or active-cma-full)",
+				"restart-ladder, deep-hunt, covariance, active-cma, covariance-clean, active-cma-full "+
+				"or restart-shape)",
 			name)
 	}
 }
@@ -1879,6 +1904,152 @@ func campaignArms(budget int) ([]arm, error) {
 	}, nil
 }
 
+// restartShapeSeedBase is a fresh range, and it has to be.
+//
+// The question this campaign asks was raised on the restart ladder's seeds --
+// its primary contrast is that campaign's, re-asked spend-matched -- so
+// re-running it there would re-read the data that raised it rather than test
+// it. The price is the bit-for-bit replication check a shared range buys, and
+// this design pays it: it repeats no committed cell. It is the same trade
+// covarianceCleanSeedBase makes, for the same reason.
+const restartShapeSeedBase = 119_000
+
+// restartShapeBlocks matches the covariance-clean campaign's count, and again
+// for an external reason rather than an inherited argument: twenty-four is what
+// the window affords at the fixed cap. Its own justification is that the
+// restart ladder returned t = -0.26 on this contrast at twelve blocks with the
+// arms spending 29-44% of what they were given, so the comparison has never
+// been made at full spend at any block count. Doubling the blocks and fixing
+// the spend are the two things that could move it, and this design does both.
+const restartShapeBlocks = 24
+
+// restartShapeLambda is where the cold-restart arms sit and where the two
+// ladders start.
+//
+// It is the restart ladder's own primary rung, four times Hansen's default at
+// this dimensionality, and the rung the active-CMA and covariance-clean
+// campaigns both ran -- so it is the one population this corpus knows most
+// about. Starting the ladders there too is what makes the primary contrast a
+// comparison of restart *mechanisms* rather than of populations: every arm
+// draws its first generation from the same lambda, and they differ in what
+// happens after a run converges.
+const restartShapeLambda = 64
+
+// restartShapeArms asks which restart shape a CMA-ES default would name, with
+// every arm spending the cap it was given.
+//
+// This is the box docs/cmaes-restart-ladder-report.md left open, and it left it
+// open for a reason it discovered rather than assumed: its arms spent only
+// 29-44% of the cap, because each cold restart trips TolFun early and a fixed
+// optimizerRestarts count cannot express "restart until the budget is gone". So
+// its primary contrast was cap-matched and not spend-matched, and a null there
+// could not distinguish a shape that does not help from a shape that was never
+// allowed to run. The filling shape now expresses exactly that, so the contrast
+// is worth making again -- and this time the losing arm is losing on merit
+// rather than on unspent budget.
+//
+// **Every arm runs full covariance**, and that is a constraint rather than a
+// preference. go-cma-es v0.1.0's rank-mu clamp binds by lambda and mode, and an
+// IPOP ladder doubles its population, so a separable ladder from lambda 64
+// crosses the boundary on its fourth rung and a block one on its fifth. A
+// design cannot pin the top rung a ladder reaches -- that is decided at run
+// time -- so the only way to guarantee no arm walks into the clamp mid-run is a
+// mode that never clamps at any lambda. Full is that mode. Holding it constant
+// across arms is required anyway; full is the value that is also safe. The
+// covariance-clean campaign measured block and separable indistinguishable at
+// this rung, so nothing is known to be given up by the choice.
+//
+// The four arms and what separates them:
+//
+//   - full-ipop-l64 is the control. An IPOP ladder doubles lambda after each
+//     converged run and consumes the shared evaluation cap, so it spends what
+//     it is given by construction.
+//   - full-r32-l64 is the fixed count the ladder ran: 32 independent cold
+//     attempts at one lambda, each free to trip TolFun and hand the remainder
+//     back to nobody. It is the secondary control, and it is in the design to
+//     be the underspender.
+//   - full-fill-l64 asks for the same cap as that arm and fills it, starting a
+//     further cold attempt whenever a whole one still fits. It is the candidate
+//     in two of the three contrasts.
+//   - full-bipop-l64 interleaves large and small populations. The ladder
+//     measured the best mean in its campaign here and could not separate it;
+//     this asks again at twice the blocks.
+//
+// The primary contrast pairs the two shapes that spend their cap, which is the
+// choice a default actually faces. It moves more than one thing -- a fixed
+// lambda with independent draws against a doubling ladder -- and that is the
+// question rather than a confound: nobody proposes tuning the two halves
+// separately. The secondary isolates the one factor that is separable, spending
+// against bounding at one lambda, and it is the direct measurement of what the
+// filling shape buys.
+//
+// The record it reports against is recordCost, 752.52, and that is the right
+// one here rather than the deep hunt's 726.1984354654948: 752.52 was set at
+// this cap, while the hunt's was bought with 1.94x of it. A fixed-cap arm
+// beating the hunt's number would be remarkable; failing to is not information.
+//
+// Cap-matched by construction, and spend-matched only as an intent: the fill
+// arm is expected near the 97% a scratch reading measured and the fixed arm
+// near the ladder's 37%, and finalEvaluations per arm is what says whether that
+// happened. Unlike every earlier campaign here, the per-attempt records now
+// survive for a fixed count as well, so how many attempts each arm ran and how
+// each of them ended is recoverable rather than inferred.
+func restartShapeArms(budget int) ([]arm, error) {
+	if budget <= 0 || budget%ladderWork != 0 {
+		return nil, fmt.Errorf(
+			"budget %d must be positive and divisible by %d; the arms would not be evaluation-matched",
+			budget, ladderWork)
+	}
+
+	if budget%restartShapeLambda != 0 {
+		return nil, fmt.Errorf(
+			"budget %d is not divisible by lambda %d; the ladder arms would not share the cap",
+			budget, restartShapeLambda)
+	}
+
+	attempts := ladderWork / restartShapeLambda
+	if attempts > app.MaxOptimizerRestarts {
+		return nil, fmt.Errorf("the cold-restart arms need %d attempts, above app.MaxOptimizerRestarts %d",
+			attempts, app.MaxOptimizerRestarts)
+	}
+
+	if restartShapeLambda < app.MinPopulation {
+		return nil, fmt.Errorf("lambda %d is below app.MinPopulation %d and would be refused at submit",
+			restartShapeLambda, app.MinPopulation)
+	}
+
+	// Full never clamps, at any lambda in any dimensionality this project
+	// searches. Asserted rather than trusted, because the whole reason the mode
+	// is pinned is that a ladder's top rung cannot be known in advance.
+	for _, lambda := range []int{restartShapeLambda, defaultPop, 2 * defaultPop, 4 * defaultPop} {
+		if rankMuClamped(searchDimensions, lambda, searchDimensions) {
+			return nil, fmt.Errorf("full covariance clamps at lambda %d in %d dimensions; a ladder could reach it",
+				lambda, searchDimensions)
+		}
+	}
+
+	cold := func(name string, restarts int) arm {
+		return arm{
+			name: name, optimizer: "cmaes", covariance: "full", restartStrategy: "none",
+			iters: budget / ladderWork, popSize: restartShapeLambda, optimizerRestarts: restarts,
+		}
+	}
+
+	ladder := func(name, strategy string) arm {
+		return arm{
+			name: name, optimizer: "cmaes", covariance: "full", restartStrategy: strategy,
+			iters: budget / restartShapeLambda, popSize: restartShapeLambda, optimizerRestarts: 1,
+		}
+	}
+
+	return []arm{
+		ladder(fmt.Sprintf("full-ipop-l%d", restartShapeLambda), "ipop"),
+		cold(fmt.Sprintf("full-r%d-l%d", attempts, restartShapeLambda), attempts),
+		cold(fmt.Sprintf("full-fill-l%d", restartShapeLambda), -attempts),
+		ladder(fmt.Sprintf("full-bipop-l%d", restartShapeLambda), "bipop"),
+	}, nil
+}
+
 // assertDesignShape refuses a -blocks or -seed-base that contradicts the
 // registered design. Both are the design's to choose, so the flags are an
 // assertion a caller can make rather than a way to alter a campaign: a
@@ -2172,16 +2343,22 @@ func printPlan(config settings) error {
 		// would make a split arm look like it spends a fifth of the cap.
 		evaluations := strconv.FormatInt(
 			int64(current.iters)*int64(current.popSize)*
-				int64(max(current.optimizerEpochs, 1))*int64(max(current.optimizerRestarts, 1)), 10)
+				int64(max(current.optimizerEpochs, 1))*int64(restartAttempts(current.optimizerRestarts)), 10)
 		if current.optimizer == "mayfly" {
 			covariance = "-"
 			restarts = fmt.Sprintf("%d cold run(s)", current.optimizerRestarts)
 			evaluations = "scored from trace"
-		} else if current.optimizerRestarts > 1 {
+		} else if attempts := restartAttempts(current.optimizerRestarts); attempts > 1 {
 			// A CMA-ES arm can carry both the adapter's own ladder and the
 			// generic cold-restart wrapper; naming only the strategy would hide
-			// the second.
-			restarts = fmt.Sprintf("%s + %d cold run(s)", restarts, current.optimizerRestarts)
+			// the second. The shape is in the sign, and the two are not the
+			// same experiment, so the table says which one an arm asked for.
+			shape := fmt.Sprintf("%d cold run(s)", attempts)
+			if current.optimizerRestarts < 0 {
+				shape = fmt.Sprintf("cold runs filling %d x iters", attempts)
+			}
+
+			restarts = fmt.Sprintf("%s + %s", restarts, shape)
 		}
 
 		sigma, active, start := "default", "-", "residual"
@@ -2904,6 +3081,23 @@ func reportRecord(plan design, names []string, byArm map[string][]resultRow) {
 // because epochs and cold restarts each multiply the generation count. Reading
 // iters*lambda alone would take one run of a split arm for the whole arm and
 // report sep-e8's spend as eight times its cap.
+// restartAttempts is how many whole attempts a restart count schedules, which
+// is its magnitude rather than its value.
+//
+// A negative count asks for the same cap as its positive twin -- abs(N) * iters
+// iterations -- and spends it instead of bounding it, so the two shapes share a
+// cap and differ in what they do with the remainder. Reading the value with
+// max(N, 1) would take a filling arm for an unsplit one and under-report its cap
+// by a factor of its magnitude, which would put a plan table and a cap guard
+// out by 32x on the very arms a spend-matched design exists to run.
+func restartAttempts(restarts int) int {
+	if restarts < 0 {
+		restarts = -restarts
+	}
+
+	return max(restarts, 1)
+}
+
 func (d design) evaluationCap() int {
 	highest := 0
 
@@ -2911,7 +3105,7 @@ func (d design) evaluationCap() int {
 		spend := defaultBudget
 		if current.optimizer != "mayfly" {
 			spend = current.iters * current.popSize *
-				max(current.optimizerEpochs, 1) * max(current.optimizerRestarts, 1)
+				max(current.optimizerEpochs, 1) * restartAttempts(current.optimizerRestarts)
 		}
 
 		if spend > highest {
