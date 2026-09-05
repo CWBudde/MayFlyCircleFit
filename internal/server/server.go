@@ -2017,12 +2017,19 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 // extendJobRequest appends a new draw-order suffix to a completed batch. The
 // existing circles remain in their original slots and are never reordered.
 type extendJobRequest struct {
-	AdditionalCircles int    `json:"additionalCircles"`
-	BatchSize         *int   `json:"batchSize,omitempty"`
-	Epochs            *int   `json:"epochs,omitempty"`
-	Iters             *int   `json:"iters,omitempty"`
-	PopSize           *int   `json:"popSize,omitempty"`
-	Seed              *int64 `json:"seed,omitempty"`
+	AdditionalCircles int  `json:"additionalCircles"`
+	BatchSize         *int `json:"batchSize,omitempty"`
+	Epochs            *int `json:"epochs,omitempty"`
+	Iters             *int `json:"iters,omitempty"`
+	PopSize           *int `json:"popSize,omitempty"`
+	// Restarts carries both shapes in its sign, the way
+	// app.JobConfig.OptimizerRestarts does: a positive count is that many
+	// independent cold attempts, a negative one a cap of abs(N) times the
+	// stage's epoch chain that is filled with as many whole attempts as fit.
+	// It exists here because a schedule step may set it, and a step is
+	// documented to mirror this request body field for field.
+	Restarts *int   `json:"restarts,omitempty"`
+	Seed     *int64 `json:"seed,omitempty"`
 	// Polish re-enables active-set polishing once the appended circles complete.
 	// It is off unless requested, so an extension stays a pure append by default.
 	Polish *bool `json:"polish,omitempty"`
@@ -2097,6 +2104,10 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 
 	if request.PopSize != nil {
 		config.PopSize = *request.PopSize
+	}
+
+	if request.Restarts != nil {
+		config.OptimizerRestarts = *request.Restarts
 	}
 
 	if request.Seed != nil {
