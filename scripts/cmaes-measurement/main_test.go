@@ -13,11 +13,6 @@ import (
 	"github.com/cwbudde/circlefit/internal/opt"
 )
 
-// coldRestartStrategy is the restartStrategy value an arm carries when it uses
-// the engine-agnostic cold-restart wrapper rather than one of CMA-ES's own
-// shared-budget schedules.
-const coldRestartStrategy = "none"
-
 func TestCampaignArmsAreEvaluationMatched(t *testing.T) {
 	t.Parallel()
 
@@ -1291,6 +1286,35 @@ func TestRestartLadderReplicatesTheStagnationCampaignArms(t *testing.T) {
 	}
 }
 
+// TestNoRegisteredDesignRunsAnUnarmedBipopArm is the same guard as
+// TestRestartLadderBipopArmCarriesAWindow, applied to every registered design
+// rather than to one of them.
+//
+// The narrow version was written for the restart ladder and did its job there,
+// and then the restart-shape design registered an unarmed bipop arm and walked
+// straight past it -- caught in review rather than by a test. A rule that holds
+// for one design because of how go-cma-es behaves holds for all of them: the
+// first large run owns the whole schedule budget, so an unarmed bipop job is
+// IPOP under another name and any contrast against an IPOP arm compares two
+// spellings of the same search.
+func TestNoRegisteredDesignRunsAnUnarmedBipopArm(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range registeredDesigns() {
+		plan, err := campaignDesign(name, mustDesignBudget(t, name))
+		if err != nil {
+			t.Fatalf("design %s: %v", name, err)
+		}
+
+		for _, current := range plan.arms {
+			if current.restartStrategy == "bipop" && current.stopStagnationIters == 0 {
+				t.Errorf("design %s runs %s as bipop with no stagnation window, which is IPOP under another name",
+					name, current.name)
+			}
+		}
+	}
+}
+
 // TestRestartLadderBipopArmCarriesAWindow guards the one configuration mistake
 // that would make the secondary contrast measure nothing. go-cma-es gives the
 // first large run a budget equal to the whole schedule and only reaches the
@@ -1342,7 +1366,7 @@ func registeredDesigns() []string {
 	return []string{
 		designPhase21, designLambda, designPilot, designStag,
 		designSplit, designLadder, designHunt, designCov, designActive,
-		designCovClean, designActiveFull,
+		designCovClean, designActiveFull, designShape,
 	}
 }
 
@@ -2301,5 +2325,151 @@ func TestActiveCMAFullCampaignMovesOnlyTheKnob(t *testing.T) {
 
 	if spend := control.popSize * control.optimizerRestarts * control.iters; spend != budget {
 		t.Errorf("arm %s is capped at %d evaluations, want %d", control.name, spend, budget)
+	}
+}
+
+// TestRestartAttemptsReadsTheMagnitudeNotTheValue pins the arithmetic a
+// spend-matched design depends on. A filling count asks for the same cap as its
+// positive twin, so a plan table and a cap guard that read the value would
+// report a filling arm's budget 32x too small and let it past a guard the
+// fixed-count arm has to clear.
+func TestRestartAttemptsReadsTheMagnitudeNotTheValue(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		restarts int
+		want     int
+	}{
+		{restarts: 0, want: 1},
+		{restarts: 1, want: 1},
+		{restarts: -1, want: 1},
+		{restarts: 32, want: 32},
+		{restarts: -32, want: 32},
+	} {
+		if got := restartAttempts(testCase.restarts); got != testCase.want {
+			t.Errorf("restartAttempts(%d) = %d, want %d", testCase.restarts, got, testCase.want)
+		}
+	}
+}
+
+// TestRestartShapeCampaignSpendsOneCapPerArm is the property the whole design
+// exists for. The restart ladder's arms were cap-matched and spent 29-44% of
+// what they were given, so its null could not separate a shape that does not
+// help from one that was never allowed to run; this campaign is worth running
+// only if every arm is handed the identical cap.
+func TestRestartShapeCampaignSpendsOneCapPerArm(t *testing.T) {
+	t.Parallel()
+
+	budget := mustDesignBudget(t, designShape)
+
+	plan, err := campaignDesign(designShape, budget)
+	if err != nil {
+		t.Fatalf("restart-shape design: %v", err)
+	}
+
+	if len(plan.arms) != 3 {
+		t.Fatalf("restart-shape arms = %d, want 3", len(plan.arms))
+	}
+
+	for _, current := range plan.arms {
+		spend := current.iters * current.popSize *
+			max(current.optimizerEpochs, 1) * restartAttempts(current.optimizerRestarts)
+		if spend != budget {
+			t.Errorf("arm %s caps at %d evaluations, want %d", current.name, spend, budget)
+		}
+
+		if current.popSize != restartShapeLambda {
+			t.Errorf("arm %s starts at lambda %d; every arm must draw its first generation from %d",
+				current.name, current.popSize, restartShapeLambda)
+		}
+	}
+
+	if plan.blocks != restartShapeBlocks || plan.seedBase != restartShapeSeedBase {
+		t.Errorf("restart-shape runs %d blocks at seed base %d, want %d at %d",
+			plan.blocks, plan.seedBase, restartShapeBlocks, restartShapeSeedBase)
+	}
+}
+
+// TestRestartShapeCampaignCannotWalkIntoTheClamp pins the reason the covariance
+// mode is fixed rather than chosen. A ladder's top rung is decided at run time,
+// so the only way to guarantee no arm meets the rank-mu clamp mid-run is a mode
+// that never clamps -- and a future edit moving these arms to separable or
+// block would reintroduce the defect that voided a whole contrast once already.
+func TestRestartShapeCampaignCannotWalkIntoTheClamp(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designShape, mustDesignBudget(t, designShape))
+	if err != nil {
+		t.Fatalf("restart-shape design: %v", err)
+	}
+
+	for _, current := range plan.arms {
+		if current.covariance != "full" {
+			t.Errorf("arm %s runs %q covariance; a ladder in that mode can double past the clamp",
+				current.name, current.covariance)
+		}
+	}
+
+	// The same rung walk the arm constructor guards with, so the two cannot
+	// drift into a guard that checks fewer rungs than the test does.
+	rungs := restartShapeRungs()
+	if len(rungs) < 2 || rungs[0] != restartShapeLambda {
+		t.Fatalf("rung walk %v does not start at the design's lambda %d", rungs, restartShapeLambda)
+	}
+
+	for _, lambda := range rungs {
+		if rankMuClamped(searchDimensions, lambda, searchDimensions) {
+			t.Errorf("full covariance clamps at lambda %d; the design's guarantee does not hold", lambda)
+		}
+	}
+}
+
+// TestRestartShapeCampaignIsolatesTheFillingShape asserts the one contrast that
+// is genuinely single-factor. The primary compares two whole mechanisms and
+// says so; this pair must differ in nothing but the sign of the restart count,
+// or the campaign cannot say what filling a cap buys.
+func TestRestartShapeCampaignIsolatesTheFillingShape(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designShape, mustDesignBudget(t, designShape))
+	if err != nil {
+		t.Fatalf("restart-shape design: %v", err)
+	}
+
+	fixed, filling := plan.arms[1], plan.arms[2]
+
+	want := fixed
+	want.name, want.optimizerRestarts = filling.name, -fixed.optimizerRestarts
+
+	if filling != want {
+		t.Errorf("the filling arm moves more than the restart shape:\n got %+v\nwant %+v", filling, want)
+	}
+
+	if fixed.optimizerRestarts <= 1 {
+		t.Errorf("the fixed arm runs %d attempts; there is nothing for a filling shape to reclaim",
+			fixed.optimizerRestarts)
+	}
+}
+
+// TestRestartShapeCampaignRegistersTwoContrasts pins the family, and that the
+// primary is the head-to-head between the two shapes that spend their cap.
+func TestRestartShapeCampaignRegistersTwoContrasts(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designShape, mustDesignBudget(t, designShape))
+	if err != nil {
+		t.Fatalf("restart-shape design: %v", err)
+	}
+
+	want := []plannedContrast{
+		{control: "full-ipop-l64", candidate: "full-fill-l64", primary: true},
+		{control: "full-r32-l64", candidate: "full-fill-l64"},
+	}
+	if !slices.Equal(plan.contrasts, want) {
+		t.Errorf("contrasts = %+v, want %+v", plan.contrasts, want)
+	}
+
+	if plan.interaction != nil {
+		t.Error("restart-shape registers an interaction; its contrasts are not a 2x2")
 	}
 }
