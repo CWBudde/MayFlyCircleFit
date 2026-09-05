@@ -179,7 +179,7 @@ anything new against its figures.
       `WithRestarts` first and deciding what an attempt of a sweep even is — a
       whole sweep chain, or one sweep. Do that deliberately, not as a
       side effect of writing the campaign.
-- [ ] Settle which restart *shape* a CMA-ES default would name. The budget-split
+- [x] Settle which restart *shape* a CMA-ES default would name. The budget-split
       screen established that splitting a CMA-ES budget beats not splitting it
       but could not order the three mechanisms, and it found the IPOP ladder
       budget-capped at two or three runs with the last always truncated.
@@ -226,7 +226,7 @@ anything new against its figures.
       the offset a trace's restart index is shifted by *is* the number of
       records accumulated, so a shape recording nothing left every sample in
       that campaign reporting restart 0.
-      **Registered 2026-09-05 as `-design restart-shape`, running.** Three arms,
+      **Registered and run 2026-09-05 as `-design restart-shape`.** Three arms,
       24 blocks, 72 jobs, seeds 119001-119024, every arm capped at
       `defaultBudget` and starting from `lambda` 64: an IPOP ladder (control),
       the ladder campaign's fixed 32 cold restarts, and the same 32 as a filling
@@ -251,6 +251,37 @@ anything new against its figures.
       rung and block on its fifth. The covariance-clean campaign measured block
       and separable indistinguishable at this rung, so nothing known is given up
       by pinning it.
+      **Ran 2026-09-05, and it answers the task.** 72 of 72 jobs, 06:51 of wall
+      clock, 52.0 job-hours. **The shape a default should name is budget-filling
+      cold restarts.** Filling beats the fixed count of 32 by `+6.89`
+      (`t = +2.89`, `p = 0.0083`), which rejects under Holm, and the primary
+      against the IPOP ladder is a null (`+3.82`, `t = +0.23`, 12/24). See
+      [`docs/cmaes-restart-shape-report.md`](docs/cmaes-restart-shape-report.md).
+      The secondary's mechanism is exact rather than argued: the two cold arms
+      share a trajectory, so its paired differences cannot be negative — 14
+      bit-identical ties, 10 wins, 0 losses — and the ten winning blocks are
+      *identical* to the ten whose best came from a restart index of 32 or
+      higher, which is the region a fixed count never reaches. The fixed arm
+      spent 51.6% of its cap and the filling arm 97.8%, so the gain is free at
+      matched evaluations.
+      **Three things this does not close.** What tips the recommendation from
+      "either" to "filling" is spread — sd 22.31 against IPOP's 71.36, range 88
+      against 325 — and **no dispersion contrast was registered**, so that part
+      is a lead rather than a result; the registered primary is underpowered,
+      needing roughly 130 blocks to see a 20-point effect. IPOP is not retired:
+      it holds the three best single results in the campaign. And the filling
+      shape costs 37% more wall clock than the ladder at the same evaluation
+      cap, because 99,367 small-population iterations carry more per-iteration
+      overhead than 9,713 large ones — a real price the cap does not show.
+      **It also opens a sharper question about the ladder.** IPOP reached
+      `lambda` 4096 in 12 of 24 blocks and **never once took a block best from
+      that rung**; its useful work concentrates at 512-2048 while the top rung
+      is the one truncated by the cap. Where to *stop* a ladder is a knob no
+      campaign here has varied, and it belongs to the top-rung task below.
+      One operational note for a follow-up: `app.MaxOptimizerRestarts` bound the
+      filling arm in 1 block of 24, so a filling shape at a smaller `lambda`
+      would hit that ceiling routinely and the constant would need raising
+      before the shape could be measured at all.
 - [ ] Decide what the IPOP ladder's top rung is worth, now that one has been
       reached. **Ran 2026-08-30 as `-design deep-hunt`** (89 of 99 jobs, 09:07 of
       wall clock, 62.9h of optimizer time), a descriptive record hunt rather than
@@ -618,11 +649,15 @@ and the fixture objection is discharged. **That is not by itself licence to
 change the default engine.** The same campaign found the unsplit CMA-ES arm
 indistinguishable from `mayfly-r16` (`t = +1.37`, `p = 0.20`), so the advantage
 belongs to CMA-ES *with its budget split*, not to the engine. A default change
-should therefore name a restart shape, and which shape is still open — the
-report recommends fixed-lambda cold restarts over the IPOP ladder on mechanism,
-but at `p = 0.0501` with 7/12 blocks that contrast did not establish it. A
-registered campaign on IPOP versus fixed lambda, with the split count as a
-second factor, is the next thing this line of work needs.
+should therefore name a restart shape — and **that campaign has now run.** This
+report recommended fixed-lambda cold restarts over the IPOP ladder on mechanism
+but could not establish it at `p = 0.0501` with 7/12 blocks; `-design
+restart-shape` asked the question spend-matched at 24 blocks and named the
+shape: **budget-filling cold restarts**, which beat a fixed count under Holm and
+tie the ladder on the mean at a third of its variance. See
+[`docs/cmaes-restart-shape-report.md`](docs/cmaes-restart-shape-report.md). What
+that leaves for this line of work is the engine question itself, unchanged, and
+a ladder ceiling nobody has varied.
 
 ### Task 11: Remaining OpenCL optimization tranches (P3)
 
