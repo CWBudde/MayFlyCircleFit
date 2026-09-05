@@ -140,7 +140,9 @@ type ScheduleStep struct {
 	// Restarts overrides the stage's restart count, and is extend-only. It
 	// carries the same shape in its sign that JobConfig.OptimizerRestarts does:
 	// a positive count is that many independent attempts, a negative one asks
-	// for a cap of abs(N) times iters and spends it.
+	// for a cap of abs(N) times epochs times iters and spends it. Epochs is a
+	// factor because WithRestarts wraps WithEpochs rather than the other way
+	// round, so one attempt is a whole epoch chain.
 	//
 	// It is refused on a polish step rather than accepted and ignored. A
 	// polish-only stage never runs the base optimizer — the worker takes the

@@ -46,12 +46,27 @@ func TestPlannedIterationsCountsTheStageBudget(t *testing.T) {
 			want:  1 * 1 * 200 * 4,
 		},
 		{
-			// Both shapes bound the stage at abs(N) * iters, so a filled cap
-			// plans exactly as a fixed count of the same magnitude does. What
-			// differs is the spend, which a plan cannot know.
+			// Both shapes bound the stage at abs(N) * epochs * iters, so a
+			// filled cap plans exactly as a fixed count of the same magnitude
+			// does. What differs is the spend, which a plan cannot know.
 			name:  "extend restart cap plans as its magnitude",
 			steps: `[{"type": "extend", "additionalCircles": 8, "restarts": -4}]`,
 			want:  1 * 1 * 200 * 4,
+		},
+		{
+			// Epochs is a factor of the cap, not something restarts sit
+			// inside: the worker wraps WithRestarts around WithEpochs, so one
+			// attempt is a whole epoch chain and the stage is bounded at
+			// abs(N) * epochs * iters. Asserted on both shapes, because the
+			// documented cap is what a reader sizes a campaign against.
+			name:  "extend restart count multiplies the epoch chain",
+			steps: `[{"type": "extend", "additionalCircles": 8, "restarts": 4, "epochs": 3}]`,
+			want:  1 * 3 * 200 * 4,
+		},
+		{
+			name:  "extend restart cap multiplies the epoch chain",
+			steps: `[{"type": "extend", "additionalCircles": 8, "restarts": -4, "epochs": 3}]`,
+			want:  1 * 3 * 200 * 4,
 		},
 		{
 			// A polish stage runs no batch stage at all, only sweeps.

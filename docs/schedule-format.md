@@ -86,7 +86,7 @@ Omitting it means one stage.
 | `additionalCircles` | Required, positive. How many circles this stage appends. |
 | `batchSize` | Overrides the append width, which otherwise equals `additionalCircles`. |
 | `epochs`, `iters`, `popSize` | Budget overrides. |
-| `restarts` | Overrides the stage's restart count, in either shape. Positive is that many independent cold attempts; negative asks for a cap of `abs(N) × iters` and spends it, starting a further attempt whenever a whole one still fits. Extend-only — see below. |
+| `restarts` | Overrides the stage's restart count, in either shape. Positive is that many independent cold attempts; negative asks for a cap of `abs(N) × epochs × iters` and spends it, starting a further attempt whenever a whole one still fits. Extend-only — see below. |
 
 The existing circles are a frozen prefix; an extend optimizes only what it
 appends.
@@ -110,7 +110,9 @@ therefore be accepted and do nothing, so it is refused instead. Restarting a
 polishing sweep is unmeasured and would need the polisher wrapped first; see
 Task 3 in [`PLAN.md`](../PLAN.md).
 
-Both shapes bound the stage at `abs(N) × iters` iterations, so the ITERATIONS
+Both shapes bound the stage at `abs(N) × epochs × iters` iterations. `epochs` is
+a factor because restarts wrap the epoch chain rather than sitting inside it, so
+one attempt is a whole chain. The two shapes share that bound, so the ITERATIONS
 column of a dry run cannot tell them apart — the stage table names the shape in
 its parameters column instead. What differs is the spend: a fixed count runs
 exactly N attempts whatever each one costs and returns the remainder to nobody,

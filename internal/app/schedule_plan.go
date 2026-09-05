@@ -84,8 +84,11 @@ func (s ScheduleStage) PlannedIterations() int {
 	total := 0
 	if !config.PolishingOnly {
 		// The magnitude, not the value: a negative OptimizerRestarts is a cap
-		// of abs(N) * Iters iterations that is filled with as many whole cold
-		// attempts as fit, so abs(N) is the exact upper bound either way. A
+		// of abs(N) * OptimizerEpochs * Iters iterations that is filled with as
+		// many whole cold attempts as fit -- restarts wrap the epoch chain, so
+		// an attempt is a chain and epochs multiplies the cap, which is why it
+		// is a factor in the product below. abs(N) is the exact upper bound
+		// either way. A
 		// filling run reaching that bound spends no more than a fixed count of
 		// abs(N) would.
 		total = s.plannedOptimizerStages() * config.Iters *
