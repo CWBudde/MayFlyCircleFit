@@ -2771,6 +2771,7 @@ func analyze(path string, plan design) error {
 		}
 	}
 
+	reportUnprintedContrasts(plan, contrasts)
 	reportInteraction(plan, contrasts)
 
 	fmt.Printf("\nHolm step-down over all %d paired contrasts at a family-wise alpha of %.2f;\n",
@@ -2990,6 +2991,54 @@ func summarize(contrasts []contrast, control, candidate string, blocks int) stri
 	}
 
 	return "n/a | n/a | n/a | n/a | n/a"
+}
+
+// reportUnprintedContrasts prints every registered contrast the two tables
+// above have no column for.
+//
+// Those tables are organized around the controls: one column against the
+// baseline and, where a design names one, a table against the secondary
+// control. A design whose contrasts all point at the baseline is fully
+// reported by them, which every design before covariance-clean was -- so a
+// contrast between two arms that are neither control simply vanished, and the
+// row that should have carried it printed "n/a" as though the lookup had
+// failed. It had not; there was nowhere to print it.
+//
+// Registering a comparison and then not reporting it is the worse half of that
+// bug: Holm still corrects the family for a contrast the reader never sees.
+func reportUnprintedContrasts(plan design, contrasts []contrast) {
+	printed := func(control, candidate string) bool {
+		if control == plan.baseline {
+			return candidate != plan.baseline
+		}
+
+		if control == plan.secondaryControl && plan.secondaryControl != "" {
+			return candidate != plan.baseline && candidate != plan.secondaryControl
+		}
+
+		return false
+	}
+
+	remaining := make([]contrast, 0, len(contrasts))
+
+	for _, current := range contrasts {
+		if current.label == "" && !printed(current.control, current.candidate) {
+			remaining = append(remaining, current)
+		}
+	}
+
+	if len(remaining) == 0 {
+		return
+	}
+
+	fmt.Println("\nFurther registered contrasts:")
+	fmt.Printf("| contrast | gain | t (df=%d) | p | Holm | blocks won |\n", plan.blocks-1)
+	fmt.Println("| --- | ---: | ---: | ---: | --- | ---: |")
+
+	for _, current := range remaining {
+		fmt.Printf("| `%s` vs `%s` | %s |\n", current.candidate, current.control,
+			summarize(contrasts, current.control, current.candidate, plan.blocks))
+	}
 }
 
 // reportInteraction prints the design's difference-in-differences, if it

@@ -243,7 +243,7 @@ func (o *restartOptimizer) RunContext(ctx context.Context, problem Problem, opti
 		totalIterations += result.Iterations
 		totalEvaluations += result.Evaluations
 
-		records.record(o.attemptRuns(filling, result))
+		records.record(o.attemptRuns(result))
 
 		if len(result.BestParams) > 0 && result.BestCost < best.BestCost {
 			best = result
@@ -330,20 +330,23 @@ func reportBoundary(observer EpochObserver, count *int, running *Candidate, boun
 // attemptRuns is the restart history one attempt contributes. An engine with a
 // restart schedule of its own reports it, and that record is always preferred.
 //
-// Where it reports none, a filling schedule synthesizes one record per attempt
-// and a fixed count synthesizes nothing. The asymmetry is deliberate: how many
-// attempts a fixed count ran is recoverable from the configuration, while how
-// many a filling schedule chose is decided at run time and observable nowhere
-// else. Emitting these for a fixed count as well would change what every
-// already-recorded campaign persists, for a number those campaigns already
-// know.
+// Where it reports none, every attempt is synthesized, whichever shape asked
+// for it. This used to hold for a filling schedule alone, on the ground that
+// how many attempts a fixed count ran is recoverable from the configuration.
+// That is true of the count and false of everything else the record carries:
+// each attempt's own best cost, iterations, evaluations and termination
+// survive nowhere else, because the job-level termination a restart schedule
+// reports describes the schedule and not the runs inside it. The
+// covariance-clean campaign is the worked case -- four fixed-count arms, one
+// of which returned a quarter more of its cap than its control, and no way to
+// see from the record whether its attempts converged early or were cut off.
 //
 // Population is left zero because the wrapper genuinely does not know it: the
 // attempt's population belongs to the engine that sampled it, which is the
 // same engine that reported no records. Termination carries this package's
 // coarse value rather than an engine string, for the same reason.
-func (o *restartOptimizer) attemptRuns(filling bool, result Result) []RestartRun {
-	if len(result.Restarts) > 0 || !filling {
+func (o *restartOptimizer) attemptRuns(result Result) []RestartRun {
+	if len(result.Restarts) > 0 {
 		return result.Restarts
 	}
 

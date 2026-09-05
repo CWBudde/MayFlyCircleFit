@@ -345,7 +345,47 @@ anything new against its figures.
       lead, never a finding, and not a refutation. But it raises the question
       whether part of that +39.12 was separable being crippled rather than
       block being good, and **anyone proposing a covariance default has to
-      answer it first.**
+      answer it first.** That question is answered by the entry below.
+- [x] Answer whether block covariance's registered win survives when separable
+      is allowed to work. **Registered 2026-09-05 as `-design
+      covariance-clean`, run the same night, reported in**
+      [`docs/cmaes-covariance-clean-report.md`](docs/cmaes-covariance-clean-report.md).
+      Four arms, 96 jobs, all completed: covariance mode crossed with a rung
+      where both modes are clean (`lambda` 64) and the shipped rung where
+      separable is clamped dead (`lambda` 1024), on one seed set and one cap.
+      **It does not survive.** The registered primary is **-7.53**
+      (`t = -0.82`, `p = 0.42`, 9 of 24) — the sign favours separable — and its
+      95% paired interval, -26.55 to +11.49, **excludes the +39.12** the
+      covariance campaign registered. Two independent clean-rung readings now
+      exist, the active-CMA by-product's +7.27 at twelve blocks and this at
+      twenty-four, straddling zero. **A covariance default has no case, and
+      this task's blocking question is discharged in the negative.**
+      What it does not settle is whether the clamp *explains* the +39.12. The
+      interaction was registered before the data were read, precisely so that
+      claim would carry its own p instead of being inferred from two verdicts —
+      a review of #132 caught that inference as the difference-in-significance
+      error while the campaign was still running. It came back inconclusive:
+      **+15.11**, interval -33.63 to +63.84, 13 of 24. The cause is variance,
+      not sign: the `lambda` 1024 arms carry a paired sd of 115.41 against the
+      primary's 45.04, mostly from four blocks where `blk-r2-l1024` returned
+      above 1000. An effect this size needs roughly 240 blocks against that
+      spread. **A follow-up should cut the variance rather than buy blocks** —
+      a rung nearer the clamp boundary still binds the clamp without the
+      runaway. The clamp therefore remains the leading explanation on
+      arithmetic grounds, and gains no measured support here.
+      Three things carry forward. The unregistered lead that 32 cold restarts
+      at `lambda` 64 beat 2 at `lambda` 1024 in separable mode by **+30.15**
+      (`t = 3.38`, 19 of 24) agrees in direction with the budget-split report,
+      and confounds `lambda` with restart count by construction — it belongs to
+      the restart-shape question this task already carries, not to this one.
+      `blk-r2-l1024` spent only **23.3%** of its cap against its control's
+      36.0%, because a fixed restart count cannot refill what an attempt that
+      trips `TolFun` leaves behind, so the secondary contrast compares two
+      differently sized searches. And the campaign exposed two driver defects,
+      both fixed alongside the report: a registered contrast between two
+      non-baseline arms was corrected by Holm and then never printed, and a
+      fixed restart count recorded nothing about its individual attempts —
+      which also left every trace sample in this campaign reporting restart 0.
 
 ### Task 4: Close the dirty-region evaluator's end-to-end check (P1)
 

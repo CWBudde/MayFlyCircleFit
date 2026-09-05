@@ -32,17 +32,18 @@ ones that will change what you propose:
   earlier, and v0.7.0 changed results for every variant, so none of their
   numbers is comparable to a run made today.** Read those for method and for
   what was ruled out; re-measure before citing a figure. See the Toolchain
-  section. Ten reports are on the current pins and may be cited directly: the
-  QMC screen, and the nine CMA-ES ones — `cmaes-report.md`,
+  section. Eleven reports are on the current pins and may be cited directly:
+  the QMC screen, and the ten CMA-ES ones — `cmaes-report.md`,
   `cmaes-lambda-report.md`, `cmaes-stagnation-report.md`,
   `cmaes-budget-split-report.md`, `cmaes-restart-ladder-report.md`,
   `cmaes-deep-hunt-report.md`, `cmaes-covariance-report.md`,
-  `cmaes-active-cma-report.md` and `cmaes-preliminary-report.md`, run in
+  `cmaes-active-cma-report.md`, `cmaes-covariance-clean-report.md` and
+  `cmaes-preliminary-report.md`, run in
   2026-08 and 2026-09 on MayFly v0.7.1 and go-cma-es v0.1.0 — the preliminary
   one on the code-identical pseudo-version that preceded that tag. Each states
   its own pins; trust that line over this one. The deep hunt and the covariance
   campaign are the exceptions to citability *within* that set: both ran at
-  1.94x the shared cap, so their costs are not comparable to the other eight,
+  1.94x the shared cap, so their costs are not comparable to the other nine,
   though they are comparable to each other.
 - [`docs/qmc-initial-population-report.md`](docs/qmc-initial-population-report.md)
   — `qmcInit` measured on the eight-circle batch stage at three population
@@ -213,7 +214,10 @@ ones that will change what you propose:
   mode below `lambda` 2048 provided the design does not let an IPOP ladder
   double past the threshold; and the primary contrast confounds covariance mode
   with active adaptation on one rung of four, bounded to 6% of the winning arm's
-  budget.
+  budget. **Its `+39.12` has since been read at a rung where the control is not
+  clamped, and it does not survive there** — see
+  `cmaes-covariance-clean-report.md`, whose interval excludes it. Do not cite
+  this report's headline as a property of the covariance model.
 - [`docs/cmaes-active-cma-report.md`](docs/cmaes-active-cma-report.md) — two
   arms and 24 jobs, the campaign that finally measures `activeCMA` after two
   campaigns failed to. **The registered contrast retains** (`-23.79`,
@@ -233,8 +237,34 @@ ones that will change what you propose:
   against separable where both modes are clean** — and block leads by only
   `+7.27` (`t` = 0.54, 7/12) against the `+39.12` the covariance campaign
   registered at `lambda` 1024, where its separable control was clamped dead.
-  Cross-campaign and unregistered, so a lead and not a refutation; but answer
-  it before proposing a covariance default.
+  Cross-campaign and unregistered, so a lead and not a refutation. It has since
+  been answered by `cmaes-covariance-clean-report.md`, below.
+- [`docs/cmaes-covariance-clean-report.md`](docs/cmaes-covariance-clean-report.md)
+  — four arms and 96 jobs, the 2x2 of covariance mode against the clamp that
+  discharges the question the two reports above carry. **Block covariance does
+  not beat separable where both modes are clean.** The registered primary is
+  `-7.53` (`t = -0.82`, `p = 0.42`, 9 of 24) and its 95% paired interval,
+  `-26.55` to `+11.49`, **excludes the `+39.12`** the covariance campaign
+  registered — so that effect is not a property block carries into a fair
+  comparison, and a proposal citing it as one is contradicted by direct
+  measurement. All three registered contrasts retain under Holm. **Read it
+  before proposing a covariance default; this is the measurement that settles
+  it, in the negative.** What it does *not* settle is whether the clamp explains
+  the `+39.12`: the interaction was registered so that claim would carry its own
+  p rather than be inferred from two verdicts, and it is inconclusive (`+15.11`,
+  `-33.63` to `+63.84`, 13 of 24) — underpowered by roughly tenfold, because the
+  `lambda` 1024 arms carry a paired sd of 115.41 against the primary's 45.04. So
+  the clamp stays the leading explanation on arithmetic grounds and gains no
+  measured support here; a follow-up should cut that variance rather than add
+  blocks. Three by-products carry. Its `distributionExtent` never exceeds 1.1020
+  over 8,891 samples while sigma spans to 7.67e+32, reproducing the lambda
+  screen's finding on fresh seeds. Unregistered, 32 cold restarts at `lambda` 64
+  beat 2 at `lambda` 1024 in separable mode by `+30.15` (`t = 3.38`, 19 of 24),
+  agreeing in direction with the budget-split report — but it confounds `lambda`
+  with restart count. And `blk-r2-l1024` spends only 23.3% of its cap against
+  its control's 36.0%, because a fixed restart count cannot refill what an
+  attempt that trips `TolFun` leaves behind, so that contrast compares two
+  differently sized searches.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more
