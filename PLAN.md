@@ -151,12 +151,34 @@ anything new against its figures.
       run therefore inherits the base config's count with no way to vary it per
       stage. That is what the extend-and-polish box below needs before it can be
       measured.
+      **Closed 2026-09-05.** `steps[].restarts` is now an extend override
+      carrying both shapes in its sign, applied to `OptimizerRestarts` on the
+      staged configuration, so a document can vary the count and the cap per
+      stage. `PlannedIterations` already read the magnitude, so the ITERATIONS
+      column and the dry run's parameters column follow without further change —
+      verified end to end, a step at `8` printing `8 restarts` and one at `-32`
+      printing `restarts filling 32 × iters` against an unset step that still
+      prints nothing. **It is refused on a polish step rather than accepted**,
+      because a polish-only stage takes the branch at
+      `internal/server/worker.go:547` and never runs the base optimizer, and the
+      polisher is wrapped in `WithEpochs` alone — a restart count written there
+      would be inert. So the extend half of the box below is now measurable and
+      the polish half still is not: restarting a sweep needs the polisher
+      wrapped first, which is a behaviour change to polishing rather than a
+      format addition.
 - [ ] Re-measure on a second reference image before changing any default. The
       ladder covered one image, `variant` standard, and the eight-circle base
       stage only.
 - [ ] Measure whether extend and polish stages benefit. They start from a fitted
       vector rather than a cold population, so the collapse dynamics there are
-      unmeasured.
+      unmeasured. **The extend half is now expressible**: `steps[].restarts`
+      landed 2026-09-05 in both shapes, so a document can put a ladder on the
+      extend stages of a campaign without touching the base. **The polish half
+      is not, and not for want of a format key**: the polisher runs under
+      `WithEpochs` alone, so measuring restarts on a sweep means wrapping it in
+      `WithRestarts` first and deciding what an attempt of a sweep even is — a
+      whole sweep chain, or one sweep. Do that deliberately, not as a
+      side effect of writing the campaign.
 - [ ] Settle which restart *shape* a CMA-ES default would name. The budget-split
       screen established that splitting a CMA-ES budget beats not splitting it
       but could not order the three mechanisms, and it found the IPOP ladder

@@ -137,6 +137,21 @@ type ScheduleStep struct {
 	Iters   *int `json:"iters,omitempty"`
 	PopSize *int `json:"popSize,omitempty"`
 
+	// Restarts overrides the stage's restart count, and is extend-only. It
+	// carries the same shape in its sign that JobConfig.OptimizerRestarts does:
+	// a positive count is that many independent attempts, a negative one asks
+	// for a cap of abs(N) times epochs times iters and spends it. Epochs is a
+	// factor because WithRestarts wraps WithEpochs rather than the other way
+	// round, so one attempt is a whole epoch chain.
+	//
+	// It is refused on a polish step rather than accepted and ignored. A
+	// polish-only stage never runs the base optimizer — the worker takes the
+	// polishing branch and hands the retained parameters straight to the
+	// sweep — and the polisher is wrapped in WithEpochs alone, so a restart
+	// count set there would be inert. Measuring a knob that silently does
+	// nothing is the failure this refusal exists to prevent.
+	Restarts *int `json:"restarts,omitempty"`
+
 	// When is the optional runtime condition. It does not affect expansion —
 	// the stage is planned either way — it decides whether the planned stage is
 	// started once the stages before it have measured something. See
@@ -466,6 +481,12 @@ func (s ScheduleStep) validate(index int) error {
 		return invalid(field("batchSize"), "is an extend override and cannot appear on a polish step")
 	}
 
+	if s.Restarts != nil {
+		return invalid(field("restarts"),
+			"is an extend override and cannot appear on a polish step, because a polish-only stage "+
+				"runs the polishing sweep instead of the base optimizer and the sweep has no restart wrapper")
+	}
+
 	return nil
 }
 
@@ -593,6 +614,10 @@ func (s ScheduleStep) realize(config JobConfig, circles, index, stepIndex, repet
 
 		if s.PopSize != nil {
 			staged.PopSize = *s.PopSize
+		}
+
+		if s.Restarts != nil {
+			staged.OptimizerRestarts = *s.Restarts
 		}
 	case ScheduleStepPolish:
 		stage.Kind = ScheduleStagePolish

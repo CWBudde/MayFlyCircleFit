@@ -397,6 +397,23 @@ func TestParseScheduleRejectsMalformedInput(t *testing.T) {
 			wantErr:  "batchSize",
 		},
 		{
+			name:     "polish restarts",
+			document: strings.Replace(baseDocument, `"steps": []`, `"steps": [{"type": "polish", "restarts": 4}]`, 1),
+			wantErr:  "restarts",
+		},
+		{
+			name: "restart count past the limit",
+			document: strings.Replace(baseDocument, `"steps": []`,
+				`"steps": [{"type": "extend", "additionalCircles": 8, "restarts": 1000}]`, 1),
+			wantErr: "optimizerRestarts",
+		},
+		{
+			name: "restart cap past the limit",
+			document: strings.Replace(baseDocument, `"steps": []`,
+				`"steps": [{"type": "extend", "additionalCircles": 8, "restarts": -1000}]`, 1),
+			wantErr: "optimizerRestarts",
+		},
+		{
 			name:     "extend carrying a polish override",
 			document: strings.Replace(baseDocument, `"steps": []`, `"steps": [{"type": "extend", "additionalCircles": 8, "maxSweeps": 2}]`, 1),
 			wantErr:  "maxSweeps",
@@ -448,7 +465,7 @@ func TestScheduleStepBudgetOverrides(t *testing.T) {
 	t.Parallel()
 
 	doc := documentWithSteps(t, `[
-    {"type": "extend", "additionalCircles": 8, "batchSize": 4, "epochs": 3, "iters": 500, "popSize": 40},
+    {"type": "extend", "additionalCircles": 8, "batchSize": 4, "epochs": 3, "iters": 500, "popSize": 40, "restarts": 4},
     {"type": "polish", "strategy": "contiguous-window", "epochs": 2, "iters": 900, "stagnationIters": 100, "minImprovement": 0.5, "popSize": 60}
   ]`)
 
@@ -458,7 +475,8 @@ func TestScheduleStepBudgetOverrides(t *testing.T) {
 	}
 
 	extend := stages[1].Config
-	if extend.BatchSize != 4 || extend.OptimizerEpochs != 3 || extend.Iters != 500 || extend.PopSize != 40 {
+	if extend.BatchSize != 4 || extend.OptimizerEpochs != 3 || extend.Iters != 500 || extend.PopSize != 40 ||
+		extend.OptimizerRestarts != 4 {
 		t.Fatalf("extend overrides = %+v", extend)
 	}
 
@@ -475,8 +493,45 @@ func TestScheduleStepBudgetOverrides(t *testing.T) {
 	}
 	// Overrides are per step: each stage derives from the base configuration, so
 	// the extend step's budget does not leak into the polish that follows it.
-	if polish.Iters != 200 || polish.OptimizerEpochs != 1 || polish.BatchSize != 8 {
+	if polish.Iters != 200 || polish.OptimizerEpochs != 1 || polish.BatchSize != 8 ||
+		polish.OptimizerRestarts != 1 {
 		t.Fatalf("polish stage inherited the previous step's budget: %+v", polish)
+	}
+}
+
+// TestScheduleStepRestartShapes pins that a step carries both restart shapes,
+// that the sign survives expansion, and that a step which sets none inherits
+// the base count rather than being normalized to something else.
+//
+// The negative case is the one this override exists for: a fixed count cannot
+// express "restart until the budget is gone", which is why the restart-ladder
+// campaign's arms spent 29-44% of their cap. See
+// docs/cmaes-restart-ladder-report.md.
+func TestScheduleStepRestartShapes(t *testing.T) {
+	t.Parallel()
+
+	source := strings.Replace(baseDocument, `"popSize": 30`, `"popSize": 30, "optimizerRestarts": 2`, 1)
+	source = strings.Replace(source, `"steps": []`, `"steps": [
+    {"type": "extend", "additionalCircles": 8, "restarts": 8},
+    {"type": "extend", "additionalCircles": 8, "restarts": -32},
+    {"type": "extend", "additionalCircles": 8}
+  ]`, 1)
+
+	doc, err := ParseSchedule([]byte(source))
+	if err != nil {
+		t.Fatalf("ParseSchedule() error = %v", err)
+	}
+
+	stages, err := doc.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+
+	want := []int{2, 8, -32, 2}
+	for index, restarts := range want {
+		if got := stages[index].Config.OptimizerRestarts; got != restarts {
+			t.Fatalf("stage %d optimizerRestarts = %d, want %d", index, got, restarts)
+		}
 	}
 }
 
