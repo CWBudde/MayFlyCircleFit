@@ -3,10 +3,12 @@ package main
 import (
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/cwbudde/circlefit/internal/app"
@@ -2639,5 +2641,97 @@ func TestExtendWidthSeedsTheStandingRecord(t *testing.T) {
 	specs := warmStartSpecs()
 	if len(specs) != extendWidthBaseCircles {
 		t.Fatalf("warmStartSpecs has %d circles, want %d", len(specs), extendWidthBaseCircles)
+	}
+}
+
+// TestCollectPreliminaryRefusesAStagedManifest pins the refusal rather than the
+// silent omission that preceded it: a staged row carries no job ID until
+// -action collect resolves one, so reading jobs off disk would drop every
+// staged arm and write a CSV holding only the single-job ones.
+func TestCollectPreliminaryRefusesAStagedManifest(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	manifestPath := filepath.Join(root, "manifest.csv")
+
+	writeFixture(t, manifestPath,
+		"arm,block,seed,scheduleId,jobId\next-w1,1,120001,sched-1,\n")
+
+	err := collectPreliminary(settings{
+		dataRoot: root, project: "measurement", manifestPath: manifestPath,
+		resultsPath: filepath.Join(root, "results.csv"),
+		trajectory:  filepath.Join(root, "trajectory.csv"), budget: 100,
+	})
+	if err == nil {
+		t.Fatal("collectPreliminary accepted a staged manifest")
+	}
+
+	if !strings.Contains(err.Error(), "sched-1") || !strings.Contains(err.Error(), "-action collect") {
+		t.Fatalf("unexpected refusal %q", err)
+	}
+}
+
+// TestWriteTrajectoriesBucketsEachStageAgainstItsShare pins the downsampler's
+// contract for a staged arm. A continuation's evaluation counter is cumulative,
+// so bucketing it against the campaign cap would leave a stage with 256/stages
+// buckets; the stage-local delta against the stage's share restores the 256 a
+// single-job arm gets.
+func TestWriteTrajectoriesBucketsEachStageAgainstItsShare(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	trajectoryPath := filepath.Join(root, "trajectory.csv")
+
+	// Two stages of a four-stage campaign: the second starts from the first's
+	// cumulative total, a little short of its nominal share.
+	stages := []stageJob{
+		{Stage: 0, JobID: "stage-0", Project: "measurement", Budget: 4000, Share: 1000, Cumulative: true},
+		{Stage: 1, JobID: "stage-1", Project: "measurement", Budget: 4000, Share: 1000, Cumulative: true},
+	}
+
+	for index, job := range stages {
+		jobDir := filepath.Join(root, "projects", job.Project, "jobs", job.JobID)
+
+		mkdirErr := os.MkdirAll(jobDir, 0o755)
+		if mkdirErr != nil {
+			t.Fatal(mkdirErr)
+		}
+
+		start := index * 960
+
+		var trace strings.Builder
+
+		for step := 1; step <= 10; step++ {
+			fmt.Fprintf(&trace,
+				`{"optimizerDiagnostics":{"sigma":0.3},"iteration":%d,"cost":%d,"evaluations":%d,`+
+					`"timestamp":"2026-09-06T10:00:00Z"}`+"\n",
+				step*1000, 100-step, start+step*8)
+		}
+
+		writeFixture(t, filepath.Join(jobDir, "trace.jsonl"), trace.String())
+	}
+
+	err := writeTrajectories(
+		settings{dataRoot: root, project: "measurement", trajectory: trajectoryPath, budget: 4000},
+		[]manifestRow{{Arm: "ext-w4", Block: 1, Seed: 1, JobID: "stage-1", Stages: stages}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The samples sit 8 evaluations apart, which is narrower than a campaign
+	// bucket (4000/256 = 15.6) and wider than a stage bucket (1000/256 = 3.9).
+	// Iterations are multiples of 1000, so none of them is in the early-sample
+	// set that survives regardless. Bucketing against the campaign cap keeps
+	// seven of the ten samples per stage; against the stage's share all ten.
+	rows := readCSVFixture(t, trajectoryPath)
+	if len(rows) != 21 {
+		t.Fatalf("wrote %d trajectory rows, want 21 (header plus ten per stage)", len(rows))
+	}
+
+	for _, row := range rows[1:] {
+		if row[3] != "0" && row[3] != "1" {
+			t.Fatalf("unexpected stage column %q", row[3])
+		}
 	}
 }

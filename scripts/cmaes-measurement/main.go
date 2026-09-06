@@ -424,7 +424,22 @@ type stageJob struct {
 	// project is not part of JobConfig, and the base stanza is a JobConfig.
 	// A reader that assumed config.project would look in an empty directory.
 	Project string
-	Budget  int
+	// Budget is the eligibility cap a sample is admitted under. A continuation
+	// stage's counters are cumulative -- an extend inherits its parent's
+	// evaluation total and counts on from it -- so this is the campaign cap for
+	// every stage of a staged arm and not the stage's share; capping a late
+	// stage at a share would reject every sample it wrote.
+	Budget int
+	// Share is the stage's own slice of the cap, which is what the trajectory
+	// downsampler buckets against. Bucketing a cumulative counter against the
+	// campaign cap would give an eight-stage arm about 32 buckets per stage
+	// instead of 256.
+	Share int
+	// Cumulative says the stage's evaluation counter carries the prefix stages'
+	// spend, so the downsampler has to subtract the stage's own starting count
+	// before bucketing. It is false for every single-job arm, whose counter
+	// starts at zero.
+	Cumulative bool
 }
 
 // jobs is every job this row spent evaluations in. A row from a campaign
@@ -435,7 +450,7 @@ func (r manifestRow) jobs(project string, budget int) []stageJob {
 		return r.Stages
 	}
 
-	return []stageJob{{Stage: 0, JobID: r.JobID, Project: project, Budget: budget}}
+	return []stageJob{{Stage: 0, JobID: r.JobID, Project: project, Budget: budget, Share: budget}}
 }
 
 type jobStatus struct {
@@ -2927,8 +2942,13 @@ func collectSchedule(config settings, client *http.Client, record manifestRow) (
 				"schedule %s stage %d completed without a job", record.ScheduleID, stage.Index)
 		}
 
+		// Budget is the campaign cap because the counters are cumulative, and
+		// Share is the stage's own slice because the downsampler has to see a
+		// stage-local range. The two are the same number only for a one-stage
+		// arm.
 		resolved.Stages = append(resolved.Stages, stageJob{
-			Stage: ordinal, JobID: stage.JobID, Project: string(app.DefaultProject), Budget: config.budget,
+			Stage: ordinal, JobID: stage.JobID, Project: string(app.DefaultProject),
+			Budget: config.budget, Share: config.budget / len(stages), Cumulative: true,
 		})
 	}
 
@@ -3245,6 +3265,20 @@ func collectPreliminary(config settings) error {
 
 	available := make([]manifestRow, 0, len(manifest))
 	for _, record := range manifest {
+		// A staged row names a campaign and carries no job ID until collect
+		// resolves one from the server. This action reads jobs off disk and
+		// knows nothing about schedules, so it would look for the checkpoint
+		// in the jobs directory itself, miss it, and drop the row -- writing a
+		// CSV that silently holds only the single-job arms. Refuse instead: a
+		// partial dataset that does not say which arms are missing is worse
+		// than no dataset.
+		if record.ScheduleID != "" {
+			return fmt.Errorf(
+				"arm %s block %d is a staged campaign (schedule %s); "+
+					"-action preliminary reads jobs off disk and cannot resolve schedule stages, use -action collect",
+				record.Arm, record.Block, record.ScheduleID)
+		}
+
 		jobDir := jobDirectory(config.dataRoot, config.project, record.JobID)
 
 		body, readErr := os.ReadFile(filepath.Join(jobDir, "checkpoint-info.json"))
@@ -3563,6 +3597,10 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 		// campaign budget instead would collapse a short stage to a handful of
 		// rows and hide exactly the shape this column exists to show.
 		for _, job := range row.jobs(config.project, config.budget) {
+			if job.Share <= 0 {
+				return fmt.Errorf("job %s carries no budget share to downsample against", job.JobID)
+			}
+
 			jobDir := jobDirectory(config.dataRoot, job.Project, job.JobID)
 
 			entries, readErr := readTrace(filepath.Join(jobDir, "trace.jsonl"))
@@ -3571,11 +3609,26 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 			}
 
 			lastEligible := -1
+			// base is the count the stage started from. A continuation's
+			// counter carries the prefix stages' spend, so the stage-local
+			// delta -- and not the cumulative reading -- is what the stage's
+			// share of the cap divides into buckets. It is read off the trace
+			// rather than assumed to be the nominal share, because a
+			// budget-filling stage stops a little short of its allowance and a
+			// nominal offset would make the next stage's first samples
+			// negative.
+			base := 0
 
 			for index, entry := range entries {
-				if entry.OptimizerDiagnostics != nil && entry.Evaluations <= job.Budget {
-					lastEligible = index
+				if entry.OptimizerDiagnostics == nil || entry.Evaluations > job.Budget {
+					continue
 				}
+
+				if lastEligible < 0 && job.Cumulative {
+					base = entry.Evaluations
+				}
+
+				lastEligible = index
 			}
 
 			lastBucket := -1
@@ -3585,7 +3638,7 @@ func writeTrajectories(config settings, manifest []manifestRow) error {
 					continue
 				}
 
-				bucket := entry.Evaluations * 256 / job.Budget
+				bucket := (entry.Evaluations - base) * 256 / job.Share
 
 				isLast := index == lastEligible
 				if !isLast && !early[entry.Iteration] && bucket == lastBucket {
