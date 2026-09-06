@@ -304,9 +304,9 @@ ones that will change what you propose:
   top of the standing eight-circle record. The first staged-schedule campaign
   here, the first to fit sixteen circles, so **its costs compare to nothing
   outside it**. All four registered contrasts reject under Holm. **Narrow
-  extends win by the largest margin this project has measured**: eight extends
-  of one beat one extend of eight by `+39.65` (`t = +14.94`, 12/12), four of two
-  by `+40.88`, two of four by `+23.96`. **Building on the record beats a cold
+  extends win decisively**: eight extends of one beat one extend of eight by
+  `+39.65` (`t = +14.94`, 12/12), four of two by `+40.88`, two of four by
+  `+23.96`. **Building on the record beats a cold
   sixteen-circle fit** by `+128.81` (`t = +20.08`, 12/12) — the cold arm's mean
   of 743.77 is worse than the eight-circle record itself, which is a statement
   about search at 112 dimensions, not about the image. Read before proposing a
