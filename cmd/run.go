@@ -294,10 +294,18 @@ func newPolishOptimizer(config app.JobConfig, rend renderer.Renderer) (opt.Optim
 		return newCMAESPolishOptimizer(config, rend, seed), nil
 	}
 
+	// Parallel evaluation is carried across for the same reason the server's
+	// twin carries it: a sweep leases a session per evaluation like the staged
+	// pipelines do, so without it --parallel-evaluation would widen the base
+	// stage and leave the sweep serial. The two halves have to agree, because
+	// the same stored configuration is run by both and the width is not
+	// trajectory-neutral. A run that did not ask for it is unaffected --
+	// ParallelEvaluationOption returns a no-op option when it is not granted.
 	polisher, err := opt.NewMayflyVariant(
 		string(app.VariantStandard), config.PolishingIters, config.PolishingPopSize, seed,
 		opt.WithLogger(slog.Default()),
 		opt.WithEarlyStop(polishEarlyStop(config)),
+		parallelEvaluationOption(config, rend),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create polishing optimizer: %w", err)
