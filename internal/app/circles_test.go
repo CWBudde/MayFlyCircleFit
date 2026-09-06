@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -207,5 +208,85 @@ func TestApplyDefaultsMakesInitialCirclesOpaque(t *testing.T) {
 
 	if config.InitialCircles[0].Opacity != 1 {
 		t.Fatalf("opacity = %v, want 1", config.InitialCircles[0].Opacity)
+	}
+}
+
+// TestCircleSpecsExactColorRoundTrips is the point of the rgb form: a solution
+// carried back into a run must return the vector it left as, bit for bit.
+//
+// The hex form cannot do that. A channel round trips through eight bits, and
+// the loss is no longer cosmetic -- re-seeding the eight-circle record costs
+// 3.73 against a polishing gain of 3.34, so the codec eats more than the search
+// finds. The two assertions below are that pair: exact for rgb, lossy for hex.
+func TestCircleSpecsExactColorRoundTrips(t *testing.T) {
+	t.Parallel()
+
+	channels := [3]float64{0.4823529411764706, 0.19607843137254902, 0.7333333333333333}
+	specs := CircleSpecs{{X: 10, Y: 20, R: 5, RGB: &channels, Opacity: 1}}
+
+	err := specs.Validate()
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	params, err := specs.ToParams()
+	if err != nil {
+		t.Fatalf("ToParams() error = %v", err)
+	}
+
+	for i, want := range channels {
+		if got := params[3+i]; got != want {
+			t.Errorf("channel %d = %v, want %v", i, got, want)
+		}
+	}
+}
+
+// TestCircleSpecsHexColorStillQuantizes pins the behaviour the exact form
+// exists to sidestep, so a future reader does not mistake the hex path for
+// lossless and reintroduce the round trip.
+func TestCircleSpecsHexColorStillQuantizes(t *testing.T) {
+	t.Parallel()
+
+	specs := CircleSpecs{{X: 10, Y: 20, R: 5, Color: "#7b3239", Opacity: 1}}
+
+	params, err := specs.ToParams()
+	if err != nil {
+		t.Fatalf("ToParams() error = %v", err)
+	}
+
+	if params[3] != 123.0/255.0 {
+		t.Errorf("red = %v, want %v", params[3], 123.0/255.0)
+	}
+}
+
+func TestCircleSpecsRefusesAmbiguousOrMissingColor(t *testing.T) {
+	t.Parallel()
+
+	channels := [3]float64{0.5, 0.5, 0.5}
+	outOfRange := [3]float64{0.5, 1.5, 0.5}
+
+	tests := map[string]struct {
+		spec  CircleSpec
+		field string
+	}{
+		"neither":     {CircleSpec{X: 1, Y: 1, R: 5, Opacity: 1}, "color"},
+		"both":        {CircleSpec{X: 1, Y: 1, R: 5, Color: "#ffffff", RGB: &channels, Opacity: 1}, "rgb"},
+		"outOfRange":  {CircleSpec{X: 1, Y: 1, R: 5, RGB: &outOfRange, Opacity: 1}, "rgb"},
+		"badHexColor": {CircleSpec{X: 1, Y: 1, R: 5, Color: "#zzz", Opacity: 1}, "color"},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			err := CircleSpecs{test.spec}.Validate()
+			if err == nil {
+				t.Fatalf("Validate() accepted %+v", test.spec)
+			}
+
+			if !strings.Contains(err.Error(), test.field) {
+				t.Errorf("error = %v, want it to name %q", err, test.field)
+			}
+		})
 	}
 }
