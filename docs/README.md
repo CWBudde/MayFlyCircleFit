@@ -246,6 +246,32 @@ re-measure instead.
   `distributionExtent` reading bounded at 1.0821 over 14,519 samples, and the
   note that the driver's `recordCost` still reports against the superseded
   752.52 record.
+- [`cmaes-extend-width-report.md`](cmaes-extend-width-report.md) — five arms
+  and 60 campaigns (252 jobs) asking **how to group the next eight circles** on
+  top of the standing eight-circle record. The first staged-schedule campaign in
+  the corpus, and the first to fit sixteen circles, so **its costs compare to
+  nothing outside it**. All four registered contrasts reject under Holm.
+  **Narrow extends win decisively**: eight extends of one beat one extend of
+  eight by `+39.65` (`t = +14.94`, 12/12), four of two by `+40.88`, two of four
+  by `+23.96`. And **building on the record beats a cold sixteen-circle fit** by
+  `+128.81` (`t = +20.08`, 12/12) — the cold arm's mean of 743.77 is *worse than
+  the eight-circle record itself*. Read before proposing a growth recipe; it
+  re-establishes `schedule-format.md`'s `+1`-per-extend advice on the current
+  pin. Four cautions. **Width one against width two is a null** (`+1.24`,
+  `t = +0.72`, 6/12) and unregistered, and the two differ in spread rather than
+  mean — `ext-w1`'s twelve costs lie inside 5.0 points while `ext-w2` reaches
+  the campaign best of 559.59 — so the narrowest width is *not* established.
+  Nothing here rearranges an earlier circle, because an extend freezes its
+  prefix and polishing is MayFly-only, so "best" means "best among schedules
+  that never revisit". The base is quantized to 728.38 from 726.20 by
+  `initialCircles`' 8-bit colours, a constant that cancels in every paired
+  contrast. And wall clock is unmatched by 41% in the direction that makes the
+  winner more expensive. By-products: the campaign sets the first sixteen-circle
+  record (**559.5857671101888**), it is spend-matched to within 1.1 points of
+  cap across a sixteenfold dimension range, and it **refutes**
+  `cmaes-restart-shape-report.md`'s claim that `app.MaxOptimizerRestarts` bound
+  a block — stages here ran up to 88 attempts with the constant at 64, because
+  it bounds the requested magnitude, not the attempts a filling schedule runs.
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by

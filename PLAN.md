@@ -225,6 +225,30 @@ anything new against its figures.
       shape runs, which the probe demonstrated by running 69 from a request of
       16. `docs/cmaes-restart-shape-report.md` reads its block 3 as having hit a
       64-attempt ceiling; on this evidence that block simply stopped at 64.
+      **Ran 2026-09-05/06, and it answers the extend half.** 60 of 60 campaigns,
+      252 jobs, 04:20 of wall clock, 166.3 job-hours. **All four registered
+      contrasts reject under Holm, and narrow extends win by the largest margin
+      this project has measured.** `ext-w1` beats `ext-w8` by `+39.65`
+      (`t = +14.94`, `p = 1.2e-08`, 12/12); `ext-w2` by `+40.88` and `ext-w4` by
+      `+23.96`, both 12/12. The secondary settles the premise emphatically:
+      `ext-w8` beats `cold-w16` by `+128.81` (`t = +20.08`, 12/12), and the cold
+      arm's mean of 743.77 is *worse than the eight-circle record it was given
+      for free*. See
+      [`docs/cmaes-extend-width-report.md`](docs/cmaes-extend-width-report.md).
+      The spend gate the design made a hard condition passed: 95.6-96.7% of cap
+      across a sixteenfold dimension range. First sixteen-circle record:
+      **559.5857671101888**, `ext-w2` block 9.
+      **What it leaves open.** Width one against width two is a null (`+1.24`,
+      `t = +0.72`, 6/12) and unregistered, and the arms differ in spread rather
+      than mean — `ext-w1`'s twelve costs lie inside 5.0 points, seven of them
+      inside 0.14, which looks like a near-deterministic greedy fixed point,
+      while `ext-w2` holds the campaign best. So the *direction* is settled and
+      the narrowest width is not. Wall clock is unmatched by 41% against the
+      winner. And the sixteenth circle still buys 13.8 points, so nothing here
+      says the fixture is saturated.
+      The campaign also **withdraws the `MaxOptimizerRestarts` reading above**
+      by direct measurement rather than by probe: stages ran up to 88 attempts
+      with the constant unchanged at 64.
 - [x] Settle which restart *shape* a CMA-ES default would name. The budget-split
       screen established that splitting a CMA-ES budget beats not splitting it
       but could not order the three mechanisms, and it found the IPOP ladder
@@ -327,10 +351,12 @@ anything new against its figures.
       that rung**; its useful work concentrates at 512-2048 while the top rung
       is the one truncated by the cap. Where to *stop* a ladder is a knob no
       campaign here has varied, and it belongs to the top-rung task below.
-      One operational note for a follow-up: `app.MaxOptimizerRestarts` bound the
-      filling arm in 1 block of 24, so a filling shape at a smaller `lambda`
-      would hit that ceiling routinely and the constant would need raising
-      before the shape could be measured at all.
+      One operational note is **withdrawn**: the report reads
+      `app.MaxOptimizerRestarts` as having bound the filling arm in 1 block of
+      24, and it did not. The constant bounds the restart magnitude a job may
+      request, not the attempts a filling schedule executes — `-design
+      extend-width` ran up to 88 attempts per stage with it unchanged at 64. No
+      raise is needed before measuring a filling shape at a smaller `lambda`.
 - [ ] Decide what the IPOP ladder's top rung is worth, now that one has been
       reached. **Ran 2026-08-30 as `-design deep-hunt`** (89 of 99 jobs, 09:07 of
       wall clock, 62.9h of optimizer time), a descriptive record hunt rather than
