@@ -260,12 +260,16 @@ which is exactly the defect
 in `blk-r2-l1024`. `full-fill-l64` runs 58 to 64 attempts, mean 61.0, and
 recovers the budget to 97.8%.
 
-**The filling arm hit `app.MaxOptimizerRestarts` once.** Block 3 ran exactly 64
-attempts, the ceiling, so in that one block the shape was bounded by the limit
-rather than by the budget. It is 1 block of 24 and the arm still won that block,
-so nothing here turns on it — but a filling shape at a smaller `lambda` would
-hit the ceiling routinely, and the constant would then need raising before the
-shape could be measured at all.
+**~~The filling arm hit `app.MaxOptimizerRestarts` once.~~ Withdrawn.** Block 3
+ran exactly 64 attempts, and this report read that as the ceiling binding. It is
+not: `app.MaxOptimizerRestarts` bounds the restart *magnitude* a job may
+request, not the number of attempts a filling schedule executes.
+[`cmaes-extend-width-report.md`](cmaes-extend-width-report.md) ran up to **88
+attempts per stage** with the constant unchanged at 64, and a pre-flight there
+ran 69 from a request of 16. Block 3 simply stopped at 64 because that is where
+its budget ran out. Nothing in this report turned on the reading, and the
+follow-up advice it gave — that the constant would need raising before a
+filling shape could be measured at a smaller `lambda` — is void.
 
 ## Diagnostics
 
@@ -367,7 +371,8 @@ the size of the gain is not.
 - **The two cold arms are not independent.** They share a trajectory by design,
   which is what makes the secondary's mechanism readable and also means its
   paired sd of 11.69 is not comparable to the primary's.
-- **`app.MaxOptimizerRestarts` bound the filling arm in one block.** See above.
+- ~~**`app.MaxOptimizerRestarts` bound the filling arm in one block.**~~
+  Withdrawn; see above.
 - **The filling arm's wall-clock cost is 37% above IPOP's.** The design matched
   evaluations, not time.
 

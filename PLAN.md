@@ -181,6 +181,77 @@ anything new against its figures.
       measuring them means wrapping it in `WithRestarts` first and deciding what
       an attempt of a sweep even is — a whole sweep chain, or one sweep. Do that
       deliberately, not as a side effect of writing the campaign.
+      **The extend half is registered 2026-09-05 as `-design extend-width`**,
+      the first staged campaign in this driver and the first CMA-ES measurement
+      here that is not a cold eight-circle batch. It seeds the standing record
+      as a frozen prefix and asks how the next eight circles should be
+      committed: `ext-w8`, `ext-w4`, `ext-w2` and `ext-w1` run one, two, four
+      and eight extend stages, and `cold-w16` fits all sixteen from scratch at
+      the same cap. Everything else is held: full covariance, `lambda` 64,
+      budget-filling cold restarts, and **twenty nominal cold attempts per
+      stage** — the attempt *count* is what is pinned, not its length. Twelve
+      blocks, seeds 120001-120012, 6,502,400 evaluations per arm by
+      construction.
+      Primary contrast `ext-w1` against `ext-w8` — the `+1`-versus-`+8`
+      question, which `docs/schedule-format.md` answered under a MayFly pin
+      that no longer applies and which
+      `docs/seed-variance-and-population-report.md` argues the other way.
+      Registered alongside them: `ext-w4` and `ext-w2` against `ext-w8`, and
+      `ext-w8` against `cold-w16`, which is the one that can invalidate the
+      premise rather than answer the primary. **The polish half of this box is
+      untouched by that campaign** and stays open for the reason above — though
+      the blocker it named is gone: `polishingEnabled` left
+      `JobConfig.mayflyOnlyFields()` on 2026-09-06, so a CMA-ES schedule can now
+      carry a polish step.
+      **Two facts the campaign's pre-flights established**, both recorded here
+      because they are properties of the system rather than of the campaign.
+      `initialCircles` quantizes colour to eight bits, so a base seeded from the
+      record starts at 728.382406870524 rather than 726.1984354654948 — a
+      constant 2.184 that cancels between seeded arms and does not cancel
+      against a cold one. And a continuation's evaluation and iteration
+      counters are **cumulative**: an eight-stage probe reported 1,625
+      evaluations at stage 1 and 12,839 at stage 8, so a campaign's spend is its
+      final stage's counter and summing the stages overstates it by 4.5x.
+      **A third pre-flight changed the design rather than just documenting it.**
+      A filling shape starts a further attempt only while a whole nominal one
+      still fits, so it leaves a remainder of fixed absolute size while these
+      arms' stage caps differ eightfold. Probed at a pinned 3,175-iteration
+      attempt, one stage per width, spend was 76.5% of cap at 7 dimensions,
+      87.8% at 14 and 94.7% at 28 against the 97.8% measured at 56 — a 21-point
+      gradient running along the campaign's own variable. Pinning twenty
+      attempts per stage instead, and letting the length scale (5,080 down to
+      635), flattens it to 96.2 / 95.8 / 95.9%. Attempt length was the right
+      thing to give up: `docs/restart-vs-budget-report.md` found every adjacent
+      restart-length comparison null while spend is first order. The probe also
+      **contradicts this repository's reading of `app.MaxOptimizerRestarts`**:
+      it bounds the magnitude a job may request, not the attempts a filling
+      shape runs, which the probe demonstrated by running 69 from a request of
+      16. `docs/cmaes-restart-shape-report.md` reads its block 3 as having hit a
+      64-attempt ceiling; on this evidence that block simply stopped at 64.
+      **Ran 2026-09-05/06, and it answers the extend half.** 60 of 60 campaigns,
+      252 jobs, 04:20 of wall clock, 166.3 job-hours. **All four registered
+      contrasts reject under Holm, and narrow extends win by the largest margin
+      this project has measured.** `ext-w1` beats `ext-w8` by `+39.65`
+      (`t = +14.94`, `p = 1.2e-08`, 12/12); `ext-w2` by `+40.88` and `ext-w4` by
+      `+23.96`, both 12/12. The secondary settles the premise emphatically:
+      `ext-w8` beats `cold-w16` by `+128.81` (`t = +20.08`, 12/12), and the cold
+      arm's mean of 743.77 is *worse than the eight-circle record it was given
+      for free*. See
+      [`docs/cmaes-extend-width-report.md`](docs/cmaes-extend-width-report.md).
+      The spend gate the design made a hard condition passed: 95.6-96.7% of cap
+      across a sixteenfold dimension range. First sixteen-circle record:
+      **559.5857671101888**, `ext-w2` block 9.
+      **What it leaves open.** Width one against width two is a null (`+1.24`,
+      `t = +0.72`, 6/12) and unregistered, and the arms differ in spread rather
+      than mean — `ext-w1`'s twelve costs lie inside 5.0 points, seven of them
+      inside 0.14, which looks like a near-deterministic greedy fixed point,
+      while `ext-w2` holds the campaign best. So the *direction* is settled and
+      the narrowest width is not. Wall clock is unmatched by 41% against the
+      winner. And the sixteenth circle still buys 13.8 points, so nothing here
+      says the fixture is saturated.
+      The campaign also **withdraws the `MaxOptimizerRestarts` reading above**
+      by direct measurement rather than by probe: stages ran up to 88 attempts
+      with the constant unchanged at 64.
 - [x] Settle which restart *shape* a CMA-ES default would name. The budget-split
       screen established that splitting a CMA-ES budget beats not splitting it
       but could not order the three mechanisms, and it found the IPOP ladder
@@ -283,10 +354,12 @@ anything new against its figures.
       that rung**; its useful work concentrates at 512-2048 while the top rung
       is the one truncated by the cap. Where to *stop* a ladder is a knob no
       campaign here has varied, and it belongs to the top-rung task below.
-      One operational note for a follow-up: `app.MaxOptimizerRestarts` bound the
-      filling arm in 1 block of 24, so a filling shape at a smaller `lambda`
-      would hit that ceiling routinely and the constant would need raising
-      before the shape could be measured at all.
+      One operational note is **withdrawn**: the report reads
+      `app.MaxOptimizerRestarts` as having bound the filling arm in 1 block of
+      24, and it did not. The constant bounds the restart magnitude a job may
+      request, not the attempts a filling schedule executes — `-design
+      extend-width` ran up to 88 attempts per stage with it unchanged at 64. No
+      raise is needed before measuring a filling shape at a smaller `lambda`.
 - [ ] Decide what the IPOP ladder's top rung is worth, now that one has been
       reached. **Ran 2026-08-30 as `-design deep-hunt`** (89 of 99 jobs, 09:07 of
       wall clock, 62.9h of optimizer time), a descriptive record hunt rather than
