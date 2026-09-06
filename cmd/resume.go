@@ -164,12 +164,7 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 		return fmt.Errorf("invalid checkpoint configuration: %w", err)
 	}
 
-	warning, err := opt.GuardCheckpointVersion(
-		optimizerLibraryName(checkpoint.Config.ResolvedOptimizer()),
-		checkpoint.OptimizerVersion,
-		optimizerLibraryVersion(checkpoint.Config.ResolvedOptimizer()),
-		resumeAllowOptimizerMismatch,
-	)
+	warnings, err := guardCheckpointVersions(checkpoint, resumeAllowOptimizerMismatch)
 	if err != nil {
 		if errors.Is(err, opt.ErrOptimizerVersionMismatch) {
 			return fmt.Errorf("%w (pass --allow-optimizer-mismatch to resume anyway)", err)
@@ -178,7 +173,7 @@ func runResumeLocal(ctx context.Context, jobID string) error {
 		return err
 	}
 
-	if warning != "" {
+	for _, warning := range warnings {
 		slog.Warn("Optimizer version check", "job_id", jobID, "warning", warning)
 		fmt.Printf("! %s\n\n", warning)
 	}

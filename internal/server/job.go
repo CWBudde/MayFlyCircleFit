@@ -855,12 +855,35 @@ func cloneJob(job *Job) *Job {
 
 // cloneCircleSpecs copies an authored arrangement, preserving nil so a job that
 // was never seeded keeps saying so in JSON.
+//
+// The copy is deep in the one field that needs it. CircleSpec.RGB is a pointer,
+// so a plain slice copy would leave the clone and the original sharing one
+// array: an in-process caller mutating the exact colour of a submitted or a
+// fetched configuration would then reach across the manager lock and change the
+// seed of a live job after it was validated. Every other field is a value.
 func cloneCircleSpecs(specs app.CircleSpecs) app.CircleSpecs {
 	if specs == nil {
 		return nil
 	}
 
-	return append(app.CircleSpecs(nil), specs...)
+	cloned := append(app.CircleSpecs(nil), specs...)
+	for i := range cloned {
+		cloned[i].RGB = cloneRGB(cloned[i].RGB)
+	}
+
+	return cloned
+}
+
+// cloneRGB copies an exact colour, preserving nil so a spec authored in hex
+// keeps saying so.
+func cloneRGB(rgb *[3]float64) *[3]float64 {
+	if rgb == nil {
+		return nil
+	}
+
+	cloned := *rgb
+
+	return &cloned
 }
 
 func cloneFloat(value *float64) *float64 {

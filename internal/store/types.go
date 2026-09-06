@@ -170,6 +170,23 @@ type Checkpoint struct {
 	// as a mismatch, so the schema version does not move.
 	OptimizerVersion string `json:"optimizerVersion,omitempty"`
 
+	// PolishingOptimizerVersion records the version of the library a polishing
+	// sweep ran, when that is a different library from the one OptimizerVersion
+	// names. A job may polish with an engine other than the one its base stage
+	// searched with -- a CMA-ES stage finished by the default MayFly sweep is
+	// the ordinary case -- and then a single recorded version describes only
+	// half of what produced BestCost. Without this field such a checkpoint
+	// survives a behaviour-changing upgrade of the other library unremarked,
+	// which is exactly the silent continuation OptimizerVersion exists to stop.
+	//
+	// It stays empty when both stages run the same library, because
+	// OptimizerVersion already speaks for the sweep then, and when the job does
+	// not polish at all. It is additive and optional like the fields around it:
+	// a checkpoint written before it existed decodes with it empty, which the
+	// guard reads as unknown rather than as a mismatch, so the schema version
+	// does not move.
+	PolishingOptimizerVersion string `json:"polishingOptimizerVersion,omitempty"`
+
 	// EffectiveBackend is the backend that actually produced BestCost, and
 	// BackendDegraded reports whether the device was lost mid-run and the
 	// remainder was costed on the CPU.
@@ -260,21 +277,22 @@ type CheckpointInfo struct {
 // This is a helper for converting runtime job state to a persistable checkpoint.
 func NewCheckpoint(jobID string, bestParams []float64, bestCost, initialCost float64, iteration int, config JobConfig) *Checkpoint {
 	checkpoint := Checkpoint{
-		SchemaVersion:    CheckpointSchemaVersion,
-		JobID:            jobID,
-		BestParams:       append([]float64(nil), bestParams...),
-		BestCost:         bestCost,
-		InitialCost:      initialCost,
-		RequestedCircles: config.Circles,
-		ActualCircles:    len(bestParams) / 7,
-		EffectiveSeed:    effectiveSeed(config),
-		ResumeCount:      config.ResumeCount,
-		Iterations:       iteration,
-		Iteration:        iteration,
-		Termination:      TerminationUnknown,
-		Timestamp:        time.Now(),
-		OptimizerVersion: optimizerVersion(config),
-		Config:           config,
+		SchemaVersion:             CheckpointSchemaVersion,
+		JobID:                     jobID,
+		BestParams:                append([]float64(nil), bestParams...),
+		BestCost:                  bestCost,
+		InitialCost:               initialCost,
+		RequestedCircles:          config.Circles,
+		ActualCircles:             len(bestParams) / 7,
+		EffectiveSeed:             effectiveSeed(config),
+		ResumeCount:               config.ResumeCount,
+		Iterations:                iteration,
+		Iteration:                 iteration,
+		Termination:               TerminationUnknown,
+		Timestamp:                 time.Now(),
+		OptimizerVersion:          optimizerVersion(config),
+		PolishingOptimizerVersion: polishingOptimizerVersion(config),
+		Config:                    config,
 	}
 
 	return &checkpoint
@@ -288,6 +306,27 @@ func optimizerVersion(config JobConfig) string {
 	case app.OptimizerDragonfly:
 		return opt.DragonflyLibraryVersion()
 	case app.OptimizerCMAES:
+		return opt.CMAESLibraryVersion()
+	}
+
+	return opt.LibraryVersion()
+}
+
+// polishingOptimizerVersion reports the version of the library a polishing
+// sweep runs with, or the empty string when there is nothing extra to record.
+//
+// Nothing extra means one of two things: the job does not polish, or its sweep
+// runs the same library its base stage does, in which case OptimizerVersion
+// already carries the answer and repeating it would only invite the two to
+// disagree. Recording a second version is only useful where a second library is
+// actually linked into the run.
+func polishingOptimizerVersion(config JobConfig) string {
+	engine, ok := config.SecondaryOptimizer()
+	if !ok {
+		return ""
+	}
+
+	if engine == app.OptimizerCMAES {
 		return opt.CMAESLibraryVersion()
 	}
 
@@ -449,29 +488,30 @@ func (c *Checkpoint) UnmarshalJSON(data []byte) error {
 	}
 
 	*c = Checkpoint{
-		SchemaVersion:    CheckpointSchemaVersion,
-		JobID:            wire.JobID,
-		BestParams:       append([]float64(nil), wire.BestParams...),
-		BestCost:         wire.BestCost,
-		InitialCost:      wire.InitialCost,
-		RequestedCircles: wire.RequestedCircles,
-		ActualCircles:    wire.ActualCircles,
-		EffectiveSeed:    wire.EffectiveSeed,
-		ResumeCount:      wire.ResumeCount,
-		Iterations:       iterations,
-		Evaluations:      wire.Evaluations,
-		Termination:      wire.Termination,
-		Restarts:         append([]opt.RestartRun(nil), wire.Restarts...),
-		Iteration:        iterations,
-		Timestamp:        wire.Timestamp,
-		ExtendedFrom:     wire.ExtendedFrom,
-		PolishedFrom:     wire.PolishedFrom,
-		ScheduleID:       wire.ScheduleID,
-		StageIndex:       wire.StageIndex,
-		OptimizerVersion: wire.OptimizerVersion,
-		EffectiveBackend: wire.EffectiveBackend,
-		BackendDegraded:  wire.BackendDegraded,
-		Config:           wire.Config,
+		SchemaVersion:             CheckpointSchemaVersion,
+		JobID:                     wire.JobID,
+		BestParams:                append([]float64(nil), wire.BestParams...),
+		BestCost:                  wire.BestCost,
+		InitialCost:               wire.InitialCost,
+		RequestedCircles:          wire.RequestedCircles,
+		ActualCircles:             wire.ActualCircles,
+		EffectiveSeed:             wire.EffectiveSeed,
+		ResumeCount:               wire.ResumeCount,
+		Iterations:                iterations,
+		Evaluations:               wire.Evaluations,
+		Termination:               wire.Termination,
+		Restarts:                  append([]opt.RestartRun(nil), wire.Restarts...),
+		Iteration:                 iterations,
+		Timestamp:                 wire.Timestamp,
+		ExtendedFrom:              wire.ExtendedFrom,
+		PolishedFrom:              wire.PolishedFrom,
+		ScheduleID:                wire.ScheduleID,
+		StageIndex:                wire.StageIndex,
+		OptimizerVersion:          wire.OptimizerVersion,
+		PolishingOptimizerVersion: wire.PolishingOptimizerVersion,
+		EffectiveBackend:          wire.EffectiveBackend,
+		BackendDegraded:           wire.BackendDegraded,
+		Config:                    wire.Config,
 	}
 	legacy := wire.SchemaVersion == 0 || wire.SchemaVersion == 1
 
@@ -490,55 +530,57 @@ func (c *Checkpoint) UnmarshalJSON(data []byte) error {
 }
 
 type checkpointWire struct {
-	SchemaVersion    int              `json:"schemaVersion"`
-	JobID            string           `json:"jobId"`
-	BestParams       []float64        `json:"bestParams"`
-	BestCost         float64          `json:"bestCost"`
-	InitialCost      float64          `json:"initialCost"`
-	RequestedCircles int              `json:"requestedCircles"`
-	ActualCircles    int              `json:"actualCircles"`
-	EffectiveSeed    int64            `json:"effectiveSeed"`
-	ResumeCount      int              `json:"resumeCount"`
-	Iterations       int              `json:"iterations"`
-	Evaluations      int64            `json:"evaluations"`
-	Termination      string           `json:"termination"`
-	Restarts         []opt.RestartRun `json:"restarts,omitempty"`
-	Iteration        int              `json:"iteration,omitempty"`
-	Timestamp        time.Time        `json:"timestamp"`
-	ExtendedFrom     string           `json:"extendedFrom,omitempty"`
-	PolishedFrom     string           `json:"polishedFrom,omitempty"`
-	ScheduleID       string           `json:"scheduleId,omitempty"`
-	StageIndex       *int             `json:"stageIndex,omitempty"`
-	OptimizerVersion string           `json:"optimizerVersion,omitempty"`
-	EffectiveBackend app.Backend      `json:"effectiveBackend,omitempty"`
-	BackendDegraded  bool             `json:"backendDegraded,omitempty"`
-	Config           JobConfig        `json:"config"`
+	SchemaVersion             int              `json:"schemaVersion"`
+	JobID                     string           `json:"jobId"`
+	BestParams                []float64        `json:"bestParams"`
+	BestCost                  float64          `json:"bestCost"`
+	InitialCost               float64          `json:"initialCost"`
+	RequestedCircles          int              `json:"requestedCircles"`
+	ActualCircles             int              `json:"actualCircles"`
+	EffectiveSeed             int64            `json:"effectiveSeed"`
+	ResumeCount               int              `json:"resumeCount"`
+	Iterations                int              `json:"iterations"`
+	Evaluations               int64            `json:"evaluations"`
+	Termination               string           `json:"termination"`
+	Restarts                  []opt.RestartRun `json:"restarts,omitempty"`
+	Iteration                 int              `json:"iteration,omitempty"`
+	Timestamp                 time.Time        `json:"timestamp"`
+	ExtendedFrom              string           `json:"extendedFrom,omitempty"`
+	PolishedFrom              string           `json:"polishedFrom,omitempty"`
+	ScheduleID                string           `json:"scheduleId,omitempty"`
+	StageIndex                *int             `json:"stageIndex,omitempty"`
+	OptimizerVersion          string           `json:"optimizerVersion,omitempty"`
+	PolishingOptimizerVersion string           `json:"polishingOptimizerVersion,omitempty"`
+	EffectiveBackend          app.Backend      `json:"effectiveBackend,omitempty"`
+	BackendDegraded           bool             `json:"backendDegraded,omitempty"`
+	Config                    JobConfig        `json:"config"`
 }
 
 func checkpointWireFrom(c Checkpoint) checkpointWire {
 	return checkpointWire{
-		SchemaVersion:    c.SchemaVersion,
-		JobID:            c.JobID,
-		BestParams:       c.BestParams,
-		BestCost:         c.BestCost,
-		InitialCost:      c.InitialCost,
-		RequestedCircles: c.RequestedCircles,
-		ActualCircles:    c.ActualCircles,
-		EffectiveSeed:    c.EffectiveSeed,
-		ResumeCount:      c.ResumeCount,
-		Iterations:       c.Iterations,
-		Evaluations:      c.Evaluations,
-		Termination:      c.Termination,
-		Restarts:         c.Restarts,
-		Timestamp:        c.Timestamp,
-		ExtendedFrom:     c.ExtendedFrom,
-		PolishedFrom:     c.PolishedFrom,
-		ScheduleID:       c.ScheduleID,
-		StageIndex:       c.StageIndex,
-		OptimizerVersion: c.OptimizerVersion,
-		EffectiveBackend: c.EffectiveBackend,
-		BackendDegraded:  c.BackendDegraded,
-		Config:           c.Config,
+		SchemaVersion:             c.SchemaVersion,
+		JobID:                     c.JobID,
+		BestParams:                c.BestParams,
+		BestCost:                  c.BestCost,
+		InitialCost:               c.InitialCost,
+		RequestedCircles:          c.RequestedCircles,
+		ActualCircles:             c.ActualCircles,
+		EffectiveSeed:             c.EffectiveSeed,
+		ResumeCount:               c.ResumeCount,
+		Iterations:                c.Iterations,
+		Evaluations:               c.Evaluations,
+		Termination:               c.Termination,
+		Restarts:                  c.Restarts,
+		Timestamp:                 c.Timestamp,
+		ExtendedFrom:              c.ExtendedFrom,
+		PolishedFrom:              c.PolishedFrom,
+		ScheduleID:                c.ScheduleID,
+		StageIndex:                c.StageIndex,
+		OptimizerVersion:          c.OptimizerVersion,
+		PolishingOptimizerVersion: c.PolishingOptimizerVersion,
+		EffectiveBackend:          c.EffectiveBackend,
+		BackendDegraded:           c.BackendDegraded,
+		Config:                    c.Config,
 	}
 }
 

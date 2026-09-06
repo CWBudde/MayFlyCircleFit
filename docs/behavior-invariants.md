@@ -232,7 +232,9 @@ Rendering-side invariants live in
   `dragonfly`, or `cmaes`, and an absent value is `mayfly`, so every
   configuration and checkpoint written before the field existed keeps its
   behavior. The engine is persisted in the checkpoint together with that engine's library version in
-  `optimizerVersion`, and no resume path reads the engine from anywhere else:
+  `optimizerVersion` -- and, where a polishing sweep names a *second* library,
+  that one's version in `polishingOptimizerVersion` -- and no resume path reads
+  the engine from anywhere else:
   neither `resume --local` nor the resume endpoint can continue a run under a
   different optimizer than produced it. A setting the named engine cannot read
   is refused at validation rather than accepted and ignored, because a dropped
@@ -288,7 +290,18 @@ Rendering-side invariants live in
   checkpoint that records no version at all — every checkpoint written before
   the field existed — is never refused; it warns, naming the running version.
   The same applies when either side reports `unknown`, which is what a build
-  without module information reports. Two pairs of versions are exempt, each
+  without module information reports.
+- **A job that polishes with a different engine than its base stage runs two
+  libraries, and both are guarded.** A CMA-ES stage finished by the default
+  MayFly sweep is the ordinary case, and `optimizerVersion` speaks for only half
+  of what produced the cost, so the checkpoint also records
+  `polishingOptimizerVersion` and every resume path checks it under exactly the
+  same rule: refuse on a mismatch, warn on an absent or `unknown` version, and
+  let `--allow-optimizer-mismatch` past. The field stays empty when the sweep
+  runs the same library the base stage did, because `optimizerVersion` already
+  answers for it, and when the job does not polish. It is additive: a checkpoint
+  written before it existed decodes with it empty and resumes with a warning,
+  so the schema version does not move. Two pairs of versions are exempt, each
   measured to be behaviour-neutral so that a checkpoint written by either member
   resumes silently under the other: MayFly v0.7.0 and v0.7.1, and CMA-ES
   `v0.0.0-20260825143954-e528faf326bf` — the pseudo-version pinned before the
@@ -436,7 +449,13 @@ Rendering-side invariants live in
   CMA-ES polisher is pinned to full covariance and no restart strategy: full is
   the only mode that never clamps its rank-mu rate on the pinned library, and a
   restart ladder inside a sweep would abandon the incumbent the sweep exists to
-  refine. `MaxVelocity` has no CMA-ES analogue and that adapter ignores it, so a
+  refine. Because that mode never clamps but is also the expensive one, a CMA-ES
+  sweep is held to the same 512-dimension full-covariance limit the base stage
+  is: `polishingActiveSetSize` may name at most 73 circles, which validation
+  refuses beyond rather than letting the sweep launch a dense search of a size
+  the limit exists to rule out. A MayFly sweep learns no covariance matrix and
+  is not bound by it. `MaxVelocity` has no CMA-ES analogue and that adapter
+  ignores it, so a
   CMA-ES sweep is a genuinely different local search under the same name --
   which is why the figures in
   [`polishing-budget-report.md`](polishing-budget-report.md) and

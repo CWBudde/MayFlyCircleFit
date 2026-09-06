@@ -72,6 +72,27 @@ func (c *JobConfig) ResolvedPolishingOptimizer() Optimizer {
 	return c.PolishingOptimizer
 }
 
+// SecondaryOptimizer reports the engine a polishing sweep runs with when that
+// is a second library beside the one ResolvedOptimizer names, and false when
+// the run links only one.
+//
+// It exists because a version, a cost projection or a warning that names "the
+// optimizer" is only complete while a job has one. A CMA-ES stage finished by
+// the default MayFly sweep runs two libraries, and anything recording just the
+// base engine describes half of what produced the result.
+func (c *JobConfig) SecondaryOptimizer() (Optimizer, bool) {
+	if !c.PolishingEnabled {
+		return "", false
+	}
+
+	engine := c.ResolvedPolishingOptimizer()
+	if engine == c.ResolvedOptimizer() {
+		return "", false
+	}
+
+	return engine, true
+}
+
 // ResolvedPolishingSigma reports the seeded perturbation width a polishing
 // sweep searches at, treating zero as the recorded default.
 func (c *JobConfig) ResolvedPolishingSigma() float64 {

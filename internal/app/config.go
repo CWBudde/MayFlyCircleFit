@@ -898,8 +898,13 @@ func (c *JobConfig) Validate() error {
 		return err
 	}
 
-	if c.PolishingSigma < 0 || c.PolishingSigma > 1 {
-		return invalid("polishingSigma", "must be between 0 and 1, in the optimizer's normalized search box")
+	// NaN is tested explicitly rather than left to the range: every comparison
+	// against NaN is false, so a bare range would accept it and hand a NaN
+	// continuation width to the optimizer, where it stays just as quiet. The
+	// infinities need no separate test -- they fail the range.
+	if math.IsNaN(c.PolishingSigma) || c.PolishingSigma < 0 || c.PolishingSigma > 1 {
+		return invalid("polishingSigma", "must be finite and between 0 and 1, "+
+			"in the optimizer's normalized search box")
 	}
 
 	switch c.PolishingStrategy {
@@ -910,6 +915,11 @@ func (c *JobConfig) Validate() error {
 
 	if c.PolishingActiveSetSize < 1 || c.PolishingActiveSetSize > MaxBatchSize || c.PolishingActiveSetSize > c.Circles {
 		return invalid("polishingActiveSetSize", "must be positive, within the limit, and no larger than circles")
+	}
+
+	err = c.validatePolishingDimensions()
+	if err != nil {
+		return err
 	}
 
 	if c.PolishingMaxSweeps < 1 || c.PolishingMaxSweeps > MaxPolishingSweeps {
