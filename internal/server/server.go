@@ -1905,6 +1905,12 @@ type polishJobRequest struct {
 	MinImprovement  *float64               `json:"minImprovement,omitempty"`
 	PopSize         *int                   `json:"popSize,omitempty"`
 	Seed            *int64                 `json:"seed,omitempty"`
+	// Optimizer names the engine the sweep searches its active set with, and
+	// Sigma its seeded perturbation width. Both are separate from the parent's
+	// own engine and sigma, which describe the cold search of the whole vector
+	// that produced the incumbent this continuation refines.
+	Optimizer *app.Optimizer `json:"optimizer,omitempty"`
+	Sigma     *float64       `json:"sigma,omitempty"`
 }
 
 func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID string) {
@@ -1975,6 +1981,14 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 	// of its own, the request field keeps meaning what it always meant.
 	if request.PopSize != nil {
 		config.PolishingPopSize = *request.PopSize
+	}
+
+	if request.Optimizer != nil {
+		config.PolishingOptimizer = *request.Optimizer
+	}
+
+	if request.Sigma != nil {
+		config.PolishingSigma = *request.Sigma
 	}
 
 	if request.Seed != nil {

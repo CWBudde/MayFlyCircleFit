@@ -763,31 +763,10 @@ func polishBatchResult(
 	if seed == 0 {
 		seed = job.Config.Seed
 	}
-	// Polishing leases a session per evaluation like the staged pipelines do, so
-	// it honors the job's evaluation width instead of falling back to a serial
-	// optimizer while the rest of the run is 48 evaluations wide.
-	polishingOptions := []opt.MayflyOption{
-		opt.WithLogger(slog.Default()),
-		opt.WithEarlyStop(opt.Stop{
-			MinImprovement:  job.Config.PolishingMinImprovement,
-			StagnationIters: job.Config.PolishingStagnationIters,
-		}),
-		parallelEvaluationOption(job.Config, rend),
-	}
-	// Diagnostics are a job-wide opt-in, and a polishing-only job has no other
-	// optimizer to report them. Leaving the polishing adapter out would make
-	// such a job complete with every trace entry missing optimizerDiagnostics
-	// despite having explicitly asked for them.
-	if job.Config.EnableOptimizerDiagnostics {
-		polishingOptions = append(polishingOptions, opt.WithMayflySearchDiagnostics())
-	}
 
-	polisher, err := opt.NewMayflyVariant(
-		string(app.VariantStandard), job.Config.PolishingIters, job.Config.PolishingPopSize, seed,
-		polishingOptions...,
-	)
+	polisher, err := newPolishOptimizer(job.Config, rend, seed)
 	if err != nil {
-		return nil, fmt.Errorf("create polishing optimizer: %w", err)
+		return nil, err
 	}
 
 	polisher = opt.WithEpochs(polisher, job.Config.PolishingEpochs)
@@ -847,6 +826,7 @@ func polishBatchResult(
 		MaxSweeps:          job.Config.PolishingMaxSweeps,
 		Strategy:           renderer.BatchPolishStrategy(job.Config.PolishingStrategy),
 		InitialVisitCounts: initialVisitCounts,
+		Continuation:       polishContinuationProfile(job.Config),
 		Observer: func(progress opt.Progress) {
 			progress.Iterations += mainIterations
 
@@ -1083,6 +1063,104 @@ func newCMAESOptimizer(config store.JobConfig, rend renderer.Renderer, seed int6
 	}
 
 	return opt.NewCMAES(config.Iters, config.PopSize, seed, options...)
+}
+
+// newPolishOptimizer builds the optimizer a polishing sweep searches its active
+// set with.
+//
+// It is a separate factory from newStageOptimizer, not a call into it, because
+// a sweep is a different problem from a stage and reads a different half of the
+// configuration: the polishing budgets rather than the job-wide ones, no
+// restart strategy, and no initial-population sequence. Mirroring
+// newStageOptimizer's structure keeps the two readable side by side; sharing
+// its body would silently give a sweep a restart ladder.
+//
+// An unset engine is MayFly, which is what every checkpoint written before
+// polishingOptimizer existed carries, so such a job keeps running the
+// standard-variant population the figures in docs/polishing-budget-report.md
+// describe.
+//
+// Polishing leases a session per evaluation like the staged pipelines do, so it
+// honors the job's evaluation width instead of falling back to a serial
+// optimizer while the rest of the run is 48 evaluations wide.
+func newPolishOptimizer(config store.JobConfig, rend renderer.Renderer, seed int64) (opt.Optimizer, error) {
+	if config.ResolvedPolishingOptimizer() == app.OptimizerCMAES {
+		return newCMAESPolishOptimizer(config, rend, seed), nil
+	}
+
+	options := []opt.MayflyOption{
+		opt.WithLogger(slog.Default()),
+		opt.WithEarlyStop(polishEarlyStop(config)),
+		parallelEvaluationOption(config, rend),
+	}
+	// Diagnostics are a job-wide opt-in, and a polishing-only job has no other
+	// optimizer to report them. Leaving the polishing adapter out would make
+	// such a job complete with every trace entry missing optimizerDiagnostics
+	// despite having explicitly asked for them.
+	if config.EnableOptimizerDiagnostics {
+		options = append(options, opt.WithMayflySearchDiagnostics())
+	}
+
+	polisher, err := opt.NewMayflyVariant(
+		string(app.VariantStandard), config.PolishingIters, config.PolishingPopSize, seed, options...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create polishing optimizer: %w", err)
+	}
+
+	return polisher, nil
+}
+
+// newCMAESPolishOptimizer builds a CMA-ES polisher.
+//
+// Three of its settings are pinned rather than read from the job, because a
+// sweep is a local search and the job-wide values describe a cold one. Full
+// covariance is the only mode that never clamps its rank-mu rate on the pinned
+// library (docs/cmaes-covariance-report.md), and an active set is small enough
+// that the 512-dimension full-covariance limit is far away -- the default five
+// circles is 35 dimensions. No restart strategy, because a ladder inside a
+// sweep would abandon the incumbent the sweep exists to refine. And the initial
+// sigma comes from the continuation profile the renderer hands every run, not
+// from the job's cmaes initialSigma, which sizes a cold search of the whole
+// vector.
+func newCMAESPolishOptimizer(config store.JobConfig, rend renderer.Renderer, seed int64) opt.Optimizer {
+	options := []opt.CMAESOption{
+		opt.WithCMAESLogger(slog.Default()),
+		opt.WithCMAESEarlyStop(polishEarlyStop(config)),
+		opt.WithCMAESInitialSigma(config.ResolvedPolishingSigma()),
+		opt.WithCMAESCovarianceMode(string(app.CMAESCovarianceFull), app.ParametersPerCircle),
+		opt.WithCMAESActiveCMA(config.ResolvedCMAESActive()),
+		opt.WithCMAESRestartStrategy(string(app.CMAESRestartNone)),
+	}
+	if config.EnableOptimizerDiagnostics {
+		options = append(options, opt.WithCMAESSearchDiagnostics())
+	}
+
+	if width, granted := renderer.ParallelEvaluationWidth(rend, config.ParallelEvaluation); granted {
+		options = append(options, opt.WithCMAESParallelEvaluation(width))
+	}
+
+	return opt.NewCMAES(config.PolishingIters, config.PolishingPopSize, seed, options...)
+}
+
+// polishEarlyStop is the sweep's own stopping rule. It reads the polishing
+// stagnation fields rather than the job-wide Stop* ones, which describe the
+// base stage.
+func polishEarlyStop(config store.JobConfig) opt.Stop {
+	return opt.Stop{
+		MinImprovement:  config.PolishingMinImprovement,
+		StagnationIters: config.PolishingStagnationIters,
+	}
+}
+
+// polishContinuationProfile is the profile every sweep hands its optimizer. Only the
+// sigma is configurable; see renderer.BatchPolishOptions.Continuation for why
+// the other three terms are not.
+func polishContinuationProfile(config store.JobConfig) *opt.ContinuationProfile {
+	profile := renderer.DefaultPolishContinuation()
+	profile.Sigma = config.ResolvedPolishingSigma()
+
+	return profile
 }
 
 // newDragonflyOptimizer builds the proof-of-concept Dragonfly adapter. It

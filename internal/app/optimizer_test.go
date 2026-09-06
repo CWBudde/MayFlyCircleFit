@@ -115,10 +115,6 @@ func TestValidateRefusesMayflyOnlyFieldsUnderDragonfly(t *testing.T) {
 			func(c *app.JobConfig) { c.OppositionProbability = &weight },
 			fieldOppositionProbability,
 		},
-		{fieldPolishingEnabled, func(c *app.JobConfig) {
-			c.Mode = app.ModeBatch
-			c.PolishingEnabled = true
-		}, fieldPolishingEnabled},
 	}
 
 	for _, test := range tests {
@@ -133,14 +129,13 @@ func TestValidateRefusesMayflyOnlyFieldsUnderDragonfly(t *testing.T) {
 	}
 }
 
-// TestPolishingRefusalExplainsTheRestriction pins the second half of the
-// polishing message. Naming the owner is the whole story for a variant, which
-// exists only inside MayFly; polishing is a stage any engine could plausibly
-// grow, so an owner alone reads as wiring nobody has got to yet. The refusal
-// has to say that a sweep runs its own MayFly population and what to do
-// instead, or the decision recorded in docs/behavior-invariants.md is invisible
-// at the one place it is enforced.
-func TestPolishingRefusalExplainsTheRestriction(t *testing.T) {
+// TestPolishingIsReachableFromEveryBaseEngine pins the rule that replaced the
+// MayFly-only refusal. A sweep names its own engine through polishingOptimizer,
+// so the engine the base stage runs no longer decides whether the job may
+// polish at all. An unset field still resolves to MayFly, which is what keeps
+// every checkpoint and every recorded polishing figure describing the stage
+// that ran.
+func TestPolishingIsReachableFromEveryBaseEngine(t *testing.T) {
 	t.Parallel()
 
 	for _, engine := range []app.Optimizer{app.OptimizerCMAES, app.OptimizerDragonfly} {
@@ -152,27 +147,61 @@ func TestPolishingRefusalExplainsTheRestriction(t *testing.T) {
 			config.PolishingEnabled = true
 
 			err := config.Validate()
-			assertInvalidField(t, err, fieldPolishingEnabled)
-
-			wants := []string{
-				"own MayFly population",
-				"decision rather than a missing feature",
-				string(engine),
+			if err != nil {
+				t.Fatalf("Validate() rejected polishing under %q: %v", engine, err)
 			}
-			for _, want := range wants {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("error %q does not contain %q", err, want)
-				}
+
+			if got := config.ResolvedPolishingOptimizer(); got != app.OptimizerMayfly {
+				t.Errorf("ResolvedPolishingOptimizer() = %q, want %q", got, app.OptimizerMayfly)
 			}
 		})
 	}
 }
 
-// TestEngineOnlyRefusalsWithoutPolishingStayBrief is the counterweight to the
-// test above: only polishing carries an explanation. Every other engine-only
-// field is refused by naming its owner and stopping, so the detail cannot leak
-// onto refusals it does not describe.
-func TestEngineOnlyRefusalsWithoutPolishingStayBrief(t *testing.T) {
+// TestPolishingEngineRefusesDragonfly pins the one engine a sweep may not name.
+// The adapter loses every block in docs/dragonfly-poc-report.md, so the refusal
+// says that rather than only naming the field, or the decision reads as wiring
+// nobody has got to yet.
+func TestPolishingEngineRefusesDragonfly(t *testing.T) {
+	t.Parallel()
+
+	config := engineBaseConfig(t, app.OptimizerMayfly)
+	config.Mode = app.ModeBatch
+	config.PolishingEnabled = true
+	config.PolishingOptimizer = app.OptimizerDragonfly
+
+	err := config.Validate()
+	assertInvalidField(t, err, "polishingOptimizer")
+
+	for _, want := range []string{"proof of concept", "does not polish"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+}
+
+// TestPolishingEngineAcceptsCMAESUnderACMAESBase is the case the change exists
+// for: the block-coordinate sweep reachable from the engine that holds the
+// record.
+func TestPolishingEngineAcceptsCMAESUnderACMAESBase(t *testing.T) {
+	t.Parallel()
+
+	config := engineBaseConfig(t, app.OptimizerCMAES)
+	config.Mode = app.ModeBatch
+	config.PolishingEnabled = true
+	config.PolishingOptimizer = app.OptimizerCMAES
+
+	err := config.Validate()
+	if err != nil {
+		t.Fatalf("Validate() rejected a CMA-ES polisher under a CMA-ES base: %v", err)
+	}
+}
+
+// TestEngineOnlyRefusalsStayBrief pins the shape of an engine-only refusal now
+// that none of them carries a detail: the message names the field's owner and
+// stops. It is the counterweight to the polishing tests above -- polishing left
+// this list, and no explanation may leak onto the refusals that remain.
+func TestEngineOnlyRefusalsStayBrief(t *testing.T) {
 	t.Parallel()
 
 	config := dragonflyBaseConfig(t)
@@ -320,11 +349,11 @@ func TestScheduleCarriesTheEngineToEveryStage(t *testing.T) {
 	}
 }
 
-// TestScheduleRefusesAPolishStageUnderDragonfly is the campaign-level half of
-// the polishing refusal: polishing runs its own MayFly population, so a
-// document that asks for one under another engine has to fail at parse time
-// rather than quietly running MayFly for those stages.
-func TestScheduleRefusesAPolishStageUnderDragonfly(t *testing.T) {
+// TestScheduleAcceptsAPolishStepUnderCMAES is the campaign-level half of the
+// change: a document may now alternate extend and polish stages under the
+// engine that holds the record. ParseSchedule expands the document to validate
+// it, so acceptance here means every stage validated, not only the base.
+func TestScheduleAcceptsAPolishStepUnderCMAES(t *testing.T) {
 	t.Parallel()
 
 	document := `{
@@ -337,23 +366,30 @@ func TestScheduleRefusesAPolishStageUnderDragonfly(t *testing.T) {
     "batchSize": 8,
     "iters": 200,
     "popSize": 30,
-    "optimizer": "dragonfly"
+    "optimizer": "cmaes"
   },
-  "steps": [{"type": "polish"}]
+  "steps": [
+    {"type": "extend", "additionalCircles": 1},
+    {"type": "polish", "polishOptimizer": "cmaes"}
+  ]
 }`
 
-	// app.ParseSchedule expands the document to validate it, so the refusal
-	// arrives before a campaign is ever queued.
-	_, err := app.ParseSchedule([]byte(document))
-	if err == nil {
-		t.Fatal("app.ParseSchedule() accepted a polish stage under an engine that cannot polish")
+	parsed, err := app.ParseSchedule([]byte(document))
+	if err != nil {
+		t.Fatalf("app.ParseSchedule() rejected a polish step under cmaes: %v", err)
 	}
 
-	if !strings.Contains(err.Error(), fieldPolishingEnabled) {
-		t.Errorf("error = %v, want it to name polishingEnabled", err)
+	stages, err := parsed.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "dragonfly") {
-		t.Errorf("error = %v, want it to name the engine that runs", err)
+	polish := stages[len(stages)-1]
+	if polish.Kind != app.ScheduleStagePolish {
+		t.Fatalf("last stage kind = %q, want %q", polish.Kind, app.ScheduleStagePolish)
+	}
+
+	if got := polish.Config.ResolvedPolishingOptimizer(); got != app.OptimizerCMAES {
+		t.Errorf("ResolvedPolishingOptimizer() = %q, want %q", got, app.OptimizerCMAES)
 	}
 }

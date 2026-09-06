@@ -27,6 +27,34 @@ type BatchPolishOptions struct {
 	Observer           opt.Observer
 	OnEpoch            func(BatchPolishEpoch) error
 	OnSweep            func(BatchPolishProgress) error
+	// Continuation is the profile every sweep hands its optimizer. Nil selects
+	// DefaultPolishContinuation, which is the profile this function carried
+	// inline before the value was configurable, so an unset caller reproduces
+	// every polishing figure recorded under it.
+	Continuation *opt.ContinuationProfile
+}
+
+// DefaultPolishContinuation is the local search a sweep performs unless the
+// caller says otherwise. It is exported so a caller that varies one term can
+// start from the recorded profile rather than restating all four.
+//
+// A sweep is not the job's optimizer applied to a subset of the circles: it is
+// a search around a known incumbent, and these four numbers are what make it
+// one. LocalFraction 1 seeds the whole population from the incumbent,
+// CoordinateRate 0.2 keeps a perturbation from moving every variable of a
+// high-dimensional active set at once, and MaxVelocity caps MayFly's movement
+// per iteration -- it has no CMA-ES analogue and that adapter ignores it.
+//
+// Sigma is the one term callers vary, because it is the only one every engine
+// reads: MayFly perturbs its seeded population by it and CMA-ES takes it as the
+// initial sigma of the whole search.
+func DefaultPolishContinuation() *opt.ContinuationProfile {
+	return &opt.ContinuationProfile{
+		LocalFraction:  1,
+		Sigma:          0.02,
+		CoordinateRate: 0.2,
+		MaxVelocity:    0.02,
+	}
 }
 
 // BatchPolishStrategy selects how a polishing active set and its population
@@ -175,6 +203,11 @@ func PolishCircleBatchContext(
 		options.Strategy != BatchPolishResidualRegion &&
 		options.Strategy != BatchPolishContiguousWindow {
 		return nil, fmt.Errorf("%w: unsupported polishing strategy %q", ErrInvalidOptimizationInput, options.Strategy)
+	}
+
+	continuation := options.Continuation
+	if continuation == nil {
+		continuation = DefaultPolishContinuation()
 	}
 
 	fullSession, cleanup, err := sessionForJoint(base, circleCount)
@@ -424,12 +457,7 @@ func PolishCircleBatchContext(
 			Initial:         &initial,
 			AdditionalSeeds: additionalSeeds,
 			ResumeCount:     sweep,
-			Continuation: &opt.ContinuationProfile{
-				LocalFraction:  1,
-				Sigma:          0.02,
-				CoordinateRate: 0.2,
-				MaxVelocity:    0.02,
-			},
+			Continuation:    continuation,
 		}
 
 		if observer != nil {

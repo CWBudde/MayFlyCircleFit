@@ -56,6 +56,32 @@ func (c *JobConfig) ResolvedOptimizer() Optimizer {
 	return c.Optimizer
 }
 
+// ResolvedPolishingOptimizer reports the engine a polishing sweep searches its
+// active set with, treating an empty value as MayFly.
+//
+// The fallback is the same one ResolvedOptimizer needs and it exists for the
+// same reason: every checkpoint written before the field existed carries no
+// polishing engine, and must keep running the standard-variant MayFly polisher
+// the measurements in docs/polishing-budget-report.md and
+// docs/contiguous-window-polish-report.md describe.
+func (c *JobConfig) ResolvedPolishingOptimizer() Optimizer {
+	if c.PolishingOptimizer == "" {
+		return OptimizerMayfly
+	}
+
+	return c.PolishingOptimizer
+}
+
+// ResolvedPolishingSigma reports the seeded perturbation width a polishing
+// sweep searches at, treating zero as the recorded default.
+func (c *JobConfig) ResolvedPolishingSigma() float64 {
+	if c.PolishingSigma == 0 {
+		return DefaultPolishingSigma
+	}
+
+	return c.PolishingSigma
+}
+
 // engineOnlyField pairs a setting only one engine reads with the JSON field
 // that carries it, so one list drives the refusal. Both mayflyOnlyFields and
 // cmaesOnlyFields build such a list; the type names the shape, not the engine.
@@ -74,10 +100,11 @@ type engineOnlyField struct {
 // first. The three advanced knobs come from advancedKnobs, so this list and the
 // range check cannot disagree about what they are called.
 //
-// Polishing is on the list because the polishing stage runs its own MayFly
-// population by construction; the remaining polishing fields are inert without
-// polishingEnabled and are defaulted for every job, so refusing them would
-// reject configurations nobody wrote.
+// Polishing is deliberately not on the list. A sweep names its own engine
+// through polishingOptimizer, which validatePolishingEngine checks separately,
+// so a CMA-ES base stage may enable polishing; the remaining polishing fields
+// are inert without polishingEnabled and are defaulted for every job, so
+// refusing them would reject configurations nobody wrote.
 func (c *JobConfig) mayflyOnlyFields() []engineOnlyField {
 	fields := []engineOnlyField{
 		{field: "variant", set: c.Variant != ""},
@@ -89,22 +116,28 @@ func (c *JobConfig) mayflyOnlyFields() []engineOnlyField {
 		fields = append(fields, engineOnlyField{field: knob.field, set: knob.value != nil})
 	}
 
-	return append(fields, engineOnlyField{
-		field:  "polishingEnabled",
-		detail: polishingEngineDetail,
-		set:    c.PolishingEnabled,
-	})
+	return fields
 }
 
-// polishingEngineDetail is the second half of the polishing refusal. Without
-// it the message reads like a wiring gap -- the field belongs to another
-// engine, so presumably someone will connect it -- when it is a recorded
-// decision: a sweep is a fixed local search around the incumbent, and it runs
-// its own standard-variant MayFly population whatever engine the job names.
-// See docs/behavior-invariants.md, "Polishing is MayFly-only".
-const polishingEngineDetail = "a polishing sweep runs its own MayFly population whatever engine the job " +
-	"names, so this is a decision rather than a missing feature: run the base stage under " +
-	`"mayfly", or leave polishing off`
+// validatePolishingEngine checks the engine a sweep names, independently of the
+// engine the base stage runs.
+//
+// Dragonfly is refused rather than merely unmeasured. The adapter is a proof of
+// concept that loses all twelve blocks to MayFly in every arm of
+// docs/dragonfly-poc-report.md, so offering it here would add a configuration
+// surface, a cost projection and a checkpoint value for a stage nothing has
+// shown it could serve.
+func (c *JobConfig) validatePolishingEngine() error {
+	switch c.ResolvedPolishingOptimizer() {
+	case OptimizerMayfly, OptimizerCMAES:
+		return nil
+	case OptimizerDragonfly:
+		return invalid("polishingOptimizer", `must be one of "mayfly", "cmaes"; `+
+			`the "dragonfly" adapter is a proof of concept and does not polish`)
+	}
+
+	return invalid("polishingOptimizer", `must be one of "mayfly", "cmaes"`)
+}
 
 // validateOptimizerEngine rejects an unknown engine, and refuses the settings
 // an engine other than MayFly cannot honor.
