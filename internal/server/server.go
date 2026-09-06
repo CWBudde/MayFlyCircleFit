@@ -583,17 +583,12 @@ func (s *Server) requestResume(jobID string, allowOptimizerMismatch bool) (*stor
 		return nil, errResumeCheckpointOverflow
 	}
 
-	warning, err := opt.GuardCheckpointVersion(
-		optimizerLibraryName(checkpoint.Config.ResolvedOptimizer()),
-		checkpoint.OptimizerVersion,
-		s.optimizerVersion(checkpoint.Config.ResolvedOptimizer()),
-		allowOptimizerMismatch,
-	)
+	warnings, err := s.guardCheckpointVersions(checkpoint, allowOptimizerMismatch)
 	if err != nil {
 		return nil, err
 	}
 
-	if warning != "" {
+	for _, warning := range warnings {
 		slog.Warn("Optimizer version check", "job_id", jobID, "warning", warning)
 	}
 
@@ -1691,6 +1686,64 @@ func (s *Server) optimizerVersion(optimizer app.Optimizer) string {
 	return opt.LibraryVersion()
 }
 
+// guardCheckpointVersions decides whether a checkpoint may be resumed by this
+// build, across every optimizer library its job actually ran.
+//
+// A job that polishes with an engine other than the one its base stage searched
+// with links two libraries, and the base version alone speaks for only one of
+// them, so an upgrade of the other would continue the run silently -- exactly
+// what the guard exists to stop. Both are therefore checked, and the caller
+// gets every warning rather than only the first, because they describe
+// different libraries and suppressing one would hide a real comparability gap.
+func (s *Server) guardCheckpointVersions(checkpoint *store.Checkpoint, allowMismatch bool) ([]string, error) {
+	base := checkpoint.Config.ResolvedOptimizer()
+
+	warnings := make([]string, 0, 2)
+
+	warning, err := opt.GuardCheckpointVersion(
+		optimizerLibraryName(base),
+		checkpoint.OptimizerVersion,
+		s.optimizerVersion(base),
+		allowMismatch,
+	)
+	if err != nil {
+		// Returned unwrapped on purpose: the guard's message already names both
+		// versions and the way out of the refusal, and every caller turns it
+		// straight into an operator-facing 409 or exit status. A prefix here
+		// would say nothing the caller does not already know.
+		return nil, err //nolint:wrapcheck // the guard's message is the operator-facing one
+	}
+
+	if warning != "" {
+		warnings = append(warnings, warning)
+	}
+
+	polishing, ok := checkpoint.Config.SecondaryOptimizer()
+	if !ok {
+		return warnings, nil
+	}
+	// An empty recorded version here is the legacy case rather than a
+	// mismatch, and GuardCheckpointVersion already says so in the words the
+	// base field uses: a checkpoint written before the field existed carries
+	// nothing, and refusing every one of them would strand jobs already on
+	// disk.
+	warning, err = opt.GuardCheckpointVersion(
+		optimizerLibraryName(polishing),
+		checkpoint.PolishingOptimizerVersion,
+		s.optimizerVersion(polishing),
+		allowMismatch,
+	)
+	if err != nil {
+		return nil, err //nolint:wrapcheck // the guard's message is the operator-facing one
+	}
+
+	if warning != "" {
+		warnings = append(warnings, warning)
+	}
+
+	return warnings, nil
+}
+
 // optimizerLibraryName reports the human-readable library name used in
 // operator-facing messages, so a Dragonfly checkpoint is never described as a
 // MayFly one.
@@ -1805,18 +1858,13 @@ func (s *Server) forkJobFromCheckpoint(w http.ResponseWriter, jobID string, allo
 		return
 	}
 
-	warning, err := opt.GuardCheckpointVersion(
-		optimizerLibraryName(checkpoint.Config.ResolvedOptimizer()),
-		checkpoint.OptimizerVersion,
-		s.optimizerVersion(checkpoint.Config.ResolvedOptimizer()),
-		allowOptimizerMismatch,
-	)
+	warnings, err := s.guardCheckpointVersions(checkpoint, allowOptimizerMismatch)
 	if err != nil {
 		writeAPIError(w, http.StatusConflict, "optimizer_version_mismatch", err.Error())
 		return
 	}
 
-	if warning != "" {
+	for _, warning := range warnings {
 		slog.Warn("Optimizer version check", "job_id", jobID, "warning", warning)
 	}
 

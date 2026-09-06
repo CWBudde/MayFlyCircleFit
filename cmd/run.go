@@ -16,6 +16,7 @@ import (
 	"github.com/cwbudde/circlefit/internal/fit"
 	"github.com/cwbudde/circlefit/internal/fit/renderer"
 	"github.com/cwbudde/circlefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -378,6 +379,59 @@ func optimizerLibraryVersion(optimizer app.Optimizer) string {
 	}
 
 	return opt.LibraryVersion()
+}
+
+// guardCheckpointVersions decides whether a checkpoint may be resumed by this
+// build, across every optimizer library its job actually ran.
+//
+// It is the CLI's half of the decision internal/server/server.go makes in its
+// own guardCheckpointVersions, and it exists for the same reason: a job that
+// polishes with an engine other than the one its base stage searched with links
+// two libraries, so the base version alone would let an upgrade of the other
+// one continue the run unremarked. Both are checked and every warning is
+// returned, because the two describe different libraries.
+func guardCheckpointVersions(checkpoint *store.Checkpoint, allowMismatch bool) ([]string, error) {
+	base := checkpoint.Config.ResolvedOptimizer()
+
+	warnings := make([]string, 0, 2)
+
+	warning, err := opt.GuardCheckpointVersion(
+		optimizerLibraryName(base),
+		checkpoint.OptimizerVersion,
+		optimizerLibraryVersion(base),
+		allowMismatch,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if warning != "" {
+		warnings = append(warnings, warning)
+	}
+
+	polishing, ok := checkpoint.Config.SecondaryOptimizer()
+	if !ok {
+		return warnings, nil
+	}
+	// An empty recorded version is the legacy case rather than a mismatch, and
+	// GuardCheckpointVersion reports it in the words the base field already
+	// uses: a checkpoint written before the field existed carries nothing, and
+	// refusing every one of them would strand jobs already on disk.
+	warning, err = opt.GuardCheckpointVersion(
+		optimizerLibraryName(polishing),
+		checkpoint.PolishingOptimizerVersion,
+		optimizerLibraryVersion(polishing),
+		allowMismatch,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if warning != "" {
+		warnings = append(warnings, warning)
+	}
+
+	return warnings, nil
 }
 
 // optimizerLibraryName reports the human-readable library name used in
