@@ -41,6 +41,7 @@ const DEFAULTED_NUMBERS = [
 	"polishingPopSize",
 	"polishingStagnationIters",
 	"polishingMinImprovement",
+	"polishingSigma",
 	"convergencePatience",
 	"convergenceThreshold",
 ] as const;
@@ -179,6 +180,11 @@ export function buildCreateJobBody(form: CreateJobFormValues): CreateJobBody {
 
 	const strategy = text(form, "polishingStrategy");
 	if (strategy !== "") body.polishingStrategy = strategy;
+
+	// The sweep names its own engine, independently of the run's. Blank is
+	// "leave it to the defaults", which resolve it to MayFly.
+	const polisher = text(form, "polishingOptimizer");
+	if (polisher !== "") body.polishingOptimizer = polisher;
 
 	// Both keys travel together. An unchecked box is the only way the form can
 	// ask for convergence detection to be off, and a lone `convergenceEnabled:

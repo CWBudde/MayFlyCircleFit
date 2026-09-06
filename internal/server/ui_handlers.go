@@ -538,6 +538,8 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 	polishingPopSizeStr := r.FormValue("polishingPopSize")
 	polishingStagnationItersStr := r.FormValue("polishingStagnationIters")
 	polishingMinImprovementStr := r.FormValue("polishingMinImprovement")
+	polishingOptimizer := app.Optimizer(r.FormValue("polishingOptimizer"))
+	polishingSigmaStr := r.FormValue("polishingSigma")
 	seedStr := r.FormValue("seed")
 	convergenceEnabledStr := r.FormValue("convergenceEnabled")
 	convergencePatienceStr := r.FormValue("convergencePatience")
@@ -668,6 +670,12 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	polishingSigma, err := formFloatOrDefault(polishingSigmaStr, 0, "Polishing sigma")
+	if err != nil {
+		renderCreateError(w, r, formProject, err)
+		return
+	}
+
 	seed, err := strconv.ParseInt(seedStr, 10, 64)
 	if err != nil {
 		renderCreateJobError(w, r, "Invalid seed value", formProject)
@@ -757,6 +765,8 @@ func (s *Server) handleCreatePagePost(w http.ResponseWriter, r *http.Request) {
 		PolishingPopSize:         polishingPopSize,
 		PolishingStagnationIters: polishingStagnationIters,
 		PolishingMinImprovement:  polishingMinImprovement,
+		PolishingOptimizer:       polishingOptimizer,
+		PolishingSigma:           polishingSigma,
 		Seed:                     seed,
 		EnableSSIM:               enableSSIM,
 		ConvergenceEnabled:       convergenceEnabled,
