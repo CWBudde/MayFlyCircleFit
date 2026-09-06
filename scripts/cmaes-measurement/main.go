@@ -3052,7 +3052,12 @@ func (d scheduleDetail) scoringStages() []scheduleStage {
 // stage three is not a completed campaign with a usable final cost, and this
 // reports it as whatever the executor called it so the tally in collect names
 // the real state.
-func collectSchedule(config settings, client *http.Client, record manifestRow) (resultRow, string, error) {
+// collectSchedule scores one staged arm's campaign against budget, which is the
+// arm's whole planned spend and not necessarily config.budget: a polishing arm
+// spends its sweeps on top of the ladder cap every arm shares.
+func collectSchedule(
+	config settings, client *http.Client, record manifestRow, budget int,
+) (resultRow, string, error) {
 	detail, err := fetchSchedule(client, config.server, record.ScheduleID)
 	if err != nil {
 		return resultRow{}, "", fmt.Errorf("schedule %s: %w", record.ScheduleID, err)
@@ -3082,7 +3087,7 @@ func collectSchedule(config settings, client *http.Client, record manifestRow) (
 		// arm.
 		resolved.Stages = append(resolved.Stages, stageJob{
 			Stage: ordinal, JobID: stage.JobID, Project: string(app.DefaultProject),
-			Budget: config.budget, Share: config.budget / len(stages), Cumulative: true,
+			Budget: budget, Share: budget / len(stages), Cumulative: true,
 		})
 	}
 
@@ -3098,7 +3103,7 @@ func collectSchedule(config settings, client *http.Client, record manifestRow) (
 	// evaluation total and counts on from it. The last stage of an eight-stage
 	// arm carries samples numbered near the whole cap, so capping its trace at
 	// a stage's share would reject every one of them.
-	row, err := collectJob(config, string(app.DefaultProject), resolved, final, config.budget)
+	row, err := collectJob(config, string(app.DefaultProject), resolved, final, budget)
 	if err != nil {
 		return resultRow{}, detail.State, err
 	}
@@ -3163,8 +3168,34 @@ func stageRestartRuns(config settings, stages []stageJob) ([]opt.RestartRun, err
 	return runs, nil
 }
 
+// armBudgets is every registered arm's total planned spend, by name. A manifest
+// naming an arm the design does not have is a mismatched pair of files rather
+// than something to score against a guessed budget, so it is refused.
+func armBudgets(config settings) (map[string]int, error) {
+	plan, err := campaignDesign(config.design, config.budget)
+	if err != nil {
+		return nil, err
+	}
+
+	budgets := make(map[string]int, len(plan.arms))
+	for _, current := range plan.arms {
+		budgets[current.name] = current.totalPlannedEvaluations()
+	}
+
+	return budgets, nil
+}
+
 func collect(config settings) error {
 	manifest, err := readManifest(config.manifestPath)
+	if err != nil {
+		return err
+	}
+
+	// The scoring window is the arm's own planned spend. For every design
+	// before polish-engine that is config.budget for all arms; a polishing arm
+	// adds its sweeps, and scoring it against the shared ladder cap would
+	// reject every sample its final stage wrote.
+	budgets, err := armBudgets(config)
 	if err != nil {
 		return err
 	}
@@ -3179,7 +3210,7 @@ func collect(config settings) error {
 		// resolve to one scored result; only the staged path has to find the
 		// job first, and only it can report a state that is not a job's.
 		if record.ScheduleID != "" {
-			result, state, scheduleErr := collectSchedule(config, client, record)
+			result, state, scheduleErr := collectSchedule(config, client, record, budgets[record.Arm])
 			if scheduleErr != nil {
 				return scheduleErr
 			}
@@ -4837,6 +4868,28 @@ func polishEngineArm(base arm, name, engine string, interleaved bool) arm {
 // polish stage that reaches its own acceptance gate commits nothing. So this is
 // what the design asks for and not what the campaign will report, which is why
 // collect reads the spend columns rather than trusting this.
+// plannedPolishEvaluations is the sweep spend an arm adds on top of its
+// searching ladder. Zero for every arm without a polish step, which is every
+// arm in every design before polish-engine.
+//
+// It exists on arm rather than only in the design because collect needs it:
+// a polish stage's evaluation counter is cumulative like an extend's, so a
+// polishing arm's final stage reports the ladder's cap *plus* the sweeps, and
+// scoring it against the ladder's cap alone admits no sample at all.
+func (a arm) plannedPolishEvaluations() int {
+	if a.polishEngine == "" {
+		return 0
+	}
+
+	return int(polishEngineSweepSpend(a))
+}
+
+// totalPlannedEvaluations is everything an arm spends, which is the window a
+// sample from its last stage has to be admitted under.
+func (a arm) totalPlannedEvaluations() int {
+	return a.plannedEvaluations() + a.plannedPolishEvaluations()
+}
+
 func polishEngineSweepSpend(current arm) float64 {
 	sweeps := current.polishSweeps
 	if current.polishInterleaved {
