@@ -33,19 +33,20 @@ import (
 // switch in campaignDesign, the artifact defaults, and the tests that
 // enumerate them -- cannot drift apart.
 const (
-	designPhase21     = "phase21"
-	designLambda      = "lambda"
-	designPilot       = "stagnation-pilot"
-	designStag        = "stagnation"
-	designSplit       = "budget-split"
-	designLadder      = "restart-ladder"
-	designHunt        = "deep-hunt"
-	designCov         = "covariance"
-	designActive      = "active-cma"
-	designCovClean    = "covariance-clean"
-	designActiveFull  = "active-cma-full"
-	designShape       = "restart-shape"
-	designExtendWidth = "extend-width"
+	designPhase21      = "phase21"
+	designLambda       = "lambda"
+	designPilot        = "stagnation-pilot"
+	designStag         = "stagnation"
+	designSplit        = "budget-split"
+	designLadder       = "restart-ladder"
+	designHunt         = "deep-hunt"
+	designCov          = "covariance"
+	designActive       = "active-cma"
+	designCovClean     = "covariance-clean"
+	designActiveFull   = "active-cma-full"
+	designShape        = "restart-shape"
+	designExtendWidth  = "extend-width"
+	designPolishEngine = "polish-engine"
 )
 
 // huntBudget is the deep hunt's per-job evaluation cap. It is 1.94x
@@ -171,6 +172,34 @@ type arm struct {
 	// seeds a base stage that the run under test then extends and never
 	// revisits -- an extend freezes its prefix.
 	seeded bool
+	// polishEngine names the optimizer a polish step runs, and an empty value
+	// is an arm with no polish step at all. It reaches the document as
+	// steps[].polishOptimizer, which JobConfig grew on 2026-09-06; before that
+	// a CMA-ES schedule could not carry a polish step, which is why no earlier
+	// design has this field.
+	polishEngine string
+	// polishInterleaved puts a polish step after every extend rather than one
+	// after the last. It is the variable polish-engine exists to vary: an
+	// extend freezes its prefix, so an interleaved sweep is the only thing in
+	// the schedule that can revisit a circle the greedy ladder already
+	// committed.
+	polishInterleaved bool
+	// polishSweeps is maxSweeps on one polish stage. It is the budget knob the
+	// placement contrast is matched on: an interleaved arm runs stages of this
+	// many sweeps at every extend and a terminal arm runs one stage of
+	// stages*this, so the two spend the same nominal sweeps.
+	polishSweeps int
+	// The remaining polish fields are held identical across every polishing
+	// arm and are here so the design states them rather than inheriting
+	// whatever the server's defaults happen to be on the day it runs.
+	polishIters      int
+	polishPopSize    int
+	polishEpochs     int
+	polishActiveSet  int
+	polishStagnation int
+	polishStrategy   string
+	polishMinImprove float64
+	polishSigma      float64
 }
 
 // plannedEvaluations is the nominal cap an arm spends across every stage it
@@ -581,7 +610,7 @@ func parseFlags() settings {
 	flag.StringVar(&config.action, "action", "collect", "plan, submit, collect, preliminary, or analyze")
 	flag.StringVar(&config.design, "design", "phase21", "registered campaign design: phase21, lambda, stagnation-pilot, "+
 		"stagnation, budget-split, restart-ladder, deep-hunt, covariance, active-cma, covariance-clean, "+
-		"active-cma-full or restart-shape")
+		"active-cma-full, restart-shape, extend-width or polish-engine")
 	flag.StringVar(&config.server, "server", "http://localhost:8085", "serve base URL")
 	flag.StringVar(&config.dataRoot, "data-root", "./data/cmaes-phase11", "serve data root")
 	flag.StringVar(&config.reference, "ref", "example/MayFly-512.png", "reference image")
@@ -889,6 +918,52 @@ func campaignDesign(name string, budget int) (design, error) {
 				{control: "ext-w8", candidate: "ext-w4"},
 				{control: "ext-w8", candidate: "ext-w2"},
 				{control: "cold-w16", candidate: "ext-w8"},
+			},
+		}, nil
+	case designPolishEngine:
+		polish, polishErr := polishEngineArms(budget)
+		if polishErr != nil {
+			return design{}, polishErr
+		}
+
+		// Four contrasts in one Holm family, and they are not all the same
+		// kind of question.
+		//
+		// The primary is placement under CMA-ES, and it is the one the whole
+		// change was built for: an extend freezes its prefix, so a greedy
+		// ladder can never revisit circle 3 once circle 4 is committed, and an
+		// interleaved sweep is the only step in the format that can. It is
+		// matched by construction -- same ladder, same engine, same nominal
+		// sweeps, same groups per sweep -- so nothing but placement separates
+		// the arms.
+		//
+		// The second is the same question under MayFly. It is registered
+		// rather than derived because a placement effect that appears under one
+		// engine and not the other is a different finding from one that appears
+		// under both, and the lambda screen showed what deriving a family after
+		// the fact costs.
+		//
+		// The third is the engine ranking at equal placement. No such ranking
+		// exists for this stage: polishingOptimizer defaults to MayFly because
+		// MayFly is what every recorded polishing figure ran, not because
+		// anything measured it as the better sweep.
+		//
+		// The fourth asks whether the operator pays at all, on seeds no
+		// extend-width arm searched. It is deliberately **not**
+		// evaluation-matched: a sweep's budget is additional to the ladder's
+		// cap, and pretending otherwise would mean shrinking the ladder to pay
+		// for the sweep, which would answer a different question. Read it as a
+		// cost-benefit reading and not as a like-for-like contrast, and read
+		// the spend columns beside it.
+		return design{
+			name: name, baseline: "pol-term-cma", secondaryControl: "pol-none",
+			blocks: polishEngineBlocks, seedBase: polishEngineSeedBase, arms: polish,
+			reference: recordReference, circles: extendWidthCircles,
+			contrasts: []plannedContrast{
+				{control: "pol-term-cma", candidate: "pol-int-cma", primary: true},
+				{control: "pol-term-may", candidate: "pol-int-may"},
+				{control: "pol-term-may", candidate: "pol-term-cma"},
+				{control: "pol-none", candidate: "pol-term-cma"},
 			},
 		}, nil
 	case designActiveFull:
@@ -2751,19 +2826,66 @@ func schedulePayload(config settings, plan design, current arm, seed int64) map[
 			"covarianceMode": current.covariance, "restartStrategy": current.restartStrategy,
 			"initialCircles": warmStartSpecs(),
 		},
-		"steps": []map[string]any{{
+		"steps": scheduleSteps(current),
+	}
+
+	return document
+}
+
+// scheduleSteps is the step list of a staged arm's document.
+//
+// An arm with no polish engine is one extend stanza in the generator form,
+// which is every campaign before polish-engine and is byte-for-byte what
+// extend-width submitted. A polishing arm interleaves or appends polish
+// stanzas, and the two placements are the same total nominal sweeps by
+// construction -- see polishEngineArms.
+//
+// Interleaving cannot use repeat: the generator form unrolls one stanza, and
+// alternating two kinds of stage needs the pairs written out. Eight pairs is
+// sixteen stanzas, comfortably inside both MaxScheduleStages and the 128 KiB
+// the API allows.
+func scheduleSteps(current arm) []map[string]any {
+	extend := func(repeat int) map[string]any {
+		return map[string]any{
 			"type":              "extend",
-			"repeat":            current.stages,
+			"repeat":            repeat,
 			"additionalCircles": current.width,
 			"batchSize":         current.width,
 			"epochs":            max(current.optimizerEpochs, 1),
 			"iters":             current.iters,
 			"popSize":           current.popSize,
 			"restarts":          current.optimizerRestarts,
-		}},
+		}
 	}
 
-	return document
+	if current.polishEngine == "" {
+		return []map[string]any{extend(current.stages)}
+	}
+
+	polish := map[string]any{
+		"type":            "polish",
+		"polishOptimizer": current.polishEngine,
+		"sigma":           current.polishSigma,
+		"strategy":        current.polishStrategy,
+		"activeSetSize":   current.polishActiveSet,
+		"maxSweeps":       current.polishSweeps,
+		"stagnationIters": current.polishStagnation,
+		"minImprovement":  current.polishMinImprove,
+		"epochs":          current.polishEpochs,
+		"iters":           current.polishIters,
+		"popSize":         current.polishPopSize,
+	}
+
+	if !current.polishInterleaved {
+		return []map[string]any{extend(current.stages), polish}
+	}
+
+	steps := make([]map[string]any, 0, 2*current.stages)
+	for range current.stages {
+		steps = append(steps, extend(1), polish)
+	}
+
+	return steps
 }
 
 // submitSchedule posts a staged arm's campaign document and returns the
@@ -2868,13 +2990,25 @@ func fetchSchedule(client *http.Client, server, scheduleID string) (scheduleDeta
 	return detail, nil
 }
 
-// extendStages returns the campaign's extend stages in index order, which is
-// draw order: the last of them is the run whose cost is the campaign's answer.
-func (d scheduleDetail) extendStages() []scheduleStage {
+// scoringStages returns the campaign's searching stages in index order, which
+// is the order they ran: the last of them is the run whose cost is the
+// campaign's answer.
+//
+// Both kinds count. An extend freezes its prefix and returns the whole vector
+// it grew, and a polish rewrites part of that vector in place and returns the
+// whole vector too, so either can be the last thing that touched the answer.
+// Taking the last extend instead would silently discard a terminal sweep --
+// which is exactly the arm polish-engine registers -- and report the arm's
+// cost as though it had never polished.
+//
+// The base stage is not a searching stage and is excluded: it is one
+// generation of app.MinPopulation individuals whose only job is to install
+// recordCircles.
+func (d scheduleDetail) scoringStages() []scheduleStage {
 	stages := make([]scheduleStage, 0, len(d.Stages))
 
 	for _, stage := range d.Stages {
-		if stage.Kind == "extend" {
+		if stage.Kind == "extend" || stage.Kind == "polish" {
 			stages = append(stages, stage)
 		}
 	}
@@ -2913,9 +3047,9 @@ func collectSchedule(config settings, client *http.Client, record manifestRow) (
 		return resultRow{}, detail.State, nil
 	}
 
-	stages := detail.extendStages()
+	stages := detail.scoringStages()
 	if len(stages) == 0 {
-		return resultRow{}, detail.State, fmt.Errorf("schedule %s completed with no extend stage", record.ScheduleID)
+		return resultRow{}, detail.State, fmt.Errorf("schedule %s completed with no searching stage", record.ScheduleID)
 	}
 
 	resolved := record
@@ -3091,6 +3225,34 @@ func collect(config settings) error {
 // printPlan reports exactly what submit would create, without creating it.
 // A campaign is expensive and a manifest may only be written once, so the arm
 // shapes are worth reading before 12 blocks of them are queued.
+// describePolish names an arm's polish step for the plan table. A campaign
+// whose whole variable is the sweep must be able to tell its arms apart in the
+// printout it registers, and every column before this one is identical across
+// all five polish-engine arms.
+//
+// The sweep's evaluation spend is deliberately not here. It depends on how many
+// sweeps actually run before the stagnation window closes them, and on how many
+// evaluations per iteration the engine spends -- which differs between MayFly
+// and CMA-ES and is the reason the engine contrast reports measured spend
+// beside it rather than claiming a matched one.
+func describePolish(current arm) string {
+	if current.polishEngine == "" {
+		return "none"
+	}
+
+	placement := "terminal"
+	stages := 1
+
+	if current.polishInterleaved {
+		placement = "interleaved"
+		stages = current.stages
+	}
+
+	return fmt.Sprintf("%s %s, %d x %d sweeps of %d x %d",
+		placement, current.polishEngine, stages, current.polishSweeps,
+		current.polishIters, current.polishPopSize)
+}
+
 func printPlan(config settings) error {
 	plan, err := campaignDesign(config.design, config.budget)
 	if err != nil {
@@ -3108,8 +3270,8 @@ func printPlan(config settings) error {
 		plan.seedBase+1, plan.seedBase+int64(plan.blocks))
 	fmt.Printf("fixture %s, %d circles\n", reference, circles)
 	fmt.Println("| arm | optimizer | shape | covariance | restarts | epochs | popSize (lambda) | iters | " +
-		"sigma | active | start | stagnation | evaluations |")
-	fmt.Println("| --- | --- | --- | --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | ---: |")
+		"sigma | active | start | stagnation | polish | evaluations |")
+	fmt.Println("| --- | --- | --- | --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- | ---: |")
 
 	for _, current := range plan.arms {
 		covariance, restarts := current.covariance, current.restartStrategy
@@ -3163,11 +3325,11 @@ func printPlan(config settings) error {
 			}
 		}
 
-		fmt.Printf("| `%s` | %s | %s | %s | %s | %d | %d | %d | %s | %s | %s | %s | %s |\n",
+		fmt.Printf("| `%s` | %s | %s | %s | %s | %d | %d | %d | %s | %s | %s | %s | %s | %s |\n",
 			current.name, current.optimizer, describeShape(current, circles), covariance, restarts,
 			max(current.optimizerEpochs, 1),
 			current.popSize, current.iters, sigma, active, start,
-			describeStagnation(current), evaluations)
+			describeStagnation(current), describePolish(current), evaluations)
 	}
 
 	if plan.secondaryControl != "" {
@@ -4441,4 +4603,204 @@ func pairedStatistics(differences []float64) (float64, float64, float64, int) {
 	}
 
 	return mean, deviation, statistic, wins
+}
+
+// The polish-engine campaign's fixed shape. Every one of these is a design
+// input rather than a tunable: the campaign varies exactly two things, where a
+// polish step sits and which engine runs it, and holds everything else at the
+// extend-width winner's settings so the two variables are the only ones moving.
+const (
+	// polishEngineSeedBase follows extendWidthSeedBase's block, so no seed in
+	// this campaign has been searched by any earlier one.
+	polishEngineSeedBase = 130_000
+	polishEngineBlocks   = 12
+	// The extend ladder is ext-w1 verbatim -- eight extends of one circle,
+	// full covariance at lambda 64, budget-filling cold restarts, twenty
+	// nominal attempts per stage. It won extend-width by +39.65 over ext-w8
+	// (t = +14.94, 12/12), so it is the ladder a default would ship and the
+	// only one worth asking the polish question about.
+	polishEngineStages = 8
+	polishEngineWidth  = 1
+	// polishEngineSweeps is maxSweeps on one *interleaved* polish stage. A
+	// terminal arm runs polishEngineStages times this in a single stage, which
+	// is what matches the two placements on nominal sweeps.
+	polishEngineSweeps = 4
+	// The rest reproduce the pilot that measured the operator worth measuring:
+	// +13.50 at sixteen circles and +3.34 at eight, both from exactly these
+	// settings. Changing any of them would measure a different sweep.
+	//
+	// activeSetSize 8 is also what makes the two placements cost the same.
+	// A sweep is *one* optimizer run over exactly activeSetSize circles, not
+	// one run per group of them, so a sweep's spend is independent of how many
+	// circles the vector holds: an interleaved stage polishing nine circles and
+	// a terminal stage polishing sixteen both optimize 8 x 7 = 56 dimensions
+	// and both freeze the rest. Measured, not assumed -- a two-sweep probe
+	// spent exactly 2 x epochs x iters x popSize evaluations at nine circles,
+	// which is one run per sweep.
+	polishEngineActiveSet  = 8
+	polishEngineStrategy   = "hybrid-overlap"
+	polishEngineEpochs     = 2
+	polishEnginePopSize    = 50
+	polishEngineIters      = 400
+	polishEngineMinImprove = 1e-4
+	// polishEngineMayflyEvalRatio is how many evaluations MayFly spends per
+	// iteration, as a multiple of popSize. CMA-ES spends exactly popSize; a
+	// MayFly sweep at identical settings spent 250,000 evaluations against
+	// CMA-ES's 80,000 over the same 1,600 iterations, which is 25/8 to the
+	// evaluation.
+	//
+	// It is here because the engine contrast is otherwise not a contrast. Two
+	// sweeps given the same iteration count are two differently sized searches,
+	// and this repository matches on evaluations everywhere else. So the MayFly
+	// arms run polishEngineMayflyIters instead, and pay for the same budget in
+	// fewer, wider iterations. That asymmetry is the declared cost of matching
+	// and belongs in the report beside the result.
+	polishEngineMayflyEvalRatio = 25.0 / 8.0
+	polishEngineMayflyIters     = 128
+	// polishEngineSigma is app.DefaultPolishingSigma written out. For MayFly it
+	// is the seed perturbation the continuation profile has always used; for
+	// CMA-ES it is the initial step size of the sweep. It is the one quantity
+	// in the sweep that both engines read, which is why the design pins it
+	// rather than letting each adapter pick.
+	polishEngineSigma = 0.02
+)
+
+// polishEngineArms builds the 2x2 of polish placement against polish engine,
+// plus the unpolished control.
+//
+// The extend half of every arm is identical -- ext-w1, evaluation-matched to
+// budget by construction -- so the arms differ only in what follows an extend.
+// That is deliberate and it is also the campaign's main limitation: the polish
+// spend is *additional* to the cap, not carved out of it, because a sweep and a
+// restart ladder do not share a budget in any way the schedule format can
+// express. The four polishing arms therefore spend the same amount as each
+// other and more than the control, and the contrast against the control is
+// registered as unmatched rather than dressed up as matched.
+func polishEngineArms(budget int) ([]arm, error) {
+	base, err := extendWidthStagedArm("pol-none", polishEngineStages, budget/extendWidthLambda,
+		polishEngineStages*polishEngineWidth)
+	if err != nil {
+		return nil, err
+	}
+
+	if base.stages != polishEngineStages || base.width != polishEngineWidth {
+		return nil, fmt.Errorf("pol-none built %d stages of %d, want %d of %d",
+			base.stages, base.width, polishEngineStages, polishEngineWidth)
+	}
+
+	arms := []arm{base}
+
+	for _, spec := range []struct {
+		name        string
+		engine      string
+		interleaved bool
+	}{
+		{"pol-term-cma", "cmaes", false},
+		{"pol-int-cma", "cmaes", true},
+		{"pol-term-may", "mayfly", false},
+		{"pol-int-may", "mayfly", true},
+	} {
+		arms = append(arms, polishEngineArm(base, spec.name, spec.engine, spec.interleaved))
+	}
+
+	// The extend halves must still agree on the cap, because that is the part
+	// of the spend the campaign does match. plannedEvaluations reports the
+	// extend ladder only; a sweep's spend is not expressible from an arm and is
+	// measured at collect instead.
+	for _, built := range arms {
+		if spend := built.plannedEvaluations(); spend != budget {
+			return nil, fmt.Errorf("%s plans %d extend evaluations, want %d", built.name, spend, budget)
+		}
+
+		if built.polishEngine == "" {
+			continue
+		}
+
+		if spend := polishEngineSweepSpend(built); spend != polishEngineSweepBudget() {
+			return nil, fmt.Errorf("%s plans %.0f polish evaluations, want %.0f; the engines would not be matched",
+				built.name, spend, polishEngineSweepBudget())
+		}
+	}
+
+	nominal := polishEngineSweeps * polishEngineStages
+
+	for _, built := range arms[1:] {
+		total := built.polishSweeps
+		if built.polishInterleaved {
+			total = built.polishSweeps * polishEngineStages
+		}
+
+		if total != nominal {
+			return nil, fmt.Errorf("%s plans %d nominal sweeps, want %d; the placements would not be matched",
+				built.name, total, nominal)
+		}
+	}
+
+	return arms, nil
+}
+
+// polishEngineArm dresses the shared extend ladder with one arm's sweep.
+// Everything but the engine and the placement is a design constant, so this is
+// where the campaign's "hold everything else" is actually held.
+func polishEngineArm(base arm, name, engine string, interleaved bool) arm {
+	polished := base
+	polished.name = name
+	polished.polishEngine = engine
+	polished.polishInterleaved = interleaved
+	// A terminal arm runs the interleaved arm's whole sweep allowance in one
+	// stage, which is what matches the two placements on nominal sweeps.
+	polished.polishSweeps = polishEngineSweeps
+
+	if !interleaved {
+		polished.polishSweeps = polishEngineSweeps * polishEngineStages
+	}
+
+	polished.polishIters = polishEngineIters
+	if engine == "mayfly" {
+		polished.polishIters = polishEngineMayflyIters
+	}
+
+	polished.polishPopSize = polishEnginePopSize
+	polished.polishEpochs = polishEngineEpochs
+	polished.polishActiveSet = polishEngineActiveSet
+	// The stagnation window is the arm's own iteration count, which is the
+	// widest app.JobConfig accepts and the nearest thing to leaving the
+	// criterion off. Pinning it to a constant instead would arm it on the
+	// MayFly arms and not on the CMA-ES ones.
+	polished.polishStagnation = polished.polishIters
+	polished.polishStrategy = polishEngineStrategy
+	polished.polishMinImprove = polishEngineMinImprove
+	polished.polishSigma = polishEngineSigma
+
+	return polished
+}
+
+// polishEngineSweepSpend is the evaluations an arm's sweeps cost across the
+// whole campaign, nominal. One sweep is one optimizer run of epochs x iters
+// generations over activeSetSize circles, and only MayFly spends more than
+// popSize evaluations in a generation.
+//
+// Nominal is the right word: a sweep that stops improving closes early, and a
+// polish stage that reaches its own acceptance gate commits nothing. So this is
+// what the design asks for and not what the campaign will report, which is why
+// collect reads the spend columns rather than trusting this.
+func polishEngineSweepSpend(current arm) float64 {
+	sweeps := current.polishSweeps
+	if current.polishInterleaved {
+		sweeps *= current.stages
+	}
+
+	perGeneration := float64(current.polishPopSize)
+	if current.polishEngine == "mayfly" {
+		perGeneration *= polishEngineMayflyEvalRatio
+	}
+
+	return float64(sweeps*current.polishEpochs*current.polishIters) * perGeneration
+}
+
+// polishEngineSweepBudget is the sweep budget every polishing arm is held to,
+// stated as the CMA-ES arm's arithmetic because that is the engine whose
+// evaluations-per-generation is exactly popSize.
+func polishEngineSweepBudget() float64 {
+	return float64(polishEngineSweeps * polishEngineStages * polishEngineEpochs * polishEngineIters * polishEnginePopSize)
 }

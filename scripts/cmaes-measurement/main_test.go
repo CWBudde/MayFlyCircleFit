@@ -2641,3 +2641,199 @@ func TestExtendWidthSeedsTheStandingRecord(t *testing.T) {
 		t.Fatalf("warmStartSpecs has %d circles, want %d", len(specs), extendWidthBaseCircles)
 	}
 }
+
+// TestPolishEngineDocumentsExpandAsRegistered is the same pre-flight the
+// extend-width test runs, extended to the thing this campaign adds: a polish
+// stage inside a CMA-ES schedule, which no document could carry before
+// polishingEnabled left JobConfig.mayflyOnlyFields().
+//
+// It asserts the two properties the placement contrast is matched on -- equal
+// nominal sweeps and an identical extend ladder -- because both are established
+// by construction and a construction that quietly stopped holding would produce
+// a campaign that measured spend rather than placement.
+func TestPolishEngineDocumentsExpandAsRegistered(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designPolishEngine, defaultBudget)
+	if err != nil {
+		t.Fatalf("polish-engine: %v", err)
+	}
+
+	config := settings{project: defaultProject, reference: recordReference, workers: 8}
+	sweeps := map[string]int{}
+
+	for _, current := range plan.arms {
+		body, marshalErr := json.Marshal(schedulePayload(config, plan, current, polishEngineSeedBase+1))
+		if marshalErr != nil {
+			t.Fatalf("%s: %v", current.name, marshalErr)
+		}
+
+		document, parseErr := app.ParseSchedule(body)
+		if parseErr != nil {
+			t.Fatalf("%s: app refused the document: %v", current.name, parseErr)
+		}
+
+		stages, expandErr := document.Expand()
+		if expandErr != nil {
+			t.Fatalf("%s: expand: %v", current.name, expandErr)
+		}
+
+		extends, polishes, total := 0, 0, 0
+
+		for _, stage := range stages {
+			switch stage.Kind {
+			case app.ScheduleStageBase:
+				continue
+			case app.ScheduleStageExtend:
+				extends++
+
+				if stage.Config.PolishingEnabled {
+					t.Errorf("%s stage %d polishes during an extend", current.name, stage.Index)
+				}
+			case app.ScheduleStagePolish:
+				polishes++
+				total += stage.Config.PolishingMaxSweeps
+
+				assertPolishStage(t, current, stage)
+			}
+		}
+
+		if extends != current.stages {
+			t.Errorf("%s expands to %d extends, want %d", current.name, extends, current.stages)
+		}
+
+		if want := expectedPolishStages(current); polishes != want {
+			t.Errorf("%s expands to %d polish stages, want %d", current.name, polishes, want)
+		}
+
+		// The last searching stage is what collectSchedule scores, so a
+		// terminal arm has to end on its sweep and not on an extend.
+		if last := stages[len(stages)-1]; current.polishEngine != "" && last.Kind != app.ScheduleStagePolish {
+			t.Errorf("%s ends on %s, want the scored stage to be the polish", current.name, last.Kind)
+		}
+
+		if current.polishEngine != "" {
+			sweeps[current.name] = total
+		}
+	}
+
+	// Every polishing arm must plan the same nominal sweeps, whichever
+	// placement it uses. This is the placement contrast's matching condition.
+	var first string
+
+	for name, total := range sweeps {
+		if first == "" {
+			first = name
+
+			continue
+		}
+
+		if total != sweeps[first] {
+			t.Errorf("%s plans %d nominal sweeps and %s plans %d; the placements are not matched",
+				name, total, first, sweeps[first])
+		}
+	}
+
+	if got := sweeps[first]; got != polishEngineSweeps*polishEngineStages {
+		t.Errorf("nominal sweeps = %d, want %d", got, polishEngineSweeps*polishEngineStages)
+	}
+}
+
+func expectedPolishStages(current arm) int {
+	switch {
+	case current.polishEngine == "":
+		return 0
+	case current.polishInterleaved:
+		return current.stages
+	default:
+		return 1
+	}
+}
+
+// assertPolishStage pins every sweep setting the design states, because a
+// polish stage that silently fell back to a server default would make the
+// engine contrast a comparison of two different sweeps.
+func assertPolishStage(t *testing.T, current arm, stage app.ScheduleStage) {
+	t.Helper()
+
+	if !stage.Config.PolishingEnabled || !stage.Config.PolishingOnly {
+		t.Errorf("%s stage %d is not a polish-only stage", current.name, stage.Index)
+	}
+
+	if got := string(stage.Config.PolishingOptimizer); got != current.polishEngine {
+		t.Errorf("%s stage %d polishes with %q, want %q", current.name, stage.Index, got, current.polishEngine)
+	}
+
+	if got := stage.Config.PolishingSigma; got != current.polishSigma {
+		t.Errorf("%s stage %d sigma = %v, want %v", current.name, stage.Index, got, current.polishSigma)
+	}
+
+	if got := string(stage.Config.PolishingStrategy); got != current.polishStrategy {
+		t.Errorf("%s stage %d strategy = %q, want %q", current.name, stage.Index, got, current.polishStrategy)
+	}
+
+	if got := stage.Config.PolishingActiveSetSize; got != current.polishActiveSet {
+		t.Errorf("%s stage %d active set = %d, want %d", current.name, stage.Index, got, current.polishActiveSet)
+	}
+
+	if got := stage.Config.PolishingMaxSweeps; got != current.polishSweeps {
+		t.Errorf("%s stage %d sweeps = %d, want %d", current.name, stage.Index, got, current.polishSweeps)
+	}
+
+	if got := stage.Config.PolishingIters; got != current.polishIters {
+		t.Errorf("%s stage %d iters = %d, want %d", current.name, stage.Index, got, current.polishIters)
+	}
+
+	if got := stage.Config.PolishingPopSize; got != current.polishPopSize {
+		t.Errorf("%s stage %d popSize = %d, want %d", current.name, stage.Index, got, current.polishPopSize)
+	}
+
+	if got := stage.Config.PolishingEpochs; got != current.polishEpochs {
+		t.Errorf("%s stage %d epochs = %d, want %d", current.name, stage.Index, got, current.polishEpochs)
+	}
+}
+
+// TestPolishEngineMatchesTheEnginesOnEvaluations pins the correction a spend
+// pre-flight forced on this design.
+//
+// A sweep given the same iteration count is not the same search on both
+// engines: CMA-ES spends exactly popSize evaluations per generation and MayFly
+// spent 25/8 of that, measured as 250,000 against 80,000 over an identical
+// 1,600 iterations. Matching on iterations would have made the engine contrast
+// a comparison of a search with a search three times its size.
+func TestPolishEngineMatchesTheEnginesOnEvaluations(t *testing.T) {
+	t.Parallel()
+
+	plan, err := campaignDesign(designPolishEngine, defaultBudget)
+	if err != nil {
+		t.Fatalf("polish-engine: %v", err)
+	}
+
+	polishing := 0
+
+	for _, current := range plan.arms {
+		if current.polishEngine == "" {
+			continue
+		}
+
+		polishing++
+
+		if spend := polishEngineSweepSpend(current); spend != polishEngineSweepBudget() {
+			t.Errorf("%s spends %.0f polish evaluations, want %.0f",
+				current.name, spend, polishEngineSweepBudget())
+		}
+
+		// The stagnation window has to be the arm's own iteration count.
+		// app.JobConfig refuses a window wider than iters, and a window
+		// narrower than iters on one engine only would arm a criterion the
+		// other does not have.
+		if current.polishStagnation != current.polishIters {
+			t.Errorf("%s stagnation window %d, want its own iters %d",
+				current.name, current.polishStagnation, current.polishIters)
+		}
+	}
+
+	if polishing != 4 {
+		t.Fatalf("polish-engine registers %d polishing arms, want 4", polishing)
+	}
+}

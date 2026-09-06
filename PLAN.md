@@ -203,6 +203,42 @@ anything new against its figures.
       the blocker it named is gone: `polishingEnabled` left
       `JobConfig.mayflyOnlyFields()` on 2026-09-06, so a CMA-ES schedule can now
       carry a polish step.
+      **Registered 2026-09-06 as `-design polish-engine`**, the campaign that
+      asks the polish half. Five arms on the extend-width winner's ladder --
+      `ext-w1` verbatim, full covariance at `lambda` 64, budget-filling cold
+      restarts, twenty nominal attempts per stage -- differing only in what
+      follows an extend: `pol-none` polishes not at all, `pol-term-cma` and
+      `pol-term-may` run one terminal sweep stage of 32 sweeps, and
+      `pol-int-cma` and `pol-int-may` run four sweeps after every extend.
+      Twelve blocks, seeds 130001-130012, 6,502,400 extend evaluations per arm
+      and 1,280,000 sweep evaluations per polishing arm.
+      Primary contrast `pol-int-cma` against `pol-term-cma` -- placement, the
+      question the whole `polishingOptimizer` change was built to ask, since an
+      extend freezes its prefix and an interleaved sweep is the only step the
+      format has that can revisit a committed circle. Registered alongside it:
+      the same placement question under MayFly, the engine ranking at equal
+      placement, and `pol-term-cma` against `pol-none`.
+      **Two pre-flights changed the design rather than merely confirming it.**
+      A sweep is *one* optimizer run over `activeSetSize` circles and not one
+      per group of them, so its spend is independent of the circle count -- an
+      eight-stage interleaved probe spent exactly 40,003 evaluations at every
+      stage from nine circles to sixteen -- which is what makes the two
+      placements comparable at all. And **MayFly spends 25/8 of CMA-ES's
+      evaluations per iteration**: identical sweep settings cost 250,000 against
+      80,000 over the same 1,600 iterations. Matching on iterations would have
+      compared a search against one three times its size, so the MayFly arms run
+      128 iterations to the CMA-ES arms' 400, verified at 80,277 against 80,005
+      on a re-probe. The declared cost of that choice is an iteration asymmetry,
+      518 MayFly iterations against 1,606, and it belongs in the report.
+      **The fourth contrast is deliberately not evaluation-matched.** A sweep's
+      budget is additional to the ladder's cap, because a sweep and a restart
+      ladder do not share a budget in any way the schedule format can express,
+      and carving the ladder down to pay for the sweep would answer a different
+      question. Read it as cost-benefit, with the spend columns beside it.
+      **Not licensed by it, whatever it returns:** a `polishingOptimizer`
+      default. The pilot behind this campaign is descriptive, and no engine
+      ranking for this stage exists yet -- MayFly is the default because every
+      recorded polishing figure ran it, not because anything measured it.
       **Two facts the campaign's pre-flights established**, both recorded here
       because they are properties of the system rather than of the campaign.
       `initialCircles` quantizes colour to eight bits, so a base seeded from the
