@@ -130,6 +130,39 @@ func (c *JobConfig) validateCMAESCovariance() error {
 	return nil
 }
 
+// validatePolishingDimensions holds a CMA-ES polishing sweep to the same
+// full-covariance limit the base stage is held to.
+//
+// The sweep pins full covariance rather than reading covarianceMode, so the
+// limit cannot be dodged by naming a cheaper mode; it has to be enforced on the
+// only quantity the caller still controls, the size of the active set. That
+// size is normally far below the limit -- the default five circles is 35
+// dimensions -- but polishingActiveSetSize is bounded by MaxBatchSize, so an
+// active set of 74 circles and up would launch a dense search of exactly the
+// size the limit exists to refuse.
+//
+// validateCMAESCovariance cannot see this. It measures optimizerDimensions,
+// which reads batchSize in batch mode, and a polishing job may set a batch far
+// smaller than its active set -- so a CMA-ES base stage passes that check while
+// its sweep runs 700 dimensions, and a MayFly base stage never reaches it at
+// all.
+//
+// It is a no-op for a MayFly sweep, and for a job that does not polish.
+func (c *JobConfig) validatePolishingDimensions() error {
+	if !c.PolishingEnabled || c.ResolvedPolishingOptimizer() != OptimizerCMAES {
+		return nil
+	}
+
+	if c.PolishingActiveSetSize*ParametersPerCircle > MaxCMAESFullDimensions {
+		return invalid("polishingActiveSetSize", fmt.Sprintf(
+			"a cmaes polishing sweep searches full covariance, which supports at most %d dimensions, "+
+				"so the active set may hold at most %d circles",
+			MaxCMAESFullDimensions, MaxCMAESFullDimensions/ParametersPerCircle))
+	}
+
+	return nil
+}
+
 func (c *JobConfig) validateCMAESRestarts() error {
 	strategy := c.ResolvedCMAESRestartStrategy()
 	switch strategy {
