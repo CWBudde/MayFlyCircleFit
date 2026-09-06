@@ -165,13 +165,13 @@ behavior is production-ready.
   seven-coordinate block per circle) or `separable` there. IPOP/BIPOP spend at
   most `iters * popSize` evaluations across their internal runs and require
   `optimizerRestarts=1`; fixed attempts remain available with
-  `restartStrategy: "none"`. Polishing remains MayFly-only and is rejected,
-  not ignored, for CMA-ES jobs and schedules -- including the `/polish`
-  endpoint, which inherits its parent's engine, so a completed CMA-ES job
-  cannot be continued as a polish. That is a recorded decision rather than an
-  unfinished seam; see "Polishing is MayFly-only" in
+  `restartStrategy: "none"`. A CMA-ES job may enable polishing: the sweep names
+  its own engine through `polishingOptimizer`, which defaults to MayFly, so a
+  completed CMA-ES job can be continued through `/polish` and a schedule may
+  alternate extend and polish steps. `dragonfly` is refused as a polisher. See
+  "Polishing names its own engine" in
   [`docs/behavior-invariants.md`](behavior-invariants.md) for what a sweep
-  actually runs and what would reopen the question.
+  actually runs and what is still unmeasured about it.
 
 - CPU and OpenCL support joint, sequential, and batch pipelines; only CPU
   supports a job-level custom base canvas (`canvasPath`). Staged OpenCL sessions
@@ -403,6 +403,22 @@ behavior is production-ready.
   `internal/opt` ones.
 - MayFly's constraint handling and convergence-curve CSV/JSON export are unused.
   The problem is box-bounded, and trace ownership belongs to the store package.
+- **A hex colour in `initialCircles` is lossy, and the loss is now larger than
+  the effects being measured.** `color` is `#rrggbb`, so each channel round
+  trips through eight bits. Measured on the eight-circle record: re-seeding a
+  polished solution costs **3.73** against a polishing gain of **3.34**, so the
+  codec eats more than the search found and the re-seeded run starts *worse*
+  than the vector it came from. At sixteen circles the same round trip costs
+  0.93. Give `rgb` instead -- three exact `[0,1]` channels, mutually exclusive
+  with `color` -- whenever the arrangement came out of a run rather than out of
+  an editor.
+
+  Only the input side ever had this problem. `circles.json`
+  (`store.CircleData`) and the `params.json` export both carry float channels
+  already, so converting one into a seed is a rename: `cr`/`cg`/`cb` become the
+  three entries of `rgb`, and `x`, `y`, `r` and `opacity` carry across
+  unchanged. Neither file can be pasted in whole, because the strict decoder
+  refuses the extra keys they carry.
 
 ## CI and release status
 

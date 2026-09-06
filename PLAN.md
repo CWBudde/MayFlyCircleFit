@@ -173,12 +173,14 @@ anything new against its figures.
       vector rather than a cold population, so the collapse dynamics there are
       unmeasured. **The extend half is now expressible**: `steps[].restarts`
       landed 2026-09-05 in both shapes, so a document can put a ladder on the
-      extend stages of a campaign without touching the base. **The polish half
-      is not, and not for want of a format key**: the polisher runs under
-      `WithEpochs` alone, so measuring restarts on a sweep means wrapping it in
-      `WithRestarts` first and deciding what an attempt of a sweep even is — a
-      whole sweep chain, or one sweep. Do that deliberately, not as a
-      side effect of writing the campaign.
+      extend stages of a campaign without touching the base. **A polish step is
+      now expressible under a CMA-ES base too**, since a sweep names its own
+      engine (2026-09-06), so an alternating extend/polish campaign can be
+      written. **Restarts on a sweep are still not expressible**, and not for
+      want of a format key: the polisher runs under `WithEpochs` alone, so
+      measuring them means wrapping it in `WithRestarts` first and deciding what
+      an attempt of a sweep even is — a whole sweep chain, or one sweep. Do that
+      deliberately, not as a side effect of writing the campaign.
 - [x] Settle which restart *shape* a CMA-ES default would name. The budget-split
       screen established that splitting a CMA-ES budget beats not splitting it
       but could not order the three mechanisms, and it found the IPOP ladder
@@ -788,10 +790,17 @@ shows the prefix mattering again.
 - **A macOS GPU backend.** No OpenCL on Apple Silicon and no Metal backend
   planned. The condition to revisit is an Apple Silicon runner that can gate
   parity; see [`docs/gpu-backends.md`](docs/gpu-backends.md).
-- **CMA-ES polishing.** Polishing stays MayFly-only by decision, with the reason
-  in [`docs/behavior-invariants.md`](docs/behavior-invariants.md). Reopen only
+- ~~**CMA-ES polishing.** Polishing stays MayFly-only by decision. Reopen only
   if a CMA-ES base stage is measured to beat MayFly at an equal evaluation
-  budget.
+  budget.~~ **Reopened and shipped 2026-09-06**, on the condition this entry set
+  for itself: [`docs/cmaes-report.md`](docs/cmaes-report.md) and
+  [`docs/cmaes-budget-split-report.md`](docs/cmaes-budget-split-report.md)
+  establish that measurement on two fixtures, rejecting under Holm. A sweep now
+  names its own engine through `polishingOptimizer`, defaulting to MayFly and
+  refusing `dragonfly`; see "Polishing names its own engine" in
+  [`docs/behavior-invariants.md`](docs/behavior-invariants.md). **Nothing yet
+  ranks the two engines on the sweep itself** — that is the campaign this
+  unblocks, not a result it delivers.
 - **Per-client rate limiting.** Not carried forward for the trusted-local
   server; bounded admission and resource limits are the contract.
 - **Dragonfly as anything but an expert-only alternative.** It loses all twelve
