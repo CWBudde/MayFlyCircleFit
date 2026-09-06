@@ -8,8 +8,10 @@ extend of eight by `+39.65`** — `t = +14.94`, `p = 1.2e-08`, 12 of 12 blocks.
 Four extends of two are worth `+40.88` (`t = +10.49`) and two extends of four
 `+23.96` (`t = +7.49`), both 12 of 12.
 
-This is the largest effect this project has measured. The restart-shape primary
-that earned a default was `+6.89` at `t = +2.89`.
+Every one of those numbers is a difference between sixteen-circle costs on this
+fixture, so none of them may be ranked against an effect measured on a different
+objective; the size to read them against is this campaign's own spread, not an
+earlier campaign's headline.
 
 **The premise holds, and the control is emphatic.** Building on the record beats
 fitting sixteen circles cold by `+128.81` (`t = +20.08`, 12 of 12). The sharper
@@ -72,7 +74,7 @@ job at 112 dimensions.
 | `ext-w4` | 2 | 4 | 28 | 20 | 3,251,200 | 6,502,400 |
 | `ext-w2` | 4 | 2 | 14 | 20 | 1,625,600 | 6,502,400 |
 | `ext-w1` | 8 | 1 | 7 | 20 | 812,800 | 6,502,400 |
-| `cold-w16` (control) | — | — | 112 | 32 | 6,502,400 | 6,502,400 |
+| `cold-w16` (control) | — | — | 112 | 20 | 6,502,400 | 6,502,400 |
 
 An extend **freezes its prefix**: circles fitted in an earlier stage are not
 revisited. Polishing is the only mechanism that would revisit them, and
@@ -384,7 +386,13 @@ count.** One image, one population, one base, one budget.
 - [`cmaes-extend-width-restarts.csv`](cmaes-extend-width-restarts.csv) — 13,808
   attempt records.
 - [`cmaes-extend-width-trajectories.csv`](cmaes-extend-width-trajectories.csv) —
-  15,131 sampled iterations.
+  15,131 sampled iterations. These were downsampled against the **campaign** cap
+  rather than each stage's share of it, so a staged arm's stage holds about
+  `256 / stages` buckets instead of 256: an `ext-w1` stage keeps roughly 32
+  samples. The driver has since been corrected to bucket a stage's local
+  evaluation delta against that stage's share, so a re-collection would write a
+  denser file. Nothing in this report reads a trajectory more finely than the
+  half-budget marks above, which every arm's sampling still resolves.
 
 The measurement CSV's `finalEvaluations` is read from the **final** stage of
 each schedule, because a continuation stage's evaluation counter is cumulative;

@@ -227,8 +227,9 @@ anything new against its figures.
       64-attempt ceiling; on this evidence that block simply stopped at 64.
       **Ran 2026-09-05/06, and it answers the extend half.** 60 of 60 campaigns,
       252 jobs, 04:20 of wall clock, 166.3 job-hours. **All four registered
-      contrasts reject under Holm, and narrow extends win by the largest margin
-      this project has measured.** `ext-w1` beats `ext-w8` by `+39.65`
+      contrasts reject under Holm, and narrow extends win decisively** — within
+      this campaign; a sixteen-circle difference cannot be ranked against an
+      effect measured on another objective. `ext-w1` beats `ext-w8` by `+39.65`
       (`t = +14.94`, `p = 1.2e-08`, 12/12); `ext-w2` by `+40.88` and `ext-w4` by
       `+23.96`, both 12/12. The secondary settles the premise emphatically:
       `ext-w8` beats `cold-w16` by `+128.81` (`t = +20.08`, 12/12), and the cold
