@@ -32,20 +32,23 @@ ones that will change what you propose:
   earlier, and v0.7.0 changed results for every variant, so none of their
   numbers is comparable to a run made today.** Read those for method and for
   what was ruled out; re-measure before citing a figure. See the Toolchain
-  section. Twelve reports are on the current pins and may be cited directly:
-  the QMC screen, and the eleven CMA-ES ones — `cmaes-report.md`,
+  section. Thirteen reports are on the current pins and may be cited directly:
+  the QMC screen, and the twelve CMA-ES ones — `cmaes-report.md`,
   `cmaes-lambda-report.md`, `cmaes-stagnation-report.md`,
   `cmaes-budget-split-report.md`, `cmaes-restart-ladder-report.md`,
   `cmaes-deep-hunt-report.md`, `cmaes-covariance-report.md`,
   `cmaes-active-cma-report.md`, `cmaes-covariance-clean-report.md`,
-  `cmaes-restart-shape-report.md` and `cmaes-preliminary-report.md`, run in
+  `cmaes-restart-shape-report.md`, `cmaes-extend-width-report.md` and
+  `cmaes-preliminary-report.md`, run in
   2026-08 and 2026-09. The QMC screen is MayFly-only and ran on MayFly v0.7.1;
-  the eleven CMA-ES ones ran on go-cma-es v0.1.0 — the preliminary one on the
+  the twelve CMA-ES ones ran on go-cma-es v0.1.0 — the preliminary one on the
   code-identical pseudo-version that preceded that tag. Each report states its
   own pins; trust that line over this one. The deep hunt and the covariance
   campaign are the exceptions to citability *within* that set: both ran at
   1.94x the shared cap, so their costs are not comparable to the other ten,
-  though they are comparable to each other.
+  though they are comparable to each other. `cmaes-extend-width-report.md` is a
+  third exception, and a stronger one: it is the only campaign that fits sixteen
+  circles, so its costs are comparable to nothing outside itself.
 - [`docs/qmc-initial-population-report.md`](docs/qmc-initial-population-report.md)
   — `qmcInit` measured on the eight-circle batch stage at three population
   sizes. All six comparisons are null and the data bound any effect to about
@@ -288,12 +291,43 @@ ones that will change what you propose:
   `lambda` 4096 in 12 of 24 blocks and **never takes a block best from that
   rung**, which makes a ladder ceiling the obvious unvaried knob. And the
   filling arm costs 37% more wall clock than IPOP at the same evaluation cap,
-  which the cap does not show. Its `app.MaxOptimizerRestarts` ceiling bound one
-  block of 24, so a filling shape at a smaller `lambda` would need that constant
-  raised first. By-products: the first per-attempt restart records for cold arms
+  which the cap does not show. **Its claim that `app.MaxOptimizerRestarts`
+  bound one block of 24 is withdrawn** — `cmaes-extend-width-report.md` ran up
+  to 88 attempts per stage with the constant unchanged at 64, because it bounds
+  the requested restart magnitude, not the attempts a filling schedule
+  executes. By-products: the first per-attempt restart records for cold arms
   (2,231 rows, from the `attemptRuns` fix), `distributionExtent` bounded at
   1.0821 over 14,519 samples on fresh seeds, and confirmation that the driver's
   `recordCost` still reports against the superseded 752.52 record.
+- [`docs/cmaes-extend-width-report.md`](docs/cmaes-extend-width-report.md) —
+  five arms and 60 campaigns asking **how to group the next eight circles** on
+  top of the standing eight-circle record. The first staged-schedule campaign
+  here, the first to fit sixteen circles, so **its costs compare to nothing
+  outside it**. All four registered contrasts reject under Holm. **Narrow
+  extends win decisively**: eight extends of one beat one extend of eight by
+  `+39.65` (`t = +14.94`, 12/12), four of two by `+40.88`, two of four by
+  `+23.96`. **Building on the record beats a cold
+  sixteen-circle fit** by `+128.81` (`t = +20.08`, 12/12) — the cold arm's mean
+  of 743.77 is worse than the eight-circle record itself, which is a statement
+  about search at 112 dimensions, not about the image. Read before proposing a
+  growth recipe: it re-establishes `schedule-format.md`'s `+1`-per-extend advice
+  on the current pin, where that advice previously rested on a pre-v0.7.0
+  measurement on another image. Four cautions. **The narrowest width is not
+  established** — width one against width two is `+1.24`, `t = +0.72`, 6/12 and
+  unregistered, and they differ in spread rather than mean: `ext-w1`'s twelve
+  costs lie inside 5.0 points (seven of them inside 0.14, a near-deterministic
+  greedy fixed point) while `ext-w2` reaches the campaign best of 559.59.
+  **Nothing here rearranges an earlier circle** — an extend freezes its prefix
+  and `polishingEnabled` is MayFly-only — so "best" means "best among schedules
+  that never revisit", and the rearrange question is the obvious next campaign.
+  The base is quantized to 728.38 from 726.20 by `initialCircles`' 8-bit
+  colours, a constant offset that cancels in every paired contrast. And wall
+  clock is unmatched by 41% in the direction that makes the winner more
+  expensive. By-products: the first sixteen-circle record
+  (**559.5857671101888**), a spend gate passed to within 1.1 points of cap
+  across a sixteenfold dimension range, `distributionExtent` bounded at 0.8225
+  over 15,131 samples, and the measurement that withdraws the restart-shape
+  report's `MaxOptimizerRestarts` claim.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more
