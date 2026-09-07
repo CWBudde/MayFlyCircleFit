@@ -272,6 +272,28 @@ re-measure instead.
   `cmaes-restart-shape-report.md`'s claim that `app.MaxOptimizerRestarts` bound
   a block — stages here ran up to 88 attempts with the constant at 64, because
   it bounds the requested magnitude, not the attempts a filling schedule runs.
+- [`growth-run-report.md`](growth-run-report.md) — a **production run, not a
+  campaign**: it registers no contrasts and tests nothing, applying the
+  polish-engine recipe as deep as one night allowed. It reaches **233 circles at
+  236.0731379191** from a sixteen-circle base, 217 extend/polish pairs and
+  61.8M evaluations in 1h 57m of compute, and its per-depth series has no gaps.
+  Read it for three things. It **records three records for the first time** —
+  8 circles at **725.0288747152** (superseding 726.1984354654948) and 16 at
+  **546.1567522685** (superseding 559.5857671101888), both from the polishing
+  pilot and never written down, plus the 233-circle fit. It documents **two
+  structural ceilings on staged campaigns**: a schedule base declaring `full`
+  covariance is refused above 73 circles (`MaxCMAESFullDimensions` 512, and
+  `block` is the free substitute because one circle is one block), and a base
+  seeded with `initialCircles` is refused above **100** circles outright,
+  because that field requires `batchSize` to cover every circle while
+  `MaxBatchSize` is 100 — so document-chaining by re-seeding cannot go deeper,
+  and chaining `/extend` and `/polish` against the parent job is the shape that
+  has no ceiling. And it confirms PR #136's `rgb` field is **bit-exact** in
+  practice, reproducing parent costs to the last bit where the hex form would
+  have cost 0.9-3.7 points. **Nothing in it is comparative** — one arm, one
+  seed, no control, and a 233-circle cost compares to no other figure in this
+  corpus. Data: [`growth-run-trajectory.csv`](growth-run-trajectory.csv) and
+  [`growth-run-records.csv`](growth-run-records.csv).
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by
