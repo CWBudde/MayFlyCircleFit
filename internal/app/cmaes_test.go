@@ -223,7 +223,11 @@ func TestScheduleCarriesCMAESConfigurationToEveryStage(t *testing.T) {
 	}
 }
 
-func TestScheduleRefusesPolishingUnderCMAES(t *testing.T) {
+// TestSchedulePolishStepInheritsTheMayflyPolisherUnderCMAES pins the default a
+// CMA-ES schedule gets when it does not name a polishing engine. Reaching the
+// sweep at all is new; running it with MayFly unless asked otherwise is what
+// keeps every recorded polishing figure describing the stage that ran.
+func TestSchedulePolishStepInheritsTheMayflyPolisherUnderCMAES(t *testing.T) {
 	t.Parallel()
 
 	document := `{
@@ -240,8 +244,22 @@ func TestScheduleRefusesPolishingUnderCMAES(t *testing.T) {
   "steps": [{"type": "polish"}]
 }`
 
-	_, err := app.ParseSchedule([]byte(document))
-	if err == nil || !strings.Contains(err.Error(), fieldPolishingEnabled) {
-		t.Fatalf("ParseSchedule() error = %v, want polishing refusal", err)
+	parsed, err := app.ParseSchedule([]byte(document))
+	if err != nil {
+		t.Fatalf("ParseSchedule() error = %v, want a polish stage", err)
+	}
+
+	stages, err := parsed.Expand()
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+
+	polish := stages[len(stages)-1]
+	if got := polish.Config.ResolvedOptimizer(); got != app.OptimizerCMAES {
+		t.Errorf("base engine = %q, want %q", got, app.OptimizerCMAES)
+	}
+
+	if got := polish.Config.ResolvedPolishingOptimizer(); got != app.OptimizerMayfly {
+		t.Errorf("ResolvedPolishingOptimizer() = %q, want %q", got, app.OptimizerMayfly)
 	}
 }

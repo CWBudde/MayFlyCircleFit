@@ -232,15 +232,18 @@ Rendering-side invariants live in
   `dragonfly`, or `cmaes`, and an absent value is `mayfly`, so every
   configuration and checkpoint written before the field existed keeps its
   behavior. The engine is persisted in the checkpoint together with that engine's library version in
-  `optimizerVersion`, and no resume path reads the engine from anywhere else:
+  `optimizerVersion` -- and, where a polishing sweep names a *second* library,
+  that one's version in `polishingOptimizerVersion` -- and no resume path reads
+  the engine from anywhere else:
   neither `resume --local` nor the resume endpoint can continue a run under a
   different optimizer than produced it. A setting the named engine cannot read
   is refused at validation rather than accepted and ignored, because a dropped
   setting makes the recorded cost impossible to compare. That refusal runs in
-  both directions: a MayFly `variant`, `qmcInit`, `crossoverCount`, advanced
-  knob, or polishing is refused under `dragonfly` and under `cmaes`, and the
-  CMA-ES-only `initialSigma`, `covarianceMode`, `activeCMA`, and
-  `restartStrategy` are refused under `mayfly` and under `dragonfly`.
+  both directions: a MayFly `variant`, `qmcInit`, `crossoverCount`, or advanced
+  knob is refused under `dragonfly` and under `cmaes`, and the CMA-ES-only
+  `initialSigma`, `covarianceMode`, `activeCMA`, and `restartStrategy` are
+  refused under `mayfly` and under `dragonfly`. Polishing is not on either list;
+  it names its own engine, below.
 - **`config.qmcInit` decides how a MayFly run draws its first generation, and
   an absent value is `uniform`.** `uniform` takes every coordinate as an
   independent draw from the run's generator; `sobol` and `halton` draw from a
@@ -287,7 +290,18 @@ Rendering-side invariants live in
   checkpoint that records no version at all — every checkpoint written before
   the field existed — is never refused; it warns, naming the running version.
   The same applies when either side reports `unknown`, which is what a build
-  without module information reports. Two pairs of versions are exempt, each
+  without module information reports.
+- **A job that polishes with a different engine than its base stage runs two
+  libraries, and both are guarded.** A CMA-ES stage finished by the default
+  MayFly sweep is the ordinary case, and `optimizerVersion` speaks for only half
+  of what produced the cost, so the checkpoint also records
+  `polishingOptimizerVersion` and every resume path checks it under exactly the
+  same rule: refuse on a mismatch, warn on an absent or `unknown` version, and
+  let `--allow-optimizer-mismatch` past. The field stays empty when the sweep
+  runs the same library the base stage did, because `optimizerVersion` already
+  answers for it, and when the job does not polish. It is additive: a checkpoint
+  written before it existed decodes with it empty and resumes with a warning,
+  so the schema version does not move. Two pairs of versions are exempt, each
   measured to be behaviour-neutral so that a checkpoint written by either member
   resumes silently under the other: MayFly v0.7.0 and v0.7.1, and CMA-ES
   `v0.0.0-20260825143954-e528faf326bf` — the pseudo-version pinned before the
@@ -405,35 +419,53 @@ Rendering-side invariants live in
   defaults true and preserves an explicit false. Continuation-profile sigma
   controls the seeded first internal run; configured sigma remains the cold-run
   value for later IPOP/BIPOP restarts.
-- **Polishing is MayFly-only, by decision rather than by omission.** A CMA-ES
-  or Dragonfly job that enables polishing, or a schedule for either engine
-  containing a polish step, is rejected during configuration validation, and
-  the refusal explains the restriction instead of only naming the engine that
-  owns the field. No stage silently switches engine.
+- **Polishing names its own engine, separately from the base stage.**
+  `polishingOptimizer` selects the engine a sweep searches its active set with.
+  An empty value is MayFly, which is what every checkpoint written before the
+  field existed carries, so such a job keeps running the standard-variant MayFly
+  population the recorded polishing figures describe. `dragonfly` is refused as
+  a polisher -- the adapter loses all twelve blocks in
+  [`dragonfly-poc-report.md`](dragonfly-poc-report.md) -- while a Dragonfly or
+  CMA-ES *base* may enable polishing, because the two decisions are independent.
+  No stage silently switches engine; the field says which one runs.
 
-  A sweep is not the job's optimizer applied to a subset of the circles. It is
-  a fixed local search around the incumbent: every sweep hands the optimizer
-  the same continuation profile -- `LocalFraction` 1, `Sigma` 0.02,
-  `CoordinateRate` 0.2, `MaxVelocity` 0.02 -- and runs a `standard`-variant
-  MayFly population with its own size, iteration budget, epoch count and
-  stagnation window, whatever variant or engine the job names. `MaxVelocity`
-  has no CMA-ES analogue and is not applied, so a CMA-ES polisher would be a
-  different local search under an unchanged name, and the figures in
+  This reverses a recorded decision, on the condition that decision set for
+  itself. Until 2026-09 a CMA-ES or Dragonfly job that enabled polishing was
+  rejected outright, on the grounds that no engine ranking existed on this
+  problem and a second polishing engine would add a configuration surface for a
+  stage nothing had shown needed one. The condition named for reopening it was a
+  measurement: *a CMA-ES base stage that beats MayFly at an equal evaluation
+  budget.* [`cmaes-report.md`](cmaes-report.md) and
+  [`cmaes-budget-split-report.md`](cmaes-budget-split-report.md) establish
+  exactly that on two fixtures, rejecting under Holm, so the answer moved from
+  "no" to "measure it". **Nothing yet ranks the two engines on the sweep
+  itself**, and the default is MayFly precisely because nothing does.
+
+  A sweep is still not the job's optimizer applied to a subset of the circles.
+  It is a local search around the incumbent: every sweep hands its optimizer the
+  same continuation profile -- `LocalFraction` 1, `CoordinateRate` 0.2,
+  `MaxVelocity` 0.02, and a `Sigma` that defaults to 0.02 -- and runs with the
+  polishing budgets rather than the job-wide ones, whatever engine it names. A
+  CMA-ES polisher is pinned to full covariance and no restart strategy: full is
+  the only mode that never clamps its rank-mu rate on the pinned library, and a
+  restart ladder inside a sweep would abandon the incumbent the sweep exists to
+  refine. Because that mode never clamps but is also the expensive one, a CMA-ES
+  sweep is held to the same 512-dimension full-covariance limit the base stage
+  is: `polishingActiveSetSize` may name at most 73 circles, which validation
+  refuses beyond rather than letting the sweep launch a dense search of a size
+  the limit exists to rule out. A MayFly sweep learns no covariance matrix and
+  is not bound by it. `MaxVelocity` has no CMA-ES analogue and that adapter
+  ignores it, so a
+  CMA-ES sweep is a genuinely different local search under the same name --
+  which is why the figures in
   [`polishing-budget-report.md`](polishing-budget-report.md) and
   [`contiguous-window-polish-report.md`](contiguous-window-polish-report.md)
-  would stop describing the stage that ran.
+  describe the MayFly sweep and only that one.
 
-  This is not a claim that CMA-ES could not polish. `PolishCircleBatchContext`
-  accepts any `opt.Optimizer`, and its session-pool check reads the renderer
-  and the configured evaluation width rather than the engine, so a CMA-ES
-  polisher would pass it on exactly the terms the MayFly one does. What is
-  missing is a reason to build one: no engine ranking is established on this
-  problem (see [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md)),
-  so a second polishing engine would add a configuration surface, a cost
-  projection and a checkpoint field for a stage nothing has shown needs them.
-  The condition for reopening it is a measurement, not a request: a CMA-ES base
-  stage that beats MayFly at an equal evaluation budget. Until then the answer
-  is no rather than not yet.
+  `polishingSigma` is the one part of the profile a job may vary, because it is
+  the only term every engine reads: MayFly perturbs its seeded population by it
+  and CMA-ES takes it as the initial sigma of the whole search. Zero means the
+  recorded 0.02.
 - **Restarted progress stays monotonic.** Optimizer progress is best-so-far. A
   fresh attempt's early costs are worse than what an earlier attempt already
   reached, so only improvements are forwarded, and an epoch boundary carries

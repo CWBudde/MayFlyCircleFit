@@ -16,6 +16,7 @@ import (
 	"github.com/cwbudde/circlefit/internal/fit"
 	"github.com/cwbudde/circlefit/internal/fit/renderer"
 	"github.com/cwbudde/circlefit/internal/opt"
+	"github.com/cwbudde/circlefit/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -51,6 +52,8 @@ var (
 	polishingPopSize         int
 	polishingStagnationIters int
 	polishingMinImprovement  float64
+	polishingOptimizer       string
+	polishingSigma           float64
 	threads                  int
 	parallelEvaluation       bool
 	evaluationWorkers        int
@@ -139,6 +142,10 @@ func init() {
 	runCmd.Flags().IntVar(&polishingPopSize, "polishing-pop", app.DefaultPolishingPopSize, "Population a polishing sweep optimizes its active set with (--pop sizes the whole vector instead)")
 	runCmd.Flags().IntVar(&polishingStagnationIters, "polishing-stagnation-iters", app.DefaultPolishingStagnationIters, "Stop a polishing epoch after this many iterations without sufficient progress")
 	runCmd.Flags().Float64Var(&polishingMinImprovement, "polishing-min-improvement", 0.001, "Absolute optimizer cost reduction counted as progress during polishing")
+	runCmd.Flags().StringVar(&polishingOptimizer, "polishing-optimizer", "",
+		"Engine a polishing sweep searches its active set with: mayfly (default) or cmaes")
+	runCmd.Flags().Float64Var(&polishingSigma, "polishing-sigma", 0,
+		"Seeded perturbation width of a polishing sweep, in the optimizer's normalized box (default 0.02)")
 	runCmd.Flags().IntVar(&threads, "threads", runtime.GOMAXPROCS(0), "CPU rendering threads (capped at GOMAXPROCS)")
 	runCmd.Flags().BoolVar(&parallelEvaluation, "parallel-evaluation", false, "Evaluate optimizer population members concurrently over independent renderer sessions (reproducible per seed, but not identical to a serial run of the same seed)")
 	runCmd.Flags().IntVar(&evaluationWorkers, "evaluation-workers", 0, "Concurrent cost evaluations when --parallel-evaluation is set, capped at GOMAXPROCS (0 uses --threads). Each worker holds its own full-size canvas")
@@ -264,6 +271,89 @@ func newCMAESOptimizer(config app.JobConfig, rend renderer.Renderer, seed int64)
 	return opt.NewCMAES(config.Iters, config.PopSize, seed, options...)
 }
 
+// newPolishOptimizer builds the optimizer a polishing sweep searches its active
+// set with.
+//
+// It is the CLI's half of the decision internal/server/worker.go makes in its
+// own newPolishOptimizer; the two must agree on which engine a configuration
+// names, because a job resumed from the server has to run what the CLI ran. An
+// unset engine is MayFly, which is what every checkpoint written before
+// polishingOptimizer existed carries.
+//
+// It is a separate factory from newStageOptimizer rather than a call into it,
+// because a sweep reads the polishing budgets rather than the job-wide ones and
+// takes no restart strategy: a ladder inside a sweep would abandon the
+// incumbent the sweep exists to refine.
+func newPolishOptimizer(config app.JobConfig, rend renderer.Renderer) (opt.Optimizer, error) {
+	seed := config.EffectiveSeed
+	if seed == 0 {
+		seed = config.Seed
+	}
+
+	if config.ResolvedPolishingOptimizer() == app.OptimizerCMAES {
+		return newCMAESPolishOptimizer(config, rend, seed), nil
+	}
+
+	// Parallel evaluation is carried across for the same reason the server's
+	// twin carries it: a sweep leases a session per evaluation like the staged
+	// pipelines do, so without it --parallel-evaluation would widen the base
+	// stage and leave the sweep serial. The two halves have to agree, because
+	// the same stored configuration is run by both and the width is not
+	// trajectory-neutral. A run that did not ask for it is unaffected --
+	// ParallelEvaluationOption returns a no-op option when it is not granted.
+	polisher, err := opt.NewMayflyVariant(
+		string(app.VariantStandard), config.PolishingIters, config.PolishingPopSize, seed,
+		opt.WithLogger(slog.Default()),
+		opt.WithEarlyStop(polishEarlyStop(config)),
+		parallelEvaluationOption(config, rend),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create polishing optimizer: %w", err)
+	}
+
+	return polisher, nil
+}
+
+// newCMAESPolishOptimizer builds a CMA-ES polisher. Full covariance, no restart
+// strategy and the continuation sigma are pinned rather than read from the job;
+// internal/server/worker.go's twin records why.
+func newCMAESPolishOptimizer(config app.JobConfig, rend renderer.Renderer, seed int64) opt.Optimizer {
+	options := []opt.CMAESOption{
+		opt.WithCMAESLogger(slog.Default()),
+		opt.WithCMAESEarlyStop(polishEarlyStop(config)),
+		opt.WithCMAESInitialSigma(config.ResolvedPolishingSigma()),
+		opt.WithCMAESCovarianceMode(string(app.CMAESCovarianceFull), app.ParametersPerCircle),
+		opt.WithCMAESActiveCMA(config.ResolvedCMAESActive()),
+		opt.WithCMAESRestartStrategy(string(app.CMAESRestartNone)),
+	}
+
+	if width, granted := renderer.ParallelEvaluationWidth(rend, config.ParallelEvaluation); granted {
+		options = append(options, opt.WithCMAESParallelEvaluation(width))
+	}
+
+	return opt.NewCMAES(config.PolishingIters, config.PolishingPopSize, seed, options...)
+}
+
+// polishEarlyStop is the sweep's own stopping rule. It reads the polishing
+// stagnation fields rather than the job-wide Stop* ones, which describe the
+// base stage.
+func polishEarlyStop(config app.JobConfig) opt.Stop {
+	return opt.Stop{
+		MinImprovement:  config.PolishingMinImprovement,
+		StagnationIters: config.PolishingStagnationIters,
+	}
+}
+
+// polishContinuationProfile is the profile every sweep hands its optimizer.
+// Only the sigma is configurable; see renderer.BatchPolishOptions.Continuation
+// for why the other three terms are not.
+func polishContinuationProfile(config app.JobConfig) *opt.ContinuationProfile {
+	profile := renderer.DefaultPolishContinuation()
+	profile.Sigma = config.ResolvedPolishingSigma()
+
+	return profile
+}
+
 // newDragonflyOptimizer builds the proof-of-concept Dragonfly adapter. It
 // carries the iteration cap, population, seed, logging, optimizer-level early
 // stopping and parallel evaluation across, and nothing else.
@@ -297,6 +387,59 @@ func optimizerLibraryVersion(optimizer app.Optimizer) string {
 	}
 
 	return opt.LibraryVersion()
+}
+
+// guardCheckpointVersions decides whether a checkpoint may be resumed by this
+// build, across every optimizer library its job actually ran.
+//
+// It is the CLI's half of the decision internal/server/server.go makes in its
+// own guardCheckpointVersions, and it exists for the same reason: a job that
+// polishes with an engine other than the one its base stage searched with links
+// two libraries, so the base version alone would let an upgrade of the other
+// one continue the run unremarked. Both are checked and every warning is
+// returned, because the two describe different libraries.
+func guardCheckpointVersions(checkpoint *store.Checkpoint, allowMismatch bool) ([]string, error) {
+	base := checkpoint.Config.ResolvedOptimizer()
+
+	warnings := make([]string, 0, 2)
+
+	warning, err := opt.GuardCheckpointVersion(
+		optimizerLibraryName(base),
+		checkpoint.OptimizerVersion,
+		optimizerLibraryVersion(base),
+		allowMismatch,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if warning != "" {
+		warnings = append(warnings, warning)
+	}
+
+	polishing, ok := checkpoint.Config.SecondaryOptimizer()
+	if !ok {
+		return warnings, nil
+	}
+	// An empty recorded version is the legacy case rather than a mismatch, and
+	// GuardCheckpointVersion reports it in the words the base field already
+	// uses: a checkpoint written before the field existed carries nothing, and
+	// refusing every one of them would strand jobs already on disk.
+	warning, err = opt.GuardCheckpointVersion(
+		optimizerLibraryName(polishing),
+		checkpoint.PolishingOptimizerVersion,
+		optimizerLibraryVersion(polishing),
+		allowMismatch,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if warning != "" {
+		warnings = append(warnings, warning)
+	}
+
+	return warnings, nil
 }
 
 // optimizerLibraryName reports the human-readable library name used in
@@ -401,6 +544,8 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		PolishingPopSize:         polishingPopSize,
 		PolishingStagnationIters: polishingStagnationIters,
 		PolishingMinImprovement:  polishingMinImprovement,
+		PolishingOptimizer:       app.Optimizer(polishingOptimizer),
+		PolishingSigma:           polishingSigma,
 		Threads:                  threads,
 		ParallelEvaluation:       parallelEvaluation,
 		EvaluationWorkers:        evaluationWorkers,
@@ -645,13 +790,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 		if err == nil && config.PolishingEnabled && result.OptimizedCircles == config.Circles {
 			var polishOptimizer opt.Optimizer
 
-			polishOptimizer, err = opt.NewMayflyVariant(string(app.VariantStandard), config.PolishingIters, config.PolishingPopSize, config.EffectiveSeed,
-				opt.WithLogger(slog.Default()),
-				opt.WithEarlyStop(opt.Stop{
-					MinImprovement:  config.PolishingMinImprovement,
-					StagnationIters: config.PolishingStagnationIters,
-				}),
-			)
+			polishOptimizer, err = newPolishOptimizer(config, rend)
 			if err == nil {
 				polishOptimizer = opt.WithEpochs(polishOptimizer, config.PolishingEpochs)
 				var polished *renderer.BatchPolishResult
@@ -660,6 +799,7 @@ func runOptimization(cmd *cobra.Command, args []string) error {
 					ActiveSetSize: config.PolishingActiveSetSize,
 					MaxSweeps:     config.PolishingMaxSweeps,
 					Strategy:      renderer.BatchPolishStrategy(config.PolishingStrategy),
+					Continuation:  polishContinuationProfile(config),
 				})
 				if err == nil {
 					result.BestParams = polished.BestParams

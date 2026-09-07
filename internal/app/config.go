@@ -132,6 +132,14 @@ const (
 	DefaultPolishingStagnationIters = 100
 )
 
+// DefaultPolishingSigma is the seeded perturbation width a polishing sweep
+// searches at, as a fraction of the normalized [0,1] search box.
+//
+// It restates the constant renderer.PolishCircleBatchContext carried inline
+// before the value was configurable, so an unset configuration reproduces every
+// polishing figure recorded under it.
+const DefaultPolishingSigma = 0.02
+
 // Project is a project slug. It is a named string type so the compiler can tell
 // a slug apart from the other bare strings that travel beside it — a job ID, a
 // reference image path, a termination reason. A named string type marshals to
@@ -424,7 +432,34 @@ type JobConfig struct {
 	PolishingPopSize         int               `json:"polishingPopSize,omitempty"`
 	PolishingStagnationIters int               `json:"polishingStagnationIters,omitempty"`
 	PolishingMinImprovement  float64           `json:"polishingMinImprovement,omitempty"`
-	Threads                  int               `json:"threads,omitempty"`
+	// PolishingOptimizer names the engine a polishing sweep searches its active
+	// set with, independently of the engine the base stage runs.
+	//
+	// The two are separate because a sweep is a different problem from a stage:
+	// it optimizes activeSetSize*7 dimensions around a known incumbent at a
+	// small step size, where a stage searches the whole vector cold. Nothing
+	// establishes that one engine wins both, so the configuration lets a job
+	// say, rather than deriving one from the other.
+	//
+	// Empty means MayFly, exactly as ResolvedOptimizer treats an empty engine.
+	// Every checkpoint written before this field existed carries no value and
+	// must keep running the standard-variant MayFly polisher it ran, because
+	// docs/polishing-budget-report.md and
+	// docs/contiguous-window-polish-report.md describe that stage.
+	PolishingOptimizer Optimizer `json:"polishingOptimizer,omitempty"`
+	// PolishingSigma is the standard deviation of the sweep's continuation
+	// profile, in the optimizer's normalized [0,1] box. Zero means
+	// DefaultPolishingSigma, which is the value every recorded polishing
+	// measurement was taken at.
+	//
+	// It is configurable because it is the one part of the sweep's locality
+	// that means something to every engine: MayFly perturbs its seeded
+	// population by it, and CMA-ES takes it as the initial sigma of the whole
+	// search. The profile's other three terms stay fixed -- LocalFraction and
+	// CoordinateRate describe how a population is seeded, and MaxVelocity has
+	// no CMA-ES analogue at all.
+	PolishingSigma float64 `json:"polishingSigma,omitempty"`
+	Threads        int     `json:"threads,omitempty"`
 	// ParallelEvaluation lets the optimizer evaluate population members
 	// concurrently over a pool of independent renderer sessions sized by
 	// EvaluationWorkers. It is additive and optional: checkpoints written before
@@ -529,6 +564,8 @@ func DefaultConfig() JobConfig {
 		PolishingPopSize:         DefaultPolishingPopSize,
 		PolishingStagnationIters: DefaultPolishingStagnationIters,
 		PolishingMinImprovement:  0.001,
+		PolishingOptimizer:       OptimizerMayfly,
+		PolishingSigma:           DefaultPolishingSigma,
 		Threads:                  runtime.GOMAXPROCS(0),
 		EnableTrace:              true,
 		ConvergenceEnabled:       true,
@@ -692,6 +729,14 @@ func (c *JobConfig) ApplyDefaults() error {
 		c.PolishingMinImprovement = defaults.PolishingMinImprovement
 	}
 
+	if c.PolishingOptimizer == "" {
+		c.PolishingOptimizer = defaults.PolishingOptimizer
+	}
+
+	if c.PolishingSigma == 0 {
+		c.PolishingSigma = defaults.PolishingSigma
+	}
+
 	if c.Threads == 0 {
 		c.Threads = defaults.Threads
 	}
@@ -848,6 +893,20 @@ func (c *JobConfig) Validate() error {
 		return invalid("polishingOnly", "requires polishing to be enabled")
 	}
 
+	err = c.validatePolishingEngine()
+	if err != nil {
+		return err
+	}
+
+	// NaN is tested explicitly rather than left to the range: every comparison
+	// against NaN is false, so a bare range would accept it and hand a NaN
+	// continuation width to the optimizer, where it stays just as quiet. The
+	// infinities need no separate test -- they fail the range.
+	if math.IsNaN(c.PolishingSigma) || c.PolishingSigma < 0 || c.PolishingSigma > 1 {
+		return invalid("polishingSigma", "must be finite and between 0 and 1, "+
+			"in the optimizer's normalized search box")
+	}
+
 	switch c.PolishingStrategy {
 	case PolishingReplacement, PolishingHybridOverlap, PolishingResidualRegion, PolishingContiguousWindow:
 	default:
@@ -856,6 +915,11 @@ func (c *JobConfig) Validate() error {
 
 	if c.PolishingActiveSetSize < 1 || c.PolishingActiveSetSize > MaxBatchSize || c.PolishingActiveSetSize > c.Circles {
 		return invalid("polishingActiveSetSize", "must be positive, within the limit, and no larger than circles")
+	}
+
+	err = c.validatePolishingDimensions()
+	if err != nil {
+		return err
 	}
 
 	if c.PolishingMaxSweeps < 1 || c.PolishingMaxSweeps > MaxPolishingSweeps {

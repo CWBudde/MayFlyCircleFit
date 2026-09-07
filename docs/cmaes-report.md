@@ -301,8 +301,9 @@ opt-in trajectory trace was the only reason any of this was visible.
 - **One image, one circle count, one stage.** Eight circles jointly on a single
   512x512 reference. Nothing here speaks to other references, other circle
   counts, sequential or joint mode, or later stages of a schedule.
-- **Nothing about polishing.** Polishing remains MayFly-only regardless of what
-  the base stage used.
+- **Nothing about polishing.** No arm polished. A CMA-ES job may now enable a
+  polishing sweep, but that was added after this campaign ran and nothing here
+  measures it.
 - **`sep-cmaes-ipop` confounds two changes.** It varies covariance mode *and*
   restart strategy against `cmaes-single`, and the design has no
   separable-without-restarts arm. Whether separability, IPOP, or their

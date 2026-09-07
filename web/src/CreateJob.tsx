@@ -583,7 +583,7 @@ export function CreateJobIsland({ root }: { root: HTMLElement }) {
 					form={form}
 					name="polishingEnabled"
 					label="Polish selected circles after the batch run"
-					help="Batch mode only, and MayFly only: a polishing sweep runs its own MayFly population, so a CMA-ES or Dragonfly job asking for one is refused. Every strategy preserves draw order, and a sweep is kept only when the complete image improves."
+					help="Batch mode only. A sweep optimizes a few circles at a time while every other circle stays frozen, and it names its own engine below, independently of the one the run uses. Every strategy preserves draw order, and a sweep is kept only when the complete image improves."
 					warning={polishingWarning(values)}
 				/>
 				<div style={gridStyle}>
@@ -629,6 +629,22 @@ export function CreateJobIsland({ root }: { root: HTMLElement }) {
 						min={limits.minPolishingMinImprovement}
 						step="any"
 						help="Absolute optimizer cost reduction that resets stagnation"
+					/>
+					<Select
+						form={form}
+						choices={choices("polishingOptimizer")}
+						name="polishingOptimizer"
+						label="Sweep Engine"
+						help="Independent of the run's own optimizer. Nothing measures one engine against the other on this stage yet."
+					/>
+					<Num
+						form={form}
+						name="polishingSigma"
+						label="Sweep Sigma"
+						min={0}
+						max={1}
+						step="any"
+						help="Search width around the incumbent, as a fraction of the normalized box"
 					/>
 				</div>
 			</fieldset>

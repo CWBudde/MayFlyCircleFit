@@ -2236,3 +2236,59 @@ func polishAcceptingParams() []float64 {
 
 	return params
 }
+
+// TestPolishCircleBatchDefaultsToTheRecordedContinuation pins the profile a
+// sweep hands its optimizer when the caller supplies none.
+//
+// The four numbers were an inline literal until the sigma became configurable,
+// and every polishing figure in docs/ was measured under them. Asserting the
+// profile rather than a cost is what makes that exact: a cost comparison would
+// pass for any two profiles that happen to converge on this fixture.
+func TestPolishCircleBatchDefaultsToTheRecordedContinuation(t *testing.T) {
+	t.Parallel()
+
+	base := NewCPURenderer(solidImage(5, 5, color.NRGBA{A: 255}), 1)
+	initial := circleParams(2, 2, 5, color.NRGBA{R: 128, G: 128, B: 128, A: 255}, 1)
+	optimizer := &incumbentPolishOptimizer{}
+
+	_, err := PolishCircleBatchContext(context.Background(), base, optimizer, initial, BatchPolishOptions{
+		ActiveSetSize: 1,
+		MaxSweeps:     1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := opt.ContinuationProfile{LocalFraction: 1, Sigma: 0.02, CoordinateRate: 0.2, MaxVelocity: 0.02}
+	if len(optimizer.options) != 1 || *optimizer.options[0].Continuation != want {
+		t.Fatalf("continuation = %+v, want %+v", optimizer.options, want)
+	}
+}
+
+// TestPolishCircleBatchHonorsAnOverriddenContinuation is the other half: a
+// caller that varies the sigma gets the sigma it asked for, and nothing else
+// moves.
+func TestPolishCircleBatchHonorsAnOverriddenContinuation(t *testing.T) {
+	t.Parallel()
+
+	base := NewCPURenderer(solidImage(5, 5, color.NRGBA{A: 255}), 1)
+	initial := circleParams(2, 2, 5, color.NRGBA{R: 128, G: 128, B: 128, A: 255}, 1)
+	optimizer := &incumbentPolishOptimizer{}
+
+	profile := DefaultPolishContinuation()
+	profile.Sigma = 0.005
+
+	_, err := PolishCircleBatchContext(context.Background(), base, optimizer, initial, BatchPolishOptions{
+		ActiveSetSize: 1,
+		MaxSweeps:     1,
+		Continuation:  profile,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := opt.ContinuationProfile{LocalFraction: 1, Sigma: 0.005, CoordinateRate: 0.2, MaxVelocity: 0.02}
+	if len(optimizer.options) != 1 || *optimizer.options[0].Continuation != want {
+		t.Fatalf("continuation = %+v, want %+v", optimizer.options, want)
+	}
+}

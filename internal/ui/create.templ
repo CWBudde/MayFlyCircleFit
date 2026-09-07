@@ -473,7 +473,7 @@ templ CreateJobPage(page CreateJobPageData) {
 							<span style="font-weight: 500;">Polish selected circles after the batch run</span>
 						</label>
 						<p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem; margin-left: 1.5rem;">
-							Batch mode only, and MayFly only: a polishing sweep runs its own MayFly population, so a CMA-ES or Dragonfly job asking for one is refused. Every strategy preserves draw order, and a sweep is kept only when the complete image improves.
+							Batch mode only. A sweep optimizes a few circles at a time while every other circle stays frozen, and it names its own engine below, independently of the one the run uses. Every strategy preserves draw order, and a sweep is kept only when the complete image improves.
 						</p>
 						<div style={ createFieldGridStyle }>
 							<div>
@@ -527,6 +527,19 @@ templ CreateJobPage(page CreateJobPageData) {
 								<label for="polishingMinImprovement" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Progress Threshold</label>
 								<input type="number" id="polishingMinImprovement" name="polishingMinImprovement" value="0.001" min={ attrFloat(page.Limits.MinPolishingMinImprovement) } step="any" style={ createInputStyle }/>
 								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Absolute optimizer cost reduction that resets stagnation</p>
+							</div>
+							<div>
+								<label for="polishingOptimizer" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Sweep Engine</label>
+								<select id="polishingOptimizer" name="polishingOptimizer" style={ createSelectStyle }>
+									<option value="mayfly" selected>MayFly</option>
+									<option value="cmaes">CMA-ES</option>
+								</select>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Independent of the run&#39;s own optimizer. Nothing measures one engine against the other on this stage yet.</p>
+							</div>
+							<div>
+								<label for="polishingSigma" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Sweep Sigma</label>
+								<input type="number" id="polishingSigma" name="polishingSigma" value="0.02" min="0" max="1" step="any" style={ createInputStyle }/>
+								<p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Search width around the incumbent, as a fraction of the normalized box</p>
 							</div>
 						</div>
 					</fieldset>

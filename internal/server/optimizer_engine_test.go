@@ -256,6 +256,9 @@ func TestCreateJobAcceptsDragonflyAndRefusesMayflyOnlyFields(t *testing.T) {
 		})
 	}
 
+	// Polishing is deliberately not in the refused set. A sweep names its own
+	// engine, so a Dragonfly base may enable one and it runs under MayFly
+	// unless polishingOptimizer says otherwise.
 	t.Run("polishingEnabled", func(t *testing.T) {
 		t.Parallel()
 
@@ -265,12 +268,33 @@ func TestCreateJobAcceptsDragonflyAndRefusesMayflyOnlyFields(t *testing.T) {
 		body["polishingEnabled"] = true
 
 		response := postEngineJob(t, server, body)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("status = %d, want 201: %s", response.Code, response.Body.String())
+		}
+
+		if !strings.Contains(response.Body.String(), `"polishingOptimizer":"mayfly"`) {
+			t.Errorf("response %q does not resolve the polishing engine to mayfly", response.Body.String())
+		}
+	})
+
+	// The one engine a sweep may not name is still refused, and the refusal
+	// names the field the caller wrote rather than the base engine.
+	t.Run("polishingOptimizerDragonfly", func(t *testing.T) {
+		t.Parallel()
+
+		body := base()
+		body[fieldMode] = modeBatch
+		body["batchSize"] = 5
+		body["polishingEnabled"] = true
+		body["polishingOptimizer"] = optimizerDragonfly
+
+		response := postEngineJob(t, server, body)
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400: %s", response.Code, response.Body.String())
 		}
 
-		if !strings.Contains(response.Body.String(), "polishingEnabled") {
-			t.Errorf("error %q does not name polishingEnabled", response.Body.String())
+		if !strings.Contains(response.Body.String(), "polishingOptimizer") {
+			t.Errorf("error %q does not name polishingOptimizer", response.Body.String())
 		}
 	})
 }
@@ -290,14 +314,14 @@ func postEngineJob(t *testing.T, server *Server, body map[string]any) *httptest.
 	return response
 }
 
-// TestPolishEndpointExplainsTheEngineRestriction covers the one polishing
-// request no form can warn about beforehand. The detail page hides the polish
-// control for a job whose engine is not MayFly, but the endpoint is reachable
-// directly, and it inherits the completed job's configuration -- so a CMA-ES
-// parent arrives at app.Validate with polishing enabled and no way to turn it
-// off. The envelope has to carry the validation message, or a recorded
-// decision is reported as an unexplained bad request.
-func TestPolishEndpointExplainsTheEngineRestriction(t *testing.T) {
+// TestPolishEndpointContinuesACMAESParent covers the request the whole change
+// exists to make possible: a completed CMA-ES job handed to a polishing sweep.
+//
+// The endpoint inherits the parent's configuration wholesale, so before
+// polishingOptimizer existed such a request arrived at app.Validate with
+// polishing enabled, no way to turn it off, and a refusal. It now succeeds, and
+// the sweep runs under the engine the request names rather than the parent's.
+func TestPolishEndpointContinuesACMAESParent(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
@@ -341,31 +365,108 @@ func TestPolishEndpointExplainsTheEngineRestriction(t *testing.T) {
 	}
 
 	request := httptest.NewRequestWithContext(t.Context(),
-		http.MethodPost, "/api/v1/jobs/"+source.ID+"/polish", strings.NewReader(`{}`))
+		http.MethodPost, "/api/v1/jobs/"+source.ID+"/polish",
+		strings.NewReader(`{"optimizer":"cmaes","sigma":0.01}`))
 	request.Header.Set("Content-Type", "application/json")
 
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 
-	if response.Code != http.StatusBadRequest {
-		t.Fatalf("polish status = %d, want 400: %s", response.Code, response.Body.String())
+	if response.Code != http.StatusCreated {
+		t.Fatalf("polish status = %d, want 201: %s", response.Code, response.Body.String())
 	}
 
-	var decoded apiErrorResponse
+	var decoded struct {
+		JobID string `json:"jobId"`
+	}
 
 	err = json.Unmarshal(response.Body.Bytes(), &decoded)
 	if err != nil {
-		t.Fatalf("response %q is not the API error envelope: %v", response.Body.String(), err)
+		t.Fatalf("response %q is not the polish envelope: %v", response.Body.String(), err)
 	}
 
-	if decoded.Error.Code != codeInvalidConfig {
-		t.Errorf("error code = %q, want %q", decoded.Error.Code, codeInvalidConfig)
+	polished, ok := server.jobManager.GetJob(decoded.JobID)
+	if !ok {
+		t.Fatalf("polish job %q was not created", decoded.JobID)
 	}
 
-	wants := []string{"polishingEnabled", "own MayFly population", optimizerCMAES}
-	for _, want := range wants {
-		if !strings.Contains(decoded.Error.Message, want) {
-			t.Errorf("error message = %q, want it to contain %q", decoded.Error.Message, want)
-		}
+	if got := polished.Config.ResolvedPolishingOptimizer(); got != app.OptimizerCMAES {
+		t.Errorf("ResolvedPolishingOptimizer() = %q, want %q", got, app.OptimizerCMAES)
+	}
+
+	if got := polished.Config.ResolvedPolishingSigma(); got != 0.01 {
+		t.Errorf("ResolvedPolishingSigma() = %v, want 0.01", got)
+	}
+
+	// The base engine is inherited from the parent and untouched by the
+	// override, which is what keeps the two decisions independent.
+	if got := polished.Config.ResolvedOptimizer(); got != app.OptimizerCMAES {
+		t.Errorf("ResolvedOptimizer() = %q, want %q", got, app.OptimizerCMAES)
+	}
+}
+
+// TestNewPolishOptimizerSelectsTheConfiguredEngine pins the sweep's own engine
+// decision, which is deliberately separate from the base stage's.
+//
+// The absent case matters most: every checkpoint written before
+// polishingOptimizer existed carries no value, and must keep running the
+// standard-variant MayFly population the figures in
+// docs/polishing-budget-report.md describe.
+func TestNewPolishOptimizerSelectsTheConfiguredEngine(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		base     app.Optimizer
+		polisher app.Optimizer
+		cmaes    bool
+	}{
+		{name: caseAbsent, base: "", polisher: ""},
+		{name: "cmaesBaseKeepsMayflyPolisher", base: app.OptimizerCMAES, polisher: ""},
+		{name: "mayflyBaseWithCMAESPolisher", base: app.OptimizerMayfly, polisher: app.OptimizerCMAES, cmaes: true},
+		{name: "cmaesBoth", base: app.OptimizerCMAES, polisher: app.OptimizerCMAES, cmaes: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			optimizer, err := newPolishOptimizer(store.JobConfig{
+				Optimizer:          test.base,
+				Variant:            app.VariantStandard,
+				PolishingOptimizer: test.polisher,
+				PolishingIters:     10,
+				PolishingPopSize:   20,
+			}, nil, 7)
+			if err != nil {
+				t.Fatalf("newPolishOptimizer() error = %v", err)
+			}
+
+			_, isCMAES := optimizer.(*opt.CMAESAdapter)
+			if isCMAES != test.cmaes {
+				t.Fatalf("optimizer = %T, want cmaes = %v", optimizer, test.cmaes)
+			}
+
+			if !test.cmaes {
+				if _, ok := optimizer.(*opt.MayflyAdapter); !ok {
+					t.Fatalf("optimizer = %T, want *opt.MayflyAdapter", optimizer)
+				}
+			}
+		})
+	}
+}
+
+// TestPolishContinuationProfileDefaultsToTheRecordedSigma pins the value an
+// unset configuration polishes at, so a checkpoint written before the field
+// existed searches the width every recorded figure was measured under.
+func TestPolishContinuationProfileDefaultsToTheRecordedSigma(t *testing.T) {
+	t.Parallel()
+
+	if got := polishContinuationProfile(store.JobConfig{}).Sigma; got != app.DefaultPolishingSigma {
+		t.Errorf("sigma = %v, want %v", got, app.DefaultPolishingSigma)
+	}
+
+	if got := polishContinuationProfile(store.JobConfig{PolishingSigma: 0.005}).Sigma; got != 0.005 {
+		t.Errorf("sigma = %v, want 0.005", got)
 	}
 }

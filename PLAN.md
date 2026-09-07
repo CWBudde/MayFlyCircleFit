@@ -861,10 +861,17 @@ shows the prefix mattering again.
 - **A macOS GPU backend.** No OpenCL on Apple Silicon and no Metal backend
   planned. The condition to revisit is an Apple Silicon runner that can gate
   parity; see [`docs/gpu-backends.md`](docs/gpu-backends.md).
-- **CMA-ES polishing.** Polishing stays MayFly-only by decision, with the reason
-  in [`docs/behavior-invariants.md`](docs/behavior-invariants.md). Reopen only
+- ~~**CMA-ES polishing.** Polishing stays MayFly-only by decision. Reopen only
   if a CMA-ES base stage is measured to beat MayFly at an equal evaluation
-  budget.
+  budget.~~ **Reopened and shipped 2026-09-06**, on the condition this entry set
+  for itself: [`docs/cmaes-report.md`](docs/cmaes-report.md) and
+  [`docs/cmaes-budget-split-report.md`](docs/cmaes-budget-split-report.md)
+  establish that measurement on two fixtures, rejecting under Holm. A sweep now
+  names its own engine through `polishingOptimizer`, defaulting to MayFly and
+  refusing `dragonfly`; see "Polishing names its own engine" in
+  [`docs/behavior-invariants.md`](docs/behavior-invariants.md). **Nothing yet
+  ranks the two engines on the sweep itself** — that is the campaign this
+  unblocks, not a result it delivers.
 - **Per-client rate limiting.** Not carried forward for the trusted-local
   server; bounded admission and resource limits are the contract.
 - **Dragonfly as anything but an expert-only alternative.** It loses all twelve

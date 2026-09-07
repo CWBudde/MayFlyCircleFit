@@ -45,17 +45,21 @@ inherits it, so a campaign cannot change engine halfway through. Two campaigns
 that ran different optimizers are not comparable, for the same reason two that
 ran different MayFly versions are not. A `dragonfly` base refuses the settings
 that engine cannot read — `variant`, `qmcInit`, `crossoverCount`, `danceDamp`,
-`aquilaWeight`, `oppositionProbability` — and refuses a document containing a
-`polish` step, because polishing runs its own MayFly population. The refusal
-names the failing stage, so it arrives when the document is parsed rather than
-when the campaign reaches that stage.
+`aquilaWeight`, `oppositionProbability`. A `polish` step is accepted under any
+base engine, because a sweep names its own engine rather than inheriting one;
+`polishOptimizer: "dragonfly"` is the one value refused. Every refusal names the
+failing stage, so it arrives when the document is parsed rather than when the
+campaign reaches that stage.
 
 A `cmaes` base accepts `initialSigma` (finite and positive), `covarianceMode`
 (`full`, `separable`, or `block`), `activeCMA`, and `restartStrategy` (`none`,
 `ipop`, or `bipop`). Full covariance is limited to 512 optimizer dimensions;
 block mode groups the seven parameters of each circle. IPOP/BIPOP use one
 shared `iters * popSize` evaluation budget and require `optimizerRestarts: 1`.
-CMA-ES refuses the same MayFly-only fields and polish steps as Dragonfly.
+CMA-ES refuses the same MayFly-only fields as Dragonfly, but not polish steps:
+a polish step names its own engine through `polishOptimizer` (`mayfly`, the
+default, or `cmaes`) and its own search width through `sigma`. Both are
+polish-only and refused on an extend step.
 
 A document with steps must run its base in `"mode": "batch"`, because both
 continuation paths require a completed batch checkpoint.
@@ -96,6 +100,8 @@ appends.
 | Field | Meaning |
 | --- | --- |
 | `strategy`, `activeSetSize`, `maxSweeps`, `stagnationIters`, `minImprovement` | Polishing overrides. |
+| `polishOptimizer` | The engine the sweep searches its active set with: `mayfly` (the default) or `cmaes`. Independent of the base's `optimizer`; `dragonfly` is refused. |
+| `sigma` | The sweep's search width around the incumbent, in the optimizer's normalized `[0,1]` box. Defaults to 0.02, the value every recorded polishing figure was measured at. |
 | `epochs`, `iters`, `popSize` | Budget overrides; on a polish these address the *polishing* budget, so `popSize` sets `polishingPopSize` rather than the job-wide population a polish-only stage never spends. |
 | `when` | The runtime condition. See below. |
 
@@ -165,6 +171,24 @@ become: the first is the backdrop and the last is on top. `opacity` is optional
 and defaults to 1. A centre may sit off-canvas — half a canvas dimension past
 each edge, the same bound the optimizer explores under — which is how a large
 circle contributes only its cap.
+
+**Give `rgb` instead of `color` when the arrangement came out of a run.** The
+two are mutually exclusive and exactly one is required. `color` is `#rrggbb`, so
+each channel round trips through eight bits, and at the precision these
+campaigns now work at that loss is larger than the effects being measured -- on
+the eight-circle record it costs 3.73 against a polishing gain of 3.34, leaving
+the re-seeded run worse than the vector it came from. `rgb` is three exact
+`[0,1]` channels and round trips bit for bit:
+
+```json
+{"x": 256, "y": 256, "r": 400, "rgb": [0.7843137254901961, 0.796078431372549, 0.8156862745098039]}
+```
+
+`circles.json` and the `params.json` export already carry float channels, so
+converting one into a seed is a rename -- `cr`/`cg`/`cb` become the three
+entries of `rgb` -- and `x`, `y`, `r` and `opacity` carry across unchanged.
+Neither file can be pasted in whole, because the strict decoder refuses the
+extra keys they carry.
 
 Four rules keep the field honest:
 
@@ -306,8 +330,9 @@ it. It is an advisory and never a refusal: the document is valid and the
 configuration runs exactly as written — it is only measured wasteful. On base
 and extend stages it fires for MayFly only, because the measurement is MayFly's
 and the same `popSize` reaches CMA-ES as lambda and Dragonfly as `NPop`, where a
-larger population is a different trade; polish stages always carry it, since
-polishing runs MayFly whatever engine the document names.
+larger population is a different trade; a polish stage carries it whenever its
+sweep runs MayFly, which is the default and anything but `polishOptimizer:
+"cmaes"`.
 
 **The objective flips with what is scarce.** While the circle budget is open,
 gain per *hour* is the objective and the cheapest settings that still converge

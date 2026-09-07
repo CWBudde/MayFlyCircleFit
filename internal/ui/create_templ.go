@@ -716,7 +716,7 @@ func CreateJobPage(page CreateJobPageData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "\"><legend style=\"padding: 0;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Active-set Polishing</h2></legend> <label for=\"polishingEnabled\" style=\"display: flex; align-items: center; cursor: pointer; margin-bottom: 0.5rem;\"><input type=\"checkbox\" id=\"polishingEnabled\" name=\"polishingEnabled\" style=\"margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;\"> <span style=\"font-weight: 500;\">Polish selected circles after the batch run</span></label><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem; margin-left: 1.5rem;\">Batch mode only, and MayFly only: a polishing sweep runs its own MayFly population, so a CMA-ES or Dragonfly job asking for one is refused. Every strategy preserves draw order, and a sweep is kept only when the complete image improves.</p><div style=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "\"><legend style=\"padding: 0;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Active-set Polishing</h2></legend> <label for=\"polishingEnabled\" style=\"display: flex; align-items: center; cursor: pointer; margin-bottom: 0.5rem;\"><input type=\"checkbox\" id=\"polishingEnabled\" name=\"polishingEnabled\" style=\"margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;\"> <span style=\"font-weight: 500;\">Polish selected circles after the batch run</span></label><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem; margin-left: 1.5rem;\">Batch mode only. A sweep optimizes a few circles at a time while every other circle stays frozen, and it names its own engine below, independently of the one the run uses. Every strategy preserves draw order, and a sweep is kept only when the complete image improves.</p><div style=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -937,202 +937,228 @@ func CreateJobPage(page CreateJobPageData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Absolute optimizer cost reduction that resets stagnation</p></div></div></fieldset><fieldset style=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Absolute optimizer cost reduction that resets stagnation</p></div><div><label for=\"polishingOptimizer\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Sweep Engine</label> <select id=\"polishingOptimizer\" name=\"polishingOptimizer\" style=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var56 string
-			templ_7745c5c3_Var56, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSectionStyle)
+			templ_7745c5c3_Var56, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSelectStyle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 533, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 533, Col: 91}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "\"><legend style=\"padding: 0;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Convergence Settings</h2></legend><div style=\"margin-bottom: 1rem;\"><label for=\"convergenceEnabled\" style=\"display: flex; align-items: center; cursor: pointer;\"><input type=\"checkbox\" id=\"convergenceEnabled\" name=\"convergenceEnabled\" checked style=\"margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;\"> <span style=\"font-weight: 500;\">Enable Convergence Detection</span></label><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;\">Stop early when optimizer can't improve further (sequential/batch modes only).</p></div><div style=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "\"><option value=\"mayfly\" selected>MayFly</option> <option value=\"cmaes\">CMA-ES</option></select><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Independent of the run&#39;s own optimizer. Nothing measures one engine against the other on this stage yet.</p></div><div><label for=\"polishingSigma\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Sweep Sigma</label> <input type=\"number\" id=\"polishingSigma\" name=\"polishingSigma\" value=\"0.02\" min=\"0\" max=\"1\" step=\"any\" style=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var57 string
-			templ_7745c5c3_Var57, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createFieldGridStyle)
+			templ_7745c5c3_Var57, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 554, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 541, Col: 135}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "\"><div><label for=\"convergencePatience\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Patience</label> <input type=\"number\" id=\"convergencePatience\" name=\"convergencePatience\" value=\"3\" min=\"1\" max=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Search width around the incumbent, as a fraction of the normalized box</p></div></div></fieldset><fieldset style=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var58 string
-			templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(attrInt(page.Limits.MaxConvergencePatience))
+			templ_7745c5c3_Var58, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSectionStyle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 565, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 546, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "\" style=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "\"><legend style=\"padding: 0;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Convergence Settings</h2></legend><div style=\"margin-bottom: 1rem;\"><label for=\"convergenceEnabled\" style=\"display: flex; align-items: center; cursor: pointer;\"><input type=\"checkbox\" id=\"convergenceEnabled\" name=\"convergenceEnabled\" checked style=\"margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;\"> <span style=\"font-weight: 500;\">Enable Convergence Detection</span></label><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;\">Stop early when optimizer can't improve further (sequential/batch modes only).</p></div><div style=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var59 string
-			templ_7745c5c3_Var59, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			templ_7745c5c3_Var59, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createFieldGridStyle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 566, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 567, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Iterations with no improvement before stopping</p></div><div><label for=\"convergenceThreshold\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Threshold</label> <input type=\"number\" id=\"convergenceThreshold\" name=\"convergenceThreshold\" value=\"0.001\" min=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\"><div><label for=\"convergencePatience\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Patience</label> <input type=\"number\" id=\"convergencePatience\" name=\"convergencePatience\" value=\"3\" min=\"1\" max=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var60 string
-			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(attrFloat(page.Limits.MinConvergenceThreshold))
+			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(attrInt(page.Limits.MaxConvergencePatience))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 581, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 578, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "\" max=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "\" style=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var61 string
-			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(attrFloat(page.Limits.MaxConvergenceThreshold))
+			templ_7745c5c3_Var61, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 582, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 579, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "\" step=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Iterations with no improvement before stopping</p></div><div><label for=\"convergenceThreshold\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Threshold</label> <input type=\"number\" id=\"convergenceThreshold\" name=\"convergenceThreshold\" value=\"0.001\" min=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var62 string
 			templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(attrFloat(page.Limits.MinConvergenceThreshold))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 583, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 594, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "\" style=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "\" max=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var63 string
-			templ_7745c5c3_Var63, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(attrFloat(page.Limits.MaxConvergenceThreshold))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 584, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 595, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Minimum relative improvement (0.001 = 0.1%)</p></div></div></fieldset><fieldset style=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "\" step=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var64 string
-			templ_7745c5c3_Var64, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSectionStyle)
+			templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(attrFloat(page.Limits.MinConvergenceThreshold))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 592, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 596, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "\"><legend style=\"padding: 0;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Early Stopping (Optimizer)</h2></legend><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;\">Applied per iteration inside a single optimizer run, in every mode. The convergence settings above instead count whole circles or batches. Leave these empty to disable early stopping and keep runs reproducible.</p><div style=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "\" style=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var65 string
-			templ_7745c5c3_Var65, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createFieldGridStyle)
+			templ_7745c5c3_Var65, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 603, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 597, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\"><div><label for=\"stopTargetCost\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Target Cost</label> <input type=\"number\" id=\"stopTargetCost\" name=\"stopTargetCost\" min=\"0\" step=\"any\" placeholder=\"disabled\" style=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Minimum relative improvement (0.001 = 0.1%)</p></div></div></fieldset><fieldset style=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var66 string
-			templ_7745c5c3_Var66, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			templ_7745c5c3_Var66, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSectionStyle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 615, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 605, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Stop once the best cost reaches this absolute value</p></div><div><label for=\"stopStagnationIters\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Stagnation Iterations</label> <input type=\"number\" id=\"stopStagnationIters\" name=\"stopStagnationIters\" min=\"0\" placeholder=\"disabled\" style=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\"><legend style=\"padding: 0;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Early Stopping (Optimizer)</h2></legend><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;\">Applied per iteration inside a single optimizer run, in every mode. The convergence settings above instead count whole circles or batches. Leave these empty to disable early stopping and keep runs reproducible.</p><div style=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var67 string
-			templ_7745c5c3_Var67, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			templ_7745c5c3_Var67, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createFieldGridStyle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 631, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 616, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Stop after N consecutive iterations without progress</p></div><div><label for=\"stopMinImprovement\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Minimum Improvement</label> <input type=\"number\" id=\"stopMinImprovement\" name=\"stopMinImprovement\" min=\"0\" step=\"any\" placeholder=\"any improvement\" style=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "\"><div><label for=\"stopTargetCost\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Target Cost</label> <input type=\"number\" id=\"stopTargetCost\" name=\"stopTargetCost\" min=\"0\" step=\"any\" placeholder=\"disabled\" style=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var68 string
 			templ_7745c5c3_Var68, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 648, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 628, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">ABSOLUTE cost reduction counted as progress; requires stagnation iterations</p></div><div><label for=\"stopMinIters\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Minimum Iterations</label> <input type=\"number\" id=\"stopMinIters\" name=\"stopMinIters\" min=\"0\" placeholder=\"0\" style=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Stop once the best cost reaches this absolute value</p></div><div><label for=\"stopStagnationIters\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Stagnation Iterations</label> <input type=\"number\" id=\"stopStagnationIters\" name=\"stopStagnationIters\" min=\"0\" placeholder=\"disabled\" style=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var69 string
 			templ_7745c5c3_Var69, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 664, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 644, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Iterations completed before any early stop can fire</p></div></div></fieldset><fieldset style=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Stop after N consecutive iterations without progress</p></div><div><label for=\"stopMinImprovement\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Minimum Improvement</label> <input type=\"number\" id=\"stopMinImprovement\" name=\"stopMinImprovement\" min=\"0\" step=\"any\" placeholder=\"any improvement\" style=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var70 string
-			templ_7745c5c3_Var70, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSectionStyle)
+			templ_7745c5c3_Var70, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 672, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 661, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\"><legend style=\"padding: 0;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Advanced Metrics</h2></legend> <label for=\"enableSSIM\" style=\"display: flex; align-items: center; cursor: pointer;\"><input type=\"checkbox\" id=\"enableSSIM\" name=\"enableSSIM\" style=\"margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;\"> <span style=\"font-weight: 500;\">Enable SSIM</span></label><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;\">Track structural similarity during the run. This adds periodic image rendering and metric work.</p></fieldset><div class=\"action-row\" style=\"padding-top: 1rem; border-top: 1px solid var(--border-color);\"><a href=\"/jobs\" class=\"btn\" style=\"background-color: var(--border-color); text-decoration: none;\">Cancel</a> <button type=\"submit\" class=\"btn btn-primary\">Create Job</button></div></form></div><div class=\"card\" style=\"margin-top: 1.5rem; background-color: var(--info-bg);\"><h3 style=\"font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--info-text);\"><span aria-hidden=\"true\">💡</span> Tips</h3><ul style=\"margin-left: 1.5rem; color: var(--info-text-strong); font-size: 0.875rem; line-height: 1.6;\"><li><strong>Joint mode</strong>: Optimizes all circles simultaneously (fastest for small K)</li><li><strong>Sequential mode</strong>: Adds circles one at a time greedily (better for large K)</li><li><strong>Batch mode</strong>: Adds circles in batches (balanced approach)</li><li><strong>More iterations</strong>: Better results but takes longer</li><li><strong>Larger population</strong>: More exploration but slower per iteration</li></ul></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">ABSOLUTE cost reduction counted as progress; requires stagnation iterations</p></div><div><label for=\"stopMinIters\" style=\"display: block; font-weight: 500; margin-bottom: 0.5rem;\">Minimum Iterations</label> <input type=\"number\" id=\"stopMinIters\" name=\"stopMinIters\" min=\"0\" placeholder=\"0\" style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var71 string
+			templ_7745c5c3_Var71, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createInputStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 677, Col: 33}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "\"><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;\">Iterations completed before any early stop can fire</p></div></div></fieldset><fieldset style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var72 string
+			templ_7745c5c3_Var72, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(createSectionStyle)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 685, Col: 41}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "\"><legend style=\"padding: 0;\"><h2 style=\"font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;\">Advanced Metrics</h2></legend> <label for=\"enableSSIM\" style=\"display: flex; align-items: center; cursor: pointer;\"><input type=\"checkbox\" id=\"enableSSIM\" name=\"enableSSIM\" style=\"margin-right: 0.5rem; width: 1rem; height: 1rem; cursor: pointer;\"> <span style=\"font-weight: 500;\">Enable SSIM</span></label><p style=\"font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.5rem;\">Track structural similarity during the run. This adds periodic image rendering and metric work.</p></fieldset><div class=\"action-row\" style=\"padding-top: 1rem; border-top: 1px solid var(--border-color);\"><a href=\"/jobs\" class=\"btn\" style=\"background-color: var(--border-color); text-decoration: none;\">Cancel</a> <button type=\"submit\" class=\"btn btn-primary\">Create Job</button></div></form></div><div class=\"card\" style=\"margin-top: 1.5rem; background-color: var(--info-bg);\"><h3 style=\"font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--info-text);\"><span aria-hidden=\"true\">💡</span> Tips</h3><ul style=\"margin-left: 1.5rem; color: var(--info-text-strong); font-size: 0.875rem; line-height: 1.6;\"><li><strong>Joint mode</strong>: Optimizes all circles simultaneously (fastest for small K)</li><li><strong>Sequential mode</strong>: Adds circles one at a time greedily (better for large K)</li><li><strong>Batch mode</strong>: Adds circles in batches (balanced approach)</li><li><strong>More iterations</strong>: Better results but takes longer</li><li><strong>Larger population</strong>: More exploration but slower per iteration</li></ul></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1167,25 +1193,25 @@ func requiredMarker() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var71 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var71 == nil {
-			templ_7745c5c3_Var71 = templ.NopComponent
+		templ_7745c5c3_Var73 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var73 == nil {
+			templ_7745c5c3_Var73 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "<span style=\"color: var(--error-color);\" aria-hidden=\"true\">*</span><span class=\"sr-only\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "<span style=\"color: var(--error-color);\" aria-hidden=\"true\">*</span><span class=\"sr-only\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var72 string
-		templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(" (required)")
+		var templ_7745c5c3_Var74 string
+		templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(" (required)")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 726, Col: 106}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/create.templ`, Line: 739, Col: 106}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "</span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "</span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

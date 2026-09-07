@@ -373,7 +373,9 @@ ones that will change what you propose:
   `JobConfig.optimizer` selects MayFly, Dragonfly, or CMA-ES from the CLI,
   server, schedules, and web creation form. CMA-ES exposes normalized initial
   sigma, full/separable/block covariance, active adaptation, and IPOP/BIPOP.
-  Polishing remains MayFly-only.
+  Polishing names its own engine through `polishingOptimizer`, defaulting to
+  MayFly and refusing `dragonfly`, so a CMA-ES job may end in a polish sweep;
+  nothing yet ranks the two engines on that stage.
 - `internal/server`: trusted-local HTTP boundary and background job lifecycle.
 - `internal/store`: filesystem checkpoint, trace, and artifact ownership.
 - `internal/ui`: templ views plus committed generated Go output. Every page is

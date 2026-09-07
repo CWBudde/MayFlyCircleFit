@@ -131,6 +131,20 @@ type ScheduleStep struct {
 	StagnationIters *int               `json:"stagnationIters,omitempty"`
 	MinImprovement  *float64           `json:"minImprovement,omitempty"`
 
+	// PolishOptimizer overrides the engine the sweep searches its active set
+	// with. It is polish-only, and it is a separate knob from the base's
+	// `optimizer` because a sweep is a different problem from a stage: it
+	// searches activeSetSize*7 dimensions around a known incumbent at a small
+	// step size. Unset leaves whatever the base carries, which for a document
+	// that never mentions it is MayFly.
+	PolishOptimizer *Optimizer `json:"polishOptimizer,omitempty"`
+
+	// Sigma overrides the sweep's seeded perturbation width, in the
+	// optimizer's normalized [0,1] box. Polish-only, because it configures the
+	// continuation profile a sweep hands its optimizer and an extend stage
+	// hands none.
+	Sigma *float64 `json:"sigma,omitempty"`
+
 	// Budget overrides valid on either kind. On a polish step Epochs and Iters
 	// address the polishing budget, matching the polish endpoint.
 	Epochs  *int `json:"epochs,omitempty"`
@@ -464,6 +478,8 @@ func (s ScheduleStep) validate(index int) error {
 			"maxSweeps":       s.MaxSweeps != nil,
 			"stagnationIters": s.StagnationIters != nil,
 			"minImprovement":  s.MinImprovement != nil,
+			"polishOptimizer": s.PolishOptimizer != nil,
+			"sigma":           s.Sigma != nil,
 		} {
 			if set {
 				return invalid(field(name), "is a polish override and cannot appear on an extend step")
@@ -656,6 +672,14 @@ func (s ScheduleStep) realize(config JobConfig, circles, index, stepIndex, repet
 		// rather than the job-wide one the stage never uses.
 		if s.PopSize != nil {
 			staged.PolishingPopSize = *s.PopSize
+		}
+
+		if s.PolishOptimizer != nil {
+			staged.PolishingOptimizer = *s.PolishOptimizer
+		}
+
+		if s.Sigma != nil {
+			staged.PolishingSigma = *s.Sigma
 		}
 	}
 
