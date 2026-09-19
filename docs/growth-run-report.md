@@ -2,10 +2,10 @@
 
 A production run, not a campaign. It **registers no contrasts and tests
 nothing**: it applies the recipe the polish-engine campaign selected and drives
-it as deep as a fixed wall-clock window allowed. That campaign's report is not
-written yet; its data is in `cmaes-polish-engine-measurement.csv` and the two
-CSVs beside it. Read it for the records it sets, for
-the two structural ceilings it found, and for the method note about re-seeding.
+it as deep as a fixed wall-clock window allowed. That campaign is reported in
+[`cmaes-polish-engine-report.md`](cmaes-polish-engine-report.md). Read this one
+for the records it sets, for the two structural ceilings it found, and for the
+method note about re-seeding.
 Do not read any number in it as a comparison — there is no control arm anywhere.
 
 Run 2026-09-06 20:52 to 2026-09-07 05:43 on the 64-core box, fixture

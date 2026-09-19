@@ -289,6 +289,33 @@ anything new against its figures.
       The campaign also **withdraws the `MaxOptimizerRestarts` reading above**
       by direct measurement rather than by probe: stages ran up to 88 attempts
       with the constant unchanged at 64.
+      **Ran 2026-09-06, and it answers the polish half — negatively for
+      placement and positively for the operator.** 60 of 60 campaigns, 756
+      stages, 2h 07m of wall clock. Two of four registered contrasts reject
+      under Holm: a terminal sweep beats no sweep by `+18.09`
+      (`t = +36.58`, `p = 7.7e-13`, 12/12) for 20.6% more evaluations, and
+      CMA-ES beats MayFly as the sweep engine by `+5.16` (`t = +11.76`, 12/12).
+      **The registered primary — interleaving the same sweeps rather than
+      spending them at the end — is a bounded null**: `+1.01`, `t = +1.20`,
+      7/12, interval `-0.84` to `+2.85`, and `-0.21` when re-asked under MayFly.
+      The mechanism says why: the interleaved lead is built by the first three
+      sweeps and then stops growing (17.48 at eleven circles, 17.39 at
+      sixteen), so the revisit is a
+      level shift the terminal placement recovers in one stage and a greedy
+      ladder does not exploit a polished prefix. See
+      [`docs/cmaes-polish-engine-report.md`](docs/cmaes-polish-engine-report.md).
+      **It does not license a `polishingOptimizer` default**, exactly as
+      registered: matching on evaluations forced MayFly to 128 iterations per
+      sweep against CMA-ES's 400, so engine is confounded with iteration count
+      by construction. The campaign also confirms the extend-width withdrawal at
+      a larger number — 73 to 91 attempts per stage against twenty nominal — and
+      shows that **`elapsedSeconds` ranks queue residency rather than work**:
+      the same ladder at the same cap took 4,092 seconds here and 11,580 in
+      extend-width, so that campaign's 41% wall-clock caveat is contaminated
+      too. **This checkbox stays open for restarts on a sweep**, which the
+      campaign did not measure and could not: the polisher runs under
+      `WithEpochs` alone, so a restart count on a polish step is refused rather
+      than accepted.
 - [x] Settle which restart *shape* a CMA-ES default would name. The budget-split
       screen established that splitting a CMA-ES budget beats not splitting it
       but could not order the three mechanisms, and it found the IPOP ladder
