@@ -272,7 +272,7 @@ re-measure instead.
   `cmaes-restart-shape-report.md`'s claim that `app.MaxOptimizerRestarts` bound
   a block — stages here ran up to 88 attempts with the constant at 64, because
   it bounds the requested magnitude, not the attempts a filling schedule runs.
-- - [`cmaes-polish-engine-report.md`](cmaes-polish-engine-report.md) — five arms
+- [`cmaes-polish-engine-report.md`](cmaes-polish-engine-report.md) — five arms
   and 60 campaigns (756 stages) asking **whether a greedy extend ladder should
   polish, and where**. Every arm runs `ext-w1` verbatim and varies only the
   polish step, so the unpolished control **is** the extend-width winner on fresh

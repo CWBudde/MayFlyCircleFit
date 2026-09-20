@@ -330,7 +330,7 @@ ones that will change what you propose:
   across a sixteenfold dimension range, `distributionExtent` bounded at 0.8225
   over 15,131 samples, and the measurement that withdraws the restart-shape
   report's `MaxOptimizerRestarts` claim.
-- - [`docs/cmaes-polish-engine-report.md`](docs/cmaes-polish-engine-report.md) —
+- [`docs/cmaes-polish-engine-report.md`](docs/cmaes-polish-engine-report.md) —
   five arms and 60 campaigns asking **whether a greedy extend ladder should
   polish, and where**. It runs `ext-w1` verbatim and varies only the polish
   step, so its unpolished control is the extend-width winner on fresh seeds.
