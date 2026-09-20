@@ -43,6 +43,7 @@ historical meaning wherever it is cited.
 | [11](#task-11-remaining-opencl-optimization-tranches-p3) | Remaining OpenCL tranches | P3 | 11.13 |
 | [12](#task-12-deferred-cpu-kernel-research-p3) | Deferred CPU-kernel research | P3 | 10.20 |
 | [13](#task-13-prefix-aware-active-set-selection-p3-effectively-closed) | Prefix-aware active-set selection | P3 | 15.3 |
+| [14](#task-14-animation-export-p3-complete) | Animation export | P3 | — |
 
 ---
 
@@ -913,6 +914,35 @@ shows the prefix mattering again.
 - [ ] If reopened: bias selection toward later draw slots when region energy is
       close, and ship it only with a measured quality comparison at equal
       optimizer budget on the same seed — not on the cost argument alone.
+
+---
+
+### Task 14: Animation export (P3, complete)
+
+`circlefit animate` ports the frame-sequence export from this project's Pascal
+predecessor, CircledPictureDrawing: all four styles (`static`, `grow`,
+`cascade`, `inflate`), the closing vignette, and an optional ffmpeg encode. See
+[`docs/animation.md`](docs/animation.md).
+
+The port is a replay of a finished arrangement, because that is all the original
+ever was -- its `SaveAnimation*` procedures run from a menu after the search
+ends. Planning is a pure function to `[]Frame`, so the growth curves are pinned
+against values computed from the Pascal formulas, and the executor asserts that
+every style's last frame is byte-identical to a single-pass render of the whole
+arrangement.
+
+What it does **not** do, and cannot today:
+
+- [ ] Animate the search itself -- circles moving into place as the optimizer
+      converges. That needs a geometry history nobody records: a checkpoint is
+      overwritten in place at every epoch boundary, and `store.TraceEntry.Params`
+      exists and round-trips but is never populated by
+      `internal/server/metrics.go`. Populating it is the prerequisite, and it is
+      not free: the trace would grow by seven floats per circle per sample.
+      Decide the sampling rate before the field, not after.
+- [ ] Reach the animation from the web UI or the server. The command is
+      CLI-only; `saveSnapshots` and `snapshots/canvas-NN.png` remain the
+      unrelated, unread server-side sequence they were.
 
 ---
 

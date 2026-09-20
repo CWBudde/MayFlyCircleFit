@@ -128,7 +128,7 @@ func (c CircleSpec) validateColor(field func(string) string) error {
 		return validateChannels(field, *c.RGB)
 	}
 
-	_, err := parseHexColor(c.Color)
+	_, err := ParseHexColor(c.Color)
 	if err != nil {
 		return invalid(field("color"), err.Error())
 	}
@@ -154,7 +154,7 @@ func (c CircleSpec) channels() ([3]float64, error) {
 		return *c.RGB, nil
 	}
 
-	return parseHexColor(c.Color)
+	return ParseHexColor(c.Color)
 }
 
 // errHexColor is the one thing that can be wrong with a hex colour, so it is a
@@ -162,13 +162,18 @@ func (c CircleSpec) channels() ([3]float64, error) {
 // prefixes is what distinguishes the two call sites.
 var errHexColor = errors.New("must be a six digit hex colour such as #4a3226")
 
-// parseHexColor converts "#rrggbb" to three channels in [0,1], in red, green
+// ParseHexColor converts "#rrggbb" to three channels in [0,1], in red, green
 // and blue order. The leading hash is optional so a colour copied out of an
 // editor pastes either way.
 //
+// It is exported because a colour can reach the application from somewhere
+// other than a circle list -- the animation command takes a background colour
+// the same way -- and a second parser would be a second set of accepted
+// spellings.
+//
 // The conversion is lossy, and CircleSpec.RGB exists because the loss is now
 // larger than the effects being measured; see the field's own comment.
-func parseHexColor(value string) ([3]float64, error) {
+func ParseHexColor(value string) ([3]float64, error) {
 	channels := [3]float64{}
 
 	digits := strings.TrimPrefix(strings.TrimSpace(value), "#")
