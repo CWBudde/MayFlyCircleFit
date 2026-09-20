@@ -359,3 +359,23 @@ fields live on the base `JobConfig` and are validated against the base's own
 those fields cannot be overridden per step, so the whole 2990-stage campaign
 would then run without early stopping, at roughly twice the wall clock. Scoring
 the untouched arrangement is what `score` is for, and its number is above.
+
+### The animation: `mayfly-3000.mp4`
+
+The finished 3000-circle fit replayed as a video, produced with
+[`circlefit animate`](../docs/animation.md):
+
+```sh
+circlefit animate --ref example/MayFly-512.png \
+    --checkpoint <the finished job>/checkpoint.json \
+    --out-dir frames/ --style cascade \
+    --scale 2 --supersample 4 --fps 60 --mp4 example/mayfly-3000.mp4
+```
+
+3130 frames, 52.2 s at 60 fps, 1024x1024 h264. `--scale 2` doubles the 512x512
+fit and `--supersample 4` renders each frame at 4096x4096 and box-averages it
+back down, because the span compositor draws no partial pixels — without it the
+circle edges are a visible staircase at twice the fit's own size.
+
+The file is **not committed** (`*.mp4` is ignored): it is 1.4 MB of output that
+regenerates from the checkpoint in about eleven minutes on twelve cores.
