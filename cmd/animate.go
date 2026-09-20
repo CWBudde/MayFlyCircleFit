@@ -150,14 +150,8 @@ func runAnimate(cmd *cobra.Command, _ []string) error {
 
 	cmd.Printf("style:      %s\n", animateStyle)
 	cmd.Printf("circles:    %d\n", len(circles))
-	if animateSupersample > 1 {
-		cmd.Printf("frames:     %d at %dx%d, averaged down from %dx%d\n",
-			len(sequence.Frames),
-			sequence.Width/animateSupersample, sequence.Height/animateSupersample,
-			sequence.Width, sequence.Height)
-	} else {
-		cmd.Printf("frames:     %d at %dx%d\n", len(sequence.Frames), sequence.Width, sequence.Height)
-	}
+
+	reportFrames(cmd, sequence)
 
 	err = writeFrames(cmd, sequence, background)
 	if err != nil {
@@ -208,6 +202,22 @@ func clearStaleFrames(dir string) (int, error) {
 // staleFrameName matches exactly what frameNamePattern produces, so nothing
 // else a directory happens to hold can be deleted by it.
 var staleFrameName = regexp.MustCompile(`^frame-\d{6}\.png$`)
+
+// reportFrames states the size the frames are written at, and the size they
+// were rendered at when those differ, because the render size is what the cost
+// and the memory follow from.
+func reportFrames(cmd *cobra.Command, sequence *anim.Sequence) {
+	if animateSupersample <= 1 {
+		cmd.Printf("frames:     %d at %dx%d\n", len(sequence.Frames), sequence.Width, sequence.Height)
+
+		return
+	}
+
+	cmd.Printf("frames:     %d at %dx%d, averaged down from %dx%d\n",
+		len(sequence.Frames),
+		sequence.Width/animateSupersample, sequence.Height/animateSupersample,
+		sequence.Width, sequence.Height)
+}
 
 func animateOptions() anim.Options {
 	opts := anim.DefaultOptions()

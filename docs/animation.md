@@ -89,11 +89,37 @@ circlefit animate --ref example/MayFly-512.png --circles circles.json \
 | `--background` | `#FFFFFF` | Fill behind the arrangement. |
 | `--canvas` | — | Base canvas the fit started from. Overrides whatever the source records. |
 | `--ignore-canvas` | `false` | Animate on `--background`, ignoring the canvas the source records. |
+| `--supersample` | `1` | Render this many times larger and average down, to antialias the circle edges. |
 | `--mp4`, `--fps` | —, `30` | Encode with ffmpeg. |
 
 Frames are written as `frame-000000.png`. The padding is deliberate: the
 original wrote `Frame7.png`, which does not sort, and `ffmpeg -i
 frame-%06d.png` needs the fixed width.
+
+## Antialiasing
+
+The span compositor draws no partial pixels — a circle's edge is a hard
+boundary, because the byte-exact parity contract in
+[`renderer-correctness.md`](renderer-correctness.md) requires it to be. At the
+reference's own size that is invisible; scaled up for a video it is a visible
+staircase.
+
+`--supersample N` renders at N times the geometry and box-averages each frame
+back down, so an edge resolves to 1/N² of a pixel. A 512² fit as a 1024² video
+with 4× supersampling renders at 4096² — which is exactly `app.MaxImagePixels`,
+so that is the ceiling for a square canvas:
+
+```sh
+circlefit animate --ref example/MayFly-512.png --checkpoint checkpoint.json \
+  --out-dir frames/ --style cascade --scale 2 --supersample 4 --fps 60 --mp4 fit.mp4
+```
+
+Measured on one circle over a plain background: without it a frame holds two
+colours and no edge pixels at all; at `--supersample 4`, seventeen colours and
+982 graded edge pixels.
+
+It multiplies render cost by roughly N², and only the downsampled frame is ever
+written, so the PNGs stay the size you asked for.
 
 ## Two things worth knowing about the output
 

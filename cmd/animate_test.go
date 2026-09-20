@@ -9,6 +9,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
@@ -461,4 +464,91 @@ func TestAnimateRemovesFramesFromALongerPreviousRun(t *testing.T) {
 	if err != nil {
 		t.Errorf("notes.txt was deleted; only this command's own frames may be removed: %v", err)
 	}
+}
+
+// Supersampling is the only way to get a smooth circle edge: the span
+// compositor draws no partial pixels, because the byte-exact parity contract
+// requires it not to. Rendering larger and averaging down is what softens the
+// boundary, and the frames must come out at the requested size regardless.
+//
+//nolint:paralleltest // mutates the package-level animate flags, which every test in this package shares.
+func TestAnimateSupersamplesToTheRequestedSize(t *testing.T) {
+	_, outDir := animateFixture(t, string(anim.StyleStatic))
+
+	animateScale, animateSupersample = 2, 4
+
+	err := runAnimate(animateTestCommand(), nil)
+	if err != nil {
+		t.Fatalf("runAnimate: %v", err)
+	}
+
+	// The 32x32 fixture at scale 2 is 64x64 out, whatever it was rendered at.
+	frame := decodeFrame(t, filepath.Join(outDir, "frame-000001.png"))
+	if frame.Bounds().Dx() != 64 || frame.Bounds().Dy() != 64 {
+		t.Fatalf("frame is %dx%d, want 64x64", frame.Bounds().Dx(), frame.Bounds().Dy())
+	}
+
+	supersampled := countColors(frame)
+
+	// The same geometry without supersampling has hard edges, so a circle on a
+	// plain background yields only the two colours and nothing between them.
+	animateSupersample = 1
+	animateOutDir = filepath.Join(filepath.Dir(outDir), "aliased")
+
+	err = runAnimate(animateTestCommand(), nil)
+	if err != nil {
+		t.Fatalf("runAnimate without supersampling: %v", err)
+	}
+
+	aliased := countColors(decodeFrame(t, filepath.Join(animateOutDir, "frame-000001.png")))
+
+	if supersampled <= aliased {
+		t.Errorf("supersampled frame has %d colours and the aliased one %d; the edge was not softened",
+			supersampled, aliased)
+	}
+}
+
+//nolint:paralleltest // mutates the package-level animate flags, which every test in this package shares.
+func TestAnimateRefusesASupersampleBelowOne(t *testing.T) {
+	animateFixture(t, string(anim.StyleStatic))
+
+	animateSupersample = 0
+
+	err := runAnimate(animateTestCommand(), nil)
+	if err == nil || !strings.Contains(err.Error(), "--supersample must be at least 1") {
+		t.Errorf("got %v, want a refusal naming --supersample", err)
+	}
+}
+
+func decodeFrame(t *testing.T, path string) image.Image {
+	t.Helper()
+
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	decoded, err := png.Decode(file)
+	if err != nil {
+		t.Fatalf("decode %s: %v", path, err)
+	}
+
+	return decoded
+}
+
+// countColors reports how many distinct colours a frame holds. A hard-edged
+// render of one circle on a flat background has two; every additional one is a
+// pixel the averaging produced.
+func countColors(img image.Image) int {
+	seen := map[color.Color]struct{}{}
+
+	bounds := img.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			seen[img.At(x, y)] = struct{}{}
+		}
+	}
+
+	return len(seen)
 }
