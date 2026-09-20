@@ -468,3 +468,25 @@ func TestGrowthCurvesMatchTheOriginal(t *testing.T) {
 		})
 	}
 }
+
+// The original appended its closing vignette to every style but Static, so the
+// settings that reproduce it have to leave the outro off there.
+func TestPascalDefaultsSkipTheOutroForStatic(t *testing.T) {
+	t.Parallel()
+
+	for _, style := range anim.Styles() {
+		opts := anim.PascalDefaults(style)
+
+		if style == anim.StyleStatic {
+			if opts.Outro != 0 {
+				t.Errorf("static has an outro of %d; the original's static export had none", opts.Outro)
+			}
+
+			continue
+		}
+
+		if opts.Outro == 0 {
+			t.Errorf("%s has no outro; the original appended one to every style but static", style)
+		}
+	}
+}

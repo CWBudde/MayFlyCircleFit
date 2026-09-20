@@ -200,4 +200,8 @@ Two consequences worth knowing:
   GPU frame would not match `best.png`.
 - **`--canvas` cannot be combined with `--scale`.** Scaling a base canvas means
   resampling pixels the fit never saw. Rather than pick an interpolation and
-  quietly change what the frames mean, the combination is refused.
+  quietly change what the frames mean, the combination is refused. It *can* be
+  combined with `--supersample`: the canvas is taken up by repeating each pixel
+  as an N×N block, which the box filter on the way out reverses exactly, so the
+  averaged frame carries the canvas byte for byte and only the circle edges
+  drawn over it are softened.

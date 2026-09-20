@@ -114,12 +114,19 @@ func DefaultOptions() Options {
 
 // PascalDefaults returns the settings TFmSaveAnimation opens with, for
 // reproducing the original's output rather than a clean sequence.
+//
+// The outro is what the original appended to every style but Static, so it is
+// left off there: SaveAnimationStatic is the one procedure without the closing
+// vignette, and reproducing it means reproducing that too.
 func PascalDefaults(style Style) Options {
 	opts := DefaultOptions()
 	opts.Style = style
 	opts.Scale = 2
 	opts.Margin = 0.5
-	opts.Outro = vignetteOutroFrames
+
+	if style != StyleStatic {
+		opts.Outro = vignetteOutroFrames
+	}
 
 	return opts
 }

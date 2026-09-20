@@ -62,3 +62,31 @@ func Downsample(img *image.NRGBA, factor int) *image.NRGBA {
 func mean(total, samples int) uint8 {
 	return uint8(((total + samples/2) / samples) & 0xFF)
 }
+
+// Upsample enlarges an image by an integer factor by repeating each pixel as a
+// factor-by-factor block. It is the exact inverse of Downsample for anything
+// that has not been drawn over since: a uniform block averages to its own value,
+// so a base canvas taken up by this and back down by Downsample returns byte for
+// byte, which is what lets a supersampled animation carry the canvas a fit was
+// made over without resampling a pixel of it.
+func Upsample(img *image.NRGBA, factor int) *image.NRGBA {
+	if factor <= 1 {
+		return img
+	}
+
+	bounds := img.Bounds()
+	width, height := bounds.Dx()*factor, bounds.Dy()*factor
+	out := image.NewNRGBA(image.Rect(0, 0, width, height))
+
+	for y := range height {
+		row := out.PixOffset(0, y)
+		source := img.PixOffset(bounds.Min.X, bounds.Min.Y+y/factor)
+
+		for x := range width {
+			copy(out.Pix[row:row+4], img.Pix[source+(x/factor)*4:source+(x/factor)*4+4])
+			row += 4
+		}
+	}
+
+	return out
+}

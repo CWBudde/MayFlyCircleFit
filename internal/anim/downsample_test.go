@@ -1,6 +1,7 @@
 package anim_test
 
 import (
+	"bytes"
 	"image"
 	"image/color"
 	"testing"
@@ -87,5 +88,40 @@ func TestDownsampleRefusesToVanish(t *testing.T) {
 
 	if anim.Downsample(img, 8) != img {
 		t.Error("a factor larger than the image did not return it unchanged")
+	}
+}
+
+// Upsample exists so a base canvas survives supersampling untouched, which
+// holds only if Downsample reverses it exactly: every block is uniform, so the
+// mean has nothing to round.
+func TestUpsampleIsReversedExactlyByDownsample(t *testing.T) {
+	t.Parallel()
+
+	img := image.NewNRGBA(image.Rect(0, 0, 5, 3))
+	for i := range img.Pix {
+		// Every channel differs from its neighbours, so a misplaced block or a
+		// swapped axis cannot go unnoticed.
+		img.Pix[i] = uint8((i*37 + 11) & 0xFF)
+	}
+
+	for _, factor := range []int{2, 3, 4} {
+		up := anim.Upsample(img, factor)
+		if up.Bounds().Dx() != 5*factor || up.Bounds().Dy() != 3*factor {
+			t.Fatalf("factor %d: upsampled to %v", factor, up.Bounds())
+		}
+
+		down := anim.Downsample(up, factor)
+		if !bytes.Equal(down.Pix, img.Pix) {
+			t.Errorf("factor %d: Downsample(Upsample(img)) differs from img", factor)
+		}
+	}
+}
+
+func TestUpsampleAtFactorOneReturnsTheImage(t *testing.T) {
+	t.Parallel()
+
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	if anim.Upsample(img, 1) != img {
+		t.Error("a factor of one must return the image itself, as Downsample does")
 	}
 }

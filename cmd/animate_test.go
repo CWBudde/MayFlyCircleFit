@@ -273,10 +273,51 @@ func TestAnimateRefusesAnArrangementTheCanvasCannotHold(t *testing.T) {
 	}
 }
 
+// A checkpoint is held to the same bounds as a circle list. One written against
+// a larger reference, or edited by hand, would otherwise be drawn clamped into
+// the canvas and the animation would show an arrangement nobody fitted.
+//
+//nolint:paralleltest // mutates the package-level animate flags, which every test in this package shares.
+func TestAnimateRefusesACheckpointTheCanvasCannotHold(t *testing.T) {
+	dir, _ := animateFixture(t, string(anim.StyleStatic))
+
+	cases := map[string][]float64{
+		"centre off the canvas": {900, 900, 4, 1, 0, 0, 1},
+		"radius below minimum":  {12, 12, 0.25, 1, 0, 0, 1},
+		"colour above one":      {12, 12, 4, 2, 0, 0, 1},
+		"opacity of zero":       {12, 12, 4, 1, 0, 0, 0},
+	}
+
+	for name, params := range cases {
+		checkpoint := store.NewCheckpoint("11111111-1111-1111-1111-111111111111", params,
+			1, 1, 1, store.JobConfig{Circles: 1})
+
+		encoded, err := json.Marshal(checkpoint)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		checkpointPath := filepath.Join(dir, "checkpoint.json")
+
+		err = os.WriteFile(checkpointPath, encoded, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		animateCirclesPath, animateCheckpointPath = "", checkpointPath
+
+		err = runAnimate(animateTestCommand(), nil)
+		if err == nil || !strings.Contains(err.Error(), "outside the bounds") {
+			t.Errorf("%s: got %v, want a refusal naming the bounds", name, err)
+		}
+	}
+}
+
 // The encode itself needs ffmpeg, which a checkout is not entitled to assume,
 // so the argument vector is asserted instead. It is the part that goes wrong:
 // the input pattern has to match the names the frames were actually written
-// under, and yuv420p has to be given even dimensions to work with.
+// under, and yuv420p has to be given even dimensions to work with -- by
+// padding, in the background colour, never by cropping a row off.
 //
 //nolint:paralleltest // mutates the package-level animate flags, which every test in this package shares.
 func TestFfmpegArgumentsMatchTheFramesOnDisk(t *testing.T) {
@@ -285,14 +326,14 @@ func TestFfmpegArgumentsMatchTheFramesOnDisk(t *testing.T) {
 	animateMP4Path = filepath.Join(outDir, "fit.mp4")
 	animateFPS = 24
 
-	args := ffmpegArgs()
+	args := ffmpegArgs([3]float64{0, 0.5, 1})
 	joined := strings.Join(args, " ")
 
 	for _, want := range []string{
 		"-framerate 24",
 		filepath.Join(outDir, "frame-%06d.png"),
 		"-pix_fmt yuv420p",
-		"scale=trunc(iw/2)*2:trunc(ih/2)*2",
+		"pad=w=ceil(iw/2)*2:h=ceil(ih/2)*2:color=0x0080FF",
 		animateMP4Path,
 	} {
 		if !strings.Contains(joined, want) {
@@ -505,6 +546,46 @@ func TestAnimateSupersamplesToTheRequestedSize(t *testing.T) {
 	if supersampled <= aliased {
 		t.Errorf("supersampled frame has %d colours and the aliased one %d; the edge was not softened",
 			supersampled, aliased)
+	}
+}
+
+// A base canvas is carried through supersampling by replication, which the box
+// filter reverses exactly, so the opening frame -- the bare canvas, before any
+// circle -- must come back as the canvas itself, pixel for pixel. Placing the
+// canvas at reference size into the larger render would instead leave it in
+// one corner, and averaging it down would shrink it into a quarter of the
+// frame.
+//
+//nolint:paralleltest // mutates the package-level animate flags, which every test in this package shares.
+func TestAnimateKeepsTheBaseCanvasExactWhenSupersampling(t *testing.T) {
+	dir, outDir := animateFixture(t, string(anim.StyleStatic))
+
+	canvasPath := filepath.Join(dir, "canvas.png")
+	writeScoreFixture(t, canvasPath)
+
+	animateCanvasPath = canvasPath
+	animateSupersample = 4
+
+	err := runAnimate(animateTestCommand(), nil)
+	if err != nil {
+		t.Fatalf("runAnimate: %v", err)
+	}
+
+	canvas := decodeFrame(t, canvasPath)
+	opening := decodeFrame(t, filepath.Join(outDir, "frame-000000.png"))
+
+	if opening.Bounds() != canvas.Bounds() {
+		t.Fatalf("opening frame is %v, want the canvas's %v", opening.Bounds(), canvas.Bounds())
+	}
+
+	bounds := canvas.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			if opening.At(x, y) != canvas.At(x, y) {
+				t.Fatalf("pixel (%d,%d) is %v in the opening frame but %v in the canvas",
+					x, y, opening.At(x, y), canvas.At(x, y))
+			}
+		}
 	}
 }
 

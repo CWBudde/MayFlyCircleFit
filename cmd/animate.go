@@ -246,7 +246,7 @@ func animateOptions() anim.Options {
 // output would say so.
 func animateArrangement(ref *image.NRGBA) ([]fit.Circle, string, error) {
 	if animateCheckpointPath != "" {
-		return checkpointCircles(animateCheckpointPath)
+		return checkpointCircles(animateCheckpointPath, ref)
 	}
 
 	specs, canvasPath, err := loadCircleSpecs(animateCirclesPath)
@@ -270,25 +270,38 @@ func animateArrangement(ref *image.NRGBA) ([]fit.Circle, string, error) {
 		return nil, "", err
 	}
 
-	// An arrangement the canvas cannot hold would be quietly pulled inside, and
-	// the animation would then show something nobody authored. score refuses it
-	// for the same reason.
-	bounds := fit.NewBounds(len(specs), ref.Bounds().Dx(), ref.Bounds().Dy())
-
-	clamped := append([]float64(nil), params...)
-	bounds.ClampVector(clamped)
-
-	for i := range params {
-		if params[i] != clamped[i] {
-			return nil, "", fmt.Errorf("circle %d is outside the bounds a %dx%d canvas allows",
-				i/app.ParamsPerCircle, ref.Bounds().Dx(), ref.Bounds().Dy())
-		}
+	err = checkWithinBounds(params, ref)
+	if err != nil {
+		return nil, "", err
 	}
 
 	return decodeCircles(params), canvasPath, nil
 }
 
-func checkpointCircles(path string) ([]fit.Circle, string, error) {
+// checkWithinBounds refuses a parameter vector the reference cannot hold. An
+// arrangement outside the bounds would be quietly pulled inside by the renderer,
+// and the animation would then show something nobody authored; score refuses it
+// for the same reason. The clamp covers every parameter -- centre, radius,
+// colour and opacity -- so a vector that passes here is one the renderer draws
+// as written, whichever route it arrived by.
+func checkWithinBounds(params []float64, ref *image.NRGBA) error {
+	bounds := fit.NewBounds(len(params)/app.ParamsPerCircle, ref.Bounds().Dx(), ref.Bounds().Dy())
+
+	clamped := append([]float64(nil), params...)
+	bounds.ClampVector(clamped)
+
+	for i := range params {
+		// A NaN never equals anything, so it is caught here too.
+		if params[i] != clamped[i] {
+			return fmt.Errorf("circle %d is outside the bounds a %dx%d canvas allows",
+				i/app.ParamsPerCircle, ref.Bounds().Dx(), ref.Bounds().Dy())
+		}
+	}
+
+	return nil
+}
+
+func checkpointCircles(path string, ref *image.NRGBA) ([]fit.Circle, string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, "", fmt.Errorf("read checkpoint: %w", err)
@@ -306,7 +319,9 @@ func checkpointCircles(path string) ([]fit.Circle, string, error) {
 	// command reads one field. A checkpoint copied off the machine that ran it
 	// names a reference path that does not exist here, and refusing to draw its
 	// circles over that would be a rule with no purpose. What has to be sound
-	// is the parameter vector.
+	// is the parameter vector, and it is held to the same bounds as a circle
+	// list: a checkpoint from another reference, or a hand-edited one, is not
+	// trusted just for being a checkpoint.
 	if len(checkpoint.BestParams) == 0 {
 		return nil, "", fmt.Errorf("checkpoint %s records no solution", path)
 	}
@@ -314,6 +329,11 @@ func checkpointCircles(path string) ([]fit.Circle, string, error) {
 	if len(checkpoint.BestParams)%app.ParamsPerCircle != 0 {
 		return nil, "", fmt.Errorf("checkpoint %s holds %d parameters, which is not a whole number of circles",
 			path, len(checkpoint.BestParams))
+	}
+
+	err = checkWithinBounds(checkpoint.BestParams, ref)
+	if err != nil {
+		return nil, "", fmt.Errorf("checkpoint %s: %w", path, err)
 	}
 
 	return decodeCircles(checkpoint.BestParams), checkpoint.Config.CanvasPath, nil
@@ -337,6 +357,11 @@ func decodeCircles(params []float64) []fit.Circle {
 // A base canvas cannot be scaled. Resampling it would invent pixels the fit
 // never saw, and the frames would stop matching the image the run produced, so
 // the combination is refused rather than approximated.
+//
+// Supersampling is different, and is allowed: the canvas is taken up by pixel
+// replication, which the box filter on the way out reverses exactly, so the
+// averaged frame carries the canvas byte for byte and only the circle edges
+// drawn over it are softened.
 func animateCanvas(sequence *anim.Sequence, ref *image.NRGBA, canvasPath string) (*image.NRGBA, error) {
 	canvasPath = effectiveCanvasPath(canvasPath)
 
@@ -361,7 +386,7 @@ func animateCanvas(sequence *anim.Sequence, ref *image.NRGBA, canvasPath string)
 		return nil, err
 	}
 
-	placeCanvas(background, canvas, sequence.OffsetX, sequence.OffsetY)
+	placeCanvas(background, anim.Upsample(canvas, animateSupersample), sequence.OffsetX, sequence.OffsetY)
 
 	return background, nil
 }
@@ -464,7 +489,14 @@ func encodeVideo(cmd *cobra.Command, frames int) error {
 		return nil
 	}
 
-	args := ffmpegArgs()
+	// The background was already parsed to build the frames, so this cannot
+	// fail; it is re-read here only because the pad colour has to match it.
+	fill, err := app.ParseHexColor(animateBackground)
+	if err != nil {
+		return fmt.Errorf("background: %w", err)
+	}
+
+	args := ffmpegArgs(fill)
 
 	binary, err := exec.LookPath("ffmpeg")
 	if err != nil {
@@ -492,16 +524,27 @@ func encodeVideo(cmd *cobra.Command, frames int) error {
 
 // ffmpegArgs is separate so a test can assert the command without running it.
 //
-// The scale filter is not cosmetic: yuv420p needs even dimensions, and --scale
-// and --margin can both produce odd ones.
-func ffmpegArgs() []string {
+// The pad filter is not cosmetic: libx264 refuses odd dimensions for yuv420p,
+// and the reference, --scale and --margin can all produce them. Padding to the
+// next even size with the background colour keeps every pixel of every frame;
+// truncating instead would crop the last row or column, and would reduce a
+// one-pixel dimension to zero, which the encoder also refuses.
+func ffmpegArgs(fill [3]float64) []string {
 	return []string{
 		"-y",
 		"-framerate", strconv.Itoa(animateFPS),
 		"-i", filepath.Join(animateOutDir, frameNamePattern),
 		"-c:v", "libx264",
 		"-pix_fmt", "yuv420p",
-		"-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+		"-vf", "pad=w=ceil(iw/2)*2:h=ceil(ih/2)*2:color=" + ffmpegColor(fill),
 		animateMP4Path,
 	}
+}
+
+// ffmpegColor writes a parsed colour in the 0xRRGGBB form ffmpeg reads, rounded
+// the same way filledCanvas rounds it into the frames, so the padding cannot be
+// off by one from the background it continues.
+func ffmpegColor(fill [3]float64) string {
+	return fmt.Sprintf("0x%02X%02X%02X",
+		uint8(fill[0]*255+0.5), uint8(fill[1]*255+0.5), uint8(fill[2]*255+0.5))
 }
