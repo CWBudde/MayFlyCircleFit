@@ -90,6 +90,7 @@ circlefit animate --ref example/MayFly-512.png --circles circles.json \
 | `--canvas` | — | Base canvas the fit started from. Overrides whatever the source records. |
 | `--ignore-canvas` | `false` | Animate on `--background`, ignoring the canvas the source records. |
 | `--supersample` | `1` | Render this many times larger and average down, to antialias the circle edges. |
+| `--workers` | `0` | Goroutines that average and encode frames alongside the render. `0` uses every core. |
 | `--mp4`, `--fps` | —, `30` | Encode with ffmpeg. |
 
 Frames are written as `frame-000000.png`. The padding is deliberate: the
@@ -120,6 +121,47 @@ colours and no edge pixels at all; at `--supersample 4`, seventeen colours and
 
 It multiplies render cost by roughly N², and only the downsampled frame is ever
 written, so the PNGs stay the size you asked for.
+
+## Where the time goes
+
+Drawing the animation is the cheap part, and it is the only part that has to
+happen in order. Every frame composites onto the canvas the frame before it
+committed — the original's `BackDraw`/`Drawing` split — so the render loop is
+one sequential chain. Nothing after the composite is: averaging frame N down and
+encoding it as a PNG does not depend on frame N-1.
+
+So that is where the work is moved. `Downsample` splits its output rows across
+goroutines, and each finished frame is handed to a pool of encoders while the
+renderer draws the next one. Frames are therefore *written* out of order, which
+is invisible because each one is its own numbered file.
+
+`--workers` bounds both, capped at `GOMAXPROCS` like `run --threads`; `0` means
+every core. It is a throughput knob only — the frames are byte-identical at any
+setting, which `TestAnimateProducesTheSameFramesAtEveryWorkerCount` asserts by
+running the same arrangement at one worker and at eight.
+
+The queue holds one frame per worker, deliberately. An unbounded one would let
+the renderer run ahead of the encoders and pile up whole frames, and a
+supersampled frame is large: 4096x4096 is 67 MB. Only the averaged-down frame is
+queued, so memory stays flat in the sequence length.
+
+Measured on the 3130-frame `example/mayfly-3000.mp4` sequence — 3000 circles,
+`--style cascade --scale 2 --supersample 4`, so 4096x4096 down to 1024x1024 —
+on a Ryzen 5 4600H, 6 cores and 12 threads, the two binaries run back to back on
+an otherwise idle machine:
+
+| | wall | CPU | peak RSS |
+|---|---|---|---|
+| before | 645.18 s | 100% | 783 MB |
+| after | 238.25 s | 352% | 972 MB |
+
+2.71x, and the two runs' 6260 PNGs compare equal. 352% rather than 1100% is the
+honest ceiling here and says where the remaining time is: the render loop is
+still serial by construction, and most of what it spends is not drawing circles
+but the three full-canvas copies and two full-canvas scans that
+`NewCPURendererWithCanvas` does on every commit — and cascade commits on nearly
+every frame. Cutting that is a separate change; it would also raise this
+ceiling, because it is the serial half of Amdahl's law here.
 
 ## Two things worth knowing about the output
 

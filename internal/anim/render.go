@@ -12,12 +12,22 @@ import (
 // Sink receives each rendered frame in order.
 //
 // The image it is handed is the renderer's own buffer and is overwritten by the
-// next frame, so a sink that keeps it must copy. Encoding it, which is what
-// every caller does, is finished before the next frame starts.
+// next frame, so a sink that keeps it -- or hands it to another goroutine --
+// must copy first.
+//
+// The work a sink does is on the critical path: Render is one sequential loop,
+// because every frame composites onto the canvas the previous one committed.
+// Wrap it in a SinkPool to move that work off the loop, which is what turns an
+// animation export from a single-threaded job into a parallel one.
 type Sink func(index int, img *image.NRGBA) error
 
 // Render executes a plan, compositing through the project's own renderer so a
 // frame is byte-identical to the image the same circles produce as best.png.
+//
+// The loop itself cannot be parallelised: a frame draws over the background the
+// frame before it committed, which is the Pascal BackDraw/Drawing split and the
+// whole reason the port is faithful. What can be parallelised is everything
+// after the composite, and a caller does that by handing Render a SinkPool.
 //
 // background is the canvas the arrangement was fitted over, already at the
 // sequence's frame size: white for an ordinary run, the base image for a run

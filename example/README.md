@@ -378,4 +378,4 @@ back down, because the span compositor draws no partial pixels — without it th
 circle edges are a visible staircase at twice the fit's own size.
 
 The file is **not committed** (`*.mp4` is ignored): it is 1.4 MB of output that
-regenerates from the checkpoint in about eleven minutes on twelve cores.
+regenerates from the checkpoint in about four minutes on twelve cores.

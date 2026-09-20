@@ -38,6 +38,7 @@ var (
 	animateMP4Path        string
 	animateFPS            int
 	animateSupersample    int
+	animateWorkers        int
 )
 
 // frameNamePattern is both the file name and what ffmpeg is handed as its input
@@ -100,6 +101,8 @@ func init() {
 	flags.IntVar(&animateFPS, "fps", 30, "Frame rate for --mp4")
 	flags.IntVar(&animateSupersample, "supersample", 1,
 		"Render this many times larger and average down, to antialias the circle edges")
+	flags.IntVar(&animateWorkers, "workers", 0,
+		"Goroutines that average and encode frames alongside the render, capped at GOMAXPROCS; 0 uses every core")
 
 	_ = animateCmd.MarkFlagRequired("ref")
 	_ = animateCmd.MarkFlagRequired("out-dir")
@@ -462,20 +465,56 @@ func writeFrames(cmd *cobra.Command, sequence *anim.Sequence, background *image.
 		step = 0
 	}
 
-	return anim.Render(sequence, background, func(index int, img *image.NRGBA) error {
+	pool := anim.NewSinkPool(animateWorkers, func(index int, img *image.NRGBA) error {
 		path := filepath.Join(animateOutDir, fmt.Sprintf(frameNamePattern, index))
 
-		err := writePNG(path, anim.Downsample(img, animateSupersample))
+		err := writePNG(path, img)
 		if err != nil {
 			return fmt.Errorf("write frame %d: %w", index, err)
 		}
 
+		return nil
+	})
+
+	renderErr := anim.Render(sequence, background, func(index int, img *image.NRGBA) error {
 		if step > 0 && index > 0 && index%step == 0 {
 			cmd.Printf("            %d/%d frames\n", index, total)
 		}
 
-		return nil
+		return pool.Submit(index, detachFrame(img, animateSupersample))
 	})
+
+	// Close waits for the frames still being encoded, so it has to run whether
+	// or not the render got to the end -- and its error is the one that says a
+	// frame failed to write, since Render only ever sees the failure of an
+	// earlier frame.
+	closeErr := pool.Close()
+
+	if renderErr != nil {
+		return renderErr
+	}
+
+	return closeErr
+}
+
+// detachFrame produces the image the encoder pool is given: the averaged-down
+// frame, or a copy when there is nothing to average.
+//
+// The copy is not optional. Render hands its sink the renderer's own buffer and
+// overwrites it for the next frame, and at --supersample 1 Downsample returns
+// that buffer unchanged, so handing it straight to a worker would encode
+// whichever frame happened to be rendering by then. Downsampling already
+// allocates, so the copy costs nothing on the path that does it.
+func detachFrame(img *image.NRGBA, factor int) *image.NRGBA {
+	frame := anim.Downsample(img, factor, animateWorkers)
+	if frame != img {
+		return frame
+	}
+
+	copied := image.NewNRGBA(img.Bounds())
+	copy(copied.Pix, img.Pix)
+
+	return copied
 }
 
 // encodeVideo runs ffmpeg over the frames just written.

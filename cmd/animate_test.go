@@ -45,7 +45,7 @@ func withAnimateFlags(t *testing.T, apply func()) {
 type animateFlags struct {
 	ref, circles, checkpoint, canvas, outDir, style, background, mp4 string
 	scale, margin                                                    float64
-	halfLife, maxActive, frames, outro, fps, supersample             int
+	halfLife, maxActive, frames, outro, fps, supersample, workers    int
 	reverse, ignoreCanvas                                            bool
 }
 
@@ -58,6 +58,7 @@ func animateFlagState() animateFlags {
 		halfLife: animateHalfLife, maxActive: animateMaxActive, frames: animateFrames,
 		outro: animateOutro, fps: animateFPS, reverse: animateReverse,
 		ignoreCanvas: animateIgnoreCanvas, supersample: animateSupersample,
+		workers: animateWorkers,
 	}
 }
 
@@ -69,6 +70,7 @@ func restoreAnimateFlags(saved animateFlags) {
 	animateHalfLife, animateMaxActive, animateFrames = saved.halfLife, saved.maxActive, saved.frames
 	animateOutro, animateFPS, animateReverse = saved.outro, saved.fps, saved.reverse
 	animateIgnoreCanvas, animateSupersample = saved.ignoreCanvas, saved.supersample
+	animateWorkers = saved.workers
 }
 
 // animateFixture lays out a reference image and a circle list, and points the
@@ -98,6 +100,7 @@ func animateFixture(t *testing.T, style string) (string, string) {
 		animateHalfLife, animateMaxActive, animateFrames = 0, defaults.MaxActive, 0
 		animateOutro, animateFPS, animateReverse = 0, 30, false
 		animateIgnoreCanvas, animateSupersample = false, 1
+		animateWorkers = 0
 	})
 
 	return dir, outDir
@@ -632,4 +635,62 @@ func countColors(img image.Image) int {
 	}
 
 	return len(seen)
+}
+
+// Frames are encoded on a pool of goroutines and therefore finish out of
+// order, which is only safe because each one is its own numbered file. The
+// worker count is a throughput knob and must not be able to change a pixel --
+// or, with a supersampled frame handed to a worker while the renderer is
+// already drawing the next one, to publish a half-overwritten buffer.
+//
+//nolint:paralleltest // mutates the package-level animate flags, which every test in this package shares.
+func TestAnimateProducesTheSameFramesAtEveryWorkerCount(t *testing.T) {
+	dir, outDir := animateFixture(t, string(anim.StyleCascade))
+
+	animateSupersample = 2
+	animateWorkers = 1
+
+	err := runAnimate(animateTestCommand(), nil)
+	if err != nil {
+		t.Fatalf("serial run: %v", err)
+	}
+
+	serial := readFrames(t, outDir)
+
+	animateOutDir = filepath.Join(dir, "parallel")
+	animateWorkers = 8
+
+	err = runAnimate(animateTestCommand(), nil)
+	if err != nil {
+		t.Fatalf("parallel run: %v", err)
+	}
+
+	parallel := readFrames(t, animateOutDir)
+
+	if len(serial) != len(parallel) {
+		t.Fatalf("one worker wrote %d frames, eight wrote %d", len(serial), len(parallel))
+	}
+
+	for name, want := range serial {
+		if !bytes.Equal(parallel[name], want) {
+			t.Errorf("%s differs between one worker and eight", name)
+		}
+	}
+}
+
+func readFrames(t *testing.T, dir string) map[string][]byte {
+	t.Helper()
+
+	frames := map[string][]byte{}
+
+	for _, name := range frameNames(t, dir) {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+
+		frames[name] = data
+	}
+
+	return frames
 }

@@ -23,7 +23,7 @@ func TestDownsampleLeavesAFactorOfOneAlone(t *testing.T) {
 
 	img := filled(4, 4, 0x40)
 
-	if anim.Downsample(img, 1) != img {
+	if anim.Downsample(img, 1, 0) != img {
 		t.Error("factor one copied the image instead of returning it")
 	}
 }
@@ -31,7 +31,7 @@ func TestDownsampleLeavesAFactorOfOneAlone(t *testing.T) {
 func TestDownsampleShrinksByTheFactor(t *testing.T) {
 	t.Parallel()
 
-	got := anim.Downsample(filled(32, 16, 0xFF), 4).Bounds()
+	got := anim.Downsample(filled(32, 16, 0xFF), 4, 0).Bounds()
 
 	if got.Dx() != 8 || got.Dy() != 4 {
 		t.Errorf("got %dx%d, want 8x4", got.Dx(), got.Dy())
@@ -44,7 +44,7 @@ func TestDownsampleReproducesAFlatColourExactly(t *testing.T) {
 	t.Parallel()
 
 	for _, shade := range []uint8{0, 1, 0x7F, 0x80, 0xFE, 0xFF} {
-		out := anim.Downsample(filled(8, 8, shade), 4)
+		out := anim.Downsample(filled(8, 8, shade), 4, 0)
 
 		if out.Pix[0] != shade {
 			t.Errorf("a flat %d block averaged to %d", shade, out.Pix[0])
@@ -64,7 +64,7 @@ func TestDownsampleAveragesAnEdge(t *testing.T) {
 	img.SetNRGBA(0, 1, color.NRGBA{255, 255, 255, 255})
 	img.SetNRGBA(1, 1, color.NRGBA{255, 255, 255, 255})
 
-	out := anim.Downsample(img, 2)
+	out := anim.Downsample(img, 2, 0)
 
 	// (0 + 0 + 255 + 255 + 2) / 4 = 128
 	const want = 128
@@ -86,8 +86,114 @@ func TestDownsampleRefusesToVanish(t *testing.T) {
 
 	img := filled(2, 2, 0x10)
 
-	if anim.Downsample(img, 8) != img {
+	if anim.Downsample(img, 8, 0) != img {
 		t.Error("a factor larger than the image did not return it unchanged")
+	}
+}
+
+// gradient fills an image with a pattern that differs in every pixel and every
+// channel, so a band boundary that dropped or duplicated a row shows up.
+func gradient(width, height int) *image.NRGBA {
+	img := image.NewNRGBA(image.Rect(0, 0, width, height))
+
+	for y := range height {
+		for x := range width {
+			offset := img.PixOffset(x, y)
+			img.Pix[offset+0] = uint8(x * 7)
+			img.Pix[offset+1] = uint8(y * 11)
+			img.Pix[offset+2] = uint8(x*3 + y*5)
+			img.Pix[offset+3] = 0xFF
+		}
+	}
+
+	return img
+}
+
+// boxFilter is an independent, deliberately naive transcription of what
+// Downsample computes, written so the concurrent implementation is checked
+// against something rather than against itself.
+func boxFilter(img *image.NRGBA, factor int) *image.NRGBA {
+	width, height := img.Bounds().Dx()/factor, img.Bounds().Dy()/factor
+	out := image.NewNRGBA(image.Rect(0, 0, width, height))
+	samples := factor * factor
+
+	for y := range height {
+		for x := range width {
+			totals := [4]int{}
+
+			for dy := range factor {
+				for dx := range factor {
+					offset := img.PixOffset(x*factor+dx, y*factor+dy)
+					for channel := range totals {
+						totals[channel] += int(img.Pix[offset+channel])
+					}
+				}
+			}
+
+			target := out.PixOffset(x, y)
+			for channel, total := range totals {
+				out.Pix[target+channel] = uint8(((total + samples/2) / samples) & 0xFF)
+			}
+		}
+	}
+
+	return out
+}
+
+// Downsample splits its output rows across goroutines. Each band writes only
+// its own rows, so the answer must not depend on where the split fell -- this
+// is the assertion that a band boundary is exact. The image is large enough
+// that the work really is handed out.
+func TestDownsampleMatchesASerialBoxFilter(t *testing.T) {
+	t.Parallel()
+
+	img := gradient(256, 256)
+
+	got := anim.Downsample(img, 4, 0)
+	want := boxFilter(img, 4)
+
+	if got.Bounds() != want.Bounds() {
+		t.Fatalf("got %v, want %v", got.Bounds(), want.Bounds())
+	}
+
+	for i := range want.Pix {
+		if got.Pix[i] != want.Pix[i] {
+			t.Fatalf("byte %d is %d, want %d (pixel %d)", i, got.Pix[i], want.Pix[i], i/4)
+		}
+	}
+}
+
+// A height that does not divide evenly by the worker count leaves a short last
+// band, which is the case a fencepost error survives.
+func TestDownsampleHandlesAnUnevenRowSplit(t *testing.T) {
+	t.Parallel()
+
+	for _, height := range []int{129, 130, 253, 255} {
+		img := gradient(64, height)
+
+		got := anim.Downsample(img, 2, 0)
+		want := boxFilter(img, 2)
+
+		if !bytes.Equal(got.Pix, want.Pix) {
+			t.Errorf("a %d-row image averaged differently than the serial filter", height)
+		}
+	}
+}
+
+// The worker count is a throughput knob, so it must not be able to change a
+// byte. It is also what --workers 1 relies on: the serial answer has to be the
+// same answer.
+func TestDownsampleIgnoresTheWorkerCount(t *testing.T) {
+	t.Parallel()
+
+	img := gradient(256, 200)
+
+	want := anim.Downsample(img, 4, 1)
+
+	for _, workers := range []int{2, 3, 7, 64} {
+		if !bytes.Equal(anim.Downsample(img, 4, workers).Pix, want.Pix) {
+			t.Errorf("%d workers averaged differently than one", workers)
+		}
 	}
 }
 
@@ -110,7 +216,7 @@ func TestUpsampleIsReversedExactlyByDownsample(t *testing.T) {
 			t.Fatalf("factor %d: upsampled to %v", factor, up.Bounds())
 		}
 
-		down := anim.Downsample(up, factor)
+		down := anim.Downsample(up, factor, 1)
 		if !bytes.Equal(down.Pix, img.Pix) {
 			t.Errorf("factor %d: Downsample(Upsample(img)) differs from img", factor)
 		}
