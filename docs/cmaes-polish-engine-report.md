@@ -354,9 +354,27 @@ stage**, as they must — a polish changes the incumbent the next extend starts
 from. **All five arms' first extend stage is bit-identical** at the per-attempt
 record level, which is the check that the divergence is caused by the sweep and
 by nothing else in the arm. Their trajectory *rows* for that stage are not
-identical, and that is bucketing rather than search: a stage's trajectory is
-bucketed over its own evaluation range, and the arms' ranges differ because
-their campaign totals do.
+identical, and that is bucketing rather than search.
+
+**The committed trajectory file is sampled at a different density per arm, and
+that is a defect in the collector rather than a property of the runs.** A
+stage's rows are bucketed over a nominal share of the cap, and the share was
+taken as the campaign total divided by the number of scoring stages -- which
+counts polish stages, although a polish stage writes no trajectory at all. So
+the same eight-extend ladder was divided by eight in `pol-none`, by nine in the
+terminal arms and by sixteen in the interleaved ones, and the first extend
+stage kept 2,947, 2,770 and about 4,905 rows respectively. **No recorded value
+is affected** -- every row is an exact reading off the trace, and the
+`distributionExtent` bound below is a maximum over samples, which a denser
+sample can only sharpen -- but the row *density* is not comparable across arms,
+so do not read one arm's trajectory against another's by row count or by any
+statistic weighted by it. `stageShares` now funds the two kinds separately, the
+ladder cap across the extends and the sweep allowance across the polishes, so a
+future campaign divides each stage by the budget it actually ran within. The
+committed file predates that fix and was not regenerated: the collector has
+changed in other ways since it was written, so a re-collection today could not
+be verified against it, and a file mixing this fix with those changes would have
+weaker provenance than the one the campaign actually produced.
 
 ## Artifacts
 
@@ -364,9 +382,11 @@ their campaign totals do.
   60 rows, one per campaign: arm, block, seed, job id, cost, scored and final
   evaluations, iterations, summed stage seconds, backend.
 - [`cmaes-polish-engine-trajectories.csv`](cmaes-polish-engine-trajectories.csv)
-  — 138,302 rows of per-stage trajectory, bucketed over each stage's own
-  evaluation range, carrying `populationSpread`, `sigma`, `conditionNumber` and
+  — 138,302 rows of per-stage trajectory, bucketed over a nominal share of the
+  cap, carrying `populationSpread`, `sigma`, `conditionNumber` and
   `distributionExtent`. Extend stages only; a polish stage writes no trajectory.
+  The share diluted that nominal by the polish stages, so the density differs
+  per arm -- see the bucketing note above before comparing arms row for row.
 - [`cmaes-polish-engine-restarts.csv`](cmaes-polish-engine-restarts.csv) —
   38,349 per-attempt records across 480 stages, renumbered onto each campaign's
   stage ordinal.

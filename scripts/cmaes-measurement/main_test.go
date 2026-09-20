@@ -2931,3 +2931,86 @@ func TestWriteTrajectoriesBucketsEachStageAgainstItsShare(t *testing.T) {
 		}
 	}
 }
+
+// TestStageSharesAreFundedPerKind pins the bucket width the trajectory
+// downsampler divides by. The three polish-engine shapes run the same ladder
+// under the same shared cap and differ only in how many sweeps they add, so the
+// width an extend stage is sampled at has to be identical across all three. It
+// was not: dividing the campaign total by the stage count gave the interleaved
+// arm a width roughly half the control's, which kept about 1.7x as many rows
+// per extend stage and made a cross-arm trajectory comparison read a difference
+// that was an artifact of the divisor.
+func TestStageSharesAreFundedPerKind(t *testing.T) {
+	t.Parallel()
+
+	const (
+		ladder = 6480000
+		sweeps = 1335000
+	)
+
+	ladderStages := func(extends, polishes int) []scheduleStage {
+		stages := make([]scheduleStage, 0, extends+polishes)
+		for range extends {
+			stages = append(stages, scheduleStage{Kind: "extend"})
+		}
+
+		for range polishes {
+			stages = append(stages, scheduleStage{Kind: "polish"})
+		}
+
+		return stages
+	}
+
+	cases := []struct {
+		name              string
+		extends, polishes int
+		total             int
+		wantExtend        int
+		wantPolish        int
+	}{
+		{
+			name:    "an unpolished ladder divides the cap it ran in",
+			extends: 8, polishes: 0, total: ladder,
+			wantExtend: ladder / 8, wantPolish: ladder / 8,
+		},
+		{
+			name:    "a terminal sweep does not widen the extend buckets",
+			extends: 8, polishes: 1, total: ladder + sweeps,
+			wantExtend: ladder / 8, wantPolish: sweeps,
+		},
+		{
+			name:    "eight interleaved sweeps do not narrow them either",
+			extends: 8, polishes: 8, total: ladder + sweeps,
+			wantExtend: ladder / 8, wantPolish: sweeps / 8,
+		},
+		{
+			// Sweeps inside the shared cap are not separately funded, so there
+			// is nothing to divide; the ladder share is the only width that
+			// exists, and zero would divide by zero downstream.
+			name:    "sweeps inside the cap fall back to the ladder share",
+			extends: 4, polishes: 4, total: ladder,
+			wantExtend: ladder / 4, wantPolish: ladder / 4,
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			extendShare, polishShare := stageShares(
+				ladder, testCase.total, ladderStages(testCase.extends, testCase.polishes))
+
+			if extendShare != testCase.wantExtend {
+				t.Errorf("extendShare = %d, want %d", extendShare, testCase.wantExtend)
+			}
+
+			if polishShare != testCase.wantPolish {
+				t.Errorf("polishShare = %d, want %d", polishShare, testCase.wantPolish)
+			}
+
+			if extendShare <= 0 || polishShare <= 0 {
+				t.Error("a share of zero would divide by zero in writeTrajectories")
+			}
+		})
+	}
+}

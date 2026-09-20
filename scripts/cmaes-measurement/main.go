@@ -3052,6 +3052,85 @@ func (d scheduleDetail) scoringStages() []scheduleStage {
 // stage three is not a completed campaign with a usable final cost, and this
 // reports it as whatever the executor called it so the tally in collect names
 // the real state.
+// resolveStageJobs turns a campaign's scoring stages into the per-stage jobs the
+// manifest carries, each with the budget it is scored against and the share it
+// is downsampled against.
+//
+// Budget is the campaign cap because the counters are cumulative, and Share is
+// the stage's own slice because the downsampler has to see a stage-local range.
+// The two are the same number only for a one-stage arm.
+func resolveStageJobs(ladder, total int, scheduleID string, stages []scheduleStage) ([]stageJob, error) {
+	extendShare, polishShare := stageShares(ladder, total, stages)
+	jobs := make([]stageJob, 0, len(stages))
+
+	for ordinal, stage := range stages {
+		if stage.JobID == "" {
+			return nil, fmt.Errorf("schedule %s stage %d completed without a job", scheduleID, stage.Index)
+		}
+
+		share := extendShare
+		if stage.Kind == "polish" {
+			share = polishShare
+		}
+
+		jobs = append(jobs, stageJob{
+			Stage: ordinal, JobID: stage.JobID, Project: string(app.DefaultProject),
+			Budget: total, Share: share, Cumulative: true,
+		})
+	}
+
+	return jobs, nil
+}
+
+// stageShares reports the slice of the cap each kind of scoring stage runs
+// within -- the ladder share first, the polish share second: ladder for an
+// extend, sweeps for a polish.
+//
+// The two have to be told apart because they are funded separately. The ladder
+// cap is shared by every arm in a design and divided among its extends, while a
+// polishing arm's sweeps are additional spend on top of it -- so the campaign
+// total divided by the stage count is neither number, and it moves with how
+// many polish stages an arm happens to have. Reading it as a stage share made
+// the downsampler use a different bucket width per arm for stages that had run
+// the same budget: an interleaved arm with eight sweeps divided by sixteen
+// where a terminal arm with one divided by nine, and the unpolished control by
+// eight, so the same extend stage kept about 1.7x as many rows in one arm as in
+// another. The recorded values were never affected -- only how many of them
+// survived into the CSV -- but a trajectory comparison across arms reads the
+// density, so the widths have to come from the budget each stage actually ran
+// within.
+//
+// A design with no polish stages returns the ladder share for both, which is
+// what every pre-polish-engine campaign already computed.
+func stageShares(ladder, total int, stages []scheduleStage) (int, int) {
+	extends, polishes := 0, 0
+
+	for _, stage := range stages {
+		if stage.Kind == "polish" {
+			polishes++
+
+			continue
+		}
+
+		extends++
+	}
+
+	extendShare := 0
+	if extends > 0 {
+		extendShare = ladder / extends
+	}
+
+	// Falls back to the ladder share rather than zero: a share of zero would
+	// divide by zero in the downsampler, and an arm whose sweeps are not
+	// separately funded is one whose polish stages ran inside the ladder cap.
+	polishShare := extendShare
+	if polishes > 0 && total > ladder {
+		polishShare = (total - ladder) / polishes
+	}
+
+	return extendShare, polishShare
+}
+
 // collectSchedule scores one staged arm's campaign against budget, which is the
 // arm's whole planned spend and not necessarily config.budget: a polishing arm
 // spends its sweeps on top of the ladder cap every arm shares.
@@ -3073,23 +3152,13 @@ func collectSchedule(
 	}
 
 	resolved := record
-	resolved.Stages = make([]stageJob, 0, len(stages))
 
-	for ordinal, stage := range stages {
-		if stage.JobID == "" {
-			return resultRow{}, detail.State, fmt.Errorf(
-				"schedule %s stage %d completed without a job", record.ScheduleID, stage.Index)
-		}
-
-		// Budget is the campaign cap because the counters are cumulative, and
-		// Share is the stage's own slice because the downsampler has to see a
-		// stage-local range. The two are the same number only for a one-stage
-		// arm.
-		resolved.Stages = append(resolved.Stages, stageJob{
-			Stage: ordinal, JobID: stage.JobID, Project: string(app.DefaultProject),
-			Budget: budget, Share: budget / len(stages), Cumulative: true,
-		})
+	stageJobs, err := resolveStageJobs(config.budget, budget, record.ScheduleID, stages)
+	if err != nil {
+		return resultRow{}, detail.State, err
 	}
+
+	resolved.Stages = stageJobs
 
 	resolved.JobID = resolved.Stages[len(resolved.Stages)-1].JobID
 
