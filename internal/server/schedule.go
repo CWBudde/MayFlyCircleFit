@@ -548,7 +548,11 @@ func (s *Server) scheduleStageConfig(stage app.ScheduleStage, plan []app.Schedul
 		kind = polishContinuation
 	}
 
-	source, failure := s.continuationSourceFor(parentJobID, kind)
+	// A campaign never overrides the version guard. There is no request to carry
+	// an override on, and a schedule exists to produce comparable stages: one
+	// that silently crossed a library boundary mid-ladder would report a cost
+	// series whose early and late rows came from different algorithms.
+	source, failure := s.continuationSourceFor(parentJobID, kind, false)
 	if failure != nil {
 		return config, nil, fmt.Errorf("stage %d cannot continue job %s: %s", stage.Index, parentJobID, failure.message)
 	}

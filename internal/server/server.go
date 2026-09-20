@@ -1720,7 +1720,21 @@ func (s *Server) guardCheckpointVersions(checkpoint *store.Checkpoint, allowMism
 
 	polishing, ok := checkpoint.Config.SecondaryOptimizer()
 	if !ok {
-		return warnings, nil
+		// A checkpoint can carry a secondary version its own configuration no
+		// longer explains. An extend freezes a polished prefix and turns
+		// polishing off, so SecondaryOptimizer stops answering while the other
+		// library's parameters are still in BestCost; the recorded field is
+		// then the only thing that knows a second library ran. Reading the
+		// engine off the inherited configuration is sound because the extend
+		// path clears PolishingEnabled and leaves PolishingOptimizer alone.
+		if checkpoint.PolishingOptimizerVersion == "" {
+			return warnings, nil
+		}
+
+		polishing = checkpoint.Config.ResolvedPolishingOptimizer()
+		if polishing == base {
+			return warnings, nil
+		}
 	}
 	// An empty recorded version here is the legacy case rather than a
 	// mismatch, and GuardCheckpointVersion already says so in the words the
@@ -1985,7 +1999,7 @@ func (s *Server) handlePolishJob(w http.ResponseWriter, r *http.Request, jobID s
 		return
 	}
 
-	source, failure := s.continuationSourceFor(jobID, polishContinuation)
+	source, failure := s.continuationSourceFor(jobID, polishContinuation, boolQueryParam(r, "allowOptimizerMismatch"))
 	if failure != nil {
 		writeContinuationError(w, failure)
 		return
@@ -2127,7 +2141,7 @@ func (s *Server) handleExtendJob(w http.ResponseWriter, r *http.Request, jobID s
 		return
 	}
 
-	source, failure := s.continuationSourceFor(jobID, extendContinuation)
+	source, failure := s.continuationSourceFor(jobID, extendContinuation, boolQueryParam(r, "allowOptimizerMismatch"))
 	if failure != nil {
 		writeContinuationError(w, failure)
 		return

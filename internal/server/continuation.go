@@ -67,18 +67,46 @@ func continuationFailure(status int, code, message string) *continuationError {
 	return &continuationError{status: status, code: code, message: message}
 }
 
-// continuationSourceFor validates that jobID can be continued and returns the
-// checkpoint and configuration a continuation starts from.
-func (s *Server) continuationSourceFor(jobID string, kind continuationKind) (*continuationSource, *continuationError) {
-	source, ok := s.jobManager.GetJob(jobID)
-	if !ok {
-		return nil, continuationFailure(http.StatusNotFound, "not_found", "job not found")
+// continuationConfig derives the configuration a continuation starts from: the
+// parent's, normalized, and rebased onto the arrangement the parent actually
+// materialized.
+//
+// A refill-limited stage is a valid checkpoint of what it did place, so a
+// continuation inherits that actual size; otherwise another +N request would
+// retain the gap and strand the chain again.
+func continuationConfig(checkpoint *store.Checkpoint, kind continuationKind) (app.JobConfig, *continuationError) {
+	config, err := app.Normalize(checkpoint.Config)
+	if err != nil || config.Mode != app.ModeBatch {
+		return config, continuationFailure(http.StatusBadRequest, "invalid_checkpoint", kind.requirement)
 	}
 
-	if source.State != StateCompleted {
-		return nil, continuationFailure(http.StatusConflict, "invalid_state", kind.stateReason)
+	actualCircles := checkpoint.ActualCircles
+	complete := actualCircles == config.Circles
+
+	continuableShortStage := checkpoint.Termination == string(renderer.TerminationRefillLimit) &&
+		actualCircles < config.Circles
+	if len(checkpoint.BestParams) != actualCircles*app.ParamsPerCircle || (!complete && !continuableShortStage) {
+		return config, continuationFailure(http.StatusBadRequest, "invalid_checkpoint", kind.requirement)
 	}
 
+	config.Circles = actualCircles
+	config.BatchSize = min(config.BatchSize, actualCircles)
+	config.PolishingActiveSetSize = min(config.PolishingActiveSetSize, actualCircles)
+
+	return config, nil
+}
+
+// continuableCheckpoint loads the parent's completed checkpoint and decides
+// whether this build may continue it, which is the half of the preconditions
+// that is about the checkpoint rather than about the request.
+//
+// The version guard runs here for the same reason an explicit resume runs it. A
+// continuation is not a fresh search: it is seeded from the parent's best
+// parameters and, for an extend, freezes them as a prefix it never revisits. So
+// the cost it starts from was produced by whatever libraries the parent linked,
+// and continuing it under a behaviour-changing upgrade would write a checkpoint
+// naming the new version as though the whole run were comparable.
+func (s *Server) continuableCheckpoint(jobID string, allowMismatch bool) (*store.Checkpoint, *continuationError) {
 	jobStore, err := s.storeForJob(jobID)
 	if err != nil {
 		slog.Error("Failed to resolve project store for continuation", "job_id", jobID, "error", err)
@@ -99,31 +127,61 @@ func (s *Server) continuationSourceFor(jobID string, kind continuationKind) (*co
 		return nil, continuationFailure(http.StatusBadRequest, "invalid_checkpoint", "completed checkpoint is invalid")
 	}
 
-	config, err := app.Normalize(checkpoint.Config)
-	if err != nil || config.Mode != app.ModeBatch {
-		return nil, continuationFailure(http.StatusBadRequest, "invalid_checkpoint", kind.requirement)
+	warnings, err := s.guardCheckpointVersions(checkpoint, allowMismatch)
+	if err != nil {
+		// 409 rather than 400: the request is well formed and the checkpoint is
+		// valid; it is this build that cannot continue it comparably. That is
+		// the status an explicit resume already answers the same refusal with.
+		return nil, continuationFailure(http.StatusConflict, "optimizer_version_mismatch", err.Error())
 	}
 
-	actualCircles := checkpoint.ActualCircles
-	complete := actualCircles == config.Circles
-
-	continuableShortStage := checkpoint.Termination == string(renderer.TerminationRefillLimit) && actualCircles < config.Circles
-	if len(checkpoint.BestParams) != actualCircles*app.ParamsPerCircle || (!complete && !continuableShortStage) {
-		return nil, continuationFailure(http.StatusBadRequest, "invalid_checkpoint", kind.requirement)
+	for _, warning := range warnings {
+		slog.Warn("Optimizer version check", "job_id", jobID, "warning", warning)
 	}
-	// A refill-limited stage is a valid checkpoint of the arrangement it did
-	// materialize. Continuations therefore inherit that actual size; otherwise
-	// another +N request would retain the gap and strand the chain again.
-	config.Circles = actualCircles
-	config.BatchSize = min(config.BatchSize, actualCircles)
-	config.PolishingActiveSetSize = min(config.PolishingActiveSetSize, actualCircles)
+
+	return checkpoint, nil
+}
+
+// continuationSourceFor validates that jobID can be continued and returns the
+// checkpoint and configuration a continuation starts from.
+//
+// allowMismatch carries the caller's override for the optimizer version guard,
+// which every continuation runs for the same reason an explicit resume does. A
+// continuation is not a fresh search: it is seeded from the parent's best
+// parameters and, for an extend, freezes them as a prefix it never revisits. So
+// the recorded cost it starts from was produced by whatever libraries the
+// parent linked, and continuing it under a behaviour-changing upgrade writes a
+// checkpoint that names the new version as though the whole run were
+// comparable. Guarding here rather than in each handler is what makes a
+// scheduled stage refuse exactly what a hand-issued request would.
+func (s *Server) continuationSourceFor(
+	jobID string, kind continuationKind, allowMismatch bool,
+) (*continuationSource, *continuationError) {
+	source, ok := s.jobManager.GetJob(jobID)
+	if !ok {
+		return nil, continuationFailure(http.StatusNotFound, "not_found", "job not found")
+	}
+
+	if source.State != StateCompleted {
+		return nil, continuationFailure(http.StatusConflict, "invalid_state", kind.stateReason)
+	}
+
+	checkpoint, failure := s.continuableCheckpoint(jobID, allowMismatch)
+	if failure != nil {
+		return nil, failure
+	}
+
+	config, failure := continuationConfig(checkpoint, kind)
+	if failure != nil {
+		return nil, failure
+	}
 
 	evaluations := int(checkpoint.Evaluations)
 	if int64(evaluations) != checkpoint.Evaluations {
 		return nil, continuationFailure(http.StatusBadRequest, "invalid_checkpoint", "checkpoint evaluation count is out of range")
 	}
 
-	failure := s.resolveConfigPaths(&config, "checkpoint")
+	failure = s.resolveConfigPaths(&config, "checkpoint")
 	if failure != nil {
 		return nil, failure
 	}
@@ -183,6 +241,9 @@ func (s *Server) startContinuation(jobID string, project app.Project, config Job
 		live.Iterations = src.checkpoint.Iteration
 
 		live.Evaluations = src.evaluations
+		// The parent's secondary library travels with the parameters it
+		// produced, so the continuation's own checkpoint can keep naming it.
+		live.InheritedPolishingVersion = src.checkpoint.PolishingOptimizerVersion
 		if lineage != nil {
 			lineage(live)
 		}

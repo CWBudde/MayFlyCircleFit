@@ -88,6 +88,18 @@ type Job struct {
 	// persisted: a job restored from a checkpoint has no clock of its own left
 	// to report throughput against.
 	InheritedEvaluations int `json:"-"`
+	// InheritedPolishingVersion carries the parent checkpoint's
+	// PolishingOptimizerVersion into a continuation, so a stage that retains a
+	// polished prefix keeps naming the library that produced it even when its
+	// own configuration no longer polishes. An extend is exactly that case: it
+	// freezes the prefix and sets PolishingEnabled false, and without this the
+	// extended checkpoint would record only the base engine while its cost
+	// still incorporates the other library's parameters.
+	//
+	// It is not serialized on the job for the same reason InheritedEvaluations
+	// is not: the durable copy is the checkpoint field it is written to, and
+	// restoring reads it back from there.
+	InheritedPolishingVersion string `json:"-"`
 	// ExtendedFrom and PolishedFrom name the completed job this one continued
 	// from, and at most one is ever set. They are persisted onto the job's
 	// checkpoint, so the chain a campaign builds is readable from the job tree

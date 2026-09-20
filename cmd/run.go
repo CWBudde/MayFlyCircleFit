@@ -419,7 +419,19 @@ func guardCheckpointVersions(checkpoint *store.Checkpoint, allowMismatch bool) (
 
 	polishing, ok := checkpoint.Config.SecondaryOptimizer()
 	if !ok {
-		return warnings, nil
+		// A checkpoint can record a secondary version its own configuration no
+		// longer explains: an extend freezes a polished prefix and turns
+		// polishing off, so the other library's parameters stay in BestCost
+		// while SecondaryOptimizer stops answering. The engine is read off the
+		// inherited configuration, which the extend path leaves in place.
+		if checkpoint.PolishingOptimizerVersion == "" {
+			return warnings, nil
+		}
+
+		polishing = checkpoint.Config.ResolvedPolishingOptimizer()
+		if polishing == base {
+			return warnings, nil
+		}
 	}
 	// An empty recorded version is the legacy case rather than a mismatch, and
 	// GuardCheckpointVersion reports it in the words the base field already
