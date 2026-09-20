@@ -70,6 +70,9 @@ because there is no repository metadata to stamp into the binary.
 - `resume <job-id>` restarts from a saved best candidate, remotely or with
   `--local`.
 - `checkpoints list` and `checkpoints clean` inspect or prune persisted jobs.
+- `animate` replays a finished arrangement as a sequence of PNG frames, and
+  optionally encodes them to MP4. It takes a checkpoint, a circle list, or a
+  schedule document; see the [animation guide](docs/animation.md).
 - `version` and the root `--version` flag print version, commit, and build-date
   metadata. Source builds identify themselves as development builds.
 

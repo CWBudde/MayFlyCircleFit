@@ -37,6 +37,9 @@ Everything in `docs/`, grouped by what you came here to do. Start from
   error against the reference.
 - [`advanced-quality-metrics.md`](advanced-quality-metrics.md) — quality
   measures beyond the optimized MSE objective.
+- [`animation.md`](animation.md) — `circlefit animate`, the port of the Pascal
+  predecessor's frame-sequence export: its four styles, the growth curves, and
+  why it replays a finished arrangement rather than the search.
 
 ## How it works
 

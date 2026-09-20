@@ -38,6 +38,8 @@ Thumbs.db
 # Output
 out.png
 diff.png
+# Rendered animations (circlefit animate --mp4); regenerate rather than commit
+*.mp4
 
 # Runtime data (checkpoints, jobs, traces)
 /data/
