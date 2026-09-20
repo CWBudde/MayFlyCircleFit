@@ -173,12 +173,14 @@ anything new against its figures.
       vector rather than a cold population, so the collapse dynamics there are
       unmeasured. **The extend half is now expressible**: `steps[].restarts`
       landed 2026-09-05 in both shapes, so a document can put a ladder on the
-      extend stages of a campaign without touching the base. **The polish half
-      is not, and not for want of a format key**: the polisher runs under
-      `WithEpochs` alone, so measuring restarts on a sweep means wrapping it in
-      `WithRestarts` first and deciding what an attempt of a sweep even is — a
-      whole sweep chain, or one sweep. Do that deliberately, not as a
-      side effect of writing the campaign.
+      extend stages of a campaign without touching the base. **A polish step is
+      now expressible under a CMA-ES base too**, since a sweep names its own
+      engine (2026-09-06), so an alternating extend/polish campaign can be
+      written. **Restarts on a sweep are still not expressible**, and not for
+      want of a format key: the polisher runs under `WithEpochs` alone, so
+      measuring them means wrapping it in `WithRestarts` first and deciding what
+      an attempt of a sweep even is — a whole sweep chain, or one sweep. Do that
+      deliberately, not as a side effect of writing the campaign.
       **The extend half is registered 2026-09-05 as `-design extend-width`**,
       the first staged campaign in this driver and the first CMA-ES measurement
       here that is not a cold eight-circle batch. It seeds the standing record
@@ -197,9 +199,46 @@ anything new against its figures.
       Registered alongside them: `ext-w4` and `ext-w2` against `ext-w8`, and
       `ext-w8` against `cold-w16`, which is the one that can invalidate the
       premise rather than answer the primary. **The polish half of this box is
-      untouched by that campaign** and stays open for the reason above; a
-      CMA-ES schedule cannot contain a polish step at all, because
-      `polishingEnabled` is on `JobConfig.mayflyOnlyFields()`.
+      untouched by that campaign** and stays open for the reason above — though
+      the blocker it named is gone: `polishingEnabled` left
+      `JobConfig.mayflyOnlyFields()` on 2026-09-06, so a CMA-ES schedule can now
+      carry a polish step.
+      **Registered 2026-09-06 as `-design polish-engine`**, the campaign that
+      asks the polish half. Five arms on the extend-width winner's ladder --
+      `ext-w1` verbatim, full covariance at `lambda` 64, budget-filling cold
+      restarts, twenty nominal attempts per stage -- differing only in what
+      follows an extend: `pol-none` polishes not at all, `pol-term-cma` and
+      `pol-term-may` run one terminal sweep stage of 32 sweeps, and
+      `pol-int-cma` and `pol-int-may` run four sweeps after every extend.
+      Twelve blocks, seeds 130001-130012, 6,502,400 extend evaluations per arm
+      and 1,280,000 sweep evaluations per polishing arm.
+      Primary contrast `pol-int-cma` against `pol-term-cma` -- placement, the
+      question the whole `polishingOptimizer` change was built to ask, since an
+      extend freezes its prefix and an interleaved sweep is the only step the
+      format has that can revisit a committed circle. Registered alongside it:
+      the same placement question under MayFly, the engine ranking at equal
+      placement, and `pol-term-cma` against `pol-none`.
+      **Two pre-flights changed the design rather than merely confirming it.**
+      A sweep is *one* optimizer run over `activeSetSize` circles and not one
+      per group of them, so its spend is independent of the circle count -- an
+      eight-stage interleaved probe spent exactly 40,003 evaluations at every
+      stage from nine circles to sixteen -- which is what makes the two
+      placements comparable at all. And **MayFly spends 25/8 of CMA-ES's
+      evaluations per iteration**: identical sweep settings cost 250,000 against
+      80,000 over the same 1,600 iterations. Matching on iterations would have
+      compared a search against one three times its size, so the MayFly arms run
+      128 iterations to the CMA-ES arms' 400, verified at 80,277 against 80,005
+      on a re-probe. The declared cost of that choice is an iteration asymmetry,
+      518 MayFly iterations against 1,606, and it belongs in the report.
+      **The fourth contrast is deliberately not evaluation-matched.** A sweep's
+      budget is additional to the ladder's cap, because a sweep and a restart
+      ladder do not share a budget in any way the schedule format can express,
+      and carving the ladder down to pay for the sweep would answer a different
+      question. Read it as cost-benefit, with the spend columns beside it.
+      **Not licensed by it, whatever it returns:** a `polishingOptimizer`
+      default. The pilot behind this campaign is descriptive, and no engine
+      ranking for this stage exists yet -- MayFly is the default because every
+      recorded polishing figure ran it, not because anything measured it.
       **Two facts the campaign's pre-flights established**, both recorded here
       because they are properties of the system rather than of the campaign.
       `initialCircles` quantizes colour to eight bits, so a base seeded from the
@@ -250,6 +289,33 @@ anything new against its figures.
       The campaign also **withdraws the `MaxOptimizerRestarts` reading above**
       by direct measurement rather than by probe: stages ran up to 88 attempts
       with the constant unchanged at 64.
+      **Ran 2026-09-06, and it answers the polish half — negatively for
+      placement and positively for the operator.** 60 of 60 campaigns, 756
+      stages, 2h 07m of wall clock. Two of four registered contrasts reject
+      under Holm: a terminal sweep beats no sweep by `+18.09`
+      (`t = +36.58`, `p = 7.7e-13`, 12/12) for 20.6% more evaluations, and
+      CMA-ES beats MayFly as the sweep engine by `+5.16` (`t = +11.76`, 12/12).
+      **The registered primary — interleaving the same sweeps rather than
+      spending them at the end — is a bounded null**: `+1.01`, `t = +1.20`,
+      7/12, interval `-0.84` to `+2.85`, and `-0.21` when re-asked under MayFly.
+      The mechanism says why: the interleaved lead is built by the first three
+      sweeps and then stops growing (17.48 at eleven circles, 17.39 at
+      sixteen), so the revisit is a
+      level shift the terminal placement recovers in one stage and a greedy
+      ladder does not exploit a polished prefix. See
+      [`docs/cmaes-polish-engine-report.md`](docs/cmaes-polish-engine-report.md).
+      **It does not license a `polishingOptimizer` default**, exactly as
+      registered: matching on evaluations forced MayFly to 128 iterations per
+      sweep against CMA-ES's 400, so engine is confounded with iteration count
+      by construction. The campaign also confirms the extend-width withdrawal at
+      a larger number — 73 to 91 attempts per stage against twenty nominal — and
+      shows that **`elapsedSeconds` ranks queue residency rather than work**:
+      the same ladder at the same cap took 4,092 seconds here and 11,580 in
+      extend-width, so that campaign's 41% wall-clock caveat is contaminated
+      too. **This checkbox stays open for restarts on a sweep**, which the
+      campaign did not measure and could not: the polisher runs under
+      `WithEpochs` alone, so a restart count on a polish step is refused rather
+      than accepted.
 - [x] Settle which restart *shape* a CMA-ES default would name. The budget-split
       screen established that splitting a CMA-ES budget beats not splitting it
       but could not order the three mechanisms, and it found the IPOP ladder

@@ -127,28 +127,32 @@ func jobFromCheckpoint(checkpoint *store.Checkpoint, project app.Project) *Job {
 	}
 
 	return &Job{
-		ID:               checkpoint.JobID,
-		ExtendedFrom:     checkpoint.ExtendedFrom,
-		PolishedFrom:     checkpoint.PolishedFrom,
-		ScheduleID:       checkpoint.ScheduleID,
-		StageIndex:       stageIndex,
-		Project:          project,
-		State:            state,
-		Config:           checkpoint.Config,
-		RequestedCircles: checkpoint.RequestedCircles,
-		ActualCircles:    checkpoint.ActualCircles,
-		BestParams:       append([]float64(nil), checkpoint.BestParams...),
-		BestCost:         checkpoint.BestCost,
-		BestRevision:     1,
-		InitialCost:      checkpoint.InitialCost,
-		Iterations:       checkpoint.Iterations,
-		Evaluations:      int(checkpoint.Evaluations),
-		Termination:      checkpoint.Termination,
-		Restarts:         append([]opt.RestartRun(nil), checkpoint.Restarts...),
-		EffectiveBackend: checkpoint.EffectiveBackend,
-		BackendDegraded:  checkpoint.BackendDegraded,
-		StartTime:        checkpoint.Timestamp,
-		EndTime:          &end,
+		ID:           checkpoint.JobID,
+		ExtendedFrom: checkpoint.ExtendedFrom,
+		PolishedFrom: checkpoint.PolishedFrom,
+		// Read back so a continuation of a restored job keeps carrying the
+		// secondary library forward; the field is the only record of it once
+		// the configuration itself has stopped polishing.
+		InheritedPolishingVersion: checkpoint.PolishingOptimizerVersion,
+		ScheduleID:                checkpoint.ScheduleID,
+		StageIndex:                stageIndex,
+		Project:                   project,
+		State:                     state,
+		Config:                    checkpoint.Config,
+		RequestedCircles:          checkpoint.RequestedCircles,
+		ActualCircles:             checkpoint.ActualCircles,
+		BestParams:                append([]float64(nil), checkpoint.BestParams...),
+		BestCost:                  checkpoint.BestCost,
+		BestRevision:              1,
+		InitialCost:               checkpoint.InitialCost,
+		Iterations:                checkpoint.Iterations,
+		Evaluations:               int(checkpoint.Evaluations),
+		Termination:               checkpoint.Termination,
+		Restarts:                  append([]opt.RestartRun(nil), checkpoint.Restarts...),
+		EffectiveBackend:          checkpoint.EffectiveBackend,
+		BackendDegraded:           checkpoint.BackendDegraded,
+		StartTime:                 checkpoint.Timestamp,
+		EndTime:                   &end,
 	}
 }
 
@@ -163,6 +167,15 @@ func applyJobLineage(checkpoint *store.Checkpoint, job *Job) {
 	checkpoint.ExtendedFrom = job.ExtendedFrom
 	checkpoint.PolishedFrom = job.PolishedFrom
 	checkpoint.ScheduleID = job.ScheduleID
+
+	// A retained prefix keeps the library that polished it in the cost, so the
+	// checkpoint has to keep naming that library even where this stage's own
+	// configuration no longer polishes. Written only into a field the
+	// configuration left empty: a job that does polish records the version it
+	// actually ran, and that reading is the more specific one.
+	if checkpoint.PolishingOptimizerVersion == "" {
+		checkpoint.PolishingOptimizerVersion = job.InheritedPolishingVersion
+	}
 
 	checkpoint.StageIndex = nil
 	if job.ScheduleID != "" && job.StageIndex != nil {

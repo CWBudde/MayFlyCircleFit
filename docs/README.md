@@ -272,6 +272,61 @@ re-measure instead.
   `cmaes-restart-shape-report.md`'s claim that `app.MaxOptimizerRestarts` bound
   a block — stages here ran up to 88 attempts with the constant at 64, because
   it bounds the requested magnitude, not the attempts a filling schedule runs.
+- [`cmaes-polish-engine-report.md`](cmaes-polish-engine-report.md) — five arms
+  and 60 campaigns (756 stages) asking **whether a greedy extend ladder should
+  polish, and where**. Every arm runs `ext-w1` verbatim and varies only the
+  polish step, so the unpolished control **is** the extend-width winner on fresh
+  seeds — and it returns 575.10 against that campaign's 575.31, the first
+  cross-campaign replication of a staged result here. Two of four registered
+  contrasts reject under Holm. **A terminal sweep beats no sweep by `+18.09`**
+  (`t = +36.58`, `p = 7.7e-13`, 12/12) for 20.6% more evaluations, and **CMA-ES
+  beats MayFly as the sweep engine by `+5.16`** (`t = +11.76`, 12/12) on a
+  bit-identical sixteen-circle input. The registered primary — interleaving the
+  same 32 sweeps after every extend rather than spending them at the end — is a
+  **bounded null**: `+1.01`, `t = +1.20`, 7/12, interval `-0.84` to `+2.85`,
+  where the operator itself buys 18. The same question under MayFly returns
+  `-0.21`. The mechanism is the point: the interleaved lead is built by the
+  first three sweeps and then stops growing (17.48 at eleven circles, 17.39 at
+  sixteen), so **the revisit an interleaved sweep enables is a level shift the
+  terminal placement recovers in one stage** — a greedy ladder does not exploit
+  a polished prefix to place its later circles any better. Three cautions. The
+  engine result does **not** license a `polishingOptimizer` default: matching on
+  evaluations forced MayFly to 128 iterations per sweep against CMA-ES's 400, so
+  engine is confounded with iteration count by construction. The operator
+  contrast is deliberately unmatched, because a sweep's budget is additional to
+  the ladder's cap; read it as cost-benefit. And the campaign sets no record —
+  its best of 553.71 beats `cmaes-extend-width-report.md`'s 559.59 but not the
+  546.16 in `growth-run-report.md`. By-products: the measurement showing
+  **`elapsedSeconds` ranks queue residency rather than work** (the same ladder
+  at the same cap differs 2.83x between campaigns at an effective parallelism of
+  46.7 on eight configured slots), cold attempts running 73-91 per stage against
+  twenty nominal at a mean of 152 iterations each, and `distributionExtent`
+  bounded at 0.9088 over 138,302 samples. Data:
+  [`cmaes-polish-engine-measurement.csv`](cmaes-polish-engine-measurement.csv),
+  [`cmaes-polish-engine-trajectories.csv`](cmaes-polish-engine-trajectories.csv)
+  and [`cmaes-polish-engine-restarts.csv`](cmaes-polish-engine-restarts.csv).
+- [`growth-run-report.md`](growth-run-report.md) — a **production run, not a
+  campaign**: it registers no contrasts and tests nothing, applying the
+  polish-engine recipe as deep as one night allowed. It reaches **233 circles at
+  236.0731379191** from a sixteen-circle base, 217 extend/polish pairs and
+  61.8M evaluations in 1h 57m of compute, and its per-depth series has no gaps.
+  Read it for three things. It **records three records for the first time** —
+  8 circles at **725.0288747152** (superseding 726.1984354654948) and 16 at
+  **546.1567522685** (superseding 559.5857671101888), both from the polishing
+  pilot and never written down, plus the 233-circle fit. It documents **two
+  structural ceilings on staged campaigns**: a schedule base declaring `full`
+  covariance is refused above 73 circles (`MaxCMAESFullDimensions` 512, and
+  `block` is the free substitute because one circle is one block), and a base
+  seeded with `initialCircles` is refused above **100** circles outright,
+  because that field requires `batchSize` to cover every circle while
+  `MaxBatchSize` is 100 — so document-chaining by re-seeding cannot go deeper,
+  and chaining `/extend` and `/polish` against the parent job is the shape that
+  has no ceiling. And it confirms PR #136's `rgb` field is **bit-exact** in
+  practice, reproducing parent costs to the last bit where the hex form would
+  have cost 0.9-3.7 points. **Nothing in it is comparative** — one arm, one
+  seed, no control, and a 233-circle cost compares to no other figure in this
+  corpus. Data: [`growth-run-trajectory.csv`](growth-run-trajectory.csv) and
+  [`growth-run-records.csv`](growth-run-records.csv).
 - [`cmaes-preliminary-report.md`](cmaes-preliminary-report.md) — the stopped
   one-block CMA-ES campaign: descriptive costs and metric/adaptation traces,
   explicitly without the planned twelve-block inference. Superseded by

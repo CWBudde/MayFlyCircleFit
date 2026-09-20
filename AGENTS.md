@@ -32,23 +32,25 @@ ones that will change what you propose:
   earlier, and v0.7.0 changed results for every variant, so none of their
   numbers is comparable to a run made today.** Read those for method and for
   what was ruled out; re-measure before citing a figure. See the Toolchain
-  section. Thirteen reports are on the current pins and may be cited directly:
-  the QMC screen, and the twelve CMA-ES ones — `cmaes-report.md`,
+  section. Fourteen reports are on the current pins and may be cited directly:
+  the QMC screen, and the thirteen CMA-ES ones — `cmaes-report.md`,
   `cmaes-lambda-report.md`, `cmaes-stagnation-report.md`,
   `cmaes-budget-split-report.md`, `cmaes-restart-ladder-report.md`,
   `cmaes-deep-hunt-report.md`, `cmaes-covariance-report.md`,
   `cmaes-active-cma-report.md`, `cmaes-covariance-clean-report.md`,
-  `cmaes-restart-shape-report.md`, `cmaes-extend-width-report.md` and
-  `cmaes-preliminary-report.md`, run in
+  `cmaes-restart-shape-report.md`, `cmaes-extend-width-report.md`,
+  `cmaes-polish-engine-report.md` and `cmaes-preliminary-report.md`, run in
   2026-08 and 2026-09. The QMC screen is MayFly-only and ran on MayFly v0.7.1;
-  the twelve CMA-ES ones ran on go-cma-es v0.1.0 — the preliminary one on the
+  the thirteen CMA-ES ones ran on go-cma-es v0.1.0 — the preliminary one on the
   code-identical pseudo-version that preceded that tag. Each report states its
   own pins; trust that line over this one. The deep hunt and the covariance
   campaign are the exceptions to citability *within* that set: both ran at
   1.94x the shared cap, so their costs are not comparable to the other ten,
   though they are comparable to each other. `cmaes-extend-width-report.md` is a
-  third exception, and a stronger one: it is the only campaign that fits sixteen
-  circles, so its costs are comparable to nothing outside itself.
+  third exception, and a stronger one: it fits sixteen circles, so its costs are
+  comparable to nothing outside itself and `cmaes-polish-engine-report.md`,
+  which fits sixteen from the same base at the same cap and whose unpolished
+  control *is* its `ext-w1` arm on fresh seeds.
 - [`docs/qmc-initial-population-report.md`](docs/qmc-initial-population-report.md)
   — `qmcInit` measured on the eight-circle batch stage at three population
   sizes. All six comparisons are null and the data bound any effect to about
@@ -328,6 +330,38 @@ ones that will change what you propose:
   across a sixteenfold dimension range, `distributionExtent` bounded at 0.8225
   over 15,131 samples, and the measurement that withdraws the restart-shape
   report's `MaxOptimizerRestarts` claim.
+- [`docs/cmaes-polish-engine-report.md`](docs/cmaes-polish-engine-report.md) —
+  five arms and 60 campaigns asking **whether a greedy extend ladder should
+  polish, and where**. It runs `ext-w1` verbatim and varies only the polish
+  step, so its unpolished control is the extend-width winner on fresh seeds.
+  **Polishing pays and placement does not.** A terminal sweep beats no sweep by
+  `+18.09` (`t = +36.58`, 12/12) for 20.6% more evaluations, and CMA-ES beats
+  MayFly as the sweep engine by `+5.16` (`t = +11.76`, 12/12); both reject under
+  Holm. The registered primary — interleaving the same sweeps after every extend
+  instead of spending them at the end — is a **bounded null**: `+1.01`, `t =
+  +1.20`, 7/12, and its interval excludes anything above `+2.85` where the
+  operator itself buys 18. It replicates under MayFly with the sign reversed.
+  Read before proposing a polish default, and read the mechanism before
+  proposing another revisit operator: the interleaved lead is built by the first
+  three sweeps and then stops growing — 17.48 at eleven circles, 17.39 at
+  sixteen — so **the revisit is a level shift the terminal placement recovers in
+  one stage, and a greedy ladder does not exploit a polished prefix to place its
+  later circles better.** Three cautions. The engine result is **not** licence
+  to change `polishingOptimizer`'s default: matching on evaluations forced
+  MayFly to 128 iterations per sweep against CMA-ES's 400, so engine is
+  confounded with iteration count by construction, and σ 0.02 means a seed
+  perturbation to one adapter and an initial step size to the other. The
+  operator contrast is deliberately **not** evaluation-matched — a sweep's
+  budget is additional to the ladder's cap — so read it as cost-benefit. And the
+  campaign sets no record: its best of 553.71 beats the extend-width figure but
+  not the 546.16 in `growth-run-report.md`. By-products: the first
+  cross-campaign replication of a staged result (`ext-w1` returns 575.31 and
+  575.10 on disjoint seeds), the measurement that **`elapsedSeconds` ranks queue
+  residency rather than work** — the same ladder at the same cap differs 2.83x
+  between campaigns, so `cmaes-extend-width-report.md`'s 41% wall-clock caveat
+  is contaminated too — cold attempts running 73-91 per stage against twenty
+  nominal at a mean of 152 iterations each, and `distributionExtent` bounded at
+  0.9088 over 138,302 samples.
 - [`docs/dragonfly-poc-report.md`](docs/dragonfly-poc-report.md) — the
   proof-of-concept Dragonfly v0.1.0 adapter loses all twelve blocks to MayFly
   `standard` in every arm, by 431.68 (`t = -16.81`) even when given more
