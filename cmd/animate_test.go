@@ -43,7 +43,7 @@ type animateFlags struct {
 	ref, circles, checkpoint, canvas, outDir, style, background, mp4 string
 	scale, margin                                                    float64
 	halfLife, maxActive, frames, outro, fps                          int
-	reverse                                                          bool
+	reverse, ignoreCanvas                                            bool
 }
 
 func animateFlagState() animateFlags {
@@ -54,6 +54,7 @@ func animateFlagState() animateFlags {
 		scale: animateScale, margin: animateMargin,
 		halfLife: animateHalfLife, maxActive: animateMaxActive, frames: animateFrames,
 		outro: animateOutro, fps: animateFPS, reverse: animateReverse,
+		ignoreCanvas: animateIgnoreCanvas,
 	}
 }
 
@@ -64,6 +65,7 @@ func restoreAnimateFlags(saved animateFlags) {
 	animateScale, animateMargin = saved.scale, saved.margin
 	animateHalfLife, animateMaxActive, animateFrames = saved.halfLife, saved.maxActive, saved.frames
 	animateOutro, animateFPS, animateReverse = saved.outro, saved.fps, saved.reverse
+	animateIgnoreCanvas = saved.ignoreCanvas
 }
 
 // animateFixture lays out a reference image and a circle list, and points the
@@ -92,6 +94,7 @@ func animateFixture(t *testing.T, style string) (string, string) {
 		animateScale, animateMargin = 1, 0
 		animateHalfLife, animateMaxActive, animateFrames = 0, defaults.MaxActive, 0
 		animateOutro, animateFPS, animateReverse = 0, 30, false
+		animateIgnoreCanvas = false
 	})
 
 	return dir, outDir
@@ -316,5 +319,146 @@ func TestAnimateReportsAMissingFfmpeg(t *testing.T) {
 
 	if len(frameNames(t, outDir)) == 0 {
 		t.Error("the frames were discarded; they are finished work and must survive the missing encoder")
+	}
+}
+
+// writeCheckpoint stores a two-circle solution matching animateSpecs, over
+// whichever canvas the job was configured with.
+func writeCheckpoint(t *testing.T, path, canvasPath string) {
+	t.Helper()
+
+	checkpoint := store.NewCheckpoint("11111111-1111-1111-1111-111111111111", []float64{
+		12, 12, 6, 1, 0, 0, 1,
+		20, 18, 4, 0, 0, 1, 0.5,
+	}, 1, 2, 1, store.JobConfig{Circles: 2, CanvasPath: canvasPath})
+
+	encoded, err := json.Marshal(checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = os.WriteFile(path, encoded, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A solution fitted over a canvas does not describe the finished image without
+// it, so the canvas the checkpoint recorded has to be used without the operator
+// naming it a second time.
+//
+//nolint:paralleltest // mutates the package-level animate flags, which every test in this package shares.
+func TestAnimateUsesTheCanvasACheckpointRecords(t *testing.T) {
+	dir, outDir := animateFixture(t, string(anim.StyleStatic))
+
+	// A canvas that is not the white the renderer would default to, so using it
+	// and ignoring it cannot produce the same pixels.
+	canvasPath := filepath.Join(dir, "canvas.png")
+	writeScoreFixture(t, canvasPath)
+
+	checkpointPath := filepath.Join(dir, "checkpoint.json")
+	writeCheckpoint(t, checkpointPath, canvasPath)
+
+	animateCirclesPath, animateCheckpointPath = "", checkpointPath
+
+	err := runAnimate(animateTestCommand(), nil)
+	if err != nil {
+		t.Fatalf("runAnimate: %v", err)
+	}
+
+	recorded, err := os.ReadFile(filepath.Join(outDir, "frame-000000.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The same checkpoint with the canvas deliberately ignored must differ.
+	animateIgnoreCanvas = true
+	animateOutDir = filepath.Join(dir, "ignored")
+
+	err = runAnimate(animateTestCommand(), nil)
+	if err != nil {
+		t.Fatalf("runAnimate with --ignore-canvas: %v", err)
+	}
+
+	ignored, err := os.ReadFile(filepath.Join(animateOutDir, "frame-000000.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if bytes.Equal(recorded, ignored) {
+		t.Error("the checkpoint's recorded canvas made no difference; it is being discarded")
+	}
+}
+
+// The recorded path belongs to the machine that ran the job, so it is often
+// absent. That has to be said rather than silently replaced with white.
+//
+//nolint:paralleltest // mutates the package-level animate flags, which every test in this package shares.
+func TestAnimateReportsACheckpointCanvasItCannotRead(t *testing.T) {
+	dir, _ := animateFixture(t, string(anim.StyleStatic))
+
+	checkpointPath := filepath.Join(dir, "checkpoint.json")
+	writeCheckpoint(t, checkpointPath, "/nowhere/on/this/machine/base.png")
+
+	animateCirclesPath, animateCheckpointPath = "", checkpointPath
+
+	err := runAnimate(animateTestCommand(), nil)
+	if err == nil {
+		t.Fatal("an unreadable recorded canvas was accepted")
+	}
+
+	for _, want := range []string{"fitted over canvas", "--ignore-canvas"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("got %v, want a message containing %q", err, want)
+		}
+	}
+}
+
+// A shorter run into a directory that already holds a longer one must not leave
+// the old tail behind. The numbering is contiguous, so ffmpeg would read
+// straight through the leftovers and splice the previous ending onto this one.
+//
+//nolint:paralleltest // mutates the package-level animate flags, which every test in this package shares.
+func TestAnimateRemovesFramesFromALongerPreviousRun(t *testing.T) {
+	_, outDir := animateFixture(t, string(anim.StyleStatic))
+
+	err := os.MkdirAll(outDir, 0o750)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Frames 3 and 4 continue the numbering this run stops at, which is exactly
+	// the case that corrupts the encode.
+	stale := []string{"frame-000003.png", "frame-000004.png"}
+	for _, name := range stale {
+		err = os.WriteFile(filepath.Join(outDir, name), []byte("stale"), 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Nothing else in the directory may be touched.
+	keep := filepath.Join(outDir, "notes.txt")
+
+	err = os.WriteFile(keep, []byte("keep me"), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = runAnimate(animateTestCommand(), nil)
+	if err != nil {
+		t.Fatalf("runAnimate: %v", err)
+	}
+
+	for _, name := range stale {
+		_, err = os.Stat(filepath.Join(outDir, name))
+		if err == nil {
+			t.Errorf("%s survived; the directory now holds two animations", name)
+		}
+	}
+
+	_, err = os.Stat(keep)
+	if err != nil {
+		t.Errorf("notes.txt was deleted; only this command's own frames may be removed: %v", err)
 	}
 }

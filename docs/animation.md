@@ -87,12 +87,37 @@ circlefit animate --ref example/MayFly-512.png --circles circles.json \
 | `--outro` | `0` | Closing vignette frames. `41` reproduces the original. |
 | `--reverse` | `false` | `inflate` only; deflates to nothing. |
 | `--background` | `#FFFFFF` | Fill behind the arrangement. |
-| `--canvas` | — | Base canvas the fit started from. |
+| `--canvas` | — | Base canvas the fit started from. Overrides whatever the source records. |
+| `--ignore-canvas` | `false` | Animate on `--background`, ignoring the canvas the source records. |
 | `--mp4`, `--fps` | —, `30` | Encode with ffmpeg. |
 
 Frames are written as `frame-000000.png`. The padding is deliberate: the
 original wrote `Frame7.png`, which does not sort, and `ffmpeg -i
 frame-%06d.png` needs the fixed width.
+
+## Two things worth knowing about the output
+
+**The base canvas comes from the source.** A schedule document's
+`base.canvasPath` and a checkpoint's `config.canvasPath` are both used
+automatically, because a solution fitted over a canvas does not describe the
+finished image without it — animating those circles on white would produce
+something that never matches the run they came from. `--canvas` overrides it.
+
+A checkpoint records the path as it was on the machine that ran the job, so it
+is often absent locally. That is an **error**, not a silent fall back to white:
+
+```
+the source was fitted over canvas "/home/ewws/cf/base.png", which is not readable here: ...
+pass --canvas with a local copy, or --ignore-canvas to animate on the background colour
+```
+
+**The output directory is cleared of previous frames first.** Overwriting only
+the new prefix is not enough: a shorter run would leave the old tail behind, and
+because the numbering is contiguous those leftovers are not inert — `ffmpeg`
+reads `frame-%06d.png` until the sequence breaks, so the previous run's ending
+would be spliced onto this one's. Only names this command writes are removed —
+`frame-` followed by exactly six digits and `.png` — and only in the directory
+named by `--out-dir`. Anything else there is left alone.
 
 ## Where this differs from the original
 

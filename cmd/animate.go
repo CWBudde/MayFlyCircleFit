@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -33,6 +34,7 @@ var (
 	animateOutro          int
 	animateReverse        bool
 	animateBackground     string
+	animateIgnoreCanvas   bool
 	animateMP4Path        string
 	animateFPS            int
 )
@@ -91,6 +93,8 @@ func init() {
 	flags.IntVar(&animateOutro, "outro", 0, "Append this many closing vignette frames; 41 reproduces the original")
 	flags.BoolVar(&animateReverse, "reverse", false, "Play inflate backwards, deflating to nothing")
 	flags.StringVar(&animateBackground, "background", "#FFFFFF", "Background colour behind the arrangement")
+	flags.BoolVar(&animateIgnoreCanvas, "ignore-canvas", false,
+		"Animate on the background colour, ignoring the base canvas the source records")
 	flags.StringVar(&animateMP4Path, "mp4", "", "Also encode the frames to this MP4, using ffmpeg")
 	flags.IntVar(&animateFPS, "fps", 30, "Frame rate for --mp4")
 
@@ -128,6 +132,15 @@ func runAnimate(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("create %s: %w", animateOutDir, err)
 	}
 
+	removed, err := clearStaleFrames(animateOutDir)
+	if err != nil {
+		return err
+	}
+
+	if removed > 0 {
+		cmd.Printf("replaced:   %d frames from a previous run\n", removed)
+	}
+
 	cmd.Printf("style:      %s\n", animateStyle)
 	cmd.Printf("circles:    %d\n", len(circles))
 	cmd.Printf("frames:     %d at %dx%d\n", len(sequence.Frames), sequence.Width, sequence.Height)
@@ -141,6 +154,46 @@ func runAnimate(cmd *cobra.Command, _ []string) error {
 
 	return encodeVideo(cmd, len(sequence.Frames))
 }
+
+// clearStaleFrames deletes the frames a previous run left in the output
+// directory.
+//
+// Overwriting only the new prefix is not enough. A shorter animation leaves the
+// old tail behind, and because the numbering is contiguous those leftovers are
+// not inert: ffmpeg reads frame-%06d.png until the sequence breaks, so a
+// previous run's ending would be spliced onto this one's. The directory would
+// also no longer describe one animation.
+//
+// It removes only names this command writes -- frame- followed by exactly six
+// digits and .png -- and only in the directory it was pointed at. Anything else
+// in there is left alone.
+func clearStaleFrames(dir string) (int, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	removed := 0
+
+	for _, entry := range entries {
+		if entry.IsDir() || !staleFrameName.MatchString(entry.Name()) {
+			continue
+		}
+
+		err = os.Remove(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			return removed, fmt.Errorf("remove stale frame %s: %w", entry.Name(), err)
+		}
+
+		removed++
+	}
+
+	return removed, nil
+}
+
+// staleFrameName matches exactly what frameNamePattern produces, so nothing
+// else a directory happens to hold can be deleted by it.
+var staleFrameName = regexp.MustCompile(`^frame-\d{6}\.png$`)
 
 func animateOptions() anim.Options {
 	opts := anim.DefaultOptions()
@@ -157,13 +210,17 @@ func animateOptions() anim.Options {
 }
 
 // animateArrangement reads the circles from whichever source was named, and
-// reports the base canvas a schedule document asks for. A checkpoint names no
-// canvas of its own, so --canvas is the only way to supply one for it.
+// reports the base canvas the source was fitted over: a schedule document's
+// base.canvasPath, or the canvasPath a checkpoint recorded in its own
+// configuration. Both are overridden by --canvas.
+//
+// Carrying it matters because a solution fitted over a canvas does not describe
+// the finished image without it. Rendering those circles on white would produce
+// an animation that never matches the run it came from, and nothing in the
+// output would say so.
 func animateArrangement(ref *image.NRGBA) ([]fit.Circle, string, error) {
 	if animateCheckpointPath != "" {
-		circles, err := checkpointCircles(animateCheckpointPath)
-
-		return circles, "", err
+		return checkpointCircles(animateCheckpointPath)
 	}
 
 	specs, canvasPath, err := loadCircleSpecs(animateCirclesPath)
@@ -205,17 +262,17 @@ func animateArrangement(ref *image.NRGBA) ([]fit.Circle, string, error) {
 	return decodeCircles(params), canvasPath, nil
 }
 
-func checkpointCircles(path string) ([]fit.Circle, error) {
+func checkpointCircles(path string) ([]fit.Circle, string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read checkpoint: %w", err)
+		return nil, "", fmt.Errorf("read checkpoint: %w", err)
 	}
 
 	var checkpoint store.Checkpoint
 
 	err = json.Unmarshal(data, &checkpoint)
 	if err != nil {
-		return nil, fmt.Errorf("%s is not a checkpoint: %w", path, err)
+		return nil, "", fmt.Errorf("%s is not a checkpoint: %w", path, err)
 	}
 
 	// Deliberately not Checkpoint.Validate: that checks the whole job
@@ -225,15 +282,15 @@ func checkpointCircles(path string) ([]fit.Circle, error) {
 	// circles over that would be a rule with no purpose. What has to be sound
 	// is the parameter vector.
 	if len(checkpoint.BestParams) == 0 {
-		return nil, fmt.Errorf("checkpoint %s records no solution", path)
+		return nil, "", fmt.Errorf("checkpoint %s records no solution", path)
 	}
 
 	if len(checkpoint.BestParams)%app.ParamsPerCircle != 0 {
-		return nil, fmt.Errorf("checkpoint %s holds %d parameters, which is not a whole number of circles",
+		return nil, "", fmt.Errorf("checkpoint %s holds %d parameters, which is not a whole number of circles",
 			path, len(checkpoint.BestParams))
 	}
 
-	return decodeCircles(checkpoint.BestParams), nil
+	return decodeCircles(checkpoint.BestParams), checkpoint.Config.CanvasPath, nil
 }
 
 func decodeCircles(params []float64) []fit.Circle {
@@ -255,22 +312,14 @@ func decodeCircles(params []float64) []fit.Circle {
 // never saw, and the frames would stop matching the image the run produced, so
 // the combination is refused rather than approximated.
 func animateCanvas(sequence *anim.Sequence, ref *image.NRGBA, canvasPath string) (*image.NRGBA, error) {
-	if animateCanvasPath != "" {
-		canvasPath = animateCanvasPath
-	}
+	canvasPath = effectiveCanvasPath(canvasPath)
 
 	fill, err := app.ParseHexColor(animateBackground)
 	if err != nil {
 		return nil, fmt.Errorf("background: %w", err)
 	}
 
-	background := image.NewNRGBA(image.Rect(0, 0, sequence.Width, sequence.Height))
-	for i := 0; i < len(background.Pix); i += 4 {
-		background.Pix[i+0] = uint8(fill[0]*255 + 0.5)
-		background.Pix[i+1] = uint8(fill[1]*255 + 0.5)
-		background.Pix[i+2] = uint8(fill[2]*255 + 0.5)
-		background.Pix[i+3] = 0xFF
-	}
+	background := filledCanvas(sequence.Width, sequence.Height, fill)
 
 	if canvasPath == "" {
 		return background, nil
@@ -281,9 +330,59 @@ func animateCanvas(sequence *anim.Sequence, ref *image.NRGBA, canvasPath string)
 			"scaling the base image would invent pixels the fit never saw", animateScale)
 	}
 
+	canvas, err := loadBaseCanvas(canvasPath, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	placeCanvas(background, canvas, sequence.OffsetX, sequence.OffsetY)
+
+	return background, nil
+}
+
+// effectiveCanvasPath resolves the three ways a base canvas is chosen: the flag
+// wins, --ignore-canvas discards what the source recorded, and otherwise the
+// recorded path stands.
+func effectiveCanvasPath(recorded string) string {
+	if animateCanvasPath != "" {
+		return animateCanvasPath
+	}
+
+	if animateIgnoreCanvas {
+		return ""
+	}
+
+	return recorded
+}
+
+func filledCanvas(width, height int, fill [3]float64) *image.NRGBA {
+	background := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for i := 0; i < len(background.Pix); i += 4 {
+		background.Pix[i+0] = uint8(fill[0]*255 + 0.5)
+		background.Pix[i+1] = uint8(fill[1]*255 + 0.5)
+		background.Pix[i+2] = uint8(fill[2]*255 + 0.5)
+		background.Pix[i+3] = 0xFF
+	}
+
+	return background
+}
+
+// loadBaseCanvas reads the canvas the arrangement was fitted over and checks it
+// lines up with the reference.
+func loadBaseCanvas(canvasPath string, ref *image.NRGBA) (*image.NRGBA, error) {
 	canvas, err := loadScoreReference(canvasPath)
 	if err != nil {
-		return nil, fmt.Errorf("canvas %s: %w", canvasPath, err)
+		if animateCanvasPath != "" {
+			return nil, fmt.Errorf("canvas %s: %w", canvasPath, err)
+		}
+
+		// The path was recorded by the run, on whichever machine produced it,
+		// so it is often absent here. Falling back to the background colour
+		// would quietly animate something that is not what was fitted, so name
+		// what is missing and both ways out of it.
+		return nil, fmt.Errorf("the source was fitted over canvas %q, which is not readable here: %w"+
+			"\npass --canvas with a local copy, or --ignore-canvas to animate on the background colour",
+			canvasPath, err)
 	}
 
 	if canvas.Bounds().Dx() != ref.Bounds().Dx() || canvas.Bounds().Dy() != ref.Bounds().Dy() {
@@ -291,9 +390,7 @@ func animateCanvas(sequence *anim.Sequence, ref *image.NRGBA, canvasPath string)
 			canvasPath, canvas.Bounds().Dx(), canvas.Bounds().Dy(), ref.Bounds().Dx(), ref.Bounds().Dy())
 	}
 
-	placeCanvas(background, canvas, sequence.OffsetX, sequence.OffsetY)
-
-	return background, nil
+	return canvas, nil
 }
 
 func placeCanvas(background, canvas *image.NRGBA, offsetX, offsetY int) {
