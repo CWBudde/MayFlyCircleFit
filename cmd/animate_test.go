@@ -42,7 +42,7 @@ func withAnimateFlags(t *testing.T, apply func()) {
 type animateFlags struct {
 	ref, circles, checkpoint, canvas, outDir, style, background, mp4 string
 	scale, margin                                                    float64
-	halfLife, maxActive, frames, outro, fps                          int
+	halfLife, maxActive, frames, outro, fps, supersample             int
 	reverse, ignoreCanvas                                            bool
 }
 
@@ -54,7 +54,7 @@ func animateFlagState() animateFlags {
 		scale: animateScale, margin: animateMargin,
 		halfLife: animateHalfLife, maxActive: animateMaxActive, frames: animateFrames,
 		outro: animateOutro, fps: animateFPS, reverse: animateReverse,
-		ignoreCanvas: animateIgnoreCanvas,
+		ignoreCanvas: animateIgnoreCanvas, supersample: animateSupersample,
 	}
 }
 
@@ -65,7 +65,7 @@ func restoreAnimateFlags(saved animateFlags) {
 	animateScale, animateMargin = saved.scale, saved.margin
 	animateHalfLife, animateMaxActive, animateFrames = saved.halfLife, saved.maxActive, saved.frames
 	animateOutro, animateFPS, animateReverse = saved.outro, saved.fps, saved.reverse
-	animateIgnoreCanvas = saved.ignoreCanvas
+	animateIgnoreCanvas, animateSupersample = saved.ignoreCanvas, saved.supersample
 }
 
 // animateFixture lays out a reference image and a circle list, and points the
@@ -94,7 +94,7 @@ func animateFixture(t *testing.T, style string) (string, string) {
 		animateScale, animateMargin = 1, 0
 		animateHalfLife, animateMaxActive, animateFrames = 0, defaults.MaxActive, 0
 		animateOutro, animateFPS, animateReverse = 0, 30, false
-		animateIgnoreCanvas = false
+		animateIgnoreCanvas, animateSupersample = false, 1
 	})
 
 	return dir, outDir

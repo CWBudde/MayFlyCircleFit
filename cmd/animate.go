@@ -37,6 +37,7 @@ var (
 	animateIgnoreCanvas   bool
 	animateMP4Path        string
 	animateFPS            int
+	animateSupersample    int
 )
 
 // frameNamePattern is both the file name and what ffmpeg is handed as its input
@@ -97,6 +98,8 @@ func init() {
 		"Animate on the background colour, ignoring the base canvas the source records")
 	flags.StringVar(&animateMP4Path, "mp4", "", "Also encode the frames to this MP4, using ffmpeg")
 	flags.IntVar(&animateFPS, "fps", 30, "Frame rate for --mp4")
+	flags.IntVar(&animateSupersample, "supersample", 1,
+		"Render this many times larger and average down, to antialias the circle edges")
 
 	_ = animateCmd.MarkFlagRequired("ref")
 	_ = animateCmd.MarkFlagRequired("out-dir")
@@ -115,6 +118,10 @@ func runAnimate(cmd *cobra.Command, _ []string) error {
 	circles, canvasPath, err := animateArrangement(ref)
 	if err != nil {
 		return err
+	}
+
+	if animateSupersample < 1 {
+		return fmt.Errorf("--supersample must be at least 1, got %d", animateSupersample)
 	}
 
 	sequence, err := anim.Plan(circles, ref.Bounds().Dx(), ref.Bounds().Dy(), animateOptions())
@@ -143,7 +150,14 @@ func runAnimate(cmd *cobra.Command, _ []string) error {
 
 	cmd.Printf("style:      %s\n", animateStyle)
 	cmd.Printf("circles:    %d\n", len(circles))
-	cmd.Printf("frames:     %d at %dx%d\n", len(sequence.Frames), sequence.Width, sequence.Height)
+	if animateSupersample > 1 {
+		cmd.Printf("frames:     %d at %dx%d, averaged down from %dx%d\n",
+			len(sequence.Frames),
+			sequence.Width/animateSupersample, sequence.Height/animateSupersample,
+			sequence.Width, sequence.Height)
+	} else {
+		cmd.Printf("frames:     %d at %dx%d\n", len(sequence.Frames), sequence.Width, sequence.Height)
+	}
 
 	err = writeFrames(cmd, sequence, background)
 	if err != nil {
@@ -198,7 +212,9 @@ var staleFrameName = regexp.MustCompile(`^frame-\d{6}\.png$`)
 func animateOptions() anim.Options {
 	opts := anim.DefaultOptions()
 	opts.Style = anim.Style(animateStyle)
-	opts.Scale = animateScale
+	// Supersampling is a larger render, so it multiplies the scale and the
+	// frames are averaged back down on the way out.
+	opts.Scale = animateScale * float64(animateSupersample)
 	opts.Margin = animateMargin
 	opts.HalfLife = animateHalfLife
 	opts.MaxActive = animateMaxActive
@@ -414,7 +430,7 @@ func writeFrames(cmd *cobra.Command, sequence *anim.Sequence, background *image.
 	return anim.Render(sequence, background, func(index int, img *image.NRGBA) error {
 		path := filepath.Join(animateOutDir, fmt.Sprintf(frameNamePattern, index))
 
-		err := writePNG(path, img)
+		err := writePNG(path, anim.Downsample(img, animateSupersample))
 		if err != nil {
 			return fmt.Errorf("write frame %d: %w", index, err)
 		}
